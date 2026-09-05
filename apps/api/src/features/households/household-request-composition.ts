@@ -1,4 +1,8 @@
 import {
+  HouseholdProfileRejected,
+  PersonProfile,
+  ProfileVersion,
+  ProfileVersionPage,
   HouseholdAdultInvitationResult,
   HouseholdOrganizationId,
   HouseholdMemberDepartureOperation,
@@ -61,9 +65,9 @@ import {
   HouseholdPeopleOrganizerRequired,
 } from "./household.gateway.js";
 import {
-  makeHouseholdHttpApiLayer,
-  makeHouseholdMealPlanHttpApiLayer,
-  makeHouseholdPeopleHttpApiLayer,
+  HouseholdHttpApiLayer,
+  HouseholdMealPlanHttpApiLayer,
+  HouseholdPeopleHttpApiLayer,
 } from "./household.http.js";
 import type {
   HouseholdAssociateAdultInvitationInput,
@@ -133,6 +137,9 @@ interface HouseholdMealPlanDomainPort {
 }
 
 interface HouseholdPeopleDomainPort {
+  readonly readPersonProfile: HouseholdDomainWorkerMethods["readPersonProfile"];
+  readonly listProfileVersions: HouseholdDomainWorkerMethods["listProfileVersions"];
+  readonly mutatePersonProfile: HouseholdDomainWorkerMethods["mutatePersonProfile"];
   readonly associateAdultInvitation: (
     input: HouseholdAssociateAdultInvitationInput
   ) => Effect.Effect<object, HouseholdDomainFailure | HouseholdPeopleFailure>;
@@ -365,6 +372,9 @@ const mapPeopleFailure = (
 };
 
 /** Adapt admitted people operations to the private household Worker. */
+const profileFailure = () =>
+  new HouseholdProfileRejected({ reason: "profile_unavailable" });
+
 export const makeHouseholdPeopleGateway = (options: {
   readonly controlPlane: HouseholdPeopleControlPlane;
   readonly departureWorkflow: MemberDepartureWorkflowStarter;
@@ -449,6 +459,9 @@ export const makeHouseholdPeopleGateway = (options: {
       return input.operation;
     });
 
+  const mapProfileFailure = (
+    error: HouseholdDomainFailure | HouseholdProfileRejected
+  ) => (error._tag === "HouseholdProfileRejected" ? error : profileFailure());
   return {
     archive: ({ payload, personId, principal }) =>
       call(
@@ -622,6 +635,25 @@ export const makeHouseholdPeopleGateway = (options: {
           .pipe(Effect.mapError(mapPeopleFailure));
         return yield* decodeDeparture(wire);
       }),
+    getProfile: ({ personId, principal, version }) =>
+      makeHouseholdPeopleAdmission(principal).pipe(
+        Effect.mapError(profileFailure),
+        Effect.flatMap((admission) =>
+          options.domain
+            .readPersonProfile({
+              admission,
+              personId,
+              version:
+                version === undefined ? null : ProfileVersion.make(version),
+            })
+            .pipe(Effect.mapError(mapProfileFailure))
+        ),
+        Effect.flatMap((wire) =>
+          Schema.decodeUnknownEffect(PersonProfile)(wire).pipe(
+            Effect.mapError(profileFailure)
+          )
+        )
+      ),
     inviteAdult: ({ headers, payload, principal }) =>
       Effect.gen(function* inviteAdult() {
         const admission = yield* creatorAdmission(principal);
@@ -681,6 +713,41 @@ export const makeHouseholdPeopleGateway = (options: {
             query: { includeArchived: includeArchived ? "true" : "false" },
           }),
         HouseholdPeopleRoster
+      ),
+    listProfileVersions: ({ beforeVersion, personId, principal }) =>
+      makeHouseholdPeopleAdmission(principal).pipe(
+        Effect.mapError(profileFailure),
+        Effect.flatMap((admission) =>
+          options.domain
+            .listProfileVersions({
+              admission,
+              beforeVersion:
+                beforeVersion === null
+                  ? null
+                  : ProfileVersion.make(beforeVersion),
+              personId,
+            })
+            .pipe(Effect.mapError(mapProfileFailure))
+        ),
+        Effect.flatMap((wire) =>
+          Schema.decodeUnknownEffect(ProfileVersionPage)(wire).pipe(
+            Effect.mapError(profileFailure)
+          )
+        )
+      ),
+    mutateProfile: ({ payload, personId, principal }) =>
+      makeHouseholdPeopleAdmission(principal).pipe(
+        Effect.mapError(profileFailure),
+        Effect.flatMap((admission) =>
+          options.domain
+            .mutatePersonProfile({ admission, payload, personId })
+            .pipe(Effect.mapError(mapProfileFailure))
+        ),
+        Effect.flatMap((wire) =>
+          Schema.decodeUnknownEffect(PersonProfile)(wire).pipe(
+            Effect.mapError(profileFailure)
+          )
+        )
       ),
     repairAdultLink: ({ payload, principal }) =>
       Effect.gen(function* repairAdultAccountLink() {
@@ -935,7 +1002,7 @@ export const makeHouseholdRequestLayer = (options: {
     Layer.succeed(AuthenticatedOrganizationResolverService, options.resolver),
     Layer.succeed(HouseholdDomainGatewayService, options.gateway)
   );
-  return makeHouseholdHttpApiLayer().pipe(
+  return HouseholdHttpApiLayer.pipe(
     Layer.provide(RecipeImportHttpPlatformServices),
     Layer.provide(requestServices),
     HttpRouter.provideRequest(requestServices)
@@ -951,7 +1018,7 @@ export const makeHouseholdMealPlanRequestLayer = (options: {
     Layer.succeed(AuthenticatedOrganizationResolverService, options.resolver),
     Layer.succeed(HouseholdMealPlanGatewayService, options.gateway)
   );
-  return makeHouseholdMealPlanHttpApiLayer().pipe(
+  return HouseholdMealPlanHttpApiLayer.pipe(
     Layer.provide(RecipeImportHttpPlatformServices),
     Layer.provide(requestServices),
     HttpRouter.provideRequest(requestServices)
@@ -967,7 +1034,7 @@ export const makeHouseholdPeopleRequestLayer = (options: {
     Layer.succeed(AuthenticatedOrganizationResolverService, options.resolver),
     Layer.succeed(HouseholdPeopleGatewayService, options.gateway)
   );
-  return makeHouseholdPeopleHttpApiLayer().pipe(
+  return HouseholdPeopleHttpApiLayer.pipe(
     Layer.provide(RecipeImportHttpPlatformServices),
     Layer.provide(requestServices),
     HttpRouter.provideRequest(requestServices)

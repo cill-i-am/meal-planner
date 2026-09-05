@@ -9,7 +9,7 @@ import type { HouseholdDomainWorkerMethods } from "../households/household-domai
 import type { HouseholdSystemAdmission } from "../households/rpc/command-envelope.js";
 import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import type { AcquisitionGeneration } from "./import-media.model.js";
-import type { ProviderTaskFailureCheckpoint } from "./import-provider-workflow-task.js";
+import type { ProviderTaskFailureCheckpoint } from "./import-provider-workflow-checkpoint.js";
 import { ImportId } from "./import.contracts.js";
 import type { ImportTimestamp } from "./import.contracts.js";
 

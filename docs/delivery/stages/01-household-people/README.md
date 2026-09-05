@@ -1,9 +1,10 @@
 # Stage 1 — Household People, Profiles, And Permissions
 
-- Status: Active
-- Immediate work item:
-  [`02-account-linking-invitations-and-departure.md`](02-account-linking-invitations-and-departure.md)
-  (`In progress`)
+- Status: Done
+- Completed: 2026-09-05, following accepted cumulative evidence in PR #205
+- Final work item:
+  [`05-cumulative-exit-proof.md`](05-cumulative-exit-proof.md)
+  (Done; merge `e77f2cf2a2e634fd43cab588980a73ee7ae9b6d2`)
 - Started: 2026-08-27
 
 ## Household Outcome
@@ -26,12 +27,13 @@ The live repository establishes these boundaries:
 - Private household commands use closed Effect Schemas, exact-purpose admission,
   opaque object routing, object-side authorization, local transactions, and
   mutation receipts.
-- Public household contracts expose status, meal-plan, and the closed person
-  registry lifecycle operations. Profile, general account-link, and interview
+- Public household contracts expose status, meal-plan, person registry, account
+  linking/departure, and closed profile/version/audit operations. Interview
   session APIs remain absent.
 - The web application can create and select Better Auth organizations and now
-  presents explicit creator bootstrap plus roster create/archive/restore. It
-  never creates a person as an implicit read side effect.
+  presents explicit creator bootstrap, roster create/archive/restore, account
+  linking/departure, and profile editing with exact-command recovery. It never
+  creates a person as an implicit read side effect.
 - Real Workerd and Miniflare fixtures already prove Better Auth membership,
   private Worker-to-object routing, restart durability, and physical
   cross-household isolation.
@@ -66,12 +68,13 @@ evidence are the implemented base for Work Item 02.
 
 ## Work Items And Sequence
 
-| Order | Work item | Status | Dependency |
-| --- | --- | --- | --- |
-| 01 | [Person registry and lifecycle](01-person-registry-and-lifecycle.md) | Done | Stage 0 and accepted people/auth separation |
-| 02 | [Account linking, invitations, and departure](02-account-linking-invitations-and-departure.md) | In progress | Work Item 01 merged; ADR-0010 accepted |
-| 03 | [Profile authority, versioning, and audit](03-profile-authority-versioning-and-audit.md) | Proposed | Stable person/link semantics from Work Items 01–02 |
-| 04 | [Private interview-session boundary](04-private-interview-session-boundary.md) | Proposed | Work Item 03 and the accepted exact-version Agents SDK spike |
+| Order | Work item                                                                                      | Status                      | Dependency                                                                  |
+| ----- | ---------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------- |
+| 01    | [Person registry and lifecycle](01-person-registry-and-lifecycle.md)                           | Done                        | Stage 0 and accepted people/auth separation                                 |
+| 02    | [Account linking, invitations, and departure](02-account-linking-invitations-and-departure.md) | Done                        | PR #201 merged; ADR-0010 accepted                                           |
+| 03    | [Profile authority, versioning, and audit](03-profile-authority-versioning-and-audit.md)       | Done                        | PR #202 merged as `b509ba5` on 2026-09-05                                   |
+| 04    | [Private interview-session boundary](04-private-interview-session-boundary.md)                 | Done | PR #204 accepted boundary evidence; no Stage 1 grant implemented |
+| 05    | [Cumulative exit proof](05-cumulative-exit-proof.md) | Done | PR #205 merged; focused real-runtime profile/lifecycle joins accepted |
 
 The four-part split remains a delivery hypothesis. Inspection of the live code
 caused three refinements:
@@ -81,20 +84,20 @@ caused three refinements:
    invitation association and no active account link.
 2. Membership departure crosses Better Auth and household authority and cannot
    be made atomic. ADR-0010 now accepts the access-first durable coordination
-   protocol, so Work Item 02 is ready for one bounded implementation owner.
+   protocol, implemented by Work Item 02.
 3. Work Item 04 defines only the prerequisite boundary. Agent Durable Object
    conversation storage and runtime implementation remain Stage 2 unless the
    exact-version spike proves that a minimal prerequisite must land sooner.
 
 ## Canonical Authority And Privacy
 
-| Fact | Canonical authority | Privacy boundary |
-| --- | --- | --- |
-| User, account, session, organization, member, invitation, role | Better Auth D1 through its Drizzle adapter | Identity control plane; raw invitation email stays here |
-| Person, lifecycle, account-link fact, profile version, household audit, mutation receipt | The routed `HouseholdObject` SQLite database through Drizzle | Household-visible projections only after admitted membership |
-| Current authenticated actor and role | Better Auth, resolved before object routing | Passed as a validated, one-way actor identity; no raw session or email enters the object |
-| Conversation messages, transcripts, streaming and runtime lifecycle | A future isolated Agent Durable Object | Private to admitted participants; not ordinary household-visible data |
-| Confirmed profile commands proposed by a conversation | `HouseholdObject` after normal authorization and validation | Only the resulting typed fact and provenance become household-visible |
+| Fact                                                                                     | Canonical authority                                          | Privacy boundary                                                                         |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| User, account, session, organization, member, invitation, role                           | Better Auth D1 through its Drizzle adapter                   | Identity control plane; raw invitation email stays here                                  |
+| Person, lifecycle, account-link fact, profile version, household audit, mutation receipt | The routed `HouseholdObject` SQLite database through Drizzle | Household-visible projections only after admitted membership                             |
+| Current authenticated actor and role                                                     | Better Auth, resolved before object routing                  | Passed as a validated, one-way actor identity; no raw session or email enters the object |
+| Conversation messages, transcripts, streaming and runtime lifecycle                      | A future isolated Agent Durable Object                       | Private to admitted participants; not ordinary household-visible data                    |
+| Confirmed profile commands proposed by a conversation                                    | `HouseholdObject` after normal authorization and validation  | Only the resulting typed fact and provenance become household-visible                    |
 
 Every household mutation is a local SQLite transaction. Better Auth mutations,
 Workflow starts, Agent calls, Queue operations, R2 access, or network I/O must
@@ -190,8 +193,11 @@ remain local implementation choices.
 owns private messages, transcripts, streaming, and conversation lifecycle. A
 session may propose typed profile commands but cannot become profile authority,
 and raw transcript text must never be stored as household-visible profile or
-audit data. Work Item 04 remains proposed until the accepted exact-version
-Cloudflare Agents SDK spike resolves the minimum grant/reference contract.
+audit data. The [exact-version SDK evidence](04-agents-boundary-evidence.md)
+supports no Household grant/table prerequisite: isolated Agent metadata can own
+participant/session lifecycle. Real product admission, Alchemy composition, and
+all live-output revocation paths remain Stage 2 integration gates. This is not
+permission to treat a saved participant identity as current authorization.
 
 ## Cumulative Stage 1 Vertical Tracer
 
@@ -265,8 +271,17 @@ infer, link, archive, restore, or mutate any of that state.
 - any Agent SDK topology that materially changes ADR 0004, participant privacy,
   or the separation between conversation and product authority.
 
-## Next Implementation Assignment
+## Completion And Pause
 
-Use the one exact bounded assignment in
-[Work Item 02](02-account-linking-invitations-and-departure.md#first-implementation-agent-assignment).
-Work Items 03 and 04 remain `Proposed` and must not be combined with it.
+Stage 1 is complete. [Work Item 05](05-cumulative-exit-proof.md) records the
+cumulative profile/lifecycle proof, 1,068 passing local tests, green hosted
+checks, independent exact-head review with no findings, and PR #205's merge.
+Together with the accepted Work Items 01–04, this satisfies the Stage 1 exit
+scope. Work Item 04 is boundary evidence only; no Household grant or
+conversation implementation is claimed.
+
+The [bounded Stage 2 handoff](04-agents-boundary-evidence.md#smallest-stage-2-handoff)
+remains Proposed and unassigned. The user requested a pause after recording
+completion; no Stage 2 implementation, conversation/model work, or further
+dispatch is authorized. Full-browser authenticated and live-cloud proof are
+not claimed by this completion record.

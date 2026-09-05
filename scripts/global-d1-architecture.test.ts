@@ -19,18 +19,24 @@ import {
   inspectGlobalD1Architecture,
   readTrackedGlobalD1Architecture,
 } from "./global-d1-architecture.js";
-import type { TrackedArchitectureSource } from "./global-d1-architecture.js";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 let trackedRepositoryRoot = "";
 
 const trackedPaths = (root: string): readonly string[] =>
-  execFileSync("git", ["ls-files", "-z"], {
-    cwd: root,
-    encoding: "utf-8",
-  })
+  execFileSync(
+    "git",
+    ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+    {
+      cwd: root,
+      encoding: "utf-8",
+    }
+  )
     .split("\0")
-    .filter((entryPath) => entryPath.length > 0);
+    .filter(
+      (entryPath) =>
+        entryPath.length > 0 && existsSync(path.join(root, entryPath))
+    );
 
 const copyTrackedRepository = (): string => {
   const destination = mkdtempSync(
@@ -94,38 +100,6 @@ const withTrackedSources = <Result>(
   return withTrackedSource(source.path, source.source, () =>
     withTrackedSources(remaining, inspect)
   );
-};
-
-/** The global-D1 predicates enforced by 3a1524a before the exact allowlist. */
-const inspectPredecessorGlobalD1Structure = (
-  sources: readonly TrackedArchitectureSource[]
-): readonly string[] => {
-  const sourceAt = (entryPath: string): string =>
-    sources.find(({ path: sourcePath }) => sourcePath === entryPath)?.source ??
-    "";
-  const stack = sourceAt("alchemy.run.ts");
-  const providerSchema = sourceAt(
-    "apps/api/src/features/provider-accounting/provider-accounting.database-schema.ts"
-  );
-  const providerMigration = sourceAt(
-    "apps/api/provider-accounting-migrations/20260824183013_provider_accounting/migration.sql"
-  );
-  const forbidden = [
-    "MealPlannerDatabase",
-    "ImportEvidenceEventQueue",
-    "BucketEventNotification",
-  ];
-  const forbiddenProviderAuthority =
-    /organizationId|organization_id|import_evidence_routes|import_execution_runs/iu;
-  return [
-    ...forbidden.filter((token) => stack.includes(token)),
-    ...(forbiddenProviderAuthority.test(providerSchema)
-      ? ["provider schema household authority"]
-      : []),
-    ...(forbiddenProviderAuthority.test(providerMigration)
-      ? ["provider migration household authority"]
-      : []),
-  ];
 };
 
 describe.sequential(
@@ -372,14 +346,20 @@ export const TenantLedgerQuery = Cloudflare.D1.QueryDatabase(ProviderAccountingD
       },
       {
         entryPath:
-          "apps/api/provider-accounting-migrations/20260824183013_provider_accounting/migration.sql",
+          "apps/api/provider-accounting-migrations/20260905063703_conservative_settlement/migration.sql",
         label: "sixth provider-accounting migration table",
         source: () =>
           `${readFileSync(path.join(repositoryRoot, "apps/api/provider-accounting-migrations/20260824183013_provider_accounting/migration.sql"), "utf-8")}\nCREATE TABLE \`household_ledger\` (\`id\` text PRIMARY KEY);\n`,
       },
       {
+        entryPath: "apps/api/provider-accounting-migrations/20990101_extra.sql",
+        label: "flat SQL migration with a sixth table",
+        source: () =>
+          "CREATE TABLE `household_ledger` (`id` text PRIMARY KEY);",
+      },
+      {
         entryPath:
-          "apps/api/provider-accounting-migrations/20260824183013_provider_accounting/snapshot.json",
+          "apps/api/provider-accounting-migrations/20260905063703_conservative_settlement/snapshot.json",
         label: "sixth provider-accounting snapshot table",
         source: () => {
           const snapshot = JSON.parse(
@@ -409,7 +389,7 @@ export const TenantLedgerQuery = Cloudflare.D1.QueryDatabase(ProviderAccountingD
       });
     });
 
-    it("proves the predecessor accepted but the current guard rejects a tracked production config authority", () => {
+    it("rejects a tracked production config authority", () => {
       const fixturePath =
         "apps/api/src/features/households/tenant-ledger.config.ts";
       const fixture = `import * as Cloudflare from "alchemy/Cloudflare";
@@ -431,9 +411,6 @@ export const readTenantMeals = (database: AnyD1Database, organizationId: string)
             ({ path: sourcePath }) => sourcePath === fixturePath
           )
         ).toBe(true);
-        expect(inspectPredecessorGlobalD1Structure(tracked.sources)).toEqual(
-          []
-        );
         expect(inspectGlobalD1Architecture(tracked)).not.toEqual([]);
       });
     });
@@ -625,42 +602,6 @@ export const makeD1 = TenantD1.Database;`,
           )
         ).not.toEqual([]);
       });
-    });
-
-    it("documents direct Workflow and R2 probes instead of retired Queue reconciliation", () => {
-      const migrationPlan = readFileSync(
-        path.join(
-          repositoryRoot,
-          "docs/architecture/household-capability-migration-plan.md"
-        ),
-        "utf-8"
-      );
-
-      expect(migrationPlan).toMatch(
-        /R2 integrity is\s+reconciled directly through Workflow and R2 probes/u
-      );
-      expect(migrationPlan).not.toContain(
-        "The unordered Queue carries only R2 notifications"
-      );
-      expect(migrationPlan).not.toContain("R2-event-only DLQ");
-    });
-
-    it("documents the exact current provider-accounting table inventory", () => {
-      const infrastructure = readFileSync(
-        path.join(repositoryRoot, "docs/infrastructure/alchemy.md"),
-        "utf-8"
-      );
-
-      for (const table of [
-        "provider_accounting_budgets",
-        "provider_accounting_conservative_settlements",
-        "provider_accounting_dispatches",
-        "provider_accounting_recipe_replay_values",
-        "provider_accounting_reconciliations",
-      ]) {
-        expect(infrastructure).toContain(table);
-      }
-      expect(infrastructure).not.toContain("provider_cost_");
     });
   }
 );

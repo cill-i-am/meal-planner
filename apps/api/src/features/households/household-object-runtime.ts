@@ -1,11 +1,12 @@
 import {
+  PersonProfile,
+  ProfileVersionPage,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureStart,
   HouseholdPeopleRoster,
   HouseholdPerson,
   MealPlan,
   MealPlanPolicy,
-  MealPlanRecipeSnapshot,
   MealPlanRequest,
 } from "@meal-planner/household-api";
 import {
@@ -25,7 +26,7 @@ import { Clock, Effect, Option, Schema } from "effect";
 import migrations from "../../../household-migrations/migrations.js";
 import {
   addMealPlanCandidatePage,
-  makeDeterministicMealPlanPlanner,
+  makeMealPlanProposal,
   makeMealPlanCandidateFrontier,
   makeMealPlanService,
   MealPlanRecipeAuthorityToken,
@@ -73,13 +74,11 @@ import {
   admitMealPlanDecision,
 } from "./household-meal-plan-admission.js";
 import {
-  HouseholdCreateMealPlanInput,
   HouseholdCreateMealPlanFromRecipeBankInput,
   HouseholdDecideMealPlanInput,
   HouseholdManualMealSwapCommand,
   HouseholdMealPlanDecisionCommand,
   HouseholdReadMealPlanInput,
-  HouseholdSwapMealPlanInput,
   HouseholdSwapMealPlanFromRecipeBankInput,
 } from "./household-meal-plan.contract.js";
 import { makeHouseholdMealPlanRepository } from "./household-meal-plan.repository.js";
@@ -111,6 +110,12 @@ import {
   HouseholdTransitionPersonInput,
 } from "./people/household-people.contract.js";
 import { makeHouseholdPeopleRepository } from "./people/household-people.repository.js";
+import {
+  HouseholdReadPersonProfileInput,
+  HouseholdListProfileVersionsInput,
+  HouseholdMutatePersonProfileInput,
+} from "./profiles/household-profile.contract.js";
+import { makeHouseholdProfileRepository } from "./profiles/household-profile.repository.js";
 import {
   HouseholdAdmitRecipeImportInput,
   HouseholdAdmitRecipeImportResult,
@@ -159,27 +164,11 @@ const encodePeopleResult = <S extends Schema.Top>(
 
 const makeService = (
   database: EffectSQLiteDoDatabase,
-  digest: Effect.Success<typeof HouseholdDigest>,
-  approvedRecipes: readonly MealPlanRecipeSnapshot[] = []
+  digest: Effect.Success<typeof HouseholdDigest>
 ) =>
   makeMealPlanService({
     drafts: makeHouseholdMealPlanRepository(database, digest),
-    planner: makeDeterministicMealPlanPlanner(),
-    recipeReviews: {
-      listApproved: () => Effect.succeed(approvedRecipes),
-    },
   });
-
-const decodeApprovedRecipes = (
-  encoded: HouseholdCreateMealPlanInput["approvedRecipes"]
-) =>
-  Effect.all(
-    encoded.map((recipe) =>
-      Schema.decodeUnknownEffect(MealPlanRecipeSnapshot)(recipe).pipe(
-        Effect.mapError(invalidInput)
-      )
-    )
-  );
 
 export const HouseholdObjectRuntime = Effect.gen(
   function* initializeHouseholdObject() {
@@ -505,39 +494,6 @@ export const HouseholdObjectRuntime = Effect.gen(
             return yield* encodeMealPlan(plan);
           })
         ),
-      createMealPlan: (untrustedInput: HouseholdCreateMealPlanInput) =>
-        scoped(
-          Effect.gen(function* createHouseholdMealPlan() {
-            const command = yield* Schema.decodeUnknownEffect(
-              HouseholdCreateMealPlanInput,
-              { onExcessProperty: "error" }
-            )(untrustedInput).pipe(Effect.mapError(invalidInput));
-            yield* requireHouseholdCommandAdmission(
-              command.admission,
-              "create_meal_plan"
-            );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
-            );
-            const approvedRecipes = yield* decodeApprovedRecipes(
-              command.approvedRecipes
-            );
-            const policy = yield* Schema.decodeUnknownEffect(MealPlanPolicy)(
-              command.policy
-            ).pipe(Effect.mapError(invalidInput));
-            const request = yield* Schema.decodeUnknownEffect(MealPlanRequest)(
-              command.request
-            ).pipe(Effect.mapError(invalidInput));
-            const plan = yield* makeService(
-              connection,
-              digest,
-              approvedRecipes
-            ).create(request, policy);
-            return yield* encodeMealPlan(plan);
-          })
-        ),
       createHouseholdPerson: (untrustedInput: HouseholdCreatePersonInput) =>
         scoped(
           Effect.gen(function* createHouseholdPerson() {
@@ -621,22 +577,26 @@ export const HouseholdObjectRuntime = Effect.gen(
               frontier = addMealPlanCandidatePage(frontier, candidates);
               cursor = page.nextCursor;
             } while (cursor !== null);
+            const selection = selectMealPlanCandidates(frontier);
             const selectedImportIds = [
-              ...new Set(
-                selectMealPlanCandidates(frontier).assignments.map(
-                  ({ importId }) => importId
-                )
-              ),
+              ...new Set(selection.assignments.map(({ importId }) => importId)),
             ];
             const selectedRecipes = yield* Effect.forEach(
               (importId: (typeof selectedImportIds)[number]) =>
                 recipes.readPlanningRecipe(command.admission, importId)
             )(selectedImportIds);
-            const plan = yield* makeService(
-              connection,
-              digest,
-              selectedRecipes
-            ).create(request, policy);
+            const proposal = makeMealPlanProposal(
+              selection,
+              new Map(
+                selectedRecipes.map((recipe) => [recipe.importId, recipe])
+              ),
+              policy
+            );
+            const plan = yield* makeService(connection, digest).create(
+              request,
+              policy,
+              proposal
+            );
             return yield* encodeMealPlan(plan);
           })
         ),
@@ -1113,6 +1073,101 @@ export const HouseholdObjectRuntime = Effect.gen(
             return yield* encodePeopleResult(
               HouseholdMemberDepartureOperation,
               operation
+            );
+          })
+        ),
+      readPersonProfile: (untrustedInput: HouseholdReadPersonProfileInput) =>
+        scoped(
+          Effect.gen(function* readPersonProfile() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdReadPersonProfileInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "read_person_profile"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const result = yield* makeHouseholdProfileRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).get({
+              actor: command.admission.actor,
+              personId: command.personId,
+              version: command.version,
+            });
+            return yield* Schema.encodeEffect(PersonProfile)(result).pipe(
+              Effect.mapError(invalidInput)
+            );
+          })
+        ),
+      listProfileVersions: (
+        untrustedInput: HouseholdListProfileVersionsInput
+      ) =>
+        scoped(
+          Effect.gen(function* listProfileVersions() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdListProfileVersionsInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "read_person_profile"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const result = yield* makeHouseholdProfileRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).listVersions({
+              actor: command.admission.actor,
+              beforeVersion: command.beforeVersion,
+              personId: command.personId,
+            });
+            return yield* Schema.encodeEffect(ProfileVersionPage)(result).pipe(
+              Effect.mapError(invalidInput)
+            );
+          })
+        ),
+      mutatePersonProfile: (
+        untrustedInput: HouseholdMutatePersonProfileInput
+      ) =>
+        scoped(
+          Effect.gen(function* mutatePersonProfile() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdMutatePersonProfileInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "mutate_person_profile"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const result = yield* makeHouseholdProfileRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).mutate({
+              actor: command.admission.actor,
+              now: yield* Clock.currentTimeMillis,
+              payload: command.payload,
+              personId: command.personId,
+            });
+            return yield* Schema.encodeEffect(PersonProfile)(result).pipe(
+              Effect.mapError(invalidInput)
             );
           })
         ),
@@ -1817,44 +1872,6 @@ export const HouseholdObjectRuntime = Effect.gen(
             return yield* encodePeopleResult(HouseholdPerson, person);
           })
         ),
-      swapMealPlan: (untrustedInput: HouseholdSwapMealPlanInput) =>
-        scoped(
-          Effect.gen(function* swapHouseholdMealPlan() {
-            const command = yield* Schema.decodeUnknownEffect(
-              HouseholdSwapMealPlanInput,
-              { onExcessProperty: "error" }
-            )(untrustedInput).pipe(Effect.mapError(invalidInput));
-            yield* requireHouseholdCommandAdmission(
-              command.admission,
-              "swap_meal_plan"
-            );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
-            );
-            const approvedRecipes = yield* Effect.all(
-              command.approvedRecipes.map((recipe) =>
-                Schema.decodeUnknownEffect(MealPlanRecipeSnapshot)(recipe).pipe(
-                  Effect.mapError(invalidInput)
-                )
-              )
-            );
-            const admittedCommand = yield* Schema.decodeUnknownEffect(
-              HouseholdManualMealSwapCommand
-            )(command.request).pipe(Effect.mapError(invalidInput));
-            const request = yield* admitManualMealSwap(
-              command.admission,
-              admittedCommand
-            ).pipe(Effect.mapError(invalidInput));
-            const plan = yield* makeService(
-              connection,
-              digest,
-              approvedRecipes
-            ).swap(request);
-            return yield* encodeMealPlan(plan);
-          })
-        ),
       swapMealPlanFromRecipeBank: (
         untrustedInput: HouseholdSwapMealPlanFromRecipeBankInput
       ) =>
@@ -1886,9 +1903,10 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               admittedCommand
             ).pipe(Effect.mapError(invalidInput));
-            const plan = yield* makeService(connection, digest, [
-              replacement,
-            ]).swap(request);
+            const plan = yield* makeService(connection, digest).swap(
+              request,
+              replacement
+            );
             return yield* encodeMealPlan(plan);
           })
         ),

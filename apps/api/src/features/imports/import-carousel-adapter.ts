@@ -1,4 +1,4 @@
-import { Context, Schema } from "effect";
+import { Schema } from "effect";
 import type { Effect } from "effect";
 import { decode as decodeJpeg } from "jpeg-js";
 
@@ -91,8 +91,3 @@ export interface TikTokCarouselAdapter {
     descriptor: TikTokCarouselDescriptor
   ) => Effect.Effect<TikTokCarouselAcquisition, TikTokCarouselAdapterFailure>;
 }
-
-/** Replaceable carousel capability; no real provider implementation lands here. */
-export const TikTokCarouselAdapter = Context.Service<TikTokCarouselAdapter>(
-  "meal-planner/TikTokCarouselAdapter"
-);

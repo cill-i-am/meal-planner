@@ -5,7 +5,7 @@ import type {
   QueryGatewayClient,
 } from "alchemy/Cloudflare/AI";
 import { WorkflowStepContext } from "alchemy/Cloudflare/Workflows";
-import { Effect, Option, Schema } from "effect";
+import { Effect, Option, Predicate, Schema } from "effect";
 import type { LanguageModel, Prompt } from "effect/unstable/ai";
 import { Tool, Toolkit } from "effect/unstable/ai";
 
@@ -22,6 +22,7 @@ import type {
   ProviderAccountingConservativeReplayValue,
   ProviderKnownZeroCostFailure,
   ProviderAccountingRepository,
+  ProviderCost,
 } from "../provider-accounting/provider-accounting.js";
 import {
   decodeForcedToolResponseResult,
@@ -30,9 +31,11 @@ import {
 import type {
   ImportCorrelationId,
   ImportObservabilityTraceStore,
-  ProviderDecodeReason,
 } from "./import-observability.js";
-import { emitImportObservabilityEvent } from "./import-observability.js";
+import {
+  ProviderDecodeReason,
+  emitImportObservabilityEvent,
+} from "./import-observability.js";
 
 export const ProviderName = "cloudflare-workers-ai" as const;
 
@@ -78,16 +81,7 @@ export interface ProviderDispatchRequest<A, E> {
   readonly dispatchId: string;
   readonly invoke: Effect.Effect<
     {
-      readonly cost:
-        | {
-            readonly _tag: "Known";
-            readonly actualCostMicroUsd: number;
-          }
-        | {
-            readonly _tag: "Conservative";
-            readonly conservativeChargeMicroUsd: number;
-          }
-        | { readonly _tag: "Unknown" };
+      readonly cost: ProviderCost;
       readonly value: A;
     },
     E
@@ -276,19 +270,6 @@ export const providerFailureFromEvidence = (
 export const providerFailureFromStatus = (status: number): ProviderFailure =>
   status === 429 ? { code: "throttled" } : { code: "provider_unavailable" };
 
-export const safeFailureCode = (
-  failure: ProviderFailure
-): SafeProviderFailureCode => failure.code;
-
-export const providerErrorDescription = (
-  failure: ProviderFailure
-): string | undefined => failure.description;
-
-const hasProviderErrorDescription = (
-  failure: ProviderFailure,
-  description: string
-): boolean => providerErrorDescription(failure) === description;
-
 export const providerNormalizationDecodeReasonFromDescription = (
   description: string | undefined
 ): ProviderDecodeReason | undefined => {
@@ -303,23 +284,10 @@ export const providerNormalizationDecodeReasonFromDescription = (
     return undefined;
   }
   const reason = description.slice(prefix.length);
-  return reason.length === 0 ? undefined : (reason as ProviderDecodeReason);
-};
-
-const providerNormalizationDecodeReason = (
-  failure: ProviderFailure
-): ProviderDecodeReason | undefined =>
-  providerNormalizationDecodeReasonFromDescription(
-    providerErrorDescription(failure)
+  return Option.getOrUndefined(
+    Schema.decodeUnknownOption(ProviderDecodeReason)(reason)
   );
-
-const isProviderNormalizationFailure = (failure: ProviderFailure): boolean =>
-  providerNormalizationDecodeReason(failure) !== undefined;
-
-const isProviderNormalizationBodyFailure = (
-  failure: ProviderFailure
-): boolean =>
-  hasProviderErrorDescription(failure, ProviderNormalizationBodyInvalidMessage);
+};
 
 export const failAfter = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
@@ -403,7 +371,9 @@ export const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
       const failure = providerFailureFromEvidence(
         Option.getOrUndefined(decodeProviderFailureEvidence(error))
       );
-      const decodeReason = providerNormalizationDecodeReason(failure);
+      const decodeReason = providerNormalizationDecodeReasonFromDescription(
+        failure.description
+      );
       if (decodeReason !== undefined) {
         return emitImportObservabilityEvent(
           {
@@ -426,7 +396,7 @@ export const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
           Option.getOrUndefined(decodeProviderFailureEvidence(error))
         );
         return (
-          isProviderNormalizationBodyFailure(failure) &&
+          failure.description === ProviderNormalizationBodyInvalidMessage &&
           input.providerNormalizationFallback !== undefined
         );
       },
@@ -444,18 +414,17 @@ export const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
       const failure = providerFailureFromEvidence(
         Option.getOrUndefined(decodeProviderFailureEvidence(error))
       );
-      if (isProviderNormalizationFailure(failure)) {
+      if (
+        providerNormalizationDecodeReasonFromDescription(
+          failure.description
+        ) !== undefined
+      ) {
         return "malformed_response" as const;
       }
-      if (
-        hasProviderErrorDescription(
-          failure,
-          ProviderKnownZeroSetupFailureMessage
-        )
-      ) {
+      if (failure.description === ProviderKnownZeroSetupFailureMessage) {
         return providerKnownZeroCostFailure("provider_unavailable" as const);
       }
-      return safeFailureCode(failure);
+      return failure.code;
     }),
     Effect.flatMap((result) => {
       if (result._tag === "ProviderNormalizationFallback") {
@@ -574,24 +543,11 @@ export const pricedTokenUsage = (
   };
 };
 
-const WorkersAiGatewayOptions = Schema.Struct({
-  gateway: Schema.Struct({
-    collectLog: Schema.Literal(false),
-    id: Schema.String,
-    skipCache: Schema.Literal(true),
-  }),
-  returnRawResponse: Schema.Literal(true),
-});
-
 const workersAiGatewayOptions = (gatewayId: string) =>
-  Schema.decodeUnknownSync(WorkersAiGatewayOptions)({
-    gateway: {
-      collectLog: false,
-      id: gatewayId,
-      skipCache: true,
-    },
+  ({
+    gateway: { collectLog: false, id: gatewayId, skipCache: true },
     returnRawResponse: true,
-  });
+  }) as const;
 
 export type WorkersAiBinding = Effect.Success<QueryGatewayClient["raw"]>;
 
@@ -608,15 +564,9 @@ export const runWorkersAi = (
     workersAiGatewayOptions(gatewayId) as never
   ) as Promise<Response>;
 
-export const InstalledRecipeModel = Schema.decodeUnknownSync(
-  Schema.Literal("@cf/meta/llama-3.3-70b-instruct-fp8-fast")
-)("@cf/meta/llama-3.3-70b-instruct-fp8-fast");
-export const InstalledSpeechModel = Schema.decodeUnknownSync(
-  Schema.Literal("@cf/openai/whisper-large-v3-turbo")
-)("@cf/openai/whisper-large-v3-turbo");
-export const InstalledVisualModel = Schema.decodeUnknownSync(
-  Schema.Literal("@cf/meta/llama-4-scout-17b-16e-instruct")
-)("@cf/meta/llama-4-scout-17b-16e-instruct");
+export const InstalledRecipeModel = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+export const InstalledSpeechModel = "@cf/openai/whisper-large-v3-turbo";
+export const InstalledVisualModel = "@cf/meta/llama-4-scout-17b-16e-instruct";
 
 export const RecipeWorkersAiRequest = Schema.Struct({
   max_tokens: Schema.Number,
@@ -681,8 +631,7 @@ class ProviderInvocationFailureError extends Error {
 
 export const isUnknownRecord = (
   value: Schema.Json | undefined
-): value is Schema.JsonObject =>
-  Schema.is(Schema.Record(Schema.String, Schema.Json))(value);
+): value is Schema.JsonObject => Predicate.isObject(value);
 
 const WorkersAiProviderResponseEnvelope = Schema.Struct({
   choices: Schema.optionalKey(Schema.Json),

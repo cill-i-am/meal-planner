@@ -1,10 +1,12 @@
 # Work Item 02 — Account Linking, Invitations, And Departure
 
-- Status: In progress
+- Status: Done
 - Stage: [Stage 1 — Household people, profiles, and permissions](README.md)
 - Owner: `codex/stage1-account-linking-invitations-departure`
 - Pull request: [PR #201](https://github.com/cill-i-am/meal-planner/pull/201)
-- Completed by: Not completed
+- Completed by: PR #201 merged on 2026-09-04 as
+  `9a59f85170f379e065920eadaaf69593d90c2c40`, after review of
+  `34a376cb9a35fd6f177a0bf8b40e5c1dee938bd9` and green CI run `33910287961`.
 - Promotion condition: Satisfied on 2026-09-01 by merged Work Item 01 evidence
   and accepted ADR-0010
 

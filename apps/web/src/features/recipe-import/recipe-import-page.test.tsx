@@ -3,7 +3,10 @@
 import {
   RecipeImportAction,
   RecipeImportActionId,
-  RecipeImportIntent,
+  ProcessingRecipeImportIntent,
+  RequiresActionRecipeImportIntent,
+  SucceededRecipeImportIntent,
+  Recipe,
   RecipeImportIntentId,
 } from "@meal-planner/recipe-import-api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -22,7 +25,7 @@ const intentId = Schema.decodeUnknownSync(RecipeImportIntentId)(
 );
 const timestamp = "2026-08-17T00:00:00.000Z";
 const actionId = Schema.decodeUnknownSync(RecipeImportActionId)("a".repeat(64));
-const processing = Schema.decodeUnknownSync(RecipeImportIntent)({
+const processing = Schema.decodeUnknownSync(ProcessingRecipeImportIntent)({
   activity: { type: "working" },
   createdAt: timestamp,
   id: intentId,
@@ -37,7 +40,9 @@ const processing = Schema.decodeUnknownSync(RecipeImportIntent)({
   status: "processing",
   updatedAt: timestamp,
 });
-const requiresAction = Schema.decodeUnknownSync(RecipeImportIntent)({
+const requiresAction = Schema.decodeUnknownSync(
+  RequiresActionRecipeImportIntent
+)({
   action: {
     id: actionId,
     link: `/v1/recipe-import-intents/${intentId}/actions/${actionId}`,
@@ -90,6 +95,27 @@ const activeAction = Schema.decodeUnknownSync(RecipeImportAction)({
   },
   status: "active",
   type: "review_recipe",
+});
+
+const recipeId = "22222222-2222-4222-8222-222222222222";
+const succeeded = Schema.decodeUnknownSync(SucceededRecipeImportIntent)({
+  ...Schema.encodeSync(RequiresActionRecipeImportIntent)(requiresAction),
+  completedAt: timestamp,
+  result: { recipeId },
+  status: "succeeded",
+});
+const savedRecipe = Schema.decodeUnknownSync(Recipe)({
+  id: recipeId,
+  object: "recipe",
+  recipe: activeAction.review.recipe,
+  tags: {
+    cuisines: ["Irish"],
+    dietaryFit: "household_match",
+    difficulty: "easy",
+    leftovers: "one_meal",
+    mealTypes: ["dinner"],
+    totalTimeBand: "30_to_60_minutes",
+  },
 });
 
 const makeOperations = (
@@ -187,16 +213,18 @@ describe("RecipeImportPage", () => {
     expect(screen.queryByText("secret")).not.toBeInTheDocument();
   });
 
-  it("renders an active review and confirms its exact version", async () => {
+  it("confirms the exact review version and renders the saved recipe", async () => {
     const confirmAction = vi.fn<RecipeImportOperations["confirmAction"]>(
-      async () => processing
+      async () => succeeded
     );
+    const getRecipe = vi.fn(async () => savedRecipe);
     renderPage(
       makeOperations({
         confirmAction,
-        create: vi.fn(async () => requiresAction),
+        create: vi.fn(async () => processing),
         getAction: vi.fn(async () => activeAction),
         getIntent: vi.fn(async () => requiresAction),
+        getRecipe,
       })
     );
     const user = userEvent.setup();
@@ -221,6 +249,86 @@ describe("RecipeImportPage", () => {
       idempotencyKey: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       intentId,
       request: { expectedActionVersion: 3 },
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Recipe saved" })
+    ).toBeInTheDocument();
+    expect(getRecipe).toHaveBeenCalledWith({ recipeId });
+    expect(screen.getByText("Irish stew")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Review recipe" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("validates the source URL before sending a request", async () => {
+    const operations = makeOperations();
+    renderPage(operations);
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "Recipe link" }),
+      "http://example.com/recipe"
+    );
+    await user.tab();
+    expect(
+      await screen.findByText("Enter an absolute HTTPS recipe link.")
+    ).toBeInTheDocument();
+    expect(operations.create).not.toHaveBeenCalled();
+  });
+
+  it("validates the recipe name and saves schema-backed planning selections", async () => {
+    const action = Schema.decodeUnknownSync(RecipeImportAction)({
+      ...Schema.encodeSync(RecipeImportAction)(activeAction),
+      review: { ...activeAction.review, editableFields: ["name", "tags"] },
+    });
+    const answerAction = vi.fn<RecipeImportOperations["answerAction"]>(
+      async () => requiresAction
+    );
+    renderPage(
+      makeOperations({
+        answerAction,
+        getAction: vi.fn(async () => action),
+        getIntent: vi.fn(async () => requiresAction),
+      })
+    );
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "Recipe link" }),
+      "https://www.tiktok.com/@cook/video/7390123456789012345"
+    );
+    await user.click(screen.getByRole("button", { name: "Import recipe" }));
+    const name = await screen.findByRole("textbox", { name: "Recipe name" });
+    await user.clear(name);
+    await user.tab();
+    expect(await screen.findByText("Enter a recipe name.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save recipe name" }));
+    expect(answerAction).not.toHaveBeenCalled();
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Meal type" }),
+      "lunch"
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Difficulty" }),
+      "medium"
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Save planning tags" })
+    );
+    await waitFor(() => expect(answerAction).toHaveBeenCalledOnce());
+    expect(answerAction.mock.calls[0]?.[0].request).toEqual({
+      answers: [
+        {
+          field: "tags",
+          value: {
+            cuisines: ["Irish"],
+            dietaryFit: "household_match",
+            difficulty: "medium",
+            leftovers: "one_meal",
+            mealTypes: ["lunch"],
+            totalTimeBand: "30_to_60_minutes",
+          },
+        },
+      ],
+      expectedActionVersion: 3,
     });
   });
 });

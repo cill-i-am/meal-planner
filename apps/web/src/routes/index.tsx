@@ -11,13 +11,12 @@ import {
 import { deriveAuthBoundaryState } from "../features/auth/auth-state.js";
 import { makeBrowserHouseholdPeopleOperations } from "../features/household-people/browser-operations.js";
 import { HouseholdPeoplePanel } from "../features/household-people/household-people-panel.js";
+import { makeBrowserHouseholdProfileOperations } from "../features/household-profiles/browser-operations.js";
+import { HouseholdProfilesPanel } from "../features/household-profiles/household-profiles-panel.js";
 import { makeBrowserHouseholdOperations } from "../features/households/browser-operations.js";
 import { HouseholdDomainStatus } from "../features/households/household-domain-status.js";
 import { makeBrowserRecipeImportOperations } from "../features/recipe-import/browser-operations.js";
-import {
-  decodeRecipeImportSearch,
-  recipeImportPageSessionKey,
-} from "../features/recipe-import/navigation.js";
+import { decodeRecipeImportSearch } from "../features/recipe-import/navigation.js";
 import { RecipeImportPage } from "../features/recipe-import/recipe-import-page.js";
 
 const MealPlannerRoute = () => {
@@ -28,7 +27,8 @@ const MealPlannerRoute = () => {
   const activeOrganization = authClient.useActiveOrganization();
   const householdOperations = useMemo(makeBrowserHouseholdOperations, []);
   const peopleOperations = useMemo(makeBrowserHouseholdPeopleOperations, []);
-  const operations = useMemo(() => makeBrowserRecipeImportOperations(), []);
+  const profileOperations = useMemo(makeBrowserHouseholdProfileOperations, []);
+  const operations = useMemo(makeBrowserRecipeImportOperations, []);
 
   const signOut = async () => {
     await requireAuthSuccess(authClient.signOut());
@@ -73,11 +73,13 @@ const MealPlannerRoute = () => {
           householdId={household.id}
           householdName={household.name}
           householdDomainStatus={
+            <HouseholdDomainStatus
+              operations={householdOperations}
+              organizationId={household.id}
+            />
+          }
+          householdPeople={
             <>
-              <HouseholdDomainStatus
-                operations={householdOperations}
-                organizationId={household.id}
-              />
               <HouseholdPeoplePanel
                 {...(() => {
                   const currentMemberId = activeOrganization.data?.members.find(
@@ -90,9 +92,20 @@ const MealPlannerRoute = () => {
                 operations={peopleOperations}
                 organizationId={household.id}
               />
+              <a
+                className="inline-flex min-h-11 items-center underline"
+                href="#household-profiles"
+              >
+                View and edit food profiles
+              </a>
+              <HouseholdProfilesPanel
+                operations={profileOperations}
+                organizationId={household.id}
+                peopleOperations={peopleOperations}
+              />
             </>
           }
-          key={recipeImportPageSessionKey(household.id, intentId)}
+          key={`${household.id}:${intentId ?? "new"}`}
           onSignOut={logout}
           operations={operations}
         />

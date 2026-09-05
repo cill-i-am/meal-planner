@@ -7,19 +7,3 @@ import { healthResponse } from "./health.model.js";
 export const HealthRoutes = [
   HttpRouter.route("GET", "/health", json(healthResponse)),
 ] as const;
-
-/** Health-only router used by the Cloudflare Worker host. */
-export const HealthWorkerRoutes = HttpRouter.addAll([
-  ...HealthRoutes,
-  HttpRouter.route(
-    "*",
-    "*",
-    json(
-      {
-        error: "NotFound",
-        message: "Route not found",
-      },
-      404
-    )
-  ),
-]);

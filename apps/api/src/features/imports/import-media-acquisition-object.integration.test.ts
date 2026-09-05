@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 
 import * as Cloudflare from "alchemy/Cloudflare";
-import { Cause, Context, Effect, Exit, Option, Schema } from "effect";
+import { Cause, Context, Effect, Exit, Option, Schema, Stream } from "effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { describe, expect, it, vi } from "vitest";
@@ -138,6 +138,14 @@ const makeProcessRunner = (
         return { stderrBytes: 0, stdout: new Uint8Array() };
       }
       if (command === "ffprobe") {
+        if (args.includes("stream=width,height")) {
+          return {
+            stderrBytes: 0,
+            stdout: new TextEncoder().encode(
+              JSON.stringify({ streams: [{ height: 720, width: 1280 }] })
+            ),
+          };
+        }
         return {
           stderrBytes: 0,
           stdout: new TextEncoder().encode(
@@ -442,6 +450,71 @@ describe("installed acquisition Durable Object boundary", () => {
     }
   );
 
+  it.each([
+    ["malformed JSON", "{"],
+    ["missing streams", "{}"],
+    ["empty streams", JSON.stringify({ streams: [] })],
+    [
+      "string dimension",
+      JSON.stringify({ streams: [{ height: 720, width: "1280" }] }),
+    ],
+    [
+      "nonpositive dimension",
+      JSON.stringify({ streams: [{ height: 0, width: 1280 }] }),
+    ],
+    [
+      "unsafe integer",
+      JSON.stringify({
+        streams: [{ height: 720, width: Number.MAX_SAFE_INTEGER + 1 }],
+      }),
+    ],
+  ])("rejects ffprobe frame output with %s", async (_case, probe) => {
+    const root = await mkdtemp(join(tmpdir(), "frame-dimensions-"));
+    const artifactId = acquisitionCoordinatorId(
+      identity.importId,
+      identity.generation
+    );
+    const artifacts = makeTemporaryArtifactStore(() => Promise.resolve());
+    artifacts.registerPath(
+      artifactId,
+      root,
+      join(root, "source.mp4"),
+      "video/mp4"
+    );
+    const runtime = makeTikTokMediaContainerRuntime({
+      acquirer: {
+        acquire: () => Effect.die("source acquisition is not needed"),
+      },
+      artifacts,
+      processRunner: {
+        run: () =>
+          Effect.succeed({
+            stderrBytes: 0,
+            stdout: new TextEncoder().encode(probe),
+          }),
+      },
+      resolver: {
+        resolve: () => Effect.die("source resolution is not needed"),
+      },
+    });
+    try {
+      const exit = await Effect.runPromiseExit(
+        runtime.prepareProviderEvidence(artifactId, 12)
+      );
+      expect(Exit.isFailure(exit)).toBe(true);
+      if (Exit.isFailure(exit)) {
+        expect(
+          Option.getOrThrow(Cause.findErrorOption(exit.cause))
+        ).toMatchObject({
+          _tag: "RetryableAcquisitionFailure",
+          stage: "container",
+        });
+      }
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("classifies the container-wide process deadline as a timeout", async () => {
     const root = await mkdtemp(join(tmpdir(), "gaia-204-container-timeout-"));
     try {
@@ -592,21 +665,62 @@ describe("installed acquisition Durable Object boundary", () => {
         expect(await readFile(String(stored?.path))).toEqual(
           Buffer.from(mediaBytes)
         );
-        const artifactResponse = await Effect.runPromise(
-          stub.fetch(
-            HttpServerRequest.fromWeb(
-              new Request(
-                `http://acquisition-object.invalid/artifacts/${encodeURIComponent(prepared.artifactId)}`
-              )
-            )
+        const client = makeAcquisitionMediaObject(stub);
+        const derived = await Effect.runPromise(
+          client.prepareProviderEvidence(
+            prepared.artifactId,
+            prepared.durationSeconds
           )
         );
-        const streamedBytes = Buffer.from(
-          await HttpServerResponse.toWeb(artifactResponse).arrayBuffer()
+        await Promise.all(
+          [
+            prepared.artifactId,
+            derived.audio.artifactId,
+            ...derived.frames.map((frame) => frame.artifactId),
+          ].map(async (artifactId) => {
+            const chunks = await Effect.runPromise(
+              Stream.runCollect(client.readArtifact(artifactId))
+            );
+            expect(Buffer.concat(chunks)).toEqual(Buffer.from(mediaBytes));
+          })
         );
-        expect(artifactResponse.status).toBe(200);
-        expect(streamedBytes.byteLength).toBe(mediaBytes.byteLength);
-        expect(streamedBytes.equals(Buffer.from(mediaBytes))).toBe(true);
+        const foreignOwners = [
+          prepared.artifactId.replace(
+            identity.importId,
+            "018f47ad-91aa-7c35-b6fe-000000000002"
+          ),
+          prepared.artifactId.replace(
+            ":acquisition-generation:1",
+            ":acquisition-generation:2"
+          ),
+        ];
+        const forbiddenIds = [
+          ...foreignOwners.flatMap((owner) =>
+            ["", ":audio", ":frame:0"].map((suffix) => `${owner}${suffix}`)
+          ),
+          ...[
+            ":thumbnail",
+            ":frame:-1",
+            ":frame:0:audio",
+            ":frame:3",
+            ":frame:01",
+            ":frame:999999999999999999999999",
+          ].map((suffix) => `${prepared.artifactId}${suffix}`),
+        ];
+        await Promise.all(
+          forbiddenIds.map(async (artifactId) => {
+            artifacts.registerPath(
+              artifactId,
+              String(stored?.root),
+              String(stored?.path),
+              "video/mp4"
+            );
+            const exit = await Effect.runPromiseExit(
+              Stream.runCollect(client.readArtifact(artifactId))
+            );
+            expect(Exit.isFailure(exit)).toBe(true);
+          })
+        );
         await Effect.runPromise(stub.cleanup(prepared.artifactId));
       });
     } finally {

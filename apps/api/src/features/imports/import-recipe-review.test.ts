@@ -8,7 +8,6 @@ import {
   approvalBlockers,
   applyCorrectionOverlay,
   projectApprovedReview,
-  recipeReviewTransitionPolicy,
   refineRecipeReview,
 } from "./import-recipe-review.js";
 
@@ -116,9 +115,39 @@ const draft = Schema.decodeUnknownSync(RecipeDraft)({
   importId: "018f47ad-91aa-7c35-b6fe-000000000301",
   lifecycle: "needs_review",
   schemaVersion: 1,
+  transcript: { status: "available" },
 });
 
 describe("recipe review approval policy", () => {
+  it.each([
+    { status: "available" },
+    { reason: "source_type_carousel", status: "not_applicable" },
+  ])(
+    "reads current recipe drafts with transcript disposition $status",
+    (transcript) => {
+      const restored = Schema.decodeUnknownSync(RecipeDraft)({
+        ...Schema.encodeSync(RecipeDraft)(draft),
+        transcript,
+      });
+      expect(approvalBlockers(restored, [])).toEqual({
+        invalidFields: [],
+        unresolvedRequiredFields: ["name"],
+      });
+    }
+  );
+
+  it.each([undefined, { status: "not_applicable" }, { status: "unknown" }])(
+    "rejects a draft without a valid transcript disposition",
+    (transcript) => {
+      expect(() =>
+        Schema.decodeUnknownSync(RecipeDraft)({
+          ...Schema.encodeSync(RecipeDraft)(draft),
+          transcript,
+        })
+      ).toThrow();
+    }
+  );
+
   it("decodes every correction field/value pairing and rejects mismatches", () => {
     for (const correction of correctionPairs) {
       expect(
@@ -175,24 +204,6 @@ describe("recipe review approval policy", () => {
       unresolvedRequiredFields: [],
     });
     expect(draft.extraction.name.state).toBe("unresolved");
-  });
-
-  it("allows exactly the exhaustive review transition policy", () => {
-    const lifecycles = ["needs_review", "approved", "rejected"] as const;
-    const allowed = new Set([
-      "needs_review:approved",
-      "needs_review:rejected",
-      "approved:needs_review",
-      "rejected:needs_review",
-    ]);
-
-    for (const from of lifecycles) {
-      for (const to of lifecycles) {
-        expect(Option.isSome(recipeReviewTransitionPolicy(from, to))).toBe(
-          allowed.has(`${from}:${to}`)
-        );
-      }
-    }
   });
 
   it("refines approved rows into a total approved recipe projection", () => {

@@ -1,5 +1,15 @@
-import { Cause, Effect, Exit, Layer, Redacted, Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "@effect/vitest";
+import {
+  Cause,
+  Clock,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Redacted,
+  Schema,
+} from "effect";
 
 import type { TescoAuthBootstrapConfig } from "../tesco.config.js";
 import { TescoAuthRefresh } from "./auth-refresh.port.js";
@@ -129,57 +139,54 @@ describe("TescoAuthSessionLive", () => {
     ).rejects.toMatchObject({ _tag: "TescoAccessTokenNotRenewed" });
   });
 
-  it("refreshes expired access tokens once for concurrent callers", async () => {
-    const initial = makeSnapshot(
-      "Bearer initial-token",
-      Date.now() - 1000,
-      Date.now() + 3_600_000
-    );
-    const refreshed = makeSnapshot(
-      "Bearer refreshed-token",
-      Date.now() + 300_000,
-      Date.now() + 3_600_000
-    );
-    let refreshCount = 0;
+  it.effect("refreshes expired access tokens once for concurrent callers", () =>
+    Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
+      const initial = makeSnapshot(
+        "Bearer initial-token",
+        now,
+        now + 3_600_000
+      );
+      const refreshed = makeSnapshot(
+        "Bearer refreshed-token",
+        now + 300_000,
+        now + 3_600_000
+      );
+      const releaseRefresh = yield* Deferred.make<boolean>();
+      let refreshCount = 0;
+      const RefreshLive = Layer.succeed(
+        TescoAuthRefresh,
+        TescoAuthRefresh.of({
+          refresh: () =>
+            Effect.gen(function* () {
+              refreshCount += 1;
+              yield* Deferred.await(releaseRefresh);
+              return refreshed;
+            }),
+        })
+      );
+      const SessionLive = makeTescoAuthSessionLive(
+        bootstrapConfig(initial)
+      ).pipe(Layer.provide(RefreshLive));
 
-    const RefreshLive = Layer.succeed(
-      TescoAuthRefresh,
-      TescoAuthRefresh.of({
-        refresh: () =>
-          Effect.sleep(10).pipe(
-            Effect.asVoid,
-            Effect.tap(() =>
-              Effect.sync(() => {
-                refreshCount += 1;
-              })
-            ),
-            Effect.as(refreshed)
-          ),
-      })
-    );
-    const SessionLive = makeTescoAuthSessionLive(bootstrapConfig(initial)).pipe(
-      Layer.provide(RefreshLive)
-    );
-
-    const authorizations = await Effect.runPromise(
-      Effect.gen(function* () {
+      const authorizations = yield* Effect.gen(function* () {
         const session = yield* TescoAuthSession;
-        return yield* Effect.all(
-          Array.from({ length: 5 }, () => session.authorization),
-          { concurrency: "unbounded" }
+        const callers = yield* Effect.forEach(Array.from({ length: 5 }), () =>
+          session.authorization.pipe(
+            Effect.forkScoped({ startImmediately: true })
+          )
         );
-      }).pipe(Effect.provide(SessionLive))
-    );
+        expect(refreshCount).toBe(1);
+        yield* Deferred.succeed(releaseRefresh, true);
+        return yield* Effect.forEach(Fiber.join)(callers);
+      }).pipe(Effect.provide(SessionLive));
 
-    expect(authorizations).toStrictEqual([
-      refreshed.authorization,
-      refreshed.authorization,
-      refreshed.authorization,
-      refreshed.authorization,
-      refreshed.authorization,
-    ]);
-    expect(refreshCount).toBe(1);
-  });
+      expect(authorizations).toStrictEqual(
+        Array.from({ length: 5 }, () => refreshed.authorization)
+      );
+      expect(refreshCount).toBe(1);
+    })
+  );
 
   it("refreshes after a 401 when the failed authorization has equal redacted content", async () => {
     const initial = makeSnapshot(

@@ -7,10 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  householdDomainQueryKey,
-  HouseholdDomainStatus,
-} from "./household-domain-status.js";
+import { HouseholdDomainStatus } from "./household-domain-status.js";
 import type { HouseholdOperations } from "./operations.js";
 
 afterEach(cleanup);
@@ -39,7 +36,7 @@ const renderStatus = (
   );
 
 describe("HouseholdDomainStatus", () => {
-  it("keeps household caches isolated and shows initialization progress", () => {
+  it("shows initialization progress", () => {
     renderStatus({
       current: vi.fn(() => new Promise<typeof readyHousehold>(() => {})),
     });
@@ -47,9 +44,42 @@ describe("HouseholdDomainStatus", () => {
     expect(
       screen.getByText("Preparing household storage…")
     ).toBeInTheDocument();
-    expect(householdDomainQueryKey("organization-a")).not.toEqual(
-      householdDomainQueryKey("organization-b")
+  });
+
+  it("does not reuse another household's ready result", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    const first = { current: vi.fn(async () => readyHousehold) };
+    const second = {
+      current: vi.fn(() => new Promise<typeof readyHousehold>(() => {})),
+    };
+    const view = render(
+      <QueryClientProvider client={client}>
+        <HouseholdDomainStatus
+          operations={first}
+          organizationId="organization-a"
+        />
+      </QueryClientProvider>
     );
+    expect(
+      await screen.findByText("Household storage ready")
+    ).toBeInTheDocument();
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <HouseholdDomainStatus
+          operations={second}
+          organizationId="organization-b"
+        />
+      </QueryClientProvider>
+    );
+    expect(
+      screen.getByText("Preparing household storage…")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Household storage ready")
+    ).not.toBeInTheDocument();
+    expect(second.current).toHaveBeenCalledOnce();
   });
 
   it("shows a user-legible ready state", async () => {

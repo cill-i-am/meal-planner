@@ -1,5 +1,6 @@
 import { DateTime, Context, Effect, Layer, Option, Schema } from "effect";
 
+import { bytesToHex, checksumBytes, sha256Bytes } from "./import-digest.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import {
   AcquisitionGeneration,
@@ -151,26 +152,6 @@ const visualEvidenceManifestObjectKey = (
   importId: ImportId,
   generation: AcquisitionGeneration
 ) => `${visualGenerationPrefix(importId, generation)}/manifest.json`;
-const visualFrameKey = visualFrameObjectKey;
-const manifestKey = visualEvidenceManifestObjectKey;
-const bytesToHex = (value: ArrayBuffer) =>
-  Array.from(new Uint8Array(value), (byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
-const digest = (bytes: Uint8Array) =>
-  Effect.promise(() =>
-    crypto.subtle.digest("SHA-256", Uint8Array.from(bytes).buffer)
-  ).pipe(
-    Effect.map(bytesToHex),
-    Effect.flatMap(Schema.decodeUnknownEffect(Sha256Hex))
-  );
-const checksumBytes = (hex: Sha256Hex) => {
-  const bytes = new Uint8Array(32);
-  for (let index = 0; index < 32; index += 1) {
-    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
-  }
-  return bytes.buffer;
-};
 const checksumMatches = (
   native: ArrayBuffer | undefined,
   recovery: Sha256Hex | undefined,
@@ -209,7 +190,7 @@ const refsFor = (
     byteLength: frame.bytes.byteLength,
     frameIndex,
     height: frame.height,
-    key: visualFrameKey(importId, generation, frameIndex),
+    key: visualFrameObjectKey(importId, generation, frameIndex),
     mimeType: frame.mimeType,
     sha256: Schema.decodeUnknownSync(Sha256Hex)(frame.sha256),
     timestampMilliseconds: frame.timestampMilliseconds,
@@ -359,7 +340,7 @@ const verifyExpectedFrame = (
   if (
     frame.frameIndex !== frameIndex ||
     frame.key !==
-      visualFrameKey(expected.importId, expected.generation, frameIndex)
+      visualFrameObjectKey(expected.importId, expected.generation, frameIndex)
   ) {
     return Effect.fail(failure("invalid_frame", "visual_frame_key_invalid"));
   }
@@ -370,7 +351,10 @@ const readVerified = (bucket: AcquisitionBucketLike) =>
   Effect.fn("VisualEvidenceStore.readVerified")(function* readEvidence(
     expected: ReadVerifiedVisualEvidence
   ) {
-    const key = manifestKey(expected.importId, expected.generation);
+    const key = visualEvidenceManifestObjectKey(
+      expected.importId,
+      expected.generation
+    );
     const object = yield* bucket
       .get(key)
       .pipe(
@@ -394,20 +378,15 @@ const readVerified = (bucket: AcquisitionBucketLike) =>
         )
       );
     const bytes = new TextEncoder().encode(text);
-    const sha256 = yield* digest(bytes).pipe(
+    const sha256 = yield* sha256Bytes(bytes).pipe(
       Effect.mapError(() =>
         failure("malformed", "visual_manifest_digest_invalid")
       )
     );
-    const document = yield* Effect.try({
-      catch: () => failure("malformed", "visual_manifest_json_invalid"),
-      try: () => JSON.parse(text) as unknown,
-    }).pipe(
-      Effect.flatMap(
-        Schema.decodeUnknownEffect(VisualEvidenceManifestDocument, {
-          onExcessProperty: "error",
-        })
-      ),
+    const document = yield* Schema.decodeUnknownEffect(
+      Schema.fromJsonString(VisualEvidenceManifestDocument),
+      { onExcessProperty: "error" }
+    )(text).pipe(
       Effect.mapError(() =>
         failure("malformed", "visual_manifest_schema_invalid")
       )
@@ -494,12 +473,15 @@ const putVerified = (bucket: AcquisitionBucketLike) =>
         failure("oversized", "visual_manifest_size_invalid")
       );
     }
-    const sha256 = yield* digest(bytes).pipe(
+    const sha256 = yield* sha256Bytes(bytes).pipe(
       Effect.mapError(() =>
         failure("malformed", "visual_manifest_digest_invalid")
       )
     );
-    const key = manifestKey(document.importId, document.acquisitionGeneration);
+    const key = visualEvidenceManifestObjectKey(
+      document.importId,
+      document.acquisitionGeneration
+    );
     const written = yield* bucket
       .put(key, bytes, {
         contentLength: bytes.byteLength,

@@ -1,6 +1,6 @@
 import { Effect, Schema, SchemaGetter } from "effect";
 
-import { InvalidRequest } from "../../../app/http/http-failure.js";
+import type { InvalidRequest } from "../../../app/http/http-failure.js";
 import {
   optionalParam,
   requiredParam,
@@ -50,10 +50,6 @@ const ResultCountWithDefault = ResultCount.pipe(
   Schema.withDecodingDefaultTypeKey(Effect.succeed(DefaultResultCount))
 );
 
-const SuggestionLimitWithDefault = ResultCount.pipe(
-  Schema.withDecodingDefaultTypeKey(Effect.succeed(DefaultSuggestionLimit))
-);
-
 const SortByWithDefault = SortBy.pipe(
   Schema.withDecodingDefaultTypeKey(Effect.succeed(DefaultSortBy))
 );
@@ -87,22 +83,12 @@ export const searchInputFromUrl = (
     const count = yield* optionalParam(url, "count", ResultCountFromString);
     const sortBy = yield* optionalParam(url, "sortBy", SortBy);
 
-    const input: Record<
-      string,
-      typeof count | typeof page | typeof query | typeof sortBy
-    > = { query };
-    if (page !== undefined) {
-      input["page"] = page;
-    }
-    if (count !== undefined) {
-      input["count"] = count;
-    }
-    if (sortBy !== undefined) {
-      input["sortBy"] = sortBy;
-    }
-    return yield* Schema.decodeUnknownEffect(SearchRequestBody)(input).pipe(
-      Effect.mapError(() => new InvalidRequest({ location: "query" }))
-    );
+    return {
+      count: count ?? DefaultResultCount,
+      page: page ?? DefaultPageNumber,
+      query,
+      sortBy: sortBy ?? DefaultSortBy,
+    };
   });
 
 /** Decode one category URL into a fully populated stable catalogue input. */
@@ -115,28 +101,13 @@ export const categoryInputFromUrl = (
     const page = yield* optionalParam(url, "page", PageNumberFromString);
     const count = yield* optionalParam(url, "count", ResultCountFromString);
     const sortBy = yield* optionalParam(url, "sortBy", SortBy);
-    const input: Record<string, typeof count | typeof page | typeof sortBy> =
-      {};
-    if (page !== undefined) {
-      input["page"] = page;
-    }
-    if (count !== undefined) {
-      input["count"] = count;
-    }
-    if (sortBy !== undefined) {
-      input["sortBy"] = sortBy;
-    }
-    const body = yield* Schema.decodeUnknownEffect(CategoryProductsRequestBody)(
-      input
-    ).pipe(Effect.mapError(() => new InvalidRequest({ location: "query" })));
-    return { facet, ...body };
+    return {
+      count: count ?? DefaultResultCount,
+      facet,
+      page: page ?? DefaultPageNumber,
+      sortBy: sortBy ?? DefaultSortBy,
+    };
   });
-
-/** Add a decoded category path value to its decoded HTTP request body. */
-export const categoryInputFromBody = (
-  facet: FacetId,
-  body: typeof CategoryProductsRequestBody.Type
-): CategoryProductsInput => ({ facet, ...body });
 
 /** Decode one suggestions URL into a fully populated stable catalogue input. */
 export const suggestionsInputFromUrl = (
@@ -147,15 +118,7 @@ export const suggestionsInputFromUrl = (
     const query = yield* requiredParam(url, "query", SearchQuery);
     const limit = yield* optionalParam(url, "limit", ResultCountFromString);
 
-    const input: Record<string, typeof limit | typeof query> = { query };
-    if (limit !== undefined) {
-      input["limit"] = limit;
-    }
-    return yield* Schema.decodeUnknownEffect(
-      Schema.Struct({ limit: SuggestionLimitWithDefault, query: SearchQuery })
-    )(input).pipe(
-      Effect.mapError(() => new InvalidRequest({ location: "query" }))
-    );
+    return { limit: limit ?? DefaultSuggestionLimit, query };
   });
 
 /** Explicit HTTP projection for one stable catalogue listing. */

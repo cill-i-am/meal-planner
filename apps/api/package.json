@@ -17,6 +17,7 @@
     "@better-auth/drizzle-adapter": "1.7.0-rc.6",
     "@effect/platform-node": "4.0.0-rc.112",
     "@meal-planner/household-api": "workspace:*",
+    "@meal-planner/recipe-domain": "workspace:*",
     "@meal-planner/recipe-import-api": "workspace:*",
     "better-auth": "1.7.0-rc.6",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",

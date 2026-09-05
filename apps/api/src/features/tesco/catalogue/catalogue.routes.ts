@@ -15,7 +15,6 @@ import {
   CategoryPathParams,
   CategoryProductsRequestBody,
   SearchRequestBody,
-  categoryInputFromBody,
   categoryInputFromUrl,
   searchInputFromUrl,
   suggestionsInputFromUrl,
@@ -48,11 +47,6 @@ const toHttpFailure = (error: TescoCatalogueError): HttpFailure => {
   }
 };
 
-const projectCatalogueFailure = <A, R>(
-  effect: Effect.Effect<A, TescoCatalogueError, R>
-): Effect.Effect<A, HttpFailure, R> =>
-  effect.pipe(Effect.mapError(toHttpFailure));
-
 export const TescoCatalogueRoutes = [
   HttpRouter.route("GET", "/tesco/search", (request) =>
     routeJson(
@@ -60,7 +54,7 @@ export const TescoCatalogueRoutes = [
         const tesco = yield* TescoCatalogue;
         const search = yield* searchInputFromUrl(request.url);
         return toCatalogueProductResultsResponse(
-          yield* projectCatalogueFailure(tesco.search(search))
+          yield* tesco.search(search).pipe(Effect.mapError(toHttpFailure))
         );
       })
     )
@@ -73,7 +67,7 @@ export const TescoCatalogueRoutes = [
         const tesco = yield* TescoCatalogue;
         const search = yield* decodeBody(SearchRequestBody);
         return toCatalogueProductResultsResponse(
-          yield* projectCatalogueFailure(tesco.search(search))
+          yield* tesco.search(search).pipe(Effect.mapError(toHttpFailure))
         );
       })
     )
@@ -85,7 +79,9 @@ export const TescoCatalogueRoutes = [
         const { facet } = yield* getCategoryPathParams;
         const category = yield* categoryInputFromUrl(request.url, facet);
         return toCatalogueProductResultsResponse(
-          yield* projectCatalogueFailure(tesco.categoryProducts(category))
+          yield* tesco
+            .categoryProducts(category)
+            .pipe(Effect.mapError(toHttpFailure))
         );
       })
     )
@@ -98,9 +94,10 @@ export const TescoCatalogueRoutes = [
         const tesco = yield* TescoCatalogue;
         const { facet } = yield* getCategoryPathParams;
         const body = yield* decodeBody(CategoryProductsRequestBody);
-        const category = categoryInputFromBody(facet, body);
         return toCatalogueProductResultsResponse(
-          yield* projectCatalogueFailure(tesco.categoryProducts(category))
+          yield* tesco
+            .categoryProducts({ facet, ...body })
+            .pipe(Effect.mapError(toHttpFailure))
         );
       })
     )
@@ -111,7 +108,9 @@ export const TescoCatalogueRoutes = [
         const tesco = yield* TescoCatalogue;
         const suggestions = yield* suggestionsInputFromUrl(request.url);
         return toCatalogueSuggestionsResponse(
-          yield* projectCatalogueFailure(tesco.suggestions(suggestions))
+          yield* tesco
+            .suggestions(suggestions)
+            .pipe(Effect.mapError(toHttpFailure))
         );
       })
     )

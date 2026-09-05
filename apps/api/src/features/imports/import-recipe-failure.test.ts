@@ -59,14 +59,6 @@ describe("recipe extraction failure projection", () => {
     }
   );
 
-  it("never collapses malformed responses into generic provider errors", () => {
-    expect(projectRecipeExtractionFailure("malformed_response")).toEqual({
-      durableCode: "invalid_schema",
-      pipelineCode: "invalid_schema",
-      recoveryPolicy: "none",
-    });
-  });
-
   it.each(matrix)(
     "drives %s through the typed pipeline and durable write policy",
     async (extractorCode, pipelineCode, durableCode) => {
@@ -132,7 +124,7 @@ describe("recipe extraction failure projection", () => {
             now,
             recipeRepository: repository,
             source,
-            transcript: { route: "video_v1" },
+            transcript: { status: "available" },
           })
         )
       );

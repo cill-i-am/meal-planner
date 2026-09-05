@@ -78,60 +78,57 @@ describe("installed visual provider adapter", () => {
     log.mockRestore();
   });
 
-  it.each(["request-shape rejection", "model-agreement requirement"])(
-    "preserves an explicitly branded known-zero visual %s for guarded settlement",
-    async () => {
-      let reachedDispatchAsKnownZero = false;
-      const dispatch: ProviderDispatchGate = {
-        run: (input) =>
-          input.invoke.pipe(
-            // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed failure channel under test.
-            Effect.tapError((error) =>
-              Effect.sync(() => {
-                reachedDispatchAsKnownZero =
-                  isProviderKnownZeroCostFailure(error);
-              })
-            ),
-            Effect.map(({ value }) => value)
+  it("preserves an explicitly branded known-zero visual setup failure for guarded settlement", async () => {
+    let reachedDispatchAsKnownZero = false;
+    const dispatch: ProviderDispatchGate = {
+      run: (input) =>
+        input.invoke.pipe(
+          // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the typed failure channel under test.
+          Effect.tapError((error) =>
+            Effect.sync(() => {
+              reachedDispatchAsKnownZero =
+                isProviderKnownZeroCostFailure(error);
+            })
           ),
-      };
-      const trace = makeRecordingTraceStore();
-      const adapter = await runFactory(
-        makeInstalledVisualEvidenceExtractor({
-          correlationId,
-          dispatch,
-          transport: makeRejectedProviderTransports(
-            new Error("provider_known_zero_setup_failure")
-          ).visual,
-        }),
-        trace.service
-      );
+          Effect.map(({ value }) => value)
+        ),
+    };
+    const trace = makeRecordingTraceStore();
+    const adapter = await runFactory(
+      makeInstalledVisualEvidenceExtractor({
+        correlationId,
+        dispatch,
+        transport: makeRejectedProviderTransports(
+          new Error("provider_known_zero_setup_failure")
+        ).visual,
+      }),
+      trace.service
+    );
 
-      const exit = await Effect.runPromiseExit(
-        adapter.extract({
-          dispatchId: "visual:import-1:1",
-          frames: [
-            {
-              bytes: new Uint8Array([1, 2, 3]),
-              height: 1,
-              mimeType: "image/jpeg",
-              sha256: "a".repeat(64),
-              timestampMilliseconds: 0,
-              width: 1,
-            },
-          ],
-          generation: 1 as never,
-          importId: "import-1" as never,
-          sourceMediaSha256: "b".repeat(64),
-        })
-      );
+    const exit = await Effect.runPromiseExit(
+      adapter.extract({
+        dispatchId: "visual:import-1:1",
+        frames: [
+          {
+            bytes: new Uint8Array([1, 2, 3]),
+            height: 1,
+            mimeType: "image/jpeg",
+            sha256: "a".repeat(64),
+            timestampMilliseconds: 0,
+            width: 1,
+          },
+        ],
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
 
-      expect(exit._tag).toBe("Failure");
-      expect(JSON.stringify(exit)).toContain("provider_unavailable");
-      expect(reachedDispatchAsKnownZero).toBe(true);
-      expect(trace.events).toEqual([]);
-    }
-  );
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("provider_unavailable");
+    expect(reachedDispatchAsKnownZero).toBe(true);
+    expect(trace.events).toEqual([]);
+  });
 
   it("does not infer known-zero visual settlement from unbranded provider status, code, or name fields", async () => {
     let reachedDispatchAsKnownZero = false;

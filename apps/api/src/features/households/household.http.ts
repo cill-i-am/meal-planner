@@ -663,6 +663,94 @@ const HouseholdPeopleHandlers = HttpApiBuilder.group(
   "people",
   (handlers) =>
     handlers
+      .handle("getProfileVersion", ({ params }) =>
+        Effect.gen(function* getProfileVersion() {
+          const gateway = yield* HouseholdPeopleGateway;
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          return yield* gateway
+            .getProfile({
+              personId: params.personId,
+              principal,
+              version: params.version,
+            })
+            .pipe(
+              Effect.mapError((error) => ({
+                code: error.reason,
+                message: "The profile request could not be completed.",
+              }))
+            );
+        })
+      )
+      .handle("listProfileAudit", ({ params, query }) =>
+        Effect.gen(function* listProfileAudit() {
+          const gateway = yield* HouseholdPeopleGateway;
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const page = yield* gateway
+            .listProfileVersions({
+              beforeVersion: query.beforeVersion ?? null,
+              personId: params.personId,
+              principal,
+            })
+            .pipe(
+              Effect.mapError((error) => ({
+                code: error.reason,
+                message: "The profile request could not be completed.",
+              }))
+            );
+          return {
+            events: page.versions.flatMap((version) =>
+              version.audit === null ? [] : [version.audit]
+            ),
+            nextBeforeVersion: page.nextBeforeVersion,
+          };
+        })
+      )
+      .handle("getProfile", ({ params }) =>
+        Effect.gen(function* getProfile() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .getProfile({ personId: params.personId, principal })
+            .pipe(
+              Effect.mapError((error) => ({
+                code: error.reason,
+                message: "The profile request could not be completed.",
+              }))
+            );
+        })
+      )
+      .handle("listProfileVersions", ({ params, query }) =>
+        Effect.gen(function* listProfileVersions() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .listProfileVersions({
+              beforeVersion: query.beforeVersion ?? null,
+              personId: params.personId,
+              principal,
+            })
+            .pipe(
+              Effect.mapError((error) => ({
+                code: error.reason,
+                message: "The profile request could not be completed.",
+              }))
+            );
+        })
+      )
+      .handle("mutateProfile", ({ params, payload }) =>
+        Effect.gen(function* mutateProfile() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .mutateProfile({ payload, personId: params.personId, principal })
+            .pipe(
+              Effect.mapError((error) => ({
+                code: error.reason,
+                message: "The profile request could not be completed.",
+              }))
+            );
+        })
+      )
       .handle("bootstrapCreator", ({ payload }) =>
         Effect.gen(function* bootstrapCreatorPerson() {
           const principal = yield* HouseholdPeopleCurrentPrincipal;
@@ -839,27 +927,28 @@ const HouseholdPeopleHandlers = HttpApiBuilder.group(
 );
 
 /** Mount the authenticated household tracer API. */
-export const makeHouseholdHttpApiLayer = () =>
-  HttpApiBuilder.layer(HouseholdApi).pipe(
-    Layer.provide(HouseholdHandlers),
-    Layer.provide(HouseholdSessionAuthLive),
-    Layer.provide(HouseholdAuthorityServicesLive)
-  );
+export const HouseholdHttpApiLayer = HttpApiBuilder.layer(HouseholdApi).pipe(
+  Layer.provide(HouseholdHandlers),
+  Layer.provide(HouseholdSessionAuthLive),
+  Layer.provide(HouseholdAuthorityServicesLive)
+);
 
 /** Mount the authenticated household-owned meal-plan API. */
-export const makeHouseholdMealPlanHttpApiLayer = () =>
-  HttpApiBuilder.layer(HouseholdMealPlanApi).pipe(
-    Layer.provide(HouseholdMealPlanHandlers),
-    Layer.provide(HouseholdSessionAuthLive),
-    Layer.provide(HouseholdMealPlanSchemaErrorsLive),
-    Layer.provide(HouseholdAuthorityServicesLive)
-  );
+export const HouseholdMealPlanHttpApiLayer = HttpApiBuilder.layer(
+  HouseholdMealPlanApi
+).pipe(
+  Layer.provide(HouseholdMealPlanHandlers),
+  Layer.provide(HouseholdSessionAuthLive),
+  Layer.provide(HouseholdMealPlanSchemaErrorsLive),
+  Layer.provide(HouseholdAuthorityServicesLive)
+);
 
 /** Mount the authenticated household people API. */
-export const makeHouseholdPeopleHttpApiLayer = () =>
-  HttpApiBuilder.layer(HouseholdPeopleApi).pipe(
-    Layer.provide(HouseholdPeopleHandlers),
-    Layer.provide(HouseholdSessionAuthLive),
-    Layer.provide(HouseholdPeopleSchemaErrorsLive),
-    Layer.provide(HouseholdAuthorityServicesLive)
-  );
+export const HouseholdPeopleHttpApiLayer = HttpApiBuilder.layer(
+  HouseholdPeopleApi
+).pipe(
+  Layer.provide(HouseholdPeopleHandlers),
+  Layer.provide(HouseholdSessionAuthLive),
+  Layer.provide(HouseholdPeopleSchemaErrorsLive),
+  Layer.provide(HouseholdAuthorityServicesLive)
+);

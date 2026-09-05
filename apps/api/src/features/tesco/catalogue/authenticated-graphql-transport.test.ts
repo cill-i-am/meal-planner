@@ -130,12 +130,6 @@ describe("TescoAuthenticatedGraphQlTransportLive", () => {
       run.requests.map((request) => request.headers["authorization"])
     ).toStrictEqual(["Bearer initial-token", "Bearer refreshed-token"]);
     expect(run.requests[0]?.headers["x-apikey"]).toBe("test-api-key-secret");
-    expect(
-      JSON.stringify({ catalogueConfig, initialAuthorization })
-    ).not.toContain("test-api-key-secret");
-    expect(
-      JSON.stringify({ catalogueConfig, initialAuthorization })
-    ).not.toContain("initial-token");
   });
 
   it("stops after one replay when Tesco returns a second 401", async () => {

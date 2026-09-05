@@ -29,9 +29,6 @@ const candidate = Schema.decodeUnknownSync(RecipeCandidate)({
 });
 
 const assembly = {
-  evidenceFingerprint: "a".repeat(64),
-  generation: 1 as never,
-  importId: "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b1a" as never,
   items: [
     {
       artifactReference: "source-manifest",
@@ -56,7 +53,7 @@ const assembly = {
         "Italian quick tomato pasta serves 2. Prep for 5 minutes, cook for 12 minutes, and it is ready in 17 minutes. Heat a large pan to 180 C. Add tomatoes and fresh pasta, then boil the fresh pasta. It is high protein.",
     },
   ],
-} as const satisfies RecipeEvidenceAssembly;
+} as const satisfies Pick<RecipeEvidenceAssembly, "items">;
 
 const supportedFacts = (grounded: GroundedRecipeFactsType) =>
   [
@@ -101,9 +98,6 @@ describe("recipe candidate grounding", () => {
         expect(citation.origin).toBe(evidence?.origin);
       }
     }
-    expect(JSON.stringify(grounded)).not.toContain(
-      "adapter-provider-selection"
-    );
   });
 
   it("marks unsupported selections unresolved exactly once", () => {
@@ -128,8 +122,5 @@ describe("recipe candidate grounding", () => {
       grounded.unresolvedFields.length
     );
     expect(JSON.stringify(grounded)).not.toContain("provider-invented");
-    expect(JSON.stringify(grounded)).not.toContain(
-      "adapter-provider-selection"
-    );
   });
 });

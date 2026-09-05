@@ -63,6 +63,34 @@ import {
   ReturnHouseholdAdultPayload,
   TransitionHouseholdPersonPayload,
 } from "./people.js";
+import { ProblemDetails } from "./problem-details.js";
+import {
+  HouseholdProfileErrors,
+  ListProfileVersionsQuery,
+  MutatePersonProfilePayload,
+  PersonProfile,
+  ProfileAuditPage,
+  ProfileVersionPage,
+} from "./profiles.js";
+
+export {
+  FoodPreference,
+  HardConstraint,
+  HouseholdProfileRejected,
+  HouseholdProfileProblem,
+  ListProfileVersionsQuery,
+  MutatePersonProfilePayload,
+  PersonProfile,
+  ProfileAudit,
+  ProfileCommand,
+  ProfileFact,
+  ProfileFactId,
+  ProfileFactStanding,
+  ProfileFactValue,
+  ProfileLabel,
+  ProfileVersion,
+  ProfileVersionPage,
+} from "./profiles.js";
 
 export {
   AssociateAdultInvitationPayload,
@@ -165,14 +193,10 @@ export {
   MealPlanActorId,
   MealPlanApproved,
   MealPlanDecisionRequest,
-  MealPlanDietaryFit,
-  MealPlanDifficulty,
   MealPlanDraft,
   MealPlanDraftId,
   MealPlanGap,
   MealPlanInstant,
-  MealPlanLeftovers,
-  MealPlanMealType,
   MealPlanMutationConflict,
   MealPlanMutationId,
   MealPlanNotFound,
@@ -190,8 +214,6 @@ export {
   MealPlanSlot,
   MealPlanSlotId,
   MealPlanSwapRejected,
-  MealPlanTags,
-  MealPlanTotalTimeBand,
   MealPlanTransitionRejected,
   MealPlanVersionConflict,
   PlannedMeal,
@@ -207,19 +229,6 @@ export const HouseholdStatus = Schema.Struct({
   status: Schema.Literal("ready"),
 });
 export type HouseholdStatus = typeof HouseholdStatus.Type;
-
-const ProblemDetails = <const Status extends number, const Code extends string>(
-  status: Status,
-  code: Code
-) =>
-  Schema.Struct({
-    code: Schema.Literal(code),
-    message: Schema.String,
-    status: Schema.Literal(status),
-  }).pipe(
-    HttpApiSchema.status(status),
-    HttpApiSchema.asJson({ contentType: "application/problem+json" })
-  );
 
 export const HouseholdUnauthorizedProblem = ProblemDetails(401, "unauthorized");
 export const HouseholdInternalProblem = ProblemDetails(500, "internal_error");
@@ -303,6 +312,59 @@ export const HouseholdMealPlanApi = HttpApi.make("householdMealPlanApi")
 
 const PeopleGroup = HttpApiGroup.make("people")
   .add(
+    HttpApiEndpoint.get(
+      "getProfileVersion",
+      "/v1/household/people/:personId/profile/versions/:version",
+      {
+        error: HouseholdProfileErrors,
+        params: {
+          personId: HouseholdPersonId,
+          version: Schema.NumberFromString.pipe(
+            Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
+          ),
+        },
+        success: PersonProfile,
+      }
+    ),
+    HttpApiEndpoint.get(
+      "listProfileAudit",
+      "/v1/household/people/:personId/profile/audit",
+      {
+        error: HouseholdProfileErrors,
+        params: { personId: HouseholdPersonId },
+        query: ListProfileVersionsQuery,
+        success: ProfileAuditPage,
+      }
+    ),
+    HttpApiEndpoint.get(
+      "getProfile",
+      "/v1/household/people/:personId/profile",
+      {
+        error: HouseholdProfileErrors,
+        params: { personId: HouseholdPersonId },
+        success: PersonProfile,
+      }
+    ),
+    HttpApiEndpoint.get(
+      "listProfileVersions",
+      "/v1/household/people/:personId/profile/versions",
+      {
+        error: HouseholdProfileErrors,
+        params: { personId: HouseholdPersonId },
+        query: ListProfileVersionsQuery,
+        success: ProfileVersionPage,
+      }
+    ),
+    HttpApiEndpoint.post(
+      "mutateProfile",
+      "/v1/household/people/:personId/profile",
+      {
+        error: HouseholdProfileErrors,
+        params: { personId: HouseholdPersonId },
+        payload: MutatePersonProfilePayload,
+        success: PersonProfile,
+      }
+    ),
     HttpApiEndpoint.post(
       "bootstrapCreator",
       "/v1/household/people/bootstrap-creator",

@@ -34,6 +34,15 @@ state, or serve a public Recipe Bank read. Better Auth uses its own separate D1.
 execution coordinator. It transports temporary media and artifacts but is not
 a tenancy, lifecycle, review, Recipe Bank, or recovery authority.
 
+## Media artifact ownership
+
+The acquisition coordinator owns the original artifact and its derived audio and
+bounded frame variants. Artifact reads decode the full identifier, compare its
+acquisition owner with the coordinator, and preserve its variant when forwarding
+to the container registry. Other owners, generations, and malformed suffixes are
+rejected before streaming. Completed transcription, visual, and carousel outcomes
+carry their required integrity and replay metadata.
+
 ## Authorization and private routing
 
 Better Auth D1 remains the global identity and organization control plane. The

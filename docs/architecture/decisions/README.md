@@ -25,6 +25,8 @@ compatibility or migration obligation unless the record explicitly names one.
 - [ADR-0009 — Synchronize shopping lists through idempotent item operations](0009-synchronize-shopping-lists-through-idempotent-item-operations.md)
 - [ADR-0010 — Coordinate membership departure before person archival](0010-coordinate-membership-departure-before-person-archival.md)
 
+- [ADR-0011 — Canonicalize completed conservative settlements](0011-canonicalize-completed-conservative-settlements.md)
+
 Current-state architecture remains documented by the capability documents in
 the parent directory. An ADR may describe accepted future direction that is not
 yet implemented; delivery records must state when the cutover occurs.

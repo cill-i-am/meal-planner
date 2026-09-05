@@ -183,7 +183,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         const trace = makeImportTraceContext();
         const authenticatedOrganizationResolver =
           makeAuthenticatedOrganizationResolver({ auth });
-        const requestLayer = makeImportWorkerRequestLayer({
+        const requestServices = makeImportWorkerRequestLayer({
           householdDomain,
           importWorkflowStarter: makeImportWorkflowStarter(
             importAcquisitionWorkflow
@@ -202,7 +202,6 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           systemPrincipal: importSystemPrincipal,
           trace,
         });
-        const requestServices = requestLayer;
         const householdRequestLayer = makeHouseholdRequestLayer({
           gateway: makeHouseholdDomainGateway(householdDomain),
           resolver: authenticatedOrganizationResolver,

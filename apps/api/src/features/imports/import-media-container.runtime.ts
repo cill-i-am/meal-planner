@@ -72,6 +72,23 @@ const closedArtifactResponse = (status: number) =>
 const registeredArtifactMissing = () =>
   ({ _tag: "RegisteredArtifactMissing" }) as const;
 
+const decodeFrameDimensions = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      streams: Schema.NonEmptyArray(
+        Schema.Struct({
+          height: Schema.Number.pipe(
+            Schema.check(Schema.isInt(), Schema.isGreaterThan(0))
+          ),
+          width: Schema.Number.pipe(
+            Schema.check(Schema.isInt(), Schema.isGreaterThan(0))
+          ),
+        })
+      ),
+    })
+  )
+);
+
 export interface TikTokMediaContainerRuntimeDependencies {
   readonly acquirer: MediaAcquirer;
   readonly artifacts: ReturnType<typeof makeTemporaryArtifactStore>;
@@ -257,16 +274,14 @@ export const makeTikTokMediaContainerRuntime = ({
       )
       .pipe(Effect.mapError(retryableContainer));
     const boundedDuration = Math.max(1, durationSeconds);
-    const timestamps = yield* Effect.forEach([0.2, 0.5, 0.8], (fraction) =>
-      Schema.decodeUnknownEffect(FrameTimestampMilliseconds)(
-        Math.max(0, Math.floor(boundedDuration * fraction * 1000))
-      ).pipe(Effect.mapError(retryableContainer))
-    );
+    const frameFractions = [0.2, 0.5, 0.8] as const;
     const prepareFrame = Effect.fn("ImportMediaContainer.prepareFrame")(
-      function* prepareFrameEffect(
-        timestampMilliseconds: typeof FrameTimestampMilliseconds.Type,
-        index: number
-      ) {
+      function* prepareFrameEffect(fraction: number, index: number) {
+        const timestampMilliseconds = yield* Schema.decodeUnknownEffect(
+          FrameTimestampMilliseconds
+        )(Math.max(0, Math.floor(boundedDuration * fraction * 1000))).pipe(
+          Effect.mapError(retryableContainer)
+        );
         const framePath = path.join(
           artifact.root,
           `provider-frame-${index}.jpg`
@@ -315,27 +330,10 @@ export const makeTikTokMediaContainerRuntime = ({
             }
           )
           .pipe(Effect.mapError(retryableContainer));
-        const dimensions = yield* Effect.try({
-          catch: retryableContainer,
-          try: () =>
-            JSON.parse(new TextDecoder().decode(probe.stdout)) as {
-              readonly streams?: readonly {
-                readonly height?: number;
-                readonly width?: number;
-              }[];
-            },
-        });
-        const { height, width } = dimensions.streams?.[0] ?? {};
-        if (
-          !Number.isSafeInteger(height) ||
-          !Number.isSafeInteger(width) ||
-          height === undefined ||
-          width === undefined ||
-          height <= 0 ||
-          width <= 0
-        ) {
-          return yield* Effect.fail(retryableContainer());
-        }
+        const dimensions = yield* decodeFrameDimensions(
+          new TextDecoder().decode(probe.stdout)
+        ).pipe(Effect.mapError(retryableContainer));
+        const [{ height, width }] = dimensions.streams;
         const bytes = yield* Effect.tryPromise({
           catch: retryableContainer,
           try: () => readFile(framePath),
@@ -365,7 +363,7 @@ export const makeTikTokMediaContainerRuntime = ({
         };
       }
     );
-    const frames = yield* Effect.forEach(timestamps, prepareFrame, {
+    const frames = yield* Effect.forEach(frameFractions, prepareFrame, {
       concurrency: 1,
     });
     const audioBytes = yield* Effect.tryPromise({

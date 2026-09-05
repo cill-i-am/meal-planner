@@ -1,261 +1,176 @@
 # Work Item 04 — Private Interview-Session Boundary
 
-- Status: Proposed
+- Status: Done — boundary evidence accepted; implementation deferred to Stage 2
 - Stage: [Stage 1 — Household people, profiles, and permissions](README.md)
-- Owner: Unassigned
-- Pull request: Not opened
-- Completed by: Not completed
-- Promotion condition: Work Item 03 is merged and the accepted exact-version
-  Cloudflare Agents SDK spike identifies a Stage 1 prerequisite
+- Owner: `codex/stage1-private-interview-boundary`
+- Pull request: [#204](https://github.com/cill-i-am/meal-planner/pull/204) (merged 2026-09-05)
+- Completed by: `5d629f0f3e1e9e7c2006d2b7a0c14fd235015013`
+- Promotion condition: accept cumulative Stage 1 exit proof, then promote one bounded Stage 2
+  integration work item; no Stage 1 grant prerequisite was identified
 
-## Household Outcome
+## Household outcome
 
-The product has a truthful contract for who may start a private profile
-interview, whom it concerns, who may participate, what remains private, and how
-confirmed profile commands cross into household authority. No conversation
-runtime or transcript is incorrectly made household-visible merely to prepare
-for Stage 2.
+Define who may begin a private self-interview, who may access it, what remains
+private, and how a confirmed fact crosses into household authority. Do not add
+conversation state to HouseholdObject merely to prepare for Stage 2.
 
-## Accepted Direction
+## Accepted direction
 
 - [PDR 0001 — Household people, profiles, and interviews](../../../decisions/product/0001-household-people-profiles-and-interviews.md)
 - [PDR 0005 — MVP scope and deferrals](../../../decisions/product/0005-mvp-scope-and-deferrals.md)
 - [PDR 0007 — Household agent conversations and visibility](../../../decisions/product/0007-household-agent-conversations-and-visibility.md)
 - [ADR 0004 — Household agent coordinator and isolated chat agents](../../../architecture/decisions/0004-household-agent-coordinator-and-isolated-chat-agents.md)
-- [Stage 1 interview ownership recommendation](README.md)
 
-## User-Visible Vertical
+Work Item 03 merged in PR #202 as
+`b509ba53ce1ac1326e86a9e826bdf58cbb0e7856` on 2026-09-05.
+The [exact-version SDK evidence](04-agents-boundary-evidence.md) exercises
+`agents@0.22.0` with the repository-pinned Miniflare/workerd runtime.
 
-An admitted adult can request a private interview concerning their own linked
-person and receive an opaque session reference governed by an explicit access
-and lifecycle contract. The session may later propose closed profile commands;
-only commands confirmed and admitted through the ordinary profile API become
-household-visible. Other household adults cannot read private transcript or
-message content.
+## Boundary disposition
 
-This vertical should be implemented in Stage 1 only if the exact-version spike
-proves that a household-issued grant or reference must pre-exist the Agent
-runtime. Otherwise this record defines the prerequisite and implementation
-moves intact to Stage 2.
+Accepted: **no Stage 1 Household grant, session table, API, or UI**. The SDK
+supports isolated Agent-owned participant/lifecycle metadata and restart without
+Household persistence. Fresh membership and person linkage come from existing
+authorities, not a grant. The earlier conditional Household grant was a planning
+hypothesis; it is not a Ready implementation assignment.
 
-## Scope
+This is a runtime-backed recommendation, not proof that product chat is ready.
+The probe uses synthetic authority data. Real Better Auth/Household admission,
+Alchemy bundle composition, and passive/in-flight connection revocation remain
+explicit [Stage 2 gates](04-agents-boundary-evidence.md#smallest-stage-2-handoff).
+No blocker found in this probe justifies introducing a second grant lifecycle.
 
-### In scope
+## Future user-visible vertical
 
-- the exact-version Cloudflare Agents SDK spike required by ADR 0004;
-- admitted participant, subject-person, household, privacy, and lifecycle
-  contracts for a private interview;
-- a minimum opaque session/grant reference only if the spike proves it is a
-  prerequisite for secure later Agent Durable Object creation;
-- authorization rules for beginning, reading lifecycle state, closing, and
-  revoking such a session;
-- the typed boundary from private-session proposals to ordinary Work Item 03
-  profile commands; and
-- privacy, replay, restart, and cross-household tests for any Stage 1 state that
-  is actually introduced.
+An admitted active adult begins a private interview about their own linked
+person. They receive an opaque session identity, return to that same session,
+and later read completed history privately. Another adult—even in the same
+household—cannot discover or access it.
 
-### Out of scope
+A proposal is private, unconfirmed data. Only a separately admitted profile
+command after participant review creates household-visible product state.
+Actual interview behaviour, messages, transcripts, streaming, and models belong
+to later Stage 2 slices, not this docs/evidence PR.
 
-- model or provider selection, prompts, interview behaviour, orchestration,
-  inference, evaluation, or quality scoring;
-- Agent Durable Object implementation, message/transcript persistence,
-  streaming, resumable chat, WebSocket/UI chat, or runtime scheduling;
-- raw transcript, chat message, prompt, model response, or private proposal text
-  in `HouseholdObject`, profile projections, or household audit;
-- interviews about another adult under the MVP self-interview policy;
-- dependant interview assistance, shared-agent conversation, routines,
-  planning, recipes, or shopping; and
-- compatibility storage, shared household D1, dual writes, or provider/cloud
-  mutation in this planning assignment.
+## Identity, privacy, and authority
 
-## Product Commands And Queries
+- Better Auth supplies immutable user identity and current organization
+  membership. The household-scoped linkage subject is distinct from audit actor.
+- HouseholdObject owns the active adult/person link and confirmed profile state.
+  It remains the sole writer of profile versions, audit, and mutation receipts.
+- The isolated Agent owns immutable household/participant/person binding,
+  session identity, and conversation lifecycle. A copied opaque reference is not
+  a bearer credential. Never derive authority from email, session ID, audit
+  correlation, or whichever member first opens an Agent.
+- Reauthorize current membership and the exact active link on access and before
+  private output. A saved participant snapshot is only a comparison target.
+  Person-link repair cannot silently retarget an old session.
+- Other adults receive no session list, activity projection, transcript API, or
+  parent operation that reads a private child's history.
+- Private messages, transcript excerpts, prompts, model output, and unconfirmed
+  proposal text never enter Household SQLite, profile audit, or household-visible
+  projections. Support access and deletion have separate accepted policies.
 
-If the spike proves a household-issued grant is required, the minimum product
-surface is equivalent to:
+## Lifecycle and consistency contract
 
-- `CreatePrivateInterviewGrant(mutationId, subjectPersonId,
-  expectedProfileVersion)` for the admitted adult's own linked person;
-- `ClosePrivateInterviewGrant(mutationId, grantId, expectedGrantVersion)`;
-- `RevokePrivateInterviewGrant(...)` for the participant or an authorized
-  privacy/incident path; and
-- `GetPrivateInterviewGrant(grantId)` returning participant-only lifecycle and
-  opaque Agent reference, never messages or transcript.
-
-A future Agent session submits a typed profile proposal to the participant. The
-participant confirms it through Work Item 03's ordinary profile command with
-the current expected profile version. The grant or Agent runtime cannot write
-profile state directly.
-
-If the spike shows that Agent authority can securely derive and validate all of
-this without household persistence, do not create these commands or tables in
-Stage 1. Record the verified contract and defer implementation to Stage 2.
-
-## States, Transitions, And Invariants
-
-For any minimal grant introduced:
+The future Agent lifecycle distinguishes these meanings:
 
 ```text
-absent -> open -> closed
-             \-> revoked
+absent -> open -> completed (retained, private, read-only)
+           \-> revoked (access denied; not deletion)
 ```
 
-- Participant is the admitted adult and subject is that adult's linked person.
-- Household, participant, and subject identities are immutable for the grant.
-- An opaque session/grant reference is not a transcript locator visible to
-  other household members.
-- Closed/revoked grants cannot authorize new Agent access or proposals.
-- A proposal is not product state. Only a newly authorized, validated profile
-  command creates a profile version.
-- Profile-command authorization is evaluated at confirmation time; an old
-  session cannot bypass current membership, person link, lifecycle, profile
-  version, or safety confirmation.
-- `HouseholdObject` never imports Agent SDK runtime types and the Agent object
-  never becomes canonical profile authority.
+Completion ends interview mutation but preserves read-only access for the
+currently authorized participant. Revocation denies access without silently
+deleting history. Neither permits reopening. Departure, unlink, or person
+archival denies access regardless of stored session state.
 
-## Versioning And Projections
+Agent creation and lifecycle operations need stable mutation IDs, payload
+collision checks, monotonic versions, exact replay, and restart persistence.
+Concurrent completion/revocation must not reopen a session. A lost creation
+response must resolve the same session, not allocate another. These are Stage 2
+requirements; the metadata probe is not a complete implementation of them.
 
-Any grant has a stable opaque ID and monotonic lifecycle version. Its private
-projection contains only household/subject/participant binding, lifecycle,
-created/closed time, and the minimum opaque Agent reference proven necessary by
-the spike. The normal household roster/profile projections reveal neither grant
-existence nor private session activity to other adults.
+There is no cross-database transaction. Auth/member reads, Household admission,
+Agent state, and profile confirmation remain distinct boundaries. No Agent,
+network, or provider call enters a Household SQLite transaction. Stage 2 must
+define the race between authority changes and in-flight private output; an
+initial connect check or unbounded revocation delay does not satisfy it.
 
-Profile versions and audit may record a closed source class such as
-`private_interview_proposal` after the participant confirms a command. They must
-not record session messages, transcript excerpts, hidden proposal content,
-prompts, or model output.
+## Profile proposal boundary
 
-## Authority, Transaction, And Privacy
+Use current ordinary profile commands, expected versions, and replay semantics.
+Self-confirmation must use the linked person's identity; hard-constraint removal
+or weakening still requires the separate explicit confirmation operation.
+Concurrent edits return the normal stale-version result instead of silently
+rebasing a proposal.
 
-- `HouseholdObject` owns confirmed household product state and, only if required,
-  a minimal access grant. It does not own conversation content or runtime state.
-- An isolated Agent Durable Object owns future messages, transcripts, streaming,
-  and conversation lifecycle under ADR 0004.
-- Better Auth membership and the current account-person link are verified before
-  grant routing. Only the participant may read or close the private grant.
-- Grant mutation, version, audit-safe lifecycle event, and receipt commit in one
-  local household transaction. Agent creation or calls occur post-commit and
-  reconcile explicitly; no network/provider call enters SQLite transaction.
-- Conversation-to-profile crossing uses the existing public/household profile
-  command boundary and current authorization, not a privileged database path.
+Work Item 03 supports only `manual_ui` provenance. A future confirmation slice
+must add and test a narrowly typed interview-proposal provenance value; do not
+mislabel an Agent proposal or add that unused variant now. Only the confirmed
+closed fact and privacy-safe provenance cross into product authority.
 
-## Failure, Replay, And Concurrency
+## Scope and minimum surfaces
 
-- Identical grant create/close/revoke replay returns the committed result;
-  mutation-ID reuse with different subject/participant/lifecycle conflicts.
-- Stale grant or profile versions make no change.
-- Concurrent close/revoke has one winner and one stale/closed result.
-- Membership removal, person unlink/archive, or privacy revocation invalidates
-  access before a later proposal can become product state.
-- Agent creation response loss reconciles by exact opaque identity; it must not
-  create a second private conversation or grant.
-- Profile confirmation racing with another edit follows Work Item 03's
-  optimistic concurrency and safety rules.
-- Restart preserves only the minimal grant if one exists. Conversation restart
-  durability belongs to the future Agent Durable Object and Stage 2 tests.
-- Cross-household requests cannot test grant/session existence or submit a
-  proposal to another household's person.
+This assignment contains evidence, delivery-state corrections, and a bounded
+handoff only. It changes no application, schema, dependency, infrastructure,
+provider, deployment, or cloud state. It adds no public/Household API or UI.
 
-## Minimum API Surface
+The next proposed integration slice is participant-only Agent admission and
+lifecycle metadata using real product authority. Keep conversation content,
+chat UI, streaming, model/provider selection, tools, Agents orchestration,
+evals, shared chat, dependant interviews, support grants, household deletion,
+routines, planning, recipes, shopping, and compatibility machinery out of that
+first slice.
 
-Only if required by the spike:
+## Evidence and remaining review gates
 
-- create, get, close, and revoke the participant's own private interview grant;
-- exchange or resolve the opaque Agent reference through a participant-only
-  boundary; and
-- submit a proposed typed fact into the normal profile confirmation flow.
+- [x] Selected SDK release executes real Agent and isolated sub-agent APIs on the
+      pinned local runtime. No runtime upgrade or private API shim was required.
+- [x] Synthetic-authority probe covers same-household other-adult denial,
+      cross-household denial, known-reference non-authority, client state-write
+      rejection, active-message departure closure, reconnect denial, unlink denial,
+      completion, and persisted metadata after a full local runtime restart.
+- [x] Actual auth/link/profile code is mapped separately from SDK probe claims.
+- [ ] Real Better Auth + Household + Agent composition proves the same admission
+      and identity boundaries, including authority failure and concurrent changes.
+- [ ] Every enabled protocol and passive/in-flight output path proves continuing
+      revocation. The SDK intercepts state-sync/RPC before custom onMessage.
+- [ ] Session creation/lifecycle replay, collision, stale version, concurrency,
+      and lost-response behaviour are proven in the production composition.
+- [ ] Actual proposal confirmation proves current authorization, versions,
+      safety, and closed privacy-safe provenance without transcript injection.
+- [x] This docs-only PR passes formatting/link/diff checks and hosted CI; its
+      exact-head review records the boundary disposition.
+- [x] The orchestrator accepted the cumulative Stage 1 exit evidence in
+      [Work Item 05](05-cumulative-exit-proof.md), completed by merged PR #205.
 
-There is no household-wide session list, transcript endpoint, message endpoint,
-stream, or model endpoint in Stage 1.
+Unchecked integration items belong to the proposed Stage 2 slices. They are not
+permission to mark a grant implementation Ready, nor evidence that a Household
+grant is needed.
 
-## Minimum UI Surface
+## Review risk and assignment
 
-Only if required by the spike:
+Privacy/authority implementation is high risk and requires independent
+exact-head review. This docs-only investigation still requires review of source
+fidelity, evidence limits, and the handoff. Green SDK tests do not override
+unproven product integration.
 
-- an own-profile “Begin private review” action explaining that transcript and
-  messages are private while confirmed facts become household-visible;
-- a participant-only open/closed/revoked session shell with no chat runtime;
-- a proposal-review handoff into the existing typed profile confirmation UI;
-  and
-- explicit unavailable, stale profile, membership/person-link changed, closed,
-  and revoked states.
+Use the exact bounded
+[Stage 2 handoff](04-agents-boundary-evidence.md#smallest-stage-2-handoff)
+after accepting the cumulative Stage 1 exit proof. Do not assign the whole AI roadmap.
 
-Actual chat, streaming, resumability, model feedback, and transcript management
-remain Stage 2.
+## Delivery log
 
-## Vertical Tracer
-
-If Stage 1 state is introduced:
-
-1. Adult A creates an own-person private grant and loses the response; identical
-   retry returns the same opaque identity.
-2. Adult B in the same household cannot list, read, close, or infer A's grant.
-3. A proposed `FoodPreference` remains private until A confirms it through the
-   normal profile command; the resulting household-visible fact carries only
-   safe provenance.
-4. A stale proposal loses a profile-version race and cannot overwrite the new
-   profile.
-5. Membership removal or person unlink revokes access before another proposal
-   can commit.
-6. Another household cannot read or mutate the grant or profile command.
-
-If no Stage 1 state is required, the tracer is a provider-free contract test
-showing the future Agent boundary can preserve these identities and
-authorization checks without adding a household table.
-
-## Acceptance Evidence
-
-### Spike and focused tests
-
-- [ ] The exact repository-pinned Cloudflare Agents SDK is exercised in the
-  supported local runtime, and the result records whether a Stage 1 grant is
-  necessary.
-- [ ] Closed schemas prove participant/subject binding, private projection, and
-  proposal-to-profile command separation.
-- [ ] Any grant implementation proves replay, collision, stale version,
-  close/revoke race, and membership/person lifecycle invalidation.
-- [ ] Tests prove raw transcript/message/prompt/model fields cannot decode into
-  household state, audit, or public projections.
-
-### Real runtime and persistence proof
-
-- [ ] If a grant is implemented, real Workerd or Miniflare runs Better Auth,
-  API, private routing, `HouseholdObject`, restart, and cross-household denial.
-- [ ] Agent response-loss reconciliation uses one opaque identity and no network
-  work inside the household transaction.
-- [ ] A proposed fact becomes visible only through a separately admitted Work
-  Item 03 command and respects current authorization/version/safety rules.
-- [ ] Physical source/schema proof finds no transcript or conversation authority
-  in household SQLite or shared D1.
-
-### Repository and review gates
-
-- [ ] Root format, lint, type checks, full tests, builds, applicable container,
-  and hosted CI pass.
-- [ ] ADR 0004, privacy docs, public contracts, stage, and current delivery
-  records reflect the proven exact-version boundary.
-- [ ] A completely fresh independent exact-head review disposes privacy,
-  authorization, runtime ownership, replay, and test-integrity risks.
-
-## Review Risk
-
-Very high if code or storage is introduced; medium if the deliverable is only a
-verified contract/spike record. Any code-bearing PR requires independent
-exact-head review. Model/provider/cloud execution requires a separately approved
-assignment and does not follow from this record.
-
-## Implementation Notes
-
-- Do not create a placeholder conversation table in household SQLite.
-- Do not retain transcripts “temporarily” in audit, logs, Queue, R2, or profile
-  metadata as a shortcut.
-- Prefer no Stage 1 implementation if the exact-version spike proves no
-  prerequisite. Deferring code is a valid outcome and keeps Stage 2 ownership
-  truthful.
-- A material departure from ADR 0004 or PDR 0007 requires a new ADR/product
-  decision before implementation.
-
-## Delivery Log
-
-- 2026-08-27 — Created as `Proposed`; implementation is conditional on Work Item
-  03 and the exact-version Agents SDK spike.
+- 2026-08-27 — Proposed a conditional Stage 1 prerequisite, dependent on Work
+  Item 03 and the exact-version SDK spike.
+- 2026-09-05 — Work Item 03 merged. The provider-free SDK spike supports moving
+  interview implementation intact to Stage 2 without a Household grant.
+  Boundary disposition is in review; no production conversation code landed.
+- 2026-09-05 — PR #204 merged as
+  `5d629f0f3e1e9e7c2006d2b7a0c14fd235015013`. Independent content and exact-head
+  review accepted `2d607a77a509fec64047678add31fdab02053eea`; both hosted checks
+  passed in [run 33974785385](https://github.com/cill-i-am/meal-planner/actions/runs/33974785385).
+  Boundary evidence is Done. Synthetic SDK metadata/restart proof does not
+  establish production auth, Alchemy composition, or continuing revocation;
+  those remain Stage 2 gates. Cumulative exit proof is Work Item 05.

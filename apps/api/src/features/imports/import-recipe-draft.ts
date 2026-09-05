@@ -2,6 +2,7 @@ import { RecipeImportActionId } from "@meal-planner/recipe-import-api";
 import { Effect, Option, Schema } from "effect";
 
 import type { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
+import { sha256Bytes } from "./import-digest.js";
 import type { HouseholdImportEvidenceCurrentRepository } from "./import-evidence.repository.household.js";
 import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
@@ -261,24 +262,8 @@ const recoveryEvidenceMismatchReason = (input: {
   return null;
 };
 
-const bytesToHex = (value: ArrayBuffer) =>
-  Array.from(new Uint8Array(value), (byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
-
-const sha256Text = (value: string) =>
-  Effect.promise(() =>
-    crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
-  ).pipe(
-    Effect.map(bytesToHex),
-    Effect.map(Schema.decodeUnknownSync(Sha256Hex))
-  );
-
 const sourceEvidenceItems = (evidence: VerifiedAcquisitionEvidence) => {
   const { source } = evidence;
-  if (source === undefined) {
-    return null;
-  }
   const items: RecipeEvidenceItem[] = [
     {
       artifactReference: evidence.manifestKey,
@@ -326,11 +311,6 @@ const assembleEvidence = (
 ) =>
   Effect.gen(function* assemble() {
     const sourceItems = sourceEvidenceItems(evidence);
-    if (sourceItems === null) {
-      return yield* Effect.fail(
-        pipelineFailure("source_evidence_invalid", "source_metadata_missing")
-      );
-    }
     const items: RecipeEvidenceItem[] = [
       ...sourceItems,
       {
@@ -348,15 +328,17 @@ const assembleEvidence = (
         value: observation.text,
       })),
     ];
-    const evidenceFingerprint = yield* sha256Text(
-      JSON.stringify({
-        generation: evidence.generation,
-        importId,
-        items,
-        sourceMediaSha256: evidence.sha256,
-        transcriptSha256: transcript.sha256,
-        visualManifestSha256: visual.sha256,
-      })
+    const evidenceFingerprint = yield* sha256Bytes(
+      new TextEncoder().encode(
+        JSON.stringify({
+          generation: evidence.generation,
+          importId,
+          items,
+          sourceMediaSha256: evidence.sha256,
+          transcriptSha256: transcript.sha256,
+          visualManifestSha256: visual.sha256,
+        })
+      )
     );
     return {
       evidenceFingerprint,
@@ -563,13 +545,7 @@ export interface ProduceRecipeDraftFromEvidenceInput {
   readonly now: ImportTimestamp;
   readonly recipeRepository: RecipeDraftRepository;
   readonly source: VerifiedSourceMetadata;
-  readonly transcript:
-    | { readonly route: "video_v1" }
-    | {
-        readonly reason: "source_type_carousel";
-        readonly route: "carousel_v2";
-        readonly status: "not_applicable";
-      };
+  readonly transcript: RecipeDraft["transcript"];
 }
 
 /** Shared extraction, grounding, and review-draft boundary for every source type. */
@@ -589,11 +565,13 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
   ).pipe(Effect.mapError(() => pipelineFailure("invalid_schema")));
   const extractionFingerprintEffect =
     input.extractionFingerprint === undefined
-      ? sha256Text(
-          JSON.stringify({
-            evidenceFingerprint,
-            extractor: descriptor,
-          })
+      ? sha256Bytes(
+          new TextEncoder().encode(
+            JSON.stringify({
+              evidenceFingerprint,
+              extractor: descriptor,
+            })
+          )
         )
       : Schema.decodeUnknownEffect(Sha256Hex)(input.extractionFingerprint).pipe(
           Effect.mapError(() => pipelineFailure("invalid_schema"))
@@ -673,35 +651,18 @@ export const produceRecipeDraftFromEvidence = Effect.fn(
   if (input.lifecycle !== undefined) {
     yield* input.lifecycle.preparingReview;
   }
-  const draft = yield* input.recipeRepository.complete(
-    input.transcript.route === "video_v1"
-      ? {
-          createdAt: input.now,
-          evidenceFingerprint,
-          extraction,
-          extractionFingerprint,
-          extractor: descriptor,
-          generation: input.assembly.generation,
-          importId: input.assembly.importId,
-          lifecycle: "needs_review",
-          schemaVersion: 1,
-        }
-      : {
-          createdAt: input.now,
-          evidenceFingerprint,
-          extraction,
-          extractionFingerprint,
-          extractor: descriptor,
-          generation: input.assembly.generation,
-          importId: input.assembly.importId,
-          lifecycle: "needs_review",
-          schemaVersion: 2,
-          transcript: {
-            reason: input.transcript.reason,
-            status: input.transcript.status,
-          },
-        }
-  );
+  const draft = yield* input.recipeRepository.complete({
+    createdAt: input.now,
+    evidenceFingerprint,
+    extraction,
+    extractionFingerprint,
+    extractor: descriptor,
+    generation: input.assembly.generation,
+    importId: input.assembly.importId,
+    lifecycle: "needs_review",
+    schemaVersion: 1,
+    transcript: input.transcript,
+  });
   if (input.lifecycle !== undefined) {
     yield* input.lifecycle.reviewAvailable(
       Schema.decodeUnknownSync(RecipeImportActionId)(
@@ -863,11 +824,6 @@ export const produceRecipeDraftForImport = Effect.fn(
           dispatchId: input.recovery.dispatchId,
         };
   const { source } = evidence;
-  if (source === undefined) {
-    return yield* Effect.fail(
-      pipelineFailure("source_evidence_invalid", "source_metadata_missing")
-    );
-  }
   const draftInput: ProduceRecipeDraftFromEvidenceInput = {
     assembly: dispatchedAssembly,
     claim: ({ descriptor, evidenceFingerprint, extractionFingerprint }) =>
@@ -886,7 +842,7 @@ export const produceRecipeDraftForImport = Effect.fn(
     now,
     recipeRepository: input.recipeRepository,
     source,
-    transcript: { route: "video_v1" },
+    transcript: { status: "available" },
   };
   const lifecycleInput =
     input.lifecycle === undefined

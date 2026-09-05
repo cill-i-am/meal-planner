@@ -44,31 +44,10 @@ export default defineConfig({
       },
     },
     {
-      files: [
-        "apps/api/src/app/errors.ts",
-        "apps/api/src/features/tesco/tesco.errors.ts",
-      ],
-      rules: {
-        // Error unions are intentionally colocated and use concise readonly
-        // constructor properties as their public data contract.
-        "max-classes-per-file": "off",
-        "typescript/parameter-properties": "off",
-        // Optional unknown causes require an explicit undefined default.
-        "unicorn/no-useless-undefined": "off",
-      },
-    },
-    {
       files: ["apps/api/src/app/http/query-params.ts"],
       rules: {
         // Effect.succeed requires the explicit undefined value for this branch.
         "unicorn/no-useless-undefined": "off",
-      },
-    },
-    {
-      files: ["apps/api/src/app/errors.ts"],
-      rules: {
-        // TypeScript's noImplicitReturns checks this exhaustive tagged-union switch.
-        "default-case": "off",
       },
     },
     {
@@ -87,13 +66,6 @@ export default defineConfig({
       },
     },
     {
-      files: ["apps/api/src/features/tesco/catalogue/graphql-documents.ts"],
-      rules: {
-        // The inline marker enables GraphQL editor tooling for template literals.
-        "no-inline-comments": "off",
-      },
-    },
-    {
       files: [
         "apps/api/src/features/tesco/auth/soft-login-auth-refresh.test.ts",
       ],
@@ -109,16 +81,6 @@ export default defineConfig({
         // Async operation stubs intentionally satisfy the browser/server boundary.
         "promise/avoid-new": "off",
         "require-await": "off",
-      },
-    },
-    {
-      files: ["apps/web/scripts/poc-fake-api.ts"],
-      rules: {
-        // The small Node HTTP fixture dispatches five production-shaped routes.
-        "prefer-named-capture-group": "off",
-        // Node's listen and close APIs require callback-to-Promise adapters.
-        "promise/avoid-new": "off",
-        "promise/prefer-await-to-callbacks": "off",
       },
     },
   ],
