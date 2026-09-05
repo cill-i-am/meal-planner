@@ -65,8 +65,7 @@ const expectedD1ConsumerPaths = [
   "apps/api/src/features/imports/import-runtime-composition.ts",
   "apps/api/src/features/imports/import-worker-request-layer.ts",
   "apps/api/src/features/imports/import.workflow.ts",
-  "apps/api/src/features/provider-accounting/provider-accounting.repository.d1.ts",
-  "apps/api/src/features/provider-accounting/provider-accounting.service.ts",
+  "apps/api/src/features/provider-accounting/provider-accounting.database.ts",
   "apps/api/src/worker.ts",
 ] as const;
 
@@ -75,6 +74,11 @@ const expectedD1ConsumerCalls: readonly D1ConsumerCall[] = [
     arguments: ["yield* options.authDatabase"],
     binding: "drizzle",
     path: "apps/api/src/features/households/people/member-departure.workflow.ts",
+  },
+  {
+    arguments: ["binding"],
+    binding: "drizzle",
+    path: "apps/api/src/features/provider-accounting/provider-accounting.database.ts",
   },
   {
     arguments: ["yield* authQueryDatabase.raw"],

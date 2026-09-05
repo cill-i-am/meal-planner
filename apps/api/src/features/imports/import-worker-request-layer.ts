@@ -12,6 +12,7 @@ import {
 import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
+import { makeProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
 import {
   ProviderAccountingService,
   makeD1ProviderAccountingService,
@@ -143,7 +144,9 @@ export const makeImportWorkerRequestLayer = (
     ProviderAccountingService,
     ProviderAccountingService.of(
       makeD1ProviderAccountingService({
-        database: input.providerAccountingDatabase,
+        database: makeProviderAccountingDatabase(
+          input.providerAccountingDatabase
+        ),
         now: () => timestamp(input.now),
       })
     )

@@ -584,7 +584,7 @@ export const makeD1 = TenantD1.Database;`,
 
     it("rejects an aliased D1 consumer import in an allowed call path", () => {
       const servicePath =
-        "apps/api/src/features/provider-accounting/provider-accounting.service.ts";
+        "apps/api/src/features/provider-accounting/provider-accounting.database.ts";
       const service = readFileSync(
         path.join(repositoryRoot, servicePath),
         "utf-8"

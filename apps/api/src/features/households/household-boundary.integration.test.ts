@@ -28,6 +28,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 import * as authSchema from "../auth/auth.database-schema.js";
+import { makeProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
 import {
   ProviderAccountingDispatchId,
   ProviderAccountingProviderStageId,
@@ -715,7 +716,9 @@ const settleUnknownProviderBudget = async (input: {
     "ProviderAccountingDatabase",
     "provider-recovery"
   );
-  const budget = makeD1ProviderAccountingRepository(database);
+  const budget = makeD1ProviderAccountingRepository(
+    makeProviderAccountingDatabase(database)
+  );
   const reservation = {
     dispatchId: Schema.decodeUnknownSync(ProviderAccountingDispatchId)(
       input.dispatchId
@@ -5903,7 +5906,9 @@ describe("household public API to private Durable Object boundary", () => {
       "ProviderAccountingDatabase",
       "provider-recovery"
     );
-    const budget = makeD1ProviderAccountingRepository(database);
+    const budget = makeD1ProviderAccountingRepository(
+      makeProviderAccountingDatabase(database)
+    );
     const reservation = {
       dispatchId: Schema.decodeUnknownSync(ProviderAccountingDispatchId)(
         dispatchId
