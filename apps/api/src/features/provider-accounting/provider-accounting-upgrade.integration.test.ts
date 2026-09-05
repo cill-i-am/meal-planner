@@ -5,10 +5,8 @@ import { fileURLToPath } from "node:url";
 
 import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { NodeServices } from "@effect/platform-node";
-import {
-  applyMigrations,
-  type SqlExecutor,
-} from "alchemy/SQL/Migrations/index";
+import { applyMigrations } from "alchemy/SQL/Migrations/index";
+import type { SqlExecutor } from "alchemy/SQL/Migrations/index";
 import { listSqlFiles } from "alchemy/SQL/SqlFile";
 import { Effect, Schema } from "effect";
 import { Miniflare } from "miniflare";
