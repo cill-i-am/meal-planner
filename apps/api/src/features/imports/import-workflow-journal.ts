@@ -20,17 +20,4 @@ export const postAcquisitionRestartOptions = (
     readonly name: "record-acquisition-v2" | "resolve-acquire-store-verify-v2";
     readonly type: "do";
   };
-} =>
-  checkpoint._tag === "ResolvedWithoutFinalization"
-    ? {
-        from: {
-          name: "resolve-acquire-store-verify-v2",
-          type: "do",
-        },
-      }
-    : {
-        from: {
-          name: "record-acquisition-v2",
-          type: "do",
-        },
-      };
+} => ({ from: { name: checkpoint.lastSuccessfulStep, type: "do" } });

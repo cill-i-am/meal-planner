@@ -15,10 +15,7 @@ import {
 } from "./auth.errors.js";
 import type { TescoSoftLoginRefreshError } from "./auth.errors.js";
 import type { TescoAuthCookieHeader } from "./auth.model.js";
-import {
-  authorizationFromDiscoverConfig,
-  discoverJsonFromHtml,
-} from "./soft-login-discover.js";
+import { authorizationFromDiscoverHtml } from "./soft-login-discover.js";
 
 const SoftLoginMaxRedirects = 10;
 
@@ -98,9 +95,7 @@ export const makeTescoSoftLoginAuthRefreshLive = (
             refreshUrl,
             SoftLoginMaxRedirects
           );
-          const discoverJson = yield* discoverJsonFromHtml(html);
-          const authorization =
-            yield* authorizationFromDiscoverConfig(discoverJson);
+          const authorization = yield* authorizationFromDiscoverHtml(html);
           const refreshedCookies = yield* Ref.get(cookieRef);
           const refreshedCookieHeader = yield* cookieHeaderFromCookies(
             refreshedCookies

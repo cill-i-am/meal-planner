@@ -4,6 +4,7 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 
 import { TikTokMediaContainer } from "./import-media-container.js";
 import {
+  AcquisitionArtifact,
   AcquisitionArtifactId,
   AcquisitionCoordinatorId,
   TikTokIdentity,
@@ -52,7 +53,10 @@ export const ImportMediaAcquisitionObjectRuntime = Effect.fn(
           ""
         )
       );
-      yield* decodeAcquisitionArtifact(artifactId);
+      const [owner] = yield* Schema.decodeUnknownEffect(AcquisitionArtifact)(
+        artifactId
+      ).pipe(Effect.orDie);
+      yield* requireMatchingCoordinator(coordinatorId, owner);
       const containerPort = yield* media.getTcpPort(3000);
       return yield* containerPort.fetch(request);
     }

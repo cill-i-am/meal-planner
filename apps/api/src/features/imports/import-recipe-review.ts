@@ -1,7 +1,6 @@
-import { PlanningTags as PlanningTagsSchema } from "@meal-planner/recipe-import-api";
+import { PlanningTags as PlanningTagsSchema } from "@meal-planner/recipe-domain";
 import type { CorrectedRecipe as CorrectedRecipeType } from "@meal-planner/recipe-import-api";
 import { Option, Schema } from "effect";
-import type { Effect } from "effect";
 
 import { RecipeDraft } from "./import-recipe-draft.repository.js";
 import { RecipeUnresolvedField } from "./import-recipe-extractor.js";
@@ -10,21 +9,6 @@ import {
   ImportId,
   ImportTimestamp,
 } from "./import.contracts.js";
-import type {
-  ImportPersistenceCorrupt,
-  ImportPersistenceUnavailable,
-} from "./import.errors.js";
-
-export { importPersistenceUnavailable as recipeReviewPersistenceUnavailable } from "./import.errors.js";
-export {
-  CorrectedRecipe,
-  PlanningDietaryFit,
-  PlanningDifficulty,
-  PlanningLeftovers,
-  PlanningMealType,
-  PlanningTags,
-  PlanningTotalTimeBand,
-} from "@meal-planner/recipe-import-api";
 
 const TrimmedNonEmptyString = Schema.String.pipe(
   Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
@@ -48,14 +32,6 @@ export const RecipeReviewerActorId = TrimmedNonEmptyString.pipe(
   Schema.brand("RecipeReviewerActorId")
 );
 export type RecipeReviewerActorId = typeof RecipeReviewerActorId.Type;
-
-export const RecipeCorrectionValue = Schema.Union([
-  ShortText,
-  SafeInteger,
-  Schema.NonEmptyArray(ShortText).pipe(Schema.check(Schema.isMaxLength(256))),
-  PlanningTagsSchema,
-]);
-export type RecipeCorrectionValue = typeof RecipeCorrectionValue.Type;
 
 const TextRecipeCorrectionField = Schema.Literals([
   "author",
@@ -152,33 +128,6 @@ export const RecipeReviewTransition = Schema.Union([
 ]);
 export type RecipeReviewTransition = typeof RecipeReviewTransition.Type;
 
-export const RecipeReviewTransitionPolicy = Schema.Union([
-  Schema.Struct({
-    from: Schema.Literal("needs_review"),
-    to: Schema.Literal("approved"),
-  }),
-  Schema.Struct({
-    from: Schema.Literal("needs_review"),
-    to: Schema.Literal("rejected"),
-  }),
-  Schema.Struct({
-    from: Schema.Literal("approved"),
-    to: Schema.Literal("needs_review"),
-  }),
-  Schema.Struct({
-    from: Schema.Literal("rejected"),
-    to: Schema.Literal("needs_review"),
-  }),
-]);
-export type RecipeReviewTransitionPolicy =
-  typeof RecipeReviewTransitionPolicy.Type;
-
-export const recipeReviewTransitionPolicy = (
-  from: RecipeReviewLifecycle,
-  to: RecipeReviewLifecycle
-): Option.Option<RecipeReviewTransitionPolicy> =>
-  Schema.decodeUnknownOption(RecipeReviewTransitionPolicy)({ from, to });
-
 export const RecipeReviewLifecycle = Schema.Literals([
   "needs_review",
   "approved",
@@ -245,14 +194,6 @@ export const Review = Schema.TaggedUnion({
 export type Review = typeof Review.Type;
 export type ApprovedReview = Extract<Review, { readonly _tag: "Approved" }>;
 
-export const GetRecipeReviewResponse = Schema.Struct({
-  review: Review,
-});
-
-export const ApprovedRecipeBankResponse = Schema.Struct({
-  recipes: Schema.Array(ApprovedRecipe),
-});
-
 const requiredFields = [
   "name",
   "ingredient_lines",
@@ -275,20 +216,23 @@ export const recipeReviewNullablePolicy = [
   "yield",
 ] as const satisfies readonly RecipeUnresolvedField[];
 
-const factValue = <A>(fact: {
-  readonly state: "supported" | "unresolved";
-  readonly value?: A;
-}) => (fact.state === "supported" ? (fact.value ?? null) : null);
+const factValue = <A>(
+  fact:
+    | { readonly state: "supported"; readonly value: A }
+    | { readonly state: "unresolved" }
+): A | null => (fact.state === "supported" ? fact.value : null);
 
-const listValue = (fact: RecipeDraft["extraction"]["ingredientLines"]) =>
-  fact.state === "supported"
-    ? (() => {
-        const values = fact.items.flatMap((item) =>
-          item.state === "supported" ? [item.value] : []
-        );
-        return values.length === 0 ? null : (values as [string, ...string[]]);
-      })()
-    : null;
+const listValue = (
+  fact: RecipeDraft["extraction"]["ingredientLines"]
+): readonly [string, ...string[]] | null => {
+  if (fact.state !== "supported") {
+    return null;
+  }
+  const [first, ...rest] = fact.items.flatMap((item) =>
+    item.state === "supported" ? [item.value] : []
+  );
+  return first === undefined ? null : [first, ...rest];
+};
 
 type MutableCorrectedRecipe = {
   -readonly [K in keyof CorrectedRecipeType]: CorrectedRecipeType[K];
@@ -477,29 +421,6 @@ export const approvalBlockers = (
   return { invalidFields, unresolvedRequiredFields };
 };
 
-export type RecipeReviewPersistenceError =
-  | ImportPersistenceCorrupt
-  | ImportPersistenceUnavailable;
-
-export interface RecipeReviewRepository {
-  readonly find: (
-    importId: ImportId
-  ) => Effect.Effect<Option.Option<Review>, RecipeReviewPersistenceError>;
-  readonly listApproved: () => Effect.Effect<
-    readonly Review[],
-    RecipeReviewPersistenceError
-  >;
-}
-
-export type RecipeReviewServiceError = RecipeReviewPersistenceError;
-
-export interface RecipeReviewService {
-  readonly listApproved: () => Effect.Effect<
-    readonly ApprovedRecipe[],
-    RecipeReviewServiceError
-  >;
-}
-
 export const projectApprovedReview = (
   review: ApprovedReview
 ): ApprovedRecipe => ({
@@ -514,13 +435,3 @@ export const projectApprovedReview = (
   tags: review.tags,
   version: review.version,
 });
-
-export const projectApprovedRecipe = (
-  review: RecipeReviewView
-): ApprovedRecipe => {
-  const refined = refineRecipeReview(review);
-  if (Option.isNone(refined) || refined.value._tag !== "Approved") {
-    throw new Error("Approved recipe invariant was not satisfied");
-  }
-  return projectApprovedReview(refined.value);
-};

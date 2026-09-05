@@ -1,5 +1,6 @@
 import { Context, Effect, Layer, Option, Schema } from "effect";
 
+import { bytesToHex, checksumBytes, sha256Bytes } from "./import-digest.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
@@ -103,24 +104,6 @@ const transcriptObjectKey = (
   generation: AcquisitionGeneration
 ) =>
   `imports/${importId}/transcription/v1/generations/${generation}/transcript.json`;
-const bytesToHex = (value: ArrayBuffer) =>
-  Array.from(new Uint8Array(value), (byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
-const digest = (bytes: Uint8Array) =>
-  Effect.promise(() =>
-    crypto.subtle.digest("SHA-256", Uint8Array.from(bytes).buffer)
-  ).pipe(
-    Effect.map(bytesToHex),
-    Effect.flatMap(Schema.decodeUnknownEffect(Sha256Hex))
-  );
-const checksumBytes = (hex: Sha256Hex) => {
-  const bytes = new Uint8Array(32);
-  for (let index = 0; index < 32; index += 1) {
-    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
-  }
-  return bytes.buffer;
-};
 const verifiedChecksum = (
   native: ArrayBuffer | undefined,
   recovery: Sha256Hex | undefined,
@@ -178,18 +161,13 @@ const readVerified = (bucket: AcquisitionBucketLike) =>
         )
       );
     const bytes = new TextEncoder().encode(text);
-    const sha256 = yield* digest(bytes).pipe(
+    const sha256 = yield* sha256Bytes(bytes).pipe(
       Effect.mapError(() => failure("malformed", "transcript_digest_invalid"))
     );
-    const document = yield* Effect.try({
-      catch: () => failure("malformed", "transcript_json_invalid"),
-      try: () => JSON.parse(text) as unknown,
-    }).pipe(
-      Effect.flatMap(
-        Schema.decodeUnknownEffect(TranscriptEvidenceDocument, {
-          onExcessProperty: "error",
-        })
-      ),
+    const document = yield* Schema.decodeUnknownEffect(
+      Schema.fromJsonString(TranscriptEvidenceDocument),
+      { onExcessProperty: "error" }
+    )(text).pipe(
       Effect.mapError(() => failure("malformed", "transcript_schema_invalid"))
     );
     yield* verifiedChecksum(
@@ -237,7 +215,7 @@ const putVerified = (bucket: AcquisitionBucketLike) =>
         failure("oversized", "transcript_size_invalid")
       );
     }
-    const sha256 = yield* digest(bytes).pipe(
+    const sha256 = yield* sha256Bytes(bytes).pipe(
       Effect.mapError(() => failure("malformed", "transcript_digest_invalid"))
     );
     const key = transcriptObjectKey(

@@ -3,9 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "../../components/ui/button.js";
 import type { HouseholdOperations } from "./operations.js";
 
-export const householdDomainQueryKey = (organizationId: string) =>
-  [organizationId, "household-domain"] as const;
-
 export const HouseholdDomainStatus = ({
   organizationId,
   operations,
@@ -15,7 +12,7 @@ export const HouseholdDomainStatus = ({
 }) => {
   const household = useQuery({
     queryFn: operations.current,
-    queryKey: householdDomainQueryKey(organizationId),
+    queryKey: [organizationId, "household-domain"],
     retry: false,
   });
 

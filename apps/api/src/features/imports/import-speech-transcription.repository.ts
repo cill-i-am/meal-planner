@@ -6,7 +6,7 @@ import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import type { ImportTransitionError } from "./import.repository.js";
 
 export interface CompletedTranscriptEvidence {
-  readonly byteLength?: number;
+  readonly byteLength: number;
   readonly completedAt: ImportTimestamp;
   readonly cost: {
     readonly certainty: "estimated" | "known";
@@ -14,7 +14,7 @@ export interface CompletedTranscriptEvidence {
     readonly estimatedMicroUsd: number;
   };
   readonly detectedLanguage: string;
-  readonly deleteAt?: ImportTimestamp;
+  readonly deleteAt: ImportTimestamp;
   readonly dispatchId: string;
   readonly generation: AcquisitionGeneration;
   readonly importId: ImportId;

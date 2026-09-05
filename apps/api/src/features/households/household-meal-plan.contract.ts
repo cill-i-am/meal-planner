@@ -4,7 +4,6 @@ import {
   MealPlanDecisionRequest,
   MealPlanDraftId,
   MealPlanPolicy,
-  MealPlanRecipeSnapshot,
   MealPlanRequest,
 } from "@meal-planner/household-api";
 import { Schema } from "effect";
@@ -15,7 +14,6 @@ export const HouseholdMealPlanWire = Schema.toEncoded(MealPlan);
 export type HouseholdMealPlanWire = typeof HouseholdMealPlanWire.Type;
 
 const MealPlanPolicyWire = Schema.toEncoded(MealPlanPolicy);
-const MealPlanRecipeSnapshotWire = Schema.toEncoded(MealPlanRecipeSnapshot);
 const MealPlanRequestWire = Schema.toEncoded(MealPlanRequest);
 export const HouseholdManualMealSwapCommand = Schema.Struct({
   draftId: ManualMealSwapRequest.fields.draftId,
@@ -44,15 +42,6 @@ const HouseholdMealPlanDecisionCommandWire = Schema.toEncoded(
   HouseholdMealPlanDecisionCommand
 );
 
-export const HouseholdCreateMealPlanInput = Schema.Struct({
-  admission: HouseholdMemberAdmission,
-  approvedRecipes: Schema.Array(MealPlanRecipeSnapshotWire),
-  policy: MealPlanPolicyWire,
-  request: MealPlanRequestWire,
-});
-export type HouseholdCreateMealPlanInput =
-  typeof HouseholdCreateMealPlanInput.Type;
-
 export const HouseholdCreateMealPlanFromRecipeBankInput = Schema.Struct({
   admission: HouseholdMemberAdmission,
   policy: MealPlanPolicyWire,
@@ -66,13 +55,6 @@ export const HouseholdReadMealPlanInput = Schema.Struct({
   draftId: MealPlanDraftId,
 });
 export type HouseholdReadMealPlanInput = typeof HouseholdReadMealPlanInput.Type;
-
-export const HouseholdSwapMealPlanInput = Schema.Struct({
-  admission: HouseholdMemberAdmission,
-  approvedRecipes: Schema.Array(MealPlanRecipeSnapshotWire),
-  request: HouseholdManualMealSwapCommandWire,
-});
-export type HouseholdSwapMealPlanInput = typeof HouseholdSwapMealPlanInput.Type;
 
 export const HouseholdSwapMealPlanFromRecipeBankInput = Schema.Struct({
   admission: HouseholdMemberAdmission,

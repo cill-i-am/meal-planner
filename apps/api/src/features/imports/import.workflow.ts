@@ -45,10 +45,6 @@ import {
   decodeAcquisitionCheckpoint,
   recoverHouseholdVerifiedAcquisitionCheckpoint,
 } from "./import-acquisition-checkpoint.js";
-import {
-  runImportCarouselVisualAndRecipeWorkflow,
-  runImportVisualAndRecipeWorkflow,
-} from "./import-application-workflows.js";
 import { loadStagedOperatorCarousel } from "./import-carousel-staging.js";
 import {
   prepareTikTokCarouselEvidence,
@@ -59,6 +55,7 @@ import {
   makeR2VisualFrameSampler,
   persistDerivedProviderEvidence,
 } from "./import-derived-media.js";
+import { sha256Bytes } from "./import-digest.js";
 import { inspectHouseholdEvidenceReferences } from "./import-evidence-availability.js";
 import {
   makeHouseholdCarouselEvidenceRepository,
@@ -96,7 +93,6 @@ import {
   emitImportObservabilityEvent,
   observeImportWorkflowStart,
 } from "./import-observability.js";
-import { continueVisualFromSettledSpeech } from "./import-post-speech-visual.js";
 import {
   makeProviderDispatchGate,
   makeWorkersAiTransport,
@@ -136,11 +132,11 @@ import {
   PostAcquisitionJournalCheckpoint,
   postAcquisitionRestartOptions,
 } from "./import-workflow-journal.js";
+import type { SourceCanonicalId } from "./import.contracts.js";
 import {
   ImportId,
   ImportTimestamp,
   SourceDescriptor,
-  SourceCanonicalId,
 } from "./import.contracts.js";
 import {
   workflowStartRefused,
@@ -478,13 +474,6 @@ export const runAcquisitionTask = <
   });
 
 export { ImportWorkflowInput } from "./import-workflow-input.js";
-const AcquisitionClaimCheckpoint = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal("Finished") }),
-  Schema.Struct({
-    _tag: Schema.Literal("Acquiring"),
-    canonicalId: SourceCanonicalId,
-  }),
-]);
 const CarouselEvidenceTaskCheckpoint = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("Failed"),
@@ -494,7 +483,9 @@ const CarouselEvidenceTaskCheckpoint = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("Succeeded"),
     evidence: Schema.Struct({
+      byteLength: Schema.Number,
       completedAt: ImportTimestamp,
+      deleteAt: ImportTimestamp,
       descriptorFingerprint: Schema.String,
       dispatchId: Schema.String,
       generation: AcquisitionGeneration,
@@ -512,21 +503,12 @@ const currentProviderAccountingTimestamp = () =>
     new Date().toISOString()
   );
 
-const digestText = (value: string) =>
-  Effect.promise(() =>
-    crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
-  ).pipe(
-    Effect.map((digest) =>
-      Array.from(new Uint8Array(digest), (byte) =>
-        byte.toString(16).padStart(2, "0")
-      ).join("")
-    )
-  );
-
 const workflowMutationId = (semanticKey: string) =>
-  digestText(`household-recipe-import-workflow:v1:${semanticKey}`).pipe(
-    Effect.map(Schema.decodeUnknownSync(HouseholdImportMutationId))
-  );
+  sha256Bytes(
+    new TextEncoder().encode(
+      `household-recipe-import-workflow:v1:${semanticKey}`
+    )
+  ).pipe(Effect.map(Schema.decodeUnknownSync(HouseholdImportMutationId)));
 
 export const runHouseholdAcquisitionTask = (input: {
   readonly admission: {
@@ -934,29 +916,62 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 readonly visualDispatchId: string;
               }
             ) =>
-              runImportVisualAndRecipeWorkflow({
-                lifecycle: {
-                  beforeRecipe: intentTransitions
-                    .advanceStage("extracting_recipe")
-                    .pipe(Effect.orDie),
-                  beforeVisual: intentTransitions
-                    .advanceComponent("visuals", "processing")
-                    .pipe(Effect.orDie),
-                  failurePersisted: (failure, terminal) =>
-                    intentTransitions
-                      .fail(
-                        failure.stage,
-                        publicIntentFailureForProviderStage(failure.stage),
-                        terminal.ownershipId
-                      )
-                      .pipe(Effect.orDie),
-                  visualCompleted: intentTransitions
-                    .advanceComponent("visuals", "completed")
-                    .pipe(Effect.orDie),
-                },
-                persistTerminal: (failure) =>
-                  persistTerminal(failure, acquisitionGeneration),
-                recipe: task(
+              Effect.gen(function* completeVisualAndRecipeStages() {
+                yield* intentTransitions
+                  .advanceComponent("visuals", "processing")
+                  .pipe(Effect.orDie);
+                // Resolve recovered speech ownership outside the visual task so replay refreshes it.
+                const dispatchIds =
+                  preparedDispatchIds ??
+                  (yield* Effect.all({
+                    speechDispatchId: terminalRecovery.speechDispatchId({
+                      acquisitionGeneration,
+                      importId,
+                    }),
+                    visualDispatchId: terminalRecovery.visualDispatchId({
+                      acquisitionGeneration,
+                      importId,
+                    }),
+                  }).pipe(Effect.orDie));
+                const visual = yield* task(
+                  "extract-visual-evidence-v1",
+                  "visual",
+                  extractVisualEvidenceForTranscribedImport({
+                    bucket,
+                    extractor: visualExtractor,
+                    frameSampler: makeR2VisualFrameSampler(bucket),
+                    importId,
+                    importRepository: evidenceRepositories(
+                      acquisitionGeneration
+                    ).current,
+                    now,
+                    ...dispatchIds,
+                    visualRepository: evidenceRepositories(
+                      acquisitionGeneration
+                    ).visual,
+                  })
+                );
+                if (visual._tag === "Failed") {
+                  const terminal = yield* persistTerminal(
+                    visual,
+                    acquisitionGeneration
+                  );
+                  yield* intentTransitions
+                    .fail(
+                      visual.stage,
+                      publicIntentFailureForProviderStage(visual.stage),
+                      terminal.ownershipId
+                    )
+                    .pipe(Effect.orDie);
+                  return visual;
+                }
+                yield* intentTransitions
+                  .advanceComponent("visuals", "completed")
+                  .pipe(Effect.orDie);
+                yield* intentTransitions
+                  .advanceStage("extracting_recipe")
+                  .pipe(Effect.orDie);
+                const recipe = yield* task(
                   "extract-recipe-v1",
                   "recipe",
                   produceRecipeDraftForImport({
@@ -972,43 +987,22 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                       acquisitionGeneration
                     ).recipe,
                   })
-                ),
-                visual: (() => {
-                  const continueVisual = ({
-                    speechDispatchId,
-                    visualDispatchId,
-                  }: {
-                    readonly speechDispatchId: string;
-                    readonly visualDispatchId: string;
-                  }) =>
-                    task(
-                      "extract-visual-evidence-v1",
-                      "visual",
-                      extractVisualEvidenceForTranscribedImport({
-                        bucket,
-                        extractor: visualExtractor,
-                        frameSampler: makeR2VisualFrameSampler(bucket),
-                        importId,
-                        importRepository: evidenceRepositories(
-                          acquisitionGeneration
-                        ).current,
-                        now,
-                        speechDispatchId,
-                        visualDispatchId,
-                        visualRepository: evidenceRepositories(
-                          acquisitionGeneration
-                        ).visual,
-                      })
-                    );
-                  return preparedDispatchIds === undefined
-                    ? continueVisualFromSettledSpeech({
-                        acquisitionGeneration,
-                        continueVisual,
-                        importId,
-                        terminalRecovery,
-                      })
-                    : continueVisual(preparedDispatchIds);
-                })(),
+                );
+                if (recipe._tag === "Failed") {
+                  const terminal = yield* persistTerminal(
+                    recipe,
+                    acquisitionGeneration
+                  );
+                  yield* intentTransitions
+                    .fail(
+                      recipe.stage,
+                      publicIntentFailureForProviderStage(recipe.stage),
+                      terminal.ownershipId
+                    )
+                    .pipe(Effect.orDie);
+                  return recipe;
+                }
+                return null;
               });
             const stagedCarousel = yield* loadStagedOperatorCarousel({
               bucket,
@@ -1018,46 +1012,18 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               const carouselGeneration = Schema.decodeUnknownSync(
                 AcquisitionGeneration
               )(executionGeneration);
-              const carouselResult =
-                yield* runImportCarouselVisualAndRecipeWorkflow({
-                  lifecycle: {
-                    beforeRecipe: intentTransitions
-                      .advanceStage("extracting_recipe")
-                      .pipe(Effect.orDie),
-                    beforeVisual: Effect.gen(function* beginCarouselAnalysis() {
-                      yield* intentTransitions.advanceStage(
-                        "analyzing_evidence"
-                      );
-                      yield* intentTransitions.advanceComponent(
-                        "speech",
-                        "skipped"
-                      );
-                      yield* intentTransitions.advanceComponent(
-                        "visuals",
-                        "processing"
-                      );
-                    }).pipe(Effect.orDie),
-                    visualCompleted: intentTransitions
-                      .advanceComponent("visuals", "completed")
-                      .pipe(Effect.orDie),
-                  },
-                  recipe: (carouselEvidence) =>
-                    task(
-                      "extract-carousel-recipe-v1",
-                      "recipe",
-                      produceTikTokCarouselRecipeDraft({
-                        bucket,
-                        descriptor: stagedCarousel.descriptor,
-                        evidence: carouselEvidence.evidence,
-                        extractor: recipeExtractor,
-                        importId,
-                        lifecycle: recipeLifecycle,
-                        now,
-                        recipeRepository:
-                          evidenceRepositories(carouselGeneration).recipe,
-                      })
-                    ),
-                  visual: runProviderTask(
+              const carouselResult = yield* Effect.gen(
+                function* completeCarouselStages() {
+                  yield* intentTransitions
+                    .advanceStage("analyzing_evidence")
+                    .pipe(Effect.orDie);
+                  yield* intentTransitions
+                    .advanceComponent("speech", "skipped")
+                    .pipe(Effect.orDie);
+                  yield* intentTransitions
+                    .advanceComponent("visuals", "processing")
+                    .pipe(Effect.orDie);
+                  const visual = yield* runProviderTask(
                     "extract-carousel-visual-evidence-v1",
                     "visual",
                     prepareTikTokCarouselEvidence({
@@ -1084,8 +1050,33 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                       )(value)
                     ),
                     Effect.orDie
-                  ),
-                });
+                  );
+                  if (visual._tag === "Failed") {
+                    return visual;
+                  }
+                  yield* intentTransitions
+                    .advanceComponent("visuals", "completed")
+                    .pipe(Effect.orDie);
+                  yield* intentTransitions
+                    .advanceStage("extracting_recipe")
+                    .pipe(Effect.orDie);
+                  return yield* task(
+                    "extract-carousel-recipe-v1",
+                    "recipe",
+                    produceTikTokCarouselRecipeDraft({
+                      bucket,
+                      descriptor: stagedCarousel.descriptor,
+                      evidence: visual.evidence,
+                      extractor: recipeExtractor,
+                      importId,
+                      lifecycle: recipeLifecycle,
+                      now,
+                      recipeRepository:
+                        evidenceRepositories(carouselGeneration).recipe,
+                    })
+                  );
+                }
+              );
               if (carouselResult._tag === "Failed") {
                 yield* intentTransitions
                   .fail(
@@ -1097,19 +1088,6 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               }
               return carouselResult;
             }
-            const rawClaim = yield* Cloudflare.Workflows.task(
-              "claim-acquisition-v1",
-              Effect.succeed({
-                _tag: "Acquiring" as const,
-                canonicalId: identityResolution.identity.canonicalId,
-              })
-            );
-            const claim = yield* Schema.decodeUnknownEffect(
-              AcquisitionClaimCheckpoint
-            )(rawClaim).pipe(Effect.orDie);
-            if (claim._tag === "Finished") {
-              return { _tag: "NoAcquisitionRequired" as const };
-            }
             const encodedOutcome = yield* Cloudflare.Workflows.task(
               "resolve-acquire-store-verify-v2",
               recoverHouseholdVerifiedAcquisitionCheckpoint({
@@ -1118,7 +1096,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     executionGeneration
                   )
                 ).current.readCurrent(importId),
-                expectedCanonicalId: claim.canonicalId,
+                expectedCanonicalId: identityResolution.identity.canonicalId,
                 importId,
                 readEvidence: (stored) =>
                   Effect.gen(function* readHouseholdAcquisitionEvidence() {
@@ -1205,42 +1183,46 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     recovered === null
                       ? runHouseholdAcquisitionTask({
                           admission,
-                          attempt: (allocation) =>
-                            allocation.canonicalSourceId === claim.canonicalId
-                              ? acquireStoreVerify(
-                                  bucket,
-                                  makeAcquisitionMediaObject(
-                                    mediaObjects.getByName(
-                                      acquisitionCoordinatorId(
-                                        importId,
-                                        allocation.generation
-                                      )
-                                    )
-                                  ),
-                                  {
-                                    beforeCleanup: (
-                                      prepared,
-                                      acquisitionMediaObject
-                                    ) =>
-                                      persistDerivedProviderEvidence(
-                                        bucket,
-                                        acquisitionMediaObject,
-                                        prepared,
-                                        {
-                                          generation: allocation.generation,
-                                          importId,
-                                        }
-                                      ),
-                                    canonicalId: allocation.canonicalSourceId,
-                                    generation: allocation.generation,
+                          attempt: (allocation) => {
+                            if (
+                              allocation.canonicalSourceId !==
+                              identityResolution.identity.canonicalId
+                            ) {
+                              return Effect.die(
+                                "Persisted canonical identity changed"
+                              );
+                            }
+                            const acquisitionMediaObject =
+                              makeAcquisitionMediaObject(
+                                mediaObjects.getByName(
+                                  acquisitionCoordinatorId(
                                     importId,
-                                  }
+                                    allocation.generation
+                                  )
                                 )
-                              : Effect.die(
-                                  "Persisted canonical identity changed"
-                                ),
+                              );
+                            return acquireStoreVerify(
+                              bucket,
+                              acquisitionMediaObject,
+                              {
+                                beforeCleanup: (prepared) =>
+                                  persistDerivedProviderEvidence(
+                                    bucket,
+                                    acquisitionMediaObject,
+                                    prepared,
+                                    {
+                                      generation: allocation.generation,
+                                      importId,
+                                    }
+                                  ),
+                                canonicalId: allocation.canonicalSourceId,
+                                generation: allocation.generation,
+                                importId,
+                              }
+                            );
+                          },
                           bucket,
-                          canonicalId: claim.canonicalId,
+                          canonicalId: identityResolution.identity.canonicalId,
                           correlationId,
                           executionGeneration,
                           householdDomain,
@@ -1276,7 +1258,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     const mutationId = yield* workflowMutationId(
                       `${intentId}:${executionGeneration}:commit-acquisition-evidence:${outcome.evidence.manifestSha256}`
                     );
-                    let result: (typeof HouseholdCommitAcquisitionEvidenceInput.Type)["result"] =
+                    const result: (typeof HouseholdCommitAcquisitionEvidenceInput.Type)["result"] =
                       {
                         acquiredAt: outcome.evidence.acquiredAt,
                         audioStreams: outcome.evidence.audioStreams,
@@ -1297,11 +1279,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                             sha256: outcome.evidence.manifestSha256,
                           },
                         ],
+                        source: outcome.evidence.source,
                         videoStreams: outcome.evidence.videoStreams,
                       };
-                    if (outcome.evidence.source !== undefined) {
-                      result = { ...result, source: outcome.evidence.source };
-                    }
                     const command = yield* Schema.encodeEffect(
                       HouseholdCommitAcquisitionEvidenceInput
                     )({
@@ -1455,11 +1435,6 @@ export interface ImportWorkflowStarter {
     EnsureStartedResult,
     WorkflowStartRefused | WorkflowStartUnavailable
   >;
-  readonly ensureStarted: (
-    importId: ImportId,
-    executionGeneration: ImportIntentExecutionGeneration,
-    trace: ImportTraceContext
-  ) => Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable>;
   readonly restartFromSpeech?: (
     workflowIdentity: ImportWorkflowIdentity
   ) => Effect.Effect<ProviderRestartResult, WorkflowStartUnavailable>;
@@ -1475,11 +1450,6 @@ export interface ImportWorkflowStarter {
 export interface ImportWorkflowReconciler extends ImportWorkflowStarter {
   readonly reconcileAdmission: (
     workflowIdentity: ImportWorkflowIdentity
-  ) => Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable>;
-  readonly ensureStarted: (
-    importId: ImportId,
-    executionGeneration: ImportIntentExecutionGeneration,
-    trace: ImportTraceContext
   ) => Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable>;
 }
 
@@ -1719,7 +1689,6 @@ export const makeImportWorkflowStarter = (
         ...input,
         instanceId: cloudflareWorkflowInstanceId(input.workflowIdentity),
       }),
-    ensureStarted: () => Effect.fail(workflowStartUnavailable()),
     reconcileAdmission: (workflowIdentity) =>
       workflow.get(cloudflareWorkflowInstanceId(workflowIdentity)).pipe(
         Effect.flatMap(reconcileExisting),
@@ -1747,13 +1716,6 @@ export const makeImportWorkflowStarter = (
     restartPostAcquisition,
   };
 };
-
-export const ensureImportWorkflowStarted = (
-  starter: ImportWorkflowStarter,
-  importId: ImportId,
-  executionGeneration: ImportIntentExecutionGeneration,
-  trace: ImportTraceContext
-) => starter.ensureStarted(importId, executionGeneration, trace);
 
 export const ImportWorkflowStarter = Context.Service<ImportWorkflowStarter>(
   "meal-planner/ImportWorkflowStarter"

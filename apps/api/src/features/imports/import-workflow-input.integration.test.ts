@@ -2,12 +2,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
-import * as Bundle from "alchemy/Bundle";
-import { Effect, Schema } from "effect";
+import { Schema } from "effect";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 import { ImportCorrelationId } from "./import-observability.js";
 
 const compatibilityDate = "2026-07-14";
@@ -18,57 +17,20 @@ const fixturePath = fileURLToPath(
 const temporaryDirectories: string[] = [];
 let runtime: Miniflare;
 
-const buildFixture = async (outputDirectory: string) => {
-  const output = await Effect.runPromise(
-    Bundle.build(
-      {
-        checks: {
-          ineffectiveDynamicImport: false,
-          unresolvedImport: false,
-        },
-        external: ["cloudflare:workers"],
-        input: fixturePath,
-        plugins: [
-          cloudflareRolldown({
-            compatibilityDate,
-            compatibilityFlags,
-          }),
-        ],
-      },
-      {
-        codeSplitting: false,
-        dir: outputDirectory,
-        format: "esm",
-        minify: true,
-        sourcemap: false,
-      }
-    )
-  );
-  const {
-    files: [{ content }],
-  } = output;
-  return Schema.is(Schema.String)(content)
-    ? content
-    : new TextDecoder().decode(content);
-};
-
 beforeAll(async () => {
   const temporaryDirectory = await mkdtemp(
     `${tmpdir()}/meal-planner-gaia-191-native-`
   );
   temporaryDirectories.push(temporaryDirectory);
-  const fixtureScript = await buildFixture(temporaryDirectory);
+  const fixtureModules = await bundleWorkerFixture(
+    fixturePath,
+    temporaryDirectory
+  );
   runtime = new Miniflare({
     compatibilityDate,
     compatibilityFlags,
     kvNamespaces: ["CURRENT_WORKFLOW_STATE"],
-    modules: [
-      {
-        contents: fixtureScript,
-        path: "current-input-workflow-fixture.js",
-        type: "ESModule",
-      },
-    ],
+    modules: [...fixtureModules],
     workflows: {
       CurrentInputWorkflow: {
         className: "CurrentInputWorkflow",

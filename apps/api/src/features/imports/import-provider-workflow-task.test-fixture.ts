@@ -443,7 +443,7 @@ const installedRecipeConservativeDispatch = (
             now: decodeImportTimestamp("2026-08-16T00:00:00.000Z"),
             recipeRepository,
             source,
-            transcript: { route: "video_v1" },
+            transcript: { status: "available" },
           });
           return draft.extraction;
         })

@@ -1,4 +1,4 @@
-import { Context, Schema } from "effect";
+import { Schema } from "effect";
 import type { Effect } from "effect";
 
 import type { AcquisitionGeneration } from "./import-media.model.js";
@@ -246,6 +246,3 @@ export interface RecipeExtractor {
 }
 
 /** Replaceable provider-neutral recipe extraction capability. */
-export const RecipeExtractor = Context.Service<RecipeExtractor>(
-  "meal-planner/RecipeExtractor"
-);

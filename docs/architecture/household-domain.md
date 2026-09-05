@@ -177,8 +177,11 @@ Meal-plan creation and swaps query the local Recipe Bank capability directly.
 Iteration is cursor-, item-, and byte-bounded, and publication rejects an
 encoded recipe above the planning page's safe per-item budget. Planning can
 therefore consume more than 128 approved recipes without an unbounded snapshot
-or one oversized row blocking iteration. The removed shared-D1 recipe-source
-gateway and transfer-size workaround have no compatibility path.
+or one oversized row blocking iteration. The bounded frontier selects assignments
+once; those assignments are hydrated with their real review versions and
+fingerprints before proposal persistence. Create and swap commands accept recipe
+identifiers, not caller-supplied approved recipe snapshots. Shared planning schemas
+live in `@meal-planner/recipe-domain`.
 
 ## Recipe-import batch authority
 
@@ -250,10 +253,9 @@ notification as product truth.
 
 ## Current scope
 
-The ordered replacement of the remaining household-owned capabilities is
-defined in
-[household-capability-migration-plan.md](household-capability-migration-plan.md).
-That plan supersedes this section whenever a listed capability is delivered.
+The household storage cutover is complete. Its durable constraints and delivery
+history are summarized in the
+[household capability migration record](household-capability-migration-plan.md).
 
 The existing frontend tracer displays household storage state for the selected
 organization using an organization-keyed TanStack Query. Its generated
@@ -267,7 +269,10 @@ only large private bytes. `ProviderAccountingDatabase` retains the five global
 provider cost-accounting tables. It has no organization column, household
 table, import route, execution projection, or household product writer.
 `MealPlannerAuthDatabase` remains the separate Better Auth control plane.
-Shopping lists and preferences have not moved. There is no shared registry,
+Provider dispatches store `settled_conservative` explicitly; immutable audit and
+recipe replay evidence fence that transition, and its transaction updates the
+budget exactly once. Recovery does not depend on this global accounting store.
+Shopping lists and preferences are not yet implemented. There is no shared registry,
 organization-to-object lookup table, shared product read model, dual write,
 legacy adapter, fallback, or compatibility path.
 

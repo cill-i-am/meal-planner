@@ -117,19 +117,19 @@ requires a product decision rather than a silent schema extension.
 
 ### Commands
 
-- `AddProvisionalProfileFact(mutationId, personId, expectedProfileVersion,
-fact)` records information about another person without claiming self
+- `AddProvisionalProfileFact(mutationId, personId, expectedProfileVersion, fact)`
+  records information about another person without claiming self
   confirmation.
-- `ConfirmProfileFact(mutationId, personId, factId,
-expectedProfileVersion)` confirms an existing fact under the allowed
+- `ConfirmProfileFact(mutationId, personId, factId, expectedProfileVersion)`
+  confirms an existing fact under the allowed
   self/dependant policy.
 - `AddConfirmedProfileFact(...)` permits an adult to add their own confirmed
   fact or an adult-confirmed dependant fact.
-- `ReplaceOrdinaryProfileFact(mutationId, personId, factId,
-expectedProfileVersion, replacement)` versions an ordinary preference.
+- `ReplaceOrdinaryProfileFact(mutationId, personId, factId, expectedProfileVersion, replacement)`
+  versions an ordinary preference.
 - `RemoveOrdinaryProfileFact(...)` versions removal of a non-safety fact.
-- `ConfirmHardConstraintReduction(mutationId, personId, factId,
-expectedProfileVersion, replacementOrRemoval, confirmation)` is the only path
+- `ConfirmHardConstraintReduction(mutationId, personId, factId, expectedProfileVersion, replacementOrRemoval, confirmation)`
+  is the only path
   that can remove or weaken a hard constraint or replace
   `NoKnownHardConstraints` in a safety-significant way.
 
@@ -312,3 +312,8 @@ review is required.
 
 - 2026-08-27 — Created as `Proposed`; depends on stable person and account-link
   semantics from Work Items 01 and 02.
+
+- 2026-09-05 — PR #202 merged at `b509ba53ce1ac1326e86a9e826bdf58cbb0e7856`.
+  PR #203 reconciles that implementation without changing its profile feature
+  or migrations; combined verification and recovery proof are recorded in
+  [the cleanup delivery record](../../anti-slop-cleanup.md).

@@ -1,6 +1,7 @@
 import { Clock, Context, DateTime, Effect, Option, Schema } from "effect";
 import type { Stream } from "effect";
 
+import { bytesToHex, checksumBytes, sha256Bytes } from "./import-digest.js";
 import { putPrivateArtifact } from "./import-media-r2-upload.js";
 import { RetryableAcquisitionError } from "./import-media.errors.js";
 import type {
@@ -9,6 +10,7 @@ import type {
   AcquisitionTaskOutcome,
   MediaLimits,
   MediaObjectKey,
+  ProviderEvidenceTransport,
   RetryableAcquisitionFailure,
   TerminalMediaFailure,
   TikTokIdentity,
@@ -20,8 +22,6 @@ import {
   AcquisitionGeneration as AcquisitionGenerationSchema,
   EvidenceRetentionSeconds,
   MaximumLocalCleanupMilliseconds,
-  MaximumMediaBytes,
-  MaximumMediaDurationSeconds,
   MaximumR2OperationMilliseconds,
   ManifestByteCount as ManifestByteCountSchema,
   ManifestObjectKey as ManifestObjectKeySchema,
@@ -155,32 +155,23 @@ export interface AcquisitionMediaObjectLike {
   readonly prepare: (
     input: TikTokIdentity
   ) => Effect.Effect<PreparedMediaArtifact, ContainerAcquisitionError>;
-  readonly prepareProviderEvidence?: (
+  readonly prepareProviderEvidence: (
     artifactId: string,
     durationSeconds: number
   ) => Effect.Effect<
-    {
-      readonly audio: {
-        readonly artifactId: string;
-        readonly bytes: number;
-        readonly durationMilliseconds: number;
-        readonly sha256: string;
-      };
-      readonly frames: readonly {
-        readonly artifactId: string;
-        readonly bytes: number;
-        readonly height: number;
-        readonly sha256: string;
-        readonly timestampMilliseconds: number;
-        readonly width: number;
-      }[];
-    },
+    typeof ProviderEvidenceTransport.Encoded,
     RetryableAcquisitionFailure
   >;
   readonly readArtifact: (
     artifactId: string
   ) => Stream.Stream<Uint8Array, RetryableAcquisitionFailure>;
 }
+
+/** Container capability needed when only acquiring the source artifact. */
+export type AcquisitionMediaSource = Pick<
+  AcquisitionMediaObjectLike,
+  "cleanup" | "prepare" | "readArtifact"
+>;
 
 const NullableString = Schema.NullOr(Schema.String);
 const AcquisitionManifest = Schema.Struct({
@@ -284,32 +275,10 @@ const hasConsistentProvenance = (manifest: typeof AcquisitionManifest.Type) =>
   (manifest.publishedAt === null) ===
     (manifest.provenance.publishedAt === null);
 
-const bytesToHex = (value: ArrayBuffer) =>
-  Array.from(new Uint8Array(value), (byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
-
 const nativeSha256Hex = (object: R2ObjectLike) => {
   const checksum = object.checksums?.sha256;
   return checksum === undefined ? null : bytesToHex(checksum);
 };
-
-const sha256Bytes = (hex: string) => {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let index = 0; index < bytes.length; index += 1) {
-    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
-  }
-  return bytes.buffer;
-};
-
-const sha256Hex = (bytes: Uint8Array) =>
-  Effect.promise(() =>
-    crypto.subtle.digest("SHA-256", Uint8Array.from(bytes).buffer)
-  ).pipe(
-    Effect.map(bytesToHex),
-    Effect.flatMap(Schema.decodeUnknownEffect(Sha256HexSchema)),
-    Effect.orDie
-  );
 
 const objectMetadata = (
   importId: ImportId,
@@ -402,7 +371,7 @@ const boundedCleanup = (
 const putMediaObject = Effect.fn("ImportMedia.putMediaObject")(
   (
     bucket: AcquisitionBucketLike,
-    mediaObject: AcquisitionMediaObjectLike,
+    mediaObject: AcquisitionMediaSource,
     prepared: VerifiedPreparedMediaArtifact,
     input: {
       readonly generation: AcquisitionGeneration;
@@ -425,7 +394,7 @@ const putMediaObject = Effect.fn("ImportMedia.putMediaObject")(
           contentType: "video/mp4",
         },
         onlyIf: { etagDoesNotMatch: "*" },
-        sha256: sha256Bytes(prepared.sha256),
+        sha256: checksumBytes(prepared.sha256),
       },
       stream: mediaObject.readArtifact(prepared.artifactId),
     })
@@ -492,17 +461,10 @@ const manifestIsCurrentAndBounded = (
   value: AcquisitionManifestValue,
   observedAt: Date
 ) =>
-  Number.isSafeInteger(value.bytes) &&
-  value.bytes > 0 &&
-  value.bytes <= MaximumMediaBytes &&
-  Number.isFinite(value.durationSeconds) &&
-  value.durationSeconds > 0 &&
-  value.durationSeconds <= MaximumMediaDurationSeconds &&
   DateTime.toEpochMillis(value.deleteAt) -
     DateTime.toEpochMillis(value.acquiredAt) ===
     EvidenceRetentionSeconds * 1000 &&
-  DateTime.toEpochMillis(value.deleteAt) > observedAt.getTime() &&
-  /^[a-f\d]{64}$/u.test(value.sha256);
+  DateTime.toEpochMillis(value.deleteAt) > observedAt.getTime();
 
 const decodeCommittedEvidence = Effect.fn(
   "ImportMedia.decodeCommittedEvidence"
@@ -519,7 +481,7 @@ const decodeCommittedEvidence = Effect.fn(
   }
   const manifestText = yield* r2Effect("verify", manifest.text());
   const manifestBytes = new TextEncoder().encode(manifestText);
-  const manifestSha256 = yield* sha256Hex(manifestBytes);
+  const manifestSha256 = yield* sha256Bytes(manifestBytes);
   const parsed = yield* Effect.try({
     catch: () => null,
     try: () => JSON.parse(manifestText),
@@ -620,11 +582,10 @@ export const readVerifiedAcquisitionEvidence = Effect.fn(
 export const acquireStoreVerify = Effect.fn("ImportMedia.acquireStoreVerify")(
   function* acquireStoreVerifyEffect(
     bucket: AcquisitionBucketLike,
-    mediaObject: AcquisitionMediaObjectLike,
+    mediaObject: AcquisitionMediaSource,
     input: {
       readonly beforeCleanup?: (
-        prepared: VerifiedPreparedMediaArtifact,
-        mediaObject: AcquisitionMediaObjectLike
+        prepared: VerifiedPreparedMediaArtifact
       ) => Effect.Effect<void, RetryableAcquisitionFailure>;
       readonly canonicalId: SourceCanonicalId;
       readonly generation: AcquisitionGeneration;
@@ -684,7 +645,7 @@ export const acquireStoreVerify = Effect.fn("ImportMedia.acquireStoreVerify")(
         return yield* Effect.fail(retryableAt("store"));
       }
       if (input.beforeCleanup !== undefined) {
-        yield* input.beforeCleanup(prepared, mediaObject);
+        yield* input.beforeCleanup(prepared);
       }
       const decodedManifest = yield* Schema.decodeUnknownEffect(
         AcquisitionManifest
@@ -717,7 +678,7 @@ export const acquireStoreVerify = Effect.fn("ImportMedia.acquireStoreVerify")(
         decodedManifest
       ).pipe(Effect.mapError(() => retryableAt("store")));
       const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
-      const manifestSha256 = yield* sha256Hex(manifestBytes);
+      const manifestSha256 = yield* sha256Bytes(manifestBytes);
       const storedManifest = yield* r2Effect(
         "store",
         bucket.put(manifestKey, manifestBytes, {
@@ -733,7 +694,7 @@ export const acquireStoreVerify = Effect.fn("ImportMedia.acquireStoreVerify")(
             contentType: "application/json",
           },
           onlyIf: { etagDoesNotMatch: "*" },
-          sha256: sha256Bytes(manifestSha256),
+          sha256: checksumBytes(manifestSha256),
         })
       );
       if (storedManifest === null) {

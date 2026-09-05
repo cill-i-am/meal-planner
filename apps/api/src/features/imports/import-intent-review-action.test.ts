@@ -1,3 +1,4 @@
+import { PlanningTags } from "@meal-planner/recipe-domain";
 import {
   RecipeImportAction,
   RecipeImportActionId,
@@ -10,7 +11,6 @@ import { describe, expect, it } from "vitest";
 import { projectActiveRecipeImportAction } from "./import-intent-review-action.js";
 import { RecipeDraft } from "./import-recipe-draft.repository.js";
 import {
-  PlanningTags,
   RecipeCorrection,
   RecipeReviewView,
   refineRecipeReview,
@@ -100,6 +100,7 @@ const draft = Schema.decodeUnknownSync(RecipeDraft)({
   importId: "018f47ad-91aa-7c35-b6fe-000000000401",
   lifecycle: "needs_review",
   schemaVersion: 1,
+  transcript: { status: "available" },
 });
 
 const tags = Schema.decodeUnknownSync(PlanningTags)({

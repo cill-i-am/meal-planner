@@ -23,6 +23,12 @@ Investigated on 2026-09-05 from freshly fetched `origin/main`
 The repository has no Agents SDK dependency. The disposable probe selected the
 public npm release `agents@0.22.0`; this document does not add a product pin.
 
+Before the final documentation handoff, PR #203's cleanup was merged into this
+branch from refreshed main `2fb37db0baa0c50f31afe658da9303c7a13bcd4c`.
+The probe results retain their original `b509ba5` provenance. The existing
+authority paths linked below were rechecked after that merge; no SDK runtime
+result is attributed to the cleanup commit.
+
 | Component          | Exact version / setting       | Evidence scope                                                                    |
 | ------------------ | ----------------------------- | --------------------------------------------------------------------------------- |
 | Agents SDK         | `0.22.0`                      | Installed release, real `Agent`, `subAgent`, and sub-agent HTTP/WebSocket routing |

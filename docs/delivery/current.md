@@ -89,6 +89,16 @@ preserves the exact command through sign-in and explicit retry. Its affected web
 suite passes 95 tests; root static checks and the web production build pass.
 These corrections are included in the merged PR #202 head.
 
+[PR #203](https://github.com/cill-i-am/meal-planner/pull/203) merged the seven-pass
+cleanup on 2026-09-05 as `2fb37db0baa0c50f31afe658da9303c7a13bcd4c`.
+It includes #202 unchanged at the profile feature and migration boundaries.
+The combined branch passed all 1,068 repository tests and static/build checks;
+the independent implementation review found no unresolved issues. Native
+upgrade tests preserve completed provider settlements, including expired replay,
+under the explicitly approved
+[ADR-0011](../architecture/decisions/0011-canonicalize-completed-conservative-settlements.md).
+[The cleanup delivery record](anti-slop-cleanup.md) owns its detailed evidence.
+
 Work Item 04 now has a
 [provider-free SDK boundary record](stages/01-household-people/04-agents-boundary-evidence.md).
 Actual `agents@0.22.0` sub-agents run on the pinned local Miniflare/workerd

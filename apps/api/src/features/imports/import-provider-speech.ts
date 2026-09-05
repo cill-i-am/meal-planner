@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect";
+import { Effect, Option, Predicate, Schema } from "effect";
 
 import { isProviderKnownZeroCostFailure } from "../provider-accounting/provider-accounting.js";
 import type {
@@ -20,7 +20,6 @@ import {
   isSafeProviderFailureCode,
   isUnknownRecord,
   providerFailureFromEvidence,
-  safeFailureCode,
 } from "./import-provider-kernel.js";
 import type {
   ProviderDispatchGate,
@@ -358,14 +357,7 @@ const unknownSpeechMetadataRequiresRejection = (
     ) {
       return false;
     }
-    if (
-      Schema.is(
-        Schema.Union([
-          Schema.Array(Schema.Json),
-          Schema.Record(Schema.String, Schema.Json),
-        ])
-      )(value)
-    ) {
+    if (Predicate.isObjectOrArray(value)) {
       if (traversal.visitedContainers.has(value)) {
         return false;
       }
@@ -727,29 +719,30 @@ const rejectedSpeechEnvelope = (
   classification: ReturnType<typeof classifySpeechEnvelope>,
   defaultFailure: SpeechEnvelopeFailure
 ) => {
-  const rejected = {
-    _tag: "Rejected" as const,
-    decodeReason: "speech_envelope_schema_invalid" as const,
-    decodeStage: "speech_envelope" as const,
+  let rejected: Extract<
+    ReturnType<typeof decodeSpeechResponse>,
+    { readonly _tag: "Rejected" }
+  > = {
+    _tag: "Rejected",
+    decodeReason: "speech_envelope_schema_invalid",
+    decodeStage: "speech_envelope",
     speechEnvelopeFailure: classification.failure ?? defaultFailure,
     speechEnvelopeFamily: classification.family,
   };
-  const location = classification.unsupportedLocation;
-  const rootProperty = classification.unsupportedRootProperty;
-  if (location === undefined) {
-    if (rootProperty === undefined) {
-      return rejected;
-    }
-    return { ...rejected, speechEnvelopeUnsupportedRootProperty: rootProperty };
+  if (classification.unsupportedLocation !== undefined) {
+    rejected = {
+      ...rejected,
+      speechEnvelopeUnsupportedLocation: classification.unsupportedLocation,
+    };
   }
-  if (rootProperty === undefined) {
-    return { ...rejected, speechEnvelopeUnsupportedLocation: location };
+  if (classification.unsupportedRootProperty !== undefined) {
+    rejected = {
+      ...rejected,
+      speechEnvelopeUnsupportedRootProperty:
+        classification.unsupportedRootProperty,
+    };
   }
-  return {
-    ...rejected,
-    speechEnvelopeUnsupportedLocation: location,
-    speechEnvelopeUnsupportedRootProperty: rootProperty,
-  };
+  return rejected;
 };
 
 const decodeSpeechResponse = (
@@ -814,31 +807,8 @@ const speechDecodeDiagnostics = (
   transcript: Option.Option<SpeechTranscript>
 ) => {
   if (decoded._tag === "Rejected") {
-    const diagnostics = {
-      decodeReason: decoded.decodeReason,
-      decodeStage: decoded.decodeStage,
-      speechEnvelopeFailure: decoded.speechEnvelopeFailure,
-      speechEnvelopeFamily: decoded.speechEnvelopeFamily,
-    };
-    const location = decoded.speechEnvelopeUnsupportedLocation;
-    const rootProperty = decoded.speechEnvelopeUnsupportedRootProperty;
-    if (location === undefined) {
-      if (rootProperty === undefined) {
-        return diagnostics;
-      }
-      return {
-        ...diagnostics,
-        speechEnvelopeUnsupportedRootProperty: rootProperty,
-      };
-    }
-    if (rootProperty === undefined) {
-      return { ...diagnostics, speechEnvelopeUnsupportedLocation: location };
-    }
-    return {
-      ...diagnostics,
-      speechEnvelopeUnsupportedLocation: location,
-      speechEnvelopeUnsupportedRootProperty: rootProperty,
-    };
+    const { _tag, ...diagnostics } = decoded;
+    return diagnostics;
   }
   if (Option.isNone(transcript)) {
     return {
@@ -894,13 +864,11 @@ export const makeInstalledSpeechTranscriber = (input: {
                   catch: (error) =>
                     isProviderKnownZeroCostFailure(error)
                       ? error
-                      : safeFailureCode(
-                          providerFailureFromEvidence(
-                            Option.getOrUndefined(
-                              decodeProviderFailureEvidence(error)
-                            )
+                      : providerFailureFromEvidence(
+                          Option.getOrUndefined(
+                            decodeProviderFailureEvidence(error)
                           )
-                        ),
+                        ).code,
                   try: () =>
                     input.transport.run({
                       audio: encodeBase64(request.audio.bytes),
@@ -992,13 +960,11 @@ export const makeInstalledSpeechTranscriber = (input: {
                 }
                 return Schema.is(Schema.String)(error)
                   ? error
-                  : safeFailureCode(
-                      providerFailureFromEvidence(
-                        Option.getOrUndefined(
-                          decodeProviderFailureEvidence(error)
-                        )
+                  : providerFailureFromEvidence(
+                      Option.getOrUndefined(
+                        decodeProviderFailureEvidence(error)
                       )
-                    );
+                    ).code;
               })
             ),
             maximumCostMicroUsd: SpeechMaximumCostMicroUsd,

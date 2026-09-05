@@ -1,3 +1,10 @@
+import {
+  PlanningDietaryFit,
+  PlanningDifficulty,
+  PlanningMealType,
+  PlanningTotalTimeBand,
+  PlanningTags,
+} from "@meal-planner/recipe-domain";
 import { Schema } from "effect";
 
 const TrimmedNonEmptyString = Schema.String.pipe(
@@ -47,54 +54,6 @@ export const MealPlanInstant = Schema.DateTimeUtcFromString.pipe(
 );
 export type MealPlanInstant = typeof MealPlanInstant.Type;
 
-export const MealPlanDietaryFit = Schema.Literals([
-  "household_match",
-  "needs_adaptation",
-  "not_suitable",
-]);
-export type MealPlanDietaryFit = typeof MealPlanDietaryFit.Type;
-
-export const MealPlanDifficulty = Schema.Literals(["easy", "medium", "hard"]);
-export type MealPlanDifficulty = typeof MealPlanDifficulty.Type;
-
-export const MealPlanLeftovers = Schema.Literals([
-  "none",
-  "one_meal",
-  "two_plus_meals",
-]);
-export type MealPlanLeftovers = typeof MealPlanLeftovers.Type;
-
-export const MealPlanMealType = Schema.Literals([
-  "breakfast",
-  "lunch",
-  "dinner",
-  "snack",
-  "dessert",
-]);
-export type MealPlanMealType = typeof MealPlanMealType.Type;
-
-export const MealPlanTotalTimeBand = Schema.Literals([
-  "under_30_minutes",
-  "30_to_60_minutes",
-  "over_60_minutes",
-  "unknown",
-]);
-export type MealPlanTotalTimeBand = typeof MealPlanTotalTimeBand.Type;
-
-export const MealPlanTags = Schema.Struct({
-  cuisines: Schema.NonEmptyArray(TrimmedNonEmptyString).pipe(
-    Schema.check(Schema.isMaxLength(8))
-  ),
-  dietaryFit: MealPlanDietaryFit,
-  difficulty: MealPlanDifficulty,
-  leftovers: MealPlanLeftovers,
-  mealTypes: Schema.NonEmptyArray(MealPlanMealType).pipe(
-    Schema.check(Schema.isMaxLength(5))
-  ),
-  totalTimeBand: MealPlanTotalTimeBand,
-});
-export type MealPlanTags = typeof MealPlanTags.Type;
-
 export const MealPlanRequestKey = ShortIdentifier.pipe(
   Schema.brand("MealPlanRequestKey")
 );
@@ -128,7 +87,7 @@ export type MealPlanMutationId = typeof MealPlanMutationId.Type;
 
 export const MealPlanSlot = Schema.Struct({
   date: CalendarDate,
-  mealType: MealPlanMealType,
+  mealType: PlanningMealType,
   servings: PositiveInteger,
   slotId: MealPlanSlotId,
 });
@@ -153,13 +112,13 @@ export const MealPlanRequest = Schema.Struct({
 export type MealPlanRequest = typeof MealPlanRequest.Type;
 
 export const MealPlanPolicy = Schema.Struct({
-  allowedDietaryFit: Schema.NonEmptyArray(MealPlanDietaryFit).pipe(
+  allowedDietaryFit: Schema.NonEmptyArray(PlanningDietaryFit).pipe(
     Schema.check(Schema.isMaxLength(3))
   ),
-  allowedDifficulties: Schema.NonEmptyArray(MealPlanDifficulty).pipe(
+  allowedDifficulties: Schema.NonEmptyArray(PlanningDifficulty).pipe(
     Schema.check(Schema.isMaxLength(3))
   ),
-  allowedTotalTimeBands: Schema.NonEmptyArray(MealPlanTotalTimeBand).pipe(
+  allowedTotalTimeBands: Schema.NonEmptyArray(PlanningTotalTimeBand).pipe(
     Schema.check(Schema.isMaxLength(4))
   ),
   maxRecipeUses: PositiveInteger,
@@ -184,7 +143,7 @@ export const MealPlanRecipeSnapshot = Schema.Struct({
     evidenceFingerprint: TrimmedNonEmptyString,
     sourceUrl: Schema.NullOr(ShortText),
   }),
-  tags: MealPlanTags,
+  tags: PlanningTags,
   version: PositiveInteger,
 });
 export type MealPlanRecipeSnapshot = typeof MealPlanRecipeSnapshot.Type;
@@ -199,9 +158,9 @@ export type MealPlanReason = typeof MealPlanReason.Type;
 
 export const PlannedMeal = Schema.Struct({
   date: MealPlanSlot.fields.date,
-  mealType: MealPlanMealType,
+  mealType: PlanningMealType,
   reasons: Schema.NonEmptyArray(MealPlanReason),
-  relevantTags: MealPlanTags,
+  relevantTags: PlanningTags,
   servings: PositiveInteger,
   slotId: MealPlanSlotId,
   sourceRecipe: MealPlanRecipeSnapshot,

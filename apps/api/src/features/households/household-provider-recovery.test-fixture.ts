@@ -1,5 +1,6 @@
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
+import * as Cloudflare from "alchemy/Cloudflare";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Option, Schema, Stream } from "effect";
 
@@ -10,7 +11,7 @@ import {
 import { ImportIntentExecutionGeneration } from "../imports/import-intent-transition.js";
 import type {
   AcquisitionBucketLike,
-  AcquisitionMediaObjectLike,
+  AcquisitionMediaSource,
   PreparedMediaArtifact,
   R2ObjectBodyLike,
   R2ObjectLike,
@@ -65,19 +66,7 @@ import {
   makeD1ProviderAccountingService,
 } from "../provider-accounting/provider-accounting.service.js";
 import { HouseholdReadEvidenceStageResult } from "./evidence/household-evidence.contract.js";
-import type {
-  HouseholdMutateEvidenceStageInput,
-  HouseholdMutateEvidenceStageResult,
-  HouseholdPrepareRecipeRecoveryInput,
-  HouseholdPrepareRecipeRecoveryResult,
-  HouseholdReadEvidenceReferencesInput,
-  HouseholdReadEvidenceReferencesResult,
-  HouseholdReadEvidenceStageInput,
-  HouseholdReadImportTerminalCheckpointInput,
-  HouseholdReadImportTerminalCheckpointResult,
-  HouseholdReadRecipeRecoveryAttemptInput,
-  HouseholdReadRecipeRecoveryAttemptResult,
-} from "./evidence/household-evidence.contract.js";
+import type { HouseholdDomainWorkerMethods } from "./household-domain-worker.js";
 import {
   HouseholdAdmitRecipeImportInput,
   HouseholdAdmitRecipeImportResult,
@@ -85,12 +74,6 @@ import {
   HouseholdRecipeImportExecutionView,
   HouseholdRecipeImportFailure,
   HouseholdResolveRecipeImportSourceInput,
-} from "./recipe-import/household-recipe-import.contract.js";
-import type {
-  HouseholdReadRecipeImportExecutionInput,
-  HouseholdTransitionRecipeImportLifecycleInput,
-  HouseholdRecordRecipeImportDispatchInput,
-  HouseholdRecordRecipeImportDispatchResult,
 } from "./recipe-import/household-recipe-import.contract.js";
 import {
   HouseholdMemberAdmission,
@@ -106,136 +89,74 @@ interface Environment {
   readonly PROVIDER_RECOVERY_RESULTS: TestKvNamespace;
   readonly ImportEvidenceBucket: WorkerTestR2Bucket;
   readonly ProviderAccountingDatabase: AnyD1Database;
-  readonly HouseholdDomainWorker: {
-    readonly admitRecipeImport: (
-      input: typeof HouseholdAdmitRecipeImportInput.Type
-    ) => Promise<typeof HouseholdAdmitRecipeImportResult.Encoded>;
-    readonly mutateEvidenceStage: (
-      input: typeof HouseholdMutateEvidenceStageInput.Encoded
-    ) => Promise<typeof HouseholdMutateEvidenceStageResult.Encoded>;
-    readonly readEvidenceReferences: (
-      input: HouseholdReadEvidenceReferencesInput
-    ) => Promise<typeof HouseholdReadEvidenceReferencesResult.Encoded>;
-    readonly prepareRecipeRecovery: (
-      input: typeof HouseholdPrepareRecipeRecoveryInput.Encoded
-    ) => Promise<typeof HouseholdPrepareRecipeRecoveryResult.Encoded>;
-    readonly readEvidenceStage: (
-      input: HouseholdReadEvidenceStageInput
-    ) => Promise<typeof HouseholdReadEvidenceStageResult.Encoded>;
-    readonly readImportTerminalCheckpoint: (
-      input: HouseholdReadImportTerminalCheckpointInput
-    ) => Promise<typeof HouseholdReadImportTerminalCheckpointResult.Encoded>;
-    readonly readRecipeImportExecution: (
-      input: HouseholdReadRecipeImportExecutionInput
-    ) => Promise<typeof HouseholdRecipeImportExecutionView.Encoded>;
-    readonly readRecipeRecoveryAttempt: (
-      input: HouseholdReadRecipeRecoveryAttemptInput
-    ) => Promise<typeof HouseholdReadRecipeRecoveryAttemptResult.Encoded>;
-    readonly recordRecipeImportDispatch: (
-      input: typeof HouseholdRecordRecipeImportDispatchInput.Type
-    ) => Promise<typeof HouseholdRecordRecipeImportDispatchResult.Encoded>;
-    readonly resolveRecipeImportSource: (
-      input: typeof HouseholdResolveRecipeImportSourceInput.Type
-    ) => Promise<unknown>;
-    readonly transitionRecipeImportLifecycle: (
-      input: typeof HouseholdTransitionRecipeImportLifecycleInput.Type
-    ) => Promise<unknown>;
-  };
+  readonly HouseholdDomainWorker: object;
 }
 
-const RpcErrorEnvelope = Schema.Struct({
-  _tag: Schema.Literal("~alchemy/rpc/error"),
-  error: Schema.Struct({ reason: Schema.optionalKey(Schema.String) }),
-});
-
-const terminalRpc = <A>(run: () => Promise<A>) =>
-  Effect.tryPromise({
-    catch: () =>
-      HouseholdRecipeImportFailure.make({
-        reason: "persistence_unavailable",
-      }),
-    try: run,
-  }).pipe(
-    Effect.flatMap((value) => {
-      const rejected = Schema.decodeUnknownOption(RpcErrorEnvelope)(value);
-      if (rejected._tag === "Some") {
-        return Effect.fail(
-          HouseholdRecipeImportFailure.make({
-            reason:
-              rejected.value.error.reason === "persistence_unavailable"
-                ? "persistence_unavailable"
-                : "illegal_transition",
-          })
-        );
-      }
-      return Effect.try({
-        catch: () =>
-          HouseholdRecipeImportFailure.make({
-            reason: "persistence_unavailable",
-          }),
-        try: () => structuredClone(value),
-      });
-    })
+const terminalHousehold = (environment: Environment) => {
+  const household = Cloudflare.makeRpcStub<HouseholdDomainWorkerMethods>(
+    environment.HouseholdDomainWorker
   );
-
-const terminalHousehold = (environment: Environment) => ({
-  admitRecipeImport: (input: typeof HouseholdAdmitRecipeImportInput.Type) =>
-    terminalRpc(() =>
-      environment.HouseholdDomainWorker.admitRecipeImport(input)
-    ),
-  mutateEvidenceStage: (
-    input: typeof HouseholdMutateEvidenceStageInput.Encoded
-  ) =>
-    terminalRpc(() =>
-      environment.HouseholdDomainWorker.mutateEvidenceStage(input)
-    ),
-  prepareRecipeRecovery: (
-    input: typeof HouseholdPrepareRecipeRecoveryInput.Encoded
-  ) =>
-    terminalRpc(() =>
-      environment.HouseholdDomainWorker.prepareRecipeRecovery(input)
-    ),
-  readEvidenceReferences: (input: HouseholdReadEvidenceReferencesInput) =>
-    terminalRpc(() =>
-      environment.HouseholdDomainWorker.readEvidenceReferences(input)
-    ),
-  readEvidenceStage: (input: HouseholdReadEvidenceStageInput) =>
-    terminalRpc(() =>
-      environment.HouseholdDomainWorker.readEvidenceStage(input)
-    ),
-  readImportTerminalCheckpoint: (
-    input: HouseholdReadImportTerminalCheckpointInput
-  ) =>
-    terminalRpc(() =>
-      environment.HouseholdDomainWorker.readImportTerminalCheckpoint(input)
-    ),
-  readRecipeImportExecution: (input: HouseholdReadRecipeImportExecutionInput) =>
-    terminalRpc(() =>
-      environment.HouseholdDomainWorker.readRecipeImportExecution(input)
-    ),
-  readRecipeRecoveryAttempt: (input: HouseholdReadRecipeRecoveryAttemptInput) =>
-    terminalRpc(() =>
-      environment.HouseholdDomainWorker.readRecipeRecoveryAttempt(input)
-    ),
-  recordRecipeImportDispatch: (
-    input: typeof HouseholdRecordRecipeImportDispatchInput.Type
-  ) =>
-    terminalRpc(() =>
-      environment.HouseholdDomainWorker.recordRecipeImportDispatch(input)
-    ),
-  resolveRecipeImportSource: (
-    input: typeof HouseholdResolveRecipeImportSourceInput.Type
-  ) =>
-    terminalRpc(() =>
-      environment.HouseholdDomainWorker.resolveRecipeImportSource(input)
-    ),
-  transitionRecipeImportLifecycle: (
-    input: typeof HouseholdTransitionRecipeImportLifecycleInput.Type
-  ) =>
-    terminalRpc(() =>
-      environment.HouseholdDomainWorker.transitionRecipeImportLifecycle(input)
-    ),
-});
+  // Native RPC adds Symbol.dispose; materialize wire data before strict schema decoding.
+  return {
+    admitRecipeImport: (input) =>
+      household
+        .admitRecipeImport(input)
+        .pipe(Effect.map((value) => structuredClone(value))),
+    mutateEvidenceStage: (input) =>
+      household
+        .mutateEvidenceStage(input)
+        .pipe(Effect.map((value) => structuredClone(value))),
+    prepareRecipeRecovery: (input) =>
+      household
+        .prepareRecipeRecovery(input)
+        .pipe(Effect.map((value) => structuredClone(value))),
+    readEvidenceReferences: (input) =>
+      household
+        .readEvidenceReferences(input)
+        .pipe(Effect.map((value) => structuredClone(value))),
+    readEvidenceStage: (input) =>
+      household
+        .readEvidenceStage(input)
+        .pipe(Effect.map((value) => structuredClone(value))),
+    readImportTerminalCheckpoint: (input) =>
+      household
+        .readImportTerminalCheckpoint(input)
+        .pipe(Effect.map((value) => structuredClone(value))),
+    readRecipeImportExecution: (input) =>
+      household
+        .readRecipeImportExecution(input)
+        .pipe(Effect.map((value) => structuredClone(value))),
+    readRecipeRecoveryAttempt: (input) =>
+      household
+        .readRecipeRecoveryAttempt(input)
+        .pipe(Effect.map((value) => structuredClone(value))),
+    recordRecipeImportDispatch: (input) =>
+      household
+        .recordRecipeImportDispatch(input)
+        .pipe(Effect.map((value) => structuredClone(value))),
+    resolveRecipeImportSource: (input) =>
+      household
+        .resolveRecipeImportSource(input)
+        .pipe(Effect.map((value) => structuredClone(value))),
+    transitionRecipeImportLifecycle: (input) =>
+      household
+        .transitionRecipeImportLifecycle(input)
+        .pipe(Effect.map((value) => structuredClone(value))),
+  } satisfies Pick<
+    HouseholdDomainWorkerMethods,
+    | "admitRecipeImport"
+    | "mutateEvidenceStage"
+    | "prepareRecipeRecovery"
+    | "readEvidenceReferences"
+    | "readEvidenceStage"
+    | "readImportTerminalCheckpoint"
+    | "readRecipeImportExecution"
+    | "readRecipeRecoveryAttempt"
+    | "recordRecipeImportDispatch"
+    | "resolveRecipeImportSource"
+    | "transitionRecipeImportLifecycle"
+  >;
+};
 
 const ProviderTerminalAttemptCommand = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
@@ -397,7 +318,7 @@ const runVisualResumeProof = (
       sha256: sourceMediaSha256,
       videoStreams: [{ codec: "h264", index: 0 }],
     };
-    const mediaObject: AcquisitionMediaObjectLike = {
+    const mediaObject: AcquisitionMediaSource = {
       cleanup: () => Effect.void,
       prepare: () => Effect.succeed(prepared),
       readArtifact: () => Stream.make(mediaBytes),

@@ -183,13 +183,6 @@ const visualStatus = (outcome: "empty" | "found" | "low_confidence") => {
   return "visual_evidence_low_confidence" as const;
 };
 
-const resumedClaimTag = (outcome: "DispatchClaimed" | "ResumeDispatch") => {
-  if (outcome === "DispatchClaimed") {
-    return "DispatchClaimed" as const;
-  }
-  return "ResumeDispatch" as const;
-};
-
 const carouselRecovery = (
   failureCode:
     | "carousel_inaccessible"
@@ -462,7 +455,7 @@ export const makeHouseholdSpeechTranscriptionRepository = (
           return yield* Effect.fail(importTransitionRejected());
         }
         return {
-          _tag: resumedClaimTag(receipt.outcome),
+          _tag: receipt.outcome,
           dispatchId: claim.dispatchId,
           startedAt,
         } satisfies SpeechDispatchClaim;
@@ -470,45 +463,43 @@ export const makeHouseholdSpeechTranscriptionRepository = (
     complete: (evidence) =>
       assertIdentity(input, evidence.importId, evidence.generation).pipe(
         Effect.andThen(
-          evidence.byteLength === undefined || evidence.deleteAt === undefined
-            ? Effect.fail(importTransitionRejected())
-            : boundary.mutate(`speech:complete:${evidence.transcriptSha256}`, {
-                inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
+          boundary.mutate(`speech:complete:${evidence.transcriptSha256}`, {
+            inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
+              evidence.sourceMediaSha256
+            ),
+            operation: {
+              _tag: "Complete",
+              dispatchId: evidence.dispatchId,
+              reference: {
+                byteLength: evidence.byteLength,
+                deleteAt: evidence.deleteAt,
+                key: evidence.transcriptKey,
+                kind: "speech_transcript",
+                sha256: Schema.decodeUnknownSync(Sha256Hex)(
+                  evidence.transcriptSha256
+                ),
+              },
+              result: {
+                _tag: "Speech",
+                completedAt: evidence.completedAt,
+                cost: evidence.cost,
+                detectedLanguage: evidence.detectedLanguage,
+                dispatchId: evidence.dispatchId,
+                model: evidence.model,
+                provider: evidence.provider,
+                segmentsCount: evidence.segmentsCount,
+                sourceMediaSha256: Schema.decodeUnknownSync(Sha256Hex)(
                   evidence.sourceMediaSha256
                 ),
-                operation: {
-                  _tag: "Complete",
-                  dispatchId: evidence.dispatchId,
-                  reference: {
-                    byteLength: evidence.byteLength,
-                    deleteAt: evidence.deleteAt,
-                    key: evidence.transcriptKey,
-                    kind: "speech_transcript",
-                    sha256: Schema.decodeUnknownSync(Sha256Hex)(
-                      evidence.transcriptSha256
-                    ),
-                  },
-                  result: {
-                    _tag: "Speech",
-                    completedAt: evidence.completedAt,
-                    cost: evidence.cost,
-                    detectedLanguage: evidence.detectedLanguage,
-                    dispatchId: evidence.dispatchId,
-                    model: evidence.model,
-                    provider: evidence.provider,
-                    segmentsCount: evidence.segmentsCount,
-                    sourceMediaSha256: Schema.decodeUnknownSync(Sha256Hex)(
-                      evidence.sourceMediaSha256
-                    ),
-                    transcriptKey: evidence.transcriptKey,
-                    transcriptSha256: Schema.decodeUnknownSync(Sha256Hex)(
-                      evidence.transcriptSha256
-                    ),
-                    usage: evidence.usage,
-                  },
-                  stage: "speech",
-                },
-              })
+                transcriptKey: evidence.transcriptKey,
+                transcriptSha256: Schema.decodeUnknownSync(Sha256Hex)(
+                  evidence.transcriptSha256
+                ),
+                usage: evidence.usage,
+              },
+              stage: "speech",
+            },
+          })
         ),
         Effect.as(evidence)
       ),
@@ -659,45 +650,43 @@ export const makeHouseholdVisualEvidenceRepository = (
     complete: (evidence) =>
       assertIdentity(input, evidence.importId, evidence.generation).pipe(
         Effect.andThen(
-          evidence.byteLength === undefined || evidence.deleteAt === undefined
-            ? Effect.fail(importTransitionRejected())
-            : boundary.mutate(`visual:complete:${evidence.manifestSha256}`, {
-                inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
+          boundary.mutate(`visual:complete:${evidence.manifestSha256}`, {
+            inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
+              evidence.sourceMediaSha256
+            ),
+            operation: {
+              _tag: "Complete",
+              dispatchId: evidence.dispatchId,
+              reference: {
+                byteLength: evidence.byteLength,
+                deleteAt: evidence.deleteAt,
+                key: evidence.manifestKey,
+                kind: "visual_manifest",
+                sha256: Schema.decodeUnknownSync(Sha256Hex)(
+                  evidence.manifestSha256
+                ),
+              },
+              result: {
+                _tag: "Visual",
+                completedAt: evidence.completedAt,
+                cost: evidence.cost,
+                dispatchId: evidence.dispatchId,
+                manifestKey: evidence.manifestKey,
+                manifestSha256: Schema.decodeUnknownSync(Sha256Hex)(
+                  evidence.manifestSha256
+                ),
+                model: evidence.model,
+                observationsCount: evidence.observationsCount,
+                outcome: evidence.outcome,
+                provider: evidence.provider,
+                sourceMediaSha256: Schema.decodeUnknownSync(Sha256Hex)(
                   evidence.sourceMediaSha256
                 ),
-                operation: {
-                  _tag: "Complete",
-                  dispatchId: evidence.dispatchId,
-                  reference: {
-                    byteLength: evidence.byteLength,
-                    deleteAt: evidence.deleteAt,
-                    key: evidence.manifestKey,
-                    kind: "visual_manifest",
-                    sha256: Schema.decodeUnknownSync(Sha256Hex)(
-                      evidence.manifestSha256
-                    ),
-                  },
-                  result: {
-                    _tag: "Visual",
-                    completedAt: evidence.completedAt,
-                    cost: evidence.cost,
-                    dispatchId: evidence.dispatchId,
-                    manifestKey: evidence.manifestKey,
-                    manifestSha256: Schema.decodeUnknownSync(Sha256Hex)(
-                      evidence.manifestSha256
-                    ),
-                    model: evidence.model,
-                    observationsCount: evidence.observationsCount,
-                    outcome: evidence.outcome,
-                    provider: evidence.provider,
-                    sourceMediaSha256: Schema.decodeUnknownSync(Sha256Hex)(
-                      evidence.sourceMediaSha256
-                    ),
-                    usage: evidence.usage,
-                  },
-                  stage: "visual",
-                },
-              })
+                usage: evidence.usage,
+              },
+              stage: "visual",
+            },
+          })
         ),
         Effect.as(evidence)
       ),
@@ -809,46 +798,44 @@ export const makeHouseholdCarouselEvidenceRepository = (
           return yield* Effect.fail(importTransitionRejected());
         }
         return {
-          _tag: resumedClaimTag(receipt.outcome),
+          _tag: receipt.outcome,
         } satisfies CarouselEvidenceClaim;
       }),
     complete: (evidence) =>
       assertIdentity(input, evidence.importId, evidence.generation).pipe(
         Effect.andThen(
-          evidence.byteLength === undefined || evidence.deleteAt === undefined
-            ? Effect.fail(importTransitionRejected())
-            : boundary.mutate(`carousel:complete:${evidence.manifestSha256}`, {
-                inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
+          boundary.mutate(`carousel:complete:${evidence.manifestSha256}`, {
+            inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
+              evidence.descriptorFingerprint
+            ),
+            operation: {
+              _tag: "Complete",
+              dispatchId: evidence.dispatchId,
+              reference: {
+                byteLength: evidence.byteLength,
+                deleteAt: evidence.deleteAt,
+                key: evidence.manifestKey,
+                kind: "carousel_manifest",
+                sha256: Schema.decodeUnknownSync(Sha256Hex)(
+                  evidence.manifestSha256
+                ),
+              },
+              result: {
+                _tag: "Carousel",
+                completedAt: evidence.completedAt,
+                descriptorFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
                   evidence.descriptorFingerprint
                 ),
-                operation: {
-                  _tag: "Complete",
-                  dispatchId: evidence.dispatchId,
-                  reference: {
-                    byteLength: evidence.byteLength,
-                    deleteAt: evidence.deleteAt,
-                    key: evidence.manifestKey,
-                    kind: "carousel_manifest",
-                    sha256: Schema.decodeUnknownSync(Sha256Hex)(
-                      evidence.manifestSha256
-                    ),
-                  },
-                  result: {
-                    _tag: "Carousel",
-                    completedAt: evidence.completedAt,
-                    descriptorFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
-                      evidence.descriptorFingerprint
-                    ),
-                    dispatchId: evidence.dispatchId,
-                    imageCount: evidence.imageCount,
-                    manifestKey: evidence.manifestKey,
-                    manifestSha256: Schema.decodeUnknownSync(Sha256Hex)(
-                      evidence.manifestSha256
-                    ),
-                  },
-                  stage: "carousel",
-                },
-              })
+                dispatchId: evidence.dispatchId,
+                imageCount: evidence.imageCount,
+                manifestKey: evidence.manifestKey,
+                manifestSha256: Schema.decodeUnknownSync(Sha256Hex)(
+                  evidence.manifestSha256
+                ),
+              },
+              stage: "carousel",
+            },
+          })
         ),
         Effect.as(evidence)
       ),

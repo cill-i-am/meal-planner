@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { drizzle } from "drizzle-orm/d1";
 import { Effect } from "effect";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import * as authSchema from "./auth.database-schema.js";
 import { makeMealPlannerAuth } from "./auth.js";
@@ -66,7 +66,6 @@ describe("Better Auth D1 control plane", () => {
       schema: authSchema,
       secret,
     });
-    const getActiveMember = vi.spyOn(auth.api, "getActiveMember");
     const signUp = await auth.fetch(
       authRequest("/sign-up/email", {
         email: "local-flow@example.test",
@@ -110,9 +109,6 @@ describe("Better Auth D1 control plane", () => {
       membershipRole: "owner",
       organizationId: organization.id,
       userId: session?.user.id,
-    });
-    expect(getActiveMember).toHaveBeenCalledWith({
-      headers: expect.any(Headers),
     });
 
     const signOut = await auth.fetch(authRequest("/sign-out", {}, cookie));

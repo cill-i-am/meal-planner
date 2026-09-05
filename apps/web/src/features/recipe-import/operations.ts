@@ -1,5 +1,9 @@
 import type {
   AnswerReviewRecipeActionRequest,
+  RequiresActionRecipeImportIntent,
+  CancelledRecipeImportIntent,
+  SucceededRecipeImportIntent,
+  ProcessingRecipeImportIntent,
   CancelRecipeImportIntentRequest,
   ConfirmRecipeImportActionRequest,
   CreateRecipeImportIntentRequest,
@@ -17,22 +21,22 @@ export interface RecipeImportOperations {
     readonly idempotencyKey: IdempotencyKey;
     readonly intentId: RecipeImportIntentId;
     readonly request: AnswerReviewRecipeActionRequest;
-  }) => Promise<RecipeImportIntent>;
+  }) => Promise<RequiresActionRecipeImportIntent>;
   readonly cancel: (input: {
     readonly idempotencyKey: IdempotencyKey;
     readonly intentId: RecipeImportIntentId;
     readonly request: CancelRecipeImportIntentRequest;
-  }) => Promise<RecipeImportIntent>;
+  }) => Promise<CancelledRecipeImportIntent>;
   readonly confirmAction: (input: {
     readonly actionId: RecipeImportActionId;
     readonly idempotencyKey: IdempotencyKey;
     readonly intentId: RecipeImportIntentId;
     readonly request: ConfirmRecipeImportActionRequest;
-  }) => Promise<RecipeImportIntent>;
+  }) => Promise<SucceededRecipeImportIntent>;
   readonly create: (input: {
     readonly idempotencyKey: IdempotencyKey;
     readonly request: CreateRecipeImportIntentRequest;
-  }) => Promise<RecipeImportIntent>;
+  }) => Promise<ProcessingRecipeImportIntent>;
   readonly getAction: (input: {
     readonly actionId: RecipeImportActionId;
     readonly intentId: RecipeImportIntentId;

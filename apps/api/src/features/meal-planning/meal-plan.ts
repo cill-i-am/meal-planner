@@ -23,59 +23,8 @@ import type {
   MealPlanSwapRejected,
   MealPlanTransitionRejected,
   MealPlanVersionConflict,
-  PlannedMeal,
 } from "@meal-planner/household-api";
 import { Effect, Option, Schema } from "effect";
-
-export {
-  CreateMealPlanPayload,
-  DecideMealPlanPayload,
-  ManualMealSwapRequest,
-  ManualSwapAudit,
-  MealPlan,
-  MealPlanActorId,
-  MealPlanApproved,
-  MealPlanDecisionRequest,
-  MealPlanDraft,
-  MealPlanDraftId,
-  MealPlanDietaryFit,
-  MealPlanDifficulty,
-  MealPlanGap,
-  MealPlanInstant,
-  MealPlanLeftovers,
-  MealPlanMealType,
-  MealPlanMutationConflict,
-  MealPlanMutationId,
-  MealPlanNotFound,
-  MealPlanPersistenceFailure,
-  MealPlanPolicy,
-  MealPlanPolicyVersion,
-  MealPlanProposal,
-  MealPlanReason,
-  MealPlanRecipeSnapshot,
-  MealPlanRecipeSnapshotId,
-  MealPlanRejected,
-  MealPlanRequest,
-  MealPlanRequestConflict,
-  MealPlanRequestKey,
-  MealPlanSlot,
-  MealPlanSlotId,
-  MealPlanSwapRejected,
-  MealPlanTags,
-  MealPlanTotalTimeBand,
-  MealPlanTransitionRejected,
-  MealPlanVersionConflict,
-  PlannedMeal,
-  SwapMealPlanPayload,
-} from "@meal-planner/household-api";
-
-export interface MealPlanPlanner {
-  readonly plan: (input: {
-    readonly approvedRecipes: readonly MealPlanRecipeSnapshot[];
-    readonly policy: MealPlanPolicy;
-    readonly request: MealPlanRequest;
-  }) => Effect.Effect<MealPlanProposal>;
-}
 
 const MealPlanRecipeAuthorityFingerprint = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
@@ -121,13 +70,6 @@ export interface MealPlanCandidateSelection {
     readonly slot: MealPlanSlot;
   }[];
   readonly gaps: readonly MealPlanGap[];
-}
-
-export interface MealPlanRecipeSource {
-  readonly listApproved: () => Effect.Effect<
-    readonly MealPlanRecipeSnapshot[],
-    MealPlanPersistenceFailure
-  >;
 }
 
 export const mealPlanRequestConflict = (
@@ -212,7 +154,8 @@ export type MealPlanServiceError =
 export interface MealPlanService {
   readonly create: (
     request: MealPlanRequest,
-    policy: MealPlanPolicy
+    policy: MealPlanPolicy,
+    proposal: MealPlanProposal
   ) => Effect.Effect<MealPlan, MealPlanServiceError>;
   readonly read: (
     draftId: MealPlanDraftId
@@ -224,12 +167,10 @@ export interface MealPlanService {
     request: MealPlanDecisionRequest
   ) => Effect.Effect<MealPlanRejected, MealPlanServiceError>;
   readonly swap: (
-    request: ManualMealSwapRequest
+    request: ManualMealSwapRequest,
+    replacement: MealPlanRecipeSnapshot | undefined
   ) => Effect.Effect<MealPlanDraft, MealPlanServiceError>;
 }
-
-const includes = <A>(values: readonly A[], value: A): boolean =>
-  values.includes(value);
 
 const hasPreferredCuisine = (
   recipe: RankableMealPlanRecipe,
@@ -244,10 +185,10 @@ export const isRecipeEligibleForSlot = (
   slot: MealPlanSlot,
   policy: MealPlanPolicy
 ): boolean =>
-  includes(recipe.tags.mealTypes, slot.mealType) &&
-  includes(policy.allowedDietaryFit, recipe.tags.dietaryFit) &&
-  includes(policy.allowedDifficulties, recipe.tags.difficulty) &&
-  includes(policy.allowedTotalTimeBands, recipe.tags.totalTimeBand);
+  recipe.tags.mealTypes.includes(slot.mealType) &&
+  policy.allowedDietaryFit.includes(recipe.tags.dietaryFit) &&
+  policy.allowedDifficulties.includes(recipe.tags.difficulty) &&
+  policy.allowedTotalTimeBands.includes(recipe.tags.totalTimeBand);
 
 const compareRankedCandidates = (
   left: {
@@ -359,69 +300,6 @@ export const selectMealPlanCandidates = (
   return { assignments, gaps };
 };
 
-// The legacy planner already owns hydrated snapshots, so its authority token is
-// never used for a second read. A fixed bounded token lets it reuse the exact
-// same ranking implementation without manufacturing persistence authority.
-const AlreadyHydratedRecipeAuthorityToken = Schema.decodeUnknownSync(
-  MealPlanRecipeAuthorityToken
-)({
-  extractionFingerprint: "0".repeat(64),
-  reviewVersion: 0,
-  tagsFingerprint: "0".repeat(64),
-});
-
-export const makeDeterministicMealPlanPlanner = (): MealPlanPlanner => ({
-  plan: ({ approvedRecipes, policy, request }) =>
-    Effect.sync(() => {
-      const selection = selectMealPlanCandidates(
-        addMealPlanCandidatePage(
-          makeMealPlanCandidateFrontier({
-            policy,
-            request,
-          }),
-          approvedRecipes.map((recipe) => ({
-            authorityToken: AlreadyHydratedRecipeAuthorityToken,
-            importId: recipe.importId,
-            tags: recipe.tags,
-          }))
-        )
-      );
-      const recipesById = new Map<string, MealPlanRecipeSnapshot>();
-      for (const recipe of approvedRecipes) {
-        if (!recipesById.has(recipe.importId)) {
-          recipesById.set(recipe.importId, recipe);
-        }
-      }
-      const meals: PlannedMeal[] = selection.assignments.map(
-        ({ importId, slot }) => {
-          const recipe = recipesById.get(importId);
-          if (recipe === undefined) {
-            throw new Error("Selected meal-plan recipe is unavailable");
-          }
-          const reasons: [MealPlanReason, ...MealPlanReason[]] = [
-            "approved_recipe",
-            "meal_type_match",
-            "hard_constraints_satisfied",
-          ];
-          if (hasPreferredCuisine(recipe, policy)) {
-            reasons.push("preferred_cuisine");
-          }
-          return {
-            date: slot.date,
-            mealType: slot.mealType,
-            reasons,
-            relevantTags: recipe.tags,
-            servings: slot.servings,
-            slotId: slot.slotId,
-            sourceRecipe: recipe,
-          };
-        }
-      );
-
-      return { gaps: selection.gaps, meals };
-    }),
-});
-
 const draftIdFor = (request: MealPlanRequest): MealPlanDraftId =>
   Schema.decodeUnknownSync(MealPlanDraftId)(`draft-${request.requestKey}`);
 
@@ -483,10 +361,31 @@ const reasonsFor = (
   return reasons;
 };
 
+export const makeMealPlanProposal = (
+  selection: MealPlanCandidateSelection,
+  recipes: ReadonlyMap<string, MealPlanRecipeSnapshot>,
+  policy: MealPlanPolicy
+): MealPlanProposal => ({
+  gaps: selection.gaps,
+  meals: selection.assignments.map(({ importId, slot }) => {
+    const recipe = recipes.get(importId);
+    if (recipe === undefined) {
+      throw new Error("Selected meal-plan recipe is unavailable");
+    }
+    return {
+      date: slot.date,
+      mealType: slot.mealType,
+      reasons: reasonsFor(recipe, policy),
+      relevantTags: recipe.tags,
+      servings: slot.servings,
+      slotId: slot.slotId,
+      sourceRecipe: recipe,
+    };
+  }),
+});
+
 export const makeMealPlanService = (input: {
   readonly drafts: MealPlanDraftRepository;
-  readonly planner: MealPlanPlanner;
-  readonly recipeReviews: MealPlanRecipeSource;
 }): MealPlanService => {
   const decide = (
     request: MealPlanDecisionRequest,
@@ -556,14 +455,8 @@ export const makeMealPlanService = (input: {
             : Effect.die("Approved decision returned an invalid lifecycle")
         )
       ),
-    create: (request, policy) =>
+    create: (request, policy, proposal) =>
       Effect.gen(function* createMealPlanDraft() {
-        const approvedRecipes = yield* input.recipeReviews.listApproved();
-        const proposal = yield* input.planner.plan({
-          approvedRecipes,
-          policy,
-          request,
-        });
         const draft: MealPlanDraft = {
           _tag: "Draft",
           audit: [],
@@ -591,7 +484,7 @@ export const makeMealPlanService = (input: {
             : Effect.die("Rejected decision returned an invalid lifecycle")
         )
       ),
-    swap: (request) =>
+    swap: (request, replacement) =>
       Effect.gen(function* swapMealPlanRecipe() {
         const mutationFingerprint = fingerprint(
           ManualMealSwapFingerprint,
@@ -622,10 +515,6 @@ export const makeMealPlanService = (input: {
           return yield* Effect.fail(mealPlanSwapRejected("slot_not_found"));
         }
 
-        const approvedRecipes = yield* input.recipeReviews.listApproved();
-        const replacement = approvedRecipes.find(
-          ({ importId }) => importId === request.replacementImportId
-        );
         if (replacement === undefined) {
           return yield* Effect.fail(
             mealPlanSwapRejected("recipe_not_approved")

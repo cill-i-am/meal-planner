@@ -1,18 +1,22 @@
-import { Effect, Option, Schema } from "effect";
-
-import { RecipeDraft } from "../imports/import-recipe-draft.repository.js";
-import {
-  ApprovedRecipe,
-  RecipeReviewView,
-  projectApprovedRecipe,
-} from "../imports/import-recipe-review.js";
+import type {
+  MealPlan,
+  MealPlanDraftId,
+  ManualMealSwapRequest,
+} from "@meal-planner/household-api";
 import {
   MealPlanRecipeSnapshot,
   MealPlanRecipeSnapshotId,
-  MealPlanTags,
   MealPlanPolicy,
   MealPlanRequest,
-  makeDeterministicMealPlanPlanner,
+} from "@meal-planner/household-api";
+import { PlanningTags } from "@meal-planner/recipe-domain";
+import { Effect, Option, Schema } from "effect";
+
+import {
+  addMealPlanCandidatePage,
+  makeMealPlanCandidateFrontier,
+  makeMealPlanProposal,
+  selectMealPlanCandidates,
   makeMealPlanService,
   mealPlanMutationConflict,
   mealPlanNotFound,
@@ -20,163 +24,16 @@ import {
   mealPlanTransitionRejected,
   mealPlanVersionConflict,
 } from "./meal-plan.js";
-import type {
-  MealPlan,
-  MealPlanDraftId,
-  MealPlanDraftRepository,
-  MealPlanRecipeSource,
-} from "./meal-plan.js";
+import type { MealPlanDraftRepository } from "./meal-plan.js";
 
 const decodeRecipeId = Schema.decodeUnknownSync(MealPlanRecipeSnapshotId);
-const encodeApprovedRecipe = Schema.encodeSync(ApprovedRecipe);
-const decodeMealPlanRecipeSnapshot = Schema.decodeUnknownSync(
-  MealPlanRecipeSnapshot
-);
-const decodeTags = Schema.decodeUnknownSync(MealPlanTags);
-
-const citation = {
-  citations: [
-    {
-      confidence: 1,
-      evidenceId: "synthetic:fixture",
-      origin: "creator_provided" as const,
-    },
-  ],
-  origin: "creator_provided" as const,
-  state: "supported" as const,
-};
-const supportedString = (value: string) => ({ ...citation, value });
-const supportedNumber = (value: number) => ({ ...citation, value });
-const supportedList = (values: readonly string[]) => ({
-  items: values.map(supportedString),
-  state: "supported" as const,
-});
-const unresolved = (reason: string) => ({
-  citations: [] as const,
-  origin: "unresolved" as const,
-  reason,
-  state: "unresolved" as const,
-});
-
-const fixtureHash = (character: string) => character.repeat(64);
-
-const makeSyntheticDraft = (input: {
-  readonly fingerprintCharacter: string;
-  readonly importId: string;
-  readonly name: string;
-}) =>
-  Schema.decodeUnknownSync(RecipeDraft)({
-    createdAt: "2026-07-22T10:00:00.000Z",
-    evidenceFingerprint: fixtureHash("a"),
-    extraction: {
-      author: supportedString("Synthetic Cook"),
-      category: supportedString("Synthetic recipe"),
-      cookTimeMinutes: supportedNumber(15),
-      cost: {
-        certainty: "known",
-        currency: "USD",
-        estimatedMicroUsd: 0,
-      },
-      cuisine: supportedString("Synthetic cuisine"),
-      description: supportedString("Provider-free synthetic test data."),
-      ingredientLines: supportedList(["1 synthetic ingredient"]),
-      instructions: supportedList(["Assemble the synthetic recipe."]),
-      name: supportedString(input.name),
-      nutrition: unresolved("Not relevant to the synthetic tracer."),
-      prepTimeMinutes: supportedNumber(10),
-      sourceUrl: supportedString(
-        `https://example.test/recipes/${input.importId}`
-      ),
-      supportedClaims: supportedList(["Synthetic fixture only."]),
-      temperatureCelsius: unresolved("Not relevant to the synthetic tracer."),
-      tools: supportedList(["Synthetic pan"]),
-      totalTimeMinutes: supportedNumber(25),
-      unresolvedFields: [
-        "nutrition",
-        "temperature_celsius",
-        "ingredient_quantities",
-        "ingredient_units",
-      ],
-      usage: {
-        inputEvidenceItems: 1,
-        inputTokens: 0,
-        latencyMilliseconds: 0,
-        modelCalls: 1,
-        outputTokens: 0,
-      },
-      yield: supportedString("2 servings"),
-    },
-    extractionFingerprint: fixtureHash(input.fingerprintCharacter),
-    extractor: {
-      model: "none",
-      provider: "synthetic_fixture",
-      version: "1",
-    },
-    generation: 1,
-    importId: input.importId,
-    lifecycle: "needs_review",
-    schemaVersion: 1,
-  });
-
-const makeSyntheticReview = (input: {
-  readonly fingerprintCharacter: string;
-  readonly importId: string;
-  readonly lifecycle: "approved" | "rejected";
-  readonly name: string;
-  readonly tags: MealPlanTags;
-}): RecipeReviewView => {
-  const draft = makeSyntheticDraft(input);
-  return Schema.decodeUnknownSync(RecipeReviewView)({
-    corrections: [],
-    draft: Schema.encodeSync(RecipeDraft)(draft),
-    evidence: [],
-    lifecycle: input.lifecycle,
-    nullablePolicy: [
-      "author",
-      "category",
-      "cook_time_minutes",
-      "cuisine",
-      "description",
-      "ingredient_quantities",
-      "ingredient_units",
-      "nutrition",
-      "prep_time_minutes",
-      "temperature_celsius",
-      "tools",
-      "total_time_minutes",
-      "yield",
-    ],
-    tags: input.tags,
-    transitions: [
-      {
-        actorId: "synthetic_reviewer",
-        from: "needs_review",
-        reason: "Synthetic fixture lifecycle.",
-        to: input.lifecycle,
-        transitionedAt: "2026-07-22T10:01:00.000Z",
-        version: 1,
-      },
-    ],
-    unresolvedRequiredFields: [],
-    version: 1,
-  });
-};
-
+const decodeTags = Schema.decodeUnknownSync(PlanningTags);
 const mediterraneanDinnerTags = decodeTags({
   cuisines: ["Synthetic Mediterranean"],
   dietaryFit: "household_match",
   difficulty: "easy",
   leftovers: "one_meal",
   mealTypes: ["dinner"],
-  totalTimeBand: "under_30_minutes",
-});
-
-const breakfastTags = decodeTags({
-  cuisines: ["Synthetic Breakfast"],
-  dietaryFit: "household_match",
-  difficulty: "easy",
-  leftovers: "none",
-  mealTypes: ["breakfast"],
   totalTimeBand: "under_30_minutes",
 });
 
@@ -208,36 +65,43 @@ export const syntheticRejectedRecipeId = decodeRecipeId(
   "018f47ad-91aa-7c35-b6fe-000000000402"
 );
 
-export const syntheticRecipeReviews: readonly RecipeReviewView[] = [
-  makeSyntheticReview({
-    fingerprintCharacter: "b",
+export const syntheticApprovedRecipes = [
+  {
+    fingerprint: "b",
     importId: "018f47ad-91aa-7c35-b6fe-000000000401",
-    lifecycle: "approved",
     name: "Synthetic Tomato Orzo",
     tags: mediterraneanDinnerTags,
-  }),
-  makeSyntheticReview({
-    fingerprintCharacter: "c",
-    importId: "018f47ad-91aa-7c35-b6fe-000000000402",
-    lifecycle: "rejected",
-    name: "Synthetic Rejected Pancakes",
-    tags: breakfastTags,
-  }),
-  makeSyntheticReview({
-    fingerprintCharacter: "d",
+  },
+  {
+    fingerprint: "d",
     importId: syntheticReplacementRecipeId,
-    lifecycle: "approved",
     name: "Synthetic Bean Traybake",
     tags: replacementDinnerTags,
-  }),
-  makeSyntheticReview({
-    fingerprintCharacter: "e",
+  },
+  {
+    fingerprint: "e",
     importId: syntheticHardConstraintRecipeId,
-    lifecycle: "approved",
     name: "Synthetic Elaborate Pie",
     tags: hardDinnerTags,
-  }),
-];
+  },
+].map(({ importId, name, tags, fingerprint }) =>
+  Schema.decodeUnknownSync(MealPlanRecipeSnapshot)({
+    approvedAt: "2026-07-22T10:01:00.000Z",
+    extractionFingerprint: fingerprint.repeat(64),
+    importId,
+    recipe: {
+      ingredientLines: ["1 synthetic ingredient"],
+      instructions: ["Assemble the synthetic recipe."],
+      name,
+    },
+    source: {
+      evidenceFingerprint: "a".repeat(64),
+      sourceUrl: `https://example.test/recipes/${importId}`,
+    },
+    tags,
+    version: 1,
+  })
+);
 
 export const syntheticPlanningPolicy = Schema.decodeUnknownSync(MealPlanPolicy)(
   {
@@ -269,26 +133,6 @@ export const syntheticMealPlanRequest = Schema.decodeUnknownSync(
     },
   ],
 });
-
-export const makeInMemoryRecipeReviewRepository = (
-  initial: readonly RecipeReviewView[]
-): MealPlanRecipeSource & {
-  readonly reviews: readonly RecipeReviewView[];
-} => {
-  const reviews = [...initial];
-  return {
-    listApproved: () =>
-      Effect.succeed(
-        reviews
-          .filter(({ lifecycle }) => lifecycle === "approved")
-          .map(projectApprovedRecipe)
-          .map((approvedRecipe) =>
-            decodeMealPlanRecipeSnapshot(encodeApprovedRecipe(approvedRecipe))
-          )
-      ),
-    reviews,
-  };
-};
 
 const mutationKey = (draftId: string, mutationId: string) =>
   `${draftId}:${mutationId}`;
@@ -377,17 +221,45 @@ export const makeInMemoryMealPlanDraftRepository = (): {
 };
 
 export const makeSyntheticMealPlanTracer = () => {
-  const recipeRepository = makeInMemoryRecipeReviewRepository(
-    syntheticRecipeReviews
-  );
   const draftRepository = makeInMemoryMealPlanDraftRepository();
+  const service = makeMealPlanService({ drafts: draftRepository.repository });
   return {
     drafts: draftRepository.drafts,
-    recipeRepository,
-    service: makeMealPlanService({
-      drafts: draftRepository.repository,
-      planner: makeDeterministicMealPlanPlanner(),
-      recipeReviews: recipeRepository,
-    }),
+    service: {
+      ...service,
+      create: (request: MealPlanRequest, policy: MealPlanPolicy) => {
+        const recipes = syntheticApprovedRecipes;
+        const selection = selectMealPlanCandidates(
+          addMealPlanCandidatePage(
+            makeMealPlanCandidateFrontier({ policy, request }),
+            recipes.map((recipe) => ({
+              authorityToken: {
+                extractionFingerprint: recipe.extractionFingerprint,
+                reviewVersion: recipe.version,
+                tagsFingerprint: recipe.extractionFingerprint,
+              },
+              importId: recipe.importId,
+              tags: recipe.tags,
+            }))
+          )
+        );
+        return service.create(
+          request,
+          policy,
+          makeMealPlanProposal(
+            selection,
+            new Map(recipes.map((recipe) => [recipe.importId, recipe])),
+            policy
+          )
+        );
+      },
+      swap: (request: ManualMealSwapRequest) =>
+        service.swap(
+          request,
+          syntheticApprovedRecipes.find(
+            ({ importId }) => importId === request.replacementImportId
+          )
+        ),
+    },
   };
 };

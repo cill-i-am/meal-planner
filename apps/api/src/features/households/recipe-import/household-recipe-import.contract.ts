@@ -7,11 +7,9 @@ import {
   ConfirmRecipeImportActionRequest,
   IdempotencyKey,
   Recipe,
-  RecipeImportAction,
   RecipeImportActionId,
   RecipeImportIntent,
   RecipeImportIntentId,
-  RecipeImportTimeline,
   RecipeReviewActionView,
   RecoveryGuidance,
   StablePublicErrorCode,
@@ -291,18 +289,9 @@ export const HouseholdRecipePage = Schema.Struct({
 });
 export type HouseholdRecipePage = typeof HouseholdRecipePage.Type;
 
-export const HouseholdRecipeImportIntentResult = Schema.Struct({
-  intent: RecipeImportIntent,
-});
-export const HouseholdRecipeImportActionResult = Schema.Struct({
-  action: RecipeImportAction,
-});
 export const HouseholdActiveRecipeImportActionResult = Schema.Struct({
   action: ActiveRecipeImportAction,
   intent: RecipeImportIntent,
-});
-export const HouseholdRecipeImportTimelineResult = Schema.Struct({
-  timeline: RecipeImportTimeline,
 });
 
 export const HouseholdRecipeImportFailure = Schema.TaggedStruct(

@@ -15,6 +15,7 @@ import {
   ProviderAccountingTimestamp,
 } from "../provider-accounting/provider-accounting.js";
 import { makeD1ProviderAccountingRepository } from "../provider-accounting/provider-accounting.repository.d1.js";
+import { sha256Bytes } from "./import-digest.js";
 import { adaptAcquisitionBucket } from "./import-media-acquisition-bucket.alchemy.js";
 import { observeImportWorkflowStart } from "./import-observability.js";
 import type { ImportCorrelationId } from "./import-observability.js";
@@ -48,8 +49,6 @@ import type {
   RecipeRecoveryWorkflowInput,
   RecipeRecoveryWorkflowInputEncoded,
 } from "./import-recipe-recovery.js";
-
-export { runImportVisualAndRecipeWorkflow } from "./import-application-workflows.js";
 
 type RecoveryCheckpoint = typeof ProviderTaskCheckpoint.Type;
 
@@ -189,21 +188,11 @@ export const makeRecipeRecoveryProviderRuntime = (input: {
 };
 
 const recoveryMutationId = (semanticKey: string) =>
-  Effect.promise(() =>
-    crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(
-        `household-recipe-import-recovery-workflow:v1:${semanticKey}`
-      )
+  sha256Bytes(
+    new TextEncoder().encode(
+      `household-recipe-import-recovery-workflow:v1:${semanticKey}`
     )
-  ).pipe(
-    Effect.map((digest) =>
-      Array.from(new Uint8Array(digest), (byte) =>
-        byte.toString(16).padStart(2, "0")
-      ).join("")
-    ),
-    Effect.map(Schema.decodeUnknownSync(HouseholdImportMutationId))
-  );
+  ).pipe(Effect.map(Schema.decodeUnknownSync(HouseholdImportMutationId)));
 
 /** Cloudflare primitives retained by the recipe recovery Workflow host. */
 export interface ImportRecipeRecoveryDurableHost {

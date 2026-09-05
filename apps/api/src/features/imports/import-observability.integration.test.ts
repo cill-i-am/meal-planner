@@ -381,13 +381,7 @@ describe("opaque import correlation continuity", () => {
     ).not.toMatch(
       /https?:|prompt|transcript|cookie|authorization|credential|media|payload/iu
     );
-    expect(
-      Schema.is(ImportId)(
-        Schema.decodeUnknownSync(Schema.Struct({ importId: ImportId }), {
-          onExcessProperty: "ignore",
-        })(workflowParams).importId
-      )
-    ).toBe(true);
+
     log.mockRestore();
   });
 

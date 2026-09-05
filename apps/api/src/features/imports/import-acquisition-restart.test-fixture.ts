@@ -27,7 +27,7 @@ import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { acquireStoreVerify } from "./import-media-acquirer.js";
 import type {
   AcquisitionBucketLike,
-  AcquisitionMediaObjectLike,
+  AcquisitionMediaSource,
   R2ObjectBodyLike,
   R2ObjectLike,
 } from "./import-media-acquirer.js";
@@ -147,7 +147,7 @@ const acquisitionBucket = (raw: WorkerTestR2Bucket): AcquisitionBucketLike => ({
 
 const mediaObject = (
   canonicalId: SourceCanonicalId
-): AcquisitionMediaObjectLike => ({
+): AcquisitionMediaSource => ({
   cleanup: () => Effect.void,
   prepare: () =>
     Effect.succeed({

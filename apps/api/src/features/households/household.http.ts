@@ -927,27 +927,28 @@ const HouseholdPeopleHandlers = HttpApiBuilder.group(
 );
 
 /** Mount the authenticated household tracer API. */
-export const makeHouseholdHttpApiLayer = () =>
-  HttpApiBuilder.layer(HouseholdApi).pipe(
-    Layer.provide(HouseholdHandlers),
-    Layer.provide(HouseholdSessionAuthLive),
-    Layer.provide(HouseholdAuthorityServicesLive)
-  );
+export const HouseholdHttpApiLayer = HttpApiBuilder.layer(HouseholdApi).pipe(
+  Layer.provide(HouseholdHandlers),
+  Layer.provide(HouseholdSessionAuthLive),
+  Layer.provide(HouseholdAuthorityServicesLive)
+);
 
 /** Mount the authenticated household-owned meal-plan API. */
-export const makeHouseholdMealPlanHttpApiLayer = () =>
-  HttpApiBuilder.layer(HouseholdMealPlanApi).pipe(
-    Layer.provide(HouseholdMealPlanHandlers),
-    Layer.provide(HouseholdSessionAuthLive),
-    Layer.provide(HouseholdMealPlanSchemaErrorsLive),
-    Layer.provide(HouseholdAuthorityServicesLive)
-  );
+export const HouseholdMealPlanHttpApiLayer = HttpApiBuilder.layer(
+  HouseholdMealPlanApi
+).pipe(
+  Layer.provide(HouseholdMealPlanHandlers),
+  Layer.provide(HouseholdSessionAuthLive),
+  Layer.provide(HouseholdMealPlanSchemaErrorsLive),
+  Layer.provide(HouseholdAuthorityServicesLive)
+);
 
 /** Mount the authenticated household people API. */
-export const makeHouseholdPeopleHttpApiLayer = () =>
-  HttpApiBuilder.layer(HouseholdPeopleApi).pipe(
-    Layer.provide(HouseholdPeopleHandlers),
-    Layer.provide(HouseholdSessionAuthLive),
-    Layer.provide(HouseholdPeopleSchemaErrorsLive),
-    Layer.provide(HouseholdAuthorityServicesLive)
-  );
+export const HouseholdPeopleHttpApiLayer = HttpApiBuilder.layer(
+  HouseholdPeopleApi
+).pipe(
+  Layer.provide(HouseholdPeopleHandlers),
+  Layer.provide(HouseholdSessionAuthLive),
+  Layer.provide(HouseholdPeopleSchemaErrorsLive),
+  Layer.provide(HouseholdAuthorityServicesLive)
+);

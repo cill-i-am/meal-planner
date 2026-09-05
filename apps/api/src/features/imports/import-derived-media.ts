@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect";
 
+import { bytesToHex, checksumBytes } from "./import-digest.js";
 import type {
   AcquisitionBucketLike,
   AcquisitionMediaObjectLike,
@@ -10,10 +11,10 @@ import { RetryableAcquisitionError } from "./import-media.errors.js";
 import {
   AcquisitionGeneration,
   FrameTimestampMilliseconds,
-  MediaArtifactId,
   MediaByteCount,
   MediaDurationMilliseconds,
   Sha256Hex,
+  ProviderEvidenceTransport,
 } from "./import-media.model.js";
 import type {
   AcquisitionGeneration as AcquisitionGenerationType,
@@ -73,25 +74,6 @@ const ImageDimension = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThan(0))
 );
 
-const ProviderEvidenceTransport = Schema.Struct({
-  audio: Schema.Struct({
-    artifactId: MediaArtifactId,
-    bytes: MediaByteCount,
-    durationMilliseconds: MediaDurationMilliseconds,
-    sha256: Sha256Hex,
-  }),
-  frames: Schema.NonEmptyArray(
-    Schema.Struct({
-      artifactId: MediaArtifactId,
-      bytes: MediaByteCount,
-      height: ImageDimension,
-      sha256: Sha256Hex,
-      timestampMilliseconds: FrameTimestampMilliseconds,
-      width: ImageDimension,
-    })
-  ),
-});
-
 const DerivedEvidenceManifest = Schema.Struct({
   audio: Schema.Struct({
     bytes: MediaByteCount,
@@ -140,11 +122,6 @@ const frameKey = (
     `imports/${importId}/generations/${generation}/provider-frame-${index}.jpg`
   );
 
-const sha256Bytes = (hex: Sha256HexType) =>
-  Uint8Array.from(hex.match(/.{2}/gu) ?? [], (pair) =>
-    Number.parseInt(pair, 16)
-  ).buffer;
-
 const derivedFailure = (): RetryableAcquisitionFailure =>
   new RetryableAcquisitionError({ stage: "store" });
 
@@ -155,9 +132,7 @@ const hash = Effect.fn("ImportDerivedMedia.hash")(function* hashEffect(
     catch: derivedFailure,
     try: () => crypto.subtle.digest("SHA-256", Uint8Array.from(bytes).buffer),
   });
-  const hex = Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
+  const hex = bytesToHex(digest);
   return yield* Schema.decodeUnknownEffect(Sha256Hex)(hex).pipe(
     Effect.mapError(derivedFailure)
   );
@@ -188,7 +163,7 @@ const putStream = Effect.fn("ImportDerivedMedia.putStream")(
           contentType: input.contentType,
         },
         onlyIf: { etagDoesNotMatch: "*" },
-        sha256: sha256Bytes(input.sha256),
+        sha256: checksumBytes(input.sha256),
       },
       stream: mediaObject.readArtifact(input.artifactId),
     });
@@ -210,10 +185,6 @@ export const persistDerivedProviderEvidence = Effect.fn(
     readonly importId: ImportIdType;
   }
 ) {
-  if (mediaObject.prepareProviderEvidence === undefined) {
-    return yield* Effect.fail(derivedFailure());
-  }
-
   const sourceMediaSha256 = yield* Schema.decodeUnknownEffect(Sha256Hex)(
     prepared.sha256
   ).pipe(Effect.mapError(derivedFailure));
@@ -279,7 +250,7 @@ export const persistDerivedProviderEvidence = Effect.fn(
         contentType: "application/json",
       },
       onlyIf: { etagDoesNotMatch: "*" },
-      sha256: sha256Bytes(sha256),
+      sha256: checksumBytes(sha256),
     })
     .pipe(Effect.mapError(derivedFailure));
   if (stored === null) {

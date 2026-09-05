@@ -2,14 +2,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
 import { RecipeImportBatch } from "@meal-planner/recipe-import-api";
-import * as Bundle from "alchemy/Bundle";
-import { Effect, Schema } from "effect";
-import type { ModuleDefinition } from "miniflare";
+import { Schema } from "effect";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 import { HouseholdRecordRecipeImportDispatchResult } from "../households/recipe-import/household-recipe-import.contract.js";
 
 const compatibilityDate = "2026-07-14";
@@ -41,51 +39,6 @@ const ScenarioResult = Schema.Struct({
   workflowId: Schema.String,
 });
 
-const bundleText = (content: string | Uint8Array<ArrayBufferLike>): string =>
-  Schema.is(Schema.String)(content)
-    ? content
-    : new TextDecoder().decode(content);
-
-const bundleFixture = async (
-  fileName: string,
-  outputDirectory: string
-): Promise<readonly [ModuleDefinition, ...ModuleDefinition[]]> => {
-  const output = await Effect.runPromise(
-    Bundle.build(
-      {
-        checks: { ineffectiveDynamicImport: false, unresolvedImport: false },
-        external: ["cloudflare:workers"],
-        input: fileURLToPath(new URL(fileName, import.meta.url)),
-        plugins: [
-          cloudflareRolldown({ compatibilityDate, compatibilityFlags }),
-        ],
-      },
-      {
-        codeSplitting: false,
-        dir: outputDirectory,
-        format: "esm",
-        minify: true,
-        sourcemap: false,
-      }
-    )
-  );
-  const [entry, ...assets] = output.files;
-  return [
-    {
-      contents: bundleText(entry.content),
-      path: entry.path,
-      type: "ESModule",
-    },
-    ...assets.map(
-      (asset): ModuleDefinition => ({
-        contents: bundleText(asset.content),
-        path: asset.path,
-        type: "Text",
-      })
-    ),
-  ];
-};
-
 const runScenario = async (
   commandId: string,
   organizationId: string,
@@ -111,12 +64,22 @@ describe("household batch native production Workflow composition", () => {
       `${tmpdir()}/meal-planner-household-batch-workflow-`
     );
     const [hostModules, domainModules] = await Promise.all([
-      bundleFixture(
-        "household-import-batch-workflow.test-fixture.ts",
+      bundleWorkerFixture(
+        fileURLToPath(
+          new URL(
+            "household-import-batch-workflow.test-fixture.ts",
+            import.meta.url
+          )
+        ),
         persistenceDirectory
       ),
-      bundleFixture(
-        "../households/household-domain-service.test-fixture.js",
+      bundleWorkerFixture(
+        fileURLToPath(
+          new URL(
+            "../households/household-domain-service.test-fixture.js",
+            import.meta.url
+          )
+        ),
         persistenceDirectory
       ),
     ]);

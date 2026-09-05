@@ -5,7 +5,9 @@ import type {
   TikTokCarouselDescriptor,
   TikTokCarouselImageArtifact,
 } from "./import-carousel-adapter.js";
+import { bytesToHex, checksumBytes, sha256Bytes } from "./import-digest.js";
 import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
+import { Sha256Hex } from "./import-media.model.js";
 import {
   ImportId,
   ImportTimestamp,
@@ -13,9 +15,6 @@ import {
   SourceUrl,
 } from "./import.contracts.js";
 
-const Sha256Hex = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/^[a-f\d]{64}$/u))
-);
 const PositiveInteger = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThan(0))
 );
@@ -56,30 +55,6 @@ export const stagedCarouselManifestObjectKey = (importId: ImportId) =>
 const stagedCarouselImageObjectKey = (importId: ImportId, orderIndex: number) =>
   `${stagingPrefix(importId)}/images/${String(orderIndex).padStart(2, "0")}.jpg`;
 
-const checksumBuffer = (hex: string) => {
-  const bytes = new Uint8Array(32);
-  for (let index = 0; index < bytes.length; index += 1) {
-    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
-  }
-  return bytes.buffer;
-};
-
-const bytesToHex = (value: ArrayBuffer) =>
-  Array.from(new Uint8Array(value), (byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
-
-const sha256Hex = (bytes: Uint8Array) =>
-  Effect.promise(() =>
-    crypto.subtle.digest("SHA-256", Uint8Array.from(bytes).buffer)
-  ).pipe(
-    Effect.map((digest) =>
-      Array.from(new Uint8Array(digest), (byte) =>
-        byte.toString(16).padStart(2, "0")
-      ).join("")
-    )
-  );
-
 const putPrivate = (
   bucket: AcquisitionBucketLike,
   input: {
@@ -87,7 +62,7 @@ const putPrivate = (
     readonly contentType: "application/json" | "image/jpeg";
     readonly key: string;
     readonly metadata: Record<string, string>;
-    readonly sha256: string;
+    readonly sha256: Sha256Hex;
   }
 ) =>
   Effect.gen(function* put() {
@@ -100,7 +75,7 @@ const putPrivate = (
           contentType: input.contentType,
         },
         onlyIf: { etagDoesNotMatch: "*" },
-        sha256: checksumBuffer(input.sha256),
+        sha256: checksumBytes(input.sha256),
       })
       .pipe(Effect.mapError(failure));
     const stored = yield* bucket.head(input.key).pipe(Effect.mapError(failure));
@@ -132,6 +107,9 @@ export const stageOperatorCarouselForWorkflow = (input: {
       acquired.images,
       (image, orderIndex) =>
         Effect.gen(function* stageImage() {
+          const sha256 = yield* Schema.decodeUnknownEffect(Sha256Hex)(
+            image.sha256
+          ).pipe(Effect.mapError(failure));
           const key = stagedCarouselImageObjectKey(input.importId, orderIndex);
           yield* putPrivate(input.bucket, {
             bytes: image.bytes,
@@ -141,16 +119,16 @@ export const stageOperatorCarouselForWorkflow = (input: {
               importId: input.importId,
               kind: "staged_operator_carousel_image",
               orderIndex: String(orderIndex),
-              sha256: image.sha256,
+              sha256,
             },
-            sha256: image.sha256,
+            sha256,
           });
           return {
             byteLength: image.bytes.byteLength,
             height: image.height,
             key,
             orderIndex,
-            sha256: image.sha256,
+            sha256,
             width: image.width,
           };
         }),
@@ -176,7 +154,7 @@ export const stageOperatorCarouselForWorkflow = (input: {
     const bytes = new TextEncoder().encode(
       JSON.stringify(Schema.encodeSync(StagedCarouselManifest)(manifest))
     );
-    const sha256 = yield* sha256Hex(bytes);
+    const sha256 = yield* sha256Bytes(bytes);
     yield* putPrivate(input.bucket, {
       bytes,
       contentType: "application/json",
@@ -206,7 +184,7 @@ const readBytes = (
     );
     if (
       bytes.byteLength !== expectedLength ||
-      (yield* sha256Hex(bytes)) !== expectedSha256
+      (yield* sha256Bytes(bytes)) !== expectedSha256
     ) {
       return yield* Effect.fail(failure());
     }

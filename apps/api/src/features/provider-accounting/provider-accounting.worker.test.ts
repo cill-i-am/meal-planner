@@ -243,7 +243,7 @@ describe("provider accounting", () => {
         .first()
     ).resolves.toEqual({
       actual_cost_micro_usd: null,
-      state: "settled_unknown",
+      state: "settled_conservative",
     });
     await expect(
       testEnv.ProviderAccountingDatabase.prepare(
@@ -356,6 +356,98 @@ describe("provider accounting", () => {
         .bind(command.dispatchId)
         .first()
     ).resolves.toEqual({ count: 1 });
+  });
+
+  it("requires durable replay evidence before a conservative transition", async () => {
+    const database = testEnv.ProviderAccountingDatabase;
+    const repository = makeD1ProviderAccountingRepository(database);
+    const command = {
+      ...reservation(
+        "recipe-import:direct-transition",
+        `recipe:direct-transition:1:${evidenceFingerprint}`,
+        100_000
+      ),
+      providerStageId: decodeProviderStageId("recipe-extraction"),
+    };
+    await Effect.runPromise(repository.reserve(command));
+    await claimInvocation(repository, command);
+
+    await expect(
+      database
+        .prepare(
+          `UPDATE provider_accounting_dispatches
+          SET state = 'settled_conservative', completed_at = ?,
+              invocation_expires_at = NULL, updated_at = ?
+        WHERE dispatch_id = ?`
+        )
+        .bind(nowIso, nowIso, command.dispatchId)
+        .run()
+    ).rejects.toThrow();
+    expect(
+      await Effect.runPromise(repository.readDispatch(command))
+    ).toMatchObject({ state: "invoking" });
+    expect(await Effect.runPromise(repository.readStage())).toMatchObject({
+      reservedMicroUsd: 100_000,
+      settledMicroUsd: 0,
+      state: "invoking",
+    });
+  });
+
+  it("rolls back the audit and retains the invocation fence when replay persistence fails", async () => {
+    const database = testEnv.ProviderAccountingDatabase;
+    const repository = makeD1ProviderAccountingRepository(database);
+    const importId = "replay-persistence-failure";
+    const command = {
+      ...reservation(
+        `recipe-import:${importId}`,
+        `recipe:${importId}:1:${evidenceFingerprint}`,
+        100_000
+      ),
+      providerStageId: decodeProviderStageId("recipe-extraction"),
+    };
+    await Effect.runPromise(repository.reserve(command));
+    const invocationGeneration = await claimInvocation(repository, command);
+    const input = {
+      ...command,
+      conservativeChargeMicroUsd: 100_000,
+      invocationGeneration,
+      replay: conservativeReplay(importId),
+    };
+    await database
+      .prepare(`CREATE TRIGGER reject_recipe_replay
+      BEFORE INSERT ON provider_accounting_recipe_replay_values
+      BEGIN SELECT RAISE(ABORT, 'injected replay persistence failure'); END`)
+      .run();
+    try {
+      await expect(
+        Effect.runPromise(repository.settleConservative(input))
+      ).rejects.toMatchObject({ code: "persistence_unavailable" });
+      expect(
+        await Effect.runPromise(repository.readDispatch(command))
+      ).toMatchObject({ invocationGeneration, state: "invoking" });
+      expect(await Effect.runPromise(repository.readStage())).toMatchObject({
+        reservedMicroUsd: 100_000,
+        settledMicroUsd: 0,
+        state: "invoking",
+      });
+      await expect(
+        database
+          .prepare(
+            "SELECT COUNT(*) AS count FROM provider_accounting_conservative_settlements"
+          )
+          .first()
+      ).resolves.toEqual({ count: 0 });
+    } finally {
+      await database.prepare("DROP TRIGGER reject_recipe_replay").run();
+    }
+    expect(
+      await Effect.runPromise(repository.settleConservative(input))
+    ).toMatchObject({ state: "settled_conservative" });
+    expect(await Effect.runPromise(repository.readStage())).toMatchObject({
+      reservedMicroUsd: 0,
+      settledMicroUsd: 100_000,
+      state: "open",
+    });
   });
 
   it("rejects multibyte conservative replay JSON over the UTF-8 byte cap", async () => {
@@ -575,94 +667,6 @@ describe("provider accounting", () => {
         .bind(command.dispatchId)
         .first()
     ).resolves.toBeNull();
-  });
-
-  it("physically replaces pilot storage without acquiring household authority", async () => {
-    const schemas = await testEnv.ProviderAccountingDatabase.prepare(
-      `SELECT name, sql FROM sqlite_master
-        WHERE type = 'table'
-        ORDER BY name`
-    ).all<{ name: string; sql: string }>();
-
-    const schemaRows = schemas.results as {
-      readonly name: string;
-      readonly sql: string;
-    }[];
-    expect(schemaRows.map(({ name }) => name)).toEqual([
-      "_cf_METADATA",
-      "d1_migrations",
-      "provider_accounting_budgets",
-      "provider_accounting_conservative_settlements",
-      "provider_accounting_dispatches",
-      "provider_accounting_recipe_replay_values",
-      "provider_accounting_reconciliations",
-      "sqlite_sequence",
-    ]);
-    const runtimeBookkeepingTables = new Set([
-      "_cf_METADATA",
-      "d1_migrations",
-      "sqlite_sequence",
-    ]);
-    expect(
-      schemaRows
-        .map(({ name }) => name)
-        .filter((name) => !runtimeBookkeepingTables.has(name))
-    ).toEqual([
-      "provider_accounting_budgets",
-      "provider_accounting_conservative_settlements",
-      "provider_accounting_dispatches",
-      "provider_accounting_recipe_replay_values",
-      "provider_accounting_reconciliations",
-    ]);
-    const byName = new Map(
-      schemaRows.map(({ name, sql }) => [name, sql] as const)
-    );
-    expect(byName.get("provider_accounting_budgets")).toContain(
-      `"accounting_scope" = 'recipe-import'`
-    );
-    expect(byName.get("provider_accounting_budgets")).toContain(
-      `"budget_cap_micro_usd" = 10000000`
-    );
-    const authorityRows = await testEnv.ProviderAccountingDatabase.prepare(
-      "SELECT accounting_scope FROM provider_accounting_budgets"
-    ).all<{ readonly accounting_scope: string }>();
-    expect(authorityRows.results).toEqual([
-      { accounting_scope: "recipe-import" },
-    ]);
-
-    const triggers = await testEnv.ProviderAccountingDatabase.prepare(
-      `SELECT name, sql FROM sqlite_master
-        WHERE type = 'trigger' AND name LIKE 'provider_accounting_%'
-        ORDER BY name`
-    ).all<{ name: string; sql: string }>();
-    const triggerRows = triggers.results as {
-      readonly name: string;
-      readonly sql: string;
-    }[];
-    expect(triggerRows.map(({ name }) => name)).toEqual([
-      "provider_accounting_conservative_settlements_immutable_delete",
-      "provider_accounting_conservative_settlements_immutable_update",
-      "provider_accounting_dispatches_begin_invocation",
-      "provider_accounting_dispatches_release",
-      "provider_accounting_dispatches_reserve",
-      "provider_accounting_dispatches_settle_known",
-      "provider_accounting_dispatches_settle_unknown",
-      "provider_accounting_dispatches_transition_guard",
-      "provider_accounting_recipe_replay_values_dispatch_insert_cleanup",
-      "provider_accounting_recipe_replay_values_dispatch_update_cleanup",
-      "provider_accounting_recipe_replay_values_expired_cleanup",
-      "provider_accounting_recipe_replay_values_immutable_update",
-      "provider_accounting_reconciliations_immutable_delete",
-      "provider_accounting_reconciliations_immutable_update",
-    ]);
-    const triggerSql = triggerRows
-      .map(({ sql }) => sql)
-      .join("\n")
-      .toLowerCase();
-    expect(triggerSql).not.toContain("pilot_provider_");
-    expect(triggerSql).not.toContain("household_");
-    expect(triggerSql).not.toContain("import_terminal");
-    expect(triggerSql).not.toContain("import_recipe_extractions");
   });
 
   it("atomically fences concurrent reservations across different run IDs", async () => {

@@ -53,14 +53,6 @@ const mapTransportError = (
   }
 };
 
-const mapSearchTransportError = (
-  error: TescoAuthenticatedGraphQlTransportError
-) => mapTransportError(error, "search");
-
-const mapCategoryTransportError = (
-  error: TescoAuthenticatedGraphQlTransportError
-) => mapTransportError(error, "category_products");
-
 /** Stable Tesco catalogue adapter over named reads and isolated provider DTOs. */
 export const makeTescoXapiCatalogueLive = (config: TescoCatalogueConfig) =>
   Layer.effect(
@@ -77,7 +69,7 @@ export const makeTescoXapiCatalogueLive = (config: TescoCatalogueConfig) =>
             variables: TescoSearchQuery.variables(request),
           })
           .pipe(
-            Effect.mapError(mapSearchTransportError),
+            Effect.mapError((failure) => mapTransportError(failure, "search")),
             Effect.flatMap(TescoSearchQuery.decode)
           );
 
@@ -89,7 +81,9 @@ export const makeTescoXapiCatalogueLive = (config: TescoCatalogueConfig) =>
             variables: TescoCategoryProductsQuery.variables(request),
           })
           .pipe(
-            Effect.mapError(mapCategoryTransportError),
+            Effect.mapError((failure) =>
+              mapTransportError(failure, "category_products")
+            ),
             Effect.flatMap(TescoCategoryProductsQuery.decode)
           );
 

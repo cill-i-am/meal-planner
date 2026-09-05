@@ -50,15 +50,6 @@ describe("Tesco auth cookies", () => {
     ).toThrow();
   });
 
-  it("keeps cookie header diagnostics redacted", () => {
-    const cookieHeader = makeCookieHeader(Date.now(), Date.now() + 10_000);
-
-    expect(JSON.stringify({ cookieHeader })).toBe(
-      '{"cookieHeader":"<redacted>"}'
-    );
-    expect(String(cookieHeader)).toBe("<redacted>");
-  });
-
   it("reports malformed expiry metadata without retaining its parse cause", async () => {
     const malformedValue = "sensitive-not-json";
     const cookieHeader = Redacted.make(

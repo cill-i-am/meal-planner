@@ -83,13 +83,16 @@ export interface ProviderAccountingConservativeReplayValue {
   readonly valueSha256: string;
 }
 
+export const ProviderAccountingDispatchState = Schema.Literals([
+  "invoking",
+  "released",
+  "reserved",
+  "settled_conservative",
+  "settled_known",
+  "settled_unknown",
+]);
 export type ProviderAccountingDispatchState =
-  | "invoking"
-  | "released"
-  | "reserved"
-  | "settled_conservative"
-  | "settled_known"
-  | "settled_unknown";
+  typeof ProviderAccountingDispatchState.Type;
 
 export interface ProviderAccountingDispatch {
   readonly actualCostMicroUsd: number | null;

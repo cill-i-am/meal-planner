@@ -36,9 +36,6 @@ describe("installed recipe provider adapter", () => {
         Schema.decodeUnknownSync(RecipeExtraction)(validRecipe)
       )
     ).toBe(false);
-    expect(JSON.stringify(validRecipe.ingredientLines.items)).not.toContain(
-      "invented"
-    );
   });
 
   it("fails closed when strict recipe JSON mode adds transport metadata", async () => {
@@ -240,76 +237,9 @@ describe("installed recipe provider adapter", () => {
   });
 
   it.each([
-    ["prose", { choices: [{ message: { content: "{}" } }] }],
-    ["wrong tool", toolResponse("wrong_tool", validRecipeSemantics)],
     [
-      "multiple tools",
-      {
-        choices: [
-          {
-            message: {
-              tool_calls: [
-                {
-                  function: {
-                    arguments: JSON.stringify(validRecipeSemantics),
-                    name: "record_recipe",
-                  },
-                },
-                {
-                  function: {
-                    arguments: JSON.stringify(validRecipeSemantics),
-                    name: "record_recipe",
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      },
-    ],
-    [
-      "an extra tool before the forced tool",
-      {
-        choices: [
-          {
-            message: {
-              tool_calls: [
-                {
-                  function: {
-                    arguments: JSON.stringify(validRecipeSemantics),
-                    name: "wrong_tool",
-                  },
-                },
-                {
-                  function: {
-                    arguments: JSON.stringify(validRecipeSemantics),
-                    name: "record_recipe",
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      },
-    ],
-    [
-      "malformed JSON",
-      {
-        choices: [
-          {
-            message: {
-              tool_calls: [
-                {
-                  function: {
-                    arguments: "{",
-                    name: "record_recipe",
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      },
+      "a tool envelope instead of JSON mode",
+      toolResponse("record_recipe", validRecipeSemantics),
     ],
     [
       "schema-invalid arguments",

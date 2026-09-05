@@ -3,6 +3,7 @@ import { DateTime, Effect, Option, Schema } from "effect";
 
 import {
   ProviderAccountingDispatchId,
+  ProviderAccountingDispatchState,
   ProviderAccountingProviderStageId,
   ProviderAccountingRunId,
   ProviderAccountingCapMicroUsd,
@@ -36,13 +37,7 @@ const DispatchRow = Schema.Struct({
   replay_value_json: Schema.optionalKey(Schema.NullOr(Schema.String)),
   replay_value_sha256: Schema.optionalKey(Schema.NullOr(Schema.String)),
   run_id: ProviderAccountingRunId,
-  state: Schema.Literals([
-    "invoking",
-    "released",
-    "reserved",
-    "settled_known",
-    "settled_unknown",
-  ]),
+  state: ProviderAccountingDispatchState,
 });
 type DispatchRow = typeof DispatchRow.Type;
 const StageRow = Schema.Struct({
@@ -191,7 +186,10 @@ const hasValidInvocationFence = (row: DispatchRow) =>
         ? row.invocation_expires_at !== null
         : row.invocation_expires_at === null);
 
-const hasValidReplayFields = (row: DispatchRow) => {
+const hasValidReplayFields = (
+  row: DispatchRow,
+  replay: ReturnType<typeof replayFromRow>
+) => {
   const replayFields = [
     row.replay_evidence_fingerprint,
     row.replay_expires_at,
@@ -202,14 +200,17 @@ const hasValidReplayFields = (row: DispatchRow) => {
   ];
   return (
     replayFields.every((value) => value === null || value === undefined) ||
-    (row.state === "settled_unknown" &&
+    (row.state === "settled_conservative" &&
       row.conservative_charge_micro_usd !== undefined &&
       row.conservative_charge_micro_usd !== null &&
-      replayFromRow(row) !== undefined)
+      replay !== undefined)
   );
 };
 
-const isValidDispatchRow = (row: DispatchRow) => {
+const isValidDispatchRow = (
+  row: DispatchRow,
+  replay: ReturnType<typeof replayFromRow>
+) => {
   if (
     !validMoney(row.maximum_cost_micro_usd) ||
     row.maximum_cost_micro_usd === 0 ||
@@ -223,13 +224,19 @@ const isValidDispatchRow = (row: DispatchRow) => {
   if (
     row.conservative_charge_micro_usd !== undefined &&
     row.conservative_charge_micro_usd !== null &&
-    (row.state !== "settled_unknown" ||
+    (row.state !== "settled_conservative" ||
       row.actual_cost_micro_usd !== null ||
       row.conservative_charge_micro_usd !== row.maximum_cost_micro_usd)
   ) {
     return false;
   }
-  if (!hasValidReplayFields(row)) {
+  if (
+    row.state === "settled_conservative" &&
+    row.conservative_charge_micro_usd !== row.maximum_cost_micro_usd
+  ) {
+    return false;
+  }
+  if (!hasValidReplayFields(row, replay)) {
     return false;
   }
   return row.state === "settled_known"
@@ -243,7 +250,7 @@ const dispatchFromRow = (
   row: DispatchRow
 ): Effect.Effect<ProviderAccountingDispatch, ProviderAccountingError> => {
   const replay = replayFromRow(row);
-  if (!isValidDispatchRow(row)) {
+  if (!isValidDispatchRow(row, replay)) {
     return Effect.fail(providerAccountingError("persistence_corrupt"));
   }
   let dispatch: ProviderAccountingDispatch = {
@@ -253,12 +260,7 @@ const dispatchFromRow = (
     maximumCostMicroUsd: row.maximum_cost_micro_usd,
     providerStageId: row.provider_stage_id,
     runId: row.run_id,
-    state:
-      row.state === "settled_unknown" &&
-      row.conservative_charge_micro_usd !== null &&
-      row.conservative_charge_micro_usd !== undefined
-        ? "settled_conservative"
-        : row.state,
+    state: row.state,
   };
   if (row.invocation_expires_at !== null) {
     dispatch = {
@@ -714,28 +716,6 @@ export const makeD1ProviderAccountingRepository = (
         binding.batch([
           binding
             .prepare(
-              `UPDATE provider_accounting_dispatches
-                  SET state = 'settled_unknown', completed_at = ?,
-                      invocation_expires_at = NULL, updated_at = ?
-                WHERE accounting_scope = ?
-                  AND dispatch_id = ?
-                  AND run_id = ?
-                  AND provider_stage_id = 'recipe-extraction'
-                  AND maximum_cost_micro_usd = 100000
-                  AND actual_cost_micro_usd IS NULL
-                  AND state = 'invoking'
-                  AND invocation_generation = ?`
-            )
-            .bind(
-              timestamp,
-              timestamp,
-              ProviderAccountingScope,
-              input.dispatchId,
-              input.runId,
-              input.invocationGeneration
-            ),
-          binding
-            .prepare(
               `INSERT INTO provider_accounting_conservative_settlements (
                  actual_cost_was_unknown, authority,
                  conservative_charge_micro_usd, created_at,
@@ -752,12 +732,11 @@ export const makeD1ProviderAccountingRepository = (
                   AND dispatch.provider_stage_id = 'recipe-extraction'
                   AND dispatch.maximum_cost_micro_usd = 100000
                   AND dispatch.actual_cost_micro_usd IS NULL
-                  AND dispatch.state = 'settled_unknown'
+                  AND dispatch.state = 'invoking'
                   AND dispatch.invocation_generation = ?
-                  AND dispatch.completed_at = ?
-                  AND stage.state = 'poisoned'
-                  AND stage.poison_dispatch_id = dispatch.dispatch_id
-                  AND stage.invoking_dispatch_id IS NULL
+                  AND stage.state = 'invoking'
+                  AND stage.invoking_dispatch_id = dispatch.dispatch_id
+                  AND stage.poison_dispatch_id IS NULL
                   AND stage.reserved_micro_usd >= 100000
                   AND stage.settled_micro_usd
                       + stage.reserved_micro_usd
@@ -769,8 +748,7 @@ export const makeD1ProviderAccountingRepository = (
               ProviderAccountingScope,
               input.dispatchId,
               input.runId,
-              input.invocationGeneration,
-              timestamp
+              input.invocationGeneration
             ),
           binding
             .prepare(
@@ -793,9 +771,8 @@ export const makeD1ProviderAccountingRepository = (
                   AND dispatch.provider_stage_id = 'recipe-extraction'
                   AND dispatch.maximum_cost_micro_usd = 100000
                   AND dispatch.actual_cost_micro_usd IS NULL
-                  AND dispatch.state = 'settled_unknown'
+                  AND dispatch.state = 'invoking'
                   AND dispatch.invocation_generation = ?
-                  AND dispatch.completed_at = ?
                   AND dispatch.dispatch_id IN (?, ?, ?, ?, ?, ?, ?, ?, ?)
                   AND audit.actual_cost_was_unknown = 1
                   AND audit.authority =
@@ -815,68 +792,31 @@ export const makeD1ProviderAccountingRepository = (
               input.dispatchId,
               input.runId,
               input.invocationGeneration,
-              timestamp,
               ...recipeReplayDispatchIds(input.replay)
             ),
           binding
             .prepare(
-              `UPDATE provider_accounting_budgets
-                  SET settled_micro_usd = settled_micro_usd + 100000,
-                      reserved_micro_usd = reserved_micro_usd - 100000,
-                      state = 'open',
-                      poison_dispatch_id = NULL,
-                      updated_at = ?
-                WHERE accounting_scope = ?
-                  AND state = 'poisoned'
-                  AND invoking_dispatch_id IS NULL
-                  AND poison_dispatch_id = ?
-                  AND reserved_micro_usd >= 100000
-                  AND settled_micro_usd + reserved_micro_usd
-                      <= budget_cap_micro_usd
-                  AND EXISTS (
-                    SELECT 1
-                      FROM provider_accounting_dispatches AS dispatch
-                      JOIN provider_accounting_conservative_settlements
-                           AS audit
-                        ON audit.accounting_scope = dispatch.accounting_scope
-                       AND audit.dispatch_id = dispatch.dispatch_id
-                     WHERE dispatch.accounting_scope =
-                           provider_accounting_budgets.accounting_scope
-                       AND dispatch.dispatch_id = ?
-                       AND dispatch.run_id = ?
-                       AND dispatch.provider_stage_id =
-                           'recipe-extraction'
-                       AND dispatch.maximum_cost_micro_usd = 100000
-                       AND dispatch.actual_cost_micro_usd IS NULL
-                       AND dispatch.state = 'settled_unknown'
-                       AND dispatch.invocation_generation = ?
-                       AND dispatch.completed_at = ?
-                       AND audit.actual_cost_was_unknown = 1
-                       AND audit.authority =
-                           'schema_valid_provider_response'
-                       AND audit.conservative_charge_micro_usd = 100000
-                       AND EXISTS (
-                         SELECT 1
-                           FROM provider_accounting_recipe_replay_values AS replay
-                          WHERE replay.accounting_scope =
-                                dispatch.accounting_scope
-                            AND replay.dispatch_id = dispatch.dispatch_id
-                            AND replay.import_id = ?
-                            AND replay.generation = ?
-                            AND replay.evidence_fingerprint = ?
-                            AND replay.value_json = ?
-                            AND replay.value_sha256 = ?
-                       )
-                  )`
+              `UPDATE provider_accounting_dispatches
+                SET state = 'settled_conservative', completed_at = ?,
+                    invocation_expires_at = NULL, updated_at = ?
+              WHERE accounting_scope = ? AND dispatch_id = ? AND run_id = ?
+                AND state = 'invoking' AND invocation_generation = ?
+                AND EXISTS (
+                  SELECT 1 FROM provider_accounting_recipe_replay_values AS replay
+                   WHERE replay.accounting_scope = provider_accounting_dispatches.accounting_scope
+                     AND replay.dispatch_id = provider_accounting_dispatches.dispatch_id
+                     AND replay.import_id = ? AND replay.generation = ?
+                     AND replay.evidence_fingerprint = ?
+                     AND replay.value_json = ? AND replay.value_sha256 = ?
+                )`
             )
             .bind(
               timestamp,
+              timestamp,
               ProviderAccountingScope,
-              input.dispatchId,
               input.dispatchId,
               input.runId,
               input.invocationGeneration,
-              timestamp,
               input.replay.importId,
               input.replay.generation,
               input.replay.evidenceFingerprint,

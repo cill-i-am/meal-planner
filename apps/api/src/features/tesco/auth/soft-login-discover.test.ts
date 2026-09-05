@@ -2,10 +2,7 @@ import { Effect, Equal, Redacted, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { TescoAuthorizationValue } from "./auth.model.js";
-import {
-  authorizationFromDiscoverConfig,
-  discoverJsonFromHtml,
-} from "./soft-login-discover.js";
+import { authorizationFromDiscoverHtml } from "./soft-login-discover.js";
 
 const htmlWithDiscoverConfig = (authorization: string) => `
   <!doctype html>
@@ -27,9 +24,9 @@ const htmlWithDiscoverConfig = (authorization: string) => `
 describe("soft-login discover config", () => {
   it("extracts the renewed authorization from Tesco discover HTML", async () => {
     const authorization = await Effect.runPromise(
-      discoverJsonFromHtml(
+      authorizationFromDiscoverHtml(
         htmlWithDiscoverConfig("Bearer refreshed-token")
-      ).pipe(Effect.flatMap(authorizationFromDiscoverConfig))
+      )
     );
 
     const expected = Redacted.make(
@@ -44,7 +41,7 @@ describe("soft-login discover config", () => {
 
   it("rejects HTML without a discover config", async () => {
     await expect(
-      Effect.runPromise(discoverJsonFromHtml("<html></html>"))
+      Effect.runPromise(authorizationFromDiscoverHtml("<html></html>"))
     ).rejects.toMatchObject({
       _tag: "TescoSoftLoginResponseInvalid",
     });
@@ -53,8 +50,8 @@ describe("soft-login discover config", () => {
   it("rejects discover config without a bearer authorization", async () => {
     await expect(
       Effect.runPromise(
-        discoverJsonFromHtml(htmlWithDiscoverConfig("not-a-bearer-token")).pipe(
-          Effect.flatMap(authorizationFromDiscoverConfig)
+        authorizationFromDiscoverHtml(
+          htmlWithDiscoverConfig("not-a-bearer-token")
         )
       )
     ).rejects.toMatchObject({
