@@ -31,9 +31,25 @@ import type { HouseholdProfileOperations } from "./operations.js";
 import { describeProfileFact, ProfileFactForm } from "./profile-fact-form.js";
 
 interface PendingProfileChange {
+  readonly authenticationRequired?: boolean;
   readonly personId: HouseholdPersonId;
   readonly payload: MutatePersonProfilePayload;
 }
+const ownsPendingChange = (
+  current: PendingProfileChange | null | undefined,
+  submitted: PendingProfileChange
+) =>
+  current?.personId === submitted.personId &&
+  current.payload.mutationId === submitted.payload.mutationId;
+const pendingMessage = (saving: boolean, authenticationRequired: boolean) => {
+  if (saving) {
+    return "Saving your change…";
+  }
+  if (authenticationRequired) {
+    return "Sign in again in another tab, then return here and retry the saved change. Its exact command is retained; authentication rejection does not resolve an earlier uncertain result.";
+  }
+  return "The last change’s outcome is not known. Resolve it before making another profile change.";
+};
 const profileKey = (organizationId: string, personId: string) => [
   "household-profile",
   organizationId,
@@ -62,6 +78,8 @@ const profileErrorMessage = (error: Error | null) => {
     adult_required: "Link an active adult person before editing profiles.",
     ambiguous:
       "The change may have saved. Retry the saved command before making another change.",
+    authentication_required:
+      "Sign in again, then retry the saved change. Its exact command is retained.",
     fact_conflict:
       "This fact conflicts with existing information. Reload and resolve the conflict explicitly.",
     fact_not_found:
@@ -253,7 +271,13 @@ const SelectedProfile = ({
     queryFn: () => operations.get(person.id),
     queryKey: profileKey(organizationId, person.id),
   });
-  const definitiveError = error !== null && !isAmbiguousProfileError(error);
+  const definitiveError =
+    error !== null &&
+    !isAmbiguousProfileError(error) &&
+    !(
+      error instanceof ProfileOperationError &&
+      error.code === "authentication_required"
+    );
   const disabled =
     blocked ||
     person.lifecycle === "archived" ||
@@ -352,12 +376,24 @@ export const HouseholdProfilesPanel = ({
   const mutation = useMutation({
     mutationFn: (change: PendingProfileChange) =>
       operations.mutate(change.personId, change.payload),
-    onError: (error) => {
-      if (!isAmbiguousProfileError(error)) {
-        client.setQueryData(pendingKey, null);
-      }
+    onError: (error, submitted) => {
+      client.setQueryData<PendingProfileChange | null>(
+        pendingKey,
+        (current) => {
+          if (!ownsPendingChange(current, submitted)) {
+            return current;
+          }
+          if (
+            error instanceof ProfileOperationError &&
+            error.code === "authentication_required"
+          ) {
+            return { ...submitted, authenticationRequired: true };
+          }
+          return isAmbiguousProfileError(error) ? current : null;
+        }
+      );
     },
-    onSuccess: async (result) => {
+    onSuccess: async (result, submitted) => {
       client.setQueryData<PersonProfile>(
         profileKey(organizationId, result.personId),
         (existing) =>
@@ -365,7 +401,9 @@ export const HouseholdProfilesPanel = ({
             ? existing
             : result
       );
-      client.setQueryData(pendingKey, null);
+      client.setQueryData<PendingProfileChange | null>(pendingKey, (current) =>
+        ownsPendingChange(current, submitted) ? null : current
+      );
       await client.invalidateQueries({
         queryKey: profileKey(organizationId, result.personId),
       });
@@ -418,10 +456,18 @@ export const HouseholdProfilesPanel = ({
       {pending.data !== null && (
         <Alert>
           <p>
-            {mutation.isPending
-              ? "Saving your change…"
-              : "The last change’s outcome is not known. Resolve it before making another profile change."}
+            {pendingMessage(
+              mutation.isPending,
+              pending.data.authenticationRequired === true
+            )}
           </p>
+          {pending.data.authenticationRequired && (
+            <p>
+              <a href="/" target="_blank" rel="noreferrer">
+                Open sign-in in another tab
+              </a>
+            </p>
+          )}
           <Button
             disabled={mutation.isPending}
             onClick={() => {
@@ -430,7 +476,9 @@ export const HouseholdProfilesPanel = ({
               }
             }}
           >
-            Retry saved change
+            {pending.data.authenticationRequired
+              ? "I’ve signed in — retry saved change"
+              : "Retry saved change"}
           </Button>
         </Alert>
       )}

@@ -19,9 +19,15 @@ export interface HouseholdProfileOperations {
 }
 
 export class ProfileOperationError extends Error {
-  readonly code: "ambiguous" | HouseholdProfileRejected["reason"];
+  readonly code:
+    | "ambiguous"
+    | "authentication_required"
+    | HouseholdProfileRejected["reason"];
   constructor(
-    code: "ambiguous" | HouseholdProfileRejected["reason"],
+    code:
+      | "ambiguous"
+      | "authentication_required"
+      | HouseholdProfileRejected["reason"],
     options?: ErrorOptions
   ) {
     super(code, options);

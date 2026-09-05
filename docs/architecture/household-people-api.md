@@ -126,3 +126,10 @@ network or malformed-response failure does not authorize a new mutation. A
 definitive conflict requires reloading current state before an explicit new
 submission. This narrow gate is separate from invitation/departure coordination
 and does not introduce a generic saga framework.
+
+Completion callbacks may release only the retained command with the same person
+and mutation ID. An older request completing after remount cannot release a newer
+command. A decoded authentication rejection enters an explicit sign-in-required
+state while retaining the exact payload and ID, including across remount. The
+user signs in in another tab and explicitly retries that command; a later
+authentication rejection does not prove that an earlier attempt failed to commit.

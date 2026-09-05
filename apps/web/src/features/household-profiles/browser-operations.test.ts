@@ -3,6 +3,14 @@ import { expect, it } from "vitest";
 
 import { classifyProfileCause } from "./browser-operations.js";
 
+it("distinguishes a decoded authentication rejection from an ambiguous failure", () => {
+  expect(
+    classifyProfileCause(
+      Cause.fail({ code: "unauthorized", message: "Sign in", status: 401 })
+    ).code
+  ).toBe("authentication_required");
+});
+
 it("only releases a retained mutation for a definite decoded server rejection", () => {
   expect(
     classifyProfileCause(

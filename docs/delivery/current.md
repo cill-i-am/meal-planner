@@ -81,6 +81,12 @@ commands. Local repository tests, static checks, builds, and twice/no-diff
 Household and D1 generation pass. Hosted CI and independent exact-head review
 remain delivery gates; the draft is not merge authority.
 
+The final UI correction additionally proves that delayed callbacks from an older
+command cannot clear a newer unresolved command, and that authentication expiry
+preserves the exact command through sign-in and explicit retry. Its affected web
+suite passes 95 tests; root static checks and the web production build pass.
+The corrected head remains draft for hosted verification and user review.
+
 Organization-deletion behavior remains out of scope. Work Item 04 remains
 `Proposed`.
 

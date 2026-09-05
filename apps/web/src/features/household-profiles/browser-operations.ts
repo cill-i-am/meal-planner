@@ -1,6 +1,7 @@
 import {
   HouseholdPeopleApiClient,
   HouseholdProfileProblem,
+  HouseholdUnauthorizedProblem,
   makeHouseholdPeopleApiClientLayer,
 } from "@meal-planner/household-api";
 import { Cause, Effect, Exit, Layer, Option, Schema } from "effect";
@@ -20,6 +21,13 @@ export const classifyProfileCause = <E>(
     !Cause.isFailReason(reason)
   ) {
     return new ProfileOperationError("ambiguous");
+  }
+  if (
+    Option.isSome(
+      Schema.decodeUnknownOption(HouseholdUnauthorizedProblem)(reason.error)
+    )
+  ) {
+    return new ProfileOperationError("authentication_required");
   }
   const problem = Schema.decodeUnknownOption(HouseholdProfileProblem)(
     reason.error

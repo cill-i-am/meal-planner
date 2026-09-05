@@ -4,7 +4,7 @@ import {
   PersonProfile,
 } from "@meal-planner/household-api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Schema } from "effect";
 import { afterEach, expect, it, vi } from "vitest";
@@ -38,6 +38,135 @@ const empty = Schema.decodeUnknownSync(PersonProfile)({
   version: 0,
 });
 afterEach(cleanup);
+
+it.each([false, true])(
+  "retains the exact command through reauthentication (previous ambiguity: %s)",
+  async (ambiguousFirst) => {
+    const user = userEvent.setup();
+    const mutate = vi.fn();
+    if (ambiguousFirst) {
+      mutate.mockRejectedValueOnce(new ProfileOperationError("ambiguous"));
+    }
+    mutate
+      .mockRejectedValueOnce(
+        new ProfileOperationError("authentication_required")
+      )
+      .mockResolvedValueOnce(empty);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = () => (
+      <QueryClientProvider client={client}>
+        <HouseholdProfilesPanel
+          organizationId="auth"
+          operations={{
+            get: vi.fn().mockResolvedValue(empty),
+            mutate,
+            versions: vi
+              .fn()
+              .mockResolvedValue({ nextBeforeVersion: null, versions: [] }),
+          }}
+          peopleOperations={{ list: vi.fn().mockResolvedValue(roster) }}
+        />
+      </QueryClientProvider>
+    );
+    const first = render(view());
+    await user.type(await screen.findByLabelText("Food or ingredient"), "Peas");
+    await user.click(screen.getByRole("button", { name: "Add fact" }));
+    if (ambiguousFirst) {
+      await screen.findByText(/outcome is not known/u);
+      await user.click(
+        screen.getByRole("button", { name: "Retry saved change" })
+      );
+    }
+    await screen.findByText(/Sign in again/u);
+    expect(screen.getByRole("button", { name: "Add fact" })).toBeDisabled();
+    expect(screen.queryByText(/outcome is not known/u)).not.toBeInTheDocument();
+    first.unmount();
+    render(view());
+    await screen.findByText(/Sign in again/u);
+    await user.click(
+      screen.getByRole("button", {
+        name: "I’ve signed in — retry saved change",
+      })
+    );
+    await waitFor(() =>
+      expect(screen.queryByText(/Sign in again/u)).not.toBeInTheDocument()
+    );
+    expect(mutate).toHaveBeenCalledTimes(ambiguousFirst ? 3 : 2);
+    for (const call of mutate.mock.calls) {
+      expect(call).toEqual(mutate.mock.calls[0]);
+    }
+  }
+);
+
+it.each(["success", "definitive rejection"])(
+  "keeps M2 when the original M1 completes with %s after remount and exact retry",
+  async (outcome) => {
+    const user = userEvent.setup();
+    const original = Promise.withResolvers<PersonProfile>();
+    const newer = Promise.withResolvers<PersonProfile>();
+    const mutate = vi
+      .fn()
+      .mockReturnValueOnce(original.promise)
+      .mockResolvedValueOnce(empty)
+      .mockReturnValueOnce(newer.promise)
+      .mockRejectedValue(new ProfileOperationError("ambiguous"));
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = () => (
+      <QueryClientProvider client={client}>
+        <HouseholdProfilesPanel
+          organizationId="overlap"
+          operations={{
+            get: vi.fn().mockResolvedValue(empty),
+            mutate,
+            versions: vi
+              .fn()
+              .mockResolvedValue({ nextBeforeVersion: null, versions: [] }),
+          }}
+          peopleOperations={{ list: vi.fn().mockResolvedValue(roster) }}
+        />
+      </QueryClientProvider>
+    );
+    const first = render(view());
+    await user.type(
+      await screen.findByLabelText("Food or ingredient"),
+      "Broccoli"
+    );
+    await user.click(screen.getByRole("button", { name: "Add fact" }));
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    first.unmount();
+    render(view());
+    await user.click(
+      await screen.findByRole("button", { name: "Retry saved change" })
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("Food or ingredient")).toBeEnabled()
+    );
+    expect(mutate.mock.calls[1]).toEqual(mutate.mock.calls[0]);
+    await user.type(screen.getByLabelText("Food or ingredient"), "Carrots");
+    await user.click(screen.getByRole("button", { name: "Add fact" }));
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(3));
+    const m2 = mutate.mock.calls.at(2);
+    expect(m2).not.toEqual(mutate.mock.calls[0]);
+    await act(async () => {
+      if (outcome === "success") {
+        original.resolve(empty);
+      } else {
+        original.reject(new ProfileOperationError("stale_version"));
+      }
+    });
+    await act(async () => newer.reject(new ProfileOperationError("ambiguous")));
+    await user.click(
+      await screen.findByRole("button", { name: "Retry saved change" })
+    );
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(4));
+    expect(mutate.mock.calls[3]).toEqual(m2);
+    expect(screen.getByRole("button", { name: "Add fact" })).toBeDisabled();
+  }
+);
 
 it("retains one ambiguous command across edits and remount, retrying its exact payload", async () => {
   const user = userEvent.setup();
