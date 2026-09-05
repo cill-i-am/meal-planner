@@ -83,7 +83,7 @@ No external I/O is introduced inside household transactions.
 - [x] Native accounting proves conservative settlement, evidence requirements,
       rollback, and retry.
 - [x] Desktop/narrow browser checks cover review, validation, and saved recipe.
-- [ ] Container extraction checks pass, or an explicit environmental limit is recorded.
+- [x] Container extraction checks pass against the pinned amd64 image.
 - [ ] Independent review of the immutable PR head has no unresolved findings.
 
 ## Delivery Log
@@ -113,3 +113,29 @@ No external I/O is introduced inside household transactions.
   and the saved-recipe result with local HTTP fixtures. The narrow layout has no
   horizontal overflow. Screenshots are attached to the PR. This proves browser
   behavior; it does not claim live authentication or provider execution.
+
+### P1 review correction — applied provider-accounting migration
+
+- The review of `d853865a4b79fa5b77885bec3009bca8457fa396` identified that
+  Alchemy skips migration filenames already recorded in `d1_migrations`; rewriting
+  the baseline would leave an existing database without the new settlement trigger.
+- Restored `20260824183013_provider_accounting/migration.sql` byte-for-byte from
+  main at `9a59f85170f379e065920eadaaf69593d90c2c40`. Added the ordered
+  `20260905063703_conservative_settlement` migration to replace the transition
+  guard and install the conservative budget trigger. The generated snapshot
+  retains the same schema and links to the baseline snapshot.
+- Added a native D1 upgrade regression using installed Alchemy's SQL discovery
+  and migration executor. It pins the historical baseline hash, applies and
+  records it, begins an invocation, then applies the complete migration directory.
+  Settlement and retry must produce one audit and replay row, leave actual cost
+  unknown, move the reservation into settled spend, and reopen the budget.
+  Reapplying migrations must preserve the ledger without duplicate entries.
+- RED: with the restored baseline alone, the new test rejected conservative
+  settlement with `persistence_unavailable`. GREEN: after adding the migration,
+  the upgrade test and all 27 native accounting tests passed. The three Alchemy
+  D1 import/ledger tests also passed, including atomic import and failure rollback.
+- Correction checks: `pnpm check`, `pnpm lint`, and `pnpm build` passed. Full repository tests,
+  hosted CI, and independent review of the corrected immutable head are tracked
+  on PR #203. The previous head's full 1,041 tests, container verification, and
+  both hosted CI jobs passed; they do not replace verification of this correction.
+- No deployment or merge is authorized by this correction.
