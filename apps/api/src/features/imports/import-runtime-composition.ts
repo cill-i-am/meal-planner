@@ -10,6 +10,7 @@ import { ProviderAccountingDatabase } from "../../infrastructure/provider-accoun
 import { HouseholdDomainWorker } from "../households/household-domain-binding.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
+import { makeProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
 import {
   ProviderAccountingRunId,
   ProviderAccountingTimestamp,
@@ -177,7 +178,9 @@ export const makeRecipeRecoveryProviderRuntime = (input: {
   const dispatch = makeProviderDispatchGate({
     correlationId: input.correlationId,
     now: input.now,
-    repository: makeD1ProviderAccountingRepository(input.database),
+    repository: makeD1ProviderAccountingRepository(
+      makeProviderAccountingDatabase(input.database)
+    ),
     runId: input.runId,
   });
   return makeInstalledRecipeExtractor({

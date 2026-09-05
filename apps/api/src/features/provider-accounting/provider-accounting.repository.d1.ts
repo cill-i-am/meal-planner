@@ -1,6 +1,23 @@
-import type { AnyD1Database } from "drizzle-orm/d1";
+import {
+  and,
+  eq,
+  exists,
+  gte,
+  gt,
+  inArray,
+  isNull,
+  lte,
+  sql,
+} from "drizzle-orm";
 import { DateTime, Effect, Option, Schema } from "effect";
 
+import {
+  providerAccountingBudgets,
+  providerAccountingConservativeSettlements,
+  providerAccountingDispatches,
+  providerAccountingRecipeReplayValues,
+} from "./provider-accounting.database-schema.js";
+import type { ProviderAccountingDatabase } from "./provider-accounting.database.js";
 import {
   ProviderAccountingDispatchId,
   ProviderAccountingDispatchState,
@@ -56,15 +73,6 @@ const ConservativeSettlementRow = Schema.Struct({
   conservative_charge_micro_usd: Schema.Literal(100_000),
   dispatch_id: ProviderAccountingDispatchId,
 });
-
-const DispatchQueryRows = Schema.Struct({
-  results: Schema.Array(DispatchRow),
-});
-
-const ReservationBatchRows = Schema.Tuple([
-  Schema.Struct({ results: Schema.optionalKey(Schema.Array(Schema.Json)) }),
-  Schema.Struct({ results: Schema.Array(StageRow) }),
-]);
 
 const persistenceEffect = <A>(operation: () => PromiseLike<A>) =>
   Effect.tryPromise({
@@ -322,41 +330,76 @@ const stageFromRow = (
 };
 
 const readDispatch = (
-  binding: AnyD1Database,
+  database: ProviderAccountingDatabase,
   input: ProviderAccountingReservation
 ) =>
   persistenceEffect(() =>
-    binding
-      .prepare(
-        `SELECT dispatch.actual_cost_micro_usd,
-                audit.conservative_charge_micro_usd,
-                dispatch.dispatch_id, dispatch.maximum_cost_micro_usd,
-                dispatch.invocation_expires_at,
-                dispatch.invocation_generation,
-                dispatch.provider_stage_id,
-                  replay.evidence_fingerprint AS replay_evidence_fingerprint,
-                  replay.expires_at AS replay_expires_at,
-                  replay.generation AS replay_generation,
-                replay.import_id AS replay_import_id,
-                replay.value_json AS replay_value_json,
-                replay.value_sha256 AS replay_value_sha256,
-                dispatch.run_id, dispatch.state
-           FROM provider_accounting_dispatches AS dispatch
-           LEFT JOIN provider_accounting_conservative_settlements AS audit
-             ON audit.accounting_scope = dispatch.accounting_scope
-            AND audit.dispatch_id = dispatch.dispatch_id
-           LEFT JOIN provider_accounting_recipe_replay_values AS replay
-             ON replay.accounting_scope = dispatch.accounting_scope
-            AND replay.dispatch_id = dispatch.dispatch_id
-            AND replay.expires_at >
-                strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-          WHERE dispatch.accounting_scope = ? AND dispatch.dispatch_id = ?`
+    database
+      .select({
+        actual_cost_micro_usd: providerAccountingDispatches.actualCostMicroUsd,
+        conservative_charge_micro_usd:
+          providerAccountingConservativeSettlements.conservativeChargeMicroUsd,
+        dispatch_id: providerAccountingDispatches.dispatchId,
+        invocation_expires_at: providerAccountingDispatches.invocationExpiresAt,
+        invocation_generation:
+          providerAccountingDispatches.invocationGeneration,
+        maximum_cost_micro_usd:
+          providerAccountingDispatches.maximumCostMicroUsd,
+        provider_stage_id: providerAccountingDispatches.providerStageId,
+        replay_evidence_fingerprint:
+          providerAccountingRecipeReplayValues.evidenceFingerprint,
+        replay_expires_at: providerAccountingRecipeReplayValues.expiresAt,
+        replay_generation: providerAccountingRecipeReplayValues.generation,
+        replay_import_id: providerAccountingRecipeReplayValues.importId,
+        replay_value_json: providerAccountingRecipeReplayValues.valueJson,
+        replay_value_sha256: providerAccountingRecipeReplayValues.valueSha256,
+        run_id: providerAccountingDispatches.runId,
+        state: providerAccountingDispatches.state,
+      })
+      .from(providerAccountingDispatches)
+      .leftJoin(
+        providerAccountingConservativeSettlements,
+        and(
+          eq(
+            providerAccountingConservativeSettlements.accountingScope,
+            providerAccountingDispatches.accountingScope
+          ),
+          eq(
+            providerAccountingConservativeSettlements.dispatchId,
+            providerAccountingDispatches.dispatchId
+          )
+        )
       )
-      .bind(ProviderAccountingScope, input.dispatchId)
-      .first()
+      .leftJoin(
+        providerAccountingRecipeReplayValues,
+        and(
+          eq(
+            providerAccountingRecipeReplayValues.accountingScope,
+            providerAccountingDispatches.accountingScope
+          ),
+          eq(
+            providerAccountingRecipeReplayValues.dispatchId,
+            providerAccountingDispatches.dispatchId
+          ),
+          gt(
+            providerAccountingRecipeReplayValues.expiresAt,
+            sql<string>`strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`
+          )
+        )
+      )
+      .where(
+        and(
+          eq(
+            providerAccountingDispatches.accountingScope,
+            ProviderAccountingScope
+          ),
+          eq(providerAccountingDispatches.dispatchId, input.dispatchId)
+        )
+      )
+      .limit(1)
   ).pipe(
-    Effect.flatMap((row) =>
-      row === null
+    Effect.flatMap(([row]) =>
+      row === undefined
         ? Effect.fail(providerAccountingError("transition_rejected"))
         : Schema.decodeUnknownEffect(DispatchRow, {
             onExcessProperty: "ignore",
@@ -409,21 +452,25 @@ const rejectedReservationCode = (
   return "budget_exceeded";
 };
 
-const readStageRow = (binding: AnyD1Database) =>
+const readStageRow = (database: ProviderAccountingDatabase) =>
   persistenceEffect(() =>
-    binding
-      .prepare(
-        `SELECT budget_cap_micro_usd, invoking_dispatch_id,
-                poison_dispatch_id, reserved_micro_usd,
-                settled_micro_usd, state
-           FROM provider_accounting_budgets
-          WHERE accounting_scope = ?`
+    database
+      .select({
+        budget_cap_micro_usd: providerAccountingBudgets.budgetCapMicroUsd,
+        invoking_dispatch_id: providerAccountingBudgets.invokingDispatchId,
+        poison_dispatch_id: providerAccountingBudgets.poisonDispatchId,
+        reserved_micro_usd: providerAccountingBudgets.reservedMicroUsd,
+        settled_micro_usd: providerAccountingBudgets.settledMicroUsd,
+        state: providerAccountingBudgets.state,
+      })
+      .from(providerAccountingBudgets)
+      .where(
+        eq(providerAccountingBudgets.accountingScope, ProviderAccountingScope)
       )
-      .bind(ProviderAccountingScope)
-      .first()
+      .limit(1)
   ).pipe(
-    Effect.flatMap((row) =>
-      row === null
+    Effect.flatMap(([row]) =>
+      row === undefined
         ? Effect.fail(providerAccountingError("persistence_corrupt"))
         : Schema.decodeUnknownEffect(StageRow, {
             onExcessProperty: "ignore",
@@ -437,22 +484,38 @@ const readStageRow = (binding: AnyD1Database) =>
   );
 
 const readConservativeSettlement = (
-  binding: AnyD1Database,
+  database: ProviderAccountingDatabase,
   input: ProviderAccountingConservativeSettlement
 ) =>
   persistenceEffect(() =>
-    binding
-      .prepare(
-        `SELECT actual_cost_was_unknown, authority,
-                conservative_charge_micro_usd, dispatch_id, accounting_scope
-           FROM provider_accounting_conservative_settlements
-          WHERE accounting_scope = ? AND dispatch_id = ?`
+    database
+      .select({
+        accounting_scope:
+          providerAccountingConservativeSettlements.accountingScope,
+        actual_cost_was_unknown:
+          providerAccountingConservativeSettlements.actualCostWasUnknown,
+        authority: providerAccountingConservativeSettlements.authority,
+        conservative_charge_micro_usd:
+          providerAccountingConservativeSettlements.conservativeChargeMicroUsd,
+        dispatch_id: providerAccountingConservativeSettlements.dispatchId,
+      })
+      .from(providerAccountingConservativeSettlements)
+      .where(
+        and(
+          eq(
+            providerAccountingConservativeSettlements.accountingScope,
+            ProviderAccountingScope
+          ),
+          eq(
+            providerAccountingConservativeSettlements.dispatchId,
+            input.dispatchId
+          )
+        )
       )
-      .bind(ProviderAccountingScope, input.dispatchId)
-      .first()
+      .limit(1)
   ).pipe(
-    Effect.flatMap((row) =>
-      row === null
+    Effect.flatMap(([row]) =>
+      row === undefined
         ? Effect.fail(providerAccountingError("transition_rejected"))
         : Schema.decodeUnknownEffect(ConservativeSettlementRow, {
             onExcessProperty: "ignore",
@@ -464,31 +527,25 @@ const readConservativeSettlement = (
     )
   );
 
-const transition = (
-  binding: AnyD1Database,
+const readTransition = (
+  database: ProviderAccountingDatabase,
   input: ProviderAccountingReservation,
-  sql: string,
-  parameters: readonly (number | string | null)[]
+  operation: () => PromiseLike<unknown>
 ) =>
   Effect.gen(function* transitionDispatch() {
-    yield* persistenceEffect(() =>
-      binding
-        .prepare(sql)
-        .bind(...parameters)
-        .run()
-    );
-    return yield* readDispatch(binding, input).pipe(
+    yield* persistenceEffect(operation);
+    return yield* readDispatch(database, input).pipe(
       Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
     );
   });
 
 /** Build the global D1 provider accounting authority around the existing database. */
 export const makeD1ProviderAccountingRepository = (
-  binding: AnyD1Database
+  database: ProviderAccountingDatabase
 ): ProviderAccountingRepository => ({
   beginInvocation: (input) =>
     Effect.gen(function* beginInvocation() {
-      const current = yield* readDispatch(binding, input).pipe(
+      const current = yield* readDispatch(database, input).pipe(
         Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
       );
       const timestamp = DateTime.formatIso(input.timestamp);
@@ -505,27 +562,31 @@ export const makeD1ProviderAccountingRepository = (
           return { _tag: "NotClaimed", dispatch: current };
         }
         yield* persistenceEffect(() =>
-          binding
-            .prepare(
-              `UPDATE provider_accounting_dispatches
-                  SET state = 'settled_unknown', completed_at = ?,
-                      invocation_expires_at = NULL, updated_at = ?
-                WHERE accounting_scope = ? AND dispatch_id = ?
-                  AND state = 'invoking'
-                  AND invocation_generation = ?
-                  AND invocation_expires_at <= ?`
+          database
+            .update(providerAccountingDispatches)
+            .set({
+              completedAt: timestamp,
+              invocationExpiresAt: null,
+              state: "settled_unknown",
+              updatedAt: timestamp,
+            })
+            .where(
+              and(
+                eq(
+                  providerAccountingDispatches.accountingScope,
+                  ProviderAccountingScope
+                ),
+                eq(providerAccountingDispatches.dispatchId, input.dispatchId),
+                eq(providerAccountingDispatches.state, "invoking"),
+                eq(
+                  providerAccountingDispatches.invocationGeneration,
+                  current.invocationGeneration
+                ),
+                lte(providerAccountingDispatches.invocationExpiresAt, timestamp)
+              )
             )
-            .bind(
-              timestamp,
-              timestamp,
-              ProviderAccountingScope,
-              input.dispatchId,
-              current.invocationGeneration,
-              timestamp
-            )
-            .run()
         );
-        const dispatch = yield* readDispatch(binding, input).pipe(
+        const dispatch = yield* readDispatch(database, input).pipe(
           Effect.flatMap((row) => requireIdentity(row, input))
         );
         return { _tag: "NotClaimed", dispatch };
@@ -536,71 +597,89 @@ export const makeD1ProviderAccountingRepository = (
       const invocationExpiresAt = new Date(
         DateTime.toEpochMillis(input.timestamp) + 5 * 60 * 1000
       ).toISOString();
-      const rawClaim = yield* persistenceEffect(() =>
-        binding
-          .prepare(
-            `UPDATE provider_accounting_dispatches
-                SET state = 'invoking', invocation_started_at = ?,
-                    invocation_expires_at = ?,
-                    invocation_generation = invocation_generation + 1,
-                    updated_at = ?
-              WHERE accounting_scope = ? AND dispatch_id = ? AND state = 'reserved'
-              RETURNING actual_cost_micro_usd, dispatch_id,
-                        invocation_expires_at, invocation_generation,
-                        maximum_cost_micro_usd, provider_stage_id, run_id, state`
-          )
-          .bind(
-            timestamp,
+      const claimedRows = yield* persistenceEffect(() =>
+        database
+          .update(providerAccountingDispatches)
+          .set({
             invocationExpiresAt,
-            timestamp,
-            ProviderAccountingScope,
-            input.dispatchId
+            invocationGeneration: sql<number>`${providerAccountingDispatches.invocationGeneration} + 1`,
+            invocationStartedAt: timestamp,
+            state: "invoking",
+            updatedAt: timestamp,
+          })
+          .where(
+            and(
+              eq(
+                providerAccountingDispatches.accountingScope,
+                ProviderAccountingScope
+              ),
+              eq(providerAccountingDispatches.dispatchId, input.dispatchId),
+              eq(providerAccountingDispatches.state, "reserved")
+            )
           )
-          .all()
+          .returning({
+            actual_cost_micro_usd:
+              providerAccountingDispatches.actualCostMicroUsd,
+            dispatch_id: providerAccountingDispatches.dispatchId,
+            invocation_expires_at:
+              providerAccountingDispatches.invocationExpiresAt,
+            invocation_generation:
+              providerAccountingDispatches.invocationGeneration,
+            maximum_cost_micro_usd:
+              providerAccountingDispatches.maximumCostMicroUsd,
+            provider_stage_id: providerAccountingDispatches.providerStageId,
+            run_id: providerAccountingDispatches.runId,
+            state: providerAccountingDispatches.state,
+          })
       );
-      const claimRows = yield* Schema.decodeUnknownEffect(DispatchQueryRows, {
-        onExcessProperty: "ignore",
-      })(rawClaim).pipe(
-        Effect.mapError(() => providerAccountingError("persistence_corrupt"))
-      );
-      if (claimRows.results.length > 1) {
-        return yield* Effect.fail(
-          providerAccountingError("persistence_corrupt")
-        );
-      }
-      const [claimedRow] = claimRows.results;
+      const [claimedRow] = claimedRows;
       if (claimedRow !== undefined) {
-        const dispatch = yield* dispatchFromRow(claimedRow).pipe(
+        const dispatch = yield* Schema.decodeUnknownEffect(DispatchRow, {
+          onExcessProperty: "ignore",
+        })(claimedRow).pipe(
+          Effect.mapError(() => providerAccountingError("persistence_corrupt")),
+          Effect.flatMap(dispatchFromRow),
           Effect.flatMap((row) => requireIdentity(row, input))
         );
         return { _tag: "Claimed", dispatch };
       }
-      const dispatch = yield* readDispatch(binding, input).pipe(
+      const dispatch = yield* readDispatch(database, input).pipe(
         Effect.flatMap((row) => requireIdentity(row, input))
       );
       return { _tag: "NotClaimed", dispatch };
     }),
   readDispatch: (input) =>
-    readDispatch(binding, input).pipe(
+    readDispatch(database, input).pipe(
       Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
     ),
-  readStage: () => readStageRow(binding),
+  readStage: () => readStageRow(database),
   releaseBeforeInvocation: (input) =>
     Effect.gen(function* releaseBeforeInvocation() {
-      const current = yield* readDispatch(binding, input).pipe(
+      const current = yield* readDispatch(database, input).pipe(
         Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
       );
       if (current.state !== "reserved") {
         return current;
       }
       const timestamp = DateTime.formatIso(input.timestamp);
-      const released = yield* transition(
-        binding,
-        input,
-        `UPDATE provider_accounting_dispatches
-            SET state = 'released', completed_at = ?, updated_at = ?
-          WHERE accounting_scope = ? AND dispatch_id = ? AND state = 'reserved'`,
-        [timestamp, timestamp, ProviderAccountingScope, input.dispatchId]
+      const released = yield* readTransition(database, input, () =>
+        database
+          .update(providerAccountingDispatches)
+          .set({
+            completedAt: timestamp,
+            state: "released",
+            updatedAt: timestamp,
+          })
+          .where(
+            and(
+              eq(
+                providerAccountingDispatches.accountingScope,
+                ProviderAccountingScope
+              ),
+              eq(providerAccountingDispatches.dispatchId, input.dispatchId),
+              eq(providerAccountingDispatches.state, "reserved")
+            )
+          )
       );
       return released.state === "released"
         ? released
@@ -616,57 +695,82 @@ export const makeD1ProviderAccountingRepository = (
         return yield* Effect.fail(providerAccountingError("budget_exceeded"));
       }
       const timestamp = DateTime.formatIso(input.timestamp);
-      const stageBefore = yield* persistenceEffect(() =>
-        binding.batch([
-          binding
-            .prepare(
-              `INSERT INTO provider_accounting_dispatches (
-                 accounting_scope, dispatch_id, run_id, provider_stage_id,
-                 maximum_cost_micro_usd, state, created_at, updated_at
-               )
-               SELECT accounting_scope, ?, ?, ?, ?, 'reserved', ?, ?
-                 FROM provider_accounting_budgets
-                WHERE accounting_scope = ?
-                  AND state = 'open'
-                  AND settled_micro_usd + reserved_micro_usd + ?
-                    <= budget_cap_micro_usd
-               ON CONFLICT(accounting_scope, dispatch_id) DO NOTHING`
+      const [, stageRows] = yield* persistenceEffect(() =>
+        database.batch([
+          database
+            .insert(providerAccountingDispatches)
+            .select(
+              database
+                .select({
+                  accountingScope: providerAccountingBudgets.accountingScope,
+                  createdAt: sql<string>`${timestamp}`.as("created_at"),
+                  dispatchId: sql<string>`${input.dispatchId}`.as(
+                    "dispatch_id"
+                  ),
+                  maximumCostMicroUsd:
+                    sql<number>`${input.maximumCostMicroUsd}`.as(
+                      "maximum_cost_micro_usd"
+                    ),
+                  providerStageId: sql<string>`${input.providerStageId}`.as(
+                    "provider_stage_id"
+                  ),
+                  runId: sql<string>`${input.runId}`.as("run_id"),
+                  state: sql`'reserved'`.as("state"),
+                  updatedAt: sql<string>`${timestamp}`.as("updated_at"),
+                })
+                .from(providerAccountingBudgets)
+                .where(
+                  and(
+                    eq(
+                      providerAccountingBudgets.accountingScope,
+                      ProviderAccountingScope
+                    ),
+                    eq(providerAccountingBudgets.state, "open"),
+                    lte(
+                      sql<number>`${providerAccountingBudgets.settledMicroUsd} + ${providerAccountingBudgets.reservedMicroUsd} + ${input.maximumCostMicroUsd}`,
+                      providerAccountingBudgets.budgetCapMicroUsd
+                    )
+                  )
+                )
             )
-            .bind(
-              input.dispatchId,
-              input.runId,
-              input.providerStageId,
-              input.maximumCostMicroUsd,
-              timestamp,
-              timestamp,
-              ProviderAccountingScope,
-              input.maximumCostMicroUsd
+            .onConflictDoNothing({
+              target: [
+                providerAccountingDispatches.accountingScope,
+                providerAccountingDispatches.dispatchId,
+              ],
+            }),
+          database
+            .select({
+              budget_cap_micro_usd: providerAccountingBudgets.budgetCapMicroUsd,
+              invoking_dispatch_id:
+                providerAccountingBudgets.invokingDispatchId,
+              poison_dispatch_id: providerAccountingBudgets.poisonDispatchId,
+              reserved_micro_usd: providerAccountingBudgets.reservedMicroUsd,
+              settled_micro_usd: providerAccountingBudgets.settledMicroUsd,
+              state: providerAccountingBudgets.state,
+            })
+            .from(providerAccountingBudgets)
+            .where(
+              eq(
+                providerAccountingBudgets.accountingScope,
+                ProviderAccountingScope
+              )
             ),
-          binding
-            .prepare(
-              `SELECT budget_cap_micro_usd, invoking_dispatch_id,
-                      poison_dispatch_id, reserved_micro_usd,
-                      settled_micro_usd, state
-                 FROM provider_accounting_budgets
-                WHERE accounting_scope = ?`
-            )
-            .bind(ProviderAccountingScope),
         ])
       );
-      const [, stageResult] = yield* Schema.decodeUnknownEffect(
-        ReservationBatchRows,
+      const [stageRow] = yield* Schema.decodeUnknownEffect(
+        Schema.Array(StageRow),
         { onExcessProperty: "ignore" }
-      )(stageBefore).pipe(
+      )(stageRows).pipe(
         Effect.mapError(() => providerAccountingError("persistence_corrupt"))
       );
-      const [stageRow] = stageResult.results;
       if (stageRow === undefined) {
         return yield* Effect.fail(
           providerAccountingError("persistence_corrupt")
         );
       }
       const stage = yield* stageFromRow(stageRow);
-      const dispatch = yield* readDispatch(binding, input).pipe(
+      const dispatch = yield* readDispatch(database, input).pipe(
         Effect.catchTag("ProviderAccountingError", (error) =>
           error.code === "transition_rejected"
             ? Effect.fail(
@@ -685,7 +789,7 @@ export const makeD1ProviderAccountingRepository = (
           providerAccountingError("cost_exceeds_reservation")
         );
       }
-      const current = yield* readDispatch(binding, input).pipe(
+      const current = yield* readDispatch(database, input).pipe(
         Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
       );
       if (current.state === "settled_conservative") {
@@ -694,8 +798,8 @@ export const makeD1ProviderAccountingRepository = (
             providerAccountingError("dispatch_conflict")
           );
         }
-        yield* readConservativeSettlement(binding, input);
-        const stage = yield* readStageRow(binding);
+        yield* readConservativeSettlement(database, input);
+        const stage = yield* readStageRow(database);
         return stage.state === "open" &&
           stage.invokingDispatchId === undefined &&
           stage.poisonDispatchId === undefined &&
@@ -712,124 +816,218 @@ export const makeD1ProviderAccountingRepository = (
         return yield* Effect.fail(providerAccountingError("dispatch_conflict"));
       }
       const timestamp = DateTime.formatIso(input.timestamp);
-      yield* persistenceEffect(() =>
-        binding.batch([
-          binding
-            .prepare(
-              `INSERT INTO provider_accounting_conservative_settlements (
-                 actual_cost_was_unknown, authority,
-                 conservative_charge_micro_usd, created_at,
-                 dispatch_id, accounting_scope
-               )
-               SELECT 1, 'schema_valid_provider_response', 100000, ?,
-                      dispatch.dispatch_id, dispatch.accounting_scope
-                 FROM provider_accounting_dispatches AS dispatch
-                 JOIN provider_accounting_budgets AS stage
-                   ON stage.accounting_scope = dispatch.accounting_scope
-                WHERE dispatch.accounting_scope = ?
-                  AND dispatch.dispatch_id = ?
-                  AND dispatch.run_id = ?
-                  AND dispatch.provider_stage_id = 'recipe-extraction'
-                  AND dispatch.maximum_cost_micro_usd = 100000
-                  AND dispatch.actual_cost_micro_usd IS NULL
-                  AND dispatch.state = 'invoking'
-                  AND dispatch.invocation_generation = ?
-                  AND stage.state = 'invoking'
-                  AND stage.invoking_dispatch_id = dispatch.dispatch_id
-                  AND stage.poison_dispatch_id IS NULL
-                  AND stage.reserved_micro_usd >= 100000
-                  AND stage.settled_micro_usd
-                      + stage.reserved_micro_usd
-                      <= stage.budget_cap_micro_usd
-               ON CONFLICT(accounting_scope, dispatch_id) DO NOTHING`
-            )
-            .bind(
-              timestamp,
-              ProviderAccountingScope,
-              input.dispatchId,
-              input.runId,
+      const authorizedSettlement = database
+        .select({
+          accountingScope: providerAccountingDispatches.accountingScope,
+          actualCostWasUnknown: sql<number>`${1}`.as("actual_cost_was_unknown"),
+          authority: sql`'schema_valid_provider_response'`.as("authority"),
+          conservativeChargeMicroUsd: sql<number>`${100_000}`.as(
+            "conservative_charge_micro_usd"
+          ),
+          createdAt: sql<string>`${timestamp}`.as("created_at"),
+          dispatchId: providerAccountingDispatches.dispatchId,
+        })
+        .from(providerAccountingDispatches)
+        .innerJoin(
+          providerAccountingBudgets,
+          eq(
+            providerAccountingBudgets.accountingScope,
+            providerAccountingDispatches.accountingScope
+          )
+        )
+        .where(
+          and(
+            eq(
+              providerAccountingDispatches.accountingScope,
+              ProviderAccountingScope
+            ),
+            eq(providerAccountingDispatches.dispatchId, input.dispatchId),
+            eq(providerAccountingDispatches.runId, input.runId),
+            eq(
+              providerAccountingDispatches.providerStageId,
+              "recipe-extraction"
+            ),
+            eq(providerAccountingDispatches.maximumCostMicroUsd, 100_000),
+            isNull(providerAccountingDispatches.actualCostMicroUsd),
+            eq(providerAccountingDispatches.state, "invoking"),
+            eq(
+              providerAccountingDispatches.invocationGeneration,
               input.invocationGeneration
             ),
-          binding
-            .prepare(
-              `INSERT INTO provider_accounting_recipe_replay_values (
-                 created_at, dispatch_id, evidence_fingerprint, expires_at,
-                 generation, import_id, accounting_scope, value_json,
-                 value_sha256
-               )
-               SELECT ?, dispatch.dispatch_id, ?,
-                      strftime('%Y-%m-%dT%H:%M:%fZ', ?, '+7 days'),
-                      ?, ?,
-                      dispatch.accounting_scope, ?, ?
-                 FROM provider_accounting_dispatches AS dispatch
-                 JOIN provider_accounting_conservative_settlements AS audit
-                   ON audit.accounting_scope = dispatch.accounting_scope
-                  AND audit.dispatch_id = dispatch.dispatch_id
-                WHERE dispatch.accounting_scope = ?
-                  AND dispatch.dispatch_id = ?
-                  AND dispatch.run_id = ?
-                  AND dispatch.provider_stage_id = 'recipe-extraction'
-                  AND dispatch.maximum_cost_micro_usd = 100000
-                  AND dispatch.actual_cost_micro_usd IS NULL
-                  AND dispatch.state = 'invoking'
-                  AND dispatch.invocation_generation = ?
-                  AND dispatch.dispatch_id IN (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                  AND audit.actual_cost_was_unknown = 1
-                  AND audit.authority =
-                      'schema_valid_provider_response'
-                  AND audit.conservative_charge_micro_usd = 100000
-               ON CONFLICT(accounting_scope, dispatch_id) DO NOTHING`
-            )
-            .bind(
-              timestamp,
-              input.replay.evidenceFingerprint,
-              timestamp,
-              input.replay.generation,
-              input.replay.importId,
-              input.replay.valueJson,
-              input.replay.valueSha256,
-              ProviderAccountingScope,
-              input.dispatchId,
-              input.runId,
-              input.invocationGeneration,
-              ...recipeReplayDispatchIds(input.replay)
+            eq(providerAccountingBudgets.state, "invoking"),
+            eq(
+              providerAccountingBudgets.invokingDispatchId,
+              providerAccountingDispatches.dispatchId
             ),
-          binding
-            .prepare(
-              `UPDATE provider_accounting_dispatches
-                SET state = 'settled_conservative', completed_at = ?,
-                    invocation_expires_at = NULL, updated_at = ?
-              WHERE accounting_scope = ? AND dispatch_id = ? AND run_id = ?
-                AND state = 'invoking' AND invocation_generation = ?
-                AND EXISTS (
-                  SELECT 1 FROM provider_accounting_recipe_replay_values AS replay
-                   WHERE replay.accounting_scope = provider_accounting_dispatches.accounting_scope
-                     AND replay.dispatch_id = provider_accounting_dispatches.dispatch_id
-                     AND replay.import_id = ? AND replay.generation = ?
-                     AND replay.evidence_fingerprint = ?
-                     AND replay.value_json = ? AND replay.value_sha256 = ?
-                )`
+            isNull(providerAccountingBudgets.poisonDispatchId),
+            gte(providerAccountingBudgets.reservedMicroUsd, 100_000),
+            lte(
+              sql<number>`${providerAccountingBudgets.settledMicroUsd} + ${providerAccountingBudgets.reservedMicroUsd}`,
+              providerAccountingBudgets.budgetCapMicroUsd
             )
-            .bind(
-              timestamp,
-              timestamp,
-              ProviderAccountingScope,
-              input.dispatchId,
-              input.runId,
-              input.invocationGeneration,
-              input.replay.importId,
-              input.replay.generation,
-              input.replay.evidenceFingerprint,
-              input.replay.valueJson,
-              input.replay.valueSha256
+          )
+        );
+      const authorizedReplay = database
+        .select({
+          accountingScope: providerAccountingDispatches.accountingScope,
+          createdAt: sql<string>`${timestamp}`.as("created_at"),
+          dispatchId: providerAccountingDispatches.dispatchId,
+          evidenceFingerprint:
+            sql<string>`${input.replay.evidenceFingerprint}`.as(
+              "evidence_fingerprint"
+            ),
+          expiresAt:
+            sql<string>`strftime('%Y-%m-%dT%H:%M:%fZ', ${timestamp}, '+7 days')`.as(
+              "expires_at"
+            ),
+          generation: sql<number>`${input.replay.generation}`.as("generation"),
+          importId: sql<string>`${input.replay.importId}`.as("import_id"),
+          valueJson: sql<string>`${input.replay.valueJson}`.as("value_json"),
+          valueSha256: sql<string>`${input.replay.valueSha256}`.as(
+            "value_sha256"
+          ),
+        })
+        .from(providerAccountingDispatches)
+        .innerJoin(
+          providerAccountingConservativeSettlements,
+          and(
+            eq(
+              providerAccountingConservativeSettlements.accountingScope,
+              providerAccountingDispatches.accountingScope
+            ),
+            eq(
+              providerAccountingConservativeSettlements.dispatchId,
+              providerAccountingDispatches.dispatchId
+            )
+          )
+        )
+        .where(
+          and(
+            eq(
+              providerAccountingDispatches.accountingScope,
+              ProviderAccountingScope
+            ),
+            eq(providerAccountingDispatches.dispatchId, input.dispatchId),
+            eq(providerAccountingDispatches.runId, input.runId),
+            eq(
+              providerAccountingDispatches.providerStageId,
+              "recipe-extraction"
+            ),
+            eq(providerAccountingDispatches.maximumCostMicroUsd, 100_000),
+            isNull(providerAccountingDispatches.actualCostMicroUsd),
+            eq(providerAccountingDispatches.state, "invoking"),
+            eq(
+              providerAccountingDispatches.invocationGeneration,
+              input.invocationGeneration
+            ),
+            inArray(
+              providerAccountingDispatches.dispatchId,
+              recipeReplayDispatchIds(input.replay)
+            ),
+            eq(
+              providerAccountingConservativeSettlements.actualCostWasUnknown,
+              1
+            ),
+            eq(
+              providerAccountingConservativeSettlements.authority,
+              "schema_valid_provider_response"
+            ),
+            eq(
+              providerAccountingConservativeSettlements.conservativeChargeMicroUsd,
+              100_000
+            )
+          )
+        );
+      yield* persistenceEffect(() =>
+        database.batch([
+          database
+            .insert(providerAccountingConservativeSettlements)
+            .select(authorizedSettlement)
+            .onConflictDoNothing({
+              target: [
+                providerAccountingConservativeSettlements.accountingScope,
+                providerAccountingConservativeSettlements.dispatchId,
+              ],
+            }),
+          database
+            .insert(providerAccountingRecipeReplayValues)
+            .select(authorizedReplay)
+            .onConflictDoNothing({
+              target: [
+                providerAccountingRecipeReplayValues.accountingScope,
+                providerAccountingRecipeReplayValues.dispatchId,
+              ],
+            }),
+          database
+            .update(providerAccountingDispatches)
+            .set({
+              completedAt: timestamp,
+              invocationExpiresAt: null,
+              state: "settled_conservative",
+              updatedAt: timestamp,
+            })
+            .where(
+              and(
+                eq(
+                  providerAccountingDispatches.accountingScope,
+                  ProviderAccountingScope
+                ),
+                eq(providerAccountingDispatches.dispatchId, input.dispatchId),
+                eq(providerAccountingDispatches.runId, input.runId),
+                eq(providerAccountingDispatches.state, "invoking"),
+                eq(
+                  providerAccountingDispatches.invocationGeneration,
+                  input.invocationGeneration
+                ),
+                exists(
+                  database
+                    .select({
+                      dispatchId:
+                        providerAccountingRecipeReplayValues.dispatchId,
+                    })
+                    .from(providerAccountingRecipeReplayValues)
+                    .where(
+                      and(
+                        eq(
+                          providerAccountingRecipeReplayValues.accountingScope,
+                          providerAccountingDispatches.accountingScope
+                        ),
+                        eq(
+                          providerAccountingRecipeReplayValues.dispatchId,
+                          providerAccountingDispatches.dispatchId
+                        ),
+                        eq(
+                          providerAccountingRecipeReplayValues.importId,
+                          input.replay.importId
+                        ),
+                        eq(
+                          providerAccountingRecipeReplayValues.generation,
+                          input.replay.generation
+                        ),
+                        eq(
+                          providerAccountingRecipeReplayValues.evidenceFingerprint,
+                          input.replay.evidenceFingerprint
+                        ),
+                        eq(
+                          providerAccountingRecipeReplayValues.valueJson,
+                          input.replay.valueJson
+                        ),
+                        eq(
+                          providerAccountingRecipeReplayValues.valueSha256,
+                          input.replay.valueSha256
+                        )
+                      )
+                    )
+                )
+              )
             ),
         ])
       );
-      const settled = yield* readDispatch(binding, input).pipe(
+      const settled = yield* readDispatch(database, input).pipe(
         Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
       );
-      yield* readConservativeSettlement(binding, input);
-      const stage = yield* readStageRow(binding);
+      yield* readConservativeSettlement(database, input);
+      const stage = yield* readStageRow(database);
       return settled.state === "settled_conservative" &&
         settled.actualCostMicroUsd === null &&
         replayMatches(settled, input) &&
@@ -849,7 +1047,7 @@ export const makeD1ProviderAccountingRepository = (
           providerAccountingError("cost_exceeds_reservation")
         );
       }
-      const current = yield* readDispatch(binding, input).pipe(
+      const current = yield* readDispatch(database, input).pipe(
         Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
       );
       if (current.state === "settled_known") {
@@ -867,22 +1065,30 @@ export const makeD1ProviderAccountingRepository = (
         return yield* Effect.fail(providerAccountingError("dispatch_conflict"));
       }
       const timestamp = DateTime.formatIso(input.timestamp);
-      const settled = yield* transition(
-        binding,
-        input,
-        `UPDATE provider_accounting_dispatches
-            SET state = 'settled_known', actual_cost_micro_usd = ?,
-                completed_at = ?, invocation_expires_at = NULL, updated_at = ?
-          WHERE accounting_scope = ? AND dispatch_id = ? AND state = 'invoking'
-            AND invocation_generation = ?`,
-        [
-          input.actualCostMicroUsd,
-          timestamp,
-          timestamp,
-          ProviderAccountingScope,
-          input.dispatchId,
-          input.invocationGeneration,
-        ]
+      const settled = yield* readTransition(database, input, () =>
+        database
+          .update(providerAccountingDispatches)
+          .set({
+            actualCostMicroUsd: input.actualCostMicroUsd,
+            completedAt: timestamp,
+            invocationExpiresAt: null,
+            state: "settled_known",
+            updatedAt: timestamp,
+          })
+          .where(
+            and(
+              eq(
+                providerAccountingDispatches.accountingScope,
+                ProviderAccountingScope
+              ),
+              eq(providerAccountingDispatches.dispatchId, input.dispatchId),
+              eq(providerAccountingDispatches.state, "invoking"),
+              eq(
+                providerAccountingDispatches.invocationGeneration,
+                input.invocationGeneration
+              )
+            )
+          )
       );
       if (settled.state === "settled_unknown") {
         return yield* Effect.fail(providerAccountingError("outcome_unknown"));
@@ -894,7 +1100,7 @@ export const makeD1ProviderAccountingRepository = (
     }),
   settleUnknown: (input) =>
     Effect.gen(function* settleUnknown() {
-      const current = yield* readDispatch(binding, input).pipe(
+      const current = yield* readDispatch(database, input).pipe(
         Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
       );
       if (current.state === "settled_unknown") {
@@ -911,21 +1117,29 @@ export const makeD1ProviderAccountingRepository = (
         return yield* Effect.fail(providerAccountingError("dispatch_conflict"));
       }
       const timestamp = DateTime.formatIso(input.timestamp);
-      const settled = yield* transition(
-        binding,
-        input,
-        `UPDATE provider_accounting_dispatches
-            SET state = 'settled_unknown', completed_at = ?,
-                invocation_expires_at = NULL, updated_at = ?
-          WHERE accounting_scope = ? AND dispatch_id = ? AND state = 'invoking'
-            AND invocation_generation = ?`,
-        [
-          timestamp,
-          timestamp,
-          ProviderAccountingScope,
-          input.dispatchId,
-          input.invocationGeneration,
-        ]
+      const settled = yield* readTransition(database, input, () =>
+        database
+          .update(providerAccountingDispatches)
+          .set({
+            completedAt: timestamp,
+            invocationExpiresAt: null,
+            state: "settled_unknown",
+            updatedAt: timestamp,
+          })
+          .where(
+            and(
+              eq(
+                providerAccountingDispatches.accountingScope,
+                ProviderAccountingScope
+              ),
+              eq(providerAccountingDispatches.dispatchId, input.dispatchId),
+              eq(providerAccountingDispatches.state, "invoking"),
+              eq(
+                providerAccountingDispatches.invocationGeneration,
+                input.invocationGeneration
+              )
+            )
+          )
       );
       return settled.state === "settled_unknown"
         ? settled

@@ -12,6 +12,7 @@ import { Effect, Schema } from "effect";
 import { Miniflare } from "miniflare";
 import { expect, it } from "vitest";
 
+import { makeProviderAccountingDatabase } from "./provider-accounting.database.js";
 import {
   ProviderAccountingDispatchId,
   ProviderAccountingProviderStageId,
@@ -151,7 +152,9 @@ const withAppliedBaseline = async (
 
 it("upgrades an applied baseline and conservatively settles an existing invocation exactly once", async () => {
   await withAppliedBaseline(async (database, upgrade) => {
-    const repository = makeD1ProviderAccountingRepository(database);
+    const repository = makeD1ProviderAccountingRepository(
+      makeProviderAccountingDatabase(database)
+    );
     const evidenceFingerprint = "e".repeat(64);
     const command = {
       dispatchId: Schema.decodeUnknownSync(ProviderAccountingDispatchId)(
@@ -387,7 +390,9 @@ it.each(["active", "expired", "swept", "unknown"] as const)(
                 ),
             };
       expect(await readPersisted(database)).toEqual(expected);
-      const current = makeD1ProviderAccountingRepository(database);
+      const current = makeD1ProviderAccountingRepository(
+        makeProviderAccountingDatabase(database)
+      );
       const read = await current.readDispatch(command).pipe(Effect.runPromise);
       expect(read.state).toBe(
         scenario === "unknown" ? "settled_unknown" : "settled_conservative"

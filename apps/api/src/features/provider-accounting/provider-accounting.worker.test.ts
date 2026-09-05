@@ -1,9 +1,18 @@
 import { applyD1Migrations, env } from "cloudflare:test";
+import { eq } from "drizzle-orm";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Cause, Deferred, Effect, Exit, Fiber, Schema } from "effect";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { ImportId } from "../imports/import.contracts.js";
+import {
+  providerAccountingBudgets,
+  providerAccountingConservativeSettlements,
+  providerAccountingDispatches,
+  providerAccountingRecipeReplayValues,
+  providerAccountingReconciliations,
+} from "./provider-accounting.database-schema.js";
+import { makeProviderAccountingDatabase } from "./provider-accounting.database.js";
 import {
   ProviderAccountingDispatchId,
   ProviderAccountingProviderStageId,
@@ -99,27 +108,25 @@ beforeEach(async () => {
   await testEnv.ProviderAccountingDatabase.prepare(
     "DROP TRIGGER IF EXISTS provider_accounting_reconciliations_immutable_delete"
   ).run();
-  await testEnv.ProviderAccountingDatabase.batch([
-    testEnv.ProviderAccountingDatabase.prepare(
-      "DELETE FROM provider_accounting_recipe_replay_values"
-    ),
-    testEnv.ProviderAccountingDatabase.prepare(
-      "DELETE FROM provider_accounting_conservative_settlements"
-    ),
-    testEnv.ProviderAccountingDatabase.prepare(
-      "DELETE FROM provider_accounting_reconciliations"
-    ),
-    testEnv.ProviderAccountingDatabase.prepare(
-      "DELETE FROM provider_accounting_dispatches"
-    ),
-    testEnv.ProviderAccountingDatabase.prepare(
-      `UPDATE provider_accounting_budgets
-          SET settled_micro_usd = 0, reserved_micro_usd = 0,
-              state = 'open', invoking_dispatch_id = NULL,
-              poison_dispatch_id = NULL,
-              updated_at = '2026-07-29T18:00:00.000Z'
-        WHERE accounting_scope = 'recipe-import'`
-    ),
+  const database = makeProviderAccountingDatabase(
+    testEnv.ProviderAccountingDatabase
+  );
+  await database.batch([
+    database.delete(providerAccountingRecipeReplayValues),
+    database.delete(providerAccountingConservativeSettlements),
+    database.delete(providerAccountingReconciliations),
+    database.delete(providerAccountingDispatches),
+    database
+      .update(providerAccountingBudgets)
+      .set({
+        invokingDispatchId: null,
+        poisonDispatchId: null,
+        reservedMicroUsd: 0,
+        settledMicroUsd: 0,
+        state: "open",
+        updatedAt: "2026-07-29T18:00:00.000Z",
+      })
+      .where(eq(providerAccountingBudgets.accountingScope, "recipe-import")),
   ]);
   await testEnv.ProviderAccountingDatabase.prepare(
     `CREATE TRIGGER provider_accounting_conservative_settlements_immutable_delete
@@ -143,7 +150,7 @@ beforeEach(async () => {
 describe("provider accounting", () => {
   it("observes settlement outcomes only after durable settlement", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const outcomes: string[] = [];
 
@@ -171,7 +178,7 @@ describe("provider accounting", () => {
 
   it("charges one schema-valid recipe response conservatively without claiming known actual spend", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const command = {
       ...reservation(
@@ -316,7 +323,7 @@ describe("provider accounting", () => {
 
   it("converges concurrent conservative settlements on one immutable charge", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const command = {
       ...reservation(
@@ -360,7 +367,9 @@ describe("provider accounting", () => {
 
   it("requires durable replay evidence before a conservative transition", async () => {
     const database = testEnv.ProviderAccountingDatabase;
-    const repository = makeD1ProviderAccountingRepository(database);
+    const repository = makeD1ProviderAccountingRepository(
+      makeProviderAccountingDatabase(database)
+    );
     const command = {
       ...reservation(
         "recipe-import:direct-transition",
@@ -395,7 +404,9 @@ describe("provider accounting", () => {
 
   it("rolls back the audit and retains the invocation fence when replay persistence fails", async () => {
     const database = testEnv.ProviderAccountingDatabase;
-    const repository = makeD1ProviderAccountingRepository(database);
+    const repository = makeD1ProviderAccountingRepository(
+      makeProviderAccountingDatabase(database)
+    );
     const importId = "replay-persistence-failure";
     const command = {
       ...reservation(
@@ -452,7 +463,7 @@ describe("provider accounting", () => {
 
   it("rejects multibyte conservative replay JSON over the UTF-8 byte cap", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const importId = "import-multibyte-replay";
     const command = {
@@ -530,7 +541,7 @@ describe("provider accounting", () => {
 
   it("fails closed without redispatch when a conservative replay value is absent", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const command = {
       ...reservation(
@@ -584,7 +595,7 @@ describe("provider accounting", () => {
 
   it("fails closed on an expired replay and sweeps it during ordinary budget activity", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const command = {
       ...reservation(
@@ -669,9 +680,55 @@ describe("provider accounting", () => {
     ).resolves.toBeNull();
   });
 
+  it("keeps reservation persistence failures distinct from budget rejection and allows retry", async () => {
+    const database = makeProviderAccountingDatabase(
+      testEnv.ProviderAccountingDatabase
+    );
+    const repository = makeD1ProviderAccountingRepository(database);
+    const command = reservation(
+      "run_reservation_failure",
+      "dispatch_reservation_failure",
+      10
+    );
+    await testEnv.ProviderAccountingDatabase.prepare(
+      `CREATE TRIGGER reject_reservation
+       BEFORE INSERT ON provider_accounting_dispatches
+       BEGIN SELECT RAISE(ABORT, 'injected reservation persistence failure'); END`
+    ).run();
+    try {
+      await expect(
+        Effect.runPromise(repository.reserve(command))
+      ).rejects.toMatchObject({
+        code: "persistence_unavailable",
+      });
+      expect(await Effect.runPromise(repository.readStage())).toEqual({
+        budgetCapMicroUsd: 10_000_000,
+        reservedMicroUsd: 0,
+        settledMicroUsd: 0,
+        state: "open",
+      });
+      expect(
+        await database.select().from(providerAccountingDispatches)
+      ).toEqual([]);
+    } finally {
+      await testEnv.ProviderAccountingDatabase.prepare(
+        "DROP TRIGGER reject_reservation"
+      ).run();
+    }
+    await expect(
+      Effect.runPromise(repository.reserve(command))
+    ).resolves.toMatchObject({
+      dispatchId: command.dispatchId,
+      state: "reserved",
+    });
+    expect(await Effect.runPromise(repository.readStage())).toMatchObject({
+      reservedMicroUsd: 10,
+    });
+  });
+
   it("atomically fences concurrent reservations across different run IDs", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const first = reservation("run_a", "dispatch_a", 6_000_000);
     const second = reservation("run_b", "dispatch_b", 6_000_000);
@@ -712,7 +769,7 @@ describe("provider accounting", () => {
 
   it("settles known cost idempotently and releases only pre-invocation reservations", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const known = reservation("run_known", "dispatch_known", 6_000_000);
     await Effect.runPromise(repository.reserve(known));
@@ -749,7 +806,7 @@ describe("provider accounting", () => {
 
   it("settles a dispatch once when concurrent callers report different known costs", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const command = reservation("run_settle", "dispatch_settle", 10);
     await Effect.runPromise(repository.reserve(command));
@@ -788,7 +845,7 @@ describe("provider accounting", () => {
 
   it("poisons the one stage across run IDs without erasing possible spend", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const unknown = reservation("run_unknown", "dispatch_unknown", 4_000_000);
     await Effect.runPromise(repository.reserve(unknown));
@@ -814,7 +871,7 @@ describe("provider accounting", () => {
 
   it("serializes invocation across runs while keeping both reservations", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const first = reservation("run_first", "dispatch_first", 4_000_000);
     const second = reservation("run_second", "dispatch_second", 4_000_000);
@@ -839,7 +896,7 @@ describe("provider accounting", () => {
 
   it("poisons a stale durable invocation claim after restart without reinvoking", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const claimed = reservationAt(
       "run_stale_claim",
@@ -851,7 +908,7 @@ describe("provider accounting", () => {
     await Effect.runPromise(repository.beginInvocation(claimed));
 
     const restartedRepository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     let providerCalls = 0;
     await expect(
@@ -890,7 +947,7 @@ describe("provider accounting", () => {
 
   it("keeps an active generation-fenced invocation claim live", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const claimed = reservationAt(
       "run_active_claim",
@@ -938,7 +995,7 @@ describe("provider accounting", () => {
 
   it("reconciles one poisoned reservation while preserving another", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const importId = Schema.decodeUnknownSync(ImportId)(
       "00000000-0000-4000-8000-000000000190"
@@ -975,7 +1032,9 @@ describe("provider accounting", () => {
     );
 
     const accounting = makeD1ProviderAccountingService({
-      database: testEnv.ProviderAccountingDatabase,
+      database: makeProviderAccountingDatabase(
+        testEnv.ProviderAccountingDatabase
+      ),
       now: () => now,
     });
     await expect(
@@ -1020,7 +1079,7 @@ describe("provider accounting", () => {
 
   it("replays an immutable reconciliation while an unrelated dispatch is invoking", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const importId = Schema.decodeUnknownSync(ImportId)(
       "00000000-0000-4000-8000-000000000291"
@@ -1050,7 +1109,9 @@ describe("provider accounting", () => {
       })
     );
     const accounting = makeD1ProviderAccountingService({
-      database: testEnv.ProviderAccountingDatabase,
+      database: makeProviderAccountingDatabase(
+        testEnv.ProviderAccountingDatabase
+      ),
       now: () => now,
     });
     const request = {
@@ -1087,7 +1148,7 @@ describe("provider accounting", () => {
 
   it("grants one provider invocation to concurrent same-dispatch runners", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const command = reservation("run_replay", "dispatch_replay", 10);
     const preparationsReleased = await Effect.runPromise(Deferred.make<null>());
@@ -1142,7 +1203,7 @@ describe("provider accounting", () => {
 
   it("releases preparation failures before invocation without poisoning", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const command = reservation("run_prepare", "dispatch_prepare", 10);
     let providerCalls = 0;
@@ -1171,7 +1232,7 @@ describe("provider accounting", () => {
 
   it("poisons provider failures and explicit unknown costs without releasing reservations", async () => {
     const providerFailureRepository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const failed = reservation("run_failed", "dispatch_failed", 10);
     const providerFailure = runAccountedProviderDispatch({
@@ -1204,7 +1265,7 @@ describe("provider accounting", () => {
       ),
     ]);
     const unknownRepository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const unknown = reservation(
       "run_unknown_result",
@@ -1237,7 +1298,7 @@ describe("provider accounting", () => {
 
   it("admits a new attempt only after the previous attempt durably settles at exact zero cost", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const first = reservation(
       "run_known_zero_retry",
@@ -1336,7 +1397,7 @@ describe("provider accounting", () => {
     "poisons a known-zero marker combined with a $label",
     async ({ finalizer, label }) => {
       const repository = makeD1ProviderAccountingRepository(
-        testEnv.ProviderAccountingDatabase
+        makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
       );
       const first = reservation(
         "run_ambiguous_known_zero",
@@ -1388,7 +1449,7 @@ describe("provider accounting", () => {
 
   it("does not grant zero-cost authority to a structurally similar provider error", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const first = reservation(
       "run_forged_known_zero",
@@ -1419,7 +1480,7 @@ describe("provider accounting", () => {
 
   it("converges concurrent ambiguous retry fences on one unknown settlement without reinvoking", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const previous = reservation(
       "run_ambiguous_retry",
@@ -1479,7 +1540,7 @@ describe("provider accounting", () => {
 
   it("poisons a typed timeout and rejects its retry before a second invocation", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const first = reservation(
       "run_timeout_retry",
@@ -1538,7 +1599,7 @@ describe("provider accounting", () => {
 
   it("settles defects and interruption unknown before any retry can invoke", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const defect = reservation("run_defect_retry", "dispatch_defect_retry", 10);
     let providerCalls = 0;
@@ -1601,7 +1662,7 @@ describe("provider accounting", () => {
 
   it("poisons after a known settlement failure and rejects replay without reinvoking", async () => {
     const repository = makeD1ProviderAccountingRepository(
-      testEnv.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
     );
     const command = reservation(
       "run_settlement_failure",

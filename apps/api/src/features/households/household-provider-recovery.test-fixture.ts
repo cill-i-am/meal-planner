@@ -60,6 +60,7 @@ import {
   VisualEvidenceStore,
   VisualEvidenceStoreLive,
 } from "../imports/visual-evidence-store.js";
+import { makeProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
 import {
   ProviderAccountingRequest,
   ProviderAccountingResponse,
@@ -836,7 +837,9 @@ export default {
       ) {
         const result = await Effect.runPromise(
           makeD1ProviderAccountingService({
-            database: environment.ProviderAccountingDatabase,
+            database: makeProviderAccountingDatabase(
+              environment.ProviderAccountingDatabase
+            ),
             now: () =>
               Schema.decodeUnknownSync(ImportTimestamp)(
                 new Date().toISOString()

@@ -15,6 +15,7 @@ import { HouseholdDispatchId } from "../households/foundation/import-workflow-ad
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { HouseholdOrganizationId } from "../households/household.contract.js";
 import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
+import { makeProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
 import {
   ProviderAccountingDispatchId,
   ProviderAccountingRunId,
@@ -487,7 +488,7 @@ const installedSpeechDispatch = (
         : "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b87"
     );
     const repository = makeD1ProviderAccountingRepository(
-      env.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(env.ProviderAccountingDatabase)
     );
     const dispatch = makeProviderDispatchGate({
       correlationId,
@@ -548,7 +549,7 @@ const installedVisualDispatch = (
       correlationId,
       now: () => decodeTimestamp("2026-07-28T08:00:00.000Z"),
       repository: makeD1ProviderAccountingRepository(
-        env.ProviderAccountingDatabase
+        makeProviderAccountingDatabase(env.ProviderAccountingDatabase)
       ),
       runId: decodeRunId("run_gaia_188_visual_ambiguous"),
     });
@@ -624,7 +625,7 @@ const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
         )
     );
     const repository = makeD1ProviderAccountingRepository(
-      env.ProviderAccountingDatabase
+      makeProviderAccountingDatabase(env.ProviderAccountingDatabase)
     );
     const correlationId = decodeCorrelationId(
       "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2199"
