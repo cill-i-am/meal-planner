@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-09-05
+- Last updated: 2026-09-06
 - Delivery source of truth: this repository
 
 ## Latest Completed Stage
@@ -152,10 +152,12 @@ self-confirmation and departed-account denial. No production change was needed.
 
 ## Immediate Next Steps
 
-No implementation is active. Discuss the proposed provider-free Stage 2
-admission/lifecycle integration slice before promoting or assigning it.
-Do not start Stage 2, conversation/model work, or the wider AI roadmap without
-the user's further direction.
+The dependency upgrade is locally complete and independently reviewed; publication
+is pending. The [prioritized risk fixes](prioritized-risk-fixes.md) record owns the
+user's next-fix order: private output after authority changes, D1 release-ledger
+safety, then media-container lifetime. These fixes are queued after the upgrade;
+safe analysis is underway, with no fix implementation active. This bounded queue
+does not promote the broader Stage 2, UI, model/provider, or cost-tuning roadmap.
 
 ## Deliberate Non-Work
 
