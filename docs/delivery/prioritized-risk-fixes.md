@@ -20,7 +20,7 @@ outside this queue.
 
 ## 1. Prevent private output after authority changes
 
-**Implementation prepared; immutable-head review pending.** The production
+**Implementation independently reviewed; repository delivery pending.** The production
 Better Auth → API → HouseholdObject → isolated private-output composition now
 uses real D1 and native WebSockets. The [implementation evidence](private-output-safety.md)
 owns the exact scope, runtime cases, and recovery limits. No prior production
@@ -56,7 +56,18 @@ runtime evidence:
 
 ## 2. Make the next D1 reconciliation safe
 
-**Independent implementation underway; merges second.** Alchemy beta 76 can convert `d1_migrations` during an approved
+**Implementation reviewed; combined-candidate verification underway; merges second.**
+[PR #210](https://github.com/cill-i-am/meal-planner/pull/210) requires fresh target,
+executor-state, ledger, schema and recovery-bookmark inspection before the release
+wrapper starts Alchemy. Its D1 implementation head
+`b9128b58b132ca7ffa5592302c43786be576fa1f` passed independent review, both hosted
+CI jobs and 65 focused local tests. The reviewed private-output candidate
+`c7de150b368d6ea39439621118ff2ca5f8e0f594` is now integrated for combined checks;
+[PR #211](https://github.com/cill-i-am/meal-planner/pull/211) has not merged and
+must merge first. This is repository implementation evidence, not verification
+of a deployed D1 target or authorization to reconcile it.
+
+Alchemy beta 76 can convert `d1_migrations` during an approved
 D1 reconciliation; an unchanged resource may remain a deployment no-op. Deployed
 histories are uninspected. The exact-version transport patch remains required;
 [the Alchemy review](../infrastructure/alchemy-upgrade-review.md) owns its removal
@@ -65,7 +76,8 @@ selection and bootstrap gates.
 
 For both `MealPlannerAuthDatabase` and `ProviderAccountingDatabase`, identify the
 release SHA, stage, Alchemy profile, independently resolved account, and physical
-database name/UUID before account inspection. Map the deployed ledger shape and
+database name/UUID before ledger inspection. Account resource discovery may
+establish this mapping first; freeze it before inspecting either ledger. Map the deployed ledger shape and
 history to checked-in SQL and enumerate pending migrations. Do not infer a target
 from logical resource IDs or assume that stored names prove SQL hash identity.
 
@@ -128,8 +140,9 @@ Each fix needs relevant checks, actual runtime evidence for its acceptance claim
 and independent review of the immutable implementation head under the
 [execution policy](../agents/execution-policy.md). Record evidence and remaining
 gates here as work proceeds; mark completion only after the authorized merge.
-The dependency upgrade is merged. Fix 1 has local native runtime evidence; its
-required immutable-head review and repository delivery are pending.
+The dependency upgrade is merged. Fix 1 has local native runtime evidence and
+independent review; its repository delivery is pending. Fix 2 has reviewed local
+and hosted evidence and is verifying the combined candidate before ordered delivery.
 The target-specific D1 release gate is independent of local fix completion; no
 deployment, remote ledger inspection, or cloud mutation has been performed for this
 queue.

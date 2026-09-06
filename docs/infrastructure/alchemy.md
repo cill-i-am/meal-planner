@@ -236,7 +236,7 @@ persistence in production composition.
 
 `MealPlannerAuthDatabase` is a separate D1 database for Better Auth identity,
 cookie sessions, organizations, invitations, and membership. The runtime uses
-Better Auth `1.7.0-rc.6` through the public Drizzle relations-v2 adapter. The
+Better Auth `1.7.2` through the public Drizzle relations-v2 adapter. The
 actual auth configuration generates `auth.database-schema.ts`; Drizzle Kit owns
 the checked-in SQLite migration under `apps/api/auth-migrations`. Alchemy only
 provisions and binds the database and applies that migration. It does not run
