@@ -2,6 +2,10 @@
 
 - Status: Accepted
 - Date: 2026-08-24
+- Amended: 2026-09-06 — the product owner accepted stage-specific evaluation:
+  discovery/profile quality in Stage 2, with planning and repair evidence in
+  their owning later stages and the complete journey required before external
+  beta.
 - Owners: Household product
 
 ## Context
@@ -89,9 +93,11 @@ evidence.
 
 ### Initial synthetic scenario suite
 
-The first release suite contains eight scenario families. Each family exercises
-the interview, visible artifacts, recommended plan, rationale, and at least one
-follow-up revision rather than judging only a final JSON document.
+The release suite contains eight scenario families. Across delivery, each family
+exercises the interview, visible artifacts, recommended plan, rationale, and at
+least one follow-up revision rather than judging only a final JSON document.
+Stage-specific runs follow the ownership below; the complete trajectory is a
+pre-external-beta gate.
 
 1. **Simple household baseline.** Straightforward preferences and routines prove
    that the agent can reach a useful plan quickly without exhaustive or repeated
@@ -120,6 +126,44 @@ follow-up revision rather than judging only a final JSON document.
 Concrete fixtures may vary within a family, but the family purpose, required
 discoveries, hard invariants, prohibited outcomes, and rubric expectations are
 versioned repository assets.
+
+### Stage-specific evidence and the complete beta gate
+
+The product owner accepted this sequencing on 2026-09-06. Evaluation develops
+alongside the capability it measures; Stage 2 does not have to implement later
+routine, planning, repair, or shopping capabilities to finish discovery.
+
+| Owner                                                 | Required evidence                                                                                                                                                                                                                           |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stage 2 — private discovery and repeat profile review | All eight families exercise their discovery/profile portions: relevant facts found without invention, useful follow-ups, progressive cards, correction and explicit confirmation, privacy, shorter dependant assistance, and repeat review. |
+| Stage 3 — routines and fallbacks                      | Confirmed routine/fallback artifacts, deterministic expansion, exceptions, conflicts, and application of approved fallbacks.                                                                                                                |
+| Stage 5 — household planning and prepared output      | Real recommendations, coverage, practicality and rationale, portions and allocations, dependency repair, profile/routine-version impact on active plans, and explicitly approved remaining-period revisions.                                |
+| Stage 6 — weekly review and household learning        | Feedback-based adaptation, visible reversible low-weight inference, and whether later weeks reduce effort and corrections.                                                                                                                  |
+| Stage 7 — shopping list                               | Approved-plan demand, aggregation, shopping repair/deltas, and preservation of manual and purchased state after plan changes.                                                                                                               |
+
+Each stage runs the relevant deterministic checks and the applicable portions of
+the same eight versioned families. A result identifies its implemented scope,
+required assertions and applicable rubric dimensions. Later-stage assertions and
+dimensions are recorded as **not exercised**, excluded from pass counts and
+quality aggregates, and remain obligations of their named owner. A canned plan,
+mocked domain result, or proposed integration hook cannot establish later-stage
+behaviour. Ordinary fixtures may isolate a test, but cannot replace the actual
+capability in a claimed end-to-end result.
+
+Stage 2 establishes the discovery baseline, including household specificity and
+profile synthesis. Planning practicality, routine synthesis, planning rationale,
+and repair scores become required when their owning capabilities land. The
+quality bands, hard blockers, version provenance, and human calibration below
+apply to each stage's required scope; applicability is reviewed with the rubric
+and cannot be reduced to make a failing candidate pass.
+
+Before the first external beta household is invited, run the complete connected
+discovery-to-repair trajectory across all eight families using the real admitted
+capabilities, including routine/fallback application, planning and rationale,
+dependency repair, and shopping consequences. All required dimensions must then
+be exercised. The product owner reviews the full baseline and the second human
+calibration below must be complete. Earlier stage passes do not substitute for
+this gate or for live beta product evidence.
 
 ### Release gating
 
@@ -199,10 +243,12 @@ reliance on the judge until the scoring policy is corrected and revalidated.
 Human review is deliberately bounded but remains a release-control mechanism,
 not a one-time setup exercise.
 
-- The first accepted baseline is created by the Meal Planner product owner
-  manually scoring the canonical fixture from all eight scenario families across
-  every critical soft dimension. The scored result and brief rationale are
-  versioned with the scenario and rubric set.
+- Each stage's first accepted baseline is created by the Meal Planner product
+  owner manually scoring the canonical fixture from all eight scenario families
+  across every applicable critical soft dimension. Before external beta, the
+  complete connected baseline covers every critical dimension. The scored
+  result, applicability, and brief rationale are versioned with the scenario and
+  rubric set.
 - Before the first external beta household is invited, a second human
   independently scores at least two representative scenarios: one relatively
   straightforward scenario and one complex scenario involving dependencies,
@@ -218,8 +264,8 @@ not a one-time setup exercise.
 - The complete suite is also human-reviewed before expansion to a new beta
   cohort stage.
 - Human and model-judge scores, reviewer identity or role, calibration-set
-  version, disagreements, and resolutions are recorded with the release
-  evidence without including private household data.
+  version, disagreements, and resolutions are recorded with the release evidence
+  without including private household data.
 - Material human-versus-judge disagreement, unexplained judge drift, or
   systematic leniency blocks reliance on the model judge for that release until
   it is recalibrated and revalidated.
@@ -242,18 +288,20 @@ The critical soft dimensions are:
 
 Candidate results are classified as follows:
 
-- **Green:** every critical dimension is at least `4/5`, and the candidate has no
-  meaningful regression from the currently accepted baseline.
-- **Review required:** any critical dimension is `3/5`, any critical dimension
-  drops by at least `0.5` from the accepted baseline, or question count,
-  latency, tool reliability, token usage, or estimated cost worsens materially.
-- **Do not release by default:** any critical dimension is below `3/5`, or
-  several scenarios are technically valid but clearly generic, impractical, or
-  burdensome for the household.
+- **Green:** every applicable critical dimension is at least `4/5`, and the
+  candidate has no meaningful regression from the currently accepted baseline.
+- **Review required:** any applicable critical dimension is `3/5`, any
+  applicable critical dimension drops by at least `0.5` from the accepted
+  baseline, or question count, latency, tool reliability, token usage, or
+  estimated cost worsens materially.
+- **Do not release by default:** any applicable critical dimension is below
+  `3/5`, or several scenarios are technically valid but clearly generic,
+  impractical, or burdensome for the household.
 
-The first accepted baseline is established through human review of the complete
-initial scenario suite. Later candidates are judged against both the absolute
-bands and that versioned baseline.
+Each accepted baseline is established through human review of all eight families
+within its declared stage scope. Later candidates are judged against both the
+absolute bands and that versioned baseline. The full baseline remains required
+before external beta.
 
 A non-hard red result remains eligible only for the documented product-owner
 override process. Such an override should be rare, explicit, and cannot affect a
@@ -264,10 +312,12 @@ hard blocker.
 Before committing the repository to a bespoke eval framework, Stage 2 includes a
 bounded spike using `@vercel/agent-eval` as a candidate harness.
 
-The spike must register the Meal Planner household agent through the package's
-custom-agent boundary and run at least one representative multi-turn scenario
-from discovery through artifact creation, recommendation, rationale, and repair.
-It should test whether the package usefully supplies:
+The Stage 2 spike must register the real Meal Planner private-conversation
+runtime through the package's custom-agent boundary and run at least one
+representative multi-turn scenario through discovery, visible profile proposals,
+correction, admitted confirmation, completion, and a new repeat review. It runs
+alongside adaptive-questioning work, before harness adoption or bespoke
+construction. It should test whether the package usefully supplies:
 
 - repeatable experiment configuration and result fingerprinting;
 - deterministic assertions over structured artifacts, tool calls, and
@@ -277,11 +327,14 @@ It should test whether the package usefully supplies:
 - readable result inspection; and
 - local or hosted isolation suitable for repository release evidence.
 
-Adoption is not automatic. The spike should reject the package if its coding-agent
-and filesystem-sandbox assumptions force an unnatural wrapper around the
-Cloudflare-hosted household agent, cannot represent private and shared thread
-semantics, cannot exercise the complete discovery-to-repair trajectory, or
-creates duplicate scenario and result authorities.
+Adoption is not automatic. The spike should reject the package if its
+coding-agent and filesystem-sandbox assumptions force an unnatural wrapper
+around the Cloudflare-hosted household agent, cannot preserve the implemented
+private thread semantics, or creates duplicate scenario and result authorities.
+Record the unexercised shared-planning and full-trajectory integration needs
+explicitly. Later owning stages must prove those real extensions before relying
+on the harness for their release evidence; canned recommendations or repairs
+cannot complete the spike's deferred coverage or the pre-beta gate.
 
 Meal Planner's repository-owned scenario, rubric, and release-evidence formats
 remain independent of the package so the harness can be replaced without
@@ -309,16 +362,18 @@ need.
 - Agent quality is treated as an engineered, versioned product capability rather
   than a one-off prompt demonstration.
 - The repository needs an eval harness, scenario format, rubric format, result
-  recording, and release evidence before Stage 2 is complete.
-- The first harness must cover all eight accepted scenario families and the full
-  discovery-to-repair trajectory.
+  recording, and discovery/profile release evidence before Stage 2 is complete.
+- The first harness covers the Stage 2 portions of all eight accepted families.
+  Later stages add their owned checks; the complete connected
+  discovery-to-repair trajectory across all eight families is required before
+  external beta.
 - The harness needs deterministic checks, programmatic telemetry, a versioned
   fixed model-judge path, and a human-calibration workflow.
-- The initial baseline needs a human-reviewed `1–5` score for every critical
-  soft dimension and scenario.
+- Each stage baseline needs a human-reviewed `1–5` score for every applicable
+  critical soft dimension and scenario, with unexercised dimensions explicit.
 - Human calibration remains bounded for ordinary green releases but expands to
-  the complete suite when the judge, rubric, scoring policy, or beta cohort stage
-  changes.
+  the complete suite when the judge, rubric, scoring policy, or beta cohort
+  stage changes.
 - A second reviewer provides an independent calibration check before external
   beta use.
 - `@vercel/agent-eval` is evaluated through one bounded representative spike

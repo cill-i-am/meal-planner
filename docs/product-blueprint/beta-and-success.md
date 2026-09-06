@@ -295,6 +295,16 @@ interaction trajectory, including unnecessary questions, missed facts, first-pla
 practicality, automatic application of known routines and fallbacks, explanation
 quality, and repair behaviour.
 
+The accepted 2026-09-06 staging in
+[PDR-0006](../decisions/product/0006-ai-evaluation-and-release-evidence.md#stage-specific-evidence-and-the-complete-beta-gate)
+lets Stage 2 establish discovery/profile evidence across all eight families.
+Routines, planning/repair, feedback learning, and shopping are exercised in
+their owning stages. Unimplemented dimensions are recorded as not exercised, not
+passing. Before inviting the first external beta household, the complete
+connected eight-family discovery-to-repair journey, including shopping
+consequences, must pass with full human calibration. A discovery-only baseline
+cannot satisfy that gate.
+
 ### Live beta product evidence
 
 Real household measures determine whether the offline evidence translates into

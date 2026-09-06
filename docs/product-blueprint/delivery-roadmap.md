@@ -107,20 +107,32 @@ Adults can repeat that review whenever tastes or circumstances change.
 - shorter dependant profile assistance;
 - conflict and uncertainty surfacing;
 - transcript privacy and retention;
-- explicit confirmation for safety, dietary rules, strong dislikes, and
-  routines;
-- visible low-weight inferred preferences;
-- profile-version impact analysis for active plans;
+- explicit confirmation for safety, dietary rules, and strong dislikes;
+- visible, labelled private tentative proposals, without treating interview
+  inference as shared household authority;
+- repeat review and versioned profile-change summaries;
 - evaluation scenarios and quality scoring; and
 - privacy-safe instrumentation.
+
+The product owner accepted stage-specific evaluation on 2026-09-06 in
+[PDR-0006](../decisions/product/0006-ai-evaluation-and-release-evidence.md#stage-specific-evidence-and-the-complete-beta-gate).
+Stage 2 evaluates discovery/profile quality across all eight scenario families.
+Stage 3 owns executable routines/fallbacks and their confirmation, Stage 5 owns
+active-plan impact and remaining-period repair, and Stage 6 owns shared
+low-weight inference from household behaviour/feedback. Discovery may identify
+these needs without claiming their later capabilities are implemented. The
+[Stage 2 delivery record](../delivery/stages/02-private-discovery/README.md)
+owns the accepted slices and next ready work item.
 
 ### Vertical tracer
 
 Two adults complete independent private reviews. Each sees and corrects a
 synthesized profile during conversation. The household sees confirmed profile
-facts without access to the other adult's transcript. A later repeat review
-changes one ordinary preference and offers a remaining-week replan without
-silently rewriting the approved week.
+facts without access to the other adult's transcript. An adult completes a
+shorter dependant review. A later new private review changes one ordinary
+preference with explicit confirmation, a new profile version, and a visible
+change summary; the earlier transcript remains read-only. Real affected-meal
+analysis and an offered remaining-week revision are proved in Stage 5.
 
 ### Exit evidence
 
@@ -129,6 +141,10 @@ silently rewriting the approved week.
 - profile mutation occurs only through validated commands;
 - conversation quality feels specific rather than generic; and
 - completion time remains compatible with the time-saving promise.
+
+The stage-scoped eval baseline and harness disposition meet PDR-0006. Later
+dimensions remain explicitly not exercised; the complete connected eight-family
+trajectory remains required before external beta.
 
 ## Stage 3 — Person And Household Routine Builder
 
@@ -155,6 +171,9 @@ not become repetitive weekly data entry.
 - conflict detection and priority policy;
 - plan rationale from confirmed facts; and
 - visual routine editing.
+
+This stage owns the routine/fallback expansion, exception, and confirmation
+evaluation deferred from discovery by PDR-0006.
 
 ### Vertical tracer
 
@@ -238,6 +257,8 @@ person and meal occasion while presenting a simple human plan.
 - deterministic hard-constraint and allocation validation;
 - draft repair across dependent meals and preparation;
 - visible person-level rationale;
+- pinned profile/routine versions, affected-meal analysis after a profile
+  change, and an explicit remaining-period replan offer;
 - compressed visual projection; and
 - revisioned adult approval.
 
@@ -258,6 +279,10 @@ change produces a visible revision rather than a silent rewrite.
 - no per-meal confirmation is required on the happy path;
 - plan revisions are idempotent and auditable; and
 - active planning time is measured from proposal to approval.
+
+This stage owns real planning, rationale, allocation, active-plan impact, and
+dependency-repair evaluation under PDR-0006; discovery-stage fixtures cannot
+substitute for this evidence.
 
 ## Stage 6 — Weekly Review And Household Learning
 
@@ -294,6 +319,9 @@ and receives a visibly improved next week.
 - later weeks require fewer corrections in representative scenarios; and
 - users can explain why the product changed its proposal.
 
+This stage owns feedback-derived inference and learning evaluation under
+PDR-0006.
+
 ## Stage 7 — Retailer-Neutral Shopping List
 
 ### Outcome
@@ -314,6 +342,10 @@ retailer integration risk or a pretend live pantry.
 - manual add, merge, split, edit, and check behaviour;
 - plan-revision shopping delta; and
 - preservation of manual and purchased state.
+
+This stage owns approved-demand and shopping-delta/repair evaluation under
+PDR-0006. Before external beta, the complete connected eight-family trajectory
+must also pass, including the planning and shopping consequences of revisions.
 
 ### Vertical tracer
 

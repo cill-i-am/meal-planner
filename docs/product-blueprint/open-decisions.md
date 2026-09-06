@@ -46,13 +46,22 @@ also requires a bounded `@vercel/agent-eval` custom-agent spike before either
 adopting that package or building a bespoke harness. Vercel Run SDK is not part
 of the current eval design.
 
+On 2026-09-06 the product owner accepted stage-specific evidence in PDR-0006:
+Stage 2 establishes discovery/profile quality across all eight families; Stages
+3, 5, 6, and 7 own routine, planning/repair, feedback, and shopping evidence.
+The complete connected trajectory remains a gate before external beta. Later
+dimensions are not exercised in Stage 2, never implicitly passed. Evaluation and
+the scoped harness spike develop alongside adaptive questioning; this staging
+choice is settled, not a remaining model/provider decision.
+
 Human calibration is also settled: the product owner scores the complete initial
-eight-scenario baseline; a second human independently scores one straightforward
-and one complex scenario before external beta use; ordinary releases include all
-failures, low scores, regressions, and two rotating green scenarios; judge or
-rubric changes trigger a complete human re-review; and the full suite is reviewed
-before cohort expansion. Material human-versus-judge disagreement blocks reliance
-on the judge until recalibrated.
+eight-scenario baseline for each stage's applicable dimensions and the complete
+baseline before external beta; a second human independently scores one
+straightforward and one complex scenario before external beta use; ordinary
+releases include all failures, low scores, regressions, and two rotating green
+scenarios; judge or rubric changes trigger a complete human re-review; and the
+full suite is reviewed before cohort expansion. Material human-versus-judge
+disagreement blocks reliance on the judge until recalibrated.
 
 Remaining choices are:
 

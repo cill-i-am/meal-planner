@@ -141,8 +141,13 @@ Confirmed outputs enter household-visible structured state through admitted
 commands. The transcript is not required to reconstruct that state.
 
 An interview is repeatable. Adults may start a profile review at any time as
-tastes and circumstances change. Transcript retention and deletion policy remain
-an explicit open decision.
+tastes and circumstances change. Completing a session closes it permanently to
+new conversation and product mutations while retaining its transcript as
+private, read-only history for the currently authorized participant. A later
+review starts a new session. Normal completion does not automatically delete the
+transcript; permanent deletion/erasure and purpose-specific support access are
+separate lifecycles, as accepted in
+[PDR-0001](../decisions/product/0001-household-people-profiles-and-interviews.md#completed-interview-lifecycle).
 
 ## Routines
 
@@ -217,7 +222,7 @@ type CoverageResolution =
   | { readonly kind: "external_meal"; readonly externalMealId: ExternalMealId }
   | { readonly kind: "intentional_skip" }
   | { readonly kind: "flexible" }
-  | { readonly kind: "unresolved"; readonly reason: GapReason }
+  | { readonly kind: "unresolved"; readonly reason: GapReason };
 ```
 
 The implementing capability may refine this union. It is a domain direction,
@@ -437,13 +442,13 @@ retailer-neutral shopping list.
 10. Raw interview transcripts are not household planning authority.
 11. Confirmed profiles are household-visible in the MVP; transcript text is not.
 12. Agent proposals become authoritative only through typed, validated domain
-   commands.
+    commands.
 13. Imported recipe uncertainty and provenance survive review and versioning.
 14. The happy path requires no per-meal confirmation.
 15. The MVP does not certify food safety, maintain a complete pantry, or perform
-   retailer mutations.
+    retailer mutations.
 16. One authenticated user links to at most one household person within a given
-   household, and link repair never silently merges product history.
+    household, and link repair never silently merges product history.
 
 ## Agent And Domain Responsibility
 
@@ -471,5 +476,5 @@ The deterministic domain is responsible for:
 - plan lifecycle and approval; and
 - shopping-demand derivation.
 
-The desired product is an unusually capable agent operating through an
-unusually strict domain, not a model prompt acting as the database.
+The desired product is an unusually capable agent operating through an unusually
+strict domain, not a model prompt acting as the database.
