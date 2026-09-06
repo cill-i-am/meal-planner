@@ -19,8 +19,11 @@
   [Work Item 01](stages/02-private-discovery/01-private-session-foundation.md)
   is Done following explicit user authorization and completed local acceptance
   on 2026-09-06, delivered by
-  [PR #215](https://github.com/cill-i-am/meal-planner/pull/215). That PR owns the
-  current hosted-check and merge record.
+  [PR #215](https://github.com/cill-i-am/meal-planner/pull/215).
+  [Work Item 02](stages/02-private-discovery/02-progressive-cards-and-confirmation.md)
+  is Done through [PR #216](https://github.com/cill-i-am/meal-planner/pull/216),
+  merged as `41b2a3e3f12c83edd3ddd9d184b9e138827101e6` on 2026-09-06.
+  Work Item 03 — adaptive discovery and evaluation — is next, not started.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -182,9 +185,10 @@ The user subsequently accepted the bounded Stage 2 plan and the evaluation split
 on 2026-09-06.
 [Private session foundation](stages/02-private-discovery/01-private-session-foundation.md)
 is complete: start, rediscover, resume, complete, and read retained private
-history using the selected native child/fence. The next bounded work is
-[progressive cards and confirmation](stages/02-private-discovery/02-progressive-cards-and-confirmation.md), explicitly authorized and started on 2026-09-06. Adaptive questioning
-with evaluated model selection, repeat review, and dependant assistance follow.
+history using the selected native child/fence.
+[Progressive cards and confirmation](stages/02-private-discovery/02-progressive-cards-and-confirmation.md)
+is also complete. Work Item 03 — adaptive discovery and evaluation — is next
+and has not started; repeat review and dependant assistance follow.
 [PDR-0006](../decisions/product/0006-ai-evaluation-and-release-evidence.md#stage-specific-evidence-and-the-complete-beta-gate)
 owns stage-specific discovery/profile evidence and the unchanged complete
 connected pre-beta gate. Work Item 01 implementation and local automated
@@ -199,6 +203,21 @@ item and owns the current hosted-check and merge record.
 The work item's delivery record owns the exact runtime evidence and the native
 idle-hibernation reconnect limitation. Provider execution remains outside this
 slice, and no deployment is claimed.
+
+[PR #216](https://github.com/cill-i-am/meal-planner/pull/216) delivered Work Item
+02 as `41b2a3e3f12c83edd3ddd9d184b9e138827101e6` after independent backend and
+UI approval of `925554e1ca1927f74a30e241ab1a029ecfd18b22` and passing Quality
+and Synthetic media container checks in
+[run 34042894812](https://github.com/cill-i-am/meal-planner/actions/runs/34042894812).
+All 1,272 local tests passed across full runs and affected reruns, along with
+static checks, builds, and twice/no-diff migration generation. Actual browser
+acceptance proves private correction/rejection, explicit and safety confirmation,
+stale review, exact lost-result recovery after restart, completed history,
+cross-adult privacy, automatic shared-profile refresh, fresh login, and mobile
+layout. Its delivery record owns the evidence and scoped accessibility result.
+The local proof used Nitro UI, canonical API test composition, native production
+classes, and synthetic proposals; it does not claim full operational bootstrap,
+model/provider execution, cloud changes, or deployment.
 
 ## Deliberate Non-Work
 

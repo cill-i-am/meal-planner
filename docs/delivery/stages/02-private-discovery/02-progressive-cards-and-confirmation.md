@@ -1,7 +1,13 @@
 # Work Item 02 — Progressive cards and confirmation
 
-- Status: In progress (2026-09-06).
+- Status: Done (2026-09-06).
 - Implementation base: `39e0b2eb97390fc81f030b10b2feeddfa5bfee74`.
+- Delivered by [PR #216](https://github.com/cill-i-am/meal-planner/pull/216),
+  merged as `41b2a3e3f12c83edd3ddd9d184b9e138827101e6`.
+- Independent backend and UI reviews approved immutable head
+  `925554e1ca1927f74a30e241ab1a029ecfd18b22` with no material findings.
+- Hosted [run 34042894812](https://github.com/cill-i-am/meal-planner/actions/runs/34042894812)
+  passed Quality and Synthetic media container before merge.
 - Authorized outcome: private proposed cards, correction, rejection, explicit
   confirmation, safety status, and current-version conflict handling.
 
@@ -84,14 +90,10 @@ deployment, and the later cumulative Stage 2 exit are not exercised here.
 ## Local verification — 2026-09-06
 
 The local full-suite runs and affected reruns cover 1,272 passing tests: 900 API,
-130 web, 62 shared-contract, and 180 root tests. The root suite's Alchemy loader
-fixture initially hit the sandbox's local IPC restriction; its complete
-22-test file passed with local socket permission. The tracked-source
-architecture check passed after including the new production files in the
-index. These were test-environment preparation issues, without production
-changes to accommodate them. Root type checking, lint, formatting, and builds
-passed. Both affected Drizzle generators twice reported no further schema
-changes after the new ordered migrations; existing migrations remain intact.
+130 web, 62 shared-contract, and 180 root tests. Root type checking, lint,
+formatting, and builds passed. Both affected Drizzle generators twice reported
+no further schema changes after the new ordered migrations; existing migrations
+remain intact.
 
 The native Household suite passes 82 tests, including 10 confirmation cases;
 the private-output suite passes 36. Together these exercise private correction
@@ -110,22 +112,44 @@ shared fact changes or disappears, same-version review mismatch requiring an
 explicit correction, and direct-client rejection of every target-fact command
 until its saved review matches the canonical current value.
 
-## Browser acceptance in progress
+## Browser acceptance and runtime bounds
 
-The actual local browser has proved correction and rejection remain private,
-followed by explicit ordinary and hard-constraint confirmation with canonical
-interview/self audit. A stale proposal cannot be confirmed until an explicit
-private revision records the current profile version. During a deliberately
-paused canonical result, the Household profile contains one committed fact,
-the private session retains the original pending mutation, and completion is
-disabled. The browser retains its exact submitted command in session storage.
+Actual browser acceptance passed against the reviewed implementation. Private
+revision, rejection, and saved notes left the canonical profile unchanged;
+explicit ordinary and hard-constraint confirmations produced versioned facts
+with interview/self audit. Stale proposals required explicit revised review
+before confirmation. Safety reduction required its separate checkbox and
+confirmation, preserving explicit no-known-hard-constraints as distinct from
+ordinary preferences and strong dislikes. Completed sessions retained read-only
+history without editing controls.
 
-This run exposed two UI defects now covered by corrections and regressions:
-successful sign-in/sign-up refreshes the organization queries that previously
-retained anonymous errors, and a canonical private confirmation settlement
-invalidates the existing shared profile/history queries. The latter does not
-publish private cards into the cache or clear an ambiguous manual command.
-Remaining browser acceptance covers dropped-result recovery after restart,
-safety reduction, completion, and the final build's account and shared-profile
-refresh behaviour. Independent immutable-head review and repository delivery
-are also pending. No completed browser acceptance or deployment is claimed.
+A deliberately dropped post-commit result left the original mutation pending
+and disabled completion. After a full local runtime restart and browser refresh,
+explicit recovery settled that same mutation. Canonical profile, facts, and audit
+bytes were unchanged across recovery, with no duplicate write and no pending
+command. The browser retained its exact submitted command in session storage.
+A second adult could read confirmed shared facts while the originating private
+session and notes remained absent; a copied private socket path was denied with
+zero frames.
+
+The final build's fresh sign-in reached household selection without Retry.
+Confirmation updated the mounted shared profile and its version without
+navigation or reload. Automated regression also proves that profile/history
+invalidation preserves an ambiguous manual command and ignores late old-socket
+settlement. Desktop and mobile captures were visually checked; the 390px layout
+had zero horizontal overflow, and the scoped card accessibility audit had zero
+violations or incomplete checks.
+
+Provenance checks matched all 853 tracked file bytes to the reviewed head and
+verified the copied UI, native builds, and canonical API fixture after only
+documented host/import substitutions. The local harness used the actual
+TanStack UI with Node Nitro SSR, canonical household API test composition, and
+production private-output and Household classes under native Miniflare.
+Synthetic proposals came from narrow same-session storage seeding. This proves
+the local product journey, not the full operational bootstrap. No model/provider
+execution, real account, production data, cloud operation, or deployment was
+used. The owned runtime processes were stopped after acceptance.
+
+Work Item 03 — adaptive discovery and evaluation — is next and has not started.
+Model quality, repeat/dependant flows, and the cumulative Stage 2 exit remain
+outside this completed slice.
