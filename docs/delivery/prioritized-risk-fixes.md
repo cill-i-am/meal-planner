@@ -1,7 +1,7 @@
 # Prioritized fixes after the dependency upgrade
 
 - Recorded: 2026-09-06, from the user's explicit priority instruction.
-- Status: Three independently owned implementation lanes are underway; merge order remains 1, then 2, then 3.
+- Status: All three implementations have independent review. Fix 1 merged in PR #211; combined-candidate verification and ordered merges of fixes 2 and 3 remain pending.
 - Delivery owner: one source owner for fix 1 on `codex/private-output-safety`;
   technical advisers and independent reviewers are read-only.
 - Verified continuation base: dependency-upgrade [PR 209](https://github.com/cill-i-am/meal-planner/pull/209)
@@ -97,7 +97,28 @@ Acceptance requires target-specific evidence and recovery readiness:
 
 ## 3. Bound media-container running lifetime
 
-**Independent implementation underway; merges third.** Artifact cleanup does not establish container shutdown. The
+**Implementation independently reviewed; combined-candidate verification pending; merges third.**
+Container head `271891f9059d44d105f42c1422b0dc555b9b5ef7` passed independent
+whole-scope review, API/Alchemy typechecks, changed-file lint/format, 32 focused
+Node tests, and 27 workerd acquisition/R2 tests. Its production-runtime Docker,
+Durable Object, and R2 proof passed in 361.13 seconds: five streamed artifact
+hashes, create-only preservation, original/audio/frame cancellation, overlapping
+reader drain, generation isolation, replay, and idle shutdown all passed. Both
+abandoned generations retired and their application containers were absent
+before fixture teardown. [The lifetime record](../infrastructure/media-container-lifetime.md)
+owns the behavior and native eviction limits; active-running reconstruction is
+not claimed.
+
+The branch now includes combined D1/private candidate
+`c6218d1d90fe3fee6cd62d8fe177ffa3429a4ed9` by merge, preserving the reviewed
+container and earlier-fix ancestry. Container source and native fixture wiring
+are unchanged by that integration. Combined type checks, lint/format, 32 focused
+Node tests, and 27 workerd tests passed. Broader combined checks and hosted native
+CI remain required before delivery. PR #211 merged as
+`62adde277db478e91d2cf2c5d1efc54d90a2e76c`; PR #210 must merge next, then
+this container fix.
+
+Artifact cleanup alone does not establish container shutdown. The
 [existing review](../infrastructure/alchemy-upgrade-review.md) identifies the
 missing application lifetime bound; it does not prove containers run continuously.
 
@@ -140,9 +161,11 @@ Each fix needs relevant checks, actual runtime evidence for its acceptance claim
 and independent review of the immutable implementation head under the
 [execution policy](../agents/execution-policy.md). Record evidence and remaining
 gates here as work proceeds; mark completion only after the authorized merge.
-The dependency upgrade is merged. Fix 1 has local native runtime evidence and
-independent review; its repository delivery is pending. Fix 2 has reviewed local
+The dependency upgrade and fix 1 (PR #211) are merged. Fix 1 has local native
+runtime evidence and independent review. Fix 2 has reviewed local
 and hosted evidence and is verifying the combined candidate before ordered delivery.
-The target-specific D1 release gate is independent of local fix completion; no
+Fix 3 has independent review and complete local native lifetime proof; its combined
+candidate and ordered repository merge remain pending. The target-specific D1
+release gate is independent of local fix completion; no
 deployment, remote ledger inspection, or cloud mutation has been performed for this
 queue.
