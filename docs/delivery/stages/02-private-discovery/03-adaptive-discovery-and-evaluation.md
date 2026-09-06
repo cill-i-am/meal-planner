@@ -1,6 +1,6 @@
 # Work Item 03 — Adaptive discovery and evaluation
 
-- Status: In progress (2026-09-06).
+- Status: In progress (2026-09-07); [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
 - Authorized by the product owner to continue after Work Item 02.
 - Implementation base: `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`.
 - Owning stage: [Stage 2](README.md).
@@ -148,25 +148,74 @@ confirmation, restart recovery, cross-adult isolation, and the fresh-session
 repeat spike. Final immutable-head reviews and relevant repository checks precede
 delivery. Provider-free doubles establish runtime behaviour, not model quality.
 
-## External gates and current evidence
+## Delivery evidence — 2026-09-07
 
-The worktree is clean at the recorded base before implementation. Exact locked
-dependencies installed successfully using the pinned Node 24.20.0 / pnpm 12.3.4
-toolchain. At the implementation handoff, provider-free adapter tests pass (18), the private
-native suite passes (57), public protocol tests pass (10), and all 156 web tests
-pass. Full workspace type checking, lint, formatting, and builds pass. The full
-repository baseline and affected final suites pass 1,341 tests, including an affected architecture rerun after
-staging the new production module for the tracked-file inventory assertion.
-Actual browser acceptance exposed an idle socket reauthentication path; its
-bounded client recovery and receipt/conflict reconciliation now pass fourteen regression cases, affected type checking,
-lint and build. Final browser acceptance against the committed source is pending.
-Local transport doubles intercept outbound requests and forward
-none. No provider/model call, secret read, cloud mutation, or deployment has
-occurred in this implementation work. The product owner must authorize the actual provider/account, synthetic
-payload scope, candidate and fixed-judge models, and bounded experiment spend
-before dependent execution. Safe source preparation and local tests continue.
+The implementation uses pinned Node 24.20.0 / pnpm 12.3.4. Independent native and
+adapter review accepted `2bf8f80ca72792ff94701dc8e413b51d1b2c0c21`; UI review
+accepted `550757f12f5aed6077d03405c6b573e6e20cb147`. The latter changes only
+the session-opening recovery check and its three regressions. Provider-free
+adapter tests pass (18), native private-session tests pass (57), public protocol
+tests pass (10), and all 159 web tests pass. Across the full baseline and affected
+reruns, 1,344 tests pass, with type checking, lint, formatting, and builds for the
+affected implementation. Both hosted checks passed for `2bf8f80` in
+[run 34064356961](https://github.com/cill-i-am/meal-planner/actions/runs/34064356961).
+That run does not establish CI success for a later head.
 
-This work item remains in progress until final browser acceptance,
-candidate protocol/quality trials, human calibration, and selected
-configuration are complete. Local synthetic tests and an optional native binding
-alone do not satisfy the evaluated adaptive-discovery outcome.
+The actual browser used canonical login/API admission, native production private
+sessions and Household state, and a built UI at `2bf8f80`. A temporary scripted
+provider sat below the production adapter. The inspected source and bundles
+matched the immutable head. The browser proof established:
+
+- Session A persisted a proposal, revised the same card from revision 0 to 1
+  through `ReviseProposedProfileCard`, and explicitly confirmed it. Canonical
+  profile version advanced from 0 to 1 only after that confirmation.
+- Stop after provider dispatch propagated cancellation and retained no late
+  assistant output. A separate held request remained pending while the entire
+  old process stopped and joined. Restart reused the same SQLite/WAL storage and
+  native/UI bundles, preserved messages and the confirmed card, and recovered
+  the attempt as interrupted without automatic dispatch.
+- After A completed, a fresh B had empty private history. Its model context
+  contained canonical profile version 1 and the confirmed fact ID, one B
+  message, and no A messages, cards, summary, or private marker. A
+  `ReplaceOrdinaryProfileFact` proposal and explicit confirmation advanced
+  canonical profile version from 1 to 2.
+
+The [sanitized browser receipt](../../../../evals/private-discovery/browser-proof.json)
+records source provenance, bounded assertions, and metadata receipt digests.
+The local composition substitutes Nitro for Website Worker SSR, uses the
+canonical API test fixture, and enables AbortSignal RPC only in the temporary
+provider fixture. It proves local runtime behavior, not cloud deployment,
+live-provider protocol compatibility, cancellation guarantees, or model quality.
+
+Browser acceptance identified and fixed bounded recovery, stale equal-version
+receipts, resolved conflict notices, and idle directory closure while opening a
+session. The final three regressions preserve established-directory recovery
+eligibility while retaining binding checks and the consumed recovery allowance.
+Final browser acceptance passed against the `550757f` UI, with native bundle
+bytes unchanged from the accepted `2bf8f80` build:
+
+- An idle session opening received `SessionReady` followed by a 1008 closure
+  before its initial reads. One fresh directory and session admission restored
+  five messages and the confirmed revision-1 card. The completed session and
+  interrupted attempt remained unchanged.
+- A second adult signed in normally to the same household. They could read the
+  confirmed shared preference at canonical profile version 2, and could see
+  neither the first adult's private sessions nor their private markers.
+- Opening a second tab for the same account cleared private content in the
+  displaced tab and exposed Reconnect. The active tab recovered session B after
+  idle expiry without showing A's content. Socket counts remained 3 to 3 over
+  54.594 seconds in the first tab and 33.232 seconds in the second, with no
+  repeated connection takeover.
+
+## Remaining external and product gates
+
+No external model calls, cloud mutations, or deployment have occurred. The
+product owner must authorize the actual provider/account, synthetic payload
+scope, candidate and fixed-judge models, and bounded experiment spend before
+execution. The eight-family pack and local trial preparation contain no accepted
+model baseline or human scores.
+
+This work item and draft PR #218 remain in progress until candidate
+protocol/quality comparison, selected configuration, and actual human calibration
+are complete. These local runtime proofs do not satisfy
+the evaluated adaptive-discovery outcome or authorize merge.

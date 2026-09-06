@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-07",
+  "workItemStatus": "in_progress",
+  "pullRequest": 218,
+  "mergeReady": false,
+  "source": {
+    "nativeAndAdapterHead": "2bf8f80ca72792ff94701dc8e413b51d1b2c0c21",
+    "browserAtoBUiHead": "2bf8f80ca72792ff94701dc8e413b51d1b2c0c21",
+    "recoveryUiHead": "550757f12f5aed6077d03405c6b573e6e20cb147",
+    "trackedFilesVerified": 873,
+    "nativeDigest": "c6e67400b1b887f394f3e7f880821b92ef8a8beba79919c969da20dc38c996ad",
+    "browserAtoBUiDigest": "23c1d18219588d94a150afc7c7fdf928cb9d8543992054bac256a0ab8b97e08b",
+    "recoveryUiDigest": "b9506029674f4fb1f554f9a9a472b37f54c90c3192f454a08053b9bec204e08c"
+  },
+  "verification": {
+    "method": "full_baseline_and_affected_reruns",
+    "passingTestCounts": {
+      "root": 180,
+      "api": 940,
+      "web": 159,
+      "householdApi": 24,
+      "recipeImportApi": 31,
+      "privateInterviewApi": 10
+    },
+    "passingTestTotal": 1344,
+    "adapterTests": 18,
+    "nativePrivateSessionTests": 57,
+    "nativeAndAdapterReview": "accepted",
+    "recoveryUiReview": "accepted",
+    "hostedChecks": {
+      "sourceHead": "2bf8f80ca72792ff94701dc8e413b51d1b2c0c21",
+      "runId": 34064356961,
+      "status": "passed",
+      "laterHeadStatus": "not_recorded"
+    }
+  },
+  "actualBrowser": {
+    "canonicalLoginAndApiAdmission": true,
+    "productionNativePrivateSessionAndHousehold": true,
+    "providerTransport": "scripted_below_production_adapter",
+    "sessionA": {
+      "sameCardRevisionTransition": [0, 1],
+      "canonicalVersionBeforeConfirmation": 0,
+      "canonicalVersionAfterConfirmation": 1,
+      "completed": true
+    },
+    "stop": {
+      "providerSignalAborted": true,
+      "lateAssistantOutputPersisted": false
+    },
+    "restart": {
+      "heldRequestDuringWholeProcessStop": true,
+      "oldProcessJoined": true,
+      "sameSqliteAndWal": true,
+      "sameEmittedBundles": true,
+      "messagesAndConfirmedCardRetained": true,
+      "attemptStatus": "interrupted",
+      "automaticDispatch": false
+    },
+    "sessionB": {
+      "initialHistoryMessageCount": 0,
+      "contextCanonicalProfileVersion": 1,
+      "currentCanonicalFactPresent": true,
+      "contextMessageCount": 1,
+      "priorSessionMessagesPresent": false,
+      "priorSessionCardsPresent": false,
+      "priorSessionSummaryPresent": false,
+      "priorPrivateMarkerPresent": false,
+      "proposalType": "ReplaceOrdinaryProfileFact",
+      "explicitConfirmation": true,
+      "canonicalVersionAfterConfirmation": 2
+    }
+  },
+  "finalRecoveryUiBrowser": {
+    "status": "passed",
+    "nativeBundleBytesUnchanged": true,
+    "idleOpening": {
+      "status": "passed",
+      "closeCode": 1008,
+      "closedAfterSessionReadyBeforeReads": true,
+      "freshDirectoryAdmissions": 1,
+      "sameSessionReadmitted": true,
+      "historyMessageCount": 5,
+      "confirmedCardRevision": 1,
+      "sessionVersion": 11,
+      "sessionCompleted": true,
+      "attemptStatus": "interrupted"
+    },
+    "crossAdultPrivacy": {
+      "status": "passed",
+      "freshCanonicalLogin": true,
+      "sameHousehold": true,
+      "otherAdultSessionAVisible": false,
+      "otherAdultSessionBVisible": false,
+      "otherAdultPrivateMarkersVisible": false,
+      "sharedProfileVersion": 2,
+      "confirmedSharedPreferenceVisible": true
+    },
+    "twoTabRecovery": {
+      "status": "passed",
+      "displacedTabPrivateContentCleared": true,
+      "displacedTabReconnectVisible": true,
+      "activeTabRecoveredSessionB": true,
+      "activeTabSessionAContentVisible": false,
+      "firstTabSocketCounts": [3, 3],
+      "firstTabObservationMilliseconds": 54594,
+      "secondTabSocketCounts": [3, 3],
+      "secondTabObservationMilliseconds": 33232,
+      "repeatedConnectionTakeover": false
+    }
+  },
+  "externalEffects": {
+    "externalModelCalls": 0,
+    "cloudMutations": 0,
+    "deployments": 0
+  },
+  "qualityEvidence": {
+    "liveModelRuns": 0,
+    "candidateComparison": "not_exercised",
+    "selectedConfiguration": null,
+    "humanCalibration": "not_exercised"
+  },
+  "receiptSha256": {
+    "final-browser-ab-metadata.json": "a0c10bbed61434301d8f075a5eef5d0ed286b37b4876c0055b30922fbdc9a573",
+    "final-provider-ab-metadata.json": "f5158fa1153dd3d7741d5dff7190cefb2526e1b9aab7e084f5bb70c719ef3aaf",
+    "held-turn-restart-receipt.json": "86220f12906478dde0a5ea431590802b6cdf2bd311b3c8bbc75f27867e8f5430",
+    "fresh-2bf8f80-final-head-provenance.json": "6ca46f0827cd0fdb4deee717ac9c7a8ecba46e33540c4dd1fe029f45f2cd2f74",
+    "ui-550757f-stage/staged-ui-provenance.json": "26dff508c6d080fa0ef4a42aafb6176abed20455476d96ab05edfecf0c8d65af",
+    "ui-550757f-running-receipt.json": "8620530a98c00093848e26a34208979f59962d9b96ca23ff6931f72b0e7c3962",
+    "final-ui-idle-metadata.json": "0898011552ca42994960be683b7b4829e227bcf393a22f54fce386e43f2bc86c",
+    "final-owner-privacy-metadata.json": "35b38adfadd3f4c1a759c10bcafda3511da88dcd0e6dbc390be91d277d10a217",
+    "final-two-tabs-first.json": "db202cd4e94069ff8ed777941dc003beb8f8ade6669f604700ea63bf171bdd85",
+    "final-two-tabs-first-after.json": "bf1c70d8750ee29737ed05d34a3aeaf1485fc5cf1b206b1647e9304c447a8c4b",
+    "final-two-tabs-second-before.json": "a7376219681907081d0f6a40d5dcaf9571cdcb4905fe1210913a2d2a211390e4",
+    "final-two-tabs-second-after.json": "b0953133b8feb827b75d2c1977c9ba56b7d442ffca664debb5db79e15023b07c"
+  },
+  "limitations": [
+    "Local UI uses Nitro SSR in place of Website Worker SSR.",
+    "Canonical API uses its native test composition.",
+    "AbortSignal RPC is enabled only in the temporary provider fixture.",
+    "Scripted provider responses do not establish live-provider protocol compatibility, cancellation guarantees, model quality, or human calibration."
+  ]
+}

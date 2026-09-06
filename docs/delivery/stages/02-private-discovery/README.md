@@ -49,8 +49,15 @@ hosted-check and merge record. Work Item 02 merged in
 and completed local browser acceptance. Its
 [delivery record](02-progressive-cards-and-confirmation.md) owns the native
 confirmation, restart, privacy, accessibility, and runtime evidence and limits.
-Work Item 03 source preparation is authorized and in progress. Model/provider
-execution remains gated on concrete target and budget authorization.
+Work Item 03 is in progress in
+[draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), with native
+adaptive-turn implementation, browser A-to-B confirmation/restart evidence,
+eight-family evaluation assets, and a measured decision not to adopt
+`agent-eval` 2.2.1. Local browser acceptance also passed idle opening, cross-adult
+privacy, and bounded two-tab recovery. Actual candidate protocol and quality
+comparison, selected configuration, and human calibration remain required
+before merge. Model/provider execution remains gated on concrete target and
+budget authorization; local scripted responses establish runtime behavior only.
 Delivery follows the existing
 [execution policy](../../../agents/execution-policy.md).
 
