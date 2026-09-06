@@ -4,6 +4,11 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import { Schema } from "effect";
 
 import {
+  ReleaseConfirmation,
+  SettleConfirmation,
+} from "./private-confirmation.contract.js";
+import type { ReleasedConfirmation } from "./private-confirmation.contract.js";
+import {
   OutputMutation,
   OutputMutationIntent,
   PrivateSessionBinding,
@@ -79,6 +84,12 @@ interface OutputWorkerEnvironment {
       readonly authorizeConnection: (
         input: typeof AuthorizedSession.Type
       ) => Promise<void>;
+      readonly releaseConfirmation: (
+        input: typeof ReleaseConfirmation.Type
+      ) => Promise<ReleasedConfirmation>;
+      readonly settleConfirmation: (
+        input: typeof SettleConfirmation.Type
+      ) => Promise<void>;
       readonly fetch: (
         request: Request | NativeCloudflare.Request
       ) => Promise<NativeCloudflare.Response>;
@@ -86,7 +97,7 @@ interface OutputWorkerEnvironment {
   };
 }
 
-/** Trusted service-binding entrypoint. No arbitrary method dispatch or private result values. */
+/** Trusted service-binding entrypoint. Only confirmed closed commands cross its narrow continuation boundary. */
 export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> {
   async beginDirectoryConnection(untrusted: PrivateParticipantBinding) {
     const binding = Schema.decodeUnknownSync(PrivateParticipantBinding, {
@@ -130,6 +141,22 @@ export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> 
     ).authorizeConnection(input);
   }
 
+  async releaseConfirmation(untrusted: typeof ReleaseConfirmation.Type) {
+    const input = Schema.decodeUnknownSync(ReleaseConfirmation, {
+      onExcessProperty: "error",
+    })(untrusted);
+    return this.env.PrivateInterviewSession.getByName(
+      await privateOutputKey("session", input.binding.sessionReference)
+    ).releaseConfirmation(input);
+  }
+  async settleConfirmation(untrusted: typeof SettleConfirmation.Type) {
+    const input = Schema.decodeUnknownSync(SettleConfirmation, {
+      onExcessProperty: "error",
+    })(untrusted);
+    return this.env.PrivateInterviewSession.getByName(
+      await privateOutputKey("session", input.binding.sessionReference)
+    ).settleConfirmation(input);
+  }
   override async fetch(
     request: Request | NativeCloudflare.Request
   ): Promise<NativeCloudflare.Response> {

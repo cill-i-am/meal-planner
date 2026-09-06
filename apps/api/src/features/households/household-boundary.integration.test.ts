@@ -14,6 +14,8 @@ import {
 } from "@meal-planner/household-api";
 import {
   DirectoryFrame,
+  MAX_PRIVATE_FRAME_BYTES,
+  ProfileCard,
   SessionFrame,
 } from "@meal-planner/private-interview-api";
 import {
@@ -161,7 +163,7 @@ const makeRuntime = (privateAuditLogs?: string[]) =>
             privateAuditLogs.push(entry.message);
           },
     resourcePersistencePath: persistenceDirectory,
-    unsafeInspectDurableObjects: privateAuditLogs !== undefined,
+    unsafeInspectDurableObjects: true,
     workers: [
       {
         config: {
@@ -7087,4 +7089,1113 @@ describe("canonical private interview output boundary", () => {
     expect(fresh.messages).toEqual(["synthetic-new-explicit-session"]);
     fresh.socket.close();
   }, 30_000);
+});
+
+type CardConnection = Awaited<ReturnType<typeof openPrivateConnection>>;
+const cardExchange = (
+  connection: CardConnection,
+  command: Record<string, unknown> & { readonly type: string }
+) => {
+  const start = connection.frames.length;
+  const id = command["mutationId"] ?? command["requestId"];
+  connection.socket.send(JSON.stringify(command));
+  return vi.waitFor(() => {
+    const frame = connection.frames
+      .slice(start)
+      .find(
+        (candidate) =>
+          ("mutationId" in candidate && candidate.mutationId === id) ||
+          ("requestId" in candidate && candidate.requestId === id) ||
+          ("commandId" in candidate && candidate.commandId === id)
+      );
+    expect(frame).toBeDefined();
+    if (frame === undefined) {
+      throw new Error("Expected private card response");
+    }
+    return frame;
+  });
+};
+const readPrivateCards = async (
+  connection: CardConnection,
+  afterOrdinal = 0,
+  limit = 25
+) => {
+  const frame = await cardExchange(connection, {
+    afterOrdinal,
+    limit,
+    requestId: crypto.randomUUID(),
+    type: "ReadCards",
+  });
+  if (frame.type !== "CardsRead") {
+    throw new Error("Expected private cards");
+  }
+  return frame;
+};
+const preferenceChange = (label = "Carrots") => ({
+  _tag: "AddConfirmedProfileFact" as const,
+  fact: {
+    _tag: "FoodPreference" as const,
+    label,
+    sentiment: "like" as const,
+    targetKind: "ingredient" as const,
+  },
+});
+const seedPrivateCard = async (
+  connection: CardConnection,
+  change: ProfileCard["change"] = preferenceChange(),
+  expectedProfileVersion = 0,
+  reviewedFact: ProfileCard["reviewedFact"] = null
+) => {
+  const storage = await getRuntime().unsafeGetDurableObjectStorage(
+    "private-output",
+    "PrivateInterviewSession",
+    { name: await privateOutputKey("session", connection.sessionReference) }
+  );
+  const [next] = await storage.exec<{ ordinal: number }>(
+    "SELECT COALESCE(MAX(ordinal), 0) + 1 AS ordinal FROM private_profile_cards"
+  );
+  const card = Schema.decodeUnknownSync(ProfileCard)({
+    change,
+    expectedProfileVersion,
+    id: crypto.randomUUID(),
+    ordinal: next?.ordinal ?? 1,
+    outcome: null,
+    reviewedFact,
+    revision: 0,
+    status: "proposed",
+  });
+  await storage.exec(
+    "INSERT INTO private_profile_cards (ordinal, id, card_json) VALUES (?, ?, ?)",
+    card.ordinal,
+    card.id,
+    JSON.stringify(card)
+  );
+  const seededCards = await readPrivateCards(connection);
+  expect(seededCards.cards).toContainEqual(card);
+  return card;
+};
+const freezePrivateCard = (
+  connection: CardConnection,
+  card: ProfileCard,
+  expectedVersion: number,
+  mutationId = crypto.randomUUID(),
+  safetyConfirmation: string | null = null
+) =>
+  cardExchange(connection, {
+    cardId: card.id,
+    cardRevision: card.revision,
+    expectedVersion,
+    mutationId,
+    safetyConfirmation,
+    type: "ConfirmProfileCard",
+  });
+const postPrivateConfirmation = (
+  cookie: string,
+  connection: Pick<CardConnection, "generation" | "sessionReference">,
+  mutationId: string,
+  headers: Record<string, string> = {},
+  body?: string
+) => {
+  const request: Parameters<Miniflare["dispatchFetch"]>[1] = {
+    headers: {
+      Origin: "https://meal-planner.test",
+      cookie,
+      "x-private-output-generation": connection.generation,
+      ...headers,
+    },
+    method: "POST",
+  };
+  if (body !== undefined) {
+    request.body = body;
+  }
+  return getRuntime().dispatchFetch(
+    `https://meal-planner.test/v1/private-interviews/${connection.sessionReference}/confirmations/${mutationId}`,
+    request
+  );
+};
+const profileAddress = (personId: string) =>
+  `https://meal-planner.test/v1/household/people/${personId}/profile`;
+const readCardProfile = async (
+  setup: Awaited<ReturnType<typeof prepareLinkedAdult>>
+) => {
+  const response = await getRuntime().dispatchFetch(
+    profileAddress(setup.adult.id),
+    {
+      headers: { cookie: setup.ownerCookie },
+    }
+  );
+  expect(response.status).toBe(200);
+  return Schema.decodeUnknownSync(PersonProfile)(await response.json());
+};
+const manualCardProfile = (
+  setup: Awaited<ReturnType<typeof prepareLinkedAdult>>,
+  payload: object
+) =>
+  getRuntime().dispatchFetch(profileAddress(setup.adult.id), {
+    body: JSON.stringify(payload),
+    headers: { "content-type": "application/json", cookie: setup.memberCookie },
+    method: "POST",
+  });
+const awaitCardBarrier = async (
+  id: string,
+  phase: "before" | "after" | "before-release"
+) => {
+  const observations = await getRuntime().getKVNamespace(
+    "HOUSEHOLD_TEST_OBSERVATIONS",
+    "api"
+  );
+  await vi.waitFor(async () =>
+    expect(await observations.get(`private-confirmation-${phase}:${id}`)).toBe(
+      "ready"
+    )
+  );
+  return (outcome = "release") =>
+    observations.put(`private-confirmation-release:${id}`, outcome);
+};
+
+const cardHouseholdStorage = async (organizationId: string) => {
+  const ids = await getRuntime().listDurableObjectIds(
+    "HouseholdObject",
+    "household-domain"
+  );
+  const candidates = await Promise.all(
+    ids.map(async (id) => {
+      const storage = await getRuntime().unsafeGetDurableObjectStorage(
+        "household-domain",
+        "HouseholdObject",
+        { id }
+      );
+      const rows = await storage.exec<{ organization_id: string }>(
+        "SELECT organization_id FROM household_meta"
+      );
+      return rows.some((row) => row.organization_id === organizationId)
+        ? storage
+        : null;
+    })
+  );
+  const storage = candidates.find((candidate) => candidate !== null);
+  if (storage === undefined) {
+    throw new Error("Expected canonical household storage");
+  }
+  return storage;
+};
+const repairCardParticipant = async (
+  setup: Awaited<ReturnType<typeof prepareLinkedAdult>>,
+  personId: string
+) => {
+  const personResponse = await getRuntime().dispatchFetch(
+    `https://meal-planner.test/v1/household/people/${personId}`,
+    { headers: { cookie: setup.ownerCookie } }
+  );
+  const person = Schema.decodeUnknownSync(HouseholdPerson)(
+    await personResponse.json()
+  );
+  const response = await getRuntime().dispatchFetch(
+    "https://meal-planner.test/v1/household/people/links/repair",
+    {
+      body: JSON.stringify({
+        expectedPersonVersion: person.version,
+        memberId: setup.memberId,
+        mutationId: crypto.randomUUID(),
+        personId,
+        reason: "Synthetic canonical confirmation race",
+      }),
+      headers: {
+        "content-type": "application/json",
+        cookie: setup.ownerCookie,
+      },
+      method: "POST",
+    }
+  );
+  expect(response.status, await response.clone().text()).toBe(200);
+};
+
+describe("canonical private profile cards", () => {
+  const capturedCardLogs: string[] = [];
+  beforeAll(async () => {
+    await restartRuntime(capturedCardLogs);
+  });
+  it("keeps correction and rejection private, then confirms only the reviewed revision with interview provenance", async () => {
+    const setup = await prepareLinkedAdult("Private Card Revision");
+    const connection = await openPrivateConnection(setup.memberCookie);
+    const card = await seedPrivateCard(connection);
+    expect(await readCardProfile(setup)).toMatchObject({
+      facts: [],
+      version: 0,
+    });
+    const reviseId = crypto.randomUUID();
+    const revised = await cardExchange(connection, {
+      cardId: card.id,
+      cardRevision: 0,
+      change: preferenceChange("Broccoli"),
+      expectedProfileVersion: 0,
+      expectedVersion: 0,
+      mutationId: reviseId,
+      reviewedFact: null,
+      type: "ReviseProfileCard",
+    });
+    expect(revised).toMatchObject({
+      card: { revision: 1, status: "proposed" },
+      state: { version: 1 },
+      type: "CardUpdated",
+    });
+    expect(await readCardProfile(setup)).toMatchObject({
+      facts: [],
+      version: 0,
+    });
+    expect(await freezePrivateCard(connection, card, 1)).toMatchObject({
+      reason: "card_conflict",
+      type: "Rejected",
+    });
+    const rejected = await cardExchange(connection, {
+      cardId: card.id,
+      cardRevision: 1,
+      expectedVersion: 1,
+      mutationId: crypto.randomUUID(),
+      type: "RejectProfileCard",
+    });
+    expect(rejected).toMatchObject({
+      card: { status: "rejected" },
+      type: "CardUpdated",
+    });
+    expect(await readCardProfile(setup)).toMatchObject({
+      facts: [],
+      version: 0,
+    });
+    const chosen = await seedPrivateCard(
+      connection,
+      preferenceChange("Potatoes")
+    );
+    const beforeTranscript = await readPrivateCards(connection);
+    const transcriptSentinel = `private-card-transcript-${crypto.randomUUID()}`;
+    expect(
+      await cardExchange(connection, {
+        expectedVersion: beforeTranscript.state.version,
+        mutationId: crypto.randomUUID(),
+        text: transcriptSentinel,
+        type: "AppendParticipantMessage",
+      })
+    ).toMatchObject({
+      message: { text: transcriptSentinel },
+      type: "MessageAppended",
+    });
+    const probe = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/test-log-capture",
+      {
+        headers: { "x-test-native-log-probe": "1" },
+      }
+    );
+    expect(probe.status).toBe(204);
+    await vi.waitFor(() =>
+      expect(
+        capturedCardLogs.some((entry) =>
+          entry.includes("Synthetic native log capture probe")
+        )
+      ).toBe(true)
+    );
+    const current = await readPrivateCards(connection);
+    const confirmationId = crypto.randomUUID();
+    expect(
+      await freezePrivateCard(
+        connection,
+        chosen,
+        current.state.version,
+        confirmationId
+      )
+    ).toMatchObject({ type: "ConfirmationPending" });
+    expect(await readCardProfile(setup)).toMatchObject({
+      facts: [],
+      version: 0,
+    });
+    const confirmed = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      confirmationId
+    );
+    expect(confirmed.status, await confirmed.clone().text()).toBe(204);
+    const profile = await readCardProfile(setup);
+    expect(profile).toMatchObject({
+      audit: {
+        actorPersonId: setup.adult.id,
+        nextVersion: 1,
+        previousVersion: 0,
+        source: "interview",
+      },
+      facts: [
+        {
+          source: "interview",
+          standing: { _tag: "confirmed", basis: "self" },
+          value: preferenceChange("Potatoes").fact,
+        },
+      ],
+      version: 1,
+    });
+    const shared = JSON.stringify(profile);
+    expect(shared.includes(connection.sessionReference)).toBe(false);
+    expect(shared.includes(chosen.id)).toBe(false);
+    expect(shared.includes("Broccoli")).toBe(false);
+    expect(await readPrivateCards(connection)).toMatchObject({
+      cards: [
+        { status: "rejected" },
+        {
+          outcome: { profileVersion: 1, type: "committed" },
+          status: "confirmed",
+        },
+      ],
+      pendingConfirmation: null,
+    });
+    const sharedStorage = await cardHouseholdStorage(setup.organization.id);
+    const metadata = await privateControl({
+      action: "metadata",
+      sessionReference: connection.sessionReference,
+    });
+    const { result: binding } = Schema.decodeUnknownSync(
+      Schema.Struct({ result: PrivateParticipantBinding })
+    )(await metadata.json());
+    const coordinators = await Promise.all([
+      getRuntime().unsafeGetDurableObjectStorage(
+        "private-output",
+        "AccountOutputLifecycle",
+        { name: binding.accountKey }
+      ),
+      getRuntime().unsafeGetDurableObjectStorage(
+        "private-output",
+        "HouseholdAgent",
+        { name: binding.householdKey }
+      ),
+    ]);
+    const privateValues = [
+      connection.sessionReference,
+      chosen.id,
+      card.id,
+      transcriptSentinel,
+      "Broccoli",
+    ];
+    await Promise.all(
+      [sharedStorage, ...coordinators].map(async (storage) => {
+        const tables = await storage.exec<{ name: string }>(
+          "SELECT name FROM sqlite_master WHERE type = 'table'"
+        );
+        await Promise.all(
+          tables.map(async ({ name }) => {
+            const rows = await storage.exec(
+              `SELECT * FROM "${name.replaceAll('"', '""')}"`
+            );
+            const stored = rows
+              .flatMap((row) =>
+                Object.values(row).map((value) =>
+                  value instanceof ArrayBuffer
+                    ? new TextDecoder().decode(value)
+                    : String(value)
+                )
+              )
+              .join("\n");
+            expect(
+              privateValues.some((value) => stored.includes(value)),
+              `Private card data absent from shared table ${name}`
+            ).toBe(false);
+          })
+        );
+      })
+    );
+    expect(
+      privateValues.some((value) =>
+        capturedCardLogs.some((entry) => entry.includes(value))
+      )
+    ).toBe(false);
+    const replay = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      confirmationId
+    );
+    expect(replay.status).toBe(204);
+    expect(await readCardProfile(setup)).toEqual(profile);
+    const sourceCollision = await manualCardProfile(setup, {
+      command: { ...preferenceChange("Potatoes"), basis: "self" },
+      expectedProfileVersion: 0,
+      mutationId: confirmationId,
+    });
+    expect(sourceCollision.status).toBe(409);
+    expect(await sourceCollision.json()).toMatchObject({
+      code: "mutation_collision",
+    });
+    const replayAfterCollision = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      confirmationId
+    );
+    expect(replayAfterCollision.status).toBe(204);
+    expect(await readCardProfile(setup)).toEqual(profile);
+    const readOnly = await readPrivateCards(connection);
+    expect(
+      await cardExchange(connection, {
+        cardId: chosen.id,
+        cardRevision: chosen.revision,
+        expectedVersion: readOnly.state.version,
+        mutationId: crypto.randomUUID(),
+        type: "RejectProfileCard",
+      })
+    ).toMatchObject({ reason: "card_conflict", type: "Rejected" });
+    expect(
+      await cardExchange(connection, {
+        cardId: card.id,
+        cardRevision: 1,
+        change: preferenceChange("Parsnips"),
+        expectedProfileVersion: 1,
+        expectedVersion: readOnly.state.version,
+        mutationId: crypto.randomUUID(),
+        reviewedFact: null,
+        type: "ReviseProfileCard",
+      })
+    ).toMatchObject({ reason: "card_conflict", type: "Rejected" });
+    expect(await readPrivateCards(connection)).toMatchObject({
+      cards: readOnly.cards,
+      pendingConfirmation: null,
+      state: readOnly.state,
+    });
+    connection.socket.close();
+  });
+
+  it("pages maximum-label proposals within the private frame budget and retains completed cards as read-only history", async () => {
+    const setup = await prepareLinkedAdult("Private Card Bounded Pages");
+    const connection = await openPrivateConnection(setup.memberCookie);
+    const storage = await getRuntime().unsafeGetDurableObjectStorage(
+      "private-output",
+      "PrivateInterviewSession",
+      {
+        name: await privateOutputKey("session", connection.sessionReference),
+      }
+    );
+    const cards = Array.from({ length: 26 }, (_, index) =>
+      Schema.decodeUnknownSync(ProfileCard)({
+        change: preferenceChange(String(index).padStart(120, "a")),
+        expectedProfileVersion: 0,
+        id: crypto.randomUUID(),
+        ordinal: index + 1,
+        outcome: null,
+        reviewedFact: preferenceChange("r".repeat(120)).fact,
+        revision: 0,
+        status: "proposed",
+      })
+    );
+    await Promise.all(
+      cards.map((card) =>
+        storage.exec(
+          "INSERT INTO private_profile_cards (ordinal, id, card_json) VALUES (?, ?, ?)",
+          card.ordinal,
+          card.id,
+          JSON.stringify(card)
+        )
+      )
+    );
+    const page = await readPrivateCards(connection);
+    expect(page.cards).toEqual(cards.slice(0, 25));
+    expect(page.hasMore).toBe(true);
+    expect(
+      new TextEncoder().encode(JSON.stringify(page)).byteLength
+    ).toBeLessThanOrEqual(MAX_PRIVATE_FRAME_BYTES);
+    const last = await readPrivateCards(connection, 25, 1);
+    expect(last.cards).toEqual(cards.slice(25));
+    expect(last.hasMore).toBe(false);
+    expect(
+      await cardExchange(connection, {
+        expectedVersion: 0,
+        mutationId: crypto.randomUUID(),
+        type: "CompleteSession",
+      })
+    ).toMatchObject({ type: "SessionCompleted" });
+    const completed = await readPrivateCards(connection);
+    expect(completed).toMatchObject({ state: { status: "completed" } });
+    const [first] = cards;
+    if (first === undefined) {
+      throw new Error("Expected seeded proposal");
+    }
+    expect(
+      await freezePrivateCard(connection, first, completed.state.version)
+    ).toMatchObject({ reason: "session_completed", type: "Rejected" });
+    expect(await readCardProfile(setup)).toMatchObject({
+      facts: [],
+      version: 0,
+    });
+    const reread = await readPrivateCards(connection);
+    expect(reread.cards).toEqual(completed.cards);
+    connection.socket.close();
+  });
+
+  it("requires a separate explicit hard-constraint reduction and retains confirmed safety history", async () => {
+    const setup = await prepareLinkedAdult("Private Card Safety");
+    const connection = await openPrivateConnection(setup.memberCookie);
+    const hardFact = {
+      _tag: "HardConstraint",
+      category: "allergen",
+      handling: "exclude",
+      label: "Peanuts",
+    } as const;
+    const card = await seedPrivateCard(connection, {
+      _tag: "AddConfirmedProfileFact",
+      fact: hardFact,
+    });
+    const confirmationId = crypto.randomUUID();
+    expect(
+      await freezePrivateCard(connection, card, 0, confirmationId)
+    ).toMatchObject({ type: "ConfirmationPending" });
+    const hardConfirmationResponse = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      confirmationId
+    );
+    expect(hardConfirmationResponse.status).toBe(204);
+    const initial = await readCardProfile(setup);
+    const [fact] = initial.facts;
+    if (fact === undefined) {
+      throw new Error("Expected confirmed constraint");
+    }
+    const bypass = await seedPrivateCard(
+      connection,
+      { _tag: "RemoveOrdinaryProfileFact", factId: fact.id },
+      1,
+      hardFact
+    );
+    const bypassId = crypto.randomUUID();
+    const before = await readPrivateCards(connection);
+    const frozen = await freezePrivateCard(
+      connection,
+      bypass,
+      before.state.version,
+      bypassId
+    );
+    expect(frozen).toMatchObject({ type: "ConfirmationPending" });
+    const deniedBySafetyPolicy = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      bypassId
+    );
+    expect(deniedBySafetyPolicy.status).toBe(204);
+    expect(await readPrivateCards(connection)).toMatchObject({
+      cards: [
+        { status: "confirmed" },
+        {
+          outcome: { reason: "safety_confirmation_required", type: "rejected" },
+          status: "conflict",
+        },
+      ],
+    });
+    expect(await readCardProfile(setup)).toEqual(initial);
+    const reduction = await seedPrivateCard(
+      connection,
+      {
+        _tag: "ConfirmHardConstraintReduction",
+        factId: fact.id,
+        replacement: null,
+      },
+      1,
+      hardFact
+    );
+    const state = await readPrivateCards(connection);
+    expect(
+      await freezePrivateCard(connection, reduction, state.state.version)
+    ).toMatchObject({
+      reason: "safety_confirmation_required",
+      type: "Rejected",
+    });
+    const reduceId = crypto.randomUUID();
+    expect(
+      await freezePrivateCard(
+        connection,
+        reduction,
+        state.state.version,
+        reduceId,
+        "I confirm this safety constraint change"
+      )
+    ).toMatchObject({ type: "ConfirmationPending" });
+    const reductionResponse = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      reduceId
+    );
+    expect(reductionResponse.status).toBe(204);
+    expect(await readCardProfile(setup)).toMatchObject({
+      audit: {
+        command: { _tag: "ConfirmHardConstraintReduction" },
+        source: "interview",
+      },
+      facts: [],
+      version: 2,
+    });
+    const historical = await getRuntime().dispatchFetch(
+      `${profileAddress(setup.adult.id)}/versions/1`,
+      { headers: { cookie: setup.memberCookie } }
+    );
+    expect(await historical.json()).toEqual(
+      Schema.encodeSync(PersonProfile)(initial)
+    );
+    connection.socket.close();
+  });
+
+  it("retains stale-version and source-collision outcomes without silently rebasing", async () => {
+    const setup = await prepareLinkedAdult("Private Card Conflict");
+    const connection = await openPrivateConnection(setup.memberCookie);
+    const card = await seedPrivateCard(connection);
+    const manualId = crypto.randomUUID();
+    const manual = await manualCardProfile(setup, {
+      command: { ...preferenceChange("Beans"), basis: "self" },
+      expectedProfileVersion: 0,
+      mutationId: manualId,
+    });
+    expect(manual.status).toBe(200);
+    const shared = await readCardProfile(setup);
+    const confirmationId = crypto.randomUUID();
+    expect(
+      await freezePrivateCard(connection, card, 0, confirmationId)
+    ).toMatchObject({ type: "ConfirmationPending" });
+    const staleConfirmationResponse = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      confirmationId
+    );
+    expect(staleConfirmationResponse.status).toBe(204);
+    expect(await readPrivateCards(connection)).toMatchObject({
+      cards: [
+        {
+          expectedProfileVersion: 0,
+          outcome: { reason: "stale_version", type: "rejected" },
+          status: "conflict",
+        },
+      ],
+    });
+    expect(await readCardProfile(setup)).toEqual(shared);
+    const collision = await seedPrivateCard(
+      connection,
+      preferenceChange("Beans"),
+      0
+    );
+    const current = await readPrivateCards(connection);
+    expect(
+      await freezePrivateCard(
+        connection,
+        collision,
+        current.state.version,
+        manualId
+      )
+    ).toMatchObject({ type: "ConfirmationPending" });
+    const collisionResponse = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      manualId
+    );
+    expect(collisionResponse.status).toBe(204);
+    const conflictedCards = await readPrivateCards(connection);
+    expect(conflictedCards.cards.at(-1)).toMatchObject({
+      outcome: { reason: "mutation_collision", type: "rejected" },
+    });
+    expect(await readCardProfile(setup)).toEqual(shared);
+    const exactManualReplay = await manualCardProfile(setup, {
+      command: { ...preferenceChange("Beans"), basis: "self" },
+      expectedProfileVersion: 0,
+      mutationId: manualId,
+    });
+    expect(
+      exactManualReplay.status,
+      await exactManualReplay.clone().text()
+    ).toBe(200);
+    expect(await exactManualReplay.json()).toEqual(
+      Schema.encodeSync(PersonProfile)(shared)
+    );
+    expect(await readCardProfile(setup)).toEqual(shared);
+    connection.socket.close();
+  });
+
+  it("blocks another device completing while the canonical commit is in flight, then recovers the exact lost result after restart", async () => {
+    const setup = await prepareLinkedAdult("Private Card Lost Result");
+    const first = await openPrivateConnection(setup.memberCookie);
+    const card = await seedPrivateCard(first);
+    const mutationId = crypto.randomUUID();
+    const frozen = await freezePrivateCard(first, card, 0, mutationId);
+    expect(frozen).toMatchObject({ type: "ConfirmationPending" });
+    const barrier = crypto.randomUUID();
+    const pending = postPrivateConfirmation(
+      setup.memberCookie,
+      first,
+      mutationId,
+      { "x-test-private-confirmation-after": barrier }
+    );
+    const release = await awaitCardBarrier(barrier, "after");
+    const committed = await readCardProfile(setup);
+    expect(committed.version).toBe(1);
+    const second = await openPrivateConnection(
+      setup.memberCookie,
+      first.sessionReference
+    );
+    const state = await readPrivateCards(second);
+    expect(state.pendingConfirmation).toBe(mutationId);
+    expect(
+      await cardExchange(second, {
+        expectedVersion: state.state.version,
+        mutationId: crypto.randomUUID(),
+        type: "CompleteSession",
+      })
+    ).toMatchObject({ reason: "confirmation_pending", type: "Rejected" });
+    expect(
+      await cardExchange(second, {
+        cardId: card.id,
+        cardRevision: card.revision,
+        expectedVersion: state.state.version,
+        mutationId: crypto.randomUUID(),
+        type: "RejectProfileCard",
+      })
+    ).toMatchObject({ reason: "confirmation_pending", type: "Rejected" });
+    await release("drop");
+    const droppedResponse = await pending;
+    expect(droppedResponse.status).toBe(503);
+    const retainedCards = await readPrivateCards(second);
+    expect(retainedCards.pendingConfirmation).toBe(mutationId);
+    first.socket.close();
+    second.socket.close();
+    await restartRuntime();
+    const restored = await openPrivateConnection(
+      setup.memberCookie,
+      first.sessionReference
+    );
+    const restoredCards = await readPrivateCards(restored);
+    expect(restoredCards.pendingConfirmation).toBe(mutationId);
+    const recoveryResponse = await postPrivateConfirmation(
+      setup.memberCookie,
+      restored,
+      mutationId
+    );
+    expect(recoveryResponse.status).toBe(204);
+    expect(await readCardProfile(setup)).toEqual(committed);
+    const settled = await readPrivateCards(restored);
+    expect(settled).toMatchObject({
+      cards: [
+        {
+          outcome: { profileVersion: 1, type: "committed" },
+          status: "confirmed",
+        },
+      ],
+      pendingConfirmation: null,
+    });
+    expect(
+      await cardExchange(restored, {
+        expectedVersion: settled.state.version,
+        mutationId: crypto.randomUUID(),
+        type: "CompleteSession",
+      })
+    ).toMatchObject({ type: "SessionCompleted" });
+    restored.socket.close();
+  });
+
+  it("denies copied references, unadmitted or body-substituted confirmation commands", async () => {
+    const setup = await prepareLinkedAdult("Private Card Admission");
+    const connection = await openPrivateConnection(setup.memberCookie);
+    const card = await seedPrivateCard(connection);
+    const mutationId = crypto.randomUUID();
+    const prematureResponse = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      mutationId
+    );
+    expect(prematureResponse.status).toBe(503);
+    expect(
+      await freezePrivateCard(connection, card, 0, mutationId)
+    ).toMatchObject({ type: "ConfirmationPending" });
+    await Promise.all(
+      ["", setup.ownerCookie].map(async (cookie) => {
+        const deniedResponse = await postPrivateConfirmation(
+          cookie,
+          connection,
+          mutationId
+        );
+        expect(deniedResponse.status).toBe(503);
+      })
+    );
+    const crossOriginResponse = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      mutationId,
+      { Origin: "https://foreign.test" }
+    );
+    expect(crossOriginResponse.status).toBe(403);
+    const substitutedBodyResponse = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      mutationId,
+      { "content-type": "application/json" },
+      JSON.stringify({
+        command: preferenceChange("Turnips"),
+        personId: setup.adult.id,
+      })
+    );
+    expect(substitutedBodyResponse.status).toBe(403);
+    expect(await readCardProfile(setup)).toMatchObject({
+      facts: [],
+      version: 0,
+    });
+    const confirmedResponse = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      mutationId
+    );
+    expect(confirmedResponse.status).toBe(204);
+    connection.socket.close();
+  });
+
+  it("rejects non-interview commands at the native Household boundary without settling the retained confirmation", async () => {
+    const setup = await prepareLinkedAdult("Private Card Closed Commands");
+    const connection = await openPrivateConnection(setup.memberCookie);
+    const card = await seedPrivateCard(connection);
+    const mutationId = crypto.randomUUID();
+    expect(
+      await freezePrivateCard(connection, card, 0, mutationId)
+    ).toMatchObject({ type: "ConfirmationPending" });
+    const attempts = await Promise.all(
+      [
+        { _tag: "AddProvisionalProfileFact", fact: preferenceChange().fact },
+        { ...preferenceChange(), basis: "household_adult" },
+      ].map((command) =>
+        postPrivateConfirmation(setup.memberCookie, connection, mutationId, {
+          "x-test-private-confirmation-command": JSON.stringify(command),
+        })
+      )
+    );
+    expect(attempts.map((response) => response.status)).toEqual([503, 503]);
+    expect(await readCardProfile(setup)).toMatchObject({
+      facts: [],
+      version: 0,
+    });
+    expect(await readPrivateCards(connection)).toMatchObject({
+      cards: [{ status: "pending" }],
+      pendingConfirmation: mutationId,
+    });
+    const confirmed = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      mutationId
+    );
+    expect(confirmed.status).toBe(204);
+    expect(await confirmed.text()).toBe("");
+    expect(await readCardProfile(setup)).toMatchObject({
+      facts: [{ source: "interview", standing: { basis: "self" } }],
+      version: 1,
+    });
+    connection.socket.close();
+  });
+
+  it("cannot borrow a new generation after an old confirmation request pauses with stale canonical auth", async () => {
+    const label = "Private Card Stale Admission";
+    const setup = await prepareLinkedAdult(label);
+    const connection = await openPrivateConnection(setup.memberCookie);
+    const card = await seedPrivateCard(connection);
+    const mutationId = crypto.randomUUID();
+    expect(
+      await freezePrivateCard(connection, card, 0, mutationId)
+    ).toMatchObject({ type: "ConfirmationPending" });
+    const barrier = crypto.randomUUID();
+    const staleRequest = postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      mutationId,
+      {
+        "x-test-private-confirmation-before-release": barrier,
+        "x-test-private-confirmation-observation": barrier,
+      }
+    );
+    const release = await awaitCardBarrier(barrier, "before-release");
+    const signedOut = await authRequest("/sign-out", {}, setup.memberCookie);
+    expect(signedOut.status).toBe(200);
+    const freshCookie = await signIn(`${label} Adult`);
+    const active = await authRequest(
+      "/organization/set-active",
+      { organizationId: setup.organization.id },
+      freshCookie
+    );
+    expect(active.status).toBe(200);
+    const restored = await openPrivateConnection(
+      freshCookie,
+      connection.sessionReference
+    );
+    expect(restored.generation).not.toBe(connection.generation);
+    await release();
+    const denied = await staleRequest;
+    expect(denied.status).toBe(503);
+    const observations = await getRuntime().getKVNamespace(
+      "HOUSEHOLD_TEST_OBSERVATIONS",
+      "api"
+    );
+    expect(
+      await observations.get(`private-confirmation-household-calls:${barrier}`)
+    ).toBeNull();
+    expect(await readCardProfile(setup)).toMatchObject({
+      facts: [],
+      version: 0,
+    });
+    expect(await readPrivateCards(restored)).toMatchObject({
+      cards: [{ status: "pending" }],
+      pendingConfirmation: mutationId,
+    });
+    const confirmed = await postPrivateConfirmation(
+      freshCookie,
+      restored,
+      mutationId,
+      { "x-test-private-confirmation-observation": barrier }
+    );
+    expect(confirmed.status).toBe(204);
+    expect(
+      await observations.get(`private-confirmation-household-calls:${barrier}`)
+    ).toBe("1");
+    expect(await readCardProfile(setup)).toMatchObject({ version: 1 });
+    connection.socket.close();
+    restored.socket.close();
+  });
+
+  it("records a canonical policy rejection so an older overlapping attempt cannot commit after participant authority is restored", async () => {
+    const setup = await prepareLinkedAdult("Private Card Terminal Rejection");
+    const connection = await openPrivateConnection(setup.memberCookie);
+    const card = await seedPrivateCard(connection);
+    const mutationId = crypto.randomUUID();
+    expect(
+      await freezePrivateCard(connection, card, 0, mutationId)
+    ).toMatchObject({ type: "ConfirmationPending" });
+    const earlierBefore = crypto.randomUUID();
+    const earlierAfter = crypto.randomUUID();
+    const retryBefore = crypto.randomUUID();
+    const retryAfter = crypto.randomUUID();
+    const earlier = postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      mutationId,
+      {
+        "x-test-private-confirmation-after": earlierAfter,
+        "x-test-private-confirmation-before": earlierBefore,
+      }
+    );
+    const releaseEarlier = await awaitCardBarrier(earlierBefore, "before");
+    const retry = postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      mutationId,
+      {
+        "x-test-private-confirmation-after": retryAfter,
+        "x-test-private-confirmation-before": retryBefore,
+      }
+    );
+    const releaseRetry = await awaitCardBarrier(retryBefore, "before");
+    const created = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people",
+      {
+        body: JSON.stringify({
+          displayName: "Synthetic temporary linked adult",
+          kind: "adult",
+          mutationId: crypto.randomUUID(),
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.ownerCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(created.status).toBe(201);
+    const replacement = Schema.decodeUnknownSync(HouseholdPerson)(
+      await created.json()
+    );
+    await repairCardParticipant(setup, replacement.id);
+    await releaseRetry();
+    const releaseRejectedResult = await awaitCardBarrier(retryAfter, "after");
+    const storage = await cardHouseholdStorage(setup.organization.id);
+    const receipt = await storage.exec<{ outcome_json: string }>(
+      "SELECT outcome_json FROM household_interview_profile_receipts WHERE mutation_id = ?",
+      mutationId
+    );
+    expect(receipt).toHaveLength(1);
+    expect(JSON.parse(receipt[0]?.outcome_json ?? "null")).toMatchObject({
+      reason: "self_required",
+      type: "rejected",
+    });
+    expect(await readCardProfile(setup)).toMatchObject({
+      facts: [],
+      version: 0,
+    });
+    await releaseRejectedResult("drop");
+    const rejectedResponse = await retry;
+    expect(rejectedResponse.status).toBe(503);
+    await repairCardParticipant(setup, setup.adult.id);
+    await releaseEarlier();
+    const releaseEarlierResult = await awaitCardBarrier(earlierAfter, "after");
+    expect(await readCardProfile(setup)).toMatchObject({
+      facts: [],
+      version: 0,
+    });
+    expect(
+      await storage.exec(
+        "SELECT outcome_json FROM household_interview_profile_receipts WHERE mutation_id = ?",
+        mutationId
+      )
+    ).toEqual(receipt);
+    await releaseEarlierResult("drop");
+    const earlierResponse = await earlier;
+    expect(earlierResponse.status).toBe(503);
+    const restored = await openPrivateConnection(
+      setup.memberCookie,
+      connection.sessionReference
+    );
+    const restoredCards = await readPrivateCards(restored);
+    expect(restoredCards.pendingConfirmation).toBe(mutationId);
+    const restoredConfirmationResponse = await postPrivateConfirmation(
+      setup.memberCookie,
+      restored,
+      mutationId
+    );
+    expect(restoredConfirmationResponse.status).toBe(204);
+    const settledCards = await readPrivateCards(restored);
+    expect(settledCards.cards).toMatchObject([
+      {
+        outcome: { reason: "self_required", type: "rejected" },
+        status: "conflict",
+      },
+    ]);
+    expect(await readCardProfile(setup)).toMatchObject({
+      facts: [],
+      version: 0,
+    });
+    connection.socket.close();
+    restored.socket.close();
+  });
+
+  it("suppresses the old generation's terminal frame after canonical commit and sign-out while preserving exact recovery", async () => {
+    const setup = await prepareLinkedAdult("Private Card Revocation");
+    const connection = await openPrivateConnection(setup.memberCookie);
+    const card = await seedPrivateCard(connection);
+    const mutationId = crypto.randomUUID();
+    expect(
+      await freezePrivateCard(connection, card, 0, mutationId)
+    ).toMatchObject({ type: "ConfirmationPending" });
+    const barrier = crypto.randomUUID();
+    const pending = postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      mutationId,
+      { "x-test-private-confirmation-after": barrier }
+    );
+    const release = await awaitCardBarrier(barrier, "after");
+    const committedProfile = await readCardProfile(setup);
+    expect(committedProfile.version).toBe(1);
+    const signedOut = await authRequest("/sign-out", {}, setup.memberCookie);
+    expect(signedOut.status).toBe(200);
+    await release();
+    await pending;
+    await delay(20);
+    expect(
+      connection.frames.some((frame) => frame.type === "ConfirmationSettled")
+    ).toBe(false);
+    const signedOutResponse = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      mutationId
+    );
+    expect(signedOutResponse.status).toBe(503);
+    const retainedProfile = await readCardProfile(setup);
+    expect(retainedProfile.version).toBe(1);
+    connection.socket.close();
+  });
 });

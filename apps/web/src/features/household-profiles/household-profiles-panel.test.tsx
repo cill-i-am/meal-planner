@@ -259,3 +259,68 @@ it("requires reload and explicit reapplication after a stale version without aut
   const [first, second] = mutate.mock.calls;
   expect(second).not.toEqual(first);
 });
+
+it.each([
+  ["interview", "Interview confirmation"],
+  ["manual_ui", "Manual entry"],
+] as const)(
+  "labels %s provenance in household history",
+  async (source, label) => {
+    const user = userEvent.setup();
+    const fact = {
+      createdAtEpochMs: 1,
+      createdBy: "a".repeat(64),
+      createdInVersion: 1,
+      id: "fact_00000000-0000-4000-8000-000000000111",
+      source,
+      standing: { _tag: "confirmed", basis: "self" },
+      updatedAtEpochMs: 1,
+      updatedBy: "a".repeat(64),
+      updatedInVersion: 1,
+      value: {
+        _tag: "FoodPreference",
+        label: "Peas",
+        sentiment: "like",
+        targetKind: "ingredient",
+      },
+    };
+    const profile = Schema.decodeUnknownSync(PersonProfile)({
+      ...empty,
+      audit: {
+        actorId: "a".repeat(64),
+        actorPersonId: personId,
+        after: fact,
+        atEpochMs: 1,
+        before: null,
+        command: {
+          _tag: "AddConfirmedProfileFact",
+          basis: "self",
+          fact: fact.value,
+        },
+        nextVersion: 1,
+        previousVersion: 0,
+        source,
+      },
+      facts: [fact],
+      version: 1,
+    });
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <HouseholdProfilesPanel
+          organizationId={`source-${source}`}
+          operations={{
+            get: vi.fn().mockResolvedValue(profile),
+            mutate: vi.fn(),
+            versions: vi.fn().mockResolvedValue({
+              nextBeforeVersion: null,
+              versions: [profile],
+            }),
+          }}
+          peopleOperations={{ list: vi.fn().mockResolvedValue(roster) }}
+        />
+      </QueryClientProvider>
+    );
+    await user.click(await screen.findByText("Version and change history"));
+    expect(await screen.findAllByText(new RegExp(label, "u"))).toHaveLength(2);
+  }
+);

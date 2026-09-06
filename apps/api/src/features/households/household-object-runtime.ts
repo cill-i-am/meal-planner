@@ -1,5 +1,6 @@
 import {
   PersonProfile,
+  InterviewProfileOutcome,
   ProfileVersionPage,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureStart,
@@ -118,6 +119,7 @@ import {
   HouseholdReadPersonProfileInput,
   HouseholdListProfileVersionsInput,
   HouseholdMutatePersonProfileInput,
+  HouseholdMutateInterviewProfileInput,
 } from "./profiles/household-profile.contract.js";
 import { makeHouseholdProfileRepository } from "./profiles/household-profile.repository.js";
 import {
@@ -1318,6 +1320,39 @@ export const HouseholdObjectRuntime = Effect.gen(
             return yield* Schema.encodeEffect(ProfileVersionPage)(result).pipe(
               Effect.mapError(invalidInput)
             );
+          })
+        ),
+      mutateInterviewProfile: (
+        untrustedInput: HouseholdMutateInterviewProfileInput
+      ) =>
+        scoped(
+          Effect.gen(function* mutateInterviewProfile() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdMutateInterviewProfileInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "mutate_interview_profile"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const result = yield* makeHouseholdProfileRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).mutateInterview({
+              actor: command.admission.actor,
+              now: yield* Clock.currentTimeMillis,
+              payload: command.payload,
+              personId: command.personId,
+            });
+            return yield* Schema.encodeEffect(InterviewProfileOutcome)(
+              result
+            ).pipe(Effect.mapError(invalidInput));
           })
         ),
       mutatePersonProfile: (

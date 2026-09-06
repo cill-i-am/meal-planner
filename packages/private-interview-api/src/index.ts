@@ -1,3 +1,10 @@
+import {
+  InterviewProfileOutcome as ConfirmationOutcome,
+  FoodPreference,
+  ProfileFactId,
+  ProfileFactValue,
+  ProfileVersion,
+} from "@meal-planner/household-api";
 import { Schema } from "effect";
 
 export const MAX_PRIVATE_FRAME_BYTES = 32_768;
@@ -45,10 +52,93 @@ export const ReadHistory = Schema.Struct({
   requestId: Id,
   type: Schema.Literal("ReadHistory"),
 });
+
+/** A private proposal has no actor, target person, confirmation basis, or source. */
+export const ProfileCardChange = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("AddConfirmedProfileFact"),
+    fact: ProfileFactValue,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("ConfirmProfileFact"),
+    factId: ProfileFactId,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("ReplaceOrdinaryProfileFact"),
+    fact: FoodPreference,
+    factId: ProfileFactId,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("RemoveOrdinaryProfileFact"),
+    factId: ProfileFactId,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("ConfirmHardConstraintReduction"),
+    factId: ProfileFactId,
+    replacement: Schema.NullOr(ProfileFactValue),
+  }),
+]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type ProfileCardChange = typeof ProfileCardChange.Type;
+export { InterviewProfileOutcome as ConfirmationOutcome } from "@meal-planner/household-api";
+export const ProfileCard = Schema.Struct({
+  change: ProfileCardChange,
+  expectedProfileVersion: ProfileVersion,
+  id: Id,
+  ordinal: Ordinal,
+  outcome: Schema.NullOr(ConfirmationOutcome),
+  reviewedFact: Schema.NullOr(ProfileFactValue),
+  revision: Ordinal,
+  status: Schema.Literals([
+    "proposed",
+    "rejected",
+    "pending",
+    "confirmed",
+    "conflict",
+  ]),
+});
+export type ProfileCard = typeof ProfileCard.Type;
+export const ReadCards = Schema.Struct({
+  afterOrdinal: Ordinal,
+  limit: PageSize,
+  requestId: Id,
+  type: Schema.Literal("ReadCards"),
+});
+export const ReviseProfileCard = Schema.Struct({
+  cardId: Id,
+  cardRevision: Ordinal,
+  change: ProfileCardChange,
+  expectedProfileVersion: ProfileVersion,
+  expectedVersion: Ordinal,
+  mutationId: Id,
+  reviewedFact: Schema.NullOr(ProfileFactValue),
+  type: Schema.Literal("ReviseProfileCard"),
+});
+export const RejectProfileCard = Schema.Struct({
+  cardId: Id,
+  cardRevision: Ordinal,
+  expectedVersion: Ordinal,
+  mutationId: Id,
+  type: Schema.Literal("RejectProfileCard"),
+});
+export const ConfirmProfileCard = Schema.Struct({
+  cardId: Id,
+  cardRevision: Ordinal,
+  expectedVersion: Ordinal,
+  mutationId: Id,
+  safetyConfirmation: Schema.NullOr(
+    Schema.Literal("I confirm this safety constraint change")
+  ),
+  type: Schema.Literal("ConfirmProfileCard"),
+});
+
 export const SessionCommand = Schema.Union([
   AppendParticipantMessage,
   CompleteSession,
   ReadHistory,
+  ReadCards,
+  ReviseProfileCard,
+  RejectProfileCard,
+  ConfirmProfileCard,
 ]);
 export type SessionCommand = typeof SessionCommand.Type;
 export const SessionState = Schema.Struct({
@@ -73,6 +163,10 @@ export const Rejected = Schema.Struct({
     "mutation_collision",
     "version_conflict",
     "session_completed",
+    "confirmation_pending",
+    "card_not_found",
+    "card_conflict",
+    "safety_confirmation_required",
   ]),
   state: Schema.NullOr(SessionState),
   type: Schema.Literal("Rejected"),
@@ -98,7 +192,36 @@ export const DirectoryFrame = Schema.Union([
 export type DirectoryFrame = typeof DirectoryFrame.Type;
 export const SessionFrame = Schema.Union([
   Schema.Struct({
+    cards: Schema.Array(ProfileCard),
+    hasMore: Schema.Boolean,
+    pendingConfirmation: Schema.NullOr(Id),
+    requestId: Id,
+    state: SessionState,
+    type: Schema.Literal("CardsRead"),
+  }),
+  Schema.Struct({
+    card: ProfileCard,
+    mutationId: Id,
+    state: SessionState,
+    type: Schema.Literal("CardUpdated"),
+  }),
+  Schema.Struct({
+    card: ProfileCard,
+    mutationId: Id,
+    state: SessionState,
+    type: Schema.Literal("ConfirmationPending"),
+  }),
+  Schema.Struct({
+    card: ProfileCard,
+    mutationId: Id,
+    outcome: ConfirmationOutcome,
+    state: SessionState,
+    type: Schema.Literal("ConfirmationSettled"),
+  }),
+  Schema.Struct({
     bindingKey: Schema.String,
+    generation: Id,
+    pendingConfirmation: Schema.NullOr(Id),
     sessionReference: Id,
     state: SessionState,
     type: Schema.Literal("SessionReady"),

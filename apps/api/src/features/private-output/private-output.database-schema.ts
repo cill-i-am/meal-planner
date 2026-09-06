@@ -80,3 +80,19 @@ export const privateReceipts = sqliteTable("private_receipts", {
   intent: text("intent").notNull(),
   mutationId: text("mutation_id").primaryKey(),
 });
+
+/** Tentative/reviewed values and pending commands are private child state only. */
+export const privateProfileCards = sqliteTable("private_profile_cards", {
+  cardJson: text("card_json").notNull(),
+  id: text("id").notNull().unique(),
+  ordinal: integer("ordinal").primaryKey({ autoIncrement: true }),
+});
+export const privatePendingConfirmation = sqliteTable(
+  "private_pending_confirmation",
+  {
+    cardId: text("card_id").notNull(),
+    mutationId: text("mutation_id").notNull().unique(),
+    payloadJson: text("payload_json").notNull(),
+    singleton: integer("singleton").primaryKey(),
+  }
+);

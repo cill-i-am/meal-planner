@@ -104,7 +104,7 @@ dependant's facts or make honestly attributed household-adult edits.
 
 The initial fact union is `FoodPreference`, `HardConstraint`, and the explicit
 reviewed `NoKnownHardConstraints` statement. Missing facts never imply safety
-clearance. Only `manual_ui` provenance is accepted. The closed public command
+clearance. The public endpoint hardcodes `manual_ui` provenance. The closed public command
 cannot supply an actor, email, session, invitation, transcript, or arbitrary
 source. Ordinary edits cannot change a safety fact; the distinct safety-change
 command requires an explicit confirmation and the UI displays old and proposed
@@ -133,3 +133,22 @@ command. A decoded authentication rejection enters an explicit sign-in-required
 state while retaining the exact payload and ID, including across remount. The
 user signs in in another tab and explicitly retries that command; a later
 authentication rejection does not prove that an earlier attempt failed to commit.
+
+
+Stage 2 Work Item 02 adds a dedicated internal `mutateInterviewProfile` command.
+It accepts only participant-confirmed closed changes with self confirmation,
+rechecks the currently linked active adult equals the bound participant, and
+hardcodes `interview` provenance. Shared profiles and audit contain no private
+session/card identity or transcript. The authenticated API obtains this command
+only from an exact pending confirmation retained in that participant's native
+private session; its public continuation accepts metadata only.
+
+The same canonical transaction additionally seals terminal interview outcomes
+in `household_interview_profile_receipts`: digest and committed version or
+closed rejection reason. Successful versions remain the authoritative profile
+receipt. Existing version receipts already seal colliding IDs; a rejected
+cross-source attempt must not shadow a prior manual receipt. Durable policy
+rejections prevent an older overlapping invocation from committing after a
+participant link is restored. Unavailable/unknown outcomes are not terminal.
+Current admission is required for receipt recovery, and a private session may
+complete only after authoritative settlement of its retained confirmation.

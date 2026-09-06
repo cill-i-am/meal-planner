@@ -2,6 +2,7 @@ import {
   HouseholdPersonId,
   MutatePersonProfilePayload,
   ProfileVersion,
+  ProfileCommand,
 } from "@meal-planner/household-api";
 import { Schema } from "effect";
 
@@ -30,3 +31,23 @@ export const HouseholdMutatePersonProfileInput = Schema.Struct({
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type HouseholdMutatePersonProfileInput =
   typeof HouseholdMutatePersonProfileInput.Type;
+
+const InterviewProfileCommand = ProfileCommand.pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (command) =>
+        command._tag !== "AddProvisionalProfileFact" &&
+        (!("basis" in command) || command.basis === "self")
+    )
+  )
+);
+export const HouseholdMutateInterviewProfileInput = Schema.Struct({
+  admission: HouseholdPeopleMemberAdmission,
+  payload: Schema.Struct({
+    ...MutatePersonProfilePayload.fields,
+    command: InterviewProfileCommand,
+  }),
+  personId: HouseholdPersonId,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type HouseholdMutateInterviewProfileInput =
+  typeof HouseholdMutateInterviewProfileInput.Type;

@@ -153,7 +153,10 @@ const ProfileHistory = ({
               <li key={version.version}>
                 <p>
                   <strong>Version {version.version}</strong> · {actor} ·{" "}
-                  {new Date(audit.atEpochMs).toLocaleString()} · Manual entry
+                  {new Date(audit.atEpochMs).toLocaleString()} ·{" "}
+                  {audit.source === "interview"
+                    ? "Interview confirmation"
+                    : "Manual entry"}
                 </p>
                 <p>
                   Before:{" "}
@@ -207,8 +210,11 @@ const ProfileFacts = ({
       <li key={fact.id} className="space-y-2 py-4">
         <p className="font-semibold">{describeProfileFact(fact.value)}</p>
         <p>
-          {standingLabel(fact)} · Manual entry · Updated in version{" "}
-          {fact.updatedInVersion}
+          {standingLabel(fact)} ·{" "}
+          {fact.source === "interview"
+            ? "Interview confirmation"
+            : "Manual entry"}{" "}
+          · Updated in version {fact.updatedInVersion}
         </p>
         <div className="flex flex-wrap gap-2">
           {fact.standing._tag === "provisional" &&

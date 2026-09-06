@@ -74,6 +74,7 @@ export const resolvePrivateOutputAuthority = (input: {
     );
     return {
       accountKey,
+      admission,
       expiresAt: session.session.expiresAt.getTime(),
       householdKey,
       linkageSubject,

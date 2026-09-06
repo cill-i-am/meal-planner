@@ -76,6 +76,7 @@ import {
 export {
   FoodPreference,
   HardConstraint,
+  InterviewProfileOutcome,
   HouseholdProfileRejected,
   HouseholdProfileProblem,
   ListProfileVersionsQuery,

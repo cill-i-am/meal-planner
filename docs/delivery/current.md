@@ -183,7 +183,7 @@ on 2026-09-06.
 [Private session foundation](stages/02-private-discovery/01-private-session-foundation.md)
 is complete: start, rediscover, resume, complete, and read retained private
 history using the selected native child/fence. The next bounded work is
-progressive cards and confirmation, which has not started. Adaptive questioning
+[progressive cards and confirmation](stages/02-private-discovery/02-progressive-cards-and-confirmation.md), explicitly authorized and started on 2026-09-06. Adaptive questioning
 with evaluated model selection, repeat review, and dependant assistance follow.
 [PDR-0006](../decisions/product/0006-ai-evaluation-and-release-evidence.md#stage-specific-evidence-and-the-complete-beta-gate)
 owns stage-specific discovery/profile evidence and the unchanged complete
@@ -202,8 +202,8 @@ slice, and no deployment is claimed.
 
 ## Deliberate Non-Work
 
-Beyond the explicitly authorized private-output safety and Work Item 01 session
-foundation, do not start model/provider work, retailer integration, full pantry inventory,
+Beyond the explicitly authorized private-output safety, Work Item 01 session
+foundation, and Work Item 02 cards and confirmation, do not start model/provider work, retailer integration, full pantry inventory,
 calories/macros, medical goal systems, MCP delivery, embedded channels, or
 generic organization support as part of this boundary investigation.
 Do not implement organization deletion; keep it disabled until its accepted

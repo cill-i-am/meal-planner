@@ -1,4 +1,5 @@
 import {
+  InterviewProfileOutcome,
   HouseholdProfileRejected,
   HouseholdPersonId,
   PersonProfile,
@@ -18,6 +19,7 @@ import {
   householdPeople,
   householdPersonAccountLinks,
   householdProfileVersions,
+  householdInterviewProfileReceipts,
 } from "../household.database-schema.js";
 import type {
   HouseholdCanonicalEncodingService,
@@ -95,6 +97,13 @@ const current = (database: Reader, personId: HouseholdPersonId) =>
           Effect.mapError(unavailable)
         );
   });
+
+interface MutationInput {
+  readonly actor: Actor;
+  readonly personId: HouseholdPersonId;
+  readonly payload: MutatePersonProfilePayload;
+  readonly now: number;
+}
 
 export const makeHouseholdProfileRepository = (
   database: EffectSQLiteDoDatabase,
@@ -183,29 +192,177 @@ export const makeHouseholdProfileRepository = (
       )
       .pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable())));
 
-  const mutate = (input: {
-    readonly actor: Actor;
-    readonly personId: HouseholdPersonId;
-    readonly payload: MutatePersonProfilePayload;
-    readonly now: number;
-  }): Effect.Effect<PersonProfile, Failure> =>
-    Effect.gen(function* mutateEffect() {
-      const canonical = yield* services.canonical
-        .encode({
-          actor: input.actor,
-          payload: input.payload,
+  type Transaction = Parameters<
+    Parameters<EffectSQLiteDoDatabase["transaction"]>[0]
+  >[0];
+  const commit = (
+    transaction: Transaction,
+    input: MutationInput,
+    digest: string,
+    source: "manual_ui" | "interview"
+  ) =>
+    Effect.gen(function* commitProfileVersion() {
+      const actorPersonId = yield* activeAdult(transaction, input.actor);
+      if (source === "interview" && actorPersonId !== input.personId) {
+        return yield* Effect.fail(reject("self_required"));
+      }
+      const person = yield* targetPerson(transaction, input.personId);
+      const [receipt] = yield* transaction
+        .select()
+        .from(householdProfileVersions)
+        .where(
+          eq(householdProfileVersions.mutationId, input.payload.mutationId)
+        )
+        .limit(1)
+        .pipe(Effect.mapError(unavailable));
+      if (receipt !== undefined) {
+        if (receipt.intentDigest !== digest) {
+          return yield* Effect.fail(reject("mutation_collision"));
+        }
+        return yield* decodeSnapshot(receipt.snapshotJson).pipe(
+          Effect.mapError(unavailable)
+        );
+      }
+      if (person.lifecycle !== "active") {
+        return yield* Effect.fail(reject("person_archived"));
+      }
+      const previous = yield* current(transaction, input.personId);
+      if (previous.version !== input.payload.expectedProfileVersion) {
+        return yield* Effect.fail(reject("stale_version"));
+      }
+      const version = ProfileVersion.make(previous.version + 1);
+      const { command } = input.payload;
+      const uuid = yield* services.identity
+        .generate()
+        .pipe(Effect.mapError(unavailable));
+      const facts = yield* applyProfileCommand(previous.facts, command, {
+        actorId: input.actor.actorId,
+        actorPersonId,
+        factId: ProfileFactId.make(`fact_${uuid}`),
+        now: input.now,
+        personId: input.personId,
+        personKind: person.kind,
+        source,
+        version,
+      });
+      const result = yield* Schema.decodeUnknownEffect(PersonProfile)({
+        audit: {
+          actorId: input.actor.actorId,
+          actorPersonId,
+          after:
+            facts.find((fact) => fact.updatedInVersion === version) ?? null,
+          atEpochMs: input.now,
+          before:
+            "factId" in command
+              ? (previous.facts.find((fact) => fact.id === command.factId) ??
+                null)
+              : null,
+          command,
+          nextVersion: version,
+          previousVersion: previous.version,
+          source,
+        },
+        facts,
+        personId: input.personId,
+        version,
+      }).pipe(Effect.mapError(unavailable));
+      yield* transaction
+        .insert(householdProfileVersions)
+        .values({
+          intentDigest: digest,
+          mutationId: input.payload.mutationId,
           personId: input.personId,
+          snapshotJson: encodeSnapshot(result),
+          version,
         })
         .pipe(Effect.mapError(unavailable));
-      const digest = yield* services.digest
-        .sha256(canonical)
-        .pipe(Effect.mapError(unavailable));
+      return result;
+    });
+  const intentDigest = (
+    input: MutationInput,
+    source: "manual_ui" | "interview"
+  ) => {
+    const intent = {
+      actor: input.actor,
+      payload: input.payload,
+      personId: input.personId,
+    };
+    return services.canonical
+      .encode(source === "interview" ? { ...intent, source } : intent)
+      .pipe(
+        Effect.flatMap((canonical) => services.digest.sha256(canonical)),
+        Effect.mapError(unavailable)
+      );
+  };
+
+  const mutate = (
+    input: MutationInput
+  ): Effect.Effect<PersonProfile, Failure> =>
+    Effect.gen(function* mutateEffect() {
+      const digest = yield* intentDigest(input, "manual_ui");
       return yield* database
         .transaction((transaction) =>
-          Effect.gen(function* commitProfileVersion() {
-            const actorPersonId = yield* activeAdult(transaction, input.actor);
-            const person = yield* targetPerson(transaction, input.personId);
+          Effect.gen(function* manualMutation() {
+            const [interviewReceipt] = yield* transaction
+              .select()
+              .from(householdInterviewProfileReceipts)
+              .where(
+                eq(
+                  householdInterviewProfileReceipts.mutationId,
+                  input.payload.mutationId
+                )
+              )
+              .limit(1)
+              .pipe(Effect.mapError(unavailable));
+            if (interviewReceipt !== undefined) {
+              return yield* Effect.fail(reject("mutation_collision"));
+            }
+            return yield* commit(transaction, input, digest, "manual_ui");
+          })
+        )
+        .pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable())));
+    });
+
+  const mutateInterview = (
+    input: MutationInput
+  ): Effect.Effect<InterviewProfileOutcome, Failure> =>
+    Effect.gen(function* interviewMutation() {
+      const digest = yield* intentDigest(input, "interview");
+      return yield* database
+        .transaction((transaction) =>
+          Effect.gen(function* sealInterviewOutcome() {
             const [receipt] = yield* transaction
+              .select()
+              .from(householdInterviewProfileReceipts)
+              .where(
+                eq(
+                  householdInterviewProfileReceipts.mutationId,
+                  input.payload.mutationId
+                )
+              )
+              .limit(1)
+              .pipe(Effect.mapError(unavailable));
+            if (receipt !== undefined) {
+              const actorPersonId = yield* activeAdult(
+                transaction,
+                input.actor
+              );
+              if (actorPersonId !== input.personId) {
+                return yield* Effect.fail(reject("self_required"));
+              }
+              if (receipt.intentDigest !== digest) {
+                return {
+                  reason: "mutation_collision" as const,
+                  type: "rejected" as const,
+                };
+              }
+              return yield* Schema.decodeUnknownEffect(
+                Schema.fromJsonString(InterviewProfileOutcome)
+              )(receipt.outcomeJson).pipe(Effect.mapError(unavailable));
+            }
+            // An existing version already seals this mutation ID. A collision must not
+            // reserve a second receipt that shadows the original manual command.
+            const [versionReceipt] = yield* transaction
               .select()
               .from(householdProfileVersions)
               .where(
@@ -216,72 +373,61 @@ export const makeHouseholdProfileRepository = (
               )
               .limit(1)
               .pipe(Effect.mapError(unavailable));
-            if (receipt !== undefined) {
-              if (receipt.intentDigest !== digest) {
-                return yield* Effect.fail(reject("mutation_collision"));
-              }
-              return yield* decodeSnapshot(receipt.snapshotJson).pipe(
-                Effect.mapError(unavailable)
+            if (versionReceipt !== undefined) {
+              const actorPersonId = yield* activeAdult(
+                transaction,
+                input.actor
               );
+              if (actorPersonId !== input.personId) {
+                return yield* Effect.fail(reject("self_required"));
+              }
+              if (versionReceipt.intentDigest !== digest) {
+                return {
+                  reason: "mutation_collision" as const,
+                  type: "rejected" as const,
+                };
+              }
+              const profile = yield* decodeSnapshot(
+                versionReceipt.snapshotJson
+              ).pipe(Effect.mapError(unavailable));
+              return {
+                profileVersion: profile.version,
+                type: "committed" as const,
+              };
             }
-            if (person.lifecycle !== "active") {
-              return yield* Effect.fail(reject("person_archived"));
-            }
-            const previous = yield* current(transaction, input.personId);
-            if (previous.version !== input.payload.expectedProfileVersion) {
-              return yield* Effect.fail(reject("stale_version"));
-            }
-            const version = ProfileVersion.make(previous.version + 1);
-            const { command } = input.payload;
-            const uuid = yield* services.identity
-              .generate()
-              .pipe(Effect.mapError(unavailable));
-            const facts = yield* applyProfileCommand(previous.facts, command, {
-              actorId: input.actor.actorId,
-              actorPersonId,
-              factId: ProfileFactId.make(`fact_${uuid}`),
-              now: input.now,
-              personId: input.personId,
-              personKind: person.kind,
-              version,
-            });
-            const result = yield* Schema.decodeUnknownEffect(PersonProfile)({
-              audit: {
-                actorId: input.actor.actorId,
-                actorPersonId,
-                after:
-                  facts.find((fact) => fact.updatedInVersion === version) ??
-                  null,
-                atEpochMs: input.now,
-                before:
-                  "factId" in command
-                    ? (previous.facts.find(
-                        (fact) => fact.id === command.factId
-                      ) ?? null)
-                    : null,
-                command,
-                nextVersion: version,
-                previousVersion: previous.version,
-                source: "manual_ui",
-              },
-              facts,
-              personId: input.personId,
-              version,
-            }).pipe(Effect.mapError(unavailable));
+            const outcome = yield* commit(
+              transaction,
+              input,
+              digest,
+              "interview"
+            ).pipe(
+              Effect.map((profile): InterviewProfileOutcome => ({
+                profileVersion: profile.version,
+                type: "committed",
+              })),
+              Effect.catchTag("HouseholdProfileRejected", (failure) =>
+                failure.reason === "profile_unavailable"
+                  ? Effect.fail(failure)
+                  : Effect.succeed<InterviewProfileOutcome>({
+                      reason: failure.reason,
+                      type: "rejected",
+                    })
+              )
+            );
             yield* transaction
-              .insert(householdProfileVersions)
+              .insert(householdInterviewProfileReceipts)
               .values({
                 intentDigest: digest,
                 mutationId: input.payload.mutationId,
-                personId: input.personId,
-                snapshotJson: encodeSnapshot(result),
-                version,
+                outcomeJson: Schema.encodeSync(
+                  Schema.fromJsonString(InterviewProfileOutcome)
+                )(outcome),
               })
               .pipe(Effect.mapError(unavailable));
-            return result;
+            return outcome;
           })
         )
         .pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable())));
     });
-  return { get, listVersions, mutate };
+  return { get, listVersions, mutate, mutateInterview };
 };

@@ -35,17 +35,18 @@ const MealPlannerRoute = () => {
     await requireAuthSuccess(authClient.signOut());
     queryClient.clear();
   };
+  const refreshAccount = async () => {
+    await Promise.all([
+      session.refetch(),
+      organizations.refetch(),
+      activeOrganization.refetch(),
+    ]);
+  };
   const actions: AuthBoundaryActions = {
     createHousehold: async (input) => {
       await requireAuthSuccess(authClient.organization.create(input));
     },
-    retry: async () => {
-      await Promise.all([
-        session.refetch(),
-        organizations.refetch(),
-        activeOrganization.refetch(),
-      ]);
-    },
+    retry: refreshAccount,
     selectHousehold: async (organizationId) => {
       await requireAuthSuccess(
         authClient.organization.setActive({ organizationId })
@@ -53,10 +54,12 @@ const MealPlannerRoute = () => {
     },
     signIn: async (input) => {
       await requireAuthSuccess(authClient.signIn.email(input));
+      await refreshAccount();
     },
     signOut,
     signUp: async (input) => {
       await requireAuthSuccess(authClient.signUp.email(input));
+      await refreshAccount();
     },
   };
 
@@ -85,6 +88,11 @@ const MealPlannerRoute = () => {
                 <PrivateInterviewsPanel
                   accountId={session.data.user.id}
                   householdId={household.id}
+                  onConfirmationSettled={() => {
+                    void queryClient.invalidateQueries({
+                      queryKey: ["household-profile", household.id],
+                    });
+                  }}
                 />
               )}
               <HouseholdPeoplePanel

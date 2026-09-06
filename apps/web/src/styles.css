@@ -596,3 +596,39 @@ h3 {
     scroll-behavior: auto !important;
   }
 }
+
+.private-profile-cards {
+  margin-block: 2rem;
+  padding-block: 1.5rem;
+  border-block: 1px solid #d8d2c6;
+}
+.private-profile-card-list {
+  list-style: none;
+  padding: 0;
+}
+.private-profile-card {
+  padding-block: 1.5rem;
+  border-bottom: 1px solid #d8d2c6;
+}
+.private-profile-card:last-child {
+  border-bottom: 0;
+}
+.private-profile-meanings {
+  display: grid;
+  gap: 0.5rem;
+  margin-block: 1rem;
+}
+.private-profile-meanings dt {
+  font-weight: 600;
+}
+.private-profile-meanings dd {
+  margin: 0 0 0.75rem;
+  overflow-wrap: anywhere;
+}
+.private-profile-card details {
+  margin-top: 1rem;
+}
+.private-profile-card summary {
+  cursor: pointer;
+  padding-block: 0.75rem;
+}

@@ -6,6 +6,7 @@ import {
   MAX_MESSAGE_LENGTH,
   MAX_PAGE_SIZE,
   SessionCommand,
+  ProfileCardChange,
 } from "./index.js";
 
 const decodeSession = Schema.decodeUnknownSync(SessionCommand, {
@@ -61,6 +62,32 @@ describe("closed private participant protocol", () => {
     ).toThrow();
     expect(() =>
       decode({ mutationId, personId: "someone-else", type: "StartSession" })
+    ).toThrow();
+  });
+  it("admits only closed proposed changes without provisional or invented authority", () => {
+    const decode = Schema.decodeUnknownSync(ProfileCardChange, {
+      onExcessProperty: "error",
+    });
+    const change = {
+      _tag: "AddConfirmedProfileFact",
+      fact: { _tag: "NoKnownHardConstraints" },
+    };
+    expect(decode(change)).toEqual(change);
+    expect(() =>
+      decode({ ...change, _tag: "AddProvisionalProfileFact" })
+    ).toThrow();
+    for (const field of ["basis", "personId", "source", "actorId"]) {
+      expect(() => decode({ ...change, [field]: "self" })).toThrow();
+    }
+    expect(() =>
+      decodeSession({
+        cardId: mutationId,
+        cardRevision: 0,
+        expectedVersion: 0,
+        mutationId,
+        safetyConfirmation: "yes",
+        type: "ConfirmProfileCard",
+      })
     ).toThrow();
   });
 });

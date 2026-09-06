@@ -1,6 +1,10 @@
+import type { PersonProfile } from "@meal-planner/household-api";
 import {
   AppendParticipantMessage,
   CompleteSession,
+  ConfirmProfileCard,
+  RejectProfileCard,
+  ReviseProfileCard,
   DirectoryFrame,
   MAX_PAGE_SIZE,
   MAX_PRIVATE_FRAME_BYTES,
@@ -10,11 +14,30 @@ import {
 import type {
   DirectoryCommand,
   Message,
+  ProfileCard,
+  ProfileCardChange,
+  Rejected,
   Reservation,
   SessionCommand,
   SessionState,
 } from "@meal-planner/private-interview-api";
 import { Schema } from "effect";
+
+import { ProfileOperationError } from "../household-profiles/operations.js";
+import {
+  readCurrentPrivateProfile,
+  continuePrivateConfirmation,
+} from "./private-profile-browser.js";
+import { matchesCurrentProfileReview } from "./private-profile-review.js";
+
+const SessionMutation = Schema.Union([
+  AppendParticipantMessage,
+  CompleteSession,
+  ReviseProfileCard,
+  RejectProfileCard,
+  ConfirmProfileCard,
+]);
+type SessionMutation = typeof SessionMutation.Type;
 
 const PendingCommand = Schema.Union([
   Schema.Struct({
@@ -24,7 +47,7 @@ const PendingCommand = Schema.Union([
   }),
   Schema.Struct({
     bindingKey: Schema.String,
-    command: Schema.Union([AppendParticipantMessage, CompleteSession]),
+    command: SessionMutation,
     sessionReference: Schema.String,
   }),
 ]);
@@ -37,13 +60,23 @@ type Connection =
 type Notice =
   | "storage_unavailable"
   | "binding_changed"
-  | "version_conflict"
-  | "session_completed"
-  | "mutation_collision"
+  | typeof Rejected.Type.reason
   | null;
 
 export interface PrivateInterviewView {
   readonly connection: Connection;
+  readonly cards: readonly ProfileCard[];
+  readonly cardsLoaded: boolean;
+  readonly moreCards: boolean;
+  readonly profile: PersonProfile | null;
+  readonly profileLoading: boolean;
+  readonly profileUnavailable: boolean;
+  readonly pendingConfirmation: string | null;
+  readonly confirmationStatus:
+    | "idle"
+    | "sending"
+    | "waiting"
+    | "retry_required";
   readonly reservations: readonly (typeof Reservation.Type)[];
   readonly sessionsLoaded: boolean;
   readonly moreSessions: boolean;
@@ -69,17 +102,32 @@ export interface PrivateInterviewDependencies {
   readonly connect: (path: string) => PrivateInterviewSocket;
   readonly storage: Pick<Storage, "getItem" | "setItem" | "removeItem">;
   readonly makeId: () => string;
+  readonly readCurrentProfile: () => Promise<PersonProfile>;
+  readonly continueConfirmation: (
+    sessionReference: string,
+    mutationId: string,
+    generation: string,
+    signal: AbortSignal
+  ) => Promise<"accepted" | "authentication_required" | "unavailable">;
 }
 
 const initialView = (): PrivateInterviewView => ({
+  cards: [],
+  cardsLoaded: false,
+  confirmationStatus: "idle",
   connection: "connecting",
   historyLoaded: false,
   lastAppendReceipt: null,
   messages: [],
+  moreCards: false,
   moreHistory: false,
   moreSessions: false,
   notice: null,
   pending: null,
+  pendingConfirmation: null,
+  profile: null,
+  profileLoading: false,
+  profileUnavailable: false,
   reservations: [],
   sessionReference: null,
   sessionState: null,
@@ -112,6 +160,7 @@ const decodeFrame = <A>(
 /** A mounted authenticated context owns its sockets and all rendered private data. */
 export class PrivateInterviewClient {
   readonly #dependencies: PrivateInterviewDependencies;
+  readonly #onConfirmationSettled: (() => void) | undefined;
   readonly #storageKey: string;
   readonly #listeners = new Set<() => void>();
   #view = initialView();
@@ -124,12 +173,18 @@ export class PrivateInterviewClient {
   #historyRequest: string | null = null;
   #listCursor = 0;
   #historyCursor = 0;
+  #cardsRequest: string | null = null;
+  #cardsCursor = 0;
+  #confirmationAbort: AbortController | null = null;
+  #sessionGeneration: string | null = null;
 
   constructor(
     context: { readonly accountId: string; readonly householdId: string },
-    dependencies: PrivateInterviewDependencies
+    dependencies: PrivateInterviewDependencies,
+    onConfirmationSettled?: () => void
   ) {
     this.#dependencies = dependencies;
+    this.#onConfirmationSettled = onConfirmationSettled;
     this.#storageKey = `meal-planner.private-interview.pending.v1:${JSON.stringify([context.accountId, context.householdId])}`;
   }
 
@@ -153,9 +208,13 @@ export class PrivateInterviewClient {
     this.#session = null;
     this.#directoryReady = false;
     this.#sessionReady = false;
+    this.#sessionGeneration = null;
     this.#bindingKey = null;
     this.#listRequest = null;
     this.#historyRequest = null;
+    this.#cardsRequest = null;
+    this.#confirmationAbort?.abort();
+    this.#confirmationAbort = null;
     for (const socket of sockets) {
       socket?.close();
     }
@@ -388,6 +447,7 @@ export class PrivateInterviewClient {
       !this.#directoryReady ||
       this.#bindingKey === null ||
       this.#view.pending !== null ||
+      this.#view.pendingConfirmation !== null ||
       this.#view.notice === "binding_changed" ||
       this.#view.notice === "storage_unavailable"
     ) {
@@ -410,6 +470,8 @@ export class PrivateInterviewClient {
   select = (sessionReference: string) => {
     if (
       !this.#directoryReady ||
+      (this.#view.pendingConfirmation !== null &&
+        this.#view.sessionReference !== sessionReference) ||
       (this.#view.pending !== null &&
         this.#view.pending.sessionReference !== sessionReference)
     ) {
@@ -419,13 +481,26 @@ export class PrivateInterviewClient {
     this.#session = null;
     previous?.close();
     this.#sessionReady = false;
+    this.#sessionGeneration = null;
     this.#historyCursor = 0;
     this.#historyRequest = null;
+    this.#cardsCursor = 0;
+    this.#cardsRequest = null;
+    this.#confirmationAbort?.abort();
+    this.#confirmationAbort = null;
     this.#update({
+      cards: [],
+      cardsLoaded: false,
+      confirmationStatus: "idle",
       historyLoaded: false,
       lastAppendReceipt: null,
       messages: [],
+      moreCards: false,
       moreHistory: false,
+      pendingConfirmation: null,
+      profile: null,
+      profileLoading: false,
+      profileUnavailable: false,
       sessionReference,
       sessionState: null,
     });
@@ -479,8 +554,11 @@ export class PrivateInterviewClient {
       throw new Error("Session binding mismatch");
     }
     this.#sessionReady = true;
+    this.#sessionGeneration = frame.generation;
     this.#state(frame.state);
+    this.#update({ pendingConfirmation: frame.pendingConfirmation });
     this.loadHistory();
+    this.loadCards();
   }
 
   #readHistory(frame: Extract<SessionFrame, { type: "HistoryRead" }>) {
@@ -513,6 +591,22 @@ export class PrivateInterviewClient {
       throw new Error("Session not ready");
     }
     switch (frame.type) {
+      case "CardsRead": {
+        this.#readCards(frame);
+        return;
+      }
+      case "CardUpdated": {
+        this.#cardUpdated(frame);
+        return;
+      }
+      case "ConfirmationPending": {
+        this.#confirmationPending(frame);
+        return;
+      }
+      case "ConfirmationSettled": {
+        this.#confirmationSettled(frame);
+        return;
+      }
       case "HistoryRead": {
         this.#readHistory(frame);
         return;
@@ -546,17 +640,7 @@ export class PrivateInterviewClient {
         return;
       }
       case "Rejected": {
-        if (
-          this.#view.pending?.sessionReference !==
-            this.#view.sessionReference ||
-          this.#acknowledge(frame.commandId) === null
-        ) {
-          return;
-        }
-        if (frame.state !== null) {
-          this.#state(frame.state);
-        }
-        this.#update({ notice: frame.reason });
+        this.#sessionRejected(frame);
         return;
       }
       default: {
@@ -564,6 +648,309 @@ export class PrivateInterviewClient {
       }
     }
   }
+
+  #sessionRejected(frame: Extract<SessionFrame, { type: "Rejected" }>) {
+    if (
+      this.#view.pending?.sessionReference !== this.#view.sessionReference ||
+      this.#acknowledge(frame.commandId) === null
+    ) {
+      return;
+    }
+    if (frame.state !== null) {
+      this.#state(frame.state);
+    }
+    this.#update({ notice: frame.reason });
+    if (frame.reason === "confirmation_pending") {
+      this.loadCards();
+    }
+  }
+
+  #mergeCards(cards: readonly ProfileCard[], currentVersion: boolean) {
+    const previous = new Map(this.#view.cards.map((card) => [card.id, card]));
+    for (const card of cards) {
+      const existing = previous.get(card.id);
+      if (
+        existing === undefined ||
+        card.revision > existing.revision ||
+        (card.revision === existing.revision && currentVersion)
+      ) {
+        previous.set(card.id, card);
+      }
+    }
+    this.#update({
+      cards: [...previous.values()].toSorted((a, b) => a.ordinal - b.ordinal),
+    });
+  }
+
+  #readCards(frame: Extract<SessionFrame, { type: "CardsRead" }>) {
+    if (frame.requestId !== this.#cardsRequest) {
+      return;
+    }
+    if (frame.cards.length > MAX_PAGE_SIZE) {
+      throw new Error("Page too large");
+    }
+    this.#cardsRequest = null;
+    this.#cardsCursor = frame.cards.at(-1)?.ordinal ?? this.#cardsCursor;
+    const currentVersion =
+      frame.state.version >= (this.#view.sessionState?.version ?? 0);
+    this.#mergeCards(frame.cards, currentVersion);
+    this.#state(frame.state);
+    this.#update({ cardsLoaded: true, moreCards: frame.hasMore });
+    if (currentVersion) {
+      this.#update({ pendingConfirmation: frame.pendingConfirmation });
+    }
+    if (
+      this.#view.cards.length > 0 &&
+      this.#view.profile === null &&
+      !this.#view.profileLoading
+    ) {
+      void this.refreshProfile();
+    }
+  }
+
+  #cardUpdated(frame: Extract<SessionFrame, { type: "CardUpdated" }>) {
+    if (this.#acknowledge(frame.mutationId) === null) {
+      return;
+    }
+    this.#mergeCards(
+      [frame.card],
+      frame.state.version >= (this.#view.sessionState?.version ?? 0)
+    );
+    this.#state(frame.state);
+  }
+
+  #confirmationPending(
+    frame: Extract<SessionFrame, { type: "ConfirmationPending" }>
+  ) {
+    if (frame.state.version < (this.#view.sessionState?.version ?? 0)) {
+      return;
+    }
+    this.#mergeCards([frame.card], true);
+    this.#state(frame.state);
+    this.#update({ pendingConfirmation: frame.mutationId });
+    if (
+      this.#view.confirmationStatus === "idle" &&
+      this.#view.pending?.command.type === "ConfirmProfileCard" &&
+      this.#view.pending.command.mutationId === frame.mutationId
+    ) {
+      void this.checkConfirmation();
+    }
+  }
+
+  #confirmationSettled(
+    frame: Extract<SessionFrame, { type: "ConfirmationSettled" }>
+  ) {
+    const currentVersion =
+      frame.state.version >= (this.#view.sessionState?.version ?? 0);
+    this.#mergeCards([frame.card], currentVersion);
+    this.#state(frame.state);
+    this.#acknowledge(frame.mutationId);
+    if (this.#view.pendingConfirmation === frame.mutationId) {
+      this.#confirmationAbort?.abort();
+      this.#confirmationAbort = null;
+      this.#update({
+        confirmationStatus: "idle",
+        notice: null,
+        pendingConfirmation: null,
+      });
+    }
+    if (currentVersion) {
+      this.#onConfirmationSettled?.();
+      void this.refreshProfile();
+    }
+  }
+
+  loadCards = () => {
+    if (!this.#sessionReady || this.#cardsRequest !== null) {
+      return;
+    }
+    this.#cardsRequest = this.#dependencies.makeId();
+    this.#send(this.#session, {
+      afterOrdinal: this.#cardsCursor,
+      limit: MAX_PAGE_SIZE,
+      requestId: this.#cardsRequest,
+      type: "ReadCards",
+    });
+  };
+
+  refreshCards = () => {
+    if (!this.#sessionReady) {
+      return;
+    }
+    this.#cardsCursor = 0;
+    this.#cardsRequest = null;
+    this.#update({ cardsLoaded: false, moreCards: false, notice: null });
+    this.loadCards();
+    void this.refreshProfile();
+  };
+
+  refreshProfile = async () => {
+    const socket = this.#session;
+    if (!this.#sessionReady || socket === null || this.#view.profileLoading) {
+      return;
+    }
+    this.#update({
+      profile: null,
+      profileLoading: true,
+      profileUnavailable: false,
+    });
+    try {
+      const profile = await this.#dependencies.readCurrentProfile();
+      if (this.#session === socket) {
+        this.#update({ profile, profileLoading: false });
+      }
+    } catch (error) {
+      if (this.#session !== socket) {
+        return;
+      }
+      if (
+        error instanceof ProfileOperationError &&
+        error.code === "authentication_required"
+      ) {
+        this.#lost(1008);
+        return;
+      }
+      this.#update({ profileLoading: false, profileUnavailable: true });
+    }
+  };
+
+  checkConfirmation = async () => {
+    const socket = this.#session;
+    const mutationId = this.#view.pendingConfirmation;
+    const reference = this.#view.sessionReference;
+    const generation = this.#sessionGeneration;
+    if (
+      !this.#sessionReady ||
+      socket === null ||
+      mutationId === null ||
+      reference === null ||
+      generation === null ||
+      this.#confirmationAbort !== null ||
+      this.#view.confirmationStatus === "retry_required"
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    this.#confirmationAbort = controller;
+    this.#update({ confirmationStatus: "sending" });
+    try {
+      const outcome = await this.#dependencies.continueConfirmation(
+        reference,
+        mutationId,
+        generation,
+        controller.signal
+      );
+      if (
+        this.#session !== socket ||
+        this.#view.pendingConfirmation !== mutationId
+      ) {
+        return;
+      }
+      if (outcome === "authentication_required") {
+        this.#lost(1008);
+        return;
+      }
+      this.#update({
+        confirmationStatus:
+          outcome === "accepted" ? "waiting" : "retry_required",
+      });
+    } catch {
+      if (
+        this.#session === socket &&
+        this.#view.pendingConfirmation === mutationId
+      ) {
+        this.#update({ confirmationStatus: "retry_required" });
+      }
+    } finally {
+      if (this.#confirmationAbort === controller) {
+        this.#confirmationAbort = null;
+      }
+    }
+  };
+
+  reconnectSession = () => {
+    if (this.#view.sessionReference !== null) {
+      this.select(this.#view.sessionReference);
+    }
+  };
+
+  reviseCard = (card: ProfileCard, change: ProfileCardChange) => {
+    const { profile } = this.#view;
+    const session = this.#view.sessionState;
+    if (
+      profile === null ||
+      session === null ||
+      !this.#view.cardsLoaded ||
+      (card.status !== "proposed" && card.status !== "conflict")
+    ) {
+      return;
+    }
+    const reviewedFact =
+      change._tag === "AddConfirmedProfileFact"
+        ? null
+        : profile.facts.find((fact) => fact.id === change.factId)?.value;
+    if (reviewedFact === undefined) {
+      return;
+    }
+    const command = Schema.decodeUnknownSync(ReviseProfileCard)({
+      cardId: card.id,
+      cardRevision: card.revision,
+      change,
+      expectedProfileVersion: profile.version,
+      expectedVersion: session.version,
+      mutationId: this.#dependencies.makeId(),
+      reviewedFact,
+      type: "ReviseProfileCard",
+    });
+    this.#mutateSession(command);
+  };
+
+  rejectCard = (card: ProfileCard) => {
+    if (
+      this.#view.sessionState === null ||
+      !this.#view.cardsLoaded ||
+      (card.status !== "proposed" && card.status !== "conflict")
+    ) {
+      return;
+    }
+    this.#mutateSession({
+      cardId: card.id,
+      cardRevision: card.revision,
+      expectedVersion: this.#view.sessionState.version,
+      mutationId: this.#dependencies.makeId(),
+      type: "RejectProfileCard",
+    });
+  };
+
+  confirmCard = (
+    card: ProfileCard,
+    safetyConfirmation: typeof ConfirmProfileCard.Type.safetyConfirmation
+  ) => {
+    if (
+      this.#view.sessionState === null ||
+      this.#view.profile === null ||
+      !this.#view.cardsLoaded ||
+      card.status !== "proposed" ||
+      card.expectedProfileVersion !== this.#view.profile.version ||
+      !matchesCurrentProfileReview(card, this.#view.profile)
+    ) {
+      return;
+    }
+    if (
+      card.change._tag === "ConfirmHardConstraintReduction" &&
+      safetyConfirmation === null
+    ) {
+      return;
+    }
+    this.#mutateSession({
+      cardId: card.id,
+      cardRevision: card.revision,
+      expectedVersion: this.#view.sessionState.version,
+      mutationId: this.#dependencies.makeId(),
+      safetyConfirmation,
+      type: "ConfirmProfileCard",
+    });
+  };
 
   loadHistory = () => {
     if (!this.#sessionReady || this.#historyRequest !== null) {
@@ -591,16 +978,16 @@ export class PrivateInterviewClient {
       notice: null,
     });
     this.loadHistory();
+    this.refreshCards();
   };
 
-  #mutateSession(
-    command: typeof AppendParticipantMessage.Type | typeof CompleteSession.Type
-  ) {
+  #mutateSession(command: SessionMutation) {
     if (
       !this.#sessionReady ||
       this.#bindingKey === null ||
       this.#view.sessionReference === null ||
       this.#view.pending !== null ||
+      this.#view.pendingConfirmation !== null ||
       this.#view.notice !== null ||
       !this.#view.historyLoaded ||
       this.#view.sessionState?.status !== "open"
@@ -681,7 +1068,9 @@ export const browserPrivateInterviewDependencies =
       socket.addEventListener("error", () => transport.onFailure?.());
       return transport;
     },
+    continueConfirmation: continuePrivateConfirmation,
     makeId: () => crypto.randomUUID(),
+    readCurrentProfile: readCurrentPrivateProfile,
     storage: {
       getItem: (key) => globalThis.sessionStorage.getItem(key),
       removeItem: (key) => globalThis.sessionStorage.removeItem(key),

@@ -18,6 +18,7 @@ import type {
   PrivateInterviewDependencies,
   PrivateInterviewView,
 } from "./private-interview-client.js";
+import { PrivateProfileCards } from "./private-profile-cards.js";
 
 const dateLabel = (timestamp: number) =>
   new Date(timestamp).toLocaleString(undefined, {
@@ -44,7 +45,10 @@ const MessageForm = ({
     },
   });
   const disabled =
-    view.pending !== null || view.notice !== null || !view.historyLoaded;
+    view.pending !== null ||
+    view.pendingConfirmation !== null ||
+    view.notice !== null ||
+    !view.historyLoaded;
   return (
     <form
       className="private-message-form field-stack"
@@ -173,6 +177,19 @@ const Notice = ({
         </Alert>
       );
     }
+    case "confirmation_pending":
+    case "card_not_found":
+    case "card_conflict":
+    case "safety_confirmation_required": {
+      return (
+        <Alert>
+          <p>This proposal needs an updated review before you can continue.</p>
+          <Button onClick={client.refreshCards}>
+            Review updated proposals
+          </Button>
+        </Alert>
+      );
+    }
     default: {
       return null;
     }
@@ -219,6 +236,7 @@ const SessionHistory = ({
     {view.moreHistory && (
       <Button onClick={client.loadHistory}>Load more messages</Button>
     )}
+    <PrivateProfileCards client={client} view={view} />
     {view.sessionState?.status === "open" && (
       <>
         <MessageForm
@@ -233,6 +251,7 @@ const SessionHistory = ({
           </p>
           <Button
             disabled={
+              view.pendingConfirmation !== null ||
               view.pending !== null ||
               view.notice !== null ||
               !view.historyLoaded
@@ -256,7 +275,7 @@ const ConnectedPanel = ({
 }) => (
   <>
     <Notice client={client} view={view} />
-    {view.pending !== null && (
+    {view.pending !== null && view.pendingConfirmation === null && (
       <div className="private-request-status" role="status">
         <p>
           The outcome of your saved request is not confirmed. Retrying uses the
@@ -275,6 +294,7 @@ const ConnectedPanel = ({
     <div className="private-session-actions">
       <Button
         disabled={
+          view.pendingConfirmation !== null ||
           view.pending !== null ||
           view.notice === "binding_changed" ||
           view.notice === "storage_unavailable"
@@ -304,8 +324,11 @@ const ConnectedPanel = ({
                 }
                 className="private-session-link"
                 disabled={
-                  view.pending !== null &&
-                  view.pending.sessionReference !== reservation.sessionReference
+                  (view.pendingConfirmation !== null &&
+                    view.sessionReference !== reservation.sessionReference) ||
+                  (view.pending !== null &&
+                    view.pending.sessionReference !==
+                      reservation.sessionReference)
                 }
                 onClick={() => client.select(reservation.sessionReference)}
                 type="button"
@@ -334,18 +357,21 @@ interface PanelProps {
   readonly accountId: string;
   readonly householdId: string;
   readonly dependencies?: PrivateInterviewDependencies;
+  readonly onConfirmationSettled?: () => void;
 }
 
 const BoundPrivateInterviewsPanel = ({
   accountId,
   householdId,
   dependencies,
+  onConfirmationSettled,
 }: PanelProps) => {
   const [client] = useState(
     () =>
       new PrivateInterviewClient(
         { accountId, householdId },
-        dependencies ?? browserPrivateInterviewDependencies()
+        dependencies ?? browserPrivateInterviewDependencies(),
+        onConfirmationSettled
       )
   );
   const view = useSyncExternalStore(
@@ -370,8 +396,8 @@ const BoundPrivateInterviewsPanel = ({
       </p>
       <p className="private-foundation-note">
         You can save messages and return to them later. Assistant replies are
-        not available yet, and these notes do not update household food
-        profiles.
+        not available yet. Notes stay private; only profile proposals you
+        explicitly confirm update household food profiles.
       </p>
       {view.connection === "connecting" && (
         <p role="status">Connecting to your private sessions…</p>

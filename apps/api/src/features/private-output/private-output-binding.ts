@@ -62,6 +62,8 @@ export type PrivateOutputMutationPort = Pick<
 >;
 export type PrivateOutputApiPort = Pick<
   PrivateOutputApi,
+  | "releaseConfirmation"
+  | "settleConfirmation"
   | "authorizeConnection"
   | "beginConnection"
   | "authorizeDirectoryConnection"

@@ -1,6 +1,7 @@
 import {
   HouseholdMemberDepartureOperation,
   HouseholdPeopleUnavailable,
+  ProfileCommand,
 } from "@meal-planner/household-api";
 import type {
   CancelledRecipeImportIntent,
@@ -700,6 +701,39 @@ export default {
     const privateAuthorityBarrier = request.headers.get(
       "x-test-private-output-authority-barrier"
     );
+    const confirmationBarrier = (
+      phase: "before" | "after" | "before-release"
+    ) =>
+      Effect.gen(function* awaitConfirmationBarrier() {
+        const barrier = request.headers.get(
+          `x-test-private-confirmation-${phase}`
+        );
+        if (barrier === null) {
+          return;
+        }
+        yield* Effect.promise(() =>
+          env.HOUSEHOLD_TEST_OBSERVATIONS.put(
+            `private-confirmation-${phase}:${barrier}`,
+            "ready"
+          )
+        );
+        let release: string | null = null;
+        while (release === null) {
+          release = yield* Effect.promise(() =>
+            env.HOUSEHOLD_TEST_OBSERVATIONS.get(
+              `private-confirmation-release:${barrier}`
+            )
+          );
+          if (release === null) {
+            yield* Effect.sleep("10 millis");
+          }
+        }
+        if (release === "drop") {
+          return yield* Effect.die(
+            new Error("Synthetic lost canonical confirmation result")
+          );
+        }
+      });
     const privateHousehold = {
       listHouseholdPeople: (
         input: Parameters<
@@ -710,6 +744,9 @@ export default {
           Effect.tap(() =>
             Effect.gen(function* listHouseholdPeople() {
               privateAuthorityReads += 1;
+              if (privateAuthorityReads === 1) {
+                yield* confirmationBarrier("before-release");
+              }
               if (
                 request.headers.get(
                   "x-test-private-output-authority-failure"
@@ -740,6 +777,47 @@ export default {
               }
             })
           )
+        ),
+      mutateInterviewProfile: (
+        input: Parameters<
+          HouseholdDomainWorkerMethods["mutateInterviewProfile"]
+        >[0]
+      ) =>
+        confirmationBarrier("before").pipe(
+          Effect.tap(() =>
+            Effect.promise(async () => {
+              const observation = request.headers.get(
+                "x-test-private-confirmation-observation"
+              );
+              if (observation === null) {
+                return;
+              }
+              const key = `private-confirmation-household-calls:${observation}`;
+              const count = Number(
+                (await env.HOUSEHOLD_TEST_OBSERVATIONS.get(key)) ?? "0"
+              );
+              await env.HOUSEHOLD_TEST_OBSERVATIONS.put(key, String(count + 1));
+            })
+          ),
+          Effect.andThen(() => {
+            const substitutedCommand = request.headers.get(
+              "x-test-private-confirmation-command"
+            );
+            return householdDomain.mutateInterviewProfile(
+              substitutedCommand === null
+                ? input
+                : {
+                    ...input,
+                    payload: {
+                      ...input.payload,
+                      command: Schema.decodeUnknownSync(ProfileCommand)(
+                        JSON.parse(substitutedCommand)
+                      ),
+                    },
+                  }
+            );
+          }),
+          Effect.tap(() => confirmationBarrier("after"))
         ),
     };
     const privateResponse = await Effect.runPromise(
