@@ -26,8 +26,107 @@ body {
 }
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
+}
+
+.private-interviews {
+  border-top: 1px solid #d8d2c6;
+  margin-top: 48px;
+  padding-top: 40px;
+}
+.private-foundation-note,
+.private-empty,
+.private-complete p {
+  color: #59645d;
+  line-height: 1.6;
+  max-width: 68ch;
+}
+.private-session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 24px 0;
+}
+.private-session-list,
+.private-messages {
+  list-style: none;
+  margin: 20px 0;
+  padding: 0;
+}
+.private-session-link {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #d8d2c6;
+  color: #26312c;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  justify-content: space-between;
+  min-height: 56px;
+  padding: 14px 10px;
+  text-align: left;
+  width: 100%;
+}
+.private-session-link:hover,
+.private-session-link[aria-current="true"] {
+  background: color-mix(in srgb, #1f6b50 9%, #fcfaf6);
+}
+.private-session-link[aria-current="true"] {
+  color: #1f6b50;
+  font-weight: 700;
+}
+.private-session-link:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.private-session-link time,
+.private-message-meta time {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.private-history {
+  margin-top: 36px;
+}
+.private-messages li {
+  border-bottom: 1px solid #d8d2c6;
+  padding: 20px 0;
+}
+.private-message-meta {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.private-messages p {
+  line-height: 1.65;
+  margin: 12px 0 0;
+  max-width: 68ch;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.private-message-form {
+  margin-top: 28px;
+}
+.private-message-input {
+  caret-color: #1f6b50;
+  line-height: 1.6;
+  resize: vertical;
+}
+.private-message-form .button {
+  justify-self: start;
+}
+.private-complete {
+  border-top: 1px solid #d8d2c6;
+  margin-top: 32px;
+  padding-top: 20px;
+}
+.private-request-status {
+  line-height: 1.6;
+  margin: 20px 0;
 }
 a {
   color: #1f6b50;
@@ -463,6 +562,9 @@ h3 {
   }
   .workspace > .people-panel {
     margin: 28px 20px;
+  }
+  .workspace > .private-interviews {
+    margin-inline: 20px;
   }
   .input-row {
     grid-template-columns: 1fr;

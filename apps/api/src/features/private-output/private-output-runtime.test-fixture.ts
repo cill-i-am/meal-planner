@@ -31,6 +31,11 @@ export const privateOutputRuntimeWorker = (
           type: "durable-object",
           worker: "private-output",
         },
+        PrivateInterviewDirectory: {
+          exportName: "PrivateInterviewDirectory",
+          type: "durable-object",
+          worker: "private-output",
+        },
         PrivateInterviewSession: {
           exportName: "PrivateInterviewSession",
           type: "durable-object",
@@ -40,6 +45,10 @@ export const privateOutputRuntimeWorker = (
       exports: {
         AccountOutputLifecycle: { storage: "sqlite", type: "durable-object" },
         HouseholdAgent: { storage: "sqlite", type: "durable-object" },
+        PrivateInterviewDirectory: {
+          storage: "sqlite",
+          type: "durable-object",
+        },
         PrivateInterviewSession: { storage: "sqlite", type: "durable-object" },
         PrivateOutputApi: { type: "worker" },
         PrivateOutputMutations: { type: "worker" },

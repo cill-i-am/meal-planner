@@ -13,6 +13,10 @@ import {
   PersonProfile,
 } from "@meal-planner/household-api";
 import {
+  DirectoryFrame,
+  SessionFrame,
+} from "@meal-planner/private-interview-api";
+import {
   Recipe,
   RecipeImportAction,
   RecipeImportBatch,
@@ -32,7 +36,10 @@ import {
   privateOutputRuntimeWorker,
   privateOutputTestBindings,
 } from "../private-output/private-output-runtime.test-fixture.js";
-import { privateOutputKey } from "../private-output/private-output.contract.js";
+import {
+  PrivateParticipantBinding,
+  privateOutputKey,
+} from "../private-output/private-output.contract.js";
 import { makeProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
 import {
   ProviderAccountingDispatchId,
@@ -144,10 +151,17 @@ let privateOutputControlManifest: Awaited<
 >;
 let privateOutputManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
 
-const makeRuntime = () =>
+const makeRuntime = (privateAuditLogs?: string[]) =>
   new Miniflare({
     cf: false,
+    handleStructuredLogs:
+      privateAuditLogs === undefined
+        ? undefined
+        : (entry) => {
+            privateAuditLogs.push(entry.message);
+          },
     resourcePersistencePath: persistenceDirectory,
+    unsafeInspectDurableObjects: privateAuditLogs !== undefined,
     workers: [
       {
         config: {
@@ -252,14 +266,20 @@ const makeRuntime = () =>
           type: "worker",
         },
       },
-      privateOutputRuntimeWorker(privateOutputManifest),
+      privateOutputRuntimeWorker(privateOutputControlManifest),
       privateOutputControlWorker(privateOutputControlManifest),
+      {
+        config: {
+          ...privateOutputRuntimeWorker(privateOutputManifest).config,
+          name: "private-output-public",
+        },
+      },
     ],
   });
 
-const restartRuntime = async () => {
+const restartRuntime = async (privateAuditLogs?: string[]) => {
   await runtime?.dispose();
-  runtime = makeRuntime();
+  runtime = makeRuntime(privateAuditLogs);
 };
 
 beforeAll(async () => {
@@ -6102,19 +6122,101 @@ const privateConnect = (
       },
     }
   );
+const openPrivateDirectory = async (cookie: string) => {
+  const response = await privateConnect(cookie, "directory");
+  expect(response.status).toBe(101);
+  const socket = response.webSocket;
+  if (socket === null) {
+    throw new Error("Expected a physical private directory WebSocket");
+  }
+  const frames: DirectoryFrame[] = [];
+  const rawFrames: string[] = [];
+  socket.addEventListener("message", (event) => {
+    rawFrames.push(String(event.data));
+    frames.push(
+      Schema.decodeUnknownSync(DirectoryFrame)(JSON.parse(String(event.data)))
+    );
+  });
+  socket.accept();
+  const ready = await vi.waitFor(() => {
+    const frame = frames.find(
+      (candidate) => candidate.type === "DirectoryReady"
+    );
+    expect(frame).toBeDefined();
+    if (frame?.type !== "DirectoryReady") {
+      throw new Error("Expected directory readiness");
+    }
+    return frame;
+  });
+  const lifecycle = await privateControl({
+    action: "directory-lifecycle",
+    directoryKey: ready.bindingKey,
+    sessionReference: crypto.randomUUID(),
+  });
+  const { result } = Schema.decodeUnknownSync(
+    Schema.Struct({
+      result: Schema.Struct({
+        generation: Schema.String,
+        status: Schema.Literal("connected"),
+      }),
+    })
+  )(await lifecycle.json());
+  return {
+    bindingKey: ready.bindingKey,
+    frames,
+    generation: result.generation,
+    rawFrames,
+    socket,
+  };
+};
+const reservePrivateSession = async (
+  cookie: string,
+  mutationId = crypto.randomUUID()
+) => {
+  const directory = await openPrivateDirectory(cookie);
+  directory.socket.send(JSON.stringify({ mutationId, type: "StartSession" }));
+  const started = await vi.waitFor(() => {
+    const frame = directory.frames.find(
+      (candidate) =>
+        candidate.type === "SessionStarted" &&
+        candidate.mutationId === mutationId
+    );
+    expect(frame).toBeDefined();
+    if (frame?.type !== "SessionStarted") {
+      throw new Error("Expected a directory reservation");
+    }
+    return frame;
+  });
+  directory.socket.close();
+  return started.reservation.sessionReference;
+};
 const openPrivateConnection = async (
   cookie: string,
-  sessionReference = crypto.randomUUID()
+  existingReference?: string
 ) => {
+  const sessionReference =
+    existingReference ?? (await reservePrivateSession(cookie));
   const response = await privateConnect(cookie, sessionReference);
   expect(response.status).toBe(101);
   const socket = response.webSocket;
   if (socket === null) {
     throw new Error("Expected a physical private interview WebSocket");
   }
-  const messages: unknown[] = [];
-  socket.addEventListener("message", (event) => messages.push(event.data));
+  const messages: string[] = [];
+  const frames: SessionFrame[] = [];
+  socket.addEventListener("message", (event) => {
+    const frame = Schema.decodeUnknownSync(SessionFrame)(
+      JSON.parse(String(event.data))
+    );
+    frames.push(frame);
+    if (frame.type === "HistoryRead") {
+      messages.push(...frame.messages.map((message) => message.text));
+    }
+  });
   socket.accept();
+  await vi.waitFor(() =>
+    expect(frames.some((frame) => frame.type === "SessionReady")).toBe(true)
+  );
   const lifecycle = await privateControl({
     action: "lifecycle",
     sessionReference,
@@ -6122,7 +6224,50 @@ const openPrivateConnection = async (
   const { result } = Schema.decodeUnknownSync(
     Schema.Struct({ result: Schema.Struct({ generation: Schema.String }) })
   )(await lifecycle.json());
-  return { generation: result.generation, messages, sessionReference, socket };
+  return {
+    frames,
+    generation: result.generation,
+    messages,
+    sessionReference,
+    socket,
+  };
+};
+const expectDirectoryFenced = async (
+  directory: Awaited<ReturnType<typeof openPrivateDirectory>>
+) => {
+  const lifecycle = await privateControl({
+    action: "directory-lifecycle",
+    directoryKey: directory.bindingKey,
+    sessionReference: crypto.randomUUID(),
+  });
+  expect(await lifecycle.json()).toMatchObject({
+    result: { generation: directory.generation, status: "invalidated" },
+  });
+  const attempted = await privateControl({
+    action: "directory-command-at-time",
+    directoryKey: directory.bindingKey,
+    generation: directory.generation,
+    now: Date.now(),
+    payload: JSON.stringify({
+      afterOrdinal: 0,
+      limit: 25,
+      requestId: crypto.randomUUID(),
+      type: "ListSessions",
+    }),
+    sessionReference: crypto.randomUUID(),
+  });
+  expect(attempted.status, await attempted.clone().text()).toBe(200);
+  await delay(10);
+  expect(directory.frames).toEqual([
+    { bindingKey: directory.bindingKey, type: "DirectoryReady" },
+  ]);
+};
+const expectDirectoryRevoked = async (
+  directory: Awaited<ReturnType<typeof openPrivateDirectory>>,
+  cookie: string
+) => {
+  await expectDirectoryFenced(directory);
+  await expectPrivateStatus(privateConnect(cookie, "directory"), 403);
 };
 const emitPrivateOutput = async (
   connection: {
@@ -6137,7 +6282,7 @@ const emitPrivateOutput = async (
     payload,
     sessionReference: connection.sessionReference,
   });
-  expect(response.status).toBe(200);
+  expect(response.status, await response.clone().text()).toBe(200);
 };
 
 describe("canonical private interview output boundary", () => {
@@ -6150,7 +6295,7 @@ describe("canonical private interview output boundary", () => {
   ])(
     "does not expose a public parent, sub-agent or protocol route at %s",
     async (path) => {
-      const worker = await getRuntime().getWorker("private-output");
+      const worker = await getRuntime().getWorker("private-output-public");
       const response = await worker.fetch(
         `https://private-output.test${path}`,
         { headers: { Upgrade: "websocket" } }
@@ -6161,10 +6306,84 @@ describe("canonical private interview output boundary", () => {
   );
   it("admits the linked adult and rejects other adults, households, missing cookies and copied references", async () => {
     const setup = await prepareLinkedAdult("Private Output Owner");
-    const connection = await openPrivateConnection(setup.memberCookie);
+    const creationId = crypto.randomUUID();
+    const reservation = await reservePrivateSession(
+      setup.memberCookie,
+      creationId
+    );
+    const connection = await openPrivateConnection(
+      setup.memberCookie,
+      reservation
+    );
+    await expectPrivateStatus(
+      privateConnect(setup.memberCookie, crypto.randomUUID()),
+      403
+    );
+    expect(await reservePrivateSession(setup.memberCookie, creationId)).toBe(
+      reservation
+    );
+    const copiedCreation = await reservePrivateSession(
+      setup.ownerCookie,
+      creationId
+    );
+    expect(copiedCreation).not.toBe(reservation);
     await emitPrivateOutput(connection, "synthetic-private-authorized");
     await delay(10);
     expect(connection.messages).toEqual(["synthetic-private-authorized"]);
+    const ownDirectory = await openPrivateDirectory(setup.memberCookie);
+    ownDirectory.socket.send(
+      JSON.stringify({
+        afterOrdinal: 0,
+        limit: 25,
+        requestId: crypto.randomUUID(),
+        type: "ListSessions",
+      })
+    );
+    await vi.waitFor(() =>
+      expect(ownDirectory.frames).toContainEqual(
+        expect.objectContaining({
+          reservations: [
+            expect.objectContaining({ sessionReference: reservation }),
+          ],
+          type: "SessionsListed",
+        })
+      )
+    );
+    expect(ownDirectory.rawFrames.join("\n")).not.toContain(
+      "synthetic-private-authorized"
+    );
+    const ownerDirectory = await openPrivateDirectory(setup.ownerCookie);
+    ownerDirectory.socket.send(
+      JSON.stringify({
+        afterOrdinal: 0,
+        limit: 25,
+        requestId: crypto.randomUUID(),
+        type: "ListSessions",
+      })
+    );
+    await vi.waitFor(() =>
+      expect(ownerDirectory.frames).toContainEqual(
+        expect.objectContaining({
+          reservations: [
+            expect.objectContaining({ sessionReference: copiedCreation }),
+          ],
+          type: "SessionsListed",
+        })
+      )
+    );
+    expect(ownerDirectory.rawFrames.join("\n")).not.toContain(reservation);
+    expect(ownerDirectory.rawFrames.join("\n")).not.toContain(
+      "synthetic-private-authorized"
+    );
+    ownDirectory.socket.close();
+    ownerDirectory.socket.close();
+    await expectPrivateStatus(privateConnect("", "directory"), 403);
+    await expectPrivateStatus(
+      privateConnect(setup.memberCookie, "directory", {
+        Origin: "https://foreign.test",
+      }),
+      403
+    );
     await expectPrivateStatus(
       privateConnect(setup.ownerCookie, connection.sessionReference),
       403
@@ -6196,9 +6415,222 @@ describe("canonical private interview output boundary", () => {
     connection.socket.close();
   }, 30_000);
 
+  it("keeps participant transcript content out of shared household state, audit, coordinators and native logs", async () => {
+    const capturedLogs: string[] = [];
+    await restartRuntime(capturedLogs);
+    try {
+      const existingHouseholdIds = new Set(
+        await getRuntime().listDurableObjectIds(
+          "HouseholdObject",
+          "household-domain"
+        )
+      );
+      const setup = await prepareLinkedAdult("Private Transcript Isolation");
+      const profileUrl = `https://meal-planner.test/v1/household/people/${setup.adult.id}/profile`;
+      const seededProfile = await getRuntime().dispatchFetch(profileUrl, {
+        body: JSON.stringify({
+          command: {
+            _tag: "AddProvisionalProfileFact",
+            fact: {
+              _tag: "FoodPreference",
+              label: "Carrots",
+              sentiment: "like",
+              targetKind: "ingredient",
+            },
+          },
+          expectedProfileVersion: 0,
+          mutationId: "private-transcript-shared-profile",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.ownerCookie,
+        },
+        method: "POST",
+      });
+      expect(seededProfile.status).toBe(200);
+      const connection = await openPrivateConnection(setup.memberCookie);
+      const directory = await openPrivateDirectory(setup.memberCookie);
+      const sharedViews = [
+        "https://meal-planner.test/v1/household",
+        "https://meal-planner.test/v1/household/people",
+        profileUrl,
+        `${profileUrl}/versions`,
+        `${profileUrl}/audit`,
+      ];
+      const readSharedViews = () =>
+        Promise.all(
+          sharedViews.map(async (url) => {
+            const response = await getRuntime().dispatchFetch(url, {
+              headers: { cookie: setup.ownerCookie },
+            });
+            expect(response.status).toBe(200);
+            return response.text();
+          })
+        );
+      const before = await readSharedViews();
+      const probe = await getRuntime().dispatchFetch(
+        "https://meal-planner.test/v1/test-log-capture",
+        { headers: { "x-test-native-log-probe": "1" } }
+      );
+      expect(probe.status).toBe(204);
+      await vi.waitFor(() =>
+        expect(
+          capturedLogs.some((entry) =>
+            entry.includes("Synthetic native log capture probe")
+          )
+        ).toBe(true)
+      );
+      const sentinel = `private-transcript-${crypto.randomUUID()}`;
+      const mutationId = crypto.randomUUID();
+      connection.socket.send(
+        JSON.stringify({
+          expectedVersion: 0,
+          mutationId,
+          text: sentinel,
+          type: "AppendParticipantMessage",
+        })
+      );
+      await vi.waitFor(() =>
+        expect(
+          connection.frames.some(
+            (frame) =>
+              frame.type === "MessageAppended" &&
+              frame.mutationId === mutationId &&
+              frame.message.text === sentinel
+          )
+        ).toBe(true)
+      );
+      const historyRequest = crypto.randomUUID();
+      connection.socket.send(
+        JSON.stringify({
+          afterOrdinal: 0,
+          limit: 25,
+          requestId: historyRequest,
+          type: "ReadHistory",
+        })
+      );
+      await vi.waitFor(() =>
+        expect(
+          connection.frames.some(
+            (frame) =>
+              frame.type === "HistoryRead" &&
+              frame.requestId === historyRequest &&
+              frame.messages.some((message) => message.text === sentinel)
+          )
+        ).toBe(true)
+      );
+      const after = await readSharedViews();
+      expect(JSON.stringify(after) === JSON.stringify(before)).toBe(true);
+      expect(after.some((body) => body.includes(sentinel))).toBe(false);
+      directory.socket.send(
+        JSON.stringify({
+          afterOrdinal: 0,
+          limit: 25,
+          requestId: crypto.randomUUID(),
+          type: "ListSessions",
+        })
+      );
+      await vi.waitFor(() =>
+        expect(
+          directory.frames.some((frame) => frame.type === "SessionsListed")
+        ).toBe(true)
+      );
+      expect(
+        directory.rawFrames.some((frame) => frame.includes(sentinel))
+      ).toBe(false);
+      const metadata = await privateControl({
+        action: "metadata",
+        sessionReference: connection.sessionReference,
+      });
+      const { result: binding } = Schema.decodeUnknownSync(
+        Schema.Struct({ result: PrivateParticipantBinding })
+      )(await metadata.json());
+      const currentHouseholdIds = await getRuntime().listDurableObjectIds(
+        "HouseholdObject",
+        "household-domain"
+      );
+      const householdIds = currentHouseholdIds.filter(
+        (id) => !existingHouseholdIds.has(id)
+      );
+      expect(householdIds).toHaveLength(1);
+      const [householdId] = householdIds;
+      if (householdId === undefined) {
+        throw new Error("Expected the canonical household storage target");
+      }
+      const householdStorage = await getRuntime().unsafeGetDurableObjectStorage(
+        "household-domain",
+        "HouseholdObject",
+        { id: householdId }
+      );
+      expect(
+        await householdStorage.exec(
+          "SELECT organization_id FROM household_meta"
+        )
+      ).toEqual([{ organization_id: setup.organization.id }]);
+      const coordinators = await Promise.all([
+        getRuntime().unsafeGetDurableObjectStorage(
+          "private-output",
+          "AccountOutputLifecycle",
+          { name: binding.accountKey }
+        ),
+        getRuntime().unsafeGetDurableObjectStorage(
+          "private-output",
+          "HouseholdAgent",
+          { name: binding.householdKey }
+        ),
+      ]);
+      await Promise.all(
+        coordinators.map(async (storage) => {
+          const registrations = await storage.exec<{ target_kind: string }>(
+            "SELECT DISTINCT target_kind FROM output_registrations ORDER BY target_kind"
+          );
+          expect(registrations).toEqual([
+            { target_kind: "directory" },
+            { target_kind: "session" },
+          ]);
+        })
+      );
+      await Promise.all(
+        [householdStorage, ...coordinators].map(async (storage) => {
+          const tables = await storage.exec<{ name: string }>(
+            "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+          );
+          expect(tables.length).toBeGreaterThan(0);
+          await Promise.all(
+            tables.map(async ({ name }) => {
+              const rows = await storage.exec(
+                `SELECT * FROM "${name.replaceAll('"', '""')}"`
+              );
+              const textValues = rows.flatMap((row) =>
+                Object.values(row).map((value) =>
+                  value instanceof ArrayBuffer
+                    ? new TextDecoder().decode(value)
+                    : String(value)
+                )
+              );
+              expect(
+                textValues.some((value) => value.includes(sentinel)),
+                `Transcript privacy for stored table ${name}`
+              ).toBe(false);
+            })
+          );
+        })
+      );
+      connection.socket.close();
+      directory.socket.close();
+      await delay(20);
+      expect(capturedLogs.some((entry) => entry.includes(sentinel))).toBe(
+        false
+      );
+    } finally {
+      await restartRuntime();
+    }
+  }, 30_000);
+
   it("stops passive and in-flight output before real Better Auth sign-out commits", async () => {
     const setup = await prepareLinkedAdult("Private Passive Revoke");
     const connection = await openPrivateConnection(setup.memberCookie);
+    const directory = await openPrivateDirectory(setup.memberCookie);
     const session = await getSession(setup.memberCookie);
     await emitPrivateOutput(connection, "synthetic-before-sign-out");
     const producer = Promise.withResolvers<null>();
@@ -6219,6 +6651,7 @@ describe("canonical private interview output boundary", () => {
     producer.resolve(null);
     await delayed;
     await emitPrivateOutput(connection, "synthetic-passive-after-sign-out");
+    await expectDirectoryRevoked(directory, setup.memberCookie);
     await delay(10);
     expect(connection.messages).toEqual(["synthetic-before-sign-out"]);
     await expectPrivateStatus(
@@ -6227,9 +6660,62 @@ describe("canonical private interview output boundary", () => {
     );
   }, 30_000);
 
+  it.each(["directory", "session"] as const)(
+    "keeps real sign-out uncommitted after a lost %s invalidation acknowledgement and safely retries",
+    async (kind) => {
+      const setup = await prepareLinkedAdult(
+        `Private Lost Acknowledgement ${kind}`
+      );
+      const connection = await openPrivateConnection(setup.memberCookie);
+      const directory = await openPrivateDirectory(setup.memberCookie);
+      const session = await getSession(setup.memberCookie);
+      const database = drizzle(
+        await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+      );
+      const fault = await privateControl({
+        action: kind === "directory" ? "directory-lose-ack" : "lose-ack",
+        directoryKey: directory.bindingKey,
+        sessionReference: connection.sessionReference,
+      });
+      expect(fault.status).toBe(200);
+      const failed = await authRequest("/sign-out", {}, setup.memberCookie);
+      expect(failed.status).toBeGreaterThanOrEqual(500);
+      expect(
+        await database
+          .select({ id: authSchema.session.id })
+          .from(authSchema.session)
+          .where(eq(authSchema.session.id, session.session.id))
+      ).toEqual([{ id: session.session.id }]);
+      await expectDirectoryFenced(directory);
+      await expectPrivateStatus(
+        privateConnect(setup.memberCookie, "directory"),
+        403
+      );
+      await expectPrivateStatus(
+        privateConnect(setup.memberCookie, connection.sessionReference),
+        403
+      );
+      await emitPrivateOutput(
+        connection,
+        "synthetic-after-lost-acknowledgement"
+      );
+      expect(connection.messages).toEqual([]);
+      const retried = await authRequest("/sign-out", {}, setup.memberCookie);
+      expect(retried.status).toBe(200);
+      expect(
+        await database
+          .select({ id: authSchema.session.id })
+          .from(authSchema.session)
+          .where(eq(authSchema.session.id, session.session.id))
+      ).toEqual([]);
+    },
+    30_000
+  );
+
   it("commits real sign-out while an unrelated refresh has an ambiguous retained dispatch", async () => {
     const setup = await prepareLinkedAdult("Private Retained Refresh");
     const connection = await openPrivateConnection(setup.memberCookie);
+    const directory = await openPrivateDirectory(setup.memberCookie);
     const session = await getSession(setup.memberCookie);
     const database = drizzle(
       await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
@@ -6288,91 +6774,115 @@ describe("canonical private interview output boundary", () => {
     });
     expect(await retained.json()).toEqual({ result: { phase: "dispatched" } });
     await emitPrivateOutput(connection, "synthetic-after-distinct-revocation");
+    await expectDirectoryRevoked(directory, setup.memberCookie);
     await delay(10);
     expect(connection.messages).toEqual([]);
   }, 30_000);
 
-  it("rejects an activation whose final canonical household read finished before a concurrent real session revocation", async () => {
-    const setup = await prepareLinkedAdult("Private Final Read Race");
-    const sessionReference = crypto.randomUUID();
-    const barrier = crypto.randomUUID();
-    const observations = await getRuntime().getKVNamespace(
-      "HOUSEHOLD_TEST_OBSERVATIONS",
-      "api"
-    );
-    const pending = privateConnect(setup.memberCookie, sessionReference, {
-      "x-test-private-output-authority-barrier": barrier,
-    });
-    try {
-      let reached = false;
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        if (
-          // eslint-disable-next-line no-await-in-loop -- Poll a durable barrier before releasing the deliberately stalled request.
-          (await observations.get(`private-output-read:${barrier}`)) === "ready"
-        ) {
-          reached = true;
-          break;
-        }
-        // eslint-disable-next-line no-await-in-loop -- The barrier must be observed between polling intervals.
-        await delay(20);
-      }
-      expect(reached).toBe(true);
-      const revoked = await authRequest(
-        "/revoke-sessions",
-        {},
-        setup.memberCookie
+  it.each(["directory", "session"] as const)(
+    "rejects %s activation whose final canonical household read finished before a concurrent real session revocation",
+    async (kind) => {
+      const setup = await prepareLinkedAdult(`Private Final Read Race ${kind}`);
+      const sessionReference =
+        kind === "directory"
+          ? "directory"
+          : await reservePrivateSession(setup.memberCookie);
+      const barrier = crypto.randomUUID();
+      const observations = await getRuntime().getKVNamespace(
+        "HOUSEHOLD_TEST_OBSERVATIONS",
+        "api"
       );
-      expect(revoked.status).toBe(200);
-    } finally {
-      await observations.put(`private-output-release:${barrier}`, "release");
-    }
-    await expectPrivateStatus(pending, 403);
-  }, 30_000);
+      const pending = privateConnect(setup.memberCookie, sessionReference, {
+        "x-test-private-output-authority-barrier": barrier,
+      });
+      try {
+        let reached = false;
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+          if (
+            // eslint-disable-next-line no-await-in-loop -- Poll a durable barrier before releasing the deliberately stalled request.
+            (await observations.get(`private-output-read:${barrier}`)) ===
+            "ready"
+          ) {
+            reached = true;
+            break;
+          }
+          // eslint-disable-next-line no-await-in-loop -- The barrier must be observed between polling intervals.
+          await delay(20);
+        }
+        expect(reached).toBe(true);
+        const revoked = await authRequest(
+          "/revoke-sessions",
+          {},
+          setup.memberCookie
+        );
+        expect(revoked.status).toBe(200);
+      } finally {
+        await observations.put(`private-output-release:${barrier}`, "release");
+      }
+      await expectPrivateStatus(pending, 403);
+    },
+    30_000
+  );
 
-  it("fails closed when the final canonical authority service becomes unavailable", async () => {
-    const setup = await prepareLinkedAdult("Private Authority Unavailable");
-    const sessionReference = crypto.randomUUID();
-    await expectPrivateStatus(
-      privateConnect(setup.memberCookie, sessionReference, {
-        "x-test-private-output-authority-failure": "1",
-      }),
-      403
-    );
-    const lifecycle = await privateControl({
-      action: "lifecycle",
-      sessionReference,
-    });
-    const retained = Schema.decodeUnknownSync(
-      Schema.Struct({
-        result: Schema.Struct({
-          generation: Schema.String,
-          status: Schema.String,
+  it.each(["directory", "session"] as const)(
+    "fails closed for %s when the final canonical authority service becomes unavailable",
+    async (kind) => {
+      const setup = await prepareLinkedAdult(
+        `Private Authority Unavailable ${kind}`
+      );
+      const sessionReference =
+        kind === "directory"
+          ? "directory"
+          : await reservePrivateSession(setup.memberCookie);
+      await expectPrivateStatus(
+        privateConnect(setup.memberCookie, sessionReference, {
+          "x-test-private-output-authority-failure": "1",
         }),
-      })
-    )(await lifecycle.json());
-    expect(retained.result.status).toBe("pending");
-    await emitPrivateOutput(
-      { generation: retained.result.generation, sessionReference },
-      "synthetic-after-authority-failure"
-    );
-    const fresh = await openPrivateConnection(
-      setup.memberCookie,
-      sessionReference
-    );
-    await emitPrivateOutput(
-      fresh,
-      "synthetic-after-canonical-reauthentication"
-    );
-    await delay(10);
-    expect(fresh.messages).toEqual([
-      "synthetic-after-canonical-reauthentication",
-    ]);
-    fresh.socket.close();
-  }, 30_000);
+        403
+      );
+      if (kind === "directory") {
+        const fresh = await openPrivateDirectory(setup.memberCookie);
+        fresh.socket.close();
+        return;
+      }
+      const lifecycle = await privateControl({
+        action: "lifecycle",
+        sessionReference,
+      });
+      const retained = Schema.decodeUnknownSync(
+        Schema.Struct({
+          result: Schema.Struct({
+            generation: Schema.String,
+            status: Schema.String,
+          }),
+        })
+      )(await lifecycle.json());
+      expect(retained.result.status).toBe("pending");
+      await emitPrivateOutput(
+        { generation: retained.result.generation, sessionReference },
+        "synthetic-after-authority-failure"
+      );
+      const fresh = await openPrivateConnection(
+        setup.memberCookie,
+        sessionReference
+      );
+      await emitPrivateOutput(
+        fresh,
+        "synthetic-after-canonical-reauthentication"
+      );
+      await delay(10);
+      expect(fresh.messages).toEqual([
+        "synthetic-after-canonical-reauthentication",
+      ]);
+      fresh.socket.close();
+    },
+    30_000
+  );
 
-  it("closes the captured household connection when the real active organization changes", async () => {
+  it("disables output for the captured household when the real active organization changes", async () => {
     const setup = await prepareLinkedAdult("Private Active Organization");
     const connection = await openPrivateConnection(setup.memberCookie);
+    const directory = await openPrivateDirectory(setup.memberCookie);
     const changed = await createOrganization(
       "Private Alternate Organization",
       setup.memberCookie
@@ -6382,6 +6892,7 @@ describe("canonical private interview output boundary", () => {
       connection,
       "synthetic-after-active-organization-change"
     );
+    await expectDirectoryRevoked(directory, setup.memberCookie);
     await delay(10);
     expect(connection.messages).toEqual([]);
     await expectPrivateStatus(
@@ -6393,6 +6904,7 @@ describe("canonical private interview output boundary", () => {
   it("fences departure preparation before membership removal and cannot reauthorize the pending adult", async () => {
     const setup = await prepareLinkedAdult("Private Household Departure");
     const connection = await openPrivateConnection(setup.memberCookie);
+    const directory = await openPrivateDirectory(setup.memberCookie);
     const response = await getRuntime().dispatchFetch(
       "https://meal-planner.test/v1/household/people/departures",
       {
@@ -6429,7 +6941,65 @@ describe("canonical private interview output boundary", () => {
         .where(eq(authSchema.member.id, setup.memberId))
     ).toEqual([{ id: setup.memberId }]);
     await emitPrivateOutput(connection, "synthetic-after-household-departure");
+    await expectDirectoryRevoked(directory, setup.memberCookie);
     await delay(10);
+    expect(connection.messages).toEqual([]);
+    await expectPrivateStatus(
+      privateConnect(setup.memberCookie, connection.sessionReference),
+      403
+    );
+  }, 30_000);
+
+  it("revokes both private children when real departure removes membership and archives the adult", async () => {
+    const setup = await prepareLinkedAdult("Private Completed Departure");
+    const connection = await openPrivateConnection(setup.memberCookie);
+    const directory = await openPrivateDirectory(setup.memberCookie);
+    const mutationId = "private-output-completed-departure";
+    const response = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/departures",
+      {
+        body: JSON.stringify({
+          expectedLinkVersion: 1,
+          expectedPersonVersion: setup.adult.version,
+          memberId: setup.memberId,
+          mutationId,
+          personId: setup.adult.id,
+          reason: "Synthetic adult departure",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.ownerCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(response.status, await response.clone().text()).toBe(202);
+    await readDepartureByMutationEventually(
+      setup.ownerCookie,
+      mutationId,
+      "completed"
+    );
+    const database = drizzle(
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+    );
+    expect(
+      await database
+        .select({ id: authSchema.member.id })
+        .from(authSchema.member)
+        .where(eq(authSchema.member.id, setup.memberId))
+    ).toEqual([]);
+    const rosterResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      { headers: { cookie: setup.ownerCookie } }
+    );
+    const roster = await Schema.decodeUnknownPromise(HouseholdPeopleRoster)(
+      await rosterResponse.json()
+    );
+    expect(
+      roster.people.find((person) => person.id === setup.adult.id)
+    ).toMatchObject({ associationState: "detached", lifecycle: "archived" });
+    await expectDirectoryRevoked(directory, setup.memberCookie);
+    await emitPrivateOutput(connection, "synthetic-after-membership-removal");
     expect(connection.messages).toEqual([]);
     await expectPrivateStatus(
       privateConnect(setup.memberCookie, connection.sessionReference),
@@ -6440,6 +7010,7 @@ describe("canonical private interview output boundary", () => {
   it("keeps the original immutable person binding after a canonical adult-link repair", async () => {
     const setup = await prepareLinkedAdult("Private Immutable Repair");
     const connection = await openPrivateConnection(setup.memberCookie);
+    const directory = await openPrivateDirectory(setup.memberCookie);
     const created = await getRuntime().dispatchFetch(
       "https://meal-planner.test/v1/household/people",
       {
@@ -6483,6 +7054,23 @@ describe("canonical private interview output boundary", () => {
       privateConnect(setup.memberCookie, connection.sessionReference),
       403
     );
+    await expectDirectoryFenced(directory);
+    const replacementDirectory = await openPrivateDirectory(setup.memberCookie);
+    expect(replacementDirectory.bindingKey).not.toBe(directory.bindingKey);
+    replacementDirectory.socket.send(
+      JSON.stringify({
+        afterOrdinal: 0,
+        limit: 25,
+        requestId: crypto.randomUUID(),
+        type: "ListSessions",
+      })
+    );
+    await vi.waitFor(() =>
+      expect(replacementDirectory.frames).toContainEqual(
+        expect.objectContaining({ reservations: [], type: "SessionsListed" })
+      )
+    );
+    replacementDirectory.socket.close();
     const metadata = await privateControl({
       action: "metadata",
       sessionReference: connection.sessionReference,

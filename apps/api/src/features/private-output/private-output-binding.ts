@@ -7,6 +7,7 @@ import type {
   AccountOutputLifecycle,
   HouseholdAgent,
 } from "./output-lifecycle.js";
+import type { PrivateInterviewDirectory } from "./private-interview-directory.js";
 import type { PrivateInterviewSession } from "./private-interview-session.js";
 import type {
   PrivateOutputApi,
@@ -23,6 +24,10 @@ export class PrivateOutputWorker extends Cloudflare.Worker<PrivateOutputWorker>(
       ),
       HouseholdAgent:
         Cloudflare.DurableObject<HouseholdAgent>("HouseholdAgent"),
+      PrivateInterviewDirectory:
+        Cloudflare.DurableObject<PrivateInterviewDirectory>(
+          "PrivateInterviewDirectory"
+        ),
       PrivateInterviewSession:
         Cloudflare.DurableObject<PrivateInterviewSession>(
           "PrivateInterviewSession"
@@ -57,7 +62,11 @@ export type PrivateOutputMutationPort = Pick<
 >;
 export type PrivateOutputApiPort = Pick<
   PrivateOutputApi,
-  "authorizeConnection" | "beginConnection" | "fetch"
+  | "authorizeConnection"
+  | "beginConnection"
+  | "authorizeDirectoryConnection"
+  | "beginDirectoryConnection"
+  | "fetch"
 >;
 
 /** Read explicitly declared native service bindings at the foreign-runtime boundary. */

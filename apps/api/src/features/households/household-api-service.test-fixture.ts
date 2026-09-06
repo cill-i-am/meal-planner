@@ -667,6 +667,10 @@ export class MemberDepartureTestWorkflow extends MemberDepartureWorkflowBridge {
  */
 export default {
   fetch: async (request: Request, env: HouseholdApiFixtureEnv) => {
+    if (request.headers.get("x-test-native-log-probe") === "1") {
+      console.info("Synthetic native log capture probe");
+      return new Response(null, { status: 204 });
+    }
     if (request.headers.get("x-test-private-household-malformed") === "1") {
       return handleMalformedPrivateCommand(env);
     }

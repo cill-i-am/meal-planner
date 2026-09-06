@@ -205,8 +205,9 @@ original immutable household, account-linkage, and person binding.
 Only the native WebSocket output path is enabled. Private HTTP response bodies,
 raw-content-returning internal RPC, SDK state synchronization, callable/tool/MCP
 protocols, and parent transcript access are absent. The parent's runtime child
-capability exposes invalidation only. Conversation production and transcript
-storage remain separate future work.
+capability exposes invalidation only. The session foundation below extends this
+transport with participant records; model conversation production remains later
+work.
 
 Lost invalidation acknowledgments retry the retained pre-dispatch operation.
 Known durable completion can be reread after a lost completion acknowledgment.
@@ -218,3 +219,48 @@ This is a deliberate residual availability limit, not a complete automatic recov
 claim. Household commands can recover a known outcome using their existing exact
 mutation receipts. See the [implementation evidence](../../delivery/private-output-safety.md)
 for the native proof and disabled-path checks.
+
+## Private session foundation — 2026-09-06
+
+[Stage 2 Work Item 01](../../delivery/stages/02-private-discovery/01-private-session-foundation.md)
+adds a participant-scoped plain native `PrivateInterviewDirectory` alongside
+`PrivateInterviewSession`. Its identity hashes the immutable account, household,
+linkage subject, and linked person. It stores reservations, creation ordinals,
+and exact creation receipts. It contains no transcript, generated title, or
+cached completion state. The authenticated API proves a matching reservation
+before it can initialize a selected session; an arbitrary UUID no longer creates
+a child.
+
+Both child kinds own private database fields and a private `PrivateOutputSocket`
+instance. This concrete connection helper reads the durable generation and
+expiry immediately before calling the child's physical socket. It is not an RPC
+entrypoint, forwarding queue, SDK bridge, or general conversation framework.
+Account and household coordinators receive closed `directory` or `session`
+registrations and runtime invalidation-only facades for both namespaces. The
+ordered native migration preserves legacy session registrations and every
+pending canonical mutation; it does not reset unknown dispatched operations.
+
+The closed browser protocol admits only creation/listing, participant append,
+history reads, and completion. The selected session owns records, monotonic
+versions, and exact successful mutation receipts. Each synchronous transaction
+checks the original connected generation and expiry before reading a receipt,
+then checks lifecycle and expected version for a new write. Receipt replay is
+permitted after completion. History and completion evidence stay readable after
+fresh admission; new conversational writes do not. No asynchronous hash or
+provider operation splits admission from persistence.
+
+Wire commands have a 32,768-byte ceiling, message text has a 4,000 UTF-16 code-unit
+ceiling, and ordinal pages request 1–25 records. History output also stops before
+the encoded response exceeds the frame ceiling; `hasMore` and the last returned
+ordinal drive the next page. Text and lifecycle identities are assigned or
+validated by the child. No production assistant producer, transcript-returning
+RPC, public private HTTP body, or SDK synchronization path is added. Synthetic
+assistant persistence exists only in a fixture subclass, then exercises the
+production history emitter.
+
+The browser waits for the admitted binding key before showing private data or
+recovering an unresolved mutation. It retains exactly the original mutation and
+payload before sending, hides private content when access is lost, and only
+retries against the same authenticated context and participant binding. A reply
+confirms persistence; loss of the reply does not prove that the write failed.
+Model output, profile proposals, confirmation, and repeat review are later work.

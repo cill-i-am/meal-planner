@@ -19,8 +19,15 @@ export const outputRegistrations = sqliteTable(
   {
     childName: text("child_name").notNull(),
     generation: text("generation").notNull(),
+    targetKind: text("target_kind", {
+      enum: ["session", "directory"],
+    }).notNull(),
   },
-  (table) => [primaryKey({ columns: [table.childName, table.generation] })]
+  (table) => [
+    primaryKey({
+      columns: [table.targetKind, table.childName, table.generation],
+    }),
+  ]
 );
 
 export const privateSessionBinding = sqliteTable("private_session_binding", {
@@ -30,6 +37,7 @@ export const privateSessionBinding = sqliteTable("private_session_binding", {
   personId: text("person_id").notNull(),
   sessionReference: text("session_reference").primaryKey(),
   status: text("status", { enum: ["open", "completed"] }).notNull(),
+  version: integer("version").notNull().default(0),
 });
 
 export const privateOutputGeneration = sqliteTable(
@@ -43,3 +51,32 @@ export const privateOutputGeneration = sqliteTable(
     }).notNull(),
   }
 );
+
+export const privateDirectoryBinding = sqliteTable(
+  "private_directory_binding",
+  {
+    accountKey: text("account_key").notNull(),
+    bindingKey: text("binding_key").notNull(),
+    householdKey: text("household_key").notNull(),
+    linkageSubject: text("linkage_subject").notNull(),
+    personId: text("person_id").notNull(),
+    singleton: integer("singleton").primaryKey(),
+  }
+);
+export const privateReservations = sqliteTable("private_reservations", {
+  createdAt: integer("created_at").notNull(),
+  ordinal: integer("ordinal").primaryKey({ autoIncrement: true }),
+  sessionReference: text("session_reference").notNull().unique(),
+});
+export const privateMessages = sqliteTable("private_messages", {
+  createdAt: integer("created_at").notNull(),
+  id: text("id").notNull().unique(),
+  ordinal: integer("ordinal").primaryKey({ autoIncrement: true }),
+  role: text("role", { enum: ["participant", "assistant"] }).notNull(),
+  text: text("text").notNull(),
+});
+export const privateReceipts = sqliteTable("private_receipts", {
+  frame: text("frame").notNull(),
+  intent: text("intent").notNull(),
+  mutationId: text("mutation_id").primaryKey(),
+});

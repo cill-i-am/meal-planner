@@ -5,11 +5,16 @@ const opaqueKey = Schema.String.pipe(
 );
 const operationId = Schema.String.pipe(Schema.check(Schema.isUUID()));
 
-export const PrivateSessionBinding = Schema.Struct({
+export const PrivateParticipantBinding = Schema.Struct({
   accountKey: opaqueKey,
   householdKey: opaqueKey,
   linkageSubject: Schema.String,
   personId: Schema.String,
+});
+export type PrivateParticipantBinding = typeof PrivateParticipantBinding.Type;
+
+export const PrivateSessionBinding = Schema.Struct({
+  ...PrivateParticipantBinding.fields,
   sessionReference: operationId,
 });
 export type PrivateSessionBinding = typeof PrivateSessionBinding.Type;
@@ -17,6 +22,7 @@ export type PrivateSessionBinding = typeof PrivateSessionBinding.Type;
 export const OutputRegistration = Schema.Struct({
   childName: opaqueKey,
   generation: operationId,
+  targetKind: Schema.Literals(["session", "directory"]),
 });
 export type OutputRegistration = typeof OutputRegistration.Type;
 
@@ -64,3 +70,14 @@ export const privateOutputKey = async (purpose: string, identity: string) => {
     byte.toString(16).padStart(2, "0")
   ).join("");
 };
+
+export const privateDirectoryKey = (binding: PrivateParticipantBinding) =>
+  privateOutputKey(
+    "directory",
+    JSON.stringify([
+      binding.accountKey,
+      binding.householdKey,
+      binding.linkageSubject,
+      binding.personId,
+    ])
+  );

@@ -18,7 +18,15 @@ import {
   outputRegistrations,
 } from "./private-output.database-schema.js";
 
+interface OutputInvalidator {
+  readonly getByName: (name: string) => {
+    readonly invalidateOutput: (input: {
+      readonly generation: string;
+    }) => Promise<void>;
+  };
+}
 interface OutputLifecycleEnvironment extends Cloudflare.Env {
+  readonly PrivateInterviewDirectory: OutputInvalidator;
   readonly PrivateInterviewSession: {
     readonly getByName: (name: string) => {
       readonly invalidateOutput: (input: {
@@ -39,6 +47,14 @@ class OutputLifecycle extends Agent<OutputLifecycleEnvironment> {
     // The Agent receives a runtime invalidation-only facade, never the child's broad namespace.
     super(context, {
       ...environment,
+      PrivateInterviewDirectory: {
+        getByName: (name: string) => ({
+          invalidateOutput: (input: { readonly generation: string }) =>
+            environment.PrivateInterviewDirectory.getByName(
+              name
+            ).invalidateOutput(input),
+        }),
+      },
       PrivateInterviewSession: {
         getByName: (name: string) => ({
           invalidateOutput: (input: { readonly generation: string }) =>
@@ -137,11 +153,17 @@ class OutputLifecycle extends Agent<OutputLifecycleEnvironment> {
       .from(outputRegistrations)
       .all();
     await Promise.all(
-      registrations.map((registration) =>
-        this.env.PrivateInterviewSession.getByName(
-          registration.childName
-        ).invalidateOutput({ generation: registration.generation })
-      )
+      registrations.map((retained) => {
+        const registration =
+          Schema.decodeUnknownSync(OutputRegistration)(retained);
+        const namespace =
+          registration.targetKind === "session"
+            ? this.env.PrivateInterviewSession
+            : this.env.PrivateInterviewDirectory;
+        return namespace
+          .getByName(registration.childName)
+          .invalidateOutput({ generation: registration.generation });
+      })
     );
     this.#database
       .update(outputMutations)

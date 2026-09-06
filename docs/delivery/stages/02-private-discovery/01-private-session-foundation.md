@@ -1,10 +1,10 @@
 # Work Item 01 — Private session foundation
 
-- Status: Ready — implementation not started.
+- Status: Done — implementation and local acceptance complete (2026-09-06).
+- Delivered by: [PR #215](https://github.com/cill-i-am/meal-planner/pull/215).
 - Accepted planning direction: 2026-09-06.
-- Owner: the delivery owner assigned when this implementation slice starts; one
-  writer for the private-session contracts, runtime, migrations, and browser
-  flow.
+- Owner: the private-session implementation owner; bounded browser and runtime
+  test delegates have disjoint file ownership.
 - Stage: [private discovery and repeat profile review](README.md).
 - Base: merged native-output safety and completed priority queue at
   `28a5f3ca4aae3c8f01c56e5261439111acd9949d`.
@@ -33,11 +33,10 @@ and
 [named Worker bindings](../../../../apps/api/src/features/private-output/private-output-binding.ts).
 [Private-output safety](../../private-output-safety.md) and
 [ADR-0004](../../../architecture/decisions/0004-household-agent-coordinator-and-isolated-chat-agents.md)
-own the accepted native transport and canonical authority fence. The current
-child stores binding/completion metadata and a connection generation, rejects
-all inbound socket messages, and has no transcript or discovery store. Its
-current connect path initializes arbitrary previously unknown UUIDs; that is
-replaced by explicit creation below.
+own the accepted native transport and canonical authority fence. Before this work item, the child stored binding/completion metadata and a
+connection generation, rejected all inbound socket messages, and had no
+transcript or discovery store. Its connect path initialized arbitrary previously
+unknown UUIDs; explicit creation below replaces that path.
 
 Add one participant-scoped plain native `PrivateInterviewDirectory` child to the
 same private-output Worker. It has a concrete purpose: cross-device discovery
@@ -197,6 +196,116 @@ adaptive model slice.
 ## Delivery record
 
 2026-09-06: implementation-ready plan accepted after the three priority fixes.
-No application code, migrations, model calls, or cloud resources have changed
-for this work item. Publication, merge, and external effects remain governed by
+The user authorized implementation of this work item after accepting the plan.
+Application implementation and local acceptance are complete.
+[PR #215](https://github.com/cill-i-am/meal-planner/pull/215) delivers this work
+item and owns the current hosted-check and merge record. Model calls and cloud
+changes remain outside this slice. Publication, merge, and external effects remain governed by
 the existing execution policy and actual user authorization.
+
+### Implemented foundation
+
+The production native directory now reserves server-generated references and
+returns bounded participant-only discovery pages. The session persists exact
+participant messages, versioned successful mutation receipts, retained
+history, and completion. The browser mounts this foundation in the household
+view and retains unresolved commands across refresh for explicit exact replay
+after the original binding is admitted. It labels the absence of a working
+assistant.
+
+The shared closed protocol limits input/output frames to 32,768 bytes,
+participant text to 4,000 UTF-16 code units, and pages to 25 records. Encoded
+history pages stop at the byte limit and retain the next ordinal. Both native
+child kinds compose the same private physical-socket fence; coordinators gain
+only closed registration targets and invalidation capabilities. The ordered
+native migration preserves previous session registrations and unresolved
+canonical fences.
+
+Native hibernation or process restart invalidates the retained connection
+generation. An idle connection can therefore require reconnecting even while
+the canonical sign-in remains valid. The browser retains an ambiguous
+mutation, asks the participant to reconnect, and retries the original command
+only after fresh admission. Restart never revives an old generation or erases
+a committed reservation, message, receipt, or completion.
+
+### Local verification
+
+Implementation checkout: `codex/private-session-foundation`, fetched planning
+base `a28f0f71dcc57a2cabb807f3973ecec30f6ddcdf`. Checks use Node 24.20.0 and
+pnpm 12.3.4. Root typecheck, build, lint, formatting, and diff checks passed.
+Native schema generation ran twice after the ordered migration with no further
+schema changes. The web build reports its existing large-chunk advisory.
+
+All 1,239 repository tests passed across the full runs and affected reruns:
+180 root/architecture, 890 API, 108 web, and 61 shared protocol tests. The final
+API addition was one focused native sentinel test after the 889-test API run.
+The first root run passed 179 tests and correctly rejected the new untracked production package; staging the intended source made
+the affected tracked-source architecture check pass. The remaining workspace
+suites ran through the repository's recursive test scripts.
+
+The native private-output suite includes 36 tests against physical sockets and
+persistent native storage: reservation/append/completion receipt recovery after
+restart, competing commands and stable ordering, generation/expiry/completion
+suppression, finite encoded history, ordered migration preservation, and exact
+production-bundle denial of fixture RPCs, storage access, private HTTP, SDK
+synchronization, and spoofed or malformed wire commands. Canonical integration
+uses real Better Auth D1 and routed Household authority to cover participant
+isolation, copied references, replacement bindings, sign-out, membership removal,
+archive/unlink/repair, failed reads, and lost invalidation acknowledgments for
+both native child kinds. The migration explicitly preserves `fencing`, `ready`,
+and unknown `dispatched` phases. An independent completed mutation cannot clear
+the earlier unknown dispatched fence after upgrade and restart.
+
+The final sentinel test confirms a participant message is present in private
+history, while five populated shared Household/profile/history/audit views remain
+unchanged. It inspects actual HouseholdObject and both coordinator stores,
+directory responses, and captured native logs for absence of that content. A
+static fixture log probe positively verifies the log capture path; no production
+logging or storage inspection endpoint is added. This focused native test and
+the affected API typecheck, lint, formatting, and diff checks pass.
+
+### Browser acceptance
+
+The real browser exercised the copied application with the production private
+output Worker, native Household classes, canonical Better Auth fixture shell,
+and persistent local D1/native storage. Creation, participant append, and
+completion each committed while the browser's actual message handler suppressed
+the corresponding receipt. Each case retained one exact unresolved command,
+then recovered through a native process restart, hard refresh, and same-ID retry.
+Reservation count did not increase on creation retry. Append recovery retained
+one message at version 1; completion recovery ended at version 2 with no pending
+command, one history message, and a completed history-only view without an editor.
+
+Passive sign-out used the actual `POST /api/auth/sign-out` request while private
+history was visible, independently of the UI auth handler. Its successful
+response and native socket close cleared both the directory and transcript and
+showed reconnect guidance. The idle-hibernation availability limit above remains
+visible; this is not a continuous-connection claim.
+
+The local harness runs the real TanStack application under Node SSR and uses the
+canonical native API test shell rather than the full operational API bootstrap
+or Website Worker hosting adapter. Only documented local origin/import seams
+differ. Native module manifest SHA-256 is
+`ae897962b07d5ac961cf4fe114be131a910e3e92a5b95c6b5bb3f735d0ab7f7e`.
+Production source and UI matched implementation head
+`38234866f2cbb9fa3aa80239136740e7d904ee5e` before the bounded mobile margin fix.
+No provider, model, cloud deployment, or production migration was exercised.
+
+A separate browser profile began with empty local and session storage, signed
+in through the actual UI, selected the household, and rediscovered the existing
+reservations without a stored session UUID. Selecting the completed session
+showed its one retained message, no editor, and no pending mutation. The harness
+initially showed its previously observed account-query retry state; the existing
+retry action recovered the household selector.
+
+Desktop and 390-pixel mobile screenshots passed visual review. The bounded
+mobile correction gives the private-session section 20-pixel inline margins
+inside the existing 780-pixel breakpoint. The resulting left/right edges are
+20 and 370 pixels, with document width 390 pixels and no horizontal overflow.
+
+Independent backend/privacy and frontend/replay reviews of immutable
+`38234866f2cbb9fa3aa80239136740e7d904ee5e` found no material issues. The only
+subsequent application change is the verified mobile margin adjustment in
+`236b0145e924bddf9122322ca545f16d0440d4a3`. Implementation and local acceptance
+are complete. [PR #215](https://github.com/cill-i-am/meal-planner/pull/215) owns
+the current hosted-check and merge record. No deployed result is claimed.

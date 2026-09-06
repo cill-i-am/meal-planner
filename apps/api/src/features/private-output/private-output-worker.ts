@@ -7,11 +7,15 @@ import {
   OutputMutation,
   OutputMutationIntent,
   PrivateSessionBinding,
+  PrivateParticipantBinding,
+  PrivateOutputUnavailable,
+  privateDirectoryKey,
   privateOutputKey,
 } from "./private-output.contract.js";
 import type { OutputLifecyclePort } from "./private-output.contract.js";
 
 export { AccountOutputLifecycle, HouseholdAgent } from "./output-lifecycle.js";
+export { PrivateInterviewDirectory } from "./private-interview-directory.js";
 export { PrivateInterviewSession } from "./private-interview-session.js";
 
 declare const Response: typeof NativeCloudflare.Response;
@@ -31,6 +35,11 @@ const ScopedMutation = Schema.Struct({
 const Session = Schema.Struct({
   sessionReference: Schema.String.pipe(Schema.check(Schema.isUUID())),
 });
+const AuthorizedDirectory = Schema.Struct({
+  binding: PrivateParticipantBinding,
+  expiresAt: Schema.Number,
+  generation: Schema.String.pipe(Schema.check(Schema.isUUID())),
+});
 const AuthorizedSession = Schema.Struct({
   binding: PrivateSessionBinding,
   expiresAt: Schema.Number,
@@ -43,6 +52,23 @@ interface OutputWorkerEnvironment {
   };
   readonly HouseholdAgent: {
     readonly getByName: (name: string) => OutputLifecyclePort;
+  };
+  readonly PrivateInterviewDirectory: {
+    readonly getByName: (name: string) => {
+      readonly initialize: (input: PrivateParticipantBinding) => Promise<void>;
+      readonly beginConnection: (
+        input: PrivateParticipantBinding
+      ) => Promise<string>;
+      readonly authorizeConnection: (
+        input: typeof AuthorizedDirectory.Type
+      ) => Promise<void>;
+      readonly hasReservation: (
+        input: PrivateSessionBinding
+      ) => Promise<boolean>;
+      readonly fetch: (
+        request: Request | NativeCloudflare.Request
+      ) => Promise<NativeCloudflare.Response>;
+    };
   };
   readonly PrivateInterviewSession: {
     readonly getByName: (name: string) => {
@@ -62,8 +88,34 @@ interface OutputWorkerEnvironment {
 
 /** Trusted service-binding entrypoint. No arbitrary method dispatch or private result values. */
 export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> {
+  async beginDirectoryConnection(untrusted: PrivateParticipantBinding) {
+    const binding = Schema.decodeUnknownSync(PrivateParticipantBinding, {
+      onExcessProperty: "error",
+    })(untrusted);
+    const child = this.env.PrivateInterviewDirectory.getByName(
+      await privateDirectoryKey(binding)
+    );
+    await child.initialize(binding);
+    return child.beginConnection(binding);
+  }
+  async authorizeDirectoryConnection(
+    untrusted: typeof AuthorizedDirectory.Type
+  ) {
+    const input = Schema.decodeUnknownSync(AuthorizedDirectory, {
+      onExcessProperty: "error",
+    })(untrusted);
+    await this.env.PrivateInterviewDirectory.getByName(
+      await privateDirectoryKey(input.binding)
+    ).authorizeConnection(input);
+  }
   async beginConnection(untrusted: PrivateSessionBinding) {
     const binding = Schema.decodeUnknownSync(PrivateSessionBinding)(untrusted);
+    const reserved = await this.env.PrivateInterviewDirectory.getByName(
+      await privateDirectoryKey(binding)
+    ).hasReservation(binding);
+    if (!reserved) {
+      throw new PrivateOutputUnavailable({ reason: "binding_conflict" });
+    }
     const child = this.env.PrivateInterviewSession.getByName(
       await privateOutputKey("session", binding.sessionReference)
     );
@@ -89,6 +141,16 @@ export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> 
       request.headers.get("Upgrade")?.toLowerCase() !== "websocket"
     ) {
       return new Response(null, { status: 404 });
+    }
+    const directoryKey = request.headers.get("private-output-directory");
+    if (directoryKey !== null) {
+      const key = Schema.decodeUnknownSync(OutputScope.fields.key)(
+        directoryKey
+      );
+      if (request.headers.has("private-output-session")) {
+        return new Response(null, { status: 404 });
+      }
+      return this.env.PrivateInterviewDirectory.getByName(key).fetch(request);
     }
     const session = Schema.decodeUnknownSync(Session)({
       sessionReference: request.headers.get("private-output-session"),
