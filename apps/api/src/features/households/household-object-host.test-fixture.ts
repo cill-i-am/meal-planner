@@ -32,6 +32,7 @@ import { Context, Effect, Option, Schema } from "effect";
 import migrations from "../../../household-migrations/migrations.js";
 import { ApprovedRecipe } from "../imports/import-recipe-review.js";
 import type { MealPlanServiceError } from "../meal-planning/meal-plan.js";
+import { HouseholdOutputFenceLive } from "../private-output/household-output-fence.js";
 import { HouseholdImportBatchQueueWriter } from "./batches/household-import-batch-queue.port.js";
 import { HouseholdDispatchId } from "./foundation/import-workflow-admission.contract.js";
 import { makeImportWorkflowAdmissionRepository } from "./foundation/import-workflow-admission.repository.js";
@@ -124,6 +125,7 @@ const HouseholdObjectTestRuntime = Effect.gen(
   function* initializeHouseholdObjectTestRuntime() {
     const household = yield* yield* HouseholdObjectRuntime.pipe(
       Effect.provide(HouseholdAuthorityServicesLive),
+      Effect.provide(HouseholdOutputFenceLive),
       Effect.provideService(HouseholdImportBatchQueueWriter, {
         send: () => Effect.void,
       })

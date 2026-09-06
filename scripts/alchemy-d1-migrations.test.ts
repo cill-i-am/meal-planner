@@ -440,6 +440,43 @@ const migrationHistory = (database: DatabaseSync) =>
   database.prepare("SELECT name FROM d1_migrations ORDER BY id;").all();
 
 describe("Alchemy D1 migration reconciliation", () => {
+  it("reconstructs a legacy hash from an edited same-name file without rerunning its historical SQL", async () => {
+    const modules = await loadAlchemyD1Modules();
+    const [original] = triggerMigrationFixture;
+    const edited = {
+      ...original,
+      sql: `${original.sql}\nALTER TABLE fixture_records ADD COLUMN historical_edit TEXT;`,
+    };
+    const database = new DatabaseSync(":memory:");
+    try {
+      seedMigrationHistory(database, [original]);
+      const transport: RecordedD1Transport = {
+        importFiles: [],
+        queryBodies: [],
+      };
+      await runApplyMigrations(
+        modules,
+        [edited],
+        makeSemanticD1Client(database, transport)
+      );
+      expect(
+        database.prepare("SELECT hash, name FROM d1_migrations").get()
+      ).toEqual({
+        hash: createHash("sha256").update(edited.sql).digest("hex"),
+        name: original.id,
+      });
+      expect(
+        database
+          .prepare("PRAGMA table_info(fixture_records)")
+          .all()
+          .map(({ name }) => name)
+      ).toEqual(["id", "state"]);
+      expect(transport.importFiles).toHaveLength(1);
+    } finally {
+      database.close();
+    }
+  });
+
   it.each(["auth-migrations", "provider-accounting-migrations"])(
     "imports every checked-in %s migration as one marker-free SQL file",
     async (directory) => {
@@ -565,6 +602,9 @@ describe("Alchemy D1 migration reconciliation", () => {
     const database = new DatabaseSync(":memory:");
     try {
       seedMigrationHistory(database, [initialMigration, acquisitionMigration]);
+      const legacyHistory = database
+        .prepare("SELECT id, name, applied_at FROM d1_migrations ORDER BY id")
+        .all();
       const transport: RecordedD1Transport = {
         importFiles: [],
         queryBodies: [],
@@ -583,6 +623,32 @@ describe("Alchemy D1 migration reconciliation", () => {
         )
       ).rejects.toThrow();
 
+      // Conversion is a committed import before the later failing import.
+      // This fixture models each import as a local SQLite transaction; it is
+      // not a live Cloudflare transaction or recovery guarantee.
+      expect(
+        database
+          .prepare("PRAGMA table_info(d1_migrations)")
+          .all()
+          .map(({ name }) => name)
+      ).toEqual(["id", "hash", "created_at", "name", "applied_at"]);
+      const convertedHistory = database
+        .prepare(
+          "SELECT id, name, hash, created_at, applied_at FROM d1_migrations ORDER BY id"
+        )
+        .all();
+      expect(convertedHistory).toEqual(
+        [initialMigration, acquisitionMigration].map((migration, index) => ({
+          applied_at: legacyHistory[index]?.["applied_at"],
+          created_at: null,
+          hash: createHash("sha256").update(migration.sql).digest("hex"),
+          id: index + 1,
+          name: migration.id,
+        }))
+      );
+      expect(legacyHistory.map(({ id }) => id)).toEqual(["00001", "00002"]);
+      expect(transport.importFiles).toHaveLength(2);
+
       expect(migrationHistory(database)).toEqual([
         { name: initialMigration.id },
         { name: acquisitionMigration.id },
@@ -596,11 +662,21 @@ describe("Alchemy D1 migration reconciliation", () => {
       ).toEqual({ count: 0 });
 
       await runApplyMigrations(modules, migrationsFiles, client);
+      expect(transport.importFiles).toHaveLength(3);
+      expect(
+        database
+          .prepare(
+            "SELECT id, name, hash, created_at, applied_at FROM d1_migrations WHERE id <= 2 ORDER BY id"
+          )
+          .all()
+      ).toEqual(convertedHistory);
       expect(migrationHistory(database)).toEqual(
         migrationsFiles.map((migration) => ({
           name: migration.id,
         }))
       );
+      await runApplyMigrations(modules, migrationsFiles, client);
+      expect(transport.importFiles).toHaveLength(3);
     } finally {
       database.close();
     }

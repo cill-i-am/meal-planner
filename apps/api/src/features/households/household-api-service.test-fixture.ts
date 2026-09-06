@@ -32,6 +32,12 @@ import {
 } from "../imports/import-intent-api.http.js";
 import { RecipeImportWorkflowDispatcher } from "../imports/import-workflow-dispatcher.js";
 import type {
+  PrivateOutputApiPort,
+  PrivateOutputMutationPort,
+} from "../private-output/private-output-binding.js";
+import { makeAuthOutputFence } from "../private-output/private-output-mutation.js";
+import { handlePrivateInterviewRequest } from "../private-output/private-output.http.js";
+import type {
   HouseholdAdmitImportBatchInput,
   HouseholdClaimImportBatchItemInput,
   HouseholdCompleteImportBatchItemInput,
@@ -153,6 +159,8 @@ const rpcResponse = (value: Schema.Json) => {
 };
 
 interface HouseholdApiFixtureEnv {
+  readonly PrivateOutputApi: PrivateOutputApiPort;
+  readonly PrivateOutputMutations: PrivateOutputMutationPort;
   readonly BETTER_AUTH_SECRET: string;
   readonly HOUSEHOLD_TEST_OBSERVATIONS: {
     readonly get: (key: string) => Promise<string | null>;
@@ -675,6 +683,7 @@ export default {
     const auth = makeMealPlannerAuth({
       baseURL,
       database: drizzle(env.MealPlannerAuthDatabase),
+      outputFence: makeAuthOutputFence(env.PrivateOutputMutations),
       schema: authSchema,
       secret: env.BETTER_AUTH_SECRET,
       verifyInvitationRecipient:
@@ -682,6 +691,63 @@ export default {
     });
     if (new URL(request.url).pathname.startsWith("/api/auth/")) {
       return auth.fetch(request);
+    }
+    let privateAuthorityReads = 0;
+    const privateAuthorityBarrier = request.headers.get(
+      "x-test-private-output-authority-barrier"
+    );
+    const privateHousehold = {
+      listHouseholdPeople: (
+        input: Parameters<
+          HouseholdDomainWorkerMethods["listHouseholdPeople"]
+        >[0]
+      ) =>
+        householdDomain.listHouseholdPeople(input).pipe(
+          Effect.tap(() =>
+            Effect.gen(function* listHouseholdPeople() {
+              privateAuthorityReads += 1;
+              if (
+                request.headers.get(
+                  "x-test-private-output-authority-failure"
+                ) === "1" &&
+                privateAuthorityReads === 2
+              ) {
+                return yield* Effect.fail(HouseholdPeopleUnavailable.make({}));
+              }
+              if (
+                privateAuthorityBarrier !== null &&
+                privateAuthorityReads === 2
+              ) {
+                yield* Effect.promise(() =>
+                  env.HOUSEHOLD_TEST_OBSERVATIONS.put(
+                    `private-output-read:${privateAuthorityBarrier}`,
+                    "ready"
+                  )
+                );
+                while (
+                  yield* Effect.promise(() =>
+                    env.HOUSEHOLD_TEST_OBSERVATIONS.get(
+                      `private-output-release:${privateAuthorityBarrier}`
+                    )
+                  ).pipe(Effect.map((value) => value !== "release"))
+                ) {
+                  yield* Effect.sleep("10 millis");
+                }
+              }
+            })
+          )
+        ),
+    };
+    const privateResponse = await Effect.runPromise(
+      handlePrivateInterviewRequest({
+        auth,
+        household: privateHousehold,
+        output: env.PrivateOutputApi,
+        request,
+      })
+    );
+    if (privateResponse !== null) {
+      return privateResponse;
     }
     const resolver = makeAuthenticatedOrganizationResolver({ auth });
     const principalResolver = makeAuthPrincipalResolver({ auth });

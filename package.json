@@ -6,6 +6,7 @@
     "alchemy:deploy": "tsx scripts/alchemy-command.ts deploy",
     "alchemy:destroy": "tsx scripts/alchemy-command.ts destroy",
     "alchemy:plan": "tsx scripts/alchemy-command.ts plan",
+    "d1:preflight": "tsx scripts/alchemy-d1-preflight.ts",
     "auth:db:generate": "pnpm --filter @meal-planner/api auth:db:generate",
     "auth:schema:generate": "pnpm --filter @meal-planner/api auth:schema:generate",
     "build": "pnpm --recursive build",

@@ -10,6 +10,7 @@
     "db:generate": "drizzle-kit generate --name provider_accounting",
     "household:db:generate": "drizzle-kit generate --config household.drizzle.config.ts --name household_domain",
     "dev": "tsx watch src/main.ts",
+    "private-output:db:generate": "drizzle-kit generate --config private-output.drizzle.config.ts --name private_output_lifecycle",
     "start": "node dist/main.js",
     "test": "vitest run"
   },
@@ -19,6 +20,7 @@
     "@meal-planner/household-api": "workspace:*",
     "@meal-planner/recipe-domain": "workspace:*",
     "@meal-planner/recipe-import-api": "workspace:*",
+    "agents": "0.22.0",
     "better-auth": "1.7.2",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "effect": "4.0.0-rc.112",
@@ -28,6 +30,7 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "1.1.4",
+    "@cloudflare/workers-types": "5.20260904.1",
     "@distilled.cloud/cloudflare-rolldown-plugin": "0.17.1",
     "@effect/vitest": "4.0.0-rc.112",
     "@types/node": "24.13.3",
