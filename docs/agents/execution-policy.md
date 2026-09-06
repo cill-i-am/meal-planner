@@ -2,6 +2,14 @@
 
 This document owns delivery authority, review, and coordination. Skills and templates supply techniques, not additional approval gates. User instructions and their existing authorization take precedence.
 
+## Standing delivery authority
+
+An implementation request authorizes the necessary local edits, disposable tests, builds, browser checks, commits, branch pushes, PR creation and updates, in-scope CI and review fixes, and merge of the intended head once the verification and review requirements below are satisfied. Continue through these steps without separate confirmation. A user restriction such as plan-only, review-only, do not push, or do not merge narrows this authority. Existing authorization persists across steps and handoffs; do not request it again.
+
+Read-only inspection of the known repository, PR, CI, or relevant provider account is authorized within the task's scope. An external endpoint alone does not require approval. Establish the actual account and target from evidence; do not guess an ambiguous cloud target. Inspect unfamiliar commands for side effects: Alchemy plan can mutate provider state and is not covered as a read-only check.
+
+This authority covers GitHub delivery messages in the task's PR and repository. It does not authorize the separate product, provider, publication, or production effects listed in [AGENTS.md](../../AGENTS.md). A merge that triggers deployment needs authorization for that deployment's actual effect and target before proceeding.
+
 ## Ownership and persistence
 
 One delivery owner carries a scoped request from current source through implementation, relevant verification, and in-scope corrections. Use the existing work item or user request as the plan when its outcome is clear. Do not stop after a first implementation to request permission for ordinary fixes.
@@ -26,7 +34,7 @@ The effect boundaries in [AGENTS.md](../../AGENTS.md) apply throughout the task.
 
 When approval is missing, complete safe implementation and verification first, then show the concrete effect for approval. Stop only the dependent action. Never claim a local fixture proves a provider action occurred. Do not repeat an effect whose outcome is unknown; inspect its retained outcome or recovery path.
 
-Merge and publication require the user's authorization. Merge only the intended head with required checks satisfied, material findings addressed, and claimed acceptance supported. Green CI is evidence, not merge permission.
+Under standing delivery authority, merge only the intended head with required checks satisfied, material findings addressed, required independent review complete, and claimed acceptance supported by relevant evidence, including real runtime evidence for runtime or user-visible changes. Green CI alone does not establish correctness or expand authority.
 
 ## Asynchronous work
 
