@@ -22,6 +22,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import { Effect, Schema } from "effect";
 
 import type { MealPlanServiceError } from "../meal-planning/meal-plan.js";
+import { PrivateOutputMutationsBinding } from "../private-output/private-output-binding.js";
 import type {
   HouseholdAdmitImportBatchInput,
   HouseholdBatchFailure,
@@ -1086,6 +1087,7 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
 
 export default HouseholdDomainWorker.make(
   {
+    env: { PrivateOutputMutations: PrivateOutputMutationsBinding },
     main: import.meta.url,
     observability: {
       enabled: true,
