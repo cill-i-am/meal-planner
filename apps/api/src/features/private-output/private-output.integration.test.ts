@@ -208,10 +208,19 @@ describe("private output on physical native WebSockets", () => {
 
   it("checks the captured canonical session deadline immediately before native enqueue", async () => {
     const session = await binding();
-    const connection = await open(session, Date.now() + 300);
-    await emit(session, connection.generation, "synthetic-before-expiry");
-    await delay(350);
-    await emit(session, connection.generation, "synthetic-after-expiry");
+    const expiresAt = Date.now() + 60_000;
+    const connection = await open(session, expiresAt);
+    const enqueueAt = (now: number, payload: string) =>
+      successful({
+        action: "emit-at-time",
+        generation: connection.generation,
+        now,
+        payload,
+        sessionReference: session.sessionReference,
+      });
+    await enqueueAt(expiresAt - 1, "synthetic-before-expiry");
+    await enqueueAt(expiresAt, "synthetic-at-expiry");
+    await enqueueAt(expiresAt + 1, "synthetic-after-expiry");
     await delay(10);
     expect(connection.messages).toEqual(["synthetic-before-expiry"]);
     connection.socket.close();

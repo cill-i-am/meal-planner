@@ -73,16 +73,112 @@ pnpm run alchemy:plan
 
 # Future approved operations name their complete target.
 pnpm run alchemy:plan -- --stage dev_cillian --profile sandbox
-pnpm run alchemy:deploy -- --stage dev_cillian --profile sandbox
+pnpm run alchemy:deploy -- --stage dev_cillian --profile sandbox --d1-target /private/path/target.json --d1-evidence <reviewed-digest>
 pnpm run alchemy:destroy -- --stage dev_cillian --profile sandbox
 ```
 
 Deploy and destroy reject missing stage/profile flags. Every wrapper rejects
 `--yes`. Destroy also refuses the exact `prod` stage.
 
+Deploy additionally requires the existing-D1 inspection below. It fixes the
+repository's `alchemy.run.ts` entrypoint and rejects alternate files, env-file
+overrides, adoption, force and other deployment flags. Plan and destroy retain
+their existing behavior. Calling Alchemy directly bypasses this repository
+guard and is not the supported release path.
+
 Immediately before an approved operation, print and confirm the stack
 (`MealPlanner`), stage, profile, independently verified account, intended
 mutation, and cleanup boundary.
+
+## Existing D1 release inspection
+
+This preflight covers the two existing Meal Planner databases. New-stage
+provisioning remains a separate, explicitly authorized infrastructure operation;
+missing databases, absent ledgers and query failures never imply permission to
+provision or adopt resources. No preflight command invokes Alchemy plan,
+bootstrap, deploy or SQL mutation. Reading an existing Alchemy auth profile can
+refresh its OAuth credentials; complete new sign-in or grants separately.
+
+After account access is established, discover metadata using the intended
+profile and account:
+
+```sh
+pnpm run d1:preflight discover --profile <profile> --account <account-id>
+```
+
+Discovery returns every API Worker with the exact `MealPlanner` stack and
+`MealPlannerApi` logical resource tags. Its stage tag and the two named D1
+bindings determine the physical UUIDs; database-name prefixes do not. It reads
+no ledger rows. Select the intended stage and save that target object privately,
+outside tracked source. Multiple candidates require actual target selection.
+The target contains account, profile, stage, Worker name and both database
+names/UUIDs; it is metadata, not credentials or approval.
+
+From a clean, committed release checkout with the pinned toolchain, inspect the
+selected target:
+
+```sh
+pnpm run d1:preflight inspect --target /private/path/target.json
+```
+
+Inspection first revalidates the resolved account, Worker ownership and both
+binding UUIDs. It reads the existing same-profile, same-account state-store
+cache, checks API version 7, and fetches only the two D1 resource records. The
+top-level attributes Alchemy uses for created, updated and interrupted updating
+resources must match the frozen UUIDs, names and account. Missing, replacing,
+creating, deleting or local-mode state requires a separately assessed recovery
+or provisioning effect. Unavailable or stale state-store credentials fail;
+the command never bootstraps the store or starts Access/login flows.
+
+It then reads migration ledger columns/rows, schema definitions and current
+recovery bookmarks. The report includes the exact
+release SHA, local SQL byte hashes, runtime versions, applied/pending migration
+names, stored-hash consistency, the expected legacy ledger conversion and a
+digest of the reviewed state. Keep this account-specific report private. Query
+errors, missing recovery bookmarks, unsupported history, duplicate aliases or
+IDs, history gaps, unknown migrations and stored hash mismatches fail closed.
+
+Review the full observed schema definitions and pending SQL with the report.
+The schema comparison binds deployment to the shape reviewed by the operator;
+it does not prove semantic compatibility or recover the original SQL. Legacy
+three-column rows contain no hashes. Alchemy reconstructs their hashes and
+creation timestamps from the current release files, preserves recorded names
+and application times, and regenerates numeric IDs. Converted rows can be
+indistinguishable from native five-column rows. Accordingly, the report always
+labels original applied-SQL provenance `unknown`; a matching stored hash proves
+consistency with today's ledger, not independent historical provenance.
+
+Before deployment, explicit authorization must cover the actual account,
+profile, stage, both database UUIDs, the observed schema/history, the proposed
+reconstruction and pending SQL, and the recovery route. Record that existing
+authorization in the task or owning delivery record. Passing a digest does not
+grant authority, and the report is not an offline release bypass.
+
+The deploy wrapper always repeats live inspection and compares its new digest
+with `--d1-evidence` before launching Alchemy. Target, executor state, release, SQL, history,
+schema or proposed-effect changes stop launch. Recovery bookmarks and observation
+times are refreshed and printed each run but excluded from the digest because
+normal application writes can advance them. The preflight and deploy use the
+same repository working directory, profile and inherited environment, including
+Alchemy's default `.env` configuration. This is a final pre-launch check, not a
+remote lock against concurrent changes during Alchemy's subsequent prompts.
+
+Capture both current bookmarks and the intended D1 Time Travel restore targets
+before an authorized reconciliation. A restore replaces database state and
+requires authorization for that effect; collecting a bookmark does not perform
+or test restoration. Consult the official
+[D1 Time Travel reference](https://developers.cloudflare.com/d1/reference/time-travel/)
+for the account's retention window and restore procedure.
+
+Conversion and pending migrations are separate import batches. Conversion can
+remain committed when a later batch fails. In that case inspect again, compare
+the new report with the expected converted state, and use its fresh digest for
+an authorized retry. Existing explicit authorization may already cover that
+expected conversion/retry state; ask again only for an effect outside its scope.
+The local SQLite-backed HTTP fixture demonstrates converted ledger persistence,
+pending-batch rollback and single-application retry through the installed
+Alchemy executor. It does not prove live Cloudflare atomicity, recovery or the
+readiness of any particular remote target.
 
 ## Outputs and health verification
 
@@ -140,7 +236,7 @@ persistence in production composition.
 
 `MealPlannerAuthDatabase` is a separate D1 database for Better Auth identity,
 cookie sessions, organizations, invitations, and membership. The runtime uses
-Better Auth `1.7.0-rc.6` through the public Drizzle relations-v2 adapter. The
+Better Auth `1.7.2` through the public Drizzle relations-v2 adapter. The
 actual auth configuration generates `auth.database-schema.ts`; Drizzle Kit owns
 the checked-in SQLite migration under `apps/api/auth-migrations`. Alchemy only
 provisions and binds the database and applies that migration. It does not run
