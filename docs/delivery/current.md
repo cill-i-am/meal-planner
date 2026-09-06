@@ -14,7 +14,11 @@
   [`05-cumulative-exit-proof.md`](stages/01-household-people/05-cumulative-exit-proof.md)
   ([PR #205](https://github.com/cill-i-am/meal-planner/pull/205), merge
   `e77f2cf2a2e634fd43cab588980a73ee7ae9b6d2`)
-- Active delivery: all three prioritized risk fixes are merged in order: private output (#211), D1 release safety (#210), and media lifetime (#212). Broader Stage 2 remains paused.
+- Active delivery: [Stage 2 planning](stages/02-private-discovery/README.md) was
+  accepted on 2026-09-06.
+  [Work Item 01](stages/02-private-discovery/01-private-session-foundation.md)
+  is Ready; application implementation has not started under this planning
+  request.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -114,14 +118,16 @@ exercises those boundaries and passed independent review. PR #211 merged as
 Stage 1's cumulative exit evidence is accepted through merged PR #205.
 Organization deletion and conversation implementation remain out of scope.
 
-[PR #204](https://github.com/cill-i-am/meal-planner/pull/204) merged the accepted
-Work Item 04 boundary disposition on 2026-09-05 as
+[PR #204](https://github.com/cill-i-am/meal-planner/pull/204) merged the
+accepted Work Item 04 boundary disposition on 2026-09-05 as
 `5d629f0f3e1e9e7c2006d2b7a0c14fd235015013`, after independent review of
 `2d607a77a509fec64047678add31fdab02053eea` and green hosted
 [run 33974785385](https://github.com/cill-i-am/meal-planner/actions/runs/33974785385).
-Work Item 04 is Done as boundary evidence, not conversation implementation.
-No Stage 1 grant was implemented. The bounded Stage 2 handoff remains Proposed;
-Stage 1 completion does not authorize starting it.
+Work Item 04 is Done as boundary evidence, not conversation implementation. No
+Stage 1 grant was implemented. The subsequent
+[Stage 2 plan](stages/02-private-discovery/README.md) is now accepted, with its
+private-session foundation Ready. Stage 1 completion itself did not authorize
+that work; application implementation has not started.
 
 PR #205 merged on 2026-09-05 as `e77f2cf2a2e634fd43cab588980a73ee7ae9b6d2`
 after independent review of `1b625121e835bc531fe7f5b6cd17bd04949c361e`
@@ -169,6 +175,18 @@ the exact heads and evidence. The authorized repository fix queue is complete.
 This bounded queue does not promote the broader Stage 2, UI, model/provider,
 or cost-tuning roadmap. No deployment or target-specific D1 reconciliation has
 been performed.
+
+The user subsequently accepted the bounded Stage 2 plan and the evaluation split
+on 2026-09-06. The next implementation slice is
+[private session foundation](stages/02-private-discovery/01-private-session-foundation.md):
+start, rediscover, resume, complete, and read retained private history using the
+selected native child/fence. Cards and confirmation follow, then adaptive
+questioning with evaluated model selection, repeat review, and dependant
+assistance.
+[PDR-0006](../decisions/product/0006-ai-evaluation-and-release-evidence.md#stage-specific-evidence-and-the-complete-beta-gate)
+owns stage-specific discovery/profile evidence and the unchanged complete
+connected pre-beta gate. The current request prepares documents only; no Stage 2
+application implementation or provider execution has begun.
 
 ## Deliberate Non-Work
 
