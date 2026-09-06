@@ -1,7 +1,9 @@
+import { InterviewProfileOutcome } from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
 
 import type { MealPlannerAuth } from "../auth/auth.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
+import { ReleasedConfirmation } from "./private-confirmation.contract.js";
 import type { PrivateOutputApiPort } from "./private-output-binding.js";
 import { resolvePrivateOutputAuthority } from "./private-output.authority.js";
 import {
@@ -17,12 +19,90 @@ export const handlePrivateInterviewRequest = Effect.fn(
     readonly auth: MealPlannerAuth;
     readonly household: Pick<
       HouseholdDomainWorkerMethods,
-      "listHouseholdPeople"
+      "listHouseholdPeople" | "mutateInterviewProfile"
     >;
     readonly output: PrivateOutputApiPort;
     readonly request: Request;
   }) {
     const url = new URL(input.request.url);
+    const confirmation =
+      /^\/v1\/private-interviews\/(?<sessionReference>[^/]+)\/confirmations\/(?<mutationId>[^/]+)$/u.exec(
+        url.pathname
+      );
+    if (confirmation !== null) {
+      if (
+        input.request.method !== "POST" ||
+        input.request.headers.get("Origin") !== url.origin
+      ) {
+        return new Response(null, { status: 403 });
+      }
+      return yield* Effect.gen(function* continueConfirmation() {
+        // No private HTTP payload or response body is accepted by this continuation.
+        const { body } = input.request;
+        if (body !== null) {
+          const empty = yield* Effect.tryPromise(async () => {
+            const reader = body.getReader();
+            const first = await reader.read();
+            await reader.cancel();
+            return first.done;
+          });
+          if (!empty) {
+            return new Response(null, { status: 403 });
+          }
+        }
+        const sessionReference = yield* Schema.decodeUnknownEffect(
+          SessionReference
+        )(confirmation.groups?.["sessionReference"]);
+        const mutationId = yield* Schema.decodeUnknownEffect(SessionReference)(
+          confirmation.groups?.["mutationId"]
+        );
+        const generation = yield* Schema.decodeUnknownEffect(SessionReference)(
+          input.request.headers.get("x-private-output-generation")
+        );
+        const current = yield* resolvePrivateOutputAuthority({
+          auth: input.auth,
+          headers: input.request.headers,
+          household: input.household,
+        });
+        const binding = {
+          accountKey: current.accountKey,
+          householdKey: current.householdKey,
+          linkageSubject: current.linkageSubject,
+          personId: current.personId,
+          sessionReference,
+        };
+        const released = yield* Effect.tryPromise(() =>
+          input.output.releaseConfirmation({ binding, generation, mutationId })
+        ).pipe(
+          Effect.flatMap(Schema.decodeUnknownEffect(ReleasedConfirmation))
+        );
+        if (released.type === "settled") {
+          return new Response(null, { status: 204 });
+        }
+        const outcome = yield* input.household
+          .mutateInterviewProfile({
+            admission: current.admission,
+            payload: released.payload,
+            personId: current.personId,
+          })
+          .pipe(
+            Effect.flatMap(Schema.decodeUnknownEffect(InterviewProfileOutcome))
+          );
+        yield* Effect.tryPromise(() =>
+          input.output.settleConfirmation({
+            binding,
+            generation: released.generation,
+            mutationId,
+            outcome,
+          })
+        );
+        return new Response(null, { status: 204 });
+      }).pipe(
+        Effect.catchCause(() =>
+          Effect.succeed(new Response(null, { status: 503 }))
+        )
+      );
+    }
     const match =
       /^\/v1\/private-interviews\/(?<sessionReference>[^/]+)\/connect$/u.exec(
         url.pathname

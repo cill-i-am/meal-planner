@@ -24,6 +24,7 @@ const context = {
   now: 1000,
   personId,
   personKind: "adult" as const,
+  source: "manual_ui" as const,
   version: ProfileVersion.make(1),
 };
 const preference = {

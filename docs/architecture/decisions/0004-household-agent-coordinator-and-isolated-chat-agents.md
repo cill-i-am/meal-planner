@@ -263,4 +263,30 @@ recovering an unresolved mutation. It retains exactly the original mutation and
 payload before sending, hides private content when access is lost, and only
 retries against the same authenticated context and participant binding. A reply
 confirms persistence; loss of the reply does not prove that the write failed.
-Model output, profile proposals, confirmation, and repeat review are later work.
+Model output and repeat review remain later work.
+
+
+## Private profile confirmation — 2026-09-06
+
+[Work Item 02](../../delivery/stages/02-private-discovery/02-progressive-cards-and-confirmation.md)
+extends that admitted socket with paged tentative cards, correction, rejection,
+and explicit confirmation. One synchronous session transaction freezes the exact
+reviewed closed command before an authenticated metadata-only HTTP continuation
+can release it. A narrow internal release RPC checks the immutable participant
+binding and current connected generation. It returns only the explicitly
+confirmed closed Household command, never history or unfinished proposals.
+The API's fresh canonical admission supplies the target person and actor to the
+trusted Household interview writer. No credentials enter private children, and
+no private values enter an HTTP response.
+
+Household durably seals success or definitive rejection. A matching internal
+settlement records that authoritative outcome and updates the private card.
+Unknown results retain the exact pending command across reconnect and restart;
+completion and other card mutations remain blocked until settlement. Revocation
+blocks new release and output, while an exact command already released for
+canonical dispatch may reach Household after revocation and settle under its
+current authority. Settlement after revocation does not emit
+through that generation: the original physical final-send fence is unchanged.
+No cancellation, lease expiry, automatic rebase, or callback worker is added.
+Synthetic local proposal fixtures provide this slice's runtime evidence; real
+adaptive proposal production remains Work Item 03.

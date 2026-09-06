@@ -1,14 +1,24 @@
+import {
+  HouseholdPeopleRoster,
+  PersonProfile,
+} from "@meal-planner/household-api";
 // @vitest-environment jsdom
+import { ProfileCard } from "@meal-planner/private-interview-api";
 import type {
   DirectoryCommand,
   DirectoryFrame,
   SessionCommand,
   SessionFrame,
+  ProfileCard as ProfileCardType,
 } from "@meal-planner/private-interview-api";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it } from "vitest";
+import { Schema } from "effect";
+import { afterEach, expect, it, vi } from "vitest";
 
+import { HouseholdProfilesPanel } from "../household-profiles/household-profiles-panel.js";
+import { ProfileOperationError } from "../household-profiles/operations.js";
 import { PrivateInterviewClient } from "./private-interview-client.js";
 import type { PrivateInterviewSocket } from "./private-interview-client.js";
 import { PrivateInterviewsPanel } from "./private-interviews-panel.js";
@@ -75,10 +85,26 @@ const fixture = () => {
       sockets.push({ path, socket });
       return socket;
     },
+    continueConfirmation: vi.fn(
+      async (
+        _session: string,
+        _mutation: string,
+        _generation: string,
+        _signal: AbortSignal
+      ) => "accepted" as "accepted" | "unavailable" | "authentication_required"
+    ),
     makeId: () => {
       ordinal += 1;
       return `00000000-0000-4000-8000-${String(ordinal).padStart(12, "0")}`;
     },
+    readCurrentProfile: vi.fn().mockResolvedValue(
+      Schema.decodeUnknownSync(PersonProfile)({
+        audit: null,
+        facts: [],
+        personId: "person_00000000-0000-4000-8000-000000000001",
+        version: 0,
+      })
+    ),
     storage: {
       getItem: (key: string) => storage.get(key) ?? null,
       removeItem: (key: string) => {
@@ -101,10 +127,17 @@ const fixture = () => {
     socket.receive({ bindingKey, type: "DirectoryReady" });
     return socket;
   };
-  const sessionReady = (sessionState = state) => {
+  const sessionReady = (
+    sessionState = state,
+    cards: readonly ProfileCardType[] = [],
+    pendingConfirmation: string | null = null,
+    generation = "00000000-0000-4000-8000-000000000301"
+  ) => {
     const socket = latest();
     socket.receive({
       bindingKey: "binding-a",
+      generation,
+      pendingConfirmation,
       sessionReference: reference,
       state: sessionState,
       type: "SessionReady",
@@ -115,6 +148,14 @@ const fixture = () => {
       requestId: socket.last("ReadHistory").requestId,
       state: sessionState,
       type: "HistoryRead",
+    });
+    socket.receive({
+      cards,
+      hasMore: false,
+      pendingConfirmation,
+      requestId: socket.last("ReadCards").requestId,
+      state: sessionState,
+      type: "CardsRead",
     });
     return socket;
   };
@@ -213,6 +254,8 @@ it("starts, saves an acknowledged message, completes, and rediscovers history af
     const socket = f.latest();
     socket.receive({
       bindingKey: "binding-a",
+      generation: "00000000-0000-4000-8000-000000000301",
+      pendingConfirmation: null,
       sessionReference: reference,
       state: { status: "completed", version: 2 },
       type: "SessionReady",
@@ -269,6 +312,8 @@ it.each([
       const recoveredState = { status: "completed" as const, version: 2 };
       socket.receive({
         bindingKey: "binding-a",
+        generation: "00000000-0000-4000-8000-000000000301",
+        pendingConfirmation: null,
         sessionReference: reference,
         state: recoveredState,
         type: "SessionReady",
@@ -391,6 +436,8 @@ it("hides content immediately on account change and ignores late frames from the
   act(() => {
     old.receive({
       bindingKey: "binding-a",
+      generation: "00000000-0000-4000-8000-000000000301",
+      pendingConfirmation: null,
       sessionReference: reference,
       state,
       type: "SessionReady",
@@ -488,6 +535,8 @@ it("deduplicates replayed history and does not skip unread pages when an append 
   const socket = f.latest();
   socket.receive({
     bindingKey: "binding-a",
+    generation: "00000000-0000-4000-8000-000000000301",
+    pendingConfirmation: null,
     sessionReference: reference,
     state,
     type: "SessionReady",
@@ -557,6 +606,8 @@ it("rejects oversized or unbound frames without rendering private content", () =
   client.select(reference);
   f.latest().receive({
     bindingKey: "binding-other",
+    generation: "00000000-0000-4000-8000-000000000301",
+    pendingConfirmation: null,
     sessionReference: reference,
     state,
     type: "SessionReady",
@@ -566,4 +617,635 @@ it("rejects oversized or unbound frames without rendering private content", () =
   f.latest().onFrame?.({ data: " ".repeat(32_769) });
   expect(client.getSnapshot().connection).toBe("unavailable");
   expect(client.getSnapshot().messages).toEqual([]);
+});
+
+const proposal = (patch: Record<string, unknown> = {}) =>
+  Schema.decodeUnknownSync(ProfileCard)({
+    change: {
+      _tag: "AddConfirmedProfileFact",
+      fact: {
+        _tag: "FoodPreference",
+        label: "Peas",
+        sentiment: "dislike",
+        targetKind: "ingredient",
+      },
+    },
+    expectedProfileVersion: 0,
+    id: "00000000-0000-4000-8000-000000000401",
+    ordinal: 1,
+    outcome: null,
+    reviewedFact: null,
+    revision: 1,
+    status: "proposed",
+    ...patch,
+  });
+const factId = "fact_00000000-0000-4000-8000-000000000501";
+const sharedProfile = (
+  value: (typeof PersonProfile.Type)["facts"][number]["value"],
+  version = 1
+) =>
+  Schema.decodeUnknownSync(PersonProfile)({
+    audit: null,
+    facts: [
+      {
+        createdAtEpochMs: 1,
+        createdBy: "a".repeat(64),
+        createdInVersion: 1,
+        id: factId,
+        source: "manual_ui",
+        standing: { _tag: "provisional" },
+        updatedAtEpochMs: 1,
+        updatedBy: "a".repeat(64),
+        updatedInVersion: version,
+        value,
+      },
+    ],
+    personId: "person_00000000-0000-4000-8000-000000000001",
+    version,
+  });
+const openProposals = async (
+  f: ReturnType<typeof fixture>,
+  cards: readonly ProfileCardType[],
+  pending: string | null = null
+) => {
+  const user = userEvent.setup();
+  const mounted = render(
+    <PrivateInterviewsPanel {...context} dependencies={f.dependencies} />
+  );
+  act(() => f.list(f.directoryReady()));
+  await user.click(screen.getByRole("button", { name: /Session 1/u }));
+  await act(async () => {
+    f.sessionReady(state, cards, pending);
+  });
+  return { mounted, socket: f.latest(), user };
+};
+
+it("revises and rejects private proposals without continuing any household write", async () => {
+  const f = fixture();
+  const card = proposal();
+  const { user, socket } = await openProposals(f, [card]);
+  await user.click(screen.getByText("Review or correct proposal"));
+  await user.clear(screen.getByLabelText("Food or ingredient"));
+  await user.type(screen.getByLabelText("Food or ingredient"), "Carrots");
+  await user.click(
+    screen.getByRole("button", { name: "Save revised proposal" })
+  );
+  const revise = socket.last("ReviseProfileCard");
+  expect(revise).toMatchObject({
+    change: { fact: { label: "Carrots" } },
+    expectedProfileVersion: 0,
+    reviewedFact: null,
+  });
+  const revised = proposal({ change: revise.change, revision: 2 });
+  act(() =>
+    socket.receive({
+      card: revised,
+      mutationId: revise.mutationId,
+      state: { status: "open", version: 1 },
+      type: "CardUpdated",
+    })
+  );
+  await user.click(screen.getByRole("button", { name: "Reject proposal" }));
+  act(() =>
+    socket.receive({
+      card: { ...revised, status: "rejected" },
+      mutationId: socket.last("RejectProfileCard").mutationId,
+      state: { status: "open", version: 2 },
+      type: "CardUpdated",
+    })
+  );
+  expect(screen.getByText("Rejected · private history")).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Confirm for household" })
+  ).not.toBeInTheDocument();
+  expect(f.dependencies.continueConfirmation).not.toHaveBeenCalled();
+});
+
+it("keeps an ordinary confirmation pending after HTTP acceptance until its socket settlement", async () => {
+  const f = fixture();
+  const card = proposal();
+  const { user, socket } = await openProposals(f, [card]);
+  await user.click(
+    screen.getByRole("button", { name: "Confirm for household" })
+  );
+  const command = socket.last("ConfirmProfileCard");
+  expect(command.safetyConfirmation).toBeNull();
+  expect(f.storage.size).toBe(1);
+  expect(f.dependencies.continueConfirmation).not.toHaveBeenCalled();
+  await act(async () =>
+    socket.receive({
+      card: { ...card, status: "pending" },
+      mutationId: command.mutationId,
+      state: { status: "open", version: 1 },
+      type: "ConfirmationPending",
+    })
+  );
+  expect(f.dependencies.continueConfirmation).toHaveBeenCalledWith(
+    reference,
+    command.mutationId,
+    "00000000-0000-4000-8000-000000000301",
+    expect.any(AbortSignal)
+  );
+  expect(
+    screen.getByRole("button", { name: "Complete session" })
+  ).toBeDisabled();
+  expect(screen.queryByText("Confirmed for household")).not.toBeInTheDocument();
+  expect(f.storage.size).toBe(1);
+  const outcome = {
+    profileVersion: Schema.decodeUnknownSync(PersonProfile)({
+      audit: null,
+      facts: [],
+      personId: "person_00000000-0000-4000-8000-000000000001",
+      version: 1,
+    }).version,
+    type: "committed" as const,
+  };
+  await act(async () =>
+    socket.receive({
+      card: { ...card, outcome, status: "confirmed" },
+      mutationId: command.mutationId,
+      outcome,
+      state: { status: "open", version: 2 },
+      type: "ConfirmationSettled",
+    })
+  );
+  expect(screen.getByText("Confirmed for household")).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Complete session" })
+  ).toBeEnabled();
+  expect(f.storage.size).toBe(0);
+});
+
+it("uses the canonical current safety fact and requires a separate safety confirmation", async () => {
+  const f = fixture();
+  const current = {
+    _tag: "HardConstraint" as const,
+    category: "allergen" as const,
+    handling: "exclude" as const,
+    label: "Peanuts",
+  };
+  f.dependencies.readCurrentProfile.mockResolvedValue(sharedProfile(current));
+  const card = proposal({
+    change: {
+      _tag: "ConfirmHardConstraintReduction",
+      factId,
+      replacement: null,
+    },
+    expectedProfileVersion: 1,
+    reviewedFact: current,
+  });
+  const { user, socket } = await openProposals(f, [card]);
+  expect(screen.getByText("Peanuts: exclude (allergen)")).toBeInTheDocument();
+  expect(screen.queryByText(/Untrusted old label/u)).not.toBeInTheDocument();
+  const confirm = screen.getByRole("button", {
+    name: "Confirm safety change for household",
+  });
+  expect(confirm).toBeDisabled();
+  await user.click(
+    screen.getByLabelText("I confirm this safety constraint change")
+  );
+  await user.click(confirm);
+  expect(socket.last("ConfirmProfileCard").safetyConfirmation).toBe(
+    "I confirm this safety constraint change"
+  );
+});
+
+it("requires an explicit revised proposal and a new confirmation after a shared version changes", async () => {
+  const f = fixture();
+  f.dependencies.readCurrentProfile.mockResolvedValue(
+    sharedProfile(
+      {
+        _tag: "FoodPreference",
+        label: "Lentils",
+        sentiment: "like",
+        targetKind: "ingredient",
+      },
+      2
+    )
+  );
+  const card = proposal({
+    change: { _tag: "ConfirmProfileFact", factId },
+    expectedProfileVersion: 1,
+    status: "conflict",
+  });
+  const { user, socket } = await openProposals(f, [card]);
+  expect(
+    screen.getByRole("button", { name: "Confirm for household" })
+  ).toBeDisabled();
+  await user.click(
+    screen.getByRole("button", { name: "Refresh current profile" })
+  );
+  expect(f.dependencies.continueConfirmation).not.toHaveBeenCalled();
+  await user.click(screen.getByText("Review or correct proposal"));
+  await user.click(
+    screen.getByRole("button", { name: "Save revised proposal" })
+  );
+  const revise = socket.last("ReviseProfileCard");
+  expect(revise).toMatchObject({
+    expectedProfileVersion: 2,
+    reviewedFact: { label: "Lentils" },
+  });
+  act(() =>
+    socket.receive({
+      card: proposal({
+        ...card,
+        expectedProfileVersion: 2,
+        reviewedFact: revise.reviewedFact,
+        revision: 2,
+        status: "proposed",
+      }),
+      mutationId: revise.mutationId,
+      state: { status: "open", version: 1 },
+      type: "CardUpdated",
+    })
+  );
+  expect(f.dependencies.continueConfirmation).not.toHaveBeenCalled();
+  await user.click(
+    screen.getByRole("button", { name: "Confirm for household" })
+  );
+  expect(socket.last("ConfirmProfileCard").mutationId).not.toBe(
+    revise.mutationId
+  );
+});
+
+it("discovers another device's pending confirmation and retries the same ID only after fresh admission", async () => {
+  const f = fixture();
+  f.dependencies.continueConfirmation.mockResolvedValueOnce("unavailable");
+  const pendingId = "00000000-0000-4000-8000-000000000601";
+  const card = proposal({ status: "pending" });
+  const { user, socket } = await openProposals(f, [card], pendingId);
+  expect(f.dependencies.continueConfirmation).not.toHaveBeenCalled();
+  expect(
+    screen.getByRole("button", { name: "Complete session" })
+  ).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "Check confirmation" }));
+  expect(f.dependencies.continueConfirmation).toHaveBeenCalledTimes(1);
+  await user.click(
+    screen.getByRole("button", { name: "Reconnect to check confirmation" })
+  );
+  expect(socket.closed).toBe(true);
+  await act(async () => {
+    f.sessionReady(
+      { status: "open", version: 1 },
+      [card],
+      pendingId,
+      "00000000-0000-4000-8000-000000000302"
+    );
+  });
+  expect(f.dependencies.continueConfirmation).toHaveBeenCalledTimes(1);
+  await user.click(screen.getByRole("button", { name: "Check confirmation" }));
+  expect(f.dependencies.continueConfirmation).toHaveBeenLastCalledWith(
+    reference,
+    pendingId,
+    "00000000-0000-4000-8000-000000000302",
+    expect.any(AbortSignal)
+  );
+  expect(
+    f.latest().commands.some((command) => command.type === "ConfirmProfileCard")
+  ).toBe(false);
+});
+
+it.each([false, true])(
+  "keeps the confirmed historical meaning after the shared fact is changed or removed (%s)",
+  async (removed) => {
+    const f = fixture();
+    const original = {
+      _tag: "FoodPreference" as const,
+      label: "Lentils",
+      sentiment: "like" as const,
+      targetKind: "ingredient" as const,
+    };
+    const profile = sharedProfile({ ...original, sentiment: "dislike" }, 2);
+    f.dependencies.readCurrentProfile.mockResolvedValue({
+      ...profile,
+      facts: removed ? [] : profile.facts,
+    });
+    const outcome = { profileVersion: 1, type: "committed" };
+    await openProposals(f, [
+      proposal({
+        change: { _tag: "ConfirmProfileFact", factId },
+        expectedProfileVersion: 1,
+        outcome,
+        reviewedFact: original,
+        status: "confirmed",
+      }),
+    ]);
+    expect(
+      screen.getByText("Lentils: like (ingredient) — confirmed by you")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Lentils: dislike (ingredient) — confirmed by you")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Confirm for household" })
+    ).not.toBeInTheDocument();
+  }
+);
+
+it("requires a revised canonical review when a proposed fact is incorrect at the same profile version", async () => {
+  const f = fixture();
+  const current = {
+    _tag: "FoodPreference" as const,
+    label: "Lentils",
+    sentiment: "like" as const,
+    targetKind: "ingredient" as const,
+  };
+  f.dependencies.readCurrentProfile.mockResolvedValue(sharedProfile(current));
+  const card = proposal({
+    change: { _tag: "ConfirmProfileFact", factId },
+    expectedProfileVersion: 1,
+    reviewedFact: { ...current, label: "Incorrect proposal label" },
+  });
+  const { user, socket } = await openProposals(f, [card]);
+  expect(
+    screen.getByRole("button", { name: "Confirm for household" })
+  ).toBeDisabled();
+  expect(
+    screen.getByText(/saved review does not match the current shared fact/u)
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByText(/Incorrect proposal label/u)
+  ).not.toBeInTheDocument();
+  await user.click(screen.getByText("Review or correct proposal"));
+  await user.click(
+    screen.getByRole("button", { name: "Save revised proposal" })
+  );
+  const revise = socket.last("ReviseProfileCard");
+  expect(revise.reviewedFact).toEqual(current);
+  expect(revise.change).toEqual(card.change);
+  expect(revise.expectedProfileVersion).toBe(1);
+  expect(
+    socket.commands.some((command) => command.type === "ConfirmProfileCard")
+  ).toBe(false);
+  const revised = proposal({
+    ...card,
+    reviewedFact: revise.reviewedFact,
+    revision: 2,
+  });
+  act(() =>
+    socket.receive({
+      card: revised,
+      mutationId: revise.mutationId,
+      state: { status: "open", version: 1 },
+      type: "CardUpdated",
+    })
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Confirm for household" })
+  );
+  const confirm = socket.last("ConfirmProfileCard");
+  expect(confirm.mutationId).not.toBe(revise.mutationId);
+  expect(confirm.cardRevision).toBe(2);
+  const confirmed = proposal({
+    ...revised,
+    outcome: { profileVersion: 2, type: "committed" },
+    status: "confirmed",
+  });
+  const { outcome } = confirmed;
+  if (outcome === null) {
+    throw new Error("Expected terminal outcome");
+  }
+  await act(async () =>
+    socket.receive({
+      card: confirmed,
+      mutationId: confirm.mutationId,
+      outcome,
+      state: { status: "open", version: 2 },
+      type: "ConfirmationSettled",
+    })
+  );
+  expect(
+    screen.getByText("Lentils: like (ingredient) — confirmed by you")
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByText(/Incorrect proposal label/u)
+  ).not.toBeInTheDocument();
+});
+
+it.each([
+  "ConfirmProfileFact",
+  "ReplaceOrdinaryProfileFact",
+  "RemoveOrdinaryProfileFact",
+  "ConfirmHardConstraintReduction",
+] as const)(
+  "blocks direct %s confirmation when its same-version review disagrees with the canonical fact",
+  async (tag) => {
+    const f = fixture();
+    const fact = {
+      _tag: "FoodPreference" as const,
+      label: "Peas",
+      sentiment: "like" as const,
+      targetKind: "ingredient" as const,
+    };
+    const profile = sharedProfile(fact);
+    f.dependencies.readCurrentProfile.mockResolvedValue(profile);
+    const change: {
+      _tag: typeof tag;
+      factId: string;
+      fact?: typeof fact;
+      replacement?: null;
+    } = { _tag: tag, factId };
+    if (tag === "ReplaceOrdinaryProfileFact") {
+      change.fact = fact;
+    }
+    if (tag === "ConfirmHardConstraintReduction") {
+      change.replacement = null;
+    }
+    const card = proposal({
+      change,
+      expectedProfileVersion: 1,
+      reviewedFact: { ...fact, label: "Incorrect label" },
+    });
+    const client = new PrivateInterviewClient(context, f.dependencies);
+    client.connect();
+    f.directoryReady();
+    client.select(reference);
+    f.sessionReady(state, [card]);
+    await Promise.resolve();
+    client.confirmCard(
+      card,
+      tag === "ConfirmHardConstraintReduction"
+        ? "I confirm this safety constraint change"
+        : null
+    );
+    expect(
+      f
+        .latest()
+        .commands.some((command) => command.type === "ConfirmProfileCard")
+    ).toBe(false);
+    expect(f.dependencies.continueConfirmation).not.toHaveBeenCalled();
+  }
+);
+
+it("refreshes the sibling shared profile and history on canonical settlement while retaining a pending manual command", async () => {
+  const user = userEvent.setup();
+  const f = fixture();
+  const personId = "person_00000000-0000-4000-8000-000000000001";
+  const initialProfile = Schema.decodeUnknownSync(PersonProfile)({
+    audit: null,
+    facts: [],
+    personId,
+    version: 0,
+  });
+  const fact = {
+    createdAtEpochMs: 1,
+    createdBy: "a".repeat(64),
+    createdInVersion: 1,
+    id: factId,
+    source: "interview",
+    standing: { _tag: "confirmed", basis: "self" },
+    updatedAtEpochMs: 1,
+    updatedBy: "a".repeat(64),
+    updatedInVersion: 1,
+    value: {
+      _tag: "FoodPreference",
+      label: "Peas",
+      sentiment: "dislike",
+      targetKind: "ingredient",
+    },
+  };
+  const confirmedProfile = Schema.decodeUnknownSync(PersonProfile)({
+    ...initialProfile,
+    audit: {
+      actorId: "a".repeat(64),
+      actorPersonId: personId,
+      after: fact,
+      atEpochMs: 1,
+      before: null,
+      command: {
+        _tag: "AddConfirmedProfileFact",
+        basis: "self",
+        fact: fact.value,
+      },
+      nextVersion: 1,
+      previousVersion: 0,
+      source: "interview",
+    },
+    facts: [fact],
+    version: 1,
+  });
+  const roster = Schema.decodeUnknownSync(HouseholdPeopleRoster)({
+    creatorSlot: "occupied",
+    currentPersonId: personId,
+    people: [
+      {
+        associationState: "linked",
+        associationVersion: 1,
+        createdAtEpochMs: 1,
+        displayName: "Cook",
+        id: personId,
+        isCurrentAdult: true,
+        kind: "adult",
+        lifecycle: "active",
+        updatedAtEpochMs: 1,
+        version: 1,
+      },
+    ],
+  });
+  const operations = {
+    get: vi.fn().mockResolvedValue(initialProfile),
+    mutate: vi.fn().mockRejectedValue(new ProfileOperationError("ambiguous")),
+    versions: vi
+      .fn()
+      .mockResolvedValue({ nextBeforeVersion: null, versions: [] }),
+  };
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <PrivateInterviewsPanel
+        {...context}
+        dependencies={f.dependencies}
+        onConfirmationSettled={() => {
+          void queryClient.invalidateQueries({
+            queryKey: ["household-profile", context.householdId],
+          });
+        }}
+      />
+      <HouseholdProfilesPanel
+        operations={operations}
+        organizationId={context.householdId}
+        peopleOperations={{ list: vi.fn().mockResolvedValue(roster) }}
+      />
+    </QueryClientProvider>
+  );
+  const shared = within(screen.getByRole("region", { name: "Food profiles" }));
+  await user.type(
+    await shared.findByLabelText("Food or ingredient"),
+    "Broccoli"
+  );
+  await user.click(shared.getByRole("button", { name: "Add fact" }));
+  await shared.findByText(/last change’s outcome is not known/u);
+  const pendingKey = ["household-profile-unresolved", context.householdId];
+  const retainedManualCommand = queryClient.getQueryData(pendingKey);
+  act(() => f.list(f.directoryReady()));
+  await user.click(screen.getByRole("button", { name: /Session 1/u }));
+  const card = proposal();
+  await act(async () => {
+    f.sessionReady(state, [card]);
+  });
+  await user.click(
+    screen.getByRole("button", { name: "Confirm for household" })
+  );
+  const socket = f.latest();
+  const confirm = socket.last("ConfirmProfileCard");
+  await act(async () =>
+    socket.receive({
+      card: { ...card, status: "pending" },
+      mutationId: confirm.mutationId,
+      state: { status: "open", version: 1 },
+      type: "ConfirmationPending",
+    })
+  );
+  expect(shared.getByText(/Profile version 0/u)).toBeInTheDocument();
+  expect(operations.get).toHaveBeenCalledTimes(1);
+  const stalledPrivateRead = Promise.withResolvers<PersonProfile>();
+  f.dependencies.readCurrentProfile.mockReturnValueOnce(
+    stalledPrivateRead.promise
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Refresh current profile" })
+  );
+  operations.get.mockResolvedValue(confirmedProfile);
+  operations.versions.mockResolvedValue({
+    nextBeforeVersion: null,
+    versions: [confirmedProfile],
+  });
+  const outcome = {
+    profileVersion: confirmedProfile.version,
+    type: "committed" as const,
+  };
+  await act(async () =>
+    socket.receive({
+      card: { ...card, outcome, status: "confirmed" },
+      mutationId: confirm.mutationId,
+      outcome,
+      state: { status: "open", version: 2 },
+      type: "ConfirmationSettled",
+    })
+  );
+  expect(await shared.findByText(/Profile version 1/u)).toBeInTheDocument();
+  expect(shared.getByText("Peas: dislike (ingredient)")).toBeInTheDocument();
+  expect(await shared.findAllByText(/Interview confirmation/u)).toHaveLength(2);
+  expect(operations.get).toHaveBeenCalledTimes(2);
+  expect(operations.versions).toHaveBeenCalledTimes(2);
+  expect(queryClient.getQueryData(pendingKey)).toEqual(retainedManualCommand);
+  expect(
+    shared.getByRole("button", { name: "Retry saved change" })
+  ).toBeEnabled();
+  expect(operations.mutate).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    socket.lose(1008);
+    socket.receive({
+      card: { ...card, outcome, status: "confirmed" },
+      mutationId: confirm.mutationId,
+      outcome,
+      state: { status: "open", version: 2 },
+      type: "ConfirmationSettled",
+    });
+    stalledPrivateRead.resolve(confirmedProfile);
+  });
+  expect(operations.get).toHaveBeenCalledTimes(2);
+  expect(operations.versions).toHaveBeenCalledTimes(2);
 });

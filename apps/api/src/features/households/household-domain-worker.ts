@@ -1,6 +1,7 @@
 import type {
   HouseholdProfileRejected,
   PersonProfile,
+  InterviewProfileOutcome,
   ProfileVersionPage,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureStart,
@@ -147,6 +148,7 @@ import {
   HouseholdReadPersonProfileInput,
   HouseholdListProfileVersionsInput,
   HouseholdMutatePersonProfileInput,
+  HouseholdMutateInterviewProfileInput,
 } from "./profiles/household-profile.contract.js";
 import type {
   HouseholdAdmitRecipeImportInput,
@@ -367,6 +369,12 @@ export interface HouseholdDomainWorkerMethods {
     input: HouseholdListProfileVersionsInput
   ) => Effect.Effect<
     typeof ProfileVersionPage.Encoded,
+    HouseholdDomainFailure | HouseholdProfileRejected
+  >;
+  readonly mutateInterviewProfile: (
+    input: HouseholdMutateInterviewProfileInput
+  ) => Effect.Effect<
+    typeof InterviewProfileOutcome.Encoded,
     HouseholdDomainFailure | HouseholdProfileRejected
   >;
   readonly mutatePersonProfile: (
@@ -840,6 +848,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
             Effect.mapError(() => HouseholdInvalidInput.make({})),
             Effect.flatMap((encoded) => household.mutateEvidenceStage(encoded))
           )
+      ),
+    mutateInterviewProfile: (input: HouseholdMutateInterviewProfileInput) =>
+      route(
+        HouseholdMutateInterviewProfileInput,
+        input,
+        "mutate_interview_profile",
+        (household, command) => household.mutateInterviewProfile(command)
       ),
     mutatePersonProfile: (input: HouseholdMutatePersonProfileInput) =>
       route(

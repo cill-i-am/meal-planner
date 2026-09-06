@@ -3,7 +3,7 @@
 - Status: Work Item 01 Done (2026-09-06), delivered by
   [PR #215](https://github.com/cill-i-am/meal-planner/pull/215).
 - Planning base: `28a5f3ca4aae3c8f01c56e5261439111acd9949d`.
-- Next: Work Item 02 — progressive cards and confirmation; not started.
+- Active: [Work Item 02 — progressive cards and confirmation](02-progressive-cards-and-confirmation.md), authorized and started on 2026-09-06.
 
 ## Accepted outcome
 
@@ -33,15 +33,15 @@ release gate, not a prerequisite for local application implementation.
 | Work item                                                           | Observable result                                                                                                                                                                                                                                                    | Status  |
 | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | [01 — Private session foundation](01-private-session-foundation.md) | An adult starts, rediscovers, resumes, and completes a private session, then reads retained history through the admitted native socket. Durable participant messages and lifecycle work without a provider; assistant output exists only in synthetic test fixtures. | Done    |
-| 02 — Progressive cards and confirmation                             | Proposed cards appear early and support correction, rejection, explicit confirmation, hard-constraint status, and conflict handling. Only closed facts and privacy-safe provenance enter the existing versioned Household commands.                                  | Planned |
+| [02 — Progressive cards and confirmation](02-progressive-cards-and-confirmation.md) | Proposed cards appear early and support correction, rejection, explicit confirmation, hard-constraint status, and conflict handling. Only closed facts and privacy-safe provenance enter the existing versioned Household commands.                                  | In progress |
 | 03 — Adaptive discovery and evaluation                              | A real evaluated model asks relevant follow-ups, avoids repeated/exhaustive questioning, and produces useful cards. Develop the scoped harness spike, scenarios, rubric, model comparison, and calibrated baseline alongside this capability.                        | Planned |
 | 04 — Repeat review and dependant assistance                         | A new private review focuses on changed circumstances using current confirmed facts. An adult completes a shorter dependant flow; confirmation produces profile versions/audit, and old sessions remain closed.                                                      | Planned |
 | 05 — Cumulative discovery exit                                      | Two adults independently review and correct profiles; one assists a dependant; a later review changes an ordinary preference. The real selected model, UI, admitted commands, privacy boundaries, and all eight stage-scoped scenario families meet PDR-0006.        | Planned |
 
 Work Item 01 implementation and local acceptance are complete.
 [PR #215](https://github.com/cill-i-am/meal-planner/pull/215) owns its current
-hosted-check and merge record. Work Item 02 is the next bounded planning and
-implementation scope and has not started. Expand it before implementation;
+hosted-check and merge record. Work Item 02 is authorized and its owning record fixes confirmation ordering
+before implementation;
 model/provider execution remains later work.
 Delivery follows the existing
 [execution policy](../../../agents/execution-policy.md).

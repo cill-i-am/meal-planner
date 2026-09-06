@@ -68,7 +68,7 @@ export const ProfileFact = Schema.Struct({
   createdBy: HouseholdPeopleAuditActorId,
   createdInVersion: ProfileVersion,
   id: ProfileFactId,
-  source: Schema.Literal("manual_ui"),
+  source: Schema.Literals(["manual_ui", "interview"]),
   standing: ProfileFactStanding,
   updatedAtEpochMs: Schema.Int,
   updatedBy: HouseholdPeopleAuditActorId,
@@ -127,7 +127,7 @@ export const ProfileAudit = Schema.Struct({
   command: ProfileCommand,
   nextVersion: ProfileVersion,
   previousVersion: ProfileVersion,
-  source: Schema.Literal("manual_ui"),
+  source: Schema.Literals(["manual_ui", "interview"]),
 });
 export const ProfileAuditPage = Schema.Struct({
   events: Schema.Array(ProfileAudit),
@@ -194,3 +194,25 @@ export const ListProfileVersionsQuery = Schema.Struct({
     )
   ),
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+
+export const InterviewProfileOutcome = Schema.Union([
+  Schema.Struct({
+    profileVersion: ProfileVersion,
+    type: Schema.Literal("committed"),
+  }),
+  Schema.Struct({
+    reason: Schema.Literals([
+      "person_not_found",
+      "adult_required",
+      "person_archived",
+      "stale_version",
+      "mutation_collision",
+      "fact_not_found",
+      "self_required",
+      "safety_confirmation_required",
+      "fact_conflict",
+    ]),
+    type: Schema.Literal("rejected"),
+  }),
+]);
+export type InterviewProfileOutcome = typeof InterviewProfileOutcome.Type;

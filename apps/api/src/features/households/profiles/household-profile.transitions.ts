@@ -19,6 +19,7 @@ interface ProfileChangeContext {
   readonly personId: HouseholdPersonId;
   readonly personKind: "adult" | "dependant";
   readonly version: ProfileVersion;
+  readonly source: "manual_ui" | "interview";
 }
 
 const reject = (reason: HouseholdProfileRejected["reason"]) =>
@@ -47,6 +48,7 @@ const updateFact = (
   context: ProfileChangeContext
 ): ProfileFact => ({
   ...fact,
+  source: context.source,
   updatedAtEpochMs: context.now,
   updatedBy: context.actorId,
   updatedInVersion: context.version,
@@ -102,7 +104,7 @@ const addFact = (
         createdBy: context.actorId,
         createdInVersion: context.version,
         id: context.factId,
-        source: "manual_ui",
+        source: context.source,
         standing,
         updatedAtEpochMs: context.now,
         updatedBy: context.actorId,

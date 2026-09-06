@@ -572,3 +572,13 @@ export const householdRecipes = sqliteTable("household_recipes", {
   recipeId: text("recipe_id").primaryKey(),
   version: integer("version").notNull(),
 });
+
+/** Terminal interview outcomes seal ambiguous retries, including policy rejection. */
+export const householdInterviewProfileReceipts = sqliteTable(
+  "household_interview_profile_receipts",
+  {
+    intentDigest: text("intent_digest").notNull(),
+    mutationId: text("mutation_id").primaryKey(),
+    outcomeJson: text("outcome_json").notNull(),
+  }
+);

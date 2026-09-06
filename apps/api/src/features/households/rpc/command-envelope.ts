@@ -125,6 +125,7 @@ export const makeHouseholdPeopleCreatorAdmission = (input: {
 export const HouseholdCommandPurpose = Schema.Literals([
   "read_person_profile",
   "mutate_person_profile",
+  "mutate_interview_profile",
   "admit_import_batch",
   "admit_recipe_import",
   "answer_recipe_import_action",
@@ -185,6 +186,7 @@ export const HouseholdCommandPurpose = Schema.Literals([
 const householdPeoplePurposes: ReadonlySet<HouseholdCommandPurpose> = new Set([
   "read_person_profile",
   "mutate_person_profile",
+  "mutate_interview_profile",
   "archive_household_person",
   "cancel_member_departure",
   "complete_accepted_adult_link",
