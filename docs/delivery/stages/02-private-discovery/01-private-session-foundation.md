@@ -1,7 +1,7 @@
 # Work Item 01 — Private session foundation
 
-- Status: Implementation and local acceptance complete — repository delivery
-  pending hosted checks (2026-09-06).
+- Status: Done — implementation and local acceptance complete (2026-09-06).
+- Delivered by: [PR #215](https://github.com/cill-i-am/meal-planner/pull/215).
 - Accepted planning direction: 2026-09-06.
 - Owner: the private-session implementation owner; bounded browser and runtime
   test delegates have disjoint file ownership.
@@ -197,9 +197,10 @@ adaptive model slice.
 
 2026-09-06: implementation-ready plan accepted after the three priority fixes.
 The user authorized implementation of this work item after accepting the plan.
-Application implementation and local acceptance are complete; repository
-delivery awaits hosted checks. Model calls and cloud changes remain outside this
-slice. Publication, merge, and external effects remain governed by
+Application implementation and local acceptance are complete.
+[PR #215](https://github.com/cill-i-am/meal-planner/pull/215) delivers this work
+item and owns the current hosted-check and merge record. Model calls and cloud
+changes remain outside this slice. Publication, merge, and external effects remain governed by
 the existing execution policy and actual user authorization.
 
 ### Implemented foundation
@@ -304,6 +305,7 @@ inside the existing 780-pixel breakpoint. The resulting left/right edges are
 
 Independent backend/privacy and frontend/replay reviews of immutable
 `38234866f2cbb9fa3aa80239136740e7d904ee5e` found no material issues. The only
-subsequent application change is that verified mobile margin adjustment.
-Implementation and local acceptance are complete; hosted checks and repository
-delivery remain pending. No deployed result is claimed.
+subsequent application change is the verified mobile margin adjustment in
+`236b0145e924bddf9122322ca545f16d0440d4a3`. Implementation and local acceptance
+are complete. [PR #215](https://github.com/cill-i-am/meal-planner/pull/215) owns
+the current hosted-check and merge record. No deployed result is claimed.

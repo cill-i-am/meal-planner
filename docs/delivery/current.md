@@ -17,8 +17,10 @@
 - Active delivery: [Stage 2 planning](stages/02-private-discovery/README.md) was
   accepted on 2026-09-06.
   [Work Item 01](stages/02-private-discovery/01-private-session-foundation.md)
-  has completed implementation and local acceptance following explicit user
-  authorization on 2026-09-06; repository delivery awaits hosted checks.
+  is Done following explicit user authorization and completed local acceptance
+  on 2026-09-06, delivered by
+  [PR #215](https://github.com/cill-i-am/meal-planner/pull/215). That PR owns the
+  current hosted-check and merge record.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -177,12 +179,12 @@ or cost-tuning roadmap. No deployment or target-specific D1 reconciliation has
 been performed.
 
 The user subsequently accepted the bounded Stage 2 plan and the evaluation split
-on 2026-09-06. The next implementation slice is
-[private session foundation](stages/02-private-discovery/01-private-session-foundation.md):
-start, rediscover, resume, complete, and read retained private history using the
-selected native child/fence. Cards and confirmation follow, then adaptive
-questioning with evaluated model selection, repeat review, and dependant
-assistance.
+on 2026-09-06.
+[Private session foundation](stages/02-private-discovery/01-private-session-foundation.md)
+is complete: start, rediscover, resume, complete, and read retained private
+history using the selected native child/fence. The next bounded work is
+progressive cards and confirmation, which has not started. Adaptive questioning
+with evaluated model selection, repeat review, and dependant assistance follow.
 [PDR-0006](../decisions/product/0006-ai-evaluation-and-release-evidence.md#stage-specific-evidence-and-the-complete-beta-gate)
 owns stage-specific discovery/profile evidence and the unchanged complete
 connected pre-beta gate. Work Item 01 implementation and local automated
@@ -191,8 +193,9 @@ replay, completion, and retained private history are implemented. All 1,239
 repository tests passed across full runs and affected reruns. Actual browser
 creation/append/completion lost-reply recovery, passive sign-out, fresh-browser
 rediscovery, and desktop/mobile verification also passed. Independent backend
-and frontend reviews found no material issues; repository delivery awaits
-hosted checks.
+and frontend reviews found no material issues.
+[PR #215](https://github.com/cill-i-am/meal-planner/pull/215) delivers this work
+item and owns the current hosted-check and merge record.
 The work item's delivery record owns the exact runtime evidence and the native
 idle-hibernation reconnect limitation. Provider execution remains outside this
 slice, and no deployment is claimed.
