@@ -404,12 +404,11 @@ export const makeTikTokMediaContainerRuntime = ({
     };
   });
 
-  return TikTokMediaContainer.of({
-    cleanup,
+  return {
     fetch: fetch(),
     prepare,
     prepareProviderEvidence,
-  });
+  };
 };
 
 const ProductionTikTokMediaContainerRuntime = Effect.sync(() => {

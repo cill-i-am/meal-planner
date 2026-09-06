@@ -35,6 +35,7 @@ import {
   MediaByteCount,
   MediaDurationSeconds,
   Sha256Hex,
+  acquisitionArtifactId,
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
@@ -672,6 +673,7 @@ describe("native R2 generation commit", () => {
     };
     const stub: AcquisitionMediaObjectStub = {
       cleanup: fake.object.cleanup,
+      closeReader: () => Effect.void,
       fetch: () =>
         Effect.succeed(
           HttpServerResponse.stream(Stream.fromIterable(chunks), {
@@ -1119,6 +1121,7 @@ describe("native R2 generation commit", () => {
         Effect.sync(() => {
           events.push("cleanup");
         }),
+      closeReader: () => Effect.void,
       fetch: () =>
         Effect.succeed(
           HttpServerResponse.stream(
@@ -1256,6 +1259,72 @@ describe("native R2 generation commit", () => {
     expect(events).toEqual(["stream-finalized", "cleanup"]);
   });
 
+  it("retires the requested generation after prepare failure or malformed preparation", async () => {
+    const importId = id(410);
+    const generation = decodeGeneration(1);
+    const fake = makeMediaObject();
+    await Promise.all(
+      [
+        () => Effect.fail(retryableR2Failure("store")),
+        () => Effect.succeed({ ...fake.prepared, bytes: -1 }),
+      ].map(async (prepare) => {
+        const released: string[] = [];
+        const result = await Effect.runPromiseExit(
+          acquireStoreVerify(
+            bucket(),
+            {
+              ...fake.object,
+              cleanup: (artifactId) =>
+                Effect.sync(() => {
+                  released.push(artifactId);
+                }),
+              prepare,
+            },
+            { canonicalId, generation, importId }
+          )
+        );
+        expect(Exit.isFailure(result)).toBe(true);
+        expect(released).toEqual([acquisitionArtifactId(importId, generation)]);
+      })
+    );
+  });
+
+  it("retires the generation when prepare is interrupted before returning an artifact", async () => {
+    const importId = id(411);
+    const generation = decodeGeneration(1);
+    const fake = makeMediaObject();
+    const prepared = Promise.withResolvers<true>();
+    const events: string[] = [];
+    const fiber = Effect.runFork(
+      acquireStoreVerify(
+        bucket(),
+        {
+          ...fake.object,
+          cleanup: (artifactId) =>
+            Effect.sync(() => {
+              events.push(artifactId);
+            }),
+          prepare: () =>
+            Effect.sync(() => prepared.resolve(true)).pipe(
+              Effect.andThen(Effect.never),
+              Effect.ensuring(
+                Effect.sync(() => {
+                  events.push("prepare-cancelled");
+                })
+              )
+            ),
+        },
+        { canonicalId, generation, importId }
+      )
+    );
+    await prepared.promise;
+    await Effect.runPromise(Fiber.interrupt(fiber));
+    expect(events).toEqual([
+      "prepare-cancelled",
+      acquisitionArtifactId(importId, generation),
+    ]);
+  });
+
   it("bounds a non-settling task-owned cleanup to exactly five seconds", async () => {
     vi.useFakeTimers();
     const importId = id(408);
@@ -1300,6 +1369,7 @@ describe("native R2 generation commit", () => {
     const fake = makeMediaObject();
     const stub: AcquisitionMediaObjectStub = {
       cleanup: fake.object.cleanup,
+      closeReader: () => Effect.void,
       fetch: () => Effect.fail(new Error("opaque-provider-secret-fragment")),
       prepare: fake.object.prepare,
       prepareProviderEvidence: () =>

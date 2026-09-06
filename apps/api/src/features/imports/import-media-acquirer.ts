@@ -31,6 +31,7 @@ import {
   MediaObjectKey as MediaObjectKeySchema,
   MediaStreamSummary,
   Sha256Hex as Sha256HexSchema,
+  acquisitionArtifactId,
   manifestObjectKey,
   mediaObjectKey,
 } from "./import-media.model.js";
@@ -594,137 +595,152 @@ export const acquireStoreVerify = Effect.fn("ImportMedia.acquireStoreVerify")(
       readonly importId: ImportId;
     }
   ): Effect.fn.Return<AcquisitionTaskOutcome, RetryableAcquisitionFailure> {
-    const preparedTransport = yield* mediaObject
-      .prepare({
-        canonicalId: input.canonicalId,
-        generation: input.generation,
-        importId: input.importId,
-        kind: "tiktok",
-      })
-      .pipe(
-        Effect.matchEffect({
-          onFailure: (failure) =>
-            closeContainerFailure(failure, input.generation),
-          onSuccess: Effect.succeed,
+    return yield* Effect.gen(function* attempt() {
+      const preparedTransport = yield* mediaObject
+        .prepare({
+          canonicalId: input.canonicalId,
+          generation: input.generation,
+          importId: input.importId,
+          kind: "tiktok",
         })
+        .pipe(
+          Effect.matchEffect({
+            onFailure: (failure) =>
+              closeContainerFailure(failure, input.generation),
+            onSuccess: Effect.succeed,
+          })
+        );
+      if ("_tag" in preparedTransport) {
+        return preparedTransport;
+      }
+      const decodedPrepared = yield* Schema.decodeUnknownEffect(
+        VerifiedPreparedMediaArtifact
+      )(preparedTransport).pipe(
+        Effect.mapError(() => retryableAt("container", "container_rpc"))
       );
-    if ("_tag" in preparedTransport) {
-      return preparedTransport;
-    }
-    const decodedPrepared = yield* Schema.decodeUnknownEffect(
-      VerifiedPreparedMediaArtifact
-    )(preparedTransport).pipe(
-      Effect.mapError(() => retryableAt("container", "container_rpc"))
-    );
-    const observedAtTransport = yield* Schema.encodeUnknownEffect(
-      ImportTimestamp
-    )(decodedPrepared.metadata.observedAt).pipe(
-      Effect.mapError(() => retryableAt("container", "container_rpc"))
-    );
-    const publishedAtTransport =
-      decodedPrepared.metadata.publishedAt === null
-        ? null
-        : yield* Schema.encodeUnknownEffect(ImportTimestamp)(
-            decodedPrepared.metadata.publishedAt
-          ).pipe(
-            Effect.mapError(() => retryableAt("container", "container_rpc"))
-          );
-    const prepared: VerifiedPreparedMediaArtifact = decodedPrepared;
-    return yield* Effect.gen(function* storePrepared() {
-      const acquiredAtDate = new Date(yield* Clock.currentTimeMillis);
-      const acquiredAt = acquiredAtDate.toISOString();
-      const deleteAt = new Date(
-        acquiredAtDate.getTime() + EvidenceRetentionSeconds * 1000
-      ).toISOString();
-      const mediaKey = mediaObjectKey(input.importId, input.generation);
-      const manifestKey = manifestObjectKey(input.importId, input.generation);
-      const storedMedia = yield* putMediaObject(bucket, mediaObject, prepared, {
-        generation: input.generation,
-        importId: input.importId,
-        mediaKey,
+      const observedAtTransport = yield* Schema.encodeUnknownEffect(
+        ImportTimestamp
+      )(decodedPrepared.metadata.observedAt).pipe(
+        Effect.mapError(() => retryableAt("container", "container_rpc"))
+      );
+      const publishedAtTransport =
+        decodedPrepared.metadata.publishedAt === null
+          ? null
+          : yield* Schema.encodeUnknownEffect(ImportTimestamp)(
+              decodedPrepared.metadata.publishedAt
+            ).pipe(
+              Effect.mapError(() => retryableAt("container", "container_rpc"))
+            );
+      const prepared: VerifiedPreparedMediaArtifact = decodedPrepared;
+      return yield* Effect.gen(function* storePrepared() {
+        const acquiredAtDate = new Date(yield* Clock.currentTimeMillis);
+        const acquiredAt = acquiredAtDate.toISOString();
+        const deleteAt = new Date(
+          acquiredAtDate.getTime() + EvidenceRetentionSeconds * 1000
+        ).toISOString();
+        const mediaKey = mediaObjectKey(input.importId, input.generation);
+        const manifestKey = manifestObjectKey(input.importId, input.generation);
+        const storedMedia = yield* putMediaObject(
+          bucket,
+          mediaObject,
+          prepared,
+          {
+            generation: input.generation,
+            importId: input.importId,
+            mediaKey,
+          }
+        );
+        if (!storedMedia) {
+          return yield* Effect.fail(retryableAt("store"));
+        }
+        if (input.beforeCleanup !== undefined) {
+          yield* input.beforeCleanup(prepared);
+        }
+        const decodedManifest = yield* Schema.decodeUnknownEffect(
+          AcquisitionManifest
+        )({
+          acquiredAt,
+          audioStreams: prepared.audioStreams,
+          bytes: prepared.bytes,
+          canonicalId: input.canonicalId,
+          canonicalUrl: prepared.metadata.canonicalUrl,
+          caption: prepared.metadata.caption,
+          creator: prepared.metadata.creator,
+          deleteAt,
+          durationSeconds: prepared.durationSeconds,
+          ffmpegVersion: "9.0.1",
+          generation: input.generation,
+          importId: input.importId,
+          manifestKey,
+          mediaKey,
+          mediaType: "video/mp4",
+          observedAt: observedAtTransport,
+          originalStreamsRemuxedToMp4: true,
+          provenance: prepared.metadata.provenance,
+          publishedAt: publishedAtTransport,
+          schemaVersion: 1,
+          sha256: prepared.sha256,
+          videoStreams: prepared.videoStreams,
+          ytDlpVersion: "2026.08.19",
+        }).pipe(Effect.mapError(() => retryableAt("store")));
+        const manifest = yield* Schema.encodeUnknownEffect(AcquisitionManifest)(
+          decodedManifest
+        ).pipe(Effect.mapError(() => retryableAt("store")));
+        const manifestBytes = new TextEncoder().encode(
+          JSON.stringify(manifest)
+        );
+        const manifestSha256 = yield* sha256Bytes(manifestBytes);
+        const storedManifest = yield* r2Effect(
+          "store",
+          bucket.put(manifestKey, manifestBytes, {
+            contentLength: manifestBytes.byteLength,
+            customMetadata: objectMetadata(
+              input.importId,
+              input.generation,
+              "manifest",
+              manifestSha256
+            ),
+            httpMetadata: {
+              cacheControl: "private, no-store",
+              contentType: "application/json",
+            },
+            onlyIf: { etagDoesNotMatch: "*" },
+            sha256: checksumBytes(manifestSha256),
+          })
+        );
+        if (storedManifest === null) {
+          return yield* Effect.fail(retryableAt("store"));
+        }
+        const stored = yield* readCommittedPair(
+          bucket,
+          input.importId,
+          input.generation
+        );
+        const evidence = yield* decodeCommittedEvidence(
+          input.importId,
+          input.generation,
+          input.canonicalId,
+          stored.media,
+          stored.manifest,
+          new Date(yield* Clock.currentTimeMillis)
+        );
+        if (evidence === null) {
+          return yield* Effect.fail(retryableAt("verify"));
+        }
+        return {
+          _tag: "VerifiedAcquisition",
+          evidence,
+          generation: input.generation,
+        } as const;
       });
-      if (!storedMedia) {
-        return yield* Effect.fail(retryableAt("store"));
-      }
-      if (input.beforeCleanup !== undefined) {
-        yield* input.beforeCleanup(prepared);
-      }
-      const decodedManifest = yield* Schema.decodeUnknownEffect(
-        AcquisitionManifest
-      )({
-        acquiredAt,
-        audioStreams: prepared.audioStreams,
-        bytes: prepared.bytes,
-        canonicalId: input.canonicalId,
-        canonicalUrl: prepared.metadata.canonicalUrl,
-        caption: prepared.metadata.caption,
-        creator: prepared.metadata.creator,
-        deleteAt,
-        durationSeconds: prepared.durationSeconds,
-        ffmpegVersion: "9.0.1",
-        generation: input.generation,
-        importId: input.importId,
-        manifestKey,
-        mediaKey,
-        mediaType: "video/mp4",
-        observedAt: observedAtTransport,
-        originalStreamsRemuxedToMp4: true,
-        provenance: prepared.metadata.provenance,
-        publishedAt: publishedAtTransport,
-        schemaVersion: 1,
-        sha256: prepared.sha256,
-        videoStreams: prepared.videoStreams,
-        ytDlpVersion: "2026.08.19",
-      }).pipe(Effect.mapError(() => retryableAt("store")));
-      const manifest = yield* Schema.encodeUnknownEffect(AcquisitionManifest)(
-        decodedManifest
-      ).pipe(Effect.mapError(() => retryableAt("store")));
-      const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
-      const manifestSha256 = yield* sha256Bytes(manifestBytes);
-      const storedManifest = yield* r2Effect(
-        "store",
-        bucket.put(manifestKey, manifestBytes, {
-          contentLength: manifestBytes.byteLength,
-          customMetadata: objectMetadata(
-            input.importId,
-            input.generation,
-            "manifest",
-            manifestSha256
-          ),
-          httpMetadata: {
-            cacheControl: "private, no-store",
-            contentType: "application/json",
-          },
-          onlyIf: { etagDoesNotMatch: "*" },
-          sha256: checksumBytes(manifestSha256),
-        })
-      );
-      if (storedManifest === null) {
-        return yield* Effect.fail(retryableAt("store"));
-      }
-      const stored = yield* readCommittedPair(
-        bucket,
-        input.importId,
-        input.generation
-      );
-      const evidence = yield* decodeCommittedEvidence(
-        input.importId,
-        input.generation,
-        input.canonicalId,
-        stored.media,
-        stored.manifest,
-        new Date(yield* Clock.currentTimeMillis)
-      );
-      if (evidence === null) {
-        return yield* Effect.fail(retryableAt("verify"));
-      }
-      return {
-        _tag: "VerifiedAcquisition",
-        evidence,
-        generation: input.generation,
-      } as const;
     }).pipe(
-      Effect.ensuring(boundedCleanup(mediaObject.cleanup(prepared.artifactId)))
+      Effect.ensuring(
+        boundedCleanup(
+          mediaObject.cleanup(
+            acquisitionArtifactId(input.importId, input.generation)
+          )
+        )
+      )
     );
   }
 );

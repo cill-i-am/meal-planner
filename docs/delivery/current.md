@@ -14,7 +14,7 @@
   [`05-cumulative-exit-proof.md`](stages/01-household-people/05-cumulative-exit-proof.md)
   ([PR #205](https://github.com/cill-i-am/meal-planner/pull/205), merge
   `e77f2cf2a2e634fd43cab588980a73ee7ae9b6d2`)
-- Active implementation: three prioritized risk fixes with independent owners; merge order is private output, D1 release safety, then media lifetime. Broader Stage 2 remains paused.
+- Active delivery: all three prioritized risk fixes have independent implementation review. Private output (#211) is merged; the combined candidate is under verification before D1 release safety (#210), then media lifetime. Broader Stage 2 remains paused.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -109,7 +109,8 @@ access without a Household grant. The recommendation is to defer interview
 implementation intact to Stage 2. That historical probe left production auth/link composition, the Alchemy bundle,
 and passive/in-flight revocation as integration gates. The bounded
 [private-output safety fix](private-output-safety.md) now implements and locally
-exercises those boundaries; independent review and merge remain pending.
+exercises those boundaries and passed independent review. PR #211 merged as
+`62adde277db478e91d2cf2c5d1efc54d90a2e76c`.
 Stage 1's cumulative exit evidence is accepted through merged PR #205.
 Organization deletion and conversation implementation remain out of scope.
 
@@ -158,8 +159,13 @@ The dependency upgrade merged in PR 209 as
 `4b4e7fd651d66c2a03805eb00209c40fe3eb3240`. The
 [prioritized risk fixes](prioritized-risk-fixes.md) record owns the
 user's next-fix order: private output after authority changes, D1 release-ledger
-safety, then media-container lifetime. All three fixes have independently owned implementation lanes under standing
-repository delivery authority. Their merge order remains 1, then 2, then 3. This bounded queue
+safety, then media-container lifetime. All three fixes have independently reviewed implementation candidates under standing
+repository delivery authority. The media branch has adopted the combined private-output
+and D1 candidate by merge without changing its reviewed container source. Local native
+lifetime proof, combined type checks, lint/format, 180 infrastructure/architecture
+tests, and 59 focused Node/workerd tests passed. The adopted test-only timing
+correction passed its 80 affected native tests. Hosted combined CI remains pending. Fix 1 merged
+in PR #211; the remaining repository merge order is fix 2, then fix 3. This bounded queue
 does not promote the broader Stage 2, UI, model/provider, or cost-tuning roadmap.
 
 ## Deliberate Non-Work

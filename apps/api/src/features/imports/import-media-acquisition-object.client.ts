@@ -1,5 +1,5 @@
 import type { RpcCallError, RpcDecodeError } from "alchemy/Rpc";
-import { Effect, Option, Schema, Stream } from "effect";
+import { Effect, Option, Schema, Scope, Stream } from "effect";
 import type { HttpServerError } from "effect/unstable/http/HttpServerError";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import type * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
@@ -9,7 +9,10 @@ import type {
   ContainerAcquisitionError,
   PreparedMediaArtifact,
 } from "./import-media-acquirer.js";
-import { privateMediaArtifactPath } from "./import-media-artifact-transport.js";
+import {
+  AcquisitionReaderHeader,
+  privateMediaArtifactPath,
+} from "./import-media-artifact-transport.js";
 import { RetryableAcquisitionError } from "./import-media.errors.js";
 import type {
   RetryableAcquisitionFailure,
@@ -43,6 +46,10 @@ type PrivateArtifactFetchEffect = Effect.Effect<
 >;
 
 export interface AcquisitionMediaObjectStub {
+  readonly closeReader: (
+    artifactId: string,
+    readerId: string
+  ) => AcquisitionRpcEffect<void>;
   readonly cleanup: (artifactId: string) => AcquisitionRpcEffect<void>;
   readonly fetch: (
     request: HttpServerRequest.HttpServerRequest
@@ -66,11 +73,13 @@ const openPrivateArtifact = Effect.fn(
   "ImportMediaAcquisitionObject.openPrivateArtifact"
 )(function* openPrivateArtifactEffect(
   stub: AcquisitionMediaObjectStub,
-  artifactId: string
+  artifactId: string,
+  readerId: string
 ) {
   const request = HttpServerRequest.fromWeb(
     new Request(
-      `http://acquisition-object.invalid${privateMediaArtifactPath(artifactId)}`
+      `http://acquisition-object.invalid${privateMediaArtifactPath(artifactId)}`,
+      { headers: { [AcquisitionReaderHeader]: readerId } }
     )
   );
   const response = yield* stub
@@ -117,5 +126,24 @@ export const makeAcquisitionMediaObject = (
       })
     ),
   readArtifact: (artifactId) =>
-    Stream.unwrap(openPrivateArtifact(stub, artifactId)),
+    Stream.unwrap(
+      Effect.gen(function* readArtifact() {
+        const readerId = crypto.randomUUID();
+        const close = yield* Effect.cached(
+          stub
+            .closeReader(artifactId, readerId)
+            .pipe(Effect.mapError(privateArtifactFailure), Effect.orDie)
+        );
+        yield* Effect.addFinalizer(() => close);
+        const body = yield* openPrivateArtifact(
+          stub,
+          artifactId,
+          readerId
+        ).pipe(Effect.onError(() => close));
+        // Register after the source pull so acknowledgement runs before native cancel.
+        return Stream.transformPull(body, (pull, scope) =>
+          Scope.addFinalizer(scope, close).pipe(Effect.as(pull))
+        );
+      })
+    ),
 });
