@@ -23,7 +23,7 @@ import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
 import { Miniflare } from "miniflare";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 import * as authSchema from "../auth/auth.database-schema.js";
@@ -55,6 +55,9 @@ import {
 } from "./evidence/household-evidence.contract.js";
 import { HouseholdMetadata } from "./household.contract.js";
 import { MemberDepartureWorkflowInput } from "./people/member-departure.js";
+
+// Native integration cases include auth, durable writes, and persisted-runtime restarts.
+vi.setConfig({ testTimeout: 30_000 });
 
 const compatibilityDate = "2026-07-14";
 const compatibilityFlags = ["nodejs_compat"];
