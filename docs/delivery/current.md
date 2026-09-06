@@ -162,8 +162,9 @@ user's next-fix order: private output after authority changes, D1 release-ledger
 safety, then media-container lifetime. All three fixes have independently reviewed implementation candidates under standing
 repository delivery authority. The media branch has adopted the combined private-output
 and D1 candidate by merge without changing its reviewed container source. Local native
-lifetime proof, combined type checks, lint/format, and 59 focused Node/workerd tests
-passed. Broader combined checks and hosted native CI remain pending. Fix 1 merged
+lifetime proof, combined type checks, lint/format, 180 infrastructure/architecture
+tests, and 59 focused Node/workerd tests passed. The adopted test-only timing
+correction passed its 80 affected native tests. Hosted combined CI remains pending. Fix 1 merged
 in PR #211; the remaining repository merge order is fix 2, then fix 3. This bounded queue
 does not promote the broader Stage 2, UI, model/provider, or cost-tuning roadmap.
 

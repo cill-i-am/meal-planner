@@ -20,7 +20,7 @@ outside this queue.
 
 ## 1. Prevent private output after authority changes
 
-**Implementation independently reviewed; repository delivery pending.** The production
+**Merged in PR #211 as `62adde277db478e91d2cf2c5d1efc54d90a2e76c` after independent review.** The production
 Better Auth → API → HouseholdObject → isolated private-output composition now
 uses real D1 and native WebSockets. The [implementation evidence](private-output-safety.md)
 owns the exact scope, runtime cases, and recovery limits. No prior production
@@ -63,8 +63,8 @@ wrapper starts Alchemy. Its D1 implementation head
 `b9128b58b132ca7ffa5592302c43786be576fa1f` passed independent review, both hosted
 CI jobs and 65 focused local tests. The reviewed private-output candidate
 `c7de150b368d6ea39439621118ff2ca5f8e0f594` is now integrated for combined checks;
-[PR #211](https://github.com/cill-i-am/meal-planner/pull/211) has not merged and
-must merge first. This is repository implementation evidence, not verification
+[PR #211](https://github.com/cill-i-am/meal-planner/pull/211) merged as
+`62adde277db478e91d2cf2c5d1efc54d90a2e76c`; PR #210 is next in the merge order. This is repository implementation evidence, not verification
 of a deployed D1 target or authorization to reconcile it.
 
 Alchemy beta 76 can convert `d1_migrations` during an approved
@@ -110,11 +110,12 @@ owns the behavior and native eviction limits; active-running reconstruction is
 not claimed.
 
 The branch now includes combined D1/private candidate
-`c6218d1d90fe3fee6cd62d8fe177ffa3429a4ed9` by merge, preserving the reviewed
+`1cfaf36ed343204802c78a2db4bc9c17501c231b` by merge, preserving the reviewed
 container and earlier-fix ancestry. Container source and native fixture wiring
-are unchanged by that integration. Combined type checks, lint/format, 32 focused
-Node tests, and 27 workerd tests passed. Broader combined checks and hosted native
-CI remain required before delivery. PR #211 merged as
+are unchanged by that integration. Combined type checks, lint/format, 180
+infrastructure/architecture tests, 32 focused Node tests, and 27 workerd tests
+passed. The adopted test-only timing correction passed its 80 affected native
+tests in 43.42 seconds. Hosted combined CI remains required before delivery. PR #211 merged as
 `62adde277db478e91d2cf2c5d1efc54d90a2e76c`; PR #210 must merge next, then
 this container fix.
 
