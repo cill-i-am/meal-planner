@@ -51,6 +51,14 @@ import { ImportSystemAuthorizationConfig } from "./features/imports/import.auth.
 import ImportAcquisitionWorkflow, {
   makeImportWorkflowStarter,
 } from "./features/imports/import.workflow.js";
+import {
+  PrivateOutputApiBinding,
+  PrivateOutputMutationsBinding,
+  privateOutputApiPort,
+  privateOutputMutationPort,
+} from "./features/private-output/private-output-binding.js";
+import { makeAuthOutputFence } from "./features/private-output/private-output-mutation.js";
+import { handlePrivateInterviewRequest } from "./features/private-output/private-output.http.js";
 import { ProviderAccountingRouteDefinitions } from "./features/provider-accounting/provider-accounting.routes.js";
 import {
   HouseholdImportBatchDeadLetterQueue,
@@ -72,6 +80,10 @@ const currentIsoTimestamp = () => new Date().toISOString();
 export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
   "MealPlannerApi",
   {
+    env: {
+      PrivateOutputApi: PrivateOutputApiBinding,
+      PrivateOutputMutations: PrivateOutputMutationsBinding,
+    },
     main: import.meta.url,
     observability: {
       enabled: true,
@@ -167,9 +179,13 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           yield* providerAccountingQueryDatabase.raw;
         const authDatabase = drizzle(yield* authQueryDatabase.raw);
         const requestOrigin = new URL(webRequest.url).origin;
+        const outputApi = yield* privateOutputApiPort;
+        const outputMutations = yield* privateOutputMutationPort;
+        const outputFence = makeAuthOutputFence(outputMutations);
         const auth = makeMealPlannerAuth({
           baseURL: requestOrigin,
           database: authDatabase,
+          outputFence,
           schema: authSchema,
           secret: Redacted.value(authSecret),
           verifyInvitationRecipient:
@@ -179,6 +195,18 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           return HttpServerResponse.fromWeb(
             yield* Effect.promise(() => auth.fetch(webRequest))
           );
+        }
+        const privateInterview = yield* handlePrivateInterviewRequest({
+          auth,
+          household: householdDomain,
+          output: outputApi,
+          request: webRequest,
+        });
+        if (privateInterview !== null) {
+          // Public raw-response interop preserves the native 101 WebSocket without rebuilding it.
+          return HttpServerResponse.raw(privateInterview, {
+            status: privateInterview.status,
+          });
         }
         const trace = makeImportTraceContext();
         const authenticatedOrganizationResolver =

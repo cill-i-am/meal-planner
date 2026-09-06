@@ -20,6 +20,10 @@ import {
   syntheticPlanningPolicy,
   syntheticApprovedRecipes,
 } from "../meal-planning/meal-plan.fake.js";
+import {
+  privateOutputRuntimeWorker,
+  privateOutputTestBindings,
+} from "../private-output/private-output-runtime.test-fixture.js";
 import { HouseholdImportWorkflowDispatchView } from "./foundation/import-workflow-admission.contract.js";
 import {
   HouseholdManualMealSwapCommand,
@@ -647,6 +651,8 @@ const MealPlanStorageResponse = Schema.Struct({
   ),
 });
 
+let privateOutputManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
+
 const makeRuntime = () =>
   new Miniflare({
     cf: false,
@@ -657,6 +663,7 @@ const makeRuntime = () =>
           compatibilityDate,
           compatibilityFlags,
           env: {
+            ...privateOutputTestBindings,
             BrokenMigrationObject: {
               exportName: "BrokenMigrationObject",
               type: "durable-object",
@@ -680,6 +687,7 @@ const makeRuntime = () =>
           type: "worker",
         },
       },
+      privateOutputRuntimeWorker(privateOutputManifest),
     ],
   });
 
@@ -688,6 +696,12 @@ beforeAll(async () => {
     `${tmpdir()}/meal-planner-household-object-`
   );
   temporaryDirectories.push(temporaryDirectory);
+  privateOutputManifest = await bundleWorkerFixture(
+    fileURLToPath(
+      new URL("../private-output/private-output-worker.ts", import.meta.url)
+    ),
+    temporaryDirectory
+  );
   persistenceDirectory = `${temporaryDirectory}/durable-object-storage`;
   fixtureManifest = await bundleWorkerFixture(fixturePath, temporaryDirectory);
   runtime = makeRuntime();

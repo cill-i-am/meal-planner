@@ -113,6 +113,7 @@ const expectedD1QueryBindings: readonly D1QueryBinding[] = [
 const expectedMigrationRoots = [
   "apps/api/auth-migrations",
   "apps/api/household-migrations",
+  "apps/api/private-output-migrations",
   "apps/api/provider-accounting-migrations",
 ] as const;
 

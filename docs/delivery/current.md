@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-09-05
+- Last updated: 2026-09-06
 - Delivery source of truth: this repository
 
 ## Latest Completed Stage
@@ -14,7 +14,7 @@
   [`05-cumulative-exit-proof.md`](stages/01-household-people/05-cumulative-exit-proof.md)
   ([PR #205](https://github.com/cill-i-am/meal-planner/pull/205), merge
   `e77f2cf2a2e634fd43cab588980a73ee7ae9b6d2`)
-- Active implementation: None. Work is paused for discussion at the user's request.
+- Active implementation: three prioritized risk fixes with independent owners; merge order is private output, D1 release safety, then media lifetime. Broader Stage 2 remains paused.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -106,8 +106,10 @@ Work Item 04 now has a
 Actual `agents@0.22.0` sub-agents run on the pinned local Miniflare/workerd
 runtime, retain metadata across restart, and admit synthetic participant-only
 access without a Household grant. The recommendation is to defer interview
-implementation intact to Stage 2. Production auth/link composition, the Alchemy
-bundle, and passive/in-flight revocation remain named Stage 2 integration gates.
+implementation intact to Stage 2. That historical probe left production auth/link composition, the Alchemy bundle,
+and passive/in-flight revocation as integration gates. The bounded
+[private-output safety fix](private-output-safety.md) now implements and locally
+exercises those boundaries; independent review and merge remain pending.
 Stage 1's cumulative exit evidence is accepted through merged PR #205.
 Organization deletion and conversation implementation remain out of scope.
 
@@ -152,14 +154,18 @@ self-confirmation and departed-account denial. No production change was needed.
 
 ## Immediate Next Steps
 
-No implementation is active. Discuss the proposed provider-free Stage 2
-admission/lifecycle integration slice before promoting or assigning it.
-Do not start Stage 2, conversation/model work, or the wider AI roadmap without
-the user's further direction.
+The dependency upgrade merged in PR 209 as
+`4b4e7fd651d66c2a03805eb00209c40fe3eb3240`. The
+[prioritized risk fixes](prioritized-risk-fixes.md) record owns the
+user's next-fix order: private output after authority changes, D1 release-ledger
+safety, then media-container lifetime. All three fixes have independently owned implementation lanes under standing
+repository delivery authority. Their merge order remains 1, then 2, then 3. This bounded queue
+does not promote the broader Stage 2, UI, model/provider, or cost-tuning roadmap.
 
 ## Deliberate Non-Work
 
-Do not start interview/chat runtime, model/provider work, retailer integration, full pantry inventory,
+Beyond the explicitly authorized private-output safety boundary, do not start
+interview/chat runtime, model/provider work, retailer integration, full pantry inventory,
 calories/macros, medical goal systems, MCP delivery, embedded channels, or
 generic organization support as part of this boundary investigation.
 Do not implement organization deletion; keep it disabled until its accepted

@@ -63,6 +63,7 @@ describe("Better Auth D1 control plane", () => {
     const auth = makeMealPlannerAuth({
       baseURL,
       database,
+      outputFence: (_input, canonical) => canonical(),
       schema: authSchema,
       secret,
     });
@@ -137,6 +138,7 @@ describe("Better Auth D1 control plane", () => {
     const auth = makeMealPlannerAuth({
       baseURL,
       database,
+      outputFence: (_input, canonical) => canonical(),
       schema: authSchema,
       secret,
     });
@@ -186,6 +188,7 @@ describe("Better Auth D1 control plane", () => {
     const auth = makeMealPlannerAuth({
       baseURL,
       database,
+      outputFence: (_input, canonical) => canonical(),
       schema: authSchema,
       secret,
     });
@@ -251,6 +254,7 @@ describe("Better Auth D1 control plane", () => {
     const auth = makeMealPlannerAuth({
       baseURL,
       database,
+      outputFence: (_input, canonical) => canonical(),
       schema: authSchema,
       secret,
     });
