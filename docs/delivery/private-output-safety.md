@@ -1,7 +1,7 @@
 # Private-output safety implementation
 
 - Date: 2026-09-06
-- Status: implemented locally; final checks and independent immutable-head review pending.
+- Status: merged in [PR #211](https://github.com/cill-i-am/meal-planner/pull/211) as `62adde277db478e91d2cf2c5d1efc54d90a2e76c` after hosted CI and independent review.
 - Priority: fix 1 in [the authorized queue](prioritized-risk-fixes.md).
 - Base: dependency-upgrade PR #209, merge `4b4e7fd651d66c2a03805eb00209c40fe3eb3240`.
 - Scope: provider-free private-output admission, revocation ordering, and native runtime proof.
@@ -190,7 +190,16 @@ and the production build. That run includes 104 native runtime cases and 19
 real-D1 auth-adapter cases. The per-intent correction adds three native cases;
 both affected native suites pass all 80 cases, with API typechecking, root lint,
 and formatting also passing. Two consecutive private-output migration generation
-passes produce no changes. CI and independent immutable-head review remain
-completion gates recorded on the pull request. This evidence is local and provider-free.
+passes produce no changes. The final implementation candidate
+`c7de150b368d6ea39439621118ff2ca5f8e0f594` passed independent review and hosted CI
+before PR #211 merged.
+
+Combined CI exposed an overly short Household integration test budget and a
+private-output session that could expire during fixture setup. The test-only correction `1cfaf36ed343204802c78a2db4bc9c17501c231b`
+passed its scoped independent review and all 80 affected native cases in 43.42
+seconds. It changes no production authority or output behavior. Both combined
+hosted CI checks passed before the correction merged with PR #210 as
+`570dad6a4c021c153e2155ba32eef10b1bbba9d6`; [the priority record](prioritized-risk-fixes.md)
+owns the exact CI receipt. This evidence is synthetic and provider-free.
 No deployment, remote D1 inspection/conversion, provider mutation, or interview
 transcript was used.

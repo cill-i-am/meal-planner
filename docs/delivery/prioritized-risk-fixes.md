@@ -1,9 +1,9 @@
 # Prioritized fixes after the dependency upgrade
 
 - Recorded: 2026-09-06, from the user's explicit priority instruction.
-- Status: All three implementations have independent review. Fix 1 merged in PR #211; combined-candidate verification and ordered merges of fixes 2 and 3 remain pending.
-- Delivery owner: one source owner for fix 1 on `codex/private-output-safety`;
-  technical advisers and independent reviewers are read-only.
+- Status: complete in the authorized order: private output (#211), D1 release safety (#210), then media lifetime (#212). All three merged after independent review and hosted CI.
+- Delivery ownership: one source owner per fix; technical advisers and
+  independent reviewers are read-only.
 - Verified continuation base: dependency-upgrade [PR 209](https://github.com/cill-i-am/meal-planner/pull/209)
   merged as `4b4e7fd651d66c2a03805eb00209c40fe3eb3240`. The fetched remote main
   matched this SHA when the implementation worktree was created. Its
@@ -11,16 +11,15 @@
   owns the upgrade evidence. Implementation and repository delivery are authorized
   under the [execution policy](../agents/execution-policy.md).
 
-Independent implementation and verification may proceed in parallel. Merge these
-fixes in the following order. None is complete merely because the upgrade checks
-passed. This order
+The fixes merged in the following order after their own implementation review and
+verification. This order
 supersedes the older efficiency-review recommendation. Broader Stage 2, chat UI,
 models/providers, container sizing, outbox tuning, and other cost work remain
 outside this queue.
 
 ## 1. Prevent private output after authority changes
 
-**Merged in PR #211 as `62adde277db478e91d2cf2c5d1efc54d90a2e76c` after independent review.** The production
+**Merged first in PR #211 as `62adde277db478e91d2cf2c5d1efc54d90a2e76c` after independent review and hosted CI.** The production
 Better Auth → API → HouseholdObject → isolated private-output composition now
 uses real D1 and native WebSockets. The [implementation evidence](private-output-safety.md)
 owns the exact scope, runtime cases, and recovery limits. No prior production
@@ -56,16 +55,28 @@ runtime evidence:
 
 ## 2. Make the next D1 reconciliation safe
 
-**Implementation reviewed; combined-candidate verification underway; merges second.**
+**Merged second in PR #210 as `570dad6a4c021c153e2155ba32eef10b1bbba9d6` after independent review and hosted CI.**
 [PR #210](https://github.com/cill-i-am/meal-planner/pull/210) requires fresh target,
 executor-state, ledger, schema and recovery-bookmark inspection before the release
 wrapper starts Alchemy. Its D1 implementation head
 `b9128b58b132ca7ffa5592302c43786be576fa1f` passed independent review, both hosted
-CI jobs and 65 focused local tests. The reviewed private-output candidate
-`c7de150b368d6ea39439621118ff2ca5f8e0f594` is now integrated for combined checks;
+CI jobs and 65 focused local tests. Combined candidate
+`c6218d1d90fe3fee6cd62d8fe177ffa3429a4ed9` passed all 180 root infrastructure and
+architecture tests, infrastructure typecheck, focused lint/format, frozen install
+and the scoped independent review. Its first combined CI run passed D1 tests but
+exposed API fixture timing races. The test-only correction
+`1cfaf36ed343204802c78a2db4bc9c17501c231b` passed independent review and all 80
+affected native cases in 43.42 seconds; D1 implementation code is unchanged.
+[Final combined CI](https://github.com/cill-i-am/meal-planner/actions/runs/34023384616)
+passed both Quality and Synthetic media container checks on that corrected head.
+The merge tree `4c9969ff1130375e8cc79099f47c7d8579db0113` matches the reviewed
+and tested correction head.
+
 [PR #211](https://github.com/cill-i-am/meal-planner/pull/211) merged as
-`62adde277db478e91d2cf2c5d1efc54d90a2e76c`; PR #210 is next in the merge order. This is repository implementation evidence, not verification
-of a deployed D1 target or authorization to reconcile it.
+`62adde277db478e91d2cf2c5d1efc54d90a2e76c` before PR #210, preserving the
+authorized merge order.
+This is repository implementation evidence, not verification of a deployed D1
+target or authorization to reconcile it.
 
 Alchemy beta 76 can convert `d1_migrations` during an approved
 D1 reconciliation; an unchanged resource may remain a deployment no-op. Deployed
@@ -97,27 +108,29 @@ Acceptance requires target-specific evidence and recovery readiness:
 
 ## 3. Bound media-container running lifetime
 
-**Implementation independently reviewed; combined-candidate verification pending; merges third.**
-Container head `271891f9059d44d105f42c1422b0dc555b9b5ef7` passed independent
-whole-scope review, API/Alchemy typechecks, changed-file lint/format, 32 focused
-Node tests, and 27 workerd acquisition/R2 tests. Its production-runtime Docker,
-Durable Object, and R2 proof passed in 361.13 seconds: five streamed artifact
-hashes, create-only preservation, original/audio/frame cancellation, overlapping
-reader drain, generation isolation, replay, and idle shutdown all passed. Both
-abandoned generations retired and their application containers were absent
-before fixture teardown. [The lifetime record](../infrastructure/media-container-lifetime.md)
+**Merged third in [PR #212](https://github.com/cill-i-am/meal-planner/pull/212) as `3114e448f8deb78833e90371ce266a63d779ab44` at 09:30:32 UTC on 2026-09-06.**
+The final reviewed head `4275f1144e1b6033f274223d8da3ee1570601da0` and merge
+share tree `06425e2bb715ca7bf50ed786c9d0f40d6f31d802`. Independent review passed
+the whole implementation at `271891f9059d44d105f42c1422b0dc555b9b5ef7`, the
+combined D1/private integration at `e1f96246cb3a617463eb863bb44fb9466910cf0e`,
+and the final test-only fixture correction. That correction explicitly pulls and
+configures a pinned Miniflare Docker networking image after CI exposed its absence;
+production container behavior is unchanged. Combined type checks, lint/format,
+180 infrastructure/architecture tests, 32 focused Node tests and 27 workerd tests
+passed; the adopted API fixture correction passed all 80 affected native cases.
+
+Full local production-runtime Docker, Durable Object and R2 proof on the final head
+passed in 360.16 seconds. Five streamed artifact hashes, create-only preservation,
+original/audio/frame cancellation, overlapping reader drain, generation isolation,
+replay and idle shutdown passed. Both abandoned generations retired before fixture
+teardown; the independent Docker process receipt was empty at 350,701 ms.
+[Final hosted CI](https://github.com/cill-i-am/meal-planner/actions/runs/34024207687)
+passed Quality at 09:27:59 UTC and Synthetic media container at 09:29:27 UTC:
+1,192 tests passed in Quality and both native container tests passed in 706.15
+seconds. The hosted idle receipt independently showed no Docker processes before
+teardown at 345,534 ms. [The lifetime record](../infrastructure/media-container-lifetime.md)
 owns the behavior and native eviction limits; active-running reconstruction is
 not claimed.
-
-The branch now includes combined D1/private candidate
-`1cfaf36ed343204802c78a2db4bc9c17501c231b` by merge, preserving the reviewed
-container and earlier-fix ancestry. Container source and native fixture wiring
-are unchanged by that integration. Combined type checks, lint/format, 180
-infrastructure/architecture tests, 32 focused Node tests, and 27 workerd tests
-passed. The adopted test-only timing correction passed its 80 affected native
-tests in 43.42 seconds. Hosted combined CI remains required before delivery. PR #211 merged as
-`62adde277db478e91d2cf2c5d1efc54d90a2e76c`; PR #210 must merge next, then
-this container fix.
 
 Artifact cleanup alone does not establish container shutdown. The
 [existing review](../infrastructure/alchemy-upgrade-review.md) identifies the
@@ -155,18 +168,17 @@ delivery, and merge after required verification and independent review are cover
 by standing delivery authority. Deployment and D1 conversion still require explicit
 authorization covering their actual effect and target. No account,
 profile, or physical database target has been established for remote ledger
-inspection; resolve that scope before contacting the account. A real Alchemy plan
+inspection. Read-only resource discovery may establish the physical targets;
+freeze the mapping before inspecting their ledgers. A real Alchemy plan
 may bootstrap account state and is not a harmless inspection command.
 
 Each fix needs relevant checks, actual runtime evidence for its acceptance claims,
 and independent review of the immutable implementation head under the
 [execution policy](../agents/execution-policy.md). Record evidence and remaining
 gates here as work proceeds; mark completion only after the authorized merge.
-The dependency upgrade and fix 1 (PR #211) are merged. Fix 1 has local native
-runtime evidence and independent review. Fix 2 has reviewed local
-and hosted evidence and is verifying the combined candidate before ordered delivery.
-Fix 3 has independent review and complete local native lifetime proof; its combined
-candidate and ordered repository merge remain pending. The target-specific D1
-release gate is independent of local fix completion; no
+The dependency upgrade and all three fixes (PRs #211, #210 and #212) are merged
+after local verification, independent review and hosted CI. The authorized
+repository queue is complete. The target-specific D1 release gate is independent
+of repository completion; no
 deployment, remote ledger inspection, or cloud mutation has been performed for this
 queue.

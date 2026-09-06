@@ -14,7 +14,7 @@
   [`05-cumulative-exit-proof.md`](stages/01-household-people/05-cumulative-exit-proof.md)
   ([PR #205](https://github.com/cill-i-am/meal-planner/pull/205), merge
   `e77f2cf2a2e634fd43cab588980a73ee7ae9b6d2`)
-- Active delivery: all three prioritized risk fixes have independent implementation review. Private output (#211) is merged; the combined candidate is under verification before D1 release safety (#210), then media lifetime. Broader Stage 2 remains paused.
+- Active delivery: all three prioritized risk fixes are merged in order: private output (#211), D1 release safety (#210), and media lifetime (#212). Broader Stage 2 remains paused.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -159,14 +159,16 @@ The dependency upgrade merged in PR 209 as
 `4b4e7fd651d66c2a03805eb00209c40fe3eb3240`. The
 [prioritized risk fixes](prioritized-risk-fixes.md) record owns the
 user's next-fix order: private output after authority changes, D1 release-ledger
-safety, then media-container lifetime. All three fixes have independently reviewed implementation candidates under standing
-repository delivery authority. The media branch has adopted the combined private-output
-and D1 candidate by merge without changing its reviewed container source. Local native
-lifetime proof, combined type checks, lint/format, 180 infrastructure/architecture
-tests, and 59 focused Node/workerd tests passed. The adopted test-only timing
-correction passed its 80 affected native tests. Hosted combined CI remains pending. Fix 1 merged
-in PR #211; the remaining repository merge order is fix 2, then fix 3. This bounded queue
-does not promote the broader Stage 2, UI, model/provider, or cost-tuning roadmap.
+safety, then media-container lifetime. Private output merged in PR #211 as
+`62adde277db478e91d2cf2c5d1efc54d90a2e76c`. D1 release safety merged next in
+PR #210 as `570dad6a4c021c153e2155ba32eef10b1bbba9d6` after independent review
+and passing hosted CI. Media lifetime merged third in PR #212 as
+`3114e448f8deb78833e90371ce266a63d779ab44` after independent review, native
+Docker/DO/R2 lifetime proof and passing final hosted CI. The priority record owns
+the exact heads and evidence. The authorized repository fix queue is complete.
+This bounded queue does not promote the broader Stage 2, UI, model/provider,
+or cost-tuning roadmap. No deployment or target-specific D1 reconciliation has
+been performed.
 
 ## Deliberate Non-Work
 
