@@ -15,6 +15,7 @@ import { makeBrowserHouseholdProfileOperations } from "../features/household-pro
 import { HouseholdProfilesPanel } from "../features/household-profiles/household-profiles-panel.js";
 import { makeBrowserHouseholdOperations } from "../features/households/browser-operations.js";
 import { HouseholdDomainStatus } from "../features/households/household-domain-status.js";
+import { PrivateInterviewsPanel } from "../features/private-interviews/private-interviews-panel.js";
 import { makeBrowserRecipeImportOperations } from "../features/recipe-import/browser-operations.js";
 import { decodeRecipeImportSearch } from "../features/recipe-import/navigation.js";
 import { RecipeImportPage } from "../features/recipe-import/recipe-import-page.js";
@@ -80,6 +81,12 @@ const MealPlannerRoute = () => {
           }
           householdPeople={
             <>
+              {session.data?.user.id !== undefined && (
+                <PrivateInterviewsPanel
+                  accountId={session.data.user.id}
+                  householdId={household.id}
+                />
+              )}
               <HouseholdPeoplePanel
                 {...(() => {
                   const currentMemberId = activeOrganization.data?.members.find(

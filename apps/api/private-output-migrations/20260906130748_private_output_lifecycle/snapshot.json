@@ -1,0 +1,451 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "a73705c9-ae35-4368-9086-ca9b90eb63ba",
+  "prevIds": ["1716232f-11d1-4220-baff-b862ac82a15b"],
+  "ddl": [
+    {
+      "name": "output_mutations",
+      "entityType": "tables"
+    },
+    {
+      "name": "output_registrations",
+      "entityType": "tables"
+    },
+    {
+      "name": "private_directory_binding",
+      "entityType": "tables"
+    },
+    {
+      "name": "private_messages",
+      "entityType": "tables"
+    },
+    {
+      "name": "private_output_generation",
+      "entityType": "tables"
+    },
+    {
+      "name": "private_receipts",
+      "entityType": "tables"
+    },
+    {
+      "name": "private_reservations",
+      "entityType": "tables"
+    },
+    {
+      "name": "private_session_binding",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "intent_key",
+      "entityType": "columns",
+      "table": "output_mutations"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "operation_id",
+      "entityType": "columns",
+      "table": "output_mutations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "phase",
+      "entityType": "columns",
+      "table": "output_mutations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "target_kind",
+      "entityType": "columns",
+      "table": "output_registrations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "child_name",
+      "entityType": "columns",
+      "table": "output_registrations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "generation",
+      "entityType": "columns",
+      "table": "output_registrations"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "singleton",
+      "entityType": "columns",
+      "table": "private_directory_binding"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "account_key",
+      "entityType": "columns",
+      "table": "private_directory_binding"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "household_key",
+      "entityType": "columns",
+      "table": "private_directory_binding"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "linkage_subject",
+      "entityType": "columns",
+      "table": "private_directory_binding"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "person_id",
+      "entityType": "columns",
+      "table": "private_directory_binding"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "binding_key",
+      "entityType": "columns",
+      "table": "private_directory_binding"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "ordinal",
+      "entityType": "columns",
+      "table": "private_messages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "private_messages"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "private_messages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "role",
+      "entityType": "columns",
+      "table": "private_messages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "text",
+      "entityType": "columns",
+      "table": "private_messages"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "table": "private_output_generation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "generation",
+      "entityType": "columns",
+      "table": "private_output_generation"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "singleton",
+      "entityType": "columns",
+      "table": "private_output_generation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "private_output_generation"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "mutation_id",
+      "entityType": "columns",
+      "table": "private_receipts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "intent",
+      "entityType": "columns",
+      "table": "private_receipts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "frame",
+      "entityType": "columns",
+      "table": "private_receipts"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "ordinal",
+      "entityType": "columns",
+      "table": "private_reservations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_reference",
+      "entityType": "columns",
+      "table": "private_reservations"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "private_reservations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "account_key",
+      "entityType": "columns",
+      "table": "private_session_binding"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "household_key",
+      "entityType": "columns",
+      "table": "private_session_binding"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "linkage_subject",
+      "entityType": "columns",
+      "table": "private_session_binding"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "person_id",
+      "entityType": "columns",
+      "table": "private_session_binding"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_reference",
+      "entityType": "columns",
+      "table": "private_session_binding"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "private_session_binding"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "version",
+      "entityType": "columns",
+      "table": "private_session_binding"
+    },
+    {
+      "columns": ["target_kind", "child_name", "generation"],
+      "nameExplicit": false,
+      "name": "output_registrations_pk",
+      "entityType": "pks",
+      "table": "output_registrations"
+    },
+    {
+      "columns": ["operation_id"],
+      "nameExplicit": false,
+      "name": "output_mutations_pk",
+      "table": "output_mutations",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["singleton"],
+      "nameExplicit": false,
+      "name": "private_directory_binding_pk",
+      "table": "private_directory_binding",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["ordinal"],
+      "nameExplicit": false,
+      "name": "private_messages_pk",
+      "table": "private_messages",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["singleton"],
+      "nameExplicit": false,
+      "name": "private_output_generation_pk",
+      "table": "private_output_generation",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["mutation_id"],
+      "nameExplicit": false,
+      "name": "private_receipts_pk",
+      "table": "private_receipts",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["ordinal"],
+      "nameExplicit": false,
+      "name": "private_reservations_pk",
+      "table": "private_reservations",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["session_reference"],
+      "nameExplicit": false,
+      "name": "private_session_binding_pk",
+      "table": "private_session_binding",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "private_messages_id_unique",
+      "entityType": "uniques",
+      "table": "private_messages"
+    },
+    {
+      "columns": ["session_reference"],
+      "nameExplicit": false,
+      "name": "private_reservations_session_reference_unique",
+      "entityType": "uniques",
+      "table": "private_reservations"
+    }
+  ],
+  "renames": []
+}

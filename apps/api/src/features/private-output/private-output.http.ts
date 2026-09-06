@@ -4,7 +4,10 @@ import type { MealPlannerAuth } from "../auth/auth.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import type { PrivateOutputApiPort } from "./private-output-binding.js";
 import { resolvePrivateOutputAuthority } from "./private-output.authority.js";
-import { PrivateOutputUnavailable } from "./private-output.contract.js";
+import {
+  PrivateOutputUnavailable,
+  privateDirectoryKey,
+} from "./private-output.contract.js";
 
 const SessionReference = Schema.String.pipe(Schema.check(Schema.isUUID()));
 
@@ -24,7 +27,9 @@ export const handlePrivateInterviewRequest = Effect.fn(
       /^\/v1\/private-interviews\/(?<sessionReference>[^/]+)\/connect$/u.exec(
         url.pathname
       );
-    if (match === null) {
+    const isDirectory =
+      url.pathname === "/v1/private-interviews/directory/connect";
+    if (match === null && !isDirectory) {
       return null;
     }
     if (
@@ -35,9 +40,11 @@ export const handlePrivateInterviewRequest = Effect.fn(
       return new Response(null, { status: 403 });
     }
     return yield* Effect.gen(function* resolvePrivateInterviewRequest() {
-      const sessionReference = yield* Schema.decodeUnknownEffect(
-        SessionReference
-      )(match.groups?.["sessionReference"]);
+      const sessionReference = isDirectory
+        ? undefined
+        : yield* Schema.decodeUnknownEffect(SessionReference)(
+            match?.groups?.["sessionReference"]
+          );
       const resolve = () =>
         resolvePrivateOutputAuthority({
           auth: input.auth,
@@ -49,13 +56,20 @@ export const handlePrivateInterviewRequest = Effect.fn(
         catch: () =>
           new PrivateOutputUnavailable({ reason: "output_disabled" }),
         try: () =>
-          input.output.beginConnection({
-            accountKey: initial.accountKey,
-            householdKey: initial.householdKey,
-            linkageSubject: initial.linkageSubject,
-            personId: initial.personId,
-            sessionReference,
-          }),
+          sessionReference === undefined
+            ? input.output.beginDirectoryConnection({
+                accountKey: initial.accountKey,
+                householdKey: initial.householdKey,
+                linkageSubject: initial.linkageSubject,
+                personId: initial.personId,
+              })
+            : input.output.beginConnection({
+                accountKey: initial.accountKey,
+                householdKey: initial.householdKey,
+                linkageSubject: initial.linkageSubject,
+                personId: initial.personId,
+                sessionReference,
+              }),
       });
       // Both durable registrations exist before these final canonical reads.
       const current = yield* resolve();
@@ -63,18 +77,37 @@ export const handlePrivateInterviewRequest = Effect.fn(
         catch: () =>
           new PrivateOutputUnavailable({ reason: "output_disabled" }),
         try: () =>
-          input.output.authorizeConnection({
-            binding: {
-              accountKey: current.accountKey,
-              householdKey: current.householdKey,
-              linkageSubject: current.linkageSubject,
-              personId: current.personId,
-              sessionReference,
-            },
-            expiresAt: current.expiresAt,
-            generation,
-          }),
+          sessionReference === undefined
+            ? input.output.authorizeDirectoryConnection({
+                binding: {
+                  accountKey: current.accountKey,
+                  householdKey: current.householdKey,
+                  linkageSubject: current.linkageSubject,
+                  personId: current.personId,
+                },
+                expiresAt: current.expiresAt,
+                generation,
+              })
+            : input.output.authorizeConnection({
+                binding: {
+                  accountKey: current.accountKey,
+                  householdKey: current.householdKey,
+                  linkageSubject: current.linkageSubject,
+                  personId: current.personId,
+                  sessionReference,
+                },
+                expiresAt: current.expiresAt,
+                generation,
+              }),
       });
+      const target =
+        sessionReference === undefined
+          ? {
+              "private-output-directory": yield* Effect.promise(() =>
+                privateDirectoryKey(current)
+              ),
+            }
+          : { "private-output-session": sessionReference };
       return yield* Effect.tryPromise({
         catch: () =>
           new PrivateOutputUnavailable({ reason: "output_disabled" }),
@@ -84,7 +117,7 @@ export const handlePrivateInterviewRequest = Effect.fn(
               headers: {
                 Upgrade: "websocket",
                 "private-output-generation": generation,
-                "private-output-session": sessionReference,
+                ...target,
               },
             })
           ),

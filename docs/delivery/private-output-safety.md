@@ -6,6 +6,11 @@
 - Base: dependency-upgrade PR #209, merge `4b4e7fd651d66c2a03805eb00209c40fe3eb3240`.
 - Scope: provider-free private-output admission, revocation ordering, and native runtime proof.
 
+The initial safety evidence below records PR #211. The authorized
+[Stage 2 session foundation](stages/02-private-discovery/01-private-session-foundation.md)
+extends it with the participant directory, retained messages, and browser flow;
+that work item owns the later implementation and acceptance evidence.
+
 ## Result and boundaries
 
 The production API now admits a participant-only native WebSocket at
@@ -20,7 +25,8 @@ change the binding or close its owner's connection. Completed metadata stays
 retained with that same binding. New private output requires current canonical
 reauthentication; completion does not grant later access.
 
-The production child contains no transcript store or model producer. Runtime
+At the initial safety boundary, the production child contained no transcript
+store or model producer. Runtime
 verification supplies synthetic output through a separate test-only capability.
 There is no chat UI, provider call, Household grant, private HTTP response body,
 transcript-returning RPC, SDK callable/tool/MCP protocol, or parent transcript
