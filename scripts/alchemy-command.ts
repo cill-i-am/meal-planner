@@ -10,6 +10,38 @@ type AlchemyRunner = (
   args: readonly string[]
 ) => number;
 
+type D1Preflight = (
+  target: string,
+  stage: string,
+  profile: string,
+  evidence: string
+) => number;
+
+const runD1Preflight: D1Preflight = (target, stage, profile, evidence) => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      fileURLToPath(new URL("alchemy-d1-preflight.ts", import.meta.url)),
+      "verify",
+      "--target",
+      target,
+      "--stage",
+      stage,
+      "--profile",
+      profile,
+      "--evidence",
+      evidence,
+    ],
+    { cwd: fileURLToPath(new URL("../", import.meta.url)), stdio: "inherit" }
+  );
+  if (result.error !== undefined || result.status === null) {
+    throw new Error("D1 release preflight did not complete");
+  }
+  return result.status;
+};
+
 const readOption = (
   args: readonly string[],
   option: string
@@ -34,6 +66,37 @@ const countOption = (args: readonly string[], option: string): number =>
     (argument) => argument === option || argument.startsWith(`${option}=`)
   ).length;
 
+const deployTarget = (args: readonly string[]) => {
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    const name = argument?.split("=")[0];
+    if (
+      name === undefined ||
+      !["--stage", "--profile", "--d1-target", "--d1-evidence"].includes(name)
+    ) {
+      throw new Error(
+        "deploy accepts only --stage, --profile, --d1-target and --d1-evidence; alternate stack files and overrides are not allowed"
+      );
+    }
+    if (!argument?.includes("=")) {
+      index += 1;
+    }
+  }
+  const target = readOption(args, "--d1-target");
+  if (target === undefined || countOption(args, "--d1-target") !== 1) {
+    throw new Error("deploy requires exactly one --d1-target file");
+  }
+  const evidence = readOption(args, "--d1-evidence");
+  if (
+    evidence === undefined ||
+    !/^[a-f0-9]{64}$/u.test(evidence) ||
+    countOption(args, "--d1-evidence") !== 1
+  ) {
+    throw new Error("deploy requires exactly one --d1-evidence digest");
+  }
+  return { evidence, target };
+};
+
 /**
  * Validate an operator command before handing it to the Alchemy process.
  *
@@ -42,7 +105,8 @@ const countOption = (args: readonly string[], option: string): number =>
 export const runAlchemyCommand = (
   command: AlchemyCommand,
   args: readonly string[],
-  runner: AlchemyRunner
+  runner: AlchemyRunner,
+  preflight: D1Preflight = runD1Preflight
 ): number => {
   const [firstArgument] = args;
   const normalizedArgs = firstArgument === "--" ? args.slice(1) : args;
@@ -87,6 +151,25 @@ export const runAlchemyCommand = (
     throw new Error("refusing to destroy the prod stage");
   }
 
+  if (command === "deploy") {
+    const { target, evidence } = deployTarget(normalizedArgs);
+    const profile = readOption(normalizedArgs, "--profile");
+    if (stage === undefined || profile === undefined) {
+      throw new Error("deploy target is incomplete");
+    }
+    const status = preflight(target, stage, profile, evidence);
+    if (status !== 0) {
+      return status;
+    }
+    return runner(command, [
+      fileURLToPath(new URL("../alchemy.run.ts", import.meta.url)),
+      "--stage",
+      stage,
+      "--profile",
+      profile,
+    ]);
+  }
+
   return runner(command, normalizedArgs);
 };
 
@@ -98,6 +181,10 @@ const runAlchemyProcess: AlchemyRunner = (command, args) => {
     process.execPath,
     ["--import", "tsx", alchemyCli, command, ...args],
     {
+      cwd:
+        command === "deploy"
+          ? fileURLToPath(new URL("../", import.meta.url))
+          : process.cwd(),
       stdio: "inherit",
     }
   );

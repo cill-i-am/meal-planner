@@ -6,6 +6,130 @@ import { describe, expect, it } from "vitest";
 import { runAlchemyCommand } from "./alchemy-command.js";
 
 describe("Alchemy command guard", () => {
+  const deployArgs = [
+    "--stage",
+    "fixture",
+    "--profile",
+    "fixture",
+    "--d1-target",
+    "/tmp/d1-target.json",
+    "--d1-evidence",
+    "a".repeat(64),
+  ];
+
+  it("runs fresh D1 verification before the canonical deployment and strips evidence arguments", () => {
+    const calls: unknown[] = [];
+    expect(
+      runAlchemyCommand(
+        "deploy",
+        deployArgs,
+        (command, args) => {
+          calls.push({ args, command });
+          return 17;
+        },
+        (...args) => {
+          calls.push(args);
+          return 0;
+        }
+      )
+    ).toBe(17);
+    expect(calls).toEqual([
+      ["/tmp/d1-target.json", "fixture", "fixture", "a".repeat(64)],
+      {
+        args: [
+          fileURLToPath(new URL("../alchemy.run.ts", import.meta.url)),
+          "--stage",
+          "fixture",
+          "--profile",
+          "fixture",
+        ],
+        command: "deploy",
+      },
+    ]);
+  });
+
+  it("never starts Alchemy after evidence drift, missing recovery or a failed preflight", () => {
+    let invoked = false;
+    expect(
+      runAlchemyCommand(
+        "deploy",
+        deployArgs,
+        () => {
+          invoked = true;
+          return 0;
+        },
+        () => 1
+      )
+    ).toBe(1);
+    expect(invoked).toBe(false);
+  });
+
+  it("does not fall back to deployment when the preflight cannot start", () => {
+    let invoked = false;
+    expect(() =>
+      runAlchemyCommand(
+        "deploy",
+        deployArgs,
+        () => {
+          invoked = true;
+          return 0;
+        },
+        () => {
+          throw new Error("preflight process failed");
+        }
+      )
+    ).toThrow("preflight process failed");
+    expect(invoked).toBe(false);
+  });
+
+  it.each([
+    "another-stack.ts",
+    "--env-file=.env.other",
+    "--adopt",
+    "--force",
+    "--dry-run",
+    "--profile=second",
+    "--d1-target=other.json",
+    "--d1-evidence=bad",
+  ])("rejects deploy override %s before preflight or Alchemy", (extra) => {
+    let invoked = false;
+    expect(() =>
+      runAlchemyCommand(
+        "deploy",
+        [...deployArgs, extra],
+        () => {
+          invoked = true;
+          return 0;
+        },
+        () => {
+          invoked = true;
+          return 0;
+        }
+      )
+    ).toThrow();
+    expect(invoked).toBe(false);
+  });
+
+  it("requires frozen target and reviewed evidence", () => {
+    const runner = () => {
+      throw new Error(`must not reach runner for ${deployArgs.join(" ")}`);
+    };
+    expect(() =>
+      runAlchemyCommand(
+        "deploy",
+        ["--stage=fixture", "--profile=fixture"],
+        runner
+      )
+    ).toThrow("--d1-target");
+    expect(() =>
+      runAlchemyCommand(
+        "deploy",
+        ["--stage=fixture", "--profile=fixture", "--d1-target=target.json"],
+        runner
+      )
+    ).toThrow("--d1-evidence");
+  });
+
   it("transforms NodeNext source imports before planning without cloud state", () => {
     const script = fileURLToPath(
       new URL("alchemy-command.ts", import.meta.url)
