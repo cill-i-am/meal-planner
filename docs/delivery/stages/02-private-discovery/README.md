@@ -1,9 +1,10 @@
 # Stage 2 — Private discovery and repeat profile review
 
-- Status: Work Item 01 Done (2026-09-06), delivered by
-  [PR #215](https://github.com/cill-i-am/meal-planner/pull/215).
+- Status: Work Items 01 and 02 Done (2026-09-06), delivered by
+  [PR #215](https://github.com/cill-i-am/meal-planner/pull/215) and
+  [PR #216](https://github.com/cill-i-am/meal-planner/pull/216).
 - Planning base: `28a5f3ca4aae3c8f01c56e5261439111acd9949d`.
-- Active: [Work Item 02 — progressive cards and confirmation](02-progressive-cards-and-confirmation.md), authorized and started on 2026-09-06.
+- Next: Work Item 03 — adaptive discovery and evaluation; planned, not started.
 
 ## Accepted outcome
 
@@ -33,16 +34,22 @@ release gate, not a prerequisite for local application implementation.
 | Work item                                                           | Observable result                                                                                                                                                                                                                                                    | Status  |
 | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | [01 — Private session foundation](01-private-session-foundation.md) | An adult starts, rediscovers, resumes, and completes a private session, then reads retained history through the admitted native socket. Durable participant messages and lifecycle work without a provider; assistant output exists only in synthetic test fixtures. | Done    |
-| [02 — Progressive cards and confirmation](02-progressive-cards-and-confirmation.md) | Proposed cards appear early and support correction, rejection, explicit confirmation, hard-constraint status, and conflict handling. Only closed facts and privacy-safe provenance enter the existing versioned Household commands.                                  | In progress |
+| [02 — Progressive cards and confirmation](02-progressive-cards-and-confirmation.md) | Proposed cards support correction, rejection, explicit confirmation, hard-constraint status, and conflict handling. Only closed facts and privacy-safe provenance enter the existing versioned Household commands; initial proposals remain synthetic until Work Item 03. | Done |
 | 03 — Adaptive discovery and evaluation                              | A real evaluated model asks relevant follow-ups, avoids repeated/exhaustive questioning, and produces useful cards. Develop the scoped harness spike, scenarios, rubric, model comparison, and calibrated baseline alongside this capability.                        | Planned |
 | 04 — Repeat review and dependant assistance                         | A new private review focuses on changed circumstances using current confirmed facts. An adult completes a shorter dependant flow; confirmation produces profile versions/audit, and old sessions remain closed.                                                      | Planned |
 | 05 — Cumulative discovery exit                                      | Two adults independently review and correct profiles; one assists a dependant; a later review changes an ordinary preference. The real selected model, UI, admitted commands, privacy boundaries, and all eight stage-scoped scenario families meet PDR-0006.        | Planned |
 
 Work Item 01 implementation and local acceptance are complete.
 [PR #215](https://github.com/cill-i-am/meal-planner/pull/215) owns its current
-hosted-check and merge record. Work Item 02 is authorized and its owning record fixes confirmation ordering
-before implementation;
-model/provider execution remains later work.
+hosted-check and merge record. Work Item 02 merged in
+[PR #216](https://github.com/cill-i-am/meal-planner/pull/216) as
+`41b2a3e3f12c83edd3ddd9d184b9e138827101e6` after backend and UI approval of
+`925554e1ca1927f74a30e241ab1a029ecfd18b22`, passing hosted
+[run 34042894812](https://github.com/cill-i-am/meal-planner/actions/runs/34042894812),
+and completed local browser acceptance. Its
+[delivery record](02-progressive-cards-and-confirmation.md) owns the native
+confirmation, restart, privacy, accessibility, and runtime evidence and limits.
+Work Item 03 and model/provider execution have not started.
 Delivery follows the existing
 [execution policy](../../../agents/execution-policy.md).
 
@@ -67,8 +74,8 @@ eventual first-plan safety/practicality gate is satisfied.
 The current
 [profile contracts](../../../../packages/household-api/src/profiles.ts) support
 food preferences, hard constraints, explicit no-known-hard-constraints,
-provisional/confirmed standings, and `manual_ui` provenance. Work Item 02 adds a
-narrow trusted interview source and its tests rather than spoofing manual input.
+provisional/confirmed standings, and `manual_ui` or `interview` provenance.
+Work Item 02 delivered the narrow trusted interview confirmation boundary.
 `HouseholdObject` remains the sole profile/version/audit/receipt writer. No
 Agent, provider, or transport call enters its SQLite transaction.
 
@@ -80,8 +87,7 @@ profile version. Stale concurrent edits require refreshed review. An ambiguous
 response retains the exact command and mutation ID; session completion must
 resolve an already submitted confirmation before closing. Agent bookkeeping
 cannot prove Household commitment or authorize new mutations after completion.
-Work Item 02 must specify and prove this cross-object ordering before
-implementation.
+Work Item 02 specifies and proves this cross-object ordering.
 
 [ADR-0004](../../../architecture/decisions/0004-household-agent-coordinator-and-isolated-chat-agents.md)
 owns runtime authority. Private state stays in plain native private children
