@@ -1,13 +1,15 @@
+import path from "node:path";
+
 import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
 import * as Bundle from "alchemy/Bundle";
 import { Effect, Schema } from "effect";
-import type { ModuleDefinition } from "miniflare";
+import type { MiniflareWorkerConfig } from "miniflare";
 
 /** Bundle a native Worker fixture and its text assets for Miniflare. */
 export const bundleWorkerFixture = async (
   inputPath: string,
   outputDirectory?: string
-): Promise<readonly [ModuleDefinition, ...ModuleDefinition[]]> => {
+): Promise<NonNullable<MiniflareWorkerConfig["manifest"]>> => {
   const outputOptions: NonNullable<Parameters<typeof Bundle.build>[1]> = {
     codeSplitting: false,
     format: "esm",
@@ -34,22 +36,28 @@ export const bundleWorkerFixture = async (
     )
   );
   const [entry, ...assets] = output.files;
-  return [
-    {
-      contents: Schema.is(Schema.String)(entry.content)
-        ? entry.content
-        : new TextDecoder().decode(entry.content),
-      path: entry.path,
-      type: "ESModule",
+  const modulesRoot = path.resolve(path.dirname(entry.path));
+  return {
+    mainModule: path.relative(modulesRoot, entry.path),
+    modules: {
+      [path.relative(modulesRoot, entry.path)]: {
+        contents: Schema.is(Schema.String)(entry.content)
+          ? entry.content
+          : new TextDecoder().decode(entry.content),
+        type: "esm",
+      },
+      ...Object.fromEntries(
+        assets.map((asset) => [
+          path.relative(modulesRoot, asset.path),
+          {
+            contents: Schema.is(Schema.String)(asset.content)
+              ? asset.content
+              : new TextDecoder().decode(asset.content),
+            type: "text",
+          },
+        ])
+      ),
     },
-    ...assets.map(
-      (asset): ModuleDefinition => ({
-        contents: Schema.is(Schema.String)(asset.content)
-          ? asset.content
-          : new TextDecoder().decode(asset.content),
-        path: asset.path,
-        type: "Text",
-      })
-    ),
-  ];
+    modulesRoot,
+  };
 };

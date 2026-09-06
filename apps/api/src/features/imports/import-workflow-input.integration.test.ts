@@ -22,21 +22,35 @@ beforeAll(async () => {
     `${tmpdir()}/meal-planner-gaia-191-native-`
   );
   temporaryDirectories.push(temporaryDirectory);
-  const fixtureModules = await bundleWorkerFixture(
+  const fixtureManifest = await bundleWorkerFixture(
     fixturePath,
     temporaryDirectory
   );
   runtime = new Miniflare({
-    compatibilityDate,
-    compatibilityFlags,
-    kvNamespaces: ["CURRENT_WORKFLOW_STATE"],
-    modules: [...fixtureModules],
-    workflows: {
-      CurrentInputWorkflow: {
-        className: "CurrentInputWorkflow",
-        name: "current-input-workflow",
+    cf: false,
+    workers: [
+      {
+        config: {
+          compatibilityDate,
+          compatibilityFlags,
+          env: {
+            CURRENT_WORKFLOW_STATE: {
+              id: "CURRENT_WORKFLOW_STATE",
+              type: "kv",
+            },
+            CurrentInputWorkflow: {
+              exportName: "CurrentInputWorkflow",
+              name: "current-input-workflow",
+              type: "workflow",
+              worker: "worker",
+            },
+          },
+          manifest: fixtureManifest,
+          name: "worker",
+          type: "worker",
+        },
       },
-    },
+    ],
   });
 }, 30_000);
 

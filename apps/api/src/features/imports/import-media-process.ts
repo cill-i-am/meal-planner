@@ -1,8 +1,7 @@
 import { spawn } from "node:child_process";
 import type { Stats } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
-// eslint-disable-next-line unicorn/import-style -- The root Alchemy TypeScript config disables synthetic default imports.
-import { join, resolve as resolvePath, sep } from "node:path";
+import path from "node:path";
 
 import { Context, Effect, Exit } from "effect";
 
@@ -93,17 +92,25 @@ export const makeTemporaryArtifactStore = (
     registerPath: (
       artifactId: string,
       root: string,
-      path: string,
+      artifactPath: string,
       contentType: string
     ) => {
-      artifacts.set(artifactId, { contentType, path, root });
+      artifacts.set(artifactId, { contentType, path: artifactPath, root });
     },
-    setPath: (artifactId: string, path: string, contentType: string) => {
+    setPath: (
+      artifactId: string,
+      artifactPath: string,
+      contentType: string
+    ) => {
       const artifact = artifacts.get(artifactId);
       if (artifact === undefined) {
         throw new Error("Temporary artifact is not registered");
       }
-      artifacts.set(artifactId, { contentType, path, root: artifact.root });
+      artifacts.set(artifactId, {
+        contentType,
+        path: artifactPath,
+        root: artifact.root,
+      });
     },
     use: <A, E, R, E2, R2>(
       artifactId: string,
@@ -188,14 +195,14 @@ export const validateTemporaryWorkspaceEntries = Effect.fn(
   entries: readonly TemporaryWorkspaceEntry[],
   root: string
 ) {
-  const resolvedRoot = resolvePath(root);
+  const resolvedRoot = path.resolve(root);
   let bytes = 0;
   let files = 0;
   for (const entry of entries) {
-    const resolvedPath = resolvePath(entry.path);
+    const resolvedPath = path.resolve(entry.path);
     if (
       (resolvedPath !== resolvedRoot &&
-        !resolvedPath.startsWith(`${resolvedRoot}${sep}`)) ||
+        !resolvedPath.startsWith(`${resolvedRoot}${path.sep}`)) ||
       (entry.kind !== "file" && entry.kind !== "directory") ||
       !Number.isSafeInteger(entry.size) ||
       entry.size < 0
@@ -230,7 +237,7 @@ export const scanTemporaryWorkspace = Effect.fn(
         const children: TemporaryWorkspaceEntry[] = [];
         for (const name of names) {
           cancellation?.throwIfAborted();
-          const entryPath = join(directory, name);
+          const entryPath = path.join(directory, name);
           // eslint-disable-next-line no-await-in-loop -- Serial traversal bounds filesystem work and stops dispatch after cancellation.
           const stats = await lstat(entryPath);
           cancellation?.throwIfAborted();

@@ -38,10 +38,10 @@ describe("household batch Queue transport", () => {
       `${tmpdir()}/meal-planner-household-batch-queue-`
     );
     const [
-      consumerModules,
-      deadLetterModules,
-      domainModules,
-      queueLossModules,
+      consumerManifest,
+      deadLetterManifest,
+      domainManifest,
+      queueLossManifest,
     ] = await Promise.all([
       bundleWorkerFixture(
         fileURLToPath(
@@ -74,73 +74,106 @@ describe("household batch Queue transport", () => {
       ),
     ]);
     runtime = new Miniflare({
-      compatibilityDate,
-      compatibilityFlags,
-      durableObjectsPersist: persistenceDirectory,
-      kvPersist: persistenceDirectory,
+      cf: false,
+      resourcePersistencePath: persistenceDirectory,
       workers: [
         {
-          compatibilityDate,
-          compatibilityFlags,
-          kvNamespaces: ["RESULTS"],
-          modules: [...consumerModules],
-          name: "consumer",
-          queueConsumers: {
-            "household-import-batches": {
-              deadLetterQueue: "household-import-batches-dead-letter",
-              maxBatchSize: 1,
-              maxBatchTimeout: 0.01,
-              maxRetries: 3,
-              retryDelay: 0,
+          config: {
+            compatibilityDate,
+            compatibilityFlags,
+            env: {
+              BATCHES: { name: "household-import-batches", type: "queue" },
+              BATCH_WORKFLOW: {
+                exportName: "HouseholdBatchQueueTestWorkflow",
+                name: "household-batch-queue-test-workflow",
+                type: "workflow",
+                worker: "consumer",
+              },
+              HouseholdDomainWorker: {
+                type: "worker",
+                worker: "household-domain",
+              },
+              RESULTS: { id: "RESULTS", type: "kv" },
             },
-          },
-          queueProducers: {
-            BATCHES: { queueName: "household-import-batches" },
-          },
-          serviceBindings: { HouseholdDomainWorker: "household-domain" },
-          workflows: {
-            BATCH_WORKFLOW: {
-              className: "HouseholdBatchQueueTestWorkflow",
-              name: "household-batch-queue-test-workflow",
-            },
+            manifest: consumerManifest,
+            name: "consumer",
+            triggers: [
+              {
+                deadLetterQueue: "household-import-batches-dead-letter",
+                maxBatchSize: 1,
+                maxBatchTimeout: 0.01,
+                maxRetries: 3,
+                name: "household-import-batches",
+                retryDelay: 0,
+                type: "queue",
+              },
+            ],
+            type: "worker",
           },
         },
         {
-          compatibilityDate,
-          compatibilityFlags,
-          kvNamespaces: ["DLQ_RESULTS"],
-          modules: [...deadLetterModules],
-          name: "dead-letter-consumer",
-          queueConsumers: {
-            "household-import-batches-dead-letter": {
-              maxBatchSize: 1,
-              maxBatchTimeout: 0.01,
-              maxRetries: 3,
-              retryDelay: 0,
+          config: {
+            compatibilityDate,
+            compatibilityFlags,
+            env: {
+              DLQ_RESULTS: { id: "DLQ_RESULTS", type: "kv" },
+              HouseholdDomainWorker: {
+                type: "worker",
+                worker: "household-domain",
+              },
+              QueueConsumer: { type: "worker", worker: "consumer" },
             },
-          },
-          serviceBindings: {
-            HouseholdDomainWorker: "household-domain",
-            QueueConsumer: "consumer",
-          },
-        },
-        {
-          compatibilityDate,
-          compatibilityFlags,
-          durableObjects: {
-            HouseholdObject: { className: "HouseholdObject", useSQLite: true },
-          },
-          modules: [...domainModules],
-          name: "household-domain",
-          wrappedBindings: {
-            HouseholdImportBatchQueue: "queue-loss-wrapper",
+            manifest: deadLetterManifest,
+            name: "dead-letter-consumer",
+            triggers: [
+              {
+                maxBatchSize: 1,
+                maxBatchTimeout: 0.01,
+                maxRetries: 3,
+                name: "household-import-batches-dead-letter",
+                retryDelay: 0,
+                type: "queue",
+              },
+            ],
+            type: "worker",
           },
         },
         {
-          modules: [...queueLossModules],
-          name: "queue-loss-wrapper",
-          queueProducers: {
-            ACCEPTED_QUEUE: { queueName: "household-import-batches" },
+          config: {
+            compatibilityDate,
+            compatibilityFlags,
+            env: {
+              HouseholdImportBatchQueue: {
+                type: "worker",
+                worker: "queue-loss-wrapper",
+              },
+              HouseholdObject: {
+                exportName: "HouseholdObject",
+                type: "durable-object",
+                worker: "household-domain",
+              },
+            },
+            exports: {
+              HouseholdObject: { storage: "sqlite", type: "durable-object" },
+            },
+            manifest: domainManifest,
+            name: "household-domain",
+            type: "worker",
+          },
+        },
+        {
+          config: {
+            compatibilityDate,
+            compatibilityFlags,
+            env: {
+              ACCEPTED_QUEUE: {
+                name: "household-import-batches",
+                type: "queue",
+              },
+            },
+            manifest: queueLossManifest,
+            name: "queue-loss-wrapper",
+            type: "worker",
           },
         },
       ],

@@ -25,7 +25,7 @@ beforeAll(async () => {
   temporaryDirectory = await mkdtemp(
     `${tmpdir()}/meal-planner-acquisition-restart-`
   );
-  const [fixtureModules, householdModules] = await Promise.all([
+  const [fixtureManifest, householdManifest] = await Promise.all([
     bundleWorkerFixture(fixturePath, `${temporaryDirectory}/workflow`),
     bundleWorkerFixture(
       householdDomainFixturePath,
@@ -33,32 +33,52 @@ beforeAll(async () => {
     ),
   ]);
   runtime = new Miniflare({
-    compatibilityDate,
-    compatibilityFlags,
+    cf: false,
     workers: [
       {
-        compatibilityDate,
-        compatibilityFlags,
-        kvNamespaces: ["ACQUISITION_RESTART_STATE"],
-        modules: [...fixtureModules],
-        name: "acquisition-restart",
-        r2Buckets: ["ImportEvidenceBucket"],
-        serviceBindings: { HouseholdDomainWorker: "household-domain" },
-        workflows: {
-          AcquisitionRestartWorkflow: {
-            className: "AcquisitionRestartWorkflow",
-            name: "acquisition-restart-workflow",
+        config: {
+          compatibilityDate,
+          compatibilityFlags,
+          env: {
+            ACQUISITION_RESTART_STATE: {
+              id: "ACQUISITION_RESTART_STATE",
+              type: "kv",
+            },
+            AcquisitionRestartWorkflow: {
+              exportName: "AcquisitionRestartWorkflow",
+              name: "acquisition-restart-workflow",
+              type: "workflow",
+              worker: "acquisition-restart",
+            },
+            HouseholdDomainWorker: {
+              type: "worker",
+              worker: "household-domain",
+            },
+            ImportEvidenceBucket: { name: "ImportEvidenceBucket", type: "r2" },
           },
+          manifest: fixtureManifest,
+          name: "acquisition-restart",
+          type: "worker",
         },
       },
       {
-        compatibilityDate,
-        compatibilityFlags,
-        durableObjects: {
-          HouseholdObject: { className: "HouseholdObject", useSQLite: true },
+        config: {
+          compatibilityDate,
+          compatibilityFlags,
+          env: {
+            HouseholdObject: {
+              exportName: "HouseholdObject",
+              type: "durable-object",
+              worker: "household-domain",
+            },
+          },
+          exports: {
+            HouseholdObject: { storage: "sqlite", type: "durable-object" },
+          },
+          manifest: householdManifest,
+          name: "household-domain",
+          type: "worker",
         },
-        modules: [...householdModules],
-        name: "household-domain",
       },
     ],
   });

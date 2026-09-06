@@ -614,12 +614,10 @@ export const makeHouseholdVisualEvidenceRepository = (
                 ? Effect.fail(importTransitionRejected())
                 : completed(stage)
             ),
-            Effect.map(
-              (evidence): VisualDispatchClaim => ({
-                _tag: "Completed",
-                evidence,
-              })
-            )
+            Effect.map((evidence): VisualDispatchClaim => ({
+              _tag: "Completed",
+              evidence,
+            }))
           );
         }
         if (receipt.outcome === "Failed") {

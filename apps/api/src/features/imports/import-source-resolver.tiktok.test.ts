@@ -8,8 +8,7 @@ import {
   stat,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-// eslint-disable-next-line unicorn/import-style -- The root Alchemy TypeScript config disables synthetic default imports.
-import { join } from "node:path";
+import path from "node:path";
 import { Readable } from "node:stream";
 
 import { Cause, Deferred, Effect, Exit, Fiber, Option, Schema } from "effect";
@@ -122,13 +121,13 @@ const makeRunner = (
       resolve: (sourceIdentity: typeof identity) =>
         Effect.acquireUseRelease(
           Effect.promise(() =>
-            mkdtemp(join(tmpdir(), "meal-planner-resolver-session-"))
+            mkdtemp(path.join(tmpdir(), "meal-planner-resolver-session-"))
           ),
           (root) =>
             resolver.resolve(sourceIdentity, root).pipe(
               Effect.onExit(() =>
                 Effect.promise(async () => {
-                  const sessionPath = join(root, "yt-dlp-session.cookies");
+                  const sessionPath = path.join(root, "yt-dlp-session.cookies");
                   let removed = false;
                   try {
                     await access(sessionPath);
@@ -393,9 +392,11 @@ describe("TikTok source resolver adapter", () => {
   });
 
   it("pins public DNS and rejects private resolution plus unsafe redirect hops", async () => {
-    const root = await mkdtemp(join(tmpdir(), "meal-planner-download-policy-"));
+    const root = await mkdtemp(
+      path.join(tmpdir(), "meal-planner-download-policy-")
+    );
     try {
-      const privateDestination = join(root, "private.mp4");
+      const privateDestination = path.join(root, "private.mp4");
       const privateClient: SecureMediaDownloadClient = {
         request: () => Promise.reject(new Error("must not connect")),
         resolve: () => Promise.resolve(["169.254.169.254"]),
@@ -411,7 +412,7 @@ describe("TikTok source resolver adapter", () => {
       await expect(access(privateDestination)).rejects.toThrow();
 
       let requests = 0;
-      const redirectDestination = join(root, "redirect.mp4");
+      const redirectDestination = path.join(root, "redirect.mp4");
       expect(isPublicMediaAddress("8.8.8.8")).toBe(true);
       expect(
         isSafeTikTokMediaLocator("https://v16m.tiktokcdn.com/media.mp4")
@@ -440,7 +441,7 @@ describe("TikTok source resolver adapter", () => {
       expect(requests).toBe(1);
       await expect(access(redirectDestination)).rejects.toThrow();
 
-      const validDestination = join(root, "valid.mp4");
+      const validDestination = path.join(root, "valid.mp4");
       const validClient: SecureMediaDownloadClient = {
         request: () =>
           Promise.resolve(
@@ -465,7 +466,9 @@ describe("TikTok source resolver adapter", () => {
   });
 
   it("carries only safe resolver headers through the pinned-IP request boundary", async () => {
-    const root = await mkdtemp(join(tmpdir(), "meal-planner-header-policy-"));
+    const root = await mkdtemp(
+      path.join(tmpdir(), "meal-planner-header-policy-")
+    );
     const fixture = makeRunner({
       duration: 1,
       http_headers: {
@@ -512,7 +515,7 @@ describe("TikTok source resolver adapter", () => {
       await Effect.runPromise(
         makeSecureMediaDownloader(client).download(
           resolved.mediaLocator,
-          join(root, "safe.mp4"),
+          path.join(root, "safe.mp4"),
           1024,
           resolved.requestHeaders,
           resolved.session
@@ -536,7 +539,9 @@ describe("TikTok source resolver adapter", () => {
   });
 
   it("revalidates redirects and scopes ephemeral cookies to each validated hop", async () => {
-    const root = await mkdtemp(join(tmpdir(), "meal-planner-session-policy-"));
+    const root = await mkdtemp(
+      path.join(tmpdir(), "meal-planner-session-policy-")
+    );
     const requests: {
       firstHostCookie: boolean;
       secondHostCookie: boolean;
@@ -574,7 +579,7 @@ describe("TikTok source resolver adapter", () => {
       await Effect.runPromise(
         makeSecureMediaDownloader(client).download(
           "https://v16m.tiktokcdn.com/media/video.mp4",
-          join(root, "redirected.mp4"),
+          path.join(root, "redirected.mp4"),
           1024,
           {},
           session
@@ -617,7 +622,7 @@ describe("TikTok source resolver adapter", () => {
     "removes the ephemeral session file after resolver %s",
     async (settlement) => {
       const root = await mkdtemp(
-        join(tmpdir(), "meal-planner-session-interruption-")
+        path.join(tmpdir(), "meal-planner-session-interruption-")
       );
       const started = await Effect.runPromise(Deferred.make<true>());
       const resolver = makeTikTokSourceResolver({
@@ -636,7 +641,7 @@ describe("TikTok source resolver adapter", () => {
           );
         },
       });
-      const sessionPath = join(root, "yt-dlp-session.cookies");
+      const sessionPath = path.join(root, "yt-dlp-session.cookies");
 
       try {
         if (settlement === "cancellation") {
@@ -686,9 +691,9 @@ describe("TikTok source resolver adapter", () => {
     "classifies $expected without retaining provider detail",
     async ({ expected, request, resolve }) => {
       const root = await mkdtemp(
-        join(tmpdir(), "meal-planner-failure-policy-")
+        path.join(tmpdir(), "meal-planner-failure-policy-")
       );
-      const destination = join(root, "failed.mp4");
+      const destination = path.join(root, "failed.mp4");
       try {
         const exit = await Effect.runPromiseExit(
           makeSecureMediaDownloader({ request, resolve }).download(
@@ -731,10 +736,12 @@ describe("TikTok source resolver adapter", () => {
     "ff00::1",
     "::ffff:127.0.0.1",
   ])("rejects special-use IPv6 %s before any request", async (address) => {
-    const root = await mkdtemp(join(tmpdir(), "meal-planner-ipv6-policy-"));
+    const root = await mkdtemp(
+      path.join(tmpdir(), "meal-planner-ipv6-policy-")
+    );
     let requests = 0;
     try {
-      const destination = join(root, "blocked.mp4");
+      const destination = path.join(root, "blocked.mp4");
       const client: SecureMediaDownloadClient = {
         request: () => {
           requests += 1;

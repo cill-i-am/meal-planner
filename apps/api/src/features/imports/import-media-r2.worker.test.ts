@@ -13,6 +13,7 @@ import { inspectHouseholdEvidenceReferences } from "./import-evidence-availabili
 import {
   VerifiedPreparedMediaArtifact,
   acquireStoreVerify,
+  readVerifiedAcquisitionEvidence,
 } from "./import-media-acquirer.js";
 import type {
   AcquisitionBucketLike,
@@ -556,6 +557,92 @@ describe("derived provider evidence", () => {
 });
 
 describe("native R2 generation commit", () => {
+  it.each([
+    {
+      ffmpegVersion: "8.1.2",
+      name: "previous container",
+      ytDlpVersion: "2026.07.04",
+    },
+    {
+      ffmpegVersion: "9.0.1",
+      name: "current container",
+      ytDlpVersion: "2026.08.19",
+    },
+  ])("reuses retained media produced by the $name", async (versions) => {
+    const importId = id(415);
+    const generation = decodeGeneration(1);
+    const mediaKey = mediaObjectKey(importId, generation);
+    const manifestKey = manifestObjectKey(importId, generation);
+    const { prepared } = makeMediaObject();
+    const manifestBytes = new TextEncoder().encode(
+      JSON.stringify({
+        ...prepared.metadata,
+        acquiredAt: "2026-09-05T00:00:00.000Z",
+        audioStreams: prepared.audioStreams,
+        bytes: mediaBytes.byteLength,
+        deleteAt: "2026-09-12T00:00:00.000Z",
+        durationSeconds: prepared.durationSeconds,
+        ffmpegVersion: versions.ffmpegVersion,
+        generation,
+        importId,
+        manifestKey,
+        mediaKey,
+        mediaType: "video/mp4",
+        originalStreamsRemuxedToMp4: true,
+        schemaVersion: 1,
+        sha256,
+        videoStreams: prepared.videoStreams,
+        ytDlpVersion: versions.ytDlpVersion,
+      })
+    );
+    const manifestSha256 = await digest(manifestBytes);
+    await testEnv.ImportEvidenceBucket.put(mediaKey, mediaBytes, {
+      customMetadata: {
+        generation: String(generation),
+        importId,
+        kind: "media",
+        sha256,
+      },
+      httpMetadata: {
+        cacheControl: "private, no-store",
+        contentType: "video/mp4",
+      },
+      sha256,
+    });
+    await testEnv.ImportEvidenceBucket.put(manifestKey, manifestBytes, {
+      customMetadata: {
+        generation: String(generation),
+        importId,
+        kind: "manifest",
+        sha256: manifestSha256,
+      },
+      httpMetadata: {
+        cacheControl: "private, no-store",
+        contentType: "application/json",
+      },
+      sha256: manifestSha256,
+    });
+
+    const evidence = await Effect.runPromise(
+      readVerifiedAcquisitionEvidence(bucket(), {
+        canonicalId,
+        generation,
+        importId,
+        observedAt: Schema.decodeUnknownSync(ImportTimestamp)(
+          "2026-09-06T00:00:00.000Z"
+        ),
+      })
+    );
+
+    expect(evidence).toMatchObject({
+      generation,
+      manifestKey,
+      manifestSha256,
+      mediaKey,
+      sha256,
+    });
+  });
+
   it("preserves a private fetch stream above 128 KiB through real R2 commits", async () => {
     const importId = id(410);
     const generation = decodeGeneration(1);
@@ -674,9 +761,11 @@ describe("native R2 generation commit", () => {
     };
     expect(manifest).toMatchObject({
       bytes: expectedBytes.byteLength,
+      ffmpegVersion: "9.0.1",
       manifestKey,
       mediaKey,
       sha256: expectedSha256,
+      ytDlpVersion: "2026.08.19",
     });
     expect(
       JSON.stringify({

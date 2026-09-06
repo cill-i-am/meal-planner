@@ -3,7 +3,7 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node", "vitest/globals", "@cloudflare/vitest-pool-workers/types"]
+    "types": ["node", "vitest/globals", "@cloudflare/vitest-plugin/types"]
   },
   "include": ["src/**/*.ts"]
 }

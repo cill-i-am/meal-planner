@@ -2,11 +2,10 @@ import { randomUUID } from "node:crypto";
 import { readdirSync, statSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-// oxlint-disable-next-line unicorn/import-style -- This ESM test intentionally keeps TypeScript synthetic default imports disabled.
-import * as path from "node:path";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
+import { readD1Migrations } from "@cloudflare/vitest-plugin";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -109,7 +108,7 @@ beforeAll(async () => {
     `${tmpdir()}/meal-planner-gaia-163-native-`
   );
   temporaryDirectories.push(temporaryDirectory);
-  const [fixtureModules, householdDomainModules] = await Promise.all([
+  const [fixtureManifest, householdDomainManifest] = await Promise.all([
     bundleWorkerFixture(fixturePath, `${temporaryDirectory}/provider-workflow`),
     bundleWorkerFixture(
       householdDomainFixturePath,
@@ -117,32 +116,52 @@ beforeAll(async () => {
     ),
   ]);
   runtime = new Miniflare({
-    compatibilityDate,
-    compatibilityFlags,
+    cf: false,
     workers: [
       {
-        compatibilityDate,
-        compatibilityFlags,
-        d1Databases: { ProviderAccountingDatabase: "gaia-163-test" },
-        kvNamespaces: ["PROVIDER_WORKFLOW_STATE"],
-        modules: [...fixtureModules],
-        name: "provider-workflow",
-        serviceBindings: { HouseholdDomainWorker: "household-domain" },
-        workflows: {
-          ProviderRetryWorkflow: {
-            className: "ProviderRetryWorkflow",
-            name: "provider-retry-workflow",
+        config: {
+          compatibilityDate,
+          compatibilityFlags,
+          env: {
+            HouseholdDomainWorker: {
+              type: "worker",
+              worker: "household-domain",
+            },
+            PROVIDER_WORKFLOW_STATE: {
+              id: "PROVIDER_WORKFLOW_STATE",
+              type: "kv",
+            },
+            ProviderAccountingDatabase: { id: "gaia-163-test", type: "d1" },
+            ProviderRetryWorkflow: {
+              exportName: "ProviderRetryWorkflow",
+              name: "provider-retry-workflow",
+              type: "workflow",
+              worker: "provider-workflow",
+            },
           },
+          manifest: fixtureManifest,
+          name: "provider-workflow",
+          type: "worker",
         },
       },
       {
-        compatibilityDate,
-        compatibilityFlags,
-        durableObjects: {
-          HouseholdObject: { className: "HouseholdObject", useSQLite: true },
+        config: {
+          compatibilityDate,
+          compatibilityFlags,
+          env: {
+            HouseholdObject: {
+              exportName: "HouseholdObject",
+              type: "durable-object",
+              worker: "household-domain",
+            },
+          },
+          exports: {
+            HouseholdObject: { storage: "sqlite", type: "durable-object" },
+          },
+          manifest: householdDomainManifest,
+          name: "household-domain",
+          type: "worker",
         },
-        modules: [...householdDomainModules],
-        name: "household-domain",
       },
     ],
   });

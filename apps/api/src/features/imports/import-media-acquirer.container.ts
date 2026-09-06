@@ -4,8 +4,7 @@ import { createReadStream } from "node:fs";
 import { open, readdir, rm, stat } from "node:fs/promises";
 import { request as httpsRequest } from "node:https";
 import { BlockList, isIP } from "node:net";
-// eslint-disable-next-line unicorn/import-style -- The root Alchemy TypeScript config disables synthetic default imports.
-import { join } from "node:path";
+import path from "node:path";
 import { checkServerIdentity } from "node:tls";
 
 import { Clock, Effect, Schema } from "effect";
@@ -409,7 +408,7 @@ export const makeContainerMediaAcquirer = (
         Effect.map((now) => Math.max(1, deadlineAt - now))
       );
       yield* scanTemporaryWorkspace(workspaceRoot);
-      const downloadPath = join(workspaceRoot, "source.download");
+      const downloadPath = path.join(workspaceRoot, "source.download");
       yield* downloader
         .download(
           source.mediaLocator,
@@ -433,7 +432,7 @@ export const makeContainerMediaAcquirer = (
       if (sourceName === undefined || additionalSources.length !== 0) {
         return yield* Effect.fail(terminal("invalid_media"));
       }
-      const mediaPath = join(workspaceRoot, "original.mp4");
+      const mediaPath = path.join(workspaceRoot, "original.mp4");
       yield* processRunner.run(
         "ffmpeg",
         [
@@ -442,7 +441,7 @@ export const makeContainerMediaAcquirer = (
           "-loglevel",
           "error",
           "-i",
-          join(workspaceRoot, sourceName),
+          path.join(workspaceRoot, sourceName),
           "-map",
           "0:v:0",
           "-map",

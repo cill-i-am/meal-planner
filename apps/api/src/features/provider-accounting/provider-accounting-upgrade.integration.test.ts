@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { readD1Migrations } from "@cloudflare/vitest-pool-workers";
+import { readD1Migrations } from "@cloudflare/vitest-plugin";
 import { NodeServices } from "@effect/platform-node";
 import { applyMigrations } from "alchemy/SQL/Migrations/index";
 import type { SqlExecutor } from "alchemy/SQL/Migrations/index";
@@ -94,10 +94,32 @@ const withAppliedBaseline = async (
   );
   const directory = await mkdtemp(`${tmpdir()}/provider-accounting-upgrade-`);
   const runtime = new Miniflare({
-    compatibilityDate: "2026-07-14",
-    d1Databases: ["ProviderAccountingDatabase"],
-    modules: true,
-    script: "export default { fetch() { return new Response('ok'); } }",
+    cf: false,
+    workers: [
+      {
+        config: {
+          compatibilityDate: "2026-07-14",
+          env: {
+            ProviderAccountingDatabase: {
+              id: "ProviderAccountingDatabase",
+              type: "d1",
+            },
+          },
+          manifest: {
+            mainModule: "worker.mjs",
+            modules: {
+              "worker.mjs": {
+                contents:
+                  "export default { fetch() { return new Response('ok'); } }",
+                type: "esm",
+              },
+            },
+          },
+          name: "worker",
+          type: "worker",
+        },
+      },
+    ],
   });
   try {
     const database = await runtime.getD1Database("ProviderAccountingDatabase");

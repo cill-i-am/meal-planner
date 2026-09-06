@@ -225,16 +225,14 @@ export const loadStagedOperatorCarousel = (input: {
       manifest.images,
       (image, orderIndex) =>
         readBytes(input.bucket, image.key, image.byteLength, image.sha256).pipe(
-          Effect.map(
-            (bytes): TikTokCarouselImageArtifact => ({
-              bytes,
-              height: image.height,
-              mimeType: "image/jpeg",
-              orderIndex,
-              sha256: image.sha256,
-              width: image.width,
-            })
-          )
+          Effect.map((bytes): TikTokCarouselImageArtifact => ({
+            bytes,
+            height: image.height,
+            mimeType: "image/jpeg",
+            orderIndex,
+            sha256: image.sha256,
+            width: image.width,
+          }))
         ),
       { concurrency: 1 }
     );

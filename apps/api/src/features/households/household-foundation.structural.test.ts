@@ -1,6 +1,5 @@
 import { access, readFile, readdir } from "node:fs/promises";
-// eslint-disable-next-line unicorn/import-style -- This package does not enable synthetic default imports for Node built-ins.
-import * as path from "node:path";
+import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 

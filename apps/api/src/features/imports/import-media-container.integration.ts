@@ -1,8 +1,7 @@
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-// eslint-disable-next-line unicorn/import-style -- The root Alchemy TypeScript config disables synthetic default imports.
-import { join } from "node:path";
+import path from "node:path";
 import { promisify } from "node:util";
 
 import { Cause, Effect, Exit, Option, Schema } from "effect";
@@ -80,8 +79,10 @@ describe.skipIf(!enabled)("pinned media container", () => {
     const container = `meal-planner-gaia-109-media-${suffix}`;
     const workspaceContainer = `meal-planner-gaia-169-workspace-${suffix}`;
     const image = `meal-planner-gaia-109-media:${suffix}`;
-    const root = await mkdtemp(join(tmpdir(), "meal-planner-container-test-"));
-    const dockerfile = join(root, "Dockerfile");
+    const root = await mkdtemp(
+      path.join(tmpdir(), "meal-planner-container-test-")
+    );
+    const dockerfile = path.join(root, "Dockerfile");
     try {
       await writeFile(dockerfile, TikTokMediaContainerDockerfile);
       await Effect.runPromise(
@@ -215,8 +216,8 @@ try {
 set -eu
 test "$(id -u)" = "10001"
 test "$(id -g)" = "10001"
-test "$(yt-dlp --version)" = "2026.07.04"
-ffmpeg -version | head -n 1 | grep "ffmpeg version 8.1.2"
+test "$(yt-dlp --version)" = "2026.08.19"
+ffmpeg -version | head -n 1 | grep "ffmpeg version 9.0.1"
 ffmpeg -hide_banner -buildconf | grep -- "--disable-network"
 if ffmpeg -hide_banner -protocols | grep -E '^[[:space:]]+(http|https|tcp|udp)$'; then exit 1; fi
 printf '#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\nhttp://169.254.169.254/latest/meta-data/\n#EXT-X-ENDLIST\n' > /tmp/private-target.m3u8
@@ -266,14 +267,14 @@ ffprobe -v error -show_format -show_streams -of json /tmp/video-only.mp4 > /tmp/
           "video-only.json",
         ].map((name) =>
           Effect.runPromise(
-            docker(["cp", `${container}:/tmp/${name}`, join(root, name)])
+            docker(["cp", `${container}:/tmp/${name}`, path.join(root, name)])
           )
         )
       );
 
-      const validBytes = await readFile(join(root, "valid.mp4"));
+      const validBytes = await readFile(path.join(root, "valid.mp4"));
       const validProbe = Schema.decodeUnknownSync(Schema.Json)(
-        JSON.parse(await readFile(join(root, "valid.json"), "utf-8"))
+        JSON.parse(await readFile(path.join(root, "valid.json"), "utf-8"))
       );
       const decodedValidProbe =
         Schema.decodeUnknownSync(MediaProbeOutput)(validProbe);
@@ -296,8 +297,8 @@ ffprobe -v error -show_format -show_streams -of json /tmp/video-only.mp4 > /tmp/
           ] as const
         ).map(async ([mediaName, probeName]) => {
           const [media, probeText] = await Promise.all([
-            readFile(join(root, mediaName)),
-            readFile(join(root, probeName), "utf-8"),
+            readFile(path.join(root, mediaName)),
+            readFile(path.join(root, probeName), "utf-8"),
           ]);
           await expectRejectedProbe(
             Schema.decodeUnknownSync(Schema.Json)(JSON.parse(probeText)),

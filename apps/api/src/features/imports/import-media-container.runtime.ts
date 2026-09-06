@@ -2,8 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-// eslint-disable-next-line unicorn/import-style -- This TypeScript target does not enable synthetic default imports.
-import * as path from "node:path";
+import path from "node:path";
 import { Readable } from "node:stream";
 
 import { Effect, Option, Schema, Stream } from "effect";
@@ -37,13 +36,13 @@ import type { SourceResolver } from "./import-source-resolver.js";
 import { makeTikTokSourceResolver } from "./import-source-resolver.tiktok.js";
 
 export const TikTokMediaContainerDockerfile = `
-FROM node:22.19.0-bookworm-slim@sha256:4a4884e8a44826194dff92ba316264f392056cbe243dcc9fd3551e71cea02b90 AS tools
+FROM node:24.20.0-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS tools
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential ca-certificates curl git gnupg nasm xz-utils && rm -rf /var/lib/apt/lists/*
-RUN curl --fail --location --output /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/download/2026.07.04/yt-dlp_linux && echo "6bbb3d314cde4febe36e5fa1d55462e29c974f63444e707871834f6d8cc210ae  /usr/local/bin/yt-dlp" | sha256sum --check && chmod 0555 /usr/local/bin/yt-dlp
+RUN curl --fail --location --output /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_linux && echo "58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a  /usr/local/bin/yt-dlp" | sha256sum --check && chmod 0555 /usr/local/bin/yt-dlp
 RUN gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys DD1EC9E8DE085C629B3E1846B18E8928B3948D64 && test "$(gpg --with-colons --fingerprint DD1EC9E8DE085C629B3E1846B18E8928B3948D64 | awk -F: '$1 == "fpr" { print $10; exit }')" = "DD1EC9E8DE085C629B3E1846B18E8928B3948D64"
-RUN git init /tmp/ffmpeg-source && cd /tmp/ffmpeg-source && git remote add origin https://github.com/FFmpeg/FFmpeg.git && git fetch --depth 1 origin tag n8.1.2 && git verify-tag n8.1.2 && test "$(git rev-parse 'n8.1.2^{commit}')" = "38b88335f99e76ed89ff3c93f877fdefce736c13" && git checkout --detach n8.1.2 && test "$(git rev-parse HEAD)" = "38b88335f99e76ed89ff3c93f877fdefce736c13" && mkdir /tmp/ffmpeg && git archive --format=tar n8.1.2 | tar --extract --directory /tmp/ffmpeg
-RUN cd /tmp/ffmpeg && ./configure --disable-debug --disable-doc --disable-ffplay --disable-network --disable-shared --enable-static && make -j2 && make install && ffmpeg -version | grep "ffmpeg version 8.1.2" && ffprobe -version | grep "ffprobe version 8.1.2"
-FROM node:22.19.0-bookworm-slim@sha256:4a4884e8a44826194dff92ba316264f392056cbe243dcc9fd3551e71cea02b90
+RUN git init /tmp/ffmpeg-source && cd /tmp/ffmpeg-source && git remote add origin https://github.com/FFmpeg/FFmpeg.git && git fetch --depth 1 origin tag n9.0.1 && git verify-tag n9.0.1 && test "$(git rev-parse 'n9.0.1^{commit}')" = "bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa" && git checkout --detach n9.0.1 && test "$(git rev-parse HEAD)" = "bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa" && mkdir /tmp/ffmpeg && git archive --format=tar n9.0.1 | tar --extract --directory /tmp/ffmpeg
+RUN cd /tmp/ffmpeg && ./configure --disable-debug --disable-doc --disable-ffplay --disable-network --disable-shared --enable-static && make -j2 && make install && ffmpeg -version | grep "ffmpeg version 9.0.1" && ffprobe -version | grep "ffprobe version 9.0.1"
+FROM node:24.20.0-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e
 COPY --from=tools /usr/local/bin/yt-dlp /usr/local/bin/yt-dlp
 COPY --from=tools /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --from=tools /usr/local/bin/ffprobe /usr/local/bin/ffprobe

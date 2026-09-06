@@ -9,7 +9,6 @@ import {
   MealPlanRecipeSnapshot,
 } from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
-import type { ModuleDefinition } from "miniflare";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -573,7 +572,7 @@ const fixturePath = fileURLToPath(
 );
 const temporaryDirectories: string[] = [];
 let runtime: Miniflare;
-let fixtureModules: readonly [ModuleDefinition, ...ModuleDefinition[]];
+let fixtureManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
 let persistenceDirectory: string;
 
 const HouseholdEnsureResponse = Schema.Union([
@@ -650,20 +649,38 @@ const MealPlanStorageResponse = Schema.Struct({
 
 const makeRuntime = () =>
   new Miniflare({
-    compatibilityDate,
-    compatibilityFlags,
-    durableObjects: {
-      BrokenMigrationObject: {
-        className: "BrokenMigrationObject",
-        useSQLite: true,
+    cf: false,
+    resourcePersistencePath: persistenceDirectory,
+    workers: [
+      {
+        config: {
+          compatibilityDate,
+          compatibilityFlags,
+          env: {
+            BrokenMigrationObject: {
+              exportName: "BrokenMigrationObject",
+              type: "durable-object",
+              worker: "worker",
+            },
+            HouseholdObject: {
+              exportName: "HouseholdObject",
+              type: "durable-object",
+              worker: "worker",
+            },
+          },
+          exports: {
+            BrokenMigrationObject: {
+              storage: "sqlite",
+              type: "durable-object",
+            },
+            HouseholdObject: { storage: "sqlite", type: "durable-object" },
+          },
+          manifest: fixtureManifest,
+          name: "worker",
+          type: "worker",
+        },
       },
-      HouseholdObject: {
-        className: "HouseholdObject",
-        useSQLite: true,
-      },
-    },
-    durableObjectsPersist: persistenceDirectory,
-    modules: [...fixtureModules],
+    ],
   });
 
 beforeAll(async () => {
@@ -672,7 +689,7 @@ beforeAll(async () => {
   );
   temporaryDirectories.push(temporaryDirectory);
   persistenceDirectory = `${temporaryDirectory}/durable-object-storage`;
-  fixtureModules = await bundleWorkerFixture(fixturePath, temporaryDirectory);
+  fixtureManifest = await bundleWorkerFixture(fixturePath, temporaryDirectory);
   runtime = makeRuntime();
 }, 30_000);
 

@@ -9,8 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-// eslint-disable-next-line unicorn/import-style -- The root Alchemy TypeScript config disables synthetic default imports.
-import { join } from "node:path";
+import path from "node:path";
 import { Readable } from "node:stream";
 
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -382,9 +381,9 @@ describe("installed acquisition Durable Object boundary", () => {
   });
 
   it("streams a registered private artifact above 128 KiB exactly", async () => {
-    const root = await mkdtemp(join(tmpdir(), "private-artifact-read-"));
+    const root = await mkdtemp(path.join(tmpdir(), "private-artifact-read-"));
     const artifactId = "018f47ad-91aa-7c35-b6fe-000000000001:1:source";
-    const artifactPath = join(root, "source.mp4");
+    const artifactPath = path.join(root, "source.mp4");
     const artifacts = makeTemporaryArtifactStore((artifactRoot) =>
       rm(artifactRoot, { force: true, recursive: true })
     );
@@ -428,7 +427,7 @@ describe("installed acquisition Durable Object boundary", () => {
     ["traversal", "/artifacts/..%2Fsource.mp4", 400],
   ])(
     "fails closed for a %s private artifact id",
-    async (_case, path, status) => {
+    async (_case, requestPath, status) => {
       const failureCanary = "opaque-artifact-read-canary";
       const runtime = makeTikTokMediaContainerRuntime({
         acquirer: { acquire: () => Effect.die(failureCanary) },
@@ -439,7 +438,7 @@ describe("installed acquisition Durable Object boundary", () => {
 
       const closedResponse = await runContainerRequest(
         runtime,
-        new Request(`http://container.invalid${path}`)
+        new Request(`http://container.invalid${requestPath}`)
       );
 
       expect(closedResponse.status).toBe(status);
@@ -469,7 +468,7 @@ describe("installed acquisition Durable Object boundary", () => {
       }),
     ],
   ])("rejects ffprobe frame output with %s", async (_case, probe) => {
-    const root = await mkdtemp(join(tmpdir(), "frame-dimensions-"));
+    const root = await mkdtemp(path.join(tmpdir(), "frame-dimensions-"));
     const artifactId = acquisitionCoordinatorId(
       identity.importId,
       identity.generation
@@ -478,7 +477,7 @@ describe("installed acquisition Durable Object boundary", () => {
     artifacts.registerPath(
       artifactId,
       root,
-      join(root, "source.mp4"),
+      path.join(root, "source.mp4"),
       "video/mp4"
     );
     const runtime = makeTikTokMediaContainerRuntime({
@@ -516,7 +515,9 @@ describe("installed acquisition Durable Object boundary", () => {
   });
 
   it("classifies the container-wide process deadline as a timeout", async () => {
-    const root = await mkdtemp(join(tmpdir(), "gaia-204-container-timeout-"));
+    const root = await mkdtemp(
+      path.join(tmpdir(), "gaia-204-container-timeout-")
+    );
     try {
       const source = await Effect.runPromise(
         makeTikTokSourceResolver(makeProcessRunner()).resolve(identity, root)
@@ -593,7 +594,9 @@ describe("installed acquisition Durable Object boundary", () => {
   });
 
   it("runs resolver and download through the Alchemy container layer and RPC", async () => {
-    const root = await mkdtemp(join(tmpdir(), "gaia-167-installed-boundary-"));
+    const root = await mkdtemp(
+      path.join(tmpdir(), "gaia-167-installed-boundary-")
+    );
     const requests: unknown[] = [];
     const sessionAudit: {
       mode?: number;
@@ -626,7 +629,7 @@ describe("installed acquisition Durable Object boundary", () => {
         makeSecureMediaDownloader(downloadClient)
       ),
       artifacts,
-      makeTemporaryRoot: () => mkdtemp(join(root, "artifact-")),
+      makeTemporaryRoot: () => mkdtemp(path.join(root, "artifact-")),
       processRunner,
       resolver: makeTikTokSourceResolver(processRunner),
     });
