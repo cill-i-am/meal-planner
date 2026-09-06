@@ -1851,3 +1851,184 @@ it("rearms one recovery for a later deliberate message after a successful idle r
   expect(f.sockets.length).toBe(count);
   expect(client.getSnapshot().connection).toBe("authentication_required");
 });
+
+it.each(["AppendParticipantMessage", "RetryAssistantTurn"] as const)(
+  "keeps a freshly admitted interrupted turn authoritative over an equal-version %s receipt",
+  async (type) => {
+    const f = fixture();
+    const { user, socket } = await openResponse(
+      f,
+      type === "RetryAssistantTurn"
+        ? { ...queuedTurn, failure: "provider_unavailable", status: "failed" }
+        : null
+    );
+    if (type === "AppendParticipantMessage") {
+      await user.type(screen.getByLabelText("Your message"), message.text);
+      await user.click(screen.getByRole("button", { name: "Save message" }));
+    } else {
+      await user.click(
+        screen.getByRole("button", { name: "Try new response" })
+      );
+    }
+    const exact = socket.last(type);
+    const attempt =
+      type === "AppendParticipantMessage"
+        ? queuedTurn
+        : { ...queuedTurn, id: "00000000-0000-4000-8000-000000000402" };
+    act(() => socket.lose(1008));
+    await act(async () => {
+      f.list(f.directoryReady());
+      f.sessionReady({ ...state, version: 1 }, [], null, undefined, {
+        ...attempt,
+        failure: "connection_lost",
+        status: "interrupted",
+      });
+    });
+    const fresh = f.latest();
+    expect(fresh.last(type)).toEqual(exact);
+    act(() => {
+      if (type === "AppendParticipantMessage") {
+        fresh.receive({
+          assistantTurn: attempt,
+          message,
+          mutationId: exact.mutationId,
+          state: { ...state, version: 1 },
+          type: "MessageAppended",
+        });
+      } else {
+        fresh.receive({
+          mutationId: exact.mutationId,
+          state: { ...state, version: 1 },
+          turn: attempt,
+          type: "AssistantTurnChanged",
+        });
+      }
+    });
+    expect(f.storage.size).toBe(0);
+    expect(
+      screen.getByText(/The response was interrupted/u)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Try new response" })
+    ).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: "Continue response" })
+    ).not.toBeInTheDocument();
+    expect(f.dependencies.continueAssistantTurn).not.toHaveBeenCalled();
+    expect(f.dependencies.continueConfirmation).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Try new response" }));
+    const retry = fresh.last("RetryAssistantTurn");
+    expect(retry.turnId).toBe(attempt.id);
+    expect(retry.mutationId).not.toBe(exact.mutationId);
+    const next = { ...queuedTurn, id: "00000000-0000-4000-8000-000000000403" };
+    await act(async () =>
+      fresh.receive({
+        mutationId: retry.mutationId,
+        state: { ...state, version: 2 },
+        turn: next,
+        type: "AssistantTurnChanged",
+      })
+    );
+    expect(
+      f.dependencies.continueAssistantTurn
+    ).toHaveBeenCalledExactlyOnceWith(
+      reference,
+      next.id,
+      "00000000-0000-4000-8000-000000000301",
+      expect.any(AbortSignal)
+    );
+  }
+);
+
+it("allows equal-version forward turn progress while rejecting queued and running regressions", () => {
+  const f = fixture();
+  const { client, socket } = establishedClient(f);
+  const update = (turn: AssistantTurn) =>
+    socket.receive({
+      state: { ...state, version: 1 },
+      turn,
+      type: "AssistantTurnUpdated",
+    });
+  update(queuedTurn);
+  update({ ...queuedTurn, status: "running" });
+  update(queuedTurn);
+  expect(client.getSnapshot().assistantTurn?.status).toBe("running");
+  update({ ...queuedTurn, failure: "provider_unavailable", status: "failed" });
+  update({ ...queuedTurn, status: "running" });
+  update(queuedTurn);
+  expect(client.getSnapshot().assistantTurn).toEqual({
+    ...queuedTurn,
+    failure: "provider_unavailable",
+    status: "failed",
+  });
+  expect(f.dependencies.continueAssistantTurn).not.toHaveBeenCalled();
+});
+
+it.each(["assistant_turn_conflict", "assistant_turn_pending"] as const)(
+  "reconciles %s after Stop races with completion and a fresh status admission succeeds",
+  async (reason) => {
+    const f = fixture();
+    const { user, socket } = await openResponse(f, {
+      ...queuedTurn,
+      status: "running",
+    });
+    await user.click(screen.getByRole("button", { name: "Stop response" }));
+    const cancel = socket.last("CancelAssistantTurn");
+    const settledState = { ...state, version: 1 };
+    const succeeded = { ...queuedTurn, status: "succeeded" as const };
+    act(() => {
+      socket.receive({
+        state: settledState,
+        turn: succeeded,
+        type: "AssistantTurnUpdated",
+      });
+      socket.receive({
+        hasMore: false,
+        messages: [],
+        requestId: socket.last("ReadHistory").requestId,
+        state: settledState,
+        type: "HistoryRead",
+      });
+      socket.receive({
+        cards: [],
+        hasMore: false,
+        pendingConfirmation: null,
+        requestId: socket.last("ReadCards").requestId,
+        state: settledState,
+        type: "CardsRead",
+      });
+      socket.receive({
+        commandId: cancel.mutationId,
+        reason,
+        state: settledState,
+        type: "Rejected",
+      });
+      socket.receive({
+        requestId: socket.last("ReadAssistantTurn").requestId,
+        state: settledState,
+        turn: succeeded,
+        type: "AssistantTurnRead",
+      });
+    });
+    expect(f.storage.size).toBe(0);
+    expect(screen.getByLabelText("Your message")).toBeDisabled();
+    await user.click(
+      screen.getByRole("button", { name: "Review response status" })
+    );
+    await act(async () =>
+      f.sessionReady(settledState, [], null, undefined, succeeded)
+    );
+    expect(
+      screen.queryByRole("button", { name: "Review response status" })
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Your message")).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Complete session" })
+    ).toBeEnabled();
+    expect(f.dependencies.continueAssistantTurn).not.toHaveBeenCalled();
+    expect(f.dependencies.continueConfirmation).not.toHaveBeenCalled();
+    await user.type(screen.getByLabelText("Your message"), message.text);
+    await user.click(screen.getByRole("button", { name: "Save message" }));
+    expect(f.latest().last("AppendParticipantMessage").expectedVersion).toBe(1);
+  }
+);

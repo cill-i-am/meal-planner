@@ -696,6 +696,11 @@ export class PrivateInterviewClient {
     this.#state(frame.state);
     this.#update({
       assistantTurn: frame.assistantTurn,
+      notice:
+        this.#view.notice === "assistant_turn_conflict" ||
+        this.#view.notice === "assistant_turn_pending"
+          ? null
+          : this.#view.notice,
       pendingConfirmation: frame.pendingConfirmation,
     });
     this.loadHistory();
@@ -957,9 +962,18 @@ export class PrivateInterviewClient {
       return;
     }
     const previous = this.#view.assistantTurn;
+    if (
+      turn !== null &&
+      previous !== null &&
+      turn.id === previous.id &&
+      ((turn.status === "queued" && previous.status !== "queued") ||
+        (turn.status === "running" && !isAssistantTurnActive(previous)))
+    ) {
+      return;
+    }
     this.#state(state);
     this.#update({ assistantTurn: turn });
-    if (turn?.status !== "queued" && turn?.status !== "running") {
+    if (!isAssistantTurnActive(turn)) {
       this.#turnAbort?.abort();
       this.#turnAbort = null;
       this.#update({ turnRequestStatus: "idle" });

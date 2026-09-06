@@ -1863,10 +1863,8 @@ describe("native adaptive assistant attempts through the production model adapte
       turn: { status: "succeeded" },
     });
     const attempts = await audit(session);
-    expect(JSON.parse(attempts[0]?.usageJson ?? "null")).toMatchObject({
-      inputTokens: 100,
-      outputTokens: 20,
-    });
+    // Stop precedes response headers, so cancellation discards the unread body and its unknown usage.
+    expect(attempts[0]?.usageJson).toBeNull();
     expect(attempts[0]?.summary).toBeNull();
     expect(attempts.map((item) => item.status)).toEqual([
       "cancelled",

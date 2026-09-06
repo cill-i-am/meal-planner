@@ -1,5 +1,5 @@
 import type * as NativeCloudflare from "@cloudflare/workers-types";
-import { Effect, Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
 import { PrivateDiscoveryContext } from "./private-discovery-model.js";
@@ -318,6 +318,76 @@ describe("private discovery Workers AI boundary", () => {
       usage: null,
     });
     expect(aborted).toBe(true);
+    expect(test.run).toHaveBeenCalledOnce();
+  });
+
+  it("aborts transport and cancels a stalled body at the deadline without awaiting cancellation", async () => {
+    const cancel = vi.fn(() => Promise.withResolvers<never>().promise);
+    const test = fixture(() =>
+      Promise.resolve(new Response(new ReadableStream({ cancel })))
+    );
+    const error = await Effect.runPromise(
+      Effect.flip(test.model.generate(test.input))
+    );
+    expect(error.reason).toBe("outcome_unknown");
+    expect(test.run.mock.calls[0]?.[2].signal.aborted).toBe(true);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(test.run).toHaveBeenCalledOnce();
+  });
+
+  it("cancels a stalled body after participant stop without awaiting cancellation", async () => {
+    const reading = Promise.withResolvers<true>();
+    const cancel = vi.fn(() => Promise.withResolvers<never>().promise);
+    const test = fixture(() =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream(
+            { cancel, pull: () => reading.resolve(true) },
+            { highWaterMark: 0 }
+          )
+        )
+      )
+    );
+    const controller = new AbortController();
+    const result = Effect.runPromise(
+      Effect.flip(
+        test.model.generate({ ...test.input, signal: controller.signal })
+      )
+    );
+    await reading.promise;
+    controller.abort();
+    const error = await result;
+    expect(error.reason).toBe("outcome_unknown");
+    expect(test.run.mock.calls[0]?.[2].signal.aborted).toBe(true);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(test.run).toHaveBeenCalledOnce();
+  });
+
+  it("cancels the owned body reader when the calling fiber is interrupted", async () => {
+    const reading = Promise.withResolvers<true>();
+    const cancel = vi.fn(() => Promise.withResolvers<never>().promise);
+    const test = fixture(() =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream(
+            { cancel, pull: () => reading.resolve(true) },
+            { highWaterMark: 0 }
+          )
+        )
+      )
+    );
+    const controller = new AbortController();
+    const running = Effect.runPromiseExit(test.model.generate(test.input), {
+      signal: controller.signal,
+    });
+    await reading.promise;
+    controller.abort();
+    const result = await running;
+    expect(Exit.isFailure(result) && Cause.hasInterrupts(result.cause)).toBe(
+      true
+    );
+    expect(test.run.mock.calls[0]?.[2].signal.aborted).toBe(true);
+    expect(cancel).toHaveBeenCalledOnce();
     expect(test.run).toHaveBeenCalledOnce();
   });
 });

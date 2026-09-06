@@ -49,13 +49,22 @@ abort does not claim to undo provider work. A late result can persist only for t
 same active attempt, original generation, and session version. Every physical
 socket send retains the existing final-send authorization fence.
 
+One cancellation signal remains active through provider dispatch and complete
+bounded response consumption. Stop, deadline and caller interruption cancel the
+owned body reader without awaiting a potentially stalled cleanup promise. An
+unread cancelled response has unknown usage; already decoded measurements remain
+eligible for metadata-only retention without restoring private output.
+
 The browser clears private rendered state when an established connection is lost.
 It allows one fresh authenticated admission and exact retained WebSocket mutation
 replay per deliberate user action, restoring a selected session only after the
 new directory binding matches the original. Successful reads and admission never
 replenish that recovery allowance. Recovered turns and confirmations require an
 explicit continuation; reconnecting cannot automatically dispatch model work or
-confirm a profile card. Failed admission remains visibly unavailable.
+confirm a profile card. A stale receipt cannot regress the same attempt from a
+running or terminal status, even when the session version is unchanged. A fresh
+session admission clears only reconciled assistant-turn conflict/pending notices.
+Failed admission remains visibly unavailable.
 
 The thin application-owned model seam accepts bounded authorized context and
 returns assistant text, bounded new-card/proposed-card-revision operations, a
@@ -143,13 +152,13 @@ delivery. Provider-free doubles establish runtime behaviour, not model quality.
 
 The worktree is clean at the recorded base before implementation. Exact locked
 dependencies installed successfully using the pinned Node 24.20.0 / pnpm 12.3.4
-toolchain. At the implementation handoff, provider-free adapter tests pass (15), the private
-native suite passes (57), public protocol tests pass (10), and all 151 web tests
+toolchain. At the implementation handoff, provider-free adapter tests pass (18), the private
+native suite passes (57), public protocol tests pass (10), and all 156 web tests
 pass. Full workspace type checking, lint, formatting, and builds pass. The full
-repository baseline and affected final suites pass 1,333 tests, including an affected architecture rerun after
+repository baseline and affected final suites pass 1,341 tests, including an affected architecture rerun after
 staging the new production module for the tracked-file inventory assertion.
 Actual browser acceptance exposed an idle socket reauthentication path; its
-bounded client recovery now passes nine regression cases, affected type checking,
+bounded client recovery and receipt/conflict reconciliation now pass fourteen regression cases, affected type checking,
 lint and build. Final browser acceptance against the committed source is pending.
 Local transport doubles intercept outbound requests and forward
 none. No provider/model call, secret read, cloud mutation, or deployment has

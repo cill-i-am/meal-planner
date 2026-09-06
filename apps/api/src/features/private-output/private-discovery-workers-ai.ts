@@ -117,18 +117,29 @@ const requestFor = (
       };
 };
 
-const readBoundedResponse = async (response: NativeCloudflare.Response) => {
+const readBoundedResponse = async (
+  response: NativeCloudflare.Response,
+  signal: AbortSignal
+) => {
   if (response.body === null) {
     throw failure("invalid_output");
   }
   const reader = response.body.getReader();
+  const cancel = () => {
+    // Cancellation is best effort; a stalled provider must not hold the deadline open.
+    // oxlint-disable-next-line promise/prefer-await-to-then -- The cancellation request must not await a stalled provider cleanup promise.
+    void reader.cancel().catch(() => null);
+  };
+  signal.addEventListener("abort", cancel, { once: true });
   let length = 0;
   let text = "";
   const decoder = new TextDecoder();
   try {
+    signal.throwIfAborted();
     while (true) {
       // oxlint-disable-next-line no-await-in-loop -- A stream reader has one ordered consumer; parallel reads would bypass the byte limit.
       const part = await reader.read();
+      signal.throwIfAborted();
       if (part.done) {
         break;
       }
@@ -140,7 +151,8 @@ const readBoundedResponse = async (response: NativeCloudflare.Response) => {
     }
     return text + decoder.decode();
   } finally {
-    await reader.cancel();
+    signal.removeEventListener("abort", cancel);
+    cancel();
   }
 };
 
@@ -184,9 +196,13 @@ export const makePrivateDiscoveryModel = (
         return yield* Effect.fail(configuredFailure("context_limit"));
       }
       return yield* Effect.gen(function* callPrivateDiscoveryProvider() {
-        const response = yield* Effect.tryPromise({
-          catch: () => configuredFailure("outcome_unknown"),
-          try: (signal) => {
+        const encoded = yield* Effect.tryPromise({
+          catch: (error) =>
+            error instanceof PrivateDiscoveryFailure
+              ? error
+              : configuredFailure("outcome_unknown"),
+          try: async (signal) => {
+            const transportSignal = AbortSignal.any([input.signal, signal]);
             const options = {
               extraHeaders: { "cf-aig-max-attempts": "1" },
               gateway: {
@@ -197,28 +213,26 @@ export const makePrivateDiscoveryModel = (
               returnRawResponse: true as const,
               // SAFETY: The Workers and DOM libraries describe the same runtime signal with
               // incompatible event-listener overloads at this native API boundary.
-              signal: AbortSignal.any([
-                input.signal,
-                signal,
-              ]) as unknown as NativeCloudflare.AbortSignal,
+              signal:
+                transportSignal as unknown as NativeCloudflare.AbortSignal,
             };
             if (options.signal.aborted) {
               throw configuredFailure("outcome_unknown");
             }
             input.beforeDispatch(provenance);
-            return ai.run(request.model, request.body, options);
+            const response = await ai.run(request.model, request.body, options);
+            if (!response.ok) {
+              void response.body?.cancel().catch(() => null);
+              throw configuredFailure("provider_unavailable");
+            }
+            try {
+              return await readBoundedResponse(response, transportSignal);
+            } catch {
+              throw configuredFailure(
+                transportSignal.aborted ? "outcome_unknown" : "invalid_output"
+              );
+            }
           },
-        });
-        if (!response.ok) {
-          yield* Effect.tryPromise({
-            catch: () => configuredFailure("provider_unavailable"),
-            try: () => response.body?.cancel() ?? Promise.resolve(),
-          });
-          return yield* Effect.fail(configuredFailure("provider_unavailable"));
-        }
-        const encoded = yield* Effect.tryPromise({
-          catch: () => configuredFailure("invalid_output"),
-          try: () => readBoundedResponse(response),
         });
         const completion = yield* Schema.decodeUnknownEffect(
           Schema.fromJsonString(Completion)
