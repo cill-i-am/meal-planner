@@ -2,6 +2,11 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import { Effect, Schema } from "effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 
+import { makeAcquisitionLifetime } from "./import-media-acquisition-lifetime.js";
+import {
+  AcquisitionReaderHeader,
+  AcquisitionReaderId,
+} from "./import-media-artifact-transport.js";
 import { TikTokMediaContainer } from "./import-media-container.js";
 import {
   AcquisitionArtifact,
@@ -22,65 +27,113 @@ const requireMatchingCoordinator = (
 export const ImportMediaAcquisitionObjectRuntime = Effect.fn(
   "ImportMediaAcquisitionObject.initialize"
 )(function* ImportMediaAcquisitionObjectInit() {
-  const durableObjectState = yield* Cloudflare.DurableObjectState;
-  const media = yield* TikTokMediaContainer;
-  const coordinatorId = yield* Schema.decodeUnknownEffect(
-    AcquisitionCoordinatorId
-  )(durableObjectState.id.name).pipe(Effect.orDie);
-  const decodeAcquisitionArtifact = (artifactId: string) =>
-    Schema.decodeUnknownEffect(AcquisitionArtifactId)(artifactId).pipe(
-      Effect.flatMap((decoded) =>
-        requireMatchingCoordinator(coordinatorId, decoded)
-      ),
-      Effect.orDie
-    );
-  const decodeIdentity = (untrustedIdentity: typeof TikTokIdentity.Type) =>
-    Schema.decodeUnknownEffect(TikTokIdentity)(untrustedIdentity).pipe(
-      Effect.flatMap((identity) =>
-        requireMatchingCoordinator(
-          coordinatorId,
-          acquisitionCoordinatorId(identity.importId, identity.generation)
-        ).pipe(Effect.as(identity))
-      ),
-      Effect.orDie
-    );
-  const fetch = Effect.fn("ImportMediaAcquisitionObject.fetch")(
-    function* forwardPrivateArtifactRequest() {
-      const request = yield* HttpServerRequest.HttpServerRequest;
-      const artifactId = decodeURIComponent(
-        new URL(request.url, "https://acquisition.internal").pathname.replace(
-          /^\/artifacts\//u,
-          ""
-        )
+  const application = yield* TikTokMediaContainer.Application;
+  // Alchemy beta.76 exposes bind at runtime but omits its signature from Platform.
+  const binding = yield* Cloudflare.Containers.ContainerPlatform.bind(
+    application
+  ) as unknown as Effect.Effect<Effect.Effect<Cloudflare.Containers.Container>>;
+  const initializationContext = yield* Effect.context();
+  return Effect.gen(function* runtime() {
+    const durableObjectState = yield* Cloudflare.DurableObjectState;
+    const container = yield* binding;
+    const lifetime = yield* makeAcquisitionLifetime(container);
+    // startContainer exposes an untyped environment; the captured constructor context supplies it.
+    const startMedia = Cloudflare.Containers.startContainer(
+      TikTokMediaContainer,
+      { enableInternet: true }
+    ).pipe(
+      Effect.provide(initializationContext)
+    ) as unknown as Effect.Effect<TikTokMediaContainer>;
+    const media = yield* Effect.cached(startMedia);
+    const coordinatorId = yield* Schema.decodeUnknownEffect(
+      AcquisitionCoordinatorId
+    )(durableObjectState.id.name).pipe(Effect.orDie);
+    const decodeAcquisitionArtifact = (artifactId: string) =>
+      Schema.decodeUnknownEffect(AcquisitionArtifactId)(artifactId).pipe(
+        Effect.flatMap((decoded) =>
+          requireMatchingCoordinator(coordinatorId, decoded)
+        ),
+        Effect.orDie
       );
-      const [owner] = yield* Schema.decodeUnknownEffect(AcquisitionArtifact)(
-        artifactId
-      ).pipe(Effect.orDie);
-      yield* requireMatchingCoordinator(coordinatorId, owner);
-      const containerPort = yield* media.getTcpPort(3000);
-      return yield* containerPort.fetch(request);
-    }
-  );
-  return Effect.succeed({
-    cleanup: (artifactId: string) =>
-      decodeAcquisitionArtifact(artifactId).pipe(Effect.flatMap(media.cleanup)),
-    fetch: fetch(),
-    prepare: (untrustedIdentity: typeof TikTokIdentity.Type) =>
-      decodeIdentity(untrustedIdentity).pipe(Effect.flatMap(media.prepare)),
-    prepareProviderEvidence: (artifactId: string, durationSeconds: number) =>
-      decodeAcquisitionArtifact(artifactId).pipe(
-        Effect.flatMap((decodedArtifactId) =>
-          media.prepareProviderEvidence(decodedArtifactId, durationSeconds)
-        )
-      ),
+    const decodeReaderArtifact = (artifactId: string) =>
+      Schema.decodeUnknownEffect(AcquisitionArtifact)(artifactId).pipe(
+        Effect.flatMap(([owner]) =>
+          requireMatchingCoordinator(coordinatorId, owner)
+        ),
+        Effect.orDie
+      );
+    const decodeIdentity = (untrustedIdentity: typeof TikTokIdentity.Type) =>
+      Schema.decodeUnknownEffect(TikTokIdentity)(untrustedIdentity).pipe(
+        Effect.flatMap((identity) =>
+          requireMatchingCoordinator(
+            coordinatorId,
+            acquisitionCoordinatorId(identity.importId, identity.generation)
+          ).pipe(Effect.as(identity))
+        ),
+        Effect.orDie
+      );
+    const fetch = Effect.fn("ImportMediaAcquisitionObject.fetch")(
+      function* forwardPrivateArtifactRequest() {
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const artifactId = decodeURIComponent(
+          new URL(request.url, "https://acquisition.internal").pathname.replace(
+            /^\/artifacts\//u,
+            ""
+          )
+        );
+        yield* decodeReaderArtifact(artifactId);
+        const started = yield* media;
+        const containerPort = yield* started.getTcpPort(3000);
+        return yield* containerPort.fetch(request);
+      }
+    );
+    return {
+      alarm: () => lifetime.alarm,
+      cleanup: (artifactId: string) =>
+        decodeAcquisitionArtifact(artifactId).pipe(
+          Effect.flatMap(() => lifetime.cleanup)
+        ),
+      closeReader: (artifactId: string, readerId: string) =>
+        decodeReaderArtifact(artifactId).pipe(
+          Effect.andThen(
+            Schema.decodeUnknownEffect(AcquisitionReaderId)(readerId)
+          ),
+          Effect.orDie,
+          Effect.flatMap(lifetime.closeReader)
+        ),
+      fetch: Effect.gen(function* admitPrivateArtifact() {
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const readerId = yield* Schema.decodeUnknownEffect(AcquisitionReaderId)(
+          request.headers[AcquisitionReaderHeader]
+        ).pipe(Effect.orDie);
+        return yield* lifetime.fetch(readerId, fetch());
+      }),
+      prepare: (untrustedIdentity: typeof TikTokIdentity.Type) =>
+        decodeIdentity(untrustedIdentity).pipe(
+          Effect.flatMap((identity) =>
+            lifetime.use(
+              media.pipe(Effect.flatMap((started) => started.prepare(identity)))
+            )
+          )
+        ),
+      prepareProviderEvidence: (artifactId: string, durationSeconds: number) =>
+        decodeAcquisitionArtifact(artifactId).pipe(
+          Effect.flatMap((decodedArtifactId) =>
+            lifetime.use(
+              media.pipe(
+                Effect.flatMap((started) =>
+                  started.prepareProviderEvidence(
+                    decodedArtifactId,
+                    durationSeconds
+                  )
+                )
+              )
+            )
+          )
+        ),
+    };
   });
-})().pipe(
-  Effect.provide(
-    Cloudflare.Containers.layer(TikTokMediaContainer, {
-      enableInternet: true,
-    })
-  )
-);
+})();
 
 /**
  * Noncanonical execution/transport coordinator only. The import intent keeps

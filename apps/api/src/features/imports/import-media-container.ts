@@ -14,7 +14,6 @@ import type {
 export class TikTokMediaContainer extends Cloudflare.Container<
   TikTokMediaContainer,
   {
-    readonly cleanup: (artifactId: string) => Effect.Effect<void>;
     readonly prepare: (
       request: TikTokIdentity
     ) => Effect.Effect<PreparedMediaArtifact, ContainerAcquisitionError>;

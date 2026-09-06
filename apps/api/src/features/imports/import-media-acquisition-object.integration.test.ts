@@ -13,6 +13,8 @@ import path from "node:path";
 import { Readable } from "node:stream";
 
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as Output from "alchemy/Output";
+import { Self } from "alchemy/Self";
 import { Cause, Context, Effect, Exit, Option, Schema, Stream } from "effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
@@ -31,7 +33,6 @@ import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import { makeAcquisitionMediaObject } from "./import-media-acquisition-object.client.js";
 import type { AcquisitionMediaObjectStub } from "./import-media-acquisition-object.client.js";
 import { ImportMediaAcquisitionObjectRuntime } from "./import-media-acquisition-object.js";
-import { TikTokMediaContainer } from "./import-media-container.js";
 import { makeTikTokMediaContainerRuntime } from "./import-media-container.runtime.js";
 import { makeTemporaryArtifactStore } from "./import-media-process.js";
 import type { MediaProcessRunner } from "./import-media-process.js";
@@ -217,36 +218,28 @@ const withInstalledAcquisitionBoundary = async <A>(
   ) => Promise<A>,
   rpcFailure?: Error
 ) => {
-  const bindingKey = "~alchemy/Container/Binding";
-  const originalBinding = Object.getOwnPropertyDescriptor(
-    TikTokMediaContainer,
-    bindingKey
-  );
   const fetcher = makeContainerFetcher(runtime, rpcFailure);
-  Object.defineProperty(TikTokMediaContainer, bindingKey, {
-    configurable: true,
-    value: Effect.succeed(
-      Effect.succeed({
-        destroy: () => Effect.void,
-        getTcpPort: () => Effect.succeed(fetcher),
-        interceptAllOutboundHttp: () => Effect.void,
-        interceptOutboundHttp: () => Effect.void,
-        monitor: () => Effect.never,
-        running: Effect.succeed(true),
-        setInactivityTimeout: () => Effect.void,
-        signal: () => Effect.void,
-        start: () => Effect.void,
-      })
-    ),
-  });
-
+  const services = Context.empty().pipe(
+    Context.add(Self("Cloudflare.Container<TikTokMediaContainer>"), {
+      LogicalId: "TikTokMediaContainer",
+      bind: () => () => Effect.void,
+      hash: Output.asOutput({ image: "test" }),
+    } as never),
+    Context.add(Self("Cloudflare.Worker"), {
+      bind: () => () => Effect.void,
+    } as never),
+    Context.add(Cloudflare.DurableObjectScope, {
+      name: "ImportMediaAcquisitionObject",
+      namespaceId: Output.asOutput("test"),
+    } as never)
+  );
   const alchemyRuntimeContractKey = "shape";
   const entrypoint = Effect.succeed({
     RuntimeContext: {
       exports: Effect.succeed({
         ImportMediaAcquisitionObject: {
           constructor: ImportMediaAcquisitionObjectRuntime,
-          services: Context.empty(),
+          services,
         },
       }),
       [alchemyRuntimeContractKey]: () => ({}),
@@ -276,12 +269,34 @@ const withInstalledAcquisitionBoundary = async <A>(
       const state = {
         blockConcurrencyWhile: <Value>(operation: () => Promise<Value>) =>
           operation(),
-        container: {},
+        container: {
+          destroy: async () => {},
+          getTcpPort: () => ({
+            fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+              const artifactResponse = await Effect.runPromise(
+                Effect.scoped(
+                  fetcher.fetch(
+                    HttpServerRequest.fromWeb(new Request(input, init))
+                  )
+                )
+              );
+              return HttpServerResponse.toWeb(artifactResponse);
+            },
+          }),
+          monitor: () => Promise.withResolvers<never>().promise,
+          running: true,
+          start: () => {},
+        },
         id: {
           name: coordinatorName,
           toString: () => coordinatorName,
         },
-        storage: {},
+        storage: {
+          deleteAlarm: async () => {},
+          get: () => Promise.resolve(null),
+          put: async () => {},
+          setAlarm: async () => {},
+        },
         waitUntil: (promise: Promise<unknown>) => {
           pending.push(promise);
         },
@@ -292,11 +307,6 @@ const withInstalledAcquisitionBoundary = async <A>(
     return await use(stubFor);
   } finally {
     await Promise.allSettled(pending);
-    if (originalBinding === undefined) {
-      Reflect.deleteProperty(TikTokMediaContainer, bindingKey);
-    } else {
-      Object.defineProperty(TikTokMediaContainer, bindingKey, originalBinding);
-    }
   }
 };
 
