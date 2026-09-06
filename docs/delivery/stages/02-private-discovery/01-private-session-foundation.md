@@ -1,6 +1,7 @@
 # Work Item 01 — Private session foundation
 
-- Status: In progress — implementation authorized on 2026-09-06.
+- Status: Implementation and local acceptance complete — repository delivery
+  pending hosted checks (2026-09-06).
 - Accepted planning direction: 2026-09-06.
 - Owner: the private-session implementation owner; bounded browser and runtime
   test delegates have disjoint file ownership.
@@ -196,8 +197,9 @@ adaptive model slice.
 
 2026-09-06: implementation-ready plan accepted after the three priority fixes.
 The user authorized implementation of this work item after accepting the plan.
-Application implementation is in progress; model calls and cloud changes remain
-outside this slice. Publication, merge, and external effects remain governed by
+Application implementation and local acceptance are complete; repository
+delivery awaits hosted checks. Model calls and cloud changes remain outside this
+slice. Publication, merge, and external effects remain governed by
 the existing execution policy and actual user authorization.
 
 ### Implemented foundation
@@ -235,8 +237,8 @@ schema changes. The web build reports its existing large-chunk advisory.
 
 All 1,239 repository tests passed across the full runs and affected reruns:
 180 root/architecture, 890 API, 108 web, and 61 shared protocol tests. The final
-API addition was one focused native sentinel test after the 889-test API run. The first root run passed 179 tests and correctly
-rejected the new untracked production package; staging the intended source made
+API addition was one focused native sentinel test after the 889-test API run.
+The first root run passed 179 tests and correctly rejected the new untracked production package; staging the intended source made
 the affected tracked-source architecture check pass. The remaining workspace
 suites ran through the repository's recursive test scripts.
 
@@ -261,5 +263,47 @@ static fixture log probe positively verifies the log capture path; no production
 logging or storage inspection endpoint is added. This focused native test and
 the affected API typecheck, lint, formatting, and diff checks pass.
 
-Browser acceptance proof and independent immutable-head review are in progress.
-This record does not yet claim their completion or a deployed result.
+### Browser acceptance
+
+The real browser exercised the copied application with the production private
+output Worker, native Household classes, canonical Better Auth fixture shell,
+and persistent local D1/native storage. Creation, participant append, and
+completion each committed while the browser's actual message handler suppressed
+the corresponding receipt. Each case retained one exact unresolved command,
+then recovered through a native process restart, hard refresh, and same-ID retry.
+Reservation count did not increase on creation retry. Append recovery retained
+one message at version 1; completion recovery ended at version 2 with no pending
+command, one history message, and a completed history-only view without an editor.
+
+Passive sign-out used the actual `POST /api/auth/sign-out` request while private
+history was visible, independently of the UI auth handler. Its successful
+response and native socket close cleared both the directory and transcript and
+showed reconnect guidance. The idle-hibernation availability limit above remains
+visible; this is not a continuous-connection claim.
+
+The local harness runs the real TanStack application under Node SSR and uses the
+canonical native API test shell rather than the full operational API bootstrap
+or Website Worker hosting adapter. Only documented local origin/import seams
+differ. Native module manifest SHA-256 is
+`ae897962b07d5ac961cf4fe114be131a910e3e92a5b95c6b5bb3f735d0ab7f7e`.
+Production source and UI matched implementation head
+`38234866f2cbb9fa3aa80239136740e7d904ee5e` before the bounded mobile margin fix.
+No provider, model, cloud deployment, or production migration was exercised.
+
+A separate browser profile began with empty local and session storage, signed
+in through the actual UI, selected the household, and rediscovered the existing
+reservations without a stored session UUID. Selecting the completed session
+showed its one retained message, no editor, and no pending mutation. The harness
+initially showed its previously observed account-query retry state; the existing
+retry action recovered the household selector.
+
+Desktop and 390-pixel mobile screenshots passed visual review. The bounded
+mobile correction gives the private-session section 20-pixel inline margins
+inside the existing 780-pixel breakpoint. The resulting left/right edges are
+20 and 370 pixels, with document width 390 pixels and no horizontal overflow.
+
+Independent backend/privacy and frontend/replay reviews of immutable
+`38234866f2cbb9fa3aa80239136740e7d904ee5e` found no material issues. The only
+subsequent application change is that verified mobile margin adjustment.
+Implementation and local acceptance are complete; hosted checks and repository
+delivery remain pending. No deployed result is claimed.

@@ -17,7 +17,8 @@
 - Active delivery: [Stage 2 planning](stages/02-private-discovery/README.md) was
   accepted on 2026-09-06.
   [Work Item 01](stages/02-private-discovery/01-private-session-foundation.md)
-  is In progress following explicit user authorization on 2026-09-06.
+  has completed implementation and local acceptance following explicit user
+  authorization on 2026-09-06; repository delivery awaits hosted checks.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -125,8 +126,8 @@ accepted Work Item 04 boundary disposition on 2026-09-05 as
 Work Item 04 is Done as boundary evidence, not conversation implementation. No
 Stage 1 grant was implemented. The subsequent
 [Stage 2 plan](stages/02-private-discovery/README.md) is now accepted, with its
-private-session foundation now in progress following separate implementation
-authorization on 2026-09-06. Stage 1 completion itself did not authorize that work.
+private-session foundation separately authorized on 2026-09-06 and now locally
+verified. Stage 1 completion itself did not authorize that work.
 
 PR #205 merged on 2026-09-05 as `e77f2cf2a2e634fd43cab588980a73ee7ae9b6d2`
 after independent review of `1b625121e835bc531fe7f5b6cd17bd04949c361e`
@@ -184,8 +185,17 @@ questioning with evaluated model selection, repeat review, and dependant
 assistance.
 [PDR-0006](../decisions/product/0006-ai-evaluation-and-release-evidence.md#stage-specific-evidence-and-the-complete-beta-gate)
 owns stage-specific discovery/profile evidence and the unchanged complete
-connected pre-beta gate. Work Item 01 application implementation is authorized and in progress. Provider
-execution remains outside this slice.
+connected pre-beta gate. Work Item 01 implementation and local automated
+verification are complete: participant-only discovery, durable messages, exact
+replay, completion, and retained private history are implemented. All 1,239
+repository tests passed across full runs and affected reruns. Actual browser
+creation/append/completion lost-reply recovery, passive sign-out, fresh-browser
+rediscovery, and desktop/mobile verification also passed. Independent backend
+and frontend reviews found no material issues; repository delivery awaits
+hosted checks.
+The work item's delivery record owns the exact runtime evidence and the native
+idle-hibernation reconnect limitation. Provider execution remains outside this
+slice, and no deployment is claimed.
 
 ## Deliberate Non-Work
 
