@@ -15,8 +15,22 @@ export {
   PrivateOutputMutations,
 } from "./private-output-worker.js";
 
-/** A durable test-only lost acknowledgement after the production invalidation has committed. */
+/** Test-only acknowledgment faults and a synchronous clock around the production session. */
 export class PrivateInterviewSession extends ProductionSession {
+  enqueueOutputAtTime(
+    input: Parameters<ProductionSession["enqueueOutput"]>[0],
+    now: number
+  ) {
+    const nativeNow = Date.now;
+    Date.now = () => now;
+    try {
+      // Production enqueue is synchronous: no other request observes the fixture clock.
+      super.enqueueOutput(input);
+    } finally {
+      Date.now = nativeNow;
+    }
+  }
+
   async loseNextInvalidationAcknowledgement() {
     await this.ctx.storage.put("lose-invalidation", true);
   }
@@ -37,6 +51,7 @@ type SessionPort = {
       | "authorizeConnection"
       | "invalidateOutput"
       | "enqueueOutput"
+      | "enqueueOutputAtTime"
       | "readMetadata"
       | "readOutputLifecycle"
       | "completeSession"
@@ -73,6 +88,7 @@ const Command = Schema.Struct({
   generation: Schema.optional(Schema.String),
   intentKey: Schema.optional(Schema.String),
   key: Schema.optional(Schema.String),
+  now: Schema.optional(Schema.Number),
   operationId: Schema.optional(Schema.String),
   payload: Schema.optional(Schema.String),
   scope: Schema.optional(Schema.Literals(["account", "household"])),
@@ -113,6 +129,11 @@ export default {
               "private-output-generation": generation.generation,
             },
           })
+        );
+      } else if (input.action === "emit-at-time" && input.now !== undefined) {
+        result = await child.enqueueOutputAtTime(
+          { ...generation, payload: input.payload ?? "" },
+          input.now
         );
       } else if (input.action === "emit") {
         result = await child.enqueueOutput({
