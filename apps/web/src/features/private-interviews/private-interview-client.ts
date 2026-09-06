@@ -605,7 +605,6 @@ export class PrivateInterviewClient {
     ) {
       return;
     }
-    this.#admitted = false;
     const previous = this.#session;
     this.#session = null;
     previous?.close();

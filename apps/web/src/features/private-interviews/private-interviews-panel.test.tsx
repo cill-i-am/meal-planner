@@ -2032,3 +2032,73 @@ it.each(["assistant_turn_conflict", "assistant_turn_pending"] as const)(
     expect(f.latest().last("AppendParticipantMessage").expectedVersion).toBe(1);
   }
 );
+
+it.each(["restored", "binding_changed", "interrupted_admission"] as const)(
+  "recovers an established directory closing between selected SessionReady and its initial reads: %s",
+  (outcome) => {
+    const f = fixture();
+    const client = new PrivateInterviewClient(context, f.dependencies);
+    client.connect();
+    const originalDirectory = f.directoryReady();
+    f.list(originalDirectory);
+    client.select(reference);
+    const originalSession = f.latest();
+    const ready = {
+      assistantTurn: queuedTurn,
+      bindingKey: "binding-a",
+      generation: "00000000-0000-4000-8000-000000000301",
+      pendingConfirmation: null,
+      sessionReference: reference,
+      state,
+      type: "SessionReady" as const,
+    };
+    originalSession.receive(ready);
+    expect(client.getSnapshot().historyLoaded).toBe(false);
+    expect(client.getSnapshot().cardsLoaded).toBe(false);
+    originalDirectory.lose(1008);
+    expect(f.sockets).toHaveLength(3);
+    expect(client.getSnapshot().connection).toBe("connecting");
+    expect(client.getSnapshot().sessionReference).toBeNull();
+    expect(client.getSnapshot().assistantTurn).toBeNull();
+    originalSession.receive({
+      hasMore: false,
+      messages: [message],
+      requestId: originalSession.last("ReadHistory").requestId,
+      state,
+      type: "HistoryRead",
+    });
+    expect(client.getSnapshot().messages).toEqual([]);
+    const freshDirectory = f.directoryReady(
+      outcome === "binding_changed" ? "binding-other" : "binding-a"
+    );
+    if (outcome === "binding_changed") {
+      expect(f.sockets).toHaveLength(3);
+      expect(freshDirectory.commands).toEqual([]);
+      expect(client.getSnapshot().connection).toBe("authentication_required");
+      expect(client.getSnapshot().sessionReference).toBeNull();
+    } else {
+      f.list(freshDirectory);
+      expect(f.sockets).toHaveLength(4);
+      expect(f.sockets.at(-1)?.path).toBe(
+        `/v1/private-interviews/${reference}/connect`
+      );
+      const freshSession = f.latest();
+      if (outcome === "interrupted_admission") {
+        freshSession.receive(ready);
+      } else {
+        f.sessionReady(state, [], null, undefined, queuedTurn);
+        expect(client.getSnapshot().sessionReference).toBe(reference);
+        expect(client.getSnapshot().historyLoaded).toBe(true);
+        expect(client.getSnapshot().cardsLoaded).toBe(true);
+      }
+      freshDirectory.lose(1008);
+      freshSession.lose(1008);
+      expect(f.sockets).toHaveLength(4);
+      expect(client.getSnapshot().connection).toBe("authentication_required");
+    }
+    expect(client.getSnapshot().messages).toEqual([]);
+    expect(client.getSnapshot().cards).toEqual([]);
+    expect(f.dependencies.continueAssistantTurn).not.toHaveBeenCalled();
+    expect(f.dependencies.continueConfirmation).not.toHaveBeenCalled();
+  }
+);
