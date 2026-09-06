@@ -96,12 +96,14 @@ class OutputLifecycle extends Agent<OutputLifecycleEnvironment> {
       const pending = transaction
         .select()
         .from(outputMutations)
-        .where(ne(outputMutations.phase, "settled"))
+        .where(
+          and(
+            eq(outputMutations.intentKey, input.intentKey),
+            ne(outputMutations.phase, "settled")
+          )
+        )
         .get();
       if (pending !== undefined) {
-        if (pending.intentKey !== input.intentKey) {
-          throw new PrivateOutputUnavailable({ reason: "mutation_pending" });
-        }
         return { operationId: pending.operationId, phase: pending.phase };
       }
       const operationId = crypto.randomUUID();
@@ -117,14 +119,6 @@ class OutputLifecycle extends Agent<OutputLifecycleEnvironment> {
   async prepareMutation(untrusted: OutputMutation): Promise<void> {
     const input = Schema.decodeUnknownSync(OutputMutation)(untrusted);
     this.#database.transaction((transaction) => {
-      const pending = transaction
-        .select()
-        .from(outputMutations)
-        .where(ne(outputMutations.phase, "settled"))
-        .get();
-      if (pending !== undefined && pending.operationId !== input.operationId) {
-        throw new PrivateOutputUnavailable({ reason: "mutation_pending" });
-      }
       const retained = transaction
         .select()
         .from(outputMutations)
@@ -178,7 +172,7 @@ class OutputLifecycle extends Agent<OutputLifecycleEnvironment> {
       .run();
   }
 
-  /** Only a definite canonical outcome may reopen registration; old generations stay closed. */
+  /** Settle only this definite outcome; any other pending operation keeps registration closed. */
   completeMutation(untrusted: OutputMutation): void {
     const input = Schema.decodeUnknownSync(OutputMutation)(untrusted);
     this.#database.transaction((transaction) => {

@@ -439,6 +439,76 @@ describe("private output on physical native WebSockets", () => {
     ).toEqual({ ...session, status: "open" });
   });
 
+  it.each(["fencing", "dispatched"] as const)(
+    "allows a distinct canonical intent while a retained %s operation keeps output closed",
+    async (phase) => {
+      const session = await binding();
+      await open(session);
+      const port = mutationPort(session.sessionReference);
+      const first = {
+        intentKey: "7".repeat(64),
+        key: session.accountKey,
+        scope: "account" as const,
+      };
+      const retained = await port.beginMutation(first);
+      const operation = { ...first, operationId: retained.operationId };
+      if (phase === "fencing") {
+        await successful({
+          action: "lose-ack",
+          sessionReference: session.sessionReference,
+        });
+        await expect(port.prepareMutation(operation)).rejects.toThrow();
+      } else {
+        await port.prepareMutation(operation);
+        await port.markDispatched(operation);
+      }
+      await runtime.dispose();
+      runtime = makeRuntime();
+      const expectClosed = () =>
+        expectStatus(
+          command({
+            action: "begin",
+            binding: session,
+            sessionReference: session.sessionReference,
+          }),
+          409
+        );
+      await expectClosed();
+      const entered = Promise.withResolvers<null>();
+      const release = Promise.withResolvers<null>();
+      let writes = 0;
+      const second = runOutputFencedMutation(
+        port,
+        { ...first, intentKey: "8".repeat(64) },
+        async () => {
+          writes += 1;
+          entered.resolve(null);
+          await release.promise;
+        }
+      );
+      await entered.promise;
+      await expectClosed();
+      release.resolve(null);
+      await second;
+      expect(writes).toBe(1);
+      expect(await port.readMutation(operation)).toEqual({ phase });
+      await expectClosed();
+      await runtime.dispose();
+      runtime = makeRuntime();
+      expect(await port.readMutation(operation)).toEqual({ phase });
+      await expectClosed();
+      if (phase === "dispatched") {
+        await expect(
+          runOutputFencedMutation(port, first, () => {
+            writes += 1;
+            return Promise.resolve();
+          })
+        ).rejects.toThrow();
+        expect(writes).toBe(1);
+      }
+    }
+  );
+
   it("recovers a lost completion acknowledgement from the exact durable result", async () => {
     const session = await binding();
     const port = mutationPort(session.sessionReference);

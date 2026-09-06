@@ -136,8 +136,15 @@ and Household migrations are unchanged.
   when the caller never executed its canonical closure. No timeout, later
   authority snapshot, or new operation token unlocks it. This residual denial of
   private output requires a future authorized repair protocol; it is not complete
-  automatic recovery. Other pending non-refresh auth intents also require an
-  identical retry payload before dispatch.
+  automatic recovery. Distinct canonical mutation intents can still execute
+  under their own durable fences; settling one never settles an older unknown
+  operation or reopens registration while any operation remains pending. The
+  same dispatched intent cannot replay. Other pending non-refresh auth intents
+  require an identical retry payload before dispatch. An unknown refresh still
+  blocks that same session token from refreshing: a refresh-dependent endpoint
+  can fail during session middleware before reaching its distinct mutation.
+  Direct sign-out remains available, and a newly authenticated session has a
+  different refresh identity.
 - Child restart invalidates cached generations and closes retained sockets.
   Authority-read failure leaves the new generation disabled. Session expiry is
   checked at the final send even if no cleanup request or inbound message occurs.
@@ -158,6 +165,10 @@ preparation before membership removal, immutable binding through link repair,
 expiry without an inbound message, disabled protocols/private HTTP/internal
 storage RPC, retained completion, lost invalidation/completion acknowledgments,
 single dispatch under concurrency, and unknown operations across restart.
+Distinct-intent cases retain a lost invalidation/dispatch acknowledgment across
+restart, prove a second canonical operation executes once while output remains
+closed before/during/after it, and prove real Better Auth sign-out commits after
+an unrelated retained refresh dispatch.
 The separate real-D1 adapter suite covers programmatic removal and self-leave,
 more than 100 session rows, refresh, selector/identity rejection, transaction
 callback coverage, and both forms of sign-out failure reporting.
@@ -173,10 +184,13 @@ pnpm build
 pnpm test
 ```
 
-The implementation candidate passes 104 native runtime cases and 19 real-D1
-auth-adapter cases, root/workspace typechecking, lint, and the production build.
-Two consecutive private-output migration generation passes produce no changes.
-The full root suite and independent immutable-head review remain completion
-gates recorded on the pull request. This evidence is local and provider-free.
+The initial candidate passed the full root suite (837 API and 95 web cases, plus
+package and root architecture cases), root/workspace typechecking, lint, format,
+and the production build. That run includes 104 native runtime cases and 19
+real-D1 auth-adapter cases. The per-intent correction adds three native cases;
+both affected native suites pass all 80 cases, with API typechecking, root lint,
+and formatting also passing. Two consecutive private-output migration generation
+passes produce no changes. CI and independent immutable-head review remain
+completion gates recorded on the pull request. This evidence is local and provider-free.
 No deployment, remote D1 inspection/conversion, provider mutation, or interview
 transcript was used.

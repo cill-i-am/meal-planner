@@ -32,6 +32,7 @@ import {
   privateOutputRuntimeWorker,
   privateOutputTestBindings,
 } from "../private-output/private-output-runtime.test-fixture.js";
+import { privateOutputKey } from "../private-output/private-output.contract.js";
 import { makeProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
 import {
   ProviderAccountingDispatchId,
@@ -6221,6 +6222,71 @@ describe("canonical private interview output boundary", () => {
       privateConnect(setup.memberCookie, connection.sessionReference),
       403
     );
+  }, 30_000);
+
+  it("commits real sign-out while an unrelated refresh has an ambiguous retained dispatch", async () => {
+    const setup = await prepareLinkedAdult("Private Retained Refresh");
+    const connection = await openPrivateConnection(setup.memberCookie);
+    const session = await getSession(setup.memberCookie);
+    const database = drizzle(
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+    );
+    const [canonicalSession] = await database
+      .select({ token: authSchema.session.token })
+      .from(authSchema.session)
+      .where(eq(authSchema.session.id, session.session.id));
+    if (canonicalSession === undefined) {
+      throw new Error("Expected the canonical synthetic session.");
+    }
+    const identity = {
+      intentKey: await privateOutputKey(
+        "auth-mutation",
+        JSON.stringify({
+          kind: "session-refresh",
+          token: canonicalSession.token,
+        })
+      ),
+      key: await privateOutputKey("account", session.user.id),
+      scope: "account",
+      sessionReference: connection.sessionReference,
+    };
+    const begun = await privateControl({
+      ...identity,
+      action: "mutation-begin",
+    });
+    expect(begun.status).toBe(200);
+    const { result } = Schema.decodeUnknownSync(
+      Schema.Struct({ result: Schema.Struct({ operationId: Schema.String }) })
+    )(await begun.json());
+    const operation = { ...identity, operationId: result.operationId };
+    await expectPrivateStatus(
+      privateControl({ ...operation, action: "mutation-prepare" }),
+      200
+    );
+    await expectPrivateStatus(
+      privateControl({ ...operation, action: "mutation-dispatch" }),
+      200
+    );
+    await expectPrivateStatus(
+      privateConnect(setup.memberCookie, connection.sessionReference),
+      403
+    );
+    const revoked = await authRequest("/sign-out", {}, setup.memberCookie);
+    expect(revoked.status).toBe(200);
+    expect(
+      await database
+        .select({ id: authSchema.session.id })
+        .from(authSchema.session)
+        .where(eq(authSchema.session.id, session.session.id))
+    ).toEqual([]);
+    const retained = await privateControl({
+      ...operation,
+      action: "mutation-read",
+    });
+    expect(await retained.json()).toEqual({ result: { phase: "dispatched" } });
+    await emitPrivateOutput(connection, "synthetic-after-distinct-revocation");
+    await delay(10);
+    expect(connection.messages).toEqual([]);
   }, 30_000);
 
   it("rejects an activation whose final canonical household read finished before a concurrent real session revocation", async () => {

@@ -5,7 +5,7 @@ import {
   PrivateOutputUnavailable,
 } from "./private-output.contract.js";
 
-/** A definite result reopens registration; an ambiguous canonical write stays fenced durably. */
+/** Settle this definite result; any ambiguous canonical operation keeps output fenced durably. */
 export const runOutputFencedMutation = async <A>(
   output: PrivateOutputMutationPort,
   input: {

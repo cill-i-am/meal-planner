@@ -212,6 +212,8 @@ Lost invalidation acknowledgments retry the retained pre-dispatch operation.
 Known durable completion can be reread after a lost completion acknowledgment.
 An auth write whose canonical outcome is unknown after dispatch leaves the account
 fenced across restart; no timer, lease, or later authority snapshot may reopen it.
+Distinct canonical mutation intents retain independent fences and may proceed;
+settling a newer operation does not settle the unknown operation or admit output.
 This is a deliberate residual availability limit, not a complete automatic recovery
 claim. Household commands can recover a known outcome using their existing exact
 mutation receipts. See the [implementation evidence](../../delivery/private-output-safety.md)
