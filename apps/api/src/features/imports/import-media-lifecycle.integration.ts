@@ -15,6 +15,9 @@ import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 
 const run = promisify(execFile);
 const enabled = process.env["MEAL_PLANNER_RUN_CONTAINER_TESTS"] === "1";
+// The native Docker engine requires its configured networking image to exist locally.
+const containerEgressInterceptorImage =
+  "cloudflare/proxy-everything:3cb1195@sha256:0ef6716c52430096900b150d84a3302057d6cd2319dae7987128c85d0733e3c8";
 const docker = async (...args: string[]) => {
   const result = await run("docker", args, { maxBuffer: 16 * 1024 * 1024 });
   return result.stdout.trim();
@@ -64,9 +67,12 @@ describe.skipIf(!enabled)("native generation container lifetime", () => {
     const context = JSON.parse(await docker("context", "inspect"));
     const socketPath = String(context[0].Endpoints.docker.Host);
     await docker("build", "--platform", "linux/amd64", "-t", image, root);
+    await docker("pull", containerEgressInterceptorImage);
     const mf = new Miniflare({
       cf: false,
-      containerEngine: { localDocker: { socketPath } },
+      containerEngine: {
+        localDocker: { containerEgressInterceptorImage, socketPath },
+      },
       workers: [
         {
           config: {
