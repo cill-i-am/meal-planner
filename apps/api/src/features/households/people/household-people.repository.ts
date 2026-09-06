@@ -2513,3 +2513,18 @@ export const makeHouseholdPeopleRepository = (
     startMemberDeparture,
   };
 };
+
+/** Receipt presence permits safe command replay; the command still checks its original intent digest. */
+export const hasHouseholdPersonMutationReceipt = (
+  database: EffectSQLiteDoDatabase,
+  mutationId: string
+) =>
+  database
+    .select({ mutationId: householdPersonMutationReceipts.mutationId })
+    .from(householdPersonMutationReceipts)
+    .where(eq(householdPersonMutationReceipts.mutationId, mutationId))
+    .limit(1)
+    .pipe(
+      queryFailure,
+      Effect.map((rows) => rows.length === 1)
+    );

@@ -172,3 +172,47 @@ household command, receipt, version, and transaction model.
 Rejected because it would add abstraction for its own sake. The accepted seam is
 only the thin application boundary needed for tests, eval provenance, and
 provider replacement.
+
+## Private-output implementation decision — 2026-09-06
+
+The `agents@0.22.0` composition probe selects the already permitted equivalent
+native child Durable Object boundary. SDK sub-agents enqueue output through an
+asynchronous parent RPC bridge; a child-side authorization check is therefore
+not adjacent to the physical socket send. A separate native runtime probe also
+confirmed that a top-level Agent's inherited `sql` and `state` RPC expose its
+storage. Private sessions consequently use a plain `PrivateInterviewSession`
+Durable Object with ECMAScript-private database fields and a physical native
+WebSocket. No SDK private method override or bridge patch is used.
+
+`HouseholdAgent` remains an SDK Agent. A second SDK `AccountOutputLifecycle`
+coordinator is keyed by immutable account identity because session revocation
+can affect multiple households without a complete, race-free membership
+snapshot. Both coordinators retain only child-generation registrations and
+mutation lifecycle metadata. They do not cache membership, grant access, own
+Household product receipts, or store raw private content. The account coordinator
+is an invalidation index, not an additional authority or Household table.
+
+An output generation starts disabled, registers durably with both coordinators,
+and then obtains fresh Better Auth session/membership and Household linked-adult
+reads. Only that still-current generation may activate. Each canonical authority
+writer first blocks registration and obtains durable invalidation acknowledgments
+from every registered child. It then acquires a single durable dispatch claim
+before changing canonical state. The child checks generation and captured session
+expiry synchronously immediately before each physical `send`, with no intervening
+await. Restart invalidates retained generations. A completed session keeps its
+original immutable household, account-linkage, and person binding.
+
+Only the native WebSocket output path is enabled. Private HTTP response bodies,
+raw-content-returning internal RPC, SDK state synchronization, callable/tool/MCP
+protocols, and parent transcript access are absent. The parent's runtime child
+capability exposes invalidation only. Conversation production and transcript
+storage remain separate future work.
+
+Lost invalidation acknowledgments retry the retained pre-dispatch operation.
+Known durable completion can be reread after a lost completion acknowledgment.
+An auth write whose canonical outcome is unknown after dispatch leaves the account
+fenced across restart; no timer, lease, or later authority snapshot may reopen it.
+This is a deliberate residual availability limit, not a complete automatic recovery
+claim. Household commands can recover a known outcome using their existing exact
+mutation receipts. See the [implementation evidence](../../delivery/private-output-safety.md)
+for the native proof and disabled-path checks.

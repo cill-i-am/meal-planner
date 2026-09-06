@@ -27,6 +27,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 import * as authSchema from "../auth/auth.database-schema.js";
+import {
+  privateOutputControlWorker,
+  privateOutputRuntimeWorker,
+  privateOutputTestBindings,
+} from "../private-output/private-output-runtime.test-fixture.js";
 import { makeProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
 import {
   ProviderAccountingDispatchId,
@@ -130,6 +135,11 @@ const applyD1Migrations = async (
   );
 };
 
+let privateOutputControlManifest: Awaited<
+  ReturnType<typeof bundleWorkerFixture>
+>;
+let privateOutputManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
+
 const makeRuntime = () =>
   new Miniflare({
     cf: false,
@@ -150,6 +160,7 @@ const makeRuntime = () =>
           compatibilityDate,
           compatibilityFlags,
           env: {
+            ...privateOutputTestBindings,
             BETTER_AUTH_SECRET: { type: "text", value: secret },
             HOUSEHOLD_TEST_OBSERVATIONS: {
               id: "HOUSEHOLD_TEST_OBSERVATIONS",
@@ -194,6 +205,7 @@ const makeRuntime = () =>
           compatibilityDate,
           compatibilityFlags,
           env: {
+            ...privateOutputTestBindings,
             HouseholdImportBatchQueue: {
               name: "household-import-batches",
               type: "queue",
@@ -236,6 +248,8 @@ const makeRuntime = () =>
           type: "worker",
         },
       },
+      privateOutputRuntimeWorker(privateOutputManifest),
+      privateOutputControlWorker(privateOutputControlManifest),
     ],
   });
 
@@ -249,6 +263,21 @@ beforeAll(async () => {
     `${tmpdir()}/meal-planner-household-boundary-`
   );
   temporaryDirectories.push(temporaryDirectory);
+  privateOutputControlManifest = await bundleWorkerFixture(
+    fileURLToPath(
+      new URL(
+        "../private-output/private-output-control.test-fixture.ts",
+        import.meta.url
+      )
+    ),
+    temporaryDirectory
+  );
+  privateOutputManifest = await bundleWorkerFixture(
+    fileURLToPath(
+      new URL("../private-output/private-output-worker.ts", import.meta.url)
+    ),
+    temporaryDirectory
+  );
   persistenceDirectory = `${temporaryDirectory}/runtime-storage`;
   [
     websiteManifest,
@@ -6038,4 +6067,367 @@ describe("household public API to private Durable Object boundary", () => {
       .all();
     expect(removedSharedAuthority.results).toEqual([]);
   });
+});
+
+const expectPrivateStatus = async (
+  pending: Promise<{ readonly status: number }>,
+  status: number
+) => {
+  const response = await pending;
+  expect(response.status).toBe(status);
+};
+const privateControl = async (input: Record<string, unknown>) => {
+  const worker = await getRuntime().getWorker("private-output-control");
+  return worker.fetch("https://private-output.test/control", {
+    headers: { "x-test-command": JSON.stringify(input) },
+  });
+};
+const privateConnect = (
+  cookie: string,
+  sessionReference: string,
+  additionalHeaders: Record<string, string> = {}
+) =>
+  getRuntime().dispatchFetch(
+    `https://meal-planner.test/v1/private-interviews/${sessionReference}/connect`,
+    {
+      headers: {
+        Origin: "https://meal-planner.test",
+        Upgrade: "websocket",
+        cookie,
+        ...additionalHeaders,
+      },
+    }
+  );
+const openPrivateConnection = async (
+  cookie: string,
+  sessionReference = crypto.randomUUID()
+) => {
+  const response = await privateConnect(cookie, sessionReference);
+  expect(response.status).toBe(101);
+  const socket = response.webSocket;
+  if (socket === null) {
+    throw new Error("Expected a physical private interview WebSocket");
+  }
+  const messages: unknown[] = [];
+  socket.addEventListener("message", (event) => messages.push(event.data));
+  socket.accept();
+  const lifecycle = await privateControl({
+    action: "lifecycle",
+    sessionReference,
+  });
+  const { result } = Schema.decodeUnknownSync(
+    Schema.Struct({ result: Schema.Struct({ generation: Schema.String }) })
+  )(await lifecycle.json());
+  return { generation: result.generation, messages, sessionReference, socket };
+};
+const emitPrivateOutput = async (
+  connection: {
+    readonly generation: string;
+    readonly sessionReference: string;
+  },
+  payload: string
+) => {
+  const response = await privateControl({
+    action: "emit",
+    generation: connection.generation,
+    payload,
+    sessionReference: connection.sessionReference,
+  });
+  expect(response.status).toBe(200);
+};
+
+describe("canonical private interview output boundary", () => {
+  it.each([
+    "/",
+    "/agents/household/owner",
+    "/sub/private-interview",
+    "/mcp",
+    "/rpc",
+  ])(
+    "does not expose a public parent, sub-agent or protocol route at %s",
+    async (path) => {
+      const worker = await getRuntime().getWorker("private-output");
+      const response = await worker.fetch(
+        `https://private-output.test${path}`,
+        { headers: { Upgrade: "websocket" } }
+      );
+      expect(response.status).toBe(404);
+      expect(await response.text()).toBe("");
+    }
+  );
+  it("admits the linked adult and rejects other adults, households, missing cookies and copied references", async () => {
+    const setup = await prepareLinkedAdult("Private Output Owner");
+    const connection = await openPrivateConnection(setup.memberCookie);
+    await emitPrivateOutput(connection, "synthetic-private-authorized");
+    await delay(10);
+    expect(connection.messages).toEqual(["synthetic-private-authorized"]);
+    await expectPrivateStatus(
+      privateConnect(setup.ownerCookie, connection.sessionReference),
+      403
+    );
+    await expectPrivateStatus(
+      privateConnect("", connection.sessionReference),
+      403
+    );
+    const other = await prepareLinkedAdult("Private Output Other Household");
+    await expectPrivateStatus(
+      privateConnect(other.memberCookie, connection.sessionReference),
+      403
+    );
+    await expectPrivateStatus(
+      privateConnect(setup.memberCookie, connection.sessionReference, {
+        Origin: "https://foreign.test",
+      }),
+      403
+    );
+    await emitPrivateOutput(
+      connection,
+      "synthetic-owner-after-copied-reference"
+    );
+    await delay(10);
+    expect(connection.messages).toEqual([
+      "synthetic-private-authorized",
+      "synthetic-owner-after-copied-reference",
+    ]);
+    connection.socket.close();
+  }, 30_000);
+
+  it("stops passive and in-flight output before real Better Auth sign-out commits", async () => {
+    const setup = await prepareLinkedAdult("Private Passive Revoke");
+    const connection = await openPrivateConnection(setup.memberCookie);
+    const session = await getSession(setup.memberCookie);
+    await emitPrivateOutput(connection, "synthetic-before-sign-out");
+    const producer = Promise.withResolvers<null>();
+    const delayed = producer.promise.then(() =>
+      emitPrivateOutput(connection, "synthetic-inflight-after-sign-out")
+    );
+    const revoked = await authRequest("/sign-out", {}, setup.memberCookie);
+    expect(revoked.status).toBe(200);
+    const database = drizzle(
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+    );
+    expect(
+      await database
+        .select({ id: authSchema.session.id })
+        .from(authSchema.session)
+        .where(eq(authSchema.session.id, session.session.id))
+    ).toEqual([]);
+    producer.resolve(null);
+    await delayed;
+    await emitPrivateOutput(connection, "synthetic-passive-after-sign-out");
+    await delay(10);
+    expect(connection.messages).toEqual(["synthetic-before-sign-out"]);
+    await expectPrivateStatus(
+      privateConnect(setup.memberCookie, connection.sessionReference),
+      403
+    );
+  }, 30_000);
+
+  it("rejects an activation whose final canonical household read finished before a concurrent real session revocation", async () => {
+    const setup = await prepareLinkedAdult("Private Final Read Race");
+    const sessionReference = crypto.randomUUID();
+    const barrier = crypto.randomUUID();
+    const observations = await getRuntime().getKVNamespace(
+      "HOUSEHOLD_TEST_OBSERVATIONS",
+      "api"
+    );
+    const pending = privateConnect(setup.memberCookie, sessionReference, {
+      "x-test-private-output-authority-barrier": barrier,
+    });
+    try {
+      let reached = false;
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if (
+          // eslint-disable-next-line no-await-in-loop -- Poll a durable barrier before releasing the deliberately stalled request.
+          (await observations.get(`private-output-read:${barrier}`)) === "ready"
+        ) {
+          reached = true;
+          break;
+        }
+        // eslint-disable-next-line no-await-in-loop -- The barrier must be observed between polling intervals.
+        await delay(20);
+      }
+      expect(reached).toBe(true);
+      const revoked = await authRequest(
+        "/revoke-sessions",
+        {},
+        setup.memberCookie
+      );
+      expect(revoked.status).toBe(200);
+    } finally {
+      await observations.put(`private-output-release:${barrier}`, "release");
+    }
+    await expectPrivateStatus(pending, 403);
+  }, 30_000);
+
+  it("fails closed when the final canonical authority service becomes unavailable", async () => {
+    const setup = await prepareLinkedAdult("Private Authority Unavailable");
+    const sessionReference = crypto.randomUUID();
+    await expectPrivateStatus(
+      privateConnect(setup.memberCookie, sessionReference, {
+        "x-test-private-output-authority-failure": "1",
+      }),
+      403
+    );
+    const lifecycle = await privateControl({
+      action: "lifecycle",
+      sessionReference,
+    });
+    const retained = Schema.decodeUnknownSync(
+      Schema.Struct({
+        result: Schema.Struct({
+          generation: Schema.String,
+          status: Schema.String,
+        }),
+      })
+    )(await lifecycle.json());
+    expect(retained.result.status).toBe("pending");
+    await emitPrivateOutput(
+      { generation: retained.result.generation, sessionReference },
+      "synthetic-after-authority-failure"
+    );
+    const fresh = await openPrivateConnection(
+      setup.memberCookie,
+      sessionReference
+    );
+    await emitPrivateOutput(
+      fresh,
+      "synthetic-after-canonical-reauthentication"
+    );
+    await delay(10);
+    expect(fresh.messages).toEqual([
+      "synthetic-after-canonical-reauthentication",
+    ]);
+    fresh.socket.close();
+  }, 30_000);
+
+  it("closes the captured household connection when the real active organization changes", async () => {
+    const setup = await prepareLinkedAdult("Private Active Organization");
+    const connection = await openPrivateConnection(setup.memberCookie);
+    const changed = await createOrganization(
+      "Private Alternate Organization",
+      setup.memberCookie
+    );
+    expect(changed.id).not.toBe(setup.organization.id);
+    await emitPrivateOutput(
+      connection,
+      "synthetic-after-active-organization-change"
+    );
+    await delay(10);
+    expect(connection.messages).toEqual([]);
+    await expectPrivateStatus(
+      privateConnect(setup.memberCookie, connection.sessionReference),
+      403
+    );
+  }, 30_000);
+
+  it("fences departure preparation before membership removal and cannot reauthorize the pending adult", async () => {
+    const setup = await prepareLinkedAdult("Private Household Departure");
+    const connection = await openPrivateConnection(setup.memberCookie);
+    const response = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/departures",
+      {
+        body: JSON.stringify({
+          expectedLinkVersion: 1,
+          expectedPersonVersion: setup.adult.version,
+          memberId: setup.memberId,
+          mutationId: "private-output-departure",
+          personId: setup.adult.id,
+          reason: "Synthetic adult departure",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.ownerCookie,
+          "x-test-member-departure-crash": "after-prepare-before-start",
+        },
+        method: "POST",
+      }
+    );
+    expect(response.status).toBeGreaterThanOrEqual(500);
+    const prepared = await readDepartureByMutationEventually(
+      setup.ownerCookie,
+      "private-output-departure",
+      "prepared"
+    );
+    expect(prepared.state).toBe("prepared");
+    const database = drizzle(
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+    );
+    expect(
+      await database
+        .select({ id: authSchema.member.id })
+        .from(authSchema.member)
+        .where(eq(authSchema.member.id, setup.memberId))
+    ).toEqual([{ id: setup.memberId }]);
+    await emitPrivateOutput(connection, "synthetic-after-household-departure");
+    await delay(10);
+    expect(connection.messages).toEqual([]);
+    await expectPrivateStatus(
+      privateConnect(setup.memberCookie, connection.sessionReference),
+      403
+    );
+  }, 30_000);
+
+  it("keeps the original immutable person binding after a canonical adult-link repair", async () => {
+    const setup = await prepareLinkedAdult("Private Immutable Repair");
+    const connection = await openPrivateConnection(setup.memberCookie);
+    const created = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people",
+      {
+        body: JSON.stringify({
+          displayName: "Synthetic replacement adult",
+          kind: "adult",
+          mutationId: "private-output-replacement",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.ownerCookie,
+        },
+        method: "POST",
+      }
+    );
+    const replacement = await Schema.decodeUnknownPromise(HouseholdPerson)(
+      await created.json()
+    );
+    const repaired = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/links/repair",
+      {
+        body: JSON.stringify({
+          expectedPersonVersion: replacement.version,
+          memberId: setup.memberId,
+          mutationId: "private-output-repair",
+          personId: replacement.id,
+          reason: "Synthetic explicit linkage repair",
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.ownerCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(repaired.status, await repaired.clone().text()).toBe(200);
+    await emitPrivateOutput(connection, "synthetic-after-link-repair");
+    await delay(10);
+    expect(connection.messages).toEqual([]);
+    await expectPrivateStatus(
+      privateConnect(setup.memberCookie, connection.sessionReference),
+      403
+    );
+    const metadata = await privateControl({
+      action: "metadata",
+      sessionReference: connection.sessionReference,
+    });
+    expect(await metadata.json()).toMatchObject({
+      result: {
+        personId: setup.adult.id,
+        sessionReference: connection.sessionReference,
+      },
+    });
+    const fresh = await openPrivateConnection(setup.memberCookie);
+    await emitPrivateOutput(fresh, "synthetic-new-explicit-session");
+    await delay(10);
+    expect(fresh.messages).toEqual(["synthetic-new-explicit-session"]);
+    fresh.socket.close();
+  }, 30_000);
 });

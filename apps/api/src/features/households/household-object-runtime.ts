@@ -32,6 +32,7 @@ import {
   MealPlanRecipeAuthorityToken,
   selectMealPlanCandidates,
 } from "../meal-planning/meal-plan.js";
+import { HouseholdOutputFence } from "../private-output/household-output-fence.js";
 import { HouseholdImportBatchQueueWriter } from "./batches/household-import-batch-queue.port.js";
 import {
   HouseholdAdmitImportBatchInput,
@@ -109,7 +110,10 @@ import {
   HouseholdStartMemberDepartureInput,
   HouseholdTransitionPersonInput,
 } from "./people/household-people.contract.js";
-import { makeHouseholdPeopleRepository } from "./people/household-people.repository.js";
+import {
+  hasHouseholdPersonMutationReceipt,
+  makeHouseholdPeopleRepository,
+} from "./people/household-people.repository.js";
 import {
   HouseholdReadPersonProfileInput,
   HouseholdListProfileVersionsInput,
@@ -177,6 +181,7 @@ export const HouseholdObjectRuntime = Effect.gen(
     const digest = yield* HouseholdDigest;
     const identityGenerator = yield* HouseholdIdentityGenerator;
     const batchQueueWriter = yield* HouseholdImportBatchQueueWriter;
+    const outputFence = yield* HouseholdOutputFence;
     const scoped = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       effect.pipe(
         Effect.provideService(HouseholdCanonicalEncoding, canonicalEncoding),
@@ -205,22 +210,47 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               "associate_adult_invitation"
             );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
+            const intent = yield* canonicalEncoding
+              .encode({ command, method: "associateAdultInvitation" })
+              .pipe(Effect.mapError(invalidInput));
+            const intentKey = yield* digest
+              .sha256(intent)
+              .pipe(Effect.mapError(invalidInput));
+            return yield* outputFence.run(
+              {
+                intentKey,
+                organizationId: command.admission.organizationId,
+                wasCommitted: database.pipe(
+                  Effect.flatMap((connection) =>
+                    hasHouseholdPersonMutationReceipt(
+                      connection,
+                      command.payload.mutationId
+                    )
+                  )
+                ),
+              },
+              Effect.gen(function* applyAssociateAdultInvitation() {
+                const connection = yield* database;
+                yield* ensureHouseholdProvenance(
+                  connection,
+                  command.admission.organizationId
+                );
+                const person = yield* makeHouseholdPeopleRepository(
+                  connection,
+                  {
+                    canonical: canonicalEncoding,
+                    digest,
+                    identity: identityGenerator,
+                  }
+                ).associateAdultInvitation({
+                  actorId: command.admission.actor.actorId,
+                  linkageSubject: command.admission.actor.linkageSubject,
+                  now: yield* Clock.currentTimeMillis,
+                  payload: command.payload,
+                });
+                return yield* encodePeopleResult(HouseholdPerson, person);
+              })
             );
-            const person = yield* makeHouseholdPeopleRepository(connection, {
-              canonical: canonicalEncoding,
-              digest,
-              identity: identityGenerator,
-            }).associateAdultInvitation({
-              actorId: command.admission.actor.actorId,
-              linkageSubject: command.admission.actor.linkageSubject,
-              now: yield* Clock.currentTimeMillis,
-              payload: command.payload,
-            });
-            return yield* encodePeopleResult(HouseholdPerson, person);
           })
         ),
       archiveHouseholdPerson: (
@@ -236,23 +266,48 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               "archive_household_person"
             );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
+            const intent = yield* canonicalEncoding
+              .encode({ command, method: "archiveHouseholdPerson" })
+              .pipe(Effect.mapError(invalidInput));
+            const intentKey = yield* digest
+              .sha256(intent)
+              .pipe(Effect.mapError(invalidInput));
+            return yield* outputFence.run(
+              {
+                intentKey,
+                organizationId: command.admission.organizationId,
+                wasCommitted: database.pipe(
+                  Effect.flatMap((connection) =>
+                    hasHouseholdPersonMutationReceipt(
+                      connection,
+                      command.payload.mutationId
+                    )
+                  )
+                ),
+              },
+              Effect.gen(function* applyArchiveHouseholdPerson() {
+                const connection = yield* database;
+                yield* ensureHouseholdProvenance(
+                  connection,
+                  command.admission.organizationId
+                );
+                const person = yield* makeHouseholdPeopleRepository(
+                  connection,
+                  {
+                    canonical: canonicalEncoding,
+                    digest,
+                    identity: identityGenerator,
+                  }
+                ).archive({
+                  actorId: command.admission.actor.actorId,
+                  linkageSubject: command.admission.actor.linkageSubject,
+                  now: yield* Clock.currentTimeMillis,
+                  payload: command.payload,
+                  personId: command.personId,
+                });
+                return yield* encodePeopleResult(HouseholdPerson, person);
+              })
             );
-            const person = yield* makeHouseholdPeopleRepository(connection, {
-              canonical: canonicalEncoding,
-              digest,
-              identity: identityGenerator,
-            }).archive({
-              actorId: command.admission.actor.actorId,
-              linkageSubject: command.admission.actor.linkageSubject,
-              now: yield* Clock.currentTimeMillis,
-              payload: command.payload,
-              personId: command.personId,
-            });
-            return yield* encodePeopleResult(HouseholdPerson, person);
           })
         ),
       admitImportBatch: (untrustedInput: HouseholdAdmitImportBatchInput) =>
@@ -317,22 +372,47 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               "bootstrap_creator_person"
             );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
+            const intent = yield* canonicalEncoding
+              .encode({ command, method: "bootstrapCreatorPerson" })
+              .pipe(Effect.mapError(invalidInput));
+            const intentKey = yield* digest
+              .sha256(intent)
+              .pipe(Effect.mapError(invalidInput));
+            return yield* outputFence.run(
+              {
+                intentKey,
+                organizationId: command.admission.organizationId,
+                wasCommitted: database.pipe(
+                  Effect.flatMap((connection) =>
+                    hasHouseholdPersonMutationReceipt(
+                      connection,
+                      command.payload.mutationId
+                    )
+                  )
+                ),
+              },
+              Effect.gen(function* applyBootstrapCreatorPerson() {
+                const connection = yield* database;
+                yield* ensureHouseholdProvenance(
+                  connection,
+                  command.admission.organizationId
+                );
+                const person = yield* makeHouseholdPeopleRepository(
+                  connection,
+                  {
+                    canonical: canonicalEncoding,
+                    digest,
+                    identity: identityGenerator,
+                  }
+                ).bootstrapCreator({
+                  actorId: command.admission.actor.actorId,
+                  linkageSubject: command.admission.actor.linkageSubject,
+                  now: yield* Clock.currentTimeMillis,
+                  payload: command.payload,
+                });
+                return yield* encodePeopleResult(HouseholdPerson, person);
+              })
             );
-            const person = yield* makeHouseholdPeopleRepository(connection, {
-              canonical: canonicalEncoding,
-              digest,
-              identity: identityGenerator,
-            }).bootstrapCreator({
-              actorId: command.admission.actor.actorId,
-              linkageSubject: command.admission.actor.linkageSubject,
-              now: yield* Clock.currentTimeMillis,
-              payload: command.payload,
-            });
-            return yield* encodePeopleResult(HouseholdPerson, person);
           })
         ),
       answerRecipeImportAction: (
@@ -803,22 +883,47 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               "complete_accepted_adult_link"
             );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
+            const intent = yield* canonicalEncoding
+              .encode({ command, method: "completeAcceptedAdultLink" })
+              .pipe(Effect.mapError(invalidInput));
+            const intentKey = yield* digest
+              .sha256(intent)
+              .pipe(Effect.mapError(invalidInput));
+            return yield* outputFence.run(
+              {
+                intentKey,
+                organizationId: command.admission.organizationId,
+                wasCommitted: database.pipe(
+                  Effect.flatMap((connection) =>
+                    hasHouseholdPersonMutationReceipt(
+                      connection,
+                      command.payload.mutationId
+                    )
+                  )
+                ),
+              },
+              Effect.gen(function* applyCompleteAcceptedAdultLink() {
+                const connection = yield* database;
+                yield* ensureHouseholdProvenance(
+                  connection,
+                  command.admission.organizationId
+                );
+                const person = yield* makeHouseholdPeopleRepository(
+                  connection,
+                  {
+                    canonical: canonicalEncoding,
+                    digest,
+                    identity: identityGenerator,
+                  }
+                ).completeAcceptedAdultLink({
+                  actorId: command.admission.actor.actorId,
+                  linkageSubject: command.admission.actor.linkageSubject,
+                  now: yield* Clock.currentTimeMillis,
+                  payload: command.payload,
+                });
+                return yield* encodePeopleResult(HouseholdPerson, person);
+              })
             );
-            const person = yield* makeHouseholdPeopleRepository(connection, {
-              canonical: canonicalEncoding,
-              digest,
-              identity: identityGenerator,
-            }).completeAcceptedAdultLink({
-              actorId: command.admission.actor.actorId,
-              linkageSubject: command.admission.actor.linkageSubject,
-              now: yield* Clock.currentTimeMillis,
-              payload: command.payload,
-            });
-            return yield* encodePeopleResult(HouseholdPerson, person);
           })
         ),
       confirmAdultInvitationRecipient: (
@@ -834,19 +939,34 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               "confirm_adult_invitation_recipient"
             );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
+            const intent = yield* canonicalEncoding
+              .encode({ command, method: "confirmAdultInvitationRecipient" })
+              .pipe(Effect.mapError(invalidInput));
+            const intentKey = yield* digest
+              .sha256(intent)
+              .pipe(Effect.mapError(invalidInput));
+            return yield* outputFence.run(
+              {
+                intentKey,
+                organizationId: command.admission.organizationId,
+                wasCommitted: Effect.succeed(false),
+              },
+              Effect.gen(function* applyConfirmAdultInvitationRecipient() {
+                const connection = yield* database;
+                yield* ensureHouseholdProvenance(
+                  connection,
+                  command.admission.organizationId
+                );
+                yield* makeHouseholdPeopleRepository(connection, {
+                  canonical: canonicalEncoding,
+                  digest,
+                  identity: identityGenerator,
+                }).confirmAdultInvitationRecipient({
+                  invitationDigest: command.invitationDigest,
+                  linkageSubject: command.linkageSubject,
+                });
+              })
             );
-            yield* makeHouseholdPeopleRepository(connection, {
-              canonical: canonicalEncoding,
-              digest,
-              identity: identityGenerator,
-            }).confirmAdultInvitationRecipient({
-              invitationDigest: command.invitationDigest,
-              linkageSubject: command.linkageSubject,
-            });
           })
         ),
       cancelMemberDeparture: (
@@ -862,26 +982,52 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               "cancel_member_departure"
             );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
-            );
-            const operation = yield* makeHouseholdPeopleRepository(connection, {
-              canonical: canonicalEncoding,
-              digest,
-              identity: identityGenerator,
-            }).cancelMemberDeparture({
-              actorId: command.admission.actor.actorId,
-              callerIsOwner: command.admission.actor._tag === "PeopleCreator",
-              callerLinkageSubject: command.admission.actor.linkageSubject,
-              now: yield* Clock.currentTimeMillis,
-              operationId: command.operationId,
-              payload: command.payload,
-            });
-            return yield* encodePeopleResult(
-              HouseholdMemberDepartureOperation,
-              operation
+            const intent = yield* canonicalEncoding
+              .encode({ command, method: "cancelMemberDeparture" })
+              .pipe(Effect.mapError(invalidInput));
+            const intentKey = yield* digest
+              .sha256(intent)
+              .pipe(Effect.mapError(invalidInput));
+            return yield* outputFence.run(
+              {
+                intentKey,
+                organizationId: command.admission.organizationId,
+                wasCommitted: database.pipe(
+                  Effect.flatMap((connection) =>
+                    hasHouseholdPersonMutationReceipt(
+                      connection,
+                      command.payload.mutationId
+                    )
+                  )
+                ),
+              },
+              Effect.gen(function* applyCancelMemberDeparture() {
+                const connection = yield* database;
+                yield* ensureHouseholdProvenance(
+                  connection,
+                  command.admission.organizationId
+                );
+                const operation = yield* makeHouseholdPeopleRepository(
+                  connection,
+                  {
+                    canonical: canonicalEncoding,
+                    digest,
+                    identity: identityGenerator,
+                  }
+                ).cancelMemberDeparture({
+                  actorId: command.admission.actor.actorId,
+                  callerIsOwner:
+                    command.admission.actor._tag === "PeopleCreator",
+                  callerLinkageSubject: command.admission.actor.linkageSubject,
+                  now: yield* Clock.currentTimeMillis,
+                  operationId: command.operationId,
+                  payload: command.payload,
+                });
+                return yield* encodePeopleResult(
+                  HouseholdMemberDepartureOperation,
+                  operation
+                );
+              })
             );
           })
         ),
@@ -898,23 +1044,41 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               "confirm_member_access_revoked"
             );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
-            );
-            const operation = yield* makeHouseholdPeopleRepository(connection, {
-              canonical: canonicalEncoding,
-              digest,
-              identity: identityGenerator,
-            }).confirmMemberAccessRevoked({
-              expectedOperationVersion: command.expectedOperationVersion,
-              now: yield* Clock.currentTimeMillis,
-              operationId: command.operationId,
-            });
-            return yield* encodePeopleResult(
-              HouseholdMemberDepartureOperation,
-              operation
+            const intent = yield* canonicalEncoding
+              .encode({ command, method: "confirmMemberAccessRevoked" })
+              .pipe(Effect.mapError(invalidInput));
+            const intentKey = yield* digest
+              .sha256(intent)
+              .pipe(Effect.mapError(invalidInput));
+            return yield* outputFence.run(
+              {
+                intentKey,
+                organizationId: command.admission.organizationId,
+                wasCommitted: Effect.succeed(false),
+              },
+              Effect.gen(function* applyConfirmMemberAccessRevoked() {
+                const connection = yield* database;
+                yield* ensureHouseholdProvenance(
+                  connection,
+                  command.admission.organizationId
+                );
+                const operation = yield* makeHouseholdPeopleRepository(
+                  connection,
+                  {
+                    canonical: canonicalEncoding,
+                    digest,
+                    identity: identityGenerator,
+                  }
+                ).confirmMemberAccessRevoked({
+                  expectedOperationVersion: command.expectedOperationVersion,
+                  now: yield* Clock.currentTimeMillis,
+                  operationId: command.operationId,
+                });
+                return yield* encodePeopleResult(
+                  HouseholdMemberDepartureOperation,
+                  operation
+                );
+              })
             );
           })
         ),
@@ -931,23 +1095,41 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               "finalize_member_departure"
             );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
-            );
-            const operation = yield* makeHouseholdPeopleRepository(connection, {
-              canonical: canonicalEncoding,
-              digest,
-              identity: identityGenerator,
-            }).finalizeMemberDeparture({
-              expectedOperationVersion: command.expectedOperationVersion,
-              now: yield* Clock.currentTimeMillis,
-              operationId: command.operationId,
-            });
-            return yield* encodePeopleResult(
-              HouseholdMemberDepartureOperation,
-              operation
+            const intent = yield* canonicalEncoding
+              .encode({ command, method: "finalizeMemberDeparture" })
+              .pipe(Effect.mapError(invalidInput));
+            const intentKey = yield* digest
+              .sha256(intent)
+              .pipe(Effect.mapError(invalidInput));
+            return yield* outputFence.run(
+              {
+                intentKey,
+                organizationId: command.admission.organizationId,
+                wasCommitted: Effect.succeed(false),
+              },
+              Effect.gen(function* applyFinalizeMemberDeparture() {
+                const connection = yield* database;
+                yield* ensureHouseholdProvenance(
+                  connection,
+                  command.admission.organizationId
+                );
+                const operation = yield* makeHouseholdPeopleRepository(
+                  connection,
+                  {
+                    canonical: canonicalEncoding,
+                    digest,
+                    identity: identityGenerator,
+                  }
+                ).finalizeMemberDeparture({
+                  expectedOperationVersion: command.expectedOperationVersion,
+                  now: yield* Clock.currentTimeMillis,
+                  operationId: command.operationId,
+                });
+                return yield* encodePeopleResult(
+                  HouseholdMemberDepartureOperation,
+                  operation
+                );
+              })
             );
           })
         ),
@@ -1212,24 +1394,42 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               "mark_member_departure_repair_required"
             );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
-            );
-            const operation = yield* makeHouseholdPeopleRepository(connection, {
-              canonical: canonicalEncoding,
-              digest,
-              identity: identityGenerator,
-            }).markMemberDepartureRepairRequired({
-              expectedOperationVersion: command.expectedOperationVersion,
-              now: yield* Clock.currentTimeMillis,
-              operationId: command.operationId,
-              phase: command.phase,
-            });
-            return yield* encodePeopleResult(
-              HouseholdMemberDepartureOperation,
-              operation
+            const intent = yield* canonicalEncoding
+              .encode({ command, method: "markMemberDepartureRepairRequired" })
+              .pipe(Effect.mapError(invalidInput));
+            const intentKey = yield* digest
+              .sha256(intent)
+              .pipe(Effect.mapError(invalidInput));
+            return yield* outputFence.run(
+              {
+                intentKey,
+                organizationId: command.admission.organizationId,
+                wasCommitted: Effect.succeed(false),
+              },
+              Effect.gen(function* applyMarkMemberDepartureRepairRequired() {
+                const connection = yield* database;
+                yield* ensureHouseholdProvenance(
+                  connection,
+                  command.admission.organizationId
+                );
+                const operation = yield* makeHouseholdPeopleRepository(
+                  connection,
+                  {
+                    canonical: canonicalEncoding,
+                    digest,
+                    identity: identityGenerator,
+                  }
+                ).markMemberDepartureRepairRequired({
+                  expectedOperationVersion: command.expectedOperationVersion,
+                  now: yield* Clock.currentTimeMillis,
+                  operationId: command.operationId,
+                  phase: command.phase,
+                });
+                return yield* encodePeopleResult(
+                  HouseholdMemberDepartureOperation,
+                  operation
+                );
+              })
             );
           })
         ),
@@ -1246,26 +1446,52 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               "prepare_member_departure"
             );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
-            );
-            const operation = yield* makeHouseholdPeopleRepository(connection, {
-              canonical: canonicalEncoding,
-              digest,
-              identity: identityGenerator,
-            }).prepareMemberDeparture({
-              actorId: command.admission.actor.actorId,
-              callerIsOwner: command.admission.actor._tag === "PeopleCreator",
-              callerLinkageSubject: command.admission.actor.linkageSubject,
-              now: yield* Clock.currentTimeMillis,
-              payload: command.payload,
-              targetLinkageSubject: command.targetLinkageSubject,
-            });
-            return yield* encodePeopleResult(
-              HouseholdMemberDepartureOperation,
-              operation
+            const intent = yield* canonicalEncoding
+              .encode({ command, method: "prepareMemberDeparture" })
+              .pipe(Effect.mapError(invalidInput));
+            const intentKey = yield* digest
+              .sha256(intent)
+              .pipe(Effect.mapError(invalidInput));
+            return yield* outputFence.run(
+              {
+                intentKey,
+                organizationId: command.admission.organizationId,
+                wasCommitted: database.pipe(
+                  Effect.flatMap((connection) =>
+                    hasHouseholdPersonMutationReceipt(
+                      connection,
+                      command.payload.mutationId
+                    )
+                  )
+                ),
+              },
+              Effect.gen(function* applyPrepareMemberDeparture() {
+                const connection = yield* database;
+                yield* ensureHouseholdProvenance(
+                  connection,
+                  command.admission.organizationId
+                );
+                const operation = yield* makeHouseholdPeopleRepository(
+                  connection,
+                  {
+                    canonical: canonicalEncoding,
+                    digest,
+                    identity: identityGenerator,
+                  }
+                ).prepareMemberDeparture({
+                  actorId: command.admission.actor.actorId,
+                  callerIsOwner:
+                    command.admission.actor._tag === "PeopleCreator",
+                  callerLinkageSubject: command.admission.actor.linkageSubject,
+                  now: yield* Clock.currentTimeMillis,
+                  payload: command.payload,
+                  targetLinkageSubject: command.targetLinkageSubject,
+                });
+                return yield* encodePeopleResult(
+                  HouseholdMemberDepartureOperation,
+                  operation
+                );
+              })
             );
           })
         ),
@@ -1282,23 +1508,48 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               "repair_adult_account_link"
             );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
+            const intent = yield* canonicalEncoding
+              .encode({ command, method: "repairAdultAccountLink" })
+              .pipe(Effect.mapError(invalidInput));
+            const intentKey = yield* digest
+              .sha256(intent)
+              .pipe(Effect.mapError(invalidInput));
+            return yield* outputFence.run(
+              {
+                intentKey,
+                organizationId: command.admission.organizationId,
+                wasCommitted: database.pipe(
+                  Effect.flatMap((connection) =>
+                    hasHouseholdPersonMutationReceipt(
+                      connection,
+                      command.payload.mutationId
+                    )
+                  )
+                ),
+              },
+              Effect.gen(function* applyRepairAdultAccountLink() {
+                const connection = yield* database;
+                yield* ensureHouseholdProvenance(
+                  connection,
+                  command.admission.organizationId
+                );
+                const person = yield* makeHouseholdPeopleRepository(
+                  connection,
+                  {
+                    canonical: canonicalEncoding,
+                    digest,
+                    identity: identityGenerator,
+                  }
+                ).repairAdultAccountLink({
+                  actorId: command.admission.actor.actorId,
+                  linkageSubject: command.admission.actor.linkageSubject,
+                  now: yield* Clock.currentTimeMillis,
+                  payload: command.payload,
+                  targetLinkageSubject: command.targetLinkageSubject,
+                });
+                return yield* encodePeopleResult(HouseholdPerson, person);
+              })
             );
-            const person = yield* makeHouseholdPeopleRepository(connection, {
-              canonical: canonicalEncoding,
-              digest,
-              identity: identityGenerator,
-            }).repairAdultAccountLink({
-              actorId: command.admission.actor.actorId,
-              linkageSubject: command.admission.actor.linkageSubject,
-              now: yield* Clock.currentTimeMillis,
-              payload: command.payload,
-              targetLinkageSubject: command.targetLinkageSubject,
-            });
-            return yield* encodePeopleResult(HouseholdPerson, person);
           })
         ),
       restoreReturningAdultLink: (
@@ -1314,22 +1565,47 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               "restore_returning_adult_link"
             );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
+            const intent = yield* canonicalEncoding
+              .encode({ command, method: "restoreReturningAdultLink" })
+              .pipe(Effect.mapError(invalidInput));
+            const intentKey = yield* digest
+              .sha256(intent)
+              .pipe(Effect.mapError(invalidInput));
+            return yield* outputFence.run(
+              {
+                intentKey,
+                organizationId: command.admission.organizationId,
+                wasCommitted: database.pipe(
+                  Effect.flatMap((connection) =>
+                    hasHouseholdPersonMutationReceipt(
+                      connection,
+                      command.payload.mutationId
+                    )
+                  )
+                ),
+              },
+              Effect.gen(function* applyRestoreReturningAdultLink() {
+                const connection = yield* database;
+                yield* ensureHouseholdProvenance(
+                  connection,
+                  command.admission.organizationId
+                );
+                const person = yield* makeHouseholdPeopleRepository(
+                  connection,
+                  {
+                    canonical: canonicalEncoding,
+                    digest,
+                    identity: identityGenerator,
+                  }
+                ).restoreReturningAdultLink({
+                  actorId: command.admission.actor.actorId,
+                  linkageSubject: command.admission.actor.linkageSubject,
+                  now: yield* Clock.currentTimeMillis,
+                  payload: command.payload,
+                });
+                return yield* encodePeopleResult(HouseholdPerson, person);
+              })
             );
-            const person = yield* makeHouseholdPeopleRepository(connection, {
-              canonical: canonicalEncoding,
-              digest,
-              identity: identityGenerator,
-            }).restoreReturningAdultLink({
-              actorId: command.admission.actor.actorId,
-              linkageSubject: command.admission.actor.linkageSubject,
-              now: yield* Clock.currentTimeMillis,
-              payload: command.payload,
-            });
-            return yield* encodePeopleResult(HouseholdPerson, person);
           })
         ),
       retryMemberDeparture: (
@@ -1345,27 +1621,50 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               "retry_member_departure"
             );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
-            );
-            const start = yield* makeHouseholdPeopleRepository(connection, {
-              canonical: canonicalEncoding,
-              digest,
-              identity: identityGenerator,
-            }).retryMemberDeparture({
-              actorId: command.admission.actor.actorId,
-              callerIsOwner: command.admission.actor._tag === "PeopleCreator",
-              callerLinkageSubject: command.admission.actor.linkageSubject,
-              now: yield* Clock.currentTimeMillis,
-              operationId: command.operationId,
-              payload: command.payload,
-              targetLinkageSubject: command.targetLinkageSubject,
-            });
-            return yield* encodePeopleResult(
-              HouseholdMemberDepartureStart,
-              start
+            const intent = yield* canonicalEncoding
+              .encode({ command, method: "retryMemberDeparture" })
+              .pipe(Effect.mapError(invalidInput));
+            const intentKey = yield* digest
+              .sha256(intent)
+              .pipe(Effect.mapError(invalidInput));
+            return yield* outputFence.run(
+              {
+                intentKey,
+                organizationId: command.admission.organizationId,
+                wasCommitted: database.pipe(
+                  Effect.flatMap((connection) =>
+                    hasHouseholdPersonMutationReceipt(
+                      connection,
+                      command.payload.mutationId
+                    )
+                  )
+                ),
+              },
+              Effect.gen(function* applyRetryMemberDeparture() {
+                const connection = yield* database;
+                yield* ensureHouseholdProvenance(
+                  connection,
+                  command.admission.organizationId
+                );
+                const start = yield* makeHouseholdPeopleRepository(connection, {
+                  canonical: canonicalEncoding,
+                  digest,
+                  identity: identityGenerator,
+                }).retryMemberDeparture({
+                  actorId: command.admission.actor.actorId,
+                  callerIsOwner:
+                    command.admission.actor._tag === "PeopleCreator",
+                  callerLinkageSubject: command.admission.actor.linkageSubject,
+                  now: yield* Clock.currentTimeMillis,
+                  operationId: command.operationId,
+                  payload: command.payload,
+                  targetLinkageSubject: command.targetLinkageSubject,
+                });
+                return yield* encodePeopleResult(
+                  HouseholdMemberDepartureStart,
+                  start
+                );
+              })
             );
           })
         ),
@@ -1382,25 +1681,41 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               "start_member_departure"
             );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
-            );
-            const start = yield* makeHouseholdPeopleRepository(connection, {
-              canonical: canonicalEncoding,
-              digest,
-              identity: identityGenerator,
-            }).startMemberDeparture({
-              callerIsOwner: command.admission.actor._tag === "PeopleCreator",
-              callerLinkageSubject: command.admission.actor.linkageSubject,
-              expectedOperationVersion: command.expectedOperationVersion,
-              now: yield* Clock.currentTimeMillis,
-              operationId: command.operationId,
-            });
-            return yield* encodePeopleResult(
-              HouseholdMemberDepartureStart,
-              start
+            const intent = yield* canonicalEncoding
+              .encode({ command, method: "startMemberDeparture" })
+              .pipe(Effect.mapError(invalidInput));
+            const intentKey = yield* digest
+              .sha256(intent)
+              .pipe(Effect.mapError(invalidInput));
+            return yield* outputFence.run(
+              {
+                intentKey,
+                organizationId: command.admission.organizationId,
+                wasCommitted: Effect.succeed(false),
+              },
+              Effect.gen(function* applyStartMemberDeparture() {
+                const connection = yield* database;
+                yield* ensureHouseholdProvenance(
+                  connection,
+                  command.admission.organizationId
+                );
+                const start = yield* makeHouseholdPeopleRepository(connection, {
+                  canonical: canonicalEncoding,
+                  digest,
+                  identity: identityGenerator,
+                }).startMemberDeparture({
+                  callerIsOwner:
+                    command.admission.actor._tag === "PeopleCreator",
+                  callerLinkageSubject: command.admission.actor.linkageSubject,
+                  expectedOperationVersion: command.expectedOperationVersion,
+                  now: yield* Clock.currentTimeMillis,
+                  operationId: command.operationId,
+                });
+                return yield* encodePeopleResult(
+                  HouseholdMemberDepartureStart,
+                  start
+                );
+              })
             );
           })
         ),
@@ -1853,23 +2168,48 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               "restore_household_person"
             );
-            const connection = yield* database;
-            yield* ensureHouseholdProvenance(
-              connection,
-              command.admission.organizationId
+            const intent = yield* canonicalEncoding
+              .encode({ command, method: "restoreHouseholdPerson" })
+              .pipe(Effect.mapError(invalidInput));
+            const intentKey = yield* digest
+              .sha256(intent)
+              .pipe(Effect.mapError(invalidInput));
+            return yield* outputFence.run(
+              {
+                intentKey,
+                organizationId: command.admission.organizationId,
+                wasCommitted: database.pipe(
+                  Effect.flatMap((connection) =>
+                    hasHouseholdPersonMutationReceipt(
+                      connection,
+                      command.payload.mutationId
+                    )
+                  )
+                ),
+              },
+              Effect.gen(function* applyRestoreHouseholdPerson() {
+                const connection = yield* database;
+                yield* ensureHouseholdProvenance(
+                  connection,
+                  command.admission.organizationId
+                );
+                const person = yield* makeHouseholdPeopleRepository(
+                  connection,
+                  {
+                    canonical: canonicalEncoding,
+                    digest,
+                    identity: identityGenerator,
+                  }
+                ).restore({
+                  actorId: command.admission.actor.actorId,
+                  linkageSubject: command.admission.actor.linkageSubject,
+                  now: yield* Clock.currentTimeMillis,
+                  payload: command.payload,
+                  personId: command.personId,
+                });
+                return yield* encodePeopleResult(HouseholdPerson, person);
+              })
             );
-            const person = yield* makeHouseholdPeopleRepository(connection, {
-              canonical: canonicalEncoding,
-              digest,
-              identity: identityGenerator,
-            }).restore({
-              actorId: command.admission.actor.actorId,
-              linkageSubject: command.admission.actor.linkageSubject,
-              now: yield* Clock.currentTimeMillis,
-              payload: command.payload,
-              personId: command.personId,
-            });
-            return yield* encodePeopleResult(HouseholdPerson, person);
           })
         ),
       swapMealPlanFromRecipeBank: (

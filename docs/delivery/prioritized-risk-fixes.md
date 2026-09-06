@@ -1,41 +1,39 @@
 # Prioritized fixes after the dependency upgrade
 
 - Recorded: 2026-09-06, from the user's explicit priority instruction.
-- Status: Queued after dependency-upgrade publication; analysis only. No fixes
-  implemented.
-- Delivery owner: the current dependency-upgrade task; one implementation owner
-  will carry each fix when its lane starts. Technical scope advisers are read-only.
-- Continuation base: `376517b8aa78a9410fe880e1e495b903394e49c0` on
-  `codex/latest-dependencies-2026-09-05`. The upgrade is locally complete; its
-  independent exact-head PASS covers parent
-  `8f2a3e4953a3d2de5c537c4572205c45cd8107bf`. The successor only aligns documented
-  Node/pnpm prerequisites and changes no source or dependencies. Neither head is
-  published or merged. Its
+- Status: Three independently owned implementation lanes are underway; merge order remains 1, then 2, then 3.
+- Delivery owner: one source owner for fix 1 on `codex/private-output-safety`;
+  technical advisers and independent reviewers are read-only.
+- Verified continuation base: dependency-upgrade [PR 209](https://github.com/cill-i-am/meal-planner/pull/209)
+  merged as `4b4e7fd651d66c2a03805eb00209c40fe3eb3240`. The fetched remote main
+  matched this SHA when the implementation worktree was created. Its
   [verification record](../infrastructure/dependency-upgrade-2026-09-05.md)
-  owns the detailed evidence. This record is on a separate continuation branch.
+  owns the upgrade evidence. Implementation and repository delivery are authorized
+  under the [execution policy](../agents/execution-policy.md).
 
-Implement and verify these fixes in the following order. Safe scoping may proceed
-now; none is complete merely because the upgrade checks passed. This order
+Independent implementation and verification may proceed in parallel. Merge these
+fixes in the following order. None is complete merely because the upgrade checks
+passed. This order
 supersedes the older efficiency-review recommendation. Broader Stage 2, chat UI,
 models/providers, container sizing, outbox tuning, and other cost work remain
 outside this queue.
 
 ## 1. Prevent private output after authority changes
 
-**Queued first.** The
-[Agents boundary evidence](stages/01-household-people/04-agents-boundary-evidence.md)
-proves synthetic admission and denial on the next custom message. Production
-Better Auth → API → HouseholdObject → Agent composition remains unproven; no
-production Agent currently exists. This is an integration gate, not evidence of
-a currently exposed private-output leak. SDK protocol handling may precede
-`onMessage`, so connection admission and custom-message checks are insufficient.
+**Implementation prepared; immutable-head review pending.** The production
+Better Auth → API → HouseholdObject → isolated private-output composition now
+uses real D1 and native WebSockets. The [implementation evidence](private-output-safety.md)
+owns the exact scope, runtime cases, and recovery limits. No prior production
+private-output leak was established: this closes the first-composition integration
+gate left by the [Stage 1 SDK boundary evidence](stages/01-household-people/04-agents-boundary-evidence.md).
 
-Build a provider-free composition proof using real Better Auth D1, current active
-linked-adult authority in HouseholdObject, an isolated Agent, and synthetic private
-output. Use the supported Alchemy Worker/native Durable Object export and existing
-bundle-fixture seam. Preserve immutable household/account-linkage/person binding
-and retained completed metadata; do not persist session credentials in Agent
-metadata or logs. No Household grant, transcript, model, or chat UI is needed.
+The pinned SDK's sub-agent output uses an asynchronous parent bridge, and its
+inherited SQL/state RPC can expose a private Agent's storage. The accepted
+[ADR-0004 fallback](../architecture/decisions/0004-household-agent-coordinator-and-isolated-chat-agents.md)
+therefore uses a plain native child Durable Object as the physical emitter.
+`HouseholdAgent` and the account lifecycle coordinator own revocation metadata
+only. Private HTTP bodies, transcript-returning RPC, SDK client protocols, models,
+chat UI, and Household grants remain disabled or absent.
 
 Acceptance requires an explicit authority-change/output ordering design and real
 runtime evidence:
@@ -58,7 +56,7 @@ runtime evidence:
 
 ## 2. Make the next D1 reconciliation safe
 
-**Queued second.** Alchemy beta 76 can convert `d1_migrations` during an approved
+**Independent implementation underway; merges second.** Alchemy beta 76 can convert `d1_migrations` during an approved
 D1 reconciliation; an unchanged resource may remain a deployment no-op. Deployed
 histories are uninspected. The exact-version transport patch remains required;
 [the Alchemy review](../infrastructure/alchemy-upgrade-review.md) owns its removal
@@ -87,7 +85,7 @@ Acceptance requires target-specific evidence and recovery readiness:
 
 ## 3. Bound media-container running lifetime
 
-**Queued third.** Artifact cleanup does not establish container shutdown. The
+**Independent implementation underway; merges third.** Artifact cleanup does not establish container shutdown. The
 [existing review](../infrastructure/alchemy-upgrade-review.md) identifies the
 missing application lifetime bound; it does not prove containers run continuously.
 
@@ -118,9 +116,10 @@ and retain the deployed-runtime proof gate pending explicit target authorization
 
 ## Authority and completion
 
-Local analysis, implementation, and disposable verification stay within the
-bounded fix scope. Publication/PR creation, merge, deployment, and D1 conversion
-require explicit authorization for their actual effect and target. No account,
+Local implementation, disposable verification, commits, branch publication, PR
+delivery, and merge after required verification and independent review are covered
+by standing delivery authority. Deployment and D1 conversion still require explicit
+authorization covering their actual effect and target. No account,
 profile, or physical database target has been established for remote ledger
 inspection; resolve that scope before contacting the account. A real Alchemy plan
 may bootstrap account state and is not a harmless inspection command.
@@ -129,5 +128,8 @@ Each fix needs relevant checks, actual runtime evidence for its acceptance claim
 and independent review of the immutable implementation head under the
 [execution policy](../agents/execution-policy.md). Record evidence and remaining
 gates here as work proceeds; mark completion only after the authorized merge.
-No push, PR, merge, deployment, remote ledger inspection, or cloud mutation has
-been performed for this priority record.
+The dependency upgrade is merged. Fix 1 has local native runtime evidence; its
+required immutable-head review and repository delivery are pending.
+The target-specific D1 release gate is independent of local fix completion; no
+deployment, remote ledger inspection, or cloud mutation has been performed for this
+queue.
