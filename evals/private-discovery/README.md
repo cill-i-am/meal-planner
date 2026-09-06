@@ -1,0 +1,58 @@
+# Private discovery evaluation assets
+
+These repository-owned synthetic product-quality assets implement the WI03 adult discovery portion of [PDR-0006](../../docs/decisions/product/0006-ai-evaluation-and-release-evidence.md). They are independent of a harness, provider and model. They contain no real household data, completed model run, accepted baseline or release verdict.
+
+| Asset | Purpose |
+| --- | --- |
+| `scenarios.json` | All eight canonical families, initial context, withheld answers, allowed cards, challenges and prohibited outcomes. |
+| `rubric.json` | Required hard assertions, critical 1–5 anchors, exact PDR quality bands, calibration rules and deferred owners. |
+| `judge.md` | Versioned instructions for a separately fixed soft-quality judge after required hard checks pass. |
+| `evidence.template.json` | Empty run/result format with exact provenance, disclosure/transition receipts, unavailable telemetry and explicit scope. |
+| `calibration.template.json` | Eight unscored product-owner review rows and the outstanding second-human pre-beta obligation. |
+| `harness-spike.json` | Sanitized measured custom-agent spike and the decision not to adopt agent-eval 2.2.1. |
+
+The [Stage 2 plan](../../docs/delivery/stages/02-private-discovery/README.md) retains shorter dependant assistance and the full repeat-review flow in WI04. This pack exercises an adult's own discovery/profile portion of every family. Discussing a dependant or fallback is not a dependant-targeted confirmation flow. Routine, capacity, equipment and fallback facts can be useful private context; they cannot be squeezed into food-preference labels. All named deferred obligations are `not_exercised`, excluded from pass counts and quality aggregates, and remain required in their owning stage. This scoped pack cannot establish whole-Stage-2 completion or the complete external-beta gate.
+
+## Assisted disclosure policy: private-discovery-driver-v1
+
+Version 1 is a manually facilitated scenario pack, not an automated semantic driver. A facilitator follows the fixed policy below while the real candidate model, private runtime and admitted commands produce the actual interaction. Record the facilitator role and policy version. Do not script assistant replies, profile cards, successful commands or model outcomes.
+
+1. Provision the synthetic adult and current profile through the real test setup. The fixture's `ownProfile` is a compact value/standing/ID seed; runtime metadata and any remapped IDs come from setup receipts. Supply the candidate only its actual canonical own-profile context and the opening participant message. Never send `evaluatorOnly`, expected artifacts, the rubric, other adults' profiles or old transcripts to the candidate.
+2. For each actual candidate question, inspect the fixed `revealWhen` criteria. Disclose a withheld answer only if that question substantively requests its topic. A generic request to reveal every hidden detail is insufficient. One relevant question may reveal multiple matching facts; do not drip-feed them to manufacture extra questions. If relevance is ambiguous, withhold the fact and record the uncertainty rather than inventing a semantic pass.
+3. Record the fact ID, candidate-question reference, facilitator's criterion judgment/rationale, and actual participant-message reference for every disclosure. Use the fixture answer's meaning without adding new material facts. For an out-of-scope question, say the fixture has no further information; record unnecessary questioning. Initial known facts are supported by the opening/profile receipt and do not require a fabricated question receipt.
+4. Deliver the listed challenge when its observable trigger occurs. A correction may clarify an already-correct proposal; do not induce a false prior mistake. Match intent and semantics, not exact wording. If the trigger never occurs, record the missing transition instead of injecting a canned card to continue.
+5. Review actual progressive cards, then exercise correction/rejection and the participant's explicit admitted confirmation. Inspect its real settlement, canonical profile/version and retained card outcome before recording success. A synthetic actor may choose the action; the domain result must be real.
+
+This policy makes manual disclosure decisions inspectable, not automatically semantic. A deterministic checker can verify fact IDs, message ordering and actual receipts. It cannot infer that a question was relevant, a summary showed understanding, or prose contained no invented confirmed fact merely from a keyword match. Record those assertion reviews separately with reviewer/method, evidence and limits. Missing or disputed hard evidence remains unverified and blocks soft release judging. Keep assisted versus automated measurement methods visible when comparing runs; changing the driver requires reviewed versioning.
+
+## Cards and transitions
+
+The only model proposal vocabulary is the production [`ProfileCardChange`](../../packages/private-interview-api/src/index.ts). Sample `expectedCards.change` objects use that closed contract. Compare tags, fact identity, preference strength, safety category and supported meaning; labels need not match one exact phrase. If IDs are remapped during fixture provisioning, use the actual canonical ID and retain the mapping receipt. No model-authored actor, target person, confirmation basis, provenance, card status, reviewed fact, expected version or safety consent is accepted.
+
+`AddConfirmedProfileFact` names the requested eventual change; its initial card is still **proposed**, private and uncommitted. The common observed trajectory is `proposed → corrected proposed/rejected → proposed → pending → confirmed`, with an actual committed Household outcome and profile version for the accepted card. Do not require every corrected interaction to emit a separate rejected card: revision and rejection are the existing alternative participant operations. A rejected card stays rejected; any replacement is separately visible. If a real stale-version conflict occurs, record `conflict` and refreshed review; never call it confirmation. Current safety constraints stay active, and an actual reduction needs the separate admitted safety confirmation. A transcript claim, tool request, pending card or agent bookkeeping is not commitment proof.
+
+The simple-household `repeatSpike` is the required narrow harness seam: real discovery, visible proposal, correction, admitted confirmation, completion of A, then fresh B using the current committed profile and new dialogue only. B must not receive A's transcript or rejected/private material. Its removal proposal uses the real current fact ID and requires a new admitted confirmation. Record the actual two-session receipts; do not count a fabricated profile or session as an end-to-end pass. This does not claim the full WI04 focused-review product flow.
+
+## Measured harness disposition
+
+The required `agent-eval` 2.2.1 custom-agent spike completed a real local A-to-B trajectory through the production adapter, private persistence, typed card correction and admitted canonical confirmation. Four prescribed provider turns completed two sessions; explicit confirmations advanced profile versions 0 → 1 → 2. Fresh B received the current canonical fact and excluded A's transcript, summary and private cards. This was zero live-model quality runs and zero external requests. [The sanitized receipt](harness-spike.json) records package provenance, development-bundle provenance, assertions and receipt digests.
+
+Do not adopt the package. Its native trace parser returned no normalized events, and a separate mechanics probe automatically retried a deterministic failure into one persisted passing attempt. Native authority assertions, telemetry and a fixed judge still needed application integration. Keep the existing native harness and the manually facilitated eight-family policy above; add no generic framework or package dependency.
+
+The spike used a frozen development bundle before final recovery fixes and explicitly readmitted after provider-plan waits. It establishes the real narrow repeat seam, not final immutable-head browser acceptance, idle recovery, native Stop/Retry/restart, provider protocol compatibility, candidate quality or human calibration. Its wall-clock duration includes manual coordination and is not a latency benchmark.
+
+## Review and evidence
+
+Copy the empty evidence format for a real run; its `scenarioResultTemplate` is a shape example, not a ninth scenario result. Create one result for each exercised canonical family and enumerate all common plus scenario-specific hard assertions. Missing families, unverified assertions and deferred capabilities cannot be counted as passing. Retain required discovery IDs, actual cards and transitions, prohibited-outcome inspections and their receipts per scenario.
+
+Record immutable source head/tree, exact candidate provider/model/configuration, prompt/tool/policy versions and content digests, scenario/rubric/applicability, harness/driver configuration, separately fixed judge, and calibration-set versions. Run IDs and provenance stay null until known. Synthetic interaction evidence may be retained for review; never copy real private dialogue, secrets, provider credentials or identifying household data into this pack or results.
+
+Measure question and repeat counts, participant turns, latency, tool/schema failures, tokens and cost only from actual evidence with a stated method. The manual classification of repeated questions needs its own review receipt. Unavailable measurements stay null with `unavailable` status, never zero. Cost needs a currency and price basis. Do not invent a meaningful-regression threshold for operational measures: record the comparison for explicit product review.
+
+Only after required hard checks and prohibited-claim inspection pass may the fixed judge score household specificity and profile synthesis. Human review then calibrates those scores against this scope. Copy `calibration.template.json` for that run; all eight product-owner rows remain unscored until an actual human supplies scores and rationale. Do not prefill them from a model or this asset review. Preserve every scenario/dimension score: averages cannot conceal a hard blocker, a score below 3, a 0.5-point regression or material burden/reliability/cost regressions.
+
+Use the PDR's exact green/review/red policy in `rubric.json`. No accepted baseline means baseline comparison is unavailable, not that a candidate is calibrated green. An ordinary candidate also needs human review of all hard failures, critical scores at 3 or lower, meaningful regressions, requested overrides and two rotating green cases. Judge/rubric/policy changes trigger all-eight human review. A product owner may explicitly accept a non-hard regression under the PDR's evidence requirements; no one may waive a hard blocker.
+
+## Asset validation
+
+Run `pnpm exec node --import tsx evals/private-discovery/validate.ts` from the repository root. It checks the eight-family roster, oracle references, deferred owners, 1–5 anchors, blank evidence/calibration templates and compatibility of the fixture facts/cards with the actual production schemas. It makes no model, provider or network call and is not an eval harness or quality scorer. Formatting and focused lint also apply to these assets; passing them is asset validation, not runtime, discovery-quality or human-calibration evidence.

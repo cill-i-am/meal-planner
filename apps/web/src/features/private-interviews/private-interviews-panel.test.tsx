@@ -5,6 +5,7 @@ import {
 // @vitest-environment jsdom
 import { ProfileCard } from "@meal-planner/private-interview-api";
 import type {
+  AssistantTurn,
   DirectoryCommand,
   DirectoryFrame,
   SessionCommand,
@@ -37,6 +38,12 @@ const message = {
   ordinal: 1,
   role: "participant" as const,
   text: "I prefer mild dinners.",
+};
+const queuedTurn: AssistantTurn = {
+  failure: null,
+  id: "00000000-0000-4000-8000-000000000401",
+  sourceMessageId: messageId,
+  status: "queued",
 };
 const context = { accountId: "adult-a", householdId: "household-a" };
 
@@ -85,6 +92,14 @@ const fixture = () => {
       sockets.push({ path, socket });
       return socket;
     },
+    continueAssistantTurn: vi.fn(
+      async (
+        _session: string,
+        _turn: string,
+        _generation: string,
+        _signal: AbortSignal
+      ) => "accepted" as "accepted" | "unavailable" | "authentication_required"
+    ),
     continueConfirmation: vi.fn(
       async (
         _session: string,
@@ -131,10 +146,12 @@ const fixture = () => {
     sessionState = state,
     cards: readonly ProfileCardType[] = [],
     pendingConfirmation: string | null = null,
-    generation = "00000000-0000-4000-8000-000000000301"
+    generation = "00000000-0000-4000-8000-000000000301",
+    assistantTurn: AssistantTurn | null = null
   ) => {
     const socket = latest();
     socket.receive({
+      assistantTurn,
       bindingKey: "binding-a",
       generation,
       pendingConfirmation,
@@ -172,7 +189,7 @@ const fixture = () => {
 
 afterEach(cleanup);
 
-it("offers a fresh connection after an authority close and retries the same request without a new login", async () => {
+it("offers explicit reconnect when a fresh automatic admission fails and retains the same request", async () => {
   const user = userEvent.setup();
   const f = fixture();
   render(<PrivateInterviewsPanel {...context} dependencies={f.dependencies} />);
@@ -181,6 +198,10 @@ it("offers a fresh connection after an authority close and retries the same requ
     screen.getByRole("button", { name: "Start private session" })
   );
   const request = f.latest().last("StartSession");
+  act(() => f.latest().lose(1008));
+  expect(
+    screen.getByText(/Connecting to your private sessions/u)
+  ).toBeInTheDocument();
   act(() => f.latest().lose(1008));
   expect(
     screen.getByText(/Reconnect to continue\. If your sign-in has expired/u)
@@ -199,7 +220,7 @@ it("starts, saves an acknowledged message, completes, and rediscovers history af
   );
   const first = render(view());
   expect(
-    screen.getByText(/Assistant replies are not available yet/u)
+    screen.getByText(/Your messages and replies stay private/u)
   ).toBeInTheDocument();
   act(() => {
     f.list(f.directoryReady(), []);
@@ -228,6 +249,7 @@ it("starts, saves an acknowledged message, completes, and rediscovers history af
   ).not.toBeInTheDocument();
   act(() =>
     session.receive({
+      assistantTurn: queuedTurn,
       message,
       mutationId: append.mutationId,
       state: { status: "open", version: 1 },
@@ -236,6 +258,13 @@ it("starts, saves an acknowledged message, completes, and rediscovers history af
   );
   expect(screen.getByText(message.text, { selector: "p" })).toBeInTheDocument();
   expect(screen.getByLabelText("Your message")).toHaveValue("");
+  act(() =>
+    session.receive({
+      state: { status: "open", version: 1 },
+      turn: { ...queuedTurn, failure: "not_configured", status: "failed" },
+      type: "AssistantTurnUpdated",
+    })
+  );
   await user.click(screen.getByRole("button", { name: "Complete session" }));
   act(() =>
     session.receive({
@@ -253,6 +282,7 @@ it("starts, saves an acknowledged message, completes, and rediscovers history af
   act(() => {
     const socket = f.latest();
     socket.receive({
+      assistantTurn: null,
       bindingKey: "binding-a",
       generation: "00000000-0000-4000-8000-000000000301",
       pendingConfirmation: null,
@@ -300,6 +330,8 @@ it.each([
     }
     const command = f.latest().last(type);
     f.latest().lose(1008);
+    expect(first.getSnapshot().connection).toBe("connecting");
+    f.latest().lose(1008);
     expect(first.getSnapshot().connection).toBe("authentication_required");
     expect(first.getSnapshot().messages).toEqual([]);
     first.disconnect();
@@ -311,6 +343,7 @@ it.each([
       const socket = f.latest();
       const recoveredState = { status: "completed" as const, version: 2 };
       socket.receive({
+        assistantTurn: null,
         bindingKey: "binding-a",
         generation: "00000000-0000-4000-8000-000000000301",
         pendingConfirmation: null,
@@ -387,12 +420,18 @@ it("keeps old receipts from clearing a newer unresolved mutation", () => {
   client.append(message.text);
   const first = socket.last("AppendParticipantMessage");
   const receipt: SessionFrame = {
+    assistantTurn: queuedTurn,
     message,
     mutationId: first.mutationId,
     state: { status: "open", version: 1 },
     type: "MessageAppended",
   };
   socket.receive(receipt);
+  socket.receive({
+    state: { ...state, version: 1 },
+    turn: { ...queuedTurn, failure: "not_configured", status: "failed" },
+    type: "AssistantTurnUpdated",
+  });
   client.append("Another message");
   const second = socket.last("AppendParticipantMessage");
   socket.receive(receipt);
@@ -435,6 +474,7 @@ it("hides content immediately on account change and ignores late frames from the
   const old = f.latest();
   act(() => {
     old.receive({
+      assistantTurn: null,
       bindingKey: "binding-a",
       generation: "00000000-0000-4000-8000-000000000301",
       pendingConfirmation: null,
@@ -534,6 +574,7 @@ it("deduplicates replayed history and does not skip unread pages when an append 
   client.select(reference);
   const socket = f.latest();
   socket.receive({
+    assistantTurn: null,
     bindingKey: "binding-a",
     generation: "00000000-0000-4000-8000-000000000301",
     pendingConfirmation: null,
@@ -550,6 +591,7 @@ it("deduplicates replayed history and does not skip unread pages when an append 
   });
   client.append("New message");
   socket.receive({
+    assistantTurn: queuedTurn,
     message: {
       ...message,
       id: "00000000-0000-4000-8000-000000000204",
@@ -605,6 +647,7 @@ it("rejects oversized or unbound frames without rendering private content", () =
   f.directoryReady();
   client.select(reference);
   f.latest().receive({
+    assistantTurn: null,
     bindingKey: "binding-other",
     generation: "00000000-0000-4000-8000-000000000301",
     pendingConfirmation: null,
@@ -1248,4 +1291,563 @@ it("refreshes the sibling shared profile and history on canonical settlement whi
   });
   expect(operations.get).toHaveBeenCalledTimes(2);
   expect(operations.versions).toHaveBeenCalledTimes(2);
+});
+
+const openResponse = async (
+  f: ReturnType<typeof fixture>,
+  turn: AssistantTurn | null = null
+) => {
+  const user = userEvent.setup();
+  render(<PrivateInterviewsPanel {...context} dependencies={f.dependencies} />);
+  act(() => f.list(f.directoryReady()));
+  await user.click(screen.getByRole("button", { name: /Session 1/u }));
+  await act(async () => f.sessionReady(state, [], null, undefined, turn));
+  return { socket: f.latest(), user };
+};
+
+it("dispatches an acknowledged message once and renders output only after canonical success", async () => {
+  const f = fixture();
+  const { user, socket } = await openResponse(f);
+  await user.type(screen.getByLabelText("Your message"), message.text);
+  await user.click(screen.getByRole("button", { name: "Save message" }));
+  const receipt = {
+    assistantTurn: queuedTurn,
+    message,
+    mutationId: socket.last("AppendParticipantMessage").mutationId,
+    state: { ...state, version: 1 },
+    type: "MessageAppended" as const,
+  };
+  await act(async () => socket.receive(receipt));
+  act(() => socket.receive(receipt));
+  expect(f.dependencies.continueAssistantTurn).toHaveBeenCalledExactlyOnceWith(
+    reference,
+    queuedTurn.id,
+    "00000000-0000-4000-8000-000000000301",
+    expect.any(AbortSignal)
+  );
+  expect(
+    screen.getByRole("button", { name: "Complete session" })
+  ).toBeDisabled();
+  expect(screen.getByLabelText("Your message")).toBeDisabled();
+  expect(
+    screen.queryByText("Assistant", { selector: "strong" })
+  ).not.toBeInTheDocument();
+  act(() =>
+    socket.receive({
+      requestId: socket.last("ReadAssistantTurn").requestId,
+      state: receipt.state,
+      turn: { ...queuedTurn, status: "running" },
+      type: "AssistantTurnRead",
+    })
+  );
+  expect(screen.getByText(/Preparing a response/u)).toBeInTheDocument();
+  act(() =>
+    socket.receive({
+      state: { ...state, version: 2 },
+      turn: { ...queuedTurn, status: "succeeded" },
+      type: "AssistantTurnUpdated",
+    })
+  );
+  const reply = {
+    ...message,
+    id: "00000000-0000-4000-8000-000000000202",
+    ordinal: 2,
+    role: "assistant" as const,
+    text: "What helps a mild dinner feel satisfying?",
+  };
+  act(() => {
+    socket.receive({
+      hasMore: false,
+      messages: [message, reply],
+      requestId: socket.last("ReadHistory").requestId,
+      state: { ...state, version: 2 },
+      type: "HistoryRead",
+    });
+    socket.receive({
+      cards: [],
+      hasMore: false,
+      pendingConfirmation: null,
+      requestId: socket.last("ReadCards").requestId,
+      state: { ...state, version: 2 },
+      type: "CardsRead",
+    });
+  });
+  expect(screen.getByText(reply.text)).toBeInTheDocument();
+  expect(screen.getByLabelText("Your message")).toBeEnabled();
+  expect(f.dependencies.continueAssistantTurn).toHaveBeenCalledTimes(1);
+});
+
+it.each(["queued", "running"] as const)(
+  "recovers %s without automatically dispatching and keeps Stop available",
+  async (status) => {
+    const f = fixture();
+    const { user, socket } = await openResponse(f, { ...queuedTurn, status });
+    expect(f.dependencies.continueAssistantTurn).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Complete session" })
+    ).toBeDisabled();
+    if (status === "queued") {
+      await user.click(
+        screen.getByRole("button", { name: "Continue response" })
+      );
+      expect(f.dependencies.continueAssistantTurn).toHaveBeenCalledTimes(1);
+    } else {
+      expect(
+        screen.queryByRole("button", { name: "Continue response" })
+      ).not.toBeInTheDocument();
+    }
+    await user.click(screen.getByRole("button", { name: "Stop response" }));
+    const cancel = socket.last("CancelAssistantTurn");
+    expect(cancel.turnId).toBe(queuedTurn.id);
+    act(() =>
+      socket.receive({
+        mutationId: cancel.mutationId,
+        state: { ...state, version: 1 },
+        turn: { ...queuedTurn, status: "cancelled" },
+        type: "AssistantTurnChanged",
+      })
+    );
+    expect(screen.getByText(/Response stopped/u)).toBeInTheDocument();
+    expect(screen.getByLabelText("Your message")).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Try new response" }));
+    const retry = socket.last("RetryAssistantTurn");
+    expect(retry.turnId).toBe(queuedTurn.id);
+    expect(retry.mutationId).not.toBe(cancel.mutationId);
+    const next = { ...queuedTurn, id: "00000000-0000-4000-8000-000000000402" };
+    await act(async () =>
+      socket.receive({
+        mutationId: retry.mutationId,
+        state: { ...state, version: 2 },
+        turn: next,
+        type: "AssistantTurnChanged",
+      })
+    );
+    expect(f.dependencies.continueAssistantTurn).toHaveBeenLastCalledWith(
+      reference,
+      next.id,
+      "00000000-0000-4000-8000-000000000301",
+      expect.any(AbortSignal)
+    );
+    expect(
+      socket.commands.filter(
+        (command) => command.type === "AppendParticipantMessage"
+      )
+    ).toHaveLength(0);
+  }
+);
+
+it("reconciles an ambiguous HTTP result and never borrows a replacement socket generation", async () => {
+  const f = fixture();
+  f.dependencies.continueAssistantTurn.mockResolvedValueOnce("unavailable");
+  const { user, socket } = await openResponse(f, queuedTurn);
+  await user.click(screen.getByRole("button", { name: "Continue response" }));
+  expect(f.dependencies.continueAssistantTurn).toHaveBeenCalledTimes(1);
+  await user.click(
+    screen.getByRole("button", { name: "Reconnect to check response" })
+  );
+  act(() =>
+    f.sessionReady(state, [], null, "00000000-0000-4000-8000-000000000302", {
+      ...queuedTurn,
+      failure: "outcome_unknown",
+      status: "interrupted",
+    })
+  );
+  expect(
+    screen.getByText(/previous request may have been processed/u)
+  ).toBeInTheDocument();
+  expect(f.dependencies.continueAssistantTurn).toHaveBeenCalledTimes(1);
+  act(() =>
+    socket.receive({
+      state: { ...state, version: 9 },
+      turn: { ...queuedTurn, status: "succeeded" },
+      type: "AssistantTurnUpdated",
+    })
+  );
+  expect(
+    screen.getByText(/previous request may have been processed/u)
+  ).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Try new response" }));
+  const fresh = f.latest();
+  const retry = fresh.last("RetryAssistantTurn");
+  const next = { ...queuedTurn, id: "00000000-0000-4000-8000-000000000402" };
+  await act(async () =>
+    fresh.receive({
+      mutationId: retry.mutationId,
+      state: { ...state, version: 1 },
+      turn: next,
+      type: "AssistantTurnChanged",
+    })
+  );
+  expect(f.dependencies.continueAssistantTurn).toHaveBeenLastCalledWith(
+    reference,
+    next.id,
+    "00000000-0000-4000-8000-000000000302",
+    expect.any(AbortSignal)
+  );
+});
+
+it("shows unavailable configuration honestly and clears private response data after authority loss", async () => {
+  const f = fixture();
+  const { socket } = await openResponse(f, {
+    ...queuedTurn,
+    failure: "not_configured",
+    status: "failed",
+  });
+  expect(
+    screen.getByText(/Assistant replies are not available for this session/u)
+  ).toBeInTheDocument();
+  expect(f.dependencies.continueAssistantTurn).not.toHaveBeenCalled();
+  act(() => socket.lose(1008));
+  expect(
+    screen.queryByText(/Assistant replies are not available for this session/u)
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Try new response" })
+  ).not.toBeInTheDocument();
+});
+
+it("freezes all profile and conversation mutations during a running response", async () => {
+  const f = fixture();
+  const client = new PrivateInterviewClient(context, f.dependencies);
+  client.connect();
+  f.directoryReady();
+  client.select(reference);
+  const card = proposal();
+  const socket = f.sessionReady(state, [card], null, undefined, {
+    ...queuedTurn,
+    status: "running",
+  });
+  await client.refreshProfile();
+  client.append("Another message");
+  client.complete();
+  client.rejectCard(card);
+  client.confirmCard(card, null);
+  client.reviseCard(card, card.change);
+  client.tryNewResponse();
+  await client.continueResponse();
+  expect(
+    socket.commands.every(
+      (command) =>
+        command.type === "ReadHistory" || command.type === "ReadCards"
+    )
+  ).toBe(true);
+  expect(f.dependencies.continueAssistantTurn).not.toHaveBeenCalled();
+  client.stopResponse();
+  expect(socket.last("CancelAssistantTurn").turnId).toBe(queuedTurn.id);
+});
+
+it("ignores a late HTTP authentication result from a replaced private socket", async () => {
+  const f = fixture();
+  let finish: ((outcome: "authentication_required") => void) | undefined;
+  f.dependencies.continueAssistantTurn.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  const client = new PrivateInterviewClient(context, f.dependencies);
+  client.connect();
+  f.directoryReady();
+  client.select(reference);
+  f.sessionReady(state, [], null, undefined, queuedTurn);
+  const request = client.continueResponse();
+  const originalSignal =
+    f.dependencies.continueAssistantTurn.mock.calls[0]?.[3];
+  client.reconnectSession();
+  const socket = f.sessionReady(
+    state,
+    [],
+    null,
+    "00000000-0000-4000-8000-000000000302",
+    { ...queuedTurn, status: "running" }
+  );
+  expect(originalSignal?.aborted).toBe(true);
+  finish?.("authentication_required");
+  await request;
+  expect(client.getSnapshot().connection).toBe("ready");
+  expect(client.getSnapshot().assistantTurn?.status).toBe("running");
+  expect(socket.commands.map((command) => command.type)).toEqual([
+    "ReadHistory",
+    "ReadCards",
+  ]);
+  expect(f.dependencies.continueAssistantTurn).toHaveBeenCalledTimes(1);
+});
+
+it.each([queuedTurn.id, "00000000-0000-4000-8000-000000000402"])(
+  "requires explicit continuation after recovering an append receipt with current turn %s",
+  async (turnId) => {
+    const f = fixture();
+    const client = new PrivateInterviewClient(context, f.dependencies);
+    client.connect();
+    f.directoryReady();
+    client.select(reference);
+    const original = f.sessionReady();
+    client.append(message.text);
+    const append = original.last("AppendParticipantMessage");
+    original.lose();
+    client.connect();
+    f.directoryReady();
+    const recovered = f.sessionReady(
+      { ...state, version: 2 },
+      [],
+      null,
+      undefined,
+      { ...queuedTurn, id: turnId }
+    );
+    client.retry();
+    recovered.receive({
+      assistantTurn: queuedTurn,
+      message,
+      mutationId: append.mutationId,
+      state: { ...state, version: 1 },
+      type: "MessageAppended",
+    });
+    expect(f.dependencies.continueAssistantTurn).not.toHaveBeenCalled();
+    expect(client.getSnapshot().assistantTurn?.id).toBe(turnId);
+    await client.continueResponse();
+    expect(
+      f.dependencies.continueAssistantTurn
+    ).toHaveBeenCalledExactlyOnceWith(
+      reference,
+      turnId,
+      "00000000-0000-4000-8000-000000000301",
+      expect.any(AbortSignal)
+    );
+  }
+);
+
+it("transparently re-admits an idle directory and reconciles the exact Start request", async () => {
+  const f = fixture();
+  const user = userEvent.setup();
+  render(<PrivateInterviewsPanel {...context} dependencies={f.dependencies} />);
+  let original: Socket | undefined;
+  act(() => {
+    original = f.directoryReady();
+    f.list(original, []);
+  });
+  await user.click(
+    screen.getByRole("button", { name: "Start private session" })
+  );
+  const start = f.latest().last("StartSession");
+  act(() => original?.lose(1008));
+  expect(
+    screen.getByText(/Connecting to your private sessions/u)
+  ).toBeInTheDocument();
+  const fresh = f.latest();
+  act(() => {
+    f.directoryReady();
+    f.list(fresh, []);
+  });
+  expect(fresh.last("StartSession")).toEqual(start);
+  act(() => {
+    fresh.receive({
+      mutationId: start.mutationId,
+      reservation,
+      type: "SessionStarted",
+    });
+    f.sessionReady();
+  });
+  expect(screen.getByLabelText("Your message")).toBeEnabled();
+  expect(f.storage.size).toBe(0);
+  expect(f.dependencies.continueAssistantTurn).not.toHaveBeenCalled();
+  expect(f.dependencies.continueConfirmation).not.toHaveBeenCalled();
+});
+
+const establishedClient = (f: ReturnType<typeof fixture>) => {
+  const client = new PrivateInterviewClient(context, f.dependencies);
+  client.connect();
+  f.list(f.directoryReady());
+  client.select(reference);
+  const socket = f.sessionReady();
+  return { client, socket };
+};
+
+it("restores only selection metadata after idle loss and rejects a different participant binding", () => {
+  const f = fixture();
+  const { client, socket } = establishedClient(f);
+  client.loadHistory();
+  socket.receive({
+    hasMore: false,
+    messages: [message],
+    requestId: socket.last("ReadHistory").requestId,
+    state,
+    type: "HistoryRead",
+  });
+  expect(client.getSnapshot().messages).toEqual([message]);
+  socket.lose(1008);
+  expect(client.getSnapshot().messages).toEqual([]);
+  expect(client.getSnapshot().sessionReference).toBeNull();
+  const count = f.sockets.length;
+  const admission = f.latest();
+  f.directoryReady("binding-other");
+  expect(client.getSnapshot().connection).toBe("authentication_required");
+  expect(client.getSnapshot().messages).toEqual([]);
+  expect(f.sockets.length).toBe(count);
+  expect(admission.commands).toEqual([]);
+  expect(admission.closed).toBe(true);
+});
+
+it.each(["admission", "initial_reads"])(
+  "stops automatic recovery after a revoked %s without looping",
+  (failurePoint) => {
+    const f = fixture();
+    const { client, socket } = establishedClient(f);
+    socket.lose(1008);
+    if (failurePoint === "initial_reads") {
+      f.list(f.directoryReady());
+      f.latest().receive({
+        assistantTurn: null,
+        bindingKey: "binding-a",
+        generation: "00000000-0000-4000-8000-000000000302",
+        pendingConfirmation: null,
+        sessionReference: reference,
+        state,
+        type: "SessionReady",
+      });
+    }
+    const failed = f.latest();
+    const count = f.sockets.length;
+    failed.lose(1008);
+    failed.lose(1008);
+    expect(f.sockets.length).toBe(count);
+    expect(client.getSnapshot().connection).toBe("authentication_required");
+    expect(client.getSnapshot().messages).toEqual([]);
+    expect(client.getSnapshot().cards).toEqual([]);
+  }
+);
+
+it("does not let two established tabs endlessly replace one another after repeated authority closes", () => {
+  const left = fixture();
+  const right = fixture();
+  const a = establishedClient(left);
+  const b = establishedClient(right);
+  a.socket.lose(1008);
+  left.list(left.directoryReady());
+  left.sessionReady();
+  expect(a.client.getSnapshot().sessionReference).toBe(reference);
+  b.socket.lose(1008);
+  right.list(right.directoryReady());
+  right.sessionReady();
+  const leftCount = left.sockets.length;
+  const rightCount = right.sockets.length;
+  left.latest().lose(1008);
+  right.latest().lose(1008);
+  expect(left.sockets.length).toBe(leftCount);
+  expect(right.sockets.length).toBe(rightCount);
+  expect(a.client.getSnapshot().connection).toBe("authentication_required");
+  expect(b.client.getSnapshot().connection).toBe("authentication_required");
+  a.client.connect();
+  left.list(left.directoryReady());
+  a.client.start();
+  const exact = left.latest().last("StartSession");
+  left.latest().lose(1008);
+  const fresh = left.directoryReady();
+  expect(fresh.last("StartSession")).toEqual(exact);
+  expect(left.sockets.length).toBe(leftCount + 2);
+});
+
+it.each([
+  "AppendParticipantMessage",
+  "RetryAssistantTurn",
+  "ConfirmProfileCard",
+] as const)(
+  "reconciles recovered %s exactly once without any automatic HTTP continuation",
+  async (type) => {
+    const f = fixture();
+    const client = new PrivateInterviewClient(context, f.dependencies);
+    client.connect();
+    f.list(f.directoryReady());
+    client.select(reference);
+    const card = proposal();
+    const initialTurn =
+      type === "RetryAssistantTurn"
+        ? {
+            ...queuedTurn,
+            failure: "provider_unavailable" as const,
+            status: "failed" as const,
+          }
+        : null;
+    const original = f.sessionReady(
+      state,
+      [card],
+      null,
+      undefined,
+      initialTurn
+    );
+    await Promise.resolve();
+    if (type === "AppendParticipantMessage") {
+      client.append(message.text);
+    } else if (type === "RetryAssistantTurn") {
+      client.tryNewResponse();
+    } else {
+      client.confirmCard(card, null);
+    }
+    const exact = original.last(type);
+    original.lose(1008);
+    f.list(f.directoryReady());
+    const fresh = f.sessionReady(state, [card], null, undefined, initialTurn);
+    expect(fresh.last(type)).toEqual(exact);
+    if (type === "AppendParticipantMessage") {
+      fresh.receive({
+        assistantTurn: queuedTurn,
+        message,
+        mutationId: exact.mutationId,
+        state: { ...state, version: 1 },
+        type: "MessageAppended",
+      });
+    } else if (type === "RetryAssistantTurn") {
+      fresh.receive({
+        mutationId: exact.mutationId,
+        state: { ...state, version: 1 },
+        turn: { ...queuedTurn, id: "00000000-0000-4000-8000-000000000402" },
+        type: "AssistantTurnChanged",
+      });
+    } else {
+      fresh.receive({
+        card: { ...card, status: "pending" },
+        mutationId: exact.mutationId,
+        state: { ...state, version: 1 },
+        type: "ConfirmationPending",
+      });
+    }
+    await Promise.resolve();
+    expect(
+      fresh.commands.filter((command) => command.type === type)
+    ).toHaveLength(1);
+    expect(f.dependencies.continueAssistantTurn).not.toHaveBeenCalled();
+    expect(f.dependencies.continueConfirmation).not.toHaveBeenCalled();
+    expect(client.getSnapshot().turnRequestStatus).toBe("idle");
+    expect(client.getSnapshot().confirmationStatus).toBe("idle");
+    if (type === "ConfirmProfileCard") {
+      expect(client.getSnapshot().pendingConfirmation).toBe(exact.mutationId);
+    } else {
+      expect(client.getSnapshot().assistantTurn?.status).toBe("queued");
+    }
+  }
+);
+
+it("rearms one recovery for a later deliberate message after a successful idle recovery", () => {
+  const f = fixture();
+  const { client, socket } = establishedClient(f);
+  socket.lose(1008);
+  f.list(f.directoryReady());
+  const recovered = f.sessionReady();
+  client.append(message.text);
+  const exact = recovered.last("AppendParticipantMessage");
+  recovered.lose(1008);
+  f.list(f.directoryReady());
+  const next = f.sessionReady();
+  expect(next.last("AppendParticipantMessage")).toEqual(exact);
+  next.receive({
+    assistantTurn: queuedTurn,
+    message,
+    mutationId: exact.mutationId,
+    state: { ...state, version: 1 },
+    type: "MessageAppended",
+  });
+  expect(f.dependencies.continueAssistantTurn).not.toHaveBeenCalled();
+  const count = f.sockets.length;
+  next.lose(1008);
+  expect(f.sockets.length).toBe(count);
+  expect(client.getSnapshot().connection).toBe("authentication_required");
 });

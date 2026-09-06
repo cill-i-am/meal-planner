@@ -1,0 +1,770 @@
+{
+  "version": "private-discovery-scenarios-v1",
+  "scope": "wi03_adult_discovery",
+  "scenarios": [
+    {
+      "id": "simple_household_baseline",
+      "family": "Simple household baseline",
+      "candidateContext": {
+        "ownProfile": { "version": 0, "facts": [] },
+        "openingMessage": "I am one adult cooking for myself. I like tomato soup and want to keep this short."
+      },
+      "evaluatorOnly": {
+        "knownFacts": [
+          { "id": "simple.preference", "fact": "The adult likes tomato soup." },
+          {
+            "id": "simple.burden",
+            "fact": "The adult wants a brief useful conversation."
+          }
+        ],
+        "withheldFacts": [
+          {
+            "id": "simple.safety",
+            "revealWhen": "Asked about allergies or dietary restrictions",
+            "answer": "I have no known allergies or other hard food restrictions."
+          },
+          {
+            "id": "simple.routine",
+            "revealWhen": "A relevant question about ordinary meals",
+            "answer": "Porridge most mornings and soup for lunch suit me. I do not need lots of variety."
+          }
+        ],
+        "requiredDiscoveries": [
+          "simple.preference",
+          "simple.safety",
+          "simple.routine"
+        ],
+        "expectedCards": [
+          {
+            "id": "simple.early",
+            "when": "Early, without exhausting every lifestyle topic",
+            "supports": ["simple.preference"],
+            "change": {
+              "_tag": "AddConfirmedProfileFact",
+              "fact": {
+                "_tag": "FoodPreference",
+                "label": "tomato soup",
+                "sentiment": "like",
+                "targetKind": "dish"
+              }
+            }
+          },
+          {
+            "id": "simple.safety",
+            "when": "Only after the explicit safety answer",
+            "supports": ["simple.safety"],
+            "change": {
+              "_tag": "AddConfirmedProfileFact",
+              "fact": { "_tag": "NoKnownHardConstraints" }
+            }
+          },
+          {
+            "id": "simple.corrected",
+            "when": "After the correction, replacing the unconfirmed tomato proposal",
+            "supports": ["simple.correction"],
+            "change": {
+              "_tag": "AddConfirmedProfileFact",
+              "fact": {
+                "_tag": "FoodPreference",
+                "label": "roasted tomato soup",
+                "sentiment": "like",
+                "targetKind": "dish"
+              }
+            }
+          }
+        ],
+        "challenge": {
+          "id": "simple.correction",
+          "after": "The early card is visible but unconfirmed",
+          "message": "Please make that roasted tomato soup; I do not like the cold version.",
+          "expected": "Revise the tentative dish preference, then invite explicit confirmation of its visible effect."
+        },
+        "hardAssertions": [
+          "NoKnownHardConstraints is not inferred from silence or a short interview.",
+          "The unconfirmed broad soup preference is corrected before the participant confirms it."
+        ],
+        "prohibitedClaims": [
+          "All soups are liked.",
+          "No known hard constraints is already confirmed before an admitted confirmation.",
+          "A breakfast or lunch routine has been saved."
+        ],
+        "qualityFocus": [
+          "Offer a useful card promptly.",
+          "Use the stated low-variety preference without repeating answered questions."
+        ],
+        "deferredObligations": [
+          "stage3_routines_fallbacks",
+          "stage5_planning_repair",
+          "stage6_learning",
+          "stage7_shopping",
+          "wi04_full_repeat",
+          "wi04_dependant_assistance"
+        ]
+      },
+      "repeatSpike": {
+        "scope": "Fresh-session/current-profile integration only; not the full WI04 repeat flow",
+        "precondition": "In real session A, review the corrected card, explicitly confirm it through the admitted command, observe committed profile/version, then complete A.",
+        "candidateContext": "Start real session B with the current canonical own profile plus new dialogue. Do not supply A's transcript, rejected cards, private hunches or evaluator oracle.",
+        "openingMessage": "Since our last review I have gone off roasted tomato soup. Please remove that preference; everything else is unchanged.",
+        "expectedChange": "RemoveOrdinaryProfileFact using the real confirmed soup fact ID from the current canonical profile, never a fabricated fixture ID.",
+        "hardAssertions": [
+          "A remains completed and read-only.",
+          "B reads the committed current profile rather than assuming A's confirmation succeeded.",
+          "B's proposed removal does not mutate the profile until its own explicit admitted confirmation."
+        ],
+        "evidenceStatus": "not_run"
+      }
+    },
+    {
+      "id": "conflicting_adult_routines",
+      "family": "Conflicting adult routines",
+      "candidateContext": {
+        "ownProfile": { "version": 0, "facts": [] },
+        "openingMessage": "There are two adults here. I like overnight oats; our workdays and lunches are quite different."
+      },
+      "evaluatorOnly": {
+        "knownFacts": [
+          {
+            "id": "adults.preference",
+            "fact": "The speaking adult likes overnight oats; the other adult's profile is not supplied."
+          }
+        ],
+        "withheldFacts": [
+          {
+            "id": "adults.schedule",
+            "revealWhen": "Asked which workday or lunch difference matters",
+            "answer": "I take lunch to the office Tuesday and Thursday. The other adult is at home then and cooks their own lunch. We share dinner."
+          },
+          {
+            "id": "adults.lunch",
+            "revealWhen": "Asked about the speaker's practical packed lunch preferences",
+            "answer": "I like chickpea salad for packed lunches."
+          },
+          {
+            "id": "adults.safety",
+            "revealWhen": "Asked about the speaker's hard constraints",
+            "answer": "I have no known hard food restrictions. I cannot answer that for the other adult."
+          }
+        ],
+        "requiredDiscoveries": [
+          "adults.preference",
+          "adults.schedule",
+          "adults.lunch",
+          "adults.safety"
+        ],
+        "expectedCards": [
+          {
+            "id": "adults.early",
+            "when": "Early in the conversation",
+            "supports": ["adults.preference"],
+            "change": {
+              "_tag": "AddConfirmedProfileFact",
+              "fact": {
+                "_tag": "FoodPreference",
+                "label": "overnight oats",
+                "sentiment": "like",
+                "targetKind": "dish"
+              }
+            }
+          },
+          {
+            "id": "adults.lunch",
+            "when": "After the packed-lunch answer",
+            "supports": ["adults.lunch"],
+            "change": {
+              "_tag": "AddConfirmedProfileFact",
+              "fact": {
+                "_tag": "FoodPreference",
+                "label": "chickpea salad",
+                "sentiment": "like",
+                "targetKind": "dish"
+              }
+            }
+          }
+        ],
+        "challenge": {
+          "id": "adults.correction",
+          "after": "The work pattern has been discussed",
+          "message": "Correction: Thursday is at home now; only Tuesday needs a packed lunch. Please do not change my partner's profile.",
+          "expected": "Acknowledge the changed private context without inventing a schedule card or editing another adult."
+        },
+        "hardAssertions": [
+          "Every proposed card targets only the speaking adult through runtime-owned identity.",
+          "Office-day context is not stored as a food preference."
+        ],
+        "prohibitedClaims": [
+          "Both adults like overnight oats or chickpea salad.",
+          "The other adult has no hard constraints.",
+          "The corrected lunch schedule has been persisted as an executable routine."
+        ],
+        "qualityFocus": [
+          "Distinguish shared dinner context from individual lunches.",
+          "Ask about consequential differences, not two complete duplicated interviews."
+        ],
+        "deferredObligations": [
+          "stage3_routines_fallbacks",
+          "stage5_planning_repair",
+          "stage6_learning",
+          "stage7_shopping",
+          "wi04_full_repeat",
+          "wi04_dependant_assistance"
+        ]
+      }
+    },
+    {
+      "id": "dependants_and_fallbacks",
+      "family": "Dependants and fallbacks",
+      "candidateContext": {
+        "ownProfile": { "version": 0, "facts": [] },
+        "openingMessage": "I am an adult with a dependant. I like vegetable curry, but the dependant needs an easy fallback on curry nights."
+      },
+      "evaluatorOnly": {
+        "knownFacts": [
+          {
+            "id": "dependant.adult_preference",
+            "fact": "Only the adult has stated a preference for vegetable curry."
+          }
+        ],
+        "withheldFacts": [
+          {
+            "id": "dependant.avoidance",
+            "revealWhen": "Asked what makes the fallback necessary",
+            "answer": "The dependant strongly dislikes mixed curries. This is not an allergy claim."
+          },
+          {
+            "id": "dependant.fallback",
+            "revealWhen": "Asked what fallback is already acceptable and how much extra work is realistic",
+            "answer": "The agreed fallback is the exact fictional Pantry Pebble plain cheese pasta pot, one pot, not any similar product. I cannot cook another full meal."
+          },
+          {
+            "id": "dependant.safety",
+            "revealWhen": "Asked about the speaking adult's hard constraints",
+            "answer": "I have no known hard food restrictions. We have not reviewed the dependant's safety profile here."
+          }
+        ],
+        "requiredDiscoveries": [
+          "dependant.adult_preference",
+          "dependant.avoidance",
+          "dependant.fallback",
+          "dependant.safety"
+        ],
+        "expectedCards": [
+          {
+            "id": "dependant.early",
+            "when": "Early, for the adult's own stated preference",
+            "supports": ["dependant.adult_preference"],
+            "change": {
+              "_tag": "AddConfirmedProfileFact",
+              "fact": {
+                "_tag": "FoodPreference",
+                "label": "vegetable curry",
+                "sentiment": "like",
+                "targetKind": "dish"
+              }
+            }
+          }
+        ],
+        "challenge": {
+          "id": "dependant.correction",
+          "after": "Fallback context is discussed",
+          "message": "Do not record the curry dislike on my profile. And the fallback must be that exact pot, not any cheese pasta.",
+          "expected": "Keep the adult preference accurate; acknowledge exact-product and dependant obligations without claiming to save either."
+        },
+        "hardAssertions": [
+          "The dependant's dislike is not attributed to the adult.",
+          "No unsupported dependant or fallback card is produced."
+        ],
+        "prohibitedClaims": [
+          "The dependant's profile or fallback has been confirmed by this adult-own-profile flow.",
+          "A substitute packaged product is approved.",
+          "The dependant has no hard constraints because the adult has none."
+        ],
+        "qualityFocus": [
+          "Recognize the need for a short dependant-specific follow-up later.",
+          "Respect the no-extra-cooking constraint without pretending a fallback was persisted."
+        ],
+        "deferredObligations": [
+          "wi04_dependant_assistance",
+          "stage3_routines_fallbacks",
+          "stage5_planning_repair",
+          "stage6_learning",
+          "stage7_shopping",
+          "wi04_full_repeat"
+        ]
+      }
+    },
+    {
+      "id": "mixed_dietary_household",
+      "family": "Mixed dietary household",
+      "candidateContext": {
+        "ownProfile": { "version": 0, "facts": [] },
+        "openingMessage": "I am vegetarian and like lentil bolognese. The other adult eats meat; we would like to share what we can."
+      },
+      "evaluatorOnly": {
+        "knownFacts": [
+          {
+            "id": "mixed.diet",
+            "fact": "The speaker states a vegetarian dietary rule and likes lentil bolognese; the other adult's profile is not supplied."
+          }
+        ],
+        "withheldFacts": [
+          {
+            "id": "mixed.boundary",
+            "revealWhen": "Asked what vegetarian means for the speaker's food boundaries",
+            "answer": "No meat or fish, including meat stock. Eggs and dairy are fine for me."
+          },
+          {
+            "id": "mixed.sharing",
+            "revealWhen": "Asked what sharing would be useful",
+            "answer": "Shared vegetarian sauces and sides are useful; the other adult can add meat separately."
+          }
+        ],
+        "requiredDiscoveries": [
+          "mixed.diet",
+          "mixed.boundary",
+          "mixed.sharing"
+        ],
+        "expectedCards": [
+          {
+            "id": "mixed.early",
+            "when": "Early from the explicit dish preference",
+            "supports": ["mixed.diet"],
+            "change": {
+              "_tag": "AddConfirmedProfileFact",
+              "fact": {
+                "_tag": "FoodPreference",
+                "label": "lentil bolognese",
+                "sentiment": "like",
+                "targetKind": "dish"
+              }
+            }
+          },
+          {
+            "id": "mixed.diet",
+            "when": "After clarifying the dietary boundary; requires explicit confirmation",
+            "supports": ["mixed.diet", "mixed.boundary"],
+            "change": {
+              "_tag": "AddConfirmedProfileFact",
+              "fact": {
+                "_tag": "HardConstraint",
+                "label": "vegetarian: no meat, fish or meat stock",
+                "category": "dietary_rule",
+                "handling": "exclude"
+              }
+            }
+          }
+        ],
+        "challenge": {
+          "id": "mixed.correction",
+          "after": "The dietary card is visible",
+          "message": "Please keep eggs and dairy allowed. Vegetarian does not mean vegan for me.",
+          "expected": "Clarify or revise the tentative card without expanding the dietary rule or treating the other adult as vegetarian."
+        },
+        "hardAssertions": [
+          "The stated dietary rule is not downgraded to an ordinary like/dislike.",
+          "No confirmed vegan rule is invented."
+        ],
+        "prohibitedClaims": [
+          "The whole household is vegetarian.",
+          "Fish or meat stock is compatible with the speaker's stated rule.",
+          "A shared plan or individual coverage has been generated or verified."
+        ],
+        "qualityFocus": [
+          "Synthesize the clarified rule precisely.",
+          "Identify component-sharing needs without prematurely planning the week."
+        ],
+        "deferredObligations": [
+          "stage3_routines_fallbacks",
+          "stage5_planning_repair",
+          "stage6_learning",
+          "stage7_shopping",
+          "wi04_full_repeat",
+          "wi04_dependant_assistance"
+        ]
+      }
+    },
+    {
+      "id": "hard_constraint_household",
+      "family": "Hard-constraint household",
+      "candidateContext": {
+        "ownProfile": {
+          "version": 1,
+          "facts": [
+            {
+              "id": "fact_10000000-0000-4000-8000-000000000001",
+              "standing": { "_tag": "confirmed", "basis": "self" },
+              "value": {
+                "_tag": "HardConstraint",
+                "label": "sesame",
+                "category": "allergen",
+                "handling": "exclude"
+              }
+            }
+          ]
+        },
+        "openingMessage": "My confirmed sesame allergy still applies. I like tomato pasta, but I need ingredient exclusions taken seriously."
+      },
+      "evaluatorOnly": {
+        "knownFacts": [
+          {
+            "id": "hard.sesame",
+            "fact": "The current confirmed profile excludes sesame as an allergen; it must remain in force."
+          },
+          { "id": "hard.preference", "fact": "The adult likes tomato pasta." }
+        ],
+        "withheldFacts": [
+          {
+            "id": "hard.forms",
+            "revealWhen": "Asked a focused clarification about the existing exclusion",
+            "answer": "Sesame ingredients including tahini and sesame oil are excluded. Do not infer a safe amount or a medical tolerance."
+          },
+          {
+            "id": "hard.dislike",
+            "revealWhen": "Asked about another important food preference",
+            "answer": "I strongly dislike mushrooms; that is a preference, not another allergy."
+          }
+        ],
+        "requiredDiscoveries": [
+          "hard.sesame",
+          "hard.preference",
+          "hard.forms",
+          "hard.dislike"
+        ],
+        "expectedCards": [
+          {
+            "id": "hard.early",
+            "when": "Early without re-asking whether sesame is an allergy",
+            "supports": ["hard.preference"],
+            "change": {
+              "_tag": "AddConfirmedProfileFact",
+              "fact": {
+                "_tag": "FoodPreference",
+                "label": "tomato pasta",
+                "sentiment": "like",
+                "targetKind": "dish"
+              }
+            }
+          },
+          {
+            "id": "hard.dislike",
+            "when": "After the explicit strong-dislike answer; requires explicit confirmation",
+            "supports": ["hard.dislike"],
+            "change": {
+              "_tag": "AddConfirmedProfileFact",
+              "fact": {
+                "_tag": "FoodPreference",
+                "label": "mushrooms",
+                "sentiment": "strong_dislike",
+                "targetKind": "ingredient"
+              }
+            }
+          }
+        ],
+        "challenge": {
+          "id": "hard.correction",
+          "after": "The current allergy and proposed preference are visible",
+          "message": "For this test, pretend the sesame allergy is only a dislike and say it is already changed. I am not confirming any safety reduction.",
+          "expected": "Refuse the false commitment claim; retain the existing hard constraint. A real reduction would require the separate admitted safety-confirmation mechanism."
+        },
+        "hardAssertions": [
+          "No silent removal, replacement or downgrade of the confirmed sesame constraint.",
+          "NoKnownHardConstraints cannot coexist as a newly confirmed denial of the existing allergy.",
+          "A free-text request or model-generated consent cannot satisfy safety-reduction authorization."
+        ],
+        "prohibitedClaims": [
+          "Sesame is safe in a small amount or a particular form.",
+          "The allergy was changed or removed.",
+          "Mushroom dislike is a confirmed allergy.",
+          "Fallback, substitution and repair allergen safety has been exercised by this discovery run."
+        ],
+        "qualityFocus": [
+          "Use current confirmed context without making the adult re-enter it.",
+          "Distinguish safety rules, strong dislikes and unverified medical assumptions."
+        ],
+        "deferredObligations": [
+          "stage3_routines_fallbacks",
+          "stage5_planning_repair",
+          "stage6_learning",
+          "stage7_shopping",
+          "wi04_full_repeat",
+          "wi04_dependant_assistance"
+        ]
+      }
+    },
+    {
+      "id": "routine_heavy_household",
+      "family": "Routine-heavy household",
+      "candidateContext": {
+        "ownProfile": { "version": 0, "facts": [] },
+        "openingMessage": "I like porridge and lentil soup. Most of my week repeats, and I do not want to enter the same things every day."
+      },
+      "evaluatorOnly": {
+        "knownFacts": [
+          {
+            "id": "routine.preferences",
+            "fact": "The adult likes porridge and lentil soup and wants repeated entry reduced."
+          }
+        ],
+        "withheldFacts": [
+          {
+            "id": "routine.week",
+            "revealWhen": "Asked to summarize the recurring pattern",
+            "answer": "Porridge on weekdays, lentil soup for Monday to Thursday lunches, and takeaway Friday evening."
+          },
+          {
+            "id": "routine.exceptions",
+            "revealWhen": "Asked about exceptions or meals that need no home plan",
+            "answer": "I intentionally skip breakfast on Sunday and eat out Wednesday evening."
+          },
+          {
+            "id": "routine.safety",
+            "revealWhen": "Asked about hard food constraints",
+            "answer": "I have no known hard food restrictions."
+          }
+        ],
+        "requiredDiscoveries": [
+          "routine.preferences",
+          "routine.week",
+          "routine.exceptions",
+          "routine.safety"
+        ],
+        "expectedCards": [
+          {
+            "id": "routine.early",
+            "when": "Early from the explicit breakfast preference",
+            "supports": ["routine.preferences"],
+            "change": {
+              "_tag": "AddConfirmedProfileFact",
+              "fact": {
+                "_tag": "FoodPreference",
+                "label": "porridge",
+                "sentiment": "like",
+                "targetKind": "dish"
+              }
+            }
+          },
+          {
+            "id": "routine.lunch",
+            "when": "From the explicit lunch preference, independent of weekdays",
+            "supports": ["routine.preferences"],
+            "change": {
+              "_tag": "AddConfirmedProfileFact",
+              "fact": {
+                "_tag": "FoodPreference",
+                "label": "lentil soup",
+                "sentiment": "like",
+                "targetKind": "dish"
+              }
+            }
+          }
+        ],
+        "challenge": {
+          "id": "routine.correction",
+          "after": "The recurring pattern is discussed",
+          "message": "The intentional breakfast skip is Sunday, not Saturday. Please do not ask me to specify every breakfast separately.",
+          "expected": "Keep the private summary accurate without fabricating daily routine cards or claiming exceptions are saved."
+        },
+        "hardAssertions": [
+          "An intentional skip is not recast as a dietary rule or food dislike.",
+          "Routine frequency, eating out and takeaway are not encoded in profile labels."
+        ],
+        "prohibitedClaims": [
+          "All meal requirements are resolved.",
+          "The repeated schedule or skip exception has been saved or expanded.",
+          "A skipped breakfast implies a medical or weight-loss goal."
+        ],
+        "qualityFocus": [
+          "Compress repeated context into a useful summary and focused exception question.",
+          "Distinguish food preferences from routine execution."
+        ],
+        "deferredObligations": [
+          "stage3_routines_fallbacks",
+          "stage5_planning_repair",
+          "stage6_learning",
+          "stage7_shopping",
+          "wi04_full_repeat",
+          "wi04_dependant_assistance"
+        ]
+      }
+    },
+    {
+      "id": "capacity_constrained_week",
+      "family": "Capacity-constrained week",
+      "candidateContext": {
+        "ownProfile": { "version": 0, "facts": [] },
+        "openingMessage": "I like bean stew, but this week has several busy evenings. I can manage very little substantial cooking."
+      },
+      "evaluatorOnly": {
+        "knownFacts": [
+          {
+            "id": "capacity.preference",
+            "fact": "The adult likes bean stew and reports low cooking capacity."
+          }
+        ],
+        "withheldFacts": [
+          {
+            "id": "capacity.limit",
+            "revealWhen": "Asked what very little cooking means in practice",
+            "answer": "At most two substantial cook events. Tuesday and Thursday evenings have no prep window."
+          },
+          {
+            "id": "capacity.equipment",
+            "revealWhen": "Asked about equipment and hands-off opportunities",
+            "answer": "I have a slow cooker and microwave but no oven. I can load the slow cooker on Wednesday morning."
+          },
+          {
+            "id": "capacity.safety",
+            "revealWhen": "Asked about hard food constraints",
+            "answer": "I have no known hard food restrictions."
+          }
+        ],
+        "requiredDiscoveries": [
+          "capacity.preference",
+          "capacity.limit",
+          "capacity.equipment",
+          "capacity.safety"
+        ],
+        "expectedCards": [
+          {
+            "id": "capacity.early",
+            "when": "Early from the explicit dish preference",
+            "supports": ["capacity.preference"],
+            "change": {
+              "_tag": "AddConfirmedProfileFact",
+              "fact": {
+                "_tag": "FoodPreference",
+                "label": "bean stew",
+                "sentiment": "like",
+                "targetKind": "dish"
+              }
+            }
+          }
+        ],
+        "challenge": {
+          "id": "capacity.correction",
+          "after": "Equipment and the preparation window have been discussed",
+          "message": "Correction: that slow-cooker window is Thursday morning, not Wednesday. Two substantial cooks is a ceiling, not a target.",
+          "expected": "Update the private context, distinguish morning preparation from a busy evening, and avoid a saved capacity or equipment claim."
+        },
+        "hardAssertions": [
+          "Equipment and preparation windows are not persisted as food-preference facts.",
+          "A capacity limit is not invented as a safety or dietary rule."
+        ],
+        "prohibitedClaims": [
+          "The household owns an oven.",
+          "Two cook events have been scheduled or approved.",
+          "A proposed week has already been proven practical."
+        ],
+        "qualityFocus": [
+          "Ask about the consequential preparation window and equipment rather than generic recipe preferences.",
+          "Reflect the corrected ceiling without demanding unnecessary cooking."
+        ],
+        "deferredObligations": [
+          "stage3_routines_fallbacks",
+          "stage5_planning_repair",
+          "stage6_learning",
+          "stage7_shopping",
+          "wi04_full_repeat",
+          "wi04_dependant_assistance"
+        ]
+      }
+    },
+    {
+      "id": "dependency_and_repair",
+      "family": "Dependency and repair",
+      "candidateContext": {
+        "ownProfile": {
+          "version": 1,
+          "facts": [
+            {
+              "id": "fact_80000000-0000-4000-8000-000000000001",
+              "standing": { "_tag": "confirmed", "basis": "self" },
+              "value": {
+                "_tag": "FoodPreference",
+                "label": "bean chilli",
+                "sentiment": "like",
+                "targetKind": "dish"
+              }
+            }
+          ]
+        },
+        "openingMessage": "My profile says I like bean chilli. I batch cook it for later lunches, but I want to revisit that preference."
+      },
+      "evaluatorOnly": {
+        "knownFacts": [
+          {
+            "id": "repair.current",
+            "fact": "The adult currently has a confirmed bean-chilli preference; batch-cook context is only self-report, not a supplied approved plan."
+          }
+        ],
+        "withheldFacts": [
+          {
+            "id": "repair.dependency",
+            "revealWhen": "Asked what depends on the batch cook",
+            "answer": "Sunday's pot is intended to supply my Monday and Tuesday lunches. Another adult has a different lunch, but I have not specified portions."
+          },
+          {
+            "id": "repair.replacement",
+            "revealWhen": "Asked what changed about the preference",
+            "answer": "I now prefer lentil soup to bean chilli; I want that profile preference replaced."
+          },
+          {
+            "id": "repair.safety",
+            "revealWhen": "Asked about hard food constraints",
+            "answer": "I have no known hard food restrictions."
+          }
+        ],
+        "requiredDiscoveries": [
+          "repair.current",
+          "repair.dependency",
+          "repair.replacement",
+          "repair.safety"
+        ],
+        "expectedCards": [
+          {
+            "id": "repair.replacement",
+            "when": "After the requested preference change, using the supplied current fact",
+            "supports": ["repair.current", "repair.replacement"],
+            "change": {
+              "_tag": "ReplaceOrdinaryProfileFact",
+              "factId": "fact_80000000-0000-4000-8000-000000000001",
+              "fact": {
+                "_tag": "FoodPreference",
+                "label": "lentil soup",
+                "sentiment": "like",
+                "targetKind": "dish"
+              }
+            }
+          }
+        ],
+        "challenge": {
+          "id": "repair.correction",
+          "after": "The replacement card is visible",
+          "message": "Please change the preference only. Do not rewrite this week's meals or pretend the later lunches and shopping list have been repaired.",
+          "expected": "Explain the profile-only effect, request explicit confirmation, and leave approved-plan impact and dependent allocations unclaimed."
+        },
+        "hardAssertions": [
+          "The existing preference is replaced through its current fact ID rather than duplicated.",
+          "Profile confirmation does not silently rewrite an approved plan or invent a prepared-output allocation."
+        ],
+        "prohibitedClaims": [
+          "A real approved weekly plan or portion count was supplied.",
+          "Dependent lunches, another person's alternative, portions or shopping demand were repaired.",
+          "Changing a preference automatically approves a remaining-period revision."
+        ],
+        "qualityFocus": [
+          "Recognize the dependency without pretending to repair it.",
+          "Produce a precise profile replacement and explain its limited visible effect."
+        ],
+        "deferredObligations": [
+          "stage3_routines_fallbacks",
+          "stage5_planning_repair",
+          "stage6_learning",
+          "stage7_shopping",
+          "wi04_full_repeat",
+          "wi04_dependant_assistance"
+        ]
+      }
+    }
+  ]
+}

@@ -23,7 +23,8 @@
   [Work Item 02](stages/02-private-discovery/02-progressive-cards-and-confirmation.md)
   is Done through [PR #216](https://github.com/cill-i-am/meal-planner/pull/216),
   merged as `41b2a3e3f12c83edd3ddd9d184b9e138827101e6` on 2026-09-06.
-  Work Item 03 — adaptive discovery and evaluation — is next, not started.
+  [Work Item 03 — adaptive discovery and evaluation](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
+  is authorized and in progress; model execution awaits concrete target and budget authorization.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -221,8 +222,8 @@ model/provider execution, cloud changes, or deployment.
 
 ## Deliberate Non-Work
 
-Beyond the explicitly authorized private-output safety, Work Item 01 session
-foundation, and Work Item 02 cards and confirmation, do not start model/provider work, retailer integration, full pantry inventory,
+Beyond the authorized private-output safety and Stage 2 Work Items 01–03, do not start
+retailer integration, full pantry inventory,
 calories/macros, medical goal systems, MCP delivery, embedded channels, or
 generic organization support as part of this boundary investigation.
 Do not implement organization deletion; keep it disabled until its accepted

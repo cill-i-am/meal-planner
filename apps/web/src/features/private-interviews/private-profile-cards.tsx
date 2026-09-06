@@ -7,6 +7,7 @@ import { Badge } from "../../components/ui/badge.js";
 import { Button } from "../../components/ui/button.js";
 import { describeProfileFact } from "../household-profiles/profile-fact-form.js";
 import { PrivateCardCorrection } from "./private-card-correction.js";
+import { isAssistantTurnActive } from "./private-interview-client.js";
 import type {
   PrivateInterviewClient,
   PrivateInterviewView,
@@ -119,6 +120,7 @@ const reviewState = (card: ProfileCard, view: PrivateInterviewView) => {
   const busy =
     view.pending !== null ||
     view.pendingConfirmation !== null ||
+    isAssistantTurnActive(view.assistantTurn) ||
     view.notice !== null ||
     !view.cardsLoaded ||
     !view.historyLoaded;
@@ -313,7 +315,8 @@ export const PrivateProfileCards = ({
     {!view.cardsLoaded && <p role="status">Loading private proposals…</p>}
     {view.cardsLoaded && view.cards.length === 0 && (
       <p>
-        No profile proposals yet. Automatic proposals are not available yet.
+        No profile proposals yet. Any proposals will appear here for your
+        review.
       </p>
     )}
     {view.cards.length > 0 && (

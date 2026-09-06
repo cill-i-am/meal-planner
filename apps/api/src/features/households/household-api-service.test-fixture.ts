@@ -819,6 +819,9 @@ export default {
           }),
           Effect.tap(() => confirmationBarrier("after"))
         ),
+      readPersonProfile: (
+        input: Parameters<HouseholdDomainWorkerMethods["readPersonProfile"]>[0]
+      ) => householdDomain.readPersonProfile(input),
     };
     const privateResponse = await Effect.runPromise(
       handlePrivateInterviewRequest({

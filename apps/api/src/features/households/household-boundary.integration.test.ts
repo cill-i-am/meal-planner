@@ -7315,6 +7315,209 @@ describe("canonical private profile cards", () => {
   beforeAll(async () => {
     await restartRuntime(capturedCardLogs);
   });
+  it("freezes participant mutations while an assistant turn is queued and permits explicit stop and retry before confirmation", async () => {
+    const setup = await prepareLinkedAdult("Private Queued Assistant");
+    const connection = await openPrivateConnection(setup.memberCookie);
+    const card = await seedPrivateCard(connection);
+    const append = {
+      expectedVersion: 0,
+      mutationId: crypto.randomUUID(),
+      text: "Synthetic participant preference for carrots",
+      type: "AppendParticipantMessage",
+    };
+    const appended = await cardExchange(connection, append);
+    expect(appended).toMatchObject({
+      assistantTurn: {
+        failure: null,
+        id: append.mutationId,
+        status: "queued",
+      },
+      state: { status: "open", version: 1 },
+      type: "MessageAppended",
+    });
+    if (appended.type !== "MessageAppended") {
+      throw new Error("Expected a queued private assistant turn");
+    }
+    expect(appended.assistantTurn.sourceMessageId).toBe(appended.message.id);
+    expect(await cardExchange(connection, append)).toEqual(appended);
+    expect(
+      await cardExchange(connection, {
+        requestId: crypto.randomUUID(),
+        type: "ReadAssistantTurn",
+      })
+    ).toMatchObject({
+      state: appended.state,
+      turn: appended.assistantTurn,
+      type: "AssistantTurnRead",
+    });
+    expect(
+      await cardExchange(connection, {
+        afterOrdinal: 0,
+        limit: 25,
+        requestId: crypto.randomUUID(),
+        type: "ReadHistory",
+      })
+    ).toMatchObject({
+      hasMore: false,
+      messages: [appended.message],
+      state: appended.state,
+      type: "HistoryRead",
+    });
+    const blockedCommands = [
+      {
+        text: "Synthetic second participant message",
+        type: "AppendParticipantMessage",
+      },
+      {
+        cardId: card.id,
+        cardRevision: 0,
+        change: preferenceChange("Potatoes"),
+        expectedProfileVersion: 0,
+        reviewedFact: null,
+        type: "ReviseProfileCard",
+      },
+      { cardId: card.id, cardRevision: 0, type: "RejectProfileCard" },
+      {
+        cardId: card.id,
+        cardRevision: 0,
+        safetyConfirmation: null,
+        type: "ConfirmProfileCard",
+      },
+      { type: "CompleteSession" },
+    ];
+    await Promise.all(
+      blockedCommands.map(async (command) => {
+        expect(
+          await cardExchange(connection, {
+            ...command,
+            expectedVersion: appended.state.version,
+            mutationId: crypto.randomUUID(),
+          })
+        ).toMatchObject({
+          reason: "assistant_turn_pending",
+          state: appended.state,
+          type: "Rejected",
+        });
+      })
+    );
+    expect(await readPrivateCards(connection)).toMatchObject({
+      cards: [card],
+      pendingConfirmation: null,
+      state: appended.state,
+    });
+    expect(await readCardProfile(setup)).toMatchObject({
+      facts: [],
+      version: 0,
+    });
+    expect(
+      await cardExchange(connection, {
+        expectedVersion: appended.state.version,
+        mutationId: crypto.randomUUID(),
+        turnId: crypto.randomUUID(),
+        type: "CancelAssistantTurn",
+      })
+    ).toMatchObject({ reason: "assistant_turn_conflict", type: "Rejected" });
+    const stop = {
+      expectedVersion: appended.state.version,
+      mutationId: crypto.randomUUID(),
+      turnId: appended.assistantTurn.id,
+      type: "CancelAssistantTurn",
+    };
+    const stopped = await cardExchange(connection, stop);
+    expect(stopped).toMatchObject({
+      state: { status: "open", version: 2 },
+      turn: { ...appended.assistantTurn, status: "cancelled" },
+      type: "AssistantTurnChanged",
+    });
+    if (stopped.type !== "AssistantTurnChanged") {
+      throw new Error("Expected explicit private assistant cancellation");
+    }
+    expect(await cardExchange(connection, stop)).toEqual(stopped);
+    const retry = {
+      expectedVersion: stopped.state.version,
+      mutationId: crypto.randomUUID(),
+      turnId: stopped.turn.id,
+      type: "RetryAssistantTurn",
+    };
+    const retried = await cardExchange(connection, retry);
+    expect(retried).toMatchObject({
+      state: { status: "open", version: 3 },
+      turn: {
+        failure: null,
+        id: retry.mutationId,
+        sourceMessageId: appended.message.id,
+        status: "queued",
+      },
+      type: "AssistantTurnChanged",
+    });
+    if (retried.type !== "AssistantTurnChanged") {
+      throw new Error("Expected an explicit new assistant attempt");
+    }
+    expect(retried.turn.id).not.toBe(stopped.turn.id);
+    expect(await cardExchange(connection, retry)).toEqual(retried);
+    expect(
+      await freezePrivateCard(connection, card, retried.state.version)
+    ).toMatchObject({ reason: "assistant_turn_pending", type: "Rejected" });
+    const stoppedRetry = await cardExchange(connection, {
+      expectedVersion: retried.state.version,
+      mutationId: crypto.randomUUID(),
+      turnId: retried.turn.id,
+      type: "CancelAssistantTurn",
+    });
+    expect(stoppedRetry).toMatchObject({
+      turn: { id: retried.turn.id, status: "cancelled" },
+      type: "AssistantTurnChanged",
+    });
+    if (stoppedRetry.type !== "AssistantTurnChanged") {
+      throw new Error("Expected explicit cancellation of the retry");
+    }
+    const confirmationId = crypto.randomUUID();
+    expect(
+      await freezePrivateCard(
+        connection,
+        card,
+        stoppedRetry.state.version,
+        confirmationId
+      )
+    ).toMatchObject({ type: "ConfirmationPending" });
+    const confirmed = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      confirmationId
+    );
+    expect(confirmed.status).toBe(204);
+    expect(await readCardProfile(setup)).toMatchObject({
+      facts: [
+        { source: "interview", standing: { _tag: "confirmed", basis: "self" } },
+      ],
+      version: 1,
+    });
+    const settled = await readPrivateCards(connection);
+    expect(settled).toMatchObject({
+      cards: [{ status: "confirmed" }],
+      pendingConfirmation: null,
+    });
+    expect(
+      await cardExchange(connection, {
+        afterOrdinal: 0,
+        limit: 25,
+        requestId: crypto.randomUUID(),
+        type: "ReadHistory",
+      })
+    ).toMatchObject({ messages: [appended.message], type: "HistoryRead" });
+    expect(
+      await cardExchange(connection, {
+        expectedVersion: settled.state.version,
+        mutationId: crypto.randomUUID(),
+        type: "CompleteSession",
+      })
+    ).toMatchObject({
+      state: { status: "completed" },
+      type: "SessionCompleted",
+    });
+    connection.socket.close();
+  }, 30_000);
+
   it("keeps correction and rejection private, then confirms only the reviewed revision with interview provenance", async () => {
     const setup = await prepareLinkedAdult("Private Card Revision");
     const connection = await openPrivateConnection(setup.memberCookie);
@@ -7368,16 +7571,36 @@ describe("canonical private profile cards", () => {
     );
     const beforeTranscript = await readPrivateCards(connection);
     const transcriptSentinel = `private-card-transcript-${crypto.randomUUID()}`;
-    expect(
-      await cardExchange(connection, {
-        expectedVersion: beforeTranscript.state.version,
-        mutationId: crypto.randomUUID(),
-        text: transcriptSentinel,
-        type: "AppendParticipantMessage",
-      })
-    ).toMatchObject({
+    const appended = await cardExchange(connection, {
+      expectedVersion: beforeTranscript.state.version,
+      mutationId: crypto.randomUUID(),
+      text: transcriptSentinel,
+      type: "AppendParticipantMessage",
+    });
+    expect(appended).toMatchObject({
+      assistantTurn: { failure: null, status: "queued" },
       message: { text: transcriptSentinel },
       type: "MessageAppended",
+    });
+    if (appended.type !== "MessageAppended") {
+      throw new Error("Expected a queued private assistant turn");
+    }
+    expect(
+      await freezePrivateCard(connection, chosen, appended.state.version)
+    ).toMatchObject({
+      reason: "assistant_turn_pending",
+      type: "Rejected",
+    });
+    expect(
+      await cardExchange(connection, {
+        expectedVersion: appended.state.version,
+        mutationId: crypto.randomUUID(),
+        turnId: appended.assistantTurn.id,
+        type: "CancelAssistantTurn",
+      })
+    ).toMatchObject({
+      turn: { id: appended.assistantTurn.id, status: "cancelled" },
+      type: "AssistantTurnChanged",
     });
     const probe = await getRuntime().dispatchFetch(
       "https://meal-planner.test/v1/test-log-capture",

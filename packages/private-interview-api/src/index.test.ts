@@ -90,4 +90,49 @@ describe("closed private participant protocol", () => {
       })
     ).toThrow();
   });
+  it.each(["CancelAssistantTurn", "RetryAssistantTurn"])(
+    "accepts %s only for an identified versioned participant mutation",
+    (type) => {
+      const command = {
+        expectedVersion: 1,
+        mutationId,
+        turnId: mutationId,
+        type,
+      };
+      expect(decodeSession(command)).toEqual(command);
+      expect(() =>
+        decodeSession({ ...command, turnId: "other-person-turn" })
+      ).toThrow();
+      for (const field of [
+        "model",
+        "status",
+        "provider",
+        "profile",
+        "generation",
+      ]) {
+        expect(() =>
+          decodeSession({ ...command, [field]: "caller-controlled" })
+        ).toThrow();
+      }
+    }
+  );
+  it("never admits client model output or dispatch as a participant command", () => {
+    for (const type of [
+      "AssistantTurnUpdated",
+      "RunAssistantTurn",
+      "AppendAssistantMessage",
+    ]) {
+      expect(() =>
+        decodeSession({
+          expectedVersion: 0,
+          mutationId,
+          turnId: mutationId,
+          type,
+        })
+      ).toThrow();
+    }
+    expect(
+      decodeSession({ requestId: mutationId, type: "ReadAssistantTurn" })
+    ).toEqual({ requestId: mutationId, type: "ReadAssistantTurn" });
+  });
 });

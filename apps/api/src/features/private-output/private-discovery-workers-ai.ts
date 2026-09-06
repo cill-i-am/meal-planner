@@ -1,0 +1,275 @@
+import type * as NativeCloudflare from "@cloudflare/workers-types";
+import { Effect, Option, Schema } from "effect";
+import { Tool } from "effect/unstable/ai";
+
+import {
+  PRIVATE_DISCOVERY_CONTEXT_BYTES,
+  PRIVATE_DISCOVERY_POLICY_VERSION,
+  PRIVATE_DISCOVERY_PROMPT_VERSION,
+  PRIVATE_DISCOVERY_TOOL_VERSION,
+  PrivateDiscoveryContext,
+  PrivateDiscoveryFailure,
+  PrivateDiscoveryOutput,
+} from "./private-discovery-model.js";
+import type {
+  PrivateDiscoveryModel,
+  PrivateDiscoveryProvenance,
+  PrivateDiscoveryUsage,
+} from "./private-discovery-model.js";
+import { privateDiscoveryInstructions } from "./private-discovery-prompt.js";
+
+export const PRIVATE_DISCOVERY_INPUT_BYTES = 32_768;
+export const PRIVATE_DISCOVERY_RESPONSE_BYTES = 65_536;
+const PositiveAmount = Schema.Number.pipe(
+  Schema.check(Schema.isGreaterThanOrEqualTo(0))
+);
+export const PrivateDiscoveryConfiguration = Schema.Struct({
+  gatewayId: Schema.String.pipe(
+    Schema.check(Schema.isNonEmpty(), Schema.isMaxLength(64))
+  ),
+  inputUsdPerMillionTokens: PositiveAmount,
+  maxOutputTokens: Schema.Int.pipe(
+    Schema.check(Schema.isBetween({ maximum: 4096, minimum: 1 }))
+  ),
+  model: Schema.Literals([
+    "@cf/qwen/qwen3-30b-a3b-fp8",
+    "@cf/openai/gpt-oss-120b",
+  ]),
+  outputUsdPerMillionTokens: PositiveAmount,
+  timeoutMs: Schema.Int.pipe(
+    Schema.check(Schema.isBetween({ maximum: 120_000, minimum: 1000 }))
+  ),
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type PrivateDiscoveryConfiguration =
+  typeof PrivateDiscoveryConfiguration.Type;
+export interface PrivateDiscoveryModelEnvironment {
+  readonly PRIVATE_DISCOVERY_CONFIG?: string | null;
+  readonly PrivateDiscoveryAI?: Pick<NativeCloudflare.Ai, "run">;
+}
+
+const failure = (
+  reason: PrivateDiscoveryFailure["reason"],
+  usage: PrivateDiscoveryUsage | null = null,
+  provenance: PrivateDiscoveryProvenance | null = null
+) => new PrivateDiscoveryFailure({ provenance, reason, usage });
+const TokenCount = Schema.Int.pipe(
+  Schema.check(Schema.isGreaterThanOrEqualTo(0))
+);
+const ProviderUsage = Schema.Struct({
+  completion_tokens: TokenCount,
+  prompt_tokens: TokenCount,
+});
+const Completion = Schema.Struct({
+  choices: Schema.Array(
+    Schema.Struct({
+      finish_reason: Schema.String,
+      message: Schema.Struct({
+        content: Schema.NullOr(Schema.String),
+        refusal: Schema.optionalKey(Schema.NullOr(Schema.String)),
+        role: Schema.Literal("assistant"),
+      }),
+    })
+  ).pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(1))),
+  usage: Schema.optionalKey(ProviderUsage),
+});
+const outputJsonSchema = Tool.getJsonSchemaFromSchema(PrivateDiscoveryOutput);
+const configuration = Schema.decodeUnknownOption(
+  Schema.fromJsonString(PrivateDiscoveryConfiguration)
+);
+
+const requestFor = (
+  config: PrivateDiscoveryConfiguration,
+  context: PrivateDiscoveryContext
+) => {
+  const common = {
+    max_tokens: config.maxOutputTokens,
+    messages: [
+      { content: privateDiscoveryInstructions, role: "system" as const },
+      { content: JSON.stringify(context), role: "user" as const },
+    ],
+    stream: false as const,
+    temperature: 0,
+  };
+  return config.model === "@cf/qwen/qwen3-30b-a3b-fp8"
+    ? {
+        body: {
+          ...common,
+          response_format: {
+            json_schema: outputJsonSchema,
+            type: "json_schema" as const,
+          },
+        },
+        model: config.model,
+      }
+    : {
+        body: {
+          ...common,
+          response_format: {
+            json_schema: {
+              name: "private_discovery_turn",
+              schema: outputJsonSchema,
+              strict: true,
+            },
+            type: "json_schema" as const,
+          },
+        },
+        model: config.model,
+      };
+};
+
+const readBoundedResponse = async (response: NativeCloudflare.Response) => {
+  if (response.body === null) {
+    throw failure("invalid_output");
+  }
+  const reader = response.body.getReader();
+  let length = 0;
+  let text = "";
+  const decoder = new TextDecoder();
+  try {
+    while (true) {
+      // oxlint-disable-next-line no-await-in-loop -- A stream reader has one ordered consumer; parallel reads would bypass the byte limit.
+      const part = await reader.read();
+      if (part.done) {
+        break;
+      }
+      length += part.value.byteLength;
+      if (length > PRIVATE_DISCOVERY_RESPONSE_BYTES) {
+        throw failure("invalid_output");
+      }
+      text += decoder.decode(part.value, { stream: true });
+    }
+    return text + decoder.decode();
+  } finally {
+    await reader.cancel();
+  }
+};
+
+/** One native provider call, guarded at dispatch; no retries or private logging. */
+export const makePrivateDiscoveryModel = (
+  environment: PrivateDiscoveryModelEnvironment
+): PrivateDiscoveryModel => ({
+  generate: (input) =>
+    Effect.gen(function* generatePrivateDiscovery() {
+      const configured = configuration(environment.PRIVATE_DISCOVERY_CONFIG);
+      const ai = environment.PrivateDiscoveryAI;
+      if (Option.isNone(configured) || ai === undefined) {
+        return yield* Effect.fail(failure("not_configured"));
+      }
+      const config = configured.value;
+      const provenance: PrivateDiscoveryProvenance = {
+        model: config.model,
+        policyVersion: PRIVATE_DISCOVERY_POLICY_VERSION,
+        promptVersion: PRIVATE_DISCOVERY_PROMPT_VERSION,
+        provider: "cloudflare-workers-ai",
+        toolVersion: PRIVATE_DISCOVERY_TOOL_VERSION,
+      };
+      const configuredFailure = (
+        reason: PrivateDiscoveryFailure["reason"],
+        usage: PrivateDiscoveryUsage | null = null
+      ) => failure(reason, usage, provenance);
+      const context = yield* Schema.decodeUnknownEffect(
+        PrivateDiscoveryContext,
+        { onExcessProperty: "error" }
+      )(input.context).pipe(
+        Effect.mapError(() => configuredFailure("context_limit"))
+      );
+      const request = requestFor(config, context);
+      const encoder = new TextEncoder();
+      if (
+        encoder.encode(JSON.stringify(context)).byteLength >
+          PRIVATE_DISCOVERY_CONTEXT_BYTES ||
+        encoder.encode(JSON.stringify(request.body)).byteLength >
+          PRIVATE_DISCOVERY_INPUT_BYTES
+      ) {
+        return yield* Effect.fail(configuredFailure("context_limit"));
+      }
+      return yield* Effect.gen(function* callPrivateDiscoveryProvider() {
+        const response = yield* Effect.tryPromise({
+          catch: () => configuredFailure("outcome_unknown"),
+          try: (signal) => {
+            const options = {
+              extraHeaders: { "cf-aig-max-attempts": "1" },
+              gateway: {
+                collectLog: false,
+                id: config.gatewayId,
+                skipCache: true,
+              },
+              returnRawResponse: true as const,
+              // SAFETY: The Workers and DOM libraries describe the same runtime signal with
+              // incompatible event-listener overloads at this native API boundary.
+              signal: AbortSignal.any([
+                input.signal,
+                signal,
+              ]) as unknown as NativeCloudflare.AbortSignal,
+            };
+            if (options.signal.aborted) {
+              throw configuredFailure("outcome_unknown");
+            }
+            input.beforeDispatch(provenance);
+            return ai.run(request.model, request.body, options);
+          },
+        });
+        if (!response.ok) {
+          yield* Effect.tryPromise({
+            catch: () => configuredFailure("provider_unavailable"),
+            try: () => response.body?.cancel() ?? Promise.resolve(),
+          });
+          return yield* Effect.fail(configuredFailure("provider_unavailable"));
+        }
+        const encoded = yield* Effect.tryPromise({
+          catch: () => configuredFailure("invalid_output"),
+          try: () => readBoundedResponse(response),
+        });
+        const completion = yield* Schema.decodeUnknownEffect(
+          Schema.fromJsonString(Completion)
+        )(encoded).pipe(
+          Effect.mapError(() => configuredFailure("invalid_output"))
+        );
+        const usage: PrivateDiscoveryUsage =
+          completion.usage === undefined
+            ? { estimatedCostUsd: null, inputTokens: null, outputTokens: null }
+            : {
+                estimatedCostUsd:
+                  (completion.usage.prompt_tokens *
+                    config.inputUsdPerMillionTokens +
+                    completion.usage.completion_tokens *
+                      config.outputUsdPerMillionTokens) /
+                  1_000_000,
+                inputTokens: completion.usage.prompt_tokens,
+                outputTokens: completion.usage.completion_tokens,
+              };
+        const [choice] = completion.choices;
+        if (choice === undefined) {
+          return yield* Effect.fail(configuredFailure("invalid_output", usage));
+        }
+        if (
+          choice.message.refusal !== undefined &&
+          choice.message.refusal !== null
+        ) {
+          return yield* Effect.fail(configuredFailure("refused", usage));
+        }
+        if (
+          choice.finish_reason !== "stop" ||
+          choice.message.content === null
+        ) {
+          return yield* Effect.fail(configuredFailure("invalid_output", usage));
+        }
+        const output = yield* Schema.decodeUnknownEffect(
+          Schema.fromJsonString(PrivateDiscoveryOutput),
+          { onExcessProperty: "error" }
+        )(choice.message.content).pipe(
+          Effect.mapError(() => configuredFailure("invalid_output", usage))
+        );
+        return {
+          output,
+          provenance,
+          usage,
+        };
+      }).pipe(
+        Effect.timeoutOrElse({
+          duration: config.timeoutMs,
+          orElse: () => Effect.fail(configuredFailure("outcome_unknown")),
+        })
+      );
+    }),
+});

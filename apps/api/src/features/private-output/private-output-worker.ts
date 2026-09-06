@@ -8,6 +8,7 @@ import {
   SettleConfirmation,
 } from "./private-confirmation.contract.js";
 import type { ReleasedConfirmation } from "./private-confirmation.contract.js";
+import { RunAssistantTurn } from "./private-discovery.contract.js";
 import {
   OutputMutation,
   OutputMutationIntent,
@@ -84,6 +85,9 @@ interface OutputWorkerEnvironment {
       readonly authorizeConnection: (
         input: typeof AuthorizedSession.Type
       ) => Promise<void>;
+      readonly runAssistantTurn: (
+        input: typeof RunAssistantTurn.Type
+      ) => Promise<void>;
       readonly releaseConfirmation: (
         input: typeof ReleaseConfirmation.Type
       ) => Promise<ReleasedConfirmation>;
@@ -97,7 +101,7 @@ interface OutputWorkerEnvironment {
   };
 }
 
-/** Trusted service-binding entrypoint. Only confirmed closed commands cross its narrow continuation boundary. */
+/** Trusted service-binding entrypoint for admission, model turns, and confirmed commands. */
 export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> {
   async beginDirectoryConnection(untrusted: PrivateParticipantBinding) {
     const binding = Schema.decodeUnknownSync(PrivateParticipantBinding, {
@@ -139,6 +143,17 @@ export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> 
     await this.env.PrivateInterviewSession.getByName(
       await privateOutputKey("session", input.binding.sessionReference)
     ).authorizeConnection(input);
+  }
+
+  async runAssistantTurn(
+    untrusted: typeof RunAssistantTurn.Type
+  ): Promise<void> {
+    const input = Schema.decodeUnknownSync(RunAssistantTurn, {
+      onExcessProperty: "error",
+    })(untrusted);
+    await this.env.PrivateInterviewSession.getByName(
+      await privateOutputKey("session", input.binding.sessionReference)
+    ).runAssistantTurn(input);
   }
 
   async releaseConfirmation(untrusted: typeof ReleaseConfirmation.Type) {

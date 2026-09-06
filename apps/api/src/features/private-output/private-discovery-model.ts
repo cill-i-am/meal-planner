@@ -1,0 +1,139 @@
+import {
+  ProfileFactId,
+  ProfileFactStanding,
+  ProfileFactValue,
+  ProfileVersion,
+} from "@meal-planner/household-api";
+import {
+  ProfileCard,
+  ProfileCardChange,
+} from "@meal-planner/private-interview-api";
+import type { Effect } from "effect";
+import { Data, Schema } from "effect";
+
+export const PRIVATE_DISCOVERY_CONTEXT_BYTES = 24_576;
+export const PRIVATE_DISCOVERY_MESSAGE_LIMIT = 16;
+export const PRIVATE_DISCOVERY_CARD_LIMIT = 25;
+export const PRIVATE_DISCOVERY_SUMMARY_LENGTH = 2000;
+export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v1";
+export const PRIVATE_DISCOVERY_POLICY_VERSION = "private-discovery-policy-v1";
+export const PRIVATE_DISCOVERY_TOOL_VERSION = "profile-card-change-v1";
+
+const Id = Schema.String.pipe(Schema.check(Schema.isUUID()));
+const ShortText = Schema.String.pipe(
+  Schema.check(Schema.isMinLength(1), Schema.isMaxLength(2000))
+);
+const Summary = Schema.String.pipe(
+  Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_SUMMARY_LENGTH))
+);
+export const PrivateDiscoveryProfile = Schema.Struct({
+  facts: Schema.Array(
+    Schema.Struct({
+      id: ProfileFactId,
+      standing: ProfileFactStanding,
+      value: ProfileFactValue,
+    })
+  ),
+  version: ProfileVersion,
+});
+export type PrivateDiscoveryProfile = typeof PrivateDiscoveryProfile.Type;
+
+/** Only the bound adult's own profile and this private session enter the model. */
+export const PrivateDiscoveryContext = Schema.Struct({
+  cards: Schema.Array(
+    Schema.Struct({
+      change: ProfileCardChange,
+      id: Id,
+      reviewedFact: Schema.NullOr(ProfileFactValue),
+      revision: ProfileCard.fields.revision,
+      status: Schema.Literals([
+        "proposed",
+        "rejected",
+        "pending",
+        "confirmed",
+        "conflict",
+      ]),
+    })
+  ).pipe(Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_CARD_LIMIT))),
+  messages: Schema.Array(
+    Schema.Struct({
+      id: Id,
+      role: Schema.Literals(["participant", "assistant"]),
+      text: Schema.String.pipe(
+        Schema.check(Schema.isMinLength(1), Schema.isMaxLength(4000))
+      ),
+    })
+  ).pipe(Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_MESSAGE_LIMIT))),
+  profile: PrivateDiscoveryProfile,
+  summary: Summary,
+});
+export type PrivateDiscoveryContext = typeof PrivateDiscoveryContext.Type;
+
+const PrivateDiscoveryProposal = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("ProposeProfileCard"),
+    change: ProfileCardChange,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("ReviseProposedProfileCard"),
+    cardId: Id,
+    change: ProfileCardChange,
+    expectedRevision: ProfileCard.fields.revision,
+  }),
+]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+
+/** Model text and unfinished proposals have no canonical authority. */
+export const PrivateDiscoveryOutput = Schema.Struct({
+  message: ShortText,
+  proposals: Schema.Array(PrivateDiscoveryProposal).pipe(
+    Schema.check(Schema.isMaxLength(3))
+  ),
+  summary: Summary,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type PrivateDiscoveryOutput = typeof PrivateDiscoveryOutput.Type;
+
+const TokenCount = Schema.Int.pipe(
+  Schema.check(Schema.isGreaterThanOrEqualTo(0))
+);
+export const PrivateDiscoveryUsage = Schema.Struct({
+  estimatedCostUsd: Schema.NullOr(Schema.Number),
+  inputTokens: Schema.NullOr(TokenCount),
+  outputTokens: Schema.NullOr(TokenCount),
+});
+export type PrivateDiscoveryUsage = typeof PrivateDiscoveryUsage.Type;
+export const PrivateDiscoveryProvenance = Schema.Struct({
+  model: Schema.String,
+  policyVersion: Schema.String,
+  promptVersion: Schema.String,
+  provider: Schema.Literal("cloudflare-workers-ai"),
+  toolVersion: Schema.String,
+});
+export type PrivateDiscoveryProvenance = typeof PrivateDiscoveryProvenance.Type;
+export const PrivateDiscoveryResult = Schema.Struct({
+  output: PrivateDiscoveryOutput,
+  provenance: PrivateDiscoveryProvenance,
+  usage: PrivateDiscoveryUsage,
+});
+export type PrivateDiscoveryResult = typeof PrivateDiscoveryResult.Type;
+
+export class PrivateDiscoveryFailure extends Data.TaggedError(
+  "PrivateDiscoveryFailure"
+)<{
+  readonly reason:
+    | "not_configured"
+    | "provider_unavailable"
+    | "invalid_output"
+    | "refused"
+    | "context_limit"
+    | "outcome_unknown";
+  readonly usage: PrivateDiscoveryUsage | null;
+  readonly provenance: PrivateDiscoveryProvenance | null;
+}> {}
+
+export interface PrivateDiscoveryModel {
+  readonly generate: (input: {
+    readonly beforeDispatch: (provenance: PrivateDiscoveryProvenance) => void;
+    readonly context: PrivateDiscoveryContext;
+    readonly signal: AbortSignal;
+  }) => Effect.Effect<PrivateDiscoveryResult, PrivateDiscoveryFailure>;
+}
