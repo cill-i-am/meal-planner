@@ -416,8 +416,9 @@ both outputs passed validation. Earlier `invalid_output` causes remain unknown.
 Source, emitted-bundle, native-context, and retained-state review found no
 omission of the earlier card's identity, revision, or change, no size-limit
 trimming, and no revision remapping. The emitted prompt includes the v4
-instructions. This is not direct provider wire evidence. No actionable source
-defect was found, and no further prompt or code change was made.
+instructions. This was not direct provider wire evidence. That context-path
+review found no actionable defect; the subsequent native contract audit below
+identified a separate request-shape defect.
 
 V4 added two provider reservations and two participant admissions. The cumulative
 reservation is 27 attempts and USD 1.283328, not actual spend. Higher-cap calls
@@ -433,6 +434,39 @@ were verified; no actor operation or ledger lock remains pending. Cleanup did no
 complete A, and remote-preview disposal remains unverified. The
 [retry record](../../../../evals/private-discovery/gpt-schema-prompt-retry.json)
 contains the metadata receipts, scoped review, and diagnostic proof.
+
+## Native request contract and bounded probe
+
+Commit `55a34ea49b0429b86aa8c64826acf8843b8c6f2c` removes the GPT-OSS
+`name/schema/strict` wrapper: native Workers AI receives the actual generated
+schema directly at `response_format.json_schema`. Cloudflare's
+[pinned native implementation](https://github.com/cloudflare/ai/blob/917c02430090e7d511abf138091a2c17135515b2/packages/workers-ai-provider/src/utils.ts#L283-L328)
+and [GPT-OSS regression test](https://github.com/cloudflare/langchain-cloudflare/blob/f77a64012e49935fabc10809706ae3020046b32b/libs/langchain-cloudflare/tests/unit_tests/test_chat_models.py#L651-L678)
+establish the intended contract. The old GPT request failed the new boundary
+assertion; all 27 adapter tests, type, lint, and formatting checks pass after the
+fix. The prompt, generated schema, decoder, review, and model settings are unchanged.
+
+The two-call `contract-probe-v2` used freshly captured native context and the
+retained synthetic dialogue and summary. A used the corrected full schema; B
+removed only the new-proposal branch. Both returned HTTP 200 with finish reason
+`stop`. A passed production decoding and review but proposed two new cards,
+leaving the original correction unresolved. B failed `invalid_output` at
+`output_json`: a literal trailing NUL made its content invalid JSON. Formal B
+schema and proposal review were not reached. Diagnostic inspection of its first
+JSON object found an unchanged revision plus two excluded new proposals; this
+was neither accepted nor repaired or replayed.
+
+Neither response supplies an accepted same-card correction. This pair is not a
+before/after wrapper test and does not establish the historical failure cause.
+Local native capture and five harness cases passed, but do not confer model
+quality. Exactly two reservations advanced totals to 29 calls and USD 1.379072,
+with 23 of 65 higher-cap calls used and no judge calls; these are reservations,
+not invoices. Earlier financial and participant journal prefixes were preserved.
+The runner joined, runtime and remote transport disposal completed, and matching
+local processes were absent. No participant admission or application mutation
+occurred. V1 preparation remains preserved and was never dispatched. The
+[retry record](../../../../evals/private-discovery/gpt-schema-prompt-retry.json)
+contains the source, request, result, independent review, and closure digests.
 
 ## Remaining product gates
 

@@ -3,7 +3,7 @@
   "recordedOn": "2026-09-07",
   "label": "gpt-schema-prompt-retry-v1",
   "model": "@cf/openai/gpt-oss-120b",
-  "status": "v2_v3_and_v4_families_failed_diagnostics_locally_verified",
+  "status": "native_contract_corrected_pair_failed_correction_and_output_json",
   "priorArtifacts": [
     {
       "artifact": "first-live-trial.json",
@@ -210,7 +210,9 @@
     "The v3 A-to-B transition proves its observed native effects only; cross-adult privacy and stale-conflict behavior were not freshly established.",
     "The v3 B invalid_output failure stage and provider usage remain unavailable; absent gateway rows do not establish provider outcome.",
     "Prompt v4 failed same-card correction after two schema-valid native outputs; local diagnostics do not turn this semantic failure into invalid_output.",
-    "The v4 request path was verified in source, emitted bundles and native tests; no direct provider wire capture was retained."
+    "The v4 request path was verified in source, emitted bundles and native tests; no direct provider wire capture was retained.",
+    "A later native contract audit corrected the GPT-OSS response-format wrapper; this does not establish the cause of the earlier model failures.",
+    "The corrected full-versus-revision-only pair failed same-card correction and strict JSON parsing, respectively; it is not a completed native family or a before/after causality test."
   ],
   "receiptSha256": {
     "prod-schema-prompt-v7/result.json": "949b0258dbc30da11ff9ef1f82fd299893cd3c48aac9fa076476500479463581",
@@ -245,7 +247,23 @@
     "candidate-v4/actor-run/commands.jsonl": "53dfba74da2abe2bbddc48a3ba6edcc71059a4baab8111b2a934ac71420cacf9",
     "candidate-v4/invalid-output-stages.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "candidate-v4/result.receipt.json": "dfc49664e51334733668ba21f7fdc0ea272b5fc237f2b835d0f7d3ebc7dbb3f8",
-    "baseline-v4-allowance/activation.receipt.json": "7bfc778f724899fe821940b990815ae4bdf53816c204c4f72147052b8c92b934"
+    "baseline-v4-allowance/activation.receipt.json": "7bfc778f724899fe821940b990815ae4bdf53816c204c4f72147052b8c92b934",
+    "contract-probe-v2/root-source-evidence.receipt.json": "d812d39ea1e8eff2b88949fc4ecbd273de07519ff2d016a291fe6a895c8757e8",
+    "contract-probe-v2/root-preparation-decision.receipt.json": "7d1be680222e61eaff18cf17e5ebd01c97648373ca38f341c63f089aea2fb12b",
+    "contract-probe-v2/root-approval.receipt.json": "4c2c067c292d3c7f8afec3dff48422dbc3c19bb5be52ef35d1e0467ac402930a",
+    "contract-probe-v2/preparation/local-proof.receipt.json": "e8f4e98140c36845beff7347272ebd2ebe4c7286019208529ec014e57aa28aa0",
+    "contract-probe-v2/preparation/summary-recovery.receipt.json": "9a46a9389e7967bce36d474f4ff2aabb37f493d9def91c5d821bca3e2293b59d",
+    "contract-probe-v2/local-proof.json": "6a61f8f7fbfaac81e6be9211faf6b67f21c1e1964b5ad3363bb6da03c3f4a1b0",
+    "contract-probe-v2/review-source-proof.json": "021d367764b1593ef0b661cb7ba23782e4a949af9d4372e33cbe1b4bf0885cb1",
+    "contract-probe-v2/source-build-proof.json": "8b4c8ed0aeac692cce18f4445c005b12e6464b0fa443f8e54e73d49aff3167c0",
+    "contract-probe-v2/run-state/dispatch-a.json": "9b9b98bc2b6f5ecb54c9da60eb2fe322f9e5696b4170d0234086dfa158d7d876",
+    "contract-probe-v2/run-state/dispatch-b.json": "3239e8603fea13a3da91b33b78ac7f7e6154a10baf653dc120402093ad824343",
+    "contract-probe-v2/run-state/raw-a-response.json": "80faacca6fc444406228d691fa456413824d9c0772393d710c51ff2cdec3ccb1",
+    "contract-probe-v2/run-state/raw-b-response.json": "fa766fbe727564fb44f821da0e5f38bb6044a284183f3d70bda53914918d9a6b",
+    "contract-probe-v2/run-state/pair-result.json": "d0f4f8be74f8be0f98bfbdf4e68679f6f3879498ea516ba582b8051ba445f285",
+    "contract-probe-v2/run-state/root-closure.receipt.json": "32badf17d1f90394f26186a4c6ff45ab33efd73cbb09dc6d0dd52e608ca7eb87",
+    "contract-probe-v2/acceptance-review.receipt.json": "52d7df40fa841b5ea9ca7f8819054b5d2d4dcd4f8ecfe9344ea25f637c722511",
+    "contract-probe-v2/result.receipt.json": "13f6352849f6757f15e004213cef932a396e92596295265a539255e452793b76"
   },
   "reviewedV2Source": {
     "head": "8626bebe705a766e699f6fd3744b0aec68092f59",
@@ -808,6 +826,193 @@
         "Local diagnostic tests do not retrospectively identify earlier invalid_output causes.",
         "Main-runtime remote-preview disposal remains unverified."
       ]
+    },
+    "contractProbe": {
+      "recordedAt": "2026-09-07T20:49:48.275Z",
+      "probeVersion": "contract-probe-v2",
+      "status": "failed_same_card_correction_and_output_json",
+      "sourceHead": "55a34ea49b0429b86aa8c64826acf8843b8c6f2c",
+      "sourceTree": "cc77d145b701643248d6e694ccc0a950cc925c5f",
+      "nativeContractCorrection": {
+        "previousSourceHead": "d528b8e2c2883986a5cee34d225e5b1dd83e7da3",
+        "requestShape": "response_format.json_schema contains the actual generated schema directly for both configured native models.",
+        "promptVersion": "private-discovery-prompt-v4",
+        "generatedSchemaPromptDecoderReviewAndSettingsUnchanged": true,
+        "sources": [
+          {
+            "repository": "cloudflare/ai",
+            "commit": "917c02430090e7d511abf138091a2c17135515b2",
+            "url": "https://github.com/cloudflare/ai/blob/917c02430090e7d511abf138091a2c17135515b2/packages/workers-ai-provider/src/utils.ts#L283-L328"
+          },
+          {
+            "repository": "cloudflare/langchain-cloudflare",
+            "commit": "f77a64012e49935fabc10809706ae3020046b32b",
+            "url": "https://github.com/cloudflare/langchain-cloudflare/blob/f77a64012e49935fabc10809706ae3020046b32b/libs/langchain-cloudflare/tests/unit_tests/test_chat_models.py#L651-L678"
+          },
+          {
+            "repository": "cloudflare/langchain-cloudflare",
+            "commit": "f77a64012e49935fabc10809706ae3020046b32b",
+            "url": "https://github.com/cloudflare/langchain-cloudflare/blob/f77a64012e49935fabc10809706ae3020046b32b/libs/langchain-cloudflare/langchain_cloudflare/chat_models.py#L176-L211"
+          }
+        ],
+        "historicalFailureCauseEstablished": false,
+        "beforeAfterCausalityTest": false,
+        "verification": {
+          "oldGptRequestFailedBareSchemaContractTest": true,
+          "oldQwenRequestPassedSameTest": true,
+          "adapterTestsPassed": 27,
+          "apiTypecheck": "passed",
+          "focusedLintAndFormatting": "passed",
+          "immutableSourceReview": "accepted_without_findings"
+        }
+      },
+      "comparison": {
+        "supersededV1Dispatched": false,
+        "onlyChangedPath": "body.response_format.json_schema.properties.proposals.items.anyOf",
+        "A": "Corrected production full schema.",
+        "B": "Remove only the ProposeProfileCard branch; retain the revision branch and all original constraints.",
+        "model": "@cf/openai/gpt-oss-120b",
+        "maxOutputTokens": 4096,
+        "temperature": 0,
+        "contextBytes": 977,
+        "nativePriorCardCount": 1,
+        "nativeMessageCount": 3,
+        "nativeOriginalRevision": 0,
+        "nativeSyntheticRevisionAcceptedAt": 1,
+        "exactEarlierSemanticTextAndRecoveredSummary": true,
+        "freshSyntheticIdentities": true,
+        "originalLiveWireRecovered": false,
+        "identicalSystemAndUserMessages": true,
+        "systemPromptStillContainsFullProductionSchema": true,
+        "localHarnessCasesPassed": 5,
+        "actualNativeBodiesMatchedFrozenRequests": true,
+        "thirdCallAndRestartDeniedLocally": true
+      },
+      "results": [
+        {
+          "variant": "A_production_schema",
+          "providerSequence": 28,
+          "responseStatus": 200,
+          "finishReason": "stop",
+          "elapsedMs": 9051,
+          "sentBodySha256": "780d1c1f8ce0d732918c7cb25c627c48496dc4e342f2d2472f36bac54c31a3c8",
+          "adapterAccepted": true,
+          "adapterFailure": null,
+          "adapterStage": null,
+          "productionProposalReviewAccepted": true,
+          "formalDiagnosticSchemaAdherence": true,
+          "inputTokens": 3851,
+          "outputTokens": 638,
+          "usageEstimateUsd": 0.00182635,
+          "semanticReview": {
+            "providerEnvelopeComplete": true,
+            "finishReason": "stop",
+            "productionDecoderAccepted": true,
+            "productionProposalReviewAccepted": true,
+            "sameCardCorrection": "fail",
+            "revisionOperations": 0,
+            "newProposalCount": 2,
+            "newProposalFactsIndividuallySupported": true,
+            "optionalColdDishDislikeSupported": true,
+            "supersededOriginalCardWouldRemainUnrevised": true,
+            "canonicalMutationPerformed": false
+          }
+        },
+        {
+          "variant": "B_revision_only_diagnostic_schema",
+          "providerSequence": 29,
+          "responseStatus": 200,
+          "finishReason": "stop",
+          "elapsedMs": 10423,
+          "sentBodySha256": "71371ae391bbdd84e8cb3a3e8093754ad7f11f97a9591314a2722a289a1a4158",
+          "adapterAccepted": false,
+          "adapterFailure": "invalid_output",
+          "adapterStage": "output_json",
+          "productionProposalReviewAccepted": null,
+          "formalDiagnosticSchemaAdherence": null,
+          "inputTokens": 3851,
+          "outputTokens": 909,
+          "usageEstimateUsd": 0.0020296,
+          "semanticReview": {
+            "providerEnvelopeComplete": true,
+            "finishReason": "stop",
+            "productionDecoderAccepted": false,
+            "failure": "invalid_output",
+            "stage": "output_json",
+            "productionProposalReviewAccepted": null,
+            "formalDiagnosticSchemaAdherence": null,
+            "rawFailureObservation": "One literal U+0000 follows the closing JSON object.",
+            "outputCapHit": false,
+            "forensicPrefixOnly": {
+              "targetAndExpectedRevisionMatch": true,
+              "expectedRevision": 0,
+              "revisionRepeatsOriginalChange": true,
+              "newProposeOperationsExcludedByB": 2,
+              "correctedChangeAppearsOnlyAsNewProposal": true,
+              "notAcceptedOrRepairedOrReplayed": true
+            }
+          }
+        }
+      ],
+      "accounting": {
+        "newProviderCalls": 2,
+        "previousProviderCalls": 27,
+        "cumulativeProviderCalls": 29,
+        "maximumProviderCalls": 79,
+        "newConservativeReservedMicroUsd": 95744,
+        "cumulativeConservativeReservedMicroUsd": 1379072,
+        "budgetMicroUsd": 10000000,
+        "higherCapCallsUsed": 23,
+        "higherCapCallsRemaining": 42,
+        "judgeCallsUsed": 0,
+        "judgeCallsRemaining": 8,
+        "pairUsageEstimateUsd": 0.00385595,
+        "priceBasisUsdPerMillionTokens": {
+          "input": 0.35,
+          "output": 0.75
+        },
+        "cumulativeActualSpendUsd": null,
+        "reservationIsInvoice": false,
+        "invoiceVerified": false,
+        "financialPolicyChanged": false,
+        "participantAdmissions": 0,
+        "financialJournal": {
+          "bytes": 4664,
+          "sha256": "88b729777bf20cee342f5078eddb99fc7723b072f505704e0d62ebe0ab8def83",
+          "previousPrefixBytes": 4364,
+          "previousPrefixSha256": "8a3dd6f05c52b2de9a3604238ae7830d644b26adc46217e7315936df919bfc50",
+          "previousPrefixUnchanged": true
+        },
+        "participantJournal": {
+          "bytes": 2903,
+          "sha256": "0e70a81a98a90a9ca71e2134b61fb34cedb29b67c010f4e024bbeec5728685da",
+          "unchanged": true
+        }
+      },
+      "cleanup": {
+        "runnerJoined": true,
+        "runnerExitCode": 0,
+        "runnerAndMatchingWorkerdAbsent": true,
+        "runtimeDisposed": true,
+        "transportDisposeCompleted": true,
+        "transportDisposalIncludesAwaitedRemoteSessionDispose": true,
+        "previousV1UnstartedAndPreserved": true,
+        "otherProtectedFilesUnchanged": 731,
+        "spendLockAbsent": true,
+        "applicationStateMutations": 0,
+        "automaticRetry": false,
+        "outputRepair": false,
+        "additionalProviderWorkStarted": false
+      },
+      "limitations": [
+        "B formal schema and production proposal review were not reached. Prefix inspection does not turn B into accepted output.",
+        "This pair does not persist cards, confirm facts, complete a family or prove model reliability.",
+        "The identified native request contract defect is not proven to have caused the historical failures; both pair variants use the corrected contract.",
+        "The response-format branch restriction changes allowed new-card behavior; B cannot provide the optional new preference card available to A.",
+        "This does not complete native correction/confirmation, fresh B removal, any unrun family, privacy proof, judge scoring or human calibration."
+      ],
+      "acceptedBaselineId": null,
+      "mergeReady": false
     }
   }
 }

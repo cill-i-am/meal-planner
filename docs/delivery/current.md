@@ -35,9 +35,11 @@
   v3 then failed the required same-card correction in its first live family.
   Prompt v4 also failed same-card correction after two schema-valid native
   outputs; the trial stopped before safety or routine answers, confirmation, or
-  B. Stage-only failure diagnostics pass local tests but emitted no event for
-  this semantic failure. Model selection and human calibration remain incomplete.
-  The draft is not ready to merge.
+  B. Stage-only diagnostics emitted no event for this semantic failure. A later
+  native request-contract fix passed local checks; its two-call probe still
+  failed correction with the full schema and JSON parsing with the revision-only
+  schema. Model selection and human calibration remain incomplete. The draft is
+  not ready to merge.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -229,8 +231,13 @@ outputs: the original proposal remained revision 0 while two new cards were
 added. The trial stopped with A open at version 4 and the canonical profile
 empty at version 0. Failure diagnostics pass 63 native and 27 adapter tests;
 zero live events are expected because this failure passed output validation.
-The verified source and emitted request path include prior-card context, but
-no direct provider wire receipt was retained. No source defect was identified.
+The earlier context-path review found no missing prior-card context, but retained
+no direct provider wire receipt. A later audit identified and corrected the
+native GPT-OSS response-format wrapper at `55a34ea`. In the resulting two-call
+probe, the full-schema output still added new cards; the revision-only output
+failed strict JSON parsing because of a trailing NUL. These new failures do not
+establish the cause of historical failures or complete native family acceptance.
+Both responses and cleanup were retained; no application state changed.
 No soft judge has run, no human scores have been assigned, and no configuration
 or baseline is accepted. No application deployment occurred.
 Repeat review and dependant assistance follow in Work Item 04.
