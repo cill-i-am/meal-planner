@@ -54,17 +54,21 @@ Work Item 03 is in progress in
 adaptive-turn implementation, browser A-to-B confirmation/restart evidence,
 eight-family evaluation assets, and a measured decision not to adopt
 `agent-eval` 2.2.1. Local browser acceptance also passed idle opening,
-cross-adult privacy, and bounded two-tab recovery. The first authorized live
-trial passed minimal protocol probes for both candidates but stopped when each
-first production discovery turn failed with `invalid_output`. Live quality
-comparison, selected configuration, and human calibration remain incomplete.
-Separate diagnostics found a disallowed Qwen output field and a GPT
-output-token-cap failure. Six provider attempts cost an estimated USD
-0.004275880. The approved 4,096-token GPT follow-up stopped after its single
-readiness call reached the 60-second deadline with `outcome_unknown`. That
-seventh call's usage and cost are unknown. No native candidate or judge work
-followed, and no configuration or human baseline is accepted. Prior scripted
-proofs establish runtime enforcement only.
+cross-adult privacy, and bounded two-tab recovery. The first live trial and
+timed-out GPT follow-up remain separate historical results. A later generated-schema instruction change passed
+both diagnostic and native readiness checks at prompt v2. The subsequent first
+native family produced three accepted assistant outputs, including an unsupported
+safety proposal, before a fourth generation failed with `invalid_output`.
+Real rejection and explicit confirmation of a later correct safety card recovered
+canonical state to version 1; the material-fact failure remains. The corrected
+preference, routine discovery, and live A-to-B trajectory remain unverified, and
+the other seven families had not run at review. The
+[retry evidence](../../../../evals/private-discovery/gpt-schema-prompt-retry.json)
+distinguishes readiness, failed native quality, and incomplete work. V9 passed
+without reproducing the output failure. Prompt v3 is implemented and locally
+verified; its live trial awaits participant allowance. No soft judge or human
+scores were assigned; no configuration or baseline is accepted.
+Prior scripted proofs establish runtime enforcement only.
 Delivery follows the existing
 [execution policy](../../../agents/execution-policy.md).
 

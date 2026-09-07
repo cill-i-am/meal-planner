@@ -294,12 +294,77 @@ absent, no gate lock remained, and the permanent dispatch marker and original
 six-attempt journal prefix were retained. Cloud preview deletion was not
 verified. Readiness supplies no discovery-quality or human-calibration result.
 
+## Schema-instruction retry and first-family checkpoint — 2026-09-07
+
+The [separate retry evidence](../../../../evals/private-discovery/gpt-schema-prompt-retry.json)
+preserves the original trial and timed-out follow-up artifacts unchanged. A
+controlled V7 diagnostic appended the generated output schema to the system
+instructions while retaining GPT's wrapped response format. It returned valid
+JSON accepted by the strict schema and adapter: 3,453 input / 410 output tokens,
+10,092 ms response latency, and USD 0.00151605 configured estimated cost.
+This transformed diagnostic did not execute native participant proposal review.
+
+Production commit `8626bebe705a766e699f6fd3744b0aec68092f59` applies that
+instruction change and advances prompt provenance to v2. V8 exercised the
+production adapter without a payload transformation and emitted the exact V7
+payload digest. It also passed strict readiness: 3,453 input / 420 output tokens,
+8,790 ms response latency, and USD 0.00152355 configured estimated cost. Both
+requests used a 4,096-output-token cap, temperature 0, and nonstreaming responses;
+the fully serialized payload was 22,888 bytes within the unchanged 32,768-byte
+guard. Their combined USD 0.00303960 estimate covers these two calls only,
+not the retry sequence or cumulative spend. Neither readiness result proves
+family quality or human calibration. Both readiness runners recorded runtime
+and transport disposal completion; that does not establish cleanup of the later
+candidate runtime.
+
+The new `simple_household_baseline` attempt then used the real participant
+path, with three accepted assistant outputs and a fourth generation ending in
+`invalid_output`. Independent hard review failed `supported_material_facts`:
+the second accepted output represented an explicit absence of restrictions as
+an actual safety exclusion. The participant rejected that proposal and the
+superseded broad preference. A later correct `NoKnownHardConstraints` card was
+explicitly confirmed through the admitted path, advancing canonical profile
+version 0 to 1. This recovery does not erase the unsupported material claim.
+
+The requested corrected preference was never produced, reviewed, or confirmed.
+Ordinary-meal discovery remained unverified because its disclosure trigger did
+not occur. The assistant repeated an equipment question after the participant
+had no further information. At the reviewed checkpoint A remained open and B
+had not started; the other seven families had not run. Prior runtime enforcement
+supports scoped authority and privacy checks, without supplying the missing
+live correction or fresh-session evidence. No soft judge or human rating was
+assigned. The fourth failure retained no new assistant output or card; its exact
+output failure cause is not established by this checkpoint.
+
+A separate V9 request used the retained candidate context and the exact
+production adapter and proposal review at the same v2 source. Its new response
+passed both checks: 4,189 input / 490 output tokens, 15,356 ms response latency,
+and USD 0.00183365 configured estimated cost. It did not mutate the native
+session or reproduce the fourth failure, so that original failure's cause
+remains unknown. The diagnostic recorded completed runtime and transport
+disposal. At V9 completion, the cumulative gate had reserved 20 provider
+attempts against USD 0.948224; this reservation is not actual spend. Cumulative
+usage cost remains unavailable because the original seventh attempt is unknown.
+The later local candidate launcher and actor were joined, with no pending actor
+operation or retained ledger lock. This did not complete A, which remains open
+at session version 13 and canonical profile version 1 in preserved storage.
+Main-runtime remote disposal remains unverified.
+
+Prompt v3 now makes fact selection explicit, prioritizes proposed-card
+corrections, and honors declined questions while preserving consequential
+household-context discovery. It leaves the model, schema, caps, and authority
+boundaries unchanged. Focused adapter tests (19), native context tests (5),
+lint, formatting, and API type checking pass. Its prompt adds 752 UTF-8 bytes;
+the existing serialized payload guard remains enforced. The v3 live trial is
+pending its participant allowance, with no live v3 quality result. Local checks
+do not repair or supersede the recorded v2 family failure.
+
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
-remain in progress and are not ready to merge. The approved 4,096-token
-follow-up is stopped after its failed readiness check. The candidate
-comparison, live A-to-B spike, and actual human calibration across all eight
+remain in progress and are not ready to merge. The original stopped trials and
+the failed prompt-v2 family remain recorded. Candidate comparison, the corrected
+preference and live A-to-B spike, and actual human calibration across all eight
 fixtures remain incomplete. The canonical evidence and calibration templates
-remain unfilled; the stopped-trial summaries do not replace them. No application
-deployment occurred.
+remain unfilled; readiness and checkpoint records do not replace them. No
+application deployment occurred.

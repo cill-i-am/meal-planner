@@ -1,0 +1,336 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-07",
+  "label": "gpt-schema-prompt-retry-v1",
+  "model": "@cf/openai/gpt-oss-120b",
+  "status": "v2_family_failed_v3_implemented_live_trial_pending",
+  "priorArtifacts": [
+    {
+      "artifact": "first-live-trial.json",
+      "sha256": "abead2bf879c0720b4ec539041a56c8b219cd5f367ea437c4262c985d7d8e13d",
+      "resultsChanged": false
+    },
+    {
+      "artifact": "gpt4096-followup.json",
+      "sha256": "fd6d32e66be04be44697da26b7c8f595cc23356039ffee7fe848f30c46d12be9",
+      "resultsChanged": false
+    }
+  ],
+  "productionChange": {
+    "generatedOutputSchemaAppendedToSystemInstructions": true,
+    "wrappedGptResponseFormatRetained": true,
+    "strictDecoderRetained": true,
+    "serializedPayloadLimitBytes": 32768
+  },
+  "readiness": [
+    {
+      "label": "diagnostic_v7",
+      "completedAt": "2026-09-07T15:42:47.816Z",
+      "accepted": true,
+      "productionPayloadTransformed": true,
+      "requestControls": {
+        "maxTokens": 4096,
+        "temperature": 0,
+        "stream": false,
+        "inputBytes": 22888
+      },
+      "payloadSha256": "acda10922c596059d67ece5db5b97a3df6b64d946d1fea41f751f9900afe8040",
+      "responseStatus": 200,
+      "responseLatencyMs": 10092,
+      "totalLatencyMs": 10100,
+      "finishReason": "stop",
+      "contentBytes": 628,
+      "contentParse": true,
+      "schemaAccepted": true,
+      "adapterAccepted": true,
+      "usage": {
+        "inputTokens": 3453,
+        "outputTokens": 410,
+        "estimatedCostUsd": 0.00151605
+      },
+      "proposalReview": "not_executed",
+      "familyQualityEstablished": false,
+      "runtimeDisposed": true,
+      "transportDisposeCompleted": true
+    },
+    {
+      "label": "production_native_v8",
+      "completedAt": "2026-09-07T15:56:55.595Z",
+      "accepted": true,
+      "productionPayloadTransformed": false,
+      "requestControls": {
+        "maxTokens": 4096,
+        "temperature": 0,
+        "stream": false,
+        "inputBytes": 22888
+      },
+      "payloadSha256": "acda10922c596059d67ece5db5b97a3df6b64d946d1fea41f751f9900afe8040",
+      "responseStatus": 200,
+      "responseLatencyMs": 8790,
+      "totalLatencyMs": 8830,
+      "finishReason": "stop",
+      "contentBytes": 692,
+      "contentParse": true,
+      "schemaAccepted": true,
+      "adapterAccepted": true,
+      "usage": {
+        "inputTokens": 3453,
+        "outputTokens": 420,
+        "estimatedCostUsd": 0.00152355
+      },
+      "proposalReview": "not_executed",
+      "familyQualityEstablished": false,
+      "runtimeDisposed": true,
+      "transportDisposeCompleted": true
+    }
+  ],
+  "firstFamily": {
+    "fixtureId": "simple_household_baseline",
+    "sourceHead": "8626bebe705a766e699f6fd3744b0aec68092f59",
+    "reviewedAt": "2026-09-07T16:25:02.773710+00:00",
+    "status": "failed_hard_assertion_and_later_invalid_output",
+    "completeFamily": false,
+    "candidateGenerationsObserved": 4,
+    "acceptedAssistantOutputs": 3,
+    "latestGeneration": {
+      "status": "failed",
+      "failure": "invalid_output",
+      "newAssistantOutputOrCardRetained": false,
+      "exactFailureCause": "not_established_by_checkpoint"
+    },
+    "reviewSnapshot": {
+      "responses": {
+        "snapshotLines": 49,
+        "snapshotBytes": 26989,
+        "snapshotSha256": "f7307c9e951693f72f0c983caee95859dc0277cb1ea72d553a95bee424c431b4",
+        "hashScope": "exact_byte_prefix_at_review"
+      },
+      "commands": {
+        "snapshotLines": 48,
+        "snapshotBytes": 3471,
+        "snapshotSha256": "d664a57ba448d854e2a65d6d57e48526edbfd73d2d704b92b3e3657456731640",
+        "hashScope": "exact_byte_prefix_at_review"
+      },
+      "disclosures": {
+        "snapshotLines": 3,
+        "snapshotBytes": 2162,
+        "snapshotSha256": "a4392fd47fbba5f2e82157713192e6e6f96e88f2c9f971d266f41953d758f31c",
+        "hashScope": "exact_byte_prefix_at_review"
+      }
+    },
+    "commonHardAssertions": [
+      {
+        "id": "closed_changes",
+        "status": "pass"
+      },
+      {
+        "id": "supported_material_facts",
+        "status": "fail"
+      },
+      {
+        "id": "private_until_confirmed",
+        "status": "pass"
+      },
+      {
+        "id": "explicit_confirmation",
+        "status": "pass"
+      },
+      {
+        "id": "current_authority_and_version",
+        "status": "unverified"
+      },
+      {
+        "id": "safety_retained",
+        "status": "pass"
+      },
+      {
+        "id": "correction_review",
+        "status": "unverified"
+      },
+      {
+        "id": "scope_truthfulness",
+        "status": "pass"
+      },
+      {
+        "id": "privacy_authorization",
+        "status": "pass"
+      }
+    ],
+    "materialFactFailure": {
+      "status": "fail",
+      "finding": "Explicit absence of known restrictions was represented as an actual HardConstraint exclusion.",
+      "recoveredStateErasesFailure": false
+    },
+    "actualRecovery": {
+      "unsupportedSafetyProposalRejected": true,
+      "supersededBroadPreferenceRejected": true,
+      "correctNoKnownHardConstraintsProposed": true,
+      "separateExplicitConfirmationCommitted": true,
+      "canonicalProfileVersionBefore": 0,
+      "canonicalProfileVersionAfter": 1,
+      "canonicalFactTags": ["NoKnownHardConstraints"],
+      "canonicalFactCount": 1
+    },
+    "requiredEvidence": {
+      "correctedPreferenceProduced": "unverified",
+      "correctedPreferenceReviewedAndConfirmed": "unverified",
+      "routineDiscovery": "unverified",
+      "liveAToBRepeat": "unverified",
+      "sessionAStatusAtReview": "open",
+      "sessionBStarted": false,
+      "remainingFamiliesNotRun": 7
+    },
+    "driverReview": {
+      "status": "pass",
+      "repeatedQuestionObserved": true,
+      "withheldRoutineAnswerDisclosed": false
+    },
+    "sharedRuntimeEnforcement": {
+      "reusedWithExplicitLimits": true,
+      "freshDenialsExercised": false,
+      "wholeApplicationBundleEqualityClaimed": false
+    },
+    "softJudge": "blocked_by_hard_failure_and_missing_required_evidence",
+    "humanScoresAssigned": false
+  },
+  "evaluation": {
+    "selectedConfiguration": null,
+    "acceptedBaselineId": null,
+    "humanCalibration": "unscored",
+    "mergeReady": false
+  },
+  "limitations": [
+    "Readiness success is not a completed native family or quality baseline.",
+    "The v2 family hard failure remains even if later recovery or another candidate succeeds.",
+    "Missing correction, routine discovery and fresh B evidence are not passing results.",
+    "The fourth generation failure cause cannot be inferred from invalid_output alone.",
+    "V9 is a separate new response against the retained context; its success cannot explain the original fourth response retrospectively.",
+    "Prompt v3 local checks establish implementation and context bounds, not live model quality.",
+    "Local process and actor closure preserve the open v2 session; main-runtime remote disposal remains unverified."
+  ],
+  "receiptSha256": {
+    "prod-schema-prompt-v7/result.json": "949b0258dbc30da11ff9ef1f82fd299893cd3c48aac9fa076476500479463581",
+    "prod-native-v8/result.json": "ec50d4a38d9a58d221e782f330b8b4746ab30fec2fdbccfc5875b7fe8c8934fe",
+    "prod-native-v8/source-build-proof.json": "fc71ef45a0ff40d2d94a420bffe7d11b9f2867f1680020e3ad36fa036be12c0b",
+    "candidate-continuation/first-family-review.json": "9bf857c9ff690daf2e7bb38e68331221b8b61c4271ed9d717f4911419cbca039",
+    "candidate-continuation/first-family-review.md": "af959a8a30f1e021a902bee3d395b9a77d203c72d454f201dd64ddc4856f501b",
+    "candidate-diagnostic-v9/result.json": "32099d359f7468901b799af59eb3838f3e084da5dafa05b69b80e9b34fc415d3",
+    "candidate-diagnostic-v9/transport.json": "56cd1304068f44471f74ea5f27dcae8da08f129783c0266303458deb229f3a9b",
+    "candidate-continuation-actor-run/responses.jsonl": "0a39aa66a3899e8a9964708a006a701ac626c3e12de6fa3cd2019ac35d8b4517",
+    "candidate-continuation-actor-run/commands.jsonl": "5f48db8220ebf30f8e0a3c3045af3d3126fad11d9f47e1f3fe6b616d9ae1baeb",
+    "candidate-continuation/closure.receipt.json": "4ffd90f48d81d418ed19e35a3a6316ee8bce329524af46b1b19f9c26d712232e",
+    "cloudflare-production-review-v9-metadata.receipt.json": "be8af04a8af01558f0257b3de5e0b22bd979bf53dbc9120aa80b730043ddb690"
+  },
+  "reviewedV2Source": {
+    "head": "8626bebe705a766e699f6fd3744b0aec68092f59",
+    "tree": "8889a5245b1783f760b2537a8430a2b91633ccdb",
+    "promptVersion": "private-discovery-prompt-v2"
+  },
+  "candidateContextDiagnosticV9": {
+    "sourceHead": "8626bebe705a766e699f6fd3744b0aec68092f59",
+    "completedAt": "2026-09-07T16:43:21.172Z",
+    "productionPayloadTransformed": false,
+    "requestControls": {
+      "maxTokens": 4096,
+      "temperature": 0,
+      "stream": false,
+      "inputBytes": 25589
+    },
+    "payloadSha256": "3a18b5daa9aaebb22bb5705f31d9704fb41b616b562358848b2d79da2b0cf0af",
+    "snapshotSha256": "45082a1989bc4f4667f4bea53b6a6ccb6c0ee84774d1560d6a77d2c4d66d5202",
+    "responseStatus": 200,
+    "responseLatencyMs": 15356,
+    "totalLatencyMs": 15361,
+    "finishReason": "stop",
+    "contentBytes": 463,
+    "contentParse": true,
+    "schemaAccepted": true,
+    "adapterAccepted": true,
+    "exactProductionProposalReview": true,
+    "proposalReview": "executed",
+    "reviewAccepted": true,
+    "usage": {
+      "inputTokens": 4189,
+      "outputTokens": 490,
+      "estimatedCostUsd": 0.00183365
+    },
+    "originalFailureReproduced": false,
+    "originalFailureCauseEstablished": false,
+    "nativeSessionStateChanged": false,
+    "familyQualityEstablished": false,
+    "runtimeDisposed": true,
+    "transportDisposeCompleted": true,
+    "providerMetadataCorroboration": {
+      "observedAt": "2026-09-07T16:46:25.429Z",
+      "exactLogMatch": true,
+      "responseStatus": 200,
+      "providerDurationMs": 14555,
+      "inputTokens": 4189,
+      "outputTokens": 490,
+      "reportedCostUsd": 0.0018336413879394531,
+      "invoiceVerified": false,
+      "inspectedLogListPayloadFields": {
+        "requestIsEmptyString": true,
+        "responseIsEmptyString": true,
+        "promptsIsNull": true,
+        "metadataIsNull": true
+      },
+      "widerRetentionGuaranteeEstablished": false,
+      "independentSchemaOrProposalValidation": false
+    }
+  },
+  "accounting": {
+    "scope": "V7, V8 and V9 usage estimates plus the cumulative reservation snapshot after V9; this is not a reconciliation of all retry usage.",
+    "recordedDiagnosticProviderAttempts": 3,
+    "recordedDiagnosticConfiguredUsageEstimateUsd": 0.00487325,
+    "cumulativeSnapshotAfterV9": {
+      "providerAttemptsReserved": 20,
+      "conservativeReservedBudgetUsd": 0.948224,
+      "higherCapProviderAttemptsReserved": 14,
+      "judgeAttemptsReserved": 0
+    },
+    "cumulativeUsageEstimateStatus": "unavailable_due_to_original_unknown_attempt_7",
+    "reservationIsInvoice": false,
+    "invoiceVerified": false,
+    "cumulativeUsageEstimateUsd": null
+  },
+  "promptV3": {
+    "promptVersion": "private-discovery-prompt-v3",
+    "implementation": "implemented_and_locally_verified",
+    "sourceLocation": "apps/api/src/features/private-output/private-discovery-prompt.ts",
+    "changes": [
+      "Explicit fact-type selection for preferences, actual restrictions, and known absence.",
+      "Prioritize exact proposed-card corrections before unrelated proposals or follow-ups.",
+      "Honor declined questions while preserving consequential household-context discovery."
+    ],
+    "promptUtf8ByteIncreaseFromV2": 752,
+    "modelSchemaCapsAndAuthorityUnchanged": true,
+    "liveTrial": "pending_participant_allowance",
+    "liveProviderCalls": 0,
+    "qualityOutcome": "not_evaluated",
+    "verification": {
+      "adapterTests": 19,
+      "nativeContextTests": 5,
+      "apiTypecheck": "passed",
+      "focusedLint": "passed",
+      "focusedFormatting": "passed"
+    }
+  },
+  "candidateCleanup": {
+    "localLauncherAndChildrenJoined": true,
+    "actorCloseAcknowledged": true,
+    "actorSupervisorJoined": true,
+    "actorSupervisorExitCode": 0,
+    "actorPendingHttp": false,
+    "actorPendingSocket": false,
+    "participantInFlight": false,
+    "participantPending": false,
+    "participantLedgerLockPresent": false,
+    "spendLedgerLockPresent": false,
+    "mainRuntimeRemoteDisposalVerified": false,
+    "preservedSessionAStatus": "open",
+    "preservedSessionVersion": 13,
+    "preservedCanonicalProfileVersion": 1,
+    "actorClosureCompletesSession": false
+  }
+}

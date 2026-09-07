@@ -26,11 +26,15 @@
   [Work Item 03 — adaptive discovery and evaluation](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
   is in progress in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218).
   Private adaptive-turn implementation and local browser acceptance are complete.
-  The first authorized live trial stopped after both candidates failed their first
-  production discovery turn. The approved 4,096-token GPT follow-up also stopped
-  after its readiness call reached the deadline with an unknown outcome. Model
-  selection and human calibration remain incomplete. The draft is not ready to
-  merge.
+  The original candidate failures and timed-out GPT follow-up remain recorded.
+  Adding the generated output schema to the system instructions passed separate
+  diagnostic and native readiness checks at prompt v2. The subsequent first
+  native family failed a material-fact assertion and later returned
+  `invalid_output`; the corrected preference, routine discovery, and live A-to-B
+  trajectory remain unverified. V9 did not reproduce the output failure. Prompt
+  v3 is implemented and locally verified; its live trial awaits participant
+  allowance. Model selection and human calibration remain incomplete. The draft
+  is not ready to merge.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -199,19 +203,23 @@ is in progress in draft PR #218. Its native browser proof covers proposal,
 same-card correction, explicit confirmation, Stop, process restart, and a fresh
 session using the updated canonical profile. All 1,344 local tests pass across
 the full baseline and affected reruns. Final UI acceptance also passed idle
-opening, cross-adult privacy, and bounded two-tab recovery. Both candidates
-passed minimal live protocol probes, then failed their first production
-discovery turn with `invalid_output`; the trial stopped. No accepted assistant
-output, cards, or confirmations resulted. The other seven families per candidate
-and live A-to-B repeat remain unrun. Selected configuration and human
-calibration across all eight fixtures remain required before merge. Two separate
-diagnostic probes found a disallowed Qwen output field and a GPT
-output-token-cap failure. Those six attempts have an estimated cost of USD
-0.004275880. The approved GPT 4,096-token follow-up then
-stopped after one readiness call reached the 60-second deadline with
-`outcome_unknown`. Its usage and cost are unknown, so the seven-call total cost
-is unavailable. It started no native fixture or judge run. Selected configuration
-and human calibration remain incomplete. No application deployment occurred.
+opening, cross-adult privacy, and bounded two-tab recovery. The original
+six-attempt live trial and seventh-call unknown readiness outcome retain their separate historical records. Later GPT
+readiness passed after production commit `8626bebe` appended the generated
+schema to the system instructions and advanced prompt provenance to v2. In the
+new first-family attempt, three assistant outputs were accepted before a fourth
+generation failed with `invalid_output`. An unsupported safety proposal failed
+the material-fact assertion. Actual rejection and explicit confirmation of a
+later correct safety card advanced canonical profile version 0 to 1, without
+resolving that failure or the missing corrected preference and routine discovery.
+Session A remained open at review; B and the other seven families had not run.
+The [retry evidence](../../evals/private-discovery/gpt-schema-prompt-retry.json)
+separates readiness from native quality and preserves these incomplete results.
+V9 passed the adapter and exact proposal review without reproducing the original
+failure. Prompt v3 is implemented and locally verified; its live trial awaits
+participant allowance. No live v3 quality result is claimed.
+No soft judge has run, no human scores have been assigned, and no configuration
+or baseline is accepted. No application deployment occurred.
 Repeat review and dependant assistance follow in Work Item 04.
 [PDR-0006](../decisions/product/0006-ai-evaluation-and-release-evidence.md#stage-specific-evidence-and-the-complete-beta-gate)
 owns stage-specific discovery/profile evidence and the unchanged complete
