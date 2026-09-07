@@ -207,15 +207,71 @@ bytes unchanged from the accepted `2bf8f80` build:
   54.594 seconds in the first tab and 33.232 seconds in the second, with no
   repeated connection takeover.
 
-## Remaining external and product gates
+## First authorized live trial — 2026-09-07
 
-No external model calls, cloud mutations, or deployment have occurred. The
-product owner must authorize the actual provider/account, synthetic payload
-scope, candidate and fixed-judge models, and bounded experiment spend before
-execution. The eight-family pack and local trial preparation contain no accepted
-model baseline or human scores.
+The [first live trial result](../../../../evals/private-discovery/first-live-trial.json)
+records an early stop at source `a38d20ca9c6ee5b3b18616949d6b4a5353817d4c`. Both Cloudflare
+Workers AI candidates passed minimal nonstreaming ChatCompletion and
+output-schema probes. Each then failed its first native discovery turn for
+`simple_household_baseline` with `invalid_output` under the fixed configuration:
+temperature 0, 2,048 output tokens, and a 60-second timeout.
 
-This work item and draft PR #218 remain in progress until candidate
-protocol/quality comparison, selected configuration, and actual human calibration
-are complete. These local runtime proofs do not satisfy
-the evaluated adaptive-discovery outcome or authorize merge.
+| Candidate | Input / output tokens | Append to completion | Estimated USD |
+| --- | --- | --- | --- |
+| `@cf/qwen/qwen3-30b-a3b-fp8` | 915 / 508 | 7,387 ms | 0.000219385 |
+| `@cf/openai/gpt-oss-120b` | 955 / 2,048 | 39,345 ms | 0.00187025 |
+
+These timings measure retained attempt creation to completion, not provider
+latency. GPT reached the output-token cap, consistent with truncation; the exact
+cause of either original rejection is unknown because raw output and finish
+reason were not retained. Two separate unscored diagnostic probes then used the
+same configuration and production payload construction, without the participant
+actor or proposal review:
+
+- Qwen finished normally with parseable JSON but an unexpected field at
+  `proposals.item.change.fact.additional_property`. The declared output schema
+  forbids additional properties in all 27 object definitions. Offline AJV and
+  strict Effect checks agreed on valid examples and rejected added properties
+  in all three fact branches. This diagnostic violated the declared schema;
+  that rejection did not expose a schema/decoder mismatch.
+- GPT finished with `length` at 2,048 output tokens and its content was not
+  parseable JSON. This establishes an output-cap failure for the diagnostic,
+  without proving the exact cause of its earlier response.
+
+The diagnostics used 917 input / 408 output tokens for Qwen and 955 / 2,048 for
+GPT, with measured response latencies of 6,111 ms and 33,637 ms. They are
+diagnostic evidence, not scored discovery runs.
+
+The trial used six provider attempts: two protocol probes, two native discovery
+inferences, and two separate diagnostic probes, with two unique participant
+messages. The first four attempts had a token-based estimated cost of USD
+0.002220143; the six-attempt estimate is USD 0.004275880. The conservative
+attempt gate reserved USD 0.278016. That reservation is a budget bound, not
+actual spend, and the token estimate is not an invoice.
+
+The diagnostic process was joined after SIGTERM with exit code 143. Read-only
+process and listener checks found no remaining trial native processes or owned
+listeners. Storage and journals were preserved. Remote disposal acknowledgement
+was not observed; no cloud deletion or revocation is claimed.
+
+Both actual A sessions completed without accepted assistant messages, cards,
+confirmations, or a change from canonical profile version 0. Neither native
+session continued after its output rejection; no output repair or candidate
+reconfiguration occurred. Session B could not run because its required
+corrected-and-confirmed fact did not exist. The remaining seven families per
+candidate are `not_run`. Semantic hard assertions remain incomplete; the soft
+judge did not run and every human calibration row remains unscored. Prior
+unchanged-source scripted proofs support shared runtime enforcement, not live
+candidate quality or a completed-fixture pass.
+
+## Remaining product gates
+
+No configuration or human baseline is accepted. Work Item 03 and draft PR #218
+remain in progress and are not ready to merge. Completing the candidate
+comparison, the live A-to-B spike, and actual human calibration across all eight
+fixtures remains necessary. The canonical evidence and calibration templates
+remain unfilled; this stopped-trial summary does not replace them. A possible
+GPT follow-up at 4,096 output tokens requires authorization because the approved
+trial fixed the cap at 2,048. It would evaluate a separate configuration; no
+prompt, schema, adapter, or configuration change is included here. No
+application deployment occurred.

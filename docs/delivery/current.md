@@ -26,7 +26,9 @@
   [Work Item 03 — adaptive discovery and evaluation](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
   is in progress in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218).
   Private adaptive-turn implementation and local browser acceptance are complete.
-  Authorized model comparison, selection, and human calibration remain required. The draft is not ready to merge.
+  The first authorized live trial stopped after both candidates failed their first
+  production discovery turn. Model selection and human calibration remain
+  incomplete. The draft is not ready to merge.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -195,11 +197,17 @@ is in progress in draft PR #218. Its native browser proof covers proposal,
 same-card correction, explicit confirmation, Stop, process restart, and a fresh
 session using the updated canonical profile. All 1,344 local tests pass across
 the full baseline and affected reruns. Final UI acceptance also passed idle
-opening, cross-adult privacy, and bounded two-tab recovery. Actual
-candidate protocol and quality comparison, selected configuration, and human
-calibration across all eight fixtures remain required before merge. No external
-model call or deployment has occurred. Repeat review and dependant assistance
-follow in Work Item 04.
+opening, cross-adult privacy, and bounded two-tab recovery. Both candidates
+passed minimal live protocol probes, then failed their first production
+discovery turn with `invalid_output`; the trial stopped. No accepted assistant
+output, cards, or confirmations resulted. The other seven families per candidate
+and live A-to-B repeat remain unrun. Selected configuration and human
+calibration across all eight fixtures remain required before merge. Two separate
+diagnostic probes found a disallowed Qwen output field and a GPT
+output-token-cap failure. All six attempts have an estimated total cost of USD
+0.004275880. A possible GPT 4,096-token follow-up needs authorization for that
+changed configuration. No application deployment occurred. Repeat review and
+dependant assistance follow in Work Item 04.
 [PDR-0006](../decisions/product/0006-ai-evaluation-and-release-evidence.md#stage-specific-evidence-and-the-complete-beta-gate)
 owns stage-specific discovery/profile evidence and the unchanged complete
 connected pre-beta gate. Work Item 01 implementation and local automated

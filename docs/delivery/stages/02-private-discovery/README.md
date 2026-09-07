@@ -53,11 +53,15 @@ Work Item 03 is in progress in
 [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), with native
 adaptive-turn implementation, browser A-to-B confirmation/restart evidence,
 eight-family evaluation assets, and a measured decision not to adopt
-`agent-eval` 2.2.1. Local browser acceptance also passed idle opening, cross-adult
-privacy, and bounded two-tab recovery. Actual candidate protocol and quality
-comparison, selected configuration, and human calibration remain required
-before merge. Model/provider execution remains gated on concrete target and
-budget authorization; local scripted responses establish runtime behavior only.
+`agent-eval` 2.2.1. Local browser acceptance also passed idle opening,
+cross-adult privacy, and bounded two-tab recovery. The first authorized live
+trial passed minimal protocol probes for both candidates but stopped when each
+first production discovery turn failed with `invalid_output`. Live quality
+comparison, selected configuration, and human calibration remain incomplete.
+Separate diagnostics found a disallowed Qwen output field and a GPT
+output-token-cap failure. Six provider attempts cost an estimated USD
+0.004275880; a possible 4,096-token GPT follow-up remains pending authorization.
+Prior scripted proofs establish runtime enforcement only.
 Delivery follows the existing
 [execution policy](../../../agents/execution-policy.md).
 
