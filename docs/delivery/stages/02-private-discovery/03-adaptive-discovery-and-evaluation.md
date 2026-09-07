@@ -395,14 +395,50 @@ maps the input card's `id` to `cardId` and `revision` to `expectedRevision`, and
 requires the complete corrected nested change. The model, schema, caps, and
 authority boundaries remain unchanged. Existing adapter tests (19), native
 context and revision tests (5), lint, formatting, and API type checking pass.
-Live v4 quality remains untested. Local checks do not repair or supersede either
-recorded family failure.
+These local checks did not establish live quality or supersede earlier failures.
+
+The v4 trial at source `1a965e9134f61c39f0e2398b5a3861529cd926de` stopped after
+two schema-valid native outputs. After the explicit correction, the original
+card stayed at revision 0 while two new cards were added. Independent review of
+the first 18 actor responses failed correction review and supported material
+facts; only the early supported-proposal check passed. No safety or routine
+answer, confirmation, A completion, or B transition was exercised. The root's
+last four response lines separately establish A open at version 4, an empty
+canonical profile at version 0, no pending confirmation, and actor closure.
+
+The same source adds one fixed `private_discovery.invalid_output` event with a
+closed internal stage after an eligible terminal failure. Public failure fields
+remain unchanged. All 63 native and 27 adapter tests pass, including private-data
+exclusion, terminal replay, and no partial persistence; type, lint, formatting,
+and local capture checks pass. Zero live diagnostic events are expected because
+both outputs passed validation. Earlier `invalid_output` causes remain unknown.
+
+Source, emitted-bundle, native-context, and retained-state review found no
+omission of the earlier card's identity, revision, or change, no size-limit
+trimming, and no revision remapping. The emitted prompt includes the v4
+instructions. This is not direct provider wire evidence. No actionable source
+defect was found, and no further prompt or code change was made.
+
+V4 added two provider reservations and two participant admissions. The cumulative
+reservation is 27 attempts and USD 1.283328, not actual spend. Higher-cap calls
+used 21 of 65; judge calls remain 0 of 8. The 79-call maximum and USD 10 budget
+are unchanged. The activated participant allowance retains ten earlier intents
+and leaves six of 18 unused after two fresh A admissions. Both earlier journal
+prefixes were verified unchanged.
+
+The actor supervisor joined successfully and the launcher joined after SIGTERM.
+All five known local processes and trial-port listeners were verified absent.
+The stale spend lock was removed after owner absence and unchanged journal hashes
+were verified; no actor operation or ledger lock remains pending. Cleanup did not
+complete A, and remote-preview disposal remains unverified. The
+[retry record](../../../../evals/private-discovery/gpt-schema-prompt-retry.json)
+contains the metadata receipts, scoped review, and diagnostic proof.
 
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
 remain in progress and are not ready to merge. The original stopped trials and
-the failed prompt-v2 and prompt-v3 families remain recorded. Candidate comparison,
+the failed prompt-v2, prompt-v3, and prompt-v4 families remain recorded. Candidate comparison,
 model-produced same-card correction, successful B removal, and actual human
 calibration across all eight fixtures remain incomplete. The canonical evidence
 and calibration templates remain unfilled; readiness and checkpoint records do

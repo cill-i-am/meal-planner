@@ -3,7 +3,7 @@
   "recordedOn": "2026-09-07",
   "label": "gpt-schema-prompt-retry-v1",
   "model": "@cf/openai/gpt-oss-120b",
-  "status": "v2_and_v3_families_failed_v4_implemented_live_trial_pending",
+  "status": "v2_v3_and_v4_families_failed_diagnostics_locally_verified",
   "priorArtifacts": [
     {
       "artifact": "first-live-trial.json",
@@ -205,11 +205,12 @@
     "Missing correction, routine discovery and fresh B evidence are not passing results.",
     "The fourth generation failure cause cannot be inferred from invalid_output alone.",
     "V9 is a separate new response against the retained context; its success cannot explain the original fourth response retrospectively.",
-    "Prompt v4 local checks establish implementation and context bounds, not live model quality.",
     "Local process and actor closure preserve the open v2 session; main-runtime remote disposal remains unverified.",
     "The v3 correction and routine-discovery failures remain after manual rejection, confirmation, and completion of A.",
     "The v3 A-to-B transition proves its observed native effects only; cross-adult privacy and stale-conflict behavior were not freshly established.",
-    "The v3 B invalid_output failure stage and provider usage remain unavailable; absent gateway rows do not establish provider outcome."
+    "The v3 B invalid_output failure stage and provider usage remain unavailable; absent gateway rows do not establish provider outcome.",
+    "Prompt v4 failed same-card correction after two schema-valid native outputs; local diagnostics do not turn this semantic failure into invalid_output.",
+    "The v4 request path was verified in source, emitted bundles and native tests; no direct provider wire capture was retained."
   ],
   "receiptSha256": {
     "prod-schema-prompt-v7/result.json": "949b0258dbc30da11ff9ef1f82fd299893cd3c48aac9fa076476500479463581",
@@ -231,7 +232,20 @@
     "candidate-v3/closure.receipt.json": "2c950357134a561e66aac600e090923583839c540befe5c85f04a9086deba38a",
     "candidate-v3/cloudflare-baseline-five-calls-metadata.receipt.json": "c34408d2b281a91919c9bc9f5807cd9df58389f97ccd0fe864b551732a33b2e3",
     "baseline-v3-allowance/activation.receipt.json": "5ec671dcbb9bb2ffaba918900e2f2bba93a711aa7a8d9eba3cb8308a36a8f444",
-    "candidate-v3/acceptance-review.receipt.json": "1b07f96344e0d74d7b7cb6335bebd917214c4ff4e36acbfd31ea9317448802fb"
+    "candidate-v3/acceptance-review.receipt.json": "1b07f96344e0d74d7b7cb6335bebd917214c4ff4e36acbfd31ea9317448802fb",
+    "candidate-v4/source-head.json": "c421327b21e316f98da250a0409167cb00d142488d830916563bba9dc77a7be4",
+    "candidate-v4/prepared.receipt.json": "1cdc648e208a30874a5d828f6bd3eeca3ad7e04a1e52b1234138bcd88bc02bd2",
+    "candidate-v4/source-review.receipt.json": "b22e2a6d5fdc35d2c6de461283a4e9ae1a63a757bd85678072a4b499696da48b",
+    "candidate-v4/local-proof.receipt.json": "5b3815f28a96eaffc9defb70754fe8b398a1050bca1b2c5a8327207a5c831485",
+    "candidate-v4/bundle-build-manifest.json": "a89bfcfbfa2ec3177292b47788c112b01922828771e73ee500ef0307a3a9c6a8",
+    "candidate-v4/runtime-build-manifest.json": "8415f6be4c077639c3eb335d43ecdefed35c47b2a0e04cda01dbc24f2247e936",
+    "candidate-v4/closure.receipt.json": "715ff0fd1aa7d710bea127b83738729663a82e1c3395203239b7b174705156d4",
+    "candidate-v4/acceptance-review.receipt.json": "dda8f9960793e05f45af028bbb1c34a10a17046630ac6baca75c0a9453da469d",
+    "candidate-v4/actor-run/responses.jsonl": "3f49f3b68f3b1f31b9da718c1047ed0319672a78cf0c660f7bf8a49bf3fd1d86",
+    "candidate-v4/actor-run/commands.jsonl": "53dfba74da2abe2bbddc48a3ba6edcc71059a4baab8111b2a934ac71420cacf9",
+    "candidate-v4/invalid-output-stages.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-v4/result.receipt.json": "dfc49664e51334733668ba21f7fdc0ea272b5fc237f2b835d0f7d3ebc7dbb3f8",
+    "baseline-v4-allowance/activation.receipt.json": "7bfc778f724899fe821940b990815ae4bdf53816c204c4f72147052b8c92b934"
   },
   "reviewedV2Source": {
     "head": "8626bebe705a766e699f6fd3744b0aec68092f59",
@@ -591,15 +605,209 @@
     ],
     "promptUtf8ByteIncreaseFromV3": 253,
     "modelSchemaCapsAndAuthorityUnchanged": true,
-    "liveTrial": "pending_new_live_validation",
-    "liveProviderCalls": 0,
-    "qualityOutcome": "not_evaluated",
+    "liveTrial": "stopped_after_second_output_failed_same_card_correction",
+    "liveProviderCalls": 2,
+    "qualityOutcome": "failed_same_card_correction",
     "verification": {
       "adapterTests": 19,
       "nativeContextTests": 5,
       "apiTypecheck": "passed",
       "focusedLint": "passed",
       "focusedFormatting": "passed"
+    },
+    "sourceHead": "1a965e9134f61c39f0e2398b5a3861529cd926de",
+    "sourceTree": "e9fe45e037fd3972d0d59d7a94d89af8bb60c244",
+    "nativeTrial": {
+      "recordedAt": "2026-09-07T19:30:28.022788+00:00",
+      "fixtureId": "simple_household_baseline",
+      "status": "failed_same_card_correction",
+      "completeFamily": false,
+      "acceptedAssistantOutputs": 2,
+      "rejectedAssistantOutputs": 0,
+      "modelOutputRepairOrRetry": false,
+      "remainingFamiliesNotRun": 7,
+      "providerAttempts": [
+        {
+          "session": "A",
+          "generation": 1,
+          "providerSequence": 26,
+          "applicationTransportStatus": 204,
+          "nativeStatus": "succeeded",
+          "nativeFailure": null
+        },
+        {
+          "session": "A",
+          "generation": 2,
+          "providerSequence": 27,
+          "applicationTransportStatus": 204,
+          "nativeStatus": "succeeded",
+          "nativeFailure": null
+        }
+      ],
+      "observedAcceptance": {
+        "earlyTentativePreferenceProduced": true,
+        "originalProposedCardRevised": false,
+        "originalCardUnchangedAtRevision": 0,
+        "additionalProposedCards": 2,
+        "additionalCardRevisions": [0, 0],
+        "correctionAcknowledgedInText": true,
+        "requiredRoutineAnswerDisclosed": false,
+        "safetyAnswerDisclosed": false,
+        "explicitConfirmationCommitted": false,
+        "sessionACompleted": false,
+        "sessionBStarted": false,
+        "canonicalProfileVersion": 0,
+        "canonicalFactCount": 0,
+        "pendingConfirmation": false
+      },
+      "hardAssertionReview": {
+        "correction_review": {
+          "status": "fail",
+          "scope": "Original proposed card stayed at revision zero after the explicit correction; two new cards were added.",
+          "responseLines": [12, 14, 16, 18]
+        },
+        "supported_material_facts": {
+          "status": "fail",
+          "scope": "The superseded broad preference remained proposed alongside the correction.",
+          "responseLines": [12, 14, 17, 18]
+        },
+        "early_supported_proposal": {
+          "status": "pass",
+          "scope": "Narrowly scoped to the first supported tentative preference card.",
+          "responseLines": [4, 11, 12]
+        }
+      },
+      "reviewEvidenceLimits": {
+        "independentReviewerInspectedResponseLines": {
+          "first": 1,
+          "last": 18
+        },
+        "rootVerifiedFinalProfileAndClosureLines": [19, 20, 21, 22],
+        "globalHardAssertionPass": false,
+        "privacyOrUnexercisedAcceptanceClaimed": false
+      },
+      "diagnostics": {
+        "implementationHead": "1a965e9134f61c39f0e2398b5a3861529cd926de",
+        "event": "private_discovery.invalid_output",
+        "internalClosedStageCount": 16,
+        "publicFailureContractUnchanged": true,
+        "privateOutputOrIdentifiersLogged": false,
+        "localNativeTestsPassed": 63,
+        "localAdapterTestsPassed": 27,
+        "apiTypecheck": "passed",
+        "focusedLintAndFormatting": "passed",
+        "localCaptureAllowlistVerified": true,
+        "liveDiagnosticEvents": 0,
+        "liveDiagnosticFileBytes": 0,
+        "zeroEventsExplanation": "Both native outputs passed schema and proposal review; the failure is semantic model quality.",
+        "liveInvalidOutputStageProved": false,
+        "earlierFailureCausesRetrospectivelyEstablished": false
+      },
+      "causalReview": {
+        "sourceAndEmittedBundleInspected": true,
+        "nativeSecondCallCardContextPreviouslyAsserted": true,
+        "cardIdentityRevisionChangeIncludedByVerifiedContextPath": true,
+        "contextBytesExcludingSummary": 839,
+        "contextMaximumBytesWithWorstCaseSummary": 12839,
+        "contextByteLimit": 24576,
+        "contextTrimmingExplainsFailure": false,
+        "inputSerializationAndGateForwardingPreserved": true,
+        "v4RefinementInstructionsPresentInEmittedBundle": true,
+        "revisionOperationMapsToExistingCard": true,
+        "liveProviderWireRequestCaptured": false,
+        "actionableSourceDefectFound": false,
+        "furtherPromptChangeMade": false,
+        "evidenceLimit": "Verified source, emitted bundle, native tests and retained state support the context path; no direct provider wire receipt was retained."
+      },
+      "participantAllowance": {
+        "newAllowanceActivated": true,
+        "additionalIntents": 5,
+        "previousIntentsRetained": 10,
+        "cumulativeMaximum": 18,
+        "freshEpochMaximumIntents": 8,
+        "freshIntentsUsed": 2,
+        "cumulativeIntentsReserved": 12,
+        "remainingIntents": 6,
+        "phase": "A",
+        "sessionBStarted": false,
+        "unusedAllowanceIsNotACompletedEvaluation": true
+      },
+      "accounting": {
+        "previousFinancialPrefixPreserved": true,
+        "previousParticipantPrefixPreserved": true,
+        "previousProviderAttempts": 25,
+        "newProviderAttempts": 2,
+        "cumulativeProviderAttempts": 27,
+        "maximumProviderAttempts": 79,
+        "newConservativeReservedMicroUsd": 95744,
+        "cumulativeConservativeReservedMicroUsd": 1283328,
+        "higherCapAttemptsUsed": 21,
+        "higherCapAttemptsRemaining": 44,
+        "judgeAttemptsUsed": 0,
+        "judgeAttemptsRemaining": 8,
+        "budgetMicroUsd": 10000000,
+        "financialPolicyChanged": false,
+        "cumulativeUsageEstimateUsd": null,
+        "cumulativeUsageUnavailableReason": "The original unknown attempt and later unobserved provider usage remain unresolved.",
+        "reservationIsInvoice": false,
+        "invoiceVerified": false,
+        "journalSnapshots": {
+          "financialJournal": {
+            "lines": 29,
+            "bytes": 4364,
+            "sha256": "8a3dd6f05c52b2de9a3604238ae7830d644b26adc46217e7315936df919bfc50",
+            "previousPrefixBytes": 4064,
+            "previousPrefixSha256": "53158ee756c0e47f6bf000b5fcf0610f2b7080faf8b4eaa07202484cddc9c11b"
+          },
+          "participantJournal": {
+            "lines": 16,
+            "bytes": 2903,
+            "sha256": "0e70a81a98a90a9ca71e2134b61fb34cedb29b67c010f4e024bbeec5728685da",
+            "previousPrefixBytes": 2139,
+            "previousPrefixSha256": "e9b45828a755c4e4bf638b0d36d2f5a5a6e0a27479b3853bb1488d44cb6aa2c8"
+          }
+        }
+      },
+      "cleanup": {
+        "actorCloseAcknowledged": true,
+        "actorSupervisorJoinExitCode": 0,
+        "launcherJoinExitCode": 143,
+        "knownProcessesVerifiedAbsent": true,
+        "launcherMarkerAbsent": true,
+        "webGracefulCloseMessageObserved": true,
+        "forcedKillUsed": false,
+        "actorPendingHttp": false,
+        "actorPendingSocket": false,
+        "participantInFlight": false,
+        "participantPending": false,
+        "participantIntentsReserved": 12,
+        "participantPhase": "A",
+        "participantLedgerLockPresent": false,
+        "spendLedgerLockPresent": false,
+        "mainRuntimeRemoteDisposalVerified": false,
+        "preservedSessionAStatus": "open",
+        "preservedSessionAVersion": 4,
+        "preservedCanonicalProfileVersion": 0,
+        "preservedCanonicalFactCount": 0,
+        "actorClosureCompletesSession": false,
+        "providerRetryOrFurtherRestart": false,
+        "knownProcessCount": 5,
+        "localPortsVerifiedWithoutListeners": true,
+        "staleSpendLockRemovedAfterOwnerAbsence": true,
+        "journalsUnchangedByStaleLockRemoval": true,
+        "closureEvidenceOwner": "root"
+      },
+      "softJudge": "blocked_by_hard_failure_and_missing_required_evidence",
+      "humanScoresAssigned": false,
+      "acceptedBaselineId": null,
+      "mergeReady": false,
+      "limitations": [
+        "Two schema-valid native outputs do not complete the family or establish acceptable model quality.",
+        "No safety answer, routine answer, confirmation, A completion or B transition was exercised.",
+        "No new privacy, authority-conflict, judge or human-calibration pass is inferred.",
+        "Local diagnostic tests do not retrospectively identify earlier invalid_output causes.",
+        "Main-runtime remote-preview disposal remains unverified."
+      ]
     }
   }
 }

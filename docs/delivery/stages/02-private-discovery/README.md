@@ -69,8 +69,13 @@ without reproducing the output failure. Prompt v3 subsequently failed the
 required same-card correction and routine discovery in its first live family.
 Actual confirmation and A completion preceded fresh B state with the updated
 profile, but B's first generation failed with `invalid_output`. Prompt v4
-clarifies revision routing and passes local checks; its live quality remains
-untested.
+clarifies revision routing but also failed same-card correction after two
+schema-valid native outputs. The stopped trial left A open at version 4 and
+its canonical profile empty at version 0; safety and routine answers,
+confirmation, and B were not exercised. New stage-only failure diagnostics
+pass local tests. No diagnostic event was expected for this semantic failure.
+Verified source and emitted bundles retain prior-card context; direct provider
+wire receipt remains unverified, and no source defect was identified.
 No soft judge or human scores were assigned; no configuration or baseline is
 accepted.
 Prior scripted proofs establish runtime enforcement only.
