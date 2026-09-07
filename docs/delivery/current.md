@@ -27,8 +27,10 @@
   is in progress in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218).
   Private adaptive-turn implementation and local browser acceptance are complete.
   The first authorized live trial stopped after both candidates failed their first
-  production discovery turn. Model selection and human calibration remain
-  incomplete. The draft is not ready to merge.
+  production discovery turn. The approved 4,096-token GPT follow-up also stopped
+  after its readiness call reached the deadline with an unknown outcome. Model
+  selection and human calibration remain incomplete. The draft is not ready to
+  merge.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -204,10 +206,13 @@ output, cards, or confirmations resulted. The other seven families per candidate
 and live A-to-B repeat remain unrun. Selected configuration and human
 calibration across all eight fixtures remain required before merge. Two separate
 diagnostic probes found a disallowed Qwen output field and a GPT
-output-token-cap failure. All six attempts have an estimated total cost of USD
-0.004275880. A possible GPT 4,096-token follow-up needs authorization for that
-changed configuration. No application deployment occurred. Repeat review and
-dependant assistance follow in Work Item 04.
+output-token-cap failure. Those six attempts have an estimated cost of USD
+0.004275880. The approved GPT 4,096-token follow-up then
+stopped after one readiness call reached the 60-second deadline with
+`outcome_unknown`. Its usage and cost are unknown, so the seven-call total cost
+is unavailable. It started no native fixture or judge run. Selected configuration
+and human calibration remain incomplete. No application deployment occurred.
+Repeat review and dependant assistance follow in Work Item 04.
 [PDR-0006](../decisions/product/0006-ai-evaluation-and-release-evidence.md#stage-specific-evidence-and-the-complete-beta-gate)
 owns stage-specific discovery/profile evidence and the unchanged complete
 connected pre-beta gate. Work Item 01 implementation and local automated

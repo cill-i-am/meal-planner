@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-07",
+  "label": "gpt-oss-4096-followup-v1",
+  "status": "stopped_after_readiness_failure",
+  "source": {
+    "head": "58e4041d6689ebdf37620f5bd8c011fb64eca490",
+    "tree": "07304f35522c09a514d12e5f8f12a3c4f38d24c4"
+  },
+  "approval": {
+    "approvedAt": "2026-09-07T13:29:04.100123Z",
+    "planSha256": "ce3c878d6d2ebc486321bc04eea6c8f12deb111eb5b8d37356543bd52b3e8d2a",
+    "model": "@cf/openai/gpt-oss-120b",
+    "maxOutputTokens": 4096,
+    "additionalProviderAttemptCeiling": 73,
+    "cumulativeBudgetUsd": 10
+  },
+  "priorTrial": {
+    "artifact": "first-live-trial.json",
+    "sha256": "abead2bf879c0720b4ec539041a56c8b219cd5f367ea437c4262c985d7d8e13d",
+    "providerAttempts": 6,
+    "participantMessages": 2,
+    "knownConfiguredUsageEstimateUsd": 0.00427588,
+    "conservativeReservedBudgetUsd": 0.278016,
+    "resultsChanged": false
+  },
+  "startup": {
+    "initialPackagingAttemptStatus": "failed_before_provider_dispatch",
+    "initialPackagingProviderAttempts": 0,
+    "correctedPackagingReviewed": true,
+    "nativeFakeProofPassed": true,
+    "correctedFreezeSha256": "5aa968f38357f23f07e956847dc58aaa15bd3b46832e917190728846158beb77",
+    "correctedManifestSha256": "1b5d1b4c40e62ad546cae45a7f31c3a4f2cad5ac2c8cbfcb6bf003cf997b6203"
+  },
+  "readiness": {
+    "status": "failed",
+    "providerAttempts": 1,
+    "requestControls": {
+      "maxTokens": 4096,
+      "temperature": 0,
+      "stream": false,
+      "inputBytes": 13228
+    },
+    "responseStatus": null,
+    "responseLatencyMs": null,
+    "totalLatencyMs": 60007,
+    "observed": null,
+    "adapterAccepted": false,
+    "adapterFailure": "outcome_unknown",
+    "usage": null,
+    "proposalReview": "not_executed",
+    "participantAllowanceCreated": false,
+    "candidateOrJudgeWorkStarted": false,
+    "providerCompletionOutcome": "unknown",
+    "configuredOutputCapIsObservedUsage": false
+  },
+  "accounting": {
+    "followUpProviderAttempts": 1,
+    "cumulativeProviderAttempts": 7,
+    "higherCapProviderAttempts": 1,
+    "followUpParticipantMessages": 0,
+    "cumulativeParticipantMessages": 2,
+    "judgeAttempts": 0,
+    "knownUsageAttemptCount": 6,
+    "unknownUsageAttemptCount": 1,
+    "knownConfiguredUsageEstimateUsd": 0.00427588,
+    "followUpEstimatedCostUsd": null,
+    "cumulativeEstimatedCostUsd": null,
+    "conservativeReservedBudgetUsd": 0.325888,
+    "reservationIsInvoice": false,
+    "invoiceVerified": false,
+    "originalSixAttemptPrefixPreserved": true,
+    "participantLedgerUnchanged": true
+  },
+  "evaluation": {
+    "readinessIsQualityEvidence": false,
+    "nativeFixtureRuns": "not_run",
+    "repeatSpike": "not_run",
+    "softJudge": "not_run",
+    "humanCalibration": "unscored",
+    "selectedConfiguration": null,
+    "acceptedBaselineId": null,
+    "mergeReady": false
+  },
+  "cleanup": {
+    "status": "stopped_and_verified",
+    "completedAt": "2026-09-07T13:41:53.713Z",
+    "supervisorExitCode": 1,
+    "controlFailed": false,
+    "runtimeDisposed": true,
+    "transportDisposeCompleted": true,
+    "runnerProcessAbsent": true,
+    "gateLockPresent": false,
+    "permanentReadinessDispatchRetained": true,
+    "cloudPreviewDeletionVerified": false
+  },
+  "receiptSha256": {
+    "live-trial/gpt4096-readiness-startup-failure.receipt.json": "1f9c71566682121f543775b607e2f5076157b77d37778eaf7ac09bbe438cca79",
+    "live-trial/gpt4096-readiness-native-test.receipt.json": "6b861b0076ee49aa6d62425c5d937a8a458a1e420eaf7d1325fe056f395e2ddf",
+    "live-trial/gpt4096-corrected-readiness-root-decision.receipt.json": "3837abfad7b4df64e23065ca0f53f8f50aae067cbc5dd751b70b0b71dcecc3d6",
+    "live-trial/gpt4096-readiness-manifest.json": "1b5d1b4c40e62ad546cae45a7f31c3a4f2cad5ac2c8cbfcb6bf003cf997b6203",
+    "live-trial/gpt4096-readiness/result.receipt.json": "b9976c36e5a81f1ff9723f339027fa6423d8273cb72008fcccdcbc8a0c95e725",
+    "live-trial/gpt4096-readiness-runner.receipt.json": "8766368d02e5cf30bb7a49374c511370cab374d7e214acc00788ceed60590cc7",
+    "live-trial/gateway-settings-refresh.receipt.json": "ca2bbfa80fa3d7589e078aa422f43c58534fe8c8ca289c6b7e602b925b37a0e7",
+    "trial-control/gpt4096-user-approval.receipt.json": "cd31c0a411f9a4d7eb1bcf2211d5a03ac91c6308b60cdd8fe517ccf74e9c4619",
+    "trial-control/gpt4096-activation.receipt.json": "17a23919d2619f23aefc0d447591fe28e2014a123423d07a2b079fedec14dac2",
+    "live-trial/gpt4096-followup-stop.receipt.json": "1b015aaee5f075ceff168d0fe75f930506a87bb9c45251cbdf9028e3cb0fccf6",
+    "live-trial/gpt4096-readiness-prepared.receipt.json": "5aa968f38357f23f07e956847dc58aaa15bd3b46832e917190728846158beb77",
+    "live-trial/gpt4096-readiness/dispatch.json": "18f5ad6d611d560e1370a734f0111f93cfa6b5dbe0322dde746a3755c7b9e47d",
+    "trial-control/live-attempts.jsonl": "137a1fb000c10e4b3d1717e2c9407eebf2c08fc69a90da085b39093c77efae72",
+    "trial-control/live-participant-admissions.jsonl": "04a164b46ae04050c84f50b954742b719792515828c643ae066ef0b003b4efb3"
+  },
+  "limitations": [
+    "The 60007 ms deadline outcome does not establish whether the provider eventually completed.",
+    "No response, finish reason, content, or token usage was observed; neither truncation nor 4096 tokens used is established.",
+    "The new call cost and cumulative usage estimate are unknown; the six-call known subset is preserved, not presented as the total.",
+    "Readiness did not execute participant interaction, proposal review, native fixture evaluation, judging, or human calibration."
+  ]
+}

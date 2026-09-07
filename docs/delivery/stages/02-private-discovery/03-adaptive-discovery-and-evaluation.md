@@ -264,14 +264,42 @@ judge did not run and every human calibration row remains unscored. Prior
 unchanged-source scripted proofs support shared runtime enforcement, not live
 candidate quality or a completed-fixture pass.
 
+## Approved GPT 4,096-token follow-up — 2026-09-07
+
+The [separate follow-up result](../../../../evals/private-discovery/gpt4096-followup.json)
+records the approved changed configuration at source
+`58e4041d6689ebdf37620f5bd8c011fb64eca490`. Approval retained the cumulative USD
+10 budget and allowed at most 73 additional attempts. The original six-call
+result remains unchanged.
+
+An initial worker packaging failure occurred before provider dispatch. After
+its correction passed independent review and a native local proof, one actual
+GPT-OSS 120B readiness request used the 4,096-token cap, temperature 0, and the
+existing 60-second timeout. It ended after 60,007 ms with `outcome_unknown`.
+No response status, finish reason, content, or token usage was observed. This
+does not establish whether the provider eventually completed, consumed the cap,
+or produced truncated output.
+
+The failed readiness check stopped the follow-up under the approved plan.
+No participant allowance, native candidate run, proposal review, or judge run
+started. The participant ledger remained unchanged. Across both trials, seven
+provider attempts are reserved against USD 0.325888. USD 0.004275880 remains the
+known configured usage estimate for the first six calls; the new call's cost
+and the cumulative usage estimate are unknown. The reservation is not an
+invoice.
+
+The runner was joined with exit code 1 and recorded awaited runtime and
+transport disposal completion. Final read-only checks confirmed the runner was
+absent, no gate lock remained, and the permanent dispatch marker and original
+six-attempt journal prefix were retained. Cloud preview deletion was not
+verified. Readiness supplies no discovery-quality or human-calibration result.
+
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
-remain in progress and are not ready to merge. Completing the candidate
-comparison, the live A-to-B spike, and actual human calibration across all eight
-fixtures remains necessary. The canonical evidence and calibration templates
-remain unfilled; this stopped-trial summary does not replace them. A possible
-GPT follow-up at 4,096 output tokens requires authorization because the approved
-trial fixed the cap at 2,048. It would evaluate a separate configuration; no
-prompt, schema, adapter, or configuration change is included here. No
-application deployment occurred.
+remain in progress and are not ready to merge. The approved 4,096-token
+follow-up is stopped after its failed readiness check. The candidate
+comparison, live A-to-B spike, and actual human calibration across all eight
+fixtures remain incomplete. The canonical evidence and calibration templates
+remain unfilled; the stopped-trial summaries do not replace them. No application
+deployment occurred.

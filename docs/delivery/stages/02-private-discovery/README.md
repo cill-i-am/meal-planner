@@ -60,8 +60,11 @@ first production discovery turn failed with `invalid_output`. Live quality
 comparison, selected configuration, and human calibration remain incomplete.
 Separate diagnostics found a disallowed Qwen output field and a GPT
 output-token-cap failure. Six provider attempts cost an estimated USD
-0.004275880; a possible 4,096-token GPT follow-up remains pending authorization.
-Prior scripted proofs establish runtime enforcement only.
+0.004275880. The approved 4,096-token GPT follow-up stopped after its single
+readiness call reached the 60-second deadline with `outcome_unknown`. That
+seventh call's usage and cost are unknown. No native candidate or judge work
+followed, and no configuration or human baseline is accepted. Prior scripted
+proofs establish runtime enforcement only.
 Delivery follows the existing
 [execution policy](../../../agents/execution-policy.md).
 
