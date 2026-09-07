@@ -13,6 +13,7 @@ import {
   MAX_PRIVATE_FRAME_BYTES,
 } from "@meal-planner/private-interview-api";
 import { Miniflare, Response as LocalResponse } from "miniflare";
+import type { WorkerdStructuredLog } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
@@ -42,12 +43,14 @@ const syntheticModelConfig = JSON.stringify({
 });
 let modelConfiguration: string | undefined;
 let modelCalls: unknown[] = [];
+const nativeLogs: WorkerdStructuredLog[] = [];
 let modelResponse: () => Promise<LocalResponse> = () =>
   Promise.resolve(new LocalResponse(null, { status: 503 }));
 const makeRuntime = (selectedManifest = manifest) => {
   const worker = privateOutputRuntimeWorker(selectedManifest);
   return new Miniflare({
     cf: false,
+    handleStructuredLogs: (entry) => nativeLogs.push(entry),
     resourcePersistencePath: `${temporaryDirectory}/storage`,
     workers: [
       {
@@ -1710,6 +1713,108 @@ describe("native adaptive assistant attempts through the production model adapte
     runtime = makeRuntime();
   });
 
+  const diagnosticsSince = (start: number) =>
+    nativeLogs
+      .slice(start)
+      .filter((entry) =>
+        entry.message.includes("private_discovery.invalid_output")
+      );
+
+  const expectDiagnostic = async (
+    start: number,
+    stage: string,
+    privateValues: readonly string[] = []
+  ) => {
+    await expect.poll(() => diagnosticsSince(start)).toHaveLength(1);
+    const logs = diagnosticsSince(start);
+    expect(logs[0]?.level).toBe("log");
+    expect(logs[0]?.message).toMatch(
+      new RegExp(
+        `^\\[\\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\] WARN \\(#\\d+\\): private_discovery\\.invalid_output \\{ stage: '${stage}' \\}$`,
+        "u"
+      )
+    );
+    for (const value of privateValues) {
+      expect(JSON.stringify(logs)).not.toContain(value);
+    }
+  };
+
+  it.each([
+    "response_envelope",
+    "incomplete_completion",
+    "output_json",
+    "output_schema",
+  ] as const)(
+    "emits one safe %s diagnostic through the native adapter and keeps public failure unchanged",
+    async (stage) => {
+      modelCalls = [];
+      const privateValue = `synthetic-private-${crypto.randomUUID()}`;
+      modelResponse = () => {
+        const content =
+          stage === "output_json"
+            ? `{${privateValue}`
+            : JSON.stringify({
+                ...output,
+                message: privateValue,
+                proposals: [{ _tag: privateValue }],
+              });
+        return Promise.resolve(
+          new LocalResponse(
+            JSON.stringify(
+              stage === "response_envelope"
+                ? { choices: privateValue }
+                : {
+                    choices: [
+                      {
+                        finish_reason:
+                          stage === "incomplete_completion"
+                            ? privateValue
+                            : "stop",
+                        message: { content, role: "assistant" },
+                      },
+                    ],
+                    usage: defaultUsage,
+                  }
+            )
+          )
+        );
+      };
+      const session = await binding();
+      const connection = await open(session);
+      const attempt = await queue(session, connection);
+      const start = nativeLogs.length;
+      await successful(attempt);
+      await expectDiagnostic(start, stage, [
+        privateValue,
+        session.personId,
+        session.sessionReference,
+        attempt.turnId,
+      ]);
+      const current = await readTurn(connection);
+      expect(current).toMatchObject({
+        turn: { failure: "invalid_output", status: "failed" },
+      });
+      if (current.type !== "AssistantTurnRead" || current.turn === null) {
+        throw new Error("Expected failed assistant turn");
+      }
+      expect(Object.keys(current.turn).toSorted()).toEqual([
+        "failure",
+        "id",
+        "sourceMessageId",
+        "status",
+      ]);
+      expect(await cards(connection)).toMatchObject({ cards: [] });
+      expect(await history(connection)).toMatchObject({
+        messages: [expect.objectContaining({ role: "participant" })],
+      });
+      // Replaying the same terminal continuation emits neither another call nor another diagnostic.
+      await successful(attempt);
+      expect(modelCalls).toHaveLength(1);
+      expect(diagnosticsSince(start)).toHaveLength(1);
+      connection.socket.close();
+    }
+  );
+
   it("claims duplicate continuations once and atomically stores private output, summary and reviewed proposal", async () => {
     modelCalls = [];
     const release = Promise.withResolvers<LocalResponse>();
@@ -1985,10 +2090,12 @@ describe("native adaptive assistant attempts through the production model adapte
           },
         ],
       },
+      stage: "proposal_unknown_fact",
       title: "unknown fact references",
     },
     {
       result: { ...output, actorId: "untrusted-model-actor" },
+      stage: "output_schema",
       title: "untrusted authority fields",
     },
     {
@@ -2011,30 +2118,44 @@ describe("native adaptive assistant attempts through the production model adapte
           },
         ],
       },
+      stage: "proposal_duplicate",
       title: "duplicate proposals",
     },
-  ])("rejects $title without persisting partial output", async ({ result }) => {
-    modelCalls = [];
-    modelResponse = () => Promise.resolve(response(result));
-    const session = await binding();
-    const connection = await open(session);
-    await successful(await queue(session, connection));
-    expect(await readTurn(connection)).toMatchObject({
-      state: { version: 1 },
-      turn: { failure: "invalid_output", status: "failed" },
-    });
-    expect(await cards(connection)).toMatchObject({ cards: [] });
-    expect(await history(connection)).toMatchObject({
-      messages: [expect.objectContaining({ role: "participant" })],
-    });
-    const retained = await audit(session);
-    expect(JSON.parse(retained[0]?.usageJson ?? "null")).toMatchObject({
-      inputTokens: 100,
-      outputTokens: 20,
-    });
-    connection.socket.close();
-  });
-  it.each(["correct", "stale", "rejected"] as const)(
+  ])(
+    "rejects $title without persisting partial output",
+    async ({ result, stage }) => {
+      const start = nativeLogs.length;
+      modelCalls = [];
+      const privateValue = `synthetic-private-${crypto.randomUUID()}`;
+      modelResponse = () =>
+        Promise.resolve(
+          response({ ...result, message: privateValue, summary: privateValue })
+        );
+      const session = await binding();
+      const connection = await open(session);
+      await successful(await queue(session, connection));
+      expect(await readTurn(connection)).toMatchObject({
+        state: { version: 1 },
+        turn: { failure: "invalid_output", status: "failed" },
+      });
+      expect(await cards(connection)).toMatchObject({ cards: [] });
+      expect(await history(connection)).toMatchObject({
+        messages: [expect.objectContaining({ role: "participant" })],
+      });
+      const retained = await audit(session);
+      expect(JSON.parse(retained[0]?.usageJson ?? "null")).toMatchObject({
+        inputTokens: 100,
+        outputTokens: 20,
+      });
+      await expectDiagnostic(start, stage, [
+        privateValue,
+        session.personId,
+        session.sessionReference,
+      ]);
+      connection.socket.close();
+    }
+  );
+  it.each(["correct", "stale", "rejected", "duplicate"] as const)(
     "handles a model card revision with a %s target",
     async (target) => {
       modelCalls = [];
@@ -2082,18 +2203,31 @@ describe("native adaptive assistant attempts through the production model adapte
           response({
             ...output,
             message: "I have corrected the proposal for your review.",
-            proposals: [
-              {
+            proposals: Array.from(
+              { length: target === "duplicate" ? 2 : 1 },
+              () => ({
                 _tag: "ReviseProposedProfileCard",
                 cardId: card.id,
                 change: correctedChange,
                 expectedRevision:
                   target === "stale" ? card.revision + 1 : card.revision,
-              },
-            ],
+              })
+            ),
           })
         );
+      const diagnosticStart = nativeLogs.length;
       await successful(await queue(session, connection, version));
+      if (target === "correct") {
+        expect(diagnosticsSince(diagnosticStart)).toHaveLength(0);
+      } else {
+        await expectDiagnostic(
+          diagnosticStart,
+          target === "duplicate"
+            ? "proposal_duplicate"
+            : "proposal_revision_target",
+          [card.id, session.personId]
+        );
+      }
       const retained = await cards(connection);
       if (retained.type !== "CardsRead") {
         throw new Error("Expected private cards");
@@ -2189,6 +2323,7 @@ describe("native adaptive assistant attempts through the production model adapte
     "ordinary-safety-removal",
     "reviewed-safety-reduction",
     "ordinary-strong-dislike",
+    "redundant-confirmation",
   ] as const)("matches canonical profile policy for %s", async (scenario) => {
     modelCalls = [];
     const session = await binding();
@@ -2220,14 +2355,23 @@ describe("native adaptive assistant attempts through the production model adapte
       updatedInVersion: 1,
       value,
     };
-    const change =
-      scenario === "reviewed-safety-reduction"
-        ? {
-            _tag: "ConfirmHardConstraintReduction",
-            factId: fact.id,
-            replacement: null,
-          }
-        : { _tag: "RemoveOrdinaryProfileFact", factId: fact.id };
+    const changes = {
+      "ordinary-safety-removal": {
+        _tag: "RemoveOrdinaryProfileFact",
+        factId: fact.id,
+      },
+      "ordinary-strong-dislike": {
+        _tag: "RemoveOrdinaryProfileFact",
+        factId: fact.id,
+      },
+      "redundant-confirmation": { _tag: "ConfirmProfileFact", factId: fact.id },
+      "reviewed-safety-reduction": {
+        _tag: "ConfirmHardConstraintReduction",
+        factId: fact.id,
+        replacement: null,
+      },
+    };
+    const change = changes[scenario];
     modelResponse = () =>
       Promise.resolve(
         response({
@@ -2235,11 +2379,25 @@ describe("native adaptive assistant attempts through the production model adapte
           proposals: [{ _tag: "ProposeProfileCard", change }],
         })
       );
+    const diagnosticStart = nativeLogs.length;
     await successful({
       ...attempt,
       profile: { ...attempt.profile, facts: [fact], version: 1 },
     });
-    const rejected = scenario === "ordinary-safety-removal";
+    const rejected =
+      scenario === "ordinary-safety-removal" ||
+      scenario === "redundant-confirmation";
+    if (rejected) {
+      await expectDiagnostic(
+        diagnosticStart,
+        scenario === "redundant-confirmation"
+          ? "proposal_already_confirmed"
+          : "proposal_fact_kind",
+        [fact.id, session.personId]
+      );
+    } else {
+      expect(diagnosticsSince(diagnosticStart)).toHaveLength(0);
+    }
     expect(await readTurn(connection)).toMatchObject({
       turn: {
         failure: rejected ? "invalid_output" : null,

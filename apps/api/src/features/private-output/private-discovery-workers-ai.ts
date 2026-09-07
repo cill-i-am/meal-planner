@@ -12,6 +12,7 @@ import {
   PrivateDiscoveryOutput,
 } from "./private-discovery-model.js";
 import type {
+  PrivateDiscoveryInvalidOutputStage,
   PrivateDiscoveryModel,
   PrivateDiscoveryProvenance,
   PrivateDiscoveryUsage,
@@ -50,8 +51,9 @@ export interface PrivateDiscoveryModelEnvironment {
 const failure = (
   reason: PrivateDiscoveryFailure["reason"],
   usage: PrivateDiscoveryUsage | null = null,
-  provenance: PrivateDiscoveryProvenance | null = null
-) => new PrivateDiscoveryFailure({ provenance, reason, usage });
+  provenance: PrivateDiscoveryProvenance | null = null,
+  stage: PrivateDiscoveryInvalidOutputStage | null = null
+) => new PrivateDiscoveryFailure({ provenance, reason, stage, usage });
 const TokenCount = Schema.Int.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(0))
 );
@@ -123,7 +125,7 @@ const readBoundedResponse = async (
   signal: AbortSignal
 ) => {
   if (response.body === null) {
-    throw failure("invalid_output");
+    throw failure("invalid_output", null, null, "response_body_missing");
   }
   const reader = response.body.getReader();
   const cancel = () => {
@@ -146,7 +148,7 @@ const readBoundedResponse = async (
       }
       length += part.value.byteLength;
       if (length > PRIVATE_DISCOVERY_RESPONSE_BYTES) {
-        throw failure("invalid_output");
+        throw failure("invalid_output", null, null, "response_body_limit");
       }
       text += decoder.decode(part.value, { stream: true });
     }
@@ -178,8 +180,9 @@ export const makePrivateDiscoveryModel = (
       };
       const configuredFailure = (
         reason: PrivateDiscoveryFailure["reason"],
-        usage: PrivateDiscoveryUsage | null = null
-      ) => failure(reason, usage, provenance);
+        usage: PrivateDiscoveryUsage | null = null,
+        stage: PrivateDiscoveryInvalidOutputStage | null = null
+      ) => failure(reason, usage, provenance, stage);
       const context = yield* Schema.decodeUnknownEffect(
         PrivateDiscoveryContext,
         { onExcessProperty: "error" }
@@ -228,17 +231,31 @@ export const makePrivateDiscoveryModel = (
             }
             try {
               return await readBoundedResponse(response, transportSignal);
-            } catch {
+            } catch (error) {
+              if (transportSignal.aborted) {
+                throw configuredFailure("outcome_unknown");
+              }
               throw configuredFailure(
-                transportSignal.aborted ? "outcome_unknown" : "invalid_output"
+                "invalid_output",
+                null,
+                error instanceof PrivateDiscoveryFailure && error.stage !== null
+                  ? error.stage
+                  : "response_body_read"
               );
             }
           },
         });
-        const completion = yield* Schema.decodeUnknownEffect(
-          Schema.fromJsonString(Completion)
-        )(encoded).pipe(
-          Effect.mapError(() => configuredFailure("invalid_output"))
+        const envelope = yield* Effect.try({
+          catch: () =>
+            configuredFailure("invalid_output", null, "response_json"),
+          try: (): unknown => JSON.parse(encoded),
+        });
+        const completion = yield* Schema.decodeUnknownEffect(Completion)(
+          envelope
+        ).pipe(
+          Effect.mapError(() =>
+            configuredFailure("invalid_output", null, "response_envelope")
+          )
         );
         const usage: PrivateDiscoveryUsage =
           completion.usage === undefined
@@ -255,7 +272,9 @@ export const makePrivateDiscoveryModel = (
               };
         const [choice] = completion.choices;
         if (choice === undefined) {
-          return yield* Effect.fail(configuredFailure("invalid_output", usage));
+          return yield* Effect.fail(
+            configuredFailure("invalid_output", usage, "response_envelope")
+          );
         }
         if (
           choice.message.refusal !== undefined &&
@@ -263,17 +282,29 @@ export const makePrivateDiscoveryModel = (
         ) {
           return yield* Effect.fail(configuredFailure("refused", usage));
         }
-        if (
-          choice.finish_reason !== "stop" ||
-          choice.message.content === null
-        ) {
-          return yield* Effect.fail(configuredFailure("invalid_output", usage));
+        if (choice.finish_reason !== "stop") {
+          return yield* Effect.fail(
+            configuredFailure("invalid_output", usage, "incomplete_completion")
+          );
         }
+        const { content } = choice.message;
+        if (content === null) {
+          return yield* Effect.fail(
+            configuredFailure("invalid_output", usage, "missing_content")
+          );
+        }
+        const decoded = yield* Effect.try({
+          catch: () =>
+            configuredFailure("invalid_output", usage, "output_json"),
+          try: (): unknown => JSON.parse(content),
+        });
         const output = yield* Schema.decodeUnknownEffect(
-          Schema.fromJsonString(PrivateDiscoveryOutput),
+          PrivateDiscoveryOutput,
           { onExcessProperty: "error" }
-        )(choice.message.content).pipe(
-          Effect.mapError(() => configuredFailure("invalid_output", usage))
+        )(decoded).pipe(
+          Effect.mapError(() =>
+            configuredFailure("invalid_output", usage, "output_schema")
+          )
         );
         return {
           output,

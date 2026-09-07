@@ -256,10 +256,105 @@ describe("private discovery Workers AI boundary", () => {
     expect(error).toMatchObject({
       provenance: { model: config.model },
       reason: "invalid_output",
+      stage: "output_schema",
       usage: { inputTokens: 100, outputTokens: 50 },
     });
     expect(test.run).toHaveBeenCalledOnce();
   });
+
+  it.each([
+    "response_body_missing",
+    "response_body_read",
+    "response_json",
+    "response_envelope",
+    "incomplete_completion",
+    "missing_content",
+    "output_json",
+    "output_schema",
+  ] as const)(
+    "classifies %s without retaining private error data",
+    async (stage) => {
+      const privateValue = `synthetic-private-${crypto.randomUUID()}`;
+      const payload = completion();
+      const [choice] = payload.choices;
+      if (choice === undefined) {
+        throw new Error("Expected synthetic completion choice");
+      }
+      const respond = (): Response => {
+        switch (stage) {
+          case "response_body_missing": {
+            return new Response(null);
+          }
+          case "response_body_read": {
+            return new Response(
+              new ReadableStream({
+                start(controller) {
+                  controller.error(new Error(privateValue));
+                },
+              })
+            );
+          }
+          case "response_json": {
+            return new Response(`{${privateValue}`);
+          }
+          case "response_envelope": {
+            return Response.json({ ...payload, choices: privateValue });
+          }
+          case "incomplete_completion": {
+            return Response.json({
+              ...payload,
+              choices: [{ ...choice, finish_reason: privateValue }],
+            });
+          }
+          case "missing_content": {
+            return Response.json({
+              ...payload,
+              choices: [
+                { ...choice, message: { ...choice.message, content: null } },
+              ],
+            });
+          }
+          case "output_json": {
+            return Response.json({
+              ...payload,
+              choices: [
+                {
+                  ...choice,
+                  message: { ...choice.message, content: `{${privateValue}` },
+                },
+              ],
+            });
+          }
+          case "output_schema": {
+            return Response.json(
+              completion({
+                ...output,
+                message: privateValue,
+                proposals: [{ _tag: privateValue }],
+              })
+            );
+          }
+          default: {
+            throw new Error("Unexpected synthetic diagnostic stage");
+          }
+        }
+      };
+      const test = fixture(() => Promise.resolve(respond()));
+      const input = {
+        ...test.input,
+        context: { ...test.input.context, summary: privateValue },
+      };
+      const error = await Effect.runPromise(
+        Effect.flip(test.model.generate(input))
+      );
+      expect(error).toMatchObject({ reason: "invalid_output", stage });
+      expect(error).not.toHaveProperty("cause");
+      expect(JSON.stringify(error)).not.toContain(privateValue);
+      expect(error.message).not.toContain(privateValue);
+      expect(error.stack).not.toContain(privateValue);
+      expect(test.run).toHaveBeenCalledOnce();
+    }
+  );
 
   it("retains known usage on a provider refusal", async () => {
     const payload = completion();
@@ -296,7 +391,10 @@ describe("private discovery Workers AI boundary", () => {
     const error = await Effect.runPromise(
       Effect.flip(test.model.generate(test.input))
     );
-    expect(error.reason).toBe("invalid_output");
+    expect(error).toMatchObject({
+      reason: "invalid_output",
+      stage: "response_envelope",
+    });
     expect(test.run).toHaveBeenCalledOnce();
   });
 
@@ -309,7 +407,10 @@ describe("private discovery Workers AI boundary", () => {
     const error = await Effect.runPromise(
       Effect.flip(test.model.generate(test.input))
     );
-    expect(error.reason).toBe("invalid_output");
+    expect(error).toMatchObject({
+      reason: "invalid_output",
+      stage: "response_body_limit",
+    });
     expect(test.run).toHaveBeenCalledOnce();
   });
 

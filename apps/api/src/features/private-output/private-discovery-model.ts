@@ -116,6 +116,24 @@ export const PrivateDiscoveryResult = Schema.Struct({
 });
 export type PrivateDiscoveryResult = typeof PrivateDiscoveryResult.Type;
 
+export type PrivateDiscoveryInvalidOutputStage =
+  | "context_preparation"
+  | "response_body_missing"
+  | "response_body_limit"
+  | "response_body_read"
+  | "response_json"
+  | "response_envelope"
+  | "incomplete_completion"
+  | "missing_content"
+  | "output_json"
+  | "output_schema"
+  | "proposal_unknown_fact"
+  | "proposal_revision_target"
+  | "proposal_duplicate"
+  | "proposal_fact_kind"
+  | "proposal_already_confirmed"
+  | "proposal_review";
+
 export class PrivateDiscoveryFailure extends Data.TaggedError(
   "PrivateDiscoveryFailure"
 )<{
@@ -126,6 +144,7 @@ export class PrivateDiscoveryFailure extends Data.TaggedError(
     | "refused"
     | "context_limit"
     | "outcome_unknown";
+  readonly stage: PrivateDiscoveryInvalidOutputStage | null;
   readonly usage: PrivateDiscoveryUsage | null;
   readonly provenance: PrivateDiscoveryProvenance | null;
 }> {}

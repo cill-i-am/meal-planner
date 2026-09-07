@@ -20,6 +20,7 @@ import {
   PrivateDiscoveryUsage,
 } from "./private-discovery-model.js";
 import type {
+  PrivateDiscoveryInvalidOutputStage,
   PrivateDiscoveryModel,
   PrivateDiscoveryProfile,
   PrivateDiscoveryResult,
@@ -56,10 +57,11 @@ const publicTurn = (turn: StoredTurn): AssistantTurn =>
     sourceMessageId: turn.sourceMessageId,
     status: turn.status,
   });
-const invalidOutput = () =>
+const invalidOutput = (stage: PrivateDiscoveryInvalidOutputStage) =>
   new PrivateDiscoveryFailure({
     provenance: null,
     reason: "invalid_output",
+    stage,
     usage: null,
   });
 const factKey = (value: ProfileFactValue): string => {
@@ -83,7 +85,7 @@ const reviewProposal = (
     if (
       profile.facts.some((fact) => factKey(fact.value) === factKey(change.fact))
     ) {
-      throw invalidOutput();
+      throw invalidOutput("proposal_duplicate");
     }
     return {
       change,
@@ -93,7 +95,7 @@ const reviewProposal = (
   }
   const before = profile.facts.find((fact) => fact.id === change.factId);
   if (before === undefined) {
-    throw invalidOutput();
+    throw invalidOutput("proposal_unknown_fact");
   }
   switch (change._tag) {
     case "ConfirmProfileFact": {
@@ -101,25 +103,25 @@ const reviewProposal = (
         before.standing._tag === "confirmed" &&
         before.standing.basis === "self"
       ) {
-        throw invalidOutput();
+        throw invalidOutput("proposal_already_confirmed");
       }
       break;
     }
     case "ReplaceOrdinaryProfileFact":
     case "RemoveOrdinaryProfileFact": {
       if (before.value._tag !== "FoodPreference") {
-        throw invalidOutput();
+        throw invalidOutput("proposal_fact_kind");
       }
       break;
     }
     case "ConfirmHardConstraintReduction": {
       if (before.value._tag === "FoodPreference") {
-        throw invalidOutput();
+        throw invalidOutput("proposal_fact_kind");
       }
       break;
     }
     default: {
-      throw invalidOutput();
+      throw invalidOutput("proposal_review");
     }
   }
   return {
@@ -152,10 +154,12 @@ const reviewProposals = (
         observed?.status !== "proposed" ||
         observed.revision !== action.expectedRevision ||
         current?.status !== "proposed" ||
-        current.revision !== action.expectedRevision ||
-        revised.has(action.cardId)
+        current.revision !== action.expectedRevision
       ) {
-        throw invalidOutput();
+        throw invalidOutput("proposal_revision_target");
+      }
+      if (revised.has(action.cardId)) {
+        throw invalidOutput("proposal_duplicate");
       }
       revised.add(action.cardId);
       card = current;
@@ -163,7 +167,7 @@ const reviewProposals = (
     }
     const key = proposalKey(action.change);
     if (seen.has(key)) {
-      throw invalidOutput();
+      throw invalidOutput("proposal_duplicate");
     }
     seen.add(key);
     return { card, proposal: reviewProposal(action.change, context.profile) };
@@ -330,6 +334,7 @@ export class PrivateAssistantTurns {
       throw new PrivateDiscoveryFailure({
         provenance: null,
         reason: "context_limit",
+        stage: null,
         usage: null,
       });
     }
@@ -395,27 +400,34 @@ export class PrivateAssistantTurns {
     turn: StoredTurn,
     expectedStatus: "queued" | "running",
     failure: PrivateDiscoveryFailure
-  ): void {
-    const row = this.#database.transaction(() => {
-      if (!this.#eligible(turn, expectedStatus)) {
-        return;
+  ): Effect.Effect<void> {
+    return Effect.gen({ self: this }, function* recordPrivateFailure() {
+      const row = this.#database.transaction(() => {
+        if (!this.#eligible(turn, expectedStatus)) {
+          return;
+        }
+        this.#recordMeasurements(turn, failure);
+        return this.#database
+          .update(privateAssistantTurns)
+          .set({
+            completedAt: Date.now(),
+            failure: failure.reason,
+            status:
+              failure.reason === "outcome_unknown" ? "interrupted" : "failed",
+          })
+          .where(eq(privateAssistantTurns.id, turn.id))
+          .returning()
+          .get();
+      });
+      if (row !== undefined) {
+        this.#notify(row);
+        if (failure.reason === "invalid_output" && failure.stage !== null) {
+          yield* Effect.logWarning("private_discovery.invalid_output").pipe(
+            Effect.annotateLogs({ stage: failure.stage })
+          );
+        }
       }
-      this.#recordMeasurements(turn, failure);
-      return this.#database
-        .update(privateAssistantTurns)
-        .set({
-          completedAt: Date.now(),
-          failure: failure.reason,
-          status:
-            failure.reason === "outcome_unknown" ? "interrupted" : "failed",
-        })
-        .where(eq(privateAssistantTurns.id, turn.id))
-        .returning()
-        .get();
     });
-    if (row !== undefined) {
-      this.#notify(row);
-    }
   }
   #succeed(
     turn: StoredTurn,
@@ -517,15 +529,19 @@ export class PrivateAssistantTurns {
       const prepared = yield* Effect.exit(
         Effect.try({
           catch: (error) =>
-            error instanceof PrivateDiscoveryFailure ? error : invalidOutput(),
+            error instanceof PrivateDiscoveryFailure
+              ? error
+              : invalidOutput("context_preparation"),
           try: () => this.#context(input.profile),
         })
       );
       if (Exit.isFailure(prepared)) {
-        this.#fail(
+        yield* this.#fail(
           turn,
           "queued",
-          Option.getOrElse(Cause.findErrorOption(prepared.cause), invalidOutput)
+          Option.getOrElse(Cause.findErrorOption(prepared.cause), () =>
+            invalidOutput("context_preparation")
+          )
         );
         return;
       }
@@ -566,7 +582,7 @@ export class PrivateAssistantTurns {
       // A duplicate continuation that lost dispatch may never settle the winner.
       if (!claimed) {
         if (Exit.isFailure(outcome)) {
-          this.#fail(
+          yield* this.#fail(
             turn,
             "queued",
             Option.getOrElse(
@@ -575,6 +591,7 @@ export class PrivateAssistantTurns {
                 new PrivateDiscoveryFailure({
                   provenance: null,
                   reason: "provider_unavailable",
+                  stage: null,
                   usage: null,
                 })
             )
@@ -597,7 +614,7 @@ export class PrivateAssistantTurns {
         return;
       }
       if (Exit.isFailure(outcome)) {
-        this.#fail(
+        yield* this.#fail(
           turn,
           "running",
           Option.getOrElse(
@@ -606,6 +623,7 @@ export class PrivateAssistantTurns {
               new PrivateDiscoveryFailure({
                 provenance: null,
                 reason: "outcome_unknown",
+                stage: null,
                 usage: null,
               })
           )
@@ -619,6 +637,7 @@ export class PrivateAssistantTurns {
               return new PrivateDiscoveryFailure({
                 provenance: outcome.value.provenance,
                 reason: error.reason,
+                stage: error.stage,
                 usage: outcome.value.usage,
               });
             }
@@ -628,7 +647,7 @@ export class PrivateAssistantTurns {
         })
       );
       if (Exit.isFailure(persisted)) {
-        this.#fail(
+        yield* this.#fail(
           turn,
           "running",
           Option.getOrElse(
@@ -637,6 +656,7 @@ export class PrivateAssistantTurns {
               new PrivateDiscoveryFailure({
                 provenance: outcome.value.provenance,
                 reason: "outcome_unknown",
+                stage: null,
                 usage: outcome.value.usage,
               })
           )
