@@ -65,9 +65,14 @@ preference, routine discovery, and live A-to-B trajectory remain unverified, and
 the other seven families had not run at review. The
 [retry evidence](../../../../evals/private-discovery/gpt-schema-prompt-retry.json)
 distinguishes readiness, failed native quality, and incomplete work. V9 passed
-without reproducing the output failure. Prompt v3 is implemented and locally
-verified; its live trial awaits participant allowance. No soft judge or human
-scores were assigned; no configuration or baseline is accepted.
+without reproducing the output failure. Prompt v3 subsequently failed the
+required same-card correction and routine discovery in its first live family.
+Actual confirmation and A completion preceded fresh B state with the updated
+profile, but B's first generation failed with `invalid_output`. Prompt v4
+clarifies revision routing and passes local checks; its live quality remains
+untested.
+No soft judge or human scores were assigned; no configuration or baseline is
+accepted.
 Prior scripted proofs establish runtime enforcement only.
 Delivery follows the existing
 [execution policy](../../../agents/execution-policy.md).

@@ -350,21 +350,60 @@ operation or retained ledger lock. This did not complete A, which remains open
 at session version 13 and canonical profile version 1 in preserved storage.
 Main-runtime remote disposal remains unverified.
 
-Prompt v3 now makes fact selection explicit, prioritizes proposed-card
-corrections, and honors declined questions while preserving consequential
-household-context discovery. It leaves the model, schema, caps, and authority
-boundaries unchanged. Focused adapter tests (19), native context tests (5),
-lint, formatting, and API type checking pass. Its prompt adds 752 UTF-8 bytes;
-the existing serialized payload guard remains enforced. The v3 live trial is
-pending its participant allowance, with no live v3 quality result. Local checks
-do not repair or supersede the recorded v2 family failure.
+Prompt v3 made fact selection explicit, prioritized proposed-card corrections,
+and honored declined questions while preserving consequential household-context
+discovery. Its local checks passed, but its subsequent first live family failed
+the required same-card correction: the model added separate refined-preference
+cards and left the original proposed card at revision 0. This outcome remains
+recorded against source `655392049bdf6c135d30af2d28779e7c150d7702`.
+
+V3 retained four accepted A outputs. It improved known-absence handling, proposing
+`NoKnownHardConstraints` only after the explicit safety answer, but did not
+discover the required routine; that withheld answer was never disclosed. Manual
+rejection of the broad card and explicit confirmation of the refined card
+advanced the canonical profile from version 0 to 1. Actual A completion and a
+subsequent mutation rejection established its observed read-only behavior. Fresh
+B began with empty history and cards and read the actual version-1 profile. Its
+first generation failed with `invalid_output`, leaving B open and that profile
+unchanged. No B removal was proposed or confirmed. The exact failure stage and
+provider usage remain unavailable; the gateway list did not show these five
+calls. Application HTTP 204 alone is not successful model-output validation.
+
+The retained A outputs passed closed-change review; observed canonical effects
+supported private-until-confirmed and explicit-confirmation checks. Authority
+and version checks cover exercised operations only, with no stale-conflict
+challenge. Safety remained intact in this empty-constraint fixture, without a
+reduction challenge. Supported-material-fact and correction-review assertions
+failed. Inspected deferred-capability claims passed scope-truthfulness review,
+with ambiguous profile-saving wording remaining a clarity concern. Privacy and
+authorization remain unverified from these logs alone; clean B state is not raw
+context or cross-adult transport proof. The reviewer inspected actual logs; the
+root separately verified artifact hashes and preserved journal prefixes. No
+global hard-assertion pass, soft judge, human score, or accepted baseline follows.
+
+The cumulative reservation now covers 25 provider attempts and USD 1.187584;
+this is not invoice or actual spend. Higher-cap calls used 19 of 65 and judge
+calls used 0 of 8. Participant intents reached 10 of 13, with the ledger in B
+and A resumption prohibited. All five known local processes were verified
+absent; actor join exit status was unavailable and the web child required
+forced termination. No actor operation or ledger lock remains pending.
+Main-runtime remote disposal remains unverified.
+
+Prompt v4 explicitly treats a correction, refinement, or narrowing as a revision
+of the existing proposed card, even without directly contradictory wording. It
+maps the input card's `id` to `cardId` and `revision` to `expectedRevision`, and
+requires the complete corrected nested change. The model, schema, caps, and
+authority boundaries remain unchanged. Existing adapter tests (19), native
+context and revision tests (5), lint, formatting, and API type checking pass.
+Live v4 quality remains untested. Local checks do not repair or supersede either
+recorded family failure.
 
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
 remain in progress and are not ready to merge. The original stopped trials and
-the failed prompt-v2 family remain recorded. Candidate comparison, the corrected
-preference and live A-to-B spike, and actual human calibration across all eight
-fixtures remain incomplete. The canonical evidence and calibration templates
-remain unfilled; readiness and checkpoint records do not replace them. No
-application deployment occurred.
+the failed prompt-v2 and prompt-v3 families remain recorded. Candidate comparison,
+model-produced same-card correction, successful B removal, and actual human
+calibration across all eight fixtures remain incomplete. The canonical evidence
+and calibration templates remain unfilled; readiness and checkpoint records do
+not replace them. No application deployment occurred.

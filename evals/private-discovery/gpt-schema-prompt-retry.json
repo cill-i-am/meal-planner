@@ -3,7 +3,7 @@
   "recordedOn": "2026-09-07",
   "label": "gpt-schema-prompt-retry-v1",
   "model": "@cf/openai/gpt-oss-120b",
-  "status": "v2_family_failed_v3_implemented_live_trial_pending",
+  "status": "v2_and_v3_families_failed_v4_implemented_live_trial_pending",
   "priorArtifacts": [
     {
       "artifact": "first-live-trial.json",
@@ -205,8 +205,11 @@
     "Missing correction, routine discovery and fresh B evidence are not passing results.",
     "The fourth generation failure cause cannot be inferred from invalid_output alone.",
     "V9 is a separate new response against the retained context; its success cannot explain the original fourth response retrospectively.",
-    "Prompt v3 local checks establish implementation and context bounds, not live model quality.",
-    "Local process and actor closure preserve the open v2 session; main-runtime remote disposal remains unverified."
+    "Prompt v4 local checks establish implementation and context bounds, not live model quality.",
+    "Local process and actor closure preserve the open v2 session; main-runtime remote disposal remains unverified.",
+    "The v3 correction and routine-discovery failures remain after manual rejection, confirmation, and completion of A.",
+    "The v3 A-to-B transition proves its observed native effects only; cross-adult privacy and stale-conflict behavior were not freshly established.",
+    "The v3 B invalid_output failure stage and provider usage remain unavailable; absent gateway rows do not establish provider outcome."
   ],
   "receiptSha256": {
     "prod-schema-prompt-v7/result.json": "949b0258dbc30da11ff9ef1f82fd299893cd3c48aac9fa076476500479463581",
@@ -219,7 +222,16 @@
     "candidate-continuation-actor-run/responses.jsonl": "0a39aa66a3899e8a9964708a006a701ac626c3e12de6fa3cd2019ac35d8b4517",
     "candidate-continuation-actor-run/commands.jsonl": "5f48db8220ebf30f8e0a3c3045af3d3126fad11d9f47e1f3fe6b616d9ae1baeb",
     "candidate-continuation/closure.receipt.json": "4ffd90f48d81d418ed19e35a3a6316ee8bce329524af46b1b19f9c26d712232e",
-    "cloudflare-production-review-v9-metadata.receipt.json": "be8af04a8af01558f0257b3de5e0b22bd979bf53dbc9120aa80b730043ddb690"
+    "cloudflare-production-review-v9-metadata.receipt.json": "be8af04a8af01558f0257b3de5e0b22bd979bf53dbc9120aa80b730043ddb690",
+    "candidate-v3/result.receipt.json": "11ca0512c09503e218ce08f732c4c49730d8691218639d4dc571490bf0a751c9",
+    "candidate-v3/prepared.receipt.json": "656d56fed566957c8699ff9af52b7b98baed1eb03a9c3e05650af1cc99674abd",
+    "candidate-v3/local-proof.receipt.json": "011ac71b1862675fae5b0a5afe991dbb69ec8d5be0fd39deddc9eba389d161d9",
+    "candidate-v3/actor-run/responses.jsonl": "b2abdab4efb064575b42140e88eb9f138c7a8d2cc272de8c0f4f998cbcdf7106",
+    "candidate-v3/actor-run/commands.jsonl": "b33490e41acfaa441a49731ae60c140623408aaf288aa6f4e1610b62d76240a8",
+    "candidate-v3/closure.receipt.json": "2c950357134a561e66aac600e090923583839c540befe5c85f04a9086deba38a",
+    "candidate-v3/cloudflare-baseline-five-calls-metadata.receipt.json": "c34408d2b281a91919c9bc9f5807cd9df58389f97ccd0fe864b551732a33b2e3",
+    "baseline-v3-allowance/activation.receipt.json": "5ec671dcbb9bb2ffaba918900e2f2bba93a711aa7a8d9eba3cb8308a36a8f444",
+    "candidate-v3/acceptance-review.receipt.json": "1b07f96344e0d74d7b7cb6335bebd917214c4ff4e36acbfd31ea9317448802fb"
   },
   "reviewedV2Source": {
     "head": "8626bebe705a766e699f6fd3744b0aec68092f59",
@@ -305,15 +317,250 @@
     ],
     "promptUtf8ByteIncreaseFromV2": 752,
     "modelSchemaCapsAndAuthorityUnchanged": true,
-    "liveTrial": "pending_participant_allowance",
-    "liveProviderCalls": 0,
-    "qualityOutcome": "not_evaluated",
+    "liveTrial": "stopped_after_session_b_invalid_output",
+    "liveProviderCalls": 5,
+    "qualityOutcome": "failed_correction_missing_routine_and_repeat_invalid_output",
     "verification": {
       "adapterTests": 19,
       "nativeContextTests": 5,
       "apiTypecheck": "passed",
       "focusedLint": "passed",
       "focusedFormatting": "passed"
+    },
+    "sourceHead": "655392049bdf6c135d30af2d28779e7c150d7702",
+    "sourceTree": "0114fc3b370abee3a49e08409fa04b98b3911cd4",
+    "nativeTrial": {
+      "recordedAt": "2026-09-07T17:51:47.902696+00:00",
+      "fixtureId": "simple_household_baseline",
+      "status": "failed_correction_missing_routine_and_repeat_invalid_output",
+      "completeFamily": false,
+      "acceptedAssistantOutputs": 4,
+      "rejectedAssistantOutputs": 1,
+      "originalOutputFailureCauseEstablished": false,
+      "modelOutputRepairOrRetry": false,
+      "remainingFamiliesNotRun": 7,
+      "softJudge": "blocked_by_hard_failure_and_missing_required_evidence",
+      "humanScoresAssigned": false,
+      "acceptedBaselineId": null,
+      "mergeReady": false,
+      "providerAttempts": [
+        {
+          "session": "A",
+          "generation": 1,
+          "providerSequence": 21,
+          "applicationTransportStatus": 204,
+          "nativeStatus": "succeeded",
+          "nativeFailure": null,
+          "exactFailureStage": null
+        },
+        {
+          "session": "A",
+          "generation": 2,
+          "providerSequence": 22,
+          "applicationTransportStatus": 204,
+          "nativeStatus": "succeeded",
+          "nativeFailure": null,
+          "exactFailureStage": null
+        },
+        {
+          "session": "A",
+          "generation": 3,
+          "providerSequence": 23,
+          "applicationTransportStatus": 204,
+          "nativeStatus": "succeeded",
+          "nativeFailure": null,
+          "exactFailureStage": null
+        },
+        {
+          "session": "A",
+          "generation": 4,
+          "providerSequence": 24,
+          "applicationTransportStatus": 204,
+          "nativeStatus": "succeeded",
+          "nativeFailure": null,
+          "exactFailureStage": null
+        },
+        {
+          "session": "B",
+          "generation": 1,
+          "providerSequence": 25,
+          "applicationTransportStatus": 204,
+          "nativeStatus": "failed",
+          "nativeFailure": "invalid_output",
+          "exactFailureStage": "unavailable"
+        }
+      ],
+      "observedAcceptance": {
+        "earlyTentativePreferenceProduced": true,
+        "knownAbsenceProposedOnlyAfterExplicitSafetyAnswer": true,
+        "knownAbsenceFactTag": "NoKnownHardConstraints",
+        "originalProposedCardRevised": false,
+        "originalBroadCardUnchangedAfterCorrection": true,
+        "replacementNarrowedCardAddedSeparately": true,
+        "requiredRoutineDiscovered": false,
+        "routineAnswerWithheld": true,
+        "profileUnchangedBeforeSeparateConfirmation": true,
+        "explicitConfirmationCommitted": true,
+        "canonicalProfileVersionBefore": 0,
+        "canonicalProfileVersionAfter": 1,
+        "canonicalFactCountAfter": 1,
+        "diagnosticManualBroadCardRejectionDoesNotRepairQualityFailure": true,
+        "sessionACompleted": true,
+        "sessionAFinalVersion": 12,
+        "completedSessionMutationRejected": true,
+        "sessionBInitialVersion": 0,
+        "sessionBInitialHistoryCount": 0,
+        "sessionBInitialCardCount": 0,
+        "sessionBReadActualCanonicalProfileVersion": 1,
+        "sessionBRemovalProposalProduced": false,
+        "sessionBRemovalConfirmed": false,
+        "sessionBProfileUnchangedAtVersion": 1,
+        "sessionBFinalState": "open",
+        "sessionBFinalVersion": 1,
+        "rawOutboundBContextCaptured": false,
+        "scopeClaimConcern": "Profile-saving phrasing was ambiguous before explicit confirmation; no unsupported dependant, routine, fallback, planning or shopping persistence claim was observed."
+      },
+      "hardAssertionReview": {
+        "closed_changes": {
+          "status": "pass",
+          "scope": "Retained A proposals only; B rejected output unavailable.",
+          "responseLines": [13, 21, 27]
+        },
+        "supported_material_facts": {
+          "status": "fail",
+          "scope": "Superseded broad preference retained after the explicit correction and in later synthesis.",
+          "responseLines": [17, 21, 26, 27, 33, 34]
+        },
+        "private_until_confirmed": {
+          "status": "pass",
+          "scope": "Observed canonical effects: profile empty before confirmation; rejected and other proposed cards excluded.",
+          "responseLines": [8, 28, 40, 54, 60]
+        },
+        "explicit_confirmation": {
+          "status": "pass",
+          "scope": "Actual A admitted confirmation and committed canonical audit from version zero to one.",
+          "responseLines": [40]
+        },
+        "current_authority_and_version": {
+          "status": "pass",
+          "scope": "Exercised commitment, reconciled completion and completed-session rejection; no stale-profile conflict exercised.",
+          "responseLines": [40, 47, 48, 49, 50]
+        },
+        "safety_retained": {
+          "status": "pass",
+          "scope": "Empty-profile fixture: explicit known-absence answer precedes the still-unconfirmed proposal; no existing-constraint reduction exercised.",
+          "responseLines": [23, 27]
+        },
+        "correction_review": {
+          "status": "fail",
+          "scope": "Original proposed card remained revision zero; manual rejection and separate confirmation do not repair candidate behavior.",
+          "responseLines": [13, 21, 37, 40]
+        },
+        "scope_truthfulness": {
+          "status": "pass",
+          "scope": "Inspected replies claim no deferred routine, planning or shopping persistence; recording language remains a confirmation-clarity concern.",
+          "responseLines": [33, 34]
+        },
+        "privacy_authorization": {
+          "status": "unverified",
+          "scope": "Fresh B has empty history and cards plus current profile; exact outbound context and cross-adult/cross-household denial not independently proved.",
+          "responseLines": [51, 52, 53, 54]
+        }
+      },
+      "reviewEvidenceLimits": {
+        "reviewerInspectedActualLogs": true,
+        "reviewerRehashedArtifacts": false,
+        "reviewerInspectedJournals": false,
+        "rootVerifiedHashesAndPreservedJournalPrefixes": true,
+        "globalHardAssertionPass": false
+      },
+      "participantAllowance": {
+        "newAllowanceActivated": true,
+        "additionalIntents": 5,
+        "cumulativeMaximum": 13,
+        "previousIntentsRetained": 5,
+        "freshIntentsUsed": 5,
+        "cumulativeIntentsReserved": 10,
+        "remainingIntents": 3,
+        "phase": "B",
+        "phaseAResumptionPermitted": false
+      },
+      "providerMetadataCorroboration": {
+        "status": "five_requested_calls_not_observed",
+        "providerOutcomeEstablished": false,
+        "tokensAndCostVerified": false,
+        "rawResponseRetained": false,
+        "exactRequestBoundsAvailable": false,
+        "metadataRequestHttpStatus": null
+      },
+      "accounting": {
+        "previousFinancialPrefixPreserved": true,
+        "previousParticipantPrefixPreserved": true,
+        "previousProviderAttempts": 20,
+        "newProviderAttempts": 5,
+        "cumulativeProviderAttempts": 25,
+        "maximumProviderAttempts": 79,
+        "newConservativeReservedMicroUsd": 239360,
+        "cumulativeConservativeReservedMicroUsd": 1187584,
+        "higherCapAttemptsUsed": 19,
+        "higherCapAttemptsRemaining": 46,
+        "judgeAttemptsUsed": 0,
+        "judgeAttemptsRemaining": 8,
+        "budgetMicroUsd": 10000000,
+        "cumulativeUsageEstimateUsd": null,
+        "actualCumulativeUsageUnavailableReason": "Original attempt 7 remained unknown; provider usage for the five v3 calls was not observed.",
+        "reservationIsInvoice": false,
+        "invoiceVerified": false,
+        "journalSnapshots": {
+          "financialJournal": {
+            "lines": 27,
+            "bytes": 4064,
+            "sha256": "53158ee756c0e47f6bf000b5fcf0610f2b7080faf8b4eaa07202484cddc9c11b"
+          },
+          "participantJournal": {
+            "lines": 13,
+            "bytes": 2139,
+            "sha256": "e9b45828a755c4e4bf638b0d36d2f5a5a6e0a27479b3853bb1488d44cb6aa2c8"
+          }
+        }
+      },
+      "cleanup": {
+        "actorCloseAcknowledged": true,
+        "actorSupervisorJoinExitCode": null,
+        "actorSupervisorJoinLimitation": "The completed tool session was unavailable when joined; exact process absence was verified instead.",
+        "knownProcessesVerifiedAbsent": true,
+        "launcherMarkerAbsent": true,
+        "webGracefulStopCompleted": false,
+        "actorPendingHttp": false,
+        "actorPendingSocket": false,
+        "participantInFlight": false,
+        "participantPending": false,
+        "participantPhase": "B",
+        "participantIntentsReserved": 10,
+        "participantLedgerLockPresent": false,
+        "spendLedgerLockPresent": false,
+        "mainRuntimeRemoteDisposalVerified": false,
+        "preservedSessionAStatus": "completed",
+        "preservedSessionAVersion": 12,
+        "preservedSessionBStatus": "open",
+        "preservedSessionBVersion": 1,
+        "preservedCanonicalProfileVersion": 1,
+        "actorClosureCompletesSession": false,
+        "knownProcessCount": 5,
+        "webRequiredForcedTermination": true,
+        "staleSpendLockRemovedAfterOwnerAbsence": true,
+        "journalUnchangedByStaleLockRemoval": true
+      },
+      "limitations": [
+        "This failed v3 trajectory remains a failure after manual rejection and confirmation.",
+        "The v2 failure is unchanged; v3 used a fresh synthetic identity with retained cumulative accounting.",
+        "Known native transitions prove their observed effects only; this baseline is not fresh proof of the full cross-adult, authority, stale-conflict, or privacy suite.",
+        "Cloudflare visible logs did not show these five calls; missing rows do not identify the cause of invalid_output.",
+        "HTTP 204 records that the application operation was handled, not that model output passed validation.",
+        "No raw provider response or reasoning was retained; the exact B failure stage remains unavailable.",
+        "The completed A session and fresh B profile integration do not establish successful B removal or full WI04 repeat acceptance.",
+        "Main runtime remote-preview disposal could not be verified."
+      ]
     }
   },
   "candidateCleanup": {
@@ -332,5 +579,27 @@
     "preservedSessionVersion": 13,
     "preservedCanonicalProfileVersion": 1,
     "actorClosureCompletesSession": false
+  },
+  "promptV4": {
+    "promptVersion": "private-discovery-prompt-v4",
+    "implementation": "implemented_and_locally_verified",
+    "sourceLocation": "apps/api/src/features/private-output/private-discovery-prompt.ts",
+    "changes": [
+      "Treat explicit correction, refinement, and narrowing as same-card revision even without directly contradictory wording.",
+      "Map input card id and revision to output cardId and expectedRevision.",
+      "Require the complete corrected nested change, which may still be AddConfirmedProfileFact; do not create another card for the corrected preference."
+    ],
+    "promptUtf8ByteIncreaseFromV3": 253,
+    "modelSchemaCapsAndAuthorityUnchanged": true,
+    "liveTrial": "pending_new_live_validation",
+    "liveProviderCalls": 0,
+    "qualityOutcome": "not_evaluated",
+    "verification": {
+      "adapterTests": 19,
+      "nativeContextTests": 5,
+      "apiTypecheck": "passed",
+      "focusedLint": "passed",
+      "focusedFormatting": "passed"
+    }
   }
 }

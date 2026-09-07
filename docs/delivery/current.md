@@ -32,9 +32,11 @@
   native family failed a material-fact assertion and later returned
   `invalid_output`; the corrected preference, routine discovery, and live A-to-B
   trajectory remain unverified. V9 did not reproduce the output failure. Prompt
-  v3 is implemented and locally verified; its live trial awaits participant
-  allowance. Model selection and human calibration remain incomplete. The draft
-  is not ready to merge.
+  v3 then failed the required same-card correction in its first live family.
+  Prompt v4 explicitly routes refinements to the existing card using its input
+  ID and revision; local checks pass, but live quality remains untested. Model
+  selection and human calibration remain incomplete. The draft is not ready to
+  merge.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -216,8 +218,13 @@ Session A remained open at review; B and the other seven families had not run.
 The [retry evidence](../../evals/private-discovery/gpt-schema-prompt-retry.json)
 separates readiness from native quality and preserves these incomplete results.
 V9 passed the adapter and exact proposal review without reproducing the original
-failure. Prompt v3 is implemented and locally verified; its live trial awaits
-participant allowance. No live v3 quality result is claimed.
+failure. The subsequent prompt-v3 family failed the required same-card
+correction and routine discovery. Its four A outputs were followed by actual
+explicit confirmation, A completion, and fresh B state using canonical profile
+version 1. B's first turn then failed with `invalid_output`, leaving that profile
+unchanged. These observed transitions do not establish full privacy or repeat
+acceptance. Prompt v4 clarifies revision routing and passes local checks; no
+live v4 quality result is claimed.
 No soft judge has run, no human scores have been assigned, and no configuration
 or baseline is accepted. No application deployment occurred.
 Repeat review and dependant assistance follow in Work Item 04.
