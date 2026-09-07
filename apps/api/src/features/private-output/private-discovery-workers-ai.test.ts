@@ -97,6 +97,36 @@ describe("private discovery Workers AI boundary", () => {
       expect(test.run).toHaveBeenCalledOnce();
       expect(test.run.mock.calls[0]?.[0]).toBe(modelName);
       const jsonSchema = Tool.getJsonSchemaFromSchema(PrivateDiscoveryOutput);
+      const nativeRequest = test.run.mock.calls[0]?.[1];
+      expect(nativeRequest).toMatchObject({
+        response_format: {
+          json_schema: {
+            properties: {
+              message: expect.any(Object),
+              proposals: {
+                items: { anyOf: expect.any(Array) },
+                type: "array",
+              },
+              summary: expect.any(Object),
+            },
+            required: expect.arrayContaining([
+              "message",
+              "proposals",
+              "summary",
+            ]),
+            type: "object",
+          },
+        },
+      });
+      expect(nativeRequest).not.toHaveProperty(
+        "response_format.json_schema.name"
+      );
+      expect(nativeRequest).not.toHaveProperty(
+        "response_format.json_schema.schema"
+      );
+      expect(nativeRequest).not.toHaveProperty(
+        "response_format.json_schema.strict"
+      );
       expect(test.run.mock.calls[0]?.[1]).toEqual({
         max_tokens: config.maxOutputTokens,
         messages: [
@@ -107,14 +137,7 @@ describe("private discovery Workers AI boundary", () => {
           { content: JSON.stringify(test.input.context), role: "user" },
         ],
         response_format: {
-          json_schema:
-            modelName === config.model
-              ? jsonSchema
-              : {
-                  name: "private_discovery_turn",
-                  schema: jsonSchema,
-                  strict: true,
-                },
+          json_schema: jsonSchema,
           type: "json_schema",
         },
         stream: false,

@@ -83,42 +83,22 @@ const configuration = Schema.decodeUnknownOption(
 const requestFor = (
   config: PrivateDiscoveryConfiguration,
   context: PrivateDiscoveryContext
-) => {
-  const common = {
+) => ({
+  body: {
     max_tokens: config.maxOutputTokens,
     messages: [
       { content: systemInstructions, role: "system" as const },
       { content: JSON.stringify(context), role: "user" as const },
     ],
+    response_format: {
+      json_schema: outputJsonSchema,
+      type: "json_schema" as const,
+    },
     stream: false as const,
     temperature: 0,
-  };
-  return config.model === "@cf/qwen/qwen3-30b-a3b-fp8"
-    ? {
-        body: {
-          ...common,
-          response_format: {
-            json_schema: outputJsonSchema,
-            type: "json_schema" as const,
-          },
-        },
-        model: config.model,
-      }
-    : {
-        body: {
-          ...common,
-          response_format: {
-            json_schema: {
-              name: "private_discovery_turn",
-              schema: outputJsonSchema,
-              strict: true,
-            },
-            type: "json_schema" as const,
-          },
-        },
-        model: config.model,
-      };
-};
+  },
+  model: config.model,
+});
 
 const readBoundedResponse = async (
   response: NativeCloudflare.Response,
