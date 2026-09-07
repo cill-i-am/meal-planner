@@ -15,7 +15,7 @@ export const PRIVATE_DISCOVERY_CONTEXT_BYTES = 24_576;
 export const PRIVATE_DISCOVERY_MESSAGE_LIMIT = 16;
 export const PRIVATE_DISCOVERY_CARD_LIMIT = 25;
 export const PRIVATE_DISCOVERY_SUMMARY_LENGTH = 2000;
-export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v1";
+export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v2";
 export const PRIVATE_DISCOVERY_POLICY_VERSION = "private-discovery-policy-v1";
 export const PRIVATE_DISCOVERY_TOOL_VERSION = "profile-card-change-v1";
 

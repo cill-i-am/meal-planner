@@ -1,8 +1,13 @@
 import type * as NativeCloudflare from "@cloudflare/workers-types";
 import { Cause, Effect, Exit, Schema } from "effect";
+import { Tool } from "effect/unstable/ai";
 import { describe, expect, it, vi } from "vitest";
 
-import { PrivateDiscoveryContext } from "./private-discovery-model.js";
+import {
+  PrivateDiscoveryContext,
+  PrivateDiscoveryOutput,
+} from "./private-discovery-model.js";
+import { privateDiscoveryInstructions } from "./private-discovery-prompt.js";
 import {
   makePrivateDiscoveryModel,
   PRIVATE_DISCOVERY_RESPONSE_BYTES,
@@ -91,6 +96,30 @@ describe("private discovery Workers AI boundary", () => {
       expect(test.beforeDispatch).toHaveBeenCalledOnce();
       expect(test.run).toHaveBeenCalledOnce();
       expect(test.run.mock.calls[0]?.[0]).toBe(modelName);
+      const jsonSchema = Tool.getJsonSchemaFromSchema(PrivateDiscoveryOutput);
+      expect(test.run.mock.calls[0]?.[1]).toEqual({
+        max_tokens: config.maxOutputTokens,
+        messages: [
+          {
+            content: `${privateDiscoveryInstructions}\n\nOutput JSON schema:\n${JSON.stringify(jsonSchema)}`,
+            role: "system",
+          },
+          { content: JSON.stringify(test.input.context), role: "user" },
+        ],
+        response_format: {
+          json_schema:
+            modelName === config.model
+              ? jsonSchema
+              : {
+                  name: "private_discovery_turn",
+                  schema: jsonSchema,
+                  strict: true,
+                },
+          type: "json_schema",
+        },
+        stream: false,
+        temperature: 0,
+      });
       expect(test.run.mock.calls[0]?.[2]).toMatchObject({
         extraHeaders: { "cf-aig-max-attempts": "1" },
         gateway: { collectLog: false, id: config.gatewayId, skipCache: true },
@@ -99,6 +128,7 @@ describe("private discovery Workers AI boundary", () => {
       expect(result.output).toEqual(output);
       expect(result.provenance).toMatchObject({
         model: modelName,
+        promptVersion: "private-discovery-prompt-v2",
         provider: "cloudflare-workers-ai",
       });
       expect(result.usage).toEqual({
@@ -157,29 +187,32 @@ describe("private discovery Workers AI boundary", () => {
     expect(test.run).not.toHaveBeenCalled();
   });
 
-  it("includes fixed instructions and output schema in the provider payload bound", async () => {
-    const test = fixture();
-    const input = {
-      ...test.input,
-      context: {
-        ...context(),
-        messages: Array.from({ length: 6 }, () => ({
-          id: crypto.randomUUID(),
-          role: "participant" as const,
-          text: "x".repeat(3800),
-        })),
-      },
-    };
-    expect(
-      new TextEncoder().encode(JSON.stringify(input.context)).byteLength
-    ).toBeLessThan(24_576);
-    const error = await Effect.runPromise(
-      Effect.flip(test.model.generate(input))
-    );
-    expect(error.reason).toBe("context_limit");
-    expect(test.beforeDispatch).not.toHaveBeenCalled();
-    expect(test.run).not.toHaveBeenCalled();
-  });
+  it.each([config.model, "@cf/openai/gpt-oss-120b"] as const)(
+    "counts the generated schema in the system message against the %s provider payload bound",
+    async (modelName) => {
+      const test = fixture(undefined, { ...config, model: modelName });
+      const input = {
+        ...test.input,
+        context: {
+          ...context(),
+          messages: Array.from({ length: 3 }, () => ({
+            id: crypto.randomUUID(),
+            role: "participant" as const,
+            text: "x".repeat(3800),
+          })),
+        },
+      };
+      expect(
+        new TextEncoder().encode(JSON.stringify(input.context)).byteLength
+      ).toBeLessThan(24_576);
+      const error = await Effect.runPromise(
+        Effect.flip(test.model.generate(input))
+      );
+      expect(error.reason).toBe("context_limit");
+      expect(test.beforeDispatch).not.toHaveBeenCalled();
+      expect(test.run).not.toHaveBeenCalled();
+    }
+  );
 
   it.each([
     ["unknown top-level output", { ...output, saved: true }],

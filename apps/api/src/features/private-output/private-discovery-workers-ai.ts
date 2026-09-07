@@ -73,6 +73,7 @@ const Completion = Schema.Struct({
   usage: Schema.optionalKey(ProviderUsage),
 });
 const outputJsonSchema = Tool.getJsonSchemaFromSchema(PrivateDiscoveryOutput);
+const systemInstructions = `${privateDiscoveryInstructions}\n\nOutput JSON schema:\n${JSON.stringify(outputJsonSchema)}`;
 const configuration = Schema.decodeUnknownOption(
   Schema.fromJsonString(PrivateDiscoveryConfiguration)
 );
@@ -84,7 +85,7 @@ const requestFor = (
   const common = {
     max_tokens: config.maxOutputTokens,
     messages: [
-      { content: privateDiscoveryInstructions, role: "system" as const },
+      { content: systemInstructions, role: "system" as const },
       { content: JSON.stringify(context), role: "user" as const },
     ],
     stream: false as const,
