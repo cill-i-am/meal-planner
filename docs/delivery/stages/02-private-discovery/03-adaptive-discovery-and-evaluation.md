@@ -5,6 +5,34 @@
 - Implementation base: `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`.
 - Owning stage: [Stage 2](README.md).
 
+## Current evaluation status
+
+The latest measured [prompt-v6 eight-family result](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
+at `cd24fbf7283a311f0387d84b2560db761bc26e38` made 28 candidate calls:
+27 native turns succeeded and one failed. No family passed: five were incomplete,
+two failed grounding, and one failed the output contract. The failed completion
+hit the output limit and was rejected as `incomplete_completion` before content
+JSON decoding or card review. The required live fresh-session repeat did not run;
+no judge, human calibration, candidate acceptance, or baseline was recorded.
+The result retains measured usage, timing, and shutdown limitations.
+
+The current source advances the candidate to prompt v7. It selects a concrete
+consequential follow-up, keeps closed topics closed, grounds replies and summaries
+in disclosed facts, and distinguishes hypothetical discussion from an actual
+change request. It also distinguishes a new draft about a saved profile fact
+from revision of an actual existing proposed card. The established same-card
+correction instructions and example remain intact. Schema, runtime, confirmation
+authority, model settings, and the evaluation policy are unchanged; there is no
+output repair.
+
+All 27 adapter tests, API type checking, and focused lint/format checks pass.
+Local calculations using the current production schema and three retained
+synthetic request contexts measured 26,675, 26,434, and 26,360 bytes, below the
+unchanged 32,768-byte payload limit. These examples do not guarantee every future
+context fits. **V7 has not run against the real model and is not a verified
+semantic fix.** Earlier implementation and evaluation evidence remains below,
+including the [bounded v5 correction proof](#correction-diagnosis-and-prompt-v5).
+
 ## Outcome and scope
 
 An adult receives relevant model follow-ups and useful private profile proposals
@@ -545,10 +573,10 @@ contains the metadata results and receipt digests.
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
-remain in progress and are not ready to merge. Earlier failed trials remain
-recorded. Prompt v5 passes the bounded request-level correction and
-new-information controls and a separate private-draft persistence proof. Full
-native family acceptance, candidate comparison, successful B removal, and actual
-human calibration across all eight fixtures remain incomplete. The canonical
-evidence and calibration templates remain unfilled; diagnostic and control
-results do not replace them. No application deployment occurred.
+remain in progress and are not ready to merge. The [v6 family result](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
+is nonpassing; the current v7 candidate has only local adapter/static validation.
+Passing native discovery across all eight families, candidate comparison, the
+required live A-to-B removal, and actual human calibration remain incomplete.
+Earlier scripted and bounded correction proofs do not replace those gates. The
+canonical evidence and calibration templates remain unfilled. No application
+deployment occurred.

@@ -26,28 +26,16 @@
   [Work Item 03 — adaptive discovery and evaluation](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
   is in progress in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218).
   Private adaptive-turn implementation and local browser acceptance are complete.
-  The original candidate failures and timed-out GPT follow-up remain recorded.
-  Adding the generated output schema to the system instructions passed separate
-  diagnostic and native readiness checks at prompt v2. The subsequent first
-  native family failed a material-fact assertion and later returned
-  `invalid_output`; the corrected preference, routine discovery, and live A-to-B
-  trajectory remain unverified. V9 did not reproduce the output failure. Prompt
-  v3 then failed the required same-card correction in its first live family.
-  Prompt v4 also failed same-card correction after two schema-valid native
-  outputs; the trial stopped before safety or routine answers, confirmation, or
-  B. Stage-only diagnostics emitted no event for this semantic failure. A later
-  native request-contract fix passed local checks; its two-call probe still
-  failed correction with the full schema and JSON parsing with the revision-only
-  schema.
-  A diagnostic ladder then isolated ordinary operation selection as the observed
-  failure boundary. Prompt v5 passed four full-production request controls:
-  ordinary correction twice, a mixed correction selecting the proper existing
-  card, and new information without unwanted revisions. A separate native check
-  persisted the same-card correction while leaving the confirmed profile
-  unchanged; it used one scripted seed and one live correction. Reply wording
-  still lacks an explicit review cue and sometimes strengthens the stated
-  preference. Full family acceptance, model selection, and human calibration
-  remain incomplete; the draft is not ready to merge.
+  The latest [prompt-v6 eight-family evaluation](../../evals/private-discovery/prompt-v6-eight-family-results.md)
+  made 28 candidate calls: 27 native successes and one rejected incomplete
+  completion. No family passed: five incomplete, two grounding failures, and
+  one output-contract failure. No judge, human calibration, or baseline was
+  recorded; the required live fresh-session repeat remains unrun.
+  The current v7 prompt passes local adapter/static checks but has not run against
+  the real model. Full family acceptance, candidate comparison, and human
+  calibration remain incomplete; the draft is not ready to merge. The
+  [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
+  retains current scope and the historical evidence.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as

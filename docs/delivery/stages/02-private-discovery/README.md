@@ -50,50 +50,19 @@ and completed local browser acceptance. Its
 [delivery record](02-progressive-cards-and-confirmation.md) owns the native
 confirmation, restart, privacy, accessibility, and runtime evidence and limits.
 Work Item 03 is in progress in
-[draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), with native
-adaptive-turn implementation, browser A-to-B confirmation/restart evidence,
-eight-family evaluation assets, and a measured decision not to adopt
-`agent-eval` 2.2.1. Local browser acceptance also passed idle opening,
-cross-adult privacy, and bounded two-tab recovery. The first live trial and
-timed-out GPT follow-up remain separate historical results. A later generated-schema instruction change passed
-both diagnostic and native readiness checks at prompt v2. The subsequent first
-native family produced three accepted assistant outputs, including an unsupported
-safety proposal, before a fourth generation failed with `invalid_output`.
-Real rejection and explicit confirmation of a later correct safety card recovered
-canonical state to version 1; the material-fact failure remains. The corrected
-preference, routine discovery, and live A-to-B trajectory remain unverified, and
-the other seven families had not run at review. The
-[retry evidence](../../../../evals/private-discovery/gpt-schema-prompt-retry.json)
-distinguishes readiness, failed native quality, and incomplete work. V9 passed
-without reproducing the output failure. Prompt v3 subsequently failed the
-required same-card correction and routine discovery in its first live family.
-Actual confirmation and A completion preceded fresh B state with the updated
-profile, but B's first generation failed with `invalid_output`. Prompt v4
-clarifies revision routing but also failed same-card correction after two
-schema-valid native outputs. The stopped trial left A open at version 4 and
-its canonical profile empty at version 0; safety and routine answers,
-confirmation, and B were not exercised. New stage-only failure diagnostics
-pass local tests. No diagnostic event was expected for this semantic failure.
-The earlier context-path review found no omitted prior card. A subsequent native
-request-contract audit corrected the GPT-OSS schema wrapper at `55a34ea`. Its
-full-versus-revision-only probe failed same-card correction and strict JSON
-parsing, respectively. The pair changed no application state and does not prove
-the cause of historical failures or complete native family acceptance.
-A six-call diagnostic ladder found that ordinary operation selection failed
-twice while an explicit-revision ability control passed twice. Prompt v5 at
-`3670c26e` then passed four full-production request controls: ordinary
-correction twice, a mixed correction choosing the proper existing card and
-preserving the other card, and new information producing one proposal without
-revisions. A separate native proof then persisted the same-card correction using
-one scripted seed and one live correction, while leaving the confirmed profile
-unchanged. It does not establish a fully live interview or confirmation. Reply
-wording lacked an explicit review cue and sometimes strengthened the stated
-preference, without claiming a canonical save. Earlier failures and the
-remaining family, comparison, and human-calibration gates are unchanged.
-No soft judge or human scores were assigned; no configuration or baseline is
-accepted.
-Prior scripted proofs establish runtime enforcement only.
-Delivery follows the existing
+[draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218). Native
+adaptive-turn implementation and local browser acceptance are complete. The
+latest [prompt-v6 eight-family result](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
+made 28 candidate calls, with 27 successful native turns and one rejected
+incomplete completion. No family passed: five incomplete, two grounding failures,
+and one output-contract failure. The required live fresh-session repeat,
+candidate acceptance, judge scoring, and human calibration remain incomplete.
+
+The current v7 prompt passes local adapter/static checks but has no real-model
+quality result. The draft is not ready to merge, and no baseline is accepted.
+The [owning work item](03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
+retains the current scope, earlier failed trials, and separate bounded correction
+and scripted runtime proofs. Delivery follows the existing
 [execution policy](../../../agents/execution-policy.md).
 
 ## Product and technical boundaries
