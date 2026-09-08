@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-09-07
+- Last updated: 2026-09-08
 - Delivery source of truth: this repository
 
 ## Latest Completed Stage
@@ -38,8 +38,16 @@
   B. Stage-only diagnostics emitted no event for this semantic failure. A later
   native request-contract fix passed local checks; its two-call probe still
   failed correction with the full schema and JSON parsing with the revision-only
-  schema. Model selection and human calibration remain incomplete. The draft is
-  not ready to merge.
+  schema.
+  A diagnostic ladder then isolated ordinary operation selection as the observed
+  failure boundary. Prompt v5 passed four full-production request controls:
+  ordinary correction twice, a mixed correction selecting the proper existing
+  card, and new information without unwanted revisions. A separate native check
+  persisted the same-card correction while leaving the confirmed profile
+  unchanged; it used one scripted seed and one live correction. Reply wording
+  still lacks an explicit review cue and sometimes strengthens the stated
+  preference. Full family acceptance, model selection, and human calibration
+  remain incomplete; the draft is not ready to merge.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -238,6 +246,17 @@ probe, the full-schema output still added new cards; the revision-only output
 failed strict JSON parsing because of a trailing NUL. These new failures do not
 establish the cause of historical failures or complete native family acceptance.
 Both responses and cleanup were retained; no application state changed.
+A six-call diagnostic ladder found that ordinary operation selection failed
+twice while an explicit-revision ability control passed twice. Prompt v5 at
+`3670c26e` then passed four full-production request controls: ordinary
+correction twice, a mixed correction choosing the proper existing card and
+preserving the other card, and new information producing one proposal without
+revisions. A separate native proof then persisted the same-card correction using
+one scripted seed and one live correction, while leaving the confirmed profile
+unchanged. It does not establish a fully live interview or confirmation. Reply
+wording lacked an explicit review cue and sometimes strengthened the stated
+preference, without claiming a canonical save. Earlier failures and the
+remaining family, comparison, and human-calibration gates are unchanged.
 No soft judge has run, no human scores have been assigned, and no configuration
 or baseline is accepted. No application deployment occurred.
 Repeat review and dependant assistance follow in Work Item 04.

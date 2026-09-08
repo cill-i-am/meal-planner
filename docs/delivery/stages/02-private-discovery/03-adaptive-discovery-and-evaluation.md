@@ -1,6 +1,6 @@
 # Work Item 03 — Adaptive discovery and evaluation
 
-- Status: In progress (2026-09-07); [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
+- Status: In progress (2026-09-08); [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
 - Authorized by the product owner to continue after Work Item 02.
 - Implementation base: `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`.
 - Owning stage: [Stage 2](README.md).
@@ -468,12 +468,87 @@ occurred. V1 preparation remains preserved and was never dispatched. The
 [retry record](../../../../evals/private-discovery/gpt-schema-prompt-retry.json)
 contains the source, request, result, independent review, and closure digests.
 
+## Correction diagnosis and prompt v5
+
+A six-call diagnostic ladder separated copying, correction meaning, and
+operation selection. Exact copying and corrected meaning passed. The ordinary
+narrow-schema operation request failed twice; an instruction-only
+explicit-revision control passed twice, including the existing identity,
+revision, and corrected value. This established instructed ability and an
+ordinary selection failure. It did not identify a provider cause or prove a
+production fix. The later full-schema ladder levels were not dispatched.
+
+Commit `3670c26e3d7ab9154a264850a308bc5813d1c5dd` advances the production prompt
+to v5. It compares and revises existing cards first, proposes separate new
+facts, then writes the reply from the emitted edits, with a generic mixed
+correction example. The full generated schema, strict decoder, proposal review,
+model, settings, and authority boundaries remain unchanged. All 27 adapter
+tests, four focused native revision tests, API type checking, lint, and
+formatting pass. Preparation also passed 33 scoring cases and 13 native fake
+invocations.
+
+On 2026-09-08, four live requests using the full production v5 instructions and
+schema passed strict decoding, production proposal review, and their scoped
+card-operation checks. The ordinary correction passed twice with the exact
+existing card identity and expected revision 0. A separate mixed control
+selected the second existing card at revision 2, left the first card untouched,
+and proposed the additional supported preference. A new-information-only control
+proposed exactly one supported card and no revisions. The ordinary requests
+reuse the earlier native context; the mixed and new-only contexts are
+constructed synthetic controls. The prepared narrow candidate and fresh v4
+baseline were not dispatched.
+
+These four results are request-level only: no participant admission or
+application state mutation occurred. Independent review accepted the card
+operations but found reply limitations: none of the four replies explicitly
+marked the cards as drafts or needing review, and ordinary replies strengthened
+or inferred preference wording beyond the supplied facts. None claimed a
+canonical save. These limitations remain separate from the successful
+card-operation checks. These four observations do not establish reliability
+across a full family or replace human calibration.
+
+A separate native proof then used one scripted seed turn and one real-model
+correction in a new disposable session. The actual production session persisted
+revision 0 to 1 under the same card identity and ordinal, with one separate
+supported preference and no corrected duplicate. The assistant turn succeeded,
+and no confirmation was pending. Actual Household API reads and canonical SQL
+rows were unchanged at profile version 0. After shutdown, read-only queries of
+byte-verified copies of the private and canonical SQLite files, including their
+committed journals, matched the live projections; the originals stayed
+unchanged. This proves the bounded model correction persisted as a private
+draft. It does not prove a fully live interview, explicit confirmation, restart
+recovery, or B. The live reply retained the missing review cue and
+inferred-temperature wording limitations; its emitted facts were correct.
+
+The persistence harness passed eight local cases. Invalid JSON, trailing NUL,
+wrong-target and unknown-outcome cases failed the turn and preserved the
+original draft. Stronger or semantically duplicate extras were rejected by the
+scenario scorer after production accepted and persisted them; those checks are
+not production guards.
+
+The six-call ladder and four candidate calls advanced cumulative reservations
+from 29 to 39 attempts and from USD 1.379072 to USD 1.857792. Higher-cap calls
+used 33 of 65; judge calls remain 0 of 8. Reservations are not actual spend. The
+79-call maximum and USD 10 budget are unchanged. Each candidate runner and
+runtime closed, remote transport disposal completed, matching local workers and
+locks were absent, and earlier financial prefixes, the participant journal, 42
+harness pins, and 851 protected nonfinancial files were verified unchanged. The
+separate persistence call advanced totals to 40 attempts, 34 higher-cap calls,
+no judge calls, and USD 1.905664 reserved. It used one separately scoped
+synthetic admission and preserved the old participant journal; 40 harness pins
+and 915 protected nonfinancial files were unchanged at closure. The socket,
+runtime, and remote transport closed, with no matching worker or lock remaining.
+No output repair or automatic retry occurred. The [retry
+record](../../../../evals/private-discovery/gpt-schema-prompt-retry.json)
+contains the metadata results and receipt digests.
+
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
-remain in progress and are not ready to merge. The original stopped trials and
-the failed prompt-v2, prompt-v3, and prompt-v4 families remain recorded. Candidate comparison,
-model-produced same-card correction, successful B removal, and actual human
-calibration across all eight fixtures remain incomplete. The canonical evidence
-and calibration templates remain unfilled; readiness and checkpoint records do
-not replace them. No application deployment occurred.
+remain in progress and are not ready to merge. Earlier failed trials remain
+recorded. Prompt v5 passes the bounded request-level correction and
+new-information controls and a separate private-draft persistence proof. Full
+native family acceptance, candidate comparison, successful B removal, and actual
+human calibration across all eight fixtures remain incomplete. The canonical
+evidence and calibration templates remain unfilled; diagnostic and control
+results do not replace them. No application deployment occurred.

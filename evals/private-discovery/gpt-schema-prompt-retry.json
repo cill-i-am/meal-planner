@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "recordedOn": "2026-09-07",
+  "recordedOn": "2026-09-08",
   "label": "gpt-schema-prompt-retry-v1",
   "model": "@cf/openai/gpt-oss-120b",
-  "status": "native_contract_corrected_pair_failed_correction_and_output_json",
+  "status": "prompt_v5_bounded_correction_and_native_draft_persistence_pass",
   "priorArtifacts": [
     {
       "artifact": "first-live-trial.json",
@@ -212,7 +212,8 @@
     "Prompt v4 failed same-card correction after two schema-valid native outputs; local diagnostics do not turn this semantic failure into invalid_output.",
     "The v4 request path was verified in source, emitted bundles and native tests; no direct provider wire capture was retained.",
     "A later native contract audit corrected the GPT-OSS response-format wrapper; this does not establish the cause of the earlier model failures.",
-    "The corrected full-versus-revision-only pair failed same-card correction and strict JSON parsing, respectively; it is not a completed native family or a before/after causality test."
+    "The corrected full-versus-revision-only pair failed same-card correction and strict JSON parsing, respectively; it is not a completed native family or a before/after causality test.",
+    "Prompt v5 passes bounded card-operation and scripted-seed native private-draft persistence checks; reply wording limitations and broad family, comparison, and human-calibration gates remain open."
   ],
   "receiptSha256": {
     "prod-schema-prompt-v7/result.json": "949b0258dbc30da11ff9ef1f82fd299893cd3c48aac9fa076476500479463581",
@@ -263,7 +264,32 @@
     "contract-probe-v2/run-state/pair-result.json": "d0f4f8be74f8be0f98bfbdf4e68679f6f3879498ea516ba582b8051ba445f285",
     "contract-probe-v2/run-state/root-closure.receipt.json": "32badf17d1f90394f26186a4c6ff45ab33efd73cbb09dc6d0dd52e608ca7eb87",
     "contract-probe-v2/acceptance-review.receipt.json": "52d7df40fa841b5ea9ca7f8819054b5d2d4dcd4f8ecfe9344ea25f637c722511",
-    "contract-probe-v2/result.receipt.json": "13f6352849f6757f15e004213cef932a396e92596295265a539255e452793b76"
+    "contract-probe-v2/result.receipt.json": "13f6352849f6757f15e004213cef932a396e92596295265a539255e452793b76",
+    "correction-ladder-v1/root-close.receipt.json": "f85e266a38e76625632cfa8b9a1546115daca1bdf95e41d952b956e33dd47750",
+    "correction-ladder-v1/root-inspections/slot-02-semantic-review.json": "ffe2f1c0026a84c5e1705bd99c4dd48858f830fc1fe5fbd886ac1e995985e7ba",
+    "correction-fix-v1/preparation/local-proof.receipt.json": "aef857262c83cf7ef4c439cb2d97126463dab1d26e5e4a245e0b6749896dce3d",
+    "correction-fix-v1/local-proof.json": "085a69486dfff5cc43e8698779071ded6ded0b5fd510f61b50719c7379bea41d",
+    "correction-fix-v1/source-build-proof.json": "e0501e163f82eb7e02060d3812b405f88a2e501fcf5151200b8fb3fc72e8c6c2",
+    "correction-fix-v1/review-source-proof.json": "86b4158e394d9fb60fd36bbef7b316ad44efe3db4e7423971328bcc5f72fcc79",
+    "correction-fix-v1/gateway-settings-refresh.receipt.json": "ea9b6a60baa713838e345bb6acf456f090401b094a87cf525d3a0fec51a919f2",
+    "correction-fix-v1/root-inspections/resumption-preflight.json": "141427bafa9f2b622f20d7211e3fab8457b0a634199e821a3ef3c1ed400fdb9b",
+    "correction-fix-v1/run-state/slot-01/completion.json": "c78f9df99b0ecbaee054a6033a7cba13360874a385b58ba4874a569ca77b52a1",
+    "correction-fix-v1/root-inspections/slot-01.json": "09ad3eee5943e8d03579a260340293ee7f8f7d71b5327884802c7ca6ea35987c",
+    "correction-fix-v1/run-state/slot-02/completion.json": "f3ad9014515777ad83ee1c1b82f8c16291a98325e026ca69c52816489f0bb733",
+    "correction-fix-v1/root-inspections/slot-02.json": "06bd5d0b0ce8a906ffe75c0bda7e332072c9406c74c68bdf6a9b1bd386dd79f5",
+    "correction-fix-v1/run-state/slot-03/completion.json": "0cb573fc57d7d5fa2f6b3d5c24761b5b9b0df82f95c2763705061e983ab22fec",
+    "correction-fix-v1/root-inspections/slot-03.json": "9d413ec30730820ddf2b1e84e5e271d1dc8c7d7b3bd32de4e26bd959cd4b01b5",
+    "correction-fix-v1/run-state/slot-04/completion.json": "69c2937e41745f60e54945a29bc6e7876495616eb31968f26f43834f24e4209c",
+    "correction-fix-v1/root-inspections/slot-04.json": "c4270ed4b8362175ff0e0029951c4c440c1d7cd604dd7a4f1c4d14ca8bc5eb4d",
+    "correction-fix-v1/root-close.receipt.json": "5f043e5fc0d9b3fb257529a4f2b68ae9b874c514d1cdea70380f8267f9ff4e8b",
+    "correction-persistence-v1/local-proof.json": "bdb1ffab7511fff217242401d3c823fe8c6d213071760644e04387e30e68c727",
+    "correction-persistence-v1/entry-guard-proof.json": "d6460c774e40ac540fe8134f3abadd76482f7a85279cb6c4e3876e8fbb87c90b",
+    "correction-persistence-v1/source-build-proof.json": "512e656dd9122bbb9751cda19f2af13dc9e9fcb95db824f2cd79658b7211d6c3",
+    "correction-persistence-v1/gateway-settings-refresh.receipt.json": "89bbee030e064c3845ec70fdf603febedd762cda4465d9a33b82e22a9b053abf",
+    "correction-persistence-v1/run-state/completion.json": "2c6ed8e028368c7407865ad650f3c219abd1e1d8baf990751e7cf066aa22d3fe",
+    "correction-persistence-v1/root-inspections/closure.json": "c366cb15397ac7add5e651671d5579647283f0bea4b4b828b00440b8b2a4084b",
+    "correction-persistence-v1/root-inspections/stopped-sqlite.json": "52f52dd48f648af286be23259dd97256d25bae00683f1f93a170d328fea76020",
+    "correction-persistence-v1/root-close.receipt.json": "74372c80e04ed337b3671e7464615fd6305e2a44d5093f42921f69a8b49040c2"
   },
   "reviewedV2Source": {
     "head": "8626bebe705a766e699f6fd3744b0aec68092f59",
@@ -1014,5 +1040,362 @@
       "acceptedBaselineId": null,
       "mergeReady": false
     }
+  },
+  "promptV5": {
+    "promptVersion": "private-discovery-prompt-v5",
+    "sourceHead": "3670c26e3d7ab9154a264850a308bc5813d1c5dd",
+    "sourceTree": "7f653981b45a7056b441a3be06afdcf2e1ad8575",
+    "status": "bounded_correction_and_native_draft_persistence_pass",
+    "change": "Compare and revise existing cards, propose separate new facts, then write the reply from emitted edits; provide a generic mixed correction example.",
+    "fullSchemaDecoderReviewModelSettingsAndAuthorityUnchanged": true,
+    "diagnosticPredecessor": {
+      "sourceHead": "87dce200c376bed150d7d96d16ea0629fcbe9ac2",
+      "providerCalls": 6,
+      "exactCopy": "pass",
+      "correctedMeaning": "pass",
+      "ordinaryOperationSelection": ["fail", "fail"],
+      "explicitRevisionAbility": ["pass", "pass"],
+      "laterFullSchemaLevelsDispatched": false,
+      "productionFixEstablishedByDiagnostic": false,
+      "providerCauseEstablished": false,
+      "applicationStateMutations": 0,
+      "participantAdmissions": 0,
+      "budgetAfterDiagnostic": {
+        "callsReserved": 35,
+        "reservedMicroUsd": 1666304,
+        "higherCapCallsReserved": 29,
+        "judgeCallsReserved": 0
+      }
+    },
+    "verification": {
+      "adapterTestsPassed": 27,
+      "focusedNativeRevisionTestsPassed": 4,
+      "apiTypecheck": "passed",
+      "focusedLintAndFormatting": "passed",
+      "preparationScoringCasesPassed": 33,
+      "nativeFakeInvocations": 13,
+      "independentSourceReview": "accepted_without_findings",
+      "independentFourControlReview": "card_operations_accepted_with_reply_limitations",
+      "independentRootClosureReview": "accepted_without_integrity_findings"
+    },
+    "requestControls": {
+      "freezeSha256": "e0501e163f82eb7e02060d3812b405f88a2e501fcf5151200b8fb3fc72e8c6c2",
+      "scope": "four full-production request-level controls; no native state persistence",
+      "model": "@cf/openai/gpt-oss-120b",
+      "maxOutputTokens": 4096,
+      "temperature": 0,
+      "stream": false,
+      "ordinaryContext": "unchanged earlier native capture",
+      "mixedAndNewOnlyContexts": "constructed synthetic production-contract fixtures",
+      "freshV4BaselineDispatched": false,
+      "narrowCandidateDispatched": false,
+      "allResponseBodiesComplete": true,
+      "allStrictJsonAccepted": true,
+      "allFullProductionSchemasAccepted": true,
+      "allProductionProposalReviewsAccepted": true,
+      "results": [
+        {
+          "slot": 1,
+          "providerSequence": 36,
+          "requestId": "candidate_ordinary",
+          "completedAt": "2026-09-08T05:54:10.630Z",
+          "sentBodySha256": "d4bb8919cc64ab1921de730835318cd7da82bc6312bc31c254a2616977868d50",
+          "responseStatus": 200,
+          "elapsedMs": 6528,
+          "evaluation": {
+            "meaning": "pass",
+            "action": "pass",
+            "target": "pass",
+            "correctedRevision": "pass",
+            "supportedExtras": "pass",
+            "untouchedExistingCards": "pass",
+            "additionalInformation": "pass",
+            "newPreference": "not_applicable",
+            "scenarioAccepted": "pass",
+            "narrowedSchemaAdherence": "not_applicable",
+            "proposalCount": 2,
+            "revisionCount": 1,
+            "newCorrectedProposalCount": 0,
+            "instructedAbilityOnly": false
+          },
+          "usage": {
+            "estimatedCostUsd": 0.00193975,
+            "inputTokens": 3950,
+            "outputTokens": 743
+          }
+        },
+        {
+          "slot": 2,
+          "providerSequence": 37,
+          "requestId": "candidate_ordinary",
+          "completedAt": "2026-09-08T05:55:23.197Z",
+          "sentBodySha256": "d4bb8919cc64ab1921de730835318cd7da82bc6312bc31c254a2616977868d50",
+          "responseStatus": 200,
+          "elapsedMs": 8489,
+          "evaluation": {
+            "meaning": "pass",
+            "action": "pass",
+            "target": "pass",
+            "correctedRevision": "pass",
+            "supportedExtras": "pass",
+            "untouchedExistingCards": "pass",
+            "additionalInformation": "pass",
+            "newPreference": "not_applicable",
+            "scenarioAccepted": "pass",
+            "narrowedSchemaAdherence": "not_applicable",
+            "proposalCount": 2,
+            "revisionCount": 1,
+            "newCorrectedProposalCount": 0,
+            "instructedAbilityOnly": false
+          },
+          "usage": {
+            "estimatedCostUsd": 0.001828,
+            "inputTokens": 3950,
+            "outputTokens": 594
+          }
+        },
+        {
+          "slot": 3,
+          "providerSequence": 38,
+          "requestId": "candidate_mixed",
+          "completedAt": "2026-09-08T05:56:51.069Z",
+          "sentBodySha256": "19edbd735efe0ebee1539a6e19a2284466ddbd1d20e731c729ad16afc7280282",
+          "responseStatus": 200,
+          "elapsedMs": 11345,
+          "evaluation": {
+            "meaning": "pass",
+            "action": "pass",
+            "target": "pass",
+            "correctedRevision": "pass",
+            "supportedExtras": "pass",
+            "untouchedExistingCards": "pass",
+            "additionalInformation": "pass",
+            "newPreference": "not_applicable",
+            "scenarioAccepted": "pass",
+            "narrowedSchemaAdherence": "not_applicable",
+            "proposalCount": 2,
+            "revisionCount": 1,
+            "newCorrectedProposalCount": 0,
+            "instructedAbilityOnly": false
+          },
+          "usage": {
+            "estimatedCostUsd": 0.00179435,
+            "inputTokens": 3886,
+            "outputTokens": 579
+          }
+        },
+        {
+          "slot": 4,
+          "providerSequence": 39,
+          "requestId": "candidate_new_only",
+          "completedAt": "2026-09-08T05:58:46.982Z",
+          "sentBodySha256": "3b88bcb6498aaa87550eace8d4018c5ee5b6fd09f01f8c9a30c14acf79cf632d",
+          "responseStatus": 200,
+          "elapsedMs": 6901,
+          "evaluation": {
+            "meaning": "pass",
+            "action": "pass",
+            "target": "not_applicable",
+            "correctedRevision": "not_applicable",
+            "newPreference": "pass",
+            "supportedExtras": "pass",
+            "untouchedExistingCards": "pass",
+            "additionalInformation": "not_applicable",
+            "scenarioAccepted": "pass",
+            "narrowedSchemaAdherence": "not_applicable",
+            "proposalCount": 1,
+            "revisionCount": 0,
+            "newCorrectedProposalCount": 0,
+            "instructedAbilityOnly": false
+          },
+          "usage": {
+            "estimatedCostUsd": 0.00154755,
+            "inputTokens": 3873,
+            "outputTokens": 256
+          }
+        }
+      ],
+      "allScopedCardOperationChecksPassed": true,
+      "furtherCallsSelected": false
+    },
+    "nativePersistence": {
+      "status": "passed",
+      "completedAt": "2026-09-08T06:22:57.417Z",
+      "sourceHead": "3670c26e3d7ab9154a264850a308bc5813d1c5dd",
+      "freezeSha256": "512e656dd9122bbb9751cda19f2af13dc9e9fcb95db824f2cd79658b7211d6c3",
+      "scope": "one scripted seed turn and one real-model correction in a new disposable native session",
+      "providerSequence": 40,
+      "result": {
+        "actualProductionSession": true,
+        "actualNativeBinding": true,
+        "actualHouseholdProfileRead": true,
+        "canonicalUnchanged": true,
+        "canonicalProfileVersionBefore": 0,
+        "canonicalProfileVersionAfter": 0,
+        "canonicalFactCountBefore": 0,
+        "canonicalFactCountAfter": 0,
+        "canonicalProfileRowsBefore": 0,
+        "canonicalProfileRowsAfter": 0,
+        "scriptedSeedTurns": 1,
+        "correctionTurns": 1,
+        "originalCardIdentityPreserved": true,
+        "ordinalPreserved": true,
+        "revisionBefore": 0,
+        "revisionAfter": 1,
+        "correctedDraftPersisted": true,
+        "originalDraftPreserved": false,
+        "correctedDuplicate": false,
+        "extrasSupported": true,
+        "noPrivatePending": true,
+        "cardCount": 2,
+        "sqliteMatchesSocket": true,
+        "assistantTurnStatus": "succeeded",
+        "assistantTurnFailure": null,
+        "correctionSourceMessageMatches": true,
+        "requestBodySha256": "187c2b75f29d3012078656aa4e53f52b4153a0deac92e7f6d3403977358df903",
+        "captureCount": 1,
+        "reportCount": 1,
+        "responseStatus": 200,
+        "responseComplete": true,
+        "transportFailure": false
+      },
+      "verification": {
+        "localCasesPassed": 8,
+        "nativeFakeCalls": 8,
+        "productionFailureCasesPreserveOriginalDraft": [
+          "malformed_json",
+          "nul_suffix",
+          "wrong_target",
+          "unknown"
+        ],
+        "scenarioOnlyRejectionsAfterProductionPersistence": [
+          "strong_dislike_rejected",
+          "equivalent_extras_rejected"
+        ],
+        "semanticExtraScoringIsNotAProductionGuard": true,
+        "independentLiveAndStoppedStorageReview": "accepted_with_reply_limitations"
+      },
+      "stoppedStorage": {
+        "sameDraftIdentityAndOrdinal": true,
+        "revisionBefore": 0,
+        "revisionAfter": 1,
+        "correctedDraftStoredAfterShutdown": true,
+        "correctedDuplicate": false,
+        "cardCount": 2,
+        "privateStateMatchesLiveAfterProjection": true,
+        "canonicalSqlRowsMatchBeforeAndAfter": true,
+        "canonicalProfileVersionBefore": 0,
+        "canonicalProfileVersionAfter": 0,
+        "pendingConfirmations": 0,
+        "correctionTurnSucceeded": true,
+        "rawResponseUntouched": true,
+        "strictCompleteContentParsed": true,
+        "rawCorrectRevisionMatchesPersistedDraft": true,
+        "providerAttemptsForThisInspection": 0,
+        "runtimeRestartsForThisInspection": 0,
+        "method": "Copied complete stopped SQLite DB/WAL/SHM sets with matching hashes, queried copies read-only including committed WAL, then verified originals unchanged."
+      },
+      "stoppedStorageOriginalsUnchanged": true,
+      "accounting": {
+        "providerCalls": 1,
+        "scriptedSeedProviderCalls": 0,
+        "newConservativeReservedMicroUsd": 47872,
+        "cumulativeSnapshotAfterPersistence": {
+          "callsReserved": 40,
+          "reservedMicroUsd": 1905664,
+          "higherCapCallsReserved": 34,
+          "judgeCallsReserved": 0
+        },
+        "financialJournalBytes": 6314,
+        "financialJournalSha256": "02158cfdf648af973d24474544f4a00dc6169ebbdd9ba6afc3f6bcf88ef48b04",
+        "previousFinancialPrefixUnchanged": true,
+        "newScopedSyntheticAdmissions": 1,
+        "oldParticipantJournalUnchanged": true,
+        "reservationIsInvoice": false
+      },
+      "cleanup": {
+        "completedRunnerAbsent": true,
+        "workerdProcessCount": 0,
+        "runtimeDisposed": true,
+        "transportDisposed": true,
+        "socketClosed": true,
+        "harnessPinsUnchanged": 40,
+        "protectedPriorFilesExcludingFinancialUnchanged": 915,
+        "locksAbsent": true
+      },
+      "automaticRetry": false,
+      "outputRepair": false,
+      "replyLimitations": [
+        "No explicit draft or review cue.",
+        "Temperature preference inferred in reply; emitted proposal facts remain supported.",
+        "No canonical-save claim observed."
+      ],
+      "fullyLiveInterviewEstablished": false,
+      "explicitConfirmationExercised": false,
+      "runtimeRestartRecoveryExercised": false,
+      "sessionBExercised": false,
+      "independentReview": {
+        "accepted": true,
+        "sourceHead": "3670c26e3d7ab9154a264850a308bc5813d1c5dd",
+        "freezeSha256": "512e656dd9122bbb9751cda19f2af13dc9e9fcb95db824f2cd79658b7211d6c3",
+        "scope": "Untouched raw output and emitted operations, actual live and stopped SQLite state, canonical before/after invariance, one-call accounting, immutable evidence and full shutdown.",
+        "remainingFindings": "Reply wording limitations recorded separately; broad Stage 2 acceptance not established."
+      },
+      "furtherCallsSelected": false
+    },
+    "replyLimitation": {
+      "affectedSlots": [1, 2, 3, 4],
+      "explicitDraftTentativeOrReviewMarkerPresent": false,
+      "ordinaryPreferenceStrengtheningObserved": true,
+      "slotTwoInferredTemperaturePreferenceObserved": true,
+      "canonicalSaveClaimObserved": false,
+      "separateFromCardOperationAcceptance": true,
+      "independentReviewAggregateReceipt": "correction-fix-v1/root-close.receipt.json"
+    },
+    "accounting": {
+      "newRequestControlCalls": 4,
+      "newConservativeReservedMicroUsd": 191488,
+      "cumulativeSnapshotAfterRequestControls": {
+        "callsReserved": 39,
+        "reservedMicroUsd": 1857792,
+        "higherCapCallsReserved": 33,
+        "judgeCallsReserved": 0
+      },
+      "maximumProviderCalls": 79,
+      "maximumHigherCapCalls": 65,
+      "maximumJudgeCalls": 8,
+      "budgetMicroUsd": 10000000,
+      "fourControlUsageEstimateUsd": 0.00710965,
+      "cumulativeActualSpendUsd": null,
+      "reservationIsInvoice": false,
+      "invoiceVerified": false,
+      "financialPolicyChanged": false,
+      "participantAdmissions": 0,
+      "financialJournalAtLastClosure": {
+        "bytes": 6164,
+        "sha256": "abfc89d2523b7e8261f0fb5a9a55c73bf1fab58b4f33788f2cb5bf79739bf026",
+        "priorPrefixesUnchanged": true
+      },
+      "participantJournalUnchanged": true
+    },
+    "cleanup": {
+      "allRunnersAndMatchingLocalWorkersAbsent": true,
+      "allRuntimesDisposed": true,
+      "allRemoteTransportDisposalsCompleted": true,
+      "allLocksAbsent": true,
+      "harnessPinsUnchangedAtEveryClosure": 42,
+      "protectedNonfinancialFilesUnchangedAtEveryClosure": 851,
+      "applicationStateMutations": 0,
+      "automaticRetry": false,
+      "outputRepair": false
+    },
+    "limitations": [
+      "The four request controls and one scripted-seed native correction establish bounded operation and private-draft persistence evidence, not a fully live interview, complete family, or general model reliability.",
+      "Replies lack explicit draft or review wording, and ordinary replies strengthen or infer preference wording beyond the supplied facts; no canonical-save claim was observed.",
+      "Earlier failed trials remain unchanged; no fresh full-production v4 before-after comparison was run.",
+      "Fresh B removal, remaining families, model comparison, judge scoring, and human calibration remain incomplete."
+    ],
+    "acceptedBaselineId": null,
+    "mergeReady": false
   }
 }

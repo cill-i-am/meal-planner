@@ -79,6 +79,17 @@ request-contract audit corrected the GPT-OSS schema wrapper at `55a34ea`. Its
 full-versus-revision-only probe failed same-card correction and strict JSON
 parsing, respectively. The pair changed no application state and does not prove
 the cause of historical failures or complete native family acceptance.
+A six-call diagnostic ladder found that ordinary operation selection failed
+twice while an explicit-revision ability control passed twice. Prompt v5 at
+`3670c26e` then passed four full-production request controls: ordinary
+correction twice, a mixed correction choosing the proper existing card and
+preserving the other card, and new information producing one proposal without
+revisions. A separate native proof then persisted the same-card correction using
+one scripted seed and one live correction, while leaving the confirmed profile
+unchanged. It does not establish a fully live interview or confirmation. Reply
+wording lacked an explicit review cue and sometimes strengthened the stated
+preference, without claiming a canonical save. Earlier failures and the
+remaining family, comparison, and human-calibration gates are unchanged.
 No soft judge or human scores were assigned; no configuration or baseline is
 accepted.
 Prior scripted proofs establish runtime enforcement only.
