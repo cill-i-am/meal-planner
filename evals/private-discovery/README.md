@@ -14,12 +14,7 @@ These repository-owned synthetic product-quality assets implement the WI03 adult
 
 The [Stage 2 plan](../../docs/delivery/stages/02-private-discovery/README.md) retains shorter dependant assistance and the full repeat-review flow in WI04. This pack exercises an adult's own discovery/profile portion of every family. Discussing a dependant or fallback is not a dependant-targeted confirmation flow. Routine, capacity, equipment and fallback facts can be useful private context; they cannot be squeezed into food-preference labels. All named deferred obligations are `not_exercised`, excluded from pass counts and quality aggregates, and remain required in their owning stage. This scoped pack cannot establish whole-Stage-2 completion or the complete external-beta gate.
 
-The latest measured candidate remains prompt v6 at the source recorded in that
-result. Current prompt v7 has passed local adapter/static checks only and has no
-real-model quality result. No family acceptance or human-calibrated baseline is
-claimed. Earlier diagnostic and correction results remain in
-[`gpt-schema-prompt-retry.json`](gpt-schema-prompt-retry.json) and the
-[owning work item's history](../../docs/delivery/stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#correction-diagnosis-and-prompt-v5).
+The latest measured candidate remains prompt v6 at the source recorded in that result. Current prompt v7 has passed local adapter/static checks only and has no real-model quality result. No family acceptance or human-calibrated baseline is claimed. Earlier diagnostic and correction results remain in [`gpt-schema-prompt-retry.json`](gpt-schema-prompt-retry.json) and the [owning work item's history](../../docs/delivery/stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#correction-diagnosis-and-prompt-v5).
 
 ## Assisted disclosure policy: private-discovery-driver-v1
 

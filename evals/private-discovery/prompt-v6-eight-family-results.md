@@ -3,7 +3,7 @@
 **No family passed:** five incomplete, two grounding failures and one output-contract failure. The phase made 28 candidate calls: 27 native turns succeeded and one failed. No judge or human scoring ran.
 
 | Family | Result | Calls | Native succeeded / failed | Input / output tokens | Estimated USD | Reserved USD |
-|---|---|---:|---:|---:|---:|---:|
+| --- | --- | --: | --: | --: | --: | --: |
 | simple household baseline | incomplete | 5 | 5 / 0 | 20,700 / 2,436 | 0.00907200 | 0.23936000 |
 | conflicting adult routines | incomplete | 4 | 4 / 0 | 16,405 / 1,883 | 0.00715400 | 0.19148800 |
 | dependants and fallbacks | grounding_failure | 1 | 1 / 0 | 3,764 / 429 | 0.00163915 | 0.04787200 |
