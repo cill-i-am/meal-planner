@@ -290,6 +290,11 @@ The local proof used Nitro UI, canonical API test composition, native production
 classes, and synthetic proposals; it does not claim full operational bootstrap,
 model/provider execution, cloud changes, or deployment.
 
+The product owner has also accepted
+[future site-wide json-render adoption](../product-blueprint/delivery-roadmap.md#accepted-future-interface-direction--json-render).
+Its staged rollout follows the current discovery and evaluation work; it is not
+an active implementation task.
+
 ## Deliberate Non-Work
 
 Beyond the authorized private-output safety and Stage 2 Work Items 01–03, do not start
