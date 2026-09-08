@@ -7779,6 +7779,185 @@ describe("canonical private profile cards", () => {
     connection.socket.close();
   });
 
+  it("removes only the confirmed ordinary fact in a fresh session after completing its corrected source session", async () => {
+    const setup = await prepareLinkedAdult("Private Ordinary Removal");
+    const first = await openPrivateConnection(setup.memberCookie);
+    const original = await seedPrivateCard(first);
+    const corrected = await cardExchange(first, {
+      cardId: original.id,
+      cardRevision: original.revision,
+      change: preferenceChange("Broccoli"),
+      expectedProfileVersion: 0,
+      expectedVersion: 0,
+      mutationId: crypto.randomUUID(),
+      reviewedFact: null,
+      type: "ReviseProfileCard",
+    });
+    expect(corrected).toMatchObject({
+      card: { id: original.id, revision: 1, status: "proposed" },
+      type: "CardUpdated",
+    });
+    if (corrected.type !== "CardUpdated") {
+      throw new Error("Expected the corrected private proposal");
+    }
+    expect(await readCardProfile(setup)).toMatchObject({
+      facts: [],
+      version: 0,
+    });
+    const firstConfirmationId = crypto.randomUUID();
+    expect(
+      await freezePrivateCard(
+        first,
+        corrected.card,
+        corrected.state.version,
+        firstConfirmationId
+      )
+    ).toMatchObject({ type: "ConfirmationPending" });
+    const firstConfirmation = await postPrivateConfirmation(
+      setup.memberCookie,
+      first,
+      firstConfirmationId
+    );
+    expect(firstConfirmation.status).toBe(204);
+    const firstProfile = await readCardProfile(setup);
+    expect(firstProfile).toMatchObject({
+      facts: [{ value: preferenceChange("Broccoli").fact }],
+      version: 1,
+    });
+    const unrelated = await seedPrivateCard(
+      first,
+      preferenceChange("Potatoes"),
+      firstProfile.version
+    );
+    const firstCards = await readPrivateCards(first);
+    const unrelatedConfirmationId = crypto.randomUUID();
+    expect(
+      await freezePrivateCard(
+        first,
+        unrelated,
+        firstCards.state.version,
+        unrelatedConfirmationId
+      )
+    ).toMatchObject({ type: "ConfirmationPending" });
+    const unrelatedConfirmation = await postPrivateConfirmation(
+      setup.memberCookie,
+      first,
+      unrelatedConfirmationId
+    );
+    expect(unrelatedConfirmation.status).toBe(204);
+    const committed = await readCardProfile(setup);
+    expect(committed).toMatchObject({
+      facts: [
+        { value: preferenceChange("Broccoli").fact },
+        { value: preferenceChange("Potatoes").fact },
+      ],
+      version: 2,
+    });
+    const completedCards = await readPrivateCards(first);
+    expect(
+      await cardExchange(first, {
+        expectedVersion: completedCards.state.version,
+        mutationId: crypto.randomUUID(),
+        type: "CompleteSession",
+      })
+    ).toMatchObject({
+      state: { status: "completed" },
+      type: "SessionCompleted",
+    });
+    const completed = await readPrivateCards(first);
+    expect(completed).toMatchObject({
+      cards: [{ status: "confirmed" }, { status: "confirmed" }],
+      pendingConfirmation: null,
+      state: { status: "completed" },
+    });
+
+    const second = await openPrivateConnection(setup.memberCookie);
+    expect(second.sessionReference).not.toBe(first.sessionReference);
+    expect(await readPrivateCards(second)).toMatchObject({
+      cards: [],
+      pendingConfirmation: null,
+      state: { status: "open", version: 0 },
+    });
+    const currentResponse = await getRuntime().dispatchFetch(
+      profileAddress(setup.adult.id),
+      { headers: { cookie: setup.memberCookie } }
+    );
+    expect(currentResponse.status).toBe(200);
+    const current = Schema.decodeUnknownSync(PersonProfile)(
+      await currentResponse.json()
+    );
+    expect(current).toEqual(committed);
+    const [target, retained] = current.facts;
+    if (target === undefined || retained === undefined) {
+      throw new Error("Expected the two actually confirmed preferences");
+    }
+    const removal = await seedPrivateCard(
+      second,
+      { _tag: "RemoveOrdinaryProfileFact", factId: target.id },
+      current.version,
+      target.value
+    );
+    expect(await readCardProfile(setup)).toEqual(committed);
+    const removalId = crypto.randomUUID();
+    expect(
+      await freezePrivateCard(second, removal, 0, removalId)
+    ).toMatchObject({
+      card: {
+        change: { _tag: "RemoveOrdinaryProfileFact", factId: target.id },
+        expectedProfileVersion: current.version,
+        reviewedFact: target.value,
+        status: "pending",
+      },
+      type: "ConfirmationPending",
+    });
+    expect(await readCardProfile(setup)).toEqual(committed);
+    const removalResponse = await postPrivateConfirmation(
+      setup.memberCookie,
+      second,
+      removalId
+    );
+    expect(removalResponse.status).toBe(204);
+    const removed = await readCardProfile(setup);
+    expect(removed.facts).toEqual([retained]);
+    expect(removed).toMatchObject({
+      audit: { nextVersion: 3, previousVersion: 2, source: "interview" },
+      version: 3,
+    });
+    const settled = await readPrivateCards(second);
+    expect(settled).toMatchObject({
+      cards: [
+        {
+          id: removal.id,
+          outcome: { profileVersion: 3, type: "committed" },
+          status: "confirmed",
+        },
+      ],
+      pendingConfirmation: null,
+    });
+    const replay = await postPrivateConfirmation(
+      setup.memberCookie,
+      second,
+      removalId
+    );
+    expect(replay.status).toBe(204);
+    expect(await readCardProfile(setup)).toEqual(removed);
+    expect(await readPrivateCards(second)).toMatchObject({
+      cards: settled.cards,
+      pendingConfirmation: settled.pendingConfirmation,
+      state: settled.state,
+    });
+    expect(
+      await freezePrivateCard(first, corrected.card, completed.state.version)
+    ).toMatchObject({ reason: "session_completed", type: "Rejected" });
+    expect(await readPrivateCards(first)).toMatchObject({
+      cards: completed.cards,
+      pendingConfirmation: completed.pendingConfirmation,
+      state: completed.state,
+    });
+    first.socket.close();
+    second.socket.close();
+  });
+
   it("pages maximum-label proposals within the private frame budget and retains completed cards as read-only history", async () => {
     const setup = await prepareLinkedAdult("Private Card Bounded Pages");
     const connection = await openPrivateConnection(setup.memberCookie);
