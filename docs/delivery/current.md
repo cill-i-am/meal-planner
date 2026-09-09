@@ -26,15 +26,15 @@
   [Work Item 03 — adaptive discovery and evaluation](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
   is in progress in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218).
   Private adaptive-turn implementation and local browser acceptance are complete.
-  The latest [prompt-v8 result](../../evals/private-discovery/prompt-v8-schema-results.md)
-  passed native request handling and created a valid draft, then failed on a
-  persisted summary that claimed the unconfirmed replacement was complete.
-  The canonical profile remained unchanged. The current v9 prompt separates
-  field duties, keeps summary content noncanonical, and requires a concrete
-  follow-up while consequential uncertainty remains. Local checks pass, but v9
-  has not run against the real model. No family acceptance, judge scoring, human
-  calibration, or baseline is claimed; the required live fresh-session repeat
-  remains unrun. The draft is not ready to merge. The [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
+  The latest [prompt-v9 result](../../evals/private-discovery/prompt-v9-duties-results.md)
+  produced a valid draft with the wrong effect: an addition instead of the
+  requested replacement. No confirmation occurred and the canonical profile
+  remained unchanged. The current v10 prompt chooses the intended profile effect
+  before creating or revising a card and grounds the reply in that draft's actual
+  effect. Local checks pass, but v10 has not run against the real model. No family
+  acceptance, judge scoring, human calibration, or baseline is claimed; the
+  required live fresh-session repeat remains unrun. The draft is not ready to
+  merge. The [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
   retains current scope and historical evidence.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)

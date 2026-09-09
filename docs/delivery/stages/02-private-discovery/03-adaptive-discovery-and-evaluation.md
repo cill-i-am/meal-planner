@@ -7,41 +7,40 @@
 
 ## Current evaluation status
 
-The latest [prompt-v8 schema result](../../../../evals/private-discovery/prompt-v8-schema-results.md)
-contains three successful native generations in the first repair family. The
-context-specific schema exposed only new proposals when no cards were present;
-the model then created a valid replacement draft. A later request exposed a
-revision restricted to the observed card, but no revision was emitted. This
-establishes the observed request handling, not a live revision or family pass.
+The latest [prompt-v9 result](../../../../evals/private-discovery/prompt-v9-duties-results.md)
+contains two successful native generations in the first repair family. The
+second turn represented an explicitly requested replacement as a new addition:
+its proposed `AddConfirmedProfileFact` had no target fact ID or reviewed prior
+fact. If confirmed, it would retain the old preference alongside the new one.
+Independent review confirmed the family-specific required-effect failure. No
+confirmation occurred, and the whole canonical profile remained unchanged at
+version 1; no duplicate was committed.
 
-The third turn persisted a false completed-replacement claim in its private
-summary while the card remained proposed at revision 0 and the canonical profile
-remained unchanged at version 1. Independent review confirmed a
-`supported_material_facts` hard failure. Its visible reply was future-tense;
-no completed plan or shopping repair was claimed. Required dependency and safety
-discoveries were not reached. All three calls, including the semantic failure,
-used 10,159 input and 1,501 output tokens, with USD 0.00468140 estimated cost.
-No confirmation, judge scoring, human calibration, or baseline acceptance
-occurred. Earlier [v7 phases](../../../../evals/private-discovery/prompt-v7-two-phase-results.md)
-and the [v6 eight-family result](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
-remain separate, unchanged historical evidence.
+The reply described a reviewable draft and asked a concrete follow-up, and the
+summary attributed the replacement to the participant's request. These bounded
+observations do not establish complete v9 duties or family acceptance. The
+proposed addition still contradicted the requested replacement. Earlier
+[v8](../../../../evals/private-discovery/prompt-v8-schema-results.md),
+[v7](../../../../evals/private-discovery/prompt-v7-two-phase-results.md), and
+[v6](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
+results remain separate, unchanged historical evidence.
 
-The current v9 prompt gives each output field a specific duty. Proposals remain
-useful early drafts. The reply asks one concrete next question when consequential
-uncertainty remains, respects stopping, and treats a neutral answer as closing
-only the topic just asked. The summary retains participant disclosures,
-corrections, rejections, asked/closed topics, and unresolved needs as noncanonical
-conversation continuity. Saved profile and card state are supplied separately
-and are omitted from summary narration. The existing correction sequence,
-preference qualifiers, v8 provider schemas, canonical decoding, native authority,
-model settings, and byte limits are unchanged.
+The current v10 prompt selects the intended profile effect before the outer card
+operation. A concise table distinguishes an additional fact from replacement or
+removal of an existing fact and copies targeted fact IDs from the current
+profile. The reply describes the effect encoded by the actual emitted or retained
+draft if confirmed. A value-only correction to a proposed addition still revises
+that draft with a corrected addition; an explicitly changed intended effect
+follows the operation table. V9's early-card, discovery, topic-closure, and
+noncanonical summary duties are preserved. Provider schemas, canonical decoding,
+native authority, model settings, and byte limits are unchanged.
 
 All 36 adapter tests, API type checking, and affected lint/format checks pass.
-Local calculations on the three retained v8 request contexts keep the revised
-requests within the unchanged payload limit. No native suite was repeated for
-this prompt-only change. **V9 has not run against the real model and is not a
-verified semantic fix.** Earlier implementation and evaluation evidence remains
-below, including the [bounded v5 correction proof](#correction-diagnosis-and-prompt-v5).
+Local calculations on the retained v9 request contexts keep the revised requests
+within the unchanged payload limit. No native suite was repeated for this
+prompt-only change. **V10 has not run against the real model and is not a verified
+semantic fix.** Earlier implementation and evaluation evidence remains below,
+including the [bounded v5 correction proof](#correction-diagnosis-and-prompt-v5).
 
 ## Outcome and scope
 
@@ -583,10 +582,10 @@ contains the metadata results and receipt digests.
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
-remain in progress and are not ready to merge. The [v8 result](../../../../evals/private-discovery/prompt-v8-schema-results.md)
-has a semantic hard failure; the current v9 prompt has only local validation.
-Passing native discovery across all eight families, candidate comparison, the
-required live A-to-B removal, and actual human calibration remain incomplete.
-Earlier scripted and bounded correction proofs do not replace those gates. The
-canonical evidence and calibration templates remain unfilled. No application
-deployment occurred.
+remain in progress and are not ready to merge. The [v9 result](../../../../evals/private-discovery/prompt-v9-duties-results.md)
+failed the required proposed effect; the current v10 prompt has only local
+validation. Passing native discovery across all eight families, candidate
+comparison, the required live A-to-B removal, and actual human calibration remain
+incomplete. Earlier scripted and bounded correction proofs do not replace those
+gates. The canonical evidence and calibration templates remain unfilled. No
+application deployment occurred.
