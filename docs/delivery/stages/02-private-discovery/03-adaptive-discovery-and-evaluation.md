@@ -7,41 +7,41 @@
 
 ## Current evaluation status
 
-The latest [prompt-v7 repair results](../../../../evals/private-discovery/prompt-v7-two-phase-results.md)
-contain two distinct stopped phases. The first made one successful model call,
-then an idle gap between separate actor commands left the next queued turn
-interrupted without another provider call. Local fake-provider proof reproduced
-that lifecycle and showed that immediate append-to-generation orchestration
-matches the browser's normal flow. The accepted restart and privacy fences were
-unchanged.
+The latest [prompt-v8 schema result](../../../../evals/private-discovery/prompt-v8-schema-results.md)
+contains three successful native generations in the first repair family. The
+context-specific schema exposed only new proposals when no cards were present;
+the model then created a valid replacement draft. A later request exposed a
+revision restricted to the observed card, but no revision was emitted. This
+establishes the observed request handling, not a live revision or family pass.
 
-The second phase used that immediate sequence. Its first call succeeded; the
-second returned complete valid JSON with a normal finish, but attempted to revise
-a nonexistent card when the context contained no cards. Native review rejected it
-at `proposal_revision_target`, preserving the confirmed profile. This differs
-from the earlier v6 completion-limit failure. Across both v7 phases, three calls
-used 12,435 input and 1,581 output tokens, with USD 0.005538 estimated cost.
-No family passed, and no judge, human calibration, or baseline was recorded.
-The earlier [eight-family v6 result](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
-remains unchanged.
+The third turn persisted a false completed-replacement claim in its private
+summary while the card remained proposed at revision 0 and the canonical profile
+remained unchanged at version 1. Independent review confirmed a
+`supported_material_facts` hard failure. Its visible reply was future-tense;
+no completed plan or shopping repair was claimed. Required dependency and safety
+discoveries were not reached. All three calls, including the semantic failure,
+used 10,159 input and 1,501 output tokens, with USD 0.00468140 estimated cost.
+No confirmation, judge scoring, human calibration, or baseline acceptance
+occurred. Earlier [v7 phases](../../../../evals/private-discovery/prompt-v7-two-phase-results.md)
+and the [v6 eight-family result](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
+remain separate, unchanged historical evidence.
 
-The current v8 request schema omits revision operations when no proposed cards
-are eligible. Otherwise, one revision shape lists only eligible card IDs from
-the actual supplied context. The same generated schema appears in the system
-instructions and provider response format. Canonical output decoding, exact
-card/revision checks, confirmation authority, prompt prose, model settings,
-and byte limits are unchanged. The provider schema is guidance, not authority:
-ignored restrictions still face native validation. No output repair or retry
-was added.
+The current v9 prompt gives each output field a specific duty. Proposals remain
+useful early drafts. The reply asks one concrete next question when consequential
+uncertainty remains, respects stopping, and treats a neutral answer as closing
+only the topic just asked. The summary retains participant disclosures,
+corrections, rejections, asked/closed topics, and unresolved needs as noncanonical
+conversation continuity. Saved profile and card state are supplied separately
+and are omitted from summary narration. The existing correction sequence,
+preference qualifiers, v8 provider schemas, canonical decoding, native authority,
+model settings, and byte limits are unchanged.
 
-All 36 adapter tests, 13 focused native tests, API type checking, and affected
-lint/format checks pass. One household fixture needed an execution-only
-60-second startup allowance; its original 30-second hook was restored. A
-representative 25-card context exceeds the full request limit even under the
-previous generic schema; the bounded request still fails before dispatch rather
-than dropping constraints or falling back. **V8 has not run against the real
-model and is not a verified semantic fix.** Earlier implementation and evaluation
-evidence remains below, including the [bounded v5 correction proof](#correction-diagnosis-and-prompt-v5).
+All 36 adapter tests, API type checking, and affected lint/format checks pass.
+Local calculations on the three retained v8 request contexts keep the revised
+requests within the unchanged payload limit. No native suite was repeated for
+this prompt-only change. **V9 has not run against the real model and is not a
+verified semantic fix.** Earlier implementation and evaluation evidence remains
+below, including the [bounded v5 correction proof](#correction-diagnosis-and-prompt-v5).
 
 ## Outcome and scope
 
@@ -583,8 +583,8 @@ contains the metadata results and receipt digests.
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
-remain in progress and are not ready to merge. The [v7 repair result](../../../../evals/private-discovery/prompt-v7-two-phase-results.md)
-is nonpassing; the current v8 candidate has only local adapter/native validation.
+remain in progress and are not ready to merge. The [v8 result](../../../../evals/private-discovery/prompt-v8-schema-results.md)
+has a semantic hard failure; the current v9 prompt has only local validation.
 Passing native discovery across all eight families, candidate comparison, the
 required live A-to-B removal, and actual human calibration remain incomplete.
 Earlier scripted and bounded correction proofs do not replace those gates. The
