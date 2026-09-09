@@ -2082,6 +2082,24 @@ describe("native adaptive assistant attempts through the production model adapte
         ...output,
         proposals: [
           {
+            _tag: "ReviseProposedProfileCard",
+            cardId: "00000000-0000-0000-0000-000000000000",
+            change: {
+              _tag: "AddConfirmedProfileFact",
+              fact: { _tag: "NoKnownHardConstraints" },
+            },
+            expectedRevision: 0,
+          },
+        ],
+      },
+      stage: "proposal_revision_target",
+      title: "a revision when no proposed card exists",
+    },
+    {
+      result: {
+        ...output,
+        proposals: [
+          {
             _tag: "ProposeProfileCard",
             change: {
               _tag: "RemoveOrdinaryProfileFact",

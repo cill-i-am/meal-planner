@@ -1,37 +1,47 @@
 # Work Item 03 — Adaptive discovery and evaluation
 
-- Status: In progress (2026-09-08); [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
+- Status: In progress (2026-09-09); [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
 - Authorized by the product owner to continue after Work Item 02.
 - Implementation base: `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`.
 - Owning stage: [Stage 2](README.md).
 
 ## Current evaluation status
 
-The latest measured [prompt-v6 eight-family result](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
-at `cd24fbf7283a311f0387d84b2560db761bc26e38` made 28 candidate calls:
-27 native turns succeeded and one failed. No family passed: five were incomplete,
-two failed grounding, and one failed the output contract. The failed completion
-hit the output limit and was rejected as `incomplete_completion` before content
-JSON decoding or card review. The required live fresh-session repeat did not run;
-no judge, human calibration, candidate acceptance, or baseline was recorded.
-The result retains measured usage, timing, and shutdown limitations.
+The latest [prompt-v7 repair results](../../../../evals/private-discovery/prompt-v7-two-phase-results.md)
+contain two distinct stopped phases. The first made one successful model call,
+then an idle gap between separate actor commands left the next queued turn
+interrupted without another provider call. Local fake-provider proof reproduced
+that lifecycle and showed that immediate append-to-generation orchestration
+matches the browser's normal flow. The accepted restart and privacy fences were
+unchanged.
 
-The current source advances the candidate to prompt v7. It selects a concrete
-consequential follow-up, keeps closed topics closed, grounds replies and summaries
-in disclosed facts, and distinguishes hypothetical discussion from an actual
-change request. It also distinguishes a new draft about a saved profile fact
-from revision of an actual existing proposed card. The established same-card
-correction instructions and example remain intact. Schema, runtime, confirmation
-authority, model settings, and the evaluation policy are unchanged; there is no
-output repair.
+The second phase used that immediate sequence. Its first call succeeded; the
+second returned complete valid JSON with a normal finish, but attempted to revise
+a nonexistent card when the context contained no cards. Native review rejected it
+at `proposal_revision_target`, preserving the confirmed profile. This differs
+from the earlier v6 completion-limit failure. Across both v7 phases, three calls
+used 12,435 input and 1,581 output tokens, with USD 0.005538 estimated cost.
+No family passed, and no judge, human calibration, or baseline was recorded.
+The earlier [eight-family v6 result](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
+remains unchanged.
 
-All 27 adapter tests, API type checking, and focused lint/format checks pass.
-Local calculations using the current production schema and three retained
-synthetic request contexts measured 26,675, 26,434, and 26,360 bytes, below the
-unchanged 32,768-byte payload limit. These examples do not guarantee every future
-context fits. **V7 has not run against the real model and is not a verified
-semantic fix.** Earlier implementation and evaluation evidence remains below,
-including the [bounded v5 correction proof](#correction-diagnosis-and-prompt-v5).
+The current v8 request schema omits revision operations when no proposed cards
+are eligible. Otherwise, one revision shape lists only eligible card IDs from
+the actual supplied context. The same generated schema appears in the system
+instructions and provider response format. Canonical output decoding, exact
+card/revision checks, confirmation authority, prompt prose, model settings,
+and byte limits are unchanged. The provider schema is guidance, not authority:
+ignored restrictions still face native validation. No output repair or retry
+was added.
+
+All 36 adapter tests, 13 focused native tests, API type checking, and affected
+lint/format checks pass. One household fixture needed an execution-only
+60-second startup allowance; its original 30-second hook was restored. A
+representative 25-card context exceeds the full request limit even under the
+previous generic schema; the bounded request still fails before dispatch rather
+than dropping constraints or falling back. **V8 has not run against the real
+model and is not a verified semantic fix.** Earlier implementation and evaluation
+evidence remains below, including the [bounded v5 correction proof](#correction-diagnosis-and-prompt-v5).
 
 ## Outcome and scope
 
@@ -573,8 +583,8 @@ contains the metadata results and receipt digests.
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
-remain in progress and are not ready to merge. The [v6 family result](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
-is nonpassing; the current v7 candidate has only local adapter/static validation.
+remain in progress and are not ready to merge. The [v7 repair result](../../../../evals/private-discovery/prompt-v7-two-phase-results.md)
+is nonpassing; the current v8 candidate has only local adapter/native validation.
 Passing native discovery across all eight families, candidate comparison, the
 required live A-to-B removal, and actual human calibration remain incomplete.
 Earlier scripted and bounded correction proofs do not replace those gates. The

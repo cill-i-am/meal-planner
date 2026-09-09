@@ -3,6 +3,7 @@ import { Effect, Option, Schema } from "effect";
 import { Tool } from "effect/unstable/ai";
 
 import {
+  makePrivateDiscoveryProviderOutput,
   PRIVATE_DISCOVERY_CONTEXT_BYTES,
   PRIVATE_DISCOVERY_POLICY_VERSION,
   PRIVATE_DISCOVERY_PROMPT_VERSION,
@@ -74,8 +75,6 @@ const Completion = Schema.Struct({
   ).pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(1))),
   usage: Schema.optionalKey(ProviderUsage),
 });
-const outputJsonSchema = Tool.getJsonSchemaFromSchema(PrivateDiscoveryOutput);
-const systemInstructions = `${privateDiscoveryInstructions}\n\nOutput JSON schema:\n${JSON.stringify(outputJsonSchema)}`;
 const configuration = Schema.decodeUnknownOption(
   Schema.fromJsonString(PrivateDiscoveryConfiguration)
 );
@@ -83,22 +82,28 @@ const configuration = Schema.decodeUnknownOption(
 const requestFor = (
   config: PrivateDiscoveryConfiguration,
   context: PrivateDiscoveryContext
-) => ({
-  body: {
-    max_tokens: config.maxOutputTokens,
-    messages: [
-      { content: systemInstructions, role: "system" as const },
-      { content: JSON.stringify(context), role: "user" as const },
-    ],
-    response_format: {
-      json_schema: outputJsonSchema,
-      type: "json_schema" as const,
+) => {
+  const outputJsonSchema = Tool.getJsonSchemaFromSchema(
+    makePrivateDiscoveryProviderOutput(context.cards)
+  );
+  const systemInstructions = `${privateDiscoveryInstructions}\n\nOutput JSON schema:\n${JSON.stringify(outputJsonSchema)}`;
+  return {
+    body: {
+      max_tokens: config.maxOutputTokens,
+      messages: [
+        { content: systemInstructions, role: "system" as const },
+        { content: JSON.stringify(context), role: "user" as const },
+      ],
+      response_format: {
+        json_schema: outputJsonSchema,
+        type: "json_schema" as const,
+      },
+      stream: false as const,
+      temperature: 0,
     },
-    stream: false as const,
-    temperature: 0,
-  },
-  model: config.model,
-});
+    model: config.model,
+  };
+};
 
 const readBoundedResponse = async (
   response: NativeCloudflare.Response,

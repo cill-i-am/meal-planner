@@ -4,6 +4,7 @@ import { Tool } from "effect/unstable/ai";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  makePrivateDiscoveryProviderOutput,
   PrivateDiscoveryContext,
   PrivateDiscoveryOutput,
 } from "./private-discovery-model.js";
@@ -26,6 +27,22 @@ const context = () =>
     ],
     profile: { facts: [], version: 0 },
     summary: "",
+  });
+const proposedCard = (revision: number) =>
+  Schema.decodeUnknownSync(PrivateDiscoveryContext.fields.cards.value)({
+    change: {
+      _tag: "AddConfirmedProfileFact",
+      fact: {
+        _tag: "FoodPreference",
+        label: `Illustrative dish ${revision}`,
+        sentiment: "like",
+        targetKind: "dish",
+      },
+    },
+    id: crypto.randomUUID(),
+    reviewedFact: null,
+    revision,
+    status: "proposed",
   });
 const config: PrivateDiscoveryConfiguration = {
   gatewayId: "synthetic-private-discovery",
@@ -88,6 +105,147 @@ const fixture = (
 };
 
 describe("private discovery Workers AI boundary", () => {
+  it.each([0, 1, 2])(
+    "uses one matching provider schema for %s eligible cards in both request locations",
+    async (count) => {
+      const test = fixture();
+      const cards = Array.from({ length: count }, (_, index) =>
+        proposedCard(index)
+      );
+      const input = { ...test.input, context: { ...context(), cards } };
+      await Effect.runPromise(test.model.generate(input));
+      const jsonSchema = Tool.getJsonSchemaFromSchema(
+        makePrivateDiscoveryProviderOutput(cards)
+      );
+      expect(test.run).toHaveBeenCalledOnce();
+      expect(test.run.mock.calls[0]?.[1]).toMatchObject({
+        messages: [
+          {
+            content: `${privateDiscoveryInstructions}\n\nOutput JSON schema:\n${JSON.stringify(jsonSchema)}`,
+            role: "system",
+          },
+          { content: JSON.stringify(input.context), role: "user" },
+        ],
+        response_format: { json_schema: jsonSchema, type: "json_schema" },
+      });
+      expect(jsonSchema).not.toHaveProperty("$defs");
+      const decode = Schema.decodeUnknownSync(
+        makePrivateDiscoveryProviderOutput(cards)
+      );
+      const { change } = proposedCard(0);
+      expect(
+        decode({
+          ...output,
+          proposals: [{ _tag: "ProposeProfileCard", change }],
+        })
+      ).toMatchObject({ proposals: [{ _tag: "ProposeProfileCard" }] });
+      for (const card of cards) {
+        expect(
+          decode({
+            ...output,
+            proposals: [
+              { _tag: "ProposeProfileCard", change },
+              {
+                _tag: "ReviseProposedProfileCard",
+                cardId: card.id,
+                change,
+                expectedRevision: card.revision,
+              },
+            ],
+          })
+        ).toMatchObject({ proposals: [{}, { cardId: card.id }] });
+      }
+      expect(() =>
+        decode({
+          ...output,
+          proposals: [
+            {
+              _tag: "ReviseProposedProfileCard",
+              cardId: "00000000-0000-0000-0000-000000000000",
+              change,
+              expectedRevision: 0,
+            },
+          ],
+        })
+      ).toThrow();
+    }
+  );
+
+  it.each(["pending", "rejected", "confirmed", "conflict"] as const)(
+    "omits %s cards from provider revision choices",
+    (status) => {
+      const unavailable = { ...proposedCard(0), status };
+      const eligible = proposedCard(1);
+      const revision = {
+        _tag: "ReviseProposedProfileCard",
+        cardId: unavailable.id,
+        change: unavailable.change,
+        expectedRevision: unavailable.revision,
+      };
+      for (const cards of [[unavailable], [unavailable, eligible]]) {
+        expect(() =>
+          Schema.decodeUnknownSync(makePrivateDiscoveryProviderOutput(cards))({
+            ...output,
+            proposals: [revision],
+          })
+        ).toThrow();
+      }
+    }
+  );
+
+  it("leaves canonical decoding and exact revision authority unchanged", () => {
+    const card = proposedCard(2);
+    const revision = {
+      _tag: "ReviseProposedProfileCard",
+      cardId: card.id,
+      change: card.change,
+      expectedRevision: card.revision + 1,
+    };
+    const candidate = { ...output, proposals: [revision] };
+    expect(Schema.decodeUnknownSync(PrivateDiscoveryOutput)(candidate)).toEqual(
+      candidate
+    );
+    expect(
+      Schema.decodeUnknownSync(makePrivateDiscoveryProviderOutput([card]))(
+        candidate
+      )
+    ).toEqual(candidate);
+    const canonicalOnly = {
+      ...output,
+      proposals: [{ ...revision, cardId: crypto.randomUUID() }],
+    };
+    expect(
+      Schema.decodeUnknownSync(PrivateDiscoveryOutput)(canonicalOnly)
+    ).toEqual(canonicalOnly);
+  });
+
+  it("rejects an oversized 25-card provider request before claiming or dispatching", async () => {
+    const test = fixture();
+    const input = {
+      ...test.input,
+      context: {
+        ...context(),
+        cards: Array.from({ length: 25 }, (_, index) => proposedCard(index)),
+        messages: [
+          {
+            id: crypto.randomUUID(),
+            role: "participant" as const,
+            text: "x".repeat(2000),
+          },
+        ],
+      },
+    };
+    expect(
+      new TextEncoder().encode(JSON.stringify(input.context)).byteLength
+    ).toBeLessThan(24_576);
+    const error = await Effect.runPromise(
+      Effect.flip(test.model.generate(input))
+    );
+    expect(error.reason).toBe("context_limit");
+    expect(test.beforeDispatch).not.toHaveBeenCalled();
+    expect(test.run).not.toHaveBeenCalled();
+  });
+
   it.each([config.model, "@cf/openai/gpt-oss-120b"] as const)(
     "decodes one bounded raw completion for %s with private gateway controls and provenance",
     async (modelName) => {
@@ -96,7 +254,9 @@ describe("private discovery Workers AI boundary", () => {
       expect(test.beforeDispatch).toHaveBeenCalledOnce();
       expect(test.run).toHaveBeenCalledOnce();
       expect(test.run.mock.calls[0]?.[0]).toBe(modelName);
-      const jsonSchema = Tool.getJsonSchemaFromSchema(PrivateDiscoveryOutput);
+      const jsonSchema = Tool.getJsonSchemaFromSchema(
+        makePrivateDiscoveryProviderOutput(test.input.context.cards)
+      );
       const nativeRequest = test.run.mock.calls[0]?.[1];
       expect(nativeRequest).toMatchObject({
         response_format: {
@@ -104,7 +264,10 @@ describe("private discovery Workers AI boundary", () => {
             properties: {
               message: expect.any(Object),
               proposals: {
-                items: { anyOf: expect.any(Array) },
+                items: {
+                  properties: { _tag: { enum: ["ProposeProfileCard"] } },
+                  type: "object",
+                },
                 type: "array",
               },
               summary: expect.any(Object),
@@ -151,7 +314,7 @@ describe("private discovery Workers AI boundary", () => {
       expect(result.output).toEqual(output);
       expect(result.provenance).toMatchObject({
         model: modelName,
-        promptVersion: "private-discovery-prompt-v7",
+        promptVersion: "private-discovery-prompt-v8",
         provider: "cloudflare-workers-ai",
       });
       expect(result.usage).toEqual({
@@ -218,7 +381,7 @@ describe("private discovery Workers AI boundary", () => {
         ...test.input,
         context: {
           ...context(),
-          messages: Array.from({ length: 3 }, () => ({
+          messages: Array.from({ length: 5 }, () => ({
             id: crypto.randomUUID(),
             role: "participant" as const,
             text: "x".repeat(3800),

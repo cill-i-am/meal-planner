@@ -15,7 +15,7 @@ export const PRIVATE_DISCOVERY_CONTEXT_BYTES = 24_576;
 export const PRIVATE_DISCOVERY_MESSAGE_LIMIT = 16;
 export const PRIVATE_DISCOVERY_CARD_LIMIT = 25;
 export const PRIVATE_DISCOVERY_SUMMARY_LENGTH = 2000;
-export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v7";
+export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v8";
 export const PRIVATE_DISCOVERY_POLICY_VERSION = "private-discovery-policy-v1";
 export const PRIVATE_DISCOVERY_TOOL_VERSION = "profile-card-change-v1";
 
@@ -69,28 +69,51 @@ export const PrivateDiscoveryContext = Schema.Struct({
 });
 export type PrivateDiscoveryContext = typeof PrivateDiscoveryContext.Type;
 
+const ProposeProfileCard = Schema.Struct({
+  _tag: Schema.Literal("ProposeProfileCard"),
+  change: ProfileCardChange,
+});
+const ReviseProposedProfileCard = Schema.Struct({
+  _tag: Schema.Literal("ReviseProposedProfileCard"),
+  cardId: Id,
+  change: ProfileCardChange,
+  expectedRevision: ProfileCard.fields.revision,
+});
 const PrivateDiscoveryProposal = Schema.Union([
-  Schema.Struct({
-    _tag: Schema.Literal("ProposeProfileCard"),
-    change: ProfileCardChange,
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("ReviseProposedProfileCard"),
-    cardId: Id,
-    change: ProfileCardChange,
-    expectedRevision: ProfileCard.fields.revision,
-  }),
+  ProposeProfileCard,
+  ReviseProposedProfileCard,
 ]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 
+const outputSchema = <S extends Schema.Constraint>(proposal: S) =>
+  Schema.Struct({
+    message: ShortText,
+    proposals: Schema.Array(proposal).pipe(Schema.check(Schema.isMaxLength(3))),
+    summary: Summary,
+  }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+
 /** Model text and unfinished proposals have no canonical authority. */
-export const PrivateDiscoveryOutput = Schema.Struct({
-  message: ShortText,
-  proposals: Schema.Array(PrivateDiscoveryProposal).pipe(
-    Schema.check(Schema.isMaxLength(3))
-  ),
-  summary: Summary,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export const PrivateDiscoveryOutput = outputSchema(PrivateDiscoveryProposal);
 export type PrivateDiscoveryOutput = typeof PrivateDiscoveryOutput.Type;
+
+/** Narrows provider choices; canonical decoding and native revision checks still apply. */
+export const makePrivateDiscoveryProviderOutput = (
+  cards: PrivateDiscoveryContext["cards"]
+) => {
+  const eligibleIds = cards
+    .filter((card) => card.status === "proposed")
+    .map((card) => card.id);
+  const proposal =
+    eligibleIds.length === 0
+      ? ProposeProfileCard
+      : Schema.Union([
+          ProposeProfileCard,
+          Schema.Struct({
+            ...ReviseProposedProfileCard.fields,
+            cardId: Schema.Literals(eligibleIds),
+          }),
+        ]);
+  return outputSchema(proposal);
+};
 
 const TokenCount = Schema.Int.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(0))

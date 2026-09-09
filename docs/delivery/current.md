@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-09-08
+- Last updated: 2026-09-09
 - Delivery source of truth: this repository
 
 ## Latest Completed Stage
@@ -26,16 +26,17 @@
   [Work Item 03 — adaptive discovery and evaluation](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
   is in progress in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218).
   Private adaptive-turn implementation and local browser acceptance are complete.
-  The latest [prompt-v6 eight-family evaluation](../../evals/private-discovery/prompt-v6-eight-family-results.md)
-  made 28 candidate calls: 27 native successes and one rejected incomplete
-  completion. No family passed: five incomplete, two grounding failures, and
-  one output-contract failure. No judge, human calibration, or baseline was
-  recorded; the required live fresh-session repeat remains unrun.
-  The current v7 prompt passes local adapter/static checks but has not run against
-  the real model. Full family acceptance, candidate comparison, and human
-  calibration remain incomplete; the draft is not ready to merge. The
-  [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
-  retains current scope and the historical evidence.
+  The latest [prompt-v7 repair results](../../evals/private-discovery/prompt-v7-two-phase-results.md)
+  separate an idle orchestration interruption from a later real-model failure:
+  valid output tried to revise a nonexistent card and native review rejected it.
+  The current v8 provider schema excludes unavailable revisions and restricts
+  revision IDs to eligible cards; canonical decoding and authority checks remain
+  unchanged. Local adapter/native checks pass, but v8 has not run against the
+  real model. No family acceptance, judge scoring, human calibration, or baseline
+  is claimed; the required live fresh-session repeat remains unrun. The draft is
+  not ready to merge. The [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
+  retains current scope and historical evidence, including the earlier
+  nonpassing eight-family v6 evaluation.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
