@@ -26,12 +26,14 @@
   [Work Item 03 — adaptive discovery and evaluation](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
   is in progress in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218).
   Private adaptive-turn implementation and local browser acceptance are complete.
-  The latest [prompt-v9 result](../../evals/private-discovery/prompt-v9-duties-results.md)
-  produced a valid draft with the wrong effect: an addition instead of the
-  requested replacement. No confirmation occurred and the canonical profile
-  remained unchanged. The current v10 prompt chooses the intended profile effect
-  before creating or revising a card and grounds the reply in that draft's actual
-  effect. Local checks pass, but v10 has not run against the real model. No family
+  The latest [prompt-v10 result](../../evals/private-discovery/prompt-v10-effects-results.md)
+  produced eight successful native generations, with a replacement and
+  no-known-hard-constraints fact explicitly confirmed through the adult's native
+  interface. Required dependency discovery
+  remained incomplete; no new hard assertion was proven. The current v11 prompt
+  prioritizes unresolved disclosed circumstances and preserves them in the
+  summary, distinguishing a change-scope limit and no further information from
+  refusal. Local checks pass, but v11 has no real-model quality result. No family
   acceptance, judge scoring, human calibration, or baseline is claimed; the
   required live fresh-session repeat remains unrun. The draft is not ready to
   merge. The [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)

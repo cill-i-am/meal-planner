@@ -52,17 +52,22 @@ confirmation, restart, privacy, accessibility, and runtime evidence and limits.
 Work Item 03 is in progress in
 [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218). Native
 adaptive-turn implementation and local browser acceptance are complete. The
-latest [prompt-v9 result](../../../../evals/private-discovery/prompt-v9-duties-results.md)
-proposed an addition instead of the requested replacement. No confirmation or
-canonical profile change occurred. Earlier results are preserved.
+latest [prompt-v10 result](../../../../evals/private-discovery/prompt-v10-effects-results.md)
+produced eight successful native generations, with a replacement and
+no-known-hard-constraints addition explicitly confirmed through the adult's
+native interface. Required dependency
+discovery remained incomplete, with no proven new hard assertion or driver
+violation. Earlier results are preserved.
 
-The current v10 prompt selects the intended profile effect before the card
-operation and grounds the reply in the actual draft. V9 discovery and summary
-duties, provider schemas, and native authority remain unchanged. Local checks
-pass, but v10 has no real-model quality result. The required live fresh-session
-repeat, family acceptance, candidate selection, judge scoring, and human
-calibration remain incomplete. The draft is not ready to merge, and no baseline
-is accepted. The [owning work item](03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
+The current v11 prompt prioritizes unresolved disclosed circumstances and
+preserves contextual continuity. A limit on changes does not close discussion;
+no further information is distinct from refusal and does not prompt a repeated
+question. Effect/card selection, grounding, provider schemas, and native
+authority remain unchanged. Local checks pass, but v11 has no real-model quality
+result. The required live fresh-session repeat, family acceptance, candidate
+selection, judge scoring, and human calibration remain incomplete. The draft is
+not ready to merge, and no baseline is accepted. The
+[owning work item](03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
 retains current scope and historical evidence. Delivery follows the existing
 [execution policy](../../../agents/execution-policy.md).
 

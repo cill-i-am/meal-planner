@@ -7,40 +7,46 @@
 
 ## Current evaluation status
 
-The latest [prompt-v9 result](../../../../evals/private-discovery/prompt-v9-duties-results.md)
-contains two successful native generations in the first repair family. The
-second turn represented an explicitly requested replacement as a new addition:
-its proposed `AddConfirmedProfileFact` had no target fact ID or reviewed prior
-fact. If confirmed, it would retain the old preference alongside the new one.
-Independent review confirmed the family-specific required-effect failure. No
-confirmation occurred, and the whole canonical profile remained unchanged at
-version 1; no duplicate was committed.
+The latest [prompt-v10 result](../../../../evals/private-discovery/prompt-v10-effects-results.md)
+contains eight successful native generations in the first repair family. The
+model proposed the correct replacement, which the adult explicitly confirmed
+through the native interface (profile version 1 to 2), followed by a confirmed
+no-known-hard-constraints addition (version 2 to 3). The required dependency
+discovery was not reached within eight turns, so the phase stopped for incomplete
+coverage. Independent review found no proven new hard assertion or driver
+violation. This is an incomplete discovery and quality result, not family
+acceptance.
 
-The reply described a reviewable draft and asked a concrete follow-up, and the
-summary attributed the replacement to the participant's request. These bounded
-observations do not establish complete v9 duties or family acceptance. The
-proposed addition still contradicted the requested replacement. Earlier
+The model asked about future use of the replacement, then lost the existing
+routine's unresolved context after the participant limited the change's scope.
+Later questions collected generic preference categories. Summaries repeatedly
+narrated supplied profile/card state and omitted useful circumstances; the final
+summary described a neutral absence of information as a refusal. These are
+quality concerns. There were no family scores, judge calls, human scores, or
+live fresh-session A-to-B repeat. The other seven families were not run.
+Earlier [v9](../../../../evals/private-discovery/prompt-v9-duties-results.md),
 [v8](../../../../evals/private-discovery/prompt-v8-schema-results.md),
 [v7](../../../../evals/private-discovery/prompt-v7-two-phase-results.md), and
 [v6](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
 results remain separate, unchanged historical evidence.
 
-The current v10 prompt selects the intended profile effect before the outer card
-operation. A concise table distinguishes an additional fact from replacement or
-removal of an existing fact and copies targeted fact IDs from the current
-profile. The reply describes the effect encoded by the actual emitted or retained
-draft if confirmed. A value-only correction to a proposed addition still revises
-that draft with a corrected addition; an explicitly changed intended effect
-follows the operation table. V9's early-card, discovery, topic-closure, and
-noncanonical summary duties are preserved. Provider schemas, canonical decoding,
-native authority, model settings, and byte limits are unchanged.
+The current v11 prompt prioritizes consequential unresolved circumstances
+already disclosed before collecting additional preference categories. A scope
+limit on changes does not itself close contextual discussion. Neutral absence of
+information is distinct from refusal; the model moves on without repeating the
+question. Summaries preserve useful circumstances and unresolved dependencies
+without narrating supplied profile/card state. These duties replace overlapping
+discovery wording. V10's effect/card selection, exact strength/scope qualifiers,
+safety and untrusted-input rules, provider schemas, native authority, model
+settings, and byte limits remain unchanged.
 
-All 36 adapter tests, API type checking, and affected lint/format checks pass.
-Local calculations on the retained v9 request contexts keep the revised requests
-within the unchanged payload limit. No native suite was repeated for this
-prompt-only change. **V10 has not run against the real model and is not a verified
-semantic fix.** Earlier implementation and evaluation evidence remains below,
-including the [bounded v5 correction proof](#correction-diagnosis-and-prompt-v5).
+All 36 adapter tests, API type checking, and lint/format checks pass. Rebuilding
+the eight retained H10 request bodies with v11 keeps the largest at 29,043 bytes
+and the final at 23,270 bytes, below the unchanged 32,768-byte limit, with identical
+provider schemas. No unchanged broad native suite was repeated. **V11 has not run
+against the real model and is not a verified semantic fix.** Earlier
+implementation and evaluation evidence remains below, including the
+[bounded v5 correction proof](#correction-diagnosis-and-prompt-v5).
 
 ## Outcome and scope
 
@@ -582,9 +588,9 @@ contains the metadata results and receipt digests.
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
-remain in progress and are not ready to merge. The [v9 result](../../../../evals/private-discovery/prompt-v9-duties-results.md)
-failed the required proposed effect; the current v10 prompt has only local
-validation. Passing native discovery across all eight families, candidate
+remain in progress and are not ready to merge. The [v10 result](../../../../evals/private-discovery/prompt-v10-effects-results.md)
+stopped with incomplete required discovery; the current v11 prompt has only
+local validation. Passing native discovery across all eight families, candidate
 comparison, the required live A-to-B removal, and actual human calibration remain
 incomplete. Earlier scripted and bounded correction proofs do not replace those
 gates. The canonical evidence and calibration templates remain unfilled. No
