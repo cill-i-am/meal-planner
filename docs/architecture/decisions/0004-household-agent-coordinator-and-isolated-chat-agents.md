@@ -290,3 +290,47 @@ through that generation: the original physical final-send fence is unchanged.
 No cancellation, lease expiry, automatic rebase, or callback worker is added.
 Synthetic local proposal fixtures provide this slice's runtime evidence; real
 adaptive proposal production remains Work Item 03.
+
+
+## Structured private discovery continuity — 2026-09-09
+
+[Work Item 03](../../delivery/stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
+adds one model call per admitted private assistant attempt. Its current unmerged
+candidate returns continuity additions/revisions, existing profile-card proposals,
+then an explicit Ask/Review/Stop reply. This replaces the earlier free-text rolling
+summary contract after repeated model omissions of disclosed circumstances and
+follow-up questions. These changes do not establish live-model acceptance.
+
+The private child owns a bounded array of notes with stable keys, subjects,
+details and states (`circumstance`, `unresolved`, `answered`, `no_information`,
+`declined`, `withdrawn`). Omitted notes survive unchanged; a revision replaces the
+complete identified note, allowing explicit subject corrections. A small
+feature-local reducer rejects unknown revision keys, existing addition keys,
+duplicate updates, more than six combined updates, more than twelve retained
+notes, or a snapshot exceeding 4,096 UTF-8 bytes. Keys, subjects and details are
+bounded at 32, 120 and 200 characters. There is no generic memory service,
+automatic eviction, hidden repair, or separate summarizer call.
+
+Ask must identify an unresolved retained or newly added note. Its model-authored
+text and question are joined with two newlines and must fit 2,000 characters.
+Review requires no unresolved notes and the bounded `no_relevant_open_topic`
+reason. Stop uses `participant_requested_stop`; it ends neither the native session
+nor any pending confirmation. The participant's existing explicit completion
+command remains necessary. Determining whether a topic is relevant, a disclosure
+is supported, or a stop was requested remains a semantic evaluation obligation.
+
+All continuation and card validation precedes generated writes inside the
+existing generation/session-version-guarded transaction. The child stores the
+rendered reply, reviewed card operations, successful turn and resulting continuity
+snapshot atomically. One strict JSON codec reads and writes the existing new-in-WI03
+`private_assistant_turns.summary` TEXT column. No physical migration, legacy parser,
+backfill or change to closed trial databases is introduced. Restart reloads that
+snapshot; a new private session has none of the prior session's notes.
+
+Continuity remains noncanonical and participant-private. No notes, reply decisions
+or unfinished cards enter public metadata, general RPC returns, shared agent state
+or logs. The model still cannot supply confirmation authority or mutate household
+facts; explicit card confirmation remains the only route to the Household writer.
+The wire protocol and browser rendering continue to receive ordinary private
+messages and existing card/status frames. Provider request/response bounds,
+spend/dispatch guards and physical-send revocation fences remain in force.

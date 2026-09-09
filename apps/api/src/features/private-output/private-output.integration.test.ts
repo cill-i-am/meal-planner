@@ -12,11 +12,13 @@ import {
   MAX_PAGE_SIZE,
   MAX_PRIVATE_FRAME_BYTES,
 } from "@meal-planner/private-interview-api";
+import { Schema } from "effect";
 import { Miniflare, Response as LocalResponse } from "miniflare";
 import type { WorkerdStructuredLog } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import { PrivateDiscoveryContext } from "./private-discovery-model.js";
 import type { PrivateOutputMutationPort } from "./private-output-binding.js";
 import { runOutputFencedMutation } from "./private-output-mutation.js";
 import {
@@ -1622,9 +1624,13 @@ it("keeps fixture producers and directory HTTP, SDK, and storage capabilities ab
 }, 30_000);
 
 const output = {
-  message: "Which foods do you prefer?",
+  continuity: { additions: [], revisions: [] },
   proposals: [] as unknown[],
-  summary: "The participant started their own discovery.",
+  reply: {
+    _tag: "Review",
+    reason: "no_relevant_open_topic",
+    text: "Your private discovery is ready to review.",
+  },
 };
 type SyntheticOutput = Record<string, unknown>;
 interface SyntheticUsage {
@@ -1659,12 +1665,13 @@ describe("native adaptive assistant attempts through the production model adapte
   const queue = async (
     session: PrivateSessionBinding,
     connection: Connection,
-    expectedVersion = 0
+    expectedVersion = 0,
+    text = "I like tomatoes and want to discuss my own meals."
   ) => {
     const result = await exchange(connection, {
       expectedVersion,
       mutationId: crypto.randomUUID(),
-      text: "I like tomatoes and want to discuss my own meals.",
+      text,
       type: "AppendParticipantMessage",
     });
     if (result.type !== "MessageAppended") {
@@ -1755,8 +1762,8 @@ describe("native adaptive assistant attempts through the production model adapte
             ? `{${privateValue}`
             : JSON.stringify({
                 ...output,
-                message: privateValue,
                 proposals: [{ _tag: privateValue }],
+                reply: { ...output.reply, text: privateValue },
               });
         return Promise.resolve(
           new LocalResponse(
@@ -1865,7 +1872,7 @@ describe("native adaptive assistant attempts through the production model adapte
     expect(await history(connection)).toMatchObject({
       messages: [
         expect.objectContaining({ role: "participant" }),
-        expect.objectContaining({ role: "assistant", text: output.message }),
+        expect.objectContaining({ role: "assistant", text: output.reply.text }),
       ],
     });
     expect(await cards(connection)).toMatchObject({
@@ -1884,7 +1891,7 @@ describe("native adaptive assistant attempts through the production model adapte
     expect(retained).toHaveLength(1);
     expect(retained[0]).toMatchObject({
       status: "succeeded",
-      summary: output.summary,
+      summary: "[]",
     });
     expect(JSON.parse(retained[0]?.usageJson ?? "null")).toMatchObject({
       inputTokens: 100,
@@ -1900,7 +1907,7 @@ describe("native adaptive assistant attempts through the production model adapte
           sessionReference: session.sessionReference,
         })
       )
-    ).not.toContain(output.summary);
+    ).not.toContain(output.reply.text);
     const request = modelCalls[0] as {
       body: { messages: readonly { content: string }[] };
       gateway: unknown;
@@ -1920,6 +1927,368 @@ describe("native adaptive assistant attempts through the production model adapte
     expect(context.messages).toHaveLength(1);
     connection.socket.close();
   });
+
+  const capturedContext = (index: number) => {
+    const request = Schema.decodeUnknownSync(
+      Schema.Struct({
+        body: Schema.Struct({
+          messages: Schema.Array(Schema.Struct({ content: Schema.String })),
+        }),
+      })
+    )(modelCalls[index]);
+    return Schema.decodeUnknownSync(
+      Schema.fromJsonString(PrivateDiscoveryContext)
+    )(request.body.messages[1]?.content);
+  };
+  const routineNote = {
+    detail: "The adult has little time to cook in the evening.",
+    key: "cooking_window",
+    state: "circumstance" as const,
+    subject: "Short evening cooking window",
+  };
+  const equipmentTopic = {
+    detail: "Cooking equipment is not yet known.",
+    key: "equipment",
+    state: "unresolved" as const,
+    subject: "Available cooking equipment",
+  };
+
+  it("retains omitted continuity across an unrelated turn and restart, renders the exact question, and isolates a fresh session", async () => {
+    modelCalls = [];
+    const reply = {
+      _tag: "Ask",
+      question: "What cooking equipment is available?",
+      text: "I have kept your short cooking window in mind.",
+      topicKey: equipmentTopic.key,
+    };
+    modelResponse = () =>
+      Promise.resolve(
+        response({
+          continuity: {
+            additions: [routineNote, equipmentTopic],
+            revisions: [],
+          },
+          proposals: [],
+          reply,
+        })
+      );
+    const session = await binding();
+    const connection = await open(session);
+    await successful(
+      await queue(
+        session,
+        connection,
+        0,
+        "I have little time to cook in the evening."
+      )
+    );
+    expect(capturedContext(0).continuity).toEqual([]);
+    expect(await history(connection)).toMatchObject({
+      messages: [
+        expect.objectContaining({ role: "participant" }),
+        expect.objectContaining({
+          role: "assistant",
+          text: `${reply.text}\n\n${reply.question}`,
+        }),
+      ],
+    });
+    const answered = {
+      ...equipmentTopic,
+      detail: "The adult has a hob.",
+      state: "answered" as const,
+    };
+    modelResponse = () =>
+      Promise.resolve(
+        response({
+          ...output,
+          continuity: { additions: [], revisions: [answered] },
+        })
+      );
+    await successful(await queue(session, connection, 2, "I have a hob."));
+    expect(capturedContext(1).continuity).toEqual([
+      routineNote,
+      equipmentTopic,
+    ]);
+    const retained = await audit(session);
+    expect(JSON.parse(retained[1]?.summary ?? "null")).toEqual([
+      routineNote,
+      answered,
+    ]);
+    expect(
+      JSON.stringify(
+        await successful({
+          action: "metadata",
+          sessionReference: session.sessionReference,
+        })
+      )
+    ).not.toContain(routineNote.detail);
+    connection.socket.close();
+    await runtime.dispose();
+    runtime = makeRuntime();
+    const resumed = await open(session);
+    modelResponse = () =>
+      Promise.resolve(
+        response({
+          ...output,
+          reply: {
+            _tag: "Stop",
+            reason: "participant_requested_stop",
+            text: "We can stop here.",
+          },
+        })
+      );
+    await successful(
+      await queue(session, resumed, 4, "Please stop asking questions.")
+    );
+    expect(capturedContext(2).continuity).toEqual([routineNote, answered]);
+    expect(await readTurn(resumed)).toMatchObject({
+      state: { status: "open", version: 6 },
+      turn: { status: "succeeded" },
+    });
+    const afterStop = await audit(session);
+    expect(JSON.parse(afterStop[2]?.summary ?? "null")).toEqual([
+      routineNote,
+      answered,
+    ]);
+    const nextSession = { ...session, sessionReference: crypto.randomUUID() };
+    const fresh = await open(nextSession);
+    modelResponse = () => Promise.resolve(response());
+    await successful(await queue(nextSession, fresh));
+    const nextContext = capturedContext(3);
+    expect(nextContext.continuity).toEqual([]);
+    expect(nextContext.cards).toEqual([]);
+    expect(nextContext.messages).toHaveLength(1);
+    expect(JSON.stringify(nextContext)).not.toContain(routineNote.detail);
+    expect(JSON.stringify(nextContext)).not.toContain(reply.question);
+    expect(
+      await exchange(resumed, {
+        expectedVersion: 6,
+        mutationId: crypto.randomUUID(),
+        type: "CompleteSession",
+      })
+    ).toMatchObject({ state: { status: "completed", version: 7 } });
+    fresh.socket.close();
+    resumed.socket.close();
+  });
+
+  it.each(["no_information", "declined"] as const)(
+    "persists %s distinctly and rejects reopening it with an Ask reply",
+    async (state) => {
+      modelCalls = [];
+      modelResponse = () =>
+        Promise.resolve(
+          response({
+            ...output,
+            continuity: { additions: [equipmentTopic], revisions: [] },
+            reply: {
+              _tag: "Ask",
+              question: "What equipment is available?",
+              text: "One question remains.",
+              topicKey: equipmentTopic.key,
+            },
+          })
+        );
+      const session = await binding();
+      const connection = await open(session);
+      await successful(await queue(session, connection));
+      const closed = {
+        ...equipmentTopic,
+        detail:
+          state === "no_information"
+            ? "The adult has no further information about this."
+            : "The adult declined to discuss this topic.",
+        state,
+      };
+      modelResponse = () =>
+        Promise.resolve(
+          response({
+            ...output,
+            continuity: { additions: [], revisions: [closed] },
+          })
+        );
+      await successful(await queue(session, connection, 2));
+      const afterResolution = await audit(session);
+      const saved = afterResolution[1]?.summary;
+      expect(JSON.parse(saved ?? "null")).toEqual([closed]);
+      modelResponse = () =>
+        Promise.resolve(
+          response({
+            ...output,
+            reply: {
+              _tag: "Ask",
+              question: "What equipment is available?",
+              text: "Another question.",
+              topicKey: equipmentTopic.key,
+            },
+          })
+        );
+      const start = nativeLogs.length;
+      await successful(await queue(session, connection, 4));
+      await expectDiagnostic(start, "reply_decision", [closed.detail]);
+      expect(await readTurn(connection)).toMatchObject({
+        turn: { failure: "invalid_output", status: "failed" },
+      });
+      const attempts = await audit(session);
+      expect(attempts[1]?.summary).toBe(saved);
+      expect(attempts[2]?.summary).toBeNull();
+      connection.socket.close();
+    }
+  );
+
+  it.each([
+    {
+      continuity: { additions: [routineNote], revisions: [] },
+      reply: output.reply,
+      stage: "continuity_updates",
+      title: "adding an existing key",
+    },
+    {
+      continuity: {
+        additions: [equipmentTopic, equipmentTopic],
+        revisions: [],
+      },
+      reply: output.reply,
+      stage: "continuity_updates",
+      title: "duplicate additions",
+    },
+    {
+      continuity: { additions: [], revisions: [equipmentTopic] },
+      reply: output.reply,
+      stage: "continuity_updates",
+      title: "unknown revision",
+    },
+    {
+      continuity: { additions: [], revisions: [routineNote, routineNote] },
+      reply: output.reply,
+      stage: "continuity_updates",
+      title: "duplicate revisions",
+    },
+    {
+      continuity: {
+        additions: Array.from({ length: 6 }, (_, i) => ({
+          ...routineNote,
+          key: `new-${i}`,
+        })),
+        revisions: [routineNote],
+      },
+      reply: output.reply,
+      stage: "continuity_updates",
+      title: "seven combined updates",
+    },
+    {
+      continuity: { additions: [equipmentTopic], revisions: [] },
+      reply: output.reply,
+      stage: "reply_decision",
+      title: "Review leaving an unresolved note",
+    },
+    {
+      continuity: output.continuity,
+      reply: {
+        _tag: "Ask",
+        question: "What else?",
+        text: "Private reply.",
+        topicKey: "missing",
+      },
+      stage: "reply_decision",
+      title: "Ask targeting an unknown note",
+    },
+    {
+      continuity: output.continuity,
+      reply: {
+        _tag: "Ask",
+        question: "What else?",
+        text: "Private reply.",
+        topicKey: routineNote.key,
+      },
+      stage: "reply_decision",
+      title: "Ask targeting a circumstance",
+    },
+    {
+      continuity: { additions: [equipmentTopic], revisions: [] },
+      reply: {
+        _tag: "Ask",
+        question: "q".repeat(999),
+        text: "a".repeat(1000),
+        topicKey: equipmentTopic.key,
+      },
+      stage: "reply_limit",
+      title: "an oversized combined reply",
+    },
+    {
+      continuity: {
+        additions: Array.from({ length: 6 }, (_, i) => ({
+          ...routineNote,
+          detail: "🍲".repeat(100),
+          key: `large-${i}`,
+          subject: "🍲".repeat(60),
+        })),
+        revisions: [],
+      },
+      reply: output.reply,
+      stage: "continuity_limit",
+      title: "serialized continuity overflow",
+    },
+  ])(
+    "atomically rejects $title before storing a reply, card or replacement snapshot",
+    async ({ continuity, reply, stage }) => {
+      modelCalls = [];
+      modelResponse = () =>
+        Promise.resolve(
+          response({
+            ...output,
+            continuity: { additions: [routineNote], revisions: [] },
+          })
+        );
+      const session = await binding();
+      const connection = await open(session);
+      await successful(await queue(session, connection));
+      const beforeInvalidUpdate = await audit(session);
+      const saved = beforeInvalidUpdate[0]?.summary;
+      modelResponse = () =>
+        Promise.resolve(
+          response({
+            continuity,
+            proposals: [
+              {
+                _tag: "ProposeProfileCard",
+                change: {
+                  _tag: "AddConfirmedProfileFact",
+                  fact: {
+                    _tag: "FoodPreference",
+                    label: "tomatoes",
+                    sentiment: "like",
+                    targetKind: "ingredient",
+                  },
+                },
+              },
+            ],
+            reply,
+          })
+        );
+      const start = nativeLogs.length;
+      await successful(await queue(session, connection, 2));
+      await expectDiagnostic(start, stage, [routineNote.detail]);
+      expect(await readTurn(connection)).toMatchObject({
+        state: { status: "open", version: 3 },
+        turn: { failure: "invalid_output", status: "failed" },
+      });
+      const transcript = await history(connection);
+      if (transcript.type !== "HistoryRead") {
+        throw new Error("Expected private history");
+      }
+      expect(transcript.messages.map((message) => message.role)).toEqual([
+        "participant",
+        "assistant",
+        "participant",
+      ]);
+      expect(await cards(connection)).toMatchObject({ cards: [] });
+      const attempts = await audit(session);
+      expect(attempts[0]?.summary).toBe(saved);
+      expect(attempts[1]?.summary).toBeNull();
+      expect(modelCalls).toHaveLength(2);
+      connection.socket.close();
+    }
+  );
 
   it("cancels a running attempt and requires an explicit new retry before dispatching again", async () => {
     modelCalls = [];
@@ -2147,7 +2516,10 @@ describe("native adaptive assistant attempts through the production model adapte
       const privateValue = `synthetic-private-${crypto.randomUUID()}`;
       modelResponse = () =>
         Promise.resolve(
-          response({ ...result, message: privateValue, summary: privateValue })
+          response({
+            ...result,
+            reply: { ...output.reply, text: privateValue },
+          })
         );
       const session = await binding();
       const connection = await open(session);
@@ -2220,7 +2592,6 @@ describe("native adaptive assistant attempts through the production model adapte
         Promise.resolve(
           response({
             ...output,
-            message: "I have corrected the proposal for your review.",
             proposals: Array.from(
               { length: target === "duplicate" ? 2 : 1 },
               () => ({
@@ -2231,6 +2602,10 @@ describe("native adaptive assistant attempts through the production model adapte
                   target === "stale" ? card.revision + 1 : card.revision,
               })
             ),
+            reply: {
+              ...output.reply,
+              text: "I have corrected the proposal for your review.",
+            },
           })
         );
       const diagnosticStart = nativeLogs.length;
@@ -2269,11 +2644,11 @@ describe("native adaptive assistant attempts through the production model adapte
       };
       const context = JSON.parse(
         request.body.messages[1]?.content ?? "null"
-      ) as { cards: readonly unknown[]; summary: string };
+      ) as { cards: readonly unknown[]; continuity: readonly unknown[] };
       expect(context.cards).toEqual([
         expect.objectContaining({ id: card.id, revision: card.revision }),
       ]);
-      expect(context.summary).toBe(output.summary);
+      expect(context.continuity).toEqual([]);
       connection.socket.close();
     }
   );

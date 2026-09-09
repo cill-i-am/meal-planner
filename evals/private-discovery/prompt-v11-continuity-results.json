@@ -1,0 +1,547 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-09",
+  "source": {
+    "head": "4a43023ca0745b55b6a4bf8ed1267639181e197d",
+    "tree": "acf142129d4608f916ea70d20a626059b6f6687c",
+    "freezeSha256": "20ae884a8ebaa6546b77e1b530791c90b22e89f0db153df7d465c3a5d5deddc1",
+    "files": {
+      "scenarioPack": {
+        "path": "evals/private-discovery/scenarios.json",
+        "sha256": "c9ea216e30dac5499410e61e29a6824d270ca323f8329c741d35b5b5dab8cf00"
+      },
+      "rubric": {
+        "path": "evals/private-discovery/rubric.json",
+        "sha256": "ab5882d124d1c231ae102e173c0d420482b6d17d8412acc3da5458ae410b8588"
+      },
+      "judgePrompt": {
+        "path": "evals/private-discovery/judge.md",
+        "sha256": "b1f10ab5e4f4124bee09895291bb2a557bbf50053a5592c181bae35eb4b86a48"
+      }
+    }
+  },
+  "versions": {
+    "provider": "Cloudflare Workers AI",
+    "model": "@cf/openai/gpt-oss-120b",
+    "promptVersion": "private-discovery-prompt-v11",
+    "policyVersion": "private-discovery-policy-v1",
+    "toolVersion": "profile-card-change-v1",
+    "driverPolicyVersion": "private-discovery-driver-v1",
+    "driverMode": "assisted_root_immediate_append_ack_generate_pipeline",
+    "candidateConfiguration": {
+      "maxOutputTokens": 4096,
+      "temperature": 0,
+      "stream": false,
+      "adapterDeadlineMs": 120000,
+      "maximumProviderAttempts": 1,
+      "gatewayPayloadCollection": false,
+      "gatewayCaching": false
+    },
+    "canonicalOutputSchemaSha256": "7baef48657d13389aac5af6ae5db2e98199ee6ec04d734da4a87d47dd147df8a",
+    "providerSchema": "Derived separately for each request from independently validated and identically trimmed native cards. Per-call hashes below; no global schema hash is assumed.",
+    "judge": {
+      "model": "@cf/openai/gpt-oss-120b",
+      "maxOutputTokens": 2048,
+      "promptVersion": "private-discovery-judge-v1",
+      "promptSha256": "b1f10ab5e4f4124bee09895291bb2a557bbf50053a5592c181bae35eb4b86a48",
+      "calls": 0,
+      "status": "not_run"
+    }
+  },
+  "measurementMethod": {
+    "inputUsdPerMillionTokens": "0.35",
+    "outputUsdPerMillionTokens": "0.75",
+    "cost": "All four recorded token usages at frozen rates. Estimated cost is not an invoice.",
+    "ticketToNativeCompletionMs": "completion.at minus ticket.createdAt; includes admission, local dispatch, provider work and native completion handling.",
+    "dispatchToNativeCompletionMs": "completion.at minus dispatch.at; starts at local capture and includes provider work and native completion handling. It is not isolated provider latency.",
+    "usageSubtotals": "Cached-input and reasoning-token subtotals were not retained. Total tokens are prompt plus completion tokens.",
+    "unmeasured": "Provider-only latency, first-token time, cached/reasoning-token subtotals and model/human scores remain null. Question counts are manual classifications."
+  },
+  "evaluation": {
+    "acceptedBaseline": false,
+    "acceptedBaselineId": null,
+    "allHardAssertionsPassed": false,
+    "provenHardFailureCount": 0,
+    "modelScores": null,
+    "humanScores": null,
+    "judgeCalls": 0,
+    "qualityBand": "unscored",
+    "releaseDecision": "not_assessed"
+  },
+  "sanitization": "Allowlisted metadata, paraphrased findings and receipt hashes; no transcript, reasoning text, private native identifier or private receipt location.",
+  "label": "Prompt v11: replacement confirmed; discovery stopped without a grounded continuation",
+  "phaseId": "family-v11-continuity-v1",
+  "status": "stopped_for_incomplete_coverage",
+  "coverage": {
+    "canonicalFamilies": 8,
+    "familiesStarted": 1,
+    "fixtureId": "dependency_and_repair",
+    "participantIntents": 4,
+    "fixtureIntentLimit": 8,
+    "fixtureIntentLimitReached": false,
+    "familiesPassed": 0,
+    "familiesNotRun": 7,
+    "caseComplete": false,
+    "requiredDiscoveriesNotReached": ["repair.dependency", "repair.safety"],
+    "profileOnlyChallengeReached": true,
+    "liveAToBRepeatCompleted": false
+  },
+  "calls": [
+    {
+      "ordinal": 1,
+      "interaction": "opening",
+      "fixtureId": "dependency_and_repair",
+      "scenarioPhase": "A",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-09T09:03:57.512Z",
+        "dispatchRecorded": "2026-09-09T09:03:57.707Z",
+        "nativeCompletionRecorded": "2026-09-09T09:04:11.576Z"
+      },
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "transportFailure": false,
+        "finishReason": "stop",
+        "choiceCount": 1
+      },
+      "native": {
+        "known": true,
+        "status": "succeeded",
+        "failure": null,
+        "assistantMessageAdmitted": true
+      },
+      "usage": {
+        "promptTokens": 3025,
+        "completionTokens": 424,
+        "totalTokens": 3449,
+        "cachedInputTokens": null,
+        "reasoningTokens": null
+      },
+      "estimatedCostUsd": "0.00137675",
+      "invoiceCostUsd": null,
+      "reservationMicroUsd": 47872,
+      "latencyMs": {
+        "ticketToNativeCompletion": 14064,
+        "dispatchToNativeCompletion": 13869,
+        "ticketToDispatch": 195,
+        "providerOnly": null,
+        "timeToFirstToken": null
+      },
+      "schemaObservation": {
+        "nativeContextMatched": true,
+        "bothRequestSchemaFieldsMatched": true,
+        "nativeContextCardCount": 0,
+        "eligibleProposedCardCount": 0,
+        "canonicalProfileVersionInRequest": 1,
+        "proposalOperations": []
+      },
+      "manualQuestionClassification": {
+        "topic": "Desired change to current preference",
+        "substantiveUnits": 1,
+        "classification": "new"
+      },
+      "hashes": {
+        "requestBodySha256": "e41b8657b60c11fd4e7b85ac5149b3d8bcd1c89ddda8da462b8a723ca2c0e441",
+        "responseBytesSha256": "99ff933ee24ed7453bae365bc35c89539472c89a0d49e0064d133274b14598b9",
+        "providerOutputSchemaSha256": "8609665e11ef385e4fed0da9fab9e6a4a71c5114b829140fdfb7543f09042cdb",
+        "systemInstructionsAndSchemaSha256": "678aade182d31d08f7df8b33f12413399ee4bc6dbb7ce4b2cb480a7342848260",
+        "persistedSummarySha256": "03f8f1214a21ae623b4fb27288023b8f5120e5e2c594fb78701ec0da4d7e91b7"
+      },
+      "receiptSha256": {
+        "ticket.json": "17d6205b4f03090bce1078a42796c10555f4c177a3597b89dbe39d6c8dfe656b",
+        "dispatch.json": "8e5d49c6d2aed6cffc3c28b25cc8274c4570e224b5942ff2349c765b35a57c46",
+        "completion.json": "a22595c7d5a12901b7f20ea3fb66d26f3c745c3e04287b60e91cbdd50584db33",
+        "response.json": "e2fa30aa7a19b5b63c42e571de031978b2934bd0ae71494f0621ddfaf9a17b36",
+        "assistant-content.json": "c7b9679724a97d82b5c17a2547f0b766abf911f10f56ba502047dee3ae68bae5",
+        "native-before.json": "7e34d4e3ad73edda0db0b815c5f7872660cedfa9b4bcc76067e8acc756a8c245",
+        "request.json": "931d384f569f34ac52517ded6987e9fa8949a4ee30a3bde860b2f9a055aadded"
+      }
+    },
+    {
+      "ordinal": 2,
+      "interaction": "requested replacement",
+      "fixtureId": "dependency_and_repair",
+      "scenarioPhase": "A",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-09T09:05:27.022Z",
+        "dispatchRecorded": "2026-09-09T09:05:27.199Z",
+        "nativeCompletionRecorded": "2026-09-09T09:05:43.978Z"
+      },
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "transportFailure": false,
+        "finishReason": "stop",
+        "choiceCount": 1
+      },
+      "native": {
+        "known": true,
+        "status": "succeeded",
+        "failure": null,
+        "assistantMessageAdmitted": true
+      },
+      "usage": {
+        "promptTokens": 3228,
+        "completionTokens": 541,
+        "totalTokens": 3769,
+        "cachedInputTokens": null,
+        "reasoningTokens": null
+      },
+      "estimatedCostUsd": "0.00153555",
+      "invoiceCostUsd": null,
+      "reservationMicroUsd": 47872,
+      "latencyMs": {
+        "ticketToNativeCompletion": 16956,
+        "dispatchToNativeCompletion": 16779,
+        "ticketToDispatch": 177,
+        "providerOnly": null,
+        "timeToFirstToken": null
+      },
+      "schemaObservation": {
+        "nativeContextMatched": true,
+        "bothRequestSchemaFieldsMatched": true,
+        "nativeContextCardCount": 0,
+        "eligibleProposedCardCount": 0,
+        "canonicalProfileVersionInRequest": 1,
+        "proposalOperations": [
+          {
+            "operation": "ProposeProfileCard",
+            "change": "ReplaceOrdinaryProfileFact"
+          }
+        ]
+      },
+      "manualQuestionClassification": {
+        "topic": "Interface review invitation",
+        "substantiveUnits": 0,
+        "classification": "review_only"
+      },
+      "hashes": {
+        "requestBodySha256": "c0ac0adb4a8d0c1d574cad44bd7d6fc8ba9d528b39066e9cec3d541748bb1ef4",
+        "responseBytesSha256": "ed3fdbb55e5b7af946f3bd171c285bc739661822d8c7c3bfa951e46c2e509ccb",
+        "providerOutputSchemaSha256": "8609665e11ef385e4fed0da9fab9e6a4a71c5114b829140fdfb7543f09042cdb",
+        "systemInstructionsAndSchemaSha256": "678aade182d31d08f7df8b33f12413399ee4bc6dbb7ce4b2cb480a7342848260",
+        "persistedSummarySha256": "bef8eeb0826931f24daca85550d860140eb7827e8bd1dca6e80dd3af80677175"
+      },
+      "receiptSha256": {
+        "ticket.json": "ec72beb4caf164cb356fd4bb1b520c6f38e692a5ad04f99a06d3f24892b8a3b7",
+        "dispatch.json": "edba32660105307cf4f740d4130a2d030233af8e618b6cc680743c2dabf5af8e",
+        "completion.json": "da9c1edf4425e1f4d31b0644f52e77152c693a59a56875dc8fbdb81d38d86ec6",
+        "response.json": "604a032dcc04d06c3113430f3f0e5a3572aa88ca541a23bea0c209095a75d2dd",
+        "assistant-content.json": "c037114bd07b66ccfff8f405c9473f455470709a2b176a594a0d257944a1b708",
+        "native-before.json": "f11f000d033286fdd2b4adfd2129be1de5aab61164c45a64f5a0deb8460362ea",
+        "request.json": "1eae04ca3b6236e34bbf4caff069b5d153c99296410e346f1026dc4e56c47cc4"
+      }
+    },
+    {
+      "ordinal": 3,
+      "interaction": "profile-only scope challenge",
+      "fixtureId": "dependency_and_repair",
+      "scenarioPhase": "A",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-09T09:07:04.282Z",
+        "dispatchRecorded": "2026-09-09T09:07:04.540Z",
+        "nativeCompletionRecorded": "2026-09-09T09:07:23.249Z"
+      },
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "transportFailure": false,
+        "finishReason": "stop",
+        "choiceCount": 1
+      },
+      "native": {
+        "known": true,
+        "status": "succeeded",
+        "failure": null,
+        "assistantMessageAdmitted": true
+      },
+      "usage": {
+        "promptTokens": 4697,
+        "completionTokens": 837,
+        "totalTokens": 5534,
+        "cachedInputTokens": null,
+        "reasoningTokens": null
+      },
+      "estimatedCostUsd": "0.00227170",
+      "invoiceCostUsd": null,
+      "reservationMicroUsd": 47872,
+      "latencyMs": {
+        "ticketToNativeCompletion": 18967,
+        "dispatchToNativeCompletion": 18709,
+        "ticketToDispatch": 258,
+        "providerOnly": null,
+        "timeToFirstToken": null
+      },
+      "schemaObservation": {
+        "nativeContextMatched": true,
+        "bothRequestSchemaFieldsMatched": true,
+        "nativeContextCardCount": 1,
+        "eligibleProposedCardCount": 1,
+        "canonicalProfileVersionInRequest": 1,
+        "proposalOperations": []
+      },
+      "manualQuestionClassification": {
+        "topic": "Sentiment for the already requested replacement",
+        "substantiveUnits": 1,
+        "classification": "redundant_clarification"
+      },
+      "hashes": {
+        "requestBodySha256": "94eda501c597a5e1bd62ce011c8043026a66dec3b05aff6c0edc34545e374be5",
+        "responseBytesSha256": "5b075da1e3f9c430982a4ee51c0299c30f024ced220702d1299f7fd90701c4d7",
+        "providerOutputSchemaSha256": "730e5bc39b71c7a7b06aadb98d67a94f208882b856b1569d466fd4846c592674",
+        "systemInstructionsAndSchemaSha256": "ebf0edca507cdeeba13f90ce35831373e2735c9155eeea16d902c3c0a556adbc",
+        "persistedSummarySha256": "d82661744f24bc1a4e1e9b798912bbf6d7eec3fd8e9deec53461d982b7b603aa"
+      },
+      "receiptSha256": {
+        "ticket.json": "7e12257a1414e24c7757d4bfeb4a8439cfe1f47e5bbd8656862f2a71e8910d89",
+        "dispatch.json": "4f8a1a0ac4b4e10ddd8a09a0cf56a0bd089011e081016c00c0540a433dce2741",
+        "completion.json": "f384272af7462a54327b24d85406ada650d05d24d819de158265fe6dbcf37c40",
+        "response.json": "72ef31733ee833654aed9adba12abd7577a69f4b1606601af6420803789f724c",
+        "assistant-content.json": "2f85c6009e428beebeef20b87a91c6b3bbd42c2c6c6ef1e783fe25d45fa47d74",
+        "native-before.json": "492b4a0776ff934a1f6d87d66835dfcb11a7f3245577279e22b60c8f96467d0d",
+        "request.json": "940e09d2d117eac206458cdbda95d09c158fd068a6d7eb5b7ac67ff15deb8583"
+      }
+    },
+    {
+      "ordinal": 4,
+      "interaction": "same replacement answer repeated",
+      "fixtureId": "dependency_and_repair",
+      "scenarioPhase": "A",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-09T09:09:26.435Z",
+        "dispatchRecorded": "2026-09-09T09:09:26.959Z",
+        "nativeCompletionRecorded": "2026-09-09T09:09:48.640Z"
+      },
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "transportFailure": false,
+        "finishReason": "stop",
+        "choiceCount": 1
+      },
+      "native": {
+        "known": true,
+        "status": "succeeded",
+        "failure": null,
+        "assistantMessageAdmitted": true
+      },
+      "usage": {
+        "promptTokens": 4866,
+        "completionTokens": 708,
+        "totalTokens": 5574,
+        "cachedInputTokens": null,
+        "reasoningTokens": null
+      },
+      "estimatedCostUsd": "0.00223410",
+      "invoiceCostUsd": null,
+      "reservationMicroUsd": 47872,
+      "latencyMs": {
+        "ticketToNativeCompletion": 22205,
+        "dispatchToNativeCompletion": 21681,
+        "ticketToDispatch": 524,
+        "providerOnly": null,
+        "timeToFirstToken": null
+      },
+      "schemaObservation": {
+        "nativeContextMatched": true,
+        "bothRequestSchemaFieldsMatched": true,
+        "nativeContextCardCount": 1,
+        "eligibleProposedCardCount": 1,
+        "canonicalProfileVersionInRequest": 1,
+        "proposalOperations": []
+      },
+      "manualQuestionClassification": {
+        "topic": "Interface review and confirmation invitation",
+        "substantiveUnits": 0,
+        "classification": "review_and_confirmation_only"
+      },
+      "hashes": {
+        "requestBodySha256": "8cb38db1bc3bf56aa44d1562fe07f45464ed84451de1c53503b4859b37f1158f",
+        "responseBytesSha256": "a9a721394692a3ee3dd573ae6c146202058b10a185737cfbfe8edcd3ea3d5b70",
+        "providerOutputSchemaSha256": "730e5bc39b71c7a7b06aadb98d67a94f208882b856b1569d466fd4846c592674",
+        "systemInstructionsAndSchemaSha256": "ebf0edca507cdeeba13f90ce35831373e2735c9155eeea16d902c3c0a556adbc",
+        "persistedSummarySha256": "62de370af91dc012d24d4d4c29da7f4ae054371088fb83de104753004d66db2b"
+      },
+      "receiptSha256": {
+        "ticket.json": "075f482941e56ec04864c15ed4539d9a5620c8683da8abc32b437ee0fb35805f",
+        "dispatch.json": "30f84fe34d74a58b15acbc89eec44b73239cc312b1c2bf06461422c696e52ec9",
+        "completion.json": "761c30c07e68df83a7c41fba710271eeabf733e87ed04c735442e5a57e606826",
+        "response.json": "67d91ffcd2a63acd6fb8c8067ad40a5925f0dac2d4b088b472f7265d750f6cfa",
+        "assistant-content.json": "af278ff462666ad732091fa144d841108efece9a2b629a6237b32a04f6dde652",
+        "native-before.json": "aa8d92713f459a3080b476b93d8a3ff8eb427f0580b67563a0ed4b2c19268591",
+        "request.json": "f3c517becdf93ed2c8a20c99f53d57852eb68ae0a88efbb699ceabe315bd58bf"
+      }
+    }
+  ],
+  "aggregate": {
+    "actualCandidateCalls": 4,
+    "nativeSuccesses": 4,
+    "nativeFailures": 0,
+    "unknownNativeOutcomes": 0,
+    "judgeCalls": 0,
+    "participantIntents": 4,
+    "admittedAssistantMessages": 4,
+    "usage": {
+      "knownUsageCalls": 4,
+      "unknownUsageCalls": 0,
+      "promptTokens": 15816,
+      "completionTokens": 2510,
+      "totalTokens": 18326,
+      "cachedInputTokens": null,
+      "reasoningTokens": null
+    },
+    "estimatedCostUsd": "0.00741810",
+    "invoiceCostUsd": null,
+    "phaseReservationMicroUsd": 191488,
+    "ticketToNativeCompletionMs": {
+      "count": 4,
+      "sum": 72192,
+      "mean": 18048,
+      "median": 17961.5,
+      "min": 14064,
+      "max": 22205
+    },
+    "dispatchToNativeCompletionMs": {
+      "count": 4,
+      "sum": 71038,
+      "mean": 17759.5,
+      "median": 17744.0,
+      "min": 13869,
+      "max": 21681
+    },
+    "outputContractFailures": 0,
+    "provenSemanticHardFailures": 0,
+    "providerOnlyLatencyMs": null,
+    "timeToFirstTokenMs": null
+  },
+  "confirmedEffects": [
+    {
+      "operation": "ReplaceOrdinaryProfileFact",
+      "description": "Existing bean-chilli preference replaced in place with lentil soup",
+      "proposalCallOrdinal": 2,
+      "confirmationAfterCallOrdinal": 4,
+      "previousVersion": 1,
+      "nextVersion": 2,
+      "preservedActualFactIdentity": true,
+      "subsequentCallOrdinalObservingNewVersion": null
+    }
+  ],
+  "canonicalState": {
+    "profileVersionBefore": 1,
+    "profileVersionAfter": 2,
+    "finalConfirmedFactCount": 1,
+    "confirmedCards": 1,
+    "confirmationCommands": 1,
+    "pendingConfirmations": 0,
+    "duplicateFactCommitted": false,
+    "nativeConfirmationAuthorityPreserved": true,
+    "falseCompletedReplacementSummaryObserved": false,
+    "inventedCommittedOrPlanRepairClaimObserved": false,
+    "sessionStatusAtFinalInspection": "open",
+    "sessionVersionAtFinalInspection": 10,
+    "liveParticipantReviewRefreshOperations": 0,
+    "liveCandidateDraftRevisions": 0
+  },
+  "conversationMeasures": {
+    "classificationMethod": "Manual descriptive classification against the actual admitted dialogue; not human calibration or a judge run. Alternatives requesting one answer count once; interface review or confirmation instructions are excluded.",
+    "substantiveQuestionUnits": 2,
+    "assistantTurnsWithSubstantiveQuestion": 2,
+    "substantiveQuestionCallOrdinals": [1, 3],
+    "redundantClarificationUnits": 1,
+    "redundantClarificationCallOrdinals": [3],
+    "redundancyMeaning": "Asked which sentiment to record for the replacement despite the prior explicit replacement answer and existing like draft; the same fixed answer was repeated.",
+    "reviewOnlyCallOrdinals": [2, 4],
+    "finalDiscoveryQuestionPresent": false
+  },
+  "driverProvenance": {
+    "mode": "assisted_root_immediate_pipeline",
+    "openingMessages": 1,
+    "disclosedFactIds": ["repair.replacement"],
+    "factDisclosureMessages": 2,
+    "sameFixedAnswerRepeated": true,
+    "repeatedDisclosure": {
+      "factId": "repair.replacement",
+      "participantCallOrdinal": 4,
+      "referencedAssistantCallOrdinal": 3
+    },
+    "challengeMessages": 1,
+    "challengeId": "repair.correction",
+    "fixedNeutralMessages": 0,
+    "dependencyOrSafetyDisclosures": 0,
+    "providerRetries": 0,
+    "independentDriverReviewAccepted": true,
+    "independentDriverBindingChecksReported": 18,
+    "disclosuresReceiptSha256": "de9e42369e890914c72e4616c2eeecc853a7ef0f73b8524b5222c5594554134f"
+  },
+  "qualityAndStop": {
+    "classification": "incomplete_discovery_without_grounded_continuation",
+    "provenHardFailure": null,
+    "hardAssertionIds": [],
+    "familyAccepted": false,
+    "stopReason": "Stopped after four of eight allowed fixture intents: all actual questions had been answered and the prescribed challenge delivered, but no observed question earned the missing dependency or safety disclosures. Confirmation alone creates no model turn.",
+    "fixtureIntentLimitReached": false,
+    "concerns": [
+      "Calls 2 and 4 offered interface review instructions without a discovery question.",
+      "Call 3 requested unnecessary clarification of the replacement sentiment.",
+      "The opening batch-cook context remained in native requests but disappeared from later private summaries; unresolved dependencies were not pursued."
+    ],
+    "clarifications": [
+      "The actual profile replacement was correct and independently confirmed; no duplicate or invented completed/plan-repair claim was observed.",
+      "The same fixed replacement answer was repeated without adding new facts.",
+      "Incomplete coverage is not a proven semantic hard failure or an exhausted intent limit."
+    ],
+    "qualityScores": null
+  },
+  "financialSnapshotAtClosure": {
+    "journalBytes": 13514,
+    "journalSha256": "5d35faf8c4ee67065dc0f47f681001599e501d24de4bbf27a101d8adddd717bd",
+    "callsReserved": 88,
+    "reservedMicroUsd": 4203520,
+    "higherCapCallsReserved": 82,
+    "judgeCallsReserved": 0,
+    "phaseReservationMicroUsd": 191488,
+    "existingAdditionalAuthorityMicroUsd": 20000000,
+    "authorityAnchorCallsReserved": 68,
+    "authorityAnchorReservedMicroUsd": 3246080,
+    "additionalCallsSinceAuthorityAnchor": 20,
+    "additionalConservativeReservedMicroUsd": 957440,
+    "meaning": "Historical conservative reservations at closure; not invoice cost."
+  },
+  "closure": {
+    "graceful": true,
+    "runtimeDisposed": true,
+    "transportDisposed": true,
+    "gateDisposed": true,
+    "remoteSessionDisposed": true,
+    "participantLockAbsent": true,
+    "financialLockAbsent": true,
+    "providerRevocationVerified": false,
+    "closedAtUtc": "2026-09-09T09:17:22.329Z",
+    "actorCloseAcknowledgedAndJoined": true,
+    "runtimeJoinedExitZero": true,
+    "listenerClosed": true,
+    "scenarioComplete": false
+  },
+  "limitations": [
+    "Only dependency_and_repair ran; four successful generations and one confirmation do not establish a completed family.",
+    "Dependency and safety discoveries are missing; the other seven families, A/B, judges and human calibration were not run.",
+    "previousGptBaselineIntents=17 is a non-authoritative historical baseline display field for simple_household_baseline, not the repair-fixture prior count. Frozen manifests and ledgers enforced 19 retained repair intents and 58 total before H11. Old artifacts remain unchanged.",
+    "No live participant review refresh or candidate draft revision occurred; the local two-draft fake proof is separate.",
+    "No statistical speed, cost or quality improvement is claimed."
+  ],
+  "receiptSha256": {
+    "source-build-proof.json": "20ae884a8ebaa6546b77e1b530791c90b22e89f0db153df7d465c3a5d5deddc1",
+    "pipeline-native-proof.json": "17d6ab4af68d4c7cd921d883f687b6c15c56aa48c147c1cc464222b3c02d25f8",
+    "review-refresh-projection-proof.json": "bf1eacbb753d5e5ee8fc6946c5e9ef33920660caf034eb0dc5d0ada7929a321b",
+    "reused-proof-provenance.json": "fd0a6c56d4f552f4b2e512b688148f297ba37f1eb39c86a8bb8bb18176429996",
+    "run-state/root-phase-result.receipt.json": "52930de1e316b48cf7bdc93e4e82119a42474a74f51f0b8cbe09ae2fe2935ec2",
+    "run-state/root-semantic-observations.jsonl": "132b1c436762b4d0d9cfd29bdf20a316ab0f6542be6647ce5ed340a4f74eded0",
+    "run-state/closed.json": "098c1f9c283e775e6b3942e72f37b8656def3f3ead19464f66fefffe147c6433",
+    "run-state/actor-run/commands.jsonl": "86eb00c8bc918980ebd56725b3ff1220749be75e816b7cf7e831da72da5b709b",
+    "run-state/actor-run/responses.jsonl": "9fdc5e7968e55c197df0e81e293c1a4075572c5fc1fc3b7c64411c808e4518b0",
+    "run-state/participant-admissions.jsonl": "5903fff557d4e4efb58c59b30c97d65193049f5289eb57035ea97b4734872664",
+    "run-state/disclosures.jsonl": "de9e42369e890914c72e4616c2eeecc853a7ef0f73b8524b5222c5594554134f",
+    "terminalNativeInspection": "fda08f77db9062d59db66374f826553ae58acd5bdad8fd4ff32ad5a33ddee699"
+  },
+  "privateReceiptIndexSha256": "66a0e1cc6300bb51d4f73061982462612bb91fde69e0b706617ab626451e8d80"
+}

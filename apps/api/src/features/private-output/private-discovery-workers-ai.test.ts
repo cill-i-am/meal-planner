@@ -18,6 +18,7 @@ import type { PrivateDiscoveryConfiguration } from "./private-discovery-workers-
 const context = () =>
   Schema.decodeUnknownSync(PrivateDiscoveryContext)({
     cards: [],
+    continuity: [],
     messages: [
       {
         id: crypto.randomUUID(),
@@ -26,7 +27,6 @@ const context = () =>
       },
     ],
     profile: { facts: [], version: 0 },
-    summary: "",
   });
 const proposedCard = (revision: number) =>
   Schema.decodeUnknownSync(PrivateDiscoveryContext.fields.cards.value)({
@@ -53,9 +53,24 @@ const config: PrivateDiscoveryConfiguration = {
   timeoutMs: 1000,
 };
 const output = {
-  message: "How do you like tomatoes prepared?",
+  continuity: {
+    additions: [
+      {
+        detail: "",
+        key: "preparation",
+        state: "unresolved",
+        subject: "Tomato preparation",
+      },
+    ],
+    revisions: [],
+  },
   proposals: [],
-  summary: "Tomatoes are an unconfirmed preference.",
+  reply: {
+    _tag: "Ask",
+    question: "How do you like tomatoes prepared?",
+    text: "You like tomatoes.",
+    topicKey: "preparation",
+  },
 };
 const completion = (content: Readonly<Record<string, unknown>> = output) => ({
   choices: [
@@ -117,6 +132,16 @@ describe("private discovery Workers AI boundary", () => {
       const jsonSchema = Tool.getJsonSchemaFromSchema(
         makePrivateDiscoveryProviderOutput(cards)
       );
+      expect(Object.keys(jsonSchema["properties"] ?? {})).toEqual([
+        "continuity",
+        "proposals",
+        "reply",
+      ]);
+      expect(jsonSchema["required"]).toEqual([
+        "continuity",
+        "proposals",
+        "reply",
+      ]);
       expect(test.run).toHaveBeenCalledOnce();
       expect(test.run.mock.calls[0]?.[1]).toMatchObject({
         messages: [
@@ -262,7 +287,7 @@ describe("private discovery Workers AI boundary", () => {
         response_format: {
           json_schema: {
             properties: {
-              message: expect.any(Object),
+              continuity: expect.any(Object),
               proposals: {
                 items: {
                   properties: { _tag: { enum: ["ProposeProfileCard"] } },
@@ -270,12 +295,12 @@ describe("private discovery Workers AI boundary", () => {
                 },
                 type: "array",
               },
-              summary: expect.any(Object),
+              reply: expect.any(Object),
             },
             required: expect.arrayContaining([
-              "message",
+              "continuity",
               "proposals",
-              "summary",
+              "reply",
             ]),
             type: "object",
           },
@@ -314,7 +339,7 @@ describe("private discovery Workers AI boundary", () => {
       expect(result.output).toEqual(output);
       expect(result.provenance).toMatchObject({
         model: modelName,
-        promptVersion: "private-discovery-prompt-v11",
+        promptVersion: "private-discovery-prompt-v12",
         provider: "cloudflare-workers-ai",
       });
       expect(result.usage).toEqual({
@@ -403,6 +428,21 @@ describe("private discovery Workers AI boundary", () => {
   it.each([
     ["unknown top-level output", { ...output, saved: true }],
     [
+      "the superseded free-text output contract",
+      { message: "A reply", proposals: [], summary: "A summary" },
+    ],
+    [
+      "unknown continuity fields",
+      { ...output, continuity: { ...output.continuity, actor: "forbidden" } },
+    ],
+    [
+      "an unsupported review reason",
+      {
+        ...output,
+        reply: { _tag: "Review", reason: "cards_exist", text: "Review." },
+      },
+    ],
+    [
       "canonical authority on an action",
       {
         ...output,
@@ -418,7 +458,10 @@ describe("private discovery Workers AI boundary", () => {
         ],
       },
     ],
-    ["unbounded message", { ...output, message: "x".repeat(2001) }],
+    [
+      "unbounded reply text",
+      { ...output, reply: { ...output.reply, text: "x".repeat(2001) } },
+    ],
     [
       "unbounded actions",
       {
@@ -528,7 +571,17 @@ describe("private discovery Workers AI boundary", () => {
       const test = fixture(() => Promise.resolve(respond()));
       const input = {
         ...test.input,
-        context: { ...test.input.context, summary: privateValue },
+        context: {
+          ...test.input.context,
+          continuity: [
+            {
+              detail: privateValue,
+              key: "private-context",
+              state: "circumstance" as const,
+              subject: "Private context",
+            },
+          ],
+        },
       };
       const error = await Effect.runPromise(
         Effect.flip(test.model.generate(input))

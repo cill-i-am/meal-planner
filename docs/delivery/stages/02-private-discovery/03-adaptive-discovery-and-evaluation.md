@@ -7,46 +7,57 @@
 
 ## Current evaluation status
 
-The latest [prompt-v10 result](../../../../evals/private-discovery/prompt-v10-effects-results.md)
-contains eight successful native generations in the first repair family. The
-model proposed the correct replacement, which the adult explicitly confirmed
-through the native interface (profile version 1 to 2), followed by a confirmed
-no-known-hard-constraints addition (version 2 to 3). The required dependency
-discovery was not reached within eight turns, so the phase stopped for incomplete
-coverage. Independent review found no proven new hard assertion or driver
-violation. This is an incomplete discovery and quality result, not family
-acceptance.
+The latest [prompt-v11 result](../../../../evals/private-discovery/prompt-v11-continuity-results.md)
+contains four successful native generations. The adult explicitly confirmed the
+correct replacement after call 4, advancing the profile from version 1 to 2 with
+one fact and its original identity. Calls 2 and 4 offered interface review without
+a discovery question; call 3 repeated an already answered clarification. The
+required dependency and safety discoveries were not reached. With no remaining
+driver-grounded continuation, the phase stopped before its eight-intent cap.
+There was no proven new hard assertion or driver violation, family acceptance,
+judge or human score, live review refresh, or fresh-session A-to-B repeat.
 
-The model asked about future use of the replacement, then lost the existing
-routine's unresolved context after the participant limited the change's scope.
-Later questions collected generic preference categories. Summaries repeatedly
-narrated supplied profile/card state and omitted useful circumstances; the final
-summary described a neutral absence of information as a refusal. These are
-quality concerns. There were no family scores, judge calls, human scores, or
-live fresh-session A-to-B repeat. The other seven families were not run.
-Earlier [v9](../../../../evals/private-discovery/prompt-v9-duties-results.md),
+The current v12 candidate replaces free-text summary overwrite and an implicit
+reply decision with ordered continuity additions/revisions, unchanged profile-card
+operations, and an explicit Ask/Review/Stop reply. Omitted notes are retained.
+Revisions replace the complete named note, including a corrected subject. The
+native child validates note references, bounds and reply decisions before storing
+any generated message, card or continuity snapshot. Ask renders the exact
+model-authored acknowledgement and question. Stop leaves the native session open;
+only the participant's existing completion command can close it.
+
+This is one private model call and one canonical structured continuity codec in
+the existing WI03 TEXT column. It adds no migration, compatibility parser,
+backfill, automatic eviction, output repair, provider retry or public protocol.
+The [architecture record](../../../architecture/decisions/0004-household-agent-coordinator-and-isolated-chat-agents.md#structured-private-discovery-continuity--2026-09-09)
+owns the private contract and validation boundaries. The current candidate has
+local validation only and has not run against the real model; no semantic fix,
+family result or baseline is claimed.
+
+Local validation passed 62 adapter/continuity tests and 41 focused native
+assistant tests. Native checks cover retained notes across unrelated turns and
+restart, exact rendered questions, distinct no-information/refusal states,
+fresh-session isolation, Stop versus explicit completion, and atomic rejection
+of invalid updates, decisions and limits. API types, lint, formatting and
+asset/document checks also pass. These are local synthetic proofs, not live-model
+quality acceptance.
+
+Local size checks rebuilt all twelve retained H10/H11 request contexts with an
+illustrative five-note continuity snapshot (783 bytes). The largest provider body
+was 31,620 of 32,768 bytes (1,148 bytes remaining); its capture envelope was 31,819
+of 40,000 bytes. A size-only successor projection using retained texts reached
+32,092 bytes, leaving 676. These are packing checks, not admitted fixture turns,
+reconstructed semantic state, or live quality evidence. Larger combinations may
+still reach the unchanged pre-dispatch limit.
+
+Earlier [v10](../../../../evals/private-discovery/prompt-v10-effects-results.md),
+[v9](../../../../evals/private-discovery/prompt-v9-duties-results.md),
 [v8](../../../../evals/private-discovery/prompt-v8-schema-results.md),
 [v7](../../../../evals/private-discovery/prompt-v7-two-phase-results.md), and
 [v6](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
-results remain separate, unchanged historical evidence.
-
-The current v11 prompt prioritizes consequential unresolved circumstances
-already disclosed before collecting additional preference categories. A scope
-limit on changes does not itself close contextual discussion. Neutral absence of
-information is distinct from refusal; the model moves on without repeating the
-question. Summaries preserve useful circumstances and unresolved dependencies
-without narrating supplied profile/card state. These duties replace overlapping
-discovery wording. V10's effect/card selection, exact strength/scope qualifiers,
-safety and untrusted-input rules, provider schemas, native authority, model
-settings, and byte limits remain unchanged.
-
-All 36 adapter tests, API type checking, and lint/format checks pass. Rebuilding
-the eight retained H10 request bodies with v11 keeps the largest at 29,043 bytes
-and the final at 23,270 bytes, below the unchanged 32,768-byte limit, with identical
-provider schemas. No unchanged broad native suite was repeated. **V11 has not run
-against the real model and is not a verified semantic fix.** Earlier
-implementation and evaluation evidence remains below, including the
-[bounded v5 correction proof](#correction-diagnosis-and-prompt-v5).
+results remain separate, unchanged historical evidence. Earlier implementation
+proofs below, including the [bounded v5 correction proof](#correction-diagnosis-and-prompt-v5),
+do not establish quality or acceptance of v12.
 
 ## Outcome and scope
 
@@ -110,8 +121,8 @@ session admission clears only reconciled assistant-turn conflict/pending notices
 Failed admission remains visibly unavailable.
 
 The thin application-owned model seam accepts bounded authorized context and
-returns assistant text, bounded new-card/proposed-card-revision operations, a
-private continuity summary, and usage/provenance. A revision names only a current
+returns ordered continuity additions/revisions, bounded new-card/proposed-card-revision
+operations, an Ask/Review/Stop reply, and usage/provenance. A card revision names only a current
 context card ID and expected revision. The child validates that the exact stored
 card is still proposed at that revision within the final guarded settlement
 transaction. It assigns card identity, version, status, and reviewed before-values
@@ -131,17 +142,36 @@ retained on successful and rejected model output; unknown usage stays unknown.
 Configured failures retain model/prompt/policy/tool provenance, recorded durably
 at the dispatch claim so runtime restart cannot erase the actual configuration.
 Known late usage can update only the same claimed attempt's measurements; it
-never changes terminal status or restores text, cards, summary, or socket output.
+never changes terminal status or restores text, cards, continuity, or socket output.
 
 The context keeps the whole current own-profile projection, at most 16 recent
-messages, at most 25 private cards, and a 2,000-character rolling private summary.
-It trims old private context, never canonical facts, and refuses an oversized
-profile without a provider call. The adapter checks both the 24,576-byte UTF-8
-context bound and the 32,768-byte fully serialized provider payload including
-instructions and output schema. The raw provider response is capped at 65,536
-bytes; generated replies/summary are limited to 2,000 characters and card
-operations to three. The configuration explicitly bounds output tokens and
-request duration. No fixed question count constrains the product conversation.
+messages, at most 25 private cards, and structured private continuity. Each note
+has a key (1–32 characters), subject (1–120), detail (0–200), and a state:
+`circumstance`, `unresolved`, `answered`, `no_information`, `declined`, or
+`withdrawn`. There are at most 12 retained notes and six combined additions and
+revisions per turn; the serialized snapshot must fit 4,096 UTF-8 bytes. Omission
+retains a note; explicit revisions replace its subject, detail and state. Unknown
+revision keys, duplicate updates and additions using existing keys are rejected.
+There is no eviction or fallback to an older free-text summary.
+
+Ask names an unresolved retained or newly added note. Review rejects any remaining
+unresolved note; Stop represents an explicit request to stop discussion and never
+completes the session. These are private model decisions, not new browser commands.
+The child joins Ask's model-authored text and question with two newlines and
+checks their combined 2,000-character limit. Review/Stop emit their text unchanged.
+The resulting snapshot is validated and encoded through one JSON codec in the
+existing `private_assistant_turns.summary` TEXT column, atomically with the reply,
+reviewed cards, and successful turn. A fresh session starts with empty continuity.
+
+Context preparation trims older messages and cards, never canonical facts or
+continuity notes. Oversized context is rejected before provider dispatch. The
+24,576-byte context bound, 32,768-byte fully serialized provider body, and
+65,536-byte raw response cap are unchanged. Card operations remain limited to
+three. The separate evaluation transport keeps its 40,000-byte request-envelope
+cap. Declared individual bounds do not guarantee that every maximum-sized
+combination fits the provider body; the existing bound is enforced without a
+new trimming architecture. Model output-token and duration limits remain
+explicit. No fixed question count constrains the product conversation.
 
 `PrivateOutputWorker` owns the concrete Alchemy wiring: `Cloudflare.Workers.AI()`
 creates the native `PrivateDiscoveryAI` binding, and deployment-time
@@ -588,9 +618,9 @@ contains the metadata results and receipt digests.
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
-remain in progress and are not ready to merge. The [v10 result](../../../../evals/private-discovery/prompt-v10-effects-results.md)
-stopped with incomplete required discovery; the current v11 prompt has only
-local validation. Passing native discovery across all eight families, candidate
+remain in progress and are not ready to merge. The [v11 result](../../../../evals/private-discovery/prompt-v11-continuity-results.md)
+stopped with incomplete required discovery; the current v12 structured candidate
+has only local validation. Passing native discovery across all eight families, candidate
 comparison, the required live A-to-B removal, and actual human calibration remain
 incomplete. Earlier scripted and bounded correction proofs do not replace those
 gates. The canonical evidence and calibration templates remain unfilled. No

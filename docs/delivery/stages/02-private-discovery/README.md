@@ -52,22 +52,21 @@ confirmation, restart, privacy, accessibility, and runtime evidence and limits.
 Work Item 03 is in progress in
 [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218). Native
 adaptive-turn implementation and local browser acceptance are complete. The
-latest [prompt-v10 result](../../../../evals/private-discovery/prompt-v10-effects-results.md)
-produced eight successful native generations, with a replacement and
-no-known-hard-constraints addition explicitly confirmed through the adult's
-native interface. Required dependency
-discovery remained incomplete, with no proven new hard assertion or driver
-violation. Earlier results are preserved.
+latest [prompt-v11 result](../../../../evals/private-discovery/prompt-v11-continuity-results.md)
+contains four successful native generations and one correct explicit adult
+replacement confirmation. Required dependency and safety discoveries remained
+incomplete before the intent cap; there was no proven new hard assertion or
+driver violation. Earlier results are preserved.
 
-The current v11 prompt prioritizes unresolved disclosed circumstances and
-preserves contextual continuity. A limit on changes does not close discussion;
-no further information is distinct from refusal and does not prompt a repeated
-question. Effect/card selection, grounding, provider schemas, and native
-authority remain unchanged. Local checks pass, but v11 has no real-model quality
-result. The required live fresh-session repeat, family acceptance, candidate
-selection, judge scoring, and human calibration remain incomplete. The draft is
-not ready to merge, and no baseline is accepted. The
-[owning work item](03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
+The current v12 candidate retains omitted private context through bounded
+continuity additions/revisions and makes Ask/Review/Stop explicit. The child
+validates and stores the snapshot, model-authored reply and reviewed cards
+atomically. Stop does not complete the native session. No public protocol,
+physical migration, compatibility parser, extra model call or canonical authority
+is added. The candidate has local validation only. The live fresh-session repeat,
+family acceptance, candidate comparison, judge scoring and human calibration
+remain incomplete; no baseline is accepted and the draft is not ready to merge.
+The [owning work item](03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
 retains current scope and historical evidence. Delivery follows the existing
 [execution policy](../../../agents/execution-policy.md).
 

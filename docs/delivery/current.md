@@ -26,17 +26,16 @@
   [Work Item 03 — adaptive discovery and evaluation](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
   is in progress in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218).
   Private adaptive-turn implementation and local browser acceptance are complete.
-  The latest [prompt-v10 result](../../evals/private-discovery/prompt-v10-effects-results.md)
-  produced eight successful native generations, with a replacement and
-  no-known-hard-constraints fact explicitly confirmed through the adult's native
-  interface. Required dependency discovery
-  remained incomplete; no new hard assertion was proven. The current v11 prompt
-  prioritizes unresolved disclosed circumstances and preserves them in the
-  summary, distinguishing a change-scope limit and no further information from
-  refusal. Local checks pass, but v11 has no real-model quality result. No family
-  acceptance, judge scoring, human calibration, or baseline is claimed; the
-  required live fresh-session repeat remains unrun. The draft is not ready to
-  merge. The [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
+  The latest [prompt-v11 result](../../evals/private-discovery/prompt-v11-continuity-results.md)
+  contains four successful native generations and one correct explicit adult
+  replacement confirmation. Dependency and safety discovery remained incomplete;
+  no new hard assertion was proven. The current v12 candidate uses bounded
+  continuity additions/revisions and an explicit Ask/Review/Stop reply. Omitted
+  context survives, and invalid updates or reply decisions reject atomically.
+  Stop does not complete the native session. The candidate has local validation
+  only: no live quality result, family acceptance, judge/human score, or baseline
+  is claimed. The draft is not ready to merge. The
+  [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
   retains current scope and historical evidence.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)

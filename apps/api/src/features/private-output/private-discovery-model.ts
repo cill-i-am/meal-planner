@@ -11,21 +11,21 @@ import {
 import type { Effect } from "effect";
 import { Data, Schema } from "effect";
 
+import {
+  PrivateDiscoveryContinuity,
+  PrivateDiscoveryContinuityUpdates,
+  PrivateDiscoveryReply,
+} from "./private-discovery-continuity.js";
+import type { PrivateDiscoveryContinuationFailure } from "./private-discovery-continuity.js";
+
 export const PRIVATE_DISCOVERY_CONTEXT_BYTES = 24_576;
 export const PRIVATE_DISCOVERY_MESSAGE_LIMIT = 16;
 export const PRIVATE_DISCOVERY_CARD_LIMIT = 25;
-export const PRIVATE_DISCOVERY_SUMMARY_LENGTH = 2000;
-export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v11";
-export const PRIVATE_DISCOVERY_POLICY_VERSION = "private-discovery-policy-v1";
+export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v12";
+export const PRIVATE_DISCOVERY_POLICY_VERSION = "private-discovery-policy-v2";
 export const PRIVATE_DISCOVERY_TOOL_VERSION = "profile-card-change-v1";
 
 const Id = Schema.String.pipe(Schema.check(Schema.isUUID()));
-const ShortText = Schema.String.pipe(
-  Schema.check(Schema.isMinLength(1), Schema.isMaxLength(2000))
-);
-const Summary = Schema.String.pipe(
-  Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_SUMMARY_LENGTH))
-);
 export const PrivateDiscoveryProfile = Schema.Struct({
   facts: Schema.Array(
     Schema.Struct({
@@ -55,6 +55,7 @@ export const PrivateDiscoveryContext = Schema.Struct({
       ]),
     })
   ).pipe(Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_CARD_LIMIT))),
+  continuity: PrivateDiscoveryContinuity,
   messages: Schema.Array(
     Schema.Struct({
       id: Id,
@@ -65,7 +66,6 @@ export const PrivateDiscoveryContext = Schema.Struct({
     })
   ).pipe(Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_MESSAGE_LIMIT))),
   profile: PrivateDiscoveryProfile,
-  summary: Summary,
 });
 export type PrivateDiscoveryContext = typeof PrivateDiscoveryContext.Type;
 
@@ -86,9 +86,9 @@ const PrivateDiscoveryProposal = Schema.Union([
 
 const outputSchema = <S extends Schema.Constraint>(proposal: S) =>
   Schema.Struct({
-    message: ShortText,
+    continuity: PrivateDiscoveryContinuityUpdates,
     proposals: Schema.Array(proposal).pipe(Schema.check(Schema.isMaxLength(3))),
-    summary: Summary,
+    reply: PrivateDiscoveryReply,
   }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 
 /** Model text and unfinished proposals have no canonical authority. */
@@ -140,6 +140,7 @@ export const PrivateDiscoveryResult = Schema.Struct({
 export type PrivateDiscoveryResult = typeof PrivateDiscoveryResult.Type;
 
 export type PrivateDiscoveryInvalidOutputStage =
+  | PrivateDiscoveryContinuationFailure["stage"]
   | "context_preparation"
   | "response_body_missing"
   | "response_body_limit"

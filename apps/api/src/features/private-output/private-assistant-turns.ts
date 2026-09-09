@@ -12,6 +12,11 @@ import type { drizzle } from "drizzle-orm/durable-sqlite";
 import { Cause, Effect, Exit, Option, Schema } from "effect";
 
 import {
+  applyPrivateDiscoveryContinuation,
+  PrivateDiscoveryContinuationFailure,
+  PrivateDiscoveryContinuityJson,
+} from "./private-discovery-continuity.js";
+import {
   PRIVATE_DISCOVERY_CARD_LIMIT,
   PRIVATE_DISCOVERY_CONTEXT_BYTES,
   PRIVATE_DISCOVERY_MESSAGE_LIMIT,
@@ -296,15 +301,21 @@ export class PrivateAssistantTurns {
           );
         return { change, id, reviewedFact, revision, status };
       });
-    const summary =
-      this.#database
-        .select({ summary: privateAssistantTurns.summary })
-        .from(privateAssistantTurns)
-        .where(eq(privateAssistantTurns.status, "succeeded"))
-        .orderBy(desc(privateAssistantTurns.ordinal))
-        .get()?.summary ?? "";
+    const previous = this.#database
+      .select({ summary: privateAssistantTurns.summary })
+      .from(privateAssistantTurns)
+      .where(eq(privateAssistantTurns.status, "succeeded"))
+      .orderBy(desc(privateAssistantTurns.ordinal))
+      .get();
+    const continuity =
+      previous === undefined
+        ? []
+        : Schema.decodeUnknownSync(PrivateDiscoveryContinuityJson)(
+            previous.summary
+          );
     const context = {
       cards,
+      continuity,
       messages,
       profile: {
         facts: profile.facts.map(({ id, standing, value }) => ({
@@ -314,7 +325,6 @@ export class PrivateAssistantTurns {
         })),
         version: profile.version,
       },
-      summary,
     };
     const bytes = () =>
       new TextEncoder().encode(JSON.stringify(context)).byteLength;
@@ -446,13 +456,26 @@ export class PrivateAssistantTurns {
           Schema.decodeUnknownSync(Schema.fromJsonString(ProfileCard))(cardJson)
         );
       const proposals = reviewProposals(result, context, storedCards);
+      let continuation: ReturnType<typeof applyPrivateDiscoveryContinuation>;
+      try {
+        continuation = applyPrivateDiscoveryContinuation(
+          context.continuity,
+          result.output.continuity,
+          result.output.reply
+        );
+      } catch (error) {
+        if (error instanceof PrivateDiscoveryContinuationFailure) {
+          throw invalidOutput(error.stage);
+        }
+        throw error;
+      }
       this.#database
         .insert(privateMessages)
         .values({
           createdAt: Date.now(),
           id: crypto.randomUUID(),
           role: "assistant",
-          text: result.output.message,
+          text: continuation.message,
         })
         .run();
       for (const { card: existing, proposal } of proposals) {
@@ -498,7 +521,9 @@ export class PrivateAssistantTurns {
           failure: null,
           provenanceJson: JSON.stringify(result.provenance),
           status: "succeeded",
-          summary: result.output.summary,
+          summary: Schema.encodeSync(PrivateDiscoveryContinuityJson)(
+            continuation.continuity
+          ),
           usageJson: JSON.stringify(result.usage),
         })
         .where(eq(privateAssistantTurns.id, turn.id))
