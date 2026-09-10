@@ -52,21 +52,19 @@ confirmation, restart, privacy, accessibility, and runtime evidence and limits.
 Work Item 03 is in progress in
 [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218). Native
 adaptive-turn implementation and local browser acceptance are complete. The
-latest [GPT-OSS v14 result](../../../../evals/private-discovery/prompt-v14-reply-sampling-results.md)
-contains one native success and one rejected duplicate continuity addition. The
-first truthful notes and canonical profile stayed unchanged; no second reply or
-card persisted, and required discovery remained incomplete.
+latest [GPT-OSS v15 result](../../../../evals/private-discovery/prompt-v15-keyed-continuity-results.md)
+contains three successful native turns. Keyed updates
+retained the circumstance and a correct replacement draft was proposed, but
+Review still preceded required discovery. No family acceptance was earned.
 
-V15 replaces the model's additions/revisions split with one strict array of
-complete keyed updates. New keys add notes, retained keys replace them in place,
-omissions retain prior notes, and duplicate keys within an update list reject.
-The old output shape is rejected outright. A mistyped new key now creates a note;
-semantic identity remains the model's responsibility. Policy v3 identifies the
-changed private model-output contract. The database schema, input/stored snapshot
-codec, sampling, caps and confirmation/privacy boundaries remain unchanged.
-V15 has local validation only. Live discovery across all families, the fresh-session
-repeat, completed candidate comparison, judge scoring and human calibration remain
-incomplete; no baseline is accepted and the draft is not ready to merge.
+V16 replaces only the opening paragraph with the interview's practical planning
+purpose, preserving the full discovery scope and the adult's control over
+confirmed changes. This is one hypothesis, not a proven cause or fix for early
+Review. Remaining instructions, policy v3, output schemas, sampling, fixtures,
+caps and authority boundaries stay unchanged. V16 has local validation only;
+live discovery across all families, repeat review, the completed candidate
+comparison, judge scoring and human calibration remain incomplete. No baseline
+is accepted and the draft is not ready to merge.
 The [owning work item](03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
 retains current scope and historical evidence. Delivery follows the existing
 [execution policy](../../../agents/execution-policy.md).

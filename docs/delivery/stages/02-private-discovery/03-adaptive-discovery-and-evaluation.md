@@ -7,17 +7,28 @@
 
 ## Current evaluation status
 
-The latest [GPT-OSS v14 result](../../../../evals/private-discovery/prompt-v14-reply-sampling-results.md)
-stopped after one native success and one known `invalid_output` failure at the
-actually captured `continuity_updates` stage. The first turn retained truthful
-notes for the disclosed circumstance and unresolved preference request. The
-second put an existing key under additions, so no second reply, note update or
-card persisted. Earlier native state and the whole canonical profile stayed
-exact. Dependency and safety discovery remained missing; no family result was
-accepted. This historical phase used prompt v14, policy v2 and GPT-OSS sampling
-1/1. Its output and provenance remain unchanged.
+The latest [GPT-OSS v15 result](../../../../evals/private-discovery/prompt-v15-keyed-continuity-results.md)
+completed three successful native turns. Keyed
+continuity updates worked, the disclosed circumstance was retained, and a correct
+replacement card was proposed. Calls 2 and 3 nevertheless chose Review without
+asking about dependency or safety; call 3 returned an unchanged card revision and
+claimed no open topics. The card remained proposed and the canonical profile
+unchanged. The phase stopped with incomplete discovery. Successful native updates
+do not establish discovery quality or family acceptance.
 
-The current v15 candidate changes the model output contract to
+V16 replaces only the opening paragraph with the accepted practical planning
+purpose of the adult interview: choose questions for their future planning value,
+leave lower-value detail for later, and produce supported drafts during discovery.
+Planning and repair remain later capabilities, and the adult controls confirmation.
+This is one prompt-purpose hypothesis, grounded in the
+[experience blueprint](../../../product-blueprint/experience-blueprint.md#2-run-private-repeatable-adult-reviews),
+not a proven explanation or fix for early Review. The continuity, reply, domain
+and authority instructions are unchanged, as are policy v3, output schemas,
+sampling, fixtures and caps. V16 has local validation only, pending a fresh real
+trial. If early closure persists, reassess the model/interaction strategy before
+further wording additions.
+
+The retained v15 model output contract is
 `continuity: Note[]`: at most six complete note updates. A new key creates a note;
 a retained key replaces its complete subject, detail and state in the existing
 position. New notes append in update order, omitted notes remain, and duplicate
@@ -31,7 +42,8 @@ This intentionally removes the unknown-revision guard: a mistyped new key now
 creates a note and may duplicate context. Semantic key identity remains the
 model's responsibility; replacing the wrong existing key was already possible.
 The narrower protocol does not establish truthful notes, relevant questions or
-live discovery quality. V15 has local validation only, pending a fresh real trial.
+live discovery quality. Its first live phase completed native updates but did not
+earn discovery acceptance.
 
 The input and persisted snapshot schema, strict JSON codec and WI03 TEXT column
 remain unchanged. The native child validates note fields, update/retained/byte
@@ -50,27 +62,28 @@ Qwen sampling and the fixed judge remain unchanged. The prior v14 revision
 combined framing and sampling, so its result isolates neither cause nor effect;
 no loop fix or general improvement is claimed.
 
-V15 local validation passes 24 continuity tests, 40 adapter tests and twelve
+V15 local validation passed 24 continuity tests, 40 adapter tests and twelve
 focused native continuity cases. These cover mixed creation/replacement with a
 card, full subject/detail/state correction, stable order, omission retention,
 restart and fresh-session isolation, distinct no-information/refusal states, exact
 question rendering and atomic rejection. Eleven native cases passed initially;
 the mixed case passed after correcting its incomplete expected fact shape in the
 test, with no production change between runs. API types, lint and asset validation
-also pass. Unchanged broad native and long-history proofs are not repeated.
+also passed. V16 passes 40 affected adapter tests, API types, lint and asset
+validation. No unchanged native/history tests are repeated.
 
-The generated model output schema intentionally changes: 5,285 bytes with no
-eligible card, or 9,307 bytes for the retained one-card context, down from 5,822
-and 9,844. Only the continuity schema differs; card and reply schemas match the
-retained prior requests exactly. V15 size checks rebuilt all twelve retained
-H10/H11 contexts with the same illustrative five-note snapshot (783 bytes).
-The largest provider body was 31,029 of 32,768 bytes (1,739 remaining); its capture
-envelope was 31,228 of 40,000. A size-only successor projection reached 31,501
-bytes, leaving 1,267. These packing checks are not admitted fixture turns,
+The generated v16 model output schema matches all three retained v15 requests
+exactly: 5,285 bytes with no eligible card, or 9,307 bytes for its one-card context.
+The prompt is 6,900 bytes, 137 fewer than v15. V16 size checks rebuilt all twelve
+retained H10/H11 contexts with the same illustrative five-note snapshot (783 bytes).
+The largest provider body was 30,892 of 32,768 bytes (1,876 remaining); its capture
+envelope was 31,091 of 40,000. A size-only successor projection reached 31,364
+bytes, leaving 1,404. These packing checks are not admitted fixture turns,
 reconstructed semantic state or live quality evidence. Larger valid combinations
 can still reach the unchanged pre-dispatch limit.
 
-Earlier [v13](../../../../evals/private-discovery/prompt-v13-circumstance-framing-results.md),
+Earlier [v14](../../../../evals/private-discovery/prompt-v14-reply-sampling-results.md),
+[v13](../../../../evals/private-discovery/prompt-v13-circumstance-framing-results.md),
 [GPT-OSS v12](../../../../evals/private-discovery/prompt-v12-continuity-state-results.md),
 [Qwen v12](../../../../evals/private-discovery/prompt-v12-qwen-comparison-results.md),
 [v11](../../../../evals/private-discovery/prompt-v11-continuity-results.md),
@@ -80,7 +93,7 @@ Earlier [v13](../../../../evals/private-discovery/prompt-v13-circumstance-framin
 [v7](../../../../evals/private-discovery/prompt-v7-two-phase-results.md), and
 [v6](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
 remain unchanged historical evidence with their original shapes and provenance.
-Earlier implementation proofs below do not establish v15 live acceptance.
+Earlier implementation proofs below do not establish v16 live acceptance.
 
 ## Outcome and scope
 
@@ -642,8 +655,8 @@ contains the metadata results and receipt digests.
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
-remain in progress and are not ready to merge. The latest v14 phase stopped with
-incomplete discovery and a rejected second turn; v15 has only local validation.
+remain in progress and are not ready to merge. The latest v15 phase completed
+three native turns but left discovery incomplete; v16 has only local validation.
 Passing native discovery across all eight families, the completed candidate
 comparison, the required live A-to-B removal, and actual human calibration remain
 incomplete. Earlier scripted and bounded correction proofs do not replace those

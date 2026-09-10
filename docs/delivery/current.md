@@ -26,16 +26,14 @@
   [Work Item 03 — adaptive discovery and evaluation](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
   is in progress in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218).
   Private adaptive-turn implementation and local browser acceptance are complete.
-  The latest [GPT-OSS v14 result](../../evals/private-discovery/prompt-v14-reply-sampling-results.md)
-  contains one native success followed by a rejected duplicate continuity
-  addition. The first truthful notes and canonical profile stayed unchanged;
-  no second reply or card persisted. V15 replaces the model's additions/revisions
-  split with one strict array of complete keyed updates. New keys add notes,
-  retained keys replace them, omitted notes survive, and duplicate update keys
-  reject. The model output schema changes; the database and stored snapshot codec,
-  GPT-OSS sampling, caps and confirmation/privacy boundaries remain unchanged.
-  V15 has local validation only; no family acceptance or baseline is claimed.
-  The draft is not ready to merge. The
+  The latest [GPT-OSS v15 result](../../evals/private-discovery/prompt-v15-keyed-continuity-results.md)
+  contains three successful native turns, retained
+  context and a correct replacement draft. Review still preceded required
+  discovery, so no family acceptance was earned. V16 changes only the opening
+  paragraph to clarify the interview's practical planning purpose. Existing
+  instructions, policy v3, output schemas, sampling, fixtures, caps and authority
+  boundaries remain unchanged. This is a hypothesis with local validation only;
+  no causal fix or baseline is claimed. The draft is not ready to merge. The
   [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
   retains current scope and historical evidence.
 
