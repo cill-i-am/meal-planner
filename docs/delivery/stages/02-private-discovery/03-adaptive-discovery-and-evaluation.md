@@ -16,23 +16,42 @@ setup version 1. There was no unauthorized canonical mutation. Early Review,
 missing dependency/safety discovery and omitted circumstance continuity remained
 separate limitations. No family or baseline acceptance was earned.
 
-The next comparison keeps prompt v16, policy v3 and the output contract unchanged
-and configures Qwen3-30B-A3B FP8 with `temperature: 0.6`, `top_p: 0.95` and
-`top_k: 20`. These fields are supported by the
-[Cloudflare model API](https://developers.cloudflare.com/workers-ai/models/qwen3-30b-a3b-fp8/)
-and use values from the [upstream sampling guidance](https://huggingface.co/Qwen/Qwen3-30B-A3B-FP8#best-practices).
-Cloudflare's thinking default is undocumented; no thinking-mode flag, certainty
-about the hosted mode, or general fix is claimed. GPT-OSS remains at temperature
-1/top-p 1 with no top-k field, and the fixed judge is unchanged. This is a
-configured comparison of the current v16 candidates, not a prompt iteration.
-Only local request validation exists for the new Qwen configuration.
+The [Qwen v16 comparison](../../../../evals/private-discovery/prompt-v16-qwen-sampling-results.md)
+then stopped after one native success and one actual captured `output_json`
+rejection. The second response contained an extra closing brace and a tool-response
+suffix. No second reply, card or note update persisted; the first native state
+and whole canonical profile remained unchanged. Raw-only confirmation concerns
+were not admitted or validated downstream. Neither configured candidate is
+accepted for discovery.
+
+One [isolated Qwen native-tool diagnostic](../../../../evals/private-discovery/qwen-native-tool-serialization-diagnostic-results.md)
+used retained pre-second-turn context and a named inert function. It produced a
+genuine nested function call with complete JSON string arguments. The frozen
+inspector rejected top-level aliases and empty/null legacy fields before reaching
+argument validation; that original result remains unchanged. Separate offline
+inspection of the untouched native arguments passed both source output schemas,
+then the source continuity validator failed at `reply_decision` because Ask
+targeted a circumstance note. The reply also sought conversational confirmation
+of an already stated intent. The observation is not a discovery pass or
+production integration.
+No household or native-session settlement, function execution, provider retry,
+family replay or malformed-output salvage occurred.
+
+Production remains prompt v16, policy v3 and the existing JSON-output protocol.
+Qwen3-30B-A3B FP8 retains `temperature: 0.6`, `top_p: 0.95` and `top_k: 20`, using
+[Cloudflare-supported fields](https://developers.cloudflare.com/workers-ai/models/qwen3-30b-a3b-fp8/)
+and values from [upstream guidance](https://huggingface.co/Qwen/Qwen3-30B-A3B-FP8#best-practices).
+Cloudflare's thinking default is undocumented. GPT-OSS remains at temperature
+1/top-p 1 without top-k, and the fixed judge is unchanged. No new prompt, model,
+production tool protocol or model-allowlist change is implemented in this
+results-only update. No additional-model trial or discovery acceptance is claimed.
 
 The v16 opening retains the accepted practical planning purpose of the adult
 interview, grounded in the
 [experience blueprint](../../../product-blueprint/experience-blueprint.md#2-run-private-repeatable-adult-reviews).
 All continuity, reply, domain and authority instructions, fixtures and caps remain
-unchanged. The observed GPT result does not establish a successful purpose fix,
-and the next model comparison has no result or acceptance yet.
+unchanged. The current evidence requires a further model/interaction decision;
+it establishes neither a successful purpose fix nor a reliable output channel.
 
 The retained v15 model output contract is
 `continuity: Note[]`: at most six complete note updates. A new key creates a note;
@@ -74,10 +93,11 @@ restart and fresh-session isolation, distinct no-information/refusal states, exa
 question rendering and atomic rejection. Eleven native cases passed initially;
 the mixed case passed after correcting its incomplete expected fact shape in the
 test, with no production change between runs. API types, lint and asset validation
-also passed. The Qwen-only sampling change passes 40 adapter tests, API types,
+also passed. The Qwen-only sampling change passed 40 adapter tests, API types,
 lint and asset validation. Exact request assertions cover Qwen 0.6/0.95/20 and
 unchanged GPT 1/1 without top-k, along with strict fields and gateway controls.
-No unchanged native/history tests are repeated.
+These source checks retain their original scope; this results-only update runs
+formatting and document checks without repeating native or other test suites.
 
 The generated model output schema matches all three retained v15 requests
 exactly: 5,285 bytes with no eligible card, or 9,307 bytes for its one-card context.
@@ -665,11 +685,14 @@ contains the metadata results and receipt digests.
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
-remain in progress and are not ready to merge. The latest GPT v16 phase
-persisted a false completed-update claim despite unchanged canonical state.
-The next Qwen comparison retains v16 and has only local request validation.
+remain in progress and are not ready to merge. GPT v16 persisted a false
+completed-update claim despite unchanged canonical state; Qwen v16 stopped at
+JSON decoding. The isolated tool diagnostic observed a genuine function call but
+failed source continuity validation offline and provided no native settlement or
+discovery acceptance. No new production protocol or model is implemented.
 Passing native discovery across all eight families, the completed candidate
-comparison, the required live A-to-B removal, and actual human calibration remain
-incomplete. Earlier scripted and bounded correction proofs do not replace those
-gates. The canonical evidence and calibration templates remain unfilled. No
-application deployment occurred.
+comparison, the required live A-to-B removal, fixed-judge scoring and actual human
+calibration remain incomplete.
+Earlier scripted and bounded proofs do not replace those gates. The canonical
+evidence and calibration templates remain unfilled. No merge or application
+deployment is authorized by these results.

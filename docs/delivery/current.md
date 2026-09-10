@@ -26,16 +26,17 @@
   [Work Item 03 — adaptive discovery and evaluation](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
   is in progress in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218).
   Private adaptive-turn implementation and local browser acceptance are complete.
-  The latest [GPT-OSS v16 result](../../evals/private-discovery/prompt-v16-planning-purpose-results.md)
-  contains two native successes but a persisted false claim that a preference
-  update was complete. Only a proposed card existed; the canonical profile stayed
-  unchanged and discovery remained incomplete. The next comparison retains v16
-  and configures Qwen temperature/top-p/top-k to 0.6/0.95/20. GPT and the fixed
-  judge stay unchanged. Cloudflare's Qwen thinking default is undocumented; no
-  mode or general fix is claimed. Prompt, policy v3, output schema, fixtures,
-  caps and authority boundaries remain unchanged. The Qwen configuration has
-  local validation only; no family or baseline acceptance is claimed. The draft
-  is not ready to merge. The
+  The [GPT-OSS v16 result](../../evals/private-discovery/prompt-v16-planning-purpose-results.md)
+  persisted a false completed-update claim while canonical state stayed unchanged.
+  The [Qwen v16 comparison](../../evals/private-discovery/prompt-v16-qwen-sampling-results.md)
+  stopped at malformed JSON after one native success, preserving prior state.
+  An [isolated Qwen tool diagnostic](../../evals/private-discovery/qwen-native-tool-serialization-diagnostic-results.md)
+  observed a genuine native function call, but its arguments failed source
+  continuity validation offline; it performed no native
+  settlement and earned no discovery acceptance. Production prompt, model
+  allowlist, protocol and authority remain unchanged. Both configured candidates
+  remain unaccepted, and the eight-family, candidate-comparison, A-to-B, judge
+  and human-calibration gates remain unmet. The draft is not ready to merge. The
   [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
   retains current scope and historical evidence.
 
