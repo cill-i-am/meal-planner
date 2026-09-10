@@ -99,7 +99,9 @@ const requestFor = (
         type: "json_schema" as const,
       },
       stream: false as const,
-      temperature: 0,
+      ...(config.model === "@cf/openai/gpt-oss-120b"
+        ? { temperature: 1, top_p: 1 }
+        : { temperature: 0 }),
     },
     model: config.model,
   };

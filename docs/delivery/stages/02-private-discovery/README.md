@@ -52,20 +52,26 @@ confirmation, restart, privacy, accessibility, and runtime evidence and limits.
 Work Item 03 is in progress in
 [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218). Native
 adaptive-turn implementation and local browser acceptance are complete. The
-[GPT-OSS v12 result](../../../../evals/private-discovery/prompt-v12-continuity-state-results.md)
-contains two native successes and one rejected reply decision. The matched [Qwen v12 comparison](../../../../evals/private-discovery/prompt-v12-qwen-comparison-results.md)
-had one native success followed by malformed JSON rejected at the
-captured `output_json` stage. Both left required discovery incomplete and the
-canonical profile unchanged. Earlier results are preserved.
+latest [GPT-OSS v13 result](../../../../evals/private-discovery/prompt-v13-circumstance-framing-results.md)
+contains two native successes and one rejected
+incomplete completion. The correct replacement card was proposed, but Review
+preceded required discovery. The third response reached its output-token cap;
+that failure is separate from the early-Review framing hypothesis. No confirmation
+or canonical change occurred. Earlier results are preserved.
 
-V13 prioritizes understanding this adult's preferences and practical circumstances,
-selecting useful uncertainty from the full supplied conversation before card
-mechanics. The v12 structured continuity, exact model-authored questions, atomic
-validation and confirmation boundaries remain unchanged. Stop still does not
-complete the native session. V13 has local validation only. The live fresh-session
-repeat, family acceptance, completed candidate comparison, judge scoring and human
-calibration remain incomplete; no baseline is accepted and the draft is not ready
-to merge.
+V14 replaces the local reply-decision guidance. It assesses the whole conversation
+before acknowledging a draft, distinguishes known circumstances from remaining
+uncertainty, and requires both no relevant conversational uncertainty and no
+unresolved note for Review. The same candidate sets GPT-OSS temperature/top-p
+to 1/1, following [OpenAI's recommendation](https://github.com/openai/gpt-oss#recommended-sampling-parameters)
+within [Cloudflare's supported fields](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/).
+This combined framing and sampling change cannot isolate causality or establish
+a loop fix. Qwen sampling and the fixed judge remain unchanged, as do the
+structured contract, model-authored questions, caps and confirmation/privacy
+boundaries. V14 has local validation only. The live fresh-session repeat, family
+acceptance, completed candidate comparison, judge scoring and human calibration
+remain incomplete;
+no baseline is accepted and the draft is not ready to merge.
 The [owning work item](03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
 retains current scope and historical evidence. Delivery follows the existing
 [execution policy](../../../agents/execution-policy.md).

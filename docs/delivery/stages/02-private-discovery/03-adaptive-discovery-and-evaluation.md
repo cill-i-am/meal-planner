@@ -7,28 +7,45 @@
 
 ## Current evaluation status
 
-The [GPT-OSS v12 result](../../../../evals/private-discovery/prompt-v12-continuity-state-results.md)
-contains two successful native generations and one known `invalid_output`
-rejection. The rejected Ask referenced no retained or added unresolved topic;
-`reply_decision` is a pinned-source reconstruction, not a captured native substage.
-The disclosed practical circumstance stayed absent from continuity, and call 2
-chose Review with dependency and safety discovery still missing. The canonical
-profile remained unchanged. The matched [Qwen v12 comparison](../../../../evals/private-discovery/prompt-v12-qwen-comparison-results.md)
-also stopped without family acceptance: one native success followed by an
-`invalid_output` rejection
-with the actual captured `output_json` stage. Its second response contained an
-extra closing brace. The first reply likewise omitted the disclosed circumstance;
-no card or canonical change persisted. These bounded runs do not establish a
-general model ranking.
+The latest [GPT-OSS v13 result](../../../../evals/private-discovery/prompt-v13-circumstance-framing-results.md)
+stopped after two successful native generations and
+one known `invalid_output` failure. The correct replacement card was proposed,
+but call 2 chose Review after answering only its recorded preference question;
+the disclosed circumstance remained absent and dependency/safety discovery was
+still missing. Call 3 was rejected at the actually captured
+`incomplete_completion` stage with finish reason `length` and 4,096 output tokens.
+Its raw output was malformed and repetitive. That separate completion failure
+is not explained by the early-Review framing hypothesis. Earlier native state
+and the whole canonical profile remained unchanged, with no confirmation or
+family acceptance.
 
-The current v13 candidate makes understanding this adult's preferences and
-practical circumstances the primary task. It selects useful uncertainty from the
-supplied conversation, including circumstances not yet noted, and places the
-existing discovery/reply guidance before proposal mechanics. A completed edit or
-an empty unresolved-note set does not establish that nothing useful remains to
-ask. This is one framing hypothesis, with no new examples or prescribed questions.
-The next candidate trial uses GPT-OSS; the fixed judge is unchanged. V13 has no
+The current v14 candidate replaces the local reply-decision guidance. It chooses
+from the whole actual conversation before acknowledging a draft, distinguishes
+known circumstances from remaining uncertainty, and treats understanding as
+useful even without an editable profile fact. Ask contains one new actual
+uncertainty. Review requires both no relevant uncertainty in the conversation
+and no unresolved continuity note. Existing Stop, rendering, domain, decline,
+privacy and confirmation guidance remains. The opening and all instructions
+outside that local block are unchanged.
+
+The same v14 candidate also changes only GPT-OSS sampling to `temperature: 1`
+and `top_p: 1`, following [OpenAI's recommended sampling parameters](https://github.com/openai/gpt-oss#recommended-sampling-parameters)
+within the [Cloudflare model's supported request fields](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/).
+Qwen remains at temperature 0 with no `top_p` field; the fixed judge is unchanged.
+This is a combined framing and sampling revision, not a controlled causal
+comparison. Neither the recommendation nor these settings establish the cause
+of the repeated output or prove a fix. The framing hypothesis concerns early
+Review; the separately captured incomplete completion retains its own evidence.
+The next trial starts a fresh fixture under this source, without replaying frozen
+requests or reopening earlier phases. V14 has local validation only and no
 real-model quality result yet.
+
+Earlier [GPT-OSS v12](../../../../evals/private-discovery/prompt-v12-continuity-state-results.md)
+and [matched Qwen v12](../../../../evals/private-discovery/prompt-v12-qwen-comparison-results.md)
+also stopped with incomplete discovery and a rejected turn. Their records
+separate GPT-OSS's source-reconstructed reply-decision failure from Qwen's actual
+captured `output_json` failure. These bounded results establish no general model
+ranking, accepted family result, or calibrated baseline.
 
 The v12 structured contract remains unchanged: ordered continuity
 additions/revisions, existing profile-card operations, and Ask/Review/Stop.
@@ -47,12 +64,14 @@ assistant tests. Those checks cover retained notes across unrelated turns and
 restart, exact rendered questions, distinct no-information/refusal states,
 fresh-session isolation, Stop versus explicit completion, and atomic rejection
 of invalid updates, decisions and limits. They are historical synthetic proofs,
-not live-model quality acceptance. V13 scoped validation covers prompt
-configuration (39 adapter tests), request fit and the history-test budget change
-(one focused native test, 76 skipped). API types and lint pass; unchanged v12
-native proofs are not repeated.
+not live-model quality acceptance. V14 scoped validation passes 39 adapter tests,
+API types, lint and asset validation. Captured requests assert GPT-OSS sampling
+of 1/1 and unchanged Qwen sampling, strict request shape, caps and gateway controls.
+Current generated schemas exactly match all
+three retained v13 request schemas. Unchanged native/history proofs are not
+repeated.
 
-The long multibyte/escaped history test alone now has a 15-second allowance.
+V13 gave the long multibyte/escaped history test a 15-second allowance.
 Its 25 retained records, sequential mutations, pagination assertions and global
 timeouts are unchanged. The prior five-second budget timed out in hosted CI and
 an isolated run; a source-preserving diagnostic passed all assertions in 4,907 ms.
@@ -60,11 +79,11 @@ The changed test passed in 3,689 ms with its disposable local listener permitted
 Two initial restricted runs stalled; the repeat exposed a local listener `EPERM`
 and a disposal-hook timeout, rather than an assertion failure.
 
-V13 size checks rebuilt all twelve retained H10/H11 request contexts with the
+V14 size checks rebuilt all twelve retained H10/H11 request contexts with the
 same illustrative five-note continuity snapshot (783 bytes). The largest provider
-body was 32,128 of 32,768 bytes (640 bytes remaining); its capture envelope was
-32,327 of 40,000 bytes. A size-only successor projection using retained texts
-reached 32,600 bytes, leaving 168. These are packing checks, not admitted fixture
+body was 32,168 of 32,768 bytes (600 bytes remaining); its capture envelope was
+32,367 of 40,000 bytes. A size-only successor projection using retained texts
+reached 32,640 bytes, leaving 128. These are packing checks, not admitted fixture
 turns, reconstructed semantic state, or live quality evidence. Larger combinations
 may still reach the unchanged pre-dispatch limit.
 
@@ -76,7 +95,7 @@ Earlier [v11](../../../../evals/private-discovery/prompt-v11-continuity-results.
 [v6](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
 results remain separate, unchanged historical evidence. Earlier implementation
 proofs below, including the [bounded v5 correction proof](#correction-diagnosis-and-prompt-v5),
-do not establish quality or acceptance of v13.
+do not establish quality or acceptance of v14.
 
 ## Outcome and scope
 
@@ -637,10 +656,10 @@ contains the metadata results and receipt digests.
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
-remain in progress and are not ready to merge. Both measured v12 candidates
-stopped with incomplete discovery and a rejected turn; v13 has only local
-validation. Passing native discovery across all eight families, the completed
-candidate comparison, the required live A-to-B removal, and actual human
-calibration remain incomplete. Earlier scripted and bounded correction proofs
-do not replace those gates. The canonical evidence and calibration templates
-remain unfilled. No application deployment occurred.
+remain in progress and are not ready to merge. The latest v13 phase stopped with
+incomplete discovery and a rejected third turn; v14 has only local validation.
+Passing native discovery across all eight families, the completed candidate
+comparison, the required live A-to-B removal, and actual human calibration remain
+incomplete. Earlier scripted and bounded correction proofs do not replace those
+gates. The canonical evidence and calibration templates remain unfilled. No
+application deployment occurred.

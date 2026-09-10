@@ -271,9 +271,15 @@ describe("private discovery Workers AI boundary", () => {
     expect(test.run).not.toHaveBeenCalled();
   });
 
-  it.each([config.model, "@cf/openai/gpt-oss-120b"] as const)(
-    "decodes one bounded raw completion for %s with private gateway controls and provenance",
-    async (modelName) => {
+  it.each([
+    { modelName: config.model, sampling: { temperature: 0 } },
+    {
+      modelName: "@cf/openai/gpt-oss-120b",
+      sampling: { temperature: 1, top_p: 1 },
+    },
+  ] as const)(
+    "decodes one bounded raw completion for $modelName with private gateway controls and provenance",
+    async ({ modelName, sampling }) => {
       const test = fixture(undefined, { ...config, model: modelName });
       const result = await Effect.runPromise(test.model.generate(test.input));
       expect(test.beforeDispatch).toHaveBeenCalledOnce();
@@ -329,7 +335,7 @@ describe("private discovery Workers AI boundary", () => {
           type: "json_schema",
         },
         stream: false,
-        temperature: 0,
+        ...sampling,
       });
       expect(test.run.mock.calls[0]?.[2]).toMatchObject({
         extraHeaders: { "cf-aig-max-attempts": "1" },
@@ -339,7 +345,7 @@ describe("private discovery Workers AI boundary", () => {
       expect(result.output).toEqual(output);
       expect(result.provenance).toMatchObject({
         model: modelName,
-        promptVersion: "private-discovery-prompt-v13",
+        promptVersion: "private-discovery-prompt-v14",
         provider: "cloudflare-workers-ai",
       });
       expect(result.usage).toEqual({

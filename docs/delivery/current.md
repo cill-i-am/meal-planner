@@ -26,16 +26,22 @@
   [Work Item 03 — adaptive discovery and evaluation](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
   is in progress in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218).
   Private adaptive-turn implementation and local browser acceptance are complete.
-  The [GPT-OSS v12 result](../../evals/private-discovery/prompt-v12-continuity-state-results.md)
-  contains two native successes and one rejected reply decision. The matched
-  [Qwen v12 comparison](../../evals/private-discovery/prompt-v12-qwen-comparison-results.md)
-  had one native success followed by malformed JSON rejected
-  at the captured `output_json` stage. Both left required discovery incomplete
-  and the canonical profile unchanged. V13 now prioritizes understanding the
-  adult's preferences and practical circumstances before card mechanics, using
-  the same structured continuity, model-authored questions, validation and
-  confirmation boundaries. It has local validation only; no family acceptance,
-  judge/human score or baseline is claimed. The draft is not ready to merge. The
+  The latest [GPT-OSS v13 result](../../evals/private-discovery/prompt-v13-circumstance-framing-results.md)
+  contains two native successes and one rejected
+  incomplete completion. A correct replacement card was proposed, but the model
+  returned Review before required discovery. Its third response reached the
+  output-token cap; that failure is separate from the framing hypothesis. The
+  canonical profile stayed unchanged. V14 replaces the local reply-decision
+  guidance: assess the whole conversation before draft acknowledgement, and
+  require both no relevant conversational uncertainty and no unresolved note for
+  Review. The same candidate sets GPT-OSS temperature/top-p to 1/1 using
+  [OpenAI's recommendation](https://github.com/openai/gpt-oss#recommended-sampling-parameters)
+  and [Cloudflare's supported fields](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/).
+  This combined change cannot isolate either cause or establish a loop fix.
+  Qwen sampling, the fixed judge, contracts, caps and confirmation/privacy
+  boundaries remain unchanged. V14 has local validation only; no family
+  acceptance, judge/human score or baseline is claimed. The draft is not ready
+  to merge. The
   [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
   retains current scope and historical evidence.
 

@@ -1,0 +1,415 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-10",
+  "label": "Prompt v13: output limit reached; earlier state preserved",
+  "phaseId": "family-v13-circumstance-framing-v1",
+  "status": "stopped_after_known_invalid_output",
+  "source": {
+    "head": "01b37feb3b48949cd90604de9c55e5d1b20138f8",
+    "tree": "8e97e3ba2e2d590a3e9d15b1772e25caed502fa8",
+    "freezeSha256": "f2ab3698df78ccbe14128436aca64dcafeff2a7be010937dfe7ae6817ed6849e",
+    "promptSha256": "a0512a51009182b30d2d2fb8421b712bcf26aaf678c3421037e83246df923aaa",
+    "promptUtf8Bytes": 6982,
+    "files": {
+      "scenarioPack": {
+        "path": "evals/private-discovery/scenarios.json",
+        "sha256": "c9ea216e30dac5499410e61e29a6824d270ca323f8329c741d35b5b5dab8cf00"
+      },
+      "rubric": {
+        "path": "evals/private-discovery/rubric.json",
+        "sha256": "ab5882d124d1c231ae102e173c0d420482b6d17d8412acc3da5458ae410b8588"
+      },
+      "judgePrompt": {
+        "path": "evals/private-discovery/judge.md",
+        "sha256": "b1f10ab5e4f4124bee09895291bb2a557bbf50053a5592c181bae35eb4b86a48"
+      }
+    }
+  },
+  "configuration": {
+    "candidateModel": "@cf/openai/gpt-oss-120b",
+    "promptVersion": "private-discovery-prompt-v13",
+    "policyVersion": "private-discovery-policy-v2",
+    "canonicalOutputSchemaSha256": "330635619bf27051b082c3d62b5e02f946624584b22b8a07dd7cb1e4010cffdb",
+    "maxOutputTokens": 4096,
+    "temperature": 0,
+    "stream": false,
+    "deadlineMs": 120000,
+    "maximumProviderAttempts": 1,
+    "gatewayPayloadCollection": false,
+    "gatewayCaching": false,
+    "judge": {
+      "model": "@cf/openai/gpt-oss-120b",
+      "maxOutputTokens": 2048,
+      "deadlineMs": 60000,
+      "calls": 0
+    }
+  },
+  "coverage": {
+    "canonicalFamilies": 8,
+    "familiesStarted": 1,
+    "fixtureId": "dependency_and_repair",
+    "participantIntents": 3,
+    "fixtureIntentLimit": 8,
+    "familiesAccepted": 0,
+    "familiesNotRun": 7,
+    "complete": false,
+    "missingDiscoveries": ["repair.dependency", "repair.safety"],
+    "challenge": "submitted_after_actual_replacement_card; response_failed",
+    "freshBExercised": false,
+    "judgeCalls": 0,
+    "humanScores": null,
+    "acceptedBaseline": false
+  },
+  "calls": [
+    {
+      "ordinal": 1,
+      "nativeStatus": "succeeded",
+      "known": true,
+      "nativeFailure": null,
+      "capturedStage": null,
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "choiceCount": 1,
+        "finishReason": "stop"
+      },
+      "nativeOutputSchemaAccepted": true,
+      "visibleReplyAdmitted": true,
+      "continuitySnapshotPersisted": true,
+      "inputContinuityNotes": 0,
+      "inputCards": 0,
+      "usage": {
+        "inputTokens": 3099,
+        "outputTokens": 505,
+        "totalTokens": 3604
+      },
+      "estimatedCostUsd": "0.00146340",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-10T07:07:15.033Z",
+        "dispatchRecorded": "2026-09-10T07:07:15.093Z",
+        "nativeCompletionRecorded": "2026-09-10T07:07:29.323Z"
+      },
+      "latencyMs": {
+        "ticketToNativeCompletion": 14290,
+        "dispatchToNativeCompletion": 14230,
+        "ticketToDispatch": 60
+      },
+      "bytes": {
+        "requestBodySerialized": 20369,
+        "bindingEnvelopeReconstructed": 20508,
+        "responseObserved": 4576,
+        "assistantContentUtf8": 689
+      },
+      "hashes": {
+        "requestBodySha256": "2c3b5b95eac2c0d17cfab37d3151056c175b656cfa0405d16a44317c8fd53038",
+        "providerOutputSchemaSha256": "6377427f0453da4a6dc9bb6f30ea2d9ce5cb3de7f7d99a88a6db7c386aa48f07",
+        "systemInstructionsAndSchemaSha256": "8e608293029c5130cb22135069ce7bd48cbcf730115e9597061ecaffa07d47c3",
+        "responseBytesSha256": "f14dad87523533f6a6360e3f5ce8d49f62fc823373f43da3ed828c17b86ce91b",
+        "originalAssistantContentSha256": "fe9be9c175c867ec42d82a2078ccabd9ea04ccc399fcf4f8af8d5c06542c4692",
+        "persistedSnapshotSha256": "f2d6b8240fb3b4983271185ebfb4add257b77e6dce604b1c3c7365de3f49fa3e",
+        "visibleMessageSha256": "087f9c7fcf849634dbe4ef0e191294421b21193990ce0a36b030164887dbed48"
+      }
+    },
+    {
+      "ordinal": 2,
+      "nativeStatus": "succeeded",
+      "known": true,
+      "nativeFailure": null,
+      "capturedStage": null,
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "choiceCount": 1,
+        "finishReason": "stop"
+      },
+      "nativeOutputSchemaAccepted": true,
+      "visibleReplyAdmitted": true,
+      "continuitySnapshotPersisted": true,
+      "inputContinuityNotes": 1,
+      "inputCards": 0,
+      "usage": {
+        "inputTokens": 3271,
+        "outputTokens": 780,
+        "totalTokens": 4051
+      },
+      "estimatedCostUsd": "0.00172985",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-10T07:08:15.817Z",
+        "dispatchRecorded": "2026-09-10T07:08:15.866Z",
+        "nativeCompletionRecorded": "2026-09-10T07:09:01.148Z"
+      },
+      "latencyMs": {
+        "ticketToNativeCompletion": 45331,
+        "dispatchToNativeCompletion": 45282,
+        "ticketToDispatch": 49
+      },
+      "bytes": {
+        "requestBodySerialized": 21072,
+        "bindingEnvelopeReconstructed": 21211,
+        "responseObserved": 6723,
+        "assistantContentUtf8": 877
+      },
+      "hashes": {
+        "requestBodySha256": "5693938b75051eb3df79771e22a5c628721bd753e5bf0da15cd5c19010cdabb2",
+        "providerOutputSchemaSha256": "6377427f0453da4a6dc9bb6f30ea2d9ce5cb3de7f7d99a88a6db7c386aa48f07",
+        "systemInstructionsAndSchemaSha256": "8e608293029c5130cb22135069ce7bd48cbcf730115e9597061ecaffa07d47c3",
+        "responseBytesSha256": "2f36c4e6aeee08e363e11cd2d324ec97d2de77c91edbc1fc6b4f2e41c060c386",
+        "originalAssistantContentSha256": "9734622cbf375e0c60ef2d60ee695e14b7d505e1eb5c745860ca94a259bd9afb",
+        "persistedSnapshotSha256": "ae7029ed82cc055c3e8f2f4571e77b5838a967c229aa9bfc7b84ae89971383dc",
+        "visibleMessageSha256": "7d51e1ac72ef74adff3054e144d6df09e106f690386bb6a9929187576b9a9850"
+      }
+    },
+    {
+      "ordinal": 3,
+      "nativeStatus": "failed",
+      "known": true,
+      "nativeFailure": "invalid_output",
+      "capturedStage": "incomplete_completion",
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "choiceCount": 1,
+        "finishReason": "length"
+      },
+      "nativeOutputSchemaAccepted": null,
+      "visibleReplyAdmitted": false,
+      "continuitySnapshotPersisted": false,
+      "inputContinuityNotes": 1,
+      "inputCards": 1,
+      "usage": {
+        "inputTokens": 4711,
+        "outputTokens": 4096,
+        "totalTokens": 8807
+      },
+      "estimatedCostUsd": "0.00472085",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-10T07:09:35.036Z",
+        "dispatchRecorded": "2026-09-10T07:09:35.088Z",
+        "nativeCompletionRecorded": "2026-09-10T07:11:10.915Z"
+      },
+      "latencyMs": {
+        "ticketToNativeCompletion": 95879,
+        "dispatchToNativeCompletion": 95827,
+        "ticketToDispatch": 52
+      },
+      "bytes": {
+        "requestBodySerialized": 30681,
+        "bindingEnvelopeReconstructed": 30820,
+        "responseObserved": 19675,
+        "assistantContentUtf8": 12947
+      },
+      "hashes": {
+        "requestBodySha256": "0e90f83f40d4905c2c6343e1bcf7ce5cf732ac6ace4c64f095242b0338f340a3",
+        "providerOutputSchemaSha256": "57b772bbd9ed44d6662ac5f4a90f20775872aa86d6f40680aaacce9f3bcabc23",
+        "systemInstructionsAndSchemaSha256": "02c738e9d014863137b3de9ad70041e759f6a8e3b1c287c4b17ae1e38b767288",
+        "responseBytesSha256": "722b449bda0e4caf37f1efa616aa550253a9d1747da64391e349b3c275d543b4",
+        "originalAssistantContentSha256": "d3c692fb194f8639cf178d055a9172ce569a246be2249a3254dd4492b5829d7b",
+        "persistedSnapshotSha256": null,
+        "visibleMessageSha256": null
+      }
+    }
+  ],
+  "aggregate": {
+    "candidateCalls": 3,
+    "nativeSuccesses": 2,
+    "outputContractFailures": 1,
+    "capturedIncompleteCompletionFailures": 1,
+    "capturedOutputJsonFailures": 0,
+    "newProvenPersistedSemanticHardFailures": 0,
+    "visibleAssistantReplies": 2,
+    "usage": {
+      "inputTokens": 11081,
+      "outputTokens": 5381,
+      "totalTokens": 16462
+    },
+    "estimatedCostUsd": "0.00791410",
+    "summedLatencyMs": {
+      "ticketToNativeCompletion": 155500,
+      "dispatchToNativeCompletion": 155339,
+      "ticketToDispatch": 161
+    },
+    "phaseReservedMicroUsd": 143616
+  },
+  "measurementMethod": {
+    "inputUsdPerMillionTokens": "0.35",
+    "outputUsdPerMillionTokens": "0.75",
+    "usageAndCost": "Recorded provider usage for all three calls, including rejected output, at frozen GPT rates. Estimate, not invoice.",
+    "latency": "Native completion timestamp minus ticket/dispatch timestamp; includes orchestration and native handling, not isolated provider latency.",
+    "requestBodyBytes": "UTF-8 compact serialization of captured request body, verified against native dispatch hash.",
+    "bindingEnvelopeBytes": "Reconstructed compact {inputs,options} envelope using captured body/gateway and fixed returnRawResponse=true. Original live wire-envelope bytes were not separately retained.",
+    "responseBytes": "Original response byte counts and SHA-256 observed by native worker capture.",
+    "limitsBytes": {
+      "requestBody": 32768,
+      "bindingEnvelope": 40000
+    },
+    "unmeasured": [
+      "provider-only latency",
+      "time to first token",
+      "cached-input token subtotal",
+      "reasoning-token subtotal",
+      "original live wire-envelope byte count",
+      "judge or human scores"
+    ]
+  },
+  "failure": {
+    "callOrdinal": 3,
+    "nativeReason": "invalid_output",
+    "capturedStage": "incomplete_completion",
+    "finishReason": "length",
+    "outputTokenCapReached": 4096,
+    "stageProvenance": "One actual native structured log event, corroborated by the actual terminal turn. Call/turn/session identity is derived only from the exclusive active-call file.",
+    "callbackTimestampMs": 1789024270883,
+    "observedAtUtc": "2026-09-10T07:11:10.885Z",
+    "identityMethod": "harness-exclusive-active-call-file-snapshot",
+    "emittedNativeAttemptId": null,
+    "emittedWorkerId": null,
+    "rawLogTextRetained": false,
+    "outputRepaired": false,
+    "outputReplayed": false,
+    "sourceReconstructedStage": null,
+    "laterJsonSchemaOrReplyValidationResult": null,
+    "rawTextObservations": {
+      "repeatedBlocksInOneReturnedCompletion": true,
+      "nulSeparatorCount": 10,
+      "unfinishedLastBlock": true,
+      "proposalPattern": "Repeated ProposeProfileCard tags accompanied by cardId and expectedRevision fields.",
+      "replyPattern": "Repeated Ask text seeks conversational confirmation for a topic already answered in retained continuity.",
+      "scope": "Unvalidated raw text only; neither native schema acceptance, persisted note/card revision, actual conversation nor model retry."
+    },
+    "rejectedOutputVisibleOrPersisted": false
+  },
+  "nativeState": {
+    "sessionStatus": "open",
+    "sessionVersion": 5,
+    "priorFourMessagesAndTwoWholeTurnsUnchanged": true,
+    "successfulContinuitySnapshots": 2,
+    "latestRetainedContinuityNotes": 1,
+    "noteStateTransition": "unresolved to answered on call 2",
+    "noteAccurateForDisclosedPreferenceRequest": true,
+    "batchCookCircumstanceInSnapshots": false,
+    "batchCookOpeningRetainedInAllRequestHistories": true,
+    "failedTurnSnapshot": null,
+    "persistedCards": 1,
+    "proposedCardOperation": "ReplaceOrdinaryProfileFact",
+    "proposedCardRevision": 0,
+    "proposedCardUnchangedAfterFailure": true,
+    "candidateCardRevisionsPersisted": 0,
+    "profileVersionBefore": 1,
+    "profileVersionAfter": 1,
+    "wholeCanonicalProfileUnchanged": true,
+    "confirmedFactsBeforeAndAfter": 1,
+    "confirmationCommands": 0,
+    "reviewRefreshCommands": 0,
+    "sessionCompletionCommands": 0,
+    "pendingConfirmations": 0
+  },
+  "driverAndQuestions": {
+    "policy": "private-discovery-driver-v1",
+    "selectedGroundingReviewAccepted": true,
+    "openingMessages": 1,
+    "earnedDisclosureIds": ["repair.replacement"],
+    "actualCardTriggeredChallengeMessages": 1,
+    "neutralFillerMessages": 0,
+    "providerRetries": 0,
+    "visibleAssistantReplies": 2,
+    "call1LiteralQuestions": 2,
+    "call1AdditionalElicitationSentences": 1,
+    "call1DistinctTopics": 1,
+    "call1InternalSentimentLabelsVisible": true,
+    "call2Questions": 0,
+    "call3VisibleReply": false,
+    "crossTurnRepetitions": 0,
+    "method": "Manual reading of admitted native dialogue. Literal questions, additional elicitation and distinct topics are separate; the repeated rejected raw block is excluded from visible dialogue."
+  },
+  "localIncident": {
+    "kind": "root_setup_fixture_id_typo",
+    "count": 1,
+    "rejectedBeforeContextCreation": true,
+    "correctedSetupUsedUniqueCommandId": true,
+    "extraParticipantAdmissions": 0,
+    "extraProviderCalls": 0,
+    "modelRetry": false,
+    "provenance": "Actual failed/successful setup commands and replies plus frozen setup guard before context lookup, driver creation or native HTTP effects."
+  },
+  "financialSnapshotAtClosure": {
+    "journalBytes": 14720,
+    "journalSha256": "ab0acf2774aba05f5036b44e9cc9acfaa56d91417e5ba2adb2db6f3db71dafc4",
+    "callsReserved": 96,
+    "reservedMicroUsd": 4586496,
+    "higherCapCallsReserved": 90,
+    "judgeCallsReserved": 0,
+    "phaseReservedMicroUsd": 143616,
+    "authorityAnchorCalls": 68,
+    "authorityAnchorReservedMicroUsd": 3246080,
+    "additionalCallsSinceAnchor": 28,
+    "additionalReservedMicroUsdSinceAnchor": 1340416,
+    "historicalGptParticipantIntents": 67,
+    "historicalQwenParticipantIntents": 3,
+    "totalHistoricalParticipantIntents": 70
+  },
+  "closure": {
+    "closedAtUtc": "2026-09-10T07:12:02.228Z",
+    "graceful": true,
+    "runtimeDisposed": true,
+    "transportDisposed": true,
+    "gateDisposed": true,
+    "remoteSessionDisposed": true,
+    "participantLockAbsent": true,
+    "financialLockAbsent": true,
+    "providerRevocationVerified": false,
+    "actorJoinedExitCode": 0,
+    "runtimeJoinedExitCode": 0,
+    "actualParticipantLockAbsent": true,
+    "actualFinancialLockAbsent": true,
+    "lockAbsenceCheckedAtUtc": "2026-09-10T07:19:42.618921+00:00",
+    "listenerClosed": true,
+    "scenarioComplete": false
+  },
+  "limitations": [
+    "Three turns in one incomplete fixture; no family, A/B, baseline, judge or human result.",
+    "incomplete_completion is captured; no repaired output or later output_json/reply_decision stage is claimed.",
+    "Raw repetition and malformed fields are separate from admitted dialogue and unchanged persisted state.",
+    "The v13 prompt did not produce contextual discovery in the two successful turns; no general ranking, statistical improvement or later-prompt result is inferred.",
+    "Original broad native mechanism proofs keep their original source/version/model scope; they are not new v13 proof runs."
+  ],
+  "receiptSha256": {
+    "rootResult": "2c0174ef5042fd0ab83434cf086ccdbdad59ae1d4755b808fd264fc714a86f36",
+    "closure": "f866187bf62f7cf739db4f23e22ac139f1bf5867a8d5b69acfbb796cbfeaa17c",
+    "sourceFreeze": "f2ab3698df78ccbe14128436aca64dcafeff2a7be010937dfe7ae6817ed6849e",
+    "capturedNativeDiagnostic": "3601e1ee41f3321d6d165d5a841633075cb38d4c053d975df80e902627c511a8",
+    "stop": "ebf866d00ccaddaa3d73ff8cd438c375564898fcd647e2c5bec458e7ec2fa22c",
+    "nativeAfterCall1": "f17f3e2eba5dbd5e7c40361cd8ed397b8e1ac224ffaa4c82967daf80dc11e0e7",
+    "nativeAfterCall2": "8c843b4009b545b55ce167a162cd9c05f107505fd09242d02a70130a264eda3a",
+    "nativeAfterCall3": "550e5a228124f7cf6374688786d182ad3901bba970111a2e222e17cc6d5ee1a4",
+    "shutdownAcknowledgment": "5f7db9dc908934e27c8aca3db0dfb10acce91f4c9f4d160a252628d1ee339651",
+    "actorResponses": "35a27b1691f6854cc81787725e6dd0a3bf3c12cf40625decadab9fa7bff36daf",
+    "actorCommands": "05704b1d6ee1d9b00c5f6413de3cf8554151062865ef3726373ae3f96ee51278",
+    "disclosures": "227e4b9e3d327250a158f52537b2c36aa7f98fd9f0b9f81674cbc3c6ea62b277",
+    "participantAdmissions": "6a790c04b53109be47bb9cf60d42e99454590f21288f48bf90f251010a8d971a",
+    "setupGuardSource": "f452c38c42276726584c8a04bb8be8559fe46fdce19000e8b0174acda9b4e324",
+    "call1/ticket.json": "f80a7874cb76ee1f883cf9501889c35e6b78e6a4dbc7d9692bc8a51168f10eab",
+    "call1/dispatch.json": "06b1bf3d647a8c794ce6372f66a6d5eabdcc78e95b7d7ebc0205f7c7a34ddb02",
+    "call1/completion.json": "8edb1e0e3ad06a4760305ce1207f474a4e304c03588b823827a1c6d18800751e",
+    "call1/response.json": "0bd59aed2752bdf2479ea1dc9024aac9084a53c8aad76a23e8f172585d1a54ab",
+    "call1/assistant-content.json": "078e4c6307437f957d31019fe444916375e39ed295a90bb53b77ab32a3413b1d",
+    "call1/native-before.json": "87b7ff89e1c9d301d5c0b8e52bf5e7ea34b8d74ef09330243de9a3a5de154c6d",
+    "call1/request.json": "265ad6f4dda1fa64f2cb5d122b42a48351cdf219e35710071b5f5fcf7e3628b6",
+    "call2/ticket.json": "d159f42b1a70b0b8b391ef394af6abccd1f2dd0f50a947f72d3a9d84b2b3ed16",
+    "call2/dispatch.json": "03124dde0386919f4c23faa573b55c92b044a1d9492b9edd383704d1fc09be53",
+    "call2/completion.json": "606b9094d03fd994a7ca3c4ec7052045565c77e6c2fa79effd8d9f0960ee2a46",
+    "call2/response.json": "1f8aa08d8a7e8b3bed5f3dfdaf92d5dff873bed44e60d5a1863818577752aa89",
+    "call2/assistant-content.json": "512f0470cc635b614180485202555ce712897310a74fdc8afcf2681c44e6b888",
+    "call2/native-before.json": "393edefa4c264a3d93e33fa249c7cd41289fa6740cf3cec026c61fd696b3da31",
+    "call2/request.json": "1f72a53d320d7f032607983a4747e653a03d6f6e6d95eeab80d95f86ca5030cc",
+    "call3/ticket.json": "467e0e6172ea68e5d9c6011ff8dbe339e6e3fd4282aca37f8a98ad209bfead20",
+    "call3/dispatch.json": "808dfc14f8a309e6250ae0ae00adb08203f98dfe07c471495cacaa2f150f3090",
+    "call3/completion.json": "4ce656ddc352b5c7cfc5be13a286ebdb715aa9dbf9b5e2695fc3f23e2c3483ae",
+    "call3/response.json": "9a2424659e0d473f95c70f2501172236d6e1c32e3a9f38b34cd2f3793786a0d3",
+    "call3/assistant-content.json": "26f4f323ddf44af8f84a52e01c88d282f5fa18cb2922ba841e341d270838c850",
+    "call3/native-before.json": "d18a538ee054c0c41e6adc439b1b8828ccc2bd364652181d5c81812b6cac93b5",
+    "call3/request.json": "136f6be2f5ab937f088e0fb6b6ca1a4660e6e9c82435a65c9dfd437388937616",
+    "financialJournalAtClosure": "ab0acf2774aba05f5036b44e9cc9acfaa56d91417e5ba2adb2db6f3db71dafc4"
+  },
+  "sanitization": "No raw transcripts, native identities, account identifiers, private file paths, credentials or raw diagnostic lines are included.",
+  "privateReceiptIndexSha256": "6c3e5154ccb52c6562253e7188d73d29e2b630d1cd20c1e8977ceeb10fece612"
+}
