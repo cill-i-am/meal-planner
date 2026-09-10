@@ -7,26 +7,32 @@
 
 ## Current evaluation status
 
-The latest [GPT-OSS v15 result](../../../../evals/private-discovery/prompt-v15-keyed-continuity-results.md)
-completed three successful native turns. Keyed
-continuity updates worked, the disclosed circumstance was retained, and a correct
-replacement card was proposed. Calls 2 and 3 nevertheless chose Review without
-asking about dependency or safety; call 3 returned an unchanged card revision and
-claimed no open topics. The card remained proposed and the canonical profile
-unchanged. The phase stopped with incomplete discovery. Successful native updates
-do not establish discovery quality or family acceptance.
+The latest [GPT-OSS v16 result](../../../../evals/private-discovery/prompt-v16-planning-purpose-results.md)
+stopped at a proven semantic truthfulness/authority failure. Both native calls
+succeeded, but the second assistant reply falsely represented the preference
+replacement as completed. That claim persisted in actual history while only an
+unconfirmed proposed card existed and the whole canonical profile remained at
+setup version 1. There was no unauthorized canonical mutation. Early Review,
+missing dependency/safety discovery and omitted circumstance continuity remained
+separate limitations. No family or baseline acceptance was earned.
 
-V16 replaces only the opening paragraph with the accepted practical planning
-purpose of the adult interview: choose questions for their future planning value,
-leave lower-value detail for later, and produce supported drafts during discovery.
-Planning and repair remain later capabilities, and the adult controls confirmation.
-This is one prompt-purpose hypothesis, grounded in the
-[experience blueprint](../../../product-blueprint/experience-blueprint.md#2-run-private-repeatable-adult-reviews),
-not a proven explanation or fix for early Review. The continuity, reply, domain
-and authority instructions are unchanged, as are policy v3, output schemas,
-sampling, fixtures and caps. V16 has local validation only, pending a fresh real
-trial. If early closure persists, reassess the model/interaction strategy before
-further wording additions.
+The next comparison keeps prompt v16, policy v3 and the output contract unchanged
+and configures Qwen3-30B-A3B FP8 with `temperature: 0.6`, `top_p: 0.95` and
+`top_k: 20`. These fields are supported by the
+[Cloudflare model API](https://developers.cloudflare.com/workers-ai/models/qwen3-30b-a3b-fp8/)
+and use values from the [upstream sampling guidance](https://huggingface.co/Qwen/Qwen3-30B-A3B-FP8#best-practices).
+Cloudflare's thinking default is undocumented; no thinking-mode flag, certainty
+about the hosted mode, or general fix is claimed. GPT-OSS remains at temperature
+1/top-p 1 with no top-k field, and the fixed judge is unchanged. This is a
+configured comparison of the current v16 candidates, not a prompt iteration.
+Only local request validation exists for the new Qwen configuration.
+
+The v16 opening retains the accepted practical planning purpose of the adult
+interview, grounded in the
+[experience blueprint](../../../product-blueprint/experience-blueprint.md#2-run-private-repeatable-adult-reviews).
+All continuity, reply, domain and authority instructions, fixtures and caps remain
+unchanged. The observed GPT result does not establish a successful purpose fix,
+and the next model comparison has no result or acceptance yet.
 
 The retained v15 model output contract is
 `continuity: Note[]`: at most six complete note updates. A new key creates a note;
@@ -58,9 +64,8 @@ owns the contract and its tradeoff.
 GPT-OSS remains at `temperature: 1` and `top_p: 1`, following
 [OpenAI's recommended parameters](https://github.com/openai/gpt-oss#recommended-sampling-parameters)
 within [Cloudflare's supported request fields](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/).
-Qwen sampling and the fixed judge remain unchanged. The prior v14 revision
-combined framing and sampling, so its result isolates neither cause nor effect;
-no loop fix or general improvement is claimed.
+The prior v14 revision combined GPT framing and sampling, so its result isolates
+neither cause nor effect; no loop fix or general improvement is claimed.
 
 V15 local validation passed 24 continuity tests, 40 adapter tests and twelve
 focused native continuity cases. These cover mixed creation/replacement with a
@@ -69,20 +74,25 @@ restart and fresh-session isolation, distinct no-information/refusal states, exa
 question rendering and atomic rejection. Eleven native cases passed initially;
 the mixed case passed after correcting its incomplete expected fact shape in the
 test, with no production change between runs. API types, lint and asset validation
-also passed. V16 passes 40 affected adapter tests, API types, lint and asset
-validation. No unchanged native/history tests are repeated.
+also passed. The Qwen-only sampling change passes 40 adapter tests, API types,
+lint and asset validation. Exact request assertions cover Qwen 0.6/0.95/20 and
+unchanged GPT 1/1 without top-k, along with strict fields and gateway controls.
+No unchanged native/history tests are repeated.
 
-The generated v16 model output schema matches all three retained v15 requests
+The generated model output schema matches all three retained v15 requests
 exactly: 5,285 bytes with no eligible card, or 9,307 bytes for its one-card context.
-The prompt is 6,900 bytes, 137 fewer than v15. V16 size checks rebuilt all twelve
-retained H10/H11 contexts with the same illustrative five-note snapshot (783 bytes).
-The largest provider body was 30,892 of 32,768 bytes (1,876 remaining); its capture
-envelope was 31,091 of 40,000. A size-only successor projection reached 31,364
-bytes, leaving 1,404. These packing checks are not admitted fixture turns,
-reconstructed semantic state or live quality evidence. Larger valid combinations
-can still reach the unchanged pre-dispatch limit.
+The v16 prompt stays at 6,900 bytes. With the same prompt and contexts, Qwen's
+new sampling fields add 26 serialized body bytes over its previous temperature-0
+configuration. Packing checks rebuilt twelve retained H10/H11 contexts with the
+same illustrative five-note snapshot (783 bytes). The largest Qwen provider body
+was 30,908 of 32,768 bytes (1,860 remaining); its capture envelope was 31,110 of
+40,000. A size-only successor projection reached 31,380 bytes, leaving 1,388.
+These are packing checks, not a live Qwen trial, admitted fixture turns,
+reconstructed semantic state or quality evidence. Larger valid combinations can
+still reach the unchanged pre-dispatch limit.
 
-Earlier [v14](../../../../evals/private-discovery/prompt-v14-reply-sampling-results.md),
+Earlier [v15](../../../../evals/private-discovery/prompt-v15-keyed-continuity-results.md),
+[v14](../../../../evals/private-discovery/prompt-v14-reply-sampling-results.md),
 [v13](../../../../evals/private-discovery/prompt-v13-circumstance-framing-results.md),
 [GPT-OSS v12](../../../../evals/private-discovery/prompt-v12-continuity-state-results.md),
 [Qwen v12](../../../../evals/private-discovery/prompt-v12-qwen-comparison-results.md),
@@ -655,8 +665,9 @@ contains the metadata results and receipt digests.
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
-remain in progress and are not ready to merge. The latest v15 phase completed
-three native turns but left discovery incomplete; v16 has only local validation.
+remain in progress and are not ready to merge. The latest GPT v16 phase
+persisted a false completed-update claim despite unchanged canonical state.
+The next Qwen comparison retains v16 and has only local request validation.
 Passing native discovery across all eight families, the completed candidate
 comparison, the required live A-to-B removal, and actual human calibration remain
 incomplete. Earlier scripted and bounded correction proofs do not replace those

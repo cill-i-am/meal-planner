@@ -101,7 +101,7 @@ const requestFor = (
       stream: false as const,
       ...(config.model === "@cf/openai/gpt-oss-120b"
         ? { temperature: 1, top_p: 1 }
-        : { temperature: 0 }),
+        : { temperature: 0.6, top_k: 20, top_p: 0.95 }),
     },
     model: config.model,
   };

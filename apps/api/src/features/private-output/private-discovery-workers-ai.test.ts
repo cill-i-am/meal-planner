@@ -269,7 +269,10 @@ describe("private discovery Workers AI boundary", () => {
   });
 
   it.each([
-    { modelName: config.model, sampling: { temperature: 0 } },
+    {
+      modelName: config.model,
+      sampling: { temperature: 0.6, top_k: 20, top_p: 0.95 },
+    },
     {
       modelName: "@cf/openai/gpt-oss-120b",
       sampling: { temperature: 1, top_p: 1 },

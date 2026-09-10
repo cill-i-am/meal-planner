@@ -52,17 +52,18 @@ confirmation, restart, privacy, accessibility, and runtime evidence and limits.
 Work Item 03 is in progress in
 [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218). Native
 adaptive-turn implementation and local browser acceptance are complete. The
-latest [GPT-OSS v15 result](../../../../evals/private-discovery/prompt-v15-keyed-continuity-results.md)
-contains three successful native turns. Keyed updates
-retained the circumstance and a correct replacement draft was proposed, but
-Review still preceded required discovery. No family acceptance was earned.
+latest [GPT-OSS v16 result](../../../../evals/private-discovery/prompt-v16-planning-purpose-results.md)
+contains two native successes but a persisted false completed-update claim.
+The canonical profile stayed unchanged and the card remained unconfirmed;
+required discovery was incomplete and no family acceptance was earned.
 
-V16 replaces only the opening paragraph with the interview's practical planning
-purpose, preserving the full discovery scope and the adult's control over
-confirmed changes. This is one hypothesis, not a proven cause or fix for early
-Review. Remaining instructions, policy v3, output schemas, sampling, fixtures,
-caps and authority boundaries stay unchanged. V16 has local validation only;
-live discovery across all families, repeat review, the completed candidate
+The next comparison keeps v16/policy v3 and its output contract, configuring only
+Qwen sampling to temperature 0.6, top-p 0.95 and top-k 20 using supported native
+fields and upstream guidance. Cloudflare's thinking default is undocumented;
+no mode certainty or general fix is claimed. GPT and the fixed judge remain
+unchanged. This is a configured candidate comparison with local request
+validation only, preserving prompt scope, fixtures, caps and authority boundaries.
+Live discovery across all families, repeat review, the completed candidate
 comparison, judge scoring and human calibration remain incomplete. No baseline
 is accepted and the draft is not ready to merge.
 The [owning work item](03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
