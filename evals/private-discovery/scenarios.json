@@ -77,7 +77,7 @@
           "id": "simple.correction",
           "after": "The early card is visible but unconfirmed",
           "message": "Please make that roasted tomato soup; I do not like the cold version.",
-          "expected": "Revise the tentative dish preference, then invite explicit confirmation of its visible effect."
+          "expected": "Revise the tentative dish preference, then invite the participant to review the visible card and use its Confirm action; do not ask them to repeat their already-explicit intent in chat."
         },
         "hardAssertions": [
           "NoKnownHardConstraints is not inferred from silence or a short interview.",
@@ -741,7 +741,7 @@
           "id": "repair.correction",
           "after": "The replacement card is visible",
           "message": "Please change the preference only. Do not rewrite this week's meals or pretend the later lunches and shopping list have been repaired.",
-          "expected": "Explain the profile-only effect, request explicit confirmation, and leave approved-plan impact and dependent allocations unclaimed."
+          "expected": "Explain the profile-only effect, invite the participant to review the visible card and use its Confirm action without repeating their already-explicit intent in chat, and leave approved-plan impact and dependent allocations unclaimed."
         },
         "hardAssertions": [
           "The existing preference is replaced through its current fact ID rather than duplicated.",

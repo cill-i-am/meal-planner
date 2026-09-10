@@ -62,8 +62,14 @@ An [isolated Qwen tool diagnostic](../../../../evals/private-discovery/qwen-nati
 observed a genuine native function call with schema-valid arguments. The frozen
 inspector rejected aliases and legacy-field presence before checking arguments;
 separate offline continuity validation rejected its Ask decision. There was no
-household/native settlement or discovery pass. This results-only update adds no
-prompt, model, allowlist or production protocol change. Live discovery across all
+household/native settlement or discovery pass. The [first Kimi evaluation probe](../../../../evals/private-discovery/kimi-first-probe-results.md)
+reached its 120-second deadline without a provider HTTP status, response body or
+usage receipt. The provider outcome is unknown; schema, continuity and semantic
+checks were not reached. Kimi is evaluation-only within the existing $20 cap,
+and the production allowlist still contains only GPT-OSS and Qwen. Two scenario
+expectations clarify review of the visible card and its Confirm action without
+repeating already-explicit intent in chat. No scoring dimension, threshold,
+framework, prompt or production protocol changed. Live discovery across all
 eight families, the completed candidate comparison, A-to-B repeat review, judge
 scoring and human calibration remain
 incomplete. No baseline is accepted and the draft is not ready to merge.

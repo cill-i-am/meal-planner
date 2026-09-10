@@ -37,20 +37,33 @@ production integration.
 No household or native-session settlement, function execution, provider retry,
 family replay or malformed-output salvage occurred.
 
+The [first Kimi K2.6 evaluation probe](../../../../evals/private-discovery/kimi-first-probe-results.md)
+reached the 120-second deadline without a captured provider HTTP status, response
+body or usage receipt. The native outcome is unknown. JSON parsing, source-schema,
+continuity and semantic checks were not reached, so no model-quality conclusion
+or discovery grade is supported. Its single 265,421 micro-USD reservation remains
+retained; unknown usage is not zero. Local runtime and transport disposal do not
+establish provider cancellation or credential revocation.
+
 Production remains prompt v16, policy v3 and the existing JSON-output protocol.
 Qwen3-30B-A3B FP8 retains `temperature: 0.6`, `top_p: 0.95` and `top_k: 20`, using
 [Cloudflare-supported fields](https://developers.cloudflare.com/workers-ai/models/qwen3-30b-a3b-fp8/)
 and values from [upstream guidance](https://huggingface.co/Qwen/Qwen3-30B-A3B-FP8#best-practices).
 Cloudflare's thinking default is undocumented. GPT-OSS remains at temperature
-1/top-p 1 without top-k, and the fixed judge is unchanged. No new prompt, model,
-production tool protocol or model-allowlist change is implemented in this
-results-only update. No additional-model trial or discovery acceptance is claimed.
+1/top-p 1 without top-k, and the fixed judge is unchanged. Kimi K2.6 is authorized
+only as an evaluation candidate within the existing $20 cap. The production
+allowlist still contains only GPT-OSS and Qwen; no Kimi integration is implemented.
+A viable full response remains a prerequisite for considering production adoption.
 
 The v16 opening retains the accepted practical planning purpose of the adult
 interview, grounded in the
 [experience blueprint](../../../product-blueprint/experience-blueprint.md#2-run-private-repeatable-adult-reviews).
-All continuity, reply, domain and authority instructions, fixtures and caps remain
-unchanged. The current evidence requires a further model/interaction decision;
+All production continuity, reply, domain and authority instructions and caps remain
+unchanged. Two scenario challenge expectations now explicitly require reviewing
+the visible card and using its Confirm action, without asking the participant to
+repeat already-explicit intent in chat. This clarifies the existing confirmation
+requirement; it adds no scoring dimension, threshold or framework. The current
+evidence requires a further model/interaction decision;
 it establishes neither a successful purpose fix nor a reliable output channel.
 
 The retained v15 model output contract is
@@ -96,8 +109,9 @@ test, with no production change between runs. API types, lint and asset validati
 also passed. The Qwen-only sampling change passed 40 adapter tests, API types,
 lint and asset validation. Exact request assertions cover Qwen 0.6/0.95/20 and
 unchanged GPT 1/1 without top-k, along with strict fields and gateway controls.
-These source checks retain their original scope; this results-only update runs
-formatting and document checks without repeating native or other test suites.
+These source checks retain their original scope; the current expectation and
+results update runs formatting, asset validation and document checks without
+repeating native or other test suites.
 
 The generated model output schema matches all three retained v15 requests
 exactly: 5,285 bytes with no eligible card, or 9,307 bytes for its one-card context.
@@ -689,7 +703,9 @@ remain in progress and are not ready to merge. GPT v16 persisted a false
 completed-update claim despite unchanged canonical state; Qwen v16 stopped at
 JSON decoding. The isolated tool diagnostic observed a genuine function call but
 failed source continuity validation offline and provided no native settlement or
-discovery acceptance. No new production protocol or model is implemented.
+discovery acceptance. The first Kimi probe timed out without a provider response
+or usage receipt; its outcome remains unknown and ungraded. Kimi remains an
+evaluation-only candidate, with no new production protocol or model implemented.
 Passing native discovery across all eight families, the completed candidate
 comparison, the required live A-to-B removal, fixed-judge scoring and actual human
 calibration remain incomplete.

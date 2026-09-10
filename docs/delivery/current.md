@@ -33,8 +33,14 @@
   An [isolated Qwen tool diagnostic](../../evals/private-discovery/qwen-native-tool-serialization-diagnostic-results.md)
   observed a genuine native function call, but its arguments failed source
   continuity validation offline; it performed no native
-  settlement and earned no discovery acceptance. Production prompt, model
-  allowlist, protocol and authority remain unchanged. Both configured candidates
+  settlement and earned no discovery acceptance. The [first Kimi evaluation probe](../../evals/private-discovery/kimi-first-probe-results.md)
+  reached its 120-second deadline without a provider HTTP status, response body
+  or usage receipt. Its outcome is unknown and no quality grade is possible. Kimi
+  is evaluation-only within the existing $20 cap; the production allowlist still
+  contains only GPT-OSS and Qwen. Two scenario expectations clarify that review
+  and confirmation use the visible card’s Confirm action, without repeating
+  already-explicit intent in chat. Production prompt, protocol and authority remain
+  unchanged. Both configured candidates
   remain unaccepted, and the eight-family, candidate-comparison, A-to-B, judge
   and human-calibration gates remain unmet. The draft is not ready to merge. The
   [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
