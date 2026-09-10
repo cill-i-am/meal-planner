@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-10",
+  "probe": "kimi_json_object_clean_opening",
+  "status": "valid_source_output_but_unsupported_removal_proposal",
+  "scenario": {
+    "id": "dependency_and_repair",
+    "name": "Dependency and repair",
+    "origin": "Repository-owned synthetic fixture."
+  },
+  "source": {
+    "head": "19bd59753052cac3675761ffa60b9c07f5151ace",
+    "freezeSha256": "0e666886e210d712a60a7255b2257173d05c8b8aaf50f3c493196404d8dbdc1f"
+  },
+  "configuration": {
+    "candidateModel": "@cf/moonshotai/kimi-k2.6",
+    "maxCompletionTokens": 4096,
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": "absent",
+    "thinking": false,
+    "choices": 1,
+    "stream": false,
+    "responseFormat": "json_object",
+    "workerDeadlineMs": 120000,
+    "forwardingDeadlineMs": 125000,
+    "maximumProviderAttempts": 1,
+    "payloadCollection": false,
+    "caching": false
+  },
+  "request": {
+    "changedInputFields": ["response_format"],
+    "onlyResponseFormatChanged": true,
+    "bothProductionMessageStringsUnchanged": true,
+    "embeddedFullSchemaRetained": true,
+    "embeddedFullSchemaSha256": "064f898e0b5f60f9b5682638e3655b03cf8324b389470162e449928546fa107b",
+    "retainedOpeningContextUnchanged": true,
+    "canonicalBodyBytes": 13897,
+    "canonicalBodySha256": "feadc87405defde94b3b909caf05c3a7764b6bdca5070e215779397e649a389e",
+    "actualWireEnvelopeBytes": 14036,
+    "actualWireEnvelopeSha256": "a341ad2525edd8748d46cbbe684c5a585a87428cb4efe2c9f5a3add50525927a",
+    "actualWireMatchesCapturedRequest": true,
+    "requestCaptures": 1,
+    "responseObservations": 1
+  },
+  "observedResult": {
+    "nativeHttpStatus": 200,
+    "responseComplete": true,
+    "transportFailure": false,
+    "knownNativeOutcome": true,
+    "localFallbackHttpStatus": null,
+    "finishReason": "stop",
+    "nativeResponseBytes": 1840,
+    "nativeResponseSha256": "8090f42a82159b922f37b5b3064ac8c9b184f675b78641c7422d8c049c1f8893",
+    "wholeCanonicalJsonAccepted": true,
+    "sourceOutputAndCardContextSchemaAccepted": true,
+    "sourceContinuityAccepted": true,
+    "reasoningRefusalAndToolFieldsAbsent": true,
+    "outputRepaired": false,
+    "proposalCount": 1,
+    "proposalChangeType": "RemoveOrdinaryProfileFact",
+    "replyType": "Ask",
+    "continuityNoteStates": ["circumstance", "unresolved", "unresolved"],
+    "usage": {
+      "inputTokens": 2867,
+      "cachedInputTokens": 2816,
+      "outputTokens": 312,
+      "totalTokens": 3179,
+      "uncachedInputTokens": 51
+    },
+    "providerReportedNeurons": 158.819091796875,
+    "estimatedTokenUsageCostUsd": "0.00174701"
+  },
+  "review": {
+    "manualProposalReferenceReviewAccepted": true,
+    "sourcePrivateProposalReviewFunctionInvoked": false,
+    "manualReferenceReviewScope": "Manual target/reference checks; this does not establish participant intent or household approval.",
+    "semanticReviewAccepted": false,
+    "materialSemanticFinding": "Unsupported removal proposal: asking to revisit a preference does not authorize removal. The output itself acknowledges that the intended replacement or effect is unclear.",
+    "communicationFindings": [
+      "The same clarification question is repeated.",
+      "No review-interface invitation accompanies the proposal."
+    ],
+    "rootAndIndependentReviewAgree": true,
+    "nativeHouseholdChanges": 0,
+    "diagnosticOnly": true,
+    "fixedJudgeInvoked": false,
+    "actualHumanCalibration": false,
+    "judgeGrade": null,
+    "humanGrade": null
+  },
+  "pricing": {
+    "sourceTitle": "Cloudflare Workers AI Kimi K2.6 model documentation",
+    "sourceUrl": "https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/",
+    "verifiedOn": "2026-09-10",
+    "uncachedInputUsdPerMillionTokens": "0.95",
+    "cachedInputUsdPerMillionTokens": "0.16",
+    "outputUsdPerMillionTokens": "4.00",
+    "basis": "Rates retained in the sealed root result and verified against the primary Unit Pricing row during this report-preparation session.",
+    "calculation": "(51 uncached input * 0.95 + 2816 cached input * 0.16 + 312 output * 4.00) / 1,000,000",
+    "costKind": "Cache-aware estimated token-usage cost, not a reservation or invoice.",
+    "neuronsInterpretation": "Observed provider usage metadata, not an invoice."
+  },
+  "timing": {
+    "timestampsUtc": {
+      "ticket": "2026-09-10T16:12:54.601Z",
+      "runtimeReady": "2026-09-10T16:13:03.722Z",
+      "dispatch": "2026-09-10T16:13:03.738Z",
+      "diagnosticCompletion": "2026-09-10T16:13:15.931Z",
+      "closed": "2026-09-10T16:13:15.943Z"
+    },
+    "latencyMs": {
+      "ticketToDispatch": 9137,
+      "dispatchToDiagnosticCompletion": 12193,
+      "dispatchToClosure": 12205,
+      "ticketToDiagnosticCompletion": 21330
+    },
+    "measurement": "Intervals end at diagnostic completion or closure and include applicable startup/native handling/source inspection; not provider-only latency or household settlement."
+  },
+  "scope": {
+    "controlledProtocolComparison": true,
+    "promptCauseEstablished": false,
+    "earlierTimeoutCausesEstablished": false,
+    "modelAcceptanceEstablished": false,
+    "discoveryAcceptanceEstablished": false,
+    "nativeHouseholdAcceptance": false,
+    "familyAcceptanceEstablished": false,
+    "nativeSettlements": 0,
+    "participantAdmissions": 0,
+    "toolExecutions": 0,
+    "judgeCalls": 0,
+    "automaticRetry": false,
+    "householdReplay": false
+  },
+  "financialAtClosure": {
+    "journalBytes": 17001,
+    "journalSha256": "5430befd711ad768aad6f9d46e1f325d374fe9704304a78006701b0f87d3d0d6",
+    "previousJournalBytes": 16848,
+    "previousJournalSha256": "0d4e603cfaeb5f2067460cfe9969bb2cb87c00b036a382a3128219c2dc02c3fa",
+    "callsReserved": 111,
+    "higherCapCallsReserved": 105,
+    "judgeCallsReserved": 0,
+    "reservedMicroUsd": 6392321,
+    "thisReservationRetainedMicroUsd": 265421,
+    "earlierUnknownReservationsRetained": true,
+    "earlierFullRequestUsage": null,
+    "earlierFullRequestEstimatedUsageCostUsd": null,
+    "earlierCleanOpeningUsage": null,
+    "earlierCleanOpeningEstimatedUsageCostUsd": null,
+    "authorityAnchorCalls": 68,
+    "authorityAnchorReservedMicroUsd": 3246080,
+    "additionalCallsSinceAuthorityAnchor": 43,
+    "additionalReservedMicroUsdSinceAuthorityAnchor": 3146241
+  },
+  "closure": {
+    "closedAtUtc": "2026-09-10T16:13:15.943Z",
+    "runtimeJoinedExitCode": 0,
+    "runtimeDisposed": true,
+    "gateDisposed": true,
+    "remoteSessionDisposed": true,
+    "graceful": true,
+    "actualFinancialLockAbsent": true,
+    "actualActiveCallAbsent": true,
+    "actualListenerAbsent": true,
+    "absenceCheckedAtUtc": "2026-09-10T16:26:47.949591+00:00",
+    "providerRevocationVerified": false,
+    "independentClosedOutcomeReviewAccepted": true
+  },
+  "limitations": [
+    "Parsing, source-schema and continuity success did not establish a supported profile-change proposal or discovery acceptance.",
+    "Manual reference review was not execution of the private native proposal-review function or household settlement.",
+    "The single changed response-format request does not establish a prompt cause or explain earlier unavailable responses.",
+    "No model/family acceptance, human calibration or fixed-judge grade was established."
+  ],
+  "relatedEvidence": {
+    "threeApprovedEarlierReportSetsPreservedUnchanged": true,
+    "earlierUnknownOutcomesCausesAndGradesUnchanged": true
+  },
+  "receiptSha256": {
+    "rootReferenceAndSemanticReview": "8df6f29c89f4f7a927a111cc5ec06272ad381bb603c26248cac4b7b0c6a88631",
+    "responseClassification": "7f5cc50e708f94686f31fa8cef92e69e147314bfc0b162bbbaae49514a848422",
+    "sourceInspection": "557199090a7a7155132825d5d8022d0c4bce2664d2b3d5f9d303806b6c07f57a",
+    "completion": "5c83bf7842f9011e1032403826352274ff617ac587a301865305c23aaffb715a",
+    "closure": "192227fd5fdd92b2158f483e4622824368a03b8e6f5999d763568576b0b37aa7"
+  },
+  "privateReceiptIndexSha256": "2914d84a55754589ad4ba65e23f9b7aa22d144afa5f34194ca739b0fc68cb940"
+}

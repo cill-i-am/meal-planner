@@ -45,7 +45,30 @@ or discovery grade is supported. Its single 265,421 micro-USD reservation remain
 retained; unknown usage is not zero. Local runtime and transport disposal do not
 establish provider cancellation or credential revocation.
 
-Production remains prompt v16, policy v3 and the existing JSON-output protocol.
+The [tiny structured-output baseline](../../../../evals/private-discovery/kimi-structured-output-baseline-results.md)
+returned HTTP 200 and the exact expected boolean object in 2,006 ms. This proves
+only that minimal structured-output request completed. The separate
+[clean full opening](../../../../evals/private-discovery/kimi-clean-opening-probe-results.md)
+again reached 120 seconds without a provider response or usage receipt; its
+outcome and all output grades remain unknown. Both unknown full-request
+reservations remain retained.
+
+The [full-schema control](../../../../evals/private-discovery/kimi-full-schema-control-results.md)
+returned HTTP 200 and the fixed expected object in 3,009 ms using the unchanged
+full schema with constant minimal messages. It proves that control completed,
+not interview quality, general schema reliability or the cause of either timeout.
+The [JSON-object opening comparison](../../../../evals/private-discovery/kimi-json-object-opening-results.md)
+returned HTTP 200 in 12,193 ms. Compared with the clean full opening, it retained
+the production messages and changed only the response-format setting. Strict source output and continuity
+validation and manual reference review passed, but semantic review failed: the
+model proposed removal while its own note acknowledged that the intended change
+was unclear. The reply duplicated its question and omitted the card-review
+invitation. No native settlement or discovery acceptance followed. These four
+results retain source `19bd597` provenance: the interview openings used prompt
+v16, while the two controls used their own constant prompts.
+
+The production source now specifies prompt v17 with unchanged policy v3 and
+JSON-output protocol.
 Qwen3-30B-A3B FP8 retains `temperature: 0.6`, `top_p: 0.95` and `top_k: 20`, using
 [Cloudflare-supported fields](https://developers.cloudflare.com/workers-ai/models/qwen3-30b-a3b-fp8/)
 and values from [upstream guidance](https://huggingface.co/Qwen/Qwen3-30B-A3B-FP8#best-practices).
@@ -53,18 +76,23 @@ Cloudflare's thinking default is undocumented. GPT-OSS remains at temperature
 1/top-p 1 without top-k, and the fixed judge is unchanged. Kimi K2.6 is authorized
 only as an evaluation candidate within the existing $20 cap. The production
 allowlist still contains only GPT-OSS and Qwen; no Kimi integration is implemented.
-A viable full response remains a prerequisite for considering production adoption.
 
-The v16 opening retains the accepted practical planning purpose of the adult
+V17 gives genuinely unclear intended profile effects or targets priority over
+downstream routine questions and withholds proposals that depend on the answer.
+Already-explicit intent is not asked again. Drafts are offered as their effect
+and target become clear; Ask.text contains the acknowledgement/review invitation
+without questions, and Ask.question contains the sole question. The redundant
+later clarification sentence is removed. This is a general prompt correction,
+not an output-schema, authority or persistence change, and its live effect is
+unverified.
+
+The prompt preserves the accepted practical planning purpose of the adult
 interview, grounded in the
 [experience blueprint](../../../product-blueprint/experience-blueprint.md#2-run-private-repeatable-adult-reviews).
-All production continuity, reply, domain and authority instructions and caps remain
-unchanged. Two scenario challenge expectations now explicitly require reviewing
-the visible card and using its Confirm action, without asking the participant to
-repeat already-explicit intent in chat. This clarifies the existing confirmation
-requirement; it adds no scoring dimension, threshold or framework. The current
-evidence requires a further model/interaction decision;
-it establishes neither a successful purpose fix nor a reliable output channel.
+The two scenario challenge expectations still require reviewing the visible card
+and using its Confirm action without repeating already-explicit intent in chat.
+They and the rubric are unchanged by this correction; no scoring dimension,
+threshold or framework is added.
 
 The retained v15 model output contract is
 `continuity: Note[]`: at most six complete note updates. A new key creates a note;
@@ -109,13 +137,15 @@ test, with no production change between runs. API types, lint and asset validati
 also passed. The Qwen-only sampling change passed 40 adapter tests, API types,
 lint and asset validation. Exact request assertions cover Qwen 0.6/0.95/20 and
 unchanged GPT 1/1 without top-k, along with strict fields and gateway controls.
-These source checks retain their original scope; the current expectation and
-results update runs formatting, asset validation and document checks without
-repeating native or other test suites.
+These historical source checks retain their original scope. V17 passed all 64
+focused adapter and continuity tests, API types, lint and evaluation asset
+validation. The only test edit advances the expected prompt provenance. No
+native-runtime code changed or native suite was repeated; these checks do not
+establish live semantic improvement.
 
 The generated model output schema matches all three retained v15 requests
 exactly: 5,285 bytes with no eligible card, or 9,307 bytes for its one-card context.
-The v16 prompt stays at 6,900 bytes. With the same prompt and contexts, Qwen's
+Historical v16 packing used a 6,900-byte prompt. With that prompt and contexts, Qwen's
 new sampling fields add 26 serialized body bytes over its previous temperature-0
 configuration. Packing checks rebuilt twelve retained H10/H11 contexts with the
 same illustrative five-note snapshot (783 bytes). The largest Qwen provider body
@@ -124,6 +154,15 @@ was 30,908 of 32,768 bytes (1,860 remaining); its capture envelope was 31,110 of
 These are packing checks, not a live Qwen trial, admitted fixture turns,
 reconstructed semantic state or quality evidence. Larger valid combinations can
 still reach the unchanged pre-dispatch limit.
+
+V17's prompt is 7,192 bytes, 292 more than v16. Both generated output schemas
+remain exactly unchanged at 5,285 bytes without an eligible card and 9,307 bytes
+for the retained one-card context. Reusing the same twelve illustrative packing
+contexts, the largest Qwen body is 31,200 bytes, leaving 1,568 of the unchanged
+32,768-byte limit; its envelope is 31,402 bytes. The size-only successor projection
+is 31,672 bytes with 1,096 remaining. These are packing measurements, not admitted
+turns or semantic evidence; other valid contexts can still reach the existing
+pre-dispatch limit.
 
 Earlier [v15](../../../../evals/private-discovery/prompt-v15-keyed-continuity-results.md),
 [v14](../../../../evals/private-discovery/prompt-v14-reply-sampling-results.md),
@@ -137,7 +176,7 @@ Earlier [v15](../../../../evals/private-discovery/prompt-v15-keyed-continuity-re
 [v7](../../../../evals/private-discovery/prompt-v7-two-phase-results.md), and
 [v6](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
 remain unchanged historical evidence with their original shapes and provenance.
-Earlier implementation proofs below do not establish v16 live acceptance.
+Earlier implementation proofs below do not establish v17 live acceptance.
 
 ## Outcome and scope
 
@@ -703,9 +742,12 @@ remain in progress and are not ready to merge. GPT v16 persisted a false
 completed-update claim despite unchanged canonical state; Qwen v16 stopped at
 JSON decoding. The isolated tool diagnostic observed a genuine function call but
 failed source continuity validation offline and provided no native settlement or
-discovery acceptance. The first Kimi probe timed out without a provider response
-or usage receipt; its outcome remains unknown and ungraded. Kimi remains an
-evaluation-only candidate, with no new production protocol or model implemented.
+discovery acceptance. Kimi's two full-schema interview requests remain unknown
+after their deadlines. The tiny and constant full-schema controls passed only
+their bounded checks; the JSON-object interview opening passed structural and
+reference checks but failed semantic review. V17's prompt correction is not yet
+validated live. Kimi remains evaluation-only, with no new production protocol or
+model implemented.
 Passing native discovery across all eight families, the completed candidate
 comparison, the required live A-to-B removal, fixed-judge scoring and actual human
 calibration remain incomplete.

@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-10",
+  "control": "kimi_full_schema_minimal_prompt",
+  "status": "full_schema_minimal_prompt_control_passed",
+  "source": {
+    "head": "19bd59753052cac3675761ffa60b9c07f5151ace",
+    "freezeSha256": "abe95ca1351975ffd44b94753b06935f640dbccd7b5531b33df418e95865f1a9"
+  },
+  "configuration": {
+    "candidateModel": "@cf/moonshotai/kimi-k2.6",
+    "maxCompletionTokens": 4096,
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": "absent",
+    "thinking": false,
+    "choices": 1,
+    "stream": false,
+    "responseFormat": "json_schema",
+    "workerDeadlineMs": 120000,
+    "forwardingDeadlineMs": 125000,
+    "maximumProviderAttempts": 1,
+    "payloadCollection": false,
+    "caching": false
+  },
+  "request": {
+    "constantMinimalMessagesOnly": true,
+    "participantProfileIncluded": false,
+    "participantIdsIncluded": false,
+    "interviewContextIncluded": false,
+    "changedInputFields": ["messages"],
+    "allOtherInputFieldsAndFullSchemaUnchanged": true,
+    "canonicalBodyBytes": 5841,
+    "canonicalBodySha256": "9844e50e39979d6245545f46ddec21ce89703dddbb8bf33ea787984b8dc8062d",
+    "fullSchemaBytes": 5285,
+    "fullSchemaSha256": "064f898e0b5f60f9b5682638e3655b03cf8324b389470162e449928546fa107b",
+    "actualWireEnvelopeBytes": 5980,
+    "actualWireEnvelopeSha256": "4faf2c3e07dedaf706133015b720e5ba460185992d7acd74ae0c89f8717f053a",
+    "actualWireMatchesCapturedRequest": true,
+    "requestCaptures": 1,
+    "responseObservations": 1
+  },
+  "observedResult": {
+    "nativeHttpStatus": 200,
+    "responseComplete": true,
+    "transportFailure": false,
+    "knownNativeOutcome": true,
+    "localFallbackHttpStatus": null,
+    "finishReason": "stop",
+    "nativeResponseBytes": 500,
+    "nativeResponseSha256": "ca873bb60a530fee6d3de02b26a56ece8ffd5041cfc7d34f242dda7a10220d0e",
+    "wholeCanonicalJsonAccepted": true,
+    "fullOutputSchemaAccepted": true,
+    "fixedOutputAccepted": true,
+    "fixedOutputShape": {
+      "continuityNotes": 0,
+      "proposals": 0,
+      "replyType": "Review",
+      "replyReason": "no_relevant_open_topic"
+    },
+    "fixedOutputSha256": "938f741ef378a421df152771a6fd3a93dd607c01e82b088af4d321769376cc35",
+    "reasoningRefusalAndToolFieldsAbsent": true,
+    "outputRepaired": false,
+    "usage": {
+      "inputTokens": 61,
+      "outputTokens": 28,
+      "totalTokens": 89,
+      "cachedInputTokens": 0
+    },
+    "providerReportedNeurons": 15.449999809265137,
+    "estimatedTokenUsageCostUsd": "0.00016995"
+  },
+  "pricing": {
+    "sourceTitle": "Cloudflare Workers AI Kimi K2.6 model documentation",
+    "sourceUrl": "https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/",
+    "verifiedOn": "2026-09-10",
+    "inputUsdPerMillionTokens": "0.95",
+    "outputUsdPerMillionTokens": "4.00",
+    "basis": "Rates retained in the sealed root result and directly verified against the primary Unit Pricing row during this report-preparation session.",
+    "calculation": "(61 input tokens * 0.95 + 28 output tokens * 4.00) / 1,000,000",
+    "costKind": "Estimated token-usage cost, not a reservation or invoice.",
+    "neuronsInterpretation": "Observed provider usage metadata, not an invoice."
+  },
+  "timing": {
+    "timestampsUtc": {
+      "ticket": "2026-09-10T15:57:37.130Z",
+      "runtimeReady": "2026-09-10T15:57:45.654Z",
+      "dispatch": "2026-09-10T15:57:45.671Z",
+      "diagnosticCompletion": "2026-09-10T15:57:48.680Z",
+      "closed": "2026-09-10T15:57:48.693Z"
+    },
+    "latencyMs": {
+      "ticketToDispatch": 8541,
+      "dispatchToDiagnosticCompletion": 3009,
+      "dispatchToClosure": 3022,
+      "ticketToDiagnosticCompletion": 11550
+    },
+    "measurement": "Intervals end at diagnostic completion or closure and include applicable startup/native handling/inspection; not provider-only latency or household settlement."
+  },
+  "scope": {
+    "establishes": "This unchanged full-output-schema control completed with its constant minimal prompt.",
+    "universalSchemaReliabilityEstablished": false,
+    "interviewAcceptanceEstablished": false,
+    "interviewPromptCauseEstablished": false,
+    "earlierTimeoutCausesEstablished": false,
+    "continuityValidationReached": false,
+    "referenceReviewReached": false,
+    "discoverySemanticReviewReached": false,
+    "discoveryAcceptanceEstablished": false,
+    "nativeHouseholdAcceptance": false,
+    "nativeSettlements": 0,
+    "participantAdmissions": 0,
+    "toolExecutions": 0,
+    "judgeCalls": 0,
+    "familyAcceptance": false,
+    "earlierInterviewRequestsRetried": false,
+    "householdReplay": false
+  },
+  "financialAtClosure": {
+    "journalBytes": 16848,
+    "journalSha256": "0d4e603cfaeb5f2067460cfe9969bb2cb87c00b036a382a3128219c2dc02c3fa",
+    "previousJournalBytes": 16695,
+    "previousJournalSha256": "93d7f2a1eb419f10e134790eaa7a011e8a2aa13bef4a7960aebb2a8c50dd0e64",
+    "callsReserved": 110,
+    "higherCapCallsReserved": 104,
+    "judgeCallsReserved": 0,
+    "reservedMicroUsd": 6126900,
+    "thisReservationRetainedMicroUsd": 265421,
+    "earlierUnknownReservationsRetained": true,
+    "earlierFullRequestUsage": null,
+    "earlierFullRequestEstimatedUsageCostUsd": null,
+    "earlierOpeningUsage": null,
+    "earlierOpeningEstimatedUsageCostUsd": null,
+    "authorityAnchorCalls": 68,
+    "authorityAnchorReservedMicroUsd": 3246080,
+    "additionalCallsSinceAuthorityAnchor": 42,
+    "additionalReservedMicroUsdSinceAuthorityAnchor": 2880820
+  },
+  "closure": {
+    "closedAtUtc": "2026-09-10T15:57:48.693Z",
+    "runtimeJoinedExitCode": 0,
+    "runtimeDisposed": true,
+    "gateDisposed": true,
+    "remoteSessionDisposed": true,
+    "graceful": true,
+    "actualFinancialLockAbsent": true,
+    "actualActiveCallAbsent": true,
+    "actualListenerAbsent": true,
+    "absenceCheckedAtUtc": "2026-09-10T16:10:16.824420+00:00",
+    "providerRevocationVerified": false,
+    "rootAndIndependentClosedOutcomeReviewAccepted": true
+  },
+  "limitations": [
+    "This full-schema/minimal-prompt control succeeded; it does not establish interview or semantic acceptance or universal schema reliability.",
+    "It does not identify the cause of earlier unavailable interview responses; their output grades, usage and cost remain unavailable.",
+    "No continuity, reference, discovery-semantic or native household validation occurred."
+  ],
+  "relatedEvidence": {
+    "approvedTinyAndOpeningReportsPreservedUnchanged": true,
+    "earlierUnknownGradesAndCausesUnchanged": true
+  },
+  "receiptSha256": {
+    "rootClassification": "840735efbbd49b213dc405c949ed1ed3dae8a323a538346d6a7ad03a1ae1208d",
+    "responseClassification": "7f5cc50e708f94686f31fa8cef92e69e147314bfc0b162bbbaae49514a848422",
+    "canonicalAndFullSchemaInspection": "405e889b22865339bf1af25cc1f4a00dcf1ea68b73bf614a817dab410b2b973a",
+    "completion": "857a98afa539a7bfcba062e09bc44a99ce88030b4609674e1b4352e1af5beaf8",
+    "closure": "57e2d2b8b2df4763602afc84478f72c4dfb09f172ccfa85b2937d32d5e91dde2"
+  },
+  "privateReceiptIndexSha256": "f12e85188ea1f94866127777cd8da8646af80b42e7b2fc932bad831a9bf1bcfd"
+}

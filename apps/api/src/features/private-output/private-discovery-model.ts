@@ -21,7 +21,7 @@ import type { PrivateDiscoveryContinuationFailure } from "./private-discovery-co
 export const PRIVATE_DISCOVERY_CONTEXT_BYTES = 24_576;
 export const PRIVATE_DISCOVERY_MESSAGE_LIMIT = 16;
 export const PRIVATE_DISCOVERY_CARD_LIMIT = 25;
-export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v16";
+export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v17";
 export const PRIVATE_DISCOVERY_POLICY_VERSION = "private-discovery-policy-v3";
 export const PRIVATE_DISCOVERY_TOOL_VERSION = "profile-card-change-v1";
 

@@ -33,16 +33,20 @@
   An [isolated Qwen tool diagnostic](../../evals/private-discovery/qwen-native-tool-serialization-diagnostic-results.md)
   observed a genuine native function call, but its arguments failed source
   continuity validation offline; it performed no native
-  settlement and earned no discovery acceptance. The [first Kimi evaluation probe](../../evals/private-discovery/kimi-first-probe-results.md)
-  reached its 120-second deadline without a provider HTTP status, response body
-  or usage receipt. Its outcome is unknown and no quality grade is possible. Kimi
-  is evaluation-only within the existing $20 cap; the production allowlist still
-  contains only GPT-OSS and Qwen. Two scenario expectations clarify that review
-  and confirmation use the visible card’s Confirm action, without repeating
-  already-explicit intent in chat. Production prompt, protocol and authority remain
-  unchanged. Both configured candidates
-  remain unaccepted, and the eight-family, candidate-comparison, A-to-B, judge
-  and human-calibration gates remain unmet. The draft is not ready to merge. The
+  settlement and earned no discovery acceptance. Kimi's [first full request](../../evals/private-discovery/kimi-first-probe-results.md)
+  and [clean full opening](../../evals/private-discovery/kimi-clean-opening-probe-results.md)
+  both reached their deadlines without provider responses or usage receipts.
+  The [tiny baseline](../../evals/private-discovery/kimi-structured-output-baseline-results.md)
+  and [constant full-schema control](../../evals/private-discovery/kimi-full-schema-control-results.md)
+  passed their bounded checks. The [JSON-object opening](../../evals/private-discovery/kimi-json-object-opening-results.md)
+  returned valid structured output but failed semantic review by proposing an
+  unsupported removal. Prompt v17 now prioritizes unclear intended effects before
+  dependent drafting and routine questions, and keeps the sole question in
+  Ask.question; its live effect is unverified. Kimi remains evaluation-only under
+  the existing $20 cap, and the production allowlist still contains only GPT-OSS
+  and Qwen. Schema, policy and authority are unchanged. No candidate is accepted;
+  the eight-family, completed candidate-comparison, A-to-B, judge and
+  human-calibration gates remain unmet. The draft is not ready to merge. The
   [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
   retains current scope and historical evidence.
 

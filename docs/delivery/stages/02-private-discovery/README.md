@@ -62,17 +62,24 @@ An [isolated Qwen tool diagnostic](../../../../evals/private-discovery/qwen-nati
 observed a genuine native function call with schema-valid arguments. The frozen
 inspector rejected aliases and legacy-field presence before checking arguments;
 separate offline continuity validation rejected its Ask decision. There was no
-household/native settlement or discovery pass. The [first Kimi evaluation probe](../../../../evals/private-discovery/kimi-first-probe-results.md)
-reached its 120-second deadline without a provider HTTP status, response body or
-usage receipt. The provider outcome is unknown; schema, continuity and semantic
-checks were not reached. Kimi is evaluation-only within the existing $20 cap,
-and the production allowlist still contains only GPT-OSS and Qwen. Two scenario
-expectations clarify review of the visible card and its Confirm action without
-repeating already-explicit intent in chat. No scoring dimension, threshold,
-framework, prompt or production protocol changed. Live discovery across all
-eight families, the completed candidate comparison, A-to-B repeat review, judge
-scoring and human calibration remain
-incomplete. No baseline is accepted and the draft is not ready to merge.
+household/native settlement or discovery pass. Kimi's [first full request](../../../../evals/private-discovery/kimi-first-probe-results.md)
+and [clean full opening](../../../../evals/private-discovery/kimi-clean-opening-probe-results.md)
+both reached their deadlines with provider outcome and usage unknown. Its
+[tiny baseline](../../../../evals/private-discovery/kimi-structured-output-baseline-results.md)
+and [constant full-schema control](../../../../evals/private-discovery/kimi-full-schema-control-results.md)
+passed their bounded checks. The [JSON-object opening](../../../../evals/private-discovery/kimi-json-object-opening-results.md)
+passed source schema, continuity and manual reference checks but failed semantic
+review by proposing removal while the intended change remained unclear. No
+native settlement or discovery acceptance followed.
+
+Prompt v17 prioritizes genuinely unclear intended effects or targets before
+dependent drafting and downstream routine questions, preserves already-explicit
+intent, and keeps the sole question in Ask.question. Its live effect is unverified.
+Kimi remains evaluation-only within the existing $20 cap; the production allowlist
+still contains only GPT-OSS and Qwen. Schema, policy, authority, scenarios and
+rubric are unchanged. Live discovery across all eight families, the completed
+candidate comparison, A-to-B repeat review, judge scoring and human calibration
+remain incomplete. No baseline is accepted and the draft is not ready to merge.
 The [owning work item](03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
 retains current scope and historical evidence. Delivery follows the existing
 [execution policy](../../../agents/execution-policy.md).
