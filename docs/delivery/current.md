@@ -59,8 +59,15 @@
   the six-update limit. The baseline lacked its original-card review receipt;
   no family was accepted. Prompt v19 now explicitly omits unchanged notes and
   card operations and prohibits repeating the question in acknowledgement text.
-  Its model behavior is unverified. Field sets, validation, policy and authority
-  are unchanged. Full native family acceptance remains pending under
+  The [v19 run](../../evals/private-discovery/kimi-v19-native-suite-stop-results.md)
+  recorded eight native successes and one
+  `reply_decision` rejection for another missing unresolved note. Baseline
+  coverage remained incomplete, and adult routines exposed a material draft
+  selection defect. Its fixed judge scored household specificity 4/5 and profile
+  synthesis 3/5; no family or human baseline was accepted.
+  The next configuration enables Kimi thinking with temperature 1.0 while
+  retaining prompt v19, schema, limits and authority. Its model behavior is
+  unverified. Full native family acceptance remains pending under
   the existing $20 cap. No candidate is accepted;
   the eight-family, completed candidate-comparison, A-to-B, judge and
   human-calibration gates remain unmet. The draft is not ready to merge. The

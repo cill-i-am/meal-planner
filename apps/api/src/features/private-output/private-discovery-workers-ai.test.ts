@@ -368,13 +368,19 @@ describe("private discovery Workers AI boundary", () => {
     "sends the exact Kimi JSON-object request with %s eligible cards and retains configured-rate usage",
     async (count) => {
       const payload = completion();
+      const reasoning = "Synthetic reasoning must stay outside the result.";
       const test = fixture(
         () =>
           Promise.resolve(
             Response.json({
               ...payload,
+              choices: payload.choices.map((choice) => ({
+                ...choice,
+                message: { ...choice.message, reasoning },
+              })),
               usage: {
                 ...payload.usage,
+                completion_tokens_details: { reasoning_tokens: 30 },
                 prompt_tokens_details: { cached_tokens: 80 },
               },
             })
@@ -393,7 +399,7 @@ describe("private discovery Workers AI boundary", () => {
       expect(test.run).toHaveBeenCalledOnce();
       expect(test.run.mock.calls[0]?.[0]).toBe(kimiConfig.model);
       expect(test.run.mock.calls[0]?.[1]).toEqual({
-        chat_template_kwargs: { thinking: false },
+        chat_template_kwargs: { thinking: true },
         max_completion_tokens: 4096,
         messages: [
           {
@@ -405,7 +411,7 @@ describe("private discovery Workers AI boundary", () => {
         n: 1,
         response_format: { type: "json_object" },
         stream: false,
-        temperature: 0.6,
+        temperature: 1,
         top_p: 0.95,
       });
       expect(test.run.mock.calls[0]?.[2]).toMatchObject({
@@ -429,6 +435,7 @@ describe("private discovery Workers AI boundary", () => {
         inputTokens: 100,
         outputTokens: 50,
       });
+      expect(JSON.stringify(result)).not.toContain(reasoning);
     }
   );
 
@@ -447,14 +454,22 @@ describe("private discovery Workers AI boundary", () => {
   });
 
   it.each([
-    { content: "not JSON", stage: "output_json" },
+    { content: "not JSON", finishReason: "stop", stage: "output_json" },
     {
       content: JSON.stringify({ ...output, saved: true }),
+      finishReason: "stop",
       stage: "output_schema",
     },
+    {
+      content: JSON.stringify(output),
+      finishReason: "length",
+      stage: "incomplete_completion",
+    },
+    { content: null, finishReason: "stop", stage: "missing_content" },
   ])(
-    "rejects Kimi content at $stage without repair",
-    async ({ content, stage }) => {
+    "rejects Kimi content at $stage without using reasoning or repair",
+    async ({ content, finishReason, stage }) => {
+      const reasoning = "Synthetic reasoning is not final output.";
       const test = fixture(
         () =>
           Promise.resolve(
@@ -462,8 +477,8 @@ describe("private discovery Workers AI boundary", () => {
               ...completion(),
               choices: [
                 {
-                  finish_reason: "stop",
-                  message: { content, role: "assistant" },
+                  finish_reason: finishReason,
+                  message: { content, reasoning, role: "assistant" },
                 },
               ],
             })
@@ -479,6 +494,7 @@ describe("private discovery Workers AI boundary", () => {
         usage: { inputTokens: 100, outputTokens: 50 },
       });
       expect(test.run).toHaveBeenCalledOnce();
+      expect(JSON.stringify(error)).not.toContain(reasoning);
     }
   );
 

@@ -95,13 +95,13 @@ const requestFor = (
   if (config.model === "@cf/moonshotai/kimi-k2.6") {
     return {
       body: {
-        chat_template_kwargs: { thinking: false },
+        chat_template_kwargs: { thinking: true },
         max_completion_tokens: config.maxOutputTokens,
         messages,
         n: 1,
         response_format: { type: "json_object" as const },
         stream: false as const,
-        temperature: 0.6,
+        temperature: 1,
         top_p: 0.95,
       },
       model: config.model,

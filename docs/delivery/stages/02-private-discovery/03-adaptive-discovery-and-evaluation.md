@@ -142,7 +142,22 @@ likewise contain only new or revised card operations; unchanged drafts require
 no operation. Ask.text must not contain or rephrase the question. These are
 prompt-only clarifications of existing behavior. The output schema and its order,
 policy v3, validators, update limits, card operations, persistence, sampling and
-authority remain unchanged. V19 model behavior is unverified.
+authority remain unchanged.
+
+The [v19 run](../../../../evals/private-discovery/kimi-v19-native-suite-stop-results.md)
+on source `47779591` recorded nine candidate calls: eight
+native successes and one `reply_decision` rejection. The second dependant turn
+again named an unresolved Ask topic without supplying its note. Baseline coverage
+remained incomplete without a demonstrated harness bug. Adult routines exposed
+a material operation-selection and profile-synthesis defect: the model revised
+an existing draft for an additional preference, losing the original draft's
+supported distinction. That observation alone did not establish an enumerated
+hard-invariant failure. Adult routines completed natively and passed 11 hard
+assertions, with its full-history defect retained. One fixed judge scored
+household specificity 4/5 and profile synthesis 3/5; `possibleHardFailure` was
+null. These are model scores without an accepted-baseline comparison or human
+calibration. Five other families were unrun; no family, human baseline or
+discovery release was accepted.
 Qwen3-30B-A3B FP8 retains `temperature: 0.6`, `top_p: 0.95` and `top_k: 20`, using
 [Cloudflare-supported fields](https://developers.cloudflare.com/workers-ai/models/qwen3-30b-a3b-fp8/)
 and values from [upstream guidance](https://huggingface.co/Qwen/Qwen3-30B-A3B-FP8#best-practices).
@@ -155,12 +170,39 @@ model in a deployed environment and authorizes no real-household data use.
 
 Kimi's explicit request branch retains the production system/context messages
 and full embedded schema, with `response_format: { type: "json_object" }`,
-`chat_template_kwargs: { thinking: false }`, temperature 0.6, top-p 0.95, `n: 1`
+`chat_template_kwargs: { thinking: true }`, temperature 1.0, top-p 0.95, `n: 1`
 and non-streaming output. `max_completion_tokens` uses the existing configured
 cap of at most 4,096. GPT/Qwen requests are unchanged. The strict canonical
 completion and output decoders, native continuation checks, gateway privacy
 controls, request/response bounds and authority remain unchanged. No SDK upgrade,
 thinking alias, parser repair or alternate output path is introduced.
+
+This next configuration uses Cloudflare's documented
+[`chat_template_kwargs.thinking` field](https://developers.cloudflare.com/changelog/post/2026-04-20-kimi-k2-6-workers-ai/)
+and matches [Moonshot's K2.6 thinking temperature of 1.0](https://platform.kimi.ai/docs/api/models-overview).
+Cloudflare's [model contract](https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/)
+accepts the temperature and completion-cap fields. Prompt v19 and both output
+schemas remain byte-identical; policy v3, sampling for GPT/Qwen, all token/time
+bounds, the 65,536-byte whole-response limit and the fixed judge are unchanged.
+Any future evaluation result applies jointly to thinking enabled and temperature
+1.0. No model-quality improvement has been demonstrated for this configuration.
+
+Separate Cloudflare `reasoning` metadata is ignored by the existing envelope
+decoder. Only final `message.content` is decoded into the strict output schema;
+reasoning cannot substitute for missing, incomplete or invalid final content.
+The token estimate uses reported aggregate completion tokens without adding
+reasoning-token details again. Thinking may leave less room for final JSON under
+the unchanged output, response-size and time bounds; a successful completion is
+not guaranteed. Existing native provenance records model, prompt, policy and tool
+versions but not thinking mode or temperature. Exact source-head and request
+settings in each frozen evaluation record distinguish the configurations.
+
+Focused validation passed 73 adapter/continuity tests, API types, lint and
+formatting. Existing zero/one/two-card request cases now exercise separate
+reasoning metadata and token details while retaining only final output and
+aggregate usage. Kimi cases reject reasoning-bearing length termination and
+null final content, alongside malformed JSON and invalid output schemas. These
+checks establish the local adapter contract, not native model quality.
 
 The existing usage estimate applies the configured input and output prices to
 all reported tokens. With Kimi rates of $0.95/$4.00 per million input/output
@@ -868,9 +910,13 @@ before any assistant reply, card or continuity update persisted. V18 changes
 generation order and makes the existing exact-note requirement explicit. Its
 native suite recorded six successes before the seventh call failed the
 six-update limit; no family was accepted. V19 clarifies that continuity and
-proposal output contain only changes, with its model behavior still unverified.
-Output fields, order and validation, policy and household authority remain
-unchanged. Full native family acceptance is pending.
+proposal output contain only changes. Its native run recorded eight successes
+and another missing-note `reply_decision` rejection, with incomplete baseline
+coverage and a separate adult-routines synthesis defect. One fixed judge ran;
+five other families and human calibration remain incomplete. The next Kimi
+configuration enables thinking at temperature 1.0 with the same v19 prompt;
+its model behavior is unverified. Output fields, order and validation, policy
+and household authority remain unchanged. Full native family acceptance is pending.
 Passing native discovery across all eight families, the completed candidate
 comparison, the required live A-to-B removal, fixed-judge scoring and actual human
 calibration remain incomplete.
