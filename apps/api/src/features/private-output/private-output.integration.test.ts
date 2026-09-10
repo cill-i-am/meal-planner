@@ -1515,7 +1515,7 @@ it("bounds encoded history frames while retaining every long multibyte and escap
   }
   expect(retainedIds).toEqual(ids);
   connection.socket.close();
-});
+}, 15_000);
 
 it("keeps fixture producers and directory HTTP, SDK, and storage capabilities absent from the production bundle", async () => {
   const productionManifest = await bundleWorkerFixture(

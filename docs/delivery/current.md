@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-09-09
+- Last updated: 2026-09-10
 - Delivery source of truth: this repository
 
 ## Latest Completed Stage
@@ -26,15 +26,16 @@
   [Work Item 03 — adaptive discovery and evaluation](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
   is in progress in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218).
   Private adaptive-turn implementation and local browser acceptance are complete.
-  The latest [prompt-v11 result](../../evals/private-discovery/prompt-v11-continuity-results.md)
-  contains four successful native generations and one correct explicit adult
-  replacement confirmation. Dependency and safety discovery remained incomplete;
-  no new hard assertion was proven. The current v12 candidate uses bounded
-  continuity additions/revisions and an explicit Ask/Review/Stop reply. Omitted
-  context survives, and invalid updates or reply decisions reject atomically.
-  Stop does not complete the native session. The candidate has local validation
-  only: no live quality result, family acceptance, judge/human score, or baseline
-  is claimed. The draft is not ready to merge. The
+  The [GPT-OSS v12 result](../../evals/private-discovery/prompt-v12-continuity-state-results.md)
+  contains two native successes and one rejected reply decision. The matched
+  [Qwen v12 comparison](../../evals/private-discovery/prompt-v12-qwen-comparison-results.md)
+  had one native success followed by malformed JSON rejected
+  at the captured `output_json` stage. Both left required discovery incomplete
+  and the canonical profile unchanged. V13 now prioritizes understanding the
+  adult's preferences and practical circumstances before card mechanics, using
+  the same structured continuity, model-authored questions, validation and
+  confirmation boundaries. It has local validation only; no family acceptance,
+  judge/human score or baseline is claimed. The draft is not ready to merge. The
   [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
   retains current scope and historical evidence.
 

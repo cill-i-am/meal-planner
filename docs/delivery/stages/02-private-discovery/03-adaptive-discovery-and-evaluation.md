@@ -1,63 +1,82 @@
 # Work Item 03 — Adaptive discovery and evaluation
 
-- Status: In progress (2026-09-09); [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
+- Status: In progress (2026-09-10); [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
 - Authorized by the product owner to continue after Work Item 02.
 - Implementation base: `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`.
 - Owning stage: [Stage 2](README.md).
 
 ## Current evaluation status
 
-The latest [prompt-v11 result](../../../../evals/private-discovery/prompt-v11-continuity-results.md)
-contains four successful native generations. The adult explicitly confirmed the
-correct replacement after call 4, advancing the profile from version 1 to 2 with
-one fact and its original identity. Calls 2 and 4 offered interface review without
-a discovery question; call 3 repeated an already answered clarification. The
-required dependency and safety discoveries were not reached. With no remaining
-driver-grounded continuation, the phase stopped before its eight-intent cap.
-There was no proven new hard assertion or driver violation, family acceptance,
-judge or human score, live review refresh, or fresh-session A-to-B repeat.
+The [GPT-OSS v12 result](../../../../evals/private-discovery/prompt-v12-continuity-state-results.md)
+contains two successful native generations and one known `invalid_output`
+rejection. The rejected Ask referenced no retained or added unresolved topic;
+`reply_decision` is a pinned-source reconstruction, not a captured native substage.
+The disclosed practical circumstance stayed absent from continuity, and call 2
+chose Review with dependency and safety discovery still missing. The canonical
+profile remained unchanged. The matched [Qwen v12 comparison](../../../../evals/private-discovery/prompt-v12-qwen-comparison-results.md)
+also stopped without family acceptance: one native success followed by an
+`invalid_output` rejection
+with the actual captured `output_json` stage. Its second response contained an
+extra closing brace. The first reply likewise omitted the disclosed circumstance;
+no card or canonical change persisted. These bounded runs do not establish a
+general model ranking.
 
-The current v12 candidate replaces free-text summary overwrite and an implicit
-reply decision with ordered continuity additions/revisions, unchanged profile-card
-operations, and an explicit Ask/Review/Stop reply. Omitted notes are retained.
-Revisions replace the complete named note, including a corrected subject. The
-native child validates note references, bounds and reply decisions before storing
-any generated message, card or continuity snapshot. Ask renders the exact
-model-authored acknowledgement and question. Stop leaves the native session open;
-only the participant's existing completion command can close it.
+The current v13 candidate makes understanding this adult's preferences and
+practical circumstances the primary task. It selects useful uncertainty from the
+supplied conversation, including circumstances not yet noted, and places the
+existing discovery/reply guidance before proposal mechanics. A completed edit or
+an empty unresolved-note set does not establish that nothing useful remains to
+ask. This is one framing hypothesis, with no new examples or prescribed questions.
+The next candidate trial uses GPT-OSS; the fixed judge is unchanged. V13 has no
+real-model quality result yet.
 
-This is one private model call and one canonical structured continuity codec in
-the existing WI03 TEXT column. It adds no migration, compatibility parser,
-backfill, automatic eviction, output repair, provider retry or public protocol.
-The [architecture record](../../../architecture/decisions/0004-household-agent-coordinator-and-isolated-chat-agents.md#structured-private-discovery-continuity--2026-09-09)
-owns the private contract and validation boundaries. The current candidate has
-local validation only and has not run against the real model; no semantic fix,
-family result or baseline is claimed.
+The v12 structured contract remains unchanged: ordered continuity
+additions/revisions, existing profile-card operations, and Ask/Review/Stop.
+Omitted notes are retained. Revisions replace the complete named note, including
+a corrected subject. The native child validates references, bounds and reply
+decisions before storing any generated message, card or continuity snapshot. Ask
+renders the exact model-authored acknowledgement and question. Stop leaves the
+native session open; only the participant's completion command can close it.
+This remains one private model call and one canonical continuity codec in the
+existing WI03 TEXT column, with unchanged schema, caps, privacy and confirmation
+boundaries. The [architecture record](../../../architecture/decisions/0004-household-agent-coordinator-and-isolated-chat-agents.md#structured-private-discovery-continuity--2026-09-09)
+owns that contract.
 
-Local validation passed 62 adapter/continuity tests and 41 focused native
-assistant tests. Native checks cover retained notes across unrelated turns and
+The v12 local validation passed 62 adapter/continuity tests and 41 focused native
+assistant tests. Those checks cover retained notes across unrelated turns and
 restart, exact rendered questions, distinct no-information/refusal states,
 fresh-session isolation, Stop versus explicit completion, and atomic rejection
-of invalid updates, decisions and limits. API types, lint, formatting and
-asset/document checks also pass. These are local synthetic proofs, not live-model
-quality acceptance.
+of invalid updates, decisions and limits. They are historical synthetic proofs,
+not live-model quality acceptance. V13 scoped validation covers prompt
+configuration (39 adapter tests), request fit and the history-test budget change
+(one focused native test, 76 skipped). API types and lint pass; unchanged v12
+native proofs are not repeated.
 
-Local size checks rebuilt all twelve retained H10/H11 request contexts with an
-illustrative five-note continuity snapshot (783 bytes). The largest provider body
-was 31,620 of 32,768 bytes (1,148 bytes remaining); its capture envelope was 31,819
-of 40,000 bytes. A size-only successor projection using retained texts reached
-32,092 bytes, leaving 676. These are packing checks, not admitted fixture turns,
-reconstructed semantic state, or live quality evidence. Larger combinations may
-still reach the unchanged pre-dispatch limit.
+The long multibyte/escaped history test alone now has a 15-second allowance.
+Its 25 retained records, sequential mutations, pagination assertions and global
+timeouts are unchanged. The prior five-second budget timed out in hosted CI and
+an isolated run; a source-preserving diagnostic passed all assertions in 4,907 ms.
+The changed test passed in 3,689 ms with its disposable local listener permitted.
+Two initial restricted runs stalled; the repeat exposed a local listener `EPERM`
+and a disposal-hook timeout, rather than an assertion failure.
 
-Earlier [v10](../../../../evals/private-discovery/prompt-v10-effects-results.md),
+V13 size checks rebuilt all twelve retained H10/H11 request contexts with the
+same illustrative five-note continuity snapshot (783 bytes). The largest provider
+body was 32,128 of 32,768 bytes (640 bytes remaining); its capture envelope was
+32,327 of 40,000 bytes. A size-only successor projection using retained texts
+reached 32,600 bytes, leaving 168. These are packing checks, not admitted fixture
+turns, reconstructed semantic state, or live quality evidence. Larger combinations
+may still reach the unchanged pre-dispatch limit.
+
+Earlier [v11](../../../../evals/private-discovery/prompt-v11-continuity-results.md),
+[v10](../../../../evals/private-discovery/prompt-v10-effects-results.md),
 [v9](../../../../evals/private-discovery/prompt-v9-duties-results.md),
 [v8](../../../../evals/private-discovery/prompt-v8-schema-results.md),
 [v7](../../../../evals/private-discovery/prompt-v7-two-phase-results.md), and
 [v6](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
 results remain separate, unchanged historical evidence. Earlier implementation
 proofs below, including the [bounded v5 correction proof](#correction-diagnosis-and-prompt-v5),
-do not establish quality or acceptance of v12.
+do not establish quality or acceptance of v13.
 
 ## Outcome and scope
 
@@ -618,10 +637,10 @@ contains the metadata results and receipt digests.
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
-remain in progress and are not ready to merge. The [v11 result](../../../../evals/private-discovery/prompt-v11-continuity-results.md)
-stopped with incomplete required discovery; the current v12 structured candidate
-has only local validation. Passing native discovery across all eight families, candidate
-comparison, the required live A-to-B removal, and actual human calibration remain
-incomplete. Earlier scripted and bounded correction proofs do not replace those
-gates. The canonical evidence and calibration templates remain unfilled. No
-application deployment occurred.
+remain in progress and are not ready to merge. Both measured v12 candidates
+stopped with incomplete discovery and a rejected turn; v13 has only local
+validation. Passing native discovery across all eight families, the completed
+candidate comparison, the required live A-to-B removal, and actual human
+calibration remain incomplete. Earlier scripted and bounded correction proofs
+do not replace those gates. The canonical evidence and calibration templates
+remain unfilled. No application deployment occurred.

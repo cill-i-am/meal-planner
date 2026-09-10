@@ -339,7 +339,7 @@ describe("private discovery Workers AI boundary", () => {
       expect(result.output).toEqual(output);
       expect(result.provenance).toMatchObject({
         model: modelName,
-        promptVersion: "private-discovery-prompt-v12",
+        promptVersion: "private-discovery-prompt-v13",
         provider: "cloudflare-workers-ai",
       });
       expect(result.usage).toEqual({
