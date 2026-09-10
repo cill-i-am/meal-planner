@@ -77,10 +77,12 @@ dependent drafting and downstream routine questions, preserves already-explicit
 intent, and keeps the sole question in Ask.question. The [single v17 opening](../../../../evals/private-discovery/kimi-v17-json-object-opening-results.md)
 met that narrow semantic prerequisite: it retained the routine, asked to clarify
 the unresolved intended change and emitted no proposals. It did not exercise card
-review/confirmation or establish sustained discovery quality. Native Kimi
-support remains unimplemented; the production allowlist still contains only
-GPT-OSS and Qwen. Kimi remains evaluation-only within the existing $20 cap.
-Schema, policy, authority, scenarios and rubric are unchanged. Live discovery across all eight families, the completed
+review/confirmation or establish sustained discovery quality. Kimi request
+support is now selectable alongside GPT-OSS and Qwen for the approved synthetic
+evaluation. It uses JSON-object output with the existing strict decoder;
+configuration remains disabled by default. Full native family evaluation remains
+pending within the existing $20 cap. Schema, policy, authority, scenarios and
+rubric are unchanged. Live discovery across all eight families, the completed
 candidate comparison, A-to-B repeat review, judge scoring and human calibration
 remain incomplete. No baseline is accepted and the draft is not ready to merge.
 The [owning work item](03-adaptive-discovery-and-evaluation.md#current-evaluation-status)

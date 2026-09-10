@@ -52,6 +52,13 @@ const config: PrivateDiscoveryConfiguration = {
   outputUsdPerMillionTokens: 0.6,
   timeoutMs: 1000,
 };
+const kimiConfig: PrivateDiscoveryConfiguration = {
+  ...config,
+  inputUsdPerMillionTokens: 0.95,
+  maxOutputTokens: 4096,
+  model: "@cf/moonshotai/kimi-k2.6",
+  outputUsdPerMillionTokens: 4,
+};
 const output = {
   continuity: [
     {
@@ -356,6 +363,148 @@ describe("private discovery Workers AI boundary", () => {
       });
     }
   );
+
+  it.each([0, 1, 2])(
+    "sends the exact Kimi JSON-object request with %s eligible cards and retains configured-rate usage",
+    async (count) => {
+      const payload = completion();
+      const test = fixture(
+        () =>
+          Promise.resolve(
+            Response.json({
+              ...payload,
+              usage: {
+                ...payload.usage,
+                prompt_tokens_details: { cached_tokens: 80 },
+              },
+            })
+          ),
+        kimiConfig
+      );
+      const cards = Array.from({ length: count }, (_, index) =>
+        proposedCard(index)
+      );
+      const input = { ...test.input, context: { ...context(), cards } };
+      const result = await Effect.runPromise(test.model.generate(input));
+      const jsonSchema = Tool.getJsonSchemaFromSchema(
+        makePrivateDiscoveryProviderOutput(cards)
+      );
+      expect(test.beforeDispatch).toHaveBeenCalledOnce();
+      expect(test.run).toHaveBeenCalledOnce();
+      expect(test.run.mock.calls[0]?.[0]).toBe(kimiConfig.model);
+      expect(test.run.mock.calls[0]?.[1]).toEqual({
+        chat_template_kwargs: { thinking: false },
+        max_completion_tokens: 4096,
+        messages: [
+          {
+            content: `${privateDiscoveryInstructions}\n\nOutput JSON schema:\n${JSON.stringify(jsonSchema)}`,
+            role: "system",
+          },
+          { content: JSON.stringify(input.context), role: "user" },
+        ],
+        n: 1,
+        response_format: { type: "json_object" },
+        stream: false,
+        temperature: 0.6,
+        top_p: 0.95,
+      });
+      expect(test.run.mock.calls[0]?.[2]).toMatchObject({
+        extraHeaders: { "cf-aig-max-attempts": "1" },
+        gateway: {
+          collectLog: false,
+          id: kimiConfig.gatewayId,
+          skipCache: true,
+        },
+        returnRawResponse: true,
+      });
+      expect(result.output).toEqual(output);
+      expect(result.provenance).toMatchObject({
+        model: kimiConfig.model,
+        policyVersion: "private-discovery-policy-v3",
+        promptVersion: "private-discovery-prompt-v17",
+        provider: "cloudflare-workers-ai",
+      });
+      expect(result.usage).toEqual({
+        estimatedCostUsd: 0.000295,
+        inputTokens: 100,
+        outputTokens: 50,
+      });
+    }
+  );
+
+  it("retains unavailable Kimi usage as unknown", async () => {
+    const test = fixture(
+      () => Promise.resolve(Response.json({ choices: completion().choices })),
+      kimiConfig
+    );
+    const result = await Effect.runPromise(test.model.generate(test.input));
+    expect(result.usage).toEqual({
+      estimatedCostUsd: null,
+      inputTokens: null,
+      outputTokens: null,
+    });
+    expect(test.run).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { content: "not JSON", stage: "output_json" },
+    {
+      content: JSON.stringify({ ...output, saved: true }),
+      stage: "output_schema",
+    },
+  ])(
+    "rejects Kimi content at $stage without repair",
+    async ({ content, stage }) => {
+      const test = fixture(
+        () =>
+          Promise.resolve(
+            Response.json({
+              ...completion(),
+              choices: [
+                {
+                  finish_reason: "stop",
+                  message: { content, role: "assistant" },
+                },
+              ],
+            })
+          ),
+        kimiConfig
+      );
+      const error = await Effect.runPromise(
+        Effect.flip(test.model.generate(test.input))
+      );
+      expect(error).toMatchObject({
+        reason: "invalid_output",
+        stage,
+        usage: { inputTokens: 100, outputTokens: 50 },
+      });
+      expect(test.run).toHaveBeenCalledOnce();
+    }
+  );
+
+  it("bounds the Kimi request including its embedded schema before dispatch", async () => {
+    const test = fixture(undefined, kimiConfig);
+    const input = {
+      ...test.input,
+      context: {
+        ...context(),
+        messages: Array.from({ length: 6 }, () => ({
+          id: crypto.randomUUID(),
+          role: "participant" as const,
+          text: "x".repeat(3800),
+        })),
+      },
+    };
+    expect(
+      new TextEncoder().encode(JSON.stringify(input.context)).byteLength
+    ).toBeLessThan(24_576);
+    const error = await Effect.runPromise(
+      Effect.flip(test.model.generate(input))
+    );
+    expect(error.reason).toBe("context_limit");
+    expect(test.beforeDispatch).not.toHaveBeenCalled();
+    expect(test.run).not.toHaveBeenCalled();
+  });
 
   it("does not claim or dispatch an unconfigured model", async () => {
     const test = fixture();

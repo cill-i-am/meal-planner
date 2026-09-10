@@ -44,9 +44,10 @@
   then passed its narrow semantic check: it retained the disclosed routine,
   asked one intent-clarification question and emitted no dependent proposal.
   Sustained interview behavior and card review/confirmation were not exercised.
-  Native Kimi support remains unimplemented; the production allowlist still
-  contains only GPT-OSS and Qwen. Kimi remains evaluation-only under the existing
-  $20 cap. Schema, policy and authority are unchanged. No candidate is accepted;
+  Kimi request support is now selectable alongside GPT-OSS and Qwen for the
+  approved synthetic evaluation, with configuration still disabled by default.
+  Full native family evaluation remains pending under the existing $20 cap.
+  Schema, policy and authority are unchanged. No candidate is accepted;
   the eight-family, completed candidate-comparison, A-to-B, judge and
   human-calibration gates remain unmet. The draft is not ready to merge. The
   [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)

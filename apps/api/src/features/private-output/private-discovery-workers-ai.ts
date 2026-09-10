@@ -36,6 +36,7 @@ export const PrivateDiscoveryConfiguration = Schema.Struct({
   model: Schema.Literals([
     "@cf/qwen/qwen3-30b-a3b-fp8",
     "@cf/openai/gpt-oss-120b",
+    "@cf/moonshotai/kimi-k2.6",
   ]),
   outputUsdPerMillionTokens: PositiveAmount,
   timeoutMs: Schema.Int.pipe(
@@ -87,13 +88,29 @@ const requestFor = (
     makePrivateDiscoveryProviderOutput(context.cards)
   );
   const systemInstructions = `${privateDiscoveryInstructions}\n\nOutput JSON schema:\n${JSON.stringify(outputJsonSchema)}`;
+  const messages = [
+    { content: systemInstructions, role: "system" as const },
+    { content: JSON.stringify(context), role: "user" as const },
+  ];
+  if (config.model === "@cf/moonshotai/kimi-k2.6") {
+    return {
+      body: {
+        chat_template_kwargs: { thinking: false },
+        max_completion_tokens: config.maxOutputTokens,
+        messages,
+        n: 1,
+        response_format: { type: "json_object" as const },
+        stream: false as const,
+        temperature: 0.6,
+        top_p: 0.95,
+      },
+      model: config.model,
+    };
+  }
   return {
     body: {
       max_tokens: config.maxOutputTokens,
-      messages: [
-        { content: systemInstructions, role: "system" as const },
-        { content: JSON.stringify(context), role: "user" as const },
-      ],
+      messages,
       response_format: {
         json_schema: outputJsonSchema,
         type: "json_schema" as const,

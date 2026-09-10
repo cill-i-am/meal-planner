@@ -86,10 +86,33 @@ Qwen3-30B-A3B FP8 retains `temperature: 0.6`, `top_p: 0.95` and `top_k: 20`, usi
 [Cloudflare-supported fields](https://developers.cloudflare.com/workers-ai/models/qwen3-30b-a3b-fp8/)
 and values from [upstream guidance](https://huggingface.co/Qwen/Qwen3-30B-A3B-FP8#best-practices).
 Cloudflare's thinking default is undocumented. GPT-OSS remains at temperature
-1/top-p 1 without top-k, and the fixed judge is unchanged. Kimi K2.6 is authorized
-only as an evaluation candidate within the existing $20 cap. The production
-allowlist still contains only GPT-OSS and Qwen; native Kimi integration remains
-unimplemented and configuration remains disabled by default.
+1/top-p 1 without top-k, and the fixed judge is unchanged. Kimi K2.6 is now
+selectable alongside those candidates through the existing configuration for
+the approved synthetic evaluation within the remaining portion of the existing
+$20 cap. Configuration remains disabled by default; this change selects no
+model in a deployed environment and authorizes no real-household data use.
+
+Kimi's explicit request branch retains the production system/context messages
+and full embedded schema, with `response_format: { type: "json_object" }`,
+`chat_template_kwargs: { thinking: false }`, temperature 0.6, top-p 0.95, `n: 1`
+and non-streaming output. `max_completion_tokens` uses the existing configured
+cap of at most 4,096. GPT/Qwen requests are unchanged. The strict canonical
+completion and output decoders, native continuation checks, gateway privacy
+controls, request/response bounds and authority remain unchanged. No SDK upgrade,
+thinking alias, parser repair or alternate output path is introduced.
+
+The existing usage estimate applies the configured input and output prices to
+all reported tokens. With Kimi rates of $0.95/$4.00 per million input/output
+tokens, it conservatively ignores input-cache discounts. The separate diagnostic
+reports retain their cache-aware estimates where measured; neither estimate is
+an invoice. Unknown usage and cost remain null.
+
+Focused validation passed 71 adapter and continuity tests, including seven new
+Kimi cases for exact request fields and embedded card-context schemas, provenance,
+configured-rate and unavailable usage, malformed/schema-invalid output, and
+request rejection before dispatch. API types, lint, formatting and asset checks
+passed without changing the SDK or decoder. This proves the local adapter
+boundary; full native family evaluation and release acceptance remain pending.
 
 V17 gives genuinely unclear intended profile effects or targets priority over
 downstream routine questions and withholds proposals that depend on the answer.
@@ -762,9 +785,10 @@ after their deadlines. The tiny and constant full-schema controls passed only
 their bounded checks; the JSON-object interview opening passed structural and
 reference checks but failed semantic review. A single v17 opening subsequently
 passed the narrow clarification prerequisite with zero proposals; card review,
-confirmation and sustained behavior remain unexercised. Kimi remains
-evaluation-only, with native support unimplemented and no new production
-protocol or model implemented.
+confirmation and sustained behavior remain unexercised. Kimi's explicit
+JSON-object request branch is locally supported for the approved synthetic
+evaluation, with configuration disabled by default. Full native family evaluation
+is still pending; the output schema, policy and household authority are unchanged.
 Passing native discovery across all eight families, the completed candidate
 comparison, the required live A-to-B removal, fixed-judge scoring and actual human
 calibration remain incomplete.
