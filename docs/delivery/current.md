@@ -40,11 +40,13 @@
   and [constant full-schema control](../../evals/private-discovery/kimi-full-schema-control-results.md)
   passed their bounded checks. The [JSON-object opening](../../evals/private-discovery/kimi-json-object-opening-results.md)
   returned valid structured output but failed semantic review by proposing an
-  unsupported removal. Prompt v17 now prioritizes unclear intended effects before
-  dependent drafting and routine questions, and keeps the sole question in
-  Ask.question; its live effect is unverified. Kimi remains evaluation-only under
-  the existing $20 cap, and the production allowlist still contains only GPT-OSS
-  and Qwen. Schema, policy and authority are unchanged. No candidate is accepted;
+  unsupported removal. The [v17 opening](../../evals/private-discovery/kimi-v17-json-object-opening-results.md)
+  then passed its narrow semantic check: it retained the disclosed routine,
+  asked one intent-clarification question and emitted no dependent proposal.
+  Sustained interview behavior and card review/confirmation were not exercised.
+  Native Kimi support remains unimplemented; the production allowlist still
+  contains only GPT-OSS and Qwen. Kimi remains evaluation-only under the existing
+  $20 cap. Schema, policy and authority are unchanged. No candidate is accepted;
   the eight-family, completed candidate-comparison, A-to-B, judge and
   human-calibration gates remain unmet. The draft is not ready to merge. The
   [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)

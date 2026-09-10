@@ -1,0 +1,188 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-10",
+  "probe": "kimi_v17_json_object_opening",
+  "status": "supported_clarification_in_single_v17_opening",
+  "scenario": {
+    "id": "dependency_and_repair",
+    "name": "Dependency and repair",
+    "origin": "Repository-owned synthetic fixture."
+  },
+  "source": {
+    "head": "ebce8ed5a69aee3808e7c232f9fc8cee5b97b0bd",
+    "freezeSha256": "bc5453c268fdb322b6cc15542348c212fd55561de6692f90f9e94d2690ab5cca",
+    "promptVersion": "private-discovery-prompt-v17",
+    "policyVersion": "private-discovery-policy-v3"
+  },
+  "configuration": {
+    "candidateModel": "@cf/moonshotai/kimi-k2.6",
+    "maxCompletionTokens": 4096,
+    "chat_template_kwargs": {
+      "thinking": false
+    },
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": "absent",
+    "choices": 1,
+    "stream": false,
+    "responseFormat": "json_object",
+    "workerDeadlineMs": 120000,
+    "forwardingDeadlineMs": 125000,
+    "maximumProviderAttempts": 1,
+    "gatewayPayloadCollection": false,
+    "gatewayCacheBypassed": true
+  },
+  "request": {
+    "changedInputFields": ["messages[0].content"],
+    "onlyProductionSystemPromptChanged": true,
+    "retainedOpeningContextUnchanged": true,
+    "allOtherInputFieldsUnchanged": true,
+    "embeddedFullSchemaRetained": true,
+    "embeddedFullSchemaSha256": "064f898e0b5f60f9b5682638e3655b03cf8324b389470162e449928546fa107b",
+    "canonicalBodyBytes": 14189,
+    "canonicalBodySha256": "e9cfb8be753ce37c58164c1258cc05292c2dabc9e96035f6ec31dac000a92553",
+    "actualWireEnvelopeBytes": 14328,
+    "actualWireEnvelopeSha256": "5e32e4c88474acf3525e68642782ec7200ed3a4411b78c6a21f74255f2de0550",
+    "actualWireMatchesCapturedRequest": true,
+    "requestCaptures": 1,
+    "responseObservations": 1
+  },
+  "observedResult": {
+    "nativeHttpStatus": 200,
+    "responseComplete": true,
+    "transportFailure": false,
+    "knownNativeOutcome": true,
+    "localFallbackHttpStatus": null,
+    "finishReason": "stop",
+    "nativeResponseBytes": 1506,
+    "nativeResponseSha256": "b98c6809e84fbed818ec2d259e50b142c73d9ffd83cf42d9567ddeaa0787ba7b",
+    "wholeCanonicalJsonAccepted": true,
+    "sourceOutputAndCardContextSchemaAccepted": true,
+    "sourceContinuityAccepted": true,
+    "reasoningRefusalAndToolFieldsAbsent": true,
+    "outputRepaired": false,
+    "proposalCount": 0,
+    "replyType": "Ask",
+    "usage": {
+      "inputTokens": 2916,
+      "cachedInputTokens": 384,
+      "uncachedInputTokens": 2532,
+      "outputTokens": 229,
+      "totalTokens": 3145
+    },
+    "providerReportedNeurons": 307.5309143066406,
+    "estimatedTokenUsageCostUsd": "0.00338284"
+  },
+  "review": {
+    "narrowOpeningSemanticReviewAccepted": true,
+    "observations": [
+      "The disclosed routine was retained while the intended preference change remained unresolved.",
+      "No dependent removal or replacement proposal was emitted.",
+      "A single clarification question appeared in the question field; the acknowledgement contained no question."
+    ],
+    "proposalReferenceReview": "not_applicable_no_proposals",
+    "sourcePrivateProposalReviewFunctionInvoked": false,
+    "rootAndIndependentOpeningReviewAgree": true,
+    "cardReviewInvitationExercised": false,
+    "fixedJudgeInvoked": false,
+    "actualHumanCalibration": false,
+    "judgeGrade": null,
+    "humanGrade": null
+  },
+  "pricing": {
+    "sourceTitle": "Cloudflare Workers AI Kimi K2.6 model documentation",
+    "sourceUrl": "https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/",
+    "uncachedInputUsdPerMillionTokens": "0.95",
+    "cachedInputUsdPerMillionTokens": "0.16",
+    "outputUsdPerMillionTokens": "4.00",
+    "basis": "Rates and source retained in the sealed root result; estimate recalculated from reported token usage.",
+    "calculation": "(2532 uncached input * 0.95 + 384 cached input * 0.16 + 229 output * 4.00) / 1,000,000",
+    "costKind": "Cache-aware estimated token-usage cost, not a reservation or invoice.",
+    "neuronsInterpretation": "Observed provider usage metadata, not an invoice."
+  },
+  "timing": {
+    "timestampsUtc": {
+      "ticket": "2026-09-10T16:42:20.146Z",
+      "runtimeReady": "2026-09-10T16:42:30.577Z",
+      "dispatch": "2026-09-10T16:42:30.593Z",
+      "diagnosticCompletion": "2026-09-10T16:42:39.928Z",
+      "closed": "2026-09-10T16:42:39.940Z"
+    },
+    "latencyMs": {
+      "ticketToDispatch": 10447,
+      "dispatchToDiagnosticCompletion": 9335,
+      "dispatchToClosure": 9347,
+      "ticketToDiagnosticCompletion": 19782
+    },
+    "measurement": "Intervals end at diagnostic completion or closure and include applicable startup/native handling/source inspection; not provider-only latency or household settlement."
+  },
+  "scope": {
+    "diagnosticOnly": true,
+    "controlledPromptComparison": true,
+    "generalPromptEffectEstablished": false,
+    "earlierTimeoutCausesEstablished": false,
+    "sustainedInterviewBehaviorEstablished": false,
+    "modelAcceptanceEstablished": false,
+    "discoveryAcceptanceEstablished": false,
+    "nativeHouseholdAcceptance": false,
+    "familyAcceptanceEstablished": false,
+    "nativeHouseholdChanges": 0,
+    "nativeSettlements": 0,
+    "participantAdmissions": 0,
+    "toolExecutions": 0,
+    "judgeCalls": 0,
+    "automaticRetry": false,
+    "householdReplay": false
+  },
+  "financialAtClosure": {
+    "journalBytes": 17154,
+    "journalSha256": "1ac25d9683de05293a371ac1a488696becb4677df0c999cd587c6d1db3001522",
+    "previousJournalBytes": 17001,
+    "previousJournalSha256": "5430befd711ad768aad6f9d46e1f325d374fe9704304a78006701b0f87d3d0d6",
+    "callsReserved": 112,
+    "higherCapCallsReserved": 106,
+    "judgeCallsReserved": 0,
+    "reservedMicroUsd": 6657742,
+    "thisReservationRetainedMicroUsd": 265421,
+    "earlierUnknownReservationsRetained": true,
+    "earlierUnknownUsageAndCostRemainUnavailable": true,
+    "authorityAnchorCalls": 68,
+    "authorityAnchorReservedMicroUsd": 3246080,
+    "additionalCallsSinceAuthorityAnchor": 44,
+    "additionalReservedMicroUsdSinceAuthorityAnchor": 3411662
+  },
+  "closure": {
+    "closedAtUtc": "2026-09-10T16:42:39.940Z",
+    "runtimeJoinedExitCode": 0,
+    "runtimeDisposed": true,
+    "gateDisposed": true,
+    "remoteSessionDisposed": true,
+    "financialLockAbsent": true,
+    "graceful": true,
+    "actualFinancialLockAbsent": true,
+    "actualActiveCallAbsent": true,
+    "actualListenerAbsent": true,
+    "evidence": "Verified in the sealed root closure review.",
+    "providerRevocationVerified": false,
+    "independentClosedOutcomeReviewAccepted": true
+  },
+  "limitations": [
+    "The accepted semantic result covers this single retained opening only.",
+    "Zero proposals means card-review invitation and native proposal confirmation were not exercised.",
+    "No sustained interview, model/discovery/family acceptance, native household settlement, human calibration or fixed-judge grade was established.",
+    "The controlled prompt comparison does not establish a general prompt effect or explain earlier unavailable responses."
+  ],
+  "relatedEvidence": {
+    "earlierPreparedReportSetsPreservedUnchanged": true,
+    "earlierUnknownOutcomesCausesAndGradesUnchanged": true,
+    "earlierSemanticFailureRecordUnchanged": true
+  },
+  "receiptSha256": {
+    "rootOpeningAndClosureReview": "f4807f8b1dccddbc42c164924ad55094299a8d92a430c1773aac2ce1bd1aafee",
+    "responseClassification": "7f5cc50e708f94686f31fa8cef92e69e147314bfc0b162bbbaae49514a848422",
+    "sourceInspection": "38602785bd74dbd7e830d603d658ed24b1e3102877855f007219f8e80afe7d63",
+    "completion": "33f28a14f046eef95ad3c330c814adfb7b3756b7d9ebc8cd04fa95c6c5d6c174",
+    "closure": "35dc86b93d52b746893272924803dcbe222b3bbf106a813a56a52d55fe2cdb63"
+  },
+  "privateReceiptIndexSha256": "22617b4954f88cdd10418b25e34367898a6d40902388b1afa9c74257e783eb3a"
+}

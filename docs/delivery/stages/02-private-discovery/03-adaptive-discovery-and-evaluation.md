@@ -67,6 +67,19 @@ invitation. No native settlement or discovery acceptance followed. These four
 results retain source `19bd597` provenance: the interview openings used prompt
 v16, while the two controls used their own constant prompts.
 
+The [v17 JSON-object opening](../../../../evals/private-discovery/kimi-v17-json-object-opening-results.md)
+returned HTTP 200 in 9,335 ms. Source output/card-context schemas and continuity
+checks passed; root and independent review accepted the narrow opening behavior.
+The disclosed routine was retained, intended change remained unresolved, and
+zero proposals were emitted. One clarification question appeared in Ask.question,
+with no question in Ask.text. Reference review was inapplicable without proposals;
+card-review invitation and confirmation were not exercised. No native household
+settlement or family acceptance occurred. Only the production system prompt
+changed from the preceding JSON-object opening, with context and schema retained.
+The result does not establish sustained behavior, a general prompt effect or the
+cause of earlier timeouts. Its source is `ebce8ed5`, and the earlier semantic
+failure remains unchanged historical evidence.
+
 The production source now specifies prompt v17 with unchanged policy v3 and
 JSON-output protocol.
 Qwen3-30B-A3B FP8 retains `temperature: 0.6`, `top_p: 0.95` and `top_k: 20`, using
@@ -75,7 +88,8 @@ and values from [upstream guidance](https://huggingface.co/Qwen/Qwen3-30B-A3B-FP
 Cloudflare's thinking default is undocumented. GPT-OSS remains at temperature
 1/top-p 1 without top-k, and the fixed judge is unchanged. Kimi K2.6 is authorized
 only as an evaluation candidate within the existing $20 cap. The production
-allowlist still contains only GPT-OSS and Qwen; no Kimi integration is implemented.
+allowlist still contains only GPT-OSS and Qwen; native Kimi integration remains
+unimplemented and configuration remains disabled by default.
 
 V17 gives genuinely unclear intended profile effects or targets priority over
 downstream routine questions and withholds proposals that depend on the answer.
@@ -83,8 +97,9 @@ Already-explicit intent is not asked again. Drafts are offered as their effect
 and target become clear; Ask.text contains the acknowledgement/review invitation
 without questions, and Ask.question contains the sole question. The redundant
 later clarification sentence is removed. This is a general prompt correction,
-not an output-schema, authority or persistence change, and its live effect is
-unverified.
+not an output-schema, authority or persistence change. The single opening now
+supports its narrow prerequisite; later explicit-intent, draft review and sustained
+discovery behavior remain unverified.
 
 The prompt preserves the accepted practical planning purpose of the adult
 interview, grounded in the
@@ -745,9 +760,11 @@ failed source continuity validation offline and provided no native settlement or
 discovery acceptance. Kimi's two full-schema interview requests remain unknown
 after their deadlines. The tiny and constant full-schema controls passed only
 their bounded checks; the JSON-object interview opening passed structural and
-reference checks but failed semantic review. V17's prompt correction is not yet
-validated live. Kimi remains evaluation-only, with no new production protocol or
-model implemented.
+reference checks but failed semantic review. A single v17 opening subsequently
+passed the narrow clarification prerequisite with zero proposals; card review,
+confirmation and sustained behavior remain unexercised. Kimi remains
+evaluation-only, with native support unimplemented and no new production
+protocol or model implemented.
 Passing native discovery across all eight families, the completed candidate
 comparison, the required live A-to-B removal, fixed-judge scoring and actual human
 calibration remain incomplete.

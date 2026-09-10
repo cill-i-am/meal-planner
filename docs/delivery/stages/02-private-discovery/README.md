@@ -74,10 +74,13 @@ native settlement or discovery acceptance followed.
 
 Prompt v17 prioritizes genuinely unclear intended effects or targets before
 dependent drafting and downstream routine questions, preserves already-explicit
-intent, and keeps the sole question in Ask.question. Its live effect is unverified.
-Kimi remains evaluation-only within the existing $20 cap; the production allowlist
-still contains only GPT-OSS and Qwen. Schema, policy, authority, scenarios and
-rubric are unchanged. Live discovery across all eight families, the completed
+intent, and keeps the sole question in Ask.question. The [single v17 opening](../../../../evals/private-discovery/kimi-v17-json-object-opening-results.md)
+met that narrow semantic prerequisite: it retained the routine, asked to clarify
+the unresolved intended change and emitted no proposals. It did not exercise card
+review/confirmation or establish sustained discovery quality. Native Kimi
+support remains unimplemented; the production allowlist still contains only
+GPT-OSS and Qwen. Kimi remains evaluation-only within the existing $20 cap.
+Schema, policy, authority, scenarios and rubric are unchanged. Live discovery across all eight families, the completed
 candidate comparison, A-to-B repeat review, judge scoring and human calibration
 remain incomplete. No baseline is accepted and the draft is not ready to merge.
 The [owning work item](03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
