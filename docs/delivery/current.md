@@ -51,11 +51,16 @@
   [first full-suite baseline turn](../../evals/private-discovery/kimi-v17-native-baseline-failure-results.md)
   then failed `reply_decision`: Ask referenced a
   missing unresolved note. No assistant reply, card or continuity update persisted,
-  and the canonical profile stayed unchanged. Prompt v18 now requests proposals,
+  and the canonical profile stayed unchanged. Prompt v18 requests proposals,
   reply, then continuity and explicitly requires the matching unresolved note;
   the shared output-schema declaration follows that order. Whether ordering helps
-  generation remains an unverified hypothesis. Field sets, validation, policy and
-  authority are unchanged. Full native family acceptance remains pending under
+  generation remains an unverified hypothesis. The [v18 native suite](../../evals/private-discovery/kimi-v18-native-suite-stop-results.md)
+  recorded six successful turns before rejecting seven continuity updates against
+  the six-update limit. The baseline lacked its original-card review receipt;
+  no family was accepted. Prompt v19 now explicitly omits unchanged notes and
+  card operations and prohibits repeating the question in acknowledgement text.
+  Its model behavior is unverified. Field sets, validation, policy and authority
+  are unchanged. Full native family acceptance remains pending under
   the existing $20 cap. No candidate is accepted;
   the eight-family, completed candidate-comparison, A-to-B, judge and
   human-calibration gates remain unmet. The draft is not ready to merge. The

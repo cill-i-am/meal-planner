@@ -98,8 +98,8 @@ Question text also appeared in both Ask.text and Ask.question, a separate prompt
 failure rather than the rejection's cause. No family or baseline was accepted.
 The original failed response remains failed; it is not repaired or regraded.
 
-The production source now specifies prompt v18 with unchanged policy v3 and
-JSON-output field set. The prompt and shared output-schema declaration order
+V18 retained policy v3 and the JSON-output field set while changing the prompt
+and shared output-schema declaration order to
 proposals, reply, then continuity. Ask.topicKey must exactly match a note that
 is unresolved after the response's updates: either an existing unresolved note's
 key or a complete new unresolved note supplied in continuity. Known circumstances
@@ -109,8 +109,40 @@ easier to generate; ordering is a hypothesis, not a proven cause or a demonstrat
 fix. Schema serialization and its provenance hash change; field types, validation
 rules, note/input/persistence schemas and native guards do not. Missing or
 non-unresolved note references still reject atomically, with no inferred note,
-key repair or output salvage. New native evaluation is required to measure the
-change.
+key repair or output salvage. This source change alone did not establish model
+acceptance.
+
+The [v18 native suite](../../../../evals/private-discovery/kimi-v18-native-suite-stop-results.md)
+on source `5bfdaa61` recorded six successful native turns: two in the baseline
+and four in adult routines. The baseline remained harness-incomplete: its
+original-card review returned `ok:false`, but root continued with a correction.
+The model produced a supported revision without restoring the missing original
+review receipt. That review failure's cause remains unproven; no family verdict
+was earned. The fifth adult-routines turn returned complete
+HTTP 200 output, then failed `output_schema` because it emitted seven continuity
+updates against the six-update limit. Five notes repeated retained notes
+unchanged; two were new. Both the exact captured request schema and the frozen
+source permitted `no_information`; that state was not the failure. Inert decoding
+of the untouched output reproduced only the array-length error in both source
+output schemas. Earlier assistant messages, card and summaries were preserved;
+the failed turn stored no new assistant reply, card or continuity, and the whole
+canonical profile stayed unchanged.
+
+The rejected raw output also proposed the existing unchanged draft again and
+duplicated its question across Ask.text and Ask.question. Native proposal review
+was not reached; its existing duplicate guard remains in place. No output repair,
+retry, family pass or accepted baseline followed. Six other families were unrun;
+no fixed-judge or human-calibration result was obtained.
+
+The production source now specifies prompt v19. It explicitly requires only new
+or changed continuity notes, leaves omitted notes retained automatically and
+returns an empty array when none change. Emitted notes remain complete updates,
+including the required unresolved note for a newly chosen Ask topic. Proposals
+likewise contain only new or revised card operations; unchanged drafts require
+no operation. Ask.text must not contain or rephrase the question. These are
+prompt-only clarifications of existing behavior. The output schema and its order,
+policy v3, validators, update limits, card operations, persistence, sampling and
+authority remain unchanged. V19 model behavior is unverified.
 Qwen3-30B-A3B FP8 retains `temperature: 0.6`, `top_p: 0.95` and `top_k: 20`, using
 [Cloudflare-supported fields](https://developers.cloudflare.com/workers-ai/models/qwen3-30b-a3b-fp8/)
 and values from [upstream guidance](https://huggingface.co/Qwen/Qwen3-30B-A3B-FP8#best-practices).
@@ -150,6 +182,12 @@ cover the intended order for zero, one and two eligible cards. Reversing only
 the new top-level property and required-array order reproduces the previous
 zero-card JSON schema exactly; no validation rule changed. These are local
 contract checks, not model-quality or family acceptance.
+
+V19 passed the existing 71 adapter/continuity tests and 14 native cases covering
+omitted-note retention across restart, mixed updates, atomic rejection and
+duplicate proposals. API types, focused lint and formatting passed; no
+prompt-wording tests were added.
+The zero-card provider schema remains byte-identical to v18.
 
 V17 gives genuinely unclear intended profile effects or targets priority over
 downstream routine questions and withholds proposals that depend on the answer.
@@ -251,7 +289,7 @@ Earlier [v15](../../../../evals/private-discovery/prompt-v15-keyed-continuity-re
 [v7](../../../../evals/private-discovery/prompt-v7-two-phase-results.md), and
 [v6](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
 remain unchanged historical evidence with their original shapes and provenance.
-Earlier implementation proofs below do not establish v18 live acceptance.
+Earlier implementation proofs below do not establish v19 live acceptance.
 
 ## Outcome and scope
 
@@ -827,9 +865,12 @@ JSON-object request branch is locally supported for the approved synthetic
 evaluation, with configuration disabled by default. Full native family evaluation
 stopped on its first v17 turn at `reply_decision` for a missing unresolved note,
 before any assistant reply, card or continuity update persisted. V18 changes
-generation order and makes the existing exact-note requirement explicit; its
-model behavior is unverified. Output field sets and validation, policy and
-household authority remain unchanged. Full native family acceptance is pending.
+generation order and makes the existing exact-note requirement explicit. Its
+native suite recorded six successes before the seventh call failed the
+six-update limit; no family was accepted. V19 clarifies that continuity and
+proposal output contain only changes, with its model behavior still unverified.
+Output fields, order and validation, policy and household authority remain
+unchanged. Full native family acceptance is pending.
 Passing native discovery across all eight families, the completed candidate
 comparison, the required live A-to-B removal, fixed-judge scoring and actual human
 calibration remain incomplete.

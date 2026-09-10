@@ -353,7 +353,7 @@ describe("private discovery Workers AI boundary", () => {
       expect(result.provenance).toMatchObject({
         model: modelName,
         policyVersion: "private-discovery-policy-v3",
-        promptVersion: "private-discovery-prompt-v18",
+        promptVersion: "private-discovery-prompt-v19",
         provider: "cloudflare-workers-ai",
       });
       expect(result.usage).toEqual({
@@ -421,7 +421,7 @@ describe("private discovery Workers AI boundary", () => {
       expect(result.provenance).toMatchObject({
         model: kimiConfig.model,
         policyVersion: "private-discovery-policy-v3",
-        promptVersion: "private-discovery-prompt-v18",
+        promptVersion: "private-discovery-prompt-v19",
         provider: "cloudflare-workers-ai",
       });
       expect(result.usage).toEqual({

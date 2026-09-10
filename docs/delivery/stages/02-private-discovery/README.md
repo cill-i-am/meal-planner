@@ -85,10 +85,15 @@ was interrupted by a local harness command error without a family verdict. The
 [first v17 full-suite baseline turn](../../../../evals/private-discovery/kimi-v17-native-baseline-failure-results.md)
 failed `reply_decision` because Ask referenced a missing unresolved note. The
 rejection preserved private and canonical state. Prompt v18 and the shared
-output-schema declaration now order proposals, reply, then continuity; Ask must
+output-schema declaration order proposals, reply, then continuity; Ask must
 reference an exact retained or newly supplied unresolved note. Ordering may help
-generation, but that hypothesis is unverified. Field sets, validation, policy,
-authority, scenarios and rubric are unchanged. Full native family acceptance
+generation, but that hypothesis is unverified. The [v18 native suite](../../../../evals/private-discovery/kimi-v18-native-suite-stop-results.md)
+recorded six successful turns, then rejected seven continuity updates against
+the six-update limit. The baseline lacked its original-card review receipt;
+no family was accepted. Prompt v19 explicitly requires only changed notes and
+card operations and prohibits repeating the question in acknowledgement text.
+Its model behavior is unverified. Field sets, validation, policy, authority,
+scenarios and rubric are unchanged. Full native family acceptance
 remains pending within the existing $20 cap. Live discovery across all eight
 families, the completed candidate comparison, A-to-B repeat review, judge scoring
 and human calibration
