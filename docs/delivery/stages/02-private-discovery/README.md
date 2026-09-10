@@ -52,26 +52,21 @@ confirmation, restart, privacy, accessibility, and runtime evidence and limits.
 Work Item 03 is in progress in
 [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218). Native
 adaptive-turn implementation and local browser acceptance are complete. The
-latest [GPT-OSS v13 result](../../../../evals/private-discovery/prompt-v13-circumstance-framing-results.md)
-contains two native successes and one rejected
-incomplete completion. The correct replacement card was proposed, but Review
-preceded required discovery. The third response reached its output-token cap;
-that failure is separate from the early-Review framing hypothesis. No confirmation
-or canonical change occurred. Earlier results are preserved.
+latest [GPT-OSS v14 result](../../../../evals/private-discovery/prompt-v14-reply-sampling-results.md)
+contains one native success and one rejected duplicate continuity addition. The
+first truthful notes and canonical profile stayed unchanged; no second reply or
+card persisted, and required discovery remained incomplete.
 
-V14 replaces the local reply-decision guidance. It assesses the whole conversation
-before acknowledging a draft, distinguishes known circumstances from remaining
-uncertainty, and requires both no relevant conversational uncertainty and no
-unresolved note for Review. The same candidate sets GPT-OSS temperature/top-p
-to 1/1, following [OpenAI's recommendation](https://github.com/openai/gpt-oss#recommended-sampling-parameters)
-within [Cloudflare's supported fields](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/).
-This combined framing and sampling change cannot isolate causality or establish
-a loop fix. Qwen sampling and the fixed judge remain unchanged, as do the
-structured contract, model-authored questions, caps and confirmation/privacy
-boundaries. V14 has local validation only. The live fresh-session repeat, family
-acceptance, completed candidate comparison, judge scoring and human calibration
-remain incomplete;
-no baseline is accepted and the draft is not ready to merge.
+V15 replaces the model's additions/revisions split with one strict array of
+complete keyed updates. New keys add notes, retained keys replace them in place,
+omissions retain prior notes, and duplicate keys within an update list reject.
+The old output shape is rejected outright. A mistyped new key now creates a note;
+semantic identity remains the model's responsibility. Policy v3 identifies the
+changed private model-output contract. The database schema, input/stored snapshot
+codec, sampling, caps and confirmation/privacy boundaries remain unchanged.
+V15 has local validation only. Live discovery across all families, the fresh-session
+repeat, completed candidate comparison, judge scoring and human calibration remain
+incomplete; no baseline is accepted and the draft is not ready to merge.
 The [owning work item](03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
 retains current scope and historical evidence. Delivery follows the existing
 [execution policy](../../../agents/execution-policy.md).

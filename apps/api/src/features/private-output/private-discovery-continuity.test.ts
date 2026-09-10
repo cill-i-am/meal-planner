@@ -36,7 +36,7 @@ const ask = (
     text,
     topicKey,
   });
-const unchanged = { additions: [], revisions: [] };
+const unchanged: typeof PrivateDiscoveryContinuityUpdates.Type = [];
 
 describe("private discovery continuity", () => {
   it("retains omitted circumstances while an unrelated topic is answered", () => {
@@ -49,7 +49,7 @@ describe("private discovery continuity", () => {
     };
     const result = applyPrivateDiscoveryContinuation(
       [routine, topic],
-      { additions: [], revisions: [answered] },
+      [answered],
       review
     );
     expect(result.continuity).toEqual([routine, answered]);
@@ -70,7 +70,7 @@ describe("private discovery continuity", () => {
     };
     const result = applyPrivateDiscoveryContinuation(
       [first, other],
-      { additions: [], revisions: [corrected] },
+      [corrected],
       review
     );
     expect(result.continuity).toEqual([corrected, other]);
@@ -84,7 +84,7 @@ describe("private discovery continuity", () => {
       const closed = { ...pending, state };
       const result = applyPrivateDiscoveryContinuation(
         [pending],
-        { additions: [], revisions: [closed] },
+        [closed],
         review
       );
       expect(result.continuity).toEqual([closed]);
@@ -108,7 +108,7 @@ describe("private discovery continuity", () => {
     for (const current of [[], [pending]]) {
       const result = applyPrivateDiscoveryContinuation(
         current,
-        { additions: current.length === 0 ? [pending] : [], revisions: [] },
+        current.length === 0 ? [pending] : [],
         reply
       );
       expect(result.message).toBe(
@@ -118,39 +118,55 @@ describe("private discovery continuity", () => {
     }
   });
 
+  it("mixes new and corrected notes while preserving retained and insertion order", () => {
+    const retained = note("routine");
+    const previous = note("equipment", "unresolved");
+    const omitted = note("capacity");
+    const corrected = {
+      ...previous,
+      detail: "The adult has a hob and corrected the earlier oven assumption.",
+      state: "answered" as const,
+      subject: "Available hob",
+    };
+    const firstNew = note("schedule");
+    const nextQuestion = note("exceptions", "unresolved");
+    const result = applyPrivateDiscoveryContinuation(
+      [retained, previous, omitted],
+      [firstNew, corrected, nextQuestion],
+      ask(nextQuestion.key)
+    );
+    expect(result.continuity).toEqual([
+      retained,
+      corrected,
+      omitted,
+      firstNew,
+      nextQuestion,
+    ]);
+  });
+
   it.each([
     {
       current: [],
-      title: "duplicate additions",
-      updates: { additions: [note("a"), note("a")], revisions: [] },
+      title: "duplicate new keys",
+      updates: [note("a"), note("a")],
     },
     {
       current: [note("a")],
-      title: "an existing addition",
-      updates: { additions: [note("a")], revisions: [] },
-    },
-    {
-      current: [],
-      title: "unknown revision",
-      updates: { additions: [], revisions: [note("a")] },
-    },
-    {
-      current: [note("a")],
-      title: "duplicate revisions",
-      updates: { additions: [], revisions: [note("a"), note("a")] },
-    },
-    {
-      current: [],
-      title: "adding and revising the same key",
-      updates: { additions: [note("a")], revisions: [note("a")] },
+      title: "duplicate retained keys",
+      updates: [note("a"), { ...note("a"), detail: "Different update." }],
     },
     {
       current: [note("a"), note("b"), note("c")],
-      title: "seven combined updates",
-      updates: {
-        additions: [note("d"), note("e"), note("f"), note("g")],
-        revisions: [note("a"), note("b"), note("c")],
-      },
+      title: "seven updates",
+      updates: [
+        note("d"),
+        note("e"),
+        note("f"),
+        note("g"),
+        note("a"),
+        note("b"),
+        note("c"),
+      ],
     },
   ])("rejects $title without mutating input", ({ current, updates }) => {
     const before = JSON.stringify(current);
@@ -215,11 +231,7 @@ describe("private discovery continuity", () => {
       applyPrivateDiscoveryContinuation(current, unchanged, review).continuity
     ).toEqual(current);
     expect(() =>
-      applyPrivateDiscoveryContinuation(
-        current,
-        { additions: [note("extra")], revisions: [] },
-        review
-      )
+      applyPrivateDiscoveryContinuation(current, [note("extra")], review)
     ).toThrow(expect.objectContaining({ stage: "continuity_limit" }));
     expect(current).toHaveLength(12);
   });
@@ -230,16 +242,13 @@ describe("private discovery continuity", () => {
       detail: "🍲".repeat(100),
       subject: "🍲".repeat(60),
     }));
-    const updates = {
-      additions: [
-        {
-          ...note("extra"),
-          detail: "🍲".repeat(100),
-          subject: "🍲".repeat(60),
-        },
-      ],
-      revisions: [],
-    };
+    const updates = [
+      {
+        ...note("extra"),
+        detail: "🍲".repeat(100),
+        subject: "🍲".repeat(60),
+      },
+    ];
     expect(() =>
       applyPrivateDiscoveryContinuation(current, updates, review)
     ).toThrow(expect.objectContaining({ stage: "continuity_limit" }));
@@ -273,17 +282,35 @@ describe("private discovery continuity", () => {
     ).toThrow();
   });
 
-  it("bounds stored notes and per-array updates at their parsing boundaries", () => {
+  it("bounds stored notes and update lists at their parsing boundaries", () => {
     expect(() =>
       Schema.decodeUnknownSync(PrivateDiscoveryContinuity)(
         Array.from({ length: 13 }, (_, i) => note(`n${i}`))
       )
     ).toThrow();
     expect(() =>
-      Schema.decodeUnknownSync(PrivateDiscoveryContinuityUpdates)({
-        additions: Array.from({ length: 7 }, (_, i) => note(`n${i}`)),
-        revisions: [],
-      })
+      Schema.decodeUnknownSync(PrivateDiscoveryContinuityUpdates)(
+        Array.from({ length: 7 }, (_, i) => note(`n${i}`))
+      )
+    ).toThrow();
+  });
+
+  it.each([
+    {
+      invalid: { additions: [note("a")], revisions: [] },
+      title: "the old additions/revisions shape",
+    },
+    {
+      invalid: [{ detail: "Missing required fields." }],
+      title: "an incomplete note",
+    },
+    {
+      invalid: [{ ...note("a"), actor: "forbidden" }],
+      title: "an unknown note field",
+    },
+  ])("rejects $title", ({ invalid }) => {
+    expect(() =>
+      Schema.decodeUnknownSync(PrivateDiscoveryContinuityUpdates)(invalid)
     ).toThrow();
   });
 });

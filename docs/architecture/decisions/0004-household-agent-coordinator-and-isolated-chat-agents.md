@@ -296,22 +296,35 @@ adaptive proposal production remains Work Item 03.
 
 [Work Item 03](../../delivery/stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
 adds one model call per admitted private assistant attempt. Its current unmerged
-candidate returns continuity additions/revisions, existing profile-card proposals,
-then an explicit Ask/Review/Stop reply. This replaces the earlier free-text rolling
-summary contract after repeated model omissions of disclosed circumstances and
-follow-up questions. These changes do not establish live-model acceptance.
+candidate returns one `continuity` array of complete note updates, existing
+profile-card proposals, then an explicit Ask/Review/Stop reply. V12 replaced the
+earlier free-text rolling summary with structured additions/revisions. V15 removes
+that model operation choice after a real turn rejected a complete retained note
+because it appeared under additions. The superseded output object is rejected,
+not normalized. `private-discovery-policy-v3` identifies this model-output
+contract change; it grants no new household authority. These changes do not
+establish live-model acceptance.
 
-The private child owns a bounded array of notes with stable keys, subjects,
-details and states (`circumstance`, `unresolved`, `answered`, `no_information`,
-`declined`, `withdrawn`). Omitted notes survive unchanged; a revision replaces the
-complete identified note, allowing explicit subject corrections. A small
-feature-local reducer rejects unknown revision keys, existing addition keys,
-duplicate updates, more than six combined updates, more than twelve retained
-notes, or a snapshot exceeding 4,096 UTF-8 bytes. Keys, subjects and details are
-bounded at 32, 120 and 200 characters. There is no generic memory service,
-automatic eviction, hidden repair, or separate summarizer call.
+The private child owns a bounded snapshot array of notes with stable keys,
+subjects, details and states (`circumstance`, `unresolved`, `answered`,
+`no_information`, `declined`, `withdrawn`). Output `continuity` is an update list;
+input continuity and stored continuity remain complete snapshots. A new key adds
+a complete note; a retained key replaces the complete note in its existing
+position. New keys append in update order, and omitted notes survive unchanged.
+A small feature-local reducer rejects duplicate keys within one update list,
+more than six updates, more than twelve retained notes, or a snapshot exceeding
+4,096 UTF-8 bytes. The output schema also enforces the six-update limit and strict
+complete fields. Keys, subjects and details retain their 32, 120 and 200 character
+bounds. There is no generic memory service, automatic eviction, hidden repair,
+or separate summarizer call.
 
-Ask must identify an unresolved retained or newly added note. Its model-authored
+A mistyped new key now creates a note instead of failing as an unknown revision;
+it may duplicate a topic and consume capacity. Semantic key identity remains the
+model's responsibility. A wrong existing key could already replace the wrong
+note under the prior revision contract. Neither shape establishes that a note is
+truthful or a question relevant.
+
+Ask must identify an unresolved retained or updated note. Its model-authored
 text and question are joined with two newlines and must fit 2,000 characters.
 Review requires no unresolved notes and the bounded `no_relevant_open_topic`
 reason. Stop uses `participant_requested_stop`; it ends neither the native session
@@ -322,7 +335,8 @@ is supported, or a stop was requested remains a semantic evaluation obligation.
 All continuation and card validation precedes generated writes inside the
 existing generation/session-version-guarded transaction. The child stores the
 rendered reply, reviewed card operations, successful turn and resulting continuity
-snapshot atomically. One strict JSON codec reads and writes the existing new-in-WI03
+snapshot atomically. The unchanged snapshot schema and strict JSON codec read and
+write the existing new-in-WI03
 `private_assistant_turns.summary` TEXT column. No physical migration, legacy parser,
 backfill or change to closed trial databases is introduced. Restart reloads that
 snapshot; a new private session has none of the prior session's notes.

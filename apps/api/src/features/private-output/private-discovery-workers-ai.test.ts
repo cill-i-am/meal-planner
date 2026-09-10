@@ -53,17 +53,14 @@ const config: PrivateDiscoveryConfiguration = {
   timeoutMs: 1000,
 };
 const output = {
-  continuity: {
-    additions: [
-      {
-        detail: "",
-        key: "preparation",
-        state: "unresolved",
-        subject: "Tomato preparation",
-      },
-    ],
-    revisions: [],
-  },
+  continuity: [
+    {
+      detail: "",
+      key: "preparation",
+      state: "unresolved",
+      subject: "Tomato preparation",
+    },
+  ],
   proposals: [],
   reply: {
     _tag: "Ask",
@@ -345,7 +342,8 @@ describe("private discovery Workers AI boundary", () => {
       expect(result.output).toEqual(output);
       expect(result.provenance).toMatchObject({
         model: modelName,
-        promptVersion: "private-discovery-prompt-v14",
+        policyVersion: "private-discovery-policy-v3",
+        promptVersion: "private-discovery-prompt-v15",
         provider: "cloudflare-workers-ai",
       });
       expect(result.usage).toEqual({
@@ -438,8 +436,18 @@ describe("private discovery Workers AI boundary", () => {
       { message: "A reply", proposals: [], summary: "A summary" },
     ],
     [
-      "unknown continuity fields",
-      { ...output, continuity: { ...output.continuity, actor: "forbidden" } },
+      "the superseded additions/revisions contract",
+      {
+        ...output,
+        continuity: { additions: output.continuity, revisions: [] },
+      },
+    ],
+    [
+      "unknown continuity note fields",
+      {
+        ...output,
+        continuity: [{ ...output.continuity[0], actor: "forbidden" }],
+      },
     ],
     [
       "an unsupported review reason",

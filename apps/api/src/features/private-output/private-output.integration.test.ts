@@ -1624,7 +1624,7 @@ it("keeps fixture producers and directory HTTP, SDK, and storage capabilities ab
 }, 30_000);
 
 const output = {
-  continuity: { additions: [], revisions: [] },
+  continuity: [],
   proposals: [] as unknown[],
   reply: {
     _tag: "Review",
@@ -1953,7 +1953,7 @@ describe("native adaptive assistant attempts through the production model adapte
     subject: "Available cooking equipment",
   };
 
-  it("retains omitted continuity across an unrelated turn and restart, renders the exact question, and isolates a fresh session", async () => {
+  it("applies mixed continuity updates with a card atomically, retains omitted notes across restart, and isolates a fresh session", async () => {
     modelCalls = [];
     const reply = {
       _tag: "Ask",
@@ -1964,10 +1964,7 @@ describe("native adaptive assistant attempts through the production model adapte
     modelResponse = () =>
       Promise.resolve(
         response({
-          continuity: {
-            additions: [routineNote, equipmentTopic],
-            revisions: [],
-          },
+          continuity: [routineNote, equipmentTopic],
           proposals: [],
           reply,
         })
@@ -1996,15 +1993,43 @@ describe("native adaptive assistant attempts through the production model adapte
       ...equipmentTopic,
       detail: "The adult has a hob.",
       state: "answered" as const,
+      subject: "Available hob",
+    };
+    const newNote = {
+      detail: "The adult cooks at weekends.",
+      key: "weekend_cooking",
+      state: "circumstance" as const,
+      subject: "Weekend cooking",
     };
     modelResponse = () =>
       Promise.resolve(
         response({
           ...output,
-          continuity: { additions: [], revisions: [answered] },
+          continuity: [newNote, answered],
+          proposals: [
+            {
+              _tag: "ProposeProfileCard",
+              change: {
+                _tag: "AddConfirmedProfileFact",
+                fact: {
+                  _tag: "FoodPreference",
+                  label: "tomatoes",
+                  sentiment: "like",
+                  targetKind: "ingredient",
+                },
+              },
+            },
+          ],
         })
       );
-    await successful(await queue(session, connection, 2, "I have a hob."));
+    await successful(
+      await queue(
+        session,
+        connection,
+        2,
+        "I have a hob and cook at weekends. I like tomatoes."
+      )
+    );
     expect(capturedContext(1).continuity).toEqual([
       routineNote,
       equipmentTopic,
@@ -2013,7 +2038,35 @@ describe("native adaptive assistant attempts through the production model adapte
     expect(JSON.parse(retained[1]?.summary ?? "null")).toEqual([
       routineNote,
       answered,
+      newNote,
     ]);
+    expect(retained[1]?.status).toBe("succeeded");
+    expect(await history(connection)).toMatchObject({
+      messages: [
+        expect.objectContaining({ role: "participant" }),
+        expect.objectContaining({ role: "assistant" }),
+        expect.objectContaining({ role: "participant" }),
+        expect.objectContaining({ role: "assistant", text: output.reply.text }),
+      ],
+    });
+    const savedCards = await cards(connection);
+    expect(savedCards).toMatchObject({
+      cards: [
+        expect.objectContaining({
+          change: {
+            _tag: "AddConfirmedProfileFact",
+            fact: {
+              _tag: "FoodPreference",
+              label: "tomatoes",
+              sentiment: "like",
+              targetKind: "ingredient",
+            },
+          },
+          revision: 0,
+          status: "proposed",
+        }),
+      ],
+    });
     expect(
       JSON.stringify(
         await successful({
@@ -2040,7 +2093,16 @@ describe("native adaptive assistant attempts through the production model adapte
     await successful(
       await queue(session, resumed, 4, "Please stop asking questions.")
     );
-    expect(capturedContext(2).continuity).toEqual([routineNote, answered]);
+    expect(capturedContext(2).continuity).toEqual([
+      routineNote,
+      answered,
+      newNote,
+    ]);
+    const resumedCards = await cards(resumed);
+    if (savedCards.type !== "CardsRead" || resumedCards.type !== "CardsRead") {
+      throw new Error("Expected private cards");
+    }
+    expect(resumedCards.cards).toEqual(savedCards.cards);
     expect(await readTurn(resumed)).toMatchObject({
       state: { status: "open", version: 6 },
       turn: { status: "succeeded" },
@@ -2049,6 +2111,7 @@ describe("native adaptive assistant attempts through the production model adapte
     expect(JSON.parse(afterStop[2]?.summary ?? "null")).toEqual([
       routineNote,
       answered,
+      newNote,
     ]);
     const nextSession = { ...session, sessionReference: crypto.randomUUID() };
     const fresh = await open(nextSession);
@@ -2079,7 +2142,7 @@ describe("native adaptive assistant attempts through the production model adapte
         Promise.resolve(
           response({
             ...output,
-            continuity: { additions: [equipmentTopic], revisions: [] },
+            continuity: [equipmentTopic],
             reply: {
               _tag: "Ask",
               question: "What equipment is available?",
@@ -2103,7 +2166,7 @@ describe("native adaptive assistant attempts through the production model adapte
         Promise.resolve(
           response({
             ...output,
-            continuity: { additions: [], revisions: [closed] },
+            continuity: [closed],
           })
         );
       await successful(await queue(session, connection, 2));
@@ -2139,44 +2202,35 @@ describe("native adaptive assistant attempts through the production model adapte
     {
       continuity: { additions: [routineNote], revisions: [] },
       reply: output.reply,
-      stage: "continuity_updates",
-      title: "adding an existing key",
+      stage: "output_schema",
+      title: "the superseded additions/revisions shape",
     },
     {
-      continuity: {
-        additions: [equipmentTopic, equipmentTopic],
-        revisions: [],
-      },
+      continuity: [equipmentTopic, equipmentTopic],
       reply: output.reply,
       stage: "continuity_updates",
-      title: "duplicate additions",
+      title: "duplicate new keys",
     },
     {
-      continuity: { additions: [], revisions: [equipmentTopic] },
+      continuity: [routineNote, { ...routineNote, detail: "Another update." }],
       reply: output.reply,
       stage: "continuity_updates",
-      title: "unknown revision",
+      title: "duplicate retained keys",
     },
     {
-      continuity: { additions: [], revisions: [routineNote, routineNote] },
-      reply: output.reply,
-      stage: "continuity_updates",
-      title: "duplicate revisions",
-    },
-    {
-      continuity: {
-        additions: Array.from({ length: 6 }, (_, i) => ({
+      continuity: [
+        ...Array.from({ length: 6 }, (_, i) => ({
           ...routineNote,
           key: `new-${i}`,
         })),
-        revisions: [routineNote],
-      },
+        routineNote,
+      ],
       reply: output.reply,
-      stage: "continuity_updates",
-      title: "seven combined updates",
+      stage: "output_schema",
+      title: "seven updates",
     },
     {
-      continuity: { additions: [equipmentTopic], revisions: [] },
+      continuity: [equipmentTopic],
       reply: output.reply,
       stage: "reply_decision",
       title: "Review leaving an unresolved note",
@@ -2204,7 +2258,7 @@ describe("native adaptive assistant attempts through the production model adapte
       title: "Ask targeting a circumstance",
     },
     {
-      continuity: { additions: [equipmentTopic], revisions: [] },
+      continuity: [equipmentTopic],
       reply: {
         _tag: "Ask",
         question: "q".repeat(999),
@@ -2215,15 +2269,12 @@ describe("native adaptive assistant attempts through the production model adapte
       title: "an oversized combined reply",
     },
     {
-      continuity: {
-        additions: Array.from({ length: 6 }, (_, i) => ({
-          ...routineNote,
-          detail: "🍲".repeat(100),
-          key: `large-${i}`,
-          subject: "🍲".repeat(60),
-        })),
-        revisions: [],
-      },
+      continuity: Array.from({ length: 6 }, (_, i) => ({
+        ...routineNote,
+        detail: "🍲".repeat(100),
+        key: `large-${i}`,
+        subject: "🍲".repeat(60),
+      })),
       reply: output.reply,
       stage: "continuity_limit",
       title: "serialized continuity overflow",
@@ -2236,7 +2287,7 @@ describe("native adaptive assistant attempts through the production model adapte
         Promise.resolve(
           response({
             ...output,
-            continuity: { additions: [routineNote], revisions: [] },
+            continuity: [routineNote],
           })
         );
       const session = await binding();

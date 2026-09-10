@@ -7,95 +7,80 @@
 
 ## Current evaluation status
 
-The latest [GPT-OSS v13 result](../../../../evals/private-discovery/prompt-v13-circumstance-framing-results.md)
-stopped after two successful native generations and
-one known `invalid_output` failure. The correct replacement card was proposed,
-but call 2 chose Review after answering only its recorded preference question;
-the disclosed circumstance remained absent and dependency/safety discovery was
-still missing. Call 3 was rejected at the actually captured
-`incomplete_completion` stage with finish reason `length` and 4,096 output tokens.
-Its raw output was malformed and repetitive. That separate completion failure
-is not explained by the early-Review framing hypothesis. Earlier native state
-and the whole canonical profile remained unchanged, with no confirmation or
-family acceptance.
+The latest [GPT-OSS v14 result](../../../../evals/private-discovery/prompt-v14-reply-sampling-results.md)
+stopped after one native success and one known `invalid_output` failure at the
+actually captured `continuity_updates` stage. The first turn retained truthful
+notes for the disclosed circumstance and unresolved preference request. The
+second put an existing key under additions, so no second reply, note update or
+card persisted. Earlier native state and the whole canonical profile stayed
+exact. Dependency and safety discovery remained missing; no family result was
+accepted. This historical phase used prompt v14, policy v2 and GPT-OSS sampling
+1/1. Its output and provenance remain unchanged.
 
-The current v14 candidate replaces the local reply-decision guidance. It chooses
-from the whole actual conversation before acknowledging a draft, distinguishes
-known circumstances from remaining uncertainty, and treats understanding as
-useful even without an editable profile fact. Ask contains one new actual
-uncertainty. Review requires both no relevant uncertainty in the conversation
-and no unresolved continuity note. Existing Stop, rendering, domain, decline,
-privacy and confirmation guidance remains. The opening and all instructions
-outside that local block are unchanged.
+The current v15 candidate changes the model output contract to
+`continuity: Note[]`: at most six complete note updates. A new key creates a note;
+a retained key replaces its complete subject, detail and state in the existing
+position. New notes append in update order, omitted notes remain, and duplicate
+keys within one update list reject at `continuity_updates`. The old
+additions/revisions object rejects at `output_schema`, without a compatibility
+parser or output repair. Seven updates likewise fail the schema's array limit
+before native settlement. `private-discovery-policy-v3` versions this private
+model-output contract change, not household authority.
 
-The same v14 candidate also changes only GPT-OSS sampling to `temperature: 1`
-and `top_p: 1`, following [OpenAI's recommended sampling parameters](https://github.com/openai/gpt-oss#recommended-sampling-parameters)
-within the [Cloudflare model's supported request fields](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/).
-Qwen remains at temperature 0 with no `top_p` field; the fixed judge is unchanged.
-This is a combined framing and sampling revision, not a controlled causal
-comparison. Neither the recommendation nor these settings establish the cause
-of the repeated output or prove a fix. The framing hypothesis concerns early
-Review; the separately captured incomplete completion retains its own evidence.
-The next trial starts a fresh fixture under this source, without replaying frozen
-requests or reopening earlier phases. V14 has local validation only and no
-real-model quality result yet.
+This intentionally removes the unknown-revision guard: a mistyped new key now
+creates a note and may duplicate context. Semantic key identity remains the
+model's responsibility; replacing the wrong existing key was already possible.
+The narrower protocol does not establish truthful notes, relevant questions or
+live discovery quality. V15 has local validation only, pending a fresh real trial.
 
-Earlier [GPT-OSS v12](../../../../evals/private-discovery/prompt-v12-continuity-state-results.md)
-and [matched Qwen v12](../../../../evals/private-discovery/prompt-v12-qwen-comparison-results.md)
-also stopped with incomplete discovery and a rejected turn. Their records
-separate GPT-OSS's source-reconstructed reply-decision failure from Qwen's actual
-captured `output_json` failure. These bounded results establish no general model
-ranking, accepted family result, or calibrated baseline.
+The input and persisted snapshot schema, strict JSON codec and WI03 TEXT column
+remain unchanged. The native child validates note fields, update/retained/byte
+bounds and reply decisions before any generated message, card or snapshot writes.
+The resulting snapshot still contains at most twelve notes and 4,096 UTF-8 bytes.
+Ask renders the exact model-authored acknowledgement and question; Stop leaves
+the native session open for explicit participant completion. Existing profile-card
+operations, privacy, confirmation and provider caps remain unchanged. The
+[architecture record](../../../architecture/decisions/0004-household-agent-coordinator-and-isolated-chat-agents.md#structured-private-discovery-continuity--2026-09-09)
+owns the contract and its tradeoff.
 
-The v12 structured contract remains unchanged: ordered continuity
-additions/revisions, existing profile-card operations, and Ask/Review/Stop.
-Omitted notes are retained. Revisions replace the complete named note, including
-a corrected subject. The native child validates references, bounds and reply
-decisions before storing any generated message, card or continuity snapshot. Ask
-renders the exact model-authored acknowledgement and question. Stop leaves the
-native session open; only the participant's completion command can close it.
-This remains one private model call and one canonical continuity codec in the
-existing WI03 TEXT column, with unchanged schema, caps, privacy and confirmation
-boundaries. The [architecture record](../../../architecture/decisions/0004-household-agent-coordinator-and-isolated-chat-agents.md#structured-private-discovery-continuity--2026-09-09)
-owns that contract.
+GPT-OSS remains at `temperature: 1` and `top_p: 1`, following
+[OpenAI's recommended parameters](https://github.com/openai/gpt-oss#recommended-sampling-parameters)
+within [Cloudflare's supported request fields](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/).
+Qwen sampling and the fixed judge remain unchanged. The prior v14 revision
+combined framing and sampling, so its result isolates neither cause nor effect;
+no loop fix or general improvement is claimed.
 
-The v12 local validation passed 62 adapter/continuity tests and 41 focused native
-assistant tests. Those checks cover retained notes across unrelated turns and
-restart, exact rendered questions, distinct no-information/refusal states,
-fresh-session isolation, Stop versus explicit completion, and atomic rejection
-of invalid updates, decisions and limits. They are historical synthetic proofs,
-not live-model quality acceptance. V14 scoped validation passes 39 adapter tests,
-API types, lint and asset validation. Captured requests assert GPT-OSS sampling
-of 1/1 and unchanged Qwen sampling, strict request shape, caps and gateway controls.
-Current generated schemas exactly match all
-three retained v13 request schemas. Unchanged native/history proofs are not
-repeated.
+V15 local validation passes 24 continuity tests, 40 adapter tests and twelve
+focused native continuity cases. These cover mixed creation/replacement with a
+card, full subject/detail/state correction, stable order, omission retention,
+restart and fresh-session isolation, distinct no-information/refusal states, exact
+question rendering and atomic rejection. Eleven native cases passed initially;
+the mixed case passed after correcting its incomplete expected fact shape in the
+test, with no production change between runs. API types, lint and asset validation
+also pass. Unchanged broad native and long-history proofs are not repeated.
 
-V13 gave the long multibyte/escaped history test a 15-second allowance.
-Its 25 retained records, sequential mutations, pagination assertions and global
-timeouts are unchanged. The prior five-second budget timed out in hosted CI and
-an isolated run; a source-preserving diagnostic passed all assertions in 4,907 ms.
-The changed test passed in 3,689 ms with its disposable local listener permitted.
-Two initial restricted runs stalled; the repeat exposed a local listener `EPERM`
-and a disposal-hook timeout, rather than an assertion failure.
+The generated model output schema intentionally changes: 5,285 bytes with no
+eligible card, or 9,307 bytes for the retained one-card context, down from 5,822
+and 9,844. Only the continuity schema differs; card and reply schemas match the
+retained prior requests exactly. V15 size checks rebuilt all twelve retained
+H10/H11 contexts with the same illustrative five-note snapshot (783 bytes).
+The largest provider body was 31,029 of 32,768 bytes (1,739 remaining); its capture
+envelope was 31,228 of 40,000. A size-only successor projection reached 31,501
+bytes, leaving 1,267. These packing checks are not admitted fixture turns,
+reconstructed semantic state or live quality evidence. Larger valid combinations
+can still reach the unchanged pre-dispatch limit.
 
-V14 size checks rebuilt all twelve retained H10/H11 request contexts with the
-same illustrative five-note continuity snapshot (783 bytes). The largest provider
-body was 32,168 of 32,768 bytes (600 bytes remaining); its capture envelope was
-32,367 of 40,000 bytes. A size-only successor projection using retained texts
-reached 32,640 bytes, leaving 128. These are packing checks, not admitted fixture
-turns, reconstructed semantic state, or live quality evidence. Larger combinations
-may still reach the unchanged pre-dispatch limit.
-
-Earlier [v11](../../../../evals/private-discovery/prompt-v11-continuity-results.md),
+Earlier [v13](../../../../evals/private-discovery/prompt-v13-circumstance-framing-results.md),
+[GPT-OSS v12](../../../../evals/private-discovery/prompt-v12-continuity-state-results.md),
+[Qwen v12](../../../../evals/private-discovery/prompt-v12-qwen-comparison-results.md),
+[v11](../../../../evals/private-discovery/prompt-v11-continuity-results.md),
 [v10](../../../../evals/private-discovery/prompt-v10-effects-results.md),
 [v9](../../../../evals/private-discovery/prompt-v9-duties-results.md),
 [v8](../../../../evals/private-discovery/prompt-v8-schema-results.md),
 [v7](../../../../evals/private-discovery/prompt-v7-two-phase-results.md), and
 [v6](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
-results remain separate, unchanged historical evidence. Earlier implementation
-proofs below, including the [bounded v5 correction proof](#correction-diagnosis-and-prompt-v5),
-do not establish quality or acceptance of v14.
+remain unchanged historical evidence with their original shapes and provenance.
+Earlier implementation proofs below do not establish v15 live acceptance.
 
 ## Outcome and scope
 
@@ -159,7 +144,7 @@ session admission clears only reconciled assistant-turn conflict/pending notices
 Failed admission remains visibly unavailable.
 
 The thin application-owned model seam accepts bounded authorized context and
-returns ordered continuity additions/revisions, bounded new-card/proposed-card-revision
+returns a bounded array of complete continuity note updates, bounded new-card/proposed-card-revision
 operations, an Ask/Review/Stop reply, and usage/provenance. A card revision names only a current
 context card ID and expected revision. The child validates that the exact stored
 card is still proposed at that revision within the final guarded settlement
@@ -186,13 +171,14 @@ The context keeps the whole current own-profile projection, at most 16 recent
 messages, at most 25 private cards, and structured private continuity. Each note
 has a key (1–32 characters), subject (1–120), detail (0–200), and a state:
 `circumstance`, `unresolved`, `answered`, `no_information`, `declined`, or
-`withdrawn`. There are at most 12 retained notes and six combined additions and
-revisions per turn; the serialized snapshot must fit 4,096 UTF-8 bytes. Omission
-retains a note; explicit revisions replace its subject, detail and state. Unknown
-revision keys, duplicate updates and additions using existing keys are rejected.
-There is no eviction or fallback to an older free-text summary.
+`withdrawn`. There are at most 12 retained notes and six complete keyed updates
+per turn; the serialized snapshot must fit 4,096 UTF-8 bytes. A new key adds a
+note; a retained key replaces its subject, detail and state in place. New notes
+append in update order and omission retains prior notes. Duplicate keys within
+one update list are rejected. The old additions/revisions output object is
+rejected without normalization; there is no eviction or free-text fallback.
 
-Ask names an unresolved retained or newly added note. Review rejects any remaining
+Ask names an unresolved retained or updated note. Review rejects any remaining
 unresolved note; Stop represents an explicit request to stop discussion and never
 completes the session. These are private model decisions, not new browser commands.
 The child joins Ask's model-authored text and question with two newlines and
@@ -656,8 +642,8 @@ contains the metadata results and receipt digests.
 ## Remaining product gates
 
 No configuration or human baseline is accepted. Work Item 03 and draft PR #218
-remain in progress and are not ready to merge. The latest v13 phase stopped with
-incomplete discovery and a rejected third turn; v14 has only local validation.
+remain in progress and are not ready to merge. The latest v14 phase stopped with
+incomplete discovery and a rejected second turn; v15 has only local validation.
 Passing native discovery across all eight families, the completed candidate
 comparison, the required live A-to-B removal, and actual human calibration remain
 incomplete. Earlier scripted and bounded correction proofs do not replace those

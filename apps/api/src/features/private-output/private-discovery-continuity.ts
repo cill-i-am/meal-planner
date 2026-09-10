@@ -51,14 +51,12 @@ export const PrivateDiscoveryContinuityJson = Schema.fromJsonString(
   PrivateDiscoveryContinuity
 );
 
-export const PrivateDiscoveryContinuityUpdates = Schema.Struct({
-  additions: Schema.Array(PrivateDiscoveryContinuityNote).pipe(
-    Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_CONTINUITY_UPDATE_LIMIT))
-  ),
-  revisions: Schema.Array(PrivateDiscoveryContinuityNote).pipe(
-    Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_CONTINUITY_UPDATE_LIMIT))
-  ),
-});
+export const PrivateDiscoveryContinuityUpdates = Schema.Array(
+  PrivateDiscoveryContinuityNote
+).pipe(
+  Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_CONTINUITY_UPDATE_LIMIT)),
+  Schema.annotate({ parseOptions: { onExcessProperty: "error" } })
+);
 const ReplyText = Schema.String.pipe(
   Schema.check(
     Schema.isMinLength(1),
@@ -94,7 +92,7 @@ export class PrivateDiscoveryContinuationFailure extends Data.TaggedError(
     | "reply_limit";
 }> {}
 
-/** Omission retains notes; an explicit revision replaces the named note. */
+/** Complete updates add or replace by key; omitted notes retain their order. */
 export const applyPrivateDiscoveryContinuation = (
   current: PrivateDiscoveryContinuity,
   updates: typeof PrivateDiscoveryContinuityUpdates.Type,
@@ -103,34 +101,21 @@ export const applyPrivateDiscoveryContinuation = (
   readonly continuity: PrivateDiscoveryContinuity;
   readonly message: string;
 } => {
-  if (
-    updates.additions.length + updates.revisions.length >
-    PRIVATE_DISCOVERY_CONTINUITY_UPDATE_LIMIT
-  ) {
+  if (updates.length > PRIVATE_DISCOVERY_CONTINUITY_UPDATE_LIMIT) {
     throw new PrivateDiscoveryContinuationFailure({
       stage: "continuity_updates",
     });
   }
   const notes = new Map(current.map((note) => [note.key, note]));
   const changed = new Set<string>();
-  for (const addition of updates.additions) {
-    if (notes.has(addition.key)) {
+  for (const update of updates) {
+    if (changed.has(update.key)) {
       throw new PrivateDiscoveryContinuationFailure({
         stage: "continuity_updates",
       });
     }
-    changed.add(addition.key);
-    notes.set(addition.key, addition);
-  }
-  for (const revision of updates.revisions) {
-    const previous = notes.get(revision.key);
-    if (previous === undefined || changed.has(revision.key)) {
-      throw new PrivateDiscoveryContinuationFailure({
-        stage: "continuity_updates",
-      });
-    }
-    changed.add(revision.key);
-    notes.set(revision.key, revision);
+    changed.add(update.key);
+    notes.set(update.key, update);
   }
   const continuity = [...notes.values()];
   if (
