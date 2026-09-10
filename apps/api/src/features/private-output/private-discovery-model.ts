@@ -21,7 +21,7 @@ import type { PrivateDiscoveryContinuationFailure } from "./private-discovery-co
 export const PRIVATE_DISCOVERY_CONTEXT_BYTES = 24_576;
 export const PRIVATE_DISCOVERY_MESSAGE_LIMIT = 16;
 export const PRIVATE_DISCOVERY_CARD_LIMIT = 25;
-export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v17";
+export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v18";
 export const PRIVATE_DISCOVERY_POLICY_VERSION = "private-discovery-policy-v3";
 export const PRIVATE_DISCOVERY_TOOL_VERSION = "profile-card-change-v1";
 
@@ -85,10 +85,11 @@ const PrivateDiscoveryProposal = Schema.Union([
 ]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 
 const outputSchema = <S extends Schema.Constraint>(proposal: S) =>
+  // eslint-disable-next-line sort-keys -- Provider generation places the reply before its continuity note updates.
   Schema.Struct({
-    continuity: PrivateDiscoveryContinuityUpdates,
     proposals: Schema.Array(proposal).pipe(Schema.check(Schema.isMaxLength(3))),
     reply: PrivateDiscoveryReply,
+    continuity: PrivateDiscoveryContinuityUpdates,
   }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 
 /** Model text and unfinished proposals have no canonical authority. */

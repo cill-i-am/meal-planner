@@ -80,8 +80,37 @@ The result does not establish sustained behavior, a general prompt effect or the
 cause of earlier timeouts. Its source is `ebce8ed5`, and the earlier semantic
 failure remains unchanged historical evidence.
 
-The production source now specifies prompt v17 with unchanged policy v3 and
-JSON-output protocol.
+A [two-turn native dependency checkpoint](../../../../evals/private-discovery/kimi-v17-native-dependency-checkpoint-results.md)
+on source `a8305f5f` retained two successful assistant turns and one supported
+unconfirmed replacement card, with the whole canonical profile unchanged at
+version 1. A local inspection command error ended the participant process before
+further work; it caused no provider call or participant intent. The family stayed
+incomplete, with neither a pass nor a candidate-failure verdict. Both turns
+duplicated their question across fields. No confirmation or fixed judge ran.
+
+The [first full native Kimi family suite](../../../../evals/private-discovery/kimi-v17-native-baseline-failure-results.md)
+on the same source then stopped at its first simple-household turn.
+The response passed JSON and output-schema
+validation, but Ask referenced a missing unresolved note. The native
+`reply_decision` guard rejected the response before persisting an assistant reply,
+card or continuity update; the whole canonical profile remained at version 0.
+Question text also appeared in both Ask.text and Ask.question, a separate prompt
+failure rather than the rejection's cause. No family or baseline was accepted.
+The original failed response remains failed; it is not repaired or regraded.
+
+The production source now specifies prompt v18 with unchanged policy v3 and
+JSON-output field set. The prompt and shared output-schema declaration order
+proposals, reply, then continuity. Ask.topicKey must exactly match a note that
+is unresolved after the response's updates: either an existing unresolved note's
+key or a complete new unresolved note supplied in continuity. Known circumstances
+remain separate. The acknowledgement/review invitation stays in Ask.text and the
+sole question in Ask.question. This may make the question-to-note dependency
+easier to generate; ordering is a hypothesis, not a proven cause or a demonstrated
+fix. Schema serialization and its provenance hash change; field types, validation
+rules, note/input/persistence schemas and native guards do not. Missing or
+non-unresolved note references still reject atomically, with no inferred note,
+key repair or output salvage. New native evaluation is required to measure the
+change.
 Qwen3-30B-A3B FP8 retains `temperature: 0.6`, `top_p: 0.95` and `top_k: 20`, using
 [Cloudflare-supported fields](https://developers.cloudflare.com/workers-ai/models/qwen3-30b-a3b-fp8/)
 and values from [upstream guidance](https://huggingface.co/Qwen/Qwen3-30B-A3B-FP8#best-practices).
@@ -107,12 +136,20 @@ tokens, it conservatively ignores input-cache discounts. The separate diagnostic
 reports retain their cache-aware estimates where measured; neither estimate is
 an invoice. Unknown usage and cost remain null.
 
-Focused validation passed 71 adapter and continuity tests, including seven new
-Kimi cases for exact request fields and embedded card-context schemas, provenance,
+The Kimi adapter addition passed 71 adapter and continuity tests, including seven
+new Kimi cases for exact request fields and embedded card-context schemas, provenance,
 configured-rate and unavailable usage, malformed/schema-invalid output, and
 request rejection before dispatch. API types, lint, formatting and asset checks
 passed without changing the SDK or decoder. This proves the local adapter
-boundary; full native family evaluation and release acceptance remain pending.
+boundary; full native family acceptance and release acceptance remain pending.
+
+V18 passed the existing 71 adapter/continuity tests and nine native atomic
+rejection cases, including Ask targeting a missing or circumstance note. API
+types, focused lint and formatting passed. Existing provider-schema assertions
+cover the intended order for zero, one and two eligible cards. Reversing only
+the new top-level property and required-array order reproduces the previous
+zero-card JSON schema exactly; no validation rule changed. These are local
+contract checks, not model-quality or family acceptance.
 
 V17 gives genuinely unclear intended profile effects or targets priority over
 downstream routine questions and withholds proposals that depend on the answer.
@@ -214,7 +251,7 @@ Earlier [v15](../../../../evals/private-discovery/prompt-v15-keyed-continuity-re
 [v7](../../../../evals/private-discovery/prompt-v7-two-phase-results.md), and
 [v6](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
 remain unchanged historical evidence with their original shapes and provenance.
-Earlier implementation proofs below do not establish v17 live acceptance.
+Earlier implementation proofs below do not establish v18 live acceptance.
 
 ## Outcome and scope
 
@@ -788,7 +825,11 @@ passed the narrow clarification prerequisite with zero proposals; card review,
 confirmation and sustained behavior remain unexercised. Kimi's explicit
 JSON-object request branch is locally supported for the approved synthetic
 evaluation, with configuration disabled by default. Full native family evaluation
-is still pending; the output schema, policy and household authority are unchanged.
+stopped on its first v17 turn at `reply_decision` for a missing unresolved note,
+before any assistant reply, card or continuity update persisted. V18 changes
+generation order and makes the existing exact-note requirement explicit; its
+model behavior is unverified. Output field sets and validation, policy and
+household authority remain unchanged. Full native family acceptance is pending.
 Passing native discovery across all eight families, the completed candidate
 comparison, the required live A-to-B removal, fixed-judge scoring and actual human
 calibration remain incomplete.

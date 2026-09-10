@@ -80,10 +80,18 @@ the unresolved intended change and emitted no proposals. It did not exercise car
 review/confirmation or establish sustained discovery quality. Kimi request
 support is now selectable alongside GPT-OSS and Qwen for the approved synthetic
 evaluation. It uses JSON-object output with the existing strict decoder;
-configuration remains disabled by default. Full native family evaluation remains
-pending within the existing $20 cap. Schema, policy, authority, scenarios and
-rubric are unchanged. Live discovery across all eight families, the completed
-candidate comparison, A-to-B repeat review, judge scoring and human calibration
+configuration remains disabled by default. A [two-turn native checkpoint](../../../../evals/private-discovery/kimi-v17-native-dependency-checkpoint-results.md)
+was interrupted by a local harness command error without a family verdict. The
+[first v17 full-suite baseline turn](../../../../evals/private-discovery/kimi-v17-native-baseline-failure-results.md)
+failed `reply_decision` because Ask referenced a missing unresolved note. The
+rejection preserved private and canonical state. Prompt v18 and the shared
+output-schema declaration now order proposals, reply, then continuity; Ask must
+reference an exact retained or newly supplied unresolved note. Ordering may help
+generation, but that hypothesis is unverified. Field sets, validation, policy,
+authority, scenarios and rubric are unchanged. Full native family acceptance
+remains pending within the existing $20 cap. Live discovery across all eight
+families, the completed candidate comparison, A-to-B repeat review, judge scoring
+and human calibration
 remain incomplete. No baseline is accepted and the draft is not ready to merge.
 The [owning work item](03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
 retains current scope and historical evidence. Delivery follows the existing

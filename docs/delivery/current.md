@@ -46,8 +46,17 @@
   Sustained interview behavior and card review/confirmation were not exercised.
   Kimi request support is now selectable alongside GPT-OSS and Qwen for the
   approved synthetic evaluation, with configuration still disabled by default.
-  Full native family evaluation remains pending under the existing $20 cap.
-  Schema, policy and authority are unchanged. No candidate is accepted;
+  A [two-turn native checkpoint](../../evals/private-discovery/kimi-v17-native-dependency-checkpoint-results.md)
+  ended after a local harness command error, with no family verdict. The
+  [first full-suite baseline turn](../../evals/private-discovery/kimi-v17-native-baseline-failure-results.md)
+  then failed `reply_decision`: Ask referenced a
+  missing unresolved note. No assistant reply, card or continuity update persisted,
+  and the canonical profile stayed unchanged. Prompt v18 now requests proposals,
+  reply, then continuity and explicitly requires the matching unresolved note;
+  the shared output-schema declaration follows that order. Whether ordering helps
+  generation remains an unverified hypothesis. Field sets, validation, policy and
+  authority are unchanged. Full native family acceptance remains pending under
+  the existing $20 cap. No candidate is accepted;
   the eight-family, completed candidate-comparison, A-to-B, judge and
   human-calibration gates remain unmet. The draft is not ready to merge. The
   [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
