@@ -72,8 +72,15 @@
   in 133.577 seconds. That diagnostic did not settle a native turn or establish
   family acceptance. The adapter now permits Kimi up to 65,536 completion tokens,
   a 900-second deadline and a 2 MiB whole response; GPT/Qwen limits, prompt v19,
-  schemas and authority are unchanged. A fresh native interview with those
-  limits is next. Full native family acceptance remains pending under
+  schemas and authority are unchanged. The [native interview with larger limits](../../evals/private-discovery/kimi-thinking-large-native-dependants-results.md)
+  completed four successful model turns and explicitly confirmed two supported
+  adult facts. The native session completed, but the model did not elicit the
+  required dependant avoidance, exact fallback or associated workload. Two
+  generic questions preceded Review, with one of five candidate slots unused;
+  the call ceiling did not force wrap-up. The challenge was unexercised and no
+  judge or human rating ran. No family was accepted. The next work is to diagnose
+  question selection and premature wrap-up before another candidate comparison.
+  Full native family acceptance remains pending under
   the existing $20 cap. No candidate is accepted;
   the eight-family, completed candidate-comparison, A-to-B, judge and
   human-calibration gates remain unmet. The draft is not ready to merge. The

@@ -202,7 +202,27 @@ source output-schema and continuity checks. This observed response exceeded
 both the old token cap and the old 120-second deadline. It establishes that the
 opening can complete with more room; it performed no native settlement and
 does not establish multi-turn quality, family acceptance or release acceptance.
-A fresh native interview using the larger Kimi limits remains pending.
+
+The [native dependants-and-fallbacks run with larger limits](../../../../evals/private-discovery/kimi-thinking-large-native-dependants-results.md)
+on source `06b2d5b40e497de9dd27e0a027dd0c5ac60fadf2` completed four successful
+candidate calls with no native-generation or schema failure. The adult's
+supported preference and safety statement were proposed separately and
+explicitly confirmed, advancing the canonical profile from version 0 to 2.
+The safety statement was not applied to the dependant. The native session
+completed, but the required dependant avoidance, exact fallback and associated
+workload were not elicited. The scenario challenge was unexercised.
+
+Two generic follow-up questions did not meet any remaining fixture disclosure
+condition, so the facilitator supplied only the fixed neutral no-information
+replies. The model then returned Review with `no_relevant_open_topic` while the
+original fallback circumstance remained. One of five candidate slots was unused;
+the call ceiling did not force wrap-up. Observed effects contain no evidenced
+prohibited claim, but missing discovery and challenge coverage leave the full
+family hard gate incomplete. No fixed judge or human rating ran, and zero
+families were accepted. The next work is to diagnose question selection and
+premature wrap-up before another candidate comparison; no prompt, schema or
+configuration change followed this run. Runtime and participant processes were
+closed and joined, with provider revocation unverified.
 
 Separate Cloudflare `reasoning` and `reasoning_content` metadata is ignored by the existing envelope
 decoder. Only final `message.content` is decoded into the strict output schema;
@@ -940,8 +960,14 @@ opening using larger limits passed strict source checks at 5,537 completion
 tokens and 133.577 seconds, without native settlement or family acceptance.
 The adapter now permits Kimi up to 65,536 completion tokens, a 900-second deadline
 and a 2 MiB whole response. GPT/Qwen bounds, output fields, order and validation,
-policy and household authority remain unchanged. A fresh native interview with
-the larger limits and full native family acceptance are pending.
+policy and household authority remain unchanged. The native run with larger
+limits completed four successful candidate calls, separately confirmed two
+supported adult facts and completed its session. Required dependant avoidance,
+exact fallback and workload were not elicited, and the challenge was unexercised.
+Two generic questions preceded Review with one of five candidate slots unused,
+so the call ceiling did not force the endpoint. No judge or human rating ran;
+no family was accepted. Diagnose question selection and premature wrap-up before
+another candidate comparison. Full native family acceptance remains pending.
 Passing native discovery across all eight families, the completed candidate
 comparison, the required live A-to-B removal, fixed-judge scoring and actual human
 calibration remain incomplete.
