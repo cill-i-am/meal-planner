@@ -11,6 +11,7 @@ import {
 import { privateDiscoveryInstructions } from "./private-discovery-prompt.js";
 import {
   makePrivateDiscoveryModel,
+  PRIVATE_DISCOVERY_KIMI_RESPONSE_BYTES,
   PRIVATE_DISCOVERY_RESPONSE_BYTES,
 } from "./private-discovery-workers-ai.js";
 import type { PrivateDiscoveryConfiguration } from "./private-discovery-workers-ai.js";
@@ -454,6 +455,93 @@ describe("private discovery Workers AI boundary", () => {
   });
 
   it.each([
+    { ...config, maxOutputTokens: 4096, timeoutMs: 120_000 },
+    {
+      ...config,
+      maxOutputTokens: 4096,
+      model: "@cf/openai/gpt-oss-120b",
+      timeoutMs: 120_000,
+    },
+    { ...kimiConfig, maxOutputTokens: 65_536, timeoutMs: 900_000 },
+  ] as const)(
+    "accepts the maximum token and deadline configuration for $model",
+    async (configuration) => {
+      const test = fixture(undefined, configuration);
+      const result = await Effect.runPromise(test.model.generate(test.input));
+      expect(test.run).toHaveBeenCalledOnce();
+      expect(test.run.mock.calls[0]?.[1]).toHaveProperty(
+        configuration.model === kimiConfig.model
+          ? "max_completion_tokens"
+          : "max_tokens",
+        configuration.maxOutputTokens
+      );
+      expect(result.output).toEqual(output);
+    }
+  );
+
+  it.each([
+    { ...config, maxOutputTokens: 4097 },
+    { ...config, timeoutMs: 120_001 },
+    {
+      ...config,
+      maxOutputTokens: 4097,
+      model: "@cf/openai/gpt-oss-120b",
+    },
+    {
+      ...config,
+      model: "@cf/openai/gpt-oss-120b",
+      timeoutMs: 120_001,
+    },
+    { ...kimiConfig, maxOutputTokens: 65_537 },
+    { ...kimiConfig, timeoutMs: 900_001 },
+  ] as const)(
+    "rejects $model token=$maxOutputTokens deadline=$timeoutMs configuration before dispatch",
+    async (configuration) => {
+      const test = fixture(undefined, configuration);
+      const error = await Effect.runPromise(
+        Effect.flip(test.model.generate(test.input))
+      );
+      expect(error.reason).toBe("not_configured");
+      expect(test.beforeDispatch).not.toHaveBeenCalled();
+      expect(test.run).not.toHaveBeenCalled();
+    }
+  );
+
+  it("accepts a larger Kimi envelope while excluding legacy reasoning content and counting completion usage once", async () => {
+    const payload = completion();
+    const reasoningContent = "🧠".repeat(20_000);
+    const encoded = JSON.stringify({
+      ...payload,
+      choices: payload.choices.map((choice) => ({
+        ...choice,
+        message: { ...choice.message, reasoning_content: reasoningContent },
+      })),
+      usage: {
+        ...payload.usage,
+        completion_tokens_details: { reasoning_tokens: 30 },
+      },
+    });
+    expect(new TextEncoder().encode(encoded).byteLength).toBeGreaterThan(
+      PRIVATE_DISCOVERY_RESPONSE_BYTES
+    );
+    const test = fixture(() => Promise.resolve(new Response(encoded)), {
+      ...kimiConfig,
+      maxOutputTokens: 65_536,
+      timeoutMs: 900_000,
+    });
+    const result = await Effect.runPromise(test.model.generate(test.input));
+    expect(test.run).toHaveBeenCalledOnce();
+    expect(result.output).toEqual(output);
+    expect(result.usage).toEqual({
+      estimatedCostUsd: 0.000295,
+      inputTokens: 100,
+      outputTokens: 50,
+    });
+    expect(JSON.stringify(result)).not.toContain("reasoning_content");
+    expect(JSON.stringify(result)).not.toContain(reasoningContent);
+  });
+
+  it.each([
     { content: "not JSON", finishReason: "stop", stage: "output_json" },
     {
       content: JSON.stringify({ ...output, saved: true }),
@@ -777,33 +865,38 @@ describe("private discovery Workers AI boundary", () => {
     }
   );
 
-  it("retains known usage on a provider refusal", async () => {
-    const payload = completion();
-    const test = fixture(() =>
-      Promise.resolve(
-        Response.json({
-          ...payload,
-          choices: [
-            {
-              finish_reason: "stop",
-              message: {
-                content: null,
-                refusal: "Synthetic refusal",
-                role: "assistant",
-              },
-            },
-          ],
-        })
-      )
-    );
-    const error = await Effect.runPromise(
-      Effect.flip(test.model.generate(test.input))
-    );
-    expect(error).toMatchObject({
-      reason: "refused",
-      usage: { inputTokens: 100, outputTokens: 50 },
-    });
-  });
+  it.each([config, kimiConfig])(
+    "retains known $model usage on a provider refusal",
+    async (configuration) => {
+      const payload = completion();
+      const test = fixture(
+        () =>
+          Promise.resolve(
+            Response.json({
+              ...payload,
+              choices: [
+                {
+                  finish_reason: "stop",
+                  message: {
+                    content: null,
+                    refusal: "Synthetic refusal",
+                    role: "assistant",
+                  },
+                },
+              ],
+            })
+          ),
+        configuration
+      );
+      const error = await Effect.runPromise(
+        Effect.flip(test.model.generate(test.input))
+      );
+      expect(error).toMatchObject({
+        reason: "refused",
+        usage: { inputTokens: 100, outputTokens: 50 },
+      });
+    }
+  );
 
   it("does not normalize legacy or prose output into a usable completion", async () => {
     const test = fixture(() =>
@@ -819,21 +912,47 @@ describe("private discovery Workers AI boundary", () => {
     expect(test.run).toHaveBeenCalledOnce();
   });
 
-  it("bounds the raw response stream", async () => {
-    const test = fixture(() =>
-      Promise.resolve(
-        new Response("x".repeat(PRIVATE_DISCOVERY_RESPONSE_BYTES + 1))
-      )
-    );
-    const error = await Effect.runPromise(
-      Effect.flip(test.model.generate(test.input))
-    );
-    expect(error).toMatchObject({
-      reason: "invalid_output",
-      stage: "response_body_limit",
-    });
-    expect(test.run).toHaveBeenCalledOnce();
-  });
+  it.each([
+    { configuration: config, maximumBytes: PRIVATE_DISCOVERY_RESPONSE_BYTES },
+    {
+      configuration: { ...config, model: "@cf/openai/gpt-oss-120b" },
+      maximumBytes: PRIVATE_DISCOVERY_RESPONSE_BYTES,
+    },
+    {
+      configuration: kimiConfig,
+      maximumBytes: PRIVATE_DISCOVERY_KIMI_RESPONSE_BYTES,
+    },
+  ] as const)(
+    "bounds the whole $configuration.model response stream including unused reasoning metadata",
+    async ({ configuration, maximumBytes }) => {
+      const payload = completion();
+      const test = fixture(
+        () =>
+          Promise.resolve(
+            Response.json({
+              ...payload,
+              choices: payload.choices.map((choice) => ({
+                ...choice,
+                message: {
+                  ...choice.message,
+                  reasoning_content: "x".repeat(maximumBytes),
+                },
+              })),
+            })
+          ),
+        configuration
+      );
+      const error = await Effect.runPromise(
+        Effect.flip(test.model.generate(test.input))
+      );
+      expect(error).toMatchObject({
+        reason: "invalid_output",
+        stage: "response_body_limit",
+        usage: null,
+      });
+      expect(test.run).toHaveBeenCalledOnce();
+    }
+  );
 
   it("returns provider failure without an automatic retry", async () => {
     const test = fixture(() =>
@@ -850,31 +969,34 @@ describe("private discovery Workers AI boundary", () => {
     expect(test.run).toHaveBeenCalledOnce();
   });
 
-  it("aborts transport at the deadline and retains an unknown outcome without retry", async () => {
-    let aborted = false;
-    const test = fixture((options) => {
-      const deferred = Promise.withResolvers<Response>();
-      options.signal.addEventListener(
-        "abort",
-        () => {
-          aborted = true;
-          deferred.reject(new Error("Synthetic aborted transport"));
-        },
-        { once: true }
+  it.each([config, kimiConfig])(
+    "aborts $model transport at the deadline and retains an unknown outcome without retry",
+    async (configuration) => {
+      let aborted = false;
+      const test = fixture((options) => {
+        const deferred = Promise.withResolvers<Response>();
+        options.signal.addEventListener(
+          "abort",
+          () => {
+            aborted = true;
+            deferred.reject(new Error("Synthetic aborted transport"));
+          },
+          { once: true }
+        );
+        return deferred.promise;
+      }, configuration);
+      const error = await Effect.runPromise(
+        Effect.flip(test.model.generate(test.input))
       );
-      return deferred.promise;
-    });
-    const error = await Effect.runPromise(
-      Effect.flip(test.model.generate(test.input))
-    );
-    expect(error).toMatchObject({
-      provenance: { model: config.model },
-      reason: "outcome_unknown",
-      usage: null,
-    });
-    expect(aborted).toBe(true);
-    expect(test.run).toHaveBeenCalledOnce();
-  });
+      expect(error).toMatchObject({
+        provenance: { model: configuration.model },
+        reason: "outcome_unknown",
+        usage: null,
+      });
+      expect(aborted).toBe(true);
+      expect(test.run).toHaveBeenCalledOnce();
+    }
+  );
 
   it("aborts transport and cancels a stalled body at the deadline without awaiting cancellation", async () => {
     const cancel = vi.fn(() => Promise.withResolvers<never>().promise);

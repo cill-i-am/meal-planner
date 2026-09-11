@@ -1,6 +1,6 @@
 # Work Item 03 — Adaptive discovery and evaluation
 
-- Status: In progress (2026-09-10); [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
+- Status: In progress (2026-09-11); [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
 - Authorized by the product owner to continue after Work Item 02.
 - Implementation base: `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`.
 - Owning stage: [Stage 2](README.md).
@@ -172,37 +172,56 @@ Kimi's explicit request branch retains the production system/context messages
 and full embedded schema, with `response_format: { type: "json_object" }`,
 `chat_template_kwargs: { thinking: true }`, temperature 1.0, top-p 0.95, `n: 1`
 and non-streaming output. `max_completion_tokens` uses the existing configured
-cap of at most 4,096. GPT/Qwen requests are unchanged. The strict canonical
+field with a Kimi maximum of 65,536. Kimi's deadline may be up to 900,000 ms,
+and its whole raw response is bounded at 2 MiB (2,097,152 bytes), including unused
+reasoning metadata. GPT/Qwen retain their 4,096-token, 120,000-ms and 65,536-byte
+response limits. Their requests are unchanged. The strict canonical
 completion and output decoders, native continuation checks, gateway privacy
-controls, request/response bounds and authority remain unchanged. No SDK upgrade,
+controls, input bounds and authority remain unchanged. No SDK upgrade,
 thinking alias, parser repair or alternate output path is introduced.
 
-This next configuration uses Cloudflare's documented
+This configuration uses Cloudflare's documented
 [`chat_template_kwargs.thinking` field](https://developers.cloudflare.com/changelog/post/2026-04-20-kimi-k2-6-workers-ai/)
 and matches [Moonshot's K2.6 thinking temperature of 1.0](https://platform.kimi.ai/docs/api/models-overview).
 Cloudflare's [model contract](https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/)
 accepts the temperature and completion-cap fields. Prompt v19 and both output
-schemas remain byte-identical; policy v3, sampling for GPT/Qwen, all token/time
-bounds, the 65,536-byte whole-response limit and the fixed judge are unchanged.
-Any future evaluation result applies jointly to thinking enabled and temperature
-1.0. No model-quality improvement has been demonstrated for this configuration.
+schemas remain byte-identical; policy v3, sampling for GPT/Qwen and the fixed
+judge are unchanged. Evaluation results apply jointly to thinking enabled and
+temperature 1.0, with the exact limits recorded for each phase.
 
-Separate Cloudflare `reasoning` metadata is ignored by the existing envelope
+The [first native thinking attempt](../../../../evals/private-discovery/kimi-thinking-budget-limit-results.md)
+stopped at its first request: the provider reported `finish_reason: "length"`
+at 4,096 completion tokens and returned unfinished JSON. The native completion
+guard rejected it without persisting an assistant reply, card or continuity
+update; the canonical profile stayed unchanged. No family completed.
+
+The [standalone larger-completion diagnostic](../../../../evals/private-discovery/kimi-thinking-large-completion-results.md)
+reused the opening with a 65,536-token allowance and a 900-second deadline. It
+finished in 133.577 seconds using 5,537 completion tokens and passed strict JSON,
+source output-schema and continuity checks. This observed response exceeded
+both the old token cap and the old 120-second deadline. It establishes that the
+opening can complete with more room; it performed no native settlement and
+does not establish multi-turn quality, family acceptance or release acceptance.
+A fresh native interview using the larger Kimi limits remains pending.
+
+Separate Cloudflare `reasoning` and `reasoning_content` metadata is ignored by the existing envelope
 decoder. Only final `message.content` is decoded into the strict output schema;
 reasoning cannot substitute for missing, incomplete or invalid final content.
 The token estimate uses reported aggregate completion tokens without adding
-reasoning-token details again. Thinking may leave less room for final JSON under
-the unchanged output, response-size and time bounds; a successful completion is
-not guaranteed. Existing native provenance records model, prompt, policy and tool
+reasoning-token details again. Both metadata fields still count toward the whole
+response byte limit. Existing native provenance records model, prompt, policy and tool
 versions but not thinking mode or temperature. Exact source-head and request
 settings in each frozen evaluation record distinguish the configurations.
 
-Focused validation passed 73 adapter/continuity tests, API types, lint and
+Focused validation passed 87 adapter/continuity tests, API types, lint and
 formatting. Existing zero/one/two-card request cases now exercise separate
 reasoning metadata and token details while retaining only final output and
 aggregate usage. Kimi cases reject reasoning-bearing length termination and
 null final content, alongside malformed JSON and invalid output schemas. These
-checks establish the local adapter contract, not native model quality.
+checks also admit the larger Kimi configuration and a response over 64 KiB,
+reject a whole response over 2 MiB, and preserve GPT/Qwen bounds and Kimi's
+deadline/refusal behavior. They establish the local adapter contract, not native
+model quality.
 
 The existing usage estimate applies the configured input and output prices to
 all reported tokens. With Kimi rates of $0.95/$4.00 per million input/output
@@ -440,8 +459,9 @@ reviewed cards, and successful turn. A fresh session starts with empty continuit
 
 Context preparation trims older messages and cards, never canonical facts or
 continuity notes. Oversized context is rejected before provider dispatch. The
-24,576-byte context bound, 32,768-byte fully serialized provider body, and
-65,536-byte raw response cap are unchanged. Card operations remain limited to
+24,576-byte context bound and 32,768-byte fully serialized provider body are
+unchanged. The raw response cap is 2 MiB for Kimi and 65,536 bytes for GPT/Qwen.
+Card operations remain limited to
 three. The separate evaluation transport keeps its 40,000-byte request-envelope
 cap. Declared individual bounds do not guarantee that every maximum-sized
 combination fits the provider body; the existing bound is enforced without a
@@ -453,7 +473,8 @@ creates the native `PrivateDiscoveryAI` binding, and deployment-time
 `MEAL_PLANNER_PRIVATE_DISCOVERY_CONFIG` becomes its `PRIVATE_DISCOVERY_CONFIG` JSON
 text binding. `MealPlannerApi` instantiates that worker through the existing
 `PrivateOutputApiBinding`. The JSON requires `gatewayId`, one allowed `model`,
-`maxOutputTokens` (1–4,096), `timeoutMs` (1,000–120,000), and nonnegative
+`maxOutputTokens` (1–65,536 for Kimi; 1–4,096 for GPT/Qwen), `timeoutMs`
+(1,000–900,000 for Kimi; 1,000–120,000 for GPT/Qwen), and nonnegative
 `inputUsdPerMillionTokens` / `outputUsdPerMillionTokens`. `.env.example` keeps it
 empty. Exact model/gateway/token-price selection and verified dedicated gateway
 privacy/retry/spend configuration remain prerequisites to functional deployment;
@@ -913,10 +934,14 @@ six-update limit; no family was accepted. V19 clarifies that continuity and
 proposal output contain only changes. Its native run recorded eight successes
 and another missing-note `reply_decision` rejection, with incomplete baseline
 coverage and a separate adult-routines synthesis defect. One fixed judge ran;
-five other families and human calibration remain incomplete. The next Kimi
-configuration enables thinking at temperature 1.0 with the same v19 prompt;
-its model behavior is unverified. Output fields, order and validation, policy
-and household authority remain unchanged. Full native family acceptance is pending.
+five other families and human calibration remain incomplete. Kimi thinking at
+temperature 1.0 hit the 4,096-token limit on its first native request. A standalone
+opening using larger limits passed strict source checks at 5,537 completion
+tokens and 133.577 seconds, without native settlement or family acceptance.
+The adapter now permits Kimi up to 65,536 completion tokens, a 900-second deadline
+and a 2 MiB whole response. GPT/Qwen bounds, output fields, order and validation,
+policy and household authority remain unchanged. A fresh native interview with
+the larger limits and full native family acceptance are pending.
 Passing native discovery across all eight families, the completed candidate
 comparison, the required live A-to-B removal, fixed-judge scoring and actual human
 calibration remain incomplete.

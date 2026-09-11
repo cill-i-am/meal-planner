@@ -22,6 +22,7 @@ import { privateDiscoveryInstructions } from "./private-discovery-prompt.js";
 
 export const PRIVATE_DISCOVERY_INPUT_BYTES = 32_768;
 export const PRIVATE_DISCOVERY_RESPONSE_BYTES = 65_536;
+export const PRIVATE_DISCOVERY_KIMI_RESPONSE_BYTES = 2_097_152;
 const PositiveAmount = Schema.Number.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(0))
 );
@@ -31,7 +32,7 @@ export const PrivateDiscoveryConfiguration = Schema.Struct({
   ),
   inputUsdPerMillionTokens: PositiveAmount,
   maxOutputTokens: Schema.Int.pipe(
-    Schema.check(Schema.isBetween({ maximum: 4096, minimum: 1 }))
+    Schema.check(Schema.isBetween({ maximum: 65_536, minimum: 1 }))
   ),
   model: Schema.Literals([
     "@cf/qwen/qwen3-30b-a3b-fp8",
@@ -40,9 +41,19 @@ export const PrivateDiscoveryConfiguration = Schema.Struct({
   ]),
   outputUsdPerMillionTokens: PositiveAmount,
   timeoutMs: Schema.Int.pipe(
-    Schema.check(Schema.isBetween({ maximum: 120_000, minimum: 1000 }))
+    Schema.check(Schema.isBetween({ maximum: 900_000, minimum: 1000 }))
   ),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+}).pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (config) =>
+        config.model === "@cf/moonshotai/kimi-k2.6" ||
+        (config.maxOutputTokens <= 4096 && config.timeoutMs <= 120_000),
+      { expected: "token and deadline limits supported by the selected model" }
+    )
+  ),
+  Schema.annotate({ parseOptions: { onExcessProperty: "error" } })
+);
 export type PrivateDiscoveryConfiguration =
   typeof PrivateDiscoveryConfiguration.Type;
 export interface PrivateDiscoveryModelEnvironment {
@@ -126,7 +137,8 @@ const requestFor = (
 
 const readBoundedResponse = async (
   response: NativeCloudflare.Response,
-  signal: AbortSignal
+  signal: AbortSignal,
+  maximumBytes: number
 ) => {
   if (response.body === null) {
     throw failure("invalid_output", null, null, "response_body_missing");
@@ -151,7 +163,7 @@ const readBoundedResponse = async (
         break;
       }
       length += part.value.byteLength;
-      if (length > PRIVATE_DISCOVERY_RESPONSE_BYTES) {
+      if (length > maximumBytes) {
         throw failure("invalid_output", null, null, "response_body_limit");
       }
       text += decoder.decode(part.value, { stream: true });
@@ -234,7 +246,13 @@ export const makePrivateDiscoveryModel = (
               throw configuredFailure("provider_unavailable");
             }
             try {
-              return await readBoundedResponse(response, transportSignal);
+              return await readBoundedResponse(
+                response,
+                transportSignal,
+                config.model === "@cf/moonshotai/kimi-k2.6"
+                  ? PRIVATE_DISCOVERY_KIMI_RESPONSE_BYTES
+                  : PRIVATE_DISCOVERY_RESPONSE_BYTES
+              );
             } catch (error) {
               if (transportSignal.aborted) {
                 throw configuredFailure("outcome_unknown");

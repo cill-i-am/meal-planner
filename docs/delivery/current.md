@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-09-10
+- Last updated: 2026-09-11
 - Delivery source of truth: this repository
 
 ## Latest Completed Stage
@@ -65,9 +65,15 @@
   coverage remained incomplete, and adult routines exposed a material draft
   selection defect. Its fixed judge scored household specificity 4/5 and profile
   synthesis 3/5; no family or human baseline was accepted.
-  The next configuration enables Kimi thinking with temperature 1.0 while
-  retaining prompt v19, schema, limits and authority. Its model behavior is
-  unverified. Full native family acceptance remains pending under
+  Kimi thinking at temperature 1.0 [failed its first native turn](../../evals/private-discovery/kimi-thinking-budget-limit-results.md)
+  at the 4,096-token limit, without saving generated state. A
+  [standalone opening with larger limits](../../evals/private-discovery/kimi-thinking-large-completion-results.md)
+  passed JSON, output-schema and continuity checks using 5,537 completion tokens
+  in 133.577 seconds. That diagnostic did not settle a native turn or establish
+  family acceptance. The adapter now permits Kimi up to 65,536 completion tokens,
+  a 900-second deadline and a 2 MiB whole response; GPT/Qwen limits, prompt v19,
+  schemas and authority are unchanged. A fresh native interview with those
+  limits is next. Full native family acceptance remains pending under
   the existing $20 cap. No candidate is accepted;
   the eight-family, completed candidate-comparison, A-to-B, judge and
   human-calibration gates remain unmet. The draft is not ready to merge. The

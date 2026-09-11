@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-11",
+  "run": "kimi_thinking_native_budget_limit",
+  "status": "closed_after_native_incomplete_completion",
+  "source": {
+    "head": "aeb70ac2821ffde31f154db99fef299ff4402e83",
+    "promptVersion": "private-discovery-prompt-v19",
+    "policyVersion": "private-discovery-policy-v3",
+    "freezeSha256": "9993c9c65b2fa80b0289e5651b5fe440a211c39e0d1919a73bb4d763cc4be961",
+    "tree": "da6f38e6145f9cac709e4acadd43d07d3bf21109"
+  },
+  "configuration": {
+    "candidateModel": "@cf/moonshotai/kimi-k2.6",
+    "thinking": true,
+    "temperature": 1,
+    "top_p": 0.95,
+    "responseFormat": "json_object",
+    "choices": 1,
+    "stream": false,
+    "maximumProviderAttempts": 1,
+    "maxCompletionTokens": 4096,
+    "workerDeadlineMs": 120000
+  },
+  "request": {
+    "scenario": "dependants_and_fallbacks",
+    "phase": "A",
+    "turn": 1,
+    "capturedWrapperSha256": "169266e29120f1299a8a4fda2a457374f563a2c5f49af0eb8a929f38fc037cba",
+    "canonicalBodyBytes": 14452,
+    "canonicalBodySha256": "fcd704dc8199d22c08a594e14a9f76cb81dd0da2f9dcb546870207bbd1949483"
+  },
+  "observedResult": {
+    "httpStatus": 200,
+    "responseComplete": true,
+    "transportFailure": false,
+    "finishReason": "length",
+    "failure": "invalid_output",
+    "failureStage": "incomplete_completion",
+    "nativeTurnSucceeded": false,
+    "responseBytes": 20114,
+    "responseBytesSha256": "c8bba9d365c8740870f3ed2908076c5206eef6d379fc2ff7ac319a65fb385443",
+    "inputTokens": 2942,
+    "completionTokens": 4096,
+    "cachedInputTokens": null,
+    "dispatchToNativeCompletionMs": 69473,
+    "deadlineExhausted": false,
+    "automaticRetry": false,
+    "outputRepaired": false
+  },
+  "nativeState": {
+    "canonicalProfileUnchanged": true,
+    "canonicalProfileVersion": 0,
+    "canonicalFacts": 0,
+    "persistedAssistantMessages": 0,
+    "persistedCards": 0,
+    "failedTurnSummary": null,
+    "failedTurnContinuity": null,
+    "pendingConfirmations": 0,
+    "sessionVersion": 1,
+    "historyMessages": 1
+  },
+  "coverage": {
+    "candidateCalls": 1,
+    "candidateNativeSuccesses": 0,
+    "candidateNativeFailures": 1,
+    "judgeCalls": 0,
+    "humanRatings": 0,
+    "familiesStarted": 1,
+    "familiesCompleted": 0,
+    "familiesUnrun": 7,
+    "familiesAccepted": 0,
+    "candidateAccepted": false,
+    "fullSuiteComplete": false,
+    "repeatSessionRun": false
+  },
+  "cost": {
+    "configuredFullInputUsageEstimateUsd": "0.0191789",
+    "cacheAwareUsageEstimateUsd": null,
+    "billedCostUsd": null,
+    "inputUsdPerMillionTokens": "0.95",
+    "outputUsdPerMillionTokens": "4.00",
+    "basis": "Configured rate estimate from 2,942 input and 4,096 aggregate completion tokens, counted once. Cached input accounting was not established. This is not an invoice or a reservation."
+  },
+  "reservationsAtClosure": {
+    "thisRunMicroUsd": 265421,
+    "cumulativeMicroUsd": 12012498,
+    "cumulativeCalls": 133,
+    "cumulativeHigherCapCalls": 126,
+    "cumulativeJudgeCalls": 1,
+    "strictCumulativeCeilingMicroUsd": 20000000,
+    "meaning": "Conservative retained reservations, not billed spend."
+  },
+  "closure": {
+    "runtimeJoined": true,
+    "actorJoined": true,
+    "graceful": true,
+    "providerRevocationVerified": false
+  },
+  "interpretation": "The native opening exhausted the 4,096-token allowance and was rejected at incomplete_completion before final JSON, output-schema and continuity acceptance. No quality improvement or inferiority is established; the prior missing-continuity-note defect was not reached or resolved.",
+  "receiptSha256": {
+    "rootResult": "1341face06b89e862ae4ccf425521f92ade9ae39fdd35646e99d6ec043763f9d",
+    "completion": "7b31930463b8efd8d8326a9b499539650e3a25c1038c31f4995c205eec5ee2f0",
+    "nativeInspection": "de6e1daa796954ea82f0d3a9d89fbae8a351729f6a426d9f44cfbebdb457a73b",
+    "rootClosure": "ed2c68c2911fdf6224edcb3b4cb45f930d918c6fa30923d8c671f5bbdf88f19d",
+    "closed": "7255fa5647c191c084b5f51d49d6f7a070994c95bf4093678db7601048641ede"
+  }
+}
