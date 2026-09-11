@@ -134,7 +134,7 @@ was not reached; its existing duplicate guard remains in place. No output repair
 retry, family pass or accepted baseline followed. Six other families were unrun;
 no fixed-judge or human-calibration result was obtained.
 
-The production source now specifies prompt v19. It explicitly requires only new
+Prompt v19 explicitly requires only new
 or changed continuity notes, leaves omitted notes retained automatically and
 returns an empty array when none change. Emitted notes remain complete updates,
 including the required unresolved note for a newly chosen Ask topic. Proposals
@@ -184,9 +184,9 @@ This configuration uses Cloudflare's documented
 [`chat_template_kwargs.thinking` field](https://developers.cloudflare.com/changelog/post/2026-04-20-kimi-k2-6-workers-ai/)
 and matches [Moonshot's K2.6 thinking temperature of 1.0](https://platform.kimi.ai/docs/api/models-overview).
 Cloudflare's [model contract](https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/)
-accepts the temperature and completion-cap fields. Prompt v19 and both output
-schemas remain byte-identical; policy v3, sampling for GPT/Qwen and the fixed
-judge are unchanged. Evaluation results apply jointly to thinking enabled and
+accepts the temperature and completion-cap fields. The limit increase retained
+prompt v19 and both output schemas byte-identically; policy v3, sampling for
+GPT/Qwen and the fixed judge are unchanged. Evaluation results apply jointly to thinking enabled and
 temperature 1.0, with the exact limits recorded for each phase.
 
 The [first native thinking attempt](../../../../evals/private-discovery/kimi-thinking-budget-limit-results.md)
@@ -219,10 +219,30 @@ original fallback circumstance remained. One of five candidate slots was unused;
 the call ceiling did not force wrap-up. Observed effects contain no evidenced
 prohibited claim, but missing discovery and challenge coverage leave the full
 family hard gate incomplete. No fixed judge or human rating ran, and zero
-families were accepted. The next work is to diagnose question selection and
-premature wrap-up before another candidate comparison; no prompt, schema or
-configuration change followed this run. Runtime and participant processes were
+families were accepted. The run exposed question-selection and premature-wrap-up
+gaps without changing its prompt, schema or configuration. Runtime and participant processes were
 closed and joined, with provider revocation unverified.
+
+Prompt v20 replaces the reply-decision paragraph with an explicit sequence:
+identify material unanswered details from the adult's stated planning needs;
+record unresolved topics separately from settled circumstances, including topics
+not asked about this turn; prioritize consequential uncertainty over generic
+category collection; and recheck the stated needs and actual answers before
+Review. A genuinely unclear saved-profile effect or target still takes priority,
+and proposals that depend on it remain withheld. Answered, declined and
+no-information topics stay settled unless new information makes them relevant
+again; settled context alone does not block Review.
+
+The prompt also distinguishes discussing dependant needs and fallback constraints
+as private planning context from editing or confirming a dependant's profile,
+performing its separate assisted review, or creating/persisting approved
+fallbacks. Those effects remain unavailable. Only prompt text and prompt-version
+provenance change: schemas, validators, policy v3, card authority, persistence,
+Kimi's 65,536-token/900-second/2-MiB bounds, sampling, scenarios and rubric are
+unchanged. The two existing adapter provenance expectations advance to v20;
+no wording-matching tests or deterministic steering logic were added. The next
+step is a fresh native retest. Improved question selection and completed family
+coverage remain unverified hypotheses.
 
 Separate Cloudflare `reasoning` and `reasoning_content` metadata is ignored by the existing envelope
 decoder. Only final `message.content` is decoded into the strict output schema;
@@ -966,8 +986,11 @@ supported adult facts and completed its session. Required dependant avoidance,
 exact fallback and workload were not elicited, and the challenge was unexercised.
 Two generic questions preceded Review with one of five candidate slots unused,
 so the call ceiling did not force the endpoint. No judge or human rating ran;
-no family was accepted. Diagnose question selection and premature wrap-up before
-another candidate comparison. Full native family acceptance remains pending.
+no family was accepted. Prompt v20 now makes material unresolved topics explicit
+before question selection and Review and clarifies the permitted private
+discussion of dependant needs. Its effect on question selection and premature
+wrap-up remains unverified pending a fresh native retest. Full native family
+acceptance remains pending.
 Passing native discovery across all eight families, the completed candidate
 comparison, the required live A-to-B removal, fixed-judge scoring and actual human
 calibration remain incomplete.

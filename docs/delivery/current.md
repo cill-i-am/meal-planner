@@ -71,15 +71,20 @@
   passed JSON, output-schema and continuity checks using 5,537 completion tokens
   in 133.577 seconds. That diagnostic did not settle a native turn or establish
   family acceptance. The adapter now permits Kimi up to 65,536 completion tokens,
-  a 900-second deadline and a 2 MiB whole response; GPT/Qwen limits, prompt v19,
-  schemas and authority are unchanged. The [native interview with larger limits](../../evals/private-discovery/kimi-thinking-large-native-dependants-results.md)
+  a 900-second deadline and a 2 MiB whole response; that change retained GPT/Qwen
+  limits, prompt v19, schemas and authority. The [native interview with larger limits](../../evals/private-discovery/kimi-thinking-large-native-dependants-results.md)
   completed four successful model turns and explicitly confirmed two supported
   adult facts. The native session completed, but the model did not elicit the
   required dependant avoidance, exact fallback or associated workload. Two
   generic questions preceded Review, with one of five candidate slots unused;
   the call ceiling did not force wrap-up. The challenge was unexercised and no
-  judge or human rating ran. No family was accepted. The next work is to diagnose
-  question selection and premature wrap-up before another candidate comparison.
+  judge or human rating ran. No family was accepted. Prompt v20 now identifies
+  material unanswered planning topics before selecting a question, records them
+  separately from settled circumstances, and rechecks them before Review. It
+  clarifies that dependant needs and fallback constraints may be discussed as
+  private planning context while dependant edits and approved fallbacks remain
+  unavailable. Schemas, guards, limits and authority are unchanged. A fresh native
+  retest is next; the prompt's quality effect is unverified.
   Full native family acceptance remains pending under
   the existing $20 cap. No candidate is accepted;
   the eight-family, completed candidate-comparison, A-to-B, judge and
