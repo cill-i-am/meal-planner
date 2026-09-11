@@ -229,9 +229,10 @@ record unresolved topics separately from settled circumstances, including topics
 not asked about this turn; prioritize consequential uncertainty over generic
 category collection; and recheck the stated needs and actual answers before
 Review. A genuinely unclear saved-profile effect or target still takes priority,
-and proposals that depend on it remain withheld. Answered, declined and
-no-information topics stay settled unless new information makes them relevant
-again; settled context alone does not block Review.
+and proposals that depend on it remain withheld. Answered and no-information
+topics stay settled unless new information makes them relevant again. Declined
+topics reopen only when the adult explicitly chooses to revisit them; settled
+context alone does not block Review.
 
 The prompt also distinguishes discussing dependant needs and fallback constraints
 as private planning context from editing or confirming a dependant's profile,
