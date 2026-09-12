@@ -17,6 +17,7 @@ import {
   PrivateDiscoveryContinuationFailure,
   PrivateDiscoveryContinuityJson,
 } from "./private-discovery-continuity.js";
+import type { PrivateDiscoveryReviewedProposal } from "./private-discovery-message.js";
 import {
   PRIVATE_DISCOVERY_CARD_LIMIT,
   PRIVATE_DISCOVERY_CONTEXT_BYTES,
@@ -28,6 +29,7 @@ import {
 import type {
   PrivateDiscoveryInvalidOutputStage,
   PrivateDiscoveryModel,
+  PrivateDiscoveryOutput,
   PrivateDiscoveryProfile,
   PrivateDiscoveryResult,
 } from "./private-discovery-model.js";
@@ -52,10 +54,6 @@ type CardProposal = Pick<
   ProfileCard,
   "change" | "expectedProfileVersion" | "reviewedFact"
 >;
-interface ReviewedProposal {
-  readonly card: ProfileCard | null;
-  readonly proposal: CardProposal;
-}
 const active = inArray(privateAssistantTurns.status, ["queued", "running"]);
 const publicTurn = (turn: StoredTurn): AssistantTurn =>
   Schema.decodeUnknownSync(AssistantTurn)({
@@ -137,18 +135,18 @@ const reviewProposal = (
     reviewedFact: before.value,
   };
 };
-const reviewProposals = (
-  result: PrivateDiscoveryResult,
+export const reviewPrivateDiscoveryProposals = (
+  output: PrivateDiscoveryOutput,
   context: PrivateDiscoveryContext,
   storedCards: readonly ProfileCard[]
-): readonly ReviewedProposal[] => {
+): readonly PrivateDiscoveryReviewedProposal[] => {
   const seen = new Set(
     storedCards
       .filter((card) => card.status === "proposed" || card.status === "pending")
       .map((card) => proposalKey(card.change))
   );
   const revised = new Set<string>();
-  return result.output.proposals.map((action) => {
+  return output.proposals.map((action) => {
     let card: ProfileCard | null = null;
     if (action._tag === "ReviseProposedProfileCard") {
       const observed = context.cards.find(
@@ -457,10 +455,11 @@ export class PrivateAssistantTurns {
         .map(({ cardJson }) =>
           Schema.decodeUnknownSync(Schema.fromJsonString(ProfileCard))(cardJson)
         );
-      const proposals = reviewProposals(result, context, storedCards);
-      if (result.output.reply._tag === "Stop" && proposals.length !== 0) {
-        throw invalidOutput("reply_decision");
-      }
+      const proposals = reviewPrivateDiscoveryProposals(
+        result.output,
+        context,
+        storedCards
+      );
       const participant = this.#database
         .select({
           id: privateMessages.id,
@@ -479,7 +478,8 @@ export class PrivateAssistantTurns {
           context.continuity,
           result.output.continuity,
           result.output.reply,
-          participant
+          participant,
+          proposals
         );
       } catch (error) {
         if (

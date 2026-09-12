@@ -81,13 +81,16 @@
   judge or human rating ran. No family was accepted. The [v20 retest](../../evals/private-discovery/kimi-v20-native-dependants-results.md)
   completed three native turns and discovered the dependant avoidance, but ended
   before exact fallback/preparation discovery and the challenge. Five of eight
-  candidate slots remained unused; zero families were accepted. Prompt v21 and
-  policy v4 now implement the [typed fallback policy](stages/02-private-discovery/03-typed-fallback-policy.md):
-  the model declares private needs and extracts evidenced answers, while the
-  application selects questions for unanswered reason, acceptable option and
-  preparation fields. Strict updates retain private state across omission and
-  restart without granting household authority. Native quality proof and
-  independent review remain pending.
+  candidate slots remained unused; zero families were accepted. V21 then introduced
+  typed needs, but its [first attempt](../../evals/private-discovery/kimi-v21-first-attempt-provider-failure-results.md)
+  ended with provider failure and an unknown upstream outcome. Its [second attempt](../../evals/private-discovery/kimi-v21-second-attempt-continuation-failure-results.md)
+  returned structured output but atomically rejected a generic question reference
+  without an unresolved note; no assistant text, card or typed need persisted.
+  Prompt v22/policy v5 now make each unresolved note own its question and render
+  reply wording from actual reviewed profile proposals and private typed state.
+  Model-authored persistence/interface text and separate follow-up references are
+  removed. Full message/state bounds and household authority remain unchanged.
+  Independent review and fresh native quality proof remain pending.
   Full native family acceptance remains pending under
   the existing $20 cap. No candidate is accepted;
   the eight-family, completed candidate-comparison, A-to-B, judge and

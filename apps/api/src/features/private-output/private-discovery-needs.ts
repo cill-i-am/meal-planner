@@ -127,7 +127,7 @@ export const MealFallbackNeedUpdates = Schema.Struct({
   updates: Schema.Array(
     Schema.Union([
       Schema.Struct({
-        _tag: Schema.Literal("RecordReason"),
+        _tag: Schema.Literals(["RecordReason", "RecordPreparation"]),
         ...answerFields,
         value: text(200),
       }),
@@ -135,11 +135,6 @@ export const MealFallbackNeedUpdates = Schema.Struct({
         _tag: Schema.Literal("RecordOption"),
         ...answerFields,
         value: MealFallbackOption,
-      }),
-      Schema.Struct({
-        _tag: Schema.Literal("RecordPreparation"),
-        ...answerFields,
-        value: text(200),
       }),
       Schema.Struct({
         _tag: Schema.Literal("SetFieldDisposition"),

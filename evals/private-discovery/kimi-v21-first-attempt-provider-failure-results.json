@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-12",
+  "run": "kimi_v21_first_attempt_provider_failure",
+  "status": "closed_after_provider_failure_before_assistant_output",
+  "source": {
+    "head": "8d0fbbc1f59e071f94c1b5747938d35f7e0351d0",
+    "tree": "ed3fe949b31fdc1efcdf5b7f5358d61e5c85b2e2",
+    "promptVersion": "private-discovery-prompt-v21",
+    "policyVersion": "private-discovery-policy-v4",
+    "freezeSha256": "38f52c24e063bd6710ef7f9068dcecb163e9a456ea082787586cb843af6b2e5a",
+    "integrityAtClosure": {
+      "trackedFilesAndModesChecked": 938,
+      "trackedFilesAndModesUnchanged": true,
+      "harnessPinsChecked": 199,
+      "harnessPinsUnchanged": true,
+      "manifestUnchanged": true
+    }
+  },
+  "configuration": {
+    "candidateModel": "@cf/moonshotai/kimi-k2.6",
+    "thinking": true,
+    "temperature": 1,
+    "top_p": 0.95,
+    "maxCompletionTokens": 65536,
+    "workerDeadlineMs": 900000,
+    "responseLimitBytes": 2097152,
+    "responseFormat": "json_object",
+    "choices": 1,
+    "stream": false,
+    "maximumProviderAttempts": 1
+  },
+  "request": {
+    "fixture": "dependants_and_fallbacks",
+    "phase": "A",
+    "turn": 1,
+    "capturedWrapperSha256": "eda63be98ba655830b146bbe5dea4dfe7e1f8dd636908fc0723c3e6b8277e82d",
+    "canonicalBodySha256": "21db2dfe8e7916352e9abc83c4d2f9aad046ae628717a9d3fdd8f395036d2fd1"
+  },
+  "observedResult": {
+    "httpStatus": 408,
+    "responseComplete": true,
+    "transportFailure": false,
+    "responseBytes": 221,
+    "responseBytesSha256": "0ec214cc14fa307bdbc285bf93f7456180ecb207c6c3a0b90105a1e12dd5ff4b",
+    "nativeStatus": "failed",
+    "nativeFailure": "provider_unavailable",
+    "providerOutcomeKnown": false,
+    "assistantOutputAvailable": false,
+    "choiceCount": null,
+    "finishReason": null,
+    "usageAvailable": false,
+    "inputTokens": null,
+    "completionTokens": null,
+    "dispatchToCompletionMs": 236247,
+    "upstreamFailureCauseEstablished": false,
+    "automaticRetry": false,
+    "outputRepaired": false
+  },
+  "nativeEffects": {
+    "messages": 1,
+    "assistantMessages": 0,
+    "cards": 0,
+    "confirmedFacts": 0,
+    "sessionStatus": "open",
+    "sessionVersion": 1,
+    "pendingConfirmations": 0,
+    "successfulContinuitySnapshots": 0
+  },
+  "coverage": {
+    "participantTurns": 1,
+    "candidateCalls": 1,
+    "candidateSuccesses": 0,
+    "candidateFailures": 1,
+    "judgeCalls": 0,
+    "nativeSessionCompleted": false,
+    "requiredDiscoveryCoverageComplete": false,
+    "challengeDelivered": false,
+    "hardAssertionReviewComplete": false,
+    "candidateAccepted": false,
+    "humanCalibration": false,
+    "semanticAssessmentAvailable": false,
+    "typedNeedProgressionAssessed": false
+  },
+  "cost": {
+    "usageEstimateUsd": null,
+    "billedCostUsd": null,
+    "basis": "No token usage was available. Cost cannot be estimated from the observed response; the full conservative reservation was retained."
+  },
+  "reservationsAtClosure": {
+    "thisRunMicroUsd": 511181,
+    "unknownReservationRetained": true,
+    "previousCumulativeMicroUsd": 16101946,
+    "cumulativeMicroUsd": 16613127,
+    "cumulativeCalls": 142,
+    "cumulativeHigherCapCalls": 135,
+    "cumulativeJudgeCalls": 1,
+    "strictCumulativeCeilingMicroUsd": 20000000,
+    "meaning": "Conservative retained reservations, not billed spend. The complete HTTP response does not establish the upstream model outcome or usage."
+  },
+  "closure": {
+    "actorClosedAndJoined": true,
+    "runtimeClosedAndJoined": true,
+    "actorExitCode": 0,
+    "runtimeExitCode": 0,
+    "checkedProcessesAbsent": 3,
+    "listenerAbsent": true,
+    "participantLockAbsent": true,
+    "financialLockAbsent": true,
+    "graceful": true,
+    "requestCaptures": 1,
+    "responseReports": 1,
+    "blockedRequests": 0,
+    "providerRevocationVerified": false
+  },
+  "interpretation": "The first v21/policy-v4 native attempt failed before assistant output was available. It supplies no live evidence for semantic correctness, typed-need progression, fixture acceptance or model quality. The upstream cause, usage and billed cost remain unknown.",
+  "receiptSha256": {
+    "rootResult": "dfe857091712f4afe8a2694a225ec17ce2204f6193a9c95b6a764c104acafd3c",
+    "rootClosure": "3fcae987a173dfbbb2dfb0475523269a3eb7a61158ee36067889eb1eb85dae8d",
+    "closed": "6b19ffe1874a147e86fcf8cb7521dedf8cb14eeb15e177b9d985ae03de58600f",
+    "responseMetadata": "f82084c2589e5d3d1506d4683dbf00f25fc6f5023c4b34810905173b299525aa",
+    "assistantContentInspection": "a6db37ff7a7b8c502e73d0c5b16f506d272c0b8e2be97aa530213925ee79a214",
+    "completion": "b96fd28559afb2cc9589c2ff365d691f9360ea7444027e548167a5465f92520d",
+    "pipeline": "050091b71ab28684edaf6204c58a782a0616e58a18d916a15cd788f7b1e2120e",
+    "nativeTerminalInspection": "5690c3c0e17d589f4db651f221c4c1ecca55dddcd949095d63d81bd11e07d5f3"
+  }
+}

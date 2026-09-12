@@ -19,14 +19,19 @@ const participant = {
 };
 const note = (
   key: string,
-  state: typeof PrivateDiscoveryContinuityNote.Type.state = "circumstance"
-) =>
-  Schema.decodeUnknownSync(PrivateDiscoveryContinuityNote)({
+  state: typeof PrivateDiscoveryContinuityNote.Type.state = "circumstance",
+  question = "What matters here?"
+) => {
+  const value = {
     detail: "The adult disclosed useful meal context.",
     key,
     state,
     subject: `Topic ${key}`,
-  });
+  };
+  return Schema.decodeUnknownSync(PrivateDiscoveryContinuityNote)(
+    state === "unresolved" ? { ...value, question } : value
+  );
+};
 const state = (...notes: (typeof PrivateDiscoveryContinuityNote.Type)[]) => ({
   ...emptyPrivateDiscoveryContinuity(),
   notes,
@@ -35,99 +40,83 @@ const updates = (...notes: (typeof PrivateDiscoveryContinuityNote.Type)[]) => ({
   ...emptyPrivateDiscoveryContinuityUpdates(),
   notes,
 });
-const acknowledgment = Schema.decodeUnknownSync(PrivateDiscoveryReply)({
+const continuation = Schema.decodeUnknownSync(PrivateDiscoveryReply)({
   _tag: "Continue",
-  followUp: null,
-  text: "Your cards are available for review.",
 });
-const ask = (
-  topicKey: string,
-  text = "Thank you.",
-  question = "What matters here?"
-) =>
-  Schema.decodeUnknownSync(PrivateDiscoveryReply)({
-    _tag: "Continue",
-    followUp: { question, topicKey },
-    text,
-  });
 const apply = (
   current: PrivateDiscoveryContinuity,
   changes: typeof PrivateDiscoveryContinuityUpdates.Type,
-  reply = acknowledgment
-) => applyPrivateDiscoveryContinuation(current, changes, reply, participant);
+  reply = continuation
+) =>
+  applyPrivateDiscoveryContinuation(current, changes, reply, participant, []);
 
 describe("private discovery continuity and reply policy", () => {
-  it("retains omitted circumstances while an unrelated topic is answered", () => {
+  it("retains omitted circumstances while closing an answered topic and removing its question", () => {
     const routine = note("routine");
-    const topic = note("preferences", "unresolved");
+    const pending = note("preferences", "unresolved");
     const answered = {
-      ...topic,
+      ...note("preferences", "answered"),
       detail: "The adult prefers roasted vegetables.",
-      state: "answered" as const,
     };
-    const result = apply(state(routine, topic), updates(answered));
+    const result = apply(state(routine, pending), updates(answered));
     expect(result.continuity).toEqual(state(routine, answered));
+    expect(result.continuity.notes[1]).not.toHaveProperty("question");
     expect(result.decision).toEqual({ _tag: "Review" });
-    expect(result.message).toBe(acknowledgment.text);
+    expect(result.message).toBe(
+      "You can finish this conversation when you're ready."
+    );
   });
 
-  it("corrects one note while preserving other notes and insertion order", () => {
-    const previous = note("equipment", "unresolved");
+  it("corrects a question in place and selects retained order before newly appended topics", () => {
+    const first = note(
+      "equipment",
+      "unresolved",
+      "Which equipment do you have?"
+    );
     const retained = note("routine");
-    const omitted = note("capacity");
-    const corrected = {
-      ...previous,
-      detail: "The adult has a hob.",
-      state: "answered" as const,
-      subject: "Available hob",
-    };
-    const added = note("schedule");
-    const next = note("exceptions", "unresolved");
-    const result = apply(
-      state(retained, previous, omitted),
-      updates(added, corrected, next),
-      ask(next.key)
-    );
-    expect(result.continuity).toEqual(
-      state(retained, corrected, omitted, added, next)
-    );
+    const corrected = note("equipment", "unresolved", "Does your hob work?");
+    const next = note("schedule", "unresolved", "Which evenings are busy?");
+    const result = apply(state(retained, first), updates(next, corrected));
+    expect(result.continuity).toEqual(state(retained, corrected, next));
     expect(result.decision).toEqual({
       _tag: "Ask",
-      question: "What matters here?",
-      source: { _tag: "Note", key: next.key },
+      question: "Does your hob work?",
+      source: { _tag: "Note", key: "equipment" },
     });
+    const settled = note("equipment", "answered");
+    const afterAnswer = apply(result.continuity, updates(settled));
+    expect(afterAnswer.message).toBe("Which evenings are busy?");
+    expect(afterAnswer.continuity).toEqual(state(retained, settled, next));
   });
 
   it.each(["answered", "no_information", "declined", "withdrawn"] as const)(
-    "retains %s without allowing a generic question to reopen it",
+    "retains %s without silently asking its former question again",
     (status) => {
       const pending = note("topic", "unresolved");
-      const closed = { ...pending, state: status };
+      const closed = note("topic", status);
       const result = apply(state(pending), updates(closed));
       expect(result.continuity).toEqual(state(closed));
-      expect(() => apply(result.continuity, updates(), ask("topic"))).toThrow(
-        expect.objectContaining({ stage: "reply_decision" })
-      );
+      expect(apply(result.continuity, updates()).decision).toEqual({
+        _tag: "Review",
+      });
+      expect(result.message).not.toContain("What matters here?");
     }
   );
 
-  it("selects a valid generic question for a new or retained unresolved note", () => {
-    const pending = note("topic", "unresolved");
-    for (const current of [state(), state(pending)]) {
-      const result = apply(
-        current,
-        current.notes.length === 0 ? updates(pending) : updates(),
-        ask(
-          "topic",
-          "Please review the draft.",
-          "Which part depends on your routine?"
-        )
-      );
-      expect(result.message).toBe(
-        "Please review the draft.\n\nWhich part depends on your routine?"
-      );
-      expect(result.continuity).toEqual(state(pending));
-    }
+  it("retains the sole unresolved question through codec round-trip and omission", () => {
+    const pending = note(
+      "routine",
+      "unresolved",
+      "Which part depends on your routine?"
+    );
+    const initial = apply(state(), updates(pending));
+    const restored = Schema.decodeUnknownSync(PrivateDiscoveryContinuityJson)(
+      Schema.encodeSync(PrivateDiscoveryContinuityJson)(initial.continuity)
+    );
+    const resumed = apply(restored, updates());
+    expect(resumed.continuity).toEqual(state(pending));
+    expect(resumed.message).toBe("Which part depends on your routine?");
+    expect(resumed.decision).toEqual(initial.decision);
   });
 
   it.each([
@@ -157,29 +146,16 @@ describe("private discovery continuity and reply policy", () => {
     expect(JSON.stringify(current)).toBe(before);
   });
 
-  it("rejects missing generic follow-up while a note remains unresolved", () => {
-    expect(() => apply(state(note("open", "unresolved")), updates())).toThrow(
-      expect.objectContaining({ stage: "reply_decision" })
-    );
-    expect(() => apply(state(), updates(), ask("missing"))).toThrow(
-      expect.objectContaining({ stage: "reply_decision" })
-    );
-    expect(() =>
-      apply(state(note("context")), updates(), ask("context"))
-    ).toThrow(expect.objectContaining({ stage: "reply_decision" }));
-  });
-
   it("requires current participant stop evidence and preserves the exact snapshot", () => {
     const current = state(note("topic", "unresolved"));
     const reply = {
       _tag: "Stop" as const,
       evidence: { messageId: participant.id, quote: participant.text },
-      text: "We can stop here.",
     };
     expect(apply(current, updates(), reply)).toEqual({
       continuity: current,
       decision: { _tag: "Stop" },
-      message: reply.text,
+      message: "We can stop here.",
     });
     expect(() => apply(current, updates(note("new")), reply)).toThrow(
       expect.objectContaining({ stage: "reply_decision" })
@@ -192,15 +168,10 @@ describe("private discovery continuity and reply policy", () => {
     ).toThrow(expect.objectContaining({ stage: "need_evidence" }));
   });
 
-  it("enforces the combined rendered length including the separator", () => {
-    const current = state(note("topic", "unresolved"));
-    expect(
-      apply(current, updates(), ask("topic", "a".repeat(1000), "q".repeat(998)))
-        .message
-    ).toHaveLength(2000);
-    expect(() =>
-      apply(current, updates(), ask("topic", "a".repeat(1000), "q".repeat(999)))
-    ).toThrow(expect.objectContaining({ stage: "reply_limit" }));
+  it("allows a complete question at the message bound and rejects an oversized question", () => {
+    const current = state(note("topic", "unresolved", "q".repeat(2000)));
+    expect(apply(current, updates()).message).toHaveLength(2000);
+    expect(() => note("topic", "unresolved", "q".repeat(2001))).toThrow();
   });
 
   it("retains twelve notes and rejects a thirteenth without eviction", () => {
@@ -229,9 +200,10 @@ describe("private discovery continuity and reply policy", () => {
 
   it("uses one strict snapshot codec and rejects obsolete or malformed state", () => {
     const current = state(note("routine"), note("topic", "no_information"));
-    const encoded = Schema.encodeSync(PrivateDiscoveryContinuityJson)(current);
     expect(
-      Schema.decodeUnknownSync(PrivateDiscoveryContinuityJson)(encoded)
+      Schema.decodeUnknownSync(PrivateDiscoveryContinuityJson)(
+        Schema.encodeSync(PrivateDiscoveryContinuityJson)(current)
+      )
     ).toEqual(current);
     for (const stored of [
       "Previous free-text summary",
@@ -250,13 +222,23 @@ describe("private discovery continuity and reply policy", () => {
     { ...note("a"), key: "k".repeat(33) },
     { ...note("a"), subject: "s".repeat(121) },
     { ...note("a"), detail: "d".repeat(201) },
-  ])("rejects an oversized note field", (invalid) => {
+    { ...note("a"), state: "unresolved" },
+    { ...note("a"), question: "", state: "unresolved" },
+    {
+      ...note("a"),
+      question: "A settled circumstance cannot carry a question.",
+    },
+    {
+      ...note("a", "answered"),
+      question: "A settled answer cannot carry a question.",
+    },
+  ])("rejects an invalid note field or question ownership", (invalid) => {
     expect(() =>
       Schema.decodeUnknownSync(PrivateDiscoveryContinuityNote)(invalid)
     ).toThrow();
   });
 
-  it("rejects excess notes, updates, unknown fields and the old model-owned reply shape", () => {
+  it("rejects excess notes, updates, unknown fields and removed model reply fields", () => {
     expect(() =>
       Schema.decodeUnknownSync(PrivateDiscoveryContinuity)(
         state(...Array.from({ length: 13 }, (_, i) => note(`n${i}`)))
@@ -273,13 +255,19 @@ describe("private discovery continuity and reply policy", () => {
       ).toThrow();
     }
     for (const invalid of [
-      { _tag: "Review", reason: "no_relevant_open_topic", text: "Done." },
+      { _tag: "Continue", text: "A model-authored persistence claim." },
+      { _tag: "Continue", followUp: null },
       {
-        _tag: "Ask",
-        question: "What matters?",
-        text: "Thanks.",
-        topicKey: "topic",
+        _tag: "Continue",
+        followUp: { question: "What matters?", topicKey: "topic" },
       },
+      {
+        _tag: "Stop",
+        evidence: { messageId: participant.id, quote: participant.text },
+        text: "A model-authored stop claim.",
+      },
+      { _tag: "Review", reason: "no_relevant_open_topic" },
+      { _tag: "Ask", question: "What matters?", topicKey: "topic" },
     ]) {
       expect(() =>
         Schema.decodeUnknownSync(PrivateDiscoveryReply)(invalid)

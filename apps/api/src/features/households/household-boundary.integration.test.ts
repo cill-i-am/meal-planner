@@ -7374,7 +7374,6 @@ describe("canonical private profile cards", () => {
   it("settles a typed fallback need through the authenticated turn route without changing the canonical profile", async () => {
     const participantText = "I need an alternative meal for late evenings.";
     const subject = "late evenings";
-    const acknowledgement = "I have kept that meal need in mind.";
     let modelCalls = 0;
     let connection: CardConnection | undefined;
     privateModelResponse = (context) => {
@@ -7406,11 +7405,7 @@ describe("canonical private profile cards", () => {
                   notes: [],
                 },
                 proposals: [],
-                reply: {
-                  _tag: "Continue",
-                  followUp: null,
-                  text: acknowledgement,
-                },
+                reply: { _tag: "Continue" },
               }),
               role: "assistant",
             },
@@ -7472,7 +7467,7 @@ describe("canonical private profile cards", () => {
           appended.message,
           {
             role: "assistant",
-            text: `${acknowledgement}\n\nFor late evenings, why is an alternative meal needed?`,
+            text: "Private conversation context for late evenings: an alternative meal is needed.\n\nFor late evenings, why is an alternative meal needed?",
           },
         ],
       });

@@ -37,8 +37,6 @@ const option = {
 };
 const continueReply = Schema.decodeUnknownSync(PrivateDiscoveryReply)({
   _tag: "Continue",
-  followUp: null,
-  text: "I have retained what you described.",
 });
 type Update = MealFallbackNeedUpdates["updates"][number];
 type Reference = Update["need"];
@@ -90,7 +88,8 @@ const run = (
   updates: typeof PrivateDiscoveryContinuityUpdates.Type,
   participant: PrivateDiscoveryEvidenceMessage,
   reply = continueReply
-) => applyPrivateDiscoveryContinuation(current, updates, reply, participant);
+) =>
+  applyPrivateDiscoveryContinuation(current, updates, reply, participant, []);
 const start = (
   participant: PrivateDiscoveryEvidenceMessage,
   updates: readonly Update[] = []
@@ -165,7 +164,7 @@ describe("typed private meal fallback needs", () => {
       source: { fields: ["acceptableOption", "extraPreparation"] },
     });
     expect(result.message).toBe(
-      "I have retained what you described.\n\nFor Jordan, what alternative meal is acceptable, and how much extra preparation is manageable?"
+      "Private conversation context for Jordan: reason: The shared meal is too spicy.\n\nFor Jordan, what alternative meal is acceptable, and how much extra preparation is manageable?"
     );
   });
 
@@ -200,6 +199,17 @@ describe("typed private meal fallback needs", () => {
       preparation(participant),
     ]);
     expect(result.decision).toEqual({ _tag: "Review" });
+    expect(result.message).toContain(
+      "Private conversation context for Jordan:"
+    );
+    expect(result.message).toContain(
+      "generic option: a plain sandwich; quantity: one serving"
+    );
+    expect(result.message).toContain(
+      "manageable extra preparation: Assembling without additional cooking is manageable."
+    );
+    expect(result.message).not.toContain("exact option");
+    expect(result.message).not.toContain("substitution scope");
     expect(
       result.continuity.mealFallbackNeeds[0]?.acceptableOption
     ).toMatchObject({
@@ -268,6 +278,65 @@ describe("typed private meal fallback needs", () => {
       id: needId(opening),
     });
     expect(updated.decision).toEqual({ _tag: "Review" });
+    expect(updated.message).toContain(
+      "Private conversation context for Jordan:"
+    );
+    expect(updated.message).toContain(
+      "exact option: Harbor plain soup cup; quantity: one cup; substitution scope: No generic alternative."
+    );
+    expect(updated.message).toContain(
+      "manageable extra preparation: Assembling without additional cooking is manageable."
+    );
+    expect(updated.message).not.toContain("profile proposal");
+  });
+
+  it("acknowledges a current reaffirmation from new evidence while retaining the exact option and preparation", () => {
+    const opening = source(
+      "One Harbor soup cup works because the shared dinner is too spicy; no additional cooking is manageable."
+    );
+    const exact = {
+      description: "Harbor soup cup",
+      kind: "exact" as const,
+      quantity: "one cup",
+      substitutions: "No substitutions.",
+    };
+    const first = start(opening, [
+      reason(opening),
+      {
+        _tag: "RecordOption",
+        evidence: evidence(opening),
+        need: declared,
+        revisit: null,
+        value: exact,
+      },
+      preparation(opening),
+    ]);
+    const participant = source(
+      "Yes, keep that same exact cup with no substitutions."
+    );
+    const result = run(
+      first.continuity,
+      changes(participant, [
+        {
+          _tag: "RecordOption",
+          evidence: evidence(participant),
+          need: existing(needId(opening)),
+          revisit: null,
+          value: exact,
+        },
+      ]),
+      participant
+    );
+    expect(
+      result.continuity.mealFallbackNeeds[0]?.acceptableOption
+    ).toMatchObject({ evidence: evidence(participant), value: exact });
+    expect(result.message).toContain(
+      "exact option: Harbor soup cup; quantity: one cup; substitution scope: No substitutions."
+    );
+    expect(result.message).toContain(
+      "manageable extra preparation: Assembling without additional cooking is manageable."
+    );
+    expect(result.message).not.toContain("profile proposal");
   });
 
   it.each(["no_information", "declined"] as const)(
@@ -514,20 +583,14 @@ describe("typed private meal fallback needs", () => {
             {
               detail: "",
               key: "adult_preference",
+              question: "What meal do you enjoy?",
               state: "unresolved",
               subject: "Adult preference",
             },
           ],
         },
         participant,
-        {
-          _tag: "Continue",
-          followUp: {
-            question: "What meal do you enjoy?",
-            topicKey: "adult_preference",
-          },
-          text: "Understood.",
-        }
+        { _tag: "Continue" }
       );
       expect(result.decision).toMatchObject({
         _tag: "Ask",
@@ -601,7 +664,6 @@ describe("typed private meal fallback needs", () => {
     const result = run(current, changes(participant), participant, {
       _tag: "Stop",
       evidence: evidence(participant),
-      text: "We can stop here.",
     });
     expect(result).toEqual({
       continuity: current,
@@ -711,20 +773,59 @@ describe("typed private meal fallback needs", () => {
     ).toThrow(expect.objectContaining({ stage: "need_updates" }));
   });
 
-  it("validates an emitted generic reference even when a typed question has priority", () => {
+  it("selects a typed question without requiring a separate generic routing reference", () => {
     const participant = source();
-    expect(() =>
-      run(
-        emptyPrivateDiscoveryContinuity(),
-        changes(participant, [], true),
-        participant,
+    const delta = {
+      ...changes(participant, [], true),
+      notes: [
         {
-          _tag: "Continue",
-          followUp: { question: "What else?", topicKey: "missing" },
-          text: "Understood.",
-        }
-      )
-    ).toThrow(expect.objectContaining({ stage: "reply_decision" }));
+          detail: "Has a dependant.",
+          key: "household",
+          state: "circumstance" as const,
+          subject: "Adult",
+        },
+      ],
+    };
+    const result = run(emptyPrivateDiscoveryContinuity(), delta, participant);
+    expect(result.decision).toMatchObject({
+      _tag: "Ask",
+      source: { fields: ["reason"] },
+    });
+    expect(result.message).toBe(
+      "Private conversation context for Jordan: an alternative meal is needed.\n\nFor Jordan, why is an alternative meal needed?"
+    );
+  });
+
+  it("retains a generic question while typed questions take priority, then asks it when the need is addressed", () => {
+    const participant = source();
+    const generic = {
+      detail: "",
+      key: "schedule",
+      question: "Which evenings are busy?",
+      state: "unresolved" as const,
+      subject: "Schedule",
+    };
+    const first = run(
+      emptyPrivateDiscoveryContinuity(),
+      { ...changes(participant, [], true), notes: [generic] },
+      participant
+    );
+    expect(first.decision).toMatchObject({ source: { fields: ["reason"] } });
+    const complete = run(
+      first.continuity,
+      changes(participant, [
+        reason(participant, existing(needId(participant))),
+        acceptedOption(participant, existing(needId(participant))),
+        preparation(participant, existing(needId(participant))),
+      ]),
+      participant
+    );
+    expect(complete.continuity.notes).toEqual([generic]);
+    expect(complete.decision).toEqual({
+      _tag: "Ask",
+      question: generic.question,
+      source: { _tag: "Note", key: generic.key },
+    });
   });
 
   it("bounds need count, delta count, unknown fields and evidence excerpts", () => {

@@ -7,15 +7,33 @@
 
 ## Current evaluation status
 
-The [typed fallback policy design](03-typed-fallback-policy.md) now owns the
-authorized deterministic follow-up implementation. It preserves semantic model
-recognition while giving the application responsibility for unanswered fields
-of a declared private fallback need. Prompt v21 and policy v4 replace model-owned
-Ask/Review with a strict Continue/extraction contract and application-owned
-question selection. The private snapshot retains typed reason, acceptable option
-and preparation fields across omission and restart, with current-message evidence
-and atomic rejection. Native quality proof and independent review remain pending;
-no additional candidate or family is accepted by this implementation.
+The [typed fallback policy design](03-typed-fallback-policy.md) owns the
+current deterministic discovery policy. Prompt v22/policy v5 give each unresolved
+note its sole generic question and remove model-authored reply text and follow-up
+references. The application selects a missing typed field, then the first retained
+unresolved question, then review readiness. The same pure flow renders actual
+reviewed profile draft/revision effects and changed private typed context before
+checking the complete 2,000-character limit and atomic persistence.
+
+The [first v21 attempt](../../../../evals/private-discovery/kimi-v21-first-attempt-provider-failure-results.md)
+on `8d0fbbc` received HTTP 408 and settled `provider_unavailable`, with no assistant
+output or usage. The upstream model outcome remains unknown and its full
+reservation remains retained. The [second attempt](../../../../evals/private-discovery/kimi-v21-second-attempt-continuation-failure-results.md)
+on the same source returned complete HTTP 200 output and passed separate output
+schema and typed-evidence checks, but failed `reply_decision`: the generic
+follow-up referenced no unresolved note. Its misleading invitation to review both
+a profile card and private fallback context was unpublished. Neither attempted
+card, typed need nor assistant text persisted; both sessions retained only their
+participant opening. No family, judge score or human calibration was accepted.
+The v22 fix still needs independent immutable-head review and fresh live quality
+proof. Model extraction and generic-question meaning remain semantic obligations.
+
+V22 local validation passes 132 focused schema/policy/renderer tests and all 88
+private-output native cases. All 85 household-boundary cases passed the wire and
+renderer conversion. One proposed-card restart exposed a 610-byte request-body
+overrun; equivalent shared schema branches and redundant prompt wording were
+compressed without widening limits or dropping context. The accepted report
+files retain their exact JSON data and original source provenance.
 
 Initial v21 verification on `92c3f53` passed 109 focused contract tests, all 169 native
 private-output/household-boundary cases, 34 shared API tests, type checks, scoped
@@ -28,9 +46,8 @@ Independent review identified one field-refusal transition gap: explicit revisit
 with no information could not settle atomically. The scoped correction retains
 current revisit evidence on NoInformation while preserving other fields and the
 need ID. Missing or stale authorization still rejects the entire output. The
-correction passes 113 focused tests, all 87 private-output native tests, API types
-and scoped lint/formatting. Prompt and policy versions remain v21/v4; limits are
-unchanged.
+correction passed 113 focused tests, all 87 private-output native tests, API types
+and scoped lint/formatting. That correction retained prompt/policy v21/v4 and existing limits.
 
 The latest [GPT-OSS v16 result](../../../../evals/private-discovery/prompt-v16-planning-purpose-results.md)
 stopped at a proven semantic truthfulness/authority failure. Both native calls
@@ -423,7 +440,7 @@ Earlier [v15](../../../../evals/private-discovery/prompt-v15-keyed-continuity-re
 [v7](../../../../evals/private-discovery/prompt-v7-two-phase-results.md), and
 [v6](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
 remain unchanged historical evidence with their original shapes and provenance.
-Earlier implementation proofs below do not establish v21 live acceptance.
+Earlier implementation proofs below do not establish v22 live acceptance.
 
 ## Outcome and scope
 
@@ -516,7 +533,8 @@ messages, at most 25 private cards, and structured private continuity. The stric
 snapshot is `{ notes, mealFallbackNeeds }`, bounded to 8,192 UTF-8 bytes. Each note
 has a key (1–32 characters), subject (1–120), detail (0–200), and a state:
 `circumstance`, `unresolved`, `answered`, `no_information`, `declined`, or
-`withdrawn`. There are at most 12 retained notes and six complete keyed updates
+`withdrawn`. Only an unresolved note contains its required question; other states
+forbid it. There are at most 12 retained notes and six complete keyed updates
 per turn. A new key adds a note; a retained key replaces its subject, detail and
 state in place. New notes append in update order and omission retains prior
 notes. Duplicate keys within one update list are rejected. Up to three private
@@ -526,16 +544,22 @@ The [typed fallback design](03-typed-fallback-policy.md) specifies field and
 whole-need dispositions, correction and reopening. The prior array snapshot and
 model Ask/Review output are rejected without normalization or migration.
 
-Every emitted generic follow-up names an unresolved retained or updated note,
-even when a typed need takes question priority. The application first asks for
-an active need's unanswered reason, then its acceptable option and preparation
-(combined when both remain unanswered), and then a valid generic follow-up.
-Review readiness requires neither unanswered active fields nor unresolved notes.
-An evidenced Stop permits no generated proposal or continuity update, retains
-the snapshot and never completes the session. These are internal decisions, not
-new browser commands. The child joins Continue's acknowledgement and the selected
-question with two newlines and checks the combined 2,000-character limit.
-Responses without a selected question emit their text unchanged.
+The application first asks for an active need's unanswered reason, then its
+acceptable option and preparation (combined when both remain unanswered), and
+then the first retained unresolved note's question. Review readiness requires
+neither unanswered active fields nor unresolved notes. Continue is tag-only;
+Stop carries current participant evidence and permits no proposal or continuity
+update. It preserves the snapshot, renders fixed wording and never completes the
+session. Removed model text/followUp/Ask/Review shapes are rejected strictly.
+
+The native owner reviews actual proposal operations against current profile and
+stored cards, then passes those reviewed records to the canonical pure
+continuation flow. Application wording describes new/revised profile drafts as
+unconfirmed and gives changed typed needs an attributed private-context summary.
+Only real profile proposals receive an interface review invitation. Exact/generic
+options, quantity, substitution scope and preparation stay distinct. The complete
+rendered message must fit 2,000 characters before any generated state is written;
+it is never clipped. Question and extracted-value semantics remain model-evaluated.
 The resulting snapshot is validated and encoded through one JSON codec in the
 existing `private_assistant_turns.summary` TEXT column, atomically with the reply,
 reviewed cards, and successful turn. A fresh session starts with empty continuity.
@@ -1031,10 +1055,11 @@ Two generic questions preceded Review with one of five candidate slots unused,
 so the call ceiling did not force the endpoint. No judge or human rating ran;
 no family was accepted. V20 then completed three native turns and discovered the
 dependant avoidance, but still ended before fallback/preparation discovery and the
-challenge, with five of eight candidate slots unused. Prompt v21 and policy v4
-now give the application a typed unanswered-field policy for declared private
-fallback needs. Local contract checks do not establish native model quality;
-independent review and a fresh native run remain required. Full native family
+challenge, with five of eight candidate slots unused. V21 added a typed unanswered-field policy but its two live attempts ended in
+provider failure and a generic-reference rejection. V22/policy v5 now make each
+unresolved note own its question and derive reply wording from actual reviewed
+drafts and private typed state. Local contract checks do not establish native
+model quality; independent review and a fresh native run remain required. Full native family
 acceptance remains pending.
 Passing native discovery across all eight families, the completed candidate
 comparison, the required live A-to-B removal, fixed-judge scoring and actual human

@@ -1,5 +1,7 @@
 import { Data, Schema } from "effect";
 
+import { renderPrivateDiscoveryMessage } from "./private-discovery-message.js";
+import type { PrivateDiscoveryReviewedProposal } from "./private-discovery-message.js";
 import {
   applyMealFallbackNeedUpdates,
   assertCurrentParticipantEvidence,
@@ -18,23 +20,36 @@ export const PRIVATE_DISCOVERY_REPLY_LENGTH = 2000;
 const NoteKey = Schema.String.pipe(
   Schema.check(Schema.isMinLength(1), Schema.isMaxLength(32))
 );
-const NoteState = Schema.Literals([
-  "circumstance",
-  "unresolved",
-  "answered",
-  "no_information",
-  "declined",
-  "withdrawn",
-]);
-const NoteDetail = Schema.String.pipe(Schema.check(Schema.isMaxLength(200)));
-export const PrivateDiscoveryContinuityNote = Schema.Struct({
-  detail: NoteDetail,
+const Question = Schema.String.pipe(
+  Schema.check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(PRIVATE_DISCOVERY_REPLY_LENGTH)
+  )
+);
+const noteFields = {
+  detail: Schema.String.pipe(Schema.check(Schema.isMaxLength(200))),
   key: NoteKey,
-  state: NoteState,
   subject: Schema.String.pipe(
     Schema.check(Schema.isMinLength(1), Schema.isMaxLength(120))
   ),
-});
+};
+export const PrivateDiscoveryContinuityNote = Schema.Union([
+  Schema.Struct({
+    ...noteFields,
+    question: Question,
+    state: Schema.Literal("unresolved"),
+  }),
+  Schema.Struct({
+    ...noteFields,
+    state: Schema.Literals([
+      "circumstance",
+      "answered",
+      "no_information",
+      "declined",
+      "withdrawn",
+    ]),
+  }),
+]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 const continuityBytes = (continuity: typeof ContinuityState.Type) =>
   new TextEncoder().encode(JSON.stringify(continuity)).byteLength;
 
@@ -84,26 +99,13 @@ export const emptyPrivateDiscoveryContinuityUpdates =
     mealFallbackNeeds: { declarations: [], updates: [] },
     notes: [],
   });
-const ReplyText = Schema.String.pipe(
-  Schema.check(
-    Schema.isMinLength(1),
-    Schema.isMaxLength(PRIVATE_DISCOVERY_REPLY_LENGTH)
-  )
-);
 export const PrivateDiscoveryReply = Schema.Union([
-  Schema.Struct({
-    _tag: Schema.Literal("Continue"),
-    followUp: Schema.NullOr(
-      Schema.Struct({ question: ReplyText, topicKey: NoteKey })
-    ),
-    text: ReplyText,
-  }),
+  Schema.Struct({ _tag: Schema.Literal("Continue") }),
   Schema.Struct({
     _tag: Schema.Literal("Stop"),
     evidence: PrivateDiscoveryEvidence,
-    text: ReplyText,
   }),
-]);
+]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 
 export type PrivateDiscoveryReplyDecision =
   | {
@@ -139,7 +141,8 @@ export const applyPrivateDiscoveryContinuation = (
   current: PrivateDiscoveryContinuity,
   updates: typeof PrivateDiscoveryContinuityUpdates.Type,
   reply: typeof PrivateDiscoveryReply.Type,
-  participant: PrivateDiscoveryEvidenceMessage
+  participant: PrivateDiscoveryEvidenceMessage,
+  proposals: readonly PrivateDiscoveryReviewedProposal[]
 ): {
   readonly continuity: PrivateDiscoveryContinuity;
   readonly decision: PrivateDiscoveryReplyDecision;
@@ -153,6 +156,7 @@ export const applyPrivateDiscoveryContinuation = (
   if (reply._tag === "Stop") {
     assertCurrentParticipantEvidence(reply.evidence, participant);
     if (
+      proposals.length !== 0 ||
       updates.notes.length !== 0 ||
       updates.mealFallbackNeeds.declarations.length !== 0 ||
       updates.mealFallbackNeeds.updates.length !== 0
@@ -161,13 +165,15 @@ export const applyPrivateDiscoveryContinuation = (
         stage: "reply_decision",
       });
     }
-    if (reply.text.length > PRIVATE_DISCOVERY_REPLY_LENGTH) {
-      throw new PrivateDiscoveryContinuationFailure({ stage: "reply_limit" });
-    }
     return {
       continuity: current,
       decision: { _tag: "Stop" },
-      message: reply.text,
+      message: renderPrivateDiscoveryMessage(
+        current,
+        current,
+        { _tag: "Stop" },
+        proposals
+      ),
     };
   }
   const notes = new Map(current.notes.map((note) => [note.key, note]));
@@ -197,14 +203,11 @@ export const applyPrivateDiscoveryContinuation = (
       stage: "continuity_limit",
     });
   }
-  if (
-    reply.followUp !== null &&
-    notes.get(reply.followUp.topicKey)?.state !== "unresolved"
-  ) {
-    throw new PrivateDiscoveryContinuationFailure({ stage: "reply_decision" });
-  }
   const fallbackQuestion = selectMealFallbackQuestion(
     continuity.mealFallbackNeeds
+  );
+  const genericQuestion = continuity.notes.find(
+    (note) => note.state === "unresolved"
   );
   let decision: PrivateDiscoveryReplyDecision;
   if (fallbackQuestion !== null) {
@@ -217,24 +220,21 @@ export const applyPrivateDiscoveryContinuation = (
         needId: fallbackQuestion.needId,
       },
     };
-  } else if (reply.followUp === null) {
-    if (continuity.notes.some((note) => note.state === "unresolved")) {
-      throw new PrivateDiscoveryContinuationFailure({
-        stage: "reply_decision",
-      });
-    }
+  } else if (genericQuestion === undefined) {
     decision = { _tag: "Review" };
   } else {
     decision = {
       _tag: "Ask",
-      question: reply.followUp.question,
-      source: { _tag: "Note", key: reply.followUp.topicKey },
+      question: genericQuestion.question,
+      source: { _tag: "Note", key: genericQuestion.key },
     };
   }
-  const message =
-    decision._tag === "Ask"
-      ? `${reply.text}\n\n${decision.question}`
-      : reply.text;
+  const message = renderPrivateDiscoveryMessage(
+    current,
+    continuity,
+    decision,
+    proposals
+  );
   if (message.length > PRIVATE_DISCOVERY_REPLY_LENGTH) {
     throw new PrivateDiscoveryContinuationFailure({ stage: "reply_limit" });
   }

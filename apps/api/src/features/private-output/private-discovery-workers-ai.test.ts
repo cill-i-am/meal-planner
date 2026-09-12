@@ -71,20 +71,14 @@ const output = {
       {
         detail: "",
         key: "preparation",
+        question: "How do you like tomatoes prepared?",
         state: "unresolved",
         subject: "Tomato preparation",
       },
     ],
   },
   proposals: [],
-  reply: {
-    _tag: "Continue",
-    followUp: {
-      question: "How do you like tomatoes prepared?",
-      topicKey: "preparation",
-    },
-    text: "You like tomatoes.",
-  },
+  reply: { _tag: "Continue" },
 };
 const completion = (content: Readonly<Record<string, unknown>> = output) => ({
   choices: [
@@ -363,8 +357,8 @@ describe("private discovery Workers AI boundary", () => {
       expect(result.output).toEqual(output);
       expect(result.provenance).toMatchObject({
         model: modelName,
-        policyVersion: "private-discovery-policy-v4",
-        promptVersion: "private-discovery-prompt-v21",
+        policyVersion: "private-discovery-policy-v5",
+        promptVersion: "private-discovery-prompt-v22",
         provider: "cloudflare-workers-ai",
       });
       expect(result.usage).toEqual({
@@ -437,8 +431,8 @@ describe("private discovery Workers AI boundary", () => {
       expect(result.output).toEqual(output);
       expect(result.provenance).toMatchObject({
         model: kimiConfig.model,
-        policyVersion: "private-discovery-policy-v4",
-        promptVersion: "private-discovery-prompt-v21",
+        policyVersion: "private-discovery-policy-v5",
+        promptVersion: "private-discovery-prompt-v22",
         provider: "cloudflare-workers-ai",
       });
       expect(result.usage).toEqual({
@@ -742,8 +736,23 @@ describe("private discovery Workers AI boundary", () => {
       },
     ],
     [
-      "unbounded reply text",
-      { ...output, reply: { ...output.reply, text: "x".repeat(2001) } },
+      "removed model reply text",
+      {
+        ...output,
+        reply: { ...output.reply, text: "A model-authored claim." },
+      },
+    ],
+    [
+      "unbounded unresolved question",
+      {
+        ...output,
+        continuity: {
+          ...output.continuity,
+          notes: [
+            { ...output.continuity.notes[0], question: "x".repeat(2001) },
+          ],
+        },
+      },
     ],
     [
       "unbounded actions",
