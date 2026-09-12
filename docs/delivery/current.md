@@ -78,13 +78,16 @@
   required dependant avoidance, exact fallback or associated workload. Two
   generic questions preceded Review, with one of five candidate slots unused;
   the call ceiling did not force wrap-up. The challenge was unexercised and no
-  judge or human rating ran. No family was accepted. Prompt v20 now identifies
-  material unanswered planning topics before selecting a question, records them
-  separately from settled circumstances, and rechecks them before Review. It
-  clarifies that dependant needs and fallback constraints may be discussed as
-  private planning context while dependant edits and approved fallbacks remain
-  unavailable. Schemas, guards, limits and authority are unchanged. A fresh native
-  retest is next; the prompt's quality effect is unverified.
+  judge or human rating ran. No family was accepted. The [v20 retest](../../evals/private-discovery/kimi-v20-native-dependants-results.md)
+  completed three native turns and discovered the dependant avoidance, but ended
+  before exact fallback/preparation discovery and the challenge. Five of eight
+  candidate slots remained unused; zero families were accepted. Prompt v21 and
+  policy v4 now implement the [typed fallback policy](stages/02-private-discovery/03-typed-fallback-policy.md):
+  the model declares private needs and extracts evidenced answers, while the
+  application selects questions for unanswered reason, acceptable option and
+  preparation fields. Strict updates retain private state across omission and
+  restart without granting household authority. Native quality proof and
+  independent review remain pending.
   Full native family acceptance remains pending under
   the existing $20 cap. No candidate is accepted;
   the eight-family, completed candidate-comparison, A-to-B, judge and

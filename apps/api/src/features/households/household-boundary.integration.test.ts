@@ -28,11 +28,13 @@ import {
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
-import { Miniflare } from "miniflare";
+import { Miniflare, Response as LocalResponse } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 import * as authSchema from "../auth/auth.database-schema.js";
+import { PrivateDiscoveryContinuityJson } from "../private-output/private-discovery-continuity.js";
+import { PrivateDiscoveryContext } from "../private-output/private-discovery-model.js";
 import {
   privateOutputControlWorker,
   privateOutputRuntimeWorker,
@@ -152,6 +154,9 @@ let privateOutputControlManifest: Awaited<
   ReturnType<typeof bundleWorkerFixture>
 >;
 let privateOutputManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
+let privateModelResponse:
+  | ((context: typeof PrivateDiscoveryContext.Type) => LocalResponse)
+  | undefined;
 
 const makeRuntime = (privateAuditLogs?: string[]) =>
   new Miniflare({
@@ -268,7 +273,58 @@ const makeRuntime = (privateAuditLogs?: string[]) =>
           type: "worker",
         },
       },
-      privateOutputRuntimeWorker(privateOutputControlManifest),
+      {
+        config: {
+          ...privateOutputRuntimeWorker(privateOutputControlManifest).config,
+          env: {
+            ...privateOutputRuntimeWorker(privateOutputControlManifest).config
+              .env,
+            PRIVATE_DISCOVERY_CONFIG: {
+              type: "text",
+              value:
+                privateModelResponse === undefined
+                  ? ""
+                  : JSON.stringify({
+                      gatewayId: "synthetic-local-only",
+                      inputUsdPerMillionTokens: 1,
+                      maxOutputTokens: 1000,
+                      model: "@cf/qwen/qwen3-30b-a3b-fp8",
+                      outputUsdPerMillionTokens: 2,
+                      timeoutMs: 5000,
+                    }),
+            },
+          },
+        },
+        dev: {
+          outboundService: {
+            handler: async (request) => {
+              const respond = privateModelResponse;
+              if (
+                request.url !== "https://private-model.test/run" ||
+                respond === undefined
+              ) {
+                throw new Error(
+                  "External network is forbidden in private model tests"
+                );
+              }
+              const input = Schema.decodeUnknownSync(
+                Schema.Struct({
+                  body: Schema.Struct({
+                    messages: Schema.Array(
+                      Schema.Struct({ content: Schema.String })
+                    ),
+                  }),
+                })
+              )(await request.json());
+              const context = Schema.decodeUnknownSync(
+                Schema.fromJsonString(PrivateDiscoveryContext)
+              )(input.body.messages[1]?.content);
+              return respond(context);
+            },
+            type: "fetcher",
+          },
+        },
+      },
       privateOutputControlWorker(privateOutputControlManifest),
       {
         config: {
@@ -7315,6 +7371,162 @@ describe("canonical private profile cards", () => {
   beforeAll(async () => {
     await restartRuntime(capturedCardLogs);
   });
+  it("settles a typed fallback need through the authenticated turn route without changing the canonical profile", async () => {
+    const participantText = "I need an alternative meal for late evenings.";
+    const subject = "late evenings";
+    const acknowledgement = "I have kept that meal need in mind.";
+    let modelCalls = 0;
+    let connection: CardConnection | undefined;
+    privateModelResponse = (context) => {
+      modelCalls += 1;
+      const participant = context.messages.at(-1);
+      if (participant === undefined || participant.role !== "participant") {
+        throw new Error("Expected the current participant message");
+      }
+      expect(participant.text).toBe(participantText);
+      return LocalResponse.json({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              content: JSON.stringify({
+                continuity: {
+                  mealFallbackNeeds: {
+                    declarations: [
+                      {
+                        evidence: {
+                          messageId: participant.id,
+                          quote: participant.text,
+                        },
+                        subject,
+                      },
+                    ],
+                    updates: [],
+                  },
+                  notes: [],
+                },
+                proposals: [],
+                reply: {
+                  _tag: "Continue",
+                  followUp: null,
+                  text: acknowledgement,
+                },
+              }),
+              role: "assistant",
+            },
+          },
+        ],
+        usage: { completion_tokens: 20, prompt_tokens: 100 },
+      });
+    };
+    try {
+      await restartRuntime(capturedCardLogs);
+      const setup = await prepareLinkedAdult("Private Typed Fallback Need");
+      const before = await readCardProfile(setup);
+      expect(before).toMatchObject({ facts: [], version: 0 });
+      connection = await openPrivateConnection(setup.memberCookie);
+      const appended = await cardExchange(connection, {
+        expectedVersion: 0,
+        mutationId: crypto.randomUUID(),
+        text: participantText,
+        type: "AppendParticipantMessage",
+      });
+      if (appended.type !== "MessageAppended") {
+        throw new Error("Expected a queued private assistant turn");
+      }
+      const response = await getRuntime().dispatchFetch(
+        `https://meal-planner.test/v1/private-interviews/${connection.sessionReference}/turns/${appended.assistantTurn.id}`,
+        {
+          headers: {
+            Origin: "https://meal-planner.test",
+            cookie: setup.memberCookie,
+            "x-private-output-generation": connection.generation,
+          },
+          method: "POST",
+        }
+      );
+      expect(response.status).toBe(204);
+      expect(modelCalls).toBe(1);
+      expect(
+        await cardExchange(connection, {
+          requestId: crypto.randomUUID(),
+          type: "ReadAssistantTurn",
+        })
+      ).toMatchObject({
+        state: { status: "open", version: 2 },
+        turn: {
+          failure: null,
+          id: appended.assistantTurn.id,
+          status: "succeeded",
+        },
+      });
+      expect(
+        await cardExchange(connection, {
+          afterOrdinal: 0,
+          limit: 25,
+          requestId: crypto.randomUUID(),
+          type: "ReadHistory",
+        })
+      ).toMatchObject({
+        messages: [
+          appended.message,
+          {
+            role: "assistant",
+            text: `${acknowledgement}\n\nFor late evenings, why is an alternative meal needed?`,
+          },
+        ],
+      });
+      const retained = await privateControl({
+        action: "turns",
+        sessionReference: connection.sessionReference,
+      });
+      expect(retained.status).toBe(200);
+      const turns = Schema.decodeUnknownSync(
+        Schema.Struct({
+          result: Schema.Array(
+            Schema.Struct({
+              status: Schema.String,
+              summary: Schema.NullOr(Schema.String),
+            })
+          ),
+        })
+      )(await retained.json());
+      expect(turns.result).toHaveLength(1);
+      const evidence = {
+        messageId: appended.message.id,
+        quote: participantText,
+      };
+      expect(
+        Schema.decodeUnknownSync(PrivateDiscoveryContinuityJson)(
+          turns.result[0]?.summary
+        )
+      ).toEqual({
+        mealFallbackNeeds: [
+          {
+            acceptableOption: { _tag: "Unanswered", reopenedBy: null },
+            declaration: evidence,
+            disposition: { _tag: "Active", reopenedBy: null },
+            extraPreparation: { _tag: "Unanswered", reopenedBy: null },
+            id: `${appended.message.id}:0`,
+            reason: { _tag: "Unanswered", reopenedBy: null },
+            subject,
+            subjectEvidence: evidence,
+          },
+        ],
+        notes: [],
+      });
+      expect(await readPrivateCards(connection)).toMatchObject({
+        cards: [],
+        pendingConfirmation: null,
+      });
+      expect(await readCardProfile(setup)).toEqual(before);
+    } finally {
+      connection?.socket.close();
+      privateModelResponse = undefined;
+      await restartRuntime(capturedCardLogs);
+    }
+  });
+
   it("freezes participant mutations while an assistant turn is queued and permits explicit stop and retry before confirmation", async () => {
     const setup = await prepareLinkedAdult("Private Queued Assistant");
     const connection = await openPrivateConnection(setup.memberCookie);

@@ -4,6 +4,10 @@ import { Tool } from "effect/unstable/ai";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  emptyPrivateDiscoveryContinuity,
+  emptyPrivateDiscoveryContinuityUpdates,
+} from "./private-discovery-continuity.js";
+import {
   makePrivateDiscoveryProviderOutput,
   PrivateDiscoveryContext,
   PrivateDiscoveryOutput,
@@ -19,7 +23,7 @@ import type { PrivateDiscoveryConfiguration } from "./private-discovery-workers-
 const context = () =>
   Schema.decodeUnknownSync(PrivateDiscoveryContext)({
     cards: [],
-    continuity: [],
+    continuity: emptyPrivateDiscoveryContinuity(),
     messages: [
       {
         id: crypto.randomUUID(),
@@ -61,20 +65,25 @@ const kimiConfig: PrivateDiscoveryConfiguration = {
   outputUsdPerMillionTokens: 4,
 };
 const output = {
-  continuity: [
-    {
-      detail: "",
-      key: "preparation",
-      state: "unresolved",
-      subject: "Tomato preparation",
-    },
-  ],
+  continuity: {
+    ...emptyPrivateDiscoveryContinuityUpdates(),
+    notes: [
+      {
+        detail: "",
+        key: "preparation",
+        state: "unresolved",
+        subject: "Tomato preparation",
+      },
+    ],
+  },
   proposals: [],
   reply: {
-    _tag: "Ask",
-    question: "How do you like tomatoes prepared?",
+    _tag: "Continue",
+    followUp: {
+      question: "How do you like tomatoes prepared?",
+      topicKey: "preparation",
+    },
     text: "You like tomatoes.",
-    topicKey: "preparation",
   },
 };
 const completion = (content: Readonly<Record<string, unknown>> = output) => ({
@@ -158,7 +167,8 @@ describe("private discovery Workers AI boundary", () => {
         ],
         response_format: { json_schema: jsonSchema, type: "json_schema" },
       });
-      expect(jsonSchema).not.toHaveProperty("$defs");
+      expect(jsonSchema).toHaveProperty("$defs.PrivateDiscoveryEvidence");
+      expect(jsonSchema).toHaveProperty("$defs.MealFallbackNeedReference");
       const decode = Schema.decodeUnknownSync(
         makePrivateDiscoveryProviderOutput(cards)
       );
@@ -353,8 +363,8 @@ describe("private discovery Workers AI boundary", () => {
       expect(result.output).toEqual(output);
       expect(result.provenance).toMatchObject({
         model: modelName,
-        policyVersion: "private-discovery-policy-v3",
-        promptVersion: "private-discovery-prompt-v20",
+        policyVersion: "private-discovery-policy-v4",
+        promptVersion: "private-discovery-prompt-v21",
         provider: "cloudflare-workers-ai",
       });
       expect(result.usage).toEqual({
@@ -427,8 +437,8 @@ describe("private discovery Workers AI boundary", () => {
       expect(result.output).toEqual(output);
       expect(result.provenance).toMatchObject({
         model: kimiConfig.model,
-        policyVersion: "private-discovery-policy-v3",
-        promptVersion: "private-discovery-prompt-v20",
+        policyVersion: "private-discovery-policy-v4",
+        promptVersion: "private-discovery-prompt-v21",
         provider: "cloudflare-workers-ai",
       });
       expect(result.usage).toEqual({
@@ -702,11 +712,14 @@ describe("private discovery Workers AI boundary", () => {
       "unknown continuity note fields",
       {
         ...output,
-        continuity: [{ ...output.continuity[0], actor: "forbidden" }],
+        continuity: {
+          ...output.continuity,
+          notes: [{ ...output.continuity.notes[0], actor: "forbidden" }],
+        },
       },
     ],
     [
-      "an unsupported review reason",
+      "the retired model-owned Review response",
       {
         ...output,
         reply: { _tag: "Review", reason: "cards_exist", text: "Review." },
@@ -843,14 +856,17 @@ describe("private discovery Workers AI boundary", () => {
         ...test.input,
         context: {
           ...test.input.context,
-          continuity: [
-            {
-              detail: privateValue,
-              key: "private-context",
-              state: "circumstance" as const,
-              subject: "Private context",
-            },
-          ],
+          continuity: {
+            ...emptyPrivateDiscoveryContinuity(),
+            notes: [
+              {
+                detail: privateValue,
+                key: "private-context",
+                state: "circumstance" as const,
+                subject: "Private context",
+              },
+            ],
+          },
         },
       };
       const error = await Effect.runPromise(

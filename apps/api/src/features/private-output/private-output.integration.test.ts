@@ -18,6 +18,12 @@ import type { WorkerdStructuredLog } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import {
+  emptyPrivateDiscoveryContinuity,
+  emptyPrivateDiscoveryContinuityUpdates,
+  PrivateDiscoveryContinuityJson,
+} from "./private-discovery-continuity.js";
+import type { PrivateDiscoveryContinuityNote } from "./private-discovery-continuity.js";
 import { PrivateDiscoveryContext } from "./private-discovery-model.js";
 import type { PrivateOutputMutationPort } from "./private-output-binding.js";
 import { runOutputFencedMutation } from "./private-output-mutation.js";
@@ -1624,14 +1630,31 @@ it("keeps fixture producers and directory HTTP, SDK, and storage capabilities ab
 }, 30_000);
 
 const output = {
-  continuity: [],
+  continuity: emptyPrivateDiscoveryContinuityUpdates(),
   proposals: [] as unknown[],
   reply: {
-    _tag: "Review",
-    reason: "no_relevant_open_topic",
+    _tag: "Continue",
+    followUp: null,
     text: "Your private discovery is ready to review.",
   },
 };
+const noteUpdates = (
+  notes: readonly (typeof PrivateDiscoveryContinuityNote.Type)[]
+) => ({
+  ...emptyPrivateDiscoveryContinuityUpdates(),
+  notes,
+});
+const noteSnapshot = (
+  notes: readonly (typeof PrivateDiscoveryContinuityNote.Type)[]
+) => ({
+  ...emptyPrivateDiscoveryContinuity(),
+  notes,
+});
+const genericReply = (topicKey: string, question: string, text: string) => ({
+  _tag: "Continue",
+  followUp: { question, topicKey },
+  text,
+});
 type SyntheticOutput = Record<string, unknown>;
 interface SyntheticUsage {
   completion_tokens: number;
@@ -1891,7 +1914,7 @@ describe("native adaptive assistant attempts through the production model adapte
     expect(retained).toHaveLength(1);
     expect(retained[0]).toMatchObject({
       status: "succeeded",
-      summary: "[]",
+      summary: JSON.stringify(emptyPrivateDiscoveryContinuity()),
     });
     expect(JSON.parse(retained[0]?.usageJson ?? "null")).toMatchObject({
       inputTokens: 100,
@@ -1940,6 +1963,13 @@ describe("native adaptive assistant attempts through the production model adapte
       Schema.fromJsonString(PrivateDiscoveryContext)
     )(request.body.messages[1]?.content);
   };
+  const currentParticipant = () => {
+    const participant = capturedContext(modelCalls.length - 1).messages.at(-1);
+    if (participant === undefined || participant.role !== "participant") {
+      throw new Error("Expected the current participant message");
+    }
+    return participant;
+  };
   const routineNote = {
     detail: "The adult has little time to cook in the evening.",
     key: "cooking_window",
@@ -1953,18 +1983,412 @@ describe("native adaptive assistant attempts through the production model adapte
     subject: "Available cooking equipment",
   };
 
-  it("applies mixed continuity updates with a card atomically, retains omitted notes across restart, and isolates a fresh session", async () => {
+  it("persists typed needs with cards, retains omitted fields across native restart, and derives review only after every field is addressed", async () => {
     modelCalls = [];
-    const reply = {
-      _tag: "Ask",
-      question: "What cooking equipment is available?",
-      text: "I have kept your short cooking window in mind.",
-      topicKey: equipmentTopic.key,
+    modelResponse = () => {
+      const participant = currentParticipant();
+      return Promise.resolve(
+        response({
+          ...output,
+          continuity: {
+            mealFallbackNeeds: {
+              declarations: [
+                {
+                  evidence: {
+                    messageId: participant.id,
+                    quote: "Jordan needs an alternative meal.",
+                  },
+                  subject: "Jordan",
+                },
+              ],
+              updates: [],
+            },
+            notes: [],
+          },
+          proposals: [
+            {
+              _tag: "ProposeProfileCard",
+              change: {
+                _tag: "AddConfirmedProfileFact",
+                fact: {
+                  _tag: "FoodPreference",
+                  label: "carrots",
+                  sentiment: "like",
+                  targetKind: "ingredient",
+                },
+              },
+            },
+          ],
+          reply: {
+            _tag: "Continue",
+            followUp: null,
+            text: "I have kept those details.",
+          },
+        })
+      );
     };
+    const session = await binding();
+    const connection = await open(session);
+    await successful(
+      await queue(
+        session,
+        connection,
+        0,
+        "Jordan needs an alternative meal. I like carrots."
+      )
+    );
+    const first = await audit(session);
+    expect(first[0]?.status).toBe("succeeded");
+    const saved = Schema.decodeUnknownSync(PrivateDiscoveryContinuityJson)(
+      first[0]?.summary
+    );
+    const [need] = saved.mealFallbackNeeds;
+    if (need === undefined) {
+      throw new Error("Expected the declared private need");
+    }
+    expect(need).toMatchObject({
+      acceptableOption: { _tag: "Unanswered" },
+      extraPreparation: { _tag: "Unanswered" },
+      id: `${capturedContext(0).messages[0]?.id}:0`,
+      reason: { _tag: "Unanswered" },
+    });
+    expect(await history(connection)).toMatchObject({
+      messages: [
+        { role: "participant" },
+        {
+          role: "assistant",
+          text: "I have kept those details.\n\nFor Jordan, why is an alternative meal needed?",
+        },
+      ],
+    });
+    const savedCards = await cards(connection);
+    expect(savedCards).toMatchObject({
+      cards: [
+        { change: { _tag: "AddConfirmedProfileFact" }, status: "proposed" },
+      ],
+    });
+    if (savedCards.type !== "CardsRead") {
+      throw new Error("Expected private cards");
+    }
+    connection.socket.close();
+    await runtime.dispose();
+    runtime = makeRuntime();
+    const resumed = await open(session);
     modelResponse = () =>
       Promise.resolve(
         response({
-          continuity: [routineNote, equipmentTopic],
+          ...output,
+          reply: {
+            _tag: "Continue",
+            followUp: null,
+            text: "I have retained that information.",
+          },
+        })
+      );
+    await successful(
+      await queue(session, resumed, 2, "I have no known hard food constraints.")
+    );
+    expect(await readTurn(resumed)).toMatchObject({
+      turn: { failure: null, status: "succeeded" },
+    });
+    expect(capturedContext(1).continuity).toEqual(saved);
+    const omitted = await audit(session);
+    expect(omitted[1]?.status).toBe("succeeded");
+    expect(
+      Schema.decodeUnknownSync(PrivateDiscoveryContinuityJson)(
+        omitted[1]?.summary
+      )
+    ).toEqual(saved);
+    expect(await cards(resumed)).toEqual(
+      expect.objectContaining({ cards: savedCards.cards })
+    );
+    modelResponse = () => {
+      const participant = currentParticipant();
+      const evidence = { messageId: participant.id, quote: participant.text };
+      const reference = { _tag: "Existing", id: need.id };
+      return Promise.resolve(
+        response({
+          ...output,
+          continuity: {
+            mealFallbackNeeds: {
+              declarations: [],
+              updates: [
+                {
+                  _tag: "RecordReason",
+                  evidence,
+                  need: reference,
+                  revisit: null,
+                  value: "The shared dish is too spicy.",
+                },
+                {
+                  _tag: "RecordOption",
+                  evidence,
+                  need: reference,
+                  revisit: null,
+                  value: {
+                    description: "a plain sandwich",
+                    kind: "generic",
+                    quantity: null,
+                    substitutions: null,
+                  },
+                },
+                {
+                  _tag: "RecordPreparation",
+                  evidence,
+                  need: reference,
+                  revisit: null,
+                  value: "Assembly without additional cooking is manageable.",
+                },
+              ],
+            },
+            notes: [],
+          },
+          reply: {
+            _tag: "Continue",
+            followUp: null,
+            text: "I have retained the reason, option and preparation you described.",
+          },
+        })
+      );
+    };
+    await successful(
+      await queue(
+        session,
+        resumed,
+        4,
+        "The shared dish is too spicy. A plain sandwich works, and assembly without extra cooking is manageable."
+      )
+    );
+    expect(await readTurn(resumed)).toMatchObject({
+      state: { status: "open", version: 6 },
+      turn: { status: "succeeded" },
+    });
+    const completed = await audit(session);
+    const completeSnapshot = Schema.decodeUnknownSync(
+      PrivateDiscoveryContinuityJson
+    )(completed[2]?.summary);
+    expect(completeSnapshot.mealFallbackNeeds[0]).toMatchObject({
+      acceptableOption: { _tag: "Answered", value: { kind: "generic" } },
+      extraPreparation: { _tag: "Answered" },
+      id: need.id,
+      reason: { _tag: "Answered" },
+    });
+    expect(await history(resumed)).toMatchObject({
+      messages: [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          role: "assistant",
+          text: "I have retained the reason, option and preparation you described.",
+        },
+      ],
+    });
+    resumed.socket.close();
+    const freshSession = { ...session, sessionReference: crypto.randomUUID() };
+    const fresh = await open(freshSession);
+    modelResponse = () => Promise.resolve(response());
+    await successful(await queue(freshSession, fresh));
+    expect(capturedContext(3).continuity).toEqual(
+      emptyPrivateDiscoveryContinuity()
+    );
+    expect(capturedContext(3).cards).toEqual([]);
+    expect(capturedContext(3).profile).toEqual({ facts: [], version: 0 });
+    fresh.socket.close();
+  });
+
+  it.each([
+    { kind: "old_evidence", stage: "need_evidence" },
+    { kind: "assistant_evidence", stage: "need_evidence" },
+    { kind: "missing_excerpt", stage: "need_evidence" },
+    { kind: "unknown_need", stage: "need_updates" },
+    { kind: "duplicate_field", stage: "need_updates" },
+    { kind: "unknown_field", stage: "output_schema" },
+    { kind: "invalid_generic_reference", stage: "reply_decision" },
+    { kind: "snapshot_overflow", stage: "continuity_limit" },
+  ])(
+    "atomically rejects typed $kind with a valid proposed card",
+    async ({ kind, stage }) => {
+      modelCalls = [];
+      modelResponse = () =>
+        Promise.resolve(
+          response({ ...output, continuity: noteUpdates([routineNote]) })
+        );
+      const session = await binding();
+      const connection = await open(session);
+      await successful(await queue(session, connection));
+      const [savedAudit] = await audit(session);
+      const saved = savedAudit?.summary;
+      modelResponse = () => {
+        const participant = currentParticipant();
+        const context = capturedContext(modelCalls.length - 1);
+        const evidence = { messageId: participant.id, quote: participant.text };
+        const declaration = { evidence, subject: "Jordan" };
+        const record = {
+          _tag: "RecordReason",
+          evidence,
+          need: { _tag: "Declared", index: 0 },
+          revisit: null,
+          value: "The shared meal is too spicy.",
+        };
+        let typed: unknown = { declarations: [declaration], updates: [] };
+        let reply: unknown = output.reply;
+        switch (kind) {
+          case "old_evidence":
+          case "assistant_evidence": {
+            const earlier = context.messages.find(
+              (message) =>
+                message.role ===
+                (kind === "old_evidence" ? "participant" : "assistant")
+            );
+            if (earlier === undefined) {
+              throw new Error("Expected the earlier message");
+            }
+            typed = {
+              declarations: [
+                {
+                  ...declaration,
+                  evidence: { messageId: earlier.id, quote: earlier.text },
+                },
+              ],
+              updates: [],
+            };
+            break;
+          }
+          case "missing_excerpt": {
+            typed = {
+              declarations: [
+                {
+                  ...declaration,
+                  evidence: {
+                    ...evidence,
+                    quote: "An unsupported private excerpt.",
+                  },
+                },
+              ],
+              updates: [],
+            };
+            break;
+          }
+          case "unknown_need": {
+            typed = {
+              declarations: [],
+              updates: [
+                {
+                  ...record,
+                  need: { _tag: "Existing", id: `${crypto.randomUUID()}:0` },
+                },
+              ],
+            };
+            break;
+          }
+          case "duplicate_field": {
+            typed = { declarations: [declaration], updates: [record, record] };
+            break;
+          }
+          case "unknown_field": {
+            typed = {
+              declarations: [declaration],
+              updates: [{ ...record, approved: true }],
+            };
+            break;
+          }
+          case "invalid_generic_reference": {
+            reply = genericReply("missing", "What else matters?", "Thank you.");
+            break;
+          }
+          case "snapshot_overflow": {
+            typed = {
+              declarations: Array.from({ length: 3 }, (_, index) => ({
+                evidence,
+                subject: `${index}${"🍲".repeat(59)}`,
+              })),
+              updates: Array.from({ length: 3 }, (_, index) => [
+                {
+                  ...record,
+                  need: { _tag: "Declared", index },
+                  value: "🍲".repeat(100),
+                },
+                {
+                  ...record,
+                  _tag: "RecordPreparation",
+                  need: { _tag: "Declared", index },
+                  value: "🍲".repeat(100),
+                },
+              ]).flat(),
+            };
+            break;
+          }
+          default: {
+            throw new Error("Unexpected invalid typed fixture");
+          }
+        }
+        return Promise.resolve(
+          response({
+            continuity: { mealFallbackNeeds: typed, notes: [] },
+            proposals: [
+              {
+                _tag: "ProposeProfileCard",
+                change: {
+                  _tag: "AddConfirmedProfileFact",
+                  fact: {
+                    _tag: "FoodPreference",
+                    label: "tomatoes",
+                    sentiment: "like",
+                    targetKind: "ingredient",
+                  },
+                },
+              },
+            ],
+            reply,
+          })
+        );
+      };
+      const start = nativeLogs.length;
+      await successful(
+        await queue(
+          session,
+          connection,
+          2,
+          kind === "snapshot_overflow"
+            ? "🍲".repeat(200)
+            : "Jordan needs an alternative meal."
+        )
+      );
+      await expectDiagnostic(start, stage, [routineNote.detail]);
+      expect(await readTurn(connection)).toMatchObject({
+        state: { status: "open", version: 3 },
+        turn: { failure: "invalid_output", status: "failed" },
+      });
+      expect(await history(connection)).toMatchObject({
+        messages: [
+          { role: "participant" },
+          { role: "assistant" },
+          { role: "participant" },
+        ],
+      });
+      expect(await cards(connection)).toMatchObject({ cards: [] });
+      const attempts = await audit(session);
+      expect(attempts[0]?.summary).toBe(saved);
+      expect(attempts[1]?.summary).toBeNull();
+      expect(modelCalls).toHaveLength(2);
+      connection.socket.close();
+    }
+  );
+
+  it("applies mixed continuity updates with a card atomically, retains omitted notes across restart, and isolates a fresh session", async () => {
+    modelCalls = [];
+    const reply = genericReply(
+      equipmentTopic.key,
+      "What cooking equipment is available?",
+      "I have kept your short cooking window in mind."
+    );
+    modelResponse = () =>
+      Promise.resolve(
+        response({
+          continuity: noteUpdates([routineNote, equipmentTopic]),
           proposals: [],
           reply,
         })
@@ -1979,13 +2403,15 @@ describe("native adaptive assistant attempts through the production model adapte
         "I have little time to cook in the evening."
       )
     );
-    expect(capturedContext(0).continuity).toEqual([]);
+    expect(capturedContext(0).continuity).toEqual(
+      emptyPrivateDiscoveryContinuity()
+    );
     expect(await history(connection)).toMatchObject({
       messages: [
         expect.objectContaining({ role: "participant" }),
         expect.objectContaining({
           role: "assistant",
-          text: `${reply.text}\n\n${reply.question}`,
+          text: `${reply.text}\n\n${reply.followUp.question}`,
         }),
       ],
     });
@@ -2005,7 +2431,7 @@ describe("native adaptive assistant attempts through the production model adapte
       Promise.resolve(
         response({
           ...output,
-          continuity: [newNote, answered],
+          continuity: noteUpdates([newNote, answered]),
           proposals: [
             {
               _tag: "ProposeProfileCard",
@@ -2030,16 +2456,13 @@ describe("native adaptive assistant attempts through the production model adapte
         "I have a hob and cook at weekends. I like tomatoes."
       )
     );
-    expect(capturedContext(1).continuity).toEqual([
-      routineNote,
-      equipmentTopic,
-    ]);
+    expect(capturedContext(1).continuity).toEqual(
+      noteSnapshot([routineNote, equipmentTopic])
+    );
     const retained = await audit(session);
-    expect(JSON.parse(retained[1]?.summary ?? "null")).toEqual([
-      routineNote,
-      answered,
-      newNote,
-    ]);
+    expect(JSON.parse(retained[1]?.summary ?? "null")).toEqual(
+      noteSnapshot([routineNote, answered, newNote])
+    );
     expect(retained[1]?.status).toBe("succeeded");
     expect(await history(connection)).toMatchObject({
       messages: [
@@ -2085,7 +2508,11 @@ describe("native adaptive assistant attempts through the production model adapte
           ...output,
           reply: {
             _tag: "Stop",
-            reason: "participant_requested_stop",
+            evidence: {
+              messageId: capturedContext(modelCalls.length - 1).messages.at(-1)
+                ?.id,
+              quote: "Please stop asking questions.",
+            },
             text: "We can stop here.",
           },
         })
@@ -2093,11 +2520,12 @@ describe("native adaptive assistant attempts through the production model adapte
     await successful(
       await queue(session, resumed, 4, "Please stop asking questions.")
     );
-    expect(capturedContext(2).continuity).toEqual([
-      routineNote,
-      answered,
-      newNote,
-    ]);
+    expect(await readTurn(resumed)).toMatchObject({
+      turn: { failure: null, status: "succeeded" },
+    });
+    expect(capturedContext(2).continuity).toEqual(
+      noteSnapshot([routineNote, answered, newNote])
+    );
     const resumedCards = await cards(resumed);
     if (savedCards.type !== "CardsRead" || resumedCards.type !== "CardsRead") {
       throw new Error("Expected private cards");
@@ -2108,21 +2536,19 @@ describe("native adaptive assistant attempts through the production model adapte
       turn: { status: "succeeded" },
     });
     const afterStop = await audit(session);
-    expect(JSON.parse(afterStop[2]?.summary ?? "null")).toEqual([
-      routineNote,
-      answered,
-      newNote,
-    ]);
+    expect(JSON.parse(afterStop[2]?.summary ?? "null")).toEqual(
+      noteSnapshot([routineNote, answered, newNote])
+    );
     const nextSession = { ...session, sessionReference: crypto.randomUUID() };
     const fresh = await open(nextSession);
     modelResponse = () => Promise.resolve(response());
     await successful(await queue(nextSession, fresh));
     const nextContext = capturedContext(3);
-    expect(nextContext.continuity).toEqual([]);
+    expect(nextContext.continuity).toEqual(emptyPrivateDiscoveryContinuity());
     expect(nextContext.cards).toEqual([]);
     expect(nextContext.messages).toHaveLength(1);
     expect(JSON.stringify(nextContext)).not.toContain(routineNote.detail);
-    expect(JSON.stringify(nextContext)).not.toContain(reply.question);
+    expect(JSON.stringify(nextContext)).not.toContain(reply.followUp.question);
     expect(
       await exchange(resumed, {
         expectedVersion: 6,
@@ -2142,13 +2568,12 @@ describe("native adaptive assistant attempts through the production model adapte
         Promise.resolve(
           response({
             ...output,
-            continuity: [equipmentTopic],
-            reply: {
-              _tag: "Ask",
-              question: "What equipment is available?",
-              text: "One question remains.",
-              topicKey: equipmentTopic.key,
-            },
+            continuity: noteUpdates([equipmentTopic]),
+            reply: genericReply(
+              equipmentTopic.key,
+              "What equipment is available?",
+              "One question remains."
+            ),
           })
         );
       const session = await binding();
@@ -2166,23 +2591,22 @@ describe("native adaptive assistant attempts through the production model adapte
         Promise.resolve(
           response({
             ...output,
-            continuity: [closed],
+            continuity: noteUpdates([closed]),
           })
         );
       await successful(await queue(session, connection, 2));
       const afterResolution = await audit(session);
       const saved = afterResolution[1]?.summary;
-      expect(JSON.parse(saved ?? "null")).toEqual([closed]);
+      expect(JSON.parse(saved ?? "null")).toEqual(noteSnapshot([closed]));
       modelResponse = () =>
         Promise.resolve(
           response({
             ...output,
-            reply: {
-              _tag: "Ask",
-              question: "What equipment is available?",
-              text: "Another question.",
-              topicKey: equipmentTopic.key,
-            },
+            reply: genericReply(
+              equipmentTopic.key,
+              "What equipment is available?",
+              "Another question."
+            ),
           })
         );
       const start = nativeLogs.length;
@@ -2206,78 +2630,59 @@ describe("native adaptive assistant attempts through the production model adapte
       title: "the superseded additions/revisions shape",
     },
     {
-      continuity: [equipmentTopic, equipmentTopic],
+      continuity: noteUpdates([equipmentTopic, equipmentTopic]),
       reply: output.reply,
       stage: "continuity_updates",
       title: "duplicate new keys",
     },
     {
-      continuity: [routineNote, { ...routineNote, detail: "Another update." }],
+      continuity: noteUpdates([
+        routineNote,
+        { ...routineNote, detail: "Another update." },
+      ]),
       reply: output.reply,
       stage: "continuity_updates",
       title: "duplicate retained keys",
     },
     {
-      continuity: [
+      continuity: noteUpdates([
         ...Array.from({ length: 6 }, (_, i) => ({
           ...routineNote,
           key: `new-${i}`,
         })),
         routineNote,
-      ],
+      ]),
       reply: output.reply,
       stage: "output_schema",
       title: "seven updates",
     },
     {
-      continuity: [equipmentTopic],
+      continuity: noteUpdates([equipmentTopic]),
       reply: output.reply,
       stage: "reply_decision",
-      title: "Review leaving an unresolved note",
+      title: "Continue omitting a question for an unresolved note",
     },
     {
       continuity: output.continuity,
-      reply: {
-        _tag: "Ask",
-        question: "What else?",
-        text: "Private reply.",
-        topicKey: "missing",
-      },
+      reply: genericReply("missing", "What else?", "Private reply."),
       stage: "reply_decision",
       title: "Ask targeting an unknown note",
     },
     {
       continuity: output.continuity,
-      reply: {
-        _tag: "Ask",
-        question: "What else?",
-        text: "Private reply.",
-        topicKey: routineNote.key,
-      },
+      reply: genericReply(routineNote.key, "What else?", "Private reply."),
       stage: "reply_decision",
       title: "Ask targeting a circumstance",
     },
     {
-      continuity: [equipmentTopic],
-      reply: {
-        _tag: "Ask",
-        question: "q".repeat(999),
-        text: "a".repeat(1000),
-        topicKey: equipmentTopic.key,
-      },
+      continuity: noteUpdates([equipmentTopic]),
+      reply: genericReply(
+        equipmentTopic.key,
+        "q".repeat(999),
+        "a".repeat(1000)
+      ),
       stage: "reply_limit",
       title: "an oversized combined reply",
-    },
-    {
-      continuity: Array.from({ length: 6 }, (_, i) => ({
-        ...routineNote,
-        detail: "🍲".repeat(100),
-        key: `large-${i}`,
-        subject: "🍲".repeat(60),
-      })),
-      reply: output.reply,
-      stage: "continuity_limit",
-      title: "serialized continuity overflow",
     },
   ])(
     "atomically rejects $title before storing a reply, card or replacement snapshot",
@@ -2287,7 +2692,7 @@ describe("native adaptive assistant attempts through the production model adapte
         Promise.resolve(
           response({
             ...output,
-            continuity: [routineNote],
+            continuity: noteUpdates([routineNote]),
           })
         );
       const session = await binding();
@@ -2695,11 +3100,14 @@ describe("native adaptive assistant attempts through the production model adapte
       };
       const context = JSON.parse(
         request.body.messages[1]?.content ?? "null"
-      ) as { cards: readonly unknown[]; continuity: readonly unknown[] };
+      ) as {
+        cards: readonly unknown[];
+        continuity: typeof PrivateDiscoveryContext.Type.continuity;
+      };
       expect(context.cards).toEqual([
         expect.objectContaining({ id: card.id, revision: card.revision }),
       ]);
-      expect(context.continuity).toEqual([]);
+      expect(context.continuity).toEqual(emptyPrivateDiscoveryContinuity());
       connection.socket.close();
     }
   );

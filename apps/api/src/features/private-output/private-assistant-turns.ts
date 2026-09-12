@@ -13,6 +13,7 @@ import { Cause, Effect, Exit, Option, Schema } from "effect";
 
 import {
   applyPrivateDiscoveryContinuation,
+  emptyPrivateDiscoveryContinuity,
   PrivateDiscoveryContinuationFailure,
   PrivateDiscoveryContinuityJson,
 } from "./private-discovery-continuity.js";
@@ -30,6 +31,7 @@ import type {
   PrivateDiscoveryProfile,
   PrivateDiscoveryResult,
 } from "./private-discovery-model.js";
+import { PrivateDiscoveryNeedFailure } from "./private-discovery-needs.js";
 import type { RunAssistantTurn } from "./private-discovery.contract.js";
 import type { PrivateOutputSocket } from "./private-output-socket.js";
 import { PrivateOutputUnavailable } from "./private-output.contract.js";
@@ -309,7 +311,7 @@ export class PrivateAssistantTurns {
       .get();
     const continuity =
       previous === undefined
-        ? []
+        ? emptyPrivateDiscoveryContinuity()
         : Schema.decodeUnknownSync(PrivateDiscoveryContinuityJson)(
             previous.summary
           );
@@ -456,15 +458,34 @@ export class PrivateAssistantTurns {
           Schema.decodeUnknownSync(Schema.fromJsonString(ProfileCard))(cardJson)
         );
       const proposals = reviewProposals(result, context, storedCards);
+      if (result.output.reply._tag === "Stop" && proposals.length !== 0) {
+        throw invalidOutput("reply_decision");
+      }
+      const participant = this.#database
+        .select({
+          id: privateMessages.id,
+          role: privateMessages.role,
+          text: privateMessages.text,
+        })
+        .from(privateMessages)
+        .where(eq(privateMessages.id, turn.sourceMessageId))
+        .get();
+      if (participant === undefined) {
+        throw invalidOutput("need_evidence");
+      }
       let continuation: ReturnType<typeof applyPrivateDiscoveryContinuation>;
       try {
         continuation = applyPrivateDiscoveryContinuation(
           context.continuity,
           result.output.continuity,
-          result.output.reply
+          result.output.reply,
+          participant
         );
       } catch (error) {
-        if (error instanceof PrivateDiscoveryContinuationFailure) {
+        if (
+          error instanceof PrivateDiscoveryContinuationFailure ||
+          error instanceof PrivateDiscoveryNeedFailure
+        ) {
           throw invalidOutput(error.stage);
         }
         throw error;

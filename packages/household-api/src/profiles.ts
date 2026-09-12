@@ -31,7 +31,12 @@ export const FoodPreference = Schema.Struct({
   label: ProfileLabel,
   sentiment: Schema.Literals(["like", "dislike", "strong_dislike"]),
   targetKind: Schema.Literals(["ingredient", "dish", "cuisine"]),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+}).pipe(
+  Schema.annotate({
+    identifier: "FoodPreference",
+    parseOptions: { onExcessProperty: "error" },
+  })
+);
 
 export const HardConstraint = Schema.Struct({
   _tag: Schema.Literal("HardConstraint"),
@@ -51,7 +56,7 @@ export const ProfileFactValue = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("NoKnownHardConstraints") }).pipe(
     Schema.annotate({ parseOptions: { onExcessProperty: "error" } })
   ),
-]);
+]).pipe(Schema.annotate({ identifier: "ProfileFactValue" }));
 export type ProfileFactValue = typeof ProfileFactValue.Type;
 
 export const ProfileFactStanding = Schema.Union([

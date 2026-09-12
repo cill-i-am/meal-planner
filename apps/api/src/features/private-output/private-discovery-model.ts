@@ -17,12 +17,14 @@ import {
   PrivateDiscoveryReply,
 } from "./private-discovery-continuity.js";
 import type { PrivateDiscoveryContinuationFailure } from "./private-discovery-continuity.js";
+import { PrivateDiscoveryEvidenceMessage } from "./private-discovery-needs.js";
+import type { PrivateDiscoveryNeedFailure } from "./private-discovery-needs.js";
 
 export const PRIVATE_DISCOVERY_CONTEXT_BYTES = 24_576;
 export const PRIVATE_DISCOVERY_MESSAGE_LIMIT = 16;
 export const PRIVATE_DISCOVERY_CARD_LIMIT = 25;
-export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v20";
-export const PRIVATE_DISCOVERY_POLICY_VERSION = "private-discovery-policy-v3";
+export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v21";
+export const PRIVATE_DISCOVERY_POLICY_VERSION = "private-discovery-policy-v4";
 export const PRIVATE_DISCOVERY_TOOL_VERSION = "profile-card-change-v1";
 
 const Id = Schema.String.pipe(Schema.check(Schema.isUUID()));
@@ -56,27 +58,24 @@ export const PrivateDiscoveryContext = Schema.Struct({
     })
   ).pipe(Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_CARD_LIMIT))),
   continuity: PrivateDiscoveryContinuity,
-  messages: Schema.Array(
-    Schema.Struct({
-      id: Id,
-      role: Schema.Literals(["participant", "assistant"]),
-      text: Schema.String.pipe(
-        Schema.check(Schema.isMinLength(1), Schema.isMaxLength(4000))
-      ),
-    })
-  ).pipe(Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_MESSAGE_LIMIT))),
+  messages: Schema.Array(PrivateDiscoveryEvidenceMessage).pipe(
+    Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_MESSAGE_LIMIT))
+  ),
   profile: PrivateDiscoveryProfile,
 });
 export type PrivateDiscoveryContext = typeof PrivateDiscoveryContext.Type;
 
+const DiscoveryProfileCardChange = ProfileCardChange.pipe(
+  Schema.annotate({ identifier: "PrivateDiscoveryProfileCardChange" })
+);
 const ProposeProfileCard = Schema.Struct({
   _tag: Schema.Literal("ProposeProfileCard"),
-  change: ProfileCardChange,
+  change: DiscoveryProfileCardChange,
 });
 const ReviseProposedProfileCard = Schema.Struct({
   _tag: Schema.Literal("ReviseProposedProfileCard"),
   cardId: Id,
-  change: ProfileCardChange,
+  change: DiscoveryProfileCardChange,
   expectedRevision: ProfileCard.fields.revision,
 });
 const PrivateDiscoveryProposal = Schema.Union([
@@ -142,6 +141,7 @@ export type PrivateDiscoveryResult = typeof PrivateDiscoveryResult.Type;
 
 export type PrivateDiscoveryInvalidOutputStage =
   | PrivateDiscoveryContinuationFailure["stage"]
+  | PrivateDiscoveryNeedFailure["stage"]
   | "context_preparation"
   | "response_body_missing"
   | "response_body_limit"

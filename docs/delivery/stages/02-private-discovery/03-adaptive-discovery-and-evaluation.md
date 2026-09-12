@@ -7,6 +7,23 @@
 
 ## Current evaluation status
 
+The [typed fallback policy design](03-typed-fallback-policy.md) now owns the
+authorized deterministic follow-up implementation. It preserves semantic model
+recognition while giving the application responsibility for unanswered fields
+of a declared private fallback need. Prompt v21 and policy v4 replace model-owned
+Ask/Review with a strict Continue/extraction contract and application-owned
+question selection. The private snapshot retains typed reason, acceptable option
+and preparation fields across omission and restart, with current-message evidence
+and atomic rejection. Native quality proof and independent review remain pending;
+no additional candidate or family is accepted by this implementation.
+
+Local v21 verification passes 109 focused contract tests, all 169 native
+private-output/household-boundary cases, 34 shared API tests, type checks, scoped
+lint/formatting and evaluation-asset validation. Native fixtures use synthetic
+provider responses. The design records the setup-blocked attempts and the
+proposed-card request-size regression that was repaired with shared schema
+definitions, preserving existing limits and accepted values.
+
 The latest [GPT-OSS v16 result](../../../../evals/private-discovery/prompt-v16-planning-purpose-results.md)
 stopped at a proven semantic truthfulness/authority failure. Both native calls
 succeeded, but the second assistant reply falsely represented the preference
@@ -241,9 +258,16 @@ fallbacks. Those effects remain unavailable. Only prompt text and prompt-version
 provenance change: schemas, validators, policy v3, card authority, persistence,
 Kimi's 65,536-token/900-second/2-MiB bounds, sampling, scenarios and rubric are
 unchanged. The two existing adapter provenance expectations advance to v20;
-no wording-matching tests or deterministic steering logic were added. The next
-step is a fresh native retest. Improved question selection and completed family
-coverage remain unverified hypotheses.
+no wording-matching tests or deterministic steering logic were added in v20.
+
+The [v20 native retest](../../../../evals/private-discovery/kimi-v20-native-dependants-results.md)
+on source `3302090c` completed three successful turns and explicitly confirmed two
+supported adult facts. It discovered the dependant avoidance but returned Review
+before eliciting the exact fallback or acceptable preparation. The challenge was
+unexercised, and five of eight candidate slots remained unused. No judge or human
+rating ran, and zero families were accepted. Its report retains the source-integrity
+qualification and byte-exact restoration receipts. This repeated early wrap-up
+motivated the authorized [typed fallback policy](03-typed-fallback-policy.md).
 
 Separate Cloudflare `reasoning` and `reasoning_content` metadata is ignored by the existing envelope
 decoder. Only final `message.content` is decoded into the strict output schema;
@@ -254,7 +278,7 @@ response byte limit. Existing native provenance records model, prompt, policy an
 versions but not thinking mode or temperature. Exact source-head and request
 settings in each frozen evaluation record distinguish the configurations.
 
-Focused validation passed 87 adapter/continuity tests, API types, lint and
+The earlier adapter-limit validation passed 87 adapter/continuity tests, API types, lint and
 formatting. Existing zero/one/two-card request cases now exercise separate
 reasoning metadata and token details while retaining only final output and
 aggregate usage. Kimi cases reject reasoning-bearing length termination and
@@ -391,7 +415,7 @@ Earlier [v15](../../../../evals/private-discovery/prompt-v15-keyed-continuity-re
 [v7](../../../../evals/private-discovery/prompt-v7-two-phase-results.md), and
 [v6](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
 remain unchanged historical evidence with their original shapes and provenance.
-Earlier implementation proofs below do not establish v19 live acceptance.
+Earlier implementation proofs below do not establish v21 live acceptance.
 
 ## Outcome and scope
 
@@ -455,8 +479,9 @@ session admission clears only reconciled assistant-turn conflict/pending notices
 Failed admission remains visibly unavailable.
 
 The thin application-owned model seam accepts bounded authorized context and
-returns a bounded array of complete continuity note updates, bounded new-card/proposed-card-revision
-operations, an Ask/Review/Stop reply, and usage/provenance. A card revision names only a current
+returns bounded private continuity updates, bounded new-card/proposed-card-revision
+operations, a Continue/Stop response, and usage/provenance. The application derives
+Ask or Review from the retained typed needs and generic notes. A card revision names only a current
 context card ID and expected revision. The child validates that the exact stored
 card is still proposed at that revision within the final guarded settlement
 transaction. It assigns card identity, version, status, and reviewed before-values
@@ -468,7 +493,7 @@ remain the sole version/audit writer after participant confirmation.
 
 The application adapter calls the native Workers AI binding directly with an
 explicit configuration; absent or invalid configuration leaves model work safely
-unavailable. Its initial candidate allowlist is Qwen3 30B A3B FP8 and GPT OSS 120B.
+unavailable. Its candidate allowlist is Qwen3 30B A3B FP8, GPT OSS 120B and Kimi K2.6.
 The adapter strictly decodes the selected nonstreaming Chat Completions response;
 protocol compatibility remains a measured trial prerequisite. There is no provider
 fallback or output repair. Known token usage and configured estimated cost are
@@ -479,21 +504,30 @@ Known late usage can update only the same claimed attempt's measurements; it
 never changes terminal status or restores text, cards, continuity, or socket output.
 
 The context keeps the whole current own-profile projection, at most 16 recent
-messages, at most 25 private cards, and structured private continuity. Each note
+messages, at most 25 private cards, and structured private continuity. The strict
+snapshot is `{ notes, mealFallbackNeeds }`, bounded to 8,192 UTF-8 bytes. Each note
 has a key (1–32 characters), subject (1–120), detail (0–200), and a state:
 `circumstance`, `unresolved`, `answered`, `no_information`, `declined`, or
 `withdrawn`. There are at most 12 retained notes and six complete keyed updates
-per turn; the serialized snapshot must fit 4,096 UTF-8 bytes. A new key adds a
-note; a retained key replaces its subject, detail and state in place. New notes
-append in update order and omission retains prior notes. Duplicate keys within
-one update list are rejected. The old additions/revisions output object is
-rejected without normalization; there is no eviction or free-text fallback.
+per turn. A new key adds a note; a retained key replaces its subject, detail and
+state in place. New notes append in update order and omission retains prior
+notes. Duplicate keys within one update list are rejected. Up to three private
+fallback needs retain application-owned IDs and evidenced reason, acceptable
+option and preparation fields; at most six typed operations apply per response.
+The [typed fallback design](03-typed-fallback-policy.md) specifies field and
+whole-need dispositions, correction and reopening. The prior array snapshot and
+model Ask/Review output are rejected without normalization or migration.
 
-Ask names an unresolved retained or updated note. Review rejects any remaining
-unresolved note; Stop represents an explicit request to stop discussion and never
-completes the session. These are private model decisions, not new browser commands.
-The child joins Ask's model-authored text and question with two newlines and
-checks their combined 2,000-character limit. Review/Stop emit their text unchanged.
+Every emitted generic follow-up names an unresolved retained or updated note,
+even when a typed need takes question priority. The application first asks for
+an active need's unanswered reason, then its acceptable option and preparation
+(combined when both remain unanswered), and then a valid generic follow-up.
+Review readiness requires neither unanswered active fields nor unresolved notes.
+An evidenced Stop permits no generated proposal or continuity update, retains
+the snapshot and never completes the session. These are internal decisions, not
+new browser commands. The child joins Continue's acknowledgement and the selected
+question with two newlines and checks the combined 2,000-character limit.
+Responses without a selected question emit their text unchanged.
 The resulting snapshot is validated and encoded through one JSON codec in the
 existing `private_assistant_turns.summary` TEXT column, atomically with the reply,
 reviewed cards, and successful turn. A fresh session starts with empty continuity.
@@ -987,10 +1021,12 @@ supported adult facts and completed its session. Required dependant avoidance,
 exact fallback and workload were not elicited, and the challenge was unexercised.
 Two generic questions preceded Review with one of five candidate slots unused,
 so the call ceiling did not force the endpoint. No judge or human rating ran;
-no family was accepted. Prompt v20 now makes material unresolved topics explicit
-before question selection and Review and clarifies the permitted private
-discussion of dependant needs. Its effect on question selection and premature
-wrap-up remains unverified pending a fresh native retest. Full native family
+no family was accepted. V20 then completed three native turns and discovered the
+dependant avoidance, but still ended before fallback/preparation discovery and the
+challenge, with five of eight candidate slots unused. Prompt v21 and policy v4
+now give the application a typed unanswered-field policy for declared private
+fallback needs. Local contract checks do not establish native model quality;
+independent review and a fresh native run remain required. Full native family
 acceptance remains pending.
 Passing native discovery across all eight families, the completed candidate
 comparison, the required live A-to-B removal, fixed-judge scoring and actual human
