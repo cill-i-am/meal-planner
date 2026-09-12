@@ -1,15 +1,33 @@
 # Work Item 03 — Adaptive discovery and evaluation
 
-- Status: In progress (2026-09-11); [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
+- Status: In progress (2026-09-12); focused dependants-and-fallbacks test passed; [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
 - Authorized by the product owner to continue after Work Item 02.
 - Implementation base: `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`.
 - Owning stage: [Stage 2](README.md).
 
 ## Current evaluation status
 
+The [v23 focused dependants-and-fallbacks test](../../../../evals/private-discovery/kimi-v23-safety-coverage-focused-results.md)
+passed on source `52d1b2305a0bf31196266e78b382bfe46d4863e8`, tree
+`2a17164d56f1b2adab9b93e4830745f7ba73cd20`. Four successful native model turns
+covered the adult preference, dependant avoidance, exact fallback and own-adult
+safety information, retained the preparation constraints and handled the fixed
+challenge. All eleven hard assertions passed root and independent review. Actual admitted confirmation
+committed two own-adult facts at profile version 2; the native session completed
+at version 13 with all eight messages retained. The fixed GPT-OSS judge scored
+household specificity and profile synthesis 5/5, with `possibleHardFailure: null`.
+The runtime is closed and the final source, harness and receipt checks passed.
+
+This is a focused test pass, not an accepted candidate or calibrated baseline.
+The complete eight-family suite, completed candidate comparison, required live
+A-to-B review and suite-wide fixed-judge evidence remain incomplete. All sixteen
+actual human ratings across eight families and both applicable dimensions remain
+unscored; model scores cannot fill them. Work Item 03 stays in progress and the
+PR stays draft and not ready to merge.
+
 The [typed fallback policy design](03-typed-fallback-policy.md) owns the
-current deterministic discovery policy. The v22/policy v5 contract gives each unresolved
-note its sole generic question and remove model-authored reply text and follow-up
+current deterministic discovery policy. The contract introduced in v22/policy v5
+gives each unresolved note its sole generic question and removes model-authored reply text and follow-up
 references. The application selects a missing typed field, then the first retained
 unresolved question, then review readiness. The same pure flow renders actual
 reviewed profile draft/revision effects and changed private typed context before
@@ -42,13 +60,15 @@ settles that question without inventing clearance or attributing another
 person's answer to this adult. Relevant new information may reopen an answered
 or no-information topic; refusal requires explicit choice. This is bounded model
 agenda guidance, not a new state framework or a category checklist. Policy v5,
-wire, rendering, evidence safeguards and all limits are unchanged. Fresh native
-proof remains required; prompt guidance alone does not establish semantic coverage.
+wire, rendering, evidence safeguards and all limits are unchanged. The focused
+native result above establishes coverage for this run; prompt guidance alone
+does not establish general semantic reliability.
 
 V23 passes the existing 132 focused schema/policy/renderer tests and three native
 revisit/restart/request-bound cases, plus API types, scoped lint/formatting and
-asset validation. These verify the unchanged contract and input allowance; they
-do not establish that the model follows the new coverage instruction.
+asset validation. Both hosted CI checks on exact source `52d1b23` passed,
+including 1,491 tests across 114 files. These contract and runtime checks
+remain distinct from the actual model-quality evidence in the focused result.
 
 V22 local validation passes 132 focused schema/policy/renderer tests and all 88
 private-output native cases. All 85 household-boundary cases passed the wire and
@@ -462,7 +482,8 @@ Earlier [v15](../../../../evals/private-discovery/prompt-v15-keyed-continuity-re
 [v7](../../../../evals/private-discovery/prompt-v7-two-phase-results.md), and
 [v6](../../../../evals/private-discovery/prompt-v6-eight-family-results.md)
 remain unchanged historical evidence with their original shapes and provenance.
-Earlier implementation proofs below do not establish v22 live acceptance.
+Earlier implementation proofs below retain their own scope and do not substitute
+for the v23 focused result or the remaining full-suite gates.
 
 ## Outcome and scope
 
@@ -623,8 +644,9 @@ The measured disposition is **do not adopt**. Native trace parsing produced zero
 events; a separate mechanics probe automatically retried a deterministic failure
 into one persisted pass. Native assertions, telemetry and judging still required
 application integration. Retain the native harness and manually facilitated
-eight-family pack without a new generic framework or dependency. The fixed judge,
-candidate comparison and human-calibrated baseline remain pending.
+eight-family pack without a new generic framework or dependency. At that spike's
+completion, fixed-judge integration, candidate comparison and human calibration
+remained pending.
 
 ## Evaluation and verification
 
@@ -1080,12 +1102,16 @@ dependant avoidance, but still ended before fallback/preparation discovery and t
 challenge, with five of eight candidate slots unused. V21 added a typed unanswered-field policy but its two live attempts ended in
 provider failure and a generic-reference rejection. V22/policy v5 now make each
 unresolved note own its question and derive reply wording from actual reviewed
-drafts and private typed state. Local contract checks do not establish native
-model quality; independent review and a fresh native run remain required. Full native family
-acceptance remains pending.
-Passing native discovery across all eight families, the completed candidate
-comparison, the required live A-to-B removal, fixed-judge scoring and actual human
-calibration remain incomplete.
+drafts and private typed state. Its live run covered three of four required
+discoveries but never asked the adult's own safety question. The
+[v23 focused test](../../../../evals/private-discovery/kimi-v23-safety-coverage-focused-results.md)
+then passed all four discoveries, the fixed challenge and all eleven root and
+independently reviewed hard assertions. Actual confirmation and native completion
+passed; its fixed GPT-OSS judge scored both applicable dimensions 5/5 without a
+possible hard failure. This focused result does not accept the candidate or a
+human baseline. Passing native discovery across all eight families, the completed
+candidate comparison, the required live A-to-B removal, suite-wide fixed-judge
+evidence and all sixteen actual human ratings remain incomplete.
 Earlier scripted and bounded proofs do not replace those gates. The canonical
 evidence and calibration templates remain unfilled. No merge or application
 deployment is authorized by these results.

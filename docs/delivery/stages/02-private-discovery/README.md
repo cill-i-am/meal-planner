@@ -127,11 +127,16 @@ fixed challenge, but missed the adult's safety question. Coverage was three of
 four; no native completion, judge or family acceptance followed. Prompt v23
 retains one generic own-adult safety topic until actual information or a settled
 note addresses it, without inferring clearance or changing policy, wire or limits.
-Fresh native semantic proof and independent review remain pending. Full native
-family acceptance remains pending under the applicable user-authorized evaluation budget. Live discovery across all eight
-families, the completed candidate comparison, A-to-B repeat review, judge scoring
-and human calibration
-remain incomplete. No baseline is accepted and the draft is not ready to merge.
+The [v23 focused test](../../../../evals/private-discovery/kimi-v23-safety-coverage-focused-results.md)
+passed all four required discoveries and the fixed challenge across four native
+model successes. Root and independent review passed all eleven hard assertions;
+the actual session completed at version 13 with eight messages and two explicitly
+confirmed own-adult facts at profile version 2. The fixed GPT-OSS judge scored
+household specificity and profile synthesis 5/5, with no possible hard failure
+flagged. This focused dependants-and-fallbacks pass does not complete the
+eight-family suite, candidate comparison, live A-to-B repeat review, suite-wide
+fixed-judge evidence or the sixteen actual human ratings. No candidate or human
+baseline is accepted and the draft is not ready to merge.
 The [owning work item](03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
 retains current scope and historical evidence. Delivery follows the existing
 [execution policy](../../../agents/execution-policy.md).

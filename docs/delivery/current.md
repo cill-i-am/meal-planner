@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-09-11
+- Last updated: 2026-09-12
 - Delivery source of truth: this repository
 
 ## Latest Completed Stage
@@ -96,11 +96,17 @@
   four, with no native completion, judge or accepted family. Prompt v23 now retains
   that single generic topic when actual own-adult information or a settled note
   does not address it; policy, wire, rendering and limits remain unchanged.
-  Independent review and fresh native semantic proof remain pending.
-  Full native family acceptance remains pending under the applicable
-  user-authorized evaluation budget. No candidate is accepted;
-  the eight-family, completed candidate-comparison, A-to-B, judge and
-  human-calibration gates remain unmet. The draft is not ready to merge. The
+  The [v23 focused test](../../evals/private-discovery/kimi-v23-safety-coverage-focused-results.md)
+  passed all four required discoveries and the fixed challenge across four
+  successful native model turns. Root and independent review passed all eleven
+  hard assertions. The actual session completed at version 13 with eight retained
+  messages and two explicitly confirmed own-adult facts at profile version 2.
+  The fixed GPT-OSS judge scored both applicable dimensions 5/5 and flagged no
+  possible hard failure. This is a focused dependants-and-fallbacks pass; no
+  candidate or human baseline is accepted. The complete eight-family suite,
+  completed candidate comparison, live A-to-B review, suite-wide fixed-judge
+  evidence and all sixteen actual human ratings remain unmet. The draft is not
+  ready to merge. The
   [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
   retains current scope and historical evidence.
 
@@ -312,8 +318,12 @@ unchanged. It does not establish a fully live interview or confirmation. Reply
 wording lacked an explicit review cue and sometimes strengthened the stated
 preference, without claiming a canonical save. Earlier failures and the
 remaining family, comparison, and human-calibration gates are unchanged.
-No soft judge has run, no human scores have been assigned, and no configuration
-or baseline is accepted. No application deployment occurred.
+Those earlier phases had no soft-judge or human scores. The later
+[v23 focused test](../../evals/private-discovery/kimi-v23-safety-coverage-focused-results.md)
+passed its native discovery and hard checks, with fixed-judge scores of 5/5 for
+both applicable dimensions. No actual human ratings, accepted configuration or
+calibrated baseline follow from that result; the complete suite, candidate
+comparison and live A-to-B gates remain open. No application deployment occurred.
 Repeat review and dependant assistance follow in Work Item 04.
 [PDR-0006](../decisions/product/0006-ai-evaluation-and-release-evidence.md#stage-specific-evidence-and-the-complete-beta-gate)
 owns stage-specific discovery/profile evidence and the unchanged complete
