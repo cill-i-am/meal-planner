@@ -1,11 +1,30 @@
 # Work Item 03 — Adaptive discovery and evaluation
 
-- Status: In progress (2026-09-12); v24 ordinary-meal coverage retest pending; [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
+- Status: In progress (2026-09-12); v24 native retest rejected at output-schema validation; [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
 - Authorized by the product owner to continue after Work Item 02.
 - Implementation base: `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`.
 - Owning stage: [Stage 2](README.md).
 
 ## Current evaluation status
+
+The [v24 native retest](../../../../evals/private-discovery/kimi-v24-native-output-failure-results.md)
+on `6efde2463445b4557cbda8c9b9644426dace00b2` passed its opening turn, retaining
+a usual-meals question without asking it. The correction response was complete
+HTTP 200 with finish reason `stop`, but a continuity note omitted required
+`subject`. Production rejected the whole turn as `invalid_output` before any
+assistant reply, revised card or continuity update persisted. Final native state
+retained three messages, the original revision-0 proposed tomato-soup card and an
+empty canonical profile at version 0. The participant's safety answer and
+correction persist in the third message. The successful first-turn continuity was
+unchanged; the failed turn's summary was null. No confirmation, completion,
+session B, judge or other seven families ran. The runtime is closed.
+
+Retaining the question in the opening does not establish its eventual disclosure,
+complete coverage or prompt effectiveness. The generated card correction was
+never applied. The output failure stopped the suite; the full-suite,
+candidate-comparison, A-to-B and human-calibration gates remain. Source checks and
+the passing [exact-source hosted CI](https://github.com/cill-i-am/meal-planner/actions/runs/34687351249)
+are separate evidence from this failed live result.
 
 The [subsequent v23 baseline run](../../../../evals/private-discovery/kimi-v23-native-baseline-coverage-results.md)
 on `e2d5e4eb6fbbf3e69805d9c83d14c8a75b275caf` completed two successful native
@@ -21,7 +40,8 @@ concise usual-meals question when practical meal context is missing, build on
 disclosed circumstances and honor settled topics. A liked food alone is not that
 context. Explicit limited profile edits do not acquire this extra topic. Policy
 v5, schemas, renderer, model settings, limits and confirmation boundaries are
-unchanged. This is a coverage-fix hypothesis; fresh native semantic proof is pending.
+unchanged. Its live retest failed output validation before ordinary-meal
+coverage was established.
 
 The final v24 wording passes 132 existing focused tests, four native
 revisit/restart/fresh-session cases, API types and scoped lint/format checks.
@@ -1136,8 +1156,11 @@ discoveries but never asked the adult's own safety question. The
 then passed all four discoveries, the fixed challenge and all eleven root and
 independently reviewed hard assertions. Actual confirmation and native completion
 passed; its fixed GPT-OSS judge scored both applicable dimensions 5/5 without a
-possible hard failure. This focused result does not accept the candidate or a
-human baseline. Passing native discovery across all eight families, the completed
+possible hard failure. V24's subsequent baseline opening retained a usual-meals
+question, but its correction response failed output validation for missing note
+`subject`; no ordinary-meal disclosure or later completion followed. The focused
+v23 result does not accept the candidate or a human baseline. Passing native
+discovery across all eight families, the completed
 candidate comparison, the required live A-to-B removal, suite-wide fixed-judge
 evidence and all sixteen actual human ratings remain incomplete.
 Earlier scripted and bounded proofs do not replace those gates. The canonical

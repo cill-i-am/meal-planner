@@ -107,8 +107,15 @@
   discovery, leaving coverage at two of three. All three cards remained
   unconfirmed; no completion, B or judge ran. V24 now adds one conditional
   usual-meals question through the existing notes, excluding explicit limited
-  profile edits. Contract and native request-bound checks pass; fresh live
-  coverage remains unverified. The product owner's qualitative acceptance of the
+  profile edits. Its [native retest](../../evals/private-discovery/kimi-v24-native-output-failure-results.md)
+  passed the opening but rejected the correction response because a continuity
+  note omitted required `subject`. The usual-meals question was retained but
+  never asked. The failed turn persisted no assistant reply, revised card or
+  summary; the original unconfirmed card and empty profile stayed unchanged.
+  The participant's safety answer and correction remain in history.
+  No confirmation, completion, B, judge or other family ran. Local contract and
+  request-bound checks remain separate from this failed live result; full
+  discovery coverage is unproven. The product owner's qualitative acceptance of the
   earlier dependant example and [tone follow-up](private-discovery-conversation-tone.md)
   leave numerical ratings unset. No candidate or human baseline is accepted.
   The complete eight-family suite,
