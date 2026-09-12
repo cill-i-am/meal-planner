@@ -1,11 +1,39 @@
 # Work Item 03 — Adaptive discovery and evaluation
 
-- Status: In progress (2026-09-12); focused dependants-and-fallbacks test passed; [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
+- Status: In progress (2026-09-12); v24 ordinary-meal coverage retest pending; [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
 - Authorized by the product owner to continue after Work Item 02.
 - Implementation base: `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`.
 - Owning stage: [Stage 2](README.md).
 
 ## Current evaluation status
+
+The [subsequent v23 baseline run](../../../../evals/private-discovery/kimi-v23-native-baseline-coverage-results.md)
+on `e2d5e4eb6fbbf3e69805d9c83d14c8a75b275caf` completed two successful native
+turns and correctly revised the original preference card, but covered only two
+of three required discoveries. It never asked about ordinary meals, so the
+usual-meal and low-variety information remained undisclosed. After closing the
+safety note, the model left no unresolved topic and the application correctly
+offered Review. All three proposed cards remained unconfirmed; no completion,
+session B or judge ran. The runtime is closed; the failed coverage remains failed.
+
+V24 replaces only the opening guidance: in open-ended discovery, retain one
+concise usual-meals question when practical meal context is missing, build on
+disclosed circumstances and honor settled topics. A liked food alone is not that
+context. Explicit limited profile edits do not acquire this extra topic. Policy
+v5, schemas, renderer, model settings, limits and confirmation boundaries are
+unchanged. This is a coverage-fix hypothesis; fresh native semantic proof is pending.
+
+The final v24 wording passes 132 existing focused tests, four native
+revisit/restart/fresh-session cases, API types and scoped lint/format checks.
+A local synthetic Qwen request with a retained card after restart measured 3,125
+context bytes, 32,574 request-body bytes and a 32,739-byte transport envelope. The body has
+194 bytes of headroom under the unchanged 32,768-byte limit. This one measured
+case establishes neither universal request fit nor model-quality acceptance.
+
+The product owner qualitatively accepted the earlier dependant example against
+the criteria and requested a [warmer-conversation follow-up](../../private-discovery-conversation-tone.md).
+Numerical ratings remain unset. That follow-up is recorded for future work; no
+tone change is included in v24.
 
 The [v23 focused dependants-and-fallbacks test](../../../../evals/private-discovery/kimi-v23-safety-coverage-focused-results.md)
 passed on source `52d1b2305a0bf31196266e78b382bfe46d4863e8`, tree

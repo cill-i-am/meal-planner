@@ -23,7 +23,7 @@ import type { PrivateDiscoveryNeedFailure } from "./private-discovery-needs.js";
 export const PRIVATE_DISCOVERY_CONTEXT_BYTES = 24_576;
 export const PRIVATE_DISCOVERY_MESSAGE_LIMIT = 16;
 export const PRIVATE_DISCOVERY_CARD_LIMIT = 25;
-export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v23";
+export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v24";
 export const PRIVATE_DISCOVERY_POLICY_VERSION = "private-discovery-policy-v5";
 export const PRIVATE_DISCOVERY_TOOL_VERSION = "profile-card-change-v1";
 

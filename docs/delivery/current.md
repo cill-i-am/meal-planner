@@ -102,8 +102,16 @@
   hard assertions. The actual session completed at version 13 with eight retained
   messages and two explicitly confirmed own-adult facts at profile version 2.
   The fixed GPT-OSS judge scored both applicable dimensions 5/5 and flagged no
-  possible hard failure. This is a focused dependants-and-fallbacks pass; no
-  candidate or human baseline is accepted. The complete eight-family suite,
+  possible hard failure. The [next v23 baseline](../../evals/private-discovery/kimi-v23-native-baseline-coverage-results.md)
+  passed two native turns and same-card correction but missed ordinary-meal
+  discovery, leaving coverage at two of three. All three cards remained
+  unconfirmed; no completion, B or judge ran. V24 now adds one conditional
+  usual-meals question through the existing notes, excluding explicit limited
+  profile edits. Contract and native request-bound checks pass; fresh live
+  coverage remains unverified. The product owner's qualitative acceptance of the
+  earlier dependant example and [tone follow-up](private-discovery-conversation-tone.md)
+  leave numerical ratings unset. No candidate or human baseline is accepted.
+  The complete eight-family suite,
   completed candidate comparison, live A-to-B review, suite-wide fixed-judge
   evidence and all sixteen actual human ratings remain unmet. The draft is not
   ready to merge. The
