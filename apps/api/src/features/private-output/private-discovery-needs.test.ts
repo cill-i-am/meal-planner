@@ -286,6 +286,7 @@ describe("typed private meal fallback needs", () => {
           evidence: evidence(participant),
           field: "acceptableOption",
           need: declared,
+          revisit: null,
         },
       ]);
       expect(first.decision).toMatchObject({
@@ -320,6 +321,7 @@ describe("typed private meal fallback needs", () => {
         evidence: evidence(opening),
         field: "acceptableOption",
         need: declared,
+        revisit: null,
       },
     ]);
     const participant = source(
@@ -349,6 +351,111 @@ describe("typed private meal fallback needs", () => {
       reopenedBy: evidence(participant, "I want to revisit that choice."),
     });
   });
+
+  it("atomically revisits a declined field with no information without asking it again", () => {
+    const opening = source(
+      "The shared meal is too spicy. I decline to discuss the alternative. No extra cooking is manageable."
+    );
+    const first = start(opening, [
+      reason(opening),
+      preparation(opening),
+      {
+        _tag: "SetFieldDisposition",
+        disposition: "declined",
+        evidence: evidence(opening),
+        field: "acceptableOption",
+        need: declared,
+        revisit: null,
+      },
+    ]);
+    const participant = source(
+      "I want to revisit the alternative, but I do not know what would work."
+    );
+    const revisit = evidence(participant, "I want to revisit the alternative");
+    const result = run(
+      first.continuity,
+      changes(participant, [
+        {
+          _tag: "SetFieldDisposition",
+          disposition: "no_information",
+          evidence: evidence(participant, "I do not know what would work."),
+          field: "acceptableOption",
+          need: existing(needId(opening)),
+          revisit,
+        },
+      ]),
+      participant
+    );
+    const [previous] = first.continuity.mealFallbackNeeds;
+    expect(result.continuity.mealFallbackNeeds).toEqual([
+      {
+        ...previous,
+        acceptableOption: {
+          _tag: "NoInformation",
+          evidence: evidence(participant, "I do not know what would work."),
+          reopenedBy: revisit,
+        },
+      },
+    ]);
+    expect(result.decision).toEqual({ _tag: "Review" });
+    const next = source("A plain sandwich would work after all.");
+    const answered = run(
+      result.continuity,
+      changes(next, [acceptedOption(next, existing(needId(opening)))]),
+      next
+    );
+    expect(
+      answered.continuity.mealFallbackNeeds[0]?.acceptableOption
+    ).toMatchObject({
+      _tag: "Answered",
+      reopenedBy: revisit,
+    });
+  });
+
+  it.each(["absent", "stale", "mismatched"] as const)(
+    "rejects no-information settlement of a declined field with %s revisit evidence",
+    (kind) => {
+      const opening = source("I decline to discuss the alternative.");
+      const first = start(opening, [
+        {
+          _tag: "SetFieldDisposition",
+          disposition: "declined",
+          evidence: evidence(opening),
+          field: "acceptableOption",
+          need: declared,
+          revisit: null,
+        },
+      ]);
+      const participant = source("I do not know what would work.");
+      const revisits = {
+        absent: null,
+        mismatched: evidence(participant, "I want to revisit this."),
+        stale: evidence(opening),
+      };
+      const before = JSON.stringify(first.continuity);
+      expect(() =>
+        run(
+          first.continuity,
+          changes(participant, [
+            {
+              _tag: "SetFieldDisposition",
+              disposition: "no_information",
+              evidence: evidence(participant),
+              field: "acceptableOption",
+              need: existing(needId(opening)),
+              revisit: revisits[kind],
+            },
+          ]),
+          participant
+        )
+      ).toThrow(
+        expect.objectContaining({
+          stage: kind === "absent" ? "need_updates" : "need_evidence",
+        })
+      );
+      expect(JSON.stringify(first.continuity)).toBe(before);
+    }
+  );
 
   it("can explicitly reopen a field while retaining its need identity and reopen evidence", () => {
     const opening = source();

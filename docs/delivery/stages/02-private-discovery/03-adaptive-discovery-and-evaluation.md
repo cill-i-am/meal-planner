@@ -17,12 +17,20 @@ and preparation fields across omission and restart, with current-message evidenc
 and atomic rejection. Native quality proof and independent review remain pending;
 no additional candidate or family is accepted by this implementation.
 
-Local v21 verification passes 109 focused contract tests, all 169 native
+Initial v21 verification on `92c3f53` passed 109 focused contract tests, all 169 native
 private-output/household-boundary cases, 34 shared API tests, type checks, scoped
 lint/formatting and evaluation-asset validation. Native fixtures use synthetic
 provider responses. The design records the setup-blocked attempts and the
 proposed-card request-size regression that was repaired with shared schema
 definitions, preserving existing limits and accepted values.
+
+Independent review identified one field-refusal transition gap: explicit revisit
+with no information could not settle atomically. The scoped correction retains
+current revisit evidence on NoInformation while preserving other fields and the
+need ID. Missing or stale authorization still rejects the entire output. The
+correction passes 113 focused tests, all 87 private-output native tests, API types
+and scoped lint/formatting. Prompt and policy versions remain v21/v4; limits are
+unchanged.
 
 The latest [GPT-OSS v16 result](../../../../evals/private-discovery/prompt-v16-planning-purpose-results.md)
 stopped at a proven semantic truthfulness/authority failure. Both native calls

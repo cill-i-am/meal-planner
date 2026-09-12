@@ -47,6 +47,7 @@ const field = <S extends Schema.Constraint>(value: S) =>
     Schema.Struct({
       _tag: Schema.Literal("NoInformation"),
       evidence: PrivateDiscoveryEvidence,
+      reopenedBy: OptionalEvidence,
     }),
     Schema.Struct({
       _tag: Schema.Literal("Declined"),
@@ -145,6 +146,7 @@ export const MealFallbackNeedUpdates = Schema.Struct({
         ...updateFields,
         disposition: Schema.Literals(["no_information", "declined"]),
         field: FieldName,
+        revisit: OptionalEvidence,
       }),
       Schema.Struct({
         _tag: Schema.Literal("ReopenField"),
@@ -197,30 +199,35 @@ const unanswered = (reopenedBy: Evidence | null = null) => ({
   reopenedBy,
 });
 type AnyField = MealFallbackNeed[FieldName];
+const fieldReopeningEvidence = (
+  previous: AnyField,
+  revisit: Evidence | null,
+  participant: PrivateDiscoveryEvidenceMessage
+): Evidence | null => {
+  if (previous._tag === "Declined") {
+    if (revisit === null) {
+      return fail("need_updates");
+    }
+    assertCurrentParticipantEvidence(revisit, participant);
+    return revisit;
+  }
+  if (revisit !== null) {
+    fail("need_updates");
+  }
+  return previous.reopenedBy;
+};
 const answered = <T>(
   previous: AnyField,
   value: T,
   evidence: Evidence,
   revisit: Evidence | null,
   participant: PrivateDiscoveryEvidenceMessage
-) => {
-  if ((previous._tag === "Declined") !== (revisit !== null)) {
-    fail("need_updates");
-  }
-  if (revisit !== null) {
-    assertCurrentParticipantEvidence(revisit, participant);
-  }
-  return {
-    _tag: "Answered" as const,
-    evidence,
-    reopenedBy:
-      revisit ??
-      (previous._tag === "Unanswered" || previous._tag === "Answered"
-        ? previous.reopenedBy
-        : null),
-    value,
-  };
-};
+) => ({
+  _tag: "Answered" as const,
+  evidence,
+  reopenedBy: fieldReopeningEvidence(previous, revisit, participant),
+  value,
+});
 const replaceFieldDisposition = (
   need: MealFallbackNeed,
   name: FieldName,
@@ -337,13 +344,21 @@ const applyNeedUpdate = (
       };
     }
     case "SetFieldDisposition": {
+      if (update.disposition === "declined" && update.revisit !== null) {
+        fail("need_updates");
+      }
       const value =
         update.disposition === "declined"
           ? { _tag: "Declined" as const, evidence: update.evidence }
-          : { _tag: "NoInformation" as const, evidence: update.evidence };
-      if (need[update.field]._tag === "Declined" && value._tag !== "Declined") {
-        fail("need_updates");
-      }
+          : {
+              _tag: "NoInformation" as const,
+              evidence: update.evidence,
+              reopenedBy: fieldReopeningEvidence(
+                need[update.field],
+                update.revisit,
+                participant
+              ),
+            };
       return replaceFieldDisposition(need, update.field, value);
     }
     case "ReopenField": {

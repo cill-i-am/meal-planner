@@ -2200,6 +2200,234 @@ describe("native adaptive assistant attempts through the production model adapte
   });
 
   it.each([
+    { kind: "current", stage: null },
+    { kind: "missing", stage: "need_updates" },
+    { kind: "stale", stage: "need_evidence" },
+  ] as const)(
+    "settles or rejects NoInformation with $kind revisit evidence for a declined option",
+    async ({ kind, stage }) => {
+      modelCalls = [];
+      const initialText =
+        "Jordan needs an alternative meal because the shared dish is too spicy. No extra cooking is manageable. I do not want to discuss acceptable alternatives.";
+      modelResponse = () => {
+        const participant = currentParticipant();
+        const evidence = { messageId: participant.id, quote: participant.text };
+        const need = { _tag: "Declared", index: 0 };
+        return Promise.resolve(
+          response({
+            ...output,
+            continuity: {
+              mealFallbackNeeds: {
+                declarations: [{ evidence, subject: "Jordan" }],
+                updates: [
+                  {
+                    _tag: "RecordReason",
+                    evidence,
+                    need,
+                    revisit: null,
+                    value: "The shared dish is too spicy.",
+                  },
+                  {
+                    _tag: "RecordPreparation",
+                    evidence,
+                    need,
+                    revisit: null,
+                    value: "No extra cooking is manageable.",
+                  },
+                  {
+                    _tag: "SetFieldDisposition",
+                    disposition: "declined",
+                    evidence,
+                    field: "acceptableOption",
+                    need,
+                    revisit: null,
+                  },
+                ],
+              },
+              notes: [],
+            },
+          })
+        );
+      };
+      const session = await binding();
+      let connection = await open(session);
+      try {
+        await successful(await queue(session, connection, 0, initialText));
+        const [initial] = await audit(session);
+        expect(initial?.status).toBe("succeeded");
+        const savedSummary = initial?.summary;
+        const saved = Schema.decodeUnknownSync(PrivateDiscoveryContinuityJson)(
+          savedSummary
+        );
+        const [need] = saved.mealFallbackNeeds;
+        if (need === undefined || need.acceptableOption._tag !== "Declined") {
+          throw new Error("Expected the retained declined option");
+        }
+        expect(need).toMatchObject({
+          extraPreparation: { _tag: "Answered" },
+          reason: { _tag: "Answered" },
+        });
+        const staleRevisit = need.acceptableOption.evidence;
+        const revisitQuote = "I want to revisit acceptable alternatives";
+        const noInformationQuote = "I have no more information.";
+        const participantText = `${revisitQuote}, but ${noInformationQuote} I like tomatoes.`;
+        modelResponse = () => {
+          const participant = currentParticipant();
+          const revisits = {
+            current: { messageId: participant.id, quote: revisitQuote },
+            missing: null,
+            stale: staleRevisit,
+          };
+          return Promise.resolve(
+            response({
+              ...output,
+              continuity: {
+                mealFallbackNeeds: {
+                  declarations: [],
+                  updates: [
+                    {
+                      _tag: "SetFieldDisposition",
+                      disposition: "no_information",
+                      evidence: {
+                        messageId: participant.id,
+                        quote: noInformationQuote,
+                      },
+                      field: "acceptableOption",
+                      need: { _tag: "Existing", id: need.id },
+                      revisit: revisits[kind],
+                    },
+                  ],
+                },
+                notes: [],
+              },
+              proposals: [
+                {
+                  _tag: "ProposeProfileCard",
+                  change: {
+                    _tag: "AddConfirmedProfileFact",
+                    fact: {
+                      _tag: "FoodPreference",
+                      label: "tomatoes",
+                      sentiment: "like",
+                      targetKind: "ingredient",
+                    },
+                  },
+                },
+              ],
+            })
+          );
+        };
+        const start = nativeLogs.length;
+        await successful(await queue(session, connection, 2, participantText));
+        expect(modelCalls).toHaveLength(2);
+        expect(capturedContext(1).continuity).toEqual(saved);
+        const attempts = await audit(session);
+        expect(attempts[0]?.summary).toBe(savedSummary);
+        if (stage !== null) {
+          await expectDiagnostic(start, stage, [
+            initialText,
+            participantText,
+            need.id,
+          ]);
+          expect(await readTurn(connection)).toMatchObject({
+            state: { status: "open", version: 3 },
+            turn: { failure: "invalid_output", status: "failed" },
+          });
+          expect(await history(connection)).toMatchObject({
+            messages: [
+              { role: "participant" },
+              { role: "assistant" },
+              { role: "participant" },
+            ],
+          });
+          expect(await cards(connection)).toMatchObject({ cards: [] });
+          expect(attempts[1]?.summary).toBeNull();
+          return;
+        }
+        expect(diagnosticsSince(start)).toHaveLength(0);
+        expect(await readTurn(connection)).toMatchObject({
+          state: { status: "open", version: 4 },
+          turn: { failure: null, status: "succeeded" },
+        });
+        const participant = currentParticipant();
+        const settled = {
+          ...saved,
+          mealFallbackNeeds: [
+            {
+              ...need,
+              acceptableOption: {
+                _tag: "NoInformation",
+                evidence: {
+                  messageId: participant.id,
+                  quote: noInformationQuote,
+                },
+                reopenedBy: { messageId: participant.id, quote: revisitQuote },
+              },
+            },
+          ],
+        };
+        expect(
+          Schema.decodeUnknownSync(PrivateDiscoveryContinuityJson)(
+            attempts[1]?.summary
+          )
+        ).toEqual(settled);
+        expect(await history(connection)).toMatchObject({
+          messages: [
+            { role: "participant" },
+            { role: "assistant" },
+            { role: "participant" },
+            { role: "assistant", text: output.reply.text },
+          ],
+        });
+        const savedCards = await cards(connection);
+        expect(savedCards).toMatchObject({
+          cards: [
+            { change: { _tag: "AddConfirmedProfileFact" }, status: "proposed" },
+          ],
+        });
+        if (savedCards.type !== "CardsRead") {
+          throw new Error("Expected private cards");
+        }
+        connection.socket.close();
+        await runtime.dispose();
+        runtime = makeRuntime();
+        connection = await open(session);
+        modelResponse = () => Promise.resolve(response());
+        await successful(
+          await queue(
+            session,
+            connection,
+            4,
+            "Keep the information already recorded."
+          )
+        );
+        expect(capturedContext(2).continuity).toEqual(settled);
+        expect(await readTurn(connection)).toMatchObject({
+          state: { status: "open", version: 6 },
+          turn: { failure: null, status: "succeeded" },
+        });
+        const afterRestart = await audit(session);
+        expect(afterRestart[2]?.summary).toBe(attempts[1]?.summary);
+        expect(await cards(connection)).toMatchObject({
+          cards: savedCards.cards,
+        });
+        expect(await history(connection)).toMatchObject({
+          messages: [
+            {},
+            {},
+            {},
+            {},
+            { role: "participant" },
+            { role: "assistant", text: output.reply.text },
+          ],
+        });
+      } finally {
+        connection.socket.close();
+      }
+    }
+  );
+
+  it.each([
     { kind: "old_evidence", stage: "need_evidence" },
     { kind: "assistant_evidence", stage: "need_evidence" },
     { kind: "missing_excerpt", stage: "need_evidence" },
