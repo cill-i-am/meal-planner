@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-12",
+  "run": "kimi_v21_second_attempt_continuation_failure",
+  "status": "closed_after_atomic_rejection_at_reply_decision",
+  "source": {
+    "head": "8d0fbbc1f59e071f94c1b5747938d35f7e0351d0",
+    "tree": "ed3fe949b31fdc1efcdf5b7f5358d61e5c85b2e2",
+    "promptVersion": "private-discovery-prompt-v21",
+    "policyVersion": "private-discovery-policy-v4",
+    "freezeSha256": "e585dd77a06a97e6516e755f6e475af539f95d182932ba9ef29c30d3fbb0ba97",
+    "integrityAtClosure": {
+      "trackedFilesAndModesChecked": 938,
+      "trackedFilesAndModesUnchanged": true,
+      "harnessPinsChecked": 203,
+      "harnessPinsUnchanged": true,
+      "manifestUnchanged": true
+    }
+  },
+  "configuration": {
+    "candidateModel": "@cf/moonshotai/kimi-k2.6",
+    "thinking": true,
+    "temperature": 1,
+    "top_p": 0.95,
+    "maxCompletionTokens": 65536,
+    "workerDeadlineMs": 900000,
+    "responseLimitBytes": 2097152,
+    "responseFormat": "json_object",
+    "choices": 1,
+    "stream": false,
+    "maximumProviderAttempts": 1
+  },
+  "request": {
+    "fixture": "dependants_and_fallbacks",
+    "phase": "A",
+    "turn": 1,
+    "capturedWrapperSha256": "09c48e5c6d34e10532b6042be2f9bec7f6714e025bcbb9062feec8ac1bae4ca4",
+    "canonicalBodySha256": "9b465ab55ccf54a68fee25af14cb39eec786e2baf4ae713952d0a52e5d14589c"
+  },
+  "observedResult": {
+    "httpStatus": 200,
+    "responseComplete": true,
+    "transportFailure": false,
+    "responseBytes": 36956,
+    "responseBytesSha256": "50343976676cefd4c441e7e04091ef1eb4ab75598ab28f29524b1c74896ea169",
+    "nativeStatus": "failed",
+    "nativeFailure": "invalid_output",
+    "providerOutcomeKnown": true,
+    "providerAssistantContentAvailable": true,
+    "choiceCount": 1,
+    "finishReason": "stop",
+    "inputTokens": 4181,
+    "completionTokens": 7757,
+    "dispatchToCompletionMs": 204329,
+    "failureStage": "reply_decision",
+    "failureCauseEstablished": true,
+    "automaticRetry": false,
+    "outputRepaired": false
+  },
+  "validation": {
+    "canonicalOutputJsonAcceptedSeparately": true,
+    "dynamicProviderSchemaAcceptedSeparately": true,
+    "typedDeclarationEvidenceAcceptedSeparately": true,
+    "wholeTransitionAccepted": false,
+    "cause": "The generic followUp named a topic absent from unresolved continuity notes. Its only new note was a circumstance. The generic-reference guard rejected the output before typed-question selection."
+  },
+  "unpublishedClaimAssessment": {
+    "misleadingReviewInvitation": true,
+    "reason": "The rejected candidate prose invited review of two items, although only an adult profile card would have been reviewable. The typed fallback need belongs to private conversation state.",
+    "actualDisplayedClaim": false,
+    "proposalApplied": false,
+    "typedNeedPersisted": false
+  },
+  "nativeEffects": {
+    "messages": 1,
+    "assistantMessages": 0,
+    "cards": 0,
+    "confirmedFacts": 0,
+    "sessionStatus": "open",
+    "sessionVersion": 1,
+    "pendingConfirmations": 0,
+    "successfulContinuitySnapshots": 0,
+    "failedTurnSummary": null
+  },
+  "coverage": {
+    "participantTurns": 1,
+    "candidateCalls": 1,
+    "candidateSuccesses": 0,
+    "candidateFailures": 1,
+    "judgeCalls": 0,
+    "nativeSessionCompleted": false,
+    "requiredDiscoveryCoverageComplete": false,
+    "challengeDelivered": false,
+    "hardAssertionReviewComplete": false,
+    "candidateAccepted": false,
+    "humanCalibration": false,
+    "liveTypedNeedProgressionEstablished": false
+  },
+  "cost": {
+    "configuredFullInputUsageEstimateUsd": "0.03499995",
+    "cacheAwareUsageEstimateUsd": null,
+    "billedCostUsd": null,
+    "inputUsdPerMillionTokens": "0.95",
+    "outputUsdPerMillionTokens": "4.00",
+    "basis": "Configured full-input rates applied to 4,181 input and 7,757 aggregate completion tokens, counted once. Cached input accounting is unavailable. This estimate is not an invoice or billing evidence."
+  },
+  "reservationsAtClosure": {
+    "thisRunMicroUsd": 511181,
+    "allHistoricalUnknownReservationsRetained": true,
+    "previousCumulativeMicroUsd": 16613127,
+    "cumulativeMicroUsd": 17124308,
+    "previousCumulativeCalls": 142,
+    "cumulativeCalls": 143,
+    "previousCumulativeHigherCapCalls": 135,
+    "cumulativeHigherCapCalls": 136,
+    "cumulativeJudgeCalls": 1,
+    "strictCumulativeCeilingMicroUsd": 20000000,
+    "meaning": "Conservative retained reservations, not billed spend. The prior first-attempt unknown reservation remains retained."
+  },
+  "closure": {
+    "actorClosedAndJoined": true,
+    "runtimeClosedAndJoined": true,
+    "actorExitCode": 0,
+    "runtimeExitCode": 0,
+    "checkedProcessesAbsent": 3,
+    "listenerAbsent": true,
+    "participantLockAbsent": true,
+    "financialLockAbsent": true,
+    "graceful": true,
+    "requestCaptures": 1,
+    "responseReports": 1,
+    "blockedRequests": 0,
+    "providerRevocationVerified": false
+  },
+  "interpretation": "A complete provider response passed separate JSON, dynamic-schema and typed-declaration checks but failed the canonical continuation relationship. Atomic native rejection prevented the proposal, typed need and prose from becoming native state. This attempt establishes neither live typed-need progression nor fixture acceptance.",
+  "receiptSha256": {
+    "rootResult": "f8274b6be1c075fdff54dbf82e50835b4d37504cc49eb45d2541726286adcd41",
+    "rootClosure": "d40671e3ecf4f4c0798a0f8d10cdbc01cfad8b98267c131a591b64db88a60b26",
+    "closed": "a3d77b92a50ac9e251d8bee18f9d54854ad0b1eb13f8defcc169b108db9b2422",
+    "responseMetadata": "9acd2084341f4365b286e5e1a3844e973a76bbd848c81980988d51c889407b8d",
+    "assistantContentInspection": "b4a783549f0d884b3339b2eaa94a419ffb226685990695a2e2b4aa1555d8cd7e",
+    "completion": "408d6ccc5db5a874c0604ba4b5f089000e8a2a7ed78259a4a715ba03e61e1deb",
+    "pipeline": "cf8c84bfe33ae2851fb5d96bee70b956a09aea7f3337ad4af0d4f2493113645c",
+    "nativeTerminalInspection": "81ffef62e988434e081809a9bd5bdee47c3a6fdf4b9fa31ba47c985d341d2641"
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "disposition": "do_not_adopt",
+  "package": {
+    "name": "agent-eval",
+    "version": "2.2.1",
+    "gitHead": "fb01d911a057089000009db0ab3e39be7a71734c",
+    "nodeVersion": "24.20.0"
+  },
+  "runtime": {
+    "sourceBase": "c07e48c6f6709f02c054e5110cb7178a9e5d1b93",
+    "sourceState": "frozen_dirty_development_bundle",
+    "manifestSha256": "f5a717e1c226f538bd412744815d40171c1882f4b5dd506b2c8e27781bb09b3e",
+    "finalImmutableHeadAcceptance": false,
+    "humanPacedBrowserAcceptance": false
+  },
+  "nativeTrajectory": {
+    "passed": true,
+    "customAgentInvocations": 1,
+    "scriptedProviderTurns": 4,
+    "completedSessions": 2,
+    "profileVersions": [0, 1, 2],
+    "sameCardCorrectionInBothSessions": true,
+    "canonicalChangesRequiredExplicitConfirmation": true,
+    "freshSessionReceivedCurrentCanonicalFact": true,
+    "freshSessionExcludedPriorTranscriptSummaryAndCards": true,
+    "canonicalFactIdentityPreservedInSecondConfirmation": true,
+    "liveModelQualityRuns": 0,
+    "externalRequests": 0
+  },
+  "observedPackageGaps": {
+    "nativeTraceParseSucceeded": false,
+    "normalizedNativeEvents": 0,
+    "reportedNativeTurns": 0,
+    "mechanicsFailureAutomaticallyRetriedIntoOnePersistedPass": true,
+    "nativeAssertionsTelemetryAndJudgeRequireApplicationIntegration": true,
+    "arbitraryAgentOptionsIncludedInFingerprint": false
+  },
+  "receiptSha256": {
+    "custom-agent-native-evidence.json": "d29d2e92a4b5d485107a42ed75a5e3413c10a3c7dd48d9a99c643c0514b11bef",
+    "custom-agent-context-receipt.json": "7c440933e44f4382017ff274bc6e707c08cf04103729c9fda9d118001d14af5a",
+    "custom-agent-disposition.md": "384216432f328ed4e86a32e377b949df59b4011820a9dba31ea4e0c58c3a280b"
+  },
+  "limitations": [
+    "The native driver readmitted after manual provider-plan waits; this does not prove idle browser recovery.",
+    "The bundle predates the final client recovery and late-usage changes.",
+    "Native Stop, Retry and restart behavior were not exercised by this trajectory.",
+    "No live provider compatibility, candidate comparison, independent judge or human calibration was established.",
+    "Package duration included manual coordination and is not a latency benchmark."
+  ],
+  "selectedApproach": "Retain the application native harness and manually facilitated eight-family fixture pack without adding a generic framework or dependency."
+}

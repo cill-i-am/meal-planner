@@ -1,0 +1,251 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-07",
+  "status": "stopped_no_accepted_configuration",
+  "scope": "wi03_adult_discovery",
+  "source": {
+    "head": "a38d20ca9c6ee5b3b18616949d6b4a5353817d4c",
+    "tree": "a4e57e3cffada306135f2b3ea4bf158e947c01d7"
+  },
+  "provider": "cloudflare-workers-ai",
+  "configuration": {
+    "temperature": 0,
+    "stream": false,
+    "maxOutputTokens": 2048,
+    "timeoutMs": 60000,
+    "maxInputBytes": 32768,
+    "collectLog": false,
+    "skipCache": true,
+    "gatewayMaxAttempts": 1,
+    "automaticRetry": false
+  },
+  "versions": {
+    "prompt": "private-discovery-prompt-v1",
+    "tool": "profile-card-change-v1",
+    "policy": "private-discovery-policy-v1",
+    "scenarios": "private-discovery-scenarios-v1",
+    "rubric": "private-discovery-rubric-v1",
+    "driver": "private-discovery-driver-v1",
+    "calibration": "private-discovery-calibration-v1"
+  },
+  "firstPhase": {
+    "status": "stopped_after_production_output_acceptance_failures",
+    "scenarioId": "simple_household_baseline",
+    "providerAttempts": 4,
+    "minimalProtocolProbeAttempts": 2,
+    "nativeDiscoveryInferenceAttempts": 2,
+    "uniqueParticipantMessages": 2,
+    "estimatedCostUsd": 0.002220143,
+    "conservativeReservedBudgetUsd": 0.185344,
+    "reservationIsInvoice": false,
+    "invoiceVerified": false,
+    "costMethod": "retained_usage_and_configured_per_token_estimate_not_current_invoice"
+  },
+  "candidates": [
+    {
+      "model": "@cf/qwen/qwen3-30b-a3b-fp8",
+      "minimalProtocolProbeStatus": "passed",
+      "firstNativeDiscoveryTurn": {
+        "status": "failed",
+        "failure": "invalid_output",
+        "inputTokens": 915,
+        "outputTokens": 508,
+        "estimatedCostUsd": 0.000219385,
+        "appendToCompletionMs": 7387,
+        "providerLatencyMs": null,
+        "exactRejectionCause": "unknown"
+      },
+      "sessionA": {
+        "status": "completed",
+        "participantMessages": 1,
+        "assistantMessages": 0,
+        "cards": 0,
+        "confirmations": 0,
+        "profileVersionBefore": 0,
+        "profileVersionAfter": 0
+      },
+      "sessionBStatus": "not_run_missing_confirmation_precondition",
+      "remainingFamilyCount": 7,
+      "remainingFamiliesStatus": "not_run",
+      "postRejectionCandidateRetry": false,
+      "softJudgeStatus": "not_run",
+      "humanCalibrationStatus": "unscored",
+      "review": {
+        "commonAssertionsWithBoundedEnforcementPass": 4,
+        "commonAssertionsUnverified": 5,
+        "scenarioSpecificAssertionsUnverified": 2,
+        "limits": "The four bounded passes combine observed state boundaries with prior accepted unchanged-source enforcement; they are not live semantic or completed-fixture passes."
+      },
+      "configuredEstimateBasisUsdPerMillionTokens": {
+        "inputUsdPerMillionTokens": 0.051,
+        "outputUsdPerMillionTokens": 0.34
+      }
+    },
+    {
+      "model": "@cf/openai/gpt-oss-120b",
+      "minimalProtocolProbeStatus": "passed",
+      "firstNativeDiscoveryTurn": {
+        "status": "failed",
+        "failure": "invalid_output",
+        "inputTokens": 955,
+        "outputTokens": 2048,
+        "estimatedCostUsd": 0.00187025,
+        "appendToCompletionMs": 39345,
+        "providerLatencyMs": null,
+        "exactRejectionCause": "unknown"
+      },
+      "sessionA": {
+        "status": "completed",
+        "participantMessages": 1,
+        "assistantMessages": 0,
+        "cards": 0,
+        "confirmations": 0,
+        "profileVersionBefore": 0,
+        "profileVersionAfter": 0
+      },
+      "sessionBStatus": "not_run_missing_confirmation_precondition",
+      "remainingFamilyCount": 7,
+      "remainingFamiliesStatus": "not_run",
+      "postRejectionCandidateRetry": false,
+      "softJudgeStatus": "not_run",
+      "humanCalibrationStatus": "unscored",
+      "review": {
+        "commonAssertionsWithBoundedEnforcementPass": 4,
+        "commonAssertionsUnverified": 5,
+        "scenarioSpecificAssertionsUnverified": 2,
+        "limits": "The four bounded passes combine observed state boundaries with prior accepted unchanged-source enforcement; they are not live semantic or completed-fixture passes."
+      },
+      "configuredEstimateBasisUsdPerMillionTokens": {
+        "inputUsdPerMillionTokens": 0.35,
+        "outputUsdPerMillionTokens": 0.75
+      }
+    }
+  ],
+  "diagnostics": {
+    "status": "completed",
+    "scope": "separate_unscored_production_payload_probes_same_configuration",
+    "providerAttempts": 2,
+    "participantMessages": 0,
+    "proposalReview": "not_executed",
+    "results": [
+      {
+        "model": "@cf/qwen/qwen3-30b-a3b-fp8",
+        "finishReason": "stop",
+        "contentBytes": 458,
+        "contentParse": true,
+        "schemaAccepted": false,
+        "schemaIssues": [
+          {
+            "path": "proposals.item.change.fact.additional_property",
+            "keyword": "UnexpectedKey"
+          }
+        ],
+        "adapterAccepted": false,
+        "adapterFailure": "invalid_output",
+        "inputTokens": 917,
+        "outputTokens": 408,
+        "estimatedCostUsd": 0.000185487,
+        "responseLatencyMs": 6111,
+        "originalResponseCauseEstablished": false
+      },
+      {
+        "model": "@cf/openai/gpt-oss-120b",
+        "finishReason": "length",
+        "contentBytes": 6562,
+        "contentParse": false,
+        "schemaAccepted": null,
+        "schemaIssues": [],
+        "adapterAccepted": false,
+        "adapterFailure": "invalid_output",
+        "inputTokens": 955,
+        "outputTokens": 2048,
+        "estimatedCostUsd": 0.00187025,
+        "responseLatencyMs": 33637,
+        "originalResponseCauseEstablished": false
+      }
+    ],
+    "schemaParity": {
+      "method": "offline_emitted_json_schema_and_strict_effect_decoder",
+      "sourceHead": "a38d20ca9c6ee5b3b18616949d6b4a5353817d4c",
+      "productionSourceFilesMatchRecordedHead": true,
+      "objectDefinitions": 27,
+      "allObjectDefinitionsForbidAdditionalProperties": true,
+      "validFactBranchesAcceptedByBoth": 3,
+      "extraPropertyVariantsRejectedByBoth": 3,
+      "conclusion": "No emitted-schema/strict-decoder mismatch for the observed nested extra-property failure.",
+      "providerAttempts": 0
+    }
+  },
+  "totals": {
+    "status": "recorded",
+    "providerAttempts": 6,
+    "minimalProtocolProbeAttempts": 2,
+    "nativeDiscoveryInferenceAttempts": 2,
+    "separateDiagnosticAttempts": 2,
+    "uniqueParticipantMessages": 2,
+    "judgeAttempts": 0,
+    "estimatedCostUsd": 0.00427588,
+    "conservativeReservedBudgetUsd": 0.278016,
+    "reservationIsInvoice": false,
+    "invoiceVerified": false,
+    "costMethod": "sum_of_retained_usage_estimates_using_the_recorded_configured_rates",
+    "estimateBasisNote": "Configured model-card rounded estimate rates; these are not current exact provider prices or an invoice."
+  },
+  "review": {
+    "sharedRuntimeEvidence": "prior_accepted_unchanged_source_scripted_enforcement",
+    "liveHardAssertionsComplete": false,
+    "softJudgeStatus": "not_run",
+    "humanCalibrationStatus": "unscored",
+    "acceptedBaselineId": null,
+    "selectedConfiguration": null,
+    "mergeReady": false
+  },
+  "receiptSha256": {
+    "trial-provenance.live.json": "0d00c0c3434d940f0380b7b08306d9ad993b1f239ff6c287ac159772f979e992",
+    "trial-provenance.prepared.json": "2aef87aa32bd2d19d5a186257ac4c3079e681813a02db581d6bb6c45f229e55a",
+    "protocol-probes.receipt.json": "b567ef419b8b30b4383450ff2eb48b6a0caeab8117d75d5ff9cdb5481f825748",
+    "qwen-first-candidate-stop.receipt.json": "d879035a01050fd86119bf6a8b59047b2db771aa00c5a3305ddc7830ba29233d",
+    "gpt-first-candidate-stop.receipt.json": "922e7dffca31af2de9a80d5c4e4f5ec250aeed9990dbca7dc58d2663a13f7f02",
+    "qwen-simple-first-turn-retained-metadata.receipt.json": "20f48085af4f869c9ef7e9dea59085001555c7f1cc355df12368a0f10d76647f",
+    "gpt-simple-first-turn-retained-metadata.receipt.json": "51cc4ad531ceefb047edd3c974472c8b55b5b4bafd9527296ed03ee46f25038f",
+    "qwen-simple-review.receipt.json": "e409d22cfd1712b8484391924644d5e335a5b7b974d50fa7a1500f78edb85ff5",
+    "shared-runtime-invariants.receipt.json": "77d92b0036c4799a4a531eca00458109dc1f595665257310e6ec0636be5635be",
+    "final-runtime-stop.receipt.json": "b54ab11dbd78895088ef5efec9b86e3d043ae2fb624bc5bb1ed929d5cfec0505",
+    "gpt-simple-review.receipt.json": "de81cfeb2ffddfd379094bb89eccf5c2ed10afbea3eb607cbc26462a6f2545b2",
+    "actor-close-correlation.receipt.json": "bcb093a2e68e647be94099e67ffa3fe0375266292ba5c578fb0c033cd5d23c79",
+    "actor-close-verification.receipt.json": "63bd61ae563b4f7e7e031b830a76bf72299231e359d747fc501cebc5efaf7d42",
+    "diagnostic-qwen.receipt.json": "2875e716cd2f0eaf15df957e3642fb6ff0c1fccbc552f8b324eead9c2f61d679",
+    "diagnostic-gpt.receipt.json": "6a96865172698993ceb61f59ea6e7f1e96f1ea0daf347a183ffdcc571cdbc78c",
+    "schema-parity.receipt.json": "c2a951d24fabb3a8d496e95e8d044f10d2eb729df6262fd957a4ca032e04d3c2",
+    "diagnostic-cleanup.receipt.json": "aa16d6a9dbacf406260a3f044eee9329392d66272c4fa7647147cc765f2e2987",
+    "diagnostic-poststop-verification.receipt.json": "ad0399f98fe1b2ed66d5ea655bdebe17163a23c0dc7b1d27575cf123629cf8f6"
+  },
+  "limitations": [
+    "Minimal protocol probe success does not establish production discovery-output acceptance.",
+    "Exact original invalid_output causes remain unknown because their raw output and finish reasons were not retained. Separate diagnostics establish only their own observed failures.",
+    "Append-to-completion duration is not provider latency.",
+    "Shared scripted enforcement evidence does not establish live candidate semantics or quality.",
+    "This stopped-trial summary does not fill or replace the canonical evidence and human-calibration templates."
+  ],
+  "possibleFollowUp": {
+    "candidate": "@cf/openai/gpt-oss-120b",
+    "maxOutputTokens": 4096,
+    "status": "pending_authorization",
+    "reason": "The approved trial fixed maxOutputTokens at 2048; a changed-cap follow-up is a separate configuration."
+  },
+  "runtimeCleanup": {
+    "status": "local_runtime_stopped",
+    "diagnosticProcessJoined": true,
+    "supervisorExitCode": 143,
+    "diagnosticProcessAbsent": true,
+    "remainingTrialNativeProcessCandidates": 0,
+    "ownedListenersObserved": false,
+    "historicalChildInventoryRetained": false,
+    "awaitedShutdownReceiptRetained": false,
+    "explicitRemoteDisposeCompletionObserved": false,
+    "cloudPreviewDeleted": false,
+    "cloudPreviewRevocationClaimed": false,
+    "storageAndJournalsPreserved": true,
+    "abandonedGateLockRecoveredAfterOwnerAbsenceVerified": true
+  }
+}

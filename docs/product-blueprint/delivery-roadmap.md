@@ -24,6 +24,20 @@ every possible feature in one layer before touching the next.
 - Do not introduce retailer, full pantry, nutrition-goal, MCP, embedded, or broad
   scale work into the beta critical path.
 
+## Accepted Future Interface Direction — json-render
+
+On 2026-09-08, the product owner accepted eventual site-wide adoption of
+[json-render](https://json-render.dev/docs). Roll it out in stages after the
+current discovery and evaluation work; no implementation date is set. The
+destination is adoption across the site, beyond any initial meal-interface
+prototype.
+
+Build its component catalogue from Meal Planner's existing components. Generated
+views and actions remain subject to server-owned permissions, domain validation,
+and explicit confirmation requirements. Presentation does not become household
+authority. Integration details belong to the later rollout work; this direction
+does not start implementation or dependency installation now.
+
 ## Stage 0 — Close The Current Authority Migration
 
 ### Outcome

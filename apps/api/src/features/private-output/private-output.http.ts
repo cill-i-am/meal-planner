@@ -1,4 +1,7 @@
-import { InterviewProfileOutcome } from "@meal-planner/household-api";
+import {
+  InterviewProfileOutcome,
+  PersonProfile,
+} from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
 
 import type { MealPlannerAuth } from "../auth/auth.js";
@@ -13,18 +16,90 @@ import {
 
 const SessionReference = Schema.String.pipe(Schema.check(Schema.isUUID()));
 
+const hasEmptyBody = (request: Request) =>
+  Effect.tryPromise(async () => {
+    const { body } = request;
+    if (body === null) {
+      return true;
+    }
+    const reader = body.getReader();
+    try {
+      const first = await reader.read();
+      return first.done === true;
+    } finally {
+      await reader.cancel();
+    }
+  });
+
 /** Only this authenticated route can invoke the named session-admission capability. */
 export const handlePrivateInterviewRequest = Effect.fn(
   function* handlePrivateInterviewRequest(input: {
     readonly auth: MealPlannerAuth;
     readonly household: Pick<
       HouseholdDomainWorkerMethods,
-      "listHouseholdPeople" | "mutateInterviewProfile"
+      "listHouseholdPeople" | "mutateInterviewProfile" | "readPersonProfile"
     >;
     readonly output: PrivateOutputApiPort;
     readonly request: Request;
   }) {
     const url = new URL(input.request.url);
+    const assistant =
+      /^\/v1\/private-interviews\/(?<sessionReference>[^/]+)\/turns\/(?<turnId>[^/]+)$/u.exec(
+        url.pathname
+      );
+    if (assistant !== null) {
+      if (
+        input.request.method !== "POST" ||
+        input.request.headers.get("Origin") !== url.origin
+      ) {
+        return new Response(null, { status: 403 });
+      }
+      return yield* Effect.gen(function* continueAssistantTurn() {
+        if (!(yield* hasEmptyBody(input.request))) {
+          return new Response(null, { status: 403 });
+        }
+        const sessionReference = yield* Schema.decodeUnknownEffect(
+          SessionReference
+        )(assistant.groups?.["sessionReference"]);
+        const turnId = yield* Schema.decodeUnknownEffect(SessionReference)(
+          assistant.groups?.["turnId"]
+        );
+        const generation = yield* Schema.decodeUnknownEffect(SessionReference)(
+          input.request.headers.get("x-private-output-generation")
+        );
+        const current = yield* resolvePrivateOutputAuthority({
+          auth: input.auth,
+          headers: input.request.headers,
+          household: input.household,
+        });
+        const profile = yield* input.household
+          .readPersonProfile({
+            admission: current.admission,
+            personId: current.personId,
+            version: null,
+          })
+          .pipe(Effect.flatMap(Schema.decodeUnknownEffect(PersonProfile)));
+        yield* Effect.tryPromise(() =>
+          input.output.runAssistantTurn({
+            binding: {
+              accountKey: current.accountKey,
+              householdKey: current.householdKey,
+              linkageSubject: current.linkageSubject,
+              personId: current.personId,
+              sessionReference,
+            },
+            generation,
+            profile,
+            turnId,
+          })
+        );
+        return new Response(null, { status: 204 });
+      }).pipe(
+        Effect.catchCause(() =>
+          Effect.succeed(new Response(null, { status: 503 }))
+        )
+      );
+    }
     const confirmation =
       /^\/v1\/private-interviews\/(?<sessionReference>[^/]+)\/confirmations\/(?<mutationId>[^/]+)$/u.exec(
         url.pathname
@@ -38,17 +113,8 @@ export const handlePrivateInterviewRequest = Effect.fn(
       }
       return yield* Effect.gen(function* continueConfirmation() {
         // No private HTTP payload or response body is accepted by this continuation.
-        const { body } = input.request;
-        if (body !== null) {
-          const empty = yield* Effect.tryPromise(async () => {
-            const reader = body.getReader();
-            const first = await reader.read();
-            await reader.cancel();
-            return first.done;
-          });
-          if (!empty) {
-            return new Response(null, { status: 403 });
-          }
+        if (!(yield* hasEmptyBody(input.request))) {
+          return new Response(null, { status: 403 });
         }
         const sessionReference = yield* Schema.decodeUnknownEffect(
           SessionReference

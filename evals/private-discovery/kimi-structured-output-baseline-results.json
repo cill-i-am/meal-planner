@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-10",
+  "baseline": "kimi_tiny_structured_output",
+  "status": "tiny_structured_output_baseline_accepted",
+  "source": {
+    "head": "19bd59753052cac3675761ffa60b9c07f5151ace",
+    "freezeSha256": "7b4a594465cf14f139a2e3b6b1c6c89e36137a929a5456fec801691e47e0ceac",
+    "originalRuntimeSourceHead": "49b682f7dba6b0616313d308c2ac5c376a1d732e"
+  },
+  "configuration": {
+    "candidateModel": "@cf/moonshotai/kimi-k2.6",
+    "maxCompletionTokens": 4096,
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": "absent",
+    "thinking": false,
+    "choices": 1,
+    "stream": false,
+    "responseFormat": "json_schema",
+    "workerDeadlineMs": 120000,
+    "forwardingDeadlineMs": 125000,
+    "maximumProviderAttempts": 1,
+    "payloadCollection": false,
+    "caching": false
+  },
+  "observedResult": {
+    "nativeHttpStatus": 200,
+    "responseComplete": true,
+    "transportFailure": false,
+    "knownNativeOutcome": true,
+    "localFallbackHttpStatus": null,
+    "finishReason": "stop",
+    "canonicalContentExactExpectedObject": true,
+    "expectedObject": {
+      "ok": true
+    },
+    "serializationAccepted": true,
+    "tinyBaselineOutputAccepted": true,
+    "diagnosticStage": null,
+    "reasoningFieldPresent": false,
+    "legacyReasoningContentFieldPresent": false,
+    "reasoningMetadataUsedAsOutput": false,
+    "usage": {
+      "inputTokens": 28,
+      "outputTokens": 6,
+      "totalTokens": 34,
+      "cachedInputTokens": 0
+    },
+    "providerReportedNeurons": 4.600000381469727,
+    "estimatedTokenUsageCostUsd": "0.0000506"
+  },
+  "pricing": {
+    "sourceTitle": "Cloudflare Workers AI Kimi K2.6 model documentation",
+    "sourceUrl": "https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/",
+    "verifiedOn": "2026-09-10",
+    "sourceLocation": "Unit Pricing row",
+    "inputUsdPerMillionTokens": "0.95",
+    "outputUsdPerMillionTokens": "4.00",
+    "verification": "Official primary page read during report preparation; rates also supplied as freshly verified by root.",
+    "calculation": "(28 input tokens * 0.95 + 6 output tokens * 4.00) / 1,000,000",
+    "costKind": "Estimated token-usage cost, not a reservation or invoice.",
+    "neuronsInterpretation": "Observed provider usage metadata, not an invoice."
+  },
+  "evidence": {
+    "requestCaptures": 1,
+    "responseObservations": 1,
+    "canonicalRequestBodyBytes": 490,
+    "canonicalRequestBodySha256": "88c9d25f8c48bf0fc679e8cc3435665602197be5d2e530c89729c7337d59d8cb",
+    "actualWireEnvelopeBytes": 629,
+    "actualWireEnvelopeSha256": "cc3d9e61344581aa814b2e2bad3210ea85c30846d5e11864d38c2466a75e970c",
+    "nativeResponseBytes": 386,
+    "nativeResponseSha256": "f804ae80ed795acd5cd19fd6e542b6c8a8ccf051d333478d5be1c5b0eb029c76",
+    "actualWireMatchesCapturedRequest": true,
+    "returnedBytesMatchNativeObservation": true,
+    "canonicalContentUsedWithoutRepair": true,
+    "originalFrozenEvidencePreserved": true,
+    "rootAndIndependentReviewAccepted": true
+  },
+  "timing": {
+    "timestampsUtc": {
+      "ticket": "2026-09-10T14:31:48.142Z",
+      "runtimeReady": "2026-09-10T14:31:57.827Z",
+      "dispatch": "2026-09-10T14:31:57.849Z",
+      "diagnosticCompletion": "2026-09-10T14:31:59.855Z",
+      "closed": "2026-09-10T14:31:59.874Z"
+    },
+    "latencyMs": {
+      "ticketToDispatch": 9707,
+      "dispatchToDiagnosticCompletion": 2006,
+      "dispatchToClosure": 2025,
+      "ticketToDiagnosticCompletion": 11713
+    },
+    "measurement": "Intervals end at diagnostic completion or closure; they include applicable startup/native handling/inspection and are not provider-only latency or household settlement."
+  },
+  "scope": {
+    "establishes": "Only this tiny native structured-output baseline.",
+    "fullInterviewAcceptance": false,
+    "profileValidation": false,
+    "continuityValidation": false,
+    "referenceValidation": false,
+    "privateDiscoverySemanticAcceptance": false,
+    "nativeHouseholdAcceptance": false,
+    "nativeSettlements": 0,
+    "participantAdmissions": 0,
+    "toolExecutions": 0,
+    "judgeCalls": 0,
+    "familyAcceptance": false,
+    "acceptedBaselineForFullDiscovery": false,
+    "earlierFullProbeTimeoutCauseEstablished": false,
+    "originalFullRequestRetried": false,
+    "outputRepair": false,
+    "householdReplay": false,
+    "modelWideReliabilityEstablished": false
+  },
+  "financialAtClosure": {
+    "journalBytes": 16542,
+    "journalSha256": "7e1387f66699fe8df7ea3b1f118d6c34794c08298d177e140f15eff74484510f",
+    "previousJournalBytes": 16389,
+    "previousJournalSha256": "9e43311b6d4c4689bd02f0d5a3def2ea043bd29568b0092e2b9c549e071cf8fe",
+    "callsReserved": 108,
+    "higherCapCallsReserved": 102,
+    "judgeCallsReserved": 0,
+    "reservedMicroUsd": 5596058,
+    "thisReservationMicroUsd": 265421,
+    "originalFullUnknownReservationMicroUsd": 265421,
+    "originalUnknownReservationRetained": true,
+    "originalFullProbeUsage": null,
+    "originalFullProbeEstimatedUsageCostUsd": null,
+    "authorityAnchorCalls": 68,
+    "authorityAnchorReservedMicroUsd": 3246080,
+    "additionalCallsSinceAuthorityAnchor": 40,
+    "additionalReservedMicroUsdSinceAuthorityAnchor": 2349978
+  },
+  "closure": {
+    "closedAtUtc": "2026-09-10T14:31:59.874Z",
+    "runtimeJoinedExitCode": 0,
+    "runtimeDisposed": true,
+    "gateDisposed": true,
+    "remoteSessionDisposed": true,
+    "graceful": true,
+    "actualFinancialLockAbsent": true,
+    "actualActiveCallAbsent": true,
+    "actualListenerAbsent": true,
+    "absenceCheckedAtUtc": "2026-09-10T14:46:29.622530+00:00",
+    "providerRevocationVerified": false
+  },
+  "limitations": [
+    "A tiny accepted object does not establish full private-discovery, profile, continuity, reference, semantic or household acceptance.",
+    "This different tiny request was not a retry of the earlier full request and does not establish its timeout cause.",
+    "The earlier full request retains unknown usage/cost and its full reservation; the tiny success does not refund or settle it."
+  ],
+  "receiptSha256": {
+    "rootAcceptance": "f82e3e1db94b9ce2efa64d65409b9ab34c36b1a713c11afdc80997ab6c104a8c",
+    "responseClassification": "7f5cc50e708f94686f31fa8cef92e69e147314bfc0b162bbbaae49514a848422",
+    "tinyInspection": "d3936c846026d7c99ecee312e45cc9c7fbd43cfc2191da3997d5fedd5520ec9e",
+    "completion": "fc62d7e94758a812e339b9f43251adb6a5552219823bf9f6eb40e23bf35911a5",
+    "closure": "39fb0b734b4fadf5cc2abb59639cc31774771a9be53de6b4633a6c9dfabf9e18"
+  },
+  "privateReceiptIndexSha256": "52be35ffccda7ae9e95898c0b0472512a5dab6e1fe2b10249cfa1299d6487f5f"
+}

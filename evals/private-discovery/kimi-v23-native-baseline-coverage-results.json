@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-12",
+  "run": "kimi_v23_native_baseline_coverage",
+  "status": "closed_required_discovery_incomplete",
+  "source": {
+    "head": "e2d5e4eb6fbbf3e69805d9c83d14c8a75b275caf",
+    "tree": "1c72325d963adea989a21cb924c8adb483f238d2",
+    "promptVersion": "private-discovery-prompt-v23",
+    "policyVersion": "private-discovery-policy-v5",
+    "freezeSha256": "126b3aa6be6a1e39f4557f7d22dde2ece97e60655b0dd634b593b14112546241",
+    "implementationUnchangedFrom": "52d1b2305a0bf31196266e78b382bfe46d4863e8",
+    "trackedFilesAndModesUnchangedThroughClosure": 948,
+    "harnessPinsUnchangedThroughClosure": 86,
+    "manifestSha256": "99ef2d2d2dab5f78bf6b62dd18a11dec7765d65ea95f71aa3f13001e4d43a6b9"
+  },
+  "configuration": {
+    "candidateModel": "@cf/moonshotai/kimi-k2.6",
+    "thinking": true,
+    "temperature": 1,
+    "top_p": 0.95,
+    "maxCompletionTokens": 65536,
+    "timeoutMs": 900000,
+    "maximumResponseBytes": 2097152,
+    "responseFormat": "json_object",
+    "choices": 1,
+    "stream": false,
+    "maximumProviderAttempts": 1
+  },
+  "coverage": {
+    "fixture": "simple_household_baseline",
+    "phase": "A",
+    "requiredDiscoveriesObserved": 2,
+    "requiredDiscoveriesTotal": 3,
+    "missingDiscovery": "simple.routine",
+    "usualMealQuestionAsked": false,
+    "routineNoInformationObserved": false,
+    "fixedCorrectionChallengePassed": true,
+    "unusedFixtureCandidateSlots": 6,
+    "nativeCompleted": false,
+    "phaseBExecuted": false,
+    "otherSixFreshFamiliesExecuted": false,
+    "judgeCalls": 0,
+    "confirmations": 0,
+    "candidateAccepted": false,
+    "fullSuiteComplete": false,
+    "mergeAcceptanceSatisfied": false
+  },
+  "calls": [
+    {
+      "turn": 1,
+      "nativeStatus": "succeeded",
+      "providerOutcomeKnown": true,
+      "httpStatus": 200,
+      "responseComplete": true,
+      "transportFailure": false,
+      "finishReason": "stop",
+      "inputTokens": 4177,
+      "aggregateCompletionTokens": 3728,
+      "responseBytes": 18045,
+      "responseBytesSha256": "2d55eab48599ce85166629750b18974b9625e3412b65283028ff4ba6d9592321",
+      "appendAcknowledgmentToCompletionMs": 65826,
+      "modelControlDecision": "Continue",
+      "appDecision": "Ask",
+      "nativeSnapshotAndRenderedMessageMatch": true,
+      "receiptSha256": {
+        "inspection": "45813f458aeab00bfe26ca2f9918f02ddaca2737596d1ef90e41dc1906612fb2",
+        "requestWrapper": "1b7629e5dc6bdc002f18a2ee20d4dbc9b71369d5f95c79d4a047ef6e97f60446",
+        "completion": "8805ff81f9807607b4522cd0e0e350dc307eac9445600ad24ea6a4be3e6a6f99",
+        "responseMetadata": "9f49b4e916fe8c02b200c4549b08a7f485cb4ea1b59fd8b95625104cd4aac68d"
+      }
+    },
+    {
+      "turn": 2,
+      "nativeStatus": "succeeded",
+      "providerOutcomeKnown": true,
+      "httpStatus": 200,
+      "responseComplete": true,
+      "transportFailure": false,
+      "finishReason": "stop",
+      "inputTokens": 4539,
+      "aggregateCompletionTokens": 6528,
+      "responseBytes": 31071,
+      "responseBytesSha256": "56b95f25ddd9bb3c3291ba97f8e35c4e3d38c648fdebf2afc7f2f0780ac40ee2",
+      "appendAcknowledgmentToCompletionMs": 126805,
+      "modelControlDecision": "Continue",
+      "appDecision": "Review",
+      "nativeSnapshotAndRenderedMessageMatch": true,
+      "receiptSha256": {
+        "inspection": "b3a6c1b0abf5d663d5da8b8d457a25dfa324710c805562e484c83b440ab4f191",
+        "requestWrapper": "a099a62960ec498d88c2854f48a08482e37278ea7917a31ea14411667d31e6c5",
+        "completion": "2fd000d0005835ad9668b62b51c70d462e496c4fbc069fa498e61b4c831fd950",
+        "responseMetadata": "18e278420092fc52c14a2c0455b73e78055bf03b3986aaffeeda52a6800a7bc2"
+      }
+    }
+  ],
+  "nativeEffects": {
+    "sessionStatus": "open",
+    "sessionVersion": 4,
+    "historyMessages": 4,
+    "assistantMessages": 2,
+    "canonicalProfileUnchanged": true,
+    "profileVersion": 0,
+    "canonicalFacts": 0,
+    "proposedCards": 3,
+    "confirmedCards": 0,
+    "pendingConfirmations": 0,
+    "sameOriginalCardRevised": true,
+    "originalCardRevisionBefore": 0,
+    "originalCardRevisionAfter": 1,
+    "finalProposals": [
+      {
+        "kind": "FoodPreference",
+        "label": "roasted tomato soup",
+        "sentiment": "like",
+        "targetKind": "dish"
+      },
+      {
+        "kind": "FoodPreference",
+        "label": "cold tomato soup",
+        "sentiment": "dislike",
+        "targetKind": "dish"
+      },
+      {
+        "kind": "NoKnownHardConstraints"
+      }
+    ]
+  },
+  "interpretation": "Both native turns succeeded and the original card was correctly revised. The application reached Review after the correction and hard-constraint disclosure without ever asking the required usual-meal topic. This is an agenda/coverage failure, not a transport/schema failure or an unauthorized canonical profile mutation.",
+  "cost": {
+    "inputTokens": 8716,
+    "aggregateCompletionTokens": 10256,
+    "configuredFullInputUsageEstimateUsd": "0.049304234864",
+    "billedCostUsd": null,
+    "billingVerified": false,
+    "basis": "Frozen configured full-input estimate retained from the sealed result; aggregate completion tokens counted once. This is not an invoice."
+  },
+  "timing": {
+    "candidateAppendAcknowledgmentToCompletionMsTotal": 192631,
+    "basis": "Participant append acknowledgment through native completion; includes handling and excludes inter-turn gaps when summed. Not provider-only latency or total session duration."
+  },
+  "accounting": {
+    "grossHistoricalLedger": {
+      "callsReserved": 154,
+      "higherCapCallsReserved": 146,
+      "judgeCallsReserved": 2,
+      "reservedMicroUsd": 22282456
+    },
+    "phaseFullReservationsMicroUsd": 1022364,
+    "adoptedHistoricalPostAnchorExposureMicroUsd": 3180537,
+    "currentPostAnchorExposureMicroUsd": 4202901,
+    "originalPostAnchorLimitMicroUsd": 20000000,
+    "remainingExposureMicroUsd": 15797099,
+    "newKnownCallsAutomaticallySettled": false,
+    "billingReconciled": false,
+    "accountingProposalSha256": "568e684ee4420a9e37547d25b10bb2eeb457b59c515f342b93a5fa41e5f03d25",
+    "basis": "The gross append-only reservation ledger and the separately reviewed exposure calculation are different records. Current exposure equals adopted historical exposure plus this phase’s full new reservations; neither is billed spend."
+  },
+  "priorDependantsResult": {
+    "evidenceUnchanged": true,
+    "scope": "The earlier focused dependant pass remains separate. Subsequent user qualitative criteria acceptance and a tone follow-up were not numerical human ratings.",
+    "newHumanNumericRatings": 0
+  },
+  "closure": {
+    "closedAtUtc": "2026-09-12T09:40:57.801Z",
+    "graceful": true,
+    "runtimeJoinExitCode": 0,
+    "actorJoinExitCode": 0,
+    "recordedProcessesAbsent": 3,
+    "listenerAbsent": true,
+    "providerRevocationVerified": false,
+    "requestCaptures": 2,
+    "responseReports": 2,
+    "blockedRequests": 0,
+    "ordinaryNetworkForwarding": false,
+    "automaticRetry": false,
+    "outputRepair": false
+  },
+  "receiptSha256": {
+    "rootResult": "2a962c92561af349abec7e5212ac5ce6cffcf712d277584b69beb8512cf124d0",
+    "rootClosure": "f79a5a8445535b2c745c6f128c8f64fa5be476f04ad642d8622209cad44f1d22",
+    "closed": "c769a75682775340b4c5b1f941ea4dc7f8aff868632253952d678f07e0a3e413",
+    "originalCardReview": "a19804b87236b739bc63556a6e2c0bc87baf7929647e54bbd2afdfe78755585c",
+    "finalHistory": "7b1c4c5440e07922b594085eea200c8d33ff9440845fe5c5f83f3a32c2387b08",
+    "finalCards": "24e899e74e5c630bb78d150bb25295b4f782c11ac238b5a908f61d724639474d",
+    "finalProfile": "8ef0e44c19d7d718609f7cc6e445e5707bdd9e20a2bca3149a1f969a6a00bb16",
+    "finalControls": "df5e8ad108c5040a5a4780216a9323a05258415f7ba676dabae3f4cd1c1e45e4"
+  }
+}

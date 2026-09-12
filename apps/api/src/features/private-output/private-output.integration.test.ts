@@ -12,10 +12,19 @@ import {
   MAX_PAGE_SIZE,
   MAX_PRIVATE_FRAME_BYTES,
 } from "@meal-planner/private-interview-api";
-import { Miniflare } from "miniflare";
+import { Schema } from "effect";
+import { Miniflare, Response as LocalResponse } from "miniflare";
+import type { WorkerdStructuredLog } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import {
+  emptyPrivateDiscoveryContinuity,
+  emptyPrivateDiscoveryContinuityUpdates,
+  PrivateDiscoveryContinuityJson,
+} from "./private-discovery-continuity.js";
+import type { PrivateDiscoveryContinuityNote } from "./private-discovery-continuity.js";
+import { PrivateDiscoveryContext } from "./private-discovery-model.js";
 import type { PrivateOutputMutationPort } from "./private-output-binding.js";
 import { runOutputFencedMutation } from "./private-output-mutation.js";
 import {
@@ -32,12 +41,56 @@ let runtime: Miniflare;
 let temporaryDirectory: string;
 let manifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
 let legacyManifest: typeof manifest;
-const makeRuntime = (selectedManifest = manifest) =>
-  new Miniflare({
+const syntheticModelConfig = JSON.stringify({
+  gatewayId: "synthetic-local-only",
+  inputUsdPerMillionTokens: 1,
+  maxOutputTokens: 1000,
+  model: "@cf/qwen/qwen3-30b-a3b-fp8",
+  outputUsdPerMillionTokens: 2,
+  timeoutMs: 5000,
+});
+let modelConfiguration: string | undefined;
+let modelCalls: unknown[] = [];
+const nativeLogs: WorkerdStructuredLog[] = [];
+let modelResponse: () => Promise<LocalResponse> = () =>
+  Promise.resolve(new LocalResponse(null, { status: 503 }));
+const makeRuntime = (selectedManifest = manifest) => {
+  const worker = privateOutputRuntimeWorker(selectedManifest);
+  return new Miniflare({
     cf: false,
+    handleStructuredLogs: (entry) => nativeLogs.push(entry),
     resourcePersistencePath: `${temporaryDirectory}/storage`,
-    workers: [privateOutputRuntimeWorker(selectedManifest)],
+    workers: [
+      {
+        config: {
+          ...worker.config,
+          env: {
+            ...worker.config.env,
+            PRIVATE_DISCOVERY_CONFIG: {
+              type: "text" as const,
+              value: modelConfiguration ?? "",
+            },
+          },
+        },
+        // Every fetch stays in this process. No network fallback, including unexpected URLs.
+        dev: {
+          outboundService: {
+            handler: async (request) => {
+              if (request.url !== "https://private-model.test/run") {
+                throw new Error(
+                  "External network is forbidden in private model tests"
+                );
+              }
+              modelCalls.push(await request.json());
+              return modelResponse();
+            },
+            type: "fetcher",
+          },
+        },
+      },
+    ],
   });
+};
 
 beforeAll(async () => {
   temporaryDirectory = await mkdtemp(
@@ -730,8 +783,14 @@ describe("durable private conversation protocol", () => {
       )
       .toBe(2);
     expect(connection.frames[1]).toEqual(connection.frames[2]);
-    const competing = ["second", "competing"].map((text) => ({
+    await exchange(connection, {
       expectedVersion: 1,
+      mutationId: crypto.randomUUID(),
+      turnId: first.mutationId,
+      type: "CancelAssistantTurn",
+    });
+    const competing = ["second", "competing"].map((text) => ({
+      expectedVersion: 2,
       mutationId: crypto.randomUUID(),
       text,
       type: "AppendParticipantMessage",
@@ -739,14 +798,20 @@ describe("durable private conversation protocol", () => {
     for (const input of competing) {
       connection.socket.send(JSON.stringify(input));
     }
-    await expect.poll(() => connection.frames.length).toBe(5);
-    expect(connection.frames.slice(3).map((frame) => frame.type)).toEqual([
+    await expect.poll(() => connection.frames.length).toBe(6);
+    expect(connection.frames.slice(4).map((frame) => frame.type)).toEqual([
       "MessageAppended",
       "Rejected",
     ]);
-    expect(connection.frames[4]).toMatchObject({
-      reason: "version_conflict",
-      state: { version: 2 },
+    expect(connection.frames[5]).toMatchObject({
+      reason: "assistant_turn_pending",
+      state: { version: 3 },
+    });
+    await exchange(connection, {
+      expectedVersion: 3,
+      mutationId: crypto.randomUUID(),
+      turnId: competing[0]?.mutationId,
+      type: "CancelAssistantTurn",
     });
     await emit(session, connection.generation, "synthetic-assistant-third");
     const firstPage = await history(connection, 0, 2);
@@ -764,7 +829,7 @@ describe("durable private conversation protocol", () => {
           text: "second",
         }),
       ],
-      state: { version: 3 },
+      state: { version: 5 },
       type: "HistoryRead",
     });
     const lastPage = await history(connection, 2, 2);
@@ -852,7 +917,9 @@ describe("durable private conversation protocol", () => {
       await expect.poll(() => connection.frames.length).toBe(3);
       expect(connection.frames[2]).toMatchObject({
         reason:
-          order === "append-first" ? "version_conflict" : "session_completed",
+          order === "append-first"
+            ? "assistant_turn_pending"
+            : "session_completed",
         type: "Rejected",
       });
       expect(await history(connection)).toMatchObject({
@@ -1410,7 +1477,7 @@ it("bounds encoded history frames while retaining every long multibyte and escap
   for (let index = 0; index < MAX_PAGE_SIZE; index += 1) {
     // eslint-disable-next-line no-await-in-loop -- Each optimistic version depends on the preceding committed receipt.
     const reply = await exchange(connection, {
-      expectedVersion: index,
+      expectedVersion: index * 2,
       mutationId: crypto.randomUUID(),
       text: "\u0000é".repeat(MAX_MESSAGE_LENGTH / 2),
       type: "AppendParticipantMessage",
@@ -1418,6 +1485,13 @@ it("bounds encoded history frames while retaining every long multibyte and escap
     if (reply.type !== "MessageAppended") {
       throw new Error("Expected append receipt");
     }
+    // eslint-disable-next-line no-await-in-loop -- Explicit cancellation settles each queued model attempt before the next participant mutation.
+    await exchange(connection, {
+      expectedVersion: index * 2 + 1,
+      mutationId: crypto.randomUUID(),
+      turnId: reply.assistantTurn.id,
+      type: "CancelAssistantTurn",
+    });
     ids.push(reply.message.id);
     expect(
       new TextEncoder().encode(JSON.stringify(reply)).byteLength
@@ -1447,7 +1521,7 @@ it("bounds encoded history frames while retaining every long multibyte and escap
   }
   expect(retainedIds).toEqual(ids);
   connection.socket.close();
-});
+}, 15_000);
 
 it("keeps fixture producers and directory HTTP, SDK, and storage capabilities absent from the production bundle", async () => {
   const productionManifest = await bundleWorkerFixture(
@@ -1554,3 +1628,2034 @@ it("keeps fixture producers and directory HTTP, SDK, and storage capabilities ab
     runtime = fixtureRuntime;
   }
 }, 30_000);
+
+const finishMessage = "You can finish this conversation when you're ready.";
+const proposalReviewInvitation =
+  "Review the profile proposals in the interface. They remain unconfirmed.";
+const newTomatoProposalMessage = [
+  "New profile proposal: add your preference for the ingredient “tomatoes”.",
+  proposalReviewInvitation,
+  finishMessage,
+].join("\n\n");
+const output = {
+  continuity: emptyPrivateDiscoveryContinuityUpdates(),
+  proposals: [] as unknown[],
+  reply: { _tag: "Continue" },
+};
+const noteUpdates = (
+  notes: readonly (typeof PrivateDiscoveryContinuityNote.Type)[]
+) => ({
+  ...emptyPrivateDiscoveryContinuityUpdates(),
+  notes,
+});
+const noteSnapshot = (
+  notes: readonly (typeof PrivateDiscoveryContinuityNote.Type)[]
+) => ({
+  ...emptyPrivateDiscoveryContinuity(),
+  notes,
+});
+const supersededFollowUpReply = (topicKey: string, question: string) => ({
+  _tag: "Continue",
+  followUp: { question, topicKey },
+});
+type SyntheticOutput = Record<string, unknown>;
+interface SyntheticUsage {
+  completion_tokens: number;
+  prompt_tokens: number;
+}
+const defaultUsage = { completion_tokens: 20, prompt_tokens: 100 };
+const response = (
+  result: SyntheticOutput = output,
+  usage: SyntheticUsage | null = defaultUsage
+) => {
+  const completion = {
+    choices: [
+      {
+        finish_reason: "stop",
+        message: { content: JSON.stringify(result), role: "assistant" },
+      },
+    ],
+  };
+  return new LocalResponse(
+    JSON.stringify(usage === null ? completion : { ...completion, usage }),
+    { headers: { "content-type": "application/json" } }
+  );
+};
+const emptyProfile = (session: PrivateSessionBinding) => ({
+  audit: null,
+  facts: [],
+  personId: session.personId,
+  version: 0,
+});
+describe("native adaptive assistant attempts through the production model adapter", () => {
+  const queue = async (
+    session: PrivateSessionBinding,
+    connection: Connection,
+    expectedVersion = 0,
+    text = "I like tomatoes and want to discuss my own meals."
+  ) => {
+    const result = await exchange(connection, {
+      expectedVersion,
+      mutationId: crypto.randomUUID(),
+      text,
+      type: "AppendParticipantMessage",
+    });
+    if (result.type !== "MessageAppended") {
+      throw new Error("Expected queued participant turn");
+    }
+    return {
+      action: "run-turn",
+      binding: session,
+      generation: connection.generation,
+      profile: emptyProfile(session),
+      sessionReference: session.sessionReference,
+      turnId: result.assistantTurn.id,
+    };
+  };
+  const readTurn = (connection: Connection) =>
+    exchange(connection, {
+      requestId: crypto.randomUUID(),
+      type: "ReadAssistantTurn",
+    });
+  const cards = (connection: Connection) =>
+    exchange(connection, {
+      afterOrdinal: 0,
+      limit: 25,
+      requestId: crypto.randomUUID(),
+      type: "ReadCards",
+    });
+  const audit = (session: PrivateSessionBinding) =>
+    successful<
+      readonly {
+        status: string;
+        failure: string | null;
+        usageJson: string | null;
+        provenanceJson: string | null;
+        summary: string | null;
+      }[]
+    >({ action: "turns", sessionReference: session.sessionReference });
+
+  beforeAll(async () => {
+    await runtime.dispose();
+    modelConfiguration = syntheticModelConfig;
+    runtime = makeRuntime();
+  });
+  afterAll(async () => {
+    await runtime.dispose();
+    modelConfiguration = undefined;
+    runtime = makeRuntime();
+  });
+
+  const diagnosticsSince = (start: number) =>
+    nativeLogs
+      .slice(start)
+      .filter((entry) =>
+        entry.message.includes("private_discovery.invalid_output")
+      );
+
+  const expectDiagnostic = async (
+    start: number,
+    stage: string,
+    privateValues: readonly string[] = []
+  ) => {
+    await expect.poll(() => diagnosticsSince(start)).toHaveLength(1);
+    const logs = diagnosticsSince(start);
+    expect(logs[0]?.level).toBe("log");
+    expect(logs[0]?.message).toMatch(
+      new RegExp(
+        `^\\[\\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\] WARN \\(#\\d+\\): private_discovery\\.invalid_output \\{ stage: '${stage}' \\}$`,
+        "u"
+      )
+    );
+    for (const value of privateValues) {
+      expect(JSON.stringify(logs)).not.toContain(value);
+    }
+  };
+
+  it.each([
+    "response_envelope",
+    "incomplete_completion",
+    "output_json",
+    "output_schema",
+  ] as const)(
+    "emits one safe %s diagnostic through the native adapter and keeps public failure unchanged",
+    async (stage) => {
+      modelCalls = [];
+      const privateValue = `synthetic-private-${crypto.randomUUID()}`;
+      modelResponse = () => {
+        const content =
+          stage === "output_json"
+            ? `{${privateValue}`
+            : JSON.stringify({
+                ...output,
+                proposals: [{ _tag: privateValue }],
+                reply: { ...output.reply, text: privateValue },
+              });
+        return Promise.resolve(
+          new LocalResponse(
+            JSON.stringify(
+              stage === "response_envelope"
+                ? { choices: privateValue }
+                : {
+                    choices: [
+                      {
+                        finish_reason:
+                          stage === "incomplete_completion"
+                            ? privateValue
+                            : "stop",
+                        message: { content, role: "assistant" },
+                      },
+                    ],
+                    usage: defaultUsage,
+                  }
+            )
+          )
+        );
+      };
+      const session = await binding();
+      const connection = await open(session);
+      const attempt = await queue(session, connection);
+      const start = nativeLogs.length;
+      await successful(attempt);
+      await expectDiagnostic(start, stage, [
+        privateValue,
+        session.personId,
+        session.sessionReference,
+        attempt.turnId,
+      ]);
+      const current = await readTurn(connection);
+      expect(current).toMatchObject({
+        turn: { failure: "invalid_output", status: "failed" },
+      });
+      if (current.type !== "AssistantTurnRead" || current.turn === null) {
+        throw new Error("Expected failed assistant turn");
+      }
+      expect(Object.keys(current.turn).toSorted()).toEqual([
+        "failure",
+        "id",
+        "sourceMessageId",
+        "status",
+      ]);
+      expect(await cards(connection)).toMatchObject({ cards: [] });
+      expect(await history(connection)).toMatchObject({
+        messages: [expect.objectContaining({ role: "participant" })],
+      });
+      // Replaying the same terminal continuation emits neither another call nor another diagnostic.
+      await successful(attempt);
+      expect(modelCalls).toHaveLength(1);
+      expect(diagnosticsSince(start)).toHaveLength(1);
+      connection.socket.close();
+    }
+  );
+
+  it("claims duplicate continuations once and atomically stores private output, summary and reviewed proposal", async () => {
+    modelCalls = [];
+    const release = Promise.withResolvers<LocalResponse>();
+    modelResponse = () => release.promise;
+    const session = await binding();
+    const connection = await open(session);
+    const attempt = await queue(session, connection);
+    const first = successful(attempt);
+    await expect.poll(() => modelCalls.length).toBe(1);
+    const second = successful(attempt);
+    await second;
+    expect(await readTurn(connection)).toMatchObject({
+      state: { version: 1 },
+      turn: { id: attempt.turnId, status: "running" },
+    });
+    expect(
+      await exchange(connection, {
+        expectedVersion: 1,
+        mutationId: crypto.randomUUID(),
+        type: "CompleteSession",
+      })
+    ).toMatchObject({ reason: "assistant_turn_pending" });
+    release.resolve(
+      response({
+        ...output,
+        proposals: [
+          {
+            _tag: "ProposeProfileCard",
+            change: {
+              _tag: "AddConfirmedProfileFact",
+              fact: {
+                _tag: "FoodPreference",
+                label: "tomatoes",
+                sentiment: "like",
+                targetKind: "ingredient",
+              },
+            },
+          },
+        ],
+      })
+    );
+    await first;
+    expect(modelCalls).toHaveLength(1);
+    expect(await readTurn(connection)).toMatchObject({
+      state: { version: 2 },
+      turn: { failure: null, id: attempt.turnId, status: "succeeded" },
+    });
+    expect(await history(connection)).toMatchObject({
+      messages: [
+        expect.objectContaining({ role: "participant" }),
+        expect.objectContaining({
+          role: "assistant",
+          text: newTomatoProposalMessage,
+        }),
+      ],
+    });
+    expect(await cards(connection)).toMatchObject({
+      cards: [
+        expect.objectContaining({
+          expectedProfileVersion: 0,
+          id: expect.any(String),
+          ordinal: 1,
+          reviewedFact: null,
+          revision: 0,
+          status: "proposed",
+        }),
+      ],
+    });
+    const retained = await audit(session);
+    expect(retained).toHaveLength(1);
+    expect(retained[0]).toMatchObject({
+      status: "succeeded",
+      summary: JSON.stringify(emptyPrivateDiscoveryContinuity()),
+    });
+    expect(JSON.parse(retained[0]?.usageJson ?? "null")).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 20,
+    });
+    expect(JSON.parse(retained[0]?.provenanceJson ?? "null")).toMatchObject({
+      provider: "cloudflare-workers-ai",
+    });
+    expect(
+      JSON.stringify(
+        await successful({
+          action: "metadata",
+          sessionReference: session.sessionReference,
+        })
+      )
+    ).not.toContain(newTomatoProposalMessage);
+    const request = modelCalls[0] as {
+      body: { messages: readonly { content: string }[] };
+      gateway: unknown;
+      extraHeaders: unknown;
+    };
+    expect(request.extraHeaders).toEqual({ "cf-aig-max-attempts": "1" });
+    expect(request.gateway).toEqual({
+      collectLog: false,
+      id: "synthetic-local-only",
+      skipCache: true,
+    });
+    const context = JSON.parse(request.body.messages[1]?.content ?? "null") as {
+      profile: unknown;
+      messages: readonly unknown[];
+    };
+    expect(context.profile).toEqual({ facts: [], version: 0 });
+    expect(context.messages).toHaveLength(1);
+    connection.socket.close();
+  });
+
+  const capturedContext = (index: number) => {
+    const request = Schema.decodeUnknownSync(
+      Schema.Struct({
+        body: Schema.Struct({
+          messages: Schema.Array(Schema.Struct({ content: Schema.String })),
+        }),
+      })
+    )(modelCalls[index]);
+    return Schema.decodeUnknownSync(
+      Schema.fromJsonString(PrivateDiscoveryContext)
+    )(request.body.messages[1]?.content);
+  };
+  const currentParticipant = () => {
+    const participant = capturedContext(modelCalls.length - 1).messages.at(-1);
+    if (participant === undefined || participant.role !== "participant") {
+      throw new Error("Expected the current participant message");
+    }
+    return participant;
+  };
+  const routineNote = {
+    detail: "The adult has little time to cook in the evening.",
+    key: "cooking_window",
+    state: "circumstance" as const,
+    subject: "Short evening cooking window",
+  };
+  const equipmentTopic = {
+    detail: "Cooking equipment is not yet known.",
+    key: "equipment",
+    question: "What cooking equipment is available?",
+    state: "unresolved" as const,
+    subject: "Available cooking equipment",
+  };
+
+  it("persists typed needs with cards, retains omitted fields across native restart, and derives review only after every field is addressed", async () => {
+    modelCalls = [];
+    modelResponse = () => {
+      const participant = currentParticipant();
+      return Promise.resolve(
+        response({
+          ...output,
+          continuity: {
+            mealFallbackNeeds: {
+              declarations: [
+                {
+                  evidence: {
+                    messageId: participant.id,
+                    quote: "Jordan needs an alternative meal.",
+                  },
+                  subject: "Jordan",
+                },
+              ],
+              updates: [],
+            },
+            notes: [],
+          },
+          proposals: [
+            {
+              _tag: "ProposeProfileCard",
+              change: {
+                _tag: "AddConfirmedProfileFact",
+                fact: {
+                  _tag: "FoodPreference",
+                  label: "carrots",
+                  sentiment: "like",
+                  targetKind: "ingredient",
+                },
+              },
+            },
+          ],
+          reply: output.reply,
+        })
+      );
+    };
+    const session = await binding();
+    const connection = await open(session);
+    await successful(
+      await queue(
+        session,
+        connection,
+        0,
+        "Jordan needs an alternative meal. I like carrots."
+      )
+    );
+    const first = await audit(session);
+    expect(first[0]?.status).toBe("succeeded");
+    const saved = Schema.decodeUnknownSync(PrivateDiscoveryContinuityJson)(
+      first[0]?.summary
+    );
+    const [need] = saved.mealFallbackNeeds;
+    if (need === undefined) {
+      throw new Error("Expected the declared private need");
+    }
+    expect(need).toMatchObject({
+      acceptableOption: { _tag: "Unanswered" },
+      extraPreparation: { _tag: "Unanswered" },
+      id: `${capturedContext(0).messages[0]?.id}:0`,
+      reason: { _tag: "Unanswered" },
+    });
+    expect(await history(connection)).toMatchObject({
+      messages: [
+        { role: "participant" },
+        {
+          role: "assistant",
+          text: [
+            "New profile proposal: add your preference for the ingredient “carrots”.",
+            proposalReviewInvitation,
+            "Private conversation context for Jordan: an alternative meal is needed.",
+            "For Jordan, why is an alternative meal needed?",
+          ].join("\n\n"),
+        },
+      ],
+    });
+    const savedCards = await cards(connection);
+    expect(savedCards).toMatchObject({
+      cards: [
+        { change: { _tag: "AddConfirmedProfileFact" }, status: "proposed" },
+      ],
+    });
+    if (savedCards.type !== "CardsRead") {
+      throw new Error("Expected private cards");
+    }
+    connection.socket.close();
+    await runtime.dispose();
+    runtime = makeRuntime();
+    const resumed = await open(session);
+    modelResponse = () =>
+      Promise.resolve(
+        response({
+          ...output,
+          reply: output.reply,
+        })
+      );
+    await successful(
+      await queue(session, resumed, 2, "I have no known hard food constraints.")
+    );
+    expect(await readTurn(resumed)).toMatchObject({
+      turn: { failure: null, status: "succeeded" },
+    });
+    expect(capturedContext(1).continuity).toEqual(saved);
+    expect(await history(resumed)).toMatchObject({
+      messages: [
+        {},
+        {},
+        { role: "participant" },
+        {
+          role: "assistant",
+          text: "For Jordan, why is an alternative meal needed?",
+        },
+      ],
+    });
+    const omitted = await audit(session);
+    expect(omitted[1]?.status).toBe("succeeded");
+    expect(
+      Schema.decodeUnknownSync(PrivateDiscoveryContinuityJson)(
+        omitted[1]?.summary
+      )
+    ).toEqual(saved);
+    expect(await cards(resumed)).toEqual(
+      expect.objectContaining({ cards: savedCards.cards })
+    );
+    modelResponse = () => {
+      const participant = currentParticipant();
+      const evidence = { messageId: participant.id, quote: participant.text };
+      const reference = { _tag: "Existing", id: need.id };
+      return Promise.resolve(
+        response({
+          ...output,
+          continuity: {
+            mealFallbackNeeds: {
+              declarations: [],
+              updates: [
+                {
+                  _tag: "RecordReason",
+                  evidence,
+                  need: reference,
+                  revisit: null,
+                  value: "The shared dish is too spicy.",
+                },
+                {
+                  _tag: "RecordOption",
+                  evidence,
+                  need: reference,
+                  revisit: null,
+                  value: {
+                    description: "a plain sandwich",
+                    kind: "generic",
+                    quantity: null,
+                    substitutions: null,
+                  },
+                },
+                {
+                  _tag: "RecordPreparation",
+                  evidence,
+                  need: reference,
+                  revisit: null,
+                  value: "Assembly without additional cooking is manageable.",
+                },
+              ],
+            },
+            notes: [],
+          },
+          reply: output.reply,
+        })
+      );
+    };
+    await successful(
+      await queue(
+        session,
+        resumed,
+        4,
+        "The shared dish is too spicy. A plain sandwich works, and assembly without extra cooking is manageable."
+      )
+    );
+    expect(await readTurn(resumed)).toMatchObject({
+      state: { status: "open", version: 6 },
+      turn: { status: "succeeded" },
+    });
+    const completed = await audit(session);
+    const completeSnapshot = Schema.decodeUnknownSync(
+      PrivateDiscoveryContinuityJson
+    )(completed[2]?.summary);
+    expect(completeSnapshot.mealFallbackNeeds[0]).toMatchObject({
+      acceptableOption: { _tag: "Answered", value: { kind: "generic" } },
+      extraPreparation: { _tag: "Answered" },
+      id: need.id,
+      reason: { _tag: "Answered" },
+    });
+    expect(await history(resumed)).toMatchObject({
+      messages: [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          role: "assistant",
+          text: [
+            "Private conversation context for Jordan: reason: The shared dish is too spicy.; generic option: a plain sandwich; manageable extra preparation: Assembly without additional cooking is manageable.",
+            finishMessage,
+          ].join("\n\n"),
+        },
+      ],
+    });
+    resumed.socket.close();
+    const freshSession = { ...session, sessionReference: crypto.randomUUID() };
+    const fresh = await open(freshSession);
+    modelResponse = () => Promise.resolve(response());
+    await successful(await queue(freshSession, fresh));
+    expect(capturedContext(3).continuity).toEqual(
+      emptyPrivateDiscoveryContinuity()
+    );
+    expect(capturedContext(3).cards).toEqual([]);
+    expect(capturedContext(3).profile).toEqual({ facts: [], version: 0 });
+    fresh.socket.close();
+  });
+
+  it.each([
+    { kind: "current", stage: null },
+    { kind: "missing", stage: "need_updates" },
+    { kind: "stale", stage: "need_evidence" },
+  ] as const)(
+    "settles or rejects NoInformation with $kind revisit evidence for a declined option",
+    async ({ kind, stage }) => {
+      modelCalls = [];
+      const initialText =
+        "Jordan needs an alternative meal because the shared dish is too spicy. No extra cooking is manageable. I do not want to discuss acceptable alternatives.";
+      modelResponse = () => {
+        const participant = currentParticipant();
+        const evidence = { messageId: participant.id, quote: participant.text };
+        const need = { _tag: "Declared", index: 0 };
+        return Promise.resolve(
+          response({
+            ...output,
+            continuity: {
+              mealFallbackNeeds: {
+                declarations: [{ evidence, subject: "Jordan" }],
+                updates: [
+                  {
+                    _tag: "RecordReason",
+                    evidence,
+                    need,
+                    revisit: null,
+                    value: "The shared dish is too spicy.",
+                  },
+                  {
+                    _tag: "RecordPreparation",
+                    evidence,
+                    need,
+                    revisit: null,
+                    value: "No extra cooking is manageable.",
+                  },
+                  {
+                    _tag: "SetFieldDisposition",
+                    disposition: "declined",
+                    evidence,
+                    field: "acceptableOption",
+                    need,
+                    revisit: null,
+                  },
+                ],
+              },
+              notes: [],
+            },
+          })
+        );
+      };
+      const session = await binding();
+      let connection = await open(session);
+      try {
+        await successful(await queue(session, connection, 0, initialText));
+        const [initial] = await audit(session);
+        expect(initial?.status).toBe("succeeded");
+        const savedSummary = initial?.summary;
+        const saved = Schema.decodeUnknownSync(PrivateDiscoveryContinuityJson)(
+          savedSummary
+        );
+        const [need] = saved.mealFallbackNeeds;
+        if (need === undefined || need.acceptableOption._tag !== "Declined") {
+          throw new Error("Expected the retained declined option");
+        }
+        expect(need).toMatchObject({
+          extraPreparation: { _tag: "Answered" },
+          reason: { _tag: "Answered" },
+        });
+        const staleRevisit = need.acceptableOption.evidence;
+        const revisitQuote = "I want to revisit acceptable alternatives";
+        const noInformationQuote = "I have no more information.";
+        const participantText = `${revisitQuote}, but ${noInformationQuote} I like tomatoes.`;
+        modelResponse = () => {
+          const participant = currentParticipant();
+          const revisits = {
+            current: { messageId: participant.id, quote: revisitQuote },
+            missing: null,
+            stale: staleRevisit,
+          };
+          return Promise.resolve(
+            response({
+              ...output,
+              continuity: {
+                mealFallbackNeeds: {
+                  declarations: [],
+                  updates: [
+                    {
+                      _tag: "SetFieldDisposition",
+                      disposition: "no_information",
+                      evidence: {
+                        messageId: participant.id,
+                        quote: noInformationQuote,
+                      },
+                      field: "acceptableOption",
+                      need: { _tag: "Existing", id: need.id },
+                      revisit: revisits[kind],
+                    },
+                  ],
+                },
+                notes: [],
+              },
+              proposals: [
+                {
+                  _tag: "ProposeProfileCard",
+                  change: {
+                    _tag: "AddConfirmedProfileFact",
+                    fact: {
+                      _tag: "FoodPreference",
+                      label: "tomatoes",
+                      sentiment: "like",
+                      targetKind: "ingredient",
+                    },
+                  },
+                },
+              ],
+            })
+          );
+        };
+        const start = nativeLogs.length;
+        await successful(await queue(session, connection, 2, participantText));
+        expect(modelCalls).toHaveLength(2);
+        expect(capturedContext(1).continuity).toEqual(saved);
+        const attempts = await audit(session);
+        expect(attempts[0]?.summary).toBe(savedSummary);
+        if (stage !== null) {
+          await expectDiagnostic(start, stage, [
+            initialText,
+            participantText,
+            need.id,
+          ]);
+          expect(await readTurn(connection)).toMatchObject({
+            state: { status: "open", version: 3 },
+            turn: { failure: "invalid_output", status: "failed" },
+          });
+          expect(await history(connection)).toMatchObject({
+            messages: [
+              { role: "participant" },
+              { role: "assistant" },
+              { role: "participant" },
+            ],
+          });
+          expect(await cards(connection)).toMatchObject({ cards: [] });
+          expect(attempts[1]?.summary).toBeNull();
+          return;
+        }
+        expect(diagnosticsSince(start)).toHaveLength(0);
+        expect(await readTurn(connection)).toMatchObject({
+          state: { status: "open", version: 4 },
+          turn: { failure: null, status: "succeeded" },
+        });
+        const participant = currentParticipant();
+        const settled = {
+          ...saved,
+          mealFallbackNeeds: [
+            {
+              ...need,
+              acceptableOption: {
+                _tag: "NoInformation",
+                evidence: {
+                  messageId: participant.id,
+                  quote: noInformationQuote,
+                },
+                reopenedBy: { messageId: participant.id, quote: revisitQuote },
+              },
+            },
+          ],
+        };
+        expect(
+          Schema.decodeUnknownSync(PrivateDiscoveryContinuityJson)(
+            attempts[1]?.summary
+          )
+        ).toEqual(settled);
+        expect(await history(connection)).toMatchObject({
+          messages: [
+            { role: "participant" },
+            { role: "assistant" },
+            { role: "participant" },
+            {
+              role: "assistant",
+              text: [
+                "New profile proposal: add your preference for the ingredient “tomatoes”.",
+                proposalReviewInvitation,
+                "Private conversation context for Jordan: reason: The shared dish is too spicy.; acceptable option: no information supplied; manageable extra preparation: No extra cooking is manageable.",
+                finishMessage,
+              ].join("\n\n"),
+            },
+          ],
+        });
+        const savedCards = await cards(connection);
+        expect(savedCards).toMatchObject({
+          cards: [
+            { change: { _tag: "AddConfirmedProfileFact" }, status: "proposed" },
+          ],
+        });
+        if (savedCards.type !== "CardsRead") {
+          throw new Error("Expected private cards");
+        }
+        connection.socket.close();
+        await runtime.dispose();
+        runtime = makeRuntime();
+        connection = await open(session);
+        modelResponse = () => Promise.resolve(response());
+        await successful(
+          await queue(
+            session,
+            connection,
+            4,
+            "Keep the information already recorded."
+          )
+        );
+        expect(await readTurn(connection)).toMatchObject({
+          state: { status: "open", version: 6 },
+          turn: { failure: null, status: "succeeded" },
+        });
+        expect(capturedContext(2).continuity).toEqual(settled);
+
+        const afterRestart = await audit(session);
+        expect(afterRestart[2]?.summary).toBe(attempts[1]?.summary);
+        expect(await cards(connection)).toMatchObject({
+          cards: savedCards.cards,
+        });
+        expect(await history(connection)).toMatchObject({
+          messages: [
+            {},
+            {},
+            {},
+            {},
+            { role: "participant" },
+            { role: "assistant", text: finishMessage },
+          ],
+        });
+      } finally {
+        connection.socket.close();
+      }
+    }
+  );
+
+  it.each([
+    { kind: "old_evidence", stage: "need_evidence" },
+    { kind: "assistant_evidence", stage: "need_evidence" },
+    { kind: "missing_excerpt", stage: "need_evidence" },
+    { kind: "unknown_need", stage: "need_updates" },
+    { kind: "duplicate_field", stage: "need_updates" },
+    { kind: "unknown_field", stage: "output_schema" },
+    { kind: "superseded_follow_up", stage: "output_schema" },
+    { kind: "snapshot_overflow", stage: "continuity_limit" },
+  ])(
+    "atomically rejects typed $kind with a valid proposed card",
+    async ({ kind, stage }) => {
+      modelCalls = [];
+      modelResponse = () =>
+        Promise.resolve(
+          response({ ...output, continuity: noteUpdates([routineNote]) })
+        );
+      const session = await binding();
+      const connection = await open(session);
+      await successful(await queue(session, connection));
+      const [savedAudit] = await audit(session);
+      const saved = savedAudit?.summary;
+      modelResponse = () => {
+        const participant = currentParticipant();
+        const context = capturedContext(modelCalls.length - 1);
+        const evidence = { messageId: participant.id, quote: participant.text };
+        const declaration = { evidence, subject: "Jordan" };
+        const record = {
+          _tag: "RecordReason",
+          evidence,
+          need: { _tag: "Declared", index: 0 },
+          revisit: null,
+          value: "The shared meal is too spicy.",
+        };
+        let typed: unknown = { declarations: [declaration], updates: [] };
+        let reply: unknown = output.reply;
+        switch (kind) {
+          case "old_evidence":
+          case "assistant_evidence": {
+            const earlier = context.messages.find(
+              (message) =>
+                message.role ===
+                (kind === "old_evidence" ? "participant" : "assistant")
+            );
+            if (earlier === undefined) {
+              throw new Error("Expected the earlier message");
+            }
+            typed = {
+              declarations: [
+                {
+                  ...declaration,
+                  evidence: { messageId: earlier.id, quote: earlier.text },
+                },
+              ],
+              updates: [],
+            };
+            break;
+          }
+          case "missing_excerpt": {
+            typed = {
+              declarations: [
+                {
+                  ...declaration,
+                  evidence: {
+                    ...evidence,
+                    quote: "An unsupported private excerpt.",
+                  },
+                },
+              ],
+              updates: [],
+            };
+            break;
+          }
+          case "unknown_need": {
+            typed = {
+              declarations: [],
+              updates: [
+                {
+                  ...record,
+                  need: { _tag: "Existing", id: `${crypto.randomUUID()}:0` },
+                },
+              ],
+            };
+            break;
+          }
+          case "duplicate_field": {
+            typed = { declarations: [declaration], updates: [record, record] };
+            break;
+          }
+          case "unknown_field": {
+            typed = {
+              declarations: [declaration],
+              updates: [{ ...record, approved: true }],
+            };
+            break;
+          }
+          case "superseded_follow_up": {
+            reply = supersededFollowUpReply("missing", "What else matters?");
+            break;
+          }
+          case "snapshot_overflow": {
+            typed = {
+              declarations: Array.from({ length: 3 }, (_, index) => ({
+                evidence,
+                subject: `${index}${"🍲".repeat(59)}`,
+              })),
+              updates: Array.from({ length: 3 }, (_, index) => [
+                {
+                  ...record,
+                  need: { _tag: "Declared", index },
+                  value: "🍲".repeat(100),
+                },
+                {
+                  ...record,
+                  _tag: "RecordPreparation",
+                  need: { _tag: "Declared", index },
+                  value: "🍲".repeat(100),
+                },
+              ]).flat(),
+            };
+            break;
+          }
+          default: {
+            throw new Error("Unexpected invalid typed fixture");
+          }
+        }
+        return Promise.resolve(
+          response({
+            continuity: { mealFallbackNeeds: typed, notes: [] },
+            proposals: [
+              {
+                _tag: "ProposeProfileCard",
+                change: {
+                  _tag: "AddConfirmedProfileFact",
+                  fact: {
+                    _tag: "FoodPreference",
+                    label: "tomatoes",
+                    sentiment: "like",
+                    targetKind: "ingredient",
+                  },
+                },
+              },
+            ],
+            reply,
+          })
+        );
+      };
+      const start = nativeLogs.length;
+      await successful(
+        await queue(
+          session,
+          connection,
+          2,
+          kind === "snapshot_overflow"
+            ? "🍲".repeat(200)
+            : "Jordan needs an alternative meal."
+        )
+      );
+      await expectDiagnostic(start, stage, [routineNote.detail]);
+      expect(await readTurn(connection)).toMatchObject({
+        state: { status: "open", version: 3 },
+        turn: { failure: "invalid_output", status: "failed" },
+      });
+      expect(await history(connection)).toMatchObject({
+        messages: [
+          { role: "participant" },
+          { role: "assistant" },
+          { role: "participant" },
+        ],
+      });
+      expect(await cards(connection)).toMatchObject({ cards: [] });
+      const attempts = await audit(session);
+      expect(attempts[0]?.summary).toBe(saved);
+      expect(attempts[1]?.summary).toBeNull();
+      expect(modelCalls).toHaveLength(2);
+      connection.socket.close();
+    }
+  );
+
+  it("applies mixed continuity updates with a card atomically, retains omitted notes across restart, and isolates a fresh session", async () => {
+    modelCalls = [];
+    const { reply } = output;
+    modelResponse = () =>
+      Promise.resolve(
+        response({
+          continuity: noteUpdates([routineNote, equipmentTopic]),
+          proposals: [],
+          reply,
+        })
+      );
+    const session = await binding();
+    const connection = await open(session);
+    await successful(
+      await queue(
+        session,
+        connection,
+        0,
+        "I have little time to cook in the evening."
+      )
+    );
+    expect(capturedContext(0).continuity).toEqual(
+      emptyPrivateDiscoveryContinuity()
+    );
+    expect(await history(connection)).toMatchObject({
+      messages: [
+        expect.objectContaining({ role: "participant" }),
+        expect.objectContaining({
+          role: "assistant",
+          text: equipmentTopic.question,
+        }),
+      ],
+    });
+    const answered = {
+      detail: "The adult has a hob.",
+      key: equipmentTopic.key,
+      state: "answered" as const,
+      subject: "Available hob",
+    };
+    const newNote = {
+      detail: "The adult cooks at weekends.",
+      key: "weekend_cooking",
+      state: "circumstance" as const,
+      subject: "Weekend cooking",
+    };
+    modelResponse = () =>
+      Promise.resolve(
+        response({
+          ...output,
+          continuity: noteUpdates([newNote, answered]),
+          proposals: [
+            {
+              _tag: "ProposeProfileCard",
+              change: {
+                _tag: "AddConfirmedProfileFact",
+                fact: {
+                  _tag: "FoodPreference",
+                  label: "tomatoes",
+                  sentiment: "like",
+                  targetKind: "ingredient",
+                },
+              },
+            },
+          ],
+        })
+      );
+    await successful(
+      await queue(
+        session,
+        connection,
+        2,
+        "I have a hob and cook at weekends. I like tomatoes."
+      )
+    );
+    expect(capturedContext(1).continuity).toEqual(
+      noteSnapshot([routineNote, equipmentTopic])
+    );
+    const retained = await audit(session);
+    expect(JSON.parse(retained[1]?.summary ?? "null")).toEqual(
+      noteSnapshot([routineNote, answered, newNote])
+    );
+    expect(retained[1]?.status).toBe("succeeded");
+    expect(await history(connection)).toMatchObject({
+      messages: [
+        expect.objectContaining({ role: "participant" }),
+        expect.objectContaining({ role: "assistant" }),
+        expect.objectContaining({ role: "participant" }),
+        expect.objectContaining({
+          role: "assistant",
+          text: newTomatoProposalMessage,
+        }),
+      ],
+    });
+    const savedCards = await cards(connection);
+    expect(savedCards).toMatchObject({
+      cards: [
+        expect.objectContaining({
+          change: {
+            _tag: "AddConfirmedProfileFact",
+            fact: {
+              _tag: "FoodPreference",
+              label: "tomatoes",
+              sentiment: "like",
+              targetKind: "ingredient",
+            },
+          },
+          revision: 0,
+          status: "proposed",
+        }),
+      ],
+    });
+    expect(
+      JSON.stringify(
+        await successful({
+          action: "metadata",
+          sessionReference: session.sessionReference,
+        })
+      )
+    ).not.toContain(routineNote.detail);
+    connection.socket.close();
+    await runtime.dispose();
+    runtime = makeRuntime();
+    const resumed = await open(session);
+    modelResponse = () =>
+      Promise.resolve(
+        response({
+          ...output,
+          reply: {
+            _tag: "Stop",
+            evidence: {
+              messageId: capturedContext(modelCalls.length - 1).messages.at(-1)
+                ?.id,
+              quote: "Please stop asking questions.",
+            },
+          },
+        })
+      );
+    await successful(
+      await queue(session, resumed, 4, "Please stop asking questions.")
+    );
+    expect(await readTurn(resumed)).toMatchObject({
+      turn: { failure: null, status: "succeeded" },
+    });
+    expect(capturedContext(2).continuity).toEqual(
+      noteSnapshot([routineNote, answered, newNote])
+    );
+    const resumedCards = await cards(resumed);
+    if (savedCards.type !== "CardsRead" || resumedCards.type !== "CardsRead") {
+      throw new Error("Expected private cards");
+    }
+    expect(resumedCards.cards).toEqual(savedCards.cards);
+    expect(await readTurn(resumed)).toMatchObject({
+      state: { status: "open", version: 6 },
+      turn: { status: "succeeded" },
+    });
+    expect(await history(resumed)).toMatchObject({
+      messages: [
+        {},
+        {},
+        {},
+        {},
+        { role: "participant" },
+        { role: "assistant", text: "We can stop here." },
+      ],
+    });
+    const afterStop = await audit(session);
+    expect(JSON.parse(afterStop[2]?.summary ?? "null")).toEqual(
+      noteSnapshot([routineNote, answered, newNote])
+    );
+    const nextSession = { ...session, sessionReference: crypto.randomUUID() };
+    const fresh = await open(nextSession);
+    modelResponse = () => Promise.resolve(response());
+    await successful(await queue(nextSession, fresh));
+    const nextContext = capturedContext(3);
+    expect(nextContext.continuity).toEqual(emptyPrivateDiscoveryContinuity());
+    expect(nextContext.cards).toEqual([]);
+    expect(nextContext.messages).toHaveLength(1);
+    expect(JSON.stringify(nextContext)).not.toContain(routineNote.detail);
+    expect(JSON.stringify(nextContext)).not.toContain(equipmentTopic.question);
+    expect(
+      await exchange(resumed, {
+        expectedVersion: 6,
+        mutationId: crypto.randomUUID(),
+        type: "CompleteSession",
+      })
+    ).toMatchObject({ state: { status: "completed", version: 7 } });
+    fresh.socket.close();
+    resumed.socket.close();
+  });
+
+  it.each(["no_information", "declined"] as const)(
+    "persists %s distinctly and rejects a superseded model-authored follow-up",
+    async (state) => {
+      modelCalls = [];
+      modelResponse = () =>
+        Promise.resolve(
+          response({
+            ...output,
+            continuity: noteUpdates([equipmentTopic]),
+            reply: output.reply,
+          })
+        );
+      const session = await binding();
+      const connection = await open(session);
+      await successful(await queue(session, connection));
+      const closed = {
+        detail:
+          state === "no_information"
+            ? "The adult has no further information about this."
+            : "The adult declined to discuss this topic.",
+        key: equipmentTopic.key,
+        state,
+        subject: equipmentTopic.subject,
+      };
+      modelResponse = () =>
+        Promise.resolve(
+          response({
+            ...output,
+            continuity: noteUpdates([closed]),
+          })
+        );
+      await successful(await queue(session, connection, 2));
+      const afterResolution = await audit(session);
+      const saved = afterResolution[1]?.summary;
+      expect(JSON.parse(saved ?? "null")).toEqual(noteSnapshot([closed]));
+      modelResponse = () =>
+        Promise.resolve(
+          response({
+            ...output,
+            reply: supersededFollowUpReply(
+              equipmentTopic.key,
+              "What equipment is available?"
+            ),
+          })
+        );
+      const start = nativeLogs.length;
+      await successful(await queue(session, connection, 4));
+      await expectDiagnostic(start, "output_schema", [closed.detail]);
+      expect(await readTurn(connection)).toMatchObject({
+        turn: { failure: "invalid_output", status: "failed" },
+      });
+      const attempts = await audit(session);
+      expect(attempts[1]?.summary).toBe(saved);
+      expect(attempts[2]?.summary).toBeNull();
+      connection.socket.close();
+    }
+  );
+
+  it.each([
+    {
+      continuity: { additions: [routineNote], revisions: [] },
+      reply: output.reply,
+      stage: "output_schema",
+      title: "the superseded additions/revisions shape",
+    },
+    {
+      continuity: noteUpdates([equipmentTopic, equipmentTopic]),
+      reply: output.reply,
+      stage: "continuity_updates",
+      title: "duplicate new keys",
+    },
+    {
+      continuity: noteUpdates([
+        routineNote,
+        { ...routineNote, detail: "Another update." },
+      ]),
+      reply: output.reply,
+      stage: "continuity_updates",
+      title: "duplicate retained keys",
+    },
+    {
+      continuity: noteUpdates([
+        ...Array.from({ length: 6 }, (_, i) => ({
+          ...routineNote,
+          key: `new-${i}`,
+        })),
+        routineNote,
+      ]),
+      reply: output.reply,
+      stage: "output_schema",
+      title: "seven updates",
+    },
+    {
+      continuity: {
+        ...output.continuity,
+        notes: [
+          {
+            detail: equipmentTopic.detail,
+            key: equipmentTopic.key,
+            state: "unresolved",
+            subject: equipmentTopic.subject,
+          },
+        ],
+      },
+      reply: output.reply,
+      stage: "output_schema",
+      title: "an unresolved note missing its question",
+    },
+    {
+      continuity: output.continuity,
+      reply: supersededFollowUpReply("missing", "What else?"),
+      stage: "output_schema",
+      title: "the superseded model-authored followUp field",
+    },
+    {
+      continuity: output.continuity,
+      reply: { ...output.reply, text: "Private reply." },
+      stage: "output_schema",
+      title: "the superseded model-authored text field",
+    },
+    {
+      continuity: {
+        ...output.continuity,
+        notes: [{ ...routineNote, question: "What else?" }],
+      },
+      reply: output.reply,
+      stage: "output_schema",
+      title: "a question on a settled circumstance",
+    },
+    {
+      continuity: noteUpdates([
+        { ...equipmentTopic, question: "q".repeat(2000) },
+      ]),
+      reply: output.reply,
+      stage: "reply_limit",
+      title: "an app-rendered proposal and question exceeding the reply limit",
+    },
+  ])(
+    "atomically rejects $title before storing a reply, card or replacement snapshot",
+    async ({ continuity, reply, stage }) => {
+      modelCalls = [];
+      modelResponse = () =>
+        Promise.resolve(
+          response({
+            ...output,
+            continuity: noteUpdates([routineNote]),
+          })
+        );
+      const session = await binding();
+      const connection = await open(session);
+      await successful(await queue(session, connection));
+      const beforeInvalidUpdate = await audit(session);
+      const saved = beforeInvalidUpdate[0]?.summary;
+      modelResponse = () =>
+        Promise.resolve(
+          response({
+            continuity,
+            proposals: [
+              {
+                _tag: "ProposeProfileCard",
+                change: {
+                  _tag: "AddConfirmedProfileFact",
+                  fact: {
+                    _tag: "FoodPreference",
+                    label: "tomatoes",
+                    sentiment: "like",
+                    targetKind: "ingredient",
+                  },
+                },
+              },
+            ],
+            reply,
+          })
+        );
+      const start = nativeLogs.length;
+      await successful(await queue(session, connection, 2));
+      await expectDiagnostic(start, stage, [routineNote.detail]);
+      expect(await readTurn(connection)).toMatchObject({
+        state: { status: "open", version: 3 },
+        turn: { failure: "invalid_output", status: "failed" },
+      });
+      const transcript = await history(connection);
+      if (transcript.type !== "HistoryRead") {
+        throw new Error("Expected private history");
+      }
+      expect(transcript.messages.map((message) => message.role)).toEqual([
+        "participant",
+        "assistant",
+        "participant",
+      ]);
+      expect(await cards(connection)).toMatchObject({ cards: [] });
+      const attempts = await audit(session);
+      expect(attempts[0]?.summary).toBe(saved);
+      expect(attempts[1]?.summary).toBeNull();
+      expect(modelCalls).toHaveLength(2);
+      connection.socket.close();
+    }
+  );
+
+  it("cancels a running attempt and requires an explicit new retry before dispatching again", async () => {
+    modelCalls = [];
+    const release = Promise.withResolvers<LocalResponse>();
+    modelResponse = () => release.promise;
+    const session = await binding();
+    const connection = await open(session);
+    const attempt = await queue(session, connection);
+    const running = successful(attempt);
+    await expect.poll(() => modelCalls.length).toBe(1);
+    const cancellation = {
+      expectedVersion: 1,
+      mutationId: crypto.randomUUID(),
+      turnId: attempt.turnId,
+      type: "CancelAssistantTurn",
+    };
+    const cancelled = await exchange(connection, cancellation);
+    expect(cancelled).toMatchObject({
+      state: { version: 2 },
+      turn: { status: "cancelled" },
+    });
+    expect(await exchange(connection, cancellation)).toEqual(cancelled);
+    release.resolve(response());
+    await running;
+    expect(await history(connection)).toMatchObject({
+      messages: [expect.objectContaining({ role: "participant" })],
+    });
+    const retry = {
+      expectedVersion: 2,
+      mutationId: crypto.randomUUID(),
+      turnId: attempt.turnId,
+      type: "RetryAssistantTurn",
+    };
+    const retried = await exchange(connection, retry);
+    expect(retried).toMatchObject({
+      state: { version: 3 },
+      turn: { id: retry.mutationId, status: "queued" },
+    });
+    expect(await exchange(connection, retry)).toEqual(retried);
+    expect(modelCalls).toHaveLength(1);
+    modelResponse = () => Promise.resolve(response(output, null));
+    await successful({ ...attempt, turnId: retry.mutationId });
+    expect(modelCalls).toHaveLength(2);
+    expect(await readTurn(connection)).toMatchObject({
+      state: { version: 4 },
+      turn: { status: "succeeded" },
+    });
+    const attempts = await audit(session);
+    // Stop precedes response headers, so cancellation discards the unread body and its unknown usage.
+    expect(attempts[0]?.usageJson).toBeNull();
+    expect(attempts[0]?.summary).toBeNull();
+    expect(attempts.map((item) => item.status)).toEqual([
+      "cancelled",
+      "succeeded",
+    ]);
+    expect(JSON.parse(attempts[1]?.usageJson ?? "null")).toEqual({
+      estimatedCostUsd: null,
+      inputTokens: null,
+      outputTokens: null,
+    });
+    connection.socket.close();
+  });
+
+  it.each(["account", "household"] as const)(
+    "fences a late provider response during %s revocation",
+    async (scope) => {
+      modelCalls = [];
+      const release = Promise.withResolvers<LocalResponse>();
+      modelResponse = () => release.promise;
+      const session = await binding();
+      const connection = await open(session);
+      const attempt = await queue(session, connection);
+      const running = successful(attempt);
+      await expect.poll(() => modelCalls.length).toBe(1);
+      const key =
+        scope === "account" ? session.accountKey : session.householdKey;
+      const operation = await successful<{ operationId: string }>({
+        action: "mutation-begin",
+        intentKey: "a".repeat(64),
+        key,
+        scope,
+        sessionReference: session.sessionReference,
+      });
+      await successful({
+        action: "mutation-prepare",
+        key,
+        operationId: operation.operationId,
+        scope,
+        sessionReference: session.sessionReference,
+      });
+      release.resolve(response());
+      await running;
+      const retained = await audit(session);
+      expect(retained[0]).toMatchObject({
+        failure: "connection_lost",
+        status: "interrupted",
+      });
+      expect(
+        connection.frames
+          .filter((frame) => frame.type === "AssistantTurnUpdated")
+          .map((frame) => frame.turn.status)
+      ).not.toContain("succeeded");
+      expect(
+        await successful({
+          action: "metadata",
+          sessionReference: session.sessionReference,
+        })
+      ).toMatchObject({ version: 1 });
+      await successful({
+        action: "mutation-complete",
+        key,
+        operationId: operation.operationId,
+        scope,
+        sessionReference: session.sessionReference,
+      });
+      const resumed = await open(session);
+      expect(await history(resumed)).toMatchObject({
+        messages: [expect.objectContaining({ role: "participant" })],
+      });
+      expect(await cards(resumed)).toMatchObject({ cards: [] });
+      resumed.socket.close();
+    }
+  );
+
+  it("does not dispatch a queued old-generation continuation after replacement", async () => {
+    modelCalls = [];
+    modelResponse = () => Promise.resolve(response());
+    const session = await binding();
+    const old = await open(session);
+    const attempt = await queue(session, old);
+    const current = await open(session);
+    await successful(attempt);
+    expect(modelCalls).toHaveLength(0);
+    expect(await readTurn(current)).toMatchObject({
+      turn: { failure: "connection_lost", status: "interrupted" },
+    });
+    current.socket.close();
+  });
+
+  it("interrupts queued work across restart and never silently resumes model activity", async () => {
+    modelCalls = [];
+    const session = await binding();
+    const connection = await open(session);
+    const attempt = await queue(session, connection);
+    await runtime.dispose();
+    runtime = makeRuntime();
+    const resumed = await open(session);
+    await successful(attempt);
+    expect(await readTurn(resumed)).toMatchObject({
+      state: { version: 1 },
+      turn: { failure: "runtime_restarted", status: "interrupted" },
+    });
+    expect(modelCalls).toHaveLength(0);
+    resumed.socket.close();
+  });
+
+  it.each([
+    {
+      result: {
+        ...output,
+        proposals: [
+          {
+            _tag: "ReviseProposedProfileCard",
+            cardId: "00000000-0000-0000-0000-000000000000",
+            change: {
+              _tag: "AddConfirmedProfileFact",
+              fact: { _tag: "NoKnownHardConstraints" },
+            },
+            expectedRevision: 0,
+          },
+        ],
+      },
+      stage: "proposal_revision_target",
+      title: "a revision when no proposed card exists",
+    },
+    {
+      result: {
+        ...output,
+        proposals: [
+          {
+            _tag: "ProposeProfileCard",
+            change: {
+              _tag: "RemoveOrdinaryProfileFact",
+              factId: `fact_${crypto.randomUUID()}`,
+            },
+          },
+        ],
+      },
+      stage: "proposal_unknown_fact",
+      title: "unknown fact references",
+    },
+    {
+      result: { ...output, actorId: "untrusted-model-actor" },
+      stage: "output_schema",
+      title: "untrusted authority fields",
+    },
+    {
+      result: {
+        ...output,
+        proposals: [
+          {
+            _tag: "ProposeProfileCard",
+            change: {
+              _tag: "AddConfirmedProfileFact",
+              fact: { _tag: "NoKnownHardConstraints" },
+            },
+          },
+          {
+            _tag: "ProposeProfileCard",
+            change: {
+              _tag: "AddConfirmedProfileFact",
+              fact: { _tag: "NoKnownHardConstraints" },
+            },
+          },
+        ],
+      },
+      stage: "proposal_duplicate",
+      title: "duplicate proposals",
+    },
+  ])(
+    "rejects $title without persisting partial output",
+    async ({ result, stage }) => {
+      const start = nativeLogs.length;
+      modelCalls = [];
+      const privateValue = `synthetic-private-${crypto.randomUUID()}`;
+      modelResponse = () => Promise.resolve(response(result));
+      const session = await binding();
+      const connection = await open(session);
+      await successful(await queue(session, connection, 0, privateValue));
+      expect(await readTurn(connection)).toMatchObject({
+        state: { version: 1 },
+        turn: { failure: "invalid_output", status: "failed" },
+      });
+      expect(await cards(connection)).toMatchObject({ cards: [] });
+      expect(await history(connection)).toMatchObject({
+        messages: [expect.objectContaining({ role: "participant" })],
+      });
+      const retained = await audit(session);
+      expect(JSON.parse(retained[0]?.usageJson ?? "null")).toMatchObject({
+        inputTokens: 100,
+        outputTokens: 20,
+      });
+      await expectDiagnostic(start, stage, [
+        privateValue,
+        session.personId,
+        session.sessionReference,
+      ]);
+      connection.socket.close();
+    }
+  );
+  it.each(["correct", "stale", "rejected", "duplicate"] as const)(
+    "handles a model card revision with a %s target",
+    async (target) => {
+      modelCalls = [];
+      const initialChange = {
+        _tag: "AddConfirmedProfileFact",
+        fact: {
+          _tag: "FoodPreference",
+          label: "tomatoes",
+          sentiment: "like",
+          targetKind: "ingredient",
+        },
+      };
+      modelResponse = () =>
+        Promise.resolve(
+          response({
+            ...output,
+            proposals: [{ _tag: "ProposeProfileCard", change: initialChange }],
+          })
+        );
+      const session = await binding();
+      const connection = await open(session);
+      await successful(await queue(session, connection));
+      const initial = await cards(connection);
+      if (initial.type !== "CardsRead" || initial.cards[0] === undefined) {
+        throw new Error("Expected generated private card");
+      }
+      const [card] = initial.cards;
+      let version = 2;
+      if (target === "rejected") {
+        await exchange(connection, {
+          cardId: card.id,
+          cardRevision: card.revision,
+          expectedVersion: version,
+          mutationId: crypto.randomUUID(),
+          type: "RejectProfileCard",
+        });
+        version += 1;
+      }
+      const correctedChange = {
+        ...initialChange,
+        fact: { ...initialChange.fact, sentiment: "strong_dislike" },
+      };
+      modelResponse = () =>
+        Promise.resolve(
+          response({
+            ...output,
+            proposals: Array.from(
+              { length: target === "duplicate" ? 2 : 1 },
+              () => ({
+                _tag: "ReviseProposedProfileCard",
+                cardId: card.id,
+                change: correctedChange,
+                expectedRevision:
+                  target === "stale" ? card.revision + 1 : card.revision,
+              })
+            ),
+            reply: output.reply,
+          })
+        );
+      const diagnosticStart = nativeLogs.length;
+      await successful(await queue(session, connection, version));
+      if (target === "correct") {
+        expect(diagnosticsSince(diagnosticStart)).toHaveLength(0);
+        expect(await history(connection)).toMatchObject({
+          messages: [
+            { role: "participant" },
+            { role: "assistant", text: newTomatoProposalMessage },
+            { role: "participant" },
+            {
+              role: "assistant",
+              text: [
+                "Revised profile proposal: add your strong dislike for the ingredient “tomatoes”.",
+                proposalReviewInvitation,
+                finishMessage,
+              ].join("\n\n"),
+            },
+          ],
+        });
+      } else {
+        await expectDiagnostic(
+          diagnosticStart,
+          target === "duplicate"
+            ? "proposal_duplicate"
+            : "proposal_revision_target",
+          [card.id, session.personId]
+        );
+      }
+      const retained = await cards(connection);
+      if (retained.type !== "CardsRead") {
+        throw new Error("Expected private cards");
+      }
+      expect(retained.cards).toHaveLength(1);
+      expect(retained.cards[0]).toMatchObject({
+        change: target === "correct" ? correctedChange : initialChange,
+        id: card.id,
+        ordinal: card.ordinal,
+        revision: target === "correct" ? card.revision + 1 : card.revision,
+        status: target === "rejected" ? "rejected" : "proposed",
+      });
+      expect(await readTurn(connection)).toMatchObject({
+        turn: {
+          failure: target === "correct" ? null : "invalid_output",
+          status: target === "correct" ? "succeeded" : "failed",
+        },
+      });
+      const request = modelCalls[1] as {
+        body: { messages: readonly { content: string }[] };
+      };
+      const context = JSON.parse(
+        request.body.messages[1]?.content ?? "null"
+      ) as {
+        cards: readonly unknown[];
+        continuity: typeof PrivateDiscoveryContext.Type.continuity;
+      };
+      expect(context.cards).toEqual([
+        expect.objectContaining({ id: card.id, revision: card.revision }),
+      ]);
+      expect(context.continuity).toEqual(emptyPrivateDiscoveryContinuity());
+      connection.socket.close();
+    }
+  );
+
+  it("interrupts a running attempt when its actual WebSocket closes", async () => {
+    modelCalls = [];
+    const release = Promise.withResolvers<LocalResponse>();
+    modelResponse = () => release.promise;
+    const session = await binding();
+    const connection = await open(session);
+    const attempt = await queue(session, connection);
+    const running = successful(attempt);
+    await expect.poll(() => modelCalls.length).toBe(1);
+    connection.socket.close();
+    await expect
+      .poll(async () => {
+        const turns = await audit(session);
+        return turns[0]?.status;
+      })
+      .toBe("interrupted");
+    release.resolve(response());
+    await running;
+    const resumed = await open(session);
+    expect(await history(resumed)).toMatchObject({
+      messages: [expect.objectContaining({ role: "participant" })],
+      state: { version: 1 },
+    });
+    resumed.socket.close();
+  });
+
+  it("keeps a huge own profile intact and fails before dispatch when context cannot fit", async () => {
+    modelCalls = [];
+    modelResponse = () => Promise.resolve(response());
+    const session = await binding();
+    const connection = await open(session);
+    const attempt = await queue(session, connection);
+    const facts = Array.from({ length: 200 }, (_, index) => ({
+      createdAtEpochMs: 0,
+      createdBy: "a".repeat(64),
+      createdInVersion: 1,
+      id: `fact_${crypto.randomUUID()}`,
+      source: "manual_ui",
+      standing: { _tag: "confirmed", basis: "self" },
+      updatedAtEpochMs: 0,
+      updatedBy: "a".repeat(64),
+      updatedInVersion: 1,
+      value: {
+        _tag: "HardConstraint",
+        category: "allergen",
+        handling: "exclude",
+        label: `synthetic allergen ${index} ${"x".repeat(90)}`,
+      },
+    }));
+    await successful({
+      ...attempt,
+      profile: { ...attempt.profile, facts, version: 1 },
+    });
+    expect(modelCalls).toHaveLength(0);
+    expect(await readTurn(connection)).toMatchObject({
+      turn: { failure: "context_limit", status: "failed" },
+    });
+    connection.socket.close();
+  });
+  it.each([
+    "ordinary-safety-removal",
+    "reviewed-safety-reduction",
+    "ordinary-strong-dislike",
+    "redundant-confirmation",
+  ] as const)("matches canonical profile policy for %s", async (scenario) => {
+    modelCalls = [];
+    const session = await binding();
+    const connection = await open(session);
+    const attempt = await queue(session, connection);
+    const value =
+      scenario === "ordinary-strong-dislike"
+        ? {
+            _tag: "FoodPreference",
+            label: "tomatoes",
+            sentiment: "strong_dislike",
+            targetKind: "ingredient",
+          }
+        : {
+            _tag: "HardConstraint",
+            category: "allergen",
+            handling: "exclude",
+            label: "peanuts",
+          };
+    const fact = {
+      createdAtEpochMs: 0,
+      createdBy: "a".repeat(64),
+      createdInVersion: 1,
+      id: `fact_${crypto.randomUUID()}`,
+      source: "manual_ui",
+      standing: { _tag: "confirmed", basis: "self" },
+      updatedAtEpochMs: 0,
+      updatedBy: "a".repeat(64),
+      updatedInVersion: 1,
+      value,
+    };
+    const changes = {
+      "ordinary-safety-removal": {
+        _tag: "RemoveOrdinaryProfileFact",
+        factId: fact.id,
+      },
+      "ordinary-strong-dislike": {
+        _tag: "RemoveOrdinaryProfileFact",
+        factId: fact.id,
+      },
+      "redundant-confirmation": { _tag: "ConfirmProfileFact", factId: fact.id },
+      "reviewed-safety-reduction": {
+        _tag: "ConfirmHardConstraintReduction",
+        factId: fact.id,
+        replacement: null,
+      },
+    };
+    const change = changes[scenario];
+    modelResponse = () =>
+      Promise.resolve(
+        response({
+          ...output,
+          proposals: [{ _tag: "ProposeProfileCard", change }],
+        })
+      );
+    const diagnosticStart = nativeLogs.length;
+    await successful({
+      ...attempt,
+      profile: { ...attempt.profile, facts: [fact], version: 1 },
+    });
+    const rejected =
+      scenario === "ordinary-safety-removal" ||
+      scenario === "redundant-confirmation";
+    if (rejected) {
+      await expectDiagnostic(
+        diagnosticStart,
+        scenario === "redundant-confirmation"
+          ? "proposal_already_confirmed"
+          : "proposal_fact_kind",
+        [fact.id, session.personId]
+      );
+    } else {
+      expect(diagnosticsSince(diagnosticStart)).toHaveLength(0);
+    }
+    expect(await readTurn(connection)).toMatchObject({
+      turn: {
+        failure: rejected ? "invalid_output" : null,
+        status: rejected ? "failed" : "succeeded",
+      },
+    });
+    expect(await cards(connection)).toMatchObject({
+      cards: rejected
+        ? []
+        : [
+            expect.objectContaining({
+              change,
+              expectedProfileVersion: 1,
+              reviewedFact: value,
+              status: "proposed",
+            }),
+          ],
+    });
+    connection.socket.close();
+  });
+
+  it.each(["refused", "provider_unavailable"] as const)(
+    "retains a %s attempt without implicit provider retry",
+    async (failure) => {
+      modelCalls = [];
+      modelResponse = () =>
+        Promise.resolve(
+          failure === "provider_unavailable"
+            ? new LocalResponse(null, { status: 503 })
+            : new LocalResponse(
+                JSON.stringify({
+                  choices: [
+                    {
+                      finish_reason: "stop",
+                      message: {
+                        content: null,
+                        refusal: "Synthetic refusal",
+                        role: "assistant",
+                      },
+                    },
+                  ],
+                  usage: defaultUsage,
+                })
+              )
+        );
+      const session = await binding();
+      const connection = await open(session);
+      const attempt = await queue(session, connection);
+      await successful(attempt);
+      await successful(attempt);
+      expect(modelCalls).toHaveLength(1);
+      expect(await readTurn(connection)).toMatchObject({
+        turn: { failure, status: "failed" },
+      });
+      const retained = await audit(session);
+      expect(JSON.parse(retained[0]?.provenanceJson ?? "null")).toMatchObject({
+        model: "@cf/qwen/qwen3-30b-a3b-fp8",
+        provider: "cloudflare-workers-ai",
+      });
+      expect(await history(connection)).toMatchObject({
+        messages: [expect.objectContaining({ role: "participant" })],
+      });
+      connection.socket.close();
+    }
+  );
+
+  it("rejects a foreign profile before any model call and preserves the rightful queued attempt", async () => {
+    modelCalls = [];
+    modelResponse = () => Promise.resolve(response());
+    const session = await binding();
+    const connection = await open(session);
+    const attempt = await queue(session, connection);
+    await expectStatus(
+      command({
+        ...attempt,
+        profile: {
+          ...attempt.profile,
+          personId: `person_${crypto.randomUUID()}`,
+        },
+      }),
+      409
+    );
+    expect(modelCalls).toHaveLength(0);
+    expect(await readTurn(connection)).toMatchObject({
+      turn: { status: "queued" },
+    });
+    await successful(attempt);
+    expect(modelCalls).toHaveLength(1);
+    expect(await readTurn(connection)).toMatchObject({
+      turn: { status: "succeeded" },
+    });
+    connection.socket.close();
+  });
+  it("retains dispatch provenance when a running attempt loses its runtime", async () => {
+    modelCalls = [];
+    const release = Promise.withResolvers<LocalResponse>();
+    modelResponse = () => release.promise;
+    const session = await binding();
+    const connection = await open(session);
+    const attempt = await queue(session, connection);
+    const running = command(attempt).then(
+      () => "finished",
+      () => "runtime-stopped"
+    );
+    await expect.poll(() => modelCalls.length).toBe(1);
+    const dispatched = await audit(session);
+    expect(dispatched[0]?.status).toBe("running");
+    expect(JSON.parse(dispatched[0]?.provenanceJson ?? "null")).toMatchObject({
+      model: "@cf/qwen/qwen3-30b-a3b-fp8",
+    });
+    await runtime.dispose();
+    release.resolve(response());
+    await running;
+    runtime = makeRuntime();
+    const resumed = await open(session);
+    const retained = await audit(session);
+    expect(retained[0]).toMatchObject({
+      failure: "runtime_restarted",
+      status: "interrupted",
+      summary: null,
+      usageJson: null,
+    });
+    expect(retained[0]?.provenanceJson).toBe(dispatched[0]?.provenanceJson);
+    expect(modelCalls).toHaveLength(1);
+    expect(await history(resumed)).toMatchObject({
+      messages: [expect.objectContaining({ role: "participant" })],
+      state: { version: 1 },
+    });
+    resumed.socket.close();
+  });
+});

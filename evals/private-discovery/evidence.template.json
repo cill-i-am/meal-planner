@@ -1,0 +1,149 @@
+{
+  "formatVersion": "private-discovery-evidence-v1",
+  "status": "not_run",
+  "scope": "wi03_adult_discovery",
+  "runId": null,
+  "startedAt": null,
+  "source": { "head": null, "tree": null },
+  "versions": {
+    "candidate": {
+      "provider": null,
+      "model": null,
+      "configuration": null,
+      "promptVersion": null,
+      "promptDigest": null,
+      "toolVersion": null,
+      "toolDigest": null,
+      "policyVersion": null,
+      "policyDigest": null
+    },
+    "scenarios": {
+      "version": "private-discovery-scenarios-v1",
+      "digest": null
+    },
+    "rubric": { "version": "private-discovery-rubric-v1", "digest": null },
+    "applicability": { "scope": "wi03_adult_discovery", "rubricDigest": null },
+    "harness": { "name": null, "version": null, "configurationDigest": null },
+    "driver": {
+      "mode": "assisted_manual",
+      "policyVersion": "private-discovery-driver-v1",
+      "facilitatorRole": null
+    },
+    "judge": {
+      "provider": null,
+      "model": null,
+      "configuration": null,
+      "promptVersion": "private-discovery-judge-v1",
+      "promptDigest": null,
+      "rubricDigest": null
+    },
+    "calibration": {
+      "version": "private-discovery-calibration-v1",
+      "acceptedBaselineId": null
+    }
+  },
+  "scenarioResults": [],
+  "scenarioResultTemplate": {
+    "scenarioId": null,
+    "status": "not_run",
+    "syntheticInteractionEvidence": [],
+    "disclosures": [],
+    "disclosureTemplate": {
+      "factId": null,
+      "candidateQuestionReference": null,
+      "criterionDecision": "unreviewed",
+      "facilitatorRole": null,
+      "rationale": null,
+      "participantMessageReference": null
+    },
+    "requiredDiscoveries": [],
+    "discoveryTemplate": {
+      "factId": null,
+      "status": "not_run",
+      "questionReference": null,
+      "disclosureReference": null,
+      "candidateUseReference": null,
+      "semanticReviewerRole": null,
+      "rationale": null
+    },
+    "hardAssertions": [],
+    "hardAssertionTemplate": {
+      "assertionId": null,
+      "method": null,
+      "status": "not_run",
+      "evidenceReferences": [],
+      "reviewerRole": null,
+      "limits": null
+    },
+    "cardAndTransitionEvidence": [],
+    "transitionTemplate": {
+      "expectedCardId": null,
+      "sessionReference": null,
+      "cardReference": null,
+      "revision": null,
+      "transition": null,
+      "commandReference": null,
+      "actualOutcomeReference": null,
+      "profileVersionBefore": null,
+      "profileVersionAfter": null
+    },
+    "programmaticMeasures": {
+      "question_count": null,
+      "repeated_question_count": null,
+      "participant_turn_count": null,
+      "latency_ms": null,
+      "tool_call_count": null,
+      "tool_failure_count": null,
+      "schema_failure_count": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "estimated_cost": null
+    },
+    "measurementEvidence": [],
+    "measurementTemplate": {
+      "measure": null,
+      "status": "unavailable",
+      "unit": null,
+      "method": null,
+      "evidenceReference": null,
+      "currencyAndPriceBasis": null
+    },
+    "softJudge": {
+      "status": "not_run",
+      "hardCheckReceipt": null,
+      "household_specificity": null,
+      "profile_synthesis": null,
+      "rationaleAndEvidence": []
+    },
+    "baselineComparison": {
+      "status": "unavailable",
+      "baselineId": null,
+      "dimensionChanges": [],
+      "materialOperationalRegressions": []
+    },
+    "qualityBand": "unscored",
+    "deferredObligations": [],
+    "humanReview": {
+      "status": "unscored",
+      "calibrationReference": null,
+      "disagreements": [],
+      "resolutions": []
+    }
+  },
+  "repeatSpike": {
+    "status": "not_run",
+    "sessionAEvidence": [],
+    "committedCurrentProfileEvidence": null,
+    "sessionBEvidence": [],
+    "oldHistoryExcludedEvidence": null,
+    "scope": "Narrow fresh-session/current-profile spike only; WI04 full repeat remains not_exercised."
+  },
+  "releaseDecision": {
+    "status": "not_assessed",
+    "productOwner": null,
+    "acceptedBaselineId": null,
+    "rationale": null,
+    "regressionOverride": null
+  },
+  "deferredStatus": "All deferred obligations in rubric.json remain not_exercised and excluded from pass counts and quality aggregates."
+}

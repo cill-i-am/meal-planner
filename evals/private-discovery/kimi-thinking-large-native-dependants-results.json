@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-11",
+  "run": "kimi_thinking_large_native_dependants",
+  "status": "closed_native_completed_fixture_coverage_incomplete",
+  "source": {
+    "head": "06b2d5b40e497de9dd27e0a027dd0c5ac60fadf2",
+    "tree": "a223294193e6ecaa5c5c2c1c55ae3852d67c3603",
+    "unchangedThroughRun": true,
+    "freezeSha256": "6d80ab394412f6d1a602563c47b6ec5b3b901d39dd2047eff7445d67a978ae00",
+    "promptVersion": "private-discovery-prompt-v19",
+    "policyVersion": "private-discovery-policy-v3"
+  },
+  "configuration": {
+    "candidateModel": "@cf/moonshotai/kimi-k2.6",
+    "thinking": true,
+    "temperature": 1,
+    "top_p": 0.95,
+    "maxCompletionTokens": 65536,
+    "workerDeadlineMs": 900000,
+    "responseLimitBytes": 2097152,
+    "responseFormat": "json_object",
+    "choices": 1,
+    "stream": false,
+    "maximumProviderAttempts": 1
+  },
+  "fixture": {
+    "id": "dependants_and_fallbacks",
+    "phase": "A",
+    "nativeSessionCompleted": true,
+    "nativeSessionVersion": 13,
+    "coverageComplete": false,
+    "requiredDiscoveriesObserved": [
+      "dependant.adult_preference",
+      "dependant.safety"
+    ],
+    "requiredDiscoveriesMissing": ["dependant.avoidance", "dependant.fallback"],
+    "challengeObserved": false,
+    "disclosureMethod": "Actual candidate questions were mapped to canonical fixture revealWhen conditions. Unasked withheld disclosures and the fixed challenge were not supplied."
+  },
+  "qualityObservations": [
+    "The adult preference was proposed early and explicitly confirmed.",
+    "The adult safety statement was separately proposed and explicitly confirmed without applying it to the dependant.",
+    "Two generic follow-ups elicited fixed neutral no-information replies and did not satisfy any remaining fixture disclosure trigger.",
+    "The model returned Review/no_relevant_open_topic while the original easy-fallback circumstance remained; it did not ask why the dependant needs a fallback or which exact fallback/workload is acceptable.",
+    "Wrap-up occurred with one paid candidate slot unused, so the call ceiling did not force this endpoint."
+  ],
+  "calls": [
+    {
+      "turn": 1,
+      "nativeStatus": "succeeded",
+      "httpStatus": 200,
+      "finishReason": "stop",
+      "inputTokens": 2944,
+      "outputTokens": 4710,
+      "responseBytes": 23703,
+      "replyDecision": "Ask",
+      "appendAcknowledgmentToCompletionMs": 89252,
+      "responseBytesSha256": "66b28e61529db8797f5a2eb2ad3d09ede6ff89fd8e33c6a0e427809ead79a9e0",
+      "requestWrapperSha256": "921c0fbea5aac111f06039c974bdd3d6acd9dbc6a1adf49038c7261417bd9813",
+      "canonicalRequestBodySha256": "4ff441c285a39aececae411cdf2c51fa19920e9a64d37744118314678f89aa23",
+      "completionReceiptSha256": "298709007eccc03a517ed7b7b4db839995999a0b0db09cf5a98737de3bad2282"
+    },
+    {
+      "turn": 2,
+      "nativeStatus": "succeeded",
+      "httpStatus": 200,
+      "finishReason": "stop",
+      "inputTokens": 3288,
+      "outputTokens": 5375,
+      "responseBytes": 28009,
+      "replyDecision": "Ask",
+      "appendAcknowledgmentToCompletionMs": 93542,
+      "responseBytesSha256": "42752027269af077b4465691d83eea889cc50962d6fa4d3a6f462a5bbed95394",
+      "requestWrapperSha256": "c1659057ad59da5b467c57845e4159f1513d71f72b5f46c9fb9e83e928ef1d47",
+      "canonicalRequestBodySha256": "d6dd2dd1fd6851e07c66be5c7c2c0b328d269e24bbd85151d4d53394e88963d7",
+      "completionReceiptSha256": "162ad6bbc7cf8ed09356e8b8d1d1024ccc7ba2e138c019ed3faa14d3b261032c"
+    },
+    {
+      "turn": 3,
+      "nativeStatus": "succeeded",
+      "httpStatus": 200,
+      "finishReason": "stop",
+      "inputTokens": 3548,
+      "outputTokens": 3254,
+      "responseBytes": 16391,
+      "replyDecision": "Ask",
+      "appendAcknowledgmentToCompletionMs": 65805,
+      "responseBytesSha256": "1d33a741f1314716420b385810e5d09a51f4ef62165a14c0650c7bf18562ea02",
+      "requestWrapperSha256": "92d639d202d6ddf6941a14d5e885a02cd4f1c75a08a46c43ccc400fb10bba93f",
+      "canonicalRequestBodySha256": "3ced6dd3a8030e1047f847d8bd967ec04ffa7dd68b6582abc386a87f0d24abd5",
+      "completionReceiptSha256": "c37df9992995e438660a7ec22f66c00c53b3296625f78a147e585a302f209eec"
+    },
+    {
+      "turn": 4,
+      "nativeStatus": "succeeded",
+      "httpStatus": 200,
+      "finishReason": "stop",
+      "inputTokens": 3713,
+      "outputTokens": 3653,
+      "responseBytes": 19122,
+      "replyDecision": "Review",
+      "appendAcknowledgmentToCompletionMs": 80125,
+      "responseBytesSha256": "4d270997489e02ad8fc802c0dc3cca53f17de50cd27dc4c2dc82910f3033e889",
+      "requestWrapperSha256": "9cdabe3a12a7035ad45fff2730d884ffeb8c98da7745cf52a7a60f338ffe0054",
+      "canonicalRequestBodySha256": "1e6db3948b08e2b079597342da6d78e95e0f7d4db138284f21995d57b683df66",
+      "completionReceiptSha256": "d4a60e7bc516a608b7f9ae4a72ab59a57f6e438323741a88f1c85d40eea21463"
+    }
+  ],
+  "measures": {
+    "candidateCalls": 4,
+    "participantTurns": 4,
+    "questions": 3,
+    "repeatedQuestionTopics": 0,
+    "irrelevantFixtureQuestions": 2,
+    "profileProposals": 2,
+    "profileConfirmations": 2,
+    "nativeGenerationFailures": 0,
+    "schemaFailures": 0,
+    "inputTokens": 13493,
+    "outputTokens": 16992,
+    "sumGenerationPipelineMs": 328724,
+    "latencyBasis": "From participant append acknowledgment through native completion, including handling; not provider-only latency or elapsed interview duration."
+  },
+  "nativeProfile": {
+    "version": 2,
+    "explicitlyConfirmedFacts": 2,
+    "adultFoodPreference": {
+      "kind": "dish",
+      "label": "vegetable curry",
+      "sentiment": "like"
+    },
+    "adultSafetyFact": "NoKnownHardConstraints",
+    "adultSafetyNotAppliedToDependant": true
+  },
+  "acceptance": {
+    "fixedJudgeCalls": 0,
+    "humanRatings": 0,
+    "familiesAccepted": 0,
+    "candidateAccepted": false,
+    "fullSuiteComplete": false,
+    "completeHardGatePassed": false,
+    "provenHardAssertionFailure": false,
+    "hardReviewLimit": "Observed dialogue and native effects contain no evidenced prohibited claim; missing dependent/fallback disclosure and challenge leave the full family hard gate incomplete.",
+    "mergeAcceptanceSatisfied": false
+  },
+  "localHarnessEvents": {
+    "initialActorStartupBlockedBeforeAnyAdmissionOrProviderCall": true,
+    "initialStartupCandidateCalls": 0,
+    "initialStartupParticipantIntents": 0,
+    "initialStartupBudgetUnchanged": true,
+    "earlyConfirmationOriginalMutationReconciledAfterReadmission": true,
+    "profileVersionAfterReconciliation": 1,
+    "providerRetries": 0,
+    "lifecycleExplanation": "Source-supported likely local idle eviction/reconstruction invalidated the generation. Exact constructor timing was not instrumented; the original confirmation mutation was reconciled and no provider call was repeated."
+  },
+  "cost": {
+    "configuredFullInputUsageEstimateUsd": "0.08078635",
+    "cacheAwareUsageEstimateUsd": null,
+    "billedCostUsd": null,
+    "inputUsdPerMillionTokens": "0.95",
+    "outputUsdPerMillionTokens": "4.00",
+    "basis": "Configured rates applied to 13,493 input and 16,992 aggregate completion tokens, counted once; cached input accounting unavailable. This estimate is not an invoice."
+  },
+  "reservationsAtClosure": {
+    "thisRunMicroUsd": 2044724,
+    "phaseCeilingMicroUsd": 3000000,
+    "cumulativeMicroUsd": 14568403,
+    "cumulativeCalls": 138,
+    "cumulativeHigherCapCalls": 131,
+    "cumulativeJudgeCalls": 1,
+    "strictCumulativeCeilingMicroUsd": 20000000,
+    "unusedCandidateSlots": 1,
+    "unusedJudgeSlots": 1,
+    "historicalUnknownReservationsRetained": true,
+    "meaning": "Conservative retained reservations, not billed spend. The candidate call ceiling did not force the final Review."
+  },
+  "closure": {
+    "actorClosedAndJoined": true,
+    "runtimeClosedAndJoined": true,
+    "checkedProcessesAbsent": 3,
+    "listenerAbsent": true,
+    "participantLockAbsent": true,
+    "financialLockAbsent": true,
+    "graceful": true,
+    "providerRevocationVerified": false,
+    "requestCaptures": 4,
+    "responseReports": 4,
+    "blockedRequests": 0
+  },
+  "interpretation": "The larger native limits permitted four successful turns and two explicitly confirmed adult facts. The candidate still ended before eliciting the dependant avoidance and exact fallback/workload or exercising the fixed challenge. Native limit success does not resolve discovery quality or satisfy model/family acceptance.",
+  "nextExperiment": "Diagnose question selection and premature wrap-up before another native comparison. No prompt or schema change was applied during this run.",
+  "receiptSha256": {
+    "rootResult": "0345f391cbbd0dcd5b97ad196fc042c4d50820cbca8efd081c61f9d222489236",
+    "rootClosure": "6a0cbb98d22f4bc0ffe9f2e4db0f75c810d119e1d8ead6bb62e8abce88fa4005",
+    "closed": "78496a426314c2f28bdaeae21c9822bab315b0240d708e6a81c3036e21742474",
+    "nativeTerminalInspection": "4699a2179853e6d0cae6d7543803bf8bc853dcc65f34f809a5ca47e6d8a8f496",
+    "actorSetupRecovery": "99aca9aa26dbf612bb35ae471b086a2f85e9bbba12b10eece8d145260d6cbd3a",
+    "actorCommands": "942ca973913061151ba22f8fc61bacae93fad8654c924225391e7e6e1246218c",
+    "actorResponses": "580c63cb969897ace47733ec518e8146de3d5863dcdc5ce19df83fd16c37e669"
+  }
+}

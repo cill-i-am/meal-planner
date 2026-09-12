@@ -131,7 +131,52 @@ export const ConfirmProfileCard = Schema.Struct({
   type: Schema.Literal("ConfirmProfileCard"),
 });
 
+export const AssistantTurn = Schema.Struct({
+  failure: Schema.NullOr(
+    Schema.Literals([
+      "not_configured",
+      "provider_unavailable",
+      "invalid_output",
+      "refused",
+      "context_limit",
+      "outcome_unknown",
+      "connection_lost",
+      "runtime_restarted",
+    ])
+  ),
+  id: Id,
+  sourceMessageId: Id,
+  status: Schema.Literals([
+    "queued",
+    "running",
+    "succeeded",
+    "failed",
+    "interrupted",
+    "cancelled",
+  ]),
+});
+export type AssistantTurn = typeof AssistantTurn.Type;
+export const ReadAssistantTurn = Schema.Struct({
+  requestId: Id,
+  type: Schema.Literal("ReadAssistantTurn"),
+});
+export const CancelAssistantTurn = Schema.Struct({
+  expectedVersion: Ordinal,
+  mutationId: Id,
+  turnId: Id,
+  type: Schema.Literal("CancelAssistantTurn"),
+});
+export const RetryAssistantTurn = Schema.Struct({
+  expectedVersion: Ordinal,
+  mutationId: Id,
+  turnId: Id,
+  type: Schema.Literal("RetryAssistantTurn"),
+});
+
 export const SessionCommand = Schema.Union([
+  ReadAssistantTurn,
+  CancelAssistantTurn,
+  RetryAssistantTurn,
   AppendParticipantMessage,
   CompleteSession,
   ReadHistory,
@@ -167,6 +212,8 @@ export const Rejected = Schema.Struct({
     "card_not_found",
     "card_conflict",
     "safety_confirmation_required",
+    "assistant_turn_pending",
+    "assistant_turn_conflict",
   ]),
   state: Schema.NullOr(SessionState),
   type: Schema.Literal("Rejected"),
@@ -191,6 +238,23 @@ export const DirectoryFrame = Schema.Union([
 ]);
 export type DirectoryFrame = typeof DirectoryFrame.Type;
 export const SessionFrame = Schema.Union([
+  Schema.Struct({
+    requestId: Id,
+    state: SessionState,
+    turn: Schema.NullOr(AssistantTurn),
+    type: Schema.Literal("AssistantTurnRead"),
+  }),
+  Schema.Struct({
+    mutationId: Id,
+    state: SessionState,
+    turn: AssistantTurn,
+    type: Schema.Literal("AssistantTurnChanged"),
+  }),
+  Schema.Struct({
+    state: SessionState,
+    turn: AssistantTurn,
+    type: Schema.Literal("AssistantTurnUpdated"),
+  }),
   Schema.Struct({
     cards: Schema.Array(ProfileCard),
     hasMore: Schema.Boolean,
@@ -219,6 +283,7 @@ export const SessionFrame = Schema.Union([
     type: Schema.Literal("ConfirmationSettled"),
   }),
   Schema.Struct({
+    assistantTurn: Schema.NullOr(AssistantTurn),
     bindingKey: Schema.String,
     generation: Id,
     pendingConfirmation: Schema.NullOr(Id),
@@ -227,6 +292,7 @@ export const SessionFrame = Schema.Union([
     type: Schema.Literal("SessionReady"),
   }),
   Schema.Struct({
+    assistantTurn: AssistantTurn,
     message: Message,
     mutationId: Id,
     state: SessionState,

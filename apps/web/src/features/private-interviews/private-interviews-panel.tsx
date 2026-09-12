@@ -12,6 +12,7 @@ import { Button } from "../../components/ui/button.js";
 import { Label } from "../../components/ui/label.js";
 import {
   browserPrivateInterviewDependencies,
+  isAssistantTurnActive,
   PrivateInterviewClient,
 } from "./private-interview-client.js";
 import type {
@@ -19,6 +20,7 @@ import type {
   PrivateInterviewView,
 } from "./private-interview-client.js";
 import { PrivateProfileCards } from "./private-profile-cards.js";
+import { PrivateResponseStatus } from "./private-response-status.js";
 
 const dateLabel = (timestamp: number) =>
   new Date(timestamp).toLocaleString(undefined, {
@@ -47,6 +49,7 @@ const MessageForm = ({
   const disabled =
     view.pending !== null ||
     view.pendingConfirmation !== null ||
+    isAssistantTurnActive(view.assistantTurn) ||
     view.notice !== null ||
     !view.historyLoaded;
   return (
@@ -177,6 +180,20 @@ const Notice = ({
         </Alert>
       );
     }
+    case "assistant_turn_pending":
+    case "assistant_turn_conflict": {
+      return (
+        <Alert>
+          <p>
+            This response changed on another connection. Refresh before
+            continuing.
+          </p>
+          <Button onClick={client.reconnectSession}>
+            Review response status
+          </Button>
+        </Alert>
+      );
+    }
     case "confirmation_pending":
     case "card_not_found":
     case "card_conflict":
@@ -215,7 +232,10 @@ const SessionHistory = ({
       )}
     </div>
     {view.historyLoaded && view.messages.length === 0 && (
-      <p>No messages saved in this session.</p>
+      <p>
+        Tell me about foods you enjoy, foods you avoid, or what makes meals easy
+        or difficult for you. Start wherever you like.
+      </p>
     )}
     {!view.historyLoaded && <p role="status">Loading private history…</p>}
     <ol aria-label="Saved messages" className="private-messages">
@@ -236,6 +256,7 @@ const SessionHistory = ({
     {view.moreHistory && (
       <Button onClick={client.loadHistory}>Load more messages</Button>
     )}
+    <PrivateResponseStatus client={client} view={view} />
     <PrivateProfileCards client={client} view={view} />
     {view.sessionState?.status === "open" && (
       <>
@@ -252,6 +273,7 @@ const SessionHistory = ({
           <Button
             disabled={
               view.pendingConfirmation !== null ||
+              isAssistantTurnActive(view.assistantTurn) ||
               view.pending !== null ||
               view.notice !== null ||
               !view.historyLoaded
@@ -395,9 +417,9 @@ const BoundPrivateInterviewsPanel = ({
         adult account can access these sessions.
       </p>
       <p className="private-foundation-note">
-        You can save messages and return to them later. Assistant replies are
-        not available yet. Notes stay private; only profile proposals you
-        explicitly confirm update household food profiles.
+        Your messages and replies stay private. Review any profile proposals
+        before deciding what to share. Only proposals you explicitly confirm
+        update household food profiles.
       </p>
       {view.connection === "connecting" && (
         <p role="status">Connecting to your private sessions…</p>

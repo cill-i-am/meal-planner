@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-09-06
+- Last updated: 2026-09-12
 - Delivery source of truth: this repository
 
 ## Latest Completed Stage
@@ -23,7 +23,107 @@
   [Work Item 02](stages/02-private-discovery/02-progressive-cards-and-confirmation.md)
   is Done through [PR #216](https://github.com/cill-i-am/meal-planner/pull/216),
   merged as `41b2a3e3f12c83edd3ddd9d184b9e138827101e6` on 2026-09-06.
-  Work Item 03 — adaptive discovery and evaluation — is next, not started.
+  [Work Item 03 — adaptive discovery and evaluation](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
+  is in progress in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218).
+  Private adaptive-turn implementation and local browser acceptance are complete.
+  The [GPT-OSS v16 result](../../evals/private-discovery/prompt-v16-planning-purpose-results.md)
+  persisted a false completed-update claim while canonical state stayed unchanged.
+  The [Qwen v16 comparison](../../evals/private-discovery/prompt-v16-qwen-sampling-results.md)
+  stopped at malformed JSON after one native success, preserving prior state.
+  An [isolated Qwen tool diagnostic](../../evals/private-discovery/qwen-native-tool-serialization-diagnostic-results.md)
+  observed a genuine native function call, but its arguments failed source
+  continuity validation offline; it performed no native
+  settlement and earned no discovery acceptance. Kimi's [first full request](../../evals/private-discovery/kimi-first-probe-results.md)
+  and [clean full opening](../../evals/private-discovery/kimi-clean-opening-probe-results.md)
+  both reached their deadlines without provider responses or usage receipts.
+  The [tiny baseline](../../evals/private-discovery/kimi-structured-output-baseline-results.md)
+  and [constant full-schema control](../../evals/private-discovery/kimi-full-schema-control-results.md)
+  passed their bounded checks. The [JSON-object opening](../../evals/private-discovery/kimi-json-object-opening-results.md)
+  returned valid structured output but failed semantic review by proposing an
+  unsupported removal. The [v17 opening](../../evals/private-discovery/kimi-v17-json-object-opening-results.md)
+  then passed its narrow semantic check: it retained the disclosed routine,
+  asked one intent-clarification question and emitted no dependent proposal.
+  Sustained interview behavior and card review/confirmation were not exercised.
+  Kimi request support is now selectable alongside GPT-OSS and Qwen for the
+  approved synthetic evaluation, with configuration still disabled by default.
+  A [two-turn native checkpoint](../../evals/private-discovery/kimi-v17-native-dependency-checkpoint-results.md)
+  ended after a local harness command error, with no family verdict. The
+  [first full-suite baseline turn](../../evals/private-discovery/kimi-v17-native-baseline-failure-results.md)
+  then failed `reply_decision`: Ask referenced a
+  missing unresolved note. No assistant reply, card or continuity update persisted,
+  and the canonical profile stayed unchanged. Prompt v18 requests proposals,
+  reply, then continuity and explicitly requires the matching unresolved note;
+  the shared output-schema declaration follows that order. Whether ordering helps
+  generation remains an unverified hypothesis. The [v18 native suite](../../evals/private-discovery/kimi-v18-native-suite-stop-results.md)
+  recorded six successful turns before rejecting seven continuity updates against
+  the six-update limit. The baseline lacked its original-card review receipt;
+  no family was accepted. Prompt v19 now explicitly omits unchanged notes and
+  card operations and prohibits repeating the question in acknowledgement text.
+  The [v19 run](../../evals/private-discovery/kimi-v19-native-suite-stop-results.md)
+  recorded eight native successes and one
+  `reply_decision` rejection for another missing unresolved note. Baseline
+  coverage remained incomplete, and adult routines exposed a material draft
+  selection defect. Its fixed judge scored household specificity 4/5 and profile
+  synthesis 3/5; no family or human baseline was accepted.
+  Kimi thinking at temperature 1.0 [failed its first native turn](../../evals/private-discovery/kimi-thinking-budget-limit-results.md)
+  at the 4,096-token limit, without saving generated state. A
+  [standalone opening with larger limits](../../evals/private-discovery/kimi-thinking-large-completion-results.md)
+  passed JSON, output-schema and continuity checks using 5,537 completion tokens
+  in 133.577 seconds. That diagnostic did not settle a native turn or establish
+  family acceptance. The adapter now permits Kimi up to 65,536 completion tokens,
+  a 900-second deadline and a 2 MiB whole response; that change retained GPT/Qwen
+  limits, prompt v19, schemas and authority. The [native interview with larger limits](../../evals/private-discovery/kimi-thinking-large-native-dependants-results.md)
+  completed four successful model turns and explicitly confirmed two supported
+  adult facts. The native session completed, but the model did not elicit the
+  required dependant avoidance, exact fallback or associated workload. Two
+  generic questions preceded Review, with one of five candidate slots unused;
+  the call ceiling did not force wrap-up. The challenge was unexercised and no
+  judge or human rating ran. No family was accepted. The [v20 retest](../../evals/private-discovery/kimi-v20-native-dependants-results.md)
+  completed three native turns and discovered the dependant avoidance, but ended
+  before exact fallback/preparation discovery and the challenge. Five of eight
+  candidate slots remained unused; zero families were accepted. V21 then introduced
+  typed needs, but its [first attempt](../../evals/private-discovery/kimi-v21-first-attempt-provider-failure-results.md)
+  ended with provider failure and an unknown upstream outcome. Its [second attempt](../../evals/private-discovery/kimi-v21-second-attempt-continuation-failure-results.md)
+  returned structured output but atomically rejected a generic question reference
+  without an unresolved note; no assistant text, card or typed need persisted.
+  Prompt v22/policy v5 now make each unresolved note own its question and render
+  reply wording from actual reviewed profile proposals and private typed state.
+  Model-authored persistence/interface text and separate follow-up references are
+  removed. Full message/state bounds and household authority remain unchanged.
+  The [v22 native run](../../evals/private-discovery/kimi-v22-owned-replies-focused-results.md)
+  completed four successful turns and handled exact fallback/preparation and the
+  fixed challenge, but missed the adult's safety question. Coverage was three of
+  four, with no native completion, judge or accepted family. Prompt v23 now retains
+  that single generic topic when actual own-adult information or a settled note
+  does not address it; policy, wire, rendering and limits remain unchanged.
+  The [v23 focused test](../../evals/private-discovery/kimi-v23-safety-coverage-focused-results.md)
+  passed all four required discoveries and the fixed challenge across four
+  successful native model turns. Root and independent review passed all eleven
+  hard assertions. The actual session completed at version 13 with eight retained
+  messages and two explicitly confirmed own-adult facts at profile version 2.
+  The fixed GPT-OSS judge scored both applicable dimensions 5/5 and flagged no
+  possible hard failure. The [next v23 baseline](../../evals/private-discovery/kimi-v23-native-baseline-coverage-results.md)
+  passed two native turns and same-card correction but missed ordinary-meal
+  discovery, leaving coverage at two of three. All three cards remained
+  unconfirmed; no completion, B or judge ran. V24 now adds one conditional
+  usual-meals question through the existing notes, excluding explicit limited
+  profile edits. Its [native retest](../../evals/private-discovery/kimi-v24-native-output-failure-results.md)
+  passed the opening but rejected the correction response because a continuity
+  note omitted required `subject`. The usual-meals question was retained but
+  never asked. The failed turn persisted no assistant reply, revised card or
+  summary; the original unconfirmed card and empty profile stayed unchanged.
+  The participant's safety answer and correction remain in history.
+  No confirmation, completion, B, judge or other family ran. Local contract and
+  request-bound checks remain separate from this failed live result; full
+  discovery coverage is unproven. The product owner's qualitative acceptance of the
+  earlier dependant example and [tone follow-up](private-discovery-conversation-tone.md)
+  leave numerical ratings unset. No candidate or human baseline is accepted.
+  The complete eight-family suite,
+  completed candidate comparison, live A-to-B review, suite-wide fixed-judge
+  evidence and all sixteen actual human ratings remain unmet. The draft is not
+  ready to merge. The
+  [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)
+  retains current scope and historical evidence.
 
 Work Item 01 is complete. [PR #198](https://github.com/cill-i-am/meal-planner/pull/198)
 merged its accepted person-registry implementation as
@@ -187,8 +287,59 @@ on 2026-09-06.
 is complete: start, rediscover, resume, complete, and read retained private
 history using the selected native child/fence.
 [Progressive cards and confirmation](stages/02-private-discovery/02-progressive-cards-and-confirmation.md)
-is also complete. Work Item 03 — adaptive discovery and evaluation — is next
-and has not started; repeat review and dependant assistance follow.
+is also complete. [Work Item 03 — adaptive discovery and evaluation](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
+is in progress in draft PR #218. Its native browser proof covers proposal,
+same-card correction, explicit confirmation, Stop, process restart, and a fresh
+session using the updated canonical profile. All 1,344 local tests pass across
+the full baseline and affected reruns. Final UI acceptance also passed idle
+opening, cross-adult privacy, and bounded two-tab recovery. The original
+six-attempt live trial and seventh-call unknown readiness outcome retain their separate historical records. Later GPT
+readiness passed after production commit `8626bebe` appended the generated
+schema to the system instructions and advanced prompt provenance to v2. In the
+new first-family attempt, three assistant outputs were accepted before a fourth
+generation failed with `invalid_output`. An unsupported safety proposal failed
+the material-fact assertion. Actual rejection and explicit confirmation of a
+later correct safety card advanced canonical profile version 0 to 1, without
+resolving that failure or the missing corrected preference and routine discovery.
+Session A remained open at review; B and the other seven families had not run.
+The [retry evidence](../../evals/private-discovery/gpt-schema-prompt-retry.json)
+separates readiness from native quality and preserves these incomplete results.
+V9 passed the adapter and exact proposal review without reproducing the original
+failure. The subsequent prompt-v3 family failed the required same-card
+correction and routine discovery. Its four A outputs were followed by actual
+explicit confirmation, A completion, and fresh B state using canonical profile
+version 1. B's first turn then failed with `invalid_output`, leaving that profile
+unchanged. These observed transitions do not establish full privacy or repeat
+acceptance. Prompt v4 failed same-card correction after two accepted native
+outputs: the original proposal remained revision 0 while two new cards were
+added. The trial stopped with A open at version 4 and the canonical profile
+empty at version 0. Failure diagnostics pass 63 native and 27 adapter tests;
+zero live events are expected because this failure passed output validation.
+The earlier context-path review found no missing prior-card context, but retained
+no direct provider wire receipt. A later audit identified and corrected the
+native GPT-OSS response-format wrapper at `55a34ea`. In the resulting two-call
+probe, the full-schema output still added new cards; the revision-only output
+failed strict JSON parsing because of a trailing NUL. These new failures do not
+establish the cause of historical failures or complete native family acceptance.
+Both responses and cleanup were retained; no application state changed.
+A six-call diagnostic ladder found that ordinary operation selection failed
+twice while an explicit-revision ability control passed twice. Prompt v5 at
+`3670c26e` then passed four full-production request controls: ordinary
+correction twice, a mixed correction choosing the proper existing card and
+preserving the other card, and new information producing one proposal without
+revisions. A separate native proof then persisted the same-card correction using
+one scripted seed and one live correction, while leaving the confirmed profile
+unchanged. It does not establish a fully live interview or confirmation. Reply
+wording lacked an explicit review cue and sometimes strengthened the stated
+preference, without claiming a canonical save. Earlier failures and the
+remaining family, comparison, and human-calibration gates are unchanged.
+Those earlier phases had no soft-judge or human scores. The later
+[v23 focused test](../../evals/private-discovery/kimi-v23-safety-coverage-focused-results.md)
+passed its native discovery and hard checks, with fixed-judge scores of 5/5 for
+both applicable dimensions. No actual human ratings, accepted configuration or
+calibrated baseline follow from that result; the complete suite, candidate
+comparison and live A-to-B gates remain open. No application deployment occurred.
+Repeat review and dependant assistance follow in Work Item 04.
 [PDR-0006](../decisions/product/0006-ai-evaluation-and-release-evidence.md#stage-specific-evidence-and-the-complete-beta-gate)
 owns stage-specific discovery/profile evidence and the unchanged complete
 connected pre-beta gate. Work Item 01 implementation and local automated
@@ -219,10 +370,15 @@ The local proof used Nitro UI, canonical API test composition, native production
 classes, and synthetic proposals; it does not claim full operational bootstrap,
 model/provider execution, cloud changes, or deployment.
 
+The product owner has also accepted
+[future site-wide json-render adoption](../product-blueprint/delivery-roadmap.md#accepted-future-interface-direction--json-render).
+Its staged rollout follows the current discovery and evaluation work; it is not
+an active implementation task.
+
 ## Deliberate Non-Work
 
-Beyond the explicitly authorized private-output safety, Work Item 01 session
-foundation, and Work Item 02 cards and confirmation, do not start model/provider work, retailer integration, full pantry inventory,
+Beyond the authorized private-output safety and Stage 2 Work Items 01–03, do not start
+retailer integration, full pantry inventory,
 calories/macros, medical goal systems, MCP delivery, embedded channels, or
 generic organization support as part of this boundary investigation.
 Do not implement organization deletion; keep it disabled until its accepted

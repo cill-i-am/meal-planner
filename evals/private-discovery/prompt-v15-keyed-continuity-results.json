@@ -1,0 +1,317 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-10",
+  "phaseId": "family-v15-keyed-continuity-v1",
+  "status": "incomplete_discovery_after_review_without_earned_continuation",
+  "source": {
+    "head": "4d5ee050d32c91382255131211f6d69836ca1644",
+    "tree": "e1634d8f792e9f2d6c24fd597607346876ef0193",
+    "freezeSha256": "ec5a1e348d006b3349e144714e6505a650dbc9aa389be40efc6479497c28f10e",
+    "promptVersion": "private-discovery-prompt-v15",
+    "policyVersion": "private-discovery-policy-v3",
+    "promptUtf8Bytes": 7037,
+    "promptSha256": "ece0b17dc8040cc9854921fcb1dc483e6595287398a1960fd2ed9f29d6fade47",
+    "canonicalOutputSchemaSha256": "cc9f5f5aba46b20b61dc50e22c7bd03936824e7e1cc6f44208ac259d487464a5"
+  },
+  "configuration": {
+    "candidateModel": "@cf/openai/gpt-oss-120b",
+    "maxOutputTokens": 4096,
+    "temperature": 1,
+    "top_p": 1,
+    "stream": false,
+    "deadlineMs": 120000,
+    "maximumProviderAttempts": 1,
+    "gatewayPayloadCollection": false,
+    "gatewayCaching": false,
+    "fixedJudge": {
+      "model": "@cf/openai/gpt-oss-120b",
+      "maxOutputTokens": 2048,
+      "temperature": 0,
+      "top_p": "absent",
+      "deadlineMs": 60000,
+      "calls": 0
+    },
+    "promptAndOutputProtocolChanged": true,
+    "samplingUnchangedFromPreviousPhase": true,
+    "isolatedCausalClaim": false
+  },
+  "calls": [
+    {
+      "ordinal": 1,
+      "nativeStatus": "succeeded",
+      "known": true,
+      "nativeFailure": null,
+      "capturedStage": null,
+      "httpStatus": 200,
+      "responseComplete": true,
+      "finishReason": "stop",
+      "replyType": "Ask",
+      "updatesReturned": 2,
+      "notesPersisted": 2,
+      "usage": {
+        "inputTokens": 2982,
+        "outputTokens": 751,
+        "totalTokens": 3733
+      },
+      "estimatedCostUsd": "0.00160695",
+      "timestampsUtc": {
+        "ticket": "2026-09-10T08:06:46.063Z",
+        "dispatch": "2026-09-10T08:06:46.129Z",
+        "nativeCompletion": "2026-09-10T08:07:09.206Z"
+      },
+      "latencyMs": {
+        "ticketToNativeCompletion": 23143,
+        "dispatchToNativeCompletion": 23077,
+        "ticketToDispatch": 66
+      },
+      "bytes": {
+        "serializedRequestBody": 19270,
+        "reconstructedBindingEnvelope": 19409,
+        "observedResponse": 6656
+      },
+      "hashes": {
+        "requestBody": "60c3d40d57c6448c706d92ddd4d2e0e057f4e6b251f19e9899fcee3e1e2ec991",
+        "providerOutputSchema": "064f898e0b5f60f9b5682638e3655b03cf8324b389470162e449928546fa107b",
+        "systemInstructionsAndSchema": "0d10c3e166f3d3a177dbd5b282275d19180612fdbb2fce5f1b77887f4cf3b832",
+        "originalResponseBytes": "edf219864e7650e687efa20201d7a4f71ad368b9b72624bf3aa0357816b40f35",
+        "originalAssistantContent": "2b06f69c2e2fccfbf874b7a7e6a6cf6bf12d37a161a1d689985bfd126e38b5c3",
+        "persistedSnapshot": "ef8ef15de4bf98f6b4fd8045fefb1ada8209ba4da3ad8ddb205b6119912a7943",
+        "visibleMessage": "2c04dc35038aaa9163220e6bb3d9cd7f93ad56deb3b95db34d9baa9b5afc6459"
+      }
+    },
+    {
+      "ordinal": 2,
+      "nativeStatus": "succeeded",
+      "known": true,
+      "nativeFailure": null,
+      "capturedStage": null,
+      "httpStatus": 200,
+      "responseComplete": true,
+      "finishReason": "stop",
+      "replyType": "Review",
+      "updatesReturned": 1,
+      "notesPersisted": 2,
+      "usage": {
+        "inputTokens": 3214,
+        "outputTokens": 1255,
+        "totalTokens": 4469
+      },
+      "estimatedCostUsd": "0.00206615",
+      "timestampsUtc": {
+        "ticket": "2026-09-10T08:09:32.807Z",
+        "dispatch": "2026-09-10T08:09:32.859Z",
+        "nativeCompletion": "2026-09-10T08:10:04.114Z"
+      },
+      "latencyMs": {
+        "ticketToNativeCompletion": 31307,
+        "dispatchToNativeCompletion": 31255,
+        "ticketToDispatch": 52
+      },
+      "bytes": {
+        "serializedRequestBody": 20276,
+        "reconstructedBindingEnvelope": 20415,
+        "observedResponse": 11725
+      },
+      "hashes": {
+        "requestBody": "b68408a6e3e7bbaac16c35f5b1865d96321d9148bf609d6f53d54e03dec648de",
+        "providerOutputSchema": "064f898e0b5f60f9b5682638e3655b03cf8324b389470162e449928546fa107b",
+        "systemInstructionsAndSchema": "0d10c3e166f3d3a177dbd5b282275d19180612fdbb2fce5f1b77887f4cf3b832",
+        "originalResponseBytes": "893fc8afd85d4369434ba64e5735941f460d46e0ecd9096d47fdf35dce73593c",
+        "originalAssistantContent": "e4ba0d0fa9035fd6b16768648ad518eaa4d73a8eb9df7e340bdec87d2750be37",
+        "persistedSnapshot": "7ec1d66c155f4bb3ada4723adae33076b974b37d56eb8cc8a24cb9bf4b1773d3",
+        "visibleMessage": "b60f78f2bf7ee9d030f4eb352ec84f63041dc57f1396ebe4b9b736c18c09c312"
+      }
+    },
+    {
+      "ordinal": 3,
+      "nativeStatus": "succeeded",
+      "known": true,
+      "nativeFailure": null,
+      "capturedStage": null,
+      "httpStatus": 200,
+      "responseComplete": true,
+      "finishReason": "stop",
+      "replyType": "Review",
+      "updatesReturned": 1,
+      "notesPersisted": 3,
+      "usage": {
+        "inputTokens": 4656,
+        "outputTokens": 1105,
+        "totalTokens": 5761
+      },
+      "estimatedCostUsd": "0.00245835",
+      "timestampsUtc": {
+        "ticket": "2026-09-10T08:11:08.551Z",
+        "dispatch": "2026-09-10T08:11:08.605Z",
+        "nativeCompletion": "2026-09-10T08:11:32.172Z"
+      },
+      "latencyMs": {
+        "ticketToNativeCompletion": 23621,
+        "dispatchToNativeCompletion": 23567,
+        "ticketToDispatch": 54
+      },
+      "bytes": {
+        "serializedRequestBody": 29880,
+        "reconstructedBindingEnvelope": 30019,
+        "observedResponse": 9990
+      },
+      "hashes": {
+        "requestBody": "cded11f63e6de1f08a67489b762769a5d231f28e23087d728da7bb02cae38129",
+        "providerOutputSchema": "d2b16e22cc923b73cb93a7db8a0e5971e1902e1bc32230f5dcf115f465b977f1",
+        "systemInstructionsAndSchema": "c14c69a892ef64270741cf4c5664e99112efedb9a015ff0731a3acf564bb7eb0",
+        "originalResponseBytes": "2b583008ddef9e94f204e2fc78460e1b4e82e82e0600a26108a99a06bc0011ad",
+        "originalAssistantContent": "c062caa7f966e1562e926e711f80de1384ee3ee644f6d5716b46268b429c6512",
+        "persistedSnapshot": "317b9bbdb6bb53317ee97178e182667141c1264a20688e9fdbba6f686ef2e8e9",
+        "visibleMessage": "10a6d00cec07af2a5c2d8d7e3a3f9a73f53388f3de1111ffa91bf94e2b7a67fd"
+      }
+    }
+  ],
+  "aggregate": {
+    "candidateCalls": 3,
+    "nativeSuccesses": 3,
+    "outputContractFailures": 0,
+    "providerTransportFailures": 0,
+    "newProvenPersistedSemanticHardFailures": 0,
+    "usage": {
+      "inputTokens": 10852,
+      "outputTokens": 3111,
+      "totalTokens": 13963
+    },
+    "estimatedCostUsd": "0.00613145",
+    "summedLatencyMs": {
+      "ticketToNativeCompletion": 78071,
+      "dispatchToNativeCompletion": 77899,
+      "ticketToDispatch": 172
+    },
+    "phaseReservedMicroUsd": 143616
+  },
+  "measurement": {
+    "tokenRatesUsdPerMillion": {
+      "input": "0.35",
+      "output": "0.75"
+    },
+    "usageCost": "Recorded usage for all three responses; estimated cost is not an invoice.",
+    "latency": "Native completion minus ticket/dispatch timestamp; includes orchestration and native handling, not provider-only latency.",
+    "bodyBytes": "UTF-8 compact serialization of captured body, matched to dispatch hash.",
+    "envelopeBytes": "Reconstructed compact binding envelope from captured body/options; original wire-envelope bytes were not retained.",
+    "responseBytes": "Original byte counts/hashes observed by native capture.",
+    "limitsBytes": {
+      "body": 32768,
+      "envelope": 40000
+    },
+    "unmeasured": [
+      "provider-only latency",
+      "first-token time",
+      "cached/reasoning token subtotals",
+      "original wire-envelope size",
+      "judge/human scores"
+    ]
+  },
+  "observedBehavior": {
+    "firstTurn": "Persisted the disclosed batch-cooking circumstance and an unresolved preference topic; asked how to change the preference.",
+    "secondTurn": "Replaced the existing preference note by key, retained the omitted circumstance and proposed the correct current-fact replacement at revision zero.",
+    "thirdTurn": "Added a truthful preference-only scope circumstance but revised the same unchanged card to revision one. Review again ended the exchange without dependency or safety discovery, an explicit scope explanation, a renewed interface invitation or an earned new participant turn.",
+    "keyedExistingNoteReplacementObserved": true,
+    "omittedNotePreserved": true,
+    "scopeCircumstancePersisted": true,
+    "sameChangeCardRevision": {
+      "before": 0,
+      "after": 1,
+      "wholeCardOtherwiseExactlyEqual": true,
+      "candidateSemanticCorrection": false,
+      "participantReviewRefresh": false
+    },
+    "incompleteQualityIsNotAProvenPersistedSafetyBreach": true,
+    "parserOrTransportFailureObserved": false,
+    "providerReliabilityFixOrGeneralQualityPassClaimed": false
+  },
+  "nativeState": {
+    "priorMessagesWholeTurnsAndSnapshotsExactUnchanged": true,
+    "allThreeRawDecodedInspectionsMatchActualNativeState": true,
+    "finalTruthfulNotes": 3,
+    "finalNoteStates": ["circumstance", "answered", "circumstance"],
+    "cardsPersisted": 1,
+    "cardStatus": "proposed",
+    "cardRevision": 1,
+    "cardOutcome": null,
+    "wholeCanonicalProfileExactlyUnchanged": true,
+    "profileVersionBeforeAndAfter": 1,
+    "confirmedFactsBeforeAndAfter": 1,
+    "confirmationCommands": 0,
+    "reviewRefreshCommands": 0,
+    "sessionCompletionCommands": 0,
+    "pendingConfirmations": 0,
+    "sessionStatus": "open",
+    "sessionVersion": 6
+  },
+  "coverageAndDialogue": {
+    "fixtureId": "dependency_and_repair",
+    "participantIntents": 3,
+    "fixtureIntentLimit": 8,
+    "familiesStarted": 1,
+    "familiesAccepted": 0,
+    "familiesNotRun": 7,
+    "familyComplete": false,
+    "disclosedFacts": ["repair.replacement"],
+    "missingFacts": ["repair.dependency", "repair.safety"],
+    "fixedCardTriggeredChallengeSubmitted": true,
+    "continuationAfterReviewEarned": false,
+    "freshBExercised": false,
+    "acceptedBaseline": false,
+    "judgeCalls": 0,
+    "humanScores": null,
+    "visibleAssistantReplies": 3,
+    "replyTypes": ["Ask", "Review", "Review"],
+    "literalQuestionsByReply": [1, 0, 0],
+    "additionalElicitationSentencesByReply": [1, 0, 0],
+    "distinctQuestionTopics": 1,
+    "internalSentimentLabelsVisible": true,
+    "crossTurnRepeatedQuestions": 0,
+    "providerRetries": 0,
+    "outputRepairOrReplay": false
+  },
+  "financialAtClosure": {
+    "journalBytes": 15472,
+    "journalSha256": "1b208e341d88c3bb3b626536d2bf23ab380b9d60c7ed7128b2a9a353f06c4bb7",
+    "callsReserved": 101,
+    "reservedMicroUsd": 4825856,
+    "higherCapCallsReserved": 95,
+    "judgeCallsReserved": 0,
+    "phaseReservedMicroUsd": 143616,
+    "authorityAnchorCalls": 68,
+    "authorityAnchorReservedMicroUsd": 3246080,
+    "additionalCallsSinceAnchor": 33,
+    "additionalReservedMicroUsdSinceAnchor": 1579776,
+    "historicalGptIntents": 72,
+    "historicalQwenIntents": 3,
+    "totalHistoricalIntents": 75
+  },
+  "closure": {
+    "closedAtUtc": "2026-09-10T08:13:21.307Z",
+    "actorJoinedExitCode": 0,
+    "runtimeJoinedExitCode": 0,
+    "graceful": true,
+    "runtimeDisposed": true,
+    "transportDisposed": true,
+    "gateDisposed": true,
+    "remoteSessionDisposed": true,
+    "providerRevocationVerified": false,
+    "actualParticipantLockAbsent": true,
+    "actualFinancialLockAbsent": true,
+    "lockAbsenceCheckedAtUtc": "2026-09-10T08:21:02.488987+00:00",
+    "listener4197Absent": true,
+    "scenarioComplete": false
+  },
+  "limitations": [
+    "Three successful native calls in one incomplete fixture; no family, A/B, accepted baseline, judge or human result.",
+    "Keyed-update settlement worked in this trace, but prompt and output protocol changed together; no isolated causal or general reliability claim.",
+    "Same-change card revision and early Review are observed quality limitations, not an established persisted safety hard-assertion breach.",
+    "Dependency and safety facts remained undiscovered; unexercised safety behavior is not scored as passing."
+  ],
+  "receiptSha256": {
+    "rootResult": "1341a84e001b9030ae49775151ed66ddd614db6b57603e29c590647761fd51fb",
+    "closure": "efe332186011cfa7eadf50af26a772b6a9efffc06d98638db0a8318999863210",
+    "nativeFinal": "f539a297491d93f985699ac3d87bdadc60ac69b465d2551fdd45ed986559de12"
+  },
+  "privateReceiptIndexSha256": "5cc4e292b70ab78f154e4d155e8f8ce53e627a08a12e4b3d6d8adb002e9bb9e8"
+}

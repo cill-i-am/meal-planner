@@ -1,11 +1,13 @@
 /* eslint-disable max-classes-per-file -- Native fixture exports both independently stored private child kinds. */
 import type * as NativeCloudflare from "@cloudflare/workers-types";
+import { PersonProfile } from "@meal-planner/household-api";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import { Schema } from "effect";
 
 import { PrivateInterviewDirectory as ProductionDirectory } from "./private-interview-directory.js";
 import { PrivateInterviewSession as ProductionSession } from "./private-interview-session.js";
+import type { PrivateInterviewEnvironment } from "./private-output-socket.js";
 import {
   PrivateSessionBinding,
   PrivateParticipantBinding,
@@ -14,6 +16,7 @@ import {
 } from "./private-output.contract.js";
 import type { OutputLifecyclePort } from "./private-output.contract.js";
 import {
+  privateAssistantTurns,
   privateMessages,
   privateOutputGeneration,
   privateSessionBinding,
@@ -26,9 +29,45 @@ export {
   PrivateOutputMutations,
 } from "./private-output-worker.js";
 
+type SyntheticModelBody = Readonly<Record<string, unknown>>;
+
 /** Test-only acknowledgment faults and a synchronous clock around the production session. */
 export class PrivateInterviewSession extends ProductionSession {
   #fixtureDatabase = drizzle(this.ctx.storage);
+
+  constructor(
+    context: NativeCloudflare.DurableObjectState,
+    environment: PrivateInterviewEnvironment
+  ) {
+    super(context, {
+      ...environment,
+      PrivateDiscoveryAI: {
+        // Native Ai.run is overloaded across every provider model. This test adapter replaces only its external transport.
+        run: ((
+          model: string,
+          body: SyntheticModelBody,
+          options: {
+            signal?: AbortSignal;
+            gateway?: unknown;
+            extraHeaders?: Readonly<Record<string, string>>;
+          }
+        ) =>
+          fetch("https://private-model.test/run", {
+            body: JSON.stringify({
+              body,
+              extraHeaders: options.extraHeaders,
+              gateway: options.gateway,
+              model,
+            }),
+            method: "POST",
+            // The synthetic provider deliberately ignores cancellation to prove the durable late-output fence.
+          })) as NativeCloudflare.Ai["run"],
+      },
+    });
+  }
+  readTurns() {
+    return this.#fixtureDatabase.select().from(privateAssistantTurns).all();
+  }
 
   enqueueOutput(input: {
     readonly generation: string;
@@ -139,6 +178,8 @@ type SessionPort = {
   [
     Key in
       | "initialize"
+      | "runAssistantTurn"
+      | "readTurns"
       | "beginConnection"
       | "authorizeConnection"
       | "invalidateOutput"
@@ -237,8 +278,10 @@ const Command = Schema.Struct({
   operationId: Schema.optional(Schema.String),
   participant: Schema.optional(PrivateParticipantBinding),
   payload: Schema.optional(Schema.String),
+  profile: Schema.optional(PersonProfile),
   scope: Schema.optional(Schema.Literals(["account", "household"])),
   sessionReference: Schema.String,
+  turnId: Schema.optional(Schema.String),
 });
 
 /** Test-only direct capabilities; this shell is never referenced by the production worker resource. */
@@ -355,6 +398,20 @@ export default {
           ...generation,
           payload: input.payload ?? "",
         });
+      } else if (
+        input.action === "run-turn" &&
+        input.binding &&
+        input.profile &&
+        input.turnId
+      ) {
+        result = await child.runAssistantTurn({
+          ...generation,
+          binding: input.binding,
+          profile: input.profile,
+          turnId: input.turnId,
+        });
+      } else if (input.action === "turns") {
+        result = await child.readTurns();
       } else if (input.action === "metadata") {
         result = await child.readMetadata();
       } else if (input.action === "lifecycle") {

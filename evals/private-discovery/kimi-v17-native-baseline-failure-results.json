@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-10",
+  "publicationStatus": "reviewed_sanitized_record",
+  "phaseId": "family-kimi-full-suite-v1",
+  "status": "stopped_native_output_validation_failure",
+  "source": {
+    "head": "a8305f5f4c82be82e9dd991db3064d29dec06548",
+    "tree": "5fa3076afbc68c4416a36cf18eb07e6278ef104a",
+    "freezeSha256": "2056dc4c34129ca6e7a798a81cd73ddcd6f988d0389d8e71a8de4a02a5be1cd7",
+    "promptVersion": "private-discovery-prompt-v17",
+    "policyVersion": "private-discovery-policy-v3",
+    "promptSha256": "4acfd9dbc5a19b8acb7899c83d553f28c7e6fd82162d97688e1af3f1f4feb55b",
+    "noCardOutputSchemaSha256": "064f898e0b5f60f9b5682638e3655b03cf8324b389470162e449928546fa107b"
+  },
+  "configuration": {
+    "candidateModel": "@cf/moonshotai/kimi-k2.6",
+    "requestParameters": {
+      "chat_template_kwargs": {
+        "thinking": false
+      },
+      "max_completion_tokens": 4096,
+      "n": 1,
+      "response_format": {
+        "type": "json_object"
+      },
+      "stream": false,
+      "temperature": 0.6,
+      "top_p": 0.95
+    },
+    "top_k": "absent",
+    "tools": "absent",
+    "tool_choice": "absent",
+    "deadlineMs": 120000,
+    "maximumProviderAttempts": 1,
+    "gatewayPayloadCollection": false,
+    "gatewayCacheBypassed": true,
+    "fixedJudge": {
+      "model": "@cf/openai/gpt-oss-120b",
+      "maxOutputTokens": 2048,
+      "temperature": 0,
+      "deadlineMs": 60000,
+      "calls": 0
+    }
+  },
+  "calls": [
+    {
+      "ordinal": 1,
+      "known": true,
+      "nativeStatus": "failed",
+      "nativeFailure": "invalid_output",
+      "httpStatus": 200,
+      "responseComplete": true,
+      "transportFailure": false,
+      "responseBytes": 1499,
+      "originalResponseSha256": "d3fdf20bc00ac44d95ad34b31e85989c01d8448dc940b1a519fe52a39cdd57c5",
+      "requestBodySha256": "eb7504d08340639c85fc44c0d0d51aa3b519530418869c6c518b4e795a91f700",
+      "capturedInvalidOutputStage": "reply_decision",
+      "finishReason": "stop"
+    }
+  ],
+  "aggregate": {
+    "candidateCalls": 1,
+    "nativeSuccesses": 0,
+    "outputContractFailures": 1,
+    "providerTransportFailures": 0,
+    "unknownProviderOutcomes": 0,
+    "usage": {
+      "inputTokens": 2841,
+      "outputTokens": 226,
+      "totalTokens": 3067
+    },
+    "estimatedCostUsd": "0.00360295",
+    "phaseReservedMicroUsd": 265421
+  },
+  "measurement": {
+    "latency": {
+      "measure": "native capture dispatch to native completion receipt",
+      "milliseconds": 7840
+    },
+    "costBasis": "Conservative token-usage estimate: all input priced at the recorded uncached input rate; no cache discount applied. Estimate is not a reservation or invoice.",
+    "ratesUsdPerMillion": {
+      "uncachedInput": "0.95",
+      "output": "4.0"
+    },
+    "providerOnlyLatencyMs": null,
+    "timeToFirstTokenMs": null,
+    "cachedInputTokens": null,
+    "billedCostUsd": null,
+    "responseHashes": "Hashes of original native response bytes reported by capture metadata; not hashes of parsed assistant content."
+  },
+  "coverage": {
+    "fixtureId": "simple_household_baseline",
+    "familiesStarted": 1,
+    "familiesNotRun": 7,
+    "familyCompleted": false,
+    "familyAccepted": false,
+    "freshBExercised": false,
+    "requiredDiscoveriesComplete": false,
+    "judgeCalls": 0,
+    "humanScores": null,
+    "acceptedBaseline": false
+  },
+  "closure": {
+    "closedAtUtc": "2026-09-10T20:03:52.608Z",
+    "runtimeJoinedExitCode": 0,
+    "actorSupervisorJoinedExitCode": 0,
+    "runtimeDisposed": true,
+    "transportDisposed": true,
+    "gateDisposed": true,
+    "remoteSessionDisposed": true,
+    "graceful": true,
+    "remainingProcessCount": 0,
+    "listener4197Absent": true,
+    "actualLockPathsAbsent": true,
+    "providerRevocationVerified": false
+  },
+  "financialAtClosure": {
+    "callsReserved": 115,
+    "higherCapCallsReserved": 109,
+    "judgeCallsReserved": 0,
+    "reservedMicroUsd": 7454005,
+    "phaseReservedMicroUsd": 265421,
+    "reservationIsInvoice": false,
+    "strictCumulativeExecutionCeilingMicroUsd": 20000000,
+    "remainingStrictMicroUsd": 12545995
+  },
+  "receiptSha256": {
+    "rootResult": "0c10e0767c8d37435e3e8bbe564959b6d6a007253ab269c3d0a57d2b026b4bef",
+    "sourceBuildProof": "2056dc4c34129ca6e7a798a81cd73ddcd6f988d0389d8e71a8de4a02a5be1cd7",
+    "runtimeClosure": "c64a7a2ede146cf8c58847cf98c33ee5fe90c436e96fc679db756be7a5308ba6",
+    "rootClosure": "1ae854aedd60c71ee5000480805ecc2cdbb6dcb0489abfae635e5c03446a3d51",
+    "retainedEvidence1": "132d1976f7dfe8ffe8258c6981af8393179f0fb990a7eabd7990f9480987b9ff",
+    "retainedEvidence2": "7ac10bf42334ca92d1e374547d66a7b2eb1cc4f2ecf1577c1d1a7c0f54ecf63d",
+    "retainedEvidence3": "2ec6636869a93d1861c1de8220ab607e61c1c99069c4cc8bcbf10cace4d94813",
+    "retainedEvidence4": "8a3b95bba6464bdf94b6f3ed6f236450db8290cce8d3b1dee8b0d6b58f5111f8",
+    "retainedEvidence5": "2053078a767b86d65caf5005a42d9375754ad5cd9a5766616f0e7ebf97eddacc",
+    "retainedEvidence6": "45ff318081e97218bfda88b85a5f1412513a9248952332c7b18fc44b379dce06",
+    "retainedEvidence7": "4492de61a2e3415aa445c1def7317edaedf81092ef8684756bd16a09b9890268",
+    "retainedEvidence8": "c64a7a2ede146cf8c58847cf98c33ee5fe90c436e96fc679db756be7a5308ba6",
+    "retainedEvidence9": "1ae854aedd60c71ee5000480805ecc2cdbb6dcb0489abfae635e5c03446a3d51",
+    "nativeRead": "2053078a767b86d65caf5005a42d9375754ad5cd9a5766616f0e7ebf97eddacc",
+    "call1_request_json": "1fe971b694785edb472485cac09ae441d38c71e97794675e02c65dccfc763781",
+    "call1_response_json": "7ac10bf42334ca92d1e374547d66a7b2eb1cc4f2ecf1577c1d1a7c0f54ecf63d",
+    "call1_completion_json": "2ec6636869a93d1861c1de8220ab607e61c1c99069c4cc8bcbf10cace4d94813",
+    "call1_dispatch_json": "a987f22e460b7516ae486921cd2e5626be4a44a35c64c2c15cff3fec7212e336"
+  },
+  "failure": {
+    "nativeFailure": "invalid_output",
+    "capturedEvent": "private_discovery.invalid_output",
+    "capturedStage": "reply_decision",
+    "reason": "Ask.topicKey hard_constraints had no matching unresolved note in empty prior continuity or the three submitted circumstance notes.",
+    "sourceJsonAndOutputSchemaPassedBeforeDiagnostic": true,
+    "downstreamHardAssertionsFullyPassed": false,
+    "rawSupportedProposalWasAccepted": false,
+    "atomicOutputRejection": true,
+    "automaticRetry": false,
+    "outputRepair": false
+  },
+  "nativeState": {
+    "acceptedAssistantMessages": 0,
+    "acceptedCards": 0,
+    "failedTurns": 1,
+    "persistedSummary": null,
+    "persistedContinuity": null,
+    "wholeCanonicalProfileUnchanged": true,
+    "profileVersionBefore": 0,
+    "profileVersionAfter": 0,
+    "pendingConfirmations": 0,
+    "confirmationCommands": 0,
+    "sessionStatus": "open",
+    "sessionVersion": 1,
+    "sessionCompleted": false
+  },
+  "rawOnlyObservations": [
+    "The safety question was relevant but lacked its required unresolved continuity note.",
+    "The question was duplicated across acknowledgement and question fields.",
+    "A supported proposal existed only in rejected raw output; no assistant response, card, summary or canonical change was accepted."
+  ],
+  "limitations": [
+    "This is one failed native opening in simple_household_baseline, not a completed eight-family run.",
+    "Known complete HTTP 200 transport did not make the candidate output valid; source continuation rejected it at reply_decision.",
+    "JSON/schema success before the diagnostic is not a complete hard-check pass.",
+    "Raw-only content was not admitted or semantically accepted as a native response.",
+    "No confirmation, completed session, fresh B, judge call, human score or accepted baseline; seven other families remain not_run.",
+    "Token-cost estimate assumes uncached input; provider-only latency, first-token timing, invoice charges and provider-side revocation remain unavailable or unverified."
+  ],
+  "privateReceiptIndexSha256": "064c2af84520e7e22454deef67f55e51afd3817fb715ab38d3171c54eb243f5b"
+}

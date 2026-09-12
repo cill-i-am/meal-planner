@@ -1,0 +1,269 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-10",
+  "phaseId": "family-v14-reply-sampling-v1",
+  "status": "stopped_after_known_invalid_output",
+  "source": {
+    "head": "33b72e4bc54ba628db7add97f70815afff53afcd",
+    "tree": "05278a6a1f7c4630e00ba0ee203c863bde0d83d0",
+    "freezeSha256": "e8eb240b9438cc12421b6096766b1e55741e27cda320a9fb9ab93e137ac4440a",
+    "promptVersion": "private-discovery-prompt-v14",
+    "policyVersion": "private-discovery-policy-v2",
+    "promptUtf8Bytes": 7010,
+    "promptSha256": "3f3e550ed6188d790c65cb4e24457eec6434127521e0b94a76d997ab0db1dea4",
+    "canonicalOutputSchemaSha256": "330635619bf27051b082c3d62b5e02f946624584b22b8a07dd7cb1e4010cffdb"
+  },
+  "configuration": {
+    "candidateModel": "@cf/openai/gpt-oss-120b",
+    "maxOutputTokens": 4096,
+    "temperature": 1,
+    "top_p": 1,
+    "stream": false,
+    "deadlineMs": 120000,
+    "maximumProviderAttempts": 1,
+    "gatewayPayloadCollection": false,
+    "gatewayCaching": false,
+    "fixedJudge": {
+      "model": "@cf/openai/gpt-oss-120b",
+      "maxOutputTokens": 2048,
+      "temperature": 0,
+      "top_p": "absent",
+      "deadlineMs": 60000,
+      "calls": 0
+    },
+    "combinedPromptAndSamplingRevision": true,
+    "isolatedCausalClaim": false
+  },
+  "calls": [
+    {
+      "ordinal": 1,
+      "nativeStatus": "succeeded",
+      "known": true,
+      "nativeFailure": null,
+      "capturedStage": null,
+      "httpStatus": 200,
+      "responseComplete": true,
+      "finishReason": "stop",
+      "usage": {
+        "inputTokens": 3100,
+        "outputTokens": 781,
+        "totalTokens": 3881
+      },
+      "estimatedCostUsd": "0.00167075",
+      "timestampsUtc": {
+        "ticket": "2026-09-10T07:39:49.801Z",
+        "dispatch": "2026-09-10T07:39:49.864Z",
+        "nativeCompletion": "2026-09-10T07:40:10.515Z"
+      },
+      "latencyMs": {
+        "ticketToNativeCompletion": 20714,
+        "dispatchToNativeCompletion": 20651,
+        "ticketToDispatch": 63
+      },
+      "bytes": {
+        "serializedRequestBody": 20409,
+        "reconstructedBindingEnvelope": 20548,
+        "observedResponse": 6664
+      },
+      "hashes": {
+        "requestBody": "855d378ae50ae79c5df0bea28c7e06d1eeb62386766e5acf11d93be6cb1f32f4",
+        "providerOutputSchema": "6377427f0453da4a6dc9bb6f30ea2d9ce5cb3de7f7d99a88a6db7c386aa48f07",
+        "systemInstructionsAndSchema": "c53723e29ca98b9958cc65cbb0b6449ca397f5f284c3fcfac6ca936073b04651",
+        "originalResponseBytes": "8e41a003a768a2bf23b6bac669030a629301a4ada6e060593f43d86f739b9a55",
+        "originalAssistantContent": "2a45b1691ab42999319c31c065539c2df0ac31b444a9ed15c0955438a3300118",
+        "persistedSnapshot": "3f9ed5e378dd9e2e933f4e14284e304453d0125b73c1b5868f7cfa1b4d846bdc",
+        "visibleMessage": "b4ce66b1431df5adbbd686da11aaa519dd767a2c36abc214b4e01fd642dc4567"
+      }
+    },
+    {
+      "ordinal": 2,
+      "nativeStatus": "failed",
+      "known": true,
+      "nativeFailure": "invalid_output",
+      "capturedStage": "continuity_updates",
+      "httpStatus": 200,
+      "responseComplete": true,
+      "finishReason": "stop",
+      "usage": {
+        "inputTokens": 3315,
+        "outputTokens": 1030,
+        "totalTokens": 4345
+      },
+      "estimatedCostUsd": "0.00193275",
+      "timestampsUtc": {
+        "ticket": "2026-09-10T07:40:57.432Z",
+        "dispatch": "2026-09-10T07:40:57.482Z",
+        "nativeCompletion": "2026-09-10T07:41:13.431Z"
+      },
+      "latencyMs": {
+        "ticketToNativeCompletion": 15999,
+        "dispatchToNativeCompletion": 15949,
+        "ticketToDispatch": 50
+      },
+      "bytes": {
+        "serializedRequestBody": 21272,
+        "reconstructedBindingEnvelope": 21411,
+        "observedResponse": 8324
+      },
+      "hashes": {
+        "requestBody": "f51f2aae685e541d5aaa58849e0b8f9c6d2599e3ff36d544a6cffab34035e9df",
+        "providerOutputSchema": "6377427f0453da4a6dc9bb6f30ea2d9ce5cb3de7f7d99a88a6db7c386aa48f07",
+        "systemInstructionsAndSchema": "c53723e29ca98b9958cc65cbb0b6449ca397f5f284c3fcfac6ca936073b04651",
+        "originalResponseBytes": "67f881bc8c917c7c09b08d89011f068773b969d3079225955848f11924fab4d8",
+        "originalAssistantContent": "71491229b85c995c1d24c581074db75d8478327d251505d2dcaa290145c88a16",
+        "persistedSnapshot": null,
+        "visibleMessage": null
+      }
+    }
+  ],
+  "aggregate": {
+    "candidateCalls": 2,
+    "nativeSuccesses": 1,
+    "outputContractFailures": 1,
+    "newProvenPersistedSemanticHardFailures": 0,
+    "usage": {
+      "inputTokens": 6415,
+      "outputTokens": 1811,
+      "totalTokens": 8226
+    },
+    "estimatedCostUsd": "0.00360350",
+    "summedLatencyMs": {
+      "ticketToNativeCompletion": 36713,
+      "dispatchToNativeCompletion": 36600,
+      "ticketToDispatch": 113
+    },
+    "phaseReservedMicroUsd": 95744
+  },
+  "measurement": {
+    "tokenRatesUsdPerMillion": {
+      "input": "0.35",
+      "output": "0.75"
+    },
+    "usageCost": "Recorded usage includes both responses, including rejected output; estimated cost is not an invoice.",
+    "latency": "Native completion minus ticket/dispatch timestamp; includes orchestration and native handling, not provider-only latency.",
+    "bodyBytes": "UTF-8 compact serialization of captured body, matched to dispatch hash.",
+    "envelopeBytes": "Reconstructed compact binding envelope from captured body/options; original wire-envelope bytes were not retained.",
+    "responseBytes": "Original byte counts/hashes observed by native capture.",
+    "limitsBytes": {
+      "body": 32768,
+      "envelope": 40000
+    },
+    "unmeasured": [
+      "provider-only latency",
+      "first-token time",
+      "cached/reasoning token subtotals",
+      "original wire-envelope size",
+      "judge/human scores"
+    ]
+  },
+  "failure": {
+    "callOrdinal": 2,
+    "capturedNativeReason": "invalid_output",
+    "capturedStage": "continuity_updates",
+    "observedAtUtc": "2026-09-10T07:41:13.401Z",
+    "callbackTimestampMs": 1789026073399,
+    "correlation": "One actual native stage event matched through the exclusive active-call file and actual terminal turn; identities are harness-derived.",
+    "emittedNativeAttemptId": null,
+    "emittedWorkerId": null,
+    "rawLogsRetained": false,
+    "existingContinuityKeyRepeatedInAdditions": true,
+    "duplicateExistingKeys": 1,
+    "rawAdditions": 2,
+    "rawRevisions": 1,
+    "rawProposal": "Requested ordinary-preference replacement draft.",
+    "rawReply": "Prospective question about continuing batch cooking of the original dish.",
+    "rawReplyAdmitted": false,
+    "rawQuestionEarnedDependencyDisclosure": false,
+    "failedUpdatesOrCardPersisted": false,
+    "outputRepairedOrReplayed": false,
+    "laterProposalOrReplyValidationResult": null,
+    "sourceReconstructedStage": null
+  },
+  "nativeState": {
+    "firstMessagesWholeTurnAndSnapshotExactUnchanged": true,
+    "retainedTruthfulNotes": 2,
+    "retainedStates": ["circumstance", "unresolved"],
+    "batchCookCircumstancePersisted": true,
+    "failedTurnReplyAndSnapshot": null,
+    "cardsPersisted": 0,
+    "wholeCanonicalProfileExactlyUnchanged": true,
+    "profileVersionBeforeAndAfter": 1,
+    "confirmedFactsBeforeAndAfter": 1,
+    "confirmationCommands": 0,
+    "reviewRefreshCommands": 0,
+    "sessionCompletionCommands": 0,
+    "pendingConfirmations": 0,
+    "sessionStatus": "open",
+    "sessionVersion": 3
+  },
+  "coverageAndDialogue": {
+    "fixtureId": "dependency_and_repair",
+    "participantIntents": 2,
+    "fixtureIntentLimit": 8,
+    "familiesStarted": 1,
+    "familiesAccepted": 0,
+    "familiesNotRun": 7,
+    "familyComplete": false,
+    "disclosedFacts": ["repair.replacement"],
+    "missingFacts": ["repair.dependency", "repair.safety"],
+    "challengeTriggeredOrSubmitted": false,
+    "freshBExercised": false,
+    "acceptedBaseline": false,
+    "judgeCalls": 0,
+    "humanScores": null,
+    "visibleAssistantReplies": 1,
+    "literalQuestions": 2,
+    "additionalElicitationSentences": 1,
+    "distinctQuestionTopics": 1,
+    "internalSentimentLabelsVisible": true,
+    "crossTurnRepeatedQuestions": 0,
+    "rejectedQuestionExcludedFromVisibleCounts": true,
+    "providerRetries": 0,
+    "failedActorCommands": 0
+  },
+  "financialAtClosure": {
+    "journalBytes": 15020,
+    "journalSha256": "8cf8e146a078c0a1a4ad3c86da1a997b629c3793a5f264e3fdbbfc5b09789828",
+    "callsReserved": 98,
+    "reservedMicroUsd": 4682240,
+    "higherCapCallsReserved": 92,
+    "judgeCallsReserved": 0,
+    "phaseReservedMicroUsd": 95744,
+    "authorityAnchorCalls": 68,
+    "authorityAnchorReservedMicroUsd": 3246080,
+    "additionalCallsSinceAnchor": 30,
+    "additionalReservedMicroUsdSinceAnchor": 1436160,
+    "historicalGptIntents": 69,
+    "historicalQwenIntents": 3,
+    "totalHistoricalIntents": 72
+  },
+  "closure": {
+    "closedAtUtc": "2026-09-10T07:42:41.739Z",
+    "actorJoinedExitCode": 0,
+    "runtimeJoinedExitCode": 0,
+    "graceful": true,
+    "runtimeDisposed": true,
+    "transportDisposed": true,
+    "gateDisposed": true,
+    "remoteSessionDisposed": true,
+    "providerRevocationVerified": false,
+    "actualParticipantLockAbsent": true,
+    "actualFinancialLockAbsent": true,
+    "lockAbsenceCheckedAtUtc": "2026-09-10T07:48:45.252700+00:00",
+    "listener4197Absent": true,
+    "scenarioComplete": false
+  },
+  "limitations": [
+    "Two turns in one incomplete fixture; no family, A/B, baseline, judge or human result.",
+    "Truthful circumstance retention occurred in this combined prompt/sampling revision; no isolated causal or general improvement claim.",
+    "Rejected prospective-use question is not admitted discovery or an earned dependency disclosure.",
+    "Only continuity_updates is the captured failure stage; no downstream proposal/reply validation or repaired/replayed result is claimed."
+  ],
+  "receiptSha256": {
+    "rootResult": "c731a21d27278061d0b775156837fe92962defa3eed57819f3b52d60aa3eab09",
+    "closure": "d2899c265ea554917f08fd0fa9f1b8370ae7ff485cbf583d076c5dc8cc8fc54a",
+    "diagnostic": "defbb165c80e51fc37a462fe3af5ccc7325d50ac139eadb9756a8a1378fbf4b8",
+    "nativeFinal": "7d9265c626640bad4f207b7f86d9a01217a178c972c2e5d56922b389a59d5e8b"
+  },
+  "privateReceiptIndexSha256": "e4cdd7505cb4364df8de9029011530a63610c932a2cbbdca61d194d21f4c6788"
+}

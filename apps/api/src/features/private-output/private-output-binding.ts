@@ -1,7 +1,7 @@
 // eslint-disable-next-line @typescript-eslint/triple-slash-reference -- This ambient native module has no JavaScript import; include it in every production compiler program.
 /// <reference path="./private-output-runtime.d.ts" />
 import * as Cloudflare from "alchemy/Cloudflare";
-import { Effect } from "effect";
+import { Config, Effect } from "effect";
 
 import type {
   AccountOutputLifecycle,
@@ -24,6 +24,10 @@ export class PrivateOutputWorker extends Cloudflare.Worker<PrivateOutputWorker>(
       ),
       HouseholdAgent:
         Cloudflare.DurableObject<HouseholdAgent>("HouseholdAgent"),
+      PRIVATE_DISCOVERY_CONFIG: Config.string(
+        "MEAL_PLANNER_PRIVATE_DISCOVERY_CONFIG"
+      ).pipe(Config.withDefault("")),
+      PrivateDiscoveryAI: Cloudflare.Workers.AI(),
       PrivateInterviewDirectory:
         Cloudflare.DurableObject<PrivateInterviewDirectory>(
           "PrivateInterviewDirectory"
@@ -62,6 +66,7 @@ export type PrivateOutputMutationPort = Pick<
 >;
 export type PrivateOutputApiPort = Pick<
   PrivateOutputApi,
+  | "runAssistantTurn"
   | "releaseConfirmation"
   | "settleConfirmation"
   | "authorizeConnection"

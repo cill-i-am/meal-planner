@@ -1,0 +1,626 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-08",
+  "label": "family-continuation-v1",
+  "status": "stopped_after_nonpassing_evaluation",
+  "scope": "wi03_adult_discovery",
+  "source": {
+    "head": "cd24fbf7283a311f0387d84b2560db761bc26e38",
+    "tree": "61121011edfc4896ef263bbdf3d85f95bea2e1e9",
+    "freezeSha256": "e8358603c014e64ff5c2ed6e067c14df7d05bddb4dd511fa363babd5b765b1d3"
+  },
+  "versions": {
+    "provider": "Cloudflare Workers AI",
+    "model": "@cf/openai/gpt-oss-120b",
+    "candidateConfiguration": {
+      "maxOutputTokens": 4096,
+      "temperature": 0,
+      "stream": false,
+      "adapterDeadlineMs": 120000,
+      "maximumProviderAttempts": 1,
+      "gatewayPayloadCollection": false,
+      "gatewayCaching": false
+    },
+    "promptVersion": "private-discovery-prompt-v6",
+    "policyVersion": "private-discovery-policy-v1",
+    "toolVersion": "profile-card-change-v1",
+    "systemInstructionsAndSchemaSha256": "e806981358ea53deb0717ecf39bbb7aaebb79365b337ee936c5cb576253d32b0",
+    "outputSchemaSha256": "7baef48657d13389aac5af6ae5db2e98199ee6ec04d734da4a87d47dd147df8a",
+    "scenarioPackSha256": "c9ea216e30dac5499410e61e29a6824d270ca323f8329c741d35b5b5dab8cf00",
+    "rubricSha256": "ab5882d124d1c231ae102e173c0d420482b6d17d8412acc3da5458ae410b8588",
+    "driverMode": "assisted_manual",
+    "driverPolicyVersion": "private-discovery-driver-v1",
+    "facilitatorRole": "root_agent",
+    "judge": {
+      "model": "@cf/openai/gpt-oss-120b",
+      "maxOutputTokens": 2048,
+      "promptVersion": "private-discovery-judge-v1",
+      "promptSha256": "b1f10ab5e4f4124bee09895291bb2a557bbf50053a5592c181bae35eb4b86a48",
+      "calls": 0,
+      "status": "not_run"
+    },
+    "calibration": {
+      "status": "unscored",
+      "acceptedBaselineId": null
+    }
+  },
+  "accounting": {
+    "phaseCandidateCalls": 28,
+    "phaseNativeSucceeded": 27,
+    "phaseNativeFailed": 1,
+    "phaseJudgeCalls": 0,
+    "phaseParticipantTurns": 28,
+    "knownUsageCalls": 28,
+    "unknownUsageCalls": 0,
+    "promptTokens": 115818,
+    "completionTokens": 18194,
+    "estimatedCostUsd": "0.05418180",
+    "phaseReservedUsd": "1.34041600",
+    "cumulativeReservedUsd": "3.24608000",
+    "cumulativeCalls": 68,
+    "cumulativeHigherCapCalls": 62,
+    "cumulativeJudgeCalls": 0,
+    "currency": "USD",
+    "inputUsdPerMillionTokens": "0.35",
+    "outputUsdPerMillionTokens": "0.75",
+    "reservationIsInvoice": false,
+    "invoiceVerified": false,
+    "billedCostUsd": null
+  },
+  "coverage": {
+    "canonicalFamilies": 8,
+    "terminalFamilies": 8,
+    "passingFamilies": 0,
+    "incompleteFamilies": 5,
+    "groundingFailureFamilies": 2,
+    "outputContractFailureFamilies": 1
+  },
+  "scenarios": [
+    {
+      "scenarioId": "simple_household_baseline",
+      "status": "incomplete",
+      "classification": "incomplete",
+      "candidateCalls": 5,
+      "nativeSucceeded": 5,
+      "nativeFailed": 0,
+      "participantTurns": 5,
+      "promptTokens": 20700,
+      "completionTokens": 2436,
+      "estimatedCostUsd": "0.00907200",
+      "reservedUsd": "0.23936000",
+      "ticketToNativeCompletionMs": {
+        "sum": 56519,
+        "mean": 11303.8,
+        "median": 12280,
+        "min": 6332,
+        "max": 14552
+      },
+      "dispatchToNativeCompletionMs": {
+        "sum": 56203,
+        "mean": 11240.6,
+        "median": 12230,
+        "min": 6239,
+        "max": 14502
+      },
+      "nativeSessionStatus": "open",
+      "canonicalProfileVersions": [0, 1],
+      "cardStatuses": {
+        "confirmed": 1,
+        "proposed": 2
+      },
+      "missingDiscoveryIds": ["simple.routine"],
+      "finding": "Required routine context was not elicited. Corrected preference confirmed; the required live repeat remained unrun.",
+      "questionCount": null,
+      "repeatedQuestionCount": null,
+      "schemaFailureCount": null,
+      "softJudge": "not_run",
+      "humanReview": "unscored",
+      "scores": {
+        "householdSpecificity": null,
+        "profileSynthesis": null
+      },
+      "receiptSha256": {
+        "metricsDraftSha256": "5a805c367e6b23603db1058db44cc0553aa6bbc4f94644680be692473883b733",
+        "familyEvidenceSha256": "359270c63d5cbde03ff60b85b7ca27308ba776a86ca7f579ede990801a20023b",
+        "terminalReviewSha256": "d02e3b5369c3ffe67632b4f7dcd4adafaf3f68d9f3ae80bb3900a2e1c2429a65",
+        "callReceiptSets": [
+          "13f58a55b6dea4154fa5077b76633167cca8bd34ee6bc4bb53d56a71c1208173",
+          "344bdef7f99cd82942aa46693db4bf6f3330d336c8ed1bc451c9221c112452ef",
+          "afca110758945672f9e87f0d5ad2128aada98ee83a0d17ad80c3eab995800836",
+          "2ec2e28d971f89838e84c4d1c4e795befc00ca834d75af3a790344d650922fc0",
+          "b3fd96cee4472284981f27c7c3c31041d7affa7dbab2b06d306fd266303421ea"
+        ]
+      }
+    },
+    {
+      "scenarioId": "conflicting_adult_routines",
+      "status": "incomplete",
+      "classification": "incomplete",
+      "candidateCalls": 4,
+      "nativeSucceeded": 4,
+      "nativeFailed": 0,
+      "participantTurns": 4,
+      "promptTokens": 16405,
+      "completionTokens": 1883,
+      "estimatedCostUsd": "0.00715400",
+      "reservedUsd": "0.19148800",
+      "ticketToNativeCompletionMs": {
+        "sum": 47219,
+        "mean": 11804.75,
+        "median": 11767.0,
+        "min": 8263,
+        "max": 15422
+      },
+      "dispatchToNativeCompletionMs": {
+        "sum": 46857,
+        "mean": 11714.25,
+        "median": 11691.5,
+        "min": 8149,
+        "max": 15325
+      },
+      "nativeSessionStatus": "completed",
+      "canonicalProfileVersions": [0, 1],
+      "cardStatuses": {
+        "proposed": 1,
+        "confirmed": 1
+      },
+      "missingDiscoveryIds": ["adults.safety"],
+      "finding": "Required personal safety discovery missing; one ordinary own-profile preference confirmed.",
+      "questionCount": null,
+      "repeatedQuestionCount": null,
+      "schemaFailureCount": null,
+      "softJudge": "not_run",
+      "humanReview": "unscored",
+      "scores": {
+        "householdSpecificity": null,
+        "profileSynthesis": null
+      },
+      "receiptSha256": {
+        "metricsDraftSha256": "58bebe04446a5660ee7ea6c08060492028e424253ccee1b7d1b6b8b18487d8cb",
+        "familyEvidenceSha256": "84c694ad5cd6d0ee0201525687290bd0236e1b7f872bb1a11ea15f2f72192117",
+        "terminalReviewSha256": "30bfeb22ba37e74cfdaaf7feef269bbf92cbef6bd0d4e321c345de45b9598864",
+        "callReceiptSets": [
+          "455bf321c1009032f5cabe910ab1891bc48cc40309e266f16a706a59af9d5875",
+          "0359052bea47f4107231e530e1d0861a1b4b5a02b79db705c588fbfa77128cb0",
+          "b1be2af1ff0522fb10f409e145730fd60f2226183adabc73466b307c529cc9f6",
+          "c1d23922cf67140c3733aaa36e615dd68c12239d376976f59413c7567f0a7d9b"
+        ]
+      }
+    },
+    {
+      "scenarioId": "dependants_and_fallbacks",
+      "status": "fail",
+      "classification": "grounding_failure",
+      "candidateCalls": 1,
+      "nativeSucceeded": 1,
+      "nativeFailed": 0,
+      "participantTurns": 1,
+      "promptTokens": 3764,
+      "completionTokens": 429,
+      "estimatedCostUsd": "0.00163915",
+      "reservedUsd": "0.04787200",
+      "ticketToNativeCompletionMs": {
+        "sum": 17276,
+        "mean": 17276,
+        "median": 17276,
+        "min": 17276,
+        "max": 17276
+      },
+      "dispatchToNativeCompletionMs": {
+        "sum": 17205,
+        "mean": 17205,
+        "median": 17205,
+        "min": 17205,
+        "max": 17205
+      },
+      "nativeSessionStatus": "completed",
+      "canonicalProfileVersions": [0, 0],
+      "cardStatuses": {
+        "proposed": 1
+      },
+      "missingDiscoveryIds": [
+        "dependant.avoidance",
+        "dependant.fallback",
+        "dependant.safety"
+      ],
+      "finding": "Grounding failure introduced an unsupported fallback category. No canonical mutation.",
+      "questionCount": null,
+      "repeatedQuestionCount": null,
+      "schemaFailureCount": null,
+      "softJudge": "not_run",
+      "humanReview": "unscored",
+      "scores": {
+        "householdSpecificity": null,
+        "profileSynthesis": null
+      },
+      "receiptSha256": {
+        "metricsDraftSha256": "3666139a5323488f3557c861c6ed0356216e78fb883f33041067b0fb7f54f57e",
+        "familyEvidenceSha256": "40e19ec427ad9b23f8d4be0c71d2d2102641329d44a7da2dcdaf133c9a58b3a7",
+        "terminalReviewSha256": "b9c69dba8f5fe84edceb58e8f1d60d26cf836f1edb54afeacc8feb7e700edd2c",
+        "callReceiptSets": [
+          "80a1315cd1e08e3c866d49e05594a19db64b4066fbf8e9a166ec750d543a1bea"
+        ]
+      }
+    },
+    {
+      "scenarioId": "mixed_dietary_household",
+      "status": "incomplete",
+      "classification": "incomplete",
+      "candidateCalls": 3,
+      "nativeSucceeded": 3,
+      "nativeFailed": 0,
+      "participantTurns": 3,
+      "promptTokens": 12073,
+      "completionTokens": 1552,
+      "estimatedCostUsd": "0.00538955",
+      "reservedUsd": "0.14361600",
+      "ticketToNativeCompletionMs": {
+        "sum": 21514,
+        "mean": 7171.333333333333,
+        "median": 6706,
+        "min": 6306,
+        "max": 8502
+      },
+      "dispatchToNativeCompletionMs": {
+        "sum": 21296,
+        "mean": 7098.666666666667,
+        "median": 6659,
+        "min": 6208,
+        "max": 8429
+      },
+      "nativeSessionStatus": "completed",
+      "canonicalProfileVersions": [0, 1],
+      "cardStatuses": {
+        "proposed": 1,
+        "confirmed": 1
+      },
+      "missingDiscoveryIds": ["mixed.boundary", "mixed.sharing"],
+      "finding": "Required dietary-boundary and sharing context not elicited. Ordinary preference confirmed; dietary draft unconfirmed.",
+      "questionCount": null,
+      "repeatedQuestionCount": null,
+      "schemaFailureCount": null,
+      "softJudge": "not_run",
+      "humanReview": "unscored",
+      "scores": {
+        "householdSpecificity": null,
+        "profileSynthesis": null
+      },
+      "receiptSha256": {
+        "metricsDraftSha256": "a31ae912fb7e04cfc1188347551b3611f34e0e26226bfd67c5aa68b8f7564d52",
+        "familyEvidenceSha256": "c3aea1b705686307eb31168db780dac3b2b0f1f04da009a5e462a76d4360bd95",
+        "terminalReviewSha256": "cd9e35af6fb486dab87e2e253fd1f5da3429305fa885769174048ed8cc6a1a68",
+        "callReceiptSets": [
+          "a532491423451565906df586ddcebee157c196a8a0091fd36535aa91812c026d",
+          "61fa37be506509a8c1cb4915ed21a48f00e60c4481822a6fbd0566499a5a9320",
+          "0fedce6d57a6881ddaf5d86a3adfdad67deb0ab95519b9262f37468b246b49ec"
+        ]
+      }
+    },
+    {
+      "scenarioId": "hard_constraint_household",
+      "status": "incomplete",
+      "classification": "incomplete",
+      "candidateCalls": 4,
+      "nativeSucceeded": 4,
+      "nativeFailed": 0,
+      "participantTurns": 4,
+      "promptTokens": 16926,
+      "completionTokens": 2582,
+      "estimatedCostUsd": "0.00786060",
+      "reservedUsd": "0.19148800",
+      "ticketToNativeCompletionMs": {
+        "sum": 53371,
+        "mean": 13342.75,
+        "median": 12426.5,
+        "min": 4763,
+        "max": 23755
+      },
+      "dispatchToNativeCompletionMs": {
+        "sum": 53086,
+        "mean": 13271.5,
+        "median": 12345.5,
+        "min": 4706,
+        "max": 23689
+      },
+      "nativeSessionStatus": "completed",
+      "canonicalProfileVersions": [1, 2],
+      "cardStatuses": {
+        "proposed": 1,
+        "confirmed": 1,
+        "rejected": 1
+      },
+      "missingDiscoveryIds": ["hard.forms"],
+      "finding": "Forms clarification missing. Explicit private rejection preserved the existing hard constraint; ordinary preference confirmed.",
+      "questionCount": null,
+      "repeatedQuestionCount": null,
+      "schemaFailureCount": null,
+      "softJudge": "not_run",
+      "humanReview": "unscored",
+      "scores": {
+        "householdSpecificity": null,
+        "profileSynthesis": null
+      },
+      "receiptSha256": {
+        "metricsDraftSha256": "8f96d6abf0664143a7f7ee98fa84891d39e134f1e106144f5311567b599c2d3d",
+        "familyEvidenceSha256": "184d3916e1744398591876ff9df56db65a836d36ae1c9f90414ed447541e1e6e",
+        "terminalReviewSha256": "8723e36893688f82e40fabc24b013fce4500b99d5b5c8f3ff10b8979a1de8480",
+        "callReceiptSets": [
+          "4cecdde31a3f7b384554a307a21a5efa2cf32b4916f06328b7c3407e98269d70",
+          "b93611f309e0cb87d260a60f5e1a3ef878cb7be2d7e1be7fba1dd69d78656225",
+          "2f3159791074febcdded38311b8d66cc53ffe22343513c919016e8b786ba348d",
+          "c1ffbfdd729e3c7d7ace231826bb59b4d2d63a14f9469674648d6e17dc0f90bf"
+        ]
+      }
+    },
+    {
+      "scenarioId": "routine_heavy_household",
+      "status": "fail",
+      "classification": "grounding_failure",
+      "candidateCalls": 2,
+      "nativeSucceeded": 2,
+      "nativeFailed": 0,
+      "participantTurns": 2,
+      "promptTokens": 7854,
+      "completionTokens": 1305,
+      "estimatedCostUsd": "0.00372765",
+      "reservedUsd": "0.09574400",
+      "ticketToNativeCompletionMs": {
+        "sum": 24929,
+        "mean": 12464.5,
+        "median": 12464.5,
+        "min": 10574,
+        "max": 14355
+      },
+      "dispatchToNativeCompletionMs": {
+        "sum": 24798,
+        "mean": 12399,
+        "median": 12399.0,
+        "min": 10506,
+        "max": 14292
+      },
+      "nativeSessionStatus": "completed",
+      "canonicalProfileVersions": [0, 0],
+      "cardStatuses": {
+        "proposed": 3
+      },
+      "missingDiscoveryIds": ["routine.week", "routine.exceptions"],
+      "finding": "Grounding failure invented a preference against repeated meals in a private summary and later visible reply. All cards unconfirmed.",
+      "questionCount": null,
+      "repeatedQuestionCount": null,
+      "schemaFailureCount": null,
+      "softJudge": "not_run",
+      "humanReview": "unscored",
+      "scores": {
+        "householdSpecificity": null,
+        "profileSynthesis": null
+      },
+      "receiptSha256": {
+        "metricsDraftSha256": "d62e6ed414ca39d9eba97fb81e9e1501be678aee173136ef95e7a83abd654258",
+        "familyEvidenceSha256": "bb799c5ee3e06c2fbc1d345bd2f6ef851314030b186a5248cea2251412987918",
+        "terminalReviewSha256": "a3b759a3a80daefd619f1675e903a0f1bccaf93f94d9f682ad54e7f9653eabbb",
+        "callReceiptSets": [
+          "120ea0bc7800f7355069e3450e50f1f73870965991deeb59b6f08b50f73de84c",
+          "138a7e2c318e250b5615818a457cf7053266f861cd368881f30c88bd55becef8"
+        ]
+      }
+    },
+    {
+      "scenarioId": "capacity_constrained_week",
+      "status": "incomplete",
+      "classification": "incomplete",
+      "candidateCalls": 7,
+      "nativeSucceeded": 7,
+      "nativeFailed": 0,
+      "participantTurns": 7,
+      "promptTokens": 30273,
+      "completionTokens": 3603,
+      "estimatedCostUsd": "0.01329780",
+      "reservedUsd": "0.33510400",
+      "ticketToNativeCompletionMs": {
+        "sum": 63163,
+        "mean": 9023.285714285714,
+        "median": 8735,
+        "min": 5317,
+        "max": 13774
+      },
+      "dispatchToNativeCompletionMs": {
+        "sum": 62283,
+        "mean": 8897.57142857143,
+        "median": 8645,
+        "min": 5192,
+        "max": 13677
+      },
+      "nativeSessionStatus": "completed",
+      "canonicalProfileVersions": [0, 1],
+      "cardStatuses": {
+        "confirmed": 1,
+        "proposed": 1
+      },
+      "missingDiscoveryIds": ["capacity.limit"],
+      "finding": "Practical cooking-limit discovery incomplete despite partial correction. Ordinary preference confirmed.",
+      "questionCount": null,
+      "repeatedQuestionCount": null,
+      "schemaFailureCount": null,
+      "softJudge": "not_run",
+      "humanReview": "unscored",
+      "scores": {
+        "householdSpecificity": null,
+        "profileSynthesis": null
+      },
+      "receiptSha256": {
+        "metricsDraftSha256": "7540a69e639071dde7cf8c6c40f43bef52baecb6f1fc8203fd00b045e23bdf3d",
+        "familyEvidenceSha256": "32dce63a87f21ffa5ce8c7910a81707c89528d1dc38b8a15f938d17423506599",
+        "terminalReviewSha256": "ca24451357141d4b4fbc55534dcdd4df579b81359c95c1c0b4464ab566f54e17",
+        "callReceiptSets": [
+          "01d3ddaa6e71402da293c9b61e905ea25ccfde92ff086a04521faf32275c2b3a",
+          "3081755329784b5e0c55ebcd83f0a1e49a3fe6c3f6ec2da4a06bf3f796788551",
+          "52de995aa094e43e1b88fe2bd88493371e6c2c3fcb4e36b028c3f3ec8ffaf22e",
+          "4600abe38830097da315afb34ab3731ec4debb753950a8d57c055dd9324d5d3c",
+          "a2d6d841dd1ea6f57674ede7f5518217247b274dd68e95a3a2ecbe58e62b81e0",
+          "89ce3f5159b3ea34ac478471ee706a55f6d695e395cae8d0f913928e5e19a69e",
+          "85f01473b0576212b1e336fc3116cd9ece76071a15d559ef76d69f30fc846833"
+        ]
+      }
+    },
+    {
+      "scenarioId": "dependency_and_repair",
+      "status": "fail",
+      "classification": "output_contract_failure",
+      "candidateCalls": 2,
+      "nativeSucceeded": 1,
+      "nativeFailed": 1,
+      "participantTurns": 2,
+      "promptTokens": 7823,
+      "completionTokens": 4404,
+      "estimatedCostUsd": "0.00604105",
+      "reservedUsd": "0.09574400",
+      "ticketToNativeCompletionMs": {
+        "sum": 56684,
+        "mean": 28342,
+        "median": 28342.0,
+        "min": 7674,
+        "max": 49010
+      },
+      "dispatchToNativeCompletionMs": {
+        "sum": 56537,
+        "mean": 28268.5,
+        "median": 28268.5,
+        "min": 7606,
+        "max": 48931
+      },
+      "nativeSessionStatus": "completed",
+      "canonicalProfileVersions": [1, 1],
+      "cardStatuses": {},
+      "missingDiscoveryIds": ["repair.dependency", "repair.safety"],
+      "finding": "Length-limited completion rejected before content JSON decode and proposal review. No failed output admitted; existing profile preserved.",
+      "questionCount": null,
+      "repeatedQuestionCount": null,
+      "schemaFailureCount": null,
+      "softJudge": "not_run",
+      "humanReview": "unscored",
+      "scores": {
+        "householdSpecificity": null,
+        "profileSynthesis": null
+      },
+      "receiptSha256": {
+        "metricsDraftSha256": "8a0076491d2d6b8d0f1683e89a99b9d9488b7d235427eeb26cb2d23dc9926559",
+        "familyEvidenceSha256": "1dbc5abdda7fab9ab7e3212ab2b79bb6d40ae66d29c47c78914286a32099359a",
+        "terminalReviewSha256": "bd340f07765ad7df8b5da183722448310b3c5c6bcb5bd8557843faa04d905de3",
+        "callReceiptSets": [
+          "d55dac52738a908bcf739cf9c52da54316f4123c37bf452b926bfcabf7d50d31",
+          "7e245a70b0c7749a03139d6203626e57724a0b5503459d833ac07e070dbb73ba"
+        ]
+      }
+    }
+  ],
+  "operationalMeasures": {
+    "ticketToNativeCompletionMs": {
+      "count": 28,
+      "sum": 340675,
+      "mean": 12166.964285714286,
+      "median": 9955.5,
+      "min": 4763,
+      "max": 49010
+    },
+    "dispatchToNativeCompletionMs": {
+      "count": 28,
+      "sum": 338265,
+      "mean": 12080.892857142857,
+      "median": 9870.5,
+      "min": 4706,
+      "max": 48931
+    },
+    "providerOnlyLatencyMs": null,
+    "timeToFirstTokenMs": null,
+    "questionCount": null,
+    "repeatedQuestionCount": null,
+    "schemaFailureCount": null,
+    "outputContractFailureCount": 1,
+    "incompleteCompletionCount": 1,
+    "failedActorControlCount": 5,
+    "successfulReadmissionCount": 60,
+    "method": "Exact retained timestamp, usage and command receipts; all attempts included. Timing includes orchestration and native completion. Numeric question/repetition and separate schema-stage failure metrics unavailable."
+  },
+  "outputFailure": {
+    "scenarioId": "dependency_and_repair",
+    "nativeFailure": "invalid_output",
+    "stage": "incomplete_completion",
+    "providerHttpStatus": 200,
+    "finishReason": "length",
+    "reportedPromptTokens": 3992,
+    "reportedCompletionTokens": 4096,
+    "estimatedCostUsd": "0.00446920",
+    "ticketToNativeCompletionMs": 49010,
+    "contentJsonDecode": "not_executed",
+    "contentSchemaDecode": "not_executed",
+    "proposalReview": "not_executed",
+    "admittedAssistantMessages": 0,
+    "admittedCards": 0,
+    "canonicalProfileChanged": false,
+    "sourceCheck": {
+      "path": "apps/api/src/features/private-output/private-discovery-workers-ai.ts",
+      "head": "cd24fbf7283a311f0387d84b2560db761bc26e38",
+      "finishReasonCheckLine": 265,
+      "contentJsonParseLine": 279,
+      "sha256": "74851576870e00a2b2e2dabd1ecf15a63724bf0d7a8051c62a56887f269f81b7"
+    },
+    "interpretation": "Observed rejection preceded content parsing and card review. Private forensic content findings do not prove a parser or nonexistent-card domain rejection, or establish the cause of repetition/truncation."
+  },
+  "controlObservations": {
+    "failedReadCommands": 2,
+    "failedCardReviewControls": 1,
+    "failedConfirmationControlsBeforeMutation": 1,
+    "failedAppendControlsBeforeAdmission": 1,
+    "providerRetriesObserved": 0,
+    "details": "These local control failures are separate from model output-contract and semantic failures. Root/source review established pre-mutation or pre-admission status where recorded; generic read-error causes remain unavailable."
+  },
+  "evaluation": {
+    "candidateAccepted": false,
+    "acceptedBaselineId": null,
+    "qualityBand": "unscored",
+    "softJudge": "not_run",
+    "humanCalibration": "unscored",
+    "repeatSpike": "not_run_in_live_phase",
+    "allHardAssertionsPassed": false,
+    "releaseDecision": "not_assessed",
+    "deferredObligations": "Later-stage dependant, full-repeat, routine, planning, repair and shopping obligations remain not_exercised and excluded from pass counts."
+  },
+  "cleanup": {
+    "actorCloseObserved": true,
+    "actorSupervisorJoinExitCode": 0,
+    "runtimeSignal": "SIGTERM",
+    "runtimeJoinExitCode": 143,
+    "runnerClosedReceiptPresent": false,
+    "gracefulRuntimeAndRemoteTransportDisposalVerified": false,
+    "localProcessAbsenceObservedByRoot": true,
+    "localWorkerProcessAbsenceObservedByRoot": true,
+    "localListenerAbsenceObservedByRoot": true,
+    "runStateLocksAbsentAtInitialRootInspection": true,
+    "sharedFinancialLockFoundAfterInitialInspection": true,
+    "sharedFinancialLockOwnerAbsenceVerifiedByRoot": true,
+    "removedOnlyDeadOwnerSharedFinancialLock": true,
+    "sharedFinancialLockNowAbsent": true,
+    "financialJournalUnchangedByLockCleanup": true,
+    "financialJournalBytes": 10514,
+    "financialJournalSha256": "c355ee4b69f4e5bf5a2cc0899c44b38b8b12a153e78a06d82e3a2863959741c7",
+    "cloudCleanupVerified": false,
+    "liveRestarted": false,
+    "observation": "Initial root inspection covered processes, listener and run-state locks. A later shared financial lock was removed only after proving its owner absent. The missing closed receipt and exit143 leave awaited asynchronous runtime/remote-transport disposal unverified."
+  },
+  "receiptSha256": {
+    "privateAggregate": "8e8eeb9686a306eb8a277a749efaf4cf176cc5429ce1cd281ddf3a1149a9c6b1",
+    "rootClosureObservation": "db2ca6d21df29a026580380df58f4b1ac8c3323fe522f26169512a6e888839ee",
+    "providerPhaseStopped": "fd7a01d928ae29a1a56f1fb7b06a2edf0919f406507e8080a09284b484229ab6",
+    "sharedBudgetStaleLockCleanup": "fe60d2618d7d6bb2c89f352da476002f1761c60c1a8d2922245770df49f68c88",
+    "repairRejectionOrder": "d08b222e6be58c8df88aafd8da0da3248e26e024c9cbf760fc218f72cfb60533",
+    "firstSixSummaryReview": "36127236b1d54d60947ac1372534c1e3323981930ef52c29530ae21099011f41"
+  },
+  "limitations": [
+    "No family passed: five incomplete, two grounding failures and one output-contract failure. No judge or human calibration was performed.",
+    "The required live fresh-session repeat remained unrun. Local harness proofs and older diagnostics are separate evidence.",
+    "The failed call remains included in reported tokens, estimate, reservation and timing. Production rejected incomplete_completion before content JSON decoding or card review.",
+    "Invoice cost, provider-only latency, TTFT, reasoning/cache-token breakdown, numeric question/repetition counts and separate schema-stage failure counts remain unavailable.",
+    "Runtime SIGTERM/join143 produced no closed receipt. Root observed local resource absence; the stale shared financial lock was subsequently removed without journal changes. Graceful asynchronous disposal and cloud cleanup were not verified.",
+    "This is the measured prompt-v6 phase at the recorded source commit. It contains no v7 quality result."
+  ]
+}
