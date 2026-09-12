@@ -90,9 +90,15 @@
   reply wording from actual reviewed profile proposals and private typed state.
   Model-authored persistence/interface text and separate follow-up references are
   removed. Full message/state bounds and household authority remain unchanged.
-  Independent review and fresh native quality proof remain pending.
-  Full native family acceptance remains pending under
-  the existing $20 cap. No candidate is accepted;
+  The [v22 native run](../../evals/private-discovery/kimi-v22-owned-replies-focused-results.md)
+  completed four successful turns and handled exact fallback/preparation and the
+  fixed challenge, but missed the adult's safety question. Coverage was three of
+  four, with no native completion, judge or accepted family. Prompt v23 now retains
+  that single generic topic when actual own-adult information or a settled note
+  does not address it; policy, wire, rendering and limits remain unchanged.
+  Independent review and fresh native semantic proof remain pending.
+  Full native family acceptance remains pending under the applicable
+  user-authorized evaluation budget. No candidate is accepted;
   the eight-family, completed candidate-comparison, A-to-B, judge and
   human-calibration gates remain unmet. The draft is not ready to merge. The
   [owning work item](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md#current-evaluation-status)

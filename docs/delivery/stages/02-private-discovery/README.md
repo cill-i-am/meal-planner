@@ -121,9 +121,14 @@ returned structured output but rejected an unmatched generic question reference
 before any assistant text, card or typed need persisted. V22/policy v5 now give
 each unresolved note its sole question and derive wording from reviewed profile
 drafts and private typed state. The removed model text/follow-up fields reject
-strictly. Independent review and fresh native quality proof remain pending.
-Full native family
-acceptance remains pending within the existing $20 cap. Live discovery across all eight
+strictly. The [v22 native run](../../../../evals/private-discovery/kimi-v22-owned-replies-focused-results.md)
+completed four successful turns, exact fallback/preparation discovery and the
+fixed challenge, but missed the adult's safety question. Coverage was three of
+four; no native completion, judge or family acceptance followed. Prompt v23
+retains one generic own-adult safety topic until actual information or a settled
+note addresses it, without inferring clearance or changing policy, wire or limits.
+Fresh native semantic proof and independent review remain pending. Full native
+family acceptance remains pending under the applicable user-authorized evaluation budget. Live discovery across all eight
 families, the completed candidate comparison, A-to-B repeat review, judge scoring
 and human calibration
 remain incomplete. No baseline is accepted and the draft is not ready to merge.

@@ -8,7 +8,7 @@
 ## Current evaluation status
 
 The [typed fallback policy design](03-typed-fallback-policy.md) owns the
-current deterministic discovery policy. Prompt v22/policy v5 give each unresolved
+current deterministic discovery policy. The v22/policy v5 contract gives each unresolved
 note its sole generic question and remove model-authored reply text and follow-up
 references. The application selects a missing typed field, then the first retained
 unresolved question, then review readiness. The same pure flow renders actual
@@ -25,8 +25,30 @@ follow-up referenced no unresolved note. Its misleading invitation to review bot
 a profile card and private fallback context was unpublished. Neither attempted
 card, typed need nor assistant text persisted; both sessions retained only their
 participant opening. No family, judge score or human calibration was accepted.
-The v22 fix still needs independent immutable-head review and fresh live quality
-proof. Model extraction and generic-question meaning remain semantic obligations.
+The [v22 native run](../../../../evals/private-discovery/kimi-v22-owned-replies-focused-results.md)
+then completed four successful turns with matching canonical snapshots and
+rendered messages. It discovered the exact fallback and preparation constraints,
+handled the fixed challenge and explicitly confirmed the adult preference.
+However, the model never asked about the speaking adult's own hard food
+constraints: only three of four required discoveries were covered. The session
+remained open, with no judge call, native completion or family acceptance. One
+candidate slot was unused; the ceiling did not force the missing question.
+
+Prompt v23 explicitly retains one generic question about the adult's own hard
+food constraints unless current HardConstraint/NoKnownHardConstraints facts,
+actual own disclosures or a settled answered/no-information/declined note address
+the topic. A direct answer, explicit absence, no further information or refusal
+settles that question without inventing clearance or attributing another
+person's answer to this adult. Relevant new information may reopen an answered
+or no-information topic; refusal requires explicit choice. This is bounded model
+agenda guidance, not a new state framework or a category checklist. Policy v5,
+wire, rendering, evidence safeguards and all limits are unchanged. Fresh native
+proof remains required; prompt guidance alone does not establish semantic coverage.
+
+V23 passes the existing 132 focused schema/policy/renderer tests and three native
+revisit/restart/request-bound cases, plus API types, scoped lint/formatting and
+asset validation. These verify the unchanged contract and input allowance; they
+do not establish that the model follows the new coverage instruction.
 
 V22 local validation passes 132 focused schema/policy/renderer tests and all 88
 private-output native cases. All 85 household-boundary cases passed the wire and
