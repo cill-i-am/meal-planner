@@ -1,0 +1,192 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-13",
+  "run": "kimi_v25_native_provider_failure",
+  "status": "closed_provider_response_failure",
+  "source": {
+    "head": "29870891f6cf92d4a30c4a33e79071eba7b25a18",
+    "tree": "b2e33b1e1710747a75b5f8c4d863927f31e82a7c",
+    "promptVersion": "private-discovery-prompt-v25",
+    "policyVersion": "private-discovery-policy-v6",
+    "toolVersion": "submit-discovery-turn-v2",
+    "freezeSha256": "81465e8bdab3c2ed40ca37855c7af70ed3411a315ec25dd5d7bc98723e8321d7",
+    "trackedFilesUnchangedThroughClosure": 960,
+    "harnessPinsUnchangedThroughClosure": 98
+  },
+  "verification": {
+    "hostedCi": {
+      "status": "passed",
+      "sourceHead": "29870891f6cf92d4a30c4a33e79071eba7b25a18",
+      "url": "https://github.com/cill-i-am/meal-planner/actions/runs/34759048566",
+      "qualityTestsPassed": 1512,
+      "qualityFilesPassed": 116,
+      "syntheticMediaContainerTestsPassed": 2,
+      "syntheticMediaContainerFilesPassed": 2,
+      "receiptSha256": "6444acb62e4b99c06f15427a103b5fca127074b4c0ef526775a3a9f638f7d91d",
+      "logSha256": "fc2e05ec43a4cb49d32a4d0fafa84928b383b629c0fb328f43a557b17f2577e4"
+    },
+    "independentImplementationReview": "passed_on_immutable_source",
+    "sourceValidationReceiptSha256": "70de00898328dc32572147b99813618cf259d419acfa38726e17af4122bd8756",
+    "browser": {
+      "status": "passed",
+      "sourceHead": "29870891f6cf92d4a30c4a33e79071eba7b25a18",
+      "consumedRepositoryFilesMatched": 31,
+      "method": "Real Chromium production panel/client/CSS with synthetic sockets and actual browser storage.",
+      "checks": [
+        "explicit scope actions",
+        "exact mutation ID and scope replay after lost reply and reload",
+        "explicit unreadable-request recovery",
+        "legacy queued and failed read-only history",
+        "confirmation reconciliation preserves unrelated unreadable raw request and write fence until explicit clear"
+      ],
+      "receiptSha256": "c1a0f6a65841ef22e88a6d097eba08fc5f192ef8510b0235c570c6424e8e927e",
+      "authenticatedNativeRoutingOrProviderProof": false
+    },
+    "limit": "Implementation checks and browser behavior do not establish successful live forced-tool output or semantic quality."
+  },
+  "configuration": {
+    "candidateModel": "@cf/moonshotai/kimi-k2.6",
+    "forcedToolName": "submitDiscoveryTurn",
+    "schemaSource": "SubmitDiscoveryTurn Effect Schema",
+    "parallelToolCalls": false,
+    "maximumProviderAttempts": 1,
+    "applicationDeadlineMs": 900000
+  },
+  "coverage": {
+    "fixture": "simple_household_baseline",
+    "phase": "A",
+    "scope": "InitialDiscovery",
+    "candidateCalls": 1,
+    "candidateSuccesses": 0,
+    "candidateFailures": 1,
+    "judgeCalls": 0,
+    "confirmationCalls": 0,
+    "nativeCompletions": 0,
+    "phaseBStarted": false,
+    "otherFamiliesRun": 0,
+    "acceptedFamilies": [],
+    "humanRatingsSupplied": false,
+    "familiesStarted": 1,
+    "familiesTotal": 8,
+    "familiesCompleted": 0,
+    "fullSuiteComplete": false,
+    "candidateAccepted": false,
+    "mergeAcceptanceSatisfied": false
+  },
+  "call": {
+    "turn": 1,
+    "request": {
+      "bodyBytes": 22817,
+      "bodySha256": "7d3400a6c16248fd7dc5b9094d26970aef0ae908cedcc779044db60d05f8cf93",
+      "nativeContextAndSchemaVerifiedBeforeDispatch": true,
+      "forcedToolName": "submitDiscoveryTurn",
+      "applicationDeadlineMs": 900000
+    },
+    "providerResponse": {
+      "status": 408,
+      "complete": true,
+      "transportFailure": false,
+      "bytes": 221,
+      "sha256": "eaa328749de0c81ed8ce7d622d236079a9d0d7b9b0a80f3e917034ccac8548ef",
+      "rawBodyRetained": false,
+      "originalBytesPassedUnchangedToProduction": true,
+      "dispatchToNativeCompletionMs": 237190,
+      "toolArgumentsAvailable": false,
+      "usageAvailable": false,
+      "upstreamOutcomeKnown": false,
+      "specificErrorOrOriginDetermined": false
+    },
+    "nativeFailure": "provider_unavailable",
+    "outputSchemaValidationReached": false,
+    "timingBasis": "Dispatch receipt to native completion receipt; not pure provider latency or whole-conversation duration.",
+    "receiptSha256": {
+      "request.json": "a0e31dace937b11cf9ab83583472ac430476937eb9fd64fb8d2826363091ce93",
+      "ticket.json": "32fe9fa0ad75cf3ff59ef152f0a220252439a659aa58b079a2ffaa41839cbd78",
+      "native-before.json": "e71f28047cd23d5d0f179614a6b398d4712453449c4cc6401bbf55a401bba887",
+      "dispatch.json": "615356b2068e93e22ae14123c474fda54ea7cf10a0a502333899686817c6d761",
+      "response.json": "e774bc58816362913b9b8b1c056e3846b4712fef008b171e8c96884caa9aa6f5",
+      "assistant-content.json": "be047d3a705b7049200bf72d02f39bfa76213b18974160d4b70adddde02582f3",
+      "completion.json": "dd028ef1b4c11f38ffa829de052b604bafa1d1b8d07a0ad6c44183897ba2c242"
+    }
+  },
+  "diagnosis": {
+    "classification": "upstream_http_408",
+    "independentDiagnosisAccepted": true,
+    "independentAtomicPreservationReviewAccepted": true,
+    "globalStopTriggered": true,
+    "automaticRetry": false,
+    "outputRepair": false,
+    "providerToolCompatibilityEstablished": false,
+    "cause": "undetermined",
+    "evidenceLimit": "The harness retained the response hash and selected completion metadata, not the raw error body. Original bytes were forwarded unchanged to production. No specific upstream error or origin can be recovered from this evidence; the application deadline did not expire.",
+    "futureHarnessFollowUp": "Retain bounded sanitized provider error-code and origin metadata when available. No harness change or new model phase is included in this closeout."
+  },
+  "nativeEffects": {
+    "failure": "provider_unavailable",
+    "outputSchemaValidationReached": false,
+    "sessionStatus": "open",
+    "sessionVersion": 1,
+    "scope": "InitialDiscovery",
+    "participantMessages": 1,
+    "assistantMessages": 0,
+    "cards": 0,
+    "pendingConfirmations": 0,
+    "summary": null,
+    "profileVersion": 0,
+    "profileFacts": 0,
+    "substantiveStateMatchesPreDispatch": true,
+    "authorizationStatusAfter": "invalidated",
+    "wholeLifecycleMetadataClaimedUnchanged": false
+  },
+  "accounting": {
+    "grossHistoricalLedger": {
+      "callsReserved": 157,
+      "reservedMicroUsd": 23816002,
+      "higherCapCallsReserved": 149,
+      "judgeCallsReserved": 2
+    },
+    "ledgerBytes": 24058,
+    "ledgerSha256": "728773eaa835634975682240ee1b7dd0cb5451c9f2772d6587fda09f4cfb07ba",
+    "accountingProposalSha256": "dc4a5d2467dcb352f2cee03a5ac18a5c924280929a1acf6260e38d50de7c3212",
+    "historicalEffectivePostAnchorMicroUsd": 3229843,
+    "retainedFullReservationMicroUsd": 1022364,
+    "retainedEffectivePostAnchorMicroUsd": 4252207,
+    "newFullReservationsMicroUsd": 511182,
+    "effectivePostAnchorMicroUsd": 4763389,
+    "maximumPostAnchorMicroUsd": 20000000,
+    "remainingExposureMicroUsd": 15236611,
+    "protectedRemainingJudgeMicroUsd": 370696,
+    "availableForCandidateReservationsMicroUsd": 14865915,
+    "currentCandidateCalls": 1,
+    "currentJudgeCalls": 0,
+    "newKnownCallsAutomaticallySettled": false,
+    "billingReconciled": false,
+    "usageAvailable": false,
+    "usageCreditApplied": false,
+    "billedCostUsd": null,
+    "basis": "The new call retains its full reservation. Gross historical reservations and adopted post-anchor exposure are distinct accounting measures; neither establishes billed spend."
+  },
+  "closure": {
+    "closedAt": "2026-09-13T13:48:07.372Z",
+    "graceful": true,
+    "runtimeJoinExitCode": 0,
+    "actorJoinExitCode": 0,
+    "recordedProcessesAbsent": true,
+    "listenerAbsent": true,
+    "boundaryCaptures": 1,
+    "boundaryReports": 1,
+    "blockedRequests": 0,
+    "ordinaryNetworkForwarding": false,
+    "providerRevocationVerified": false,
+    "rootResultSha256": "78d8d414b64a6a4aa22776f48ee29aa9fed72f4780c0099b4033050cc491fcab",
+    "rootClosureSha256": "e4ef90b6e56f38b2db8696b64164d9a448acde2d41781c050535f56cee53c508",
+    "closedReceiptSha256": "b89923a44e89ffae27a8d907fb4bd812173907dfec9e9b54b344c17bf37056b7"
+  },
+  "remainingAcceptance": [
+    "fresh native forced-tool response and semantic acceptance",
+    "full eight-family suite",
+    "candidate comparison and A-to-B",
+    "fixed judges and actual human ratings"
+  ],
+  "privacy": "Sanitized synthetic run record. No participant dialogue, provider response body, credentials, private identifiers or local evidence paths are included."
+}

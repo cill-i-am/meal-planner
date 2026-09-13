@@ -1,6 +1,6 @@
 # Work Item 03 — Adaptive discovery and evaluation
 
-- Status: In progress (2026-09-13); v25 deterministic contract locally verified; fresh live acceptance pending; historical v24 native failure retained; [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
+- Status: In progress (2026-09-13); v25 implementation, independent review, exact-source CI and browser checks pass; first live request stopped at HTTP 408 with no model acceptance; historical failures retained; [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
 - Authorized by the product owner to continue after Work Item 02.
 - Implementation base: `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`.
 - Owning stage: [Stage 2](README.md).
@@ -13,9 +13,24 @@ closed profile clarification and one forced schema-derived `submitDiscoveryTurn`
 call. The application owns all questions, readiness, card revision binding and
 ordinary/safety proposal routing. Optional notes retain context only. A new
 ordered private metadata table retains the user's scope; unscoped old history
-stays readable without generation or inferred conversion. Local deterministic,
-native and browser verification remains separate from fresh live evaluation.
-The full family, candidate-comparison, A-to-B and human-rating gates remain open.
+stays readable without generation or inferred conversion.
+
+Source `29870891f6cf92d4a30c4a33e79071eba7b25a18` passed independent review,
+[exact-source CI](https://github.com/cill-i-am/meal-planner/actions/runs/34759048566)
+(1,512 Quality tests and 2 Synthetic media container tests), and real Chromium
+panel/client checks with synthetic sockets and actual browser storage. The
+[v25 native attempt](../../../../evals/private-discovery/kimi-v25-native-provider-failure-results.md)
+then returned complete HTTP 408 on its first forced-tool request. Production
+settled `provider_unavailable` with an unknown upstream outcome. No tool
+arguments, usage, assistant reply or card were available; the substantive
+interview/profile snapshot was preserved and authorization metadata became
+invalidated. The suite stopped without retry and the runtime closed gracefully.
+
+The raw error body was not retained, so the precise upstream cause and tool
+compatibility remain undetermined. No output-schema or semantic acceptance was
+reached. The full family, candidate-comparison, A-to-B, fixed-judge and human-rating
+gates remain open. The report retains the exposure reservation, receipt hashes,
+closure proof and the bounded future error-metadata follow-up.
 
 The following evaluation results are historical and are not regraded by the new contract.
 

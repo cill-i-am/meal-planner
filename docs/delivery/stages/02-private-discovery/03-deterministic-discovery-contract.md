@@ -75,9 +75,13 @@ Local verification passes 146 focused contract/policy/adapter tests, 91 private-
 
 The deterministic cases cover required-key omission, null retention, refusal/revisit, current evidence, confirmed-profile source changes, mandatory question ordering, clarification bypass/retirement, snapshot revisions and canonical safety mapping. Native tests cover atomic rejection with proposed cards, scope selection and mutation collision, first-response failure plus restart, legacy history without dispatch, and the existing confirmation, isolation and revocation fences.
 
-The real Chromium panel/client/CSS proof used synthetic sockets and actual browser storage. Both explicit scope actions, exact mutation-ID/scope replay after a lost reply and reload, unreadable-request recovery and legacy read-only rendering passed. It does not establish authenticated native routing or provider quality; those have separate evidence.
+Immutable source `29870891f6cf92d4a30c4a33e79071eba7b25a18` passed independent contract and scope/recovery review. Its [hosted CI](https://github.com/cill-i-am/meal-planner/actions/runs/34759048566) passed 1,512 Quality tests and 2 Synthetic media container tests, including all 91 private-output and 85 household native cases.
 
-Fresh live evaluation and immutable-head review are still required. No previous failed report is upgraded to a pass. The full family suite, candidate comparison, A-to-B review, fixed-judge evidence and actual human ratings remain the owning work item's acceptance gates.
+The real Chromium panel/client/CSS proof used synthetic sockets and actual browser storage. Both explicit scope actions, exact mutation-ID/scope replay after a lost reply and reload, unreadable-request recovery and legacy read-only rendering passed. Confirmation reconciliation preserved the unrelated unreadable raw request and blocked new writes until explicit clear. All 31 consumed source files matched that commit. This establishes browser behavior, not authenticated native routing or provider quality.
+
+The [first v25 live request](../../../../evals/private-discovery/kimi-v25-native-provider-failure-results.md) returned complete HTTP 408 before tool arguments or usage were available. Native settlement reported `provider_unavailable`; substantive interview/profile state stayed unchanged while authorization metadata became invalidated. The suite stopped without retry and closed gracefully. The raw error body was not retained, so the upstream cause and forced-tool compatibility remain undetermined. No output-schema or semantic acceptance was reached.
+
+No previous failed report is upgraded to a pass. Fresh successful native forced-tool evidence, the full family suite, candidate comparison, A-to-B review, fixed-judge evidence and actual human ratings remain the owning work item's acceptance gates. The report records the future bounded error-metadata follow-up without changing the harness or starting another phase.
 
 ## Adjacent audit follow-ups
 

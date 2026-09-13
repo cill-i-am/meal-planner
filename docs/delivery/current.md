@@ -31,8 +31,17 @@
   `submitDiscoveryTurn` function carries evidence-backed updates; omitted required
   fields reject atomically. InitialDiscovery and ProfileEdit are explicit user
   choices retained across restart. Legacy unscoped history remains readable and
-  cannot dispatch new model work. Local contract/native/browser verification
-  passes; fresh live quality and all existing human acceptance gates remain.
+  cannot dispatch new model work. Independent immutable-source review and browser
+  verification pass on `29870891f6cf92d4a30c4a33e79071eba7b25a18`; its
+  [hosted CI](https://github.com/cill-i-am/meal-planner/actions/runs/34759048566)
+  passes 1,512 Quality tests and 2 Synthetic media container tests. The
+  [first v25 live request](../../evals/private-discovery/kimi-v25-native-provider-failure-results.md)
+  returned complete HTTP 408 before any tool arguments or usage were available.
+  The suite stopped without retry; substantive interview/profile state remained
+  unchanged and authorization metadata became invalidated. The upstream cause
+  remains undetermined because the raw error body was not retained. No family,
+  candidate or live forced-tool acceptance was established; the runtime is closed
+  and all existing evaluation and human acceptance gates remain.
   The following results are historical and retain their original outcomes.
   The [GPT-OSS v16 result](../../evals/private-discovery/prompt-v16-planning-purpose-results.md)
   persisted a false completed-update claim while canonical state stayed unchanged.
