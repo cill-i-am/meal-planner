@@ -25,6 +25,7 @@ import {
   PrivateDiscoveryContinuityJson,
 } from "./private-discovery-continuity.js";
 import type { PrivateDiscoveryContinuityNote } from "./private-discovery-continuity.js";
+import { encodeKimiCompletion } from "./private-discovery-kimi-stream.test-fixtures.js";
 import { PrivateDiscoveryContext } from "./private-discovery-model.js";
 import type { PrivateOutputMutationPort } from "./private-output-binding.js";
 import { runOutputFencedMutation } from "./private-output-mutation.js";
@@ -3862,5 +3863,182 @@ describe("native adaptive assistant attempts through the production model adapte
       state: { version: 1 },
     });
     resumed.socket.close();
+  });
+  describe("Kimi streamed tool settlement", () => {
+    beforeAll(async () => {
+      await runtime.dispose();
+      modelConfiguration = JSON.stringify({
+        gatewayId: "synthetic-local-only",
+        inputUsdPerMillionTokens: 1,
+        maxOutputTokens: 1000,
+        model: "@cf/moonshotai/kimi-k2.6",
+        outputUsdPerMillionTokens: 2,
+        timeoutMs: 5000,
+      });
+      runtime = makeRuntime();
+    });
+    afterAll(async () => {
+      await runtime.dispose();
+      modelConfiguration = syntheticModelConfig;
+      runtime = makeRuntime();
+    });
+
+    it.each([
+      "complete",
+      "missing-done",
+      "invalid-arguments",
+      "missing-required-key",
+    ] as const)(
+      "keeps partial %s SSE private and only commits a complete validated tool call",
+      async (outcome) => {
+        modelCalls = [];
+        const proposed = {
+          ...output,
+          proposals: [
+            {
+              _tag: "ProposeProfileCard",
+              change: {
+                _tag: "AddFact",
+                fact: {
+                  _tag: "FoodPreference",
+                  label: "tomatoes",
+                  sentiment: "like",
+                  targetKind: "ingredient",
+                },
+              },
+            },
+          ],
+        };
+        const argumentsText =
+          outcome === "invalid-arguments"
+            ? "{invalid-private-tool"
+            : JSON.stringify({
+                intent:
+                  outcome === "missing-required-key"
+                    ? {
+                        ...proposed,
+                        updates: {
+                          ...proposed.updates,
+                          coverage: { foodRestrictions: null },
+                        },
+                      }
+                    : proposed,
+              });
+        const encoded = encodeKimiCompletion({
+          choices: [
+            {
+              finish_reason: "tool_calls",
+              message: {
+                content: null,
+                role: "assistant",
+                tool_calls: [
+                  {
+                    function: {
+                      arguments: argumentsText,
+                      name: "submitDiscoveryTurn",
+                    },
+                    id: "synthetic-call",
+                    type: "function",
+                  },
+                ],
+              },
+            },
+          ],
+          usage: defaultUsage,
+        });
+        const opened =
+          Promise.withResolvers<ReadableStreamDefaultController<Uint8Array>>();
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            opened.resolve(controller);
+          },
+        });
+        const controller = await opened.promise;
+        const firstEnd = encoded.indexOf("\n\n") + 2;
+        controller.enqueue(
+          new TextEncoder().encode(encoded.slice(0, firstEnd))
+        );
+        modelResponse = () =>
+          Promise.resolve(
+            new LocalResponse(body, {
+              headers: { "content-type": "text/event-stream" },
+            })
+          );
+        const session = await binding();
+        const connection = await open(session);
+        const attempt = await queue(session, connection);
+        const running = successful(attempt);
+        await expect.poll(() => modelCalls.length).toBe(1);
+        expect(modelCalls[0]).toMatchObject({
+          body: { stream: true, stream_options: { include_usage: true } },
+          gateway: { requestTimeoutMs: 5000 },
+        });
+        expect(await readTurn(connection)).toMatchObject({
+          turn: { status: "running" },
+        });
+        expect(await cards(connection)).toMatchObject({ cards: [] });
+        expect(await history(connection)).toMatchObject({
+          messages: [expect.objectContaining({ role: "participant" })],
+          state: { version: 1 },
+        });
+        const beforeEnd = await audit(session);
+        expect(beforeEnd[0]).toMatchObject({ summary: null });
+        const rest = encoded.slice(firstEnd);
+        controller.enqueue(
+          new TextEncoder().encode(
+            outcome === "missing-done"
+              ? rest.replace("data: [DONE]\n\n", "")
+              : rest
+          )
+        );
+        if (outcome === "complete") {
+          expect(await readTurn(connection)).toMatchObject({
+            turn: { status: "running" },
+          });
+          expect(await cards(connection)).toMatchObject({ cards: [] });
+        }
+        controller.close();
+        await running;
+        await successful(attempt);
+        expect(modelCalls).toHaveLength(1);
+        if (outcome === "complete") {
+          expect(await readTurn(connection)).toMatchObject({
+            state: { version: 2 },
+            turn: { failure: null, status: "succeeded" },
+          });
+          expect(await cards(connection)).toMatchObject({
+            cards: [
+              expect.objectContaining({ revision: 0, status: "proposed" }),
+            ],
+          });
+          expect(await history(connection)).toMatchObject({
+            messages: [
+              expect.objectContaining({ role: "participant" }),
+              expect.objectContaining({ role: "assistant" }),
+            ],
+          });
+          const [retained] = await audit(session);
+          expect(retained?.summary).toBe(
+            JSON.stringify(emptyPrivateDiscoveryContinuity())
+          );
+          expect(JSON.parse(retained?.usageJson ?? "null")).toMatchObject({
+            inputTokens: 100,
+            outputTokens: 20,
+          });
+        } else {
+          expect(await readTurn(connection)).toMatchObject({
+            state: { version: 1 },
+            turn: { failure: "invalid_output", status: "failed" },
+          });
+          expect(await cards(connection)).toMatchObject({ cards: [] });
+          expect(await history(connection)).toMatchObject({
+            messages: [expect.objectContaining({ role: "participant" })],
+          });
+          const rejected = await audit(session);
+          expect(rejected[0]).toMatchObject({ summary: null });
+        }
+        connection.socket.close();
+      }
+    );
   });
 });

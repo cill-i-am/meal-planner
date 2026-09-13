@@ -2,6 +2,8 @@ import type * as NativeCloudflare from "@cloudflare/workers-types";
 import { Effect, Option, Schema } from "effect";
 import { Tool } from "effect/unstable/ai";
 
+import { PrivateDiscoveryCompletion } from "./private-discovery-completion.js";
+import { decodePrivateDiscoveryKimiStream } from "./private-discovery-kimi-stream.js";
 import {
   makePrivateDiscoveryProviderOutput,
   PRIVATE_DISCOVERY_CONTEXT_BYTES,
@@ -66,38 +68,6 @@ const failure = (
   provenance: PrivateDiscoveryProvenance | null = null,
   stage: PrivateDiscoveryInvalidOutputStage | null = null
 ) => new PrivateDiscoveryFailure({ provenance, reason, stage, usage });
-const TokenCount = Schema.Int.pipe(
-  Schema.check(Schema.isGreaterThanOrEqualTo(0))
-);
-const ProviderUsage = Schema.Struct({
-  completion_tokens: TokenCount,
-  prompt_tokens: TokenCount,
-});
-const Completion = Schema.Struct({
-  choices: Schema.Array(
-    Schema.Struct({
-      finish_reason: Schema.String,
-      message: Schema.Struct({
-        content: Schema.optionalKey(Schema.NullOr(Schema.String)),
-        refusal: Schema.optionalKey(Schema.NullOr(Schema.String)),
-        role: Schema.Literal("assistant"),
-        tool_calls: Schema.optionalKey(
-          Schema.Array(
-            Schema.Struct({
-              function: Schema.Struct({
-                arguments: Schema.String,
-                name: Schema.String,
-              }),
-              id: Schema.String,
-              type: Schema.Literal("function"),
-            })
-          )
-        ),
-      }),
-    })
-  ).pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(1))),
-  usage: Schema.optionalKey(ProviderUsage),
-});
 const configuration = Schema.decodeUnknownOption(
   Schema.fromJsonString(PrivateDiscoveryConfiguration)
 );
@@ -145,7 +115,8 @@ const requestFor = (
         max_completion_tokens: config.maxOutputTokens,
         messages,
         n: 1,
-        stream: false as const,
+        stream: true as const,
+        stream_options: { include_usage: true },
         temperature: 1,
         top_p: 0.95,
       } satisfies NativeCloudflare.AiModels["@cf/moonshotai/kimi-k2.6"]["inputs"],
@@ -168,7 +139,8 @@ const requestFor = (
 const readBoundedResponse = async (
   response: NativeCloudflare.Response,
   signal: AbortSignal,
-  maximumBytes: number
+  maximumBytes: number,
+  fatalUtf8: boolean
 ) => {
   if (response.body === null) {
     throw failure("invalid_output", null, null, "response_body_missing");
@@ -182,7 +154,7 @@ const readBoundedResponse = async (
   signal.addEventListener("abort", cancel, { once: true });
   let length = 0;
   let text = "";
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder("utf-8", { fatal: fatalUtf8 });
   try {
     signal.throwIfAborted();
     while (true) {
@@ -276,13 +248,30 @@ export const makePrivateDiscoveryModel = (
               void response.body?.cancel().catch(() => null);
               throw configuredFailure("provider_unavailable");
             }
+            const streaming = config.model === "@cf/moonshotai/kimi-k2.6";
+            if (
+              streaming &&
+              response.headers
+                .get("content-type")
+                ?.split(";")[0]
+                ?.trim()
+                .toLowerCase() !== "text/event-stream"
+            ) {
+              void response.body?.cancel().catch(() => null);
+              throw configuredFailure(
+                "invalid_output",
+                null,
+                "response_envelope"
+              );
+            }
             try {
               return await readBoundedResponse(
                 response,
                 transportSignal,
-                config.model === "@cf/moonshotai/kimi-k2.6"
+                streaming
                   ? PRIVATE_DISCOVERY_KIMI_RESPONSE_BYTES
-                  : PRIVATE_DISCOVERY_RESPONSE_BYTES
+                  : PRIVATE_DISCOVERY_RESPONSE_BYTES,
+                streaming
               );
             } catch (error) {
               if (transportSignal.aborted) {
@@ -299,13 +288,22 @@ export const makePrivateDiscoveryModel = (
           },
         });
         const envelope = yield* Effect.try({
-          catch: () =>
-            configuredFailure("invalid_output", null, "response_json"),
-          try: (): unknown => JSON.parse(encoded),
+          catch: (error) =>
+            configuredFailure(
+              "invalid_output",
+              null,
+              error instanceof PrivateDiscoveryFailure
+                ? error.stage
+                : "response_json"
+            ),
+          try: (): unknown =>
+            config.model === "@cf/moonshotai/kimi-k2.6"
+              ? decodePrivateDiscoveryKimiStream(encoded)
+              : JSON.parse(encoded),
         });
-        const completion = yield* Schema.decodeUnknownEffect(Completion)(
-          envelope
-        ).pipe(
+        const completion = yield* Schema.decodeUnknownEffect(
+          PrivateDiscoveryCompletion
+        )(envelope).pipe(
           Effect.mapError(() =>
             configuredFailure("invalid_output", null, "response_envelope")
           )

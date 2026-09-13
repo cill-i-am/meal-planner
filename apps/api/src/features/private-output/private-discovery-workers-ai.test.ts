@@ -8,6 +8,12 @@ import {
   emptyPrivateDiscoveryContinuityUpdates,
 } from "./private-discovery-continuity.js";
 import {
+  encodeKimiCompletion,
+  kimiChoice,
+  kimiChunk,
+  kimiEvent,
+} from "./private-discovery-kimi-stream.test-fixtures.js";
+import {
   makePrivateDiscoveryProviderOutput,
   PrivateDiscoveryContext,
   PrivateDiscoveryTurnIntent,
@@ -116,6 +122,20 @@ const completion = (content: Readonly<Record<string, unknown>> = output) => ({
   ],
   usage: { completion_tokens: 50, prompt_tokens: 100 },
 });
+const streamResponse = (
+  payload: Parameters<typeof encodeKimiCompletion>[0] = completion()
+) =>
+  new Response(encodeKimiCompletion(payload), {
+    headers: { "content-type": "text/event-stream; charset=utf-8" },
+  });
+const responseFor = (
+  configuration: PrivateDiscoveryConfiguration,
+  payload: Parameters<typeof encodeKimiCompletion>[0]
+) =>
+  configuration.model === kimiConfig.model
+    ? streamResponse(payload)
+    : Response.json(payload);
+
 interface CapturedOptions {
   readonly extraHeaders: Readonly<Record<string, string>>;
   readonly gateway: {
@@ -128,8 +148,7 @@ interface CapturedOptions {
   readonly signal: AbortSignal;
 }
 const fixture = (
-  respond: (options: CapturedOptions) => Promise<Response> = () =>
-    Promise.resolve(Response.json(completion())),
+  respond?: (options: CapturedOptions) => Promise<Response>,
   configuration: PrivateDiscoveryConfiguration = config
 ) => {
   const run = vi.fn(
@@ -137,7 +156,10 @@ const fixture = (
       _model: string,
       _body: NativeCloudflare.AiModels[PrivateDiscoveryConfiguration["model"]]["inputs"],
       options: CapturedOptions
-    ) => respond(options)
+    ) =>
+      respond === undefined
+        ? Promise.resolve(responseFor(configuration, completion()))
+        : respond(options)
   );
   const model = makePrivateDiscoveryModel({
     PRIVATE_DISCOVERY_CONFIG: JSON.stringify(configuration),
@@ -156,6 +178,192 @@ const fixture = (
 };
 
 describe("private discovery Workers AI boundary", () => {
+  it("reassembles tool deltas across single-byte UTF-8 and SSE transport fragments", async () => {
+    const expected = {
+      ...output,
+      updates: {
+        ...output.updates,
+        notes: [{ detail: "Tomatoes 🍅", key: "meal", subject: "Usual meal" }],
+      },
+    };
+    const argumentsText = JSON.stringify({ intent: expected });
+    const encoded = new TextEncoder().encode(
+      [
+        kimiEvent(
+          kimiChunk([
+            kimiChoice({ reasoning_content: "Think 🍅", role: "assistant" }),
+          ])
+        ),
+        kimiEvent(
+          kimiChunk([
+            kimiChoice({
+              tool_calls: [
+                {
+                  function: {
+                    arguments: argumentsText.slice(0, 27),
+                    name: "submitDiscov",
+                  },
+                  id: "call-",
+                  index: 0,
+                  type: "function",
+                },
+              ],
+            }),
+          ])
+        ),
+        kimiEvent(
+          kimiChunk([
+            kimiChoice({
+              tool_calls: [
+                {
+                  function: {
+                    arguments: argumentsText.slice(27),
+                    name: "eryTurn",
+                  },
+                  id: "1",
+                  index: 0,
+                },
+              ],
+            }),
+          ])
+        ),
+        kimiEvent(kimiChunk([kimiChoice({}, "tool_calls")])),
+        kimiEvent(kimiChunk([], completion().usage)),
+        "data: [DONE]\n\n",
+      ].join("")
+    );
+    let offset = 0;
+    const test = fixture(
+      () =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream({
+              pull(controller) {
+                if (offset === encoded.length) {
+                  controller.close();
+                } else {
+                  controller.enqueue(encoded.slice(offset, offset + 1));
+                  offset += 1;
+                }
+              },
+            }),
+            { headers: { "content-type": "text/event-stream" } }
+          )
+        ),
+      kimiConfig
+    );
+    const result = await Effect.runPromise(test.model.generate(test.input));
+    expect(result.output).toEqual({ intent: expected });
+    expect(result.usage).toMatchObject({ inputTokens: 100, outputTokens: 50 });
+    expect(JSON.stringify(result)).not.toContain("Think");
+    expect(test.run).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    {
+      bytes: new Uint8Array([0xc3, 0x28]),
+      name: "invalid UTF-8",
+      stage: "response_body_read",
+    },
+    {
+      bytes: new Uint8Array([0xf0, 0x9f]),
+      name: "truncated UTF-8",
+      stage: "response_body_read",
+    },
+    {
+      bytes: new TextEncoder().encode(
+        encodeKimiCompletion(completion()).replace("data: [DONE]\n\n", "")
+      ),
+      name: "missing DONE",
+      stage: "incomplete_completion",
+    },
+    {
+      bytes: new TextEncoder().encode(
+        `${encodeKimiCompletion(completion())}data: {}\n\n`
+      ),
+      name: "extra data after DONE",
+      stage: "response_envelope",
+    },
+  ])(
+    "rejects Kimi $name without accepted output or usage",
+    async ({ bytes, stage }) => {
+      const test = fixture(
+        () =>
+          Promise.resolve(
+            new Response(bytes, {
+              headers: { "content-type": "text/event-stream" },
+            })
+          ),
+        kimiConfig
+      );
+      const error = await Effect.runPromise(
+        Effect.flip(test.model.generate(test.input))
+      );
+      expect(error).toMatchObject({
+        reason: "invalid_output",
+        stage,
+        usage: null,
+      });
+      expect(test.run).toHaveBeenCalledOnce();
+    }
+  );
+
+  it("rejects a nonstreaming Kimi response without a JSON fallback", async () => {
+    const test = fixture(
+      () => Promise.resolve(Response.json(completion())),
+      kimiConfig
+    );
+    const error = await Effect.runPromise(
+      Effect.flip(test.model.generate(test.input))
+    );
+    expect(error).toMatchObject({
+      reason: "invalid_output",
+      stage: "response_envelope",
+      usage: null,
+    });
+    expect(test.run).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { content: "Here is the result", name: "submitDiscoveryTurn" },
+    { content: null, name: "wrongFunction" },
+    { content: null, name: "submitDiscoveryTurnsubmitDiscoveryTurn" },
+  ])(
+    "rejects complete Kimi prose or wrong tool name $name",
+    async ({ content, name }) => {
+      const payload = completion();
+      const test = fixture(
+        () =>
+          Promise.resolve(
+            streamResponse({
+              ...payload,
+              choices: payload.choices.map((choice) => ({
+                ...choice,
+                message: {
+                  ...choice.message,
+                  content,
+                  tool_calls: choice.message.tool_calls.map((tool) => ({
+                    ...tool,
+                    function: { ...tool.function, name },
+                  })),
+                },
+              })),
+            })
+          ),
+        kimiConfig
+      );
+      const error = await Effect.runPromise(
+        Effect.flip(test.model.generate(test.input))
+      );
+      expect(error).toMatchObject({
+        reason: "invalid_output",
+        stage: "tool_call",
+        usage: { inputTokens: 100, outputTokens: 50 },
+      });
+      expect(test.run).toHaveBeenCalledOnce();
+    }
+  );
+
   it.each([0, 1, 2])(
     "uses one forced tool schema for %s eligible cards",
     async (count) => {
@@ -467,7 +675,7 @@ describe("private discovery Workers AI boundary", () => {
       const test = fixture(
         () =>
           Promise.resolve(
-            Response.json({
+            streamResponse({
               ...payload,
               choices: payload.choices.map((choice) => ({
                 ...choice,
@@ -505,7 +713,8 @@ describe("private discovery Workers AI boundary", () => {
         ],
         n: 1,
         ...toolRequest(jsonSchema),
-        stream: false,
+        stream: true,
+        stream_options: { include_usage: true },
         temperature: 1,
         top_p: 0.95,
       });
@@ -537,7 +746,7 @@ describe("private discovery Workers AI boundary", () => {
 
   it("retains unavailable Kimi usage as unknown", async () => {
     const test = fixture(
-      () => Promise.resolve(Response.json({ choices: completion().choices })),
+      () => Promise.resolve(streamResponse({ choices: completion().choices })),
       kimiConfig
     );
     const result = await Effect.runPromise(test.model.generate(test.input));
@@ -608,7 +817,7 @@ describe("private discovery Workers AI boundary", () => {
   it("accepts a larger Kimi envelope while excluding legacy reasoning content and counting completion usage once", async () => {
     const payload = completion();
     const reasoningContent = "🧠".repeat(20_000);
-    const encoded = JSON.stringify({
+    const encoded = encodeKimiCompletion({
       ...payload,
       choices: payload.choices.map((choice) => ({
         ...choice,
@@ -622,11 +831,19 @@ describe("private discovery Workers AI boundary", () => {
     expect(new TextEncoder().encode(encoded).byteLength).toBeGreaterThan(
       PRIVATE_DISCOVERY_RESPONSE_BYTES
     );
-    const test = fixture(() => Promise.resolve(new Response(encoded)), {
-      ...kimiConfig,
-      maxOutputTokens: 65_536,
-      timeoutMs: 900_000,
-    });
+    const test = fixture(
+      () =>
+        Promise.resolve(
+          new Response(encoded, {
+            headers: { "content-type": "text/event-stream" },
+          })
+        ),
+      {
+        ...kimiConfig,
+        maxOutputTokens: 65_536,
+        timeoutMs: 900_000,
+      }
+    );
     const result = await Effect.runPromise(test.model.generate(test.input));
     expect(test.run).toHaveBeenCalledOnce();
     expect(result.output).toEqual({ intent: output });
@@ -659,7 +876,7 @@ describe("private discovery Workers AI boundary", () => {
       const test = fixture(
         () =>
           Promise.resolve(
-            Response.json({
+            streamResponse({
               ...completion(),
               choices: [
                 {
@@ -1020,7 +1237,7 @@ describe("private discovery Workers AI boundary", () => {
       const test = fixture(
         () =>
           Promise.resolve(
-            Response.json({
+            responseFor(configuration, {
               ...payload,
               choices: [
                 {
@@ -1077,7 +1294,7 @@ describe("private discovery Workers AI boundary", () => {
       const test = fixture(
         () =>
           Promise.resolve(
-            Response.json({
+            responseFor(configuration, {
               ...payload,
               choices: payload.choices.map((choice) => ({
                 ...choice,
@@ -1146,47 +1363,90 @@ describe("private discovery Workers AI boundary", () => {
     }
   );
 
-  it("aborts transport and cancels a stalled body at the deadline without awaiting cancellation", async () => {
-    const cancel = vi.fn(() => Promise.withResolvers<never>().promise);
-    const test = fixture(() =>
-      Promise.resolve(new Response(new ReadableStream({ cancel })))
-    );
-    const error = await Effect.runPromise(
-      Effect.flip(test.model.generate(test.input))
-    );
-    expect(error.reason).toBe("outcome_unknown");
-    expect(test.run.mock.calls[0]?.[2].signal.aborted).toBe(true);
-    expect(cancel).toHaveBeenCalledOnce();
-    expect(test.run).toHaveBeenCalledOnce();
-  });
+  it.each([config, kimiConfig])(
+    "aborts $model and cancels a stalled body at the deadline without awaiting cancellation",
+    async (configuration) => {
+      const cancel = vi.fn(() => Promise.withResolvers<never>().promise);
+      const test = fixture(
+        () =>
+          Promise.resolve(
+            new Response(
+              new ReadableStream({
+                cancel,
+                start(controller) {
+                  if (configuration.model === kimiConfig.model) {
+                    const encoded = encodeKimiCompletion(completion());
+                    controller.enqueue(
+                      new TextEncoder().encode(
+                        encoded.slice(0, encoded.indexOf("\n\n") + 2)
+                      )
+                    );
+                  }
+                },
+              }),
+              {
+                headers: { "content-type": "text/event-stream" },
+              }
+            )
+          ),
+        configuration
+      );
+      const error = await Effect.runPromise(
+        Effect.flip(test.model.generate(test.input))
+      );
+      expect(error.reason).toBe("outcome_unknown");
+      expect(test.run.mock.calls[0]?.[2].signal.aborted).toBe(true);
+      expect(cancel).toHaveBeenCalledOnce();
+      expect(test.run).toHaveBeenCalledOnce();
+    }
+  );
 
-  it("cancels a stalled body after participant stop without awaiting cancellation", async () => {
-    const reading = Promise.withResolvers<true>();
-    const cancel = vi.fn(() => Promise.withResolvers<never>().promise);
-    const test = fixture(() =>
-      Promise.resolve(
-        new Response(
-          new ReadableStream(
-            { cancel, pull: () => reading.resolve(true) },
-            { highWaterMark: 0 }
-          )
+  it.each([config, kimiConfig])(
+    "cancels a stalled $model body after participant stop without awaiting cancellation",
+    async (configuration) => {
+      const reading = Promise.withResolvers<true>();
+      const cancel = vi.fn(() => Promise.withResolvers<never>().promise);
+      const test = fixture(
+        () =>
+          Promise.resolve(
+            new Response(
+              new ReadableStream(
+                {
+                  cancel,
+                  pull: () => reading.resolve(true),
+                  start(controller) {
+                    if (configuration.model === kimiConfig.model) {
+                      const encoded = encodeKimiCompletion(completion());
+                      controller.enqueue(
+                        new TextEncoder().encode(
+                          encoded.slice(0, encoded.indexOf("\n\n") + 2)
+                        )
+                      );
+                    }
+                  },
+                },
+                { highWaterMark: 0 }
+              ),
+              { headers: { "content-type": "text/event-stream" } }
+            )
+          ),
+        configuration
+      );
+      const controller = new AbortController();
+      const result = Effect.runPromise(
+        Effect.flip(
+          test.model.generate({ ...test.input, signal: controller.signal })
         )
-      )
-    );
-    const controller = new AbortController();
-    const result = Effect.runPromise(
-      Effect.flip(
-        test.model.generate({ ...test.input, signal: controller.signal })
-      )
-    );
-    await reading.promise;
-    controller.abort();
-    const error = await result;
-    expect(error.reason).toBe("outcome_unknown");
-    expect(test.run.mock.calls[0]?.[2].signal.aborted).toBe(true);
-    expect(cancel).toHaveBeenCalledOnce();
-    expect(test.run).toHaveBeenCalledOnce();
-  });
+      );
+      await reading.promise;
+      controller.abort();
+      const error = await result;
+      expect(error.reason).toBe("outcome_unknown");
+      expect(test.run.mock.calls[0]?.[2].signal.aborted).toBe(true);
+      expect(cancel).toHaveBeenCalledOnce();
+      expect(test.run).toHaveBeenCalledOnce();
+    }
+  );
 
   it("cancels the owned body reader when the calling fiber is interrupted", async () => {
     const reading = Promise.withResolvers<true>();
