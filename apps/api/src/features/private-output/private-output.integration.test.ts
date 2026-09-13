@@ -1994,6 +1994,7 @@ describe("native adaptive assistant attempts through the production model adapte
     expect(request.gateway).toEqual({
       collectLog: false,
       id: "synthetic-local-only",
+      requestTimeoutMs: 5000,
       skipCache: true,
     });
     const context = JSON.parse(request.body.messages[1]?.content ?? "null") as {
