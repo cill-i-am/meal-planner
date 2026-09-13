@@ -121,6 +121,7 @@ interface CapturedOptions {
   readonly gateway: {
     readonly collectLog: boolean;
     readonly id: string;
+    readonly requestTimeoutMs: number;
     readonly skipCache: boolean;
   };
   readonly returnRawResponse: boolean;
@@ -435,7 +436,12 @@ describe("private discovery Workers AI boundary", () => {
       });
       expect(test.run.mock.calls[0]?.[2]).toMatchObject({
         extraHeaders: { "cf-aig-max-attempts": "1" },
-        gateway: { collectLog: false, id: config.gatewayId, skipCache: true },
+        gateway: {
+          collectLog: false,
+          id: config.gatewayId,
+          requestTimeoutMs: config.timeoutMs,
+          skipCache: true,
+        },
         returnRawResponse: true,
       });
       expect(result.output).toEqual({ intent: output });
@@ -508,6 +514,7 @@ describe("private discovery Workers AI boundary", () => {
         gateway: {
           collectLog: false,
           id: kimiConfig.gatewayId,
+          requestTimeoutMs: kimiConfig.timeoutMs,
           skipCache: true,
         },
         returnRawResponse: true,
@@ -562,6 +569,9 @@ describe("private discovery Workers AI boundary", () => {
           ? "max_completion_tokens"
           : "max_tokens",
         configuration.maxOutputTokens
+      );
+      expect(test.run.mock.calls[0]?.[2].gateway.requestTimeoutMs).toBe(
+        configuration.timeoutMs
       );
       expect(result.output).toEqual({ intent: output });
     }

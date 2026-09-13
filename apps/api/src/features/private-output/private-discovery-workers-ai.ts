@@ -258,6 +258,7 @@ export const makePrivateDiscoveryModel = (
               gateway: {
                 collectLog: false,
                 id: config.gatewayId,
+                requestTimeoutMs: config.timeoutMs,
                 skipCache: true,
               },
               returnRawResponse: true as const,

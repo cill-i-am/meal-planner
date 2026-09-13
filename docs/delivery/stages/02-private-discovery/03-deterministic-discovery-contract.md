@@ -67,6 +67,8 @@ The adapter admits GPT-OSS 120B and Kimi K2.6 through this single forced-tool co
 
 Kimi's verified thinking setting, sampling, configured completion allowance, deadline and whole-response limit remain unchanged. GPT bounds, the one-call dispatch fence, gateway retry maximum of one, disabled private logging/cache, unknown-usage semantics and all native authority/replay checks remain. Schema strictness cannot guarantee provider success or semantic truth; invalid output stays failed with the previous snapshot intact.
 
+The adapter explicitly passes `gateway.requestTimeoutMs = config.timeoutMs` through the installed Workers binding. [AI Gateway's request timeout](https://developers.cloudflare.com/ai-gateway/configuration/request-handling/) measures the wait for the first part of the response; the application retains its separate whole-operation deadline, capped at 900,000 ms for Kimi. This supplies the previously omitted gateway setting without changing retries, privacy or model settings. The cause of the historical v25 HTTP 408 remains unproven; this correction does not regrade that result.
+
 The complete snapshot remains bounded to 8,192 UTF-8 bytes in the existing private turn summary column, and the rendered message to 2,000 characters. Context/request/response limits remain enforced without clipping, eviction of useful continuity, or historical-state conversion. Fresh scoped sessions use the new contract.
 
 ## Verification and remaining acceptance
