@@ -21,7 +21,6 @@ import {
 import { privateDiscoveryInstructions } from "./private-discovery-prompt.js";
 import {
   makePrivateDiscoveryModel,
-  PRIVATE_DISCOVERY_KIMI_RESPONSE_BYTES,
   PRIVATE_DISCOVERY_RESPONSE_BYTES,
 } from "./private-discovery-workers-ai.js";
 import type { PrivateDiscoveryConfiguration } from "./private-discovery-workers-ai.js";
@@ -256,6 +255,80 @@ describe("private discovery Workers AI boundary", () => {
     expect(result.output).toEqual({ intent: expected });
     expect(result.usage).toMatchObject({ inputTokens: 100, outputTokens: 50 });
     expect(JSON.stringify(result)).not.toContain("Think");
+    expect(test.run).toHaveBeenCalledOnce();
+  });
+
+  it("accepts framing above the former whole-wire cap without retaining discarded reasoning", async () => {
+    const encoder = new TextEncoder();
+    const reasoningChunk = {
+      ...kimiChunk([kimiChoice({ reasoning_content: "r" })]),
+      ignoredMetadata: "x".repeat(64),
+    };
+    const reasoning = encoder.encode(kimiEvent(reasoningChunk));
+    const ending = encoder.encode(encodeKimiCompletion(completion()));
+    let sent = 0;
+    const test = fixture(
+      () =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream(
+              {
+                pull(controller) {
+                  if (sent < 13_000) {
+                    controller.enqueue(reasoning);
+                  } else if (sent === 13_000) {
+                    controller.enqueue(ending);
+                  } else {
+                    controller.close();
+                  }
+                  sent += 1;
+                },
+              },
+              { highWaterMark: 0 }
+            ),
+            { headers: { "content-type": "text/event-stream" } }
+          )
+        ),
+      { ...kimiConfig, timeoutMs: 900_000 }
+    );
+    expect(reasoning.byteLength * 13_000).toBeGreaterThan(2_097_152);
+    const result = await Effect.runPromise(test.model.generate(test.input));
+    expect(result.output).toEqual({ intent: output });
+    expect(result.usage).toMatchObject({ inputTokens: 100, outputTokens: 50 });
+    expect(test.run).toHaveBeenCalledOnce();
+  });
+
+  it("cancels immediately on a framing limit after a valid tool prefix without awaiting cleanup", async () => {
+    const encoded = encodeKimiCompletion(completion());
+    const prefix = encoded.slice(0, encoded.indexOf("\n\n") + 2);
+    const cancel = vi.fn(() => Promise.withResolvers<never>().promise);
+    const test = fixture(
+      () =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream({
+              cancel,
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode(prefix));
+                controller.enqueue(
+                  new TextEncoder().encode(`:${"x".repeat(65_536)}`)
+                );
+              },
+            }),
+            { headers: { "content-type": "text/event-stream" } }
+          )
+        ),
+      kimiConfig
+    );
+    const error = await Effect.runPromise(
+      Effect.flip(test.model.generate(test.input))
+    );
+    expect(error).toMatchObject({
+      reason: "invalid_output",
+      stage: "response_body_limit",
+      usage: null,
+    });
+    expect(cancel).toHaveBeenCalledOnce();
     expect(test.run).toHaveBeenCalledOnce();
   });
 
@@ -817,17 +890,18 @@ describe("private discovery Workers AI boundary", () => {
   it("accepts a larger Kimi envelope while excluding legacy reasoning content and counting completion usage once", async () => {
     const payload = completion();
     const reasoningContent = "🧠".repeat(20_000);
-    const encoded = encodeKimiCompletion({
+    const reasoningEvents = Array.from({ length: 20 }, () =>
+      kimiEvent(
+        kimiChunk([kimiChoice({ reasoning_content: "🧠".repeat(1000) })])
+      )
+    ).join("");
+    const encoded = `${reasoningEvents}${encodeKimiCompletion({
       ...payload,
-      choices: payload.choices.map((choice) => ({
-        ...choice,
-        message: { ...choice.message, reasoning_content: reasoningContent },
-      })),
       usage: {
         ...payload.usage,
         completion_tokens_details: { reasoning_tokens: 30 },
       },
-    });
+    })}`;
     expect(new TextEncoder().encode(encoded).byteLength).toBeGreaterThan(
       PRIVATE_DISCOVERY_RESPONSE_BYTES
     );
@@ -1282,10 +1356,6 @@ describe("private discovery Workers AI boundary", () => {
     {
       configuration: { ...config, model: "@cf/openai/gpt-oss-120b" },
       maximumBytes: PRIVATE_DISCOVERY_RESPONSE_BYTES,
-    },
-    {
-      configuration: kimiConfig,
-      maximumBytes: PRIVATE_DISCOVERY_KIMI_RESPONSE_BYTES,
     },
   ] as const)(
     "bounds the whole $configuration.model response stream including unused reasoning metadata",

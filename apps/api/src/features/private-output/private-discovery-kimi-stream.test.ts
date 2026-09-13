@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { decodePrivateDiscoveryKimiStream } from "./private-discovery-kimi-stream.js";
+import { makePrivateDiscoveryKimiStreamDecoder } from "./private-discovery-kimi-stream.js";
 import {
   kimiChunk,
   kimiEvent,
 } from "./private-discovery-kimi-stream.test-fixtures.js";
 
+const decodePrivateDiscoveryKimiStream = (encoded: string) => {
+  const decoder = makePrivateDiscoveryKimiStreamDecoder();
+  decoder.push(new TextEncoder().encode(encoded));
+  return decoder.finish();
+};
 const choice = (
   delta: Readonly<Record<string, unknown>>,
   finishReason: string | null = null
@@ -236,13 +241,31 @@ describe("Kimi discovery SSE protocol", () => {
     },
     { body: `data: {private-invalid\n\n${done}`, name: "malformed JSON" },
     { body: JSON.stringify({ choices: [] }), name: "non-SSE JSON" },
-  ])("rejects $name without leaking stream data", ({ body }) => {
-    expect(() => decodePrivateDiscoveryKimiStream(body)).toThrow();
+  ])("latches $name without leaking stream data", ({ body }) => {
+    const decoder = makePrivateDiscoveryKimiStreamDecoder();
+    let rejected: unknown;
     try {
-      decodePrivateDiscoveryKimiStream(body);
+      decoder.push(new TextEncoder().encode(body));
+      decoder.finish();
     } catch (error) {
-      expect(error).toMatchObject({ reason: "invalid_output", usage: null });
+      rejected = error;
+      expect(error).toMatchObject({
+        diagnostic: { stage: expect.any(String) },
+      });
       expect(JSON.stringify(error)).not.toContain("private-invalid");
+    }
+    expect(rejected).toBeDefined();
+    for (const operation of [
+      () => decoder.push(new TextEncoder().encode(complete)),
+      () => decoder.finish(),
+    ]) {
+      let later: unknown;
+      try {
+        operation();
+      } catch (error) {
+        later = error;
+      }
+      expect(later).toBe(rejected);
     }
   });
 });

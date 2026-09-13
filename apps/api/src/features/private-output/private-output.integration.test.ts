@@ -3888,6 +3888,7 @@ describe("native adaptive assistant attempts through the production model adapte
       "missing-done",
       "invalid-arguments",
       "missing-required-key",
+      "line-limit",
     ] as const)(
       "keeps partial %s SSE private and only commits a complete validated tool call",
       async (outcome) => {
@@ -3983,21 +3984,23 @@ describe("native adaptive assistant attempts through the production model adapte
         });
         const beforeEnd = await audit(session);
         expect(beforeEnd[0]).toMatchObject({ summary: null });
-        const rest = encoded.slice(firstEnd);
-        controller.enqueue(
-          new TextEncoder().encode(
-            outcome === "missing-done"
-              ? rest.replace("data: [DONE]\n\n", "")
-              : rest
-          )
-        );
+        let rest = encoded.slice(firstEnd);
+        if (outcome === "line-limit") {
+          rest = `:${"x".repeat(65_536)}`;
+        } else if (outcome === "missing-done") {
+          rest = rest.replace("data: [DONE]\n\n", "");
+        }
+        controller.enqueue(new TextEncoder().encode(rest));
         if (outcome === "complete") {
           expect(await readTurn(connection)).toMatchObject({
             turn: { status: "running" },
           });
           expect(await cards(connection)).toMatchObject({ cards: [] });
         }
-        controller.close();
+        if (outcome !== "line-limit") {
+          controller.close();
+        }
+        // A framing failure settles without waiting for EOF; no partial proposal is committed.
         await running;
         await successful(attempt);
         expect(modelCalls).toHaveLength(1);

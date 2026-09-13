@@ -3,7 +3,10 @@ import { Effect, Option, Schema } from "effect";
 import { Tool } from "effect/unstable/ai";
 
 import { PrivateDiscoveryCompletion } from "./private-discovery-completion.js";
-import { decodePrivateDiscoveryKimiStream } from "./private-discovery-kimi-stream.js";
+import {
+  makePrivateDiscoveryKimiStreamDecoder,
+  PrivateDiscoveryKimiStreamFailure,
+} from "./private-discovery-kimi-stream.js";
 import {
   makePrivateDiscoveryProviderOutput,
   PRIVATE_DISCOVERY_CONTEXT_BYTES,
@@ -24,7 +27,6 @@ import { privateDiscoveryInstructions } from "./private-discovery-prompt.js";
 
 export const PRIVATE_DISCOVERY_INPUT_BYTES = 32_768;
 export const PRIVATE_DISCOVERY_RESPONSE_BYTES = 65_536;
-export const PRIVATE_DISCOVERY_KIMI_RESPONSE_BYTES = 2_097_152;
 const PositiveAmount = Schema.Number.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(0))
 );
@@ -136,45 +138,58 @@ const requestFor = (
   };
 };
 
-const readBoundedResponse = async (
+const readResponseBody = async <T>(
   response: NativeCloudflare.Response,
   signal: AbortSignal,
-  maximumBytes: number,
-  fatalUtf8: boolean
-) => {
+  decoder: {
+    readonly push: (bytes: Uint8Array) => void;
+    readonly finish: () => T;
+  }
+): Promise<T> => {
   if (response.body === null) {
     throw failure("invalid_output", null, null, "response_body_missing");
   }
   const reader = response.body.getReader();
   const cancel = () => {
     // Cancellation is best effort; a stalled provider must not hold the deadline open.
-    // oxlint-disable-next-line promise/prefer-await-to-then -- The cancellation request must not await a stalled provider cleanup promise.
+    // oxlint-disable-next-line promise/prefer-await-to-then -- Cancellation must not await a stalled provider cleanup promise.
     void reader.cancel().catch(() => null);
   };
   signal.addEventListener("abort", cancel, { once: true });
-  let length = 0;
-  let text = "";
-  const decoder = new TextDecoder("utf-8", { fatal: fatalUtf8 });
   try {
     signal.throwIfAborted();
     while (true) {
-      // oxlint-disable-next-line no-await-in-loop -- A stream reader has one ordered consumer; parallel reads would bypass the byte limit.
+      // oxlint-disable-next-line no-await-in-loop -- One ordered reader preserves backpressure, resource limits and EOF settlement.
       const part = await reader.read();
       signal.throwIfAborted();
       if (part.done) {
-        break;
+        return decoder.finish();
       }
-      length += part.value.byteLength;
-      if (length > maximumBytes) {
-        throw failure("invalid_output", null, null, "response_body_limit");
-      }
-      text += decoder.decode(part.value, { stream: true });
+      decoder.push(part.value);
     }
-    return text + decoder.decode();
   } finally {
     signal.removeEventListener("abort", cancel);
     cancel();
   }
+};
+
+const readBoundedJsonResponse = (
+  response: NativeCloudflare.Response,
+  signal: AbortSignal
+) => {
+  const decoder = new TextDecoder();
+  let length = 0;
+  let text = "";
+  return readResponseBody(response, signal, {
+    finish: () => text + decoder.decode(),
+    push: (bytes) => {
+      length += bytes.byteLength;
+      if (length > PRIVATE_DISCOVERY_RESPONSE_BYTES) {
+        throw failure("invalid_output", null, null, "response_body_limit");
+      }
+      text += decoder.decode(bytes, { stream: true });
+    },
+  });
 };
 
 /** One native provider call, guarded at dispatch; no retries or private logging. */
@@ -218,7 +233,7 @@ export const makePrivateDiscoveryModel = (
         return yield* Effect.fail(configuredFailure("context_limit"));
       }
       return yield* Effect.gen(function* callPrivateDiscoveryProvider() {
-        const encoded = yield* Effect.tryPromise({
+        const received = yield* Effect.tryPromise({
           catch: (error) =>
             error instanceof PrivateDiscoveryFailure
               ? error
@@ -265,41 +280,45 @@ export const makePrivateDiscoveryModel = (
               );
             }
             try {
-              return await readBoundedResponse(
-                response,
-                transportSignal,
-                streaming
-                  ? PRIVATE_DISCOVERY_KIMI_RESPONSE_BYTES
-                  : PRIVATE_DISCOVERY_RESPONSE_BYTES,
-                streaming
-              );
+              if (streaming) {
+                return {
+                  _tag: "Kimi" as const,
+                  completion: await readResponseBody(
+                    response,
+                    transportSignal,
+                    makePrivateDiscoveryKimiStreamDecoder()
+                  ),
+                };
+              }
+              return {
+                _tag: "Json" as const,
+                text: await readBoundedJsonResponse(response, transportSignal),
+              };
             } catch (error) {
               if (transportSignal.aborted) {
                 throw configuredFailure("outcome_unknown");
               }
-              throw configuredFailure(
-                "invalid_output",
-                null,
-                error instanceof PrivateDiscoveryFailure && error.stage !== null
-                  ? error.stage
-                  : "response_body_read"
-              );
+              let stage: PrivateDiscoveryInvalidOutputStage =
+                "response_body_read";
+              if (error instanceof PrivateDiscoveryKimiStreamFailure) {
+                ({ stage } = error.diagnostic);
+              } else if (
+                error instanceof PrivateDiscoveryFailure &&
+                error.stage !== null
+              ) {
+                ({ stage } = error);
+              }
+              throw configuredFailure("invalid_output", null, stage);
             }
           },
         });
         const envelope = yield* Effect.try({
-          catch: (error) =>
-            configuredFailure(
-              "invalid_output",
-              null,
-              error instanceof PrivateDiscoveryFailure
-                ? error.stage
-                : "response_json"
-            ),
+          catch: () =>
+            configuredFailure("invalid_output", null, "response_json"),
           try: (): unknown =>
-            config.model === "@cf/moonshotai/kimi-k2.6"
-              ? decodePrivateDiscoveryKimiStream(encoded)
-              : JSON.parse(encoded),
+            received._tag === "Kimi"
+              ? received.completion
+              : JSON.parse(received.text),
         });
         const completion = yield* Schema.decodeUnknownEffect(
           PrivateDiscoveryCompletion

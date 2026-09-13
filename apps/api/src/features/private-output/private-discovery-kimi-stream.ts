@@ -2,8 +2,22 @@ import { Schema } from "effect";
 
 import { PrivateDiscoveryProviderUsage } from "./private-discovery-completion.js";
 import type { PrivateDiscoveryCompletion } from "./private-discovery-completion.js";
-import { PrivateDiscoveryFailure } from "./private-discovery-model.js";
-import type { PrivateDiscoveryInvalidOutputStage } from "./private-discovery-model.js";
+import { KimiDiscoveryFraming } from "./private-discovery-kimi-framing.js";
+import {
+  PRIVATE_DISCOVERY_KIMI_STREAM_LIMITS as limits,
+  PrivateDiscoveryKimiStreamFailure,
+} from "./private-discovery-kimi-stream-contract.js";
+import type {
+  KimiStreamMetrics,
+  RejectKimiStream,
+} from "./private-discovery-kimi-stream-contract.js";
+
+export {
+  PRIVATE_DISCOVERY_KIMI_STREAM_LIMITS,
+  PrivateDiscoveryKimiStreamDiagnostic,
+  PrivateDiscoveryKimiStreamFailure,
+  PrivateDiscoveryKimiStreamMetrics,
+} from "./private-discovery-kimi-stream-contract.js";
 
 const OptionalText = Schema.optionalKey(Schema.NullOr(Schema.String));
 const Chunk = Schema.Struct({
@@ -50,57 +64,18 @@ const Chunk = Schema.Struct({
   usage: Schema.optionalKey(Schema.NullOr(PrivateDiscoveryProviderUsage)),
 });
 
-const reject = (
-  stage: PrivateDiscoveryInvalidOutputStage = "response_envelope"
-): never => {
-  throw new PrivateDiscoveryFailure({
-    provenance: null,
-    reason: "invalid_output",
-    stage,
-    usage: null,
-  });
-};
-
-// SSE recognizes CR, LF and CRLF, and joins multiple data lines with LF.
-const kimiEvents = function* kimiEvents(encoded: string) {
-  let data: string[] = [];
-  let event = "";
-  const lines = encoded.replace(/^\uFEFF/u, "").split(/\r\n|\r|\n/u);
-  const trailing = lines.pop();
-  for (const line of lines) {
-    if (line === "") {
-      if (data.length !== 0) {
-        if (event !== "" && event !== "message") {
-          reject();
-        }
-        yield data.join("\n");
-      }
-      data = [];
-      event = "";
-      continue;
-    }
-    if (line.startsWith(":")) {
-      continue;
-    }
-    const colon = line.indexOf(":");
-    const field = colon === -1 ? line : line.slice(0, colon);
-    const raw = colon === -1 ? "" : line.slice(colon + 1);
-    const value = raw.startsWith(" ") ? raw.slice(1) : raw;
-    if (field === "data") {
-      data.push(value);
-    } else if (field === "event") {
-      event = value;
-    }
-  }
-  if (data.length !== 0 || (trailing !== "" && !trailing?.startsWith(":"))) {
-    reject("incomplete_completion");
-  }
-};
-
-/** Decode a complete, bounded SSE body. This assembles deltas; it never repairs tool arguments. */
-export const decodePrivateDiscoveryKimiStream = (
-  encoded: string
-): typeof PrivateDiscoveryCompletion.Type => {
+/** Incremental private Kimi protocol state. Only EOF can return a complete tool envelope. */
+export const makePrivateDiscoveryKimiStreamDecoder = () => {
+  const metrics: KimiStreamMetrics = {
+    dataEvents: 0,
+    logicalTextBytes: 0,
+    peakEventBytes: 0,
+    peakLineBytes: 0,
+    pendingEventBytes: 0,
+    pendingLineBytes: 0,
+    retainedTextBytes: 0,
+    wireBytes: 0,
+  };
   let completionId: string | undefined;
   let model: string | undefined;
   let roleSeen = false;
@@ -115,29 +90,90 @@ export const decodePrivateDiscoveryKimiStream = (
   let usage: typeof PrivateDiscoveryProviderUsage.Type | undefined;
   let finalUsageSeen = false;
   let done = false;
-
+  let closed = false;
+  let failure: PrivateDiscoveryKimiStreamFailure | undefined;
+  const encoder = new TextEncoder();
+  const highSurrogate = {
+    arguments: false,
+    content: false,
+    id: false,
+    name: false,
+    reasoning: false,
+    reasoning_content: false,
+    refusal: false,
+  };
+  const reject: RejectKimiStream = (check, stage, observed, limit) => {
+    throw new PrivateDiscoveryKimiStreamFailure({
+      diagnostic: {
+        check,
+        limit: limit ?? null,
+        metrics: { ...metrics },
+        observed: observed ?? null,
+        stage: stage ?? "response_envelope",
+      },
+    });
+  };
+  const countText = (
+    field: keyof typeof highSurrogate,
+    value: string | null | undefined
+  ) => {
+    if (value === undefined || value === null || value === "") {
+      return;
+    }
+    let bytes = encoder.encode(value).byteLength;
+    const first = value.codePointAt(0);
+    if (
+      highSurrogate[field] &&
+      first !== undefined &&
+      first >= 0xdc_00 &&
+      first <= 0xdf_ff
+    ) {
+      // Previously counted lone high surrogate (3 bytes) plus a new low surrogate becomes one 4-byte scalar.
+      bytes -= 2;
+    }
+    const last = value.codePointAt(value.length - 1);
+    highSurrogate[field] =
+      last !== undefined && last >= 0xd8_00 && last <= 0xdb_ff;
+    metrics.logicalTextBytes += bytes;
+    if (metrics.logicalTextBytes > limits.logicalTextBytes) {
+      reject(
+        "logical_text_limit",
+        "response_body_limit",
+        metrics.logicalTextBytes,
+        limits.logicalTextBytes
+      );
+    }
+    if (field !== "reasoning" && field !== "reasoning_content") {
+      metrics.retainedTextBytes += bytes;
+    }
+  };
   const recordUsage = (
     next: typeof PrivateDiscoveryProviderUsage.Type | null | undefined
   ) => {
     if (next === null || next === undefined) {
       return;
     }
+    if (finishReason === undefined) {
+      reject("usage_before_finish");
+    }
     if (
-      finishReason === undefined ||
-      (usage !== undefined &&
-        (usage.prompt_tokens !== next.prompt_tokens ||
-          usage.completion_tokens !== next.completion_tokens))
+      usage !== undefined &&
+      (usage.prompt_tokens !== next.prompt_tokens ||
+        usage.completion_tokens !== next.completion_tokens)
     ) {
-      reject();
+      reject("usage_conflict");
     }
     usage = next;
   };
-
   const acceptChoice = (choice: (typeof Chunk.Type.choices)[number]) => {
     if (finishReason !== undefined) {
-      reject();
+      reject("choice_after_finish");
     }
     const { delta } = choice;
+    countText("content", delta.content);
+    countText("refusal", delta.refusal);
+    countText("reasoning", delta.reasoning);
+    countText("reasoning_content", delta.reasoning_content);
     roleSeen ||= delta.role === "assistant";
     content += delta.content ?? "";
     if (delta.refusal !== undefined && delta.refusal !== null) {
@@ -145,9 +181,11 @@ export const decodePrivateDiscoveryKimiStream = (
     }
     const [tool] = delta.tool_calls ?? [];
     if (tool !== undefined) {
+      countText("id", tool.id);
+      countText("name", tool.function?.name);
+      countText("arguments", tool.function?.arguments);
       toolSeen = true;
       toolTypeSeen ||= tool.type === "function";
-      // Moonshot documents ID, name and arguments as concatenated deltas at one index.
       toolId += tool.id ?? "";
       toolName += tool.function?.name ?? "";
       toolArguments += tool.function?.arguments ?? "";
@@ -157,14 +195,14 @@ export const decodePrivateDiscoveryKimiStream = (
     }
     recordUsage(choice.usage);
   };
-
+  const decodeChunk = Schema.decodeUnknownOption(Chunk);
   const acceptEvent = (value: string) => {
     if (done) {
-      reject();
+      reject("data_after_done");
     }
     if (value === "[DONE]") {
       if (finishReason === undefined) {
-        reject("incomplete_completion");
+        reject("missing_finish", "incomplete_completion");
       }
       done = true;
       return;
@@ -173,29 +211,30 @@ export const decodePrivateDiscoveryKimiStream = (
     try {
       parsed = JSON.parse(value);
     } catch {
-      return reject("response_json");
+      return reject("event_json", "response_json");
     }
-    const decoded = Schema.decodeUnknownOption(Chunk)(parsed);
+    const decoded = decodeChunk(parsed);
     if (decoded._tag === "None") {
-      return reject();
+      return reject("chunk_schema");
     }
     const { value: chunk } = decoded;
     if (
       (completionId !== undefined && completionId !== chunk.id) ||
       (model !== undefined && model !== chunk.model)
     ) {
-      reject();
+      reject("completion_identity");
     }
     ({ id: completionId, model } = chunk);
     const [choice] = chunk.choices;
     if (choice === undefined) {
-      if (
-        finishReason === undefined ||
-        finalUsageSeen ||
-        chunk.usage === undefined ||
-        chunk.usage === null
-      ) {
-        reject();
+      if (finishReason === undefined) {
+        reject("usage_event_before_finish");
+      }
+      if (finalUsageSeen) {
+        reject("duplicate_usage_event");
+      }
+      if (chunk.usage === undefined || chunk.usage === null) {
+        reject("missing_usage");
       }
       finalUsageSeen = true;
       recordUsage(chunk.usage);
@@ -204,36 +243,83 @@ export const decodePrivateDiscoveryKimiStream = (
     acceptChoice(choice);
     recordUsage(chunk.usage);
   };
-
-  for (const value of kimiEvents(encoded)) {
-    acceptEvent(value);
-  }
-  if (!done || !roleSeen || finishReason === undefined) {
-    return reject("incomplete_completion");
-  }
-  if (toolSeen && (!toolTypeSeen || toolId.trim() === "")) {
-    return reject("tool_call");
-  }
-  const completion: typeof PrivateDiscoveryCompletion.Type = {
-    choices: [
-      {
-        finish_reason: finishReason,
-        message: {
-          content,
-          refusal,
-          role: "assistant",
-          tool_calls: toolSeen
-            ? [
-                {
-                  function: { arguments: toolArguments, name: toolName },
-                  id: toolId,
-                  type: "function",
-                },
-              ]
-            : [],
-        },
-      },
-    ],
+  const framing = new KimiDiscoveryFraming(metrics, reject, acceptEvent);
+  const discard = () => {
+    framing.clear();
+    completionId = undefined;
+    model = undefined;
+    content = "";
+    refusal = null;
+    toolId = "";
+    toolName = "";
+    toolArguments = "";
+    metrics.retainedTextBytes = 0;
   };
-  return usage === undefined ? completion : { ...completion, usage };
+  const guarded = <T>(operation: () => T): T => {
+    if (failure !== undefined) {
+      throw failure;
+    }
+    try {
+      if (closed) {
+        reject("stream_closed");
+      }
+      return operation();
+    } catch (error) {
+      failure =
+        error instanceof PrivateDiscoveryKimiStreamFailure
+          ? error
+          : new PrivateDiscoveryKimiStreamFailure({
+              diagnostic: {
+                check: "decoder_failure",
+                limit: null,
+                metrics: { ...metrics },
+                observed: null,
+                stage: "response_envelope",
+              },
+            });
+      discard();
+      throw failure;
+    }
+  };
+  return {
+    finish: (): typeof PrivateDiscoveryCompletion.Type =>
+      guarded(() => {
+        framing.finish();
+        if (!done || finishReason === undefined) {
+          return reject("missing_done", "incomplete_completion");
+        }
+        if (!roleSeen) {
+          return reject("missing_role", "incomplete_completion");
+        }
+        if (toolSeen && (!toolTypeSeen || toolId.trim() === "")) {
+          return reject("missing_tool_identity", "tool_call");
+        }
+        const completion: typeof PrivateDiscoveryCompletion.Type = {
+          choices: [
+            {
+              finish_reason: finishReason,
+              message: {
+                content,
+                refusal,
+                role: "assistant",
+                tool_calls: toolSeen
+                  ? [
+                      {
+                        function: { arguments: toolArguments, name: toolName },
+                        id: toolId,
+                        type: "function",
+                      },
+                    ]
+                  : [],
+              },
+            },
+          ],
+        };
+        closed = true;
+        discard();
+        return usage === undefined ? completion : { ...completion, usage };
+      }),
+    push: (bytes: Uint8Array): void => guarded(() => framing.push(bytes)),
+    readMetrics: () => ({ ...metrics }),
+  };
 };
