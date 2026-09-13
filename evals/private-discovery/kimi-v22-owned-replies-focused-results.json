@@ -1,0 +1,317 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-12",
+  "run": "kimi_v22_owned_replies_focused_dependants",
+  "status": "closed_incomplete_required_discovery",
+  "source": {
+    "head": "7aa1e213925557c4007f5f716c998c2828de2b23",
+    "tree": "59bae715ef4daa927497a05b8a97c7beb5ec2e55",
+    "promptVersion": "private-discovery-prompt-v22",
+    "policyVersion": "private-discovery-policy-v5",
+    "freezeSha256": "11c177fb10ac7c8b2324124e8f2fabaf5ec8a11a5fc107750af8187103d84577",
+    "integrityAtClosure": {
+      "trackedFilesAndModesChecked": 944,
+      "trackedFilesAndModesUnchanged": true,
+      "harnessPinsChecked": 282,
+      "harnessPinsUnchanged": true,
+      "manifestSha256": "2e8781c44966ae71697672d0bed3dfcc95175d70133670ba7f085b6329a3f73b",
+      "manifestUnchanged": true
+    }
+  },
+  "configuration": {
+    "candidateModel": "@cf/moonshotai/kimi-k2.6",
+    "thinking": true,
+    "temperature": 1,
+    "top_p": 0.95,
+    "maxCompletionTokens": 65536,
+    "workerDeadlineMs": 900000,
+    "responseLimitBytes": 2097152,
+    "responseFormat": "json_object",
+    "choices": 1,
+    "stream": false,
+    "maximumProviderAttempts": 1
+  },
+  "fixture": {
+    "id": "dependants_and_fallbacks",
+    "phase": "A",
+    "requiredDiscoveries": 4,
+    "coveredDiscoveryIds": [
+      "dependant.adult_preference",
+      "dependant.avoidance",
+      "dependant.fallback"
+    ],
+    "openingAlreadySupplied": ["dependant.adult_preference"],
+    "missingDiscoveryIds": ["dependant.safety"],
+    "coverageComplete": false,
+    "adultSafetyAsked": false,
+    "adultSafetyOracleAnswerSupplied": false,
+    "challengeDelivered": true,
+    "challengeHandled": true,
+    "nativeSessionCompleted": false
+  },
+  "qualityOutcome": {
+    "classification": "missing_required_discovery",
+    "firstReviewReadinessTurn": 3,
+    "stillMissingAfterFixedChallenge": true,
+    "modelControlDecisions": "Continue on all four turns",
+    "appDecisionSequence": ["Ask", "Ask", "Review", "Review"],
+    "explanation": "The application selected questions for the declared fallback fields and rendered finish readiness after they were answered. Adult safety was never asked, including after the fixed challenge. One authorized candidate slot remained unused; the call ceiling did not force this outcome.",
+    "transportOrSchemaFailure": false,
+    "falseClaimFailure": false
+  },
+  "calls": [
+    {
+      "turn": 1,
+      "nativeStatus": "succeeded",
+      "providerOutcomeKnown": true,
+      "httpStatus": 200,
+      "responseComplete": true,
+      "transportFailure": false,
+      "finishReason": "stop",
+      "inputTokens": 4094,
+      "completionTokens": 3113,
+      "responseBytes": 14384,
+      "responseBytesSha256": "4f56ad457fb5be951914e35908331937584a2602a4f0f356f04b98fb06c09e74",
+      "appendAcknowledgmentToCompletionMs": 73927,
+      "modelControlDecision": "Continue",
+      "appDecision": "Ask",
+      "appQuestionFields": ["reason"],
+      "nativeSnapshotAndRenderedMessageMatch": true,
+      "newProfileProposals": 1,
+      "typedNeedFields": {
+        "reason": "Unanswered",
+        "acceptableOption": "Unanswered",
+        "extraPreparation": "Unanswered"
+      },
+      "configuredFullInputUsageEstimateUsd": "0.0163413",
+      "receiptSha256": {
+        "inspection": "4a119a1471973dacd3218d8ee52660a461e6d183fdbf1e4dbb4cb21c8451a529",
+        "pipeline": "2628ba784293c9d1a8683400a04af096d5849e4a3a48e32934dadf7f9db5c26b",
+        "completion": "524c69cc940c52948a0c84071c82666044372daddcb6a906d67cd994ebac573f",
+        "requestWrapper": "b0a6bf3d9e1d580c7a5247ac32f5f3dac68df3d46dac05e267569627e5335698",
+        "canonicalRequestBody": "d1fc632563ee0004051d0fec4d724a22e4ab3e78fbfcf3a5653b0f57e4102bf7",
+        "responseMetadata": "045cac3f743a9b1109a581013618b78115ca6d65255879f025e3811eacc3f752"
+      }
+    },
+    {
+      "turn": 2,
+      "nativeStatus": "succeeded",
+      "providerOutcomeKnown": true,
+      "httpStatus": 200,
+      "responseComplete": true,
+      "transportFailure": false,
+      "finishReason": "stop",
+      "inputTokens": 4583,
+      "completionTokens": 2491,
+      "responseBytes": 11250,
+      "responseBytesSha256": "fd650630e464a007f160cfd3e5cd14b627ca6dd22825883df6c58131e9eeeb15",
+      "appendAcknowledgmentToCompletionMs": 54549,
+      "modelControlDecision": "Continue",
+      "appDecision": "Ask",
+      "appQuestionFields": ["acceptableOption", "extraPreparation"],
+      "nativeSnapshotAndRenderedMessageMatch": true,
+      "newProfileProposals": 0,
+      "typedNeedFields": {
+        "reason": "Answered",
+        "acceptableOption": "Unanswered",
+        "extraPreparation": "Unanswered"
+      },
+      "configuredFullInputUsageEstimateUsd": "0.01431785",
+      "receiptSha256": {
+        "inspection": "735d1ff5bedcd4583a55a751bf59aab2a667d8dc19a17cbe51df94bb539a9976",
+        "pipeline": "02bde7e580c9554557afa6397b06e97d2c9694b00176276cfbbe7688d558a1d6",
+        "completion": "3d4d93adfd1b3fe0c5226988c6074d3915c40903ec97665a4d3c8156e6c80999",
+        "requestWrapper": "c59fedd6e1280b6307ffb3c1c3fe9eb429cf2d758450ab7bd78a5341d93d2ad6",
+        "canonicalRequestBody": "7cab58e26370126edf22ed9ccca0b5424d89cc4eb99117f6db2f013dae56a08c",
+        "responseMetadata": "14f2ec8f5b131680d4e0e0273f9d9e0e3c559f5140250765553b27a10d797a70"
+      }
+    },
+    {
+      "turn": 3,
+      "nativeStatus": "succeeded",
+      "providerOutcomeKnown": true,
+      "httpStatus": 200,
+      "responseComplete": true,
+      "transportFailure": false,
+      "finishReason": "stop",
+      "inputTokens": 4775,
+      "completionTokens": 4485,
+      "responseBytes": 21111,
+      "responseBytesSha256": "6291b43e8b6419997ef9289f74fe5bc5ea3037f30639edfa4f59b5b2a58dbca5",
+      "appendAcknowledgmentToCompletionMs": 100358,
+      "modelControlDecision": "Continue",
+      "appDecision": "Review",
+      "appQuestionFields": [],
+      "nativeSnapshotAndRenderedMessageMatch": true,
+      "newProfileProposals": 0,
+      "typedNeedFields": {
+        "reason": "Answered",
+        "acceptableOption": "Answered",
+        "extraPreparation": "Answered"
+      },
+      "configuredFullInputUsageEstimateUsd": "0.02247625",
+      "receiptSha256": {
+        "inspection": "1fa9f9f582c4bb61f489f43522080dd1b6c1cca2ca7b98cfb3766f0e711221a5",
+        "pipeline": "377aebdf2b88dffb4dc6e37e78d592ab6719dea5cc67854a4a38e3e2f4985a7e",
+        "completion": "7f45eb3af8a53497e84f5c3c94cf8314cba81b4fdf6608ea6bce4b9feee20179",
+        "requestWrapper": "eafdc1ceae0683ae5cb4dd8ffa201df8865de302a6ef7f5651b11b15e78c0692",
+        "canonicalRequestBody": "b49924e3a259e5b225ad8f8f6077c05b64e7b016e42fa70ccb1cacc0d8f95dfd",
+        "responseMetadata": "73025abae03c9d723f6f75649677d720d33d274dd153d3310bb37ec19f5ecd69"
+      }
+    },
+    {
+      "turn": 4,
+      "nativeStatus": "succeeded",
+      "providerOutcomeKnown": true,
+      "httpStatus": 200,
+      "responseComplete": true,
+      "transportFailure": false,
+      "finishReason": "stop",
+      "inputTokens": 5054,
+      "completionTokens": 5375,
+      "responseBytes": 25465,
+      "responseBytesSha256": "67b6e62811d257f3f6bcfbdc5897b3dcf134777415b8d7affda9d16ee8db6f98",
+      "appendAcknowledgmentToCompletionMs": 120745,
+      "modelControlDecision": "Continue",
+      "appDecision": "Review",
+      "appQuestionFields": [],
+      "nativeSnapshotAndRenderedMessageMatch": true,
+      "newProfileProposals": 0,
+      "typedNeedFields": {
+        "reason": "Answered",
+        "acceptableOption": "Answered",
+        "extraPreparation": "Answered"
+      },
+      "configuredFullInputUsageEstimateUsd": "0.0263013",
+      "receiptSha256": {
+        "inspection": "de9fe825f033fbdac8e96c19637269046457f064db1885d0dae24dde6cdfe191",
+        "pipeline": "175acabd8d148bad4e75849b0c4e0a52b0125d57031baa33b30d6a38e6182540",
+        "completion": "b3ae9758e2b4a34e3020d1e3815105d6afd002fba9d48a22034ded123791a1c9",
+        "requestWrapper": "fcaead0ca631fe7739d5725ec36b334d5ba3a405e60f99c29fac8a0dbf57067b",
+        "canonicalRequestBody": "4be6b7eb812f9c2a91c119bc6554d1550aae5bb3221d69a5b4a6df8bc063bb7b",
+        "responseMetadata": "b3a46ff3345b76d0414c3e454186751e073bb432fa30dc9b5e8d6c0f5b6f9a5c"
+      }
+    }
+  ],
+  "nativeEffects": {
+    "assistantMessages": 4,
+    "profileCards": 1,
+    "explicitlyConfirmedFacts": 1,
+    "profileVersion": 1,
+    "adultFoodPreference": {
+      "label": "vegetable curry",
+      "targetKind": "dish",
+      "sentiment": "like"
+    },
+    "pendingConfirmations": 0,
+    "nativeSessionStatus": "open",
+    "nativeSessionVersion": 10,
+    "allFourNativeSnapshotsAndRenderedMessagesMatch": true,
+    "privateTypedNeedFieldsAnswered": [
+      "reason",
+      "acceptableOption",
+      "extraPreparation"
+    ],
+    "exactFallbackQuantitySubstitutionAndPreparationPreserved": true,
+    "fixedChallengeRefinementRetained": true,
+    "dependantOrFallbackProfileFacts": 0
+  },
+  "observations": [
+    "The opening supplied the adult preference. Turn 1 proposed its card and declared the private fallback need; the application selected its unanswered reason field.",
+    "Explicit confirmation committed the reviewed adult preference before turn 2, advancing the actual canonical profile from version 0 to 1.",
+    "Turn 2 recorded the dependant dislike as the private need reason without a new adult card. The application asked jointly about the acceptable option and extra preparation.",
+    "Turn 3 preserved the exact fictional product, one-pot quantity, no-substitution scope and no-second-full-meal constraint in private state. The application rendered Review readiness, leaving adult safety undiscovered.",
+    "Turn 4 handled the fixed challenge by retaining the adult-only preference and refining the exact-product substitution restriction. All fallback evidence remained private conversation state; the application again rendered Review readiness.",
+    "No unasked adult-safety answer, extra candidate message, native completion or judge result was supplied to manufacture coverage."
+  ],
+  "acceptance": {
+    "candidateCalls": 4,
+    "candidateSuccesses": 4,
+    "candidateFailures": 0,
+    "judgeCalls": 0,
+    "humanRatings": 0,
+    "familiesAccepted": 0,
+    "candidateAccepted": false,
+    "humanCalibration": false,
+    "hardAssertionReviewComplete": false,
+    "observedInvariantReview": "Root and independent completed-turn review found no prohibited claim or unsupported profile effect; a completed eleven-assertion family acceptance is not claimed.",
+    "fullSuiteComplete": false,
+    "mergeAcceptanceSatisfied": false
+  },
+  "measures": {
+    "participantTurns": 4,
+    "assistantQuestions": 2,
+    "profileProposals": 1,
+    "explicitConfirmations": 1,
+    "generationFailures": 0,
+    "schemaFailures": 0,
+    "inputTokens": 18506,
+    "completionTokens": 15464,
+    "sumGenerationPipelineMs": 349579,
+    "latencyBasis": "Participant append acknowledgment through native completion, including handling. The sum excludes gaps between turns and is not provider-only latency or total interview duration."
+  },
+  "cost": {
+    "configuredFullInputUsageEstimateUsd": "0.0794367",
+    "cacheAwareUsageEstimateUsd": null,
+    "billedCostUsd": null,
+    "inputUsdPerMillionTokens": "0.95",
+    "outputUsdPerMillionTokens": "4.00",
+    "basis": "Configured full-input rates applied to 18,506 input and 15,464 aggregate completion tokens, counted once. Cached input accounting is unavailable. This estimate is not an invoice or billing evidence."
+  },
+  "reservationsAtClosure": {
+    "thisRunMicroUsd": 2044724,
+    "previousCumulativeMicroUsd": 17124308,
+    "cumulativeMicroUsd": 19169032,
+    "previousCumulativeCalls": 143,
+    "cumulativeCalls": 147,
+    "previousCumulativeHigherCapCalls": 136,
+    "cumulativeHigherCapCalls": 140,
+    "cumulativeJudgeCalls": 1,
+    "authorizedCandidateSlots": 5,
+    "authorizedJudgeSlots": 1,
+    "unusedCandidateSlots": 1,
+    "unusedJudgeSlots": 1,
+    "phaseCeilingMicroUsd": 2700000,
+    "phaseMaximumNewReservationsMicroUsd": 2602241,
+    "selectedMaximumCumulativeMicroUsd": 19726549,
+    "strictCumulativeCeilingMicroUsd": 20000000,
+    "allHistoricalUnknownReservationsRetained": true,
+    "financialJournalBytes": 22521,
+    "financialJournalSha256": "c97cb682197adad2137b29b3c1203e99542e0742e0168e0203840fc053d4f7b3",
+    "meaning": "Conservative retained reservations for this closed phase, not billed spend. Unused authorized slots did not create paid calls or new reservations."
+  },
+  "closure": {
+    "closedAtUtc": "2026-09-12T01:53:29.125Z",
+    "actorClosedAndJoined": true,
+    "runtimeClosedAndJoined": true,
+    "actorExitCode": 0,
+    "runtimeExitCode": 0,
+    "checkedProcessesAbsent": 3,
+    "listenerAbsent": true,
+    "participantLockAbsent": true,
+    "financialLockAbsent": true,
+    "graceful": true,
+    "requestCaptures": 4,
+    "responseReports": 4,
+    "blockedRequests": 0,
+    "automaticRetry": false,
+    "outputRepaired": false,
+    "providerRevocationVerified": false
+  },
+  "interpretation": "App-owned questions and rendering completed the declared fallback fields and handled the fixed challenge through four valid native turns. Required adult safety discovery remained absent, so the fixture is incomplete and the candidate is not accepted. This is a discovery-coverage failure, not a transport/schema failure or an observed false-claim failure.",
+  "limitations": [
+    "Native session completion, the complete family hard review, model judging and human calibration were not performed.",
+    "The eight-family suite, completed candidate comparison, simple-baseline A-to-B removal and actual human calibration remain separate full-scope acceptance gates."
+  ],
+  "receiptSha256": {
+    "rootResult": "d0941b7bc69df0a4b42ad8605265e4f825bf795286b2a0d7fe2990cc593a281e",
+    "rootClosure": "10ea97b80e9522cfaa07e4a5c593e7652136dca403602743ccbfb43b126dd064",
+    "closed": "729f0ce71b0bd8e43b27cc092b35aafb9b35776140dcb7580428602ed10b3c89",
+    "confirmation": "6729e12d3c30ebc57a0ed20190126c3d5aabd35ffa20d6e8730625b212477ede",
+    "nativeTerminalInspection": "e55500cd86e937eb47b33a665a9a58ad7b70ba2d5a691fbe9bdec7066f1b6cd9",
+    "finalProfile": "0e742fac07b13601e651e4c570f6178226fa35315aa7da4b56d3def0499cee47",
+    "finalHistory": "64a51b30c590da1a0f85cfb4ec5f7738b638c006cbebefd48a4959ac41ae525b",
+    "finalBudget": "22a9bfc5dc3149112a08ba2b996dbd4ed0787a93c979460ee07f27149bccd1f5",
+    "finalBoundary": "1e401c0bc6293055a3e6a2262fddd1ca65c68ea23b17c206bc3f7f3a9b88776c"
+  }
+}

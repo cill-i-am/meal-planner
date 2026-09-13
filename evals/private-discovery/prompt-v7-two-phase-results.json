@@ -1,0 +1,636 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-09",
+  "label": "Prompt v7: two closed incomplete family phases",
+  "status": "incomplete_not_an_accepted_baseline",
+  "scope": "Retained real-model calls from two fresh attempts at dependency_and_repair on the same source and prompt. Synthetic fixtures only; no other family was run in either phase.",
+  "source": {
+    "head": "02a0a47d376dd0cdb3430260ba8a05ada237cdae",
+    "tree": "ec3557b562d1cbf6e1c0b3ffe5d9912e9a404729",
+    "files": {
+      "scenarioPack": {
+        "path": "evals/private-discovery/scenarios.json",
+        "sha256": "c9ea216e30dac5499410e61e29a6824d270ca323f8329c741d35b5b5dab8cf00"
+      },
+      "rubric": {
+        "path": "evals/private-discovery/rubric.json",
+        "sha256": "ab5882d124d1c231ae102e173c0d420482b6d17d8412acc3da5458ae410b8588"
+      },
+      "judgePrompt": {
+        "path": "evals/private-discovery/judge.md",
+        "sha256": "b1f10ab5e4f4124bee09895291bb2a557bbf50053a5592c181bae35eb4b86a48"
+      }
+    }
+  },
+  "versions": {
+    "provider": "Cloudflare Workers AI",
+    "model": "@cf/openai/gpt-oss-120b",
+    "promptVersion": "private-discovery-prompt-v7",
+    "policyVersion": "private-discovery-policy-v1",
+    "toolVersion": "profile-card-change-v1",
+    "driverPolicyVersion": "private-discovery-driver-v1",
+    "facilitatorRole": "root_agent",
+    "driverMode": "assisted_manual",
+    "systemInstructionsAndSchemaSha256": "39717352be69cefab0d64e3d89dc5c17b883884cd122b3c28d64da8c73f80a8b",
+    "outputSchemaSha256": "7baef48657d13389aac5af6ae5db2e98199ee6ec04d734da4a87d47dd147df8a",
+    "candidateConfiguration": {
+      "maxOutputTokens": 4096,
+      "temperature": 0,
+      "stream": false,
+      "adapterDeadlineMs": 120000,
+      "maximumProviderAttempts": 1,
+      "gatewayPayloadCollection": false,
+      "gatewayCaching": false
+    },
+    "judge": {
+      "model": "@cf/openai/gpt-oss-120b",
+      "maxOutputTokens": 2048,
+      "temperature": 0,
+      "stream": false,
+      "adapterDeadlineMs": 60000,
+      "promptVersion": "private-discovery-judge-v1",
+      "promptSha256": "b1f10ab5e4f4124bee09895291bb2a557bbf50053a5592c181bae35eb4b86a48",
+      "calls": 0,
+      "status": "not_run"
+    },
+    "calibration": {
+      "status": "unscored",
+      "acceptedBaselineId": null
+    }
+  },
+  "accountingMethod": {
+    "inputUsdPerMillionTokens": "0.35",
+    "outputUsdPerMillionTokens": "0.75",
+    "estimatedCost": "Recorded prompt and completion tokens multiplied by the frozen per-million rates; includes the complete response rejected by native proposal review. This is not an invoice.",
+    "reservation": "Conservative local budget reservation, separate from estimated token cost. Each of the three actual calls reserved 47872 micro-USD.",
+    "usage": "Provider usage retained with each complete response. Total tokens are prompt plus completion tokens. Cached and reasoning-token subtotals were not retained.",
+    "interruptedTurn": "The interrupted queued turn in phase 1 never reached the provider and is excluded from provider usage and latency aggregates."
+  },
+  "latencyDefinitions": {
+    "ticketToNativeCompletionMs": "completion.at minus ticket.createdAt; includes admission, local dispatch, provider work and native completion handling.",
+    "dispatchToNativeCompletionMs": "completion.at minus dispatch.at; starts at local request capture and includes provider work and native completion handling. It is not isolated provider latency.",
+    "ticketToDispatchMs": "dispatch.at minus ticket.createdAt.",
+    "providerOnlyLatencyMs": "Unmeasured.",
+    "timeToFirstTokenMs": "Unmeasured; requests were non-streaming.",
+    "aggregatePopulation": "All three actual candidate calls, including the failed native turn; no unattempted turn is assigned a latency."
+  },
+  "phases": [
+    {
+      "phaseId": "family-v7-continuation-v1",
+      "label": "v7 phase 1",
+      "driver": "assisted_manual_separate_operations",
+      "status": "closed_incomplete",
+      "caseComplete": false,
+      "acceptedBaseline": false,
+      "familyAttempts": [
+        {
+          "fixtureId": "dependency_and_repair",
+          "status": "incomplete_driver_interruption",
+          "allHardAssertionsVerified": false,
+          "qualityScore": null
+        }
+      ],
+      "coverage": {
+        "canonicalFamilies": 8,
+        "familiesStarted": 1,
+        "familiesPassed": 0,
+        "familiesNotRun": 7,
+        "remainingFamiliesStatus": "not_run"
+      },
+      "nativeParticipantIntents": 2,
+      "admittedAssistantMessages": 1,
+      "unattemptedInterruptedTurns": [
+        {
+          "participantIntentOrdinal": 2,
+          "nativeStatus": "interrupted",
+          "nativeFailure": "runtime_restarted",
+          "providerOutcome": "not_attempted",
+          "providerCalls": 0,
+          "reservationMicroUsd": 0,
+          "usage": null,
+          "estimatedCostUsd": null
+        }
+      ],
+      "diagnosis": {
+        "classification": "manual_test_driver_gap_under_accepted_restart_fence",
+        "originalRecordedClassification": "runtime_interruption_before_second_provider_attempt",
+        "sourceChangeRequiredForInterruption": false,
+        "finding": "Manual delay after append allowed the accepted constructor restart fence to interrupt the queued turn. No provider request or reservation was made for that interrupted turn.",
+        "localCausalProofSha256": "5a0045d1498ba74ef04a02c708a0a37a2e4fa3e6f616b6f0cf79841634af0afa",
+        "originalEvidencePreserved": true
+      },
+      "calls": [
+        {
+          "evidenceLabel": "phase-1-call-1",
+          "phaseCallOrdinal": 1,
+          "fixtureId": "dependency_and_repair",
+          "scenarioPhase": "A",
+          "purpose": "candidate",
+          "interaction": "opening",
+          "timestampsUtc": {
+            "ticketCreated": "2026-09-08T23:29:11.245Z",
+            "requestDispatched": "2026-09-08T23:29:11.372Z",
+            "nativeCompletionRecorded": "2026-09-08T23:29:21.740Z"
+          },
+          "transport": {
+            "httpStatus": 200,
+            "responseComplete": true,
+            "transportFailure": false,
+            "envelopeJsonAccepted": true,
+            "choiceCount": 1,
+            "finishReason": "stop"
+          },
+          "outputValidation": {
+            "assistantContentJsonAccepted": true,
+            "canonicalShapeAccepted": true,
+            "proposalReferenceReview": "accepted",
+            "firstRejectionReason": null,
+            "basis": "Native success"
+          },
+          "nativeOutcome": {
+            "known": true,
+            "succeeded": true,
+            "status": "succeeded",
+            "failure": null,
+            "assistantMessageAdmitted": true
+          },
+          "usage": {
+            "promptTokens": 4085,
+            "completionTokens": 403,
+            "totalTokens": 4488,
+            "cachedInputTokens": null,
+            "reasoningTokens": null
+          },
+          "estimatedCostUsd": "0.00173200",
+          "invoiceCostUsd": null,
+          "reservationMicroUsd": 47872,
+          "latency": {
+            "ticketToNativeCompletionMs": 10495,
+            "dispatchToNativeCompletionMs": 10368,
+            "ticketToDispatchMs": 127,
+            "providerOnlyLatencyMs": null,
+            "timeToFirstTokenMs": null
+          },
+          "requestBodySha256": "d8df0ac520f8781bd61600e9c6d8cfb24712b67d07c9affd652e39b0f7984f33",
+          "responseBytesSha256": "5c01415e0446fafd2b5594ef325fab2af40966bcd0a06621806a04956be265ec",
+          "systemInstructionsAndSchemaSha256": "39717352be69cefab0d64e3d89dc5c17b883884cd122b3c28d64da8c73f80a8b",
+          "outputSchemaSha256": "7baef48657d13389aac5af6ae5db2e98199ee6ec04d734da4a87d47dd147df8a",
+          "receiptSha256": {
+            "ticket.json": "e6237fe467ee45ba2fd6eb12a13eac11360088be096619637e941ff07ae716c5",
+            "dispatch.json": "3dbe728dcc6254940e4288cd0a002f7dabf10039cd54bf12558d7b034102808c",
+            "completion.json": "a8581583db9f0d4577ceedfb1ebbb6324221bc17c2a8d62c75ecb61c30fd88aa",
+            "response.json": "3efff62bf0dbba55c5da5916bf9f04b294ba1c65705cf05efd29e4515f83dd6e",
+            "assistant-content.json": "392fbcf6b0aab0becd3fa9006c7f786f902bbf97b653af2470f2e8e6d0d0c100",
+            "native-before.json": "16d8f18fec9e980357cb5b8f2c2e0e79fd0cfad7f0dd17a9d33e268576503ca1",
+            "request.json": "d3910295751f44d690638bab2b0879954e1676b3cf5cb80aacada8c161f0e4a4"
+          }
+        }
+      ],
+      "aggregate": {
+        "actualCandidateCalls": 1,
+        "judgeCalls": 0,
+        "knownNativeOutcomes": 1,
+        "unknownNativeOutcomes": 0,
+        "successfulNativeTurns": 1,
+        "failedNativeTurns": 0,
+        "completeHttp200Responses": 1,
+        "usage": {
+          "knownUsageCalls": 1,
+          "unknownUsageCalls": 0,
+          "promptTokens": 4085,
+          "completionTokens": 403,
+          "totalTokens": 4488,
+          "cachedInputTokens": null,
+          "reasoningTokens": null
+        },
+        "estimatedCostUsd": "0.00173200",
+        "invoiceCostUsd": null,
+        "incrementalReservationMicroUsd": 47872,
+        "ticketToNativeCompletionMs": {
+          "count": 1,
+          "sum": 10495,
+          "mean": 10495,
+          "median": 10495,
+          "min": 10495,
+          "max": 10495
+        },
+        "dispatchToNativeCompletionMs": {
+          "count": 1,
+          "sum": 10368,
+          "mean": 10368,
+          "median": 10368,
+          "min": 10368,
+          "max": 10368
+        },
+        "providerOnlyLatencyMs": null,
+        "timeToFirstTokenMs": null,
+        "questionCount": null,
+        "repeatedQuestionCount": null,
+        "outputContractFailureCount": 0,
+        "incompleteProviderResponseCount": 0,
+        "modelQualityScore": null,
+        "humanQualityScore": null
+      },
+      "canonicalState": {
+        "profileVersionBefore": 1,
+        "profileVersionAfter": 1,
+        "wholeSeededFactUnchanged": true,
+        "cardsProduced": 0,
+        "confirmationCommandsIssued": 0,
+        "sessionStatusAtLastNativeInspection": "open"
+      },
+      "financialCounters": {
+        "before": {
+          "callsReserved": 68,
+          "reservedMicroUsd": 3246080,
+          "higherCapCallsReserved": 62,
+          "judgeCallsReserved": 0
+        },
+        "after": {
+          "callsReserved": 69,
+          "reservedMicroUsd": 3293952,
+          "higherCapCallsReserved": 63,
+          "judgeCallsReserved": 0
+        }
+      },
+      "closure": {
+        "closedAtUtc": "2026-09-08T23:32:41.367Z",
+        "graceful": true,
+        "runtimeDisposed": true,
+        "transportDisposed": true,
+        "gateDisposed": true,
+        "remoteSessionDisposed": true,
+        "participantLockAbsent": true,
+        "financialLockAbsent": true,
+        "actorSupervisorExitCode": 0,
+        "runtimeExitCode": 0,
+        "closedAckExactlyMatches": true,
+        "localListenerClosed": true,
+        "providerRevocationVerified": false,
+        "meaning": "Local phase resources were closed; the family scenario was not completed."
+      },
+      "receiptSha256": {
+        "source-build-proof.json": "0d1b18076427a159388ca26665447dcb73b3e4d483a6ae8cd12de122f5c87292",
+        "run-state/root-phase-result.receipt.json": "71c2a6c9c3c12aba9ab5b363702db55156e343c1a06f5c8503388691d880dcc5",
+        "run-state/closed.json": "0a29426883245fa03849d4fb46eb44eec54186b15df04861276eea4ad24d45fb",
+        "run-state/actor-run/commands.jsonl": "bab537f36667b8a93705bf815a5f2a916e42bfad1af59e71450ebbf714a4b21e",
+        "run-state/actor-run/responses.jsonl": "0888b70c842e78d01bb3a77ada0fba31afbbfb0b815e473eeaeeaab2541b1810",
+        "run-state/participant-admissions.jsonl": "7b2e60704cc300f59bca841ffe86c52efe69b163c6f5baa41f71e0b7f1f3f194",
+        "run-state/root-diagnosis-addendum.receipt.json": "90a1609a9840b1731c8ed8e50fbc370b4a3ce964bb071339b4a909005888035b",
+        "terminalNativeState": "e468ad0404f1eec86d29d3e3a97d7f310ccda24767434199b0e2d11724a93d26"
+      }
+    },
+    {
+      "phaseId": "family-v7-immediate-v1",
+      "label": "v7 phase 2",
+      "driver": "assisted_root_immediate_append_ack_generate_pipeline",
+      "status": "closed_incomplete",
+      "caseComplete": false,
+      "acceptedBaseline": false,
+      "familyAttempts": [
+        {
+          "fixtureId": "dependency_and_repair",
+          "status": "failed_output_contract",
+          "allHardAssertionsVerified": false,
+          "qualityScore": null
+        }
+      ],
+      "coverage": {
+        "canonicalFamilies": 8,
+        "familiesStarted": 1,
+        "familiesPassed": 0,
+        "familiesNotRun": 7,
+        "remainingFamiliesStatus": "not_run"
+      },
+      "nativeParticipantIntents": 2,
+      "admittedAssistantMessages": 1,
+      "unattemptedInterruptedTurns": [],
+      "diagnosis": {
+        "classification": "native_proposal_revision_target",
+        "nativeFailure": "invalid_output",
+        "finding": "The complete response decoded under the canonical output schema. ReviseProposedProfileCard referenced a nonexistent placeholder draft card while observed context and native state contained no cards. This check rejected the response before nested fact review. The inner ReplaceOrdinaryProfileFact referenced the correct existing canonical fact.",
+        "firstRejectedCheck": "proposal_revision_target",
+        "nestedFactReviewExecuted": false,
+        "failedAssistantMessageAdmitted": false,
+        "failedProposalAdmitted": false
+      },
+      "calls": [
+        {
+          "evidenceLabel": "phase-2-call-1",
+          "phaseCallOrdinal": 1,
+          "fixtureId": "dependency_and_repair",
+          "scenarioPhase": "A",
+          "purpose": "candidate",
+          "interaction": "opening",
+          "timestampsUtc": {
+            "ticketCreated": "2026-09-09T00:10:09.690Z",
+            "requestDispatched": "2026-09-09T00:10:09.935Z",
+            "nativeCompletionRecorded": "2026-09-09T00:10:32.986Z"
+          },
+          "transport": {
+            "httpStatus": 200,
+            "responseComplete": true,
+            "transportFailure": false,
+            "envelopeJsonAccepted": true,
+            "choiceCount": 1,
+            "finishReason": "stop"
+          },
+          "outputValidation": {
+            "assistantContentJsonAccepted": true,
+            "canonicalShapeAccepted": true,
+            "proposalReferenceReview": "accepted",
+            "firstRejectionReason": null,
+            "basis": "Native success"
+          },
+          "nativeOutcome": {
+            "known": true,
+            "succeeded": true,
+            "status": "succeeded",
+            "failure": null,
+            "assistantMessageAdmitted": true
+          },
+          "usage": {
+            "promptTokens": 4087,
+            "completionTokens": 343,
+            "totalTokens": 4430,
+            "cachedInputTokens": null,
+            "reasoningTokens": null
+          },
+          "estimatedCostUsd": "0.00168770",
+          "invoiceCostUsd": null,
+          "reservationMicroUsd": 47872,
+          "latency": {
+            "ticketToNativeCompletionMs": 23296,
+            "dispatchToNativeCompletionMs": 23051,
+            "ticketToDispatchMs": 245,
+            "providerOnlyLatencyMs": null,
+            "timeToFirstTokenMs": null
+          },
+          "requestBodySha256": "f798574a67fef0da65a071d5177e387f13651b1581086923cf3710e1533294a7",
+          "responseBytesSha256": "6ba07c9d02a6ed8dada4017564d43d61282d98cb1d1c944070577ae232c9860d",
+          "systemInstructionsAndSchemaSha256": "39717352be69cefab0d64e3d89dc5c17b883884cd122b3c28d64da8c73f80a8b",
+          "outputSchemaSha256": "7baef48657d13389aac5af6ae5db2e98199ee6ec04d734da4a87d47dd147df8a",
+          "receiptSha256": {
+            "ticket.json": "aee859d2f21e3901405f0a3ec7c1abd226d2c96df2b0e85349bbe822fb3cb00c",
+            "dispatch.json": "f35aa9a746a79dc34b9b52e247d738f71366d93d32c425de1fcca9c558ecf048",
+            "completion.json": "b1a0da68189731407cc7584a33d07739c722fee842a8c8bf77dfac66c3950276",
+            "response.json": "4efc423d73ad100ce0a2f3d980d7f9e1ae7bd7ac27c06ded2729cb07a1b0075f",
+            "assistant-content.json": "f759909315f3e8a3de4f59de6068cd4728b4c932cc6a77103c5d263f325082c3",
+            "native-before.json": "71776ff209107ac2b5a1475e0e91d48c5f7575e01db771634c0b2727efe3b18d",
+            "request.json": "5cdf102873cd932ea115863dd0e4cb0dec12017dbe5084e3b71bded9c2ac68b0"
+          }
+        },
+        {
+          "evidenceLabel": "phase-2-call-2",
+          "phaseCallOrdinal": 2,
+          "fixtureId": "dependency_and_repair",
+          "scenarioPhase": "A",
+          "purpose": "candidate",
+          "interaction": "replacement clarification",
+          "timestampsUtc": {
+            "ticketCreated": "2026-09-09T00:11:20.397Z",
+            "requestDispatched": "2026-09-09T00:11:20.483Z",
+            "nativeCompletionRecorded": "2026-09-09T00:11:36.145Z"
+          },
+          "transport": {
+            "httpStatus": 200,
+            "responseComplete": true,
+            "transportFailure": false,
+            "envelopeJsonAccepted": true,
+            "choiceCount": 1,
+            "finishReason": "stop"
+          },
+          "outputValidation": {
+            "assistantContentJsonAccepted": true,
+            "canonicalShapeAccepted": true,
+            "proposalReferenceReview": "rejected",
+            "firstRejectionReason": "proposal_revision_target",
+            "basis": "Source-owner diagnosis recorded in the phase root result receipt"
+          },
+          "nativeOutcome": {
+            "known": true,
+            "succeeded": false,
+            "status": "failed",
+            "failure": "invalid_output",
+            "assistantMessageAdmitted": false
+          },
+          "usage": {
+            "promptTokens": 4263,
+            "completionTokens": 835,
+            "totalTokens": 5098,
+            "cachedInputTokens": null,
+            "reasoningTokens": null
+          },
+          "estimatedCostUsd": "0.00211830",
+          "invoiceCostUsd": null,
+          "reservationMicroUsd": 47872,
+          "latency": {
+            "ticketToNativeCompletionMs": 15748,
+            "dispatchToNativeCompletionMs": 15662,
+            "ticketToDispatchMs": 86,
+            "providerOnlyLatencyMs": null,
+            "timeToFirstTokenMs": null
+          },
+          "requestBodySha256": "94ca28dbdddf3d21cbcaa59542f368190481833ce89d1c36d255e271d92a898c",
+          "responseBytesSha256": "59d2a9ad4bf28d9931c8bdbd579eebf95d6eb08f0e5acb45801b76324ecc43d5",
+          "systemInstructionsAndSchemaSha256": "39717352be69cefab0d64e3d89dc5c17b883884cd122b3c28d64da8c73f80a8b",
+          "outputSchemaSha256": "7baef48657d13389aac5af6ae5db2e98199ee6ec04d734da4a87d47dd147df8a",
+          "receiptSha256": {
+            "ticket.json": "e83d1b3a411dde1b44cf587cf58c043ef73ce8f65c77b9eef8a20bed88aac517",
+            "dispatch.json": "b2fb9ea9ed45efc05da5fa95c74fcb7f1090598551658e923310bdf6894b51a3",
+            "completion.json": "3922080c93070c86cd98d12cd0f7472156e04923170c7086aa9b67b61f8cba4a",
+            "response.json": "767a044b6e327917983f47da43bf2b661d3acf676bab80f5b1e8b7d2ac7994cb",
+            "assistant-content.json": "8cb5575079be00b1c81a058a91dc1e6b9df5d725ccc4615cb7e0b52028d3e7a9",
+            "native-before.json": "76fce78751a7c70dfa8a5fad0cb2402d62532298dc6dbb35daa20c1cd4703016",
+            "request.json": "31946fe5133a6d3e57389540d34c296006641579287524c645c3ee55fee18cd8"
+          }
+        }
+      ],
+      "aggregate": {
+        "actualCandidateCalls": 2,
+        "judgeCalls": 0,
+        "knownNativeOutcomes": 2,
+        "unknownNativeOutcomes": 0,
+        "successfulNativeTurns": 1,
+        "failedNativeTurns": 1,
+        "completeHttp200Responses": 2,
+        "usage": {
+          "knownUsageCalls": 2,
+          "unknownUsageCalls": 0,
+          "promptTokens": 8350,
+          "completionTokens": 1178,
+          "totalTokens": 9528,
+          "cachedInputTokens": null,
+          "reasoningTokens": null
+        },
+        "estimatedCostUsd": "0.00380600",
+        "invoiceCostUsd": null,
+        "incrementalReservationMicroUsd": 95744,
+        "ticketToNativeCompletionMs": {
+          "count": 2,
+          "sum": 39044,
+          "mean": 19522,
+          "median": 19522.0,
+          "min": 15748,
+          "max": 23296
+        },
+        "dispatchToNativeCompletionMs": {
+          "count": 2,
+          "sum": 38713,
+          "mean": 19356.5,
+          "median": 19356.5,
+          "min": 15662,
+          "max": 23051
+        },
+        "providerOnlyLatencyMs": null,
+        "timeToFirstTokenMs": null,
+        "questionCount": null,
+        "repeatedQuestionCount": null,
+        "outputContractFailureCount": 1,
+        "incompleteProviderResponseCount": 0,
+        "modelQualityScore": null,
+        "humanQualityScore": null
+      },
+      "canonicalState": {
+        "profileVersionBefore": 1,
+        "profileVersionAfter": 1,
+        "wholeSeededFactUnchanged": true,
+        "cardsProduced": 0,
+        "confirmationCommandsIssued": 0,
+        "sessionStatusAtLastNativeInspection": "open"
+      },
+      "financialCounters": {
+        "before": {
+          "callsReserved": 69,
+          "reservedMicroUsd": 3293952,
+          "higherCapCallsReserved": 63,
+          "judgeCallsReserved": 0
+        },
+        "after": {
+          "callsReserved": 71,
+          "reservedMicroUsd": 3389696,
+          "higherCapCallsReserved": 65,
+          "judgeCallsReserved": 0
+        }
+      },
+      "closure": {
+        "closedAtUtc": "2026-09-09T00:15:20.877Z",
+        "graceful": true,
+        "runtimeDisposed": true,
+        "transportDisposed": true,
+        "gateDisposed": true,
+        "remoteSessionDisposed": true,
+        "participantLockAbsent": true,
+        "financialLockAbsent": true,
+        "actorSupervisorExitCode": 0,
+        "runtimeExitCode": 0,
+        "closedAckExactlyMatches": true,
+        "localListenerClosed": true,
+        "providerRevocationVerified": false,
+        "meaning": "Local phase resources were closed; the family scenario was not completed."
+      },
+      "receiptSha256": {
+        "source-build-proof.json": "f78e107a3d15347859859f6d1354cec0b6413869817a77ae4794390c0c4a2308",
+        "run-state/root-phase-result.receipt.json": "7e7aef168d158e2a3896ef0a1daac0955f14c6a6b9aff16f446630f14354161d",
+        "run-state/closed.json": "3844f357acbf379f18f5599d4c46f4e878412060d6bbfa004b59c29225aa9f3c",
+        "run-state/actor-run/commands.jsonl": "128eac3ff954314c47d3901f50f063f4db02d4462da19a7e40322d7d3e04dcff",
+        "run-state/actor-run/responses.jsonl": "716c2d582aa8493d8cf254dfd1dbacef7dcb9711017f725f2b5149ed871c1d13",
+        "run-state/participant-admissions.jsonl": "c55d499c96e95173f9cf1b4db0d36651ccc0a64aff512247a83339b5ac95aba1",
+        "root-turn-pipeline.py": "9b9590fb5ca6170d73f3c57f376d4ae8bb89e7a31a296f6589c5e29f86a14ce3",
+        "pipeline-native-proof.json": "993897892921775928c069afaab7c721e8de4f3211fd00020eceb6ec392c5173"
+      }
+    }
+  ],
+  "combined": {
+    "actualCandidateCalls": 3,
+    "judgeCalls": 0,
+    "knownNativeOutcomes": 3,
+    "unknownNativeOutcomes": 0,
+    "successfulNativeTurns": 2,
+    "failedNativeTurns": 1,
+    "completeHttp200Responses": 3,
+    "usage": {
+      "knownUsageCalls": 3,
+      "unknownUsageCalls": 0,
+      "promptTokens": 12435,
+      "completionTokens": 1581,
+      "totalTokens": 14016,
+      "cachedInputTokens": null,
+      "reasoningTokens": null
+    },
+    "estimatedCostUsd": "0.00553800",
+    "invoiceCostUsd": null,
+    "incrementalReservationMicroUsd": 143616,
+    "ticketToNativeCompletionMs": {
+      "count": 3,
+      "sum": 49539,
+      "mean": 16513,
+      "median": 15748,
+      "min": 10495,
+      "max": 23296
+    },
+    "dispatchToNativeCompletionMs": {
+      "count": 3,
+      "sum": 49081,
+      "mean": 16360.333333333334,
+      "median": 15662,
+      "min": 10368,
+      "max": 23051
+    },
+    "providerOnlyLatencyMs": null,
+    "timeToFirstTokenMs": null,
+    "questionCount": null,
+    "repeatedQuestionCount": null,
+    "outputContractFailureCount": 1,
+    "incompleteProviderResponseCount": 0,
+    "modelQualityScore": null,
+    "humanQualityScore": null,
+    "nativeParticipantIntents": 4,
+    "admittedAssistantMessages": 2,
+    "unattemptedInterruptedTurns": 1,
+    "uniqueFamiliesStarted": 1,
+    "completePassingFamilies": 0,
+    "completeAcceptedBaselines": 0,
+    "canonicalJsonShapeRejections": 0,
+    "proposalReferenceRejections": 1,
+    "canonicalShapeStageAttribution": "Native success for the first two responses; source-owner diagnosis retained in phase 2 root receipt for the rejected response."
+  },
+  "financialSnapshotAtFinalClosure": {
+    "callsReserved": 71,
+    "higherCapCallsReserved": 65,
+    "judgeCallsReserved": 0,
+    "reservedMicroUsd": 3389696,
+    "additionalReservedSinceExistingAuthorityAnchorMicroUsd": 143616,
+    "existingAuthorityAnchor": {
+      "callsReserved": 68,
+      "reservedMicroUsd": 3246080
+    },
+    "existingAdditionalAuthorityMicroUsd": 20000000,
+    "meaning": "Historical local reservation counters at phase 2 closure, not current usage or invoice cost."
+  },
+  "evaluation": {
+    "candidateAccepted": false,
+    "acceptedBaselineId": null,
+    "qualityBand": "unscored",
+    "allHardAssertionsPassed": false,
+    "softJudge": "not_run",
+    "humanCalibration": "unscored",
+    "questionCount": null,
+    "repeatedQuestionCount": null,
+    "modelScores": null,
+    "humanScores": null,
+    "releaseDecision": "not_assessed"
+  },
+  "privateReceiptIndexSha256": "b4e89d664675d7df978a244aef81f15fbc44e58560c0ef3bf6e8e927d4528ff3",
+  "sanitization": "Allowlisted metadata, aggregate counts, stage descriptions and SHA-256 evidence pins only. No transcript, model reasoning, private identity, native object identifier, secret or private receipt location is included.",
+  "limitations": [
+    "Both attempts stopped during the first family; the seven remaining families were not run in either phase.",
+    "Phase 1 stopped at a manual-driver interruption before its second provider request. Phase 2 stopped at a concrete missing draft-card reference after a complete provider response.",
+    "The placeholder draft-card target failed before nested canonical-fact review. Do not characterize it as a wrong existing fact ID, truncated response, JSON syntax error or canonical schema-shape failure.",
+    "Two accepted opening responses do not establish family success or an accepted baseline.",
+    "No model judge or human calibration score was produced; unmeasured values remain null.",
+    "The two attempts have different driver timing and unmatched interaction coverage. They do not establish a statistical performance comparison.",
+    "This evidence uses source and prompt v7 only; it cannot establish any later schema revision outcome.",
+    "Graceful local cleanup does not claim provider-side session revocation."
+  ]
+}

@@ -68,6 +68,16 @@ export const privateReservations = sqliteTable("private_reservations", {
   ordinal: integer("ordinal").primaryKey({ autoIncrement: true }),
   sessionReference: text("session_reference").notNull().unique(),
 });
+/** Explicit user-selected discovery scope. No row means a legacy, unscoped session. */
+export const privateDiscoverySessionScopes = sqliteTable(
+  "private_discovery_session_scopes",
+  {
+    scope: text("scope", {
+      enum: ["InitialDiscovery", "ProfileEdit"],
+    }).notNull(),
+    sessionReference: text("session_reference").primaryKey(),
+  }
+);
 export const privateMessages = sqliteTable("private_messages", {
   createdAt: integer("created_at").notNull(),
   id: text("id").notNull().unique(),
@@ -96,3 +106,39 @@ export const privatePendingConfirmation = sqliteTable(
     singleton: integer("singleton").primaryKey(),
   }
 );
+
+/** Every attempt remains private and durable, including cancelled or unknown provider outcomes. */
+export const privateAssistantTurns = sqliteTable("private_assistant_turns", {
+  completedAt: integer("completed_at"),
+  createdAt: integer("created_at").notNull(),
+  expectedSessionVersion: integer("expected_session_version").notNull(),
+  failure: text("failure", {
+    enum: [
+      "not_configured",
+      "provider_unavailable",
+      "invalid_output",
+      "refused",
+      "context_limit",
+      "outcome_unknown",
+      "connection_lost",
+      "runtime_restarted",
+    ],
+  }),
+  generation: text("generation").notNull(),
+  id: text("id").notNull().unique(),
+  ordinal: integer("ordinal").primaryKey({ autoIncrement: true }),
+  provenanceJson: text("provenance_json"),
+  sourceMessageId: text("source_message_id").notNull(),
+  status: text("status", {
+    enum: [
+      "queued",
+      "running",
+      "succeeded",
+      "failed",
+      "interrupted",
+      "cancelled",
+    ],
+  }).notNull(),
+  summary: text("summary"),
+  usageJson: text("usage_json"),
+});

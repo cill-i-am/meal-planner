@@ -1,0 +1,277 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-10",
+  "phaseId": "family-v16-qwen-sampling-v1",
+  "status": "incomplete_after_known_invalid_output",
+  "source": {
+    "head": "0d76eba4f334c557606ddd246411fa38e5a56304",
+    "freezeSha256": "90b794af34772144f7361edb3bd6319049eb182d86a087aa7b7dade4c8a7b26e",
+    "promptVersion": "private-discovery-prompt-v16",
+    "policyVersion": "private-discovery-policy-v3",
+    "promptUtf8Bytes": 6900,
+    "promptSha256": "3707853714ad15dbd7c33ac4d12792706bd4a1c9dada35858f0d75133617dbc8",
+    "canonicalOutputSchemaSha256": "cc9f5f5aba46b20b61dc50e22c7bd03936824e7e1cc6f44208ac259d487464a5"
+  },
+  "configuration": {
+    "candidateModel": "@cf/qwen/qwen3-30b-a3b-fp8",
+    "maxOutputTokens": 4096,
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": 20,
+    "stream": false,
+    "deadlineMs": 120000,
+    "maximumProviderAttempts": 1,
+    "gatewayPayloadCollection": false,
+    "gatewayCaching": false,
+    "fixedJudge": {
+      "model": "@cf/openai/gpt-oss-120b",
+      "maxOutputTokens": 2048,
+      "temperature": 0,
+      "top_p": "absent",
+      "top_k": "absent",
+      "deadlineMs": 60000,
+      "calls": 0
+    },
+    "candidateModelAndSamplingRevision": true,
+    "promptAndOutputProtocolUnchanged": true,
+    "isolatedCausalClaim": false
+  },
+  "calls": [
+    {
+      "ordinal": 1,
+      "nativeStatus": "succeeded",
+      "known": true,
+      "nativeFailure": null,
+      "capturedStage": null,
+      "httpStatus": 200,
+      "responseComplete": true,
+      "finishReason": "stop",
+      "structuredInspectionAccepted": true,
+      "visibleReplyPersisted": true,
+      "usage": {
+        "inputTokens": 2932,
+        "outputTokens": 1149,
+        "totalTokens": 4081
+      },
+      "estimatedCostUsd": "0.000540192",
+      "timestampsUtc": {
+        "ticket": "2026-09-10T09:01:57.990Z",
+        "dispatch": "2026-09-10T09:01:58.055Z",
+        "nativeCompletion": "2026-09-10T09:02:07.615Z"
+      },
+      "latencyMs": {
+        "ticketToNativeCompletion": 9625,
+        "dispatchToNativeCompletion": 9560,
+        "ticketToDispatch": 65
+      },
+      "bytes": {
+        "serializedRequestBody": 19149,
+        "reconstructedBindingEnvelope": 19288,
+        "observedResponse": 11777
+      },
+      "hashes": {
+        "requestBody": "6889d172297edce15c739709ad46a8b3e1926eeb15efb5ebcee77f2030dcba23",
+        "providerOutputSchema": "064f898e0b5f60f9b5682638e3655b03cf8324b389470162e449928546fa107b",
+        "systemInstructionsAndSchema": "26cdeaf7fc6b155e20db6e9d1d9e79cc0b362f3aeeced3c8135a0980245dcdbf",
+        "originalResponseBytes": "fb02ab5c80c9d47e934d5881bdf6b3b1836d2d69d43622119d8c046b1598877f",
+        "originalAssistantContent": "efde957990b2e96cbb9a33a17fafdf77c1ce0707db93a2751fcdff15971c8a14"
+      }
+    },
+    {
+      "ordinal": 2,
+      "nativeStatus": "failed",
+      "known": true,
+      "nativeFailure": "invalid_output",
+      "capturedStage": "output_json",
+      "httpStatus": 200,
+      "responseComplete": true,
+      "finishReason": "stop",
+      "structuredInspectionAccepted": false,
+      "visibleReplyPersisted": false,
+      "usage": {
+        "inputTokens": 3121,
+        "outputTokens": 1227,
+        "totalTokens": 4348
+      },
+      "estimatedCostUsd": "0.000576351",
+      "timestampsUtc": {
+        "ticket": "2026-09-10T09:03:49.696Z",
+        "dispatch": "2026-09-10T09:03:49.743Z",
+        "nativeCompletion": "2026-09-10T09:03:57.465Z"
+      },
+      "latencyMs": {
+        "ticketToNativeCompletion": 7769,
+        "dispatchToNativeCompletion": 7722,
+        "ticketToDispatch": 47
+      },
+      "bytes": {
+        "serializedRequestBody": 19834,
+        "reconstructedBindingEnvelope": 19973,
+        "observedResponse": 12112
+      },
+      "hashes": {
+        "requestBody": "18455c535d1752911cdd551594144a923a15edbe505fb26de8ba5abb262dd620",
+        "providerOutputSchema": "064f898e0b5f60f9b5682638e3655b03cf8324b389470162e449928546fa107b",
+        "systemInstructionsAndSchema": "26cdeaf7fc6b155e20db6e9d1d9e79cc0b362f3aeeced3c8135a0980245dcdbf",
+        "originalResponseBytes": "965da157a2dab887725445470215fe68805fd9ee6ec2c88cbb558f511551995f",
+        "originalAssistantContent": "0e7dd4ec25180204100d98521d6f437bfc606b02d05736213e3c6632026eb409"
+      }
+    }
+  ],
+  "aggregate": {
+    "candidateCalls": 2,
+    "nativeSuccesses": 1,
+    "outputContractFailures": 1,
+    "providerTransportFailures": 0,
+    "newProvenPersistedSemanticHardFailures": 0,
+    "usage": {
+      "inputTokens": 6053,
+      "outputTokens": 2376,
+      "totalTokens": 8429
+    },
+    "estimatedCostUsd": "0.001116543",
+    "summedLatencyMs": {
+      "ticketToNativeCompletion": 17394,
+      "dispatchToNativeCompletion": 17282,
+      "ticketToDispatch": 112
+    },
+    "phaseReservedMicroUsd": 95744
+  },
+  "measurement": {
+    "tokenRatesUsdPerMillion": {
+      "input": "0.051",
+      "output": "0.34"
+    },
+    "usageCost": "Recorded usage for both complete responses, including the rejected output; estimate, not an invoice.",
+    "latency": "Native completion minus ticket/dispatch time, including orchestration and native handling; not provider-only latency.",
+    "bodyBytes": "UTF-8 compact serialization of captured body; matched to dispatch hash.",
+    "envelopeBytes": "Reconstructed compact binding envelope from captured body/options; original wire-envelope bytes were not retained.",
+    "responseBytes": "Original byte counts and hashes observed by native capture.",
+    "limitsBytes": {
+      "body": 32768,
+      "envelope": 40000
+    },
+    "unmeasured": [
+      "provider-only latency",
+      "first-token time",
+      "cached/reasoning token subtotals",
+      "original wire-envelope size",
+      "judge/human scores"
+    ]
+  },
+  "failure": {
+    "callOrdinal": 2,
+    "nativeFailure": "invalid_output",
+    "actualCapturedStage": "output_json",
+    "nativeStageReceiptCaptured": true,
+    "diagnosticEvents": 1,
+    "diagnosticObservedAtUtc": "2026-09-10T09:03:57.435Z",
+    "correlationMethod": "harness-exclusive-active-call-file-snapshot",
+    "correlationIdentityMatchesFailedNativeCall": true,
+    "emittedNativeAttemptIdentityAvailable": false,
+    "emittedWorkerIdentityAvailable": false,
+    "rawLogsRetained": false,
+    "completeResponse": true,
+    "finishReason": "stop",
+    "acceptedRootClassification": "Malformed assistant JSON with an extra closing brace and tool-response suffix.",
+    "rawOnlyObservationsAcceptedFromRoot": "The attempted draft and answered note included an Ask targeting the answered topic and conversational confirmation. None was admitted or validated at later stages.",
+    "laterValidationStagesObserved": false,
+    "failedOutputAssistantMessagePersisted": false,
+    "newPersistedSemanticHardFailure": false,
+    "stoppedAtUtc": "2026-09-10T09:03:57.472Z",
+    "automaticRetry": false,
+    "outputRepairSalvageOrReplay": false,
+    "furtherProviderCallsAfterStop": 0,
+    "classificationAuthority": "Accepted root result; report preparation did not add semantic review or decode the malformed assistant content."
+  },
+  "nativeState": {
+    "firstMessagesWholeTurnAndSnapshotExactUnchanged": true,
+    "firstSourceDecodedInspectionMatchesActualNativeState": true,
+    "firstNoteStates": ["unresolved"],
+    "acceptedFirstTurnClassification": "One grounded unresolved note combines the disclosed batch-cook circumstance and unresolved preference change.",
+    "failedTurnSnapshot": null,
+    "failedTurnContinuity": null,
+    "visibleAssistantReplies": 1,
+    "cardsPersisted": 0,
+    "wholeCanonicalProfileExactlyUnchanged": true,
+    "profileVersionBeforeAndAfter": 1,
+    "confirmedFactsBeforeAndAfter": 1,
+    "confirmationCommands": 0,
+    "reviewRefreshCommands": 0,
+    "sessionCompletionCommands": 0,
+    "pendingConfirmations": 0,
+    "sessionStatus": "open",
+    "sessionVersion": 3
+  },
+  "coverageAndDialogue": {
+    "fixtureId": "dependency_and_repair",
+    "participantIntents": 2,
+    "fixtureIntentLimit": 8,
+    "familiesStarted": 1,
+    "familiesAccepted": 0,
+    "familiesNotRun": 7,
+    "familyComplete": false,
+    "disclosedFacts": ["replacement preference"],
+    "unaskedFacts": ["dependency", "safety"],
+    "fixedChallengeSubmitted": false,
+    "freshBExercised": false,
+    "acceptedBaseline": false,
+    "judgeCalls": 0,
+    "humanRatings": 0,
+    "literalQuestionsInVisibleReply": 1,
+    "distinctQuestionTopics": 1,
+    "internalSentimentLabelsVisible": false,
+    "crossTurnRepeatedQuestions": 0,
+    "providerRetries": 0,
+    "failedActorCommands": 0
+  },
+  "financialAtClosure": {
+    "journalBytes": 16082,
+    "journalSha256": "58b9091c989e9d99c4ac7453c9f396ff38f2572c5ab89b7f70511bd7a5940037",
+    "callsReserved": 105,
+    "reservedMicroUsd": 5017344,
+    "higherCapCallsReserved": 99,
+    "judgeCallsReserved": 0,
+    "phaseReservedMicroUsd": 95744,
+    "authorityAnchorCalls": 68,
+    "authorityAnchorReservedMicroUsd": 3246080,
+    "additionalCallsSinceAnchor": 37,
+    "additionalReservedMicroUsdSinceAnchor": 1771264,
+    "historicalGptIntents": 74,
+    "historicalQwenIntents": 5,
+    "totalHistoricalIntents": 79
+  },
+  "closure": {
+    "closedAtUtc": "2026-09-10T09:06:19.596Z",
+    "actorJoinedExitCode": 0,
+    "actorJoinedBeforeRuntimeShutdown": true,
+    "runtimeJoinedExitCode": 0,
+    "graceful": true,
+    "runtimeDisposed": true,
+    "transportDisposed": true,
+    "gateDisposed": true,
+    "remoteSessionDisposed": true,
+    "providerRevocationVerified": false,
+    "actualParticipantLockAbsent": true,
+    "actualFinancialLockAbsent": true,
+    "actualListener4197Absent": true,
+    "lockAndListenerCheckedAtUtc": "2026-09-10T09:18:07.788895+00:00",
+    "scenarioComplete": false
+  },
+  "limitations": [
+    "One native success followed by an actual JSON decoding failure leaves the family incomplete.",
+    "Raw-only second-response concerns were not admitted or validated downstream and are not a new persisted semantic hard failure.",
+    "Only two of eight allowed intents ran; dependency, safety, challenge, confirmation and fresh B were not completed.",
+    "No accepted baseline, judge or human result; no general model-quality or isolated causal improvement claim."
+  ],
+  "receiptSha256": {
+    "rootResult": "e5fead449256f30eb61728161e3178d845c4c73c04c8cff29a8349a3dab0ba64",
+    "stop": "015256040bc9a3a768a2490c2de88abd526a19d48e32e13c944ea71e880c7f56",
+    "closure": "024c59869e9b9960a1d445926c9cf7df75eb76e83a9e26e3e04cd35beaee6c1f",
+    "shutdownAcknowledgment": "e608867f67654930816fb2d7825d2ce42461129b15102ef57f0007417ba3556f",
+    "nativeFirst": "669de824e240b2ae75faab1319d1163e8aac17ef7b9707fd79bd0b66a1b78739",
+    "nativeFinal": "163a5c0669c472fd23cbe90c57577cff257583645d52d840ea7edc6f304fb5ef",
+    "actualDiagnostic": "3aae5af6fc1390db8d891bc8a98fb7e754afa0453d85496b0e681b686135440f"
+  },
+  "privateReceiptIndexSha256": "e1e590f8fa045bf574ce2b1c959c16e5f0406ce7a8e8f3152faef5005963b94a"
+}

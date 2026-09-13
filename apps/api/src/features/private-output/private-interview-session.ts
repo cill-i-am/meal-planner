@@ -11,18 +11,22 @@ import { DurableObject } from "cloudflare:workers";
 import { eq, gt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import { migrate } from "drizzle-orm/durable-sqlite/migrator";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 
 import migrations from "../../../private-output-migrations/migrations.js";
+import { PrivateAssistantTurns } from "./private-assistant-turns.js";
 import type { ReleasedConfirmation } from "./private-confirmation.contract.js";
 import {
   ReleaseConfirmation,
   SettleConfirmation,
 } from "./private-confirmation.contract.js";
+import { makePrivateDiscoveryModel } from "./private-discovery-workers-ai.js";
+import { RunAssistantTurn } from "./private-discovery.contract.js";
 import { Generation, PrivateOutputSocket } from "./private-output-socket.js";
 import type { PrivateInterviewEnvironment } from "./private-output-socket.js";
 import {
   PrivateSessionBinding,
+  InitializePrivateSession,
   PrivateOutputUnavailable,
   privateOutputKey,
   privateDirectoryKey,
@@ -33,6 +37,7 @@ import {
   privateMessages,
   privateReceipts,
   privateSessionBinding,
+  privateDiscoverySessionScopes,
 } from "./private-output.database-schema.js";
 
 declare const Response: typeof NativeCloudflare.Response;
@@ -54,10 +59,11 @@ const sameBinding = (
   left.linkageSubject === right.linkageSubject &&
   left.personId === right.personId &&
   left.sessionReference === right.sessionReference;
-/** Owns private history and physical WebSockets. No transcript RPC or production assistant producer. */
+/** Owns private history and physical WebSockets. No transcript RPC; model output stays inside its owning private child. */
 export class PrivateInterviewSession extends DurableObject<PrivateInterviewEnvironment> {
   #database = drizzle(this.ctx.storage);
   #socket = new PrivateOutputSocket(this.ctx, this.#database, this.env);
+  #turns = new PrivateAssistantTurns(this.#database, this.#socket);
   constructor(
     context: NativeCloudflare.DurableObjectState,
     environment: PrivateInterviewEnvironment
@@ -66,22 +72,50 @@ export class PrivateInterviewSession extends DurableObject<PrivateInterviewEnvir
     context.blockConcurrencyWhile(() => {
       migrate(this.#database, migrations);
       this.#socket.restart();
+      this.#turns.interrupt("runtime_restarted");
       return Promise.resolve();
     });
   }
-  initialize(untrusted: PrivateSessionBinding): void {
-    const binding = decodeBinding(untrusted);
-    const retained = this.#database.select().from(privateSessionBinding).get();
-    if (retained !== undefined) {
-      if (!sameBinding(retained, binding)) {
-        throw new PrivateOutputUnavailable({ reason: "binding_conflict" });
+  initialize(untrusted: typeof InitializePrivateSession.Type): void {
+    const { binding, scope } = Schema.decodeUnknownSync(
+      InitializePrivateSession,
+      {
+        onExcessProperty: "error",
       }
-      return;
-    }
-    this.#database
-      .insert(privateSessionBinding)
-      .values({ ...binding, status: "open", version: 0 })
-      .run();
+    )(untrusted);
+    this.#database.transaction(() => {
+      const retained = this.#database
+        .select()
+        .from(privateSessionBinding)
+        .get();
+      const retainedScope =
+        this.#database
+          .select()
+          .from(privateDiscoverySessionScopes)
+          .where(
+            eq(
+              privateDiscoverySessionScopes.sessionReference,
+              binding.sessionReference
+            )
+          )
+          .get()?.scope ?? null;
+      if (retained !== undefined) {
+        if (!sameBinding(retained, binding) || retainedScope !== scope) {
+          throw new PrivateOutputUnavailable({ reason: "binding_conflict" });
+        }
+        return;
+      }
+      this.#database
+        .insert(privateSessionBinding)
+        .values({ ...binding, status: "open", version: 0 })
+        .run();
+      if (scope !== null) {
+        this.#database
+          .insert(privateDiscoverySessionScopes)
+          .values({ scope, sessionReference: binding.sessionReference })
+          .run();
+      }
+    });
   }
   async beginConnection(untrusted: PrivateSessionBinding): Promise<string> {
     const binding = decodeBinding(untrusted);
@@ -90,6 +124,7 @@ export class PrivateInterviewSession extends DurableObject<PrivateInterviewEnvir
       binding.sessionReference
     );
     this.#binding(binding);
+    this.#turns.interrupt("connection_lost");
     return this.#socket.begin(binding, { childName, targetKind: "session" });
   }
   authorizeConnection(untrusted: typeof Authorization.Type): void {
@@ -110,6 +145,7 @@ export class PrivateInterviewSession extends DurableObject<PrivateInterviewEnvir
     return this.#socket.accept(
       request,
       JSON.stringify({
+        assistantTurn: this.#turns.latest(),
         bindingKey,
         generation: request.headers.get("private-output-generation"),
         pendingConfirmation: this.#pending()?.mutationId ?? null,
@@ -344,6 +380,74 @@ export class PrivateInterviewSession extends DurableObject<PrivateInterviewEnvir
     }
     return { status: binding.status, version: binding.version };
   }
+  #turnRejection(
+    command: Extract<SessionCommand, { mutationId: string }>
+  ): Extract<SessionFrame, { type: "Rejected" }>["reason"] | undefined {
+    if (
+      command.type !== "CancelAssistantTurn" &&
+      this.#turns.pending() !== undefined
+    ) {
+      return "assistant_turn_pending";
+    }
+    if (
+      command.type === "CancelAssistantTurn" &&
+      !this.#turns.canCancel(command.turnId)
+    ) {
+      return "assistant_turn_conflict";
+    }
+    if (
+      command.type === "RetryAssistantTurn" &&
+      !this.#turns.canRetry(command.turnId)
+    ) {
+      return "assistant_turn_conflict";
+    }
+    return undefined;
+  }
+  #mutateTurn(
+    command: Extract<SessionCommand, { turnId: string }>,
+    generation: string,
+    state: typeof SessionState.Type
+  ): SessionFrame {
+    if (command.type === "CancelAssistantTurn") {
+      return {
+        mutationId: command.mutationId,
+        state,
+        turn: this.#turns.cancel(command.turnId),
+        type: "AssistantTurnChanged",
+      };
+    }
+    const previous = this.#turns.latest();
+    if (previous === null) {
+      throw new PrivateOutputUnavailable({ reason: "binding_conflict" });
+    }
+    return {
+      mutationId: command.mutationId,
+      state,
+      turn: this.#turns.queue({
+        expectedSessionVersion: state.version,
+        generation,
+        id: command.mutationId,
+        sourceMessageId: previous.sourceMessageId,
+      }),
+      type: "AssistantTurnChanged",
+    };
+  }
+  /** Admitted continuation returns no private model context or content over RPC. */
+  async runAssistantTurn(
+    untrusted: typeof RunAssistantTurn.Type
+  ): Promise<void> {
+    const input = Schema.decodeUnknownSync(RunAssistantTurn, {
+      onExcessProperty: "error",
+    })(untrusted);
+    this.#binding(input.binding);
+    if (input.profile.personId !== input.binding.personId) {
+      throw new PrivateOutputUnavailable({ reason: "binding_conflict" });
+    }
+    // Native RPC is the host boundary. The attempt owner settles typed model failures and interruptions durably.
+    await Effect.runPromise(
+      this.#turns.run(input, makePrivateDiscoveryModel(this.env))
+    );
+  }
   override webSocketMessage(
     socket: NativeCloudflare.WebSocket,
     message: string | ArrayBuffer
@@ -373,6 +477,14 @@ export class PrivateInterviewSession extends DurableObject<PrivateInterviewEnvir
           return;
         }
         const state = this.#state();
+        if (command.type === "ReadAssistantTurn") {
+          return {
+            requestId: command.requestId,
+            state,
+            turn: this.#turns.latest(),
+            type: "AssistantTurnRead",
+          };
+        }
         if (command.type === "ReadCards") {
           const records = transaction
             .select()
@@ -464,6 +576,15 @@ export class PrivateInterviewSession extends DurableObject<PrivateInterviewEnvir
             type: "Rejected",
           };
         }
+        const turnRejection = this.#turnRejection(command);
+        if (turnRejection !== undefined) {
+          return {
+            commandId: command.mutationId,
+            reason: turnRejection,
+            state,
+            type: "Rejected",
+          };
+        }
         if (command.expectedVersion !== state.version) {
           return {
             commandId: command.mutationId,
@@ -498,6 +619,8 @@ export class PrivateInterviewSession extends DurableObject<PrivateInterviewEnvir
             state: next,
             type: "SessionCompleted",
           };
+        } else if ("turnId" in command) {
+          result = this.#mutateTurn(command, generation, next);
         } else if (command.type === "AppendParticipantMessage") {
           const record = transaction
             .insert(privateMessages)
@@ -510,6 +633,12 @@ export class PrivateInterviewSession extends DurableObject<PrivateInterviewEnvir
             .returning()
             .get();
           result = {
+            assistantTurn: this.#turns.queue({
+              expectedSessionVersion: next.version,
+              generation,
+              id: command.mutationId,
+              sourceMessageId: record.id,
+            }),
             message: record,
             mutationId: command.mutationId,
             state: next,
@@ -534,8 +663,22 @@ export class PrivateInterviewSession extends DurableObject<PrivateInterviewEnvir
       this.#socket.send(generation, JSON.stringify(frame));
     }
   }
+  override webSocketClose(socket: NativeCloudflare.WebSocket): void {
+    this.invalidateOutput(
+      Schema.decodeUnknownSync(Generation)(socket.deserializeAttachment())
+    );
+  }
+  override webSocketError(socket: NativeCloudflare.WebSocket): void {
+    this.invalidateOutput(
+      Schema.decodeUnknownSync(Generation)(socket.deserializeAttachment())
+    );
+  }
   invalidateOutput(untrusted: typeof Generation.Type): void {
-    this.#socket.invalidate(untrusted);
+    const input = Schema.decodeUnknownSync(Generation, {
+      onExcessProperty: "error",
+    })(untrusted);
+    this.#socket.invalidate(input);
+    this.#turns.interrupt("connection_lost", input.generation);
   }
   readMetadata() {
     return this.#database.select().from(privateSessionBinding).get() ?? null;

@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-10",
+  "publicationStatus": "reviewed_sanitized_record",
+  "phaseId": "family-kimi-native-dependency-v1",
+  "status": "incomplete_harness_interruption",
+  "source": {
+    "head": "a8305f5f4c82be82e9dd991db3064d29dec06548",
+    "tree": "5fa3076afbc68c4416a36cf18eb07e6278ef104a",
+    "freezeSha256": "99f0eb6fad4fee8c8dbe18ea77105a54e51f59069ca217cb3f06b3876b23e716",
+    "promptVersion": "private-discovery-prompt-v17",
+    "policyVersion": "private-discovery-policy-v3",
+    "promptSha256": "4acfd9dbc5a19b8acb7899c83d553f28c7e6fd82162d97688e1af3f1f4feb55b",
+    "noCardOutputSchemaSha256": "064f898e0b5f60f9b5682638e3655b03cf8324b389470162e449928546fa107b"
+  },
+  "configuration": {
+    "candidateModel": "@cf/moonshotai/kimi-k2.6",
+    "requestParameters": {
+      "chat_template_kwargs": {
+        "thinking": false
+      },
+      "max_completion_tokens": 4096,
+      "n": 1,
+      "response_format": {
+        "type": "json_object"
+      },
+      "stream": false,
+      "temperature": 0.6,
+      "top_p": 0.95
+    },
+    "top_k": "absent",
+    "tools": "absent",
+    "tool_choice": "absent",
+    "deadlineMs": 120000,
+    "maximumProviderAttempts": 1,
+    "gatewayPayloadCollection": false,
+    "gatewayCacheBypassed": true,
+    "fixedJudge": {
+      "model": "@cf/openai/gpt-oss-120b",
+      "maxOutputTokens": 2048,
+      "temperature": 0,
+      "deadlineMs": 60000,
+      "calls": 0
+    }
+  },
+  "calls": [
+    {
+      "ordinal": 1,
+      "known": true,
+      "nativeStatus": "succeeded",
+      "nativeFailure": null,
+      "httpStatus": 200,
+      "responseComplete": true,
+      "transportFailure": false,
+      "responseBytes": 1423,
+      "originalResponseSha256": "5af19fd15a93bc6c9f2ca9fcfdfff7ef63c979731125cf3ace1f680b8dbe4954",
+      "requestBodySha256": "57674f196d279e9cc3760002f1c229bcac80bb777074ae75c2b39c8f7ddff581",
+      "capturedInvalidOutputStage": null
+    },
+    {
+      "ordinal": 2,
+      "known": true,
+      "nativeStatus": "succeeded",
+      "nativeFailure": null,
+      "httpStatus": 200,
+      "responseComplete": true,
+      "transportFailure": false,
+      "responseBytes": 2097,
+      "originalResponseSha256": "262a104e26bb93ead7f8d84f89c61dc605caba0797b187819d7a2c2c358735e0",
+      "requestBodySha256": "b52d851160a06b0e5ad0d8fe865f10c73742011bc8337614266c8828828318b7",
+      "capturedInvalidOutputStage": null
+    }
+  ],
+  "aggregate": {
+    "candidateCalls": 2,
+    "nativeSuccesses": 2,
+    "outputContractFailures": 0,
+    "providerTransportFailures": 0,
+    "unknownProviderOutcomes": 0,
+    "usage": {
+      "inputTokens": 6103,
+      "outputTokens": 583,
+      "totalTokens": 6686
+    },
+    "estimatedCostUsd": "0.00812985",
+    "phaseReservedMicroUsd": 530842
+  },
+  "measurement": {
+    "latency": {
+      "measure": "participant append acknowledgement to native completion",
+      "turnMs": [7067, 9901]
+    },
+    "costBasis": "Conservative token-usage estimate: all input priced at the recorded uncached input rate; no cache discount applied. Estimate is not a reservation or invoice.",
+    "ratesUsdPerMillion": {
+      "uncachedInput": "0.95",
+      "output": "4.0"
+    },
+    "providerOnlyLatencyMs": null,
+    "timeToFirstTokenMs": null,
+    "cachedInputTokens": null,
+    "billedCostUsd": null,
+    "responseHashes": "Hashes of original native response bytes reported by capture metadata; not hashes of parsed assistant content."
+  },
+  "coverage": {
+    "fixtureId": "dependency_and_repair",
+    "familiesStarted": 1,
+    "familiesNotRun": 7,
+    "familyCompleted": false,
+    "familyAccepted": false,
+    "freshBExercised": false,
+    "requiredDiscoveriesComplete": false,
+    "judgeCalls": 0,
+    "humanScores": null,
+    "acceptedBaseline": false
+  },
+  "closure": {
+    "closedAtUtc": "2026-09-10T19:24:17.581Z",
+    "runtimeJoinedExitCode": 0,
+    "actorSupervisorJoinedExitCode": 1,
+    "runtimeDisposed": true,
+    "transportDisposed": true,
+    "gateDisposed": true,
+    "remoteSessionDisposed": true,
+    "graceful": true,
+    "remainingProcessCount": 0,
+    "listener4197Absent": true,
+    "actualLockPathsAbsent": true,
+    "providerRevocationVerified": false
+  },
+  "financialAtClosure": {
+    "callsReserved": 114,
+    "higherCapCallsReserved": 108,
+    "judgeCallsReserved": 0,
+    "reservedMicroUsd": 7188584,
+    "phaseReservedMicroUsd": 530842,
+    "reservationIsInvoice": false
+  },
+  "receiptSha256": {
+    "rootResult": "4dd64cded0373a43d9f372b5c88a4fe6283d5a88b6953c978e617d1f10baafc0",
+    "sourceBuildProof": "99f0eb6fad4fee8c8dbe18ea77105a54e51f59069ca217cb3f06b3876b23e716",
+    "runtimeClosure": "06afc23ec262c53663831d0cb4c18fe3032582f63df0a59421b3e80cf57880de",
+    "rootClosure": "29d02e5e1bfe2bdbe79848fc1c53040addafbaa129f3ebcbadc19797f5dcbe37",
+    "retainedEvidence1": "cb4e99f513b5a444d3b2565ecf1884c97d242a68fbb1d181acd71b2fbc7a86e0",
+    "retainedEvidence2": "6fc931b9c2cc5f3d14f5ca2d01d3fe1b9f02cde9c216f82f3638ddfd4799fd39",
+    "retainedEvidence3": "85ca03bc45fa4bb3c3fd46c67aa81864e28042c49e705cc3dba079119623c3c3",
+    "retainedEvidence4": "7a510ef35fc210bebdb93a6d46d01d75b352722d9439229b51cae08753b71dc4",
+    "retainedEvidence5": "06afc23ec262c53663831d0cb4c18fe3032582f63df0a59421b3e80cf57880de",
+    "retainedEvidence6": "29d02e5e1bfe2bdbe79848fc1c53040addafbaa129f3ebcbadc19797f5dcbe37",
+    "retainedEvidence7": "5c228d17656a3116e7f1ad4b80ea5da8a3b1779a400e5580bcbc089716783dc9",
+    "retainedEvidence8": "1950c74588e1d99489b1b9320f7146829db585078aa4297d20f53a2863dac499",
+    "nativeRead": "7a510ef35fc210bebdb93a6d46d01d75b352722d9439229b51cae08753b71dc4",
+    "canonicalProfileRead": "85ca03bc45fa4bb3c3fd46c67aa81864e28042c49e705cc3dba079119623c3c3",
+    "call1_request_json": "1f63b715bb007df58e62e904d95aa3c2d5f24798415168e1bc7eb905077afde2",
+    "call1_response_json": "03baa3f220a2918acaf779db59f4305969922f49396af3a1f2725fd0abd7abd1",
+    "call1_completion_json": "57f584c0a0ccef09c1f700b9b991856ae36c3b69e847d5bb63c95c07605486bf",
+    "call1_dispatch_json": "4814aa86ac0a5fed5749432a22d792079cadd2570a68d2deeced68d96b4b9ca1",
+    "call2_request_json": "e450663b6cec08948079c865ba996509ee8b10f1c37bea683f1112b640d8afea",
+    "call2_response_json": "d66ec0e99c4b2d69bfdc6fbefeb57eb13068ad30e335c7e34871394d3e8ab3eb",
+    "call2_completion_json": "d43903cb9231c57db690ccfa776eb7ee1d7d07ebf1a0aa56c89394022acd3a62",
+    "call2_dispatch_json": "ccf1d10631d246c70acd3e0a4f4b9603763db3c889ab4d63ad569c4b3281dea4"
+  },
+  "nativeState": {
+    "acceptedAssistantMessages": 2,
+    "successfulTurns": 2,
+    "persistedSummaryCount": 2,
+    "proposedReplacementCards": 1,
+    "proposedReplacementSupportedByRootAndIndependentReview": true,
+    "nativeContinuityMatchesInspectionBothTurns": true,
+    "wholeCanonicalProfileUnchanged": true,
+    "profileVersionBefore": 1,
+    "profileVersionAfter": 1,
+    "pendingConfirmations": 0,
+    "confirmationCommands": 0,
+    "sessionCompleted": false,
+    "canonicalProfileReadMethod": "Read-only credential-free snapshot of actual household SQLite, with absent WAL and byte equality before/after copy",
+    "canonicalProfileReadSourceUnchanged": true,
+    "canonicalHttpReadAfterTurn2": false
+  },
+  "harnessInterruption": {
+    "classification": "root_harness_command_error_family_incomplete",
+    "cause": "Local inspection command supplied action instead of required op; supervisor rejected it before command admission or actor forwarding and terminated the in-memory participant.",
+    "actorContextLost": true,
+    "newProviderCall": false,
+    "newParticipantIntent": false,
+    "confirmationSent": false,
+    "providerFailure": false,
+    "providerOutcomeUnknown": false,
+    "sameActorResumed": false,
+    "householdReplay": false
+  },
+  "review": {
+    "scope": "Two native turns only; no family pass or candidate-failure conclusion.",
+    "hardFailureDemonstrated": false,
+    "communicationMetrics": {
+      "measurementMethod": "Root and independent manual review of rendered questions",
+      "questionInstances": 4,
+      "distinctQuestions": 2,
+      "repeatedQuestionInstances": 2
+    },
+    "findings": [
+      "Both displayed questions were duplicated between acknowledgement and question fields.",
+      "One supported replacement card remained proposed and unconfirmed; the whole canonical profile stayed unchanged."
+    ],
+    "rootAndIndependentCheckpointReview": true,
+    "fixedJudgeInvoked": false,
+    "actualHumanCalibration": false
+  },
+  "limitations": [
+    "This closed phase is harness-incomplete, not a family pass or candidate failure.",
+    "No challenge, confirmation, session completion, fresh B or complete-family acceptance occurred; seven other families were not run.",
+    "The two successful native calls and supported proposed card do not establish full hard-check coverage, judge quality or a human baseline.",
+    "After the actor interruption, whole-profile equality was established by a read-only copy of actual SQLite; an HTTP canonical read after turn two was not completed.",
+    "Provider-only timing, cache subtotals, invoice charges and provider-side revocation remain unavailable or unverified."
+  ],
+  "privateReceiptIndexSha256": "064c2af84520e7e22454deef67f55e51afd3817fb715ab38d3171c54eb243f5b"
+}

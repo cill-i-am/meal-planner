@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-10",
+  "probe": "kimi_clean_opening",
+  "status": "no_native_response",
+  "scenario": {
+    "id": "dependency_and_repair",
+    "name": "Dependency and repair",
+    "origin": "Repository-owned synthetic fixture.",
+    "retainedOpeningParticipantMessages": 1,
+    "priorAssistantMessages": 0,
+    "priorCards": 0,
+    "priorContinuityNotes": 0
+  },
+  "source": {
+    "head": "19bd59753052cac3675761ffa60b9c07f5151ace",
+    "freezeSha256": "cfb1021b275e7bf5080fa9d6554ac20bd5ae7bd1bea73f9d9220fac86e953650",
+    "originalContextSourceHead": "0d76eba4f334c557606ddd246411fa38e5a56304",
+    "promptVersion": "private-discovery-prompt-v16",
+    "policyVersion": "private-discovery-policy-v3",
+    "preparationVerification": "Frozen preparation records direct immutable source-blob checks and exact bundle/harness pins."
+  },
+  "configuration": {
+    "candidateModel": "@cf/moonshotai/kimi-k2.6",
+    "maxCompletionTokens": 4096,
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": "absent",
+    "thinking": false,
+    "choices": 1,
+    "stream": false,
+    "responseFormat": "json_schema",
+    "strictSchemaRequested": true,
+    "workerDeadlineMs": 120000,
+    "forwardingDeadlineMs": 125000,
+    "maximumProviderAttempts": 1,
+    "payloadCollection": false,
+    "caching": false
+  },
+  "request": {
+    "canonicalRetainedBodyBytes": 19256,
+    "canonicalRetainedBodySha256": "9aeb412e1b2ee59512a6c16afaf601857eb1dbd9a49839b40d7655321df9e71f",
+    "actualWireEnvelopeBytes": 19395,
+    "actualWireEnvelopeSha256": "f78a720a805c7911500178823dbda1e9746bbc7739aeafb0e0262318627666cf",
+    "actualWireMatchesCapturedRequest": true,
+    "retainedSystemAndContextStringsUnchanged": true,
+    "retainedProfileAndCardContextSchemaMatched": true,
+    "cardContextSchemaSha256": "064f898e0b5f60f9b5682638e3655b03cf8324b389470162e449928546fa107b",
+    "canonicalOutputSchemaSha256": "cc9f5f5aba46b20b61dc50e22c7bd03936824e7e1cc6f44208ac259d487464a5",
+    "requestCaptures": 1,
+    "responseObservations": 1
+  },
+  "nativeOutcome": {
+    "known": false,
+    "httpStatus": null,
+    "rawResponseCaptured": false,
+    "responseBytes": null,
+    "responseSha256": null,
+    "responseComplete": false,
+    "transportFailure": true,
+    "finishReason": null,
+    "usage": null,
+    "estimatedUsageCostUsd": null,
+    "underlyingProviderOrNetworkCauseKnown": false,
+    "exceptionIdentityRetained": false,
+    "outputQualityConclusion": null
+  },
+  "localFallback": {
+    "httpStatus": 502,
+    "isProviderResponse": false,
+    "bytes": 43,
+    "sha256": "99fa8ce8ea4698e7ede340b7caaaa03edabf00bc09628c6a12818bf622386fed",
+    "classification": "Worker-generated fallback, not a captured provider HTTP response."
+  },
+  "timing": {
+    "timestampsUtc": {
+      "ticket": "2026-09-10T15:35:17.078Z",
+      "runtimeReady": "2026-09-10T15:35:26.380Z",
+      "dispatch": "2026-09-10T15:35:26.396Z",
+      "stop": "2026-09-10T15:37:26.409Z",
+      "diagnosticCompletion": "2026-09-10T15:37:26.410Z",
+      "closed": "2026-09-10T15:37:26.427Z"
+    },
+    "latencyMs": {
+      "ticketToDispatch": 9318,
+      "dispatchToDiagnosticCompletion": 120014,
+      "dispatchToClosure": 120031,
+      "ticketToDiagnosticCompletion": 129332
+    },
+    "inference": "The interval is consistent with the configured 120-second worker deadline before the 125-second forwarding deadline; the exact exception and underlying provider cause were not retained.",
+    "providerOnlyLatencyMs": null,
+    "nativeCompletionTime": null,
+    "diagnosticCompletionIsNotNativeSettlement": true
+  },
+  "validation": {
+    "inspectionReached": false,
+    "inspectionArtifactCreated": false,
+    "jsonValidationReached": false,
+    "outputSchemaValidationReached": false,
+    "continuityValidationReached": false,
+    "referenceReviewReached": false,
+    "semanticReviewReached": false,
+    "serializationAccepted": null,
+    "sourceOutputSchemaAccepted": null,
+    "sourceContinuityAccepted": null,
+    "referenceGrade": null,
+    "semanticGrade": null
+  },
+  "scope": {
+    "diagnosticOnly": true,
+    "candidateCalls": 1,
+    "judgeCalls": 0,
+    "householdBindings": 0,
+    "participantAdmissions": 0,
+    "nativeSettlements": 0,
+    "toolExecutions": 0,
+    "householdReplays": 0,
+    "outputRepairs": 0,
+    "automaticRetries": 0,
+    "originalUnknownCorrectionRequestRetried": false,
+    "privateDiscoveryAcceptanceEstablished": false,
+    "nativeHouseholdAcceptance": false,
+    "familyAcceptance": false,
+    "acceptedBaselineForDiscovery": false
+  },
+  "financialAtClosure": {
+    "journalBytes": 16695,
+    "journalSha256": "93d7f2a1eb419f10e134790eaa7a011e8a2aa13bef4a7960aebb2a8c50dd0e64",
+    "previousJournalBytes": 16542,
+    "previousJournalSha256": "7e1387f66699fe8df7ea3b1f118d6c34794c08298d177e140f15eff74484510f",
+    "callsReserved": 109,
+    "higherCapCallsReserved": 103,
+    "judgeCallsReserved": 0,
+    "reservedMicroUsd": 5861479,
+    "thisUnknownReservationRetainedMicroUsd": 265421,
+    "originalFullUnknownReservationRetainedMicroUsd": 265421,
+    "unknownReservationsRefunded": false,
+    "actualUsage": null,
+    "estimatedUsageCostUsd": null,
+    "originalFullProbeUsage": null,
+    "originalFullProbeEstimatedUsageCostUsd": null,
+    "usageAndCostStatus": "Unavailable, not zero; reservation accounting remains separate.",
+    "authorityAnchorCalls": 68,
+    "authorityAnchorReservedMicroUsd": 3246080,
+    "additionalCallsSinceAuthorityAnchor": 41,
+    "additionalReservedMicroUsdSinceAuthorityAnchor": 2615399
+  },
+  "closure": {
+    "closedAtUtc": "2026-09-10T15:37:26.427Z",
+    "runtimeJoinedExitCode": 0,
+    "runtimeDisposed": true,
+    "gateDisposed": true,
+    "remoteSessionDisposed": true,
+    "graceful": true,
+    "actualFinancialLockAbsent": true,
+    "actualActiveCallAbsent": true,
+    "actualListenerAbsent": true,
+    "absenceCheckedAtUtc": "2026-09-10T15:49:46.378306+00:00",
+    "providerRevocationVerified": false,
+    "rootAndIndependentClosedOutcomeReviewAccepted": true
+  },
+  "limitations": [
+    "No native provider response was captured; native outcome, actual usage and estimated usage cost remain unknown.",
+    "The local HTTP 502 fallback is not provider HTTP 502.",
+    "Deadline timing does not identify the exact exception or underlying provider/network cause.",
+    "No JSON, schema, continuity, reference, semantic, native-household or family acceptance was established."
+  ],
+  "relatedEvidence": {
+    "approvedTinyBaselineReportPreservedUnchanged": true,
+    "tinyBaselineSuccessDoesNotEstablishThisOpeningAcceptance": true
+  },
+  "receiptSha256": {
+    "rootClassification": "47f4f603bb6c3a1c818b37a165f54f2fa9dbdbc736273bdc621847b1066b12b7",
+    "responseClassification": "d6789095e61fceb2fb73abb1cdcf4b584f046ba2f6ea251dd9ef938dd2e0b9ad",
+    "responseObservation": "d9a654270a0639e7df207f31f5bd7413cf3fb10aa4df9a534119b5ba9d83e0ed",
+    "diagnosticCompletion": "e1ee7f1eacd8d3aba1548fd63a48c0aa0ac33f427b77db42232e4098a309b139",
+    "closure": "5161f4dfbc7ca8b4cb38dbf176a7d553d41391828e96c9df11af67278cd79a99"
+  },
+  "privateReceiptIndexSha256": "f2c545f0b006269d68c423a683ad455bd8c8559ce0e2f5fcecfece8243fa2ffd"
+}

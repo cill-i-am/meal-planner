@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-11",
+  "run": "kimi_thinking_large_completion_diagnostic",
+  "status": "closed_after_valid_standalone_opening",
+  "diagnosticOnly": true,
+  "source": {
+    "head": "aeb70ac2821ffde31f154db99fef299ff4402e83",
+    "promptVersion": "private-discovery-prompt-v19",
+    "policyVersion": "private-discovery-policy-v3",
+    "freezeSha256": "7a14604f019f3282367b37e0ee33dacd4079701bd3309cb180167026b80750cc"
+  },
+  "configuration": {
+    "candidateModel": "@cf/moonshotai/kimi-k2.6",
+    "thinking": true,
+    "temperature": 1,
+    "top_p": 0.95,
+    "responseFormat": "json_object",
+    "choices": 1,
+    "stream": false,
+    "maximumProviderAttempts": 1,
+    "maxCompletionTokens": 65536,
+    "workerDeadlineMs": 900000,
+    "gateDeadlineMs": 905000,
+    "callerDeadlineMs": 920000,
+    "responseLimitBytes": 2097152
+  },
+  "request": {
+    "scenario": "dependants_and_fallbacks",
+    "retainedOpeningRequest": true,
+    "sameSystemAndContextMessages": true,
+    "embeddedFullOutputSchemaUnchanged": true,
+    "sourceOutputAndContinuityValidationUnchanged": true,
+    "onlyProviderRequestDelta": {
+      "field": "max_completion_tokens",
+      "before": 4096,
+      "after": 65536
+    },
+    "otherChanges": "Local worker, forwarding and caller deadlines and capture body limits were raised.",
+    "previousCapturedRequestWrapperSha256": "169266e29120f1299a8a4fda2a457374f563a2c5f49af0eb8a929f38fc037cba",
+    "previousCanonicalBodySha256": "fcd704dc8199d22c08a594e14a9f76cb81dd0da2f9dcb546870207bbd1949483",
+    "canonicalBodyBytes": 14453,
+    "canonicalBodySha256": "4fa68d32f55cbbf82139f205dd6c4e25007c0cba770eae5615c74b8613e4a41c",
+    "actualCapturedBodyMatchesPrepared": true
+  },
+  "observedResult": {
+    "httpStatus": 200,
+    "responseComplete": true,
+    "transportFailure": false,
+    "finishReason": "stop",
+    "responseBytes": 27791,
+    "responseBytesSha256": "81785eb99e89130b79d224336bd40a01b13b9ebff9c245c83ca49bc4a48fd6ea",
+    "inputTokens": 2942,
+    "completionTokens": 5537,
+    "totalTokens": 8479,
+    "cachedInputTokens": 2880,
+    "dispatchToInspectionCompletionMs": 133577,
+    "providerOnlyLatencyMs": null,
+    "wholeContentJsonAccepted": true,
+    "sourceOutputSchemaAccepted": true,
+    "sourceContinuityAccepted": true,
+    "automaticRetry": false,
+    "outputRepaired": false
+  },
+  "rootSemanticReview": {
+    "supportedAdultCurryProposal": true,
+    "adultSafetyQuestionHasMatchingUnresolvedNote": true,
+    "dependantNeedRemainsPrivateContext": true,
+    "noClaimOfConfirmedProfileSave": true,
+    "scope": "Standalone output inspection; proposed changes were not applied."
+  },
+  "reasoningMetadata": {
+    "reasoningFieldPresent": false,
+    "legacyReasoningContentFieldPresent": true,
+    "usedAsFinalOutput": false,
+    "textOmitted": true
+  },
+  "scope": {
+    "candidateCalls": 1,
+    "newParticipantAdmissions": 0,
+    "householdBindings": false,
+    "nativeSettlement": false,
+    "nativeSessionReopened": false,
+    "toolExecuted": false,
+    "judgeCalls": 0,
+    "humanRatings": 0,
+    "familiesCompleted": 0,
+    "familiesAccepted": 0,
+    "candidateAccepted": false,
+    "fullSuiteComplete": false,
+    "repeatSessionRun": false
+  },
+  "cost": {
+    "configuredFullInputUsageEstimateUsd": "0.0249429",
+    "cacheAwareUsageEstimateUsd": "0.0226677",
+    "billedCostUsd": null,
+    "inputUsdPerMillionTokens": "0.95",
+    "cachedInputUsdPerMillionTokens": "0.16",
+    "outputUsdPerMillionTokens": "4.00",
+    "basis": "Sealed result rate estimates. All 5,537 reported aggregate completion tokens are counted once. The cache-aware estimate prices 62 uncached and 2,880 cached input tokens. Neither estimate is an invoice or a reservation."
+  },
+  "reservationsAtClosure": {
+    "thisRunMicroUsd": 511181,
+    "phaseCeilingMicroUsd": 3000000,
+    "cumulativeMicroUsd": 12523679,
+    "cumulativeCalls": 134,
+    "cumulativeHigherCapCalls": 127,
+    "cumulativeJudgeCalls": 1,
+    "strictCumulativeCeilingMicroUsd": 20000000,
+    "meaning": "Conservative retained reservations, not billed spend."
+  },
+  "closure": {
+    "runtimeJoined": true,
+    "runtimeExitCode": 0,
+    "processPresent": false,
+    "listenerOpen": false,
+    "financialLockAbsent": true,
+    "graceful": true,
+    "providerRevocationVerified": false
+  },
+  "interpretation": "One complete standalone opening passed the unchanged source JSON, output-schema and continuity checks when given more completion and time allowance. It used more than the old 4,096-token and 120,000-ms bounds. This establishes feasibility for this opening, not native multi-turn quality or family acceptance. Earlier complete non-thinking failures remain unresolved.",
+  "receiptSha256": {
+    "rootResult": "0a87aee2bd11ffdc68fc9a18557cb056382844bddf8c9efe68e893208cdf1962",
+    "requestProvenance": "acb1584db1dbc0053df1656c514a98ee155dedee9661168b14e974849657a6b2",
+    "completion": "4447783247256eb7ba4d908952bf1cc48cd6f7eb45571a1c951fc5536f45a304",
+    "outputInspection": "8e5ecc945eb4d64bc58341bcff31896c7c7ff489c56a1413bc40d97ea7a9cd43",
+    "rootClosure": "cb6e73c58e8a27f99b7f903e6ca0f028b9f90f683530ca04ca77de249ba73346",
+    "closed": "49e3724bee068fbe3aee9fddfcdd781a25adcd5592287f50c14e7dbb8d7fc557"
+  }
+}

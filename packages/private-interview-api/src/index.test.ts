@@ -53,15 +53,39 @@ describe("closed private participant protocol", () => {
       })
     ).toThrow();
   });
+  it("requires an explicit closed user-selected discovery scope on session creation", () => {
+    const decode = Schema.decodeUnknownSync(DirectoryCommand, {
+      onExcessProperty: "error",
+    });
+    expect(() => decode({ mutationId, type: "StartSession" })).toThrow();
+    expect(() =>
+      decode({ mutationId, scope: "ChooseForMe", type: "StartSession" })
+    ).toThrow();
+    for (const scope of ["InitialDiscovery", "ProfileEdit"]) {
+      expect(decode({ mutationId, scope, type: "StartSession" })).toMatchObject(
+        { scope }
+      );
+    }
+  });
   it("does not admit supplied session or participant identity on creation", () => {
     const decode = Schema.decodeUnknownSync(DirectoryCommand, {
       onExcessProperty: "error",
     });
     expect(() =>
-      decode({ mutationId, sessionReference: mutationId, type: "StartSession" })
+      decode({
+        mutationId,
+        scope: "ProfileEdit",
+        sessionReference: mutationId,
+        type: "StartSession",
+      })
     ).toThrow();
     expect(() =>
-      decode({ mutationId, personId: "someone-else", type: "StartSession" })
+      decode({
+        mutationId,
+        personId: "someone-else",
+        scope: "ProfileEdit",
+        type: "StartSession",
+      })
     ).toThrow();
   });
   it("admits only closed proposed changes without provisional or invented authority", () => {
@@ -89,5 +113,50 @@ describe("closed private participant protocol", () => {
         type: "ConfirmProfileCard",
       })
     ).toThrow();
+  });
+  it.each(["CancelAssistantTurn", "RetryAssistantTurn"])(
+    "accepts %s only for an identified versioned participant mutation",
+    (type) => {
+      const command = {
+        expectedVersion: 1,
+        mutationId,
+        turnId: mutationId,
+        type,
+      };
+      expect(decodeSession(command)).toEqual(command);
+      expect(() =>
+        decodeSession({ ...command, turnId: "other-person-turn" })
+      ).toThrow();
+      for (const field of [
+        "model",
+        "status",
+        "provider",
+        "profile",
+        "generation",
+      ]) {
+        expect(() =>
+          decodeSession({ ...command, [field]: "caller-controlled" })
+        ).toThrow();
+      }
+    }
+  );
+  it("never admits client model output or dispatch as a participant command", () => {
+    for (const type of [
+      "AssistantTurnUpdated",
+      "RunAssistantTurn",
+      "AppendAssistantMessage",
+    ]) {
+      expect(() =>
+        decodeSession({
+          expectedVersion: 0,
+          mutationId,
+          turnId: mutationId,
+          type,
+        })
+      ).toThrow();
+    }
+    expect(
+      decodeSession({ requestId: mutationId, type: "ReadAssistantTurn" })
+    ).toEqual({ requestId: mutationId, type: "ReadAssistantTurn" });
   });
 });

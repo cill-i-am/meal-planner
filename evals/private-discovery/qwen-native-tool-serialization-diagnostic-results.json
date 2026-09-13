@@ -1,0 +1,219 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-10",
+  "diagnostic": "qwen_native_tool_serialization",
+  "status": "genuine_tool_arguments_valid_but_offline_continuation_rejected",
+  "source": {
+    "head": "0d76eba4f334c557606ddd246411fa38e5a56304",
+    "tree": "71fbbdeb32d8ce91562b16dcd576fd1f2c696eb5",
+    "freezeSha256": "c9f1dc16e54aa2ec90ee11ee5d61e54d924a99a69b6fd14529938b046f070fef",
+    "promptVersion": "private-discovery-prompt-v16",
+    "policyVersion": "private-discovery-policy-v3",
+    "canonicalOutputSchemaSha256": "cc9f5f5aba46b20b61dc50e22c7bd03936824e7e1cc6f44208ac259d487464a5",
+    "cardContextOutputSchemaSha256": "064f898e0b5f60f9b5682638e3655b03cf8324b389470162e449928546fa107b"
+  },
+  "configuration": {
+    "model": "@cf/qwen/qwen3-30b-a3b-fp8",
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": 20,
+    "maxOutputTokens": 4096,
+    "stream": false,
+    "configuredDeadlineMs": 120000,
+    "maximumProviderAttempts": 1,
+    "tools": 1,
+    "expectedFunctionName": "submit_private_discovery_output",
+    "namedToolChoice": true,
+    "gatewayPayloadCollection": false,
+    "gatewayCaching": false,
+    "judgeCalls": 0
+  },
+  "requestProvenance": {
+    "origin": "Captured H18 context immediately before its second candidate call.",
+    "messageStringsExactlyUnchanged": true,
+    "cardContextSchemaExactlyUnchanged": true,
+    "samplingAndTokenControlsExactlyUnchanged": true,
+    "exactDelta": [
+      "Removed response_format.",
+      "Added one inert named function using the unchanged generated schema.",
+      "Added named tool_choice for that function."
+    ],
+    "bodySha256": "e86933e9bb646a0c8afb1932a2e31ad4c88f12fbc456cf4ddd3220d7e4656bd1",
+    "originalBodySha256": "18455c535d1752911cdd551594144a923a15edbe505fb26de8ba5abb262dd620",
+    "contextSha256": "8c9ea33222e4e202632a8ad72ef3a30c92983f7ce7746134f70043f5a9d67601",
+    "generalNamedChoiceEnforcementVerifiedForModel": false,
+    "expectedNamedFunctionReturnedInThisResponse": true
+  },
+  "layers": {
+    "originalFrozenInspector": {
+      "preservedUnchanged": true,
+      "recordedStage": "tool_calls",
+      "recordedSerializationAccepted": false,
+      "recordedSourceOutputSchemaAccepted": false,
+      "recordedSourceContinuityAccepted": false,
+      "schemaAndContinuationChecksReached": false,
+      "cause": "Presence guards rejected native top-level tool_calls and response fields plus message.function_call, before inspecting the genuine nested call.",
+      "actualAliasShape": {
+        "topLevelToolCalls": "One parsed argument-object alias.",
+        "topLevelResponse": "Empty string.",
+        "messageFunctionCall": null
+      },
+      "genuineNestedChannelAbsentOrMalformed": false
+    },
+    "genuineNativeToolChannel": {
+      "findingAuthority": "Accepted root offline inspection of unchanged original argument bytes.",
+      "channel": "choices[0].message.tool_calls[0].function.arguments",
+      "singleExpectedNestedFunctionCall": true,
+      "argumentsType": "string",
+      "completeUnmodifiedArgumentsJson": true,
+      "parallelAssistantContentEmpty": true,
+      "nativeAliasesEqualNestedArguments": true,
+      "canonicalOutputSchemaAccepted": true,
+      "cardContextOutputSchemaAccepted": true,
+      "toolExecuted": false
+    },
+    "rootOfflineSourceContinuation": {
+      "findingAuthority": "Separate explicit root offline invocation of exported applyPrivateDiscoveryContinuation.",
+      "sourceContinuityAccepted": false,
+      "failureTag": "PrivateDiscoveryContinuationFailure",
+      "failureStage": "reply_decision",
+      "cause": "Ask targets a circumstance note rather than an unresolved topic.",
+      "actualNativeSettlementStage": false,
+      "semanticInspection": {
+        "overallAccepted": false,
+        "conversationalConfirmationRepeatsAlreadyExplicitIntent": true,
+        "interfaceReviewInvitationMissing": true,
+        "dependencyAndSafetyDiscoveryNotPerformed": true
+      },
+      "proposalReferenceInspection": {
+        "method": "Manual checks against captured profile/cards; private native reviewProposals was not invoked.",
+        "existingOwnOrdinaryFactTarget": true,
+        "newDraftNoDuplicateCard": true,
+        "requestedReplacementShapeSupported": true,
+        "nativeProposalValidationClaim": false
+      }
+    }
+  },
+  "actualCall": {
+    "calls": 1,
+    "knownTransport": true,
+    "httpStatus": 200,
+    "responseComplete": true,
+    "transportFailure": false,
+    "finishReason": "stop",
+    "reasoningContentPresent": true,
+    "usage": {
+      "inputTokens": 5155,
+      "outputTokens": 752,
+      "totalTokens": 5907
+    },
+    "recordedCachedInputTokens": 0,
+    "estimatedCostUsd": "0.000518585",
+    "timestampsUtc": {
+      "ticket": "2026-09-10T09:35:15.866Z",
+      "runtimeReady": "2026-09-10T09:35:25.328Z",
+      "dispatch": "2026-09-10T09:35:25.340Z",
+      "diagnosticCompletion": "2026-09-10T09:35:31.133Z",
+      "runtimeClosed": "2026-09-10T09:35:31.151Z",
+      "rootOfflineInspectionRecorded": "2026-09-10T09:38:10.899Z"
+    },
+    "latencyMs": {
+      "ticketToDiagnosticCompletion": 15267,
+      "dispatchToDiagnosticCompletion": 5793,
+      "ticketToDispatch": 9474
+    },
+    "bytes": {
+      "compactRequestBody": 20103,
+      "actualCapturedWireEnvelope": 20242,
+      "actualReturnedResponse": 7282,
+      "originalNestedArgumentsUtf8": 968
+    },
+    "hashes": {
+      "compactRequestBody": "e86933e9bb646a0c8afb1932a2e31ad4c88f12fbc456cf4ddd3220d7e4656bd1",
+      "actualCapturedWireEnvelope": "14ec67e6fb903bb3a25c10f445a7ea03ef30f2d954e9d9703f82214b210f9c24",
+      "actualReturnedResponse": "5447353a67f233291c8500685a0f85fd03b5b5a3ad4627e8056c4c8c4e9f5ed7",
+      "originalNestedArguments": "f8e1c4805628b4b3b2d4c4b5e3684d5fcda201045b5768fd2cbdc8673c61ba82"
+    }
+  },
+  "measurement": {
+    "tokenRatesUsdPerMillion": {
+      "input": "0.051",
+      "output": "0.34"
+    },
+    "costBasis": "Configured per-token estimate from recorded usage, not an invoice.",
+    "latency": "Ticket/dispatch to original diagnostic completion, including startup, native response handling and the frozen inspection as applicable; not provider-only latency or household settlement.",
+    "wireEnvelope": "Actual captured wire-envelope bytes retained and hash-checked against the frozen request; not merely a reconstructed envelope.",
+    "response": "Returned response bytes equal the native observation byte-for-byte.",
+    "unmeasured": [
+      "provider-only latency",
+      "first-token time",
+      "reasoning-token subtotal",
+      "judge or human quality scores"
+    ]
+  },
+  "boundaries": {
+    "diagnosticOnly": true,
+    "householdBindings": 0,
+    "householdNativeSessions": 0,
+    "nativeSettlements": 0,
+    "newPersistedSemanticHardFailures": 0,
+    "toolExecutions": 0,
+    "participantAdmissions": 0,
+    "householdReplays": 0,
+    "sourceReplay": false,
+    "outputRepair": false,
+    "textSalvage": false,
+    "automaticProviderRetry": false,
+    "offlineInspectionProviderCalls": 0,
+    "reportPreparationProviderCalls": 0,
+    "acceptedBaseline": false,
+    "familyCompleted": false,
+    "historicalIntentsUnchanged": {
+      "total": 79,
+      "gpt": 74,
+      "qwen": 5
+    }
+  },
+  "financialAtClosure": {
+    "journalBytes": 16236,
+    "journalSha256": "5a039895cf96af6a2d3e52112e0f250078090a6999292dbf287a177b8ca3ed9e",
+    "previousJournalBytes": 16082,
+    "previousJournalSha256": "58b9091c989e9d99c4ac7453c9f396ff38f2572c5ab89b7f70511bd7a5940037",
+    "callsReserved": 106,
+    "higherCapCallsReserved": 100,
+    "judgeCallsReserved": 0,
+    "reservedMicroUsd": 5065216,
+    "diagnosticReservationMicroUsd": 47872,
+    "authorityAnchorCalls": 68,
+    "authorityAnchorReservedMicroUsd": 3246080,
+    "additionalCallsSinceAnchor": 38,
+    "additionalReservedMicroUsdSinceAnchor": 1819136
+  },
+  "closure": {
+    "closedAtUtc": "2026-09-10T09:35:31.151Z",
+    "rootRuntimeSessionJoinedExitCode": 0,
+    "graceful": true,
+    "runtimeDisposed": true,
+    "gateDisposed": true,
+    "remoteSessionDisposed": true,
+    "actualFinancialLockAbsent": true,
+    "actualListenerAbsent": true,
+    "actualActiveCallAbsent": true,
+    "absenceCheckedAtUtc": "2026-09-10T09:47:34.633753+00:00",
+    "providerRevocationVerified": false
+  },
+  "limitations": [
+    "One response demonstrates the expected native string-argument channel under this request; it does not establish model-wide named-choice enforcement or reliability.",
+    "The original inspector rejection and later offline continuation rejection are distinct findings; the frozen result remains unchanged.",
+    "The offline continuation and manual proposal/reference checks were not native household settlement or private native proposal validation.",
+    "No household session, persisted semantic failure, family completion, accepted baseline, judge or human quality result was produced."
+  ],
+  "receiptSha256": {
+    "originalFrozenInspection": "c31d08094f8799659fa4211fa450f64748fa50610968dbb3d215655d21f58426",
+    "acceptedRootOfflineInspection": "32cc39d74dd19a301d7b3ed2aff30f71f0d622a197b7a0729415b7d7d4879b46",
+    "sealedRootPhaseClassification": "296aa47496bfa107aa77f11faed8eceaf86ec0cc36e2d0628c0d2f9f5936268f",
+    "diagnosticCompletion": "a80ca31c7898180f6aaf88875deab7f34ab48710ff3bda37f533ed7adfbbab3a",
+    "closure": "cbc48c2d08e06d7c65c0a0737fa39e5e3fc570a9f645d7b58eb8d5c2ed428a8a"
+  },
+  "privateReceiptIndexSha256": "65c12ca4557a8eba272f0154fc0f85bcf1c67d04024b371b9ed409f0fc9b79ae"
+}

@@ -12,6 +12,7 @@ import { Button } from "../../components/ui/button.js";
 import { Label } from "../../components/ui/label.js";
 import {
   browserPrivateInterviewDependencies,
+  isAssistantTurnActive,
   PrivateInterviewClient,
 } from "./private-interview-client.js";
 import type {
@@ -19,6 +20,7 @@ import type {
   PrivateInterviewView,
 } from "./private-interview-client.js";
 import { PrivateProfileCards } from "./private-profile-cards.js";
+import { PrivateResponseStatus } from "./private-response-status.js";
 
 const dateLabel = (timestamp: number) =>
   new Date(timestamp).toLocaleString(undefined, {
@@ -47,6 +49,7 @@ const MessageForm = ({
   const disabled =
     view.pending !== null ||
     view.pendingConfirmation !== null ||
+    isAssistantTurnActive(view.assistantTurn) ||
     view.notice !== null ||
     !view.historyLoaded;
   return (
@@ -131,6 +134,23 @@ const Notice = ({
         </Alert>
       );
     }
+    case "unreadable_request": {
+      return (
+        <Alert>
+          <p>
+            This browser has a saved request it can no longer read. Its previous
+            outcome is unknown. Check your sessions before clearing the saved
+            request; clearing it does not undo any changes already made.
+          </p>
+          <Button
+            disabled={!view.sessionsLoaded}
+            onClick={client.discardUnreadableRequest}
+          >
+            Clear unreadable saved request
+          </Button>
+        </Alert>
+      );
+    }
     case "binding_changed": {
       return (
         <Alert>
@@ -177,6 +197,20 @@ const Notice = ({
         </Alert>
       );
     }
+    case "assistant_turn_pending":
+    case "assistant_turn_conflict": {
+      return (
+        <Alert>
+          <p>
+            This response changed on another connection. Refresh before
+            continuing.
+          </p>
+          <Button onClick={client.reconnectSession}>
+            Review response status
+          </Button>
+        </Alert>
+      );
+    }
     case "confirmation_pending":
     case "card_not_found":
     case "card_conflict":
@@ -215,7 +249,10 @@ const SessionHistory = ({
       )}
     </div>
     {view.historyLoaded && view.messages.length === 0 && (
-      <p>No messages saved in this session.</p>
+      <p>
+        Tell me about foods you enjoy, foods you avoid, or what makes meals easy
+        or difficult for you. Start wherever you like.
+      </p>
     )}
     {!view.historyLoaded && <p role="status">Loading private history…</p>}
     <ol aria-label="Saved messages" className="private-messages">
@@ -236,14 +273,25 @@ const SessionHistory = ({
     {view.moreHistory && (
       <Button onClick={client.loadHistory}>Load more messages</Button>
     )}
+    <PrivateResponseStatus client={client} view={view} />
     <PrivateProfileCards client={client} view={view} />
     {view.sessionState?.status === "open" && (
       <>
-        <MessageForm
-          client={client}
-          key={`${view.sessionReference}:${view.lastAppendReceipt ?? "draft"}`}
-          view={view}
-        />
+        {view.reservations.find(
+          (reservation) =>
+            reservation.sessionReference === view.sessionReference
+        )?.scope === null ? (
+          <p>
+            Start a new food discovery or profile update to continue. This older
+            conversation remains available to read.
+          </p>
+        ) : (
+          <MessageForm
+            client={client}
+            key={`${view.sessionReference}:${view.lastAppendReceipt ?? "draft"}`}
+            view={view}
+          />
+        )}
         <div className="private-complete">
           <p>
             Finish when you’re done. Your history stays available; new messages
@@ -252,6 +300,7 @@ const SessionHistory = ({
           <Button
             disabled={
               view.pendingConfirmation !== null ||
+              isAssistantTurnActive(view.assistantTurn) ||
               view.pending !== null ||
               view.notice !== null ||
               !view.historyLoaded
@@ -297,11 +346,24 @@ const ConnectedPanel = ({
           view.pendingConfirmation !== null ||
           view.pending !== null ||
           view.notice === "binding_changed" ||
-          view.notice === "storage_unavailable"
+          view.notice === "storage_unavailable" ||
+          view.notice === "unreadable_request"
         }
-        onClick={client.start}
+        onClick={() => client.start("InitialDiscovery")}
       >
-        Start private session
+        Start food discovery
+      </Button>
+      <Button
+        disabled={
+          view.pendingConfirmation !== null ||
+          view.pending !== null ||
+          view.notice === "binding_changed" ||
+          view.notice === "storage_unavailable" ||
+          view.notice === "unreadable_request"
+        }
+        onClick={() => client.start("ProfileEdit")}
+      >
+        Update my food profile
       </Button>
       <Button onClick={client.connect}>Refresh sessions</Button>
     </div>
@@ -395,9 +457,9 @@ const BoundPrivateInterviewsPanel = ({
         adult account can access these sessions.
       </p>
       <p className="private-foundation-note">
-        You can save messages and return to them later. Assistant replies are
-        not available yet. Notes stay private; only profile proposals you
-        explicitly confirm update household food profiles.
+        Your messages and replies stay private. Review any profile proposals
+        before deciding what to share. Only proposals you explicitly confirm
+        update household food profiles.
       </p>
       {view.connection === "connecting" && (
         <p role="status">Connecting to your private sessions…</p>

@@ -1,11 +1,14 @@
 /* eslint-disable max-classes-per-file -- Native fixture exports both independently stored private child kinds. */
 import type * as NativeCloudflare from "@cloudflare/workers-types";
+import { PersonProfile } from "@meal-planner/household-api";
+import { PrivateDiscoveryScope } from "@meal-planner/private-interview-api";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import { Schema } from "effect";
 
 import { PrivateInterviewDirectory as ProductionDirectory } from "./private-interview-directory.js";
 import { PrivateInterviewSession as ProductionSession } from "./private-interview-session.js";
+import type { PrivateInterviewEnvironment } from "./private-output-socket.js";
 import {
   PrivateSessionBinding,
   PrivateParticipantBinding,
@@ -14,6 +17,7 @@ import {
 } from "./private-output.contract.js";
 import type { OutputLifecyclePort } from "./private-output.contract.js";
 import {
+  privateAssistantTurns,
   privateMessages,
   privateOutputGeneration,
   privateSessionBinding,
@@ -26,9 +30,45 @@ export {
   PrivateOutputMutations,
 } from "./private-output-worker.js";
 
+type SyntheticModelBody = Readonly<Record<string, unknown>>;
+
 /** Test-only acknowledgment faults and a synchronous clock around the production session. */
 export class PrivateInterviewSession extends ProductionSession {
   #fixtureDatabase = drizzle(this.ctx.storage);
+
+  constructor(
+    context: NativeCloudflare.DurableObjectState,
+    environment: PrivateInterviewEnvironment
+  ) {
+    super(context, {
+      ...environment,
+      PrivateDiscoveryAI: {
+        // Native Ai.run is overloaded across every provider model. This test adapter replaces only its external transport.
+        run: ((
+          model: string,
+          body: SyntheticModelBody,
+          options: {
+            signal?: AbortSignal;
+            gateway?: unknown;
+            extraHeaders?: Readonly<Record<string, string>>;
+          }
+        ) =>
+          fetch("https://private-model.test/run", {
+            body: JSON.stringify({
+              body,
+              extraHeaders: options.extraHeaders,
+              gateway: options.gateway,
+              model,
+            }),
+            method: "POST",
+            // The synthetic provider deliberately ignores cancellation to prove the durable late-output fence.
+          })) as NativeCloudflare.Ai["run"],
+      },
+    });
+  }
+  readTurns() {
+    return this.#fixtureDatabase.select().from(privateAssistantTurns).all();
+  }
 
   enqueueOutput(input: {
     readonly generation: string;
@@ -139,6 +179,8 @@ type SessionPort = {
   [
     Key in
       | "initialize"
+      | "runAssistantTurn"
+      | "readTurns"
       | "beginConnection"
       | "authorizeConnection"
       | "invalidateOutput"
@@ -201,7 +243,7 @@ type DirectoryPort = {
       | "beginConnection"
       | "authorizeConnection"
       | "invalidateOutput"
-      | "hasReservation"
+      | "readReservation"
       | "readOutputLifecycle"
       | "fetch"
       | "commandAtTime"
@@ -229,6 +271,7 @@ const Command = Schema.Struct({
   action: Schema.String,
   binding: Schema.optional(PrivateSessionBinding),
   directoryKey: Schema.optional(Schema.String),
+  discoveryScope: Schema.optional(Schema.NullOr(PrivateDiscoveryScope)),
   expiresAt: Schema.optional(Schema.Number),
   generation: Schema.optional(Schema.String),
   intentKey: Schema.optional(Schema.String),
@@ -237,8 +280,10 @@ const Command = Schema.Struct({
   operationId: Schema.optional(Schema.String),
   participant: Schema.optional(PrivateParticipantBinding),
   payload: Schema.optional(Schema.String),
+  profile: Schema.optional(PersonProfile),
   scope: Schema.optional(Schema.Literals(["account", "household"])),
   sessionReference: Schema.String,
+  turnId: Schema.optional(Schema.String),
 });
 
 /** Test-only direct capabilities; this shell is never referenced by the production worker resource. */
@@ -305,7 +350,7 @@ export default {
         } else if (input.action === "directory-lose-ack") {
           result = await directory.loseNextInvalidationAcknowledgement();
         } else if (input.action === "directory-reserved" && input.binding) {
-          result = await directory.hasReservation(input.binding);
+          result = (await directory.readReservation(input.binding)) !== null;
         } else if (input.action === "directory-connect") {
           return directory.fetch(
             new Request(request.url, {
@@ -319,7 +364,13 @@ export default {
           return new Response(null, { status: 404 });
         }
       } else if (input.action === "initialize" && input.binding) {
-        result = await child.initialize(input.binding);
+        result = await child.initialize({
+          binding: input.binding,
+          scope:
+            input.discoveryScope === undefined
+              ? "ProfileEdit"
+              : input.discoveryScope,
+        });
       } else if (input.action === "begin" && input.binding) {
         result = await child.beginConnection(input.binding);
       } else if (input.action === "authorize" && input.binding) {
@@ -355,6 +406,20 @@ export default {
           ...generation,
           payload: input.payload ?? "",
         });
+      } else if (
+        input.action === "run-turn" &&
+        input.binding &&
+        input.profile &&
+        input.turnId
+      ) {
+        result = await child.runAssistantTurn({
+          ...generation,
+          binding: input.binding,
+          profile: input.profile,
+          turnId: input.turnId,
+        });
+      } else if (input.action === "turns") {
+        result = await child.readTurns();
       } else if (input.action === "metadata") {
         result = await child.readMetadata();
       } else if (input.action === "lifecycle") {

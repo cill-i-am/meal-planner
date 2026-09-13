@@ -1,0 +1,397 @@
+import type * as NativeCloudflare from "@cloudflare/workers-types";
+import { Effect, Option, Schema } from "effect";
+import { Tool } from "effect/unstable/ai";
+
+import { PrivateDiscoveryCompletion } from "./private-discovery-completion.js";
+import {
+  makePrivateDiscoveryKimiStreamDecoder,
+  PrivateDiscoveryKimiStreamFailure,
+} from "./private-discovery-kimi-stream.js";
+import {
+  makePrivateDiscoveryProviderOutput,
+  PRIVATE_DISCOVERY_CONTEXT_BYTES,
+  PRIVATE_DISCOVERY_POLICY_VERSION,
+  PRIVATE_DISCOVERY_PROMPT_VERSION,
+  PRIVATE_DISCOVERY_TOOL_VERSION,
+  PrivateDiscoveryContext,
+  PrivateDiscoveryFailure,
+  SubmitDiscoveryTurn,
+} from "./private-discovery-model.js";
+import type {
+  PrivateDiscoveryInvalidOutputStage,
+  PrivateDiscoveryModel,
+  PrivateDiscoveryProvenance,
+  PrivateDiscoveryUsage,
+} from "./private-discovery-model.js";
+import { privateDiscoveryInstructions } from "./private-discovery-prompt.js";
+
+export const PRIVATE_DISCOVERY_INPUT_BYTES = 32_768;
+export const PRIVATE_DISCOVERY_RESPONSE_BYTES = 65_536;
+const PositiveAmount = Schema.Number.pipe(
+  Schema.check(Schema.isGreaterThanOrEqualTo(0))
+);
+export const PrivateDiscoveryConfiguration = Schema.Struct({
+  gatewayId: Schema.String.pipe(
+    Schema.check(Schema.isNonEmpty(), Schema.isMaxLength(64))
+  ),
+  inputUsdPerMillionTokens: PositiveAmount,
+  maxOutputTokens: Schema.Int.pipe(
+    Schema.check(Schema.isBetween({ maximum: 65_536, minimum: 1 }))
+  ),
+  model: Schema.Literals([
+    "@cf/openai/gpt-oss-120b",
+    "@cf/moonshotai/kimi-k2.6",
+  ]),
+  outputUsdPerMillionTokens: PositiveAmount,
+  timeoutMs: Schema.Int.pipe(
+    Schema.check(Schema.isBetween({ maximum: 900_000, minimum: 1000 }))
+  ),
+}).pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (config) =>
+        config.model === "@cf/moonshotai/kimi-k2.6" ||
+        (config.maxOutputTokens <= 4096 && config.timeoutMs <= 120_000),
+      { expected: "token and deadline limits supported by the selected model" }
+    )
+  ),
+  Schema.annotate({ parseOptions: { onExcessProperty: "error" } })
+);
+export type PrivateDiscoveryConfiguration =
+  typeof PrivateDiscoveryConfiguration.Type;
+export interface PrivateDiscoveryModelEnvironment {
+  readonly PRIVATE_DISCOVERY_CONFIG?: string | null;
+  readonly PrivateDiscoveryAI?: Pick<NativeCloudflare.Ai, "run">;
+}
+
+const failure = (
+  reason: PrivateDiscoveryFailure["reason"],
+  usage: PrivateDiscoveryUsage | null = null,
+  provenance: PrivateDiscoveryProvenance | null = null,
+  stage: PrivateDiscoveryInvalidOutputStage | null = null
+) => new PrivateDiscoveryFailure({ provenance, reason, stage, usage });
+const configuration = Schema.decodeUnknownOption(
+  Schema.fromJsonString(PrivateDiscoveryConfiguration)
+);
+
+const requestFor = (
+  config: PrivateDiscoveryConfiguration,
+  context: PrivateDiscoveryContext
+) => {
+  const outputJsonSchema = Tool.getJsonSchemaFromSchema(
+    makePrivateDiscoveryProviderOutput(context.cards)
+  );
+  const systemInstructions = privateDiscoveryInstructions;
+  const messages = [
+    { content: systemInstructions, role: "system" as const },
+    { content: JSON.stringify(context), role: "user" as const },
+  ];
+  const toolRequest = {
+    parallel_tool_calls: false,
+    tool_choice: {
+      function: { name: "submitDiscoveryTurn" },
+      type: "function" as const,
+    },
+    tools: [
+      {
+        function: {
+          description:
+            "Submit one evidence-backed private discovery intent for application validation. This never confirms or saves a household fact.",
+          name: "submitDiscoveryTurn",
+          parameters: outputJsonSchema,
+          strict: true,
+        },
+        type: "function" as const,
+      },
+    ],
+  };
+  if (config.model === "@cf/moonshotai/kimi-k2.6") {
+    // Kimi's verified thinking parameter is more specific than the shared Workers declaration.
+    const thinking: NonNullable<
+      NativeCloudflare.AiModels["@cf/moonshotai/kimi-k2.6"]["inputs"]["chat_template_kwargs"]
+    > & { readonly thinking: true } = { thinking: true };
+    return {
+      body: {
+        ...toolRequest,
+        chat_template_kwargs: thinking,
+        max_completion_tokens: config.maxOutputTokens,
+        messages,
+        n: 1,
+        stream: true as const,
+        stream_options: { include_usage: true },
+        temperature: 1,
+        top_p: 0.95,
+      } satisfies NativeCloudflare.AiModels["@cf/moonshotai/kimi-k2.6"]["inputs"],
+      model: config.model,
+    };
+  }
+  return {
+    body: {
+      ...toolRequest,
+      max_tokens: config.maxOutputTokens,
+      messages,
+      stream: false as const,
+      temperature: 1,
+      top_p: 1,
+    } satisfies NativeCloudflare.AiModels["@cf/openai/gpt-oss-120b"]["inputs"],
+    model: config.model,
+  };
+};
+
+const readResponseBody = async <T>(
+  response: NativeCloudflare.Response,
+  signal: AbortSignal,
+  decoder: {
+    readonly push: (bytes: Uint8Array) => void;
+    readonly finish: () => T;
+  }
+): Promise<T> => {
+  if (response.body === null) {
+    throw failure("invalid_output", null, null, "response_body_missing");
+  }
+  const reader = response.body.getReader();
+  const cancel = () => {
+    // Cancellation is best effort; a stalled provider must not hold the deadline open.
+    // oxlint-disable-next-line promise/prefer-await-to-then -- Cancellation must not await a stalled provider cleanup promise.
+    void reader.cancel().catch(() => null);
+  };
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    signal.throwIfAborted();
+    while (true) {
+      // oxlint-disable-next-line no-await-in-loop -- One ordered reader preserves backpressure, resource limits and EOF settlement.
+      const part = await reader.read();
+      signal.throwIfAborted();
+      if (part.done) {
+        return decoder.finish();
+      }
+      decoder.push(part.value);
+    }
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    cancel();
+  }
+};
+
+const readBoundedJsonResponse = (
+  response: NativeCloudflare.Response,
+  signal: AbortSignal
+) => {
+  const decoder = new TextDecoder();
+  let length = 0;
+  let text = "";
+  return readResponseBody(response, signal, {
+    finish: () => text + decoder.decode(),
+    push: (bytes) => {
+      length += bytes.byteLength;
+      if (length > PRIVATE_DISCOVERY_RESPONSE_BYTES) {
+        throw failure("invalid_output", null, null, "response_body_limit");
+      }
+      text += decoder.decode(bytes, { stream: true });
+    },
+  });
+};
+
+/** One native provider call, guarded at dispatch; no retries or private logging. */
+export const makePrivateDiscoveryModel = (
+  environment: PrivateDiscoveryModelEnvironment
+): PrivateDiscoveryModel => ({
+  generate: (input) =>
+    Effect.gen(function* generatePrivateDiscovery() {
+      const configured = configuration(environment.PRIVATE_DISCOVERY_CONFIG);
+      const ai = environment.PrivateDiscoveryAI;
+      if (Option.isNone(configured) || ai === undefined) {
+        return yield* Effect.fail(failure("not_configured"));
+      }
+      const config = configured.value;
+      const provenance: PrivateDiscoveryProvenance = {
+        model: config.model,
+        policyVersion: PRIVATE_DISCOVERY_POLICY_VERSION,
+        promptVersion: PRIVATE_DISCOVERY_PROMPT_VERSION,
+        provider: "cloudflare-workers-ai",
+        toolVersion: PRIVATE_DISCOVERY_TOOL_VERSION,
+      };
+      const configuredFailure = (
+        reason: PrivateDiscoveryFailure["reason"],
+        usage: PrivateDiscoveryUsage | null = null,
+        stage: PrivateDiscoveryInvalidOutputStage | null = null
+      ) => failure(reason, usage, provenance, stage);
+      const context = yield* Schema.decodeUnknownEffect(
+        PrivateDiscoveryContext,
+        { onExcessProperty: "error" }
+      )(input.context).pipe(
+        Effect.mapError(() => configuredFailure("context_limit"))
+      );
+      const request = requestFor(config, context);
+      const encoder = new TextEncoder();
+      if (
+        encoder.encode(JSON.stringify(context)).byteLength >
+          PRIVATE_DISCOVERY_CONTEXT_BYTES ||
+        encoder.encode(JSON.stringify(request.body)).byteLength >
+          PRIVATE_DISCOVERY_INPUT_BYTES
+      ) {
+        return yield* Effect.fail(configuredFailure("context_limit"));
+      }
+      return yield* Effect.gen(function* callPrivateDiscoveryProvider() {
+        const received = yield* Effect.tryPromise({
+          catch: (error) =>
+            error instanceof PrivateDiscoveryFailure
+              ? error
+              : configuredFailure("outcome_unknown"),
+          try: async (signal) => {
+            const transportSignal = AbortSignal.any([input.signal, signal]);
+            const options = {
+              extraHeaders: { "cf-aig-max-attempts": "1" },
+              gateway: {
+                collectLog: false,
+                id: config.gatewayId,
+                requestTimeoutMs: config.timeoutMs,
+                skipCache: true,
+              },
+              returnRawResponse: true as const,
+              // SAFETY: The Workers and DOM libraries describe the same runtime signal with
+              // incompatible event-listener overloads at this native API boundary.
+              signal:
+                transportSignal as unknown as NativeCloudflare.AbortSignal,
+            };
+            if (options.signal.aborted) {
+              throw configuredFailure("outcome_unknown");
+            }
+            input.beforeDispatch(provenance);
+            const response = await ai.run(request.model, request.body, options);
+            if (!response.ok) {
+              void response.body?.cancel().catch(() => null);
+              throw configuredFailure("provider_unavailable");
+            }
+            const streaming = config.model === "@cf/moonshotai/kimi-k2.6";
+            if (
+              streaming &&
+              response.headers
+                .get("content-type")
+                ?.split(";")[0]
+                ?.trim()
+                .toLowerCase() !== "text/event-stream"
+            ) {
+              void response.body?.cancel().catch(() => null);
+              throw configuredFailure(
+                "invalid_output",
+                null,
+                "response_envelope"
+              );
+            }
+            try {
+              if (streaming) {
+                return {
+                  _tag: "Kimi" as const,
+                  completion: await readResponseBody(
+                    response,
+                    transportSignal,
+                    makePrivateDiscoveryKimiStreamDecoder()
+                  ),
+                };
+              }
+              return {
+                _tag: "Json" as const,
+                text: await readBoundedJsonResponse(response, transportSignal),
+              };
+            } catch (error) {
+              if (transportSignal.aborted) {
+                throw configuredFailure("outcome_unknown");
+              }
+              let stage: PrivateDiscoveryInvalidOutputStage =
+                "response_body_read";
+              if (error instanceof PrivateDiscoveryKimiStreamFailure) {
+                ({ stage } = error.diagnostic);
+              } else if (
+                error instanceof PrivateDiscoveryFailure &&
+                error.stage !== null
+              ) {
+                ({ stage } = error);
+              }
+              throw configuredFailure("invalid_output", null, stage);
+            }
+          },
+        });
+        const envelope = yield* Effect.try({
+          catch: () =>
+            configuredFailure("invalid_output", null, "response_json"),
+          try: (): unknown =>
+            received._tag === "Kimi"
+              ? received.completion
+              : JSON.parse(received.text),
+        });
+        const completion = yield* Schema.decodeUnknownEffect(
+          PrivateDiscoveryCompletion
+        )(envelope).pipe(
+          Effect.mapError(() =>
+            configuredFailure("invalid_output", null, "response_envelope")
+          )
+        );
+        const usage: PrivateDiscoveryUsage =
+          completion.usage === undefined
+            ? { estimatedCostUsd: null, inputTokens: null, outputTokens: null }
+            : {
+                estimatedCostUsd:
+                  (completion.usage.prompt_tokens *
+                    config.inputUsdPerMillionTokens +
+                    completion.usage.completion_tokens *
+                      config.outputUsdPerMillionTokens) /
+                  1_000_000,
+                inputTokens: completion.usage.prompt_tokens,
+                outputTokens: completion.usage.completion_tokens,
+              };
+        const [choice] = completion.choices;
+        if (choice === undefined) {
+          return yield* Effect.fail(
+            configuredFailure("invalid_output", usage, "response_envelope")
+          );
+        }
+        if (
+          choice.message.refusal !== undefined &&
+          choice.message.refusal !== null
+        ) {
+          return yield* Effect.fail(configuredFailure("refused", usage));
+        }
+        if (choice.finish_reason !== "tool_calls") {
+          return yield* Effect.fail(
+            configuredFailure("invalid_output", usage, "incomplete_completion")
+          );
+        }
+        const [toolCall, ...extraCalls] = choice.message.tool_calls ?? [];
+        if (
+          toolCall === undefined ||
+          extraCalls.length !== 0 ||
+          toolCall.function.name !== "submitDiscoveryTurn" ||
+          (choice.message.content !== undefined &&
+            choice.message.content !== null &&
+            choice.message.content !== "")
+        ) {
+          return yield* Effect.fail(
+            configuredFailure("invalid_output", usage, "tool_call")
+          );
+        }
+        const decoded = yield* Effect.try({
+          catch: () =>
+            configuredFailure("invalid_output", usage, "output_json"),
+          try: (): unknown => JSON.parse(toolCall.function.arguments),
+        });
+        const output = yield* Schema.decodeUnknownEffect(SubmitDiscoveryTurn, {
+          onExcessProperty: "error",
+        })(decoded).pipe(
+          Effect.mapError(() =>
+            configuredFailure("invalid_output", usage, "output_schema")
+          )
+        );
+        return {
+          output,
+          provenance,
+          usage,
+        };
+      }).pipe(
+        Effect.timeoutOrElse({
+          duration: config.timeoutMs,
+          orElse: () => Effect.fail(configuredFailure("outcome_unknown")),
+        })
+      );
+    }),
+});

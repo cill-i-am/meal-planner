@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/durable-sqlite";
 import { Schema } from "effect";
 
+import type { PrivateDiscoveryModelEnvironment } from "./private-discovery-workers-ai.js";
 import { PrivateOutputUnavailable } from "./private-output.contract.js";
 import type {
   OutputLifecyclePort,
@@ -16,7 +17,7 @@ declare const Response: typeof NativeCloudflare.Response;
 export const Generation = Schema.Struct({
   generation: Schema.String.pipe(Schema.check(Schema.isUUID())),
 });
-export interface PrivateInterviewEnvironment {
+export interface PrivateInterviewEnvironment extends PrivateDiscoveryModelEnvironment {
   readonly AccountOutputLifecycle: {
     readonly getByName: (name: string) => OutputLifecyclePort;
   };

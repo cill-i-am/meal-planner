@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-11",
+  "recordedAtUtc": "2026-09-11T23:18:45.214108+00:00",
+  "run": "kimi_v20_native_dependants",
+  "status": "closed_native_completed_fixture_coverage_incomplete",
+  "source": {
+    "head": "3302090cd61d83313199b3ed60b1408f6d5c05fc",
+    "tree": "cc50b1423e1accab5f737431998129a8381912db",
+    "freezeSha256": "5950f5563777d389ff94d6aaab8fc2b81b29be1c6b2996d089da6d9c8b423635",
+    "promptVersion": "private-discovery-prompt-v20",
+    "policyVersion": "private-discovery-policy-v3",
+    "integrity": {
+      "runtimeSourcePresentAndUnchangedAtClosure": true,
+      "nonMissingTrackedFilesVerifiedUnchanged": 930,
+      "historicalTrackedAssetsMissingAtClosure": 3,
+      "historicalTrackedAssetsRestoredExactly": 3,
+      "historicalPrivatePinsMissingAtClosure": 5,
+      "historicalPrivatePinsRestoredExactly": 5,
+      "all186HarnessPinsMatchAfterRestoration": true,
+      "causeOfMissingArtifacts": "not established",
+      "uninterruptedAvailabilityOfAllSourceAndHarnessFilesProven": false,
+      "inspectionReceiptSha256": "7607766c8de2a9b5d51ed5367aa3711f845c863880bbe8cb72b0631530d98838",
+      "sourceRestorationReceiptSha256": "036086aa8cbc95a9a87cce2a3f81b2eb99efffefccbf890795fec604c96c5f7c",
+      "privateRestorationReceiptSha256": "c9bd4b0e711ae12cda9e3109ead3a04913973d378a982c77fcaec2f15bc74f28"
+    }
+  },
+  "configuration": {
+    "candidateModel": "@cf/moonshotai/kimi-k2.6",
+    "thinking": true,
+    "temperature": 1,
+    "top_p": 0.95,
+    "maxCompletionTokens": 65536,
+    "workerDeadlineMs": 900000,
+    "responseLimitBytes": 2097152,
+    "responseFormat": "json_object",
+    "choices": 1,
+    "stream": false,
+    "maximumProviderAttempts": 1
+  },
+  "fixture": {
+    "id": "dependants_and_fallbacks",
+    "phase": "A",
+    "nativeSessionCompleted": true,
+    "nativeSessionVersion": 11,
+    "coverageComplete": false,
+    "requiredDiscoveriesObserved": [
+      "dependant.adult_preference",
+      "dependant.avoidance",
+      "dependant.safety"
+    ],
+    "requiredDiscoveriesMissing": ["dependant.fallback"],
+    "challengeObserved": false,
+    "disclosureMethod": "Actual candidate questions were mapped to canonical fixture revealWhen conditions. Unasked withheld fallback, workload and fixed-challenge information was not supplied."
+  },
+  "qualityObservations": [
+    "The opening supplied the adult preference, which was proposed early and explicitly confirmed.",
+    "The first follow-up elicited the dependant dislike; it remained private context and produced no adult profile fact.",
+    "The personal adult safety statement was separately elicited, proposed and explicitly confirmed without applying it to the dependant.",
+    "The candidate returned Review/no_relevant_open_topic after the adult safety answer while the declared fallback need and dependant dislike remained. It did not elicit the exact fallback or acceptable extra preparation.",
+    "Five authorized candidate slots remained unused, so the call ceiling did not force wrap-up."
+  ],
+  "wordingPrecisionObservation": {
+    "description": "The acknowledgement restated the absence of an allergy claim as an affirmative non-allergy description. It should retain the narrower evidentiary scope.",
+    "dependantWideSafetyClearanceEstablished": false,
+    "provenHardAssertionFailure": false
+  },
+  "calls": [
+    {
+      "turn": 1,
+      "nativeStatus": "succeeded",
+      "httpStatus": 200,
+      "finishReason": "stop",
+      "inputTokens": 3128,
+      "outputTokens": 3972,
+      "responseBytes": 19963,
+      "replyDecision": "Ask",
+      "appendAcknowledgmentToCompletionMs": 100970,
+      "responseComplete": true,
+      "transportFailure": false,
+      "responseBytesSha256": "d07a3fcf505c930a59a5c6af1eeb4e1140e7d8c749faae332c8ede0d0bb1ed73",
+      "requestWrapperSha256": "b3ea8e9226bdc3ea215c57752b122d2b87dc2682c7ad5a0057cc0204e6e60f7d",
+      "canonicalRequestBodySha256": "334d6a4905e28d3492c7b947b9587c41af9f27327c9adfe111d94d266036f618",
+      "completionReceiptSha256": "8ccc1e677d87ff9426457f16e1d40ed70e2e483f8a78a05f388f56f932d553d2"
+    },
+    {
+      "turn": 2,
+      "nativeStatus": "succeeded",
+      "httpStatus": 200,
+      "finishReason": "stop",
+      "inputTokens": 3551,
+      "outputTokens": 4006,
+      "responseBytes": 20440,
+      "replyDecision": "Ask",
+      "appendAcknowledgmentToCompletionMs": 107041,
+      "responseComplete": true,
+      "transportFailure": false,
+      "responseBytesSha256": "1ad21b2ef3e03c61e4f4052867e8acb7f0b058e44697abc1a4b08c67b531b72b",
+      "requestWrapperSha256": "47669652f2ff4dbb7687a1b8233edfbbbefda1d0da65e5fdc77ba91dd5658874",
+      "canonicalRequestBodySha256": "c207321bbd31131bd340add9829381d36c3dfd9b33ee6d915f628d1ddabba45a",
+      "completionReceiptSha256": "4e240af3ff20707912eb213c055c6a10d86a79e2fe39fb916419a708f8e3b132"
+    },
+    {
+      "turn": 3,
+      "nativeStatus": "succeeded",
+      "httpStatus": 200,
+      "finishReason": "stop",
+      "inputTokens": 3708,
+      "outputTokens": 4655,
+      "responseBytes": 23918,
+      "replyDecision": "Review",
+      "appendAcknowledgmentToCompletionMs": 135710,
+      "responseComplete": true,
+      "transportFailure": false,
+      "responseBytesSha256": "3609e88aa6d5405f108add20bd5f6bb346f2dfda43afd15c8453968822f5eb07",
+      "requestWrapperSha256": "86c5a441f7edcf92cd25d76bb2909b8c4745f6e382b6dff4c9279e9c96b49ecb",
+      "canonicalRequestBodySha256": "b846add60aaf2eb078585d95630ceaf346031b2449124ca871feb8e2d8cecc3e",
+      "completionReceiptSha256": "c75338c4c04f39961d58a71f3d83fc1544287925a40db61811fb338d018f2973"
+    }
+  ],
+  "measures": {
+    "candidateCalls": 3,
+    "participantTurns": 3,
+    "questions": 2,
+    "repeatedQuestionTopics": 0,
+    "irrelevantFixtureQuestions": 0,
+    "profileProposals": 2,
+    "profileConfirmations": 2,
+    "nativeGenerationFailures": 0,
+    "schemaFailures": 0,
+    "inputTokens": 10387,
+    "outputTokens": 12633,
+    "sumGenerationPipelineMs": 343721,
+    "latencyBasis": "Participant append acknowledgment through native completion, including native handling; not provider-only latency or total interview duration."
+  },
+  "nativeProfile": {
+    "version": 2,
+    "explicitlyConfirmedFacts": 2,
+    "adultFoodPreference": {
+      "kind": "dish",
+      "label": "vegetable curry",
+      "sentiment": "like"
+    },
+    "adultSafetyFact": "NoKnownHardConstraints",
+    "adultSafetyNotAppliedToDependant": true,
+    "dependantDislikeAddedToAdultProfile": false
+  },
+  "acceptance": {
+    "fixedJudgeCalls": 0,
+    "humanRatings": 0,
+    "familiesAccepted": 0,
+    "candidateAccepted": false,
+    "fullSuiteComplete": false,
+    "completeHardGatePassed": false,
+    "provenHardAssertionFailure": false,
+    "hardReviewLimit": "No evidenced prohibited claim was established in the observed native effects. Missing fallback disclosure and challenge leave the full family hard gate incomplete; the wording observation remains qualified.",
+    "mergeAcceptanceSatisfied": false
+  },
+  "cost": {
+    "configuredFullInputUsageEstimateUsd": "0.06039965",
+    "cacheAwareUsageEstimateUsd": null,
+    "billedCostUsd": null,
+    "inputUsdPerMillionTokens": "0.95",
+    "outputUsdPerMillionTokens": "4.00",
+    "basis": "Configured rates applied to 10,387 input and 12,633 aggregate completion tokens, counted once; cached input accounting unavailable. This estimate is not an invoice."
+  },
+  "reservationsAtClosure": {
+    "thisRunMicroUsd": 1533543,
+    "phaseCeilingMicroUsd": 5000000,
+    "cumulativeMicroUsd": 16101946,
+    "cumulativeCalls": 141,
+    "cumulativeHigherCapCalls": 134,
+    "cumulativeJudgeCalls": 1,
+    "strictCumulativeCeilingMicroUsd": 20000000,
+    "unusedCandidateSlots": 5,
+    "unusedJudgeSlots": 1,
+    "historicalUnknownReservationsRetained": true,
+    "meaning": "Conservative retained reservations, not billed spend. The candidate call ceiling did not force the final Review."
+  },
+  "closure": {
+    "actorClosedAndJoined": true,
+    "runtimeClosedAndJoined": true,
+    "actorExitCode": 0,
+    "runtimeExitCode": 0,
+    "checkedProcessesAbsent": 3,
+    "listenerAbsent": true,
+    "participantLockAbsent": true,
+    "financialLockAbsent": true,
+    "graceful": true,
+    "providerRevocationVerified": false,
+    "requestCaptures": 3,
+    "responseReports": 3,
+    "blockedRequests": 0,
+    "automaticRetry": false
+  },
+  "interpretation": "Three native turns succeeded and two adult facts were explicitly confirmed. The follow-up now elicited dependant avoidance, but the candidate still ended before eliciting the required fallback/workload or exercising the fixed challenge. This run does not establish complete fixture coverage or model/family acceptance. Artifact integrity is qualified by missing historical files restored after closure inspection.",
+  "nextExperiment": "App-owned required-field policy for declared fallback needs, with model declaration and semantic extraction remaining model responsibilities.",
+  "receiptSha256": {
+    "rootResult": "4bc02b9f6b14f2fd1eb752d39b8fe4171c7511e0521bf22a78df249e3d351f90",
+    "rootClosure": "370df4b9823fdd7ac010699bda3432f32960558b342faf1af6e8b7b0db01b7e6",
+    "closed": "5dde747dbfca8282812cf7904884329a3baeb5724de696e81452e1e16e03f011",
+    "nativeTerminalInspection": "e2f1b2a15b28f475663c91f2cc4a4a51c0c91521563b0335f39170b72746965d",
+    "nativeCompletion": "5d58acbddcb407ba1970a419a072bf6d7792f7e90fe722f7030117e56ab523a5",
+    "actorResponses": "5fe9cff76551dd5e7bace8272518c6f4e5739a46bd8083492e82c5ee87dbdcb2"
+  }
+}
