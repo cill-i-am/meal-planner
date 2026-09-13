@@ -234,7 +234,14 @@ export class PrivateInterviewClient {
     };
   };
   #update(patch: Partial<PrivateInterviewView>) {
-    this.#view = { ...this.#view, ...patch };
+    const next = { ...this.#view, ...patch };
+    if (
+      this.#unreadablePending !== null &&
+      next.notice !== "storage_unavailable"
+    ) {
+      next.notice = "unreadable_request";
+    }
+    this.#view = next;
     for (const listener of this.#listeners) {
       listener();
     }
@@ -400,6 +407,7 @@ export class PrivateInterviewClient {
     }
     this.#unreadablePending = null;
     if (raw === null) {
+      this.#update({ notice: null });
       return;
     }
     let pending: PendingCommand;
@@ -414,7 +422,7 @@ export class PrivateInterviewClient {
       this.#update({ notice: "binding_changed" });
       return;
     }
-    this.#update({ pending });
+    this.#update({ notice: null, pending });
     if (pending.sessionReference !== null) {
       this.#selectSession(pending.sessionReference);
     }
@@ -446,6 +454,10 @@ export class PrivateInterviewClient {
   };
 
   #retain(pending: PendingCommand): boolean {
+    if (this.#unreadablePending !== null) {
+      this.#update({ notice: "unreadable_request" });
+      return false;
+    }
     try {
       this.#dependencies.storage.setItem(
         this.#storageKey,

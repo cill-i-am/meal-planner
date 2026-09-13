@@ -38,7 +38,7 @@ Coverage, fallback and clarification updates, plus Stop, cite the actual current
 
 The directory atomically stores scope alongside its reservation and mutation receipt. An ordered local migration creates `private_discovery_session_scopes`; it changes no historical migration and assigns no invented scope to existing rows. Admission reads scope from the authenticated directory reservation and initializes the child with that same immutable choice. Participant identity binding remains unchanged. A failed first model response and restart cannot lose the chosen scope.
 
-An older reservation without scope remains listable and its history remains readable. An existing child with no scope cannot acquire one through reconnect. Generation fails before provider dispatch; the interface directs the participant to a fresh scoped session and hides old response/composer controls. A pre-change unreadable saved browser request remains retained until the user explicitly clears that exact raw record after checking sessions. Clearing does not claim the earlier request failed or undo any changes. A stale browser instance cannot clear a newer retained request, and no new request is issued automatically.
+An older reservation without scope remains listable and its history remains readable. An existing child with no scope cannot acquire one through reconnect. Generation fails before provider dispatch; the interface directs the participant to a fresh scoped session and hides old response/composer controls. A pre-change unreadable saved browser request remains retained until the user explicitly clears that exact raw record after checking sessions. Clearing does not claim the earlier request failed or undo any changes. A stale browser instance cannot clear a newer retained request, and no new request is issued automatically. Unreadable retained data independently blocks new stored mutations even after an existing server-side confirmation settles; ordinary reconciliation cannot clear that recovery state.
 
 ## Questions and readiness
 
@@ -71,7 +71,7 @@ The complete snapshot remains bounded to 8,192 UTF-8 bytes in the existing priva
 
 ## Verification and remaining acceptance
 
-Local verification passes 146 focused contract/policy/adapter tests, 91 private-output native cases, 85 household-boundary cases (84 in the full run and the corrected snapshot assertion in a targeted rerun), 54 web panel/client tests and 11 private protocol tests. The full workspace typecheck, scoped lint/format checks and evaluation-asset validator pass. Earlier setup/assertion failures remain recorded separately and are not live-model failures.
+Local verification passes 146 focused contract/policy/adapter tests, 91 private-output native cases, 85 household-boundary cases (84 in the full run and the corrected snapshot assertion in a targeted rerun), 55 web panel/client tests and 11 private protocol tests. The full workspace typecheck, scoped lint/format checks and evaluation-asset validator pass. Earlier setup/assertion failures remain recorded separately and are not live-model failures.
 
 The deterministic cases cover required-key omission, null retention, refusal/revisit, current evidence, confirmed-profile source changes, mandatory question ordering, clarification bypass/retirement, snapshot revisions and canonical safety mapping. Native tests cover atomic rejection with proposed cards, scope selection and mutation collision, first-response failure plus restart, legacy history without dispatch, and the existing confirmation, isolation and revocation fences.
 

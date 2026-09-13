@@ -966,6 +966,77 @@ it("requires an explicit revised proposal and a new confirmation after a shared 
   );
 });
 
+it("preserves an unreadable request through confirmation reconciliation until explicit clearing", async () => {
+  const f = fixture();
+  const first = new PrivateInterviewClient(context, f.dependencies);
+  first.connect();
+  f.list(f.directoryReady());
+  first.start("ProfileEdit");
+  const [entry] = [...f.storage];
+  if (entry === undefined) {
+    throw new Error("Expected retained request");
+  }
+  const [key, valid] = entry;
+  const decoded = JSON.parse(valid);
+  delete decoded.command.scope;
+  const unreadable = JSON.stringify(decoded);
+  f.storage.set(key, unreadable);
+  first.disconnect();
+
+  const client = new PrivateInterviewClient(context, f.dependencies);
+  client.connect();
+  const directory = f.directoryReady();
+  f.list(directory);
+  client.select(reference);
+  const pendingId = "00000000-0000-4000-8000-000000000601";
+  const card = proposal({ status: "pending" });
+  const socket = f.sessionReady(
+    { status: "open", version: 1 },
+    [card],
+    pendingId
+  );
+  expect(client.getSnapshot().notice).toBe("unreadable_request");
+  await client.checkConfirmation();
+  expect(f.dependencies.continueConfirmation).toHaveBeenCalledOnce();
+  const outcome = {
+    profileVersion: Schema.decodeUnknownSync(PersonProfile.fields.version)(1),
+    type: "committed" as const,
+  };
+  socket.receive({
+    card: { ...card, outcome, status: "confirmed" },
+    mutationId: pendingId,
+    outcome,
+    state: { status: "open", version: 2 },
+    type: "ConfirmationSettled",
+  });
+  expect(client.getSnapshot().pendingConfirmation).toBeNull();
+  expect(client.getSnapshot().notice).toBe("unreadable_request");
+  client.start("InitialDiscovery");
+  client.append("An attempted new message.");
+  client.complete();
+  expect(f.storage.get(key)).toBe(unreadable);
+  expect(
+    directory.commands.filter((command) => command.type === "StartSession")
+  ).toEqual([]);
+  expect(
+    socket.commands.filter(
+      (command) =>
+        command.type === "AppendParticipantMessage" ||
+        command.type === "CompleteSession"
+    )
+  ).toEqual([]);
+
+  client.discardUnreadableRequest();
+  expect(f.storage.has(key)).toBe(false);
+  const refreshed = f.directoryReady();
+  f.list(refreshed);
+  expect(client.getSnapshot().notice).toBeNull();
+  client.start("InitialDiscovery");
+  expect(refreshed.last("StartSession")).toMatchObject({
+    scope: "InitialDiscovery",
+  });
+});
+
 it("discovers another device's pending confirmation and retries the same ID only after fresh admission", async () => {
   const f = fixture();
   f.dependencies.continueConfirmation.mockResolvedValueOnce("unavailable");
