@@ -25,7 +25,12 @@ import {
   PrivateDiscoveryContinuityJson,
 } from "./private-discovery-continuity.js";
 import type { PrivateDiscoveryContinuityNote } from "./private-discovery-continuity.js";
-import { encodeKimiCompletion } from "./private-discovery-kimi-stream.test-fixtures.js";
+import {
+  encodeKimiCompletion,
+  kimiChunk,
+  kimiChoice,
+  kimiEvent,
+} from "./private-discovery-kimi-stream.test-fixtures.js";
 import { PrivateDiscoveryContext } from "./private-discovery-model.js";
 import type { PrivateOutputMutationPort } from "./private-output-binding.js";
 import { runOutputFencedMutation } from "./private-output-mutation.js";
@@ -3956,8 +3961,20 @@ describe("native adaptive assistant attempts through the production model adapte
         });
         const controller = await opened.promise;
         const firstEnd = encoded.indexOf("\n\n") + 2;
+        const interimUsage = kimiEvent(
+          kimiChunk(
+            [
+              kimiChoice({
+                content: "",
+                reasoning_content: null,
+                role: "assistant",
+              }),
+            ],
+            { completion_tokens: 0, prompt_tokens: 100 }
+          )
+        );
         controller.enqueue(
-          new TextEncoder().encode(encoded.slice(0, firstEnd))
+          new TextEncoder().encode(interimUsage + encoded.slice(0, firstEnd))
         );
         modelResponse = () =>
           Promise.resolve(
@@ -3983,7 +4000,7 @@ describe("native adaptive assistant attempts through the production model adapte
           state: { version: 1 },
         });
         const beforeEnd = await audit(session);
-        expect(beforeEnd[0]).toMatchObject({ summary: null });
+        expect(beforeEnd[0]).toMatchObject({ summary: null, usageJson: null });
         let rest = encoded.slice(firstEnd);
         if (outcome === "line-limit") {
           rest = `:${"x".repeat(65_536)}`;

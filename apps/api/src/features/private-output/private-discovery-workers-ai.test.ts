@@ -817,6 +817,43 @@ describe("private discovery Workers AI boundary", () => {
     }
   );
 
+  it.each([true, false])(
+    "counts only final Kimi usage when terminal counters are present: %s",
+    async (terminalUsage) => {
+      const final = completion();
+      const interim = kimiEvent(
+        kimiChunk(
+          [
+            kimiChoice({
+              content: "",
+              reasoning_content: null,
+              role: "assistant",
+            }),
+          ],
+          { completion_tokens: 0, prompt_tokens: 100 }
+        )
+      );
+      const expectedFinal = terminalUsage ? final : { choices: final.choices };
+      const test = fixture(
+        () =>
+          Promise.resolve(
+            new Response(interim + encodeKimiCompletion(expectedFinal), {
+              headers: { "content-type": "text/event-stream" },
+            })
+          ),
+        kimiConfig
+      );
+      const result = await Effect.runPromise(test.model.generate(test.input));
+      expect(result.output).toEqual({ intent: output });
+      expect(result.usage).toEqual(
+        terminalUsage
+          ? { estimatedCostUsd: 0.000295, inputTokens: 100, outputTokens: 50 }
+          : { estimatedCostUsd: null, inputTokens: null, outputTokens: null }
+      );
+      expect(test.run).toHaveBeenCalledOnce();
+    }
+  );
+
   it("retains unavailable Kimi usage as unknown", async () => {
     const test = fixture(
       () => Promise.resolve(streamResponse({ choices: completion().choices })),

@@ -121,6 +121,98 @@ describe("Kimi discovery SSE protocol", () => {
     ).not.toHaveProperty("usage");
   });
 
+  it.each(["root", "choice"] as const)(
+    "ignores nonterminal %s usage snapshots and records terminal totals once",
+    (location) => {
+      const snapshot = (
+        completionTokens: number,
+        delta: Readonly<Record<string, unknown>>
+      ) => {
+        const counters = {
+          completion_tokens: completionTokens,
+          prompt_tokens: 4072,
+        };
+        return kimiEvent(
+          kimiChunk(
+            [
+              location === "choice"
+                ? { ...choice(delta), usage: counters }
+                : choice(delta),
+            ],
+            location === "root" ? counters : undefined
+          )
+        );
+      };
+      const totals = { completion_tokens: 50, prompt_tokens: 4072 };
+      const body =
+        snapshot(0, {
+          content: "",
+          reasoning_content: null,
+          role: "assistant",
+        }) +
+        snapshot(7, { reasoning_content: "private interim reasoning" }) +
+        opening +
+        kimiEvent(kimiChunk([choice({}, "tool_calls")], totals)) +
+        kimiEvent(kimiChunk([], totals)) +
+        done;
+      expect(decodePrivateDiscoveryKimiStream(body).usage).toEqual(totals);
+    }
+  );
+
+  it("keeps usage unknown when only interim counters accompany a completed tool call", () => {
+    const interim = kimiEvent(
+      kimiChunk([choice({ content: "", role: "assistant" })], {
+        completion_tokens: 0,
+        prompt_tokens: 4072,
+      })
+    );
+    const later = kimiEvent(
+      kimiChunk([choice({})], { completion_tokens: 8, prompt_tokens: 4072 })
+    );
+    expect(
+      decodePrivateDiscoveryKimiStream(
+        interim + opening + later + terminal + done
+      )
+    ).not.toHaveProperty("usage");
+  });
+
+  it.each(["incomplete", "negative-interim", "conflicting-terminal"] as const)(
+    "preserves %s rejection after a valid initial usage snapshot",
+    (kind) => {
+      const interim = kimiEvent(
+        kimiChunk(
+          [choice({ content: "", reasoning_content: null, role: "assistant" })],
+          { completion_tokens: 0, prompt_tokens: 4072 }
+        )
+      );
+      let body = interim + opening;
+      if (kind === "negative-interim") {
+        body +=
+          kimiEvent(
+            kimiChunk([choice({})], {
+              completion_tokens: -1,
+              prompt_tokens: 4072,
+            })
+          ) +
+          terminal +
+          done;
+      } else if (kind === "conflicting-terminal") {
+        body +=
+          kimiEvent(
+            kimiChunk([choice({}, "tool_calls")], {
+              completion_tokens: 50,
+              prompt_tokens: 4072,
+            })
+          ) +
+          kimiEvent(
+            kimiChunk([], { completion_tokens: 51, prompt_tokens: 4072 })
+          ) +
+          done;
+      }
+      expect(() => decodePrivateDiscoveryKimiStream(body)).toThrow();
+    }
+  );
+
   it.each([
     { body: opening + terminal, name: "missing DONE" },
     { body: opening + done, name: "missing finish" },

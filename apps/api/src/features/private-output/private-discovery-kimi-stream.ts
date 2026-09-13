@@ -147,14 +147,15 @@ export const makePrivateDiscoveryKimiStreamDecoder = () => {
       metrics.retainedTextBytes += bytes;
     }
   };
-  const recordUsage = (
+  const recordTerminalUsage = (
     next: typeof PrivateDiscoveryProviderUsage.Type | null | undefined
   ) => {
     if (next === null || next === undefined) {
       return;
     }
     if (finishReason === undefined) {
-      reject("usage_before_finish");
+      // Valid interim counters are snapshots, not completed usage or zero-cost evidence.
+      return;
     }
     if (
       usage !== undefined &&
@@ -193,7 +194,7 @@ export const makePrivateDiscoveryKimiStreamDecoder = () => {
     if (choice.finish_reason !== null) {
       finishReason = choice.finish_reason;
     }
-    recordUsage(choice.usage);
+    recordTerminalUsage(choice.usage);
   };
   const decodeChunk = Schema.decodeUnknownOption(Chunk);
   const acceptEvent = (value: string) => {
@@ -237,11 +238,11 @@ export const makePrivateDiscoveryKimiStreamDecoder = () => {
         reject("missing_usage");
       }
       finalUsageSeen = true;
-      recordUsage(chunk.usage);
+      recordTerminalUsage(chunk.usage);
       return;
     }
     acceptChoice(choice);
-    recordUsage(chunk.usage);
+    recordTerminalUsage(chunk.usage);
   };
   const framing = new KimiDiscoveryFraming(metrics, reject, acceptEvent);
   const discard = () => {

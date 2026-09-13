@@ -38,7 +38,6 @@ export const PrivateDiscoveryKimiStreamDiagnostic = Schema.Struct({
     "event_name",
     "event_json",
     "chunk_schema",
-    "usage_before_finish",
     "usage_conflict",
     "choice_after_finish",
     "data_after_done",
