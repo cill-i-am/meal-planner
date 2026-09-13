@@ -33,7 +33,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 import * as authSchema from "../auth/auth.database-schema.js";
-import { PrivateDiscoveryContinuityJson } from "../private-output/private-discovery-continuity.js";
+import {
+  emptyPrivateDiscoveryContinuity,
+  PrivateDiscoveryContinuityJson,
+} from "../private-output/private-discovery-continuity.js";
 import { PrivateDiscoveryContext } from "../private-output/private-discovery-model.js";
 import {
   privateOutputControlWorker,
@@ -288,7 +291,7 @@ const makeRuntime = (privateAuditLogs?: string[]) =>
                       gatewayId: "synthetic-local-only",
                       inputUsdPerMillionTokens: 1,
                       maxOutputTokens: 1000,
-                      model: "@cf/qwen/qwen3-30b-a3b-fp8",
+                      model: "@cf/openai/gpt-oss-120b",
                       outputUsdPerMillionTokens: 2,
                       timeoutMs: 5000,
                     }),
@@ -6232,7 +6235,9 @@ const reservePrivateSession = async (
   mutationId = crypto.randomUUID()
 ) => {
   const directory = await openPrivateDirectory(cookie);
-  directory.socket.send(JSON.stringify({ mutationId, type: "StartSession" }));
+  directory.socket.send(
+    JSON.stringify({ mutationId, scope: "ProfileEdit", type: "StartSession" })
+  );
   const started = await vi.waitFor(() => {
     const frame = directory.frames.find(
       (candidate) =>
@@ -7386,28 +7391,45 @@ describe("canonical private profile cards", () => {
       return LocalResponse.json({
         choices: [
           {
-            finish_reason: "stop",
+            finish_reason: "tool_calls",
             message: {
-              content: JSON.stringify({
-                continuity: {
-                  mealFallbackNeeds: {
-                    declarations: [
-                      {
-                        evidence: {
-                          messageId: participant.id,
-                          quote: participant.text,
-                        },
-                        subject,
-                      },
-                    ],
-                    updates: [],
-                  },
-                  notes: [],
-                },
-                proposals: [],
-                reply: { _tag: "Continue" },
-              }),
+              content: null,
               role: "assistant",
+              tool_calls: [
+                {
+                  function: {
+                    arguments: JSON.stringify({
+                      intent: {
+                        _tag: "Continue",
+                        proposals: [],
+                        updates: {
+                          clarification: null,
+                          coverage: {
+                            foodRestrictions: null,
+                            usualMeals: null,
+                          },
+                          mealFallbackNeeds: {
+                            declarations: [
+                              {
+                                evidence: {
+                                  messageId: participant.id,
+                                  quote: participant.text,
+                                },
+                                subject,
+                              },
+                            ],
+                            updates: [],
+                          },
+                          notes: [],
+                        },
+                      },
+                    }),
+                    name: "submitDiscoveryTurn",
+                  },
+                  id: "synthetic-call",
+                  type: "function",
+                },
+              ],
             },
           },
         ],
@@ -7496,6 +7518,7 @@ describe("canonical private profile cards", () => {
           turns.result[0]?.summary
         )
       ).toEqual({
+        ...emptyPrivateDiscoveryContinuity(),
         mealFallbackNeeds: [
           {
             acceptableOption: { _tag: "Unanswered", reopenedBy: null },

@@ -26,6 +26,7 @@ import { Generation, PrivateOutputSocket } from "./private-output-socket.js";
 import type { PrivateInterviewEnvironment } from "./private-output-socket.js";
 import {
   PrivateSessionBinding,
+  InitializePrivateSession,
   PrivateOutputUnavailable,
   privateOutputKey,
   privateDirectoryKey,
@@ -36,6 +37,7 @@ import {
   privateMessages,
   privateReceipts,
   privateSessionBinding,
+  privateDiscoverySessionScopes,
 } from "./private-output.database-schema.js";
 
 declare const Response: typeof NativeCloudflare.Response;
@@ -74,19 +76,46 @@ export class PrivateInterviewSession extends DurableObject<PrivateInterviewEnvir
       return Promise.resolve();
     });
   }
-  initialize(untrusted: PrivateSessionBinding): void {
-    const binding = decodeBinding(untrusted);
-    const retained = this.#database.select().from(privateSessionBinding).get();
-    if (retained !== undefined) {
-      if (!sameBinding(retained, binding)) {
-        throw new PrivateOutputUnavailable({ reason: "binding_conflict" });
+  initialize(untrusted: typeof InitializePrivateSession.Type): void {
+    const { binding, scope } = Schema.decodeUnknownSync(
+      InitializePrivateSession,
+      {
+        onExcessProperty: "error",
       }
-      return;
-    }
-    this.#database
-      .insert(privateSessionBinding)
-      .values({ ...binding, status: "open", version: 0 })
-      .run();
+    )(untrusted);
+    this.#database.transaction(() => {
+      const retained = this.#database
+        .select()
+        .from(privateSessionBinding)
+        .get();
+      const retainedScope =
+        this.#database
+          .select()
+          .from(privateDiscoverySessionScopes)
+          .where(
+            eq(
+              privateDiscoverySessionScopes.sessionReference,
+              binding.sessionReference
+            )
+          )
+          .get()?.scope ?? null;
+      if (retained !== undefined) {
+        if (!sameBinding(retained, binding) || retainedScope !== scope) {
+          throw new PrivateOutputUnavailable({ reason: "binding_conflict" });
+        }
+        return;
+      }
+      this.#database
+        .insert(privateSessionBinding)
+        .values({ ...binding, status: "open", version: 0 })
+        .run();
+      if (scope !== null) {
+        this.#database
+          .insert(privateDiscoverySessionScopes)
+          .values({ scope, sessionReference: binding.sessionReference })
+          .run();
+      }
+    });
   }
   async beginConnection(untrusted: PrivateSessionBinding): Promise<string> {
     const binding = decodeBinding(untrusted);

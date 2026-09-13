@@ -11,7 +11,7 @@ import {
 } from "./private-discovery-continuity.js";
 import {
   PrivateDiscoveryContext,
-  PrivateDiscoveryOutput,
+  SubmitDiscoveryTurn,
 } from "./private-discovery-model.js";
 
 const participant = {
@@ -31,11 +31,11 @@ const tomatoes = Schema.decodeUnknownSync(ProfileFactValue)({
 });
 const add = (fact: ProfileFactValue = carrots) => ({
   _tag: "ProposeProfileCard",
-  change: { _tag: "AddConfirmedProfileFact", fact },
+  change: { _tag: "AddFact", fact },
 });
 const storedCard = () =>
   Schema.decodeUnknownSync(ProfileCard)({
-    change: add().change,
+    change: { _tag: "AddConfirmedProfileFact", fact: carrots },
     expectedProfileVersion: 0,
     id: crypto.randomUUID(),
     ordinal: 1,
@@ -67,14 +67,17 @@ const execute = (
     continuity: emptyPrivateDiscoveryContinuity(),
     messages: [participant],
     profile: { facts: options.facts ?? [], version: 0 },
+    scope: "ProfileEdit",
   });
-  const output = Schema.decodeUnknownSync(PrivateDiscoveryOutput)({
-    continuity: {
-      ...emptyPrivateDiscoveryContinuityUpdates(),
-      notes: options.notes ?? [],
+  const output = Schema.decodeUnknownSync(SubmitDiscoveryTurn)({
+    intent: options.reply ?? {
+      _tag: "Continue",
+      proposals,
+      updates: {
+        ...emptyPrivateDiscoveryContinuityUpdates(),
+        notes: options.notes ?? [],
+      },
     },
-    proposals,
-    reply: options.reply ?? { _tag: "Continue" },
   });
   const reviewed = reviewPrivateDiscoveryProposals(
     output,
@@ -83,10 +86,13 @@ const execute = (
   );
   return applyPrivateDiscoveryContinuation(
     context.continuity,
-    output.continuity,
-    output.reply,
+    output.intent._tag === "Stop"
+      ? emptyPrivateDiscoveryContinuityUpdates()
+      : output.intent.updates,
+    output.intent,
     participant,
-    reviewed
+    reviewed,
+    { profileFacts: context.profile.facts, scope: context.scope }
   );
 };
 
@@ -109,7 +115,6 @@ describe("application-owned private discovery messages", () => {
           _tag: "ReviseProposedProfileCard",
           cardId: card.id,
           change: add(tomatoes).change,
-          expectedRevision: 0,
         },
       ],
       { storedCards: [card] }
@@ -124,6 +129,57 @@ describe("application-owned private discovery messages", () => {
     expect(result.message).not.toContain("replace");
   });
 
+  it.each([
+    "changed_revision",
+    "removed",
+    "confirmed",
+    "not_in_snapshot",
+  ] as const)(
+    "rejects a revision whose application snapshot is %s instead of rebinding to latest storage",
+    (condition) => {
+      const card = storedCard();
+      const context = Schema.decodeUnknownSync(PrivateDiscoveryContext)({
+        cards: condition === "not_in_snapshot" ? [] : [card],
+        continuity: emptyPrivateDiscoveryContinuity(),
+        messages: [participant],
+        profile: { facts: [], version: 0 },
+        scope: "ProfileEdit",
+      });
+      const output = Schema.decodeUnknownSync(SubmitDiscoveryTurn)({
+        intent: {
+          _tag: "Continue",
+          proposals: [
+            {
+              _tag: "ReviseProposedProfileCard",
+              cardId: card.id,
+              change: add(tomatoes).change,
+            },
+          ],
+          updates: emptyPrivateDiscoveryContinuityUpdates(),
+        },
+      });
+      const current =
+        condition === "removed"
+          ? []
+          : [
+              {
+                ...card,
+                revision:
+                  condition === "changed_revision"
+                    ? card.revision + 1
+                    : card.revision,
+                status:
+                  condition === "confirmed"
+                    ? ("confirmed" as const)
+                    : card.status,
+              },
+            ];
+      expect(() =>
+        reviewPrivateDiscoveryProposals(output, context, current)
+      ).toThrow(expect.objectContaining({ stage: "proposal_revision_target" }));
+    }
+  );
+
   it("makes no new or revised profile claim when no operation was admitted", () => {
     expect(execute([], { storedCards: [storedCard()] }).message).toBe(
       "You can finish this conversation when you're ready."
@@ -132,23 +188,23 @@ describe("application-owned private discovery messages", () => {
 
   it.each([
     {
-      change: { _tag: "ReplaceOrdinaryProfileFact", fact: tomatoes },
+      change: { _tag: "ReplaceFact", fact: tomatoes },
       description:
         "replace your preference for the ingredient “carrots” with your preference for the ingredient “tomatoes”",
       value: carrots,
     },
     {
-      change: { _tag: "RemoveOrdinaryProfileFact" },
+      change: { _tag: "RemoveFact" },
       description: "remove your preference for the ingredient “carrots”",
       value: carrots,
     },
     {
-      change: { _tag: "ConfirmProfileFact" },
+      change: { _tag: "ConfirmFact" },
       description: "confirm your preference for the ingredient “carrots”",
       value: carrots,
     },
     {
-      change: { _tag: "ConfirmHardConstraintReduction", replacement: null },
+      change: { _tag: "RemoveFact" },
       description:
         "remove your allergen “sesame” (exclude); separate safety confirmation is required",
       value: {
@@ -160,8 +216,8 @@ describe("application-owned private discovery messages", () => {
     },
     {
       change: {
-        _tag: "ConfirmHardConstraintReduction",
-        replacement: { _tag: "NoKnownHardConstraints" },
+        _tag: "ReplaceFact",
+        fact: { _tag: "NoKnownHardConstraints" },
       },
       description:
         "replace your allergen “sesame” (exclude) with your statement that you have no known hard food constraints; separate safety confirmation is required",
@@ -220,7 +276,7 @@ describe("application-owned private discovery messages", () => {
     }
   );
 
-  it("rejects the complete card-and-question message at the shared bound without clipping", () => {
+  it("rejects model-authored question text before rendering", () => {
     expect(() =>
       execute([add()], {
         notes: [
@@ -233,6 +289,49 @@ describe("application-owned private discovery messages", () => {
           },
         ],
       })
+    ).toThrow();
+  });
+
+  it("rejects an oversized application-rendered fallback summary before returning a message", () => {
+    const delta = {
+      ...emptyPrivateDiscoveryContinuityUpdates(),
+      mealFallbackNeeds: {
+        declarations: Array.from({ length: 3 }, (_, index) => ({
+          evidence: { messageId: participant.id, quote: participant.text },
+          subject: `${index}${"s".repeat(119)}`,
+        })),
+        updates: Array.from({ length: 3 }, (_, index) => [
+          {
+            _tag: "RecordReason" as const,
+            evidence: { messageId: participant.id, quote: participant.text },
+            need: { _tag: "Declared" as const, index },
+            revisit: null,
+            value: "r".repeat(200),
+          },
+          {
+            _tag: "RecordOption" as const,
+            evidence: { messageId: participant.id, quote: participant.text },
+            need: { _tag: "Declared" as const, index },
+            revisit: null,
+            value: {
+              description: "d".repeat(200),
+              kind: "exact" as const,
+              quantity: "q".repeat(120),
+              substitutions: "s".repeat(200),
+            },
+          },
+        ]).flat(),
+      },
+    };
+    expect(() =>
+      applyPrivateDiscoveryContinuation(
+        emptyPrivateDiscoveryContinuity(),
+        delta,
+        { _tag: "Continue" },
+        participant,
+        [],
+        { profileFacts: [], scope: "ProfileEdit" }
+      )
     ).toThrow(expect.objectContaining({ stage: "reply_limit" }));
   });
 
@@ -245,8 +344,10 @@ describe("application-owned private discovery messages", () => {
       },
     };
     expect(execute([], { reply }).message).toBe("We can stop here.");
-    expect(() => execute([add()], { reply })).toThrow(
-      expect.objectContaining({ stage: "reply_decision" })
-    );
+    expect(() =>
+      Schema.decodeUnknownSync(SubmitDiscoveryTurn)({
+        intent: { ...reply, proposals: [add()] },
+      })
+    ).toThrow();
   });
 });

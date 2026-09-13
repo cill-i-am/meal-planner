@@ -16,6 +16,7 @@ import {
 import type {
   AssistantTurn,
   DirectoryCommand,
+  PrivateDiscoveryScope,
   Message,
   ProfileCard,
   ProfileCardChange,
@@ -65,6 +66,7 @@ type Connection =
   | "authentication_required";
 type Notice =
   | "storage_unavailable"
+  | "unreadable_request"
   | "binding_changed"
   | typeof Rejected.Type.reason
   | null;
@@ -187,6 +189,7 @@ export class PrivateInterviewClient {
   readonly #storageKey: string;
   readonly #listeners = new Set<() => void>();
   #view = initialView();
+  #unreadablePending: string | null = null;
   #directory: PrivateInterviewSocket | null = null;
   #session: PrivateInterviewSocket | null = null;
   #bindingKey: string | null = null;
@@ -388,24 +391,59 @@ export class PrivateInterviewClient {
   }
 
   #loadPending(bindingKey: string) {
+    let raw: string | null;
     try {
-      const raw = this.#dependencies.storage.getItem(this.#storageKey);
-      if (raw === null) {
+      raw = this.#dependencies.storage.getItem(this.#storageKey);
+    } catch {
+      this.#update({ notice: "storage_unavailable" });
+      return;
+    }
+    this.#unreadablePending = null;
+    if (raw === null) {
+      return;
+    }
+    let pending: PendingCommand;
+    try {
+      pending = decodeFrame(PendingCommand, raw);
+    } catch {
+      this.#unreadablePending = raw;
+      this.#update({ notice: "unreadable_request" });
+      return;
+    }
+    if (pending.bindingKey !== bindingKey) {
+      this.#update({ notice: "binding_changed" });
+      return;
+    }
+    this.#update({ pending });
+    if (pending.sessionReference !== null) {
+      this.#selectSession(pending.sessionReference);
+    }
+  }
+
+  discardUnreadableRequest = () => {
+    if (
+      this.#view.notice !== "unreadable_request" ||
+      this.#unreadablePending === null ||
+      !this.#view.sessionsLoaded
+    ) {
+      return;
+    }
+    try {
+      const current = this.#dependencies.storage.getItem(this.#storageKey);
+      if (current !== this.#unreadablePending) {
+        this.connect();
         return;
       }
-      const pending = decodeFrame(PendingCommand, raw);
-      if (pending.bindingKey !== bindingKey) {
-        this.#update({ notice: "binding_changed" });
-        return;
-      }
-      this.#update({ pending });
-      if (pending.sessionReference !== null) {
-        this.#selectSession(pending.sessionReference);
-      }
+      this.#dependencies.storage.removeItem(this.#storageKey);
+      this.#unreadablePending = null;
+      this.#recovery = null;
+      this.#automaticTurnMutation = null;
+      this.#update({ notice: null, pending: null });
+      this.connect();
     } catch {
       this.#update({ notice: "storage_unavailable" });
     }
-  }
+  };
 
   #retain(pending: PendingCommand): boolean {
     try {
@@ -564,14 +602,15 @@ export class PrivateInterviewClient {
     });
   };
 
-  start = () => {
+  start = (scope: PrivateDiscoveryScope) => {
     if (
       !this.#directoryReady ||
       this.#bindingKey === null ||
       this.#view.pending !== null ||
       this.#view.pendingConfirmation !== null ||
       this.#view.notice === "binding_changed" ||
-      this.#view.notice === "storage_unavailable"
+      this.#view.notice === "storage_unavailable" ||
+      this.#view.notice === "unreadable_request"
     ) {
       return;
     }
@@ -581,6 +620,7 @@ export class PrivateInterviewClient {
       bindingKey: this.#bindingKey,
       command: {
         mutationId: this.#dependencies.makeId(),
+        scope,
         type: "StartSession" as const,
       },
       sessionReference: null,

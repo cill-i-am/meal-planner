@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-09-12
+- Last updated: 2026-09-13
 - Delivery source of truth: this repository
 
 ## Latest Completed Stage
@@ -25,7 +25,15 @@
   merged as `41b2a3e3f12c83edd3ddd9d184b9e138827101e6` on 2026-09-06.
   [Work Item 03 — adaptive discovery and evaluation](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
   is in progress in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218).
-  Private adaptive-turn implementation and local browser acceptance are complete.
+  The current v25/policy-v6 [deterministic discovery contract](stages/02-private-discovery/03-deterministic-discovery-contract.md)
+  moves required coverage, scope, all question wording, clarification, card revision
+  binding and ordinary/safety proposal routing into application code. One strict
+  `submitDiscoveryTurn` function carries evidence-backed updates; omitted required
+  fields reject atomically. InitialDiscovery and ProfileEdit are explicit user
+  choices retained across restart. Legacy unscoped history remains readable and
+  cannot dispatch new model work. Local contract/native/browser verification
+  passes; fresh live quality and all existing human acceptance gates remain.
+  The following results are historical and retain their original outcomes.
   The [GPT-OSS v16 result](../../evals/private-discovery/prompt-v16-planning-purpose-results.md)
   persisted a false completed-update claim while canonical state stayed unchanged.
   The [Qwen v16 comparison](../../evals/private-discovery/prompt-v16-qwen-sampling-results.md)
@@ -44,20 +52,21 @@
   then passed its narrow semantic check: it retained the disclosed routine,
   asked one intent-clarification question and emitted no dependent proposal.
   Sustained interview behavior and card review/confirmation were not exercised.
-  Kimi request support is now selectable alongside GPT-OSS and Qwen for the
-  approved synthetic evaluation, with configuration still disabled by default.
+  The current forced-tool adapter admits Kimi and GPT-OSS; Qwen
+  remains historical evidence because its installed binding does not express the
+  new forced choice/full-schema contract. Configuration stays disabled by default.
   A [two-turn native checkpoint](../../evals/private-discovery/kimi-v17-native-dependency-checkpoint-results.md)
   ended after a local harness command error, with no family verdict. The
   [first full-suite baseline turn](../../evals/private-discovery/kimi-v17-native-baseline-failure-results.md)
   then failed `reply_decision`: Ask referenced a
   missing unresolved note. No assistant reply, card or continuity update persisted,
-  and the canonical profile stayed unchanged. Prompt v18 requests proposals,
+  and the canonical profile stayed unchanged. Prompt v18 requested proposals,
   reply, then continuity and explicitly requires the matching unresolved note;
   the shared output-schema declaration follows that order. Whether ordering helps
   generation remains an unverified hypothesis. The [v18 native suite](../../evals/private-discovery/kimi-v18-native-suite-stop-results.md)
   recorded six successful turns before rejecting seven continuity updates against
   the six-update limit. The baseline lacked its original-card review receipt;
-  no family was accepted. Prompt v19 now explicitly omits unchanged notes and
+  no family was accepted. Prompt v19 explicitly omitted unchanged notes and
   card operations and prohibits repeating the question in acknowledgement text.
   The [v19 run](../../evals/private-discovery/kimi-v19-native-suite-stop-results.md)
   recorded eight native successes and one
@@ -86,14 +95,14 @@
   ended with provider failure and an unknown upstream outcome. Its [second attempt](../../evals/private-discovery/kimi-v21-second-attempt-continuation-failure-results.md)
   returned structured output but atomically rejected a generic question reference
   without an unresolved note; no assistant text, card or typed need persisted.
-  Prompt v22/policy v5 now make each unresolved note own its question and render
+  Prompt v22/policy v5 made each unresolved note own its question and rendered
   reply wording from actual reviewed profile proposals and private typed state.
-  Model-authored persistence/interface text and separate follow-up references are
+  Model-authored persistence/interface text and separate follow-up references were
   removed. Full message/state bounds and household authority remain unchanged.
   The [v22 native run](../../evals/private-discovery/kimi-v22-owned-replies-focused-results.md)
   completed four successful turns and handled exact fallback/preparation and the
   fixed challenge, but missed the adult's safety question. Coverage was three of
-  four, with no native completion, judge or accepted family. Prompt v23 now retains
+  four, with no native completion, judge or accepted family. Prompt v23 retained
   that single generic topic when actual own-adult information or a settled note
   does not address it; policy, wire, rendering and limits remain unchanged.
   The [v23 focused test](../../evals/private-discovery/kimi-v23-safety-coverage-focused-results.md)
@@ -105,7 +114,7 @@
   possible hard failure. The [next v23 baseline](../../evals/private-discovery/kimi-v23-native-baseline-coverage-results.md)
   passed two native turns and same-card correction but missed ordinary-meal
   discovery, leaving coverage at two of three. All three cards remained
-  unconfirmed; no completion, B or judge ran. V24 now adds one conditional
+  unconfirmed; no completion, B or judge ran. V24 added one conditional
   usual-meals question through the existing notes, excluding explicit limited
   profile edits. Its [native retest](../../evals/private-discovery/kimi-v24-native-output-failure-results.md)
   passed the opening but rejected the correction response because a continuity

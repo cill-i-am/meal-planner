@@ -5,27 +5,32 @@ import {
   ProfileVersion,
 } from "@meal-planner/household-api";
 import {
+  PrivateDiscoveryScope,
   ProfileCard,
   ProfileCardChange,
 } from "@meal-planner/private-interview-api";
 import type { Effect } from "effect";
 import { Data, Schema } from "effect";
 
+import type { PrivateDiscoveryClarificationFailure } from "./private-discovery-clarification.js";
 import {
   PrivateDiscoveryContinuity,
   PrivateDiscoveryContinuityUpdates,
-  PrivateDiscoveryReply,
 } from "./private-discovery-continuity.js";
 import type { PrivateDiscoveryContinuationFailure } from "./private-discovery-continuity.js";
-import { PrivateDiscoveryEvidenceMessage } from "./private-discovery-needs.js";
+import type { PrivateDiscoveryCoverageFailure } from "./private-discovery-coverage.js";
+import {
+  PrivateDiscoveryEvidence,
+  PrivateDiscoveryEvidenceMessage,
+} from "./private-discovery-needs.js";
 import type { PrivateDiscoveryNeedFailure } from "./private-discovery-needs.js";
 
 export const PRIVATE_DISCOVERY_CONTEXT_BYTES = 24_576;
 export const PRIVATE_DISCOVERY_MESSAGE_LIMIT = 16;
 export const PRIVATE_DISCOVERY_CARD_LIMIT = 25;
-export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v24";
-export const PRIVATE_DISCOVERY_POLICY_VERSION = "private-discovery-policy-v5";
-export const PRIVATE_DISCOVERY_TOOL_VERSION = "profile-card-change-v1";
+export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v25";
+export const PRIVATE_DISCOVERY_POLICY_VERSION = "private-discovery-policy-v6";
+export const PRIVATE_DISCOVERY_TOOL_VERSION = "submit-discovery-turn-v2";
 
 const Id = Schema.String.pipe(Schema.check(Schema.isUUID()));
 export const PrivateDiscoveryProfile = Schema.Struct({
@@ -62,12 +67,26 @@ export const PrivateDiscoveryContext = Schema.Struct({
     Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_MESSAGE_LIMIT))
   ),
   profile: PrivateDiscoveryProfile,
+  scope: PrivateDiscoveryScope,
 });
 export type PrivateDiscoveryContext = typeof PrivateDiscoveryContext.Type;
 
-const DiscoveryProfileCardChange = ProfileCardChange.pipe(
-  Schema.annotate({ identifier: "PrivateDiscoveryProfileCardChange" })
+export const DiscoveryProfileCardChange = Schema.Union([
+  Schema.Struct({ _tag: Schema.Literal("AddFact"), fact: ProfileFactValue }),
+  Schema.Struct({ _tag: Schema.Literal("ConfirmFact"), factId: ProfileFactId }),
+  Schema.Struct({ _tag: Schema.Literal("RemoveFact"), factId: ProfileFactId }),
+  Schema.Struct({
+    _tag: Schema.Literal("ReplaceFact"),
+    fact: ProfileFactValue,
+    factId: ProfileFactId,
+  }),
+]).pipe(
+  Schema.annotate({
+    identifier: "PrivateDiscoveryProfileCardChange",
+    parseOptions: { onExcessProperty: "error" },
+  })
 );
+export type DiscoveryProfileCardChange = typeof DiscoveryProfileCardChange.Type;
 const ProposeProfileCard = Schema.Struct({
   _tag: Schema.Literal("ProposeProfileCard"),
   change: DiscoveryProfileCardChange,
@@ -76,7 +95,6 @@ const ReviseProposedProfileCard = Schema.Struct({
   _tag: Schema.Literal("ReviseProposedProfileCard"),
   cardId: Id,
   change: DiscoveryProfileCardChange,
-  expectedRevision: ProfileCard.fields.revision,
 });
 const PrivateDiscoveryProposal = Schema.Union([
   ProposeProfileCard,
@@ -84,16 +102,29 @@ const PrivateDiscoveryProposal = Schema.Union([
 ]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 
 const outputSchema = <S extends Schema.Constraint>(proposal: S) =>
-  // eslint-disable-next-line sort-keys -- Keep provider generation ordered as proposals, control decision, then continuity updates.
-  Schema.Struct({
-    proposals: Schema.Array(proposal).pipe(Schema.check(Schema.isMaxLength(3))),
-    reply: PrivateDiscoveryReply,
-    continuity: PrivateDiscoveryContinuityUpdates,
-  }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+  Schema.Union([
+    Schema.Struct({
+      _tag: Schema.Literal("Stop"),
+      evidence: PrivateDiscoveryEvidence,
+    }),
+    Schema.Struct({
+      _tag: Schema.Literal("Continue"),
+      proposals: Schema.Array(proposal).pipe(
+        Schema.check(Schema.isMaxLength(3))
+      ),
+      updates: PrivateDiscoveryContinuityUpdates,
+    }),
+  ]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 
 /** Model extractions and unfinished proposals have no canonical authority. */
-export const PrivateDiscoveryOutput = outputSchema(PrivateDiscoveryProposal);
-export type PrivateDiscoveryOutput = typeof PrivateDiscoveryOutput.Type;
+export const PrivateDiscoveryTurnIntent = outputSchema(
+  PrivateDiscoveryProposal
+);
+export type PrivateDiscoveryTurnIntent = typeof PrivateDiscoveryTurnIntent.Type;
+export const SubmitDiscoveryTurn = Schema.Struct({
+  intent: PrivateDiscoveryTurnIntent,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type SubmitDiscoveryTurn = typeof SubmitDiscoveryTurn.Type;
 
 /** Narrows provider choices; canonical decoding and native revision checks still apply. */
 export const makePrivateDiscoveryProviderOutput = (
@@ -112,7 +143,9 @@ export const makePrivateDiscoveryProviderOutput = (
             cardId: Schema.Literals(eligibleIds),
           }),
         ]);
-  return outputSchema(proposal);
+  return Schema.Struct({ intent: outputSchema(proposal) }).pipe(
+    Schema.annotate({ parseOptions: { onExcessProperty: "error" } })
+  );
 };
 
 const TokenCount = Schema.Int.pipe(
@@ -133,7 +166,7 @@ export const PrivateDiscoveryProvenance = Schema.Struct({
 });
 export type PrivateDiscoveryProvenance = typeof PrivateDiscoveryProvenance.Type;
 export const PrivateDiscoveryResult = Schema.Struct({
-  output: PrivateDiscoveryOutput,
+  output: SubmitDiscoveryTurn,
   provenance: PrivateDiscoveryProvenance,
   usage: PrivateDiscoveryUsage,
 });
@@ -142,6 +175,8 @@ export type PrivateDiscoveryResult = typeof PrivateDiscoveryResult.Type;
 export type PrivateDiscoveryInvalidOutputStage =
   | PrivateDiscoveryContinuationFailure["stage"]
   | PrivateDiscoveryNeedFailure["stage"]
+  | PrivateDiscoveryCoverageFailure["stage"]
+  | PrivateDiscoveryClarificationFailure["stage"]
   | "context_preparation"
   | "response_body_missing"
   | "response_body_limit"
@@ -149,7 +184,7 @@ export type PrivateDiscoveryInvalidOutputStage =
   | "response_json"
   | "response_envelope"
   | "incomplete_completion"
-  | "missing_content"
+  | "tool_call"
   | "output_json"
   | "output_schema"
   | "proposal_unknown_fact"

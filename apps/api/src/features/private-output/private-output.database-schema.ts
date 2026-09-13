@@ -68,6 +68,16 @@ export const privateReservations = sqliteTable("private_reservations", {
   ordinal: integer("ordinal").primaryKey({ autoIncrement: true }),
   sessionReference: text("session_reference").notNull().unique(),
 });
+/** Explicit user-selected discovery scope. No row means a legacy, unscoped session. */
+export const privateDiscoverySessionScopes = sqliteTable(
+  "private_discovery_session_scopes",
+  {
+    scope: text("scope", {
+      enum: ["InitialDiscovery", "ProfileEdit"],
+    }).notNull(),
+    sessionReference: text("session_reference").primaryKey(),
+  }
+);
 export const privateMessages = sqliteTable("private_messages", {
   createdAt: integer("created_at").notNull(),
   id: text("id").notNull().unique(),

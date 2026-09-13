@@ -29,6 +29,7 @@ const messageId = "00000000-0000-4000-8000-000000000201";
 const reservation = {
   createdAt: 1_788_691_200_000,
   ordinal: 1,
+  scope: "ProfileEdit" as const,
   sessionReference: reference,
 };
 const state = { status: "open" as const, version: 0 };
@@ -195,7 +196,7 @@ it("offers explicit reconnect when a fresh automatic admission fails and retains
   render(<PrivateInterviewsPanel {...context} dependencies={f.dependencies} />);
   act(() => f.list(f.directoryReady(), []));
   await user.click(
-    screen.getByRole("button", { name: "Start private session" })
+    screen.getByRole("button", { name: "Start food discovery" })
   );
   const request = f.latest().last("StartSession");
   act(() => f.latest().lose(1008));
@@ -226,7 +227,7 @@ it("starts, saves an acknowledged message, completes, and rediscovers history af
     f.list(f.directoryReady(), []);
   });
   await user.click(
-    screen.getByRole("button", { name: "Start private session" })
+    screen.getByRole("button", { name: "Start food discovery" })
   );
   const directory = f.latest();
   const start = directory.last("StartSession");
@@ -318,7 +319,7 @@ it.each([
     const directory = f.directoryReady();
     f.list(directory);
     if (type === "StartSession") {
-      first.start();
+      first.start("ProfileEdit");
     } else {
       first.select(reference);
       f.sessionReady();
@@ -402,13 +403,67 @@ it("cannot replay or display retained private contents under another account, ho
     "ListSessions",
   ]);
   repaired.discardPreviousRequest();
-  repaired.start();
+  repaired.start("ProfileEdit");
   expect(f.latest().commands.map((command) => command.type)).toEqual([
     "ListSessions",
     "StartSession",
   ]);
   expect(repaired.getSnapshot().pending?.bindingKey).toBe("binding-repaired");
 });
+
+it.each(["clear", "changed"] as const)(
+  "recovers an unreadable saved start only through an explicit %s action",
+  (outcome) => {
+    const f = fixture();
+    const first = new PrivateInterviewClient(context, f.dependencies);
+    first.connect();
+    const initialDirectory = f.directoryReady();
+    f.list(initialDirectory);
+    first.start("ProfileEdit");
+    const [entry] = [...f.storage];
+    if (entry === undefined) {
+      throw new Error("Expected retained request");
+    }
+    const [key, valid] = entry;
+    const decoded = JSON.parse(valid);
+    delete decoded.command.scope;
+    const unreadable = JSON.stringify(decoded);
+    f.storage.set(key, unreadable);
+    first.disconnect();
+    const resumed = new PrivateInterviewClient(context, f.dependencies);
+    resumed.connect();
+    const directory = f.directoryReady();
+    f.list(directory);
+    expect(resumed.getSnapshot().notice).toBe("unreadable_request");
+    expect(f.storage.get(key)).toBe(unreadable);
+    resumed.start("InitialDiscovery");
+    expect(
+      directory.commands.filter((command) => command.type === "StartSession")
+    ).toEqual([]);
+    if (outcome === "changed") {
+      f.storage.set(key, valid);
+    }
+    resumed.discardUnreadableRequest();
+    expect(f.storage.get(key)).toBe(outcome === "changed" ? valid : undefined);
+    const refreshed = f.directoryReady();
+    f.list(refreshed);
+    if (outcome === "clear") {
+      expect(resumed.getSnapshot().notice).toBeNull();
+      resumed.start("InitialDiscovery");
+      expect(refreshed.last("StartSession")).toMatchObject({
+        scope: "InitialDiscovery",
+      });
+    } else {
+      expect(resumed.getSnapshot().pending?.command).toMatchObject({
+        scope: "ProfileEdit",
+        type: "StartSession",
+      });
+      expect(
+        refreshed.commands.filter((command) => command.type === "StartSession")
+      ).toEqual([]);
+    }
+  }
+);
 
 it("keeps old receipts from clearing a newer unresolved mutation", () => {
   const f = fixture();
@@ -459,7 +514,7 @@ it("allows a new session after a definitive completed-session rejection", () => 
     type: "Rejected",
   });
   expect(client.getSnapshot().notice).toBe("session_completed");
-  client.start();
+  client.start("ProfileEdit");
   expect(directory.last("StartSession").type).toBe("StartSession");
 });
 
@@ -633,7 +688,7 @@ it("does not send a mutation when browser storage fails", () => {
   });
   client.connect();
   f.directoryReady();
-  client.start();
+  client.start("ProfileEdit");
   expect(f.latest().commands.map((command) => command.type)).toEqual([
     "ListSessions",
   ]);
@@ -1626,7 +1681,7 @@ it("transparently re-admits an idle directory and reconciles the exact Start req
     f.list(original, []);
   });
   await user.click(
-    screen.getByRole("button", { name: "Start private session" })
+    screen.getByRole("button", { name: "Start food discovery" })
   );
   const start = f.latest().last("StartSession");
   act(() => original?.lose(1008));
@@ -1738,7 +1793,7 @@ it("does not let two established tabs endlessly replace one another after repeat
   expect(b.client.getSnapshot().connection).toBe("authentication_required");
   a.client.connect();
   left.list(left.directoryReady());
-  a.client.start();
+  a.client.start("ProfileEdit");
   const exact = left.latest().last("StartSession");
   left.latest().lose(1008);
   const fresh = left.directoryReady();

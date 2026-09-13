@@ -89,7 +89,10 @@ const run = (
   participant: PrivateDiscoveryEvidenceMessage,
   reply = continueReply
 ) =>
-  applyPrivateDiscoveryContinuation(current, updates, reply, participant, []);
+  applyPrivateDiscoveryContinuation(current, updates, reply, participant, [], {
+    profileFacts: [],
+    scope: "ProfileEdit",
+  });
 const start = (
   participant: PrivateDiscoveryEvidenceMessage,
   updates: readonly Update[] = []
@@ -140,7 +143,6 @@ describe("typed private meal fallback needs", () => {
           {
             detail: participant.text,
             key: "adult_safety",
-            state: "answered",
             subject: "Adult safety",
           },
         ],
@@ -579,22 +581,20 @@ describe("typed private meal fallback needs", () => {
               need: existing(needId(opening)),
             },
           ]),
-          notes: [
-            {
-              detail: "",
-              key: "adult_preference",
-              question: "What meal do you enjoy?",
-              state: "unresolved",
-              subject: "Adult preference",
-            },
-          ],
+          clarification: {
+            _tag: "Request",
+            evidence: evidence(participant),
+            request: { _tag: "ProfileTarget" },
+            revisit: null,
+            safetyRevisit: null,
+          },
         },
         participant,
         { _tag: "Continue" }
       );
       expect(result.decision).toMatchObject({
         _tag: "Ask",
-        source: { _tag: "Note", key: "adult_preference" },
+        source: { _tag: "ProfileClarification" },
       });
       expect(result.continuity.mealFallbackNeeds[0]).toMatchObject({
         disposition: {
@@ -781,7 +781,6 @@ describe("typed private meal fallback needs", () => {
         {
           detail: "Has a dependant.",
           key: "household",
-          state: "circumstance" as const,
           subject: "Adult",
         },
       ],
@@ -796,23 +795,42 @@ describe("typed private meal fallback needs", () => {
     );
   });
 
-  it("retains a generic question while typed questions take priority, then asks it when the need is addressed", () => {
+  it("resolves a typed clarification before continuing the required fallback questions", () => {
     const participant = source();
-    const generic = {
-      detail: "",
-      key: "schedule",
-      question: "Which evenings are busy?",
-      state: "unresolved" as const,
-      subject: "Schedule",
-    };
     const first = run(
       emptyPrivateDiscoveryContinuity(),
-      { ...changes(participant, [], true), notes: [generic] },
+      {
+        ...changes(participant, [], true),
+        clarification: {
+          _tag: "Request",
+          evidence: evidence(participant),
+          request: { _tag: "ProfileTarget" },
+          revisit: null,
+          safetyRevisit: null,
+        },
+      },
       participant
     );
-    expect(first.decision).toMatchObject({ source: { fields: ["reason"] } });
-    const complete = run(
+    expect(first.decision).toMatchObject({
+      source: { _tag: "ProfileClarification" },
+    });
+    const clarified = run(
       first.continuity,
+      {
+        ...changes(participant),
+        clarification: {
+          _tag: "RecordAnswer",
+          evidence: evidence(participant),
+          revisit: null,
+        },
+      },
+      participant
+    );
+    expect(clarified.decision).toMatchObject({
+      source: { fields: ["reason"] },
+    });
+    const complete = run(
+      clarified.continuity,
       changes(participant, [
         reason(participant, existing(needId(participant))),
         acceptedOption(participant, existing(needId(participant))),
@@ -820,12 +838,10 @@ describe("typed private meal fallback needs", () => {
       ]),
       participant
     );
-    expect(complete.continuity.notes).toEqual([generic]);
-    expect(complete.decision).toEqual({
-      _tag: "Ask",
-      question: generic.question,
-      source: { _tag: "Note", key: generic.key },
-    });
+    expect(complete.continuity.clarification).toEqual(
+      clarified.continuity.clarification
+    );
+    expect(complete.decision).toEqual({ _tag: "Review" });
   });
 
   it("bounds need count, delta count, unknown fields and evidence excerpts", () => {
@@ -898,6 +914,7 @@ describe("typed private meal fallback needs", () => {
       },
     ]);
     const delta = Schema.decodeUnknownSync(PrivateDiscoveryContinuityUpdates)({
+      ...emptyPrivateDiscoveryContinuityUpdates(),
       mealFallbackNeeds: { declarations, updates },
       notes: [],
     });

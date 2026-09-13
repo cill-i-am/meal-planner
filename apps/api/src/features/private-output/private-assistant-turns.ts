@@ -11,12 +11,15 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/durable-sqlite";
 import { Cause, Effect, Exit, Option, Schema } from "effect";
 
+import { PrivateDiscoveryClarificationFailure } from "./private-discovery-clarification.js";
 import {
   applyPrivateDiscoveryContinuation,
   emptyPrivateDiscoveryContinuity,
+  emptyPrivateDiscoveryContinuityUpdates,
   PrivateDiscoveryContinuationFailure,
   PrivateDiscoveryContinuityJson,
 } from "./private-discovery-continuity.js";
+import { PrivateDiscoveryCoverageFailure } from "./private-discovery-coverage.js";
 import type { PrivateDiscoveryReviewedProposal } from "./private-discovery-message.js";
 import {
   PRIVATE_DISCOVERY_CARD_LIMIT,
@@ -25,11 +28,12 @@ import {
   PrivateDiscoveryContext,
   PrivateDiscoveryFailure,
   PrivateDiscoveryUsage,
+  SubmitDiscoveryTurn,
 } from "./private-discovery-model.js";
 import type {
+  DiscoveryProfileCardChange,
   PrivateDiscoveryInvalidOutputStage,
   PrivateDiscoveryModel,
-  PrivateDiscoveryOutput,
   PrivateDiscoveryProfile,
   PrivateDiscoveryResult,
 } from "./private-discovery-model.js";
@@ -43,6 +47,7 @@ import {
   privatePendingConfirmation,
   privateProfileCards,
   privateSessionBinding,
+  privateDiscoverySessionScopes,
 } from "./private-output.database-schema.js";
 
 type StoredTurn = typeof privateAssistantTurns.$inferSelect;
@@ -83,50 +88,69 @@ const proposalKey = (change: ProfileCardChange): string =>
     ? `add:${factKey(change.fact)}`
     : `target:${change.factId}`;
 const reviewProposal = (
-  change: ProfileCardChange,
+  intent: DiscoveryProfileCardChange,
   profile: PrivateDiscoveryProfile
 ): CardProposal => {
-  if (change._tag === "AddConfirmedProfileFact") {
+  if (intent._tag === "AddFact") {
     if (
-      profile.facts.some((fact) => factKey(fact.value) === factKey(change.fact))
+      profile.facts.some((fact) => factKey(fact.value) === factKey(intent.fact))
     ) {
       throw invalidOutput("proposal_duplicate");
     }
     return {
-      change,
+      change: { _tag: "AddConfirmedProfileFact", fact: intent.fact },
       expectedProfileVersion: profile.version,
       reviewedFact: null,
     };
   }
-  const before = profile.facts.find((fact) => fact.id === change.factId);
+  const before = profile.facts.find((fact) => fact.id === intent.factId);
   if (before === undefined) {
     throw invalidOutput("proposal_unknown_fact");
   }
-  switch (change._tag) {
-    case "ConfirmProfileFact": {
+  let change: ProfileCardChange;
+  switch (intent._tag) {
+    case "ConfirmFact": {
       if (
         before.standing._tag === "confirmed" &&
         before.standing.basis === "self"
       ) {
         throw invalidOutput("proposal_already_confirmed");
       }
+      change = { _tag: "ConfirmProfileFact", factId: before.id };
       break;
     }
-    case "ReplaceOrdinaryProfileFact":
-    case "RemoveOrdinaryProfileFact": {
-      if (before.value._tag !== "FoodPreference") {
-        throw invalidOutput("proposal_fact_kind");
-      }
+    case "RemoveFact": {
+      change =
+        before.value._tag === "FoodPreference"
+          ? { _tag: "RemoveOrdinaryProfileFact", factId: before.id }
+          : {
+              _tag: "ConfirmHardConstraintReduction",
+              factId: before.id,
+              replacement: null,
+            };
       break;
     }
-    case "ConfirmHardConstraintReduction": {
+    case "ReplaceFact": {
       if (before.value._tag === "FoodPreference") {
-        throw invalidOutput("proposal_fact_kind");
+        if (intent.fact._tag !== "FoodPreference") {
+          throw invalidOutput("proposal_fact_kind");
+        }
+        change = {
+          _tag: "ReplaceOrdinaryProfileFact",
+          fact: intent.fact,
+          factId: before.id,
+        };
+      } else {
+        change = {
+          _tag: "ConfirmHardConstraintReduction",
+          factId: before.id,
+          replacement: intent.fact,
+        };
       }
       break;
     }
     default: {
-      throw invalidOutput("proposal_review");
+      return intent satisfies never;
     }
   }
   return {
@@ -136,17 +160,20 @@ const reviewProposal = (
   };
 };
 export const reviewPrivateDiscoveryProposals = (
-  output: PrivateDiscoveryOutput,
+  output: SubmitDiscoveryTurn,
   context: PrivateDiscoveryContext,
   storedCards: readonly ProfileCard[]
 ): readonly PrivateDiscoveryReviewedProposal[] => {
+  if (output.intent._tag === "Stop") {
+    return [];
+  }
   const seen = new Set(
     storedCards
       .filter((card) => card.status === "proposed" || card.status === "pending")
       .map((card) => proposalKey(card.change))
   );
   const revised = new Set<string>();
-  return output.proposals.map((action) => {
+  return output.intent.proposals.map((action) => {
     let card: ProfileCard | null = null;
     if (action._tag === "ReviseProposedProfileCard") {
       const observed = context.cards.find(
@@ -157,9 +184,8 @@ export const reviewPrivateDiscoveryProposals = (
       );
       if (
         observed?.status !== "proposed" ||
-        observed.revision !== action.expectedRevision ||
         current?.status !== "proposed" ||
-        current.revision !== action.expectedRevision
+        current.revision !== observed.revision
       ) {
         throw invalidOutput("proposal_revision_target");
       }
@@ -170,12 +196,13 @@ export const reviewPrivateDiscoveryProposals = (
       card = current;
       seen.delete(proposalKey(current.change));
     }
-    const key = proposalKey(action.change);
+    const proposal = reviewProposal(action.change, context.profile);
+    const key = proposalKey(proposal.change);
     if (seen.has(key)) {
       throw invalidOutput("proposal_duplicate");
     }
     seen.add(key);
-    return { card, proposal: reviewProposal(action.change, context.profile) };
+    return { card, proposal };
   });
 };
 
@@ -313,6 +340,13 @@ export class PrivateAssistantTurns {
         : Schema.decodeUnknownSync(PrivateDiscoveryContinuityJson)(
             previous.summary
           );
+    const scope = this.#database
+      .select()
+      .from(privateDiscoverySessionScopes)
+      .get()?.scope;
+    if (scope === undefined) {
+      throw invalidOutput("context_preparation");
+    }
     const context = {
       cards,
       continuity,
@@ -325,6 +359,7 @@ export class PrivateAssistantTurns {
         })),
         version: profile.version,
       },
+      scope,
     };
     const bytes = () =>
       new TextEncoder().encode(JSON.stringify(context)).byteLength;
@@ -455,8 +490,16 @@ export class PrivateAssistantTurns {
         .map(({ cardJson }) =>
           Schema.decodeUnknownSync(Schema.fromJsonString(ProfileCard))(cardJson)
         );
+      let submission: SubmitDiscoveryTurn;
+      try {
+        submission = Schema.decodeUnknownSync(SubmitDiscoveryTurn, {
+          onExcessProperty: "error",
+        })(result.output);
+      } catch {
+        throw invalidOutput("output_schema");
+      }
       const proposals = reviewPrivateDiscoveryProposals(
-        result.output,
+        submission,
         context,
         storedCards
       );
@@ -476,15 +519,20 @@ export class PrivateAssistantTurns {
       try {
         continuation = applyPrivateDiscoveryContinuation(
           context.continuity,
-          result.output.continuity,
-          result.output.reply,
+          submission.intent._tag === "Stop"
+            ? emptyPrivateDiscoveryContinuityUpdates()
+            : submission.intent.updates,
+          submission.intent,
           participant,
-          proposals
+          proposals,
+          { profileFacts: context.profile.facts, scope: context.scope }
         );
       } catch (error) {
         if (
           error instanceof PrivateDiscoveryContinuationFailure ||
-          error instanceof PrivateDiscoveryNeedFailure
+          error instanceof PrivateDiscoveryNeedFailure ||
+          error instanceof PrivateDiscoveryCoverageFailure ||
+          error instanceof PrivateDiscoveryClarificationFailure
         ) {
           throw invalidOutput(error.stage);
         }

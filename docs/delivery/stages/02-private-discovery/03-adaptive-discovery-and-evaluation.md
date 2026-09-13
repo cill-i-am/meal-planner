@@ -1,11 +1,23 @@
 # Work Item 03 — Adaptive discovery and evaluation
 
-- Status: In progress (2026-09-12); v24 native retest rejected at output-schema validation; [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
+- Status: In progress (2026-09-13); v25 deterministic contract locally verified; fresh live acceptance pending; historical v24 native failure retained; [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
 - Authorized by the product owner to continue after Work Item 02.
 - Implementation base: `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`.
 - Owning stage: [Stage 2](README.md).
 
 ## Current evaluation status
+
+The current implementation is [application-owned discovery coverage](03-deterministic-discovery-contract.md),
+prompt v25/policy v6. It uses explicit session scope, fixed required coverage,
+closed profile clarification and one forced schema-derived `submitDiscoveryTurn`
+call. The application owns all questions, readiness, card revision binding and
+ordinary/safety proposal routing. Optional notes retain context only. A new
+ordered private metadata table retains the user's scope; unscoped old history
+stays readable without generation or inferred conversion. Local deterministic,
+native and browser verification remains separate from fresh live evaluation.
+The full family, candidate-comparison, A-to-B and human-rating gates remain open.
+
+The following evaluation results are historical and are not regraded by the new contract.
 
 The [v24 native retest](../../../../evals/private-discovery/kimi-v24-native-output-failure-results.md)
 on `6efde2463445b4557cbda8c9b9644426dace00b2` passed its opening turn, retaining
@@ -73,13 +85,10 @@ actual human ratings across eight families and both applicable dimensions remain
 unscored; model scores cannot fill them. Work Item 03 stays in progress and the
 PR stays draft and not ready to merge.
 
-The [typed fallback policy design](03-typed-fallback-policy.md) owns the
-current deterministic discovery policy. The contract introduced in v22/policy v5
-gives each unresolved note its sole generic question and removes model-authored reply text and follow-up
-references. The application selects a missing typed field, then the first retained
-unresolved question, then review readiness. The same pure flow renders actual
-reviewed profile draft/revision effects and changed private typed context before
-checking the complete 2,000-character limit and atomic persistence.
+The [current deterministic contract](03-deterministic-discovery-contract.md) owns
+coverage, scope, question selection, clarification and the tool boundary. The
+[earlier typed fallback design](03-typed-fallback-policy.md) retains historical
+implementation and evaluation evidence; its generic question path is superseded.
 
 The [first v21 attempt](../../../../evals/private-discovery/kimi-v21-first-attempt-provider-failure-results.md)
 on `8d0fbbc` received HTTP 408 and settled `provider_unavailable`, with no assistant
@@ -594,71 +603,30 @@ running or terminal status, even when the session version is unchanged. A fresh
 session admission clears only reconciled assistant-turn conflict/pending notices.
 Failed admission remains visibly unavailable.
 
-The thin application-owned model seam accepts bounded authorized context and
-returns bounded private continuity updates, bounded new-card/proposed-card-revision
-operations, a Continue/Stop response, and usage/provenance. The application derives
-Ask or Review from the retained typed needs and generic notes. A card revision names only a current
-context card ID and expected revision. The child validates that the exact stored
-card is still proposed at that revision within the final guarded settlement
-transaction. It assigns card identity, version, status, and reviewed before-values
-from its canonical snapshot; a revision retains identity and advances its card
-revision. Pending, confirmed, rejected, and conflicted cards cannot be revised by
-model output. These operations never confirm cards or mutate canonical state. Provider output cannot supply an actor, target person,
-confirmation basis, source, or safety-consent phrase. Existing Household commands
-remain the sole version/audit writer after participant confirmation.
+The current model and native settlement contract is specified in
+[Application-owned discovery coverage](03-deterministic-discovery-contract.md).
+The model submits one typed Stop or Continue intent through the forced function.
+Required coverage and nullable clarification updates are strict, current-evidenced
+changes; the application owns the complete state, question policy and readiness.
+Context notes have no state or question. The native owner re-decodes submissions,
+reviews semantic proposal effects against the fresh own profile and snapshot card
+revision, and commits rendered messages, proposals and the bounded private snapshot
+atomically. Only explicit card confirmation uses the canonical Household writer.
+GPT-OSS 120B and Kimi K2.6 share this one tool contract; there is no JSON-output
+fallback, automatic retry or output repair. Historical Qwen evidence remains
+unchanged; its installed binding does not express this forced-tool integration.
 
-The application adapter calls the native Workers AI binding directly with an
-explicit configuration; absent or invalid configuration leaves model work safely
-unavailable. Its candidate allowlist is Qwen3 30B A3B FP8, GPT OSS 120B and Kimi K2.6.
-The adapter strictly decodes the selected nonstreaming Chat Completions response;
-protocol compatibility remains a measured trial prerequisite. There is no provider
-fallback or output repair. Known token usage and configured estimated cost are
-retained on successful and rejected model output; unknown usage stays unknown.
-Configured failures retain model/prompt/policy/tool provenance, recorded durably
-at the dispatch claim so runtime restart cannot erase the actual configuration.
-Known late usage can update only the same claimed attempt's measurements; it
-never changes terminal status or restores text, cards, continuity, or socket output.
-
-The context keeps the whole current own-profile projection, at most 16 recent
-messages, at most 25 private cards, and structured private continuity. The strict
-snapshot is `{ notes, mealFallbackNeeds }`, bounded to 8,192 UTF-8 bytes. Each note
-has a key (1–32 characters), subject (1–120), detail (0–200), and a state:
-`circumstance`, `unresolved`, `answered`, `no_information`, `declined`, or
-`withdrawn`. Only an unresolved note contains its required question; other states
-forbid it. There are at most 12 retained notes and six complete keyed updates
-per turn. A new key adds a note; a retained key replaces its subject, detail and
-state in place. New notes append in update order and omission retains prior
-notes. Duplicate keys within one update list are rejected. Up to three private
-fallback needs retain application-owned IDs and evidenced reason, acceptable
-option and preparation fields; at most six typed operations apply per response.
-The [typed fallback design](03-typed-fallback-policy.md) specifies field and
-whole-need dispositions, correction and reopening. The prior array snapshot and
-model Ask/Review output are rejected without normalization or migration.
-
-The application first asks for an active need's unanswered reason, then its
-acceptable option and preparation (combined when both remain unanswered), and
-then the first retained unresolved note's question. Review readiness requires
-neither unanswered active fields nor unresolved notes. Continue is tag-only;
-Stop carries current participant evidence and permits no proposal or continuity
-update. It preserves the snapshot, renders fixed wording and never completes the
-session. Removed model text/followUp/Ask/Review shapes are rejected strictly.
-
-The native owner reviews actual proposal operations against current profile and
-stored cards, then passes those reviewed records to the canonical pure
-continuation flow. Application wording describes new/revised profile drafts as
-unconfirmed and gives changed typed needs an attributed private-context summary.
-Only real profile proposals receive an interface review invitation. Exact/generic
-options, quantity, substitution scope and preparation stay distinct. The complete
-rendered message must fit 2,000 characters before any generated state is written;
-it is never clipped. Question and extracted-value semantics remain model-evaluated.
-The resulting snapshot is validated and encoded through one JSON codec in the
-existing `private_assistant_turns.summary` TEXT column, atomically with the reply,
-reviewed cards, and successful turn. A fresh session starts with empty continuity.
-
+The snapshot is `{ coverage, clarification, notes, mealFallbackNeeds }`, stored
+through one strict JSON codec in the existing private turn summary column.
+The separate ordered scope migration assigns no historical session a scope.
+Current confirmed own-profile safety facts can satisfy coverage, while provisional
+facts, drafts, no-information and refusal cannot become safety clearance.
+All profile-confirmation, unknown-usage, cancellation, replay and final-send
+revocation boundaries remain as described above.
 Context preparation trims older messages and cards, never canonical facts or
-continuity notes. Oversized context is rejected before provider dispatch. The
+continuity. Oversized context is rejected before provider dispatch. The
 24,576-byte context bound and 32,768-byte fully serialized provider body are
-unchanged. The raw response cap is 2 MiB for Kimi and 65,536 bytes for GPT/Qwen.
+unchanged. The raw response cap is 2 MiB for Kimi and 65,536 bytes for GPT-OSS.
 Card operations remain limited to
 three. The separate evaluation transport keeps its 40,000-byte request-envelope
 cap. Declared individual bounds do not guarantee that every maximum-sized
@@ -671,8 +639,8 @@ creates the native `PrivateDiscoveryAI` binding, and deployment-time
 `MEAL_PLANNER_PRIVATE_DISCOVERY_CONFIG` becomes its `PRIVATE_DISCOVERY_CONFIG` JSON
 text binding. `MealPlannerApi` instantiates that worker through the existing
 `PrivateOutputApiBinding`. The JSON requires `gatewayId`, one allowed `model`,
-`maxOutputTokens` (1–65,536 for Kimi; 1–4,096 for GPT/Qwen), `timeoutMs`
-(1,000–900,000 for Kimi; 1,000–120,000 for GPT/Qwen), and nonnegative
+`maxOutputTokens` (1–65,536 for Kimi; 1–4,096 for GPT-OSS), `timeoutMs`
+(1,000–900,000 for Kimi; 1,000–120,000 for GPT-OSS), and nonnegative
 `inputUsdPerMillionTokens` / `outputUsdPerMillionTokens`. `.env.example` keeps it
 empty. Exact model/gateway/token-price selection and verified dedicated gateway
 privacy/retry/spend configuration remain prerequisites to functional deployment;

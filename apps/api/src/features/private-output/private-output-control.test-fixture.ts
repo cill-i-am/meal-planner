@@ -1,6 +1,7 @@
 /* eslint-disable max-classes-per-file -- Native fixture exports both independently stored private child kinds. */
 import type * as NativeCloudflare from "@cloudflare/workers-types";
 import { PersonProfile } from "@meal-planner/household-api";
+import { PrivateDiscoveryScope } from "@meal-planner/private-interview-api";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import { Schema } from "effect";
@@ -242,7 +243,7 @@ type DirectoryPort = {
       | "beginConnection"
       | "authorizeConnection"
       | "invalidateOutput"
-      | "hasReservation"
+      | "readReservation"
       | "readOutputLifecycle"
       | "fetch"
       | "commandAtTime"
@@ -270,6 +271,7 @@ const Command = Schema.Struct({
   action: Schema.String,
   binding: Schema.optional(PrivateSessionBinding),
   directoryKey: Schema.optional(Schema.String),
+  discoveryScope: Schema.optional(Schema.NullOr(PrivateDiscoveryScope)),
   expiresAt: Schema.optional(Schema.Number),
   generation: Schema.optional(Schema.String),
   intentKey: Schema.optional(Schema.String),
@@ -348,7 +350,7 @@ export default {
         } else if (input.action === "directory-lose-ack") {
           result = await directory.loseNextInvalidationAcknowledgement();
         } else if (input.action === "directory-reserved" && input.binding) {
-          result = await directory.hasReservation(input.binding);
+          result = (await directory.readReservation(input.binding)) !== null;
         } else if (input.action === "directory-connect") {
           return directory.fetch(
             new Request(request.url, {
@@ -362,7 +364,13 @@ export default {
           return new Response(null, { status: 404 });
         }
       } else if (input.action === "initialize" && input.binding) {
-        result = await child.initialize(input.binding);
+        result = await child.initialize({
+          binding: input.binding,
+          scope:
+            input.discoveryScope === undefined
+              ? "ProfileEdit"
+              : input.discoveryScope,
+        });
       } else if (input.action === "begin" && input.binding) {
         result = await child.beginConnection(input.binding);
       } else if (input.action === "authorize" && input.binding) {

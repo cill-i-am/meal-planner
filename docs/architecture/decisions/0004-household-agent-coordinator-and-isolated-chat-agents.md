@@ -295,8 +295,8 @@ adaptive proposal production remains Work Item 03.
 ## Structured private discovery continuity — 2026-09-09
 
 [Work Item 03](../../delivery/stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
-adds one model call per admitted private assistant attempt. Its current unmerged
-candidate returns one `continuity` array of complete note updates, existing
+added one model call per admitted private assistant attempt. Its historical v15
+candidate returned one `continuity` array of complete note updates, existing
 profile-card proposals, then an explicit Ask/Review/Stop reply. V12 replaced the
 earlier free-text rolling summary with structured additions/revisions. V15 removes
 that model operation choice after a real turn rejected a complete retained note
@@ -348,3 +348,33 @@ facts; explicit card confirmation remains the only route to the Household writer
 The wire protocol and browser rendering continue to receive ordinary private
 messages and existing card/status frames. Provider request/response bounds,
 spend/dispatch guards and physical-send revocation fences remain in force.
+
+
+## Application-owned private discovery — 2026-09-13
+
+The [v25/policy-v6 contract](../../delivery/stages/02-private-discovery/03-deterministic-discovery-contract.md)
+supersedes model-owned generic question states and output in the preceding
+historical section. The application creates required food-restriction and
+ordinary-meal topics and owns question wording, ordering and review readiness.
+One forced `submitDiscoveryTurn` function carries closed evidence-backed intents.
+Required nullable topic keys preserve state on null; missing keys reject.
+The native child decodes again before its atomic guarded settlement. Strict tool
+shape and excerpt provenance do not establish semantic truth or provider reliability.
+
+The participant explicitly selects InitialDiscovery or ProfileEdit when reserving
+a session. An ordered private metadata table stores that scope atomically with
+the directory reservation and receipt, then the authenticated admission copies
+it into a new child's immutable scope metadata. Identity bindings are unchanged.
+No historical scope is inferred or backfilled. Existing unscoped history remains
+readable; generation fails before provider dispatch and fresh scoped sessions use
+the new contract. An unreadable retained browser request requires explicit exact-record
+clearing, with no automatic replay or claim about its previous outcome.
+
+Context notes contain no questions. A bounded typed profile-clarification slot
+uses application templates and permission-checked transitions; missing saved
+targets are explicitly retired without retargeting or invented answers. Required
+coverage, clarification and typed fallback state share the existing bounded
+private snapshot, remain noncanonical and survive restart. The model supplies
+semantic profile changes, while application code derives safety versus ordinary
+proposal paths and binds revisions from the generation snapshot. Existing explicit
+card confirmation remains the only route to canonical household mutation.

@@ -10,7 +10,7 @@ import {
   PRIVATE_DISCOVERY_TOOL_VERSION,
   PrivateDiscoveryContext,
   PrivateDiscoveryFailure,
-  PrivateDiscoveryOutput,
+  SubmitDiscoveryTurn,
 } from "./private-discovery-model.js";
 import type {
   PrivateDiscoveryInvalidOutputStage,
@@ -35,7 +35,6 @@ export const PrivateDiscoveryConfiguration = Schema.Struct({
     Schema.check(Schema.isBetween({ maximum: 65_536, minimum: 1 }))
   ),
   model: Schema.Literals([
-    "@cf/qwen/qwen3-30b-a3b-fp8",
     "@cf/openai/gpt-oss-120b",
     "@cf/moonshotai/kimi-k2.6",
   ]),
@@ -79,9 +78,21 @@ const Completion = Schema.Struct({
     Schema.Struct({
       finish_reason: Schema.String,
       message: Schema.Struct({
-        content: Schema.NullOr(Schema.String),
+        content: Schema.optionalKey(Schema.NullOr(Schema.String)),
         refusal: Schema.optionalKey(Schema.NullOr(Schema.String)),
         role: Schema.Literal("assistant"),
+        tool_calls: Schema.optionalKey(
+          Schema.Array(
+            Schema.Struct({
+              function: Schema.Struct({
+                arguments: Schema.String,
+                name: Schema.String,
+              }),
+              id: Schema.String,
+              type: Schema.Literal("function"),
+            })
+          )
+        ),
       }),
     })
   ).pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(1))),
@@ -98,39 +109,58 @@ const requestFor = (
   const outputJsonSchema = Tool.getJsonSchemaFromSchema(
     makePrivateDiscoveryProviderOutput(context.cards)
   );
-  const systemInstructions = `${privateDiscoveryInstructions}\n\nOutput JSON schema:\n${JSON.stringify(outputJsonSchema)}`;
+  const systemInstructions = privateDiscoveryInstructions;
   const messages = [
     { content: systemInstructions, role: "system" as const },
     { content: JSON.stringify(context), role: "user" as const },
   ];
+  const toolRequest = {
+    parallel_tool_calls: false,
+    tool_choice: {
+      function: { name: "submitDiscoveryTurn" },
+      type: "function" as const,
+    },
+    tools: [
+      {
+        function: {
+          description:
+            "Submit one evidence-backed private discovery intent for application validation. This never confirms or saves a household fact.",
+          name: "submitDiscoveryTurn",
+          parameters: outputJsonSchema,
+          strict: true,
+        },
+        type: "function" as const,
+      },
+    ],
+  };
   if (config.model === "@cf/moonshotai/kimi-k2.6") {
+    // Kimi's verified thinking parameter is more specific than the shared Workers declaration.
+    const thinking: NonNullable<
+      NativeCloudflare.AiModels["@cf/moonshotai/kimi-k2.6"]["inputs"]["chat_template_kwargs"]
+    > & { readonly thinking: true } = { thinking: true };
     return {
       body: {
-        chat_template_kwargs: { thinking: true },
+        ...toolRequest,
+        chat_template_kwargs: thinking,
         max_completion_tokens: config.maxOutputTokens,
         messages,
         n: 1,
-        response_format: { type: "json_object" as const },
         stream: false as const,
         temperature: 1,
         top_p: 0.95,
-      },
+      } satisfies NativeCloudflare.AiModels["@cf/moonshotai/kimi-k2.6"]["inputs"],
       model: config.model,
     };
   }
   return {
     body: {
+      ...toolRequest,
       max_tokens: config.maxOutputTokens,
       messages,
-      response_format: {
-        json_schema: outputJsonSchema,
-        type: "json_schema" as const,
-      },
       stream: false as const,
-      ...(config.model === "@cf/openai/gpt-oss-120b"
-        ? { temperature: 1, top_p: 1 }
-        : { temperature: 0.6, top_k: 20, top_p: 0.95 }),
-    },
+      temperature: 1,
+      top_p: 1,
+    } satisfies NativeCloudflare.AiModels["@cf/openai/gpt-oss-120b"]["inputs"],
     model: config.model,
   };
 };
@@ -304,26 +334,32 @@ export const makePrivateDiscoveryModel = (
         ) {
           return yield* Effect.fail(configuredFailure("refused", usage));
         }
-        if (choice.finish_reason !== "stop") {
+        if (choice.finish_reason !== "tool_calls") {
           return yield* Effect.fail(
             configuredFailure("invalid_output", usage, "incomplete_completion")
           );
         }
-        const { content } = choice.message;
-        if (content === null) {
+        const [toolCall, ...extraCalls] = choice.message.tool_calls ?? [];
+        if (
+          toolCall === undefined ||
+          extraCalls.length !== 0 ||
+          toolCall.function.name !== "submitDiscoveryTurn" ||
+          (choice.message.content !== undefined &&
+            choice.message.content !== null &&
+            choice.message.content !== "")
+        ) {
           return yield* Effect.fail(
-            configuredFailure("invalid_output", usage, "missing_content")
+            configuredFailure("invalid_output", usage, "tool_call")
           );
         }
         const decoded = yield* Effect.try({
           catch: () =>
             configuredFailure("invalid_output", usage, "output_json"),
-          try: (): unknown => JSON.parse(content),
+          try: (): unknown => JSON.parse(toolCall.function.arguments),
         });
-        const output = yield* Schema.decodeUnknownEffect(
-          PrivateDiscoveryOutput,
-          { onExcessProperty: "error" }
-        )(decoded).pipe(
+        const output = yield* Schema.decodeUnknownEffect(SubmitDiscoveryTurn, {
+          onExcessProperty: "error",
+        })(decoded).pipe(
           Effect.mapError(() =>
             configuredFailure("invalid_output", usage, "output_schema")
           )

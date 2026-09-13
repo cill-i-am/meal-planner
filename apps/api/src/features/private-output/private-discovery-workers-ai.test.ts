@@ -10,7 +10,7 @@ import {
 import {
   makePrivateDiscoveryProviderOutput,
   PrivateDiscoveryContext,
-  PrivateDiscoveryOutput,
+  PrivateDiscoveryTurnIntent,
 } from "./private-discovery-model.js";
 import { privateDiscoveryInstructions } from "./private-discovery-prompt.js";
 import {
@@ -32,6 +32,7 @@ const context = () =>
       },
     ],
     profile: { facts: [], version: 0 },
+    scope: "ProfileEdit",
   });
 const proposedCard = (revision: number) =>
   Schema.decodeUnknownSync(PrivateDiscoveryContext.fields.cards.value)({
@@ -53,7 +54,7 @@ const config: PrivateDiscoveryConfiguration = {
   gatewayId: "synthetic-private-discovery",
   inputUsdPerMillionTokens: 0.2,
   maxOutputTokens: 2048,
-  model: "@cf/qwen/qwen3-30b-a3b-fp8",
+  model: "@cf/openai/gpt-oss-120b",
   outputUsdPerMillionTokens: 0.6,
   timeoutMs: 1000,
 };
@@ -65,26 +66,52 @@ const kimiConfig: PrivateDiscoveryConfiguration = {
   outputUsdPerMillionTokens: 4,
 };
 const output = {
-  continuity: {
+  _tag: "Continue",
+  proposals: [],
+  updates: {
     ...emptyPrivateDiscoveryContinuityUpdates(),
     notes: [
       {
-        detail: "",
+        detail: "The adult enjoys tomatoes.",
         key: "preparation",
-        question: "How do you like tomatoes prepared?",
-        state: "unresolved",
         subject: "Tomato preparation",
       },
     ],
   },
-  proposals: [],
-  reply: { _tag: "Continue" },
 };
+const toolRequest = (parameters: Record<string, unknown>) => ({
+  parallel_tool_calls: false,
+  tool_choice: { function: { name: "submitDiscoveryTurn" }, type: "function" },
+  tools: [
+    {
+      function: {
+        description: expect.any(String),
+        name: "submitDiscoveryTurn",
+        parameters,
+        strict: true,
+      },
+      type: "function",
+    },
+  ],
+});
 const completion = (content: Readonly<Record<string, unknown>> = output) => ({
   choices: [
     {
-      finish_reason: "stop",
-      message: { content: JSON.stringify(content), role: "assistant" },
+      finish_reason: "tool_calls",
+      message: {
+        content: null,
+        role: "assistant",
+        tool_calls: [
+          {
+            function: {
+              arguments: JSON.stringify({ intent: content }),
+              name: "submitDiscoveryTurn",
+            },
+            id: "test-call",
+            type: "function",
+          },
+        ],
+      },
     },
   ],
   usage: { completion_tokens: 50, prompt_tokens: 100 },
@@ -129,7 +156,7 @@ const fixture = (
 
 describe("private discovery Workers AI boundary", () => {
   it.each([0, 1, 2])(
-    "uses one matching provider schema for %s eligible cards in both request locations",
+    "uses one forced tool schema for %s eligible cards",
     async (count) => {
       const test = fixture();
       const cards = Array.from({ length: count }, (_, index) =>
@@ -140,33 +167,25 @@ describe("private discovery Workers AI boundary", () => {
       const jsonSchema = Tool.getJsonSchemaFromSchema(
         makePrivateDiscoveryProviderOutput(cards)
       );
-      expect(Object.keys(jsonSchema["properties"] ?? {})).toEqual([
-        "proposals",
-        "reply",
-        "continuity",
-      ]);
-      expect(jsonSchema["required"]).toEqual([
-        "proposals",
-        "reply",
-        "continuity",
-      ]);
+      expect(Object.keys(jsonSchema["properties"] ?? {})).toEqual(["intent"]);
+      expect(jsonSchema["required"]).toEqual(["intent"]);
       expect(test.run).toHaveBeenCalledOnce();
       expect(test.run.mock.calls[0]?.[1]).toMatchObject({
         messages: [
           {
-            content: `${privateDiscoveryInstructions}\n\nOutput JSON schema:\n${JSON.stringify(jsonSchema)}`,
+            content: privateDiscoveryInstructions,
             role: "system",
           },
           { content: JSON.stringify(input.context), role: "user" },
         ],
-        response_format: { json_schema: jsonSchema, type: "json_schema" },
+        ...toolRequest(jsonSchema),
       });
       expect(jsonSchema).toHaveProperty("$defs.PrivateDiscoveryEvidence");
       expect(jsonSchema).toHaveProperty("$defs.MealFallbackNeedReference");
       const decode = Schema.decodeUnknownSync(
-        makePrivateDiscoveryProviderOutput(cards)
+        makePrivateDiscoveryProviderOutput(cards).fields.intent
       );
-      const { change } = proposedCard(0);
+      const change = { ...proposedCard(0).change, _tag: "AddFact" };
       expect(
         decode({
           ...output,
@@ -183,7 +202,6 @@ describe("private discovery Workers AI boundary", () => {
                 _tag: "ReviseProposedProfileCard",
                 cardId: card.id,
                 change,
-                expectedRevision: card.revision,
               },
             ],
           })
@@ -197,7 +215,6 @@ describe("private discovery Workers AI boundary", () => {
               _tag: "ReviseProposedProfileCard",
               cardId: "00000000-0000-0000-0000-000000000000",
               change,
-              expectedRevision: 0,
             },
           ],
         })
@@ -213,12 +230,13 @@ describe("private discovery Workers AI boundary", () => {
       const revision = {
         _tag: "ReviseProposedProfileCard",
         cardId: unavailable.id,
-        change: unavailable.change,
-        expectedRevision: unavailable.revision,
+        change: { ...unavailable.change, _tag: "AddFact" },
       };
       for (const cards of [[unavailable], [unavailable, eligible]]) {
         expect(() =>
-          Schema.decodeUnknownSync(makePrivateDiscoveryProviderOutput(cards))({
+          Schema.decodeUnknownSync(
+            makePrivateDiscoveryProviderOutput(cards).fields.intent
+          )({
             ...output,
             proposals: [revision],
           })
@@ -232,26 +250,128 @@ describe("private discovery Workers AI boundary", () => {
     const revision = {
       _tag: "ReviseProposedProfileCard",
       cardId: card.id,
-      change: card.change,
-      expectedRevision: card.revision + 1,
+      change: { ...card.change, _tag: "AddFact" },
     };
     const candidate = { ...output, proposals: [revision] };
-    expect(Schema.decodeUnknownSync(PrivateDiscoveryOutput)(candidate)).toEqual(
-      candidate
-    );
     expect(
-      Schema.decodeUnknownSync(makePrivateDiscoveryProviderOutput([card]))(
-        candidate
-      )
+      Schema.decodeUnknownSync(PrivateDiscoveryTurnIntent)(candidate)
+    ).toEqual(candidate);
+    expect(
+      Schema.decodeUnknownSync(
+        makePrivateDiscoveryProviderOutput([card]).fields.intent
+      )(candidate)
     ).toEqual(candidate);
     const canonicalOnly = {
       ...output,
       proposals: [{ ...revision, cardId: crypto.randomUUID() }],
     };
     expect(
-      Schema.decodeUnknownSync(PrivateDiscoveryOutput)(canonicalOnly)
+      Schema.decodeUnknownSync(PrivateDiscoveryTurnIntent)(canonicalOnly)
     ).toEqual(canonicalOnly);
   });
+
+  it.each([
+    { kind: "wrong_name", stage: "tool_call", title: "wrong tool name" },
+    { kind: "multiple", stage: "tool_call", title: "multiple tool calls" },
+    { kind: "prose", stage: "tool_call", title: "prose alongside a tool call" },
+    {
+      kind: "foodRestrictions",
+      stage: "output_schema",
+      title: "missing food restrictions entry",
+    },
+    {
+      kind: "usualMeals",
+      stage: "output_schema",
+      title: "missing usual meals entry",
+    },
+    {
+      kind: "revision",
+      stage: "output_schema",
+      title: "model supplied revision bookkeeping",
+    },
+  ])(
+    "rejects $title without repairing or retrying",
+    async ({ kind, stage }) => {
+      const payload = completion();
+      const [choice] = payload.choices;
+      if (choice === undefined) {
+        throw new Error("Expected fixture choice");
+      }
+      const [call] = choice.message.tool_calls;
+      if (call === undefined) {
+        throw new Error("Expected fixture tool call");
+      }
+      let message: Record<string, unknown> = choice.message;
+      switch (kind) {
+        case "wrong_name": {
+          message = {
+            ...choice.message,
+            tool_calls: [
+              { ...call, function: { ...call.function, name: "saveProfile" } },
+            ],
+          };
+          break;
+        }
+        case "multiple": {
+          message = {
+            ...choice.message,
+            tool_calls: [call, { ...call, id: "second-call" }],
+          };
+          break;
+        }
+        case "prose": {
+          message = { ...choice.message, content: "I saved your profile." };
+          break;
+        }
+        default: {
+          const intent: Record<string, unknown> = { ...output };
+          if (kind === "revision") {
+            intent["proposals"] = [
+              {
+                _tag: "ReviseProposedProfileCard",
+                cardId: crypto.randomUUID(),
+                change: {
+                  _tag: "AddFact",
+                  fact: { _tag: "NoKnownHardConstraints" },
+                },
+                expectedRevision: 0,
+              },
+            ];
+          } else {
+            intent["updates"] = {
+              ...output.updates,
+              coverage:
+                kind === "foodRestrictions"
+                  ? { usualMeals: null }
+                  : { foodRestrictions: null },
+            };
+          }
+          message = {
+            ...choice.message,
+            tool_calls: [
+              {
+                ...call,
+                function: {
+                  arguments: JSON.stringify({ intent }),
+                  name: "submitDiscoveryTurn",
+                },
+              },
+            ],
+          };
+        }
+      }
+      const test = fixture(() =>
+        Promise.resolve(
+          Response.json({ ...payload, choices: [{ ...choice, message }] })
+        )
+      );
+      const failure = await Effect.runPromise(
+        Effect.flip(test.model.generate(test.input))
+      );
+      expect(failure).toMatchObject({ reason: "invalid_output", stage });
+      expect(test.run).toHaveBeenCalledOnce();
+    }
+  );
 
   it("rejects an oversized 25-card provider request before claiming or dispatching", async () => {
     const test = fixture();
@@ -260,13 +380,11 @@ describe("private discovery Workers AI boundary", () => {
       context: {
         ...context(),
         cards: Array.from({ length: 25 }, (_, index) => proposedCard(index)),
-        messages: [
-          {
-            id: crypto.randomUUID(),
-            role: "participant" as const,
-            text: "x".repeat(2000),
-          },
-        ],
+        messages: Array.from({ length: 3 }, () => ({
+          id: crypto.randomUUID(),
+          role: "participant" as const,
+          text: "x".repeat(3000),
+        })),
       },
     };
     expect(
@@ -283,7 +401,7 @@ describe("private discovery Workers AI boundary", () => {
   it.each([
     {
       modelName: config.model,
-      sampling: { temperature: 0.6, top_k: 20, top_p: 0.95 },
+      sampling: { temperature: 1, top_p: 1 },
     },
     {
       modelName: "@cf/openai/gpt-oss-120b",
@@ -301,51 +419,17 @@ describe("private discovery Workers AI boundary", () => {
         makePrivateDiscoveryProviderOutput(test.input.context.cards)
       );
       const nativeRequest = test.run.mock.calls[0]?.[1];
-      expect(nativeRequest).toMatchObject({
-        response_format: {
-          json_schema: {
-            properties: {
-              continuity: expect.any(Object),
-              proposals: {
-                items: {
-                  properties: { _tag: { enum: ["ProposeProfileCard"] } },
-                  type: "object",
-                },
-                type: "array",
-              },
-              reply: expect.any(Object),
-            },
-            required: expect.arrayContaining([
-              "continuity",
-              "proposals",
-              "reply",
-            ]),
-            type: "object",
-          },
-        },
-      });
-      expect(nativeRequest).not.toHaveProperty(
-        "response_format.json_schema.name"
-      );
-      expect(nativeRequest).not.toHaveProperty(
-        "response_format.json_schema.schema"
-      );
-      expect(nativeRequest).not.toHaveProperty(
-        "response_format.json_schema.strict"
-      );
+      expect(nativeRequest).not.toHaveProperty("response_format");
       expect(test.run.mock.calls[0]?.[1]).toEqual({
         max_tokens: config.maxOutputTokens,
         messages: [
           {
-            content: `${privateDiscoveryInstructions}\n\nOutput JSON schema:\n${JSON.stringify(jsonSchema)}`,
+            content: privateDiscoveryInstructions,
             role: "system",
           },
           { content: JSON.stringify(test.input.context), role: "user" },
         ],
-        response_format: {
-          json_schema: jsonSchema,
-          type: "json_schema",
-        },
+        ...toolRequest(jsonSchema),
         stream: false,
         ...sampling,
       });
@@ -354,11 +438,11 @@ describe("private discovery Workers AI boundary", () => {
         gateway: { collectLog: false, id: config.gatewayId, skipCache: true },
         returnRawResponse: true,
       });
-      expect(result.output).toEqual(output);
+      expect(result.output).toEqual({ intent: output });
       expect(result.provenance).toMatchObject({
         model: modelName,
-        policyVersion: "private-discovery-policy-v5",
-        promptVersion: "private-discovery-prompt-v24",
+        policyVersion: "private-discovery-policy-v6",
+        promptVersion: "private-discovery-prompt-v25",
         provider: "cloudflare-workers-ai",
       });
       expect(result.usage).toEqual({
@@ -370,7 +454,7 @@ describe("private discovery Workers AI boundary", () => {
   );
 
   it.each([0, 1, 2])(
-    "sends the exact Kimi JSON-object request with %s eligible cards and retains configured-rate usage",
+    "sends the exact Kimi forced-tool request with %s eligible cards and retains configured-rate usage",
     async (count) => {
       const payload = completion();
       const reasoning = "Synthetic reasoning must stay outside the result.";
@@ -408,13 +492,13 @@ describe("private discovery Workers AI boundary", () => {
         max_completion_tokens: 4096,
         messages: [
           {
-            content: `${privateDiscoveryInstructions}\n\nOutput JSON schema:\n${JSON.stringify(jsonSchema)}`,
+            content: privateDiscoveryInstructions,
             role: "system",
           },
           { content: JSON.stringify(input.context), role: "user" },
         ],
         n: 1,
-        response_format: { type: "json_object" },
+        ...toolRequest(jsonSchema),
         stream: false,
         temperature: 1,
         top_p: 0.95,
@@ -428,11 +512,11 @@ describe("private discovery Workers AI boundary", () => {
         },
         returnRawResponse: true,
       });
-      expect(result.output).toEqual(output);
+      expect(result.output).toEqual({ intent: output });
       expect(result.provenance).toMatchObject({
         model: kimiConfig.model,
-        policyVersion: "private-discovery-policy-v5",
-        promptVersion: "private-discovery-prompt-v24",
+        policyVersion: "private-discovery-policy-v6",
+        promptVersion: "private-discovery-prompt-v25",
         provider: "cloudflare-workers-ai",
       });
       expect(result.usage).toEqual({
@@ -479,7 +563,7 @@ describe("private discovery Workers AI boundary", () => {
           : "max_tokens",
         configuration.maxOutputTokens
       );
-      expect(result.output).toEqual(output);
+      expect(result.output).toEqual({ intent: output });
     }
   );
 
@@ -535,7 +619,7 @@ describe("private discovery Workers AI boundary", () => {
     });
     const result = await Effect.runPromise(test.model.generate(test.input));
     expect(test.run).toHaveBeenCalledOnce();
-    expect(result.output).toEqual(output);
+    expect(result.output).toEqual({ intent: output });
     expect(result.usage).toEqual({
       estimatedCostUsd: 0.000295,
       inputTokens: 100,
@@ -546,10 +630,10 @@ describe("private discovery Workers AI boundary", () => {
   });
 
   it.each([
-    { content: "not JSON", finishReason: "stop", stage: "output_json" },
+    { content: "not JSON", finishReason: "tool_calls", stage: "output_json" },
     {
-      content: JSON.stringify({ ...output, saved: true }),
-      finishReason: "stop",
+      content: JSON.stringify({ intent: { ...output, saved: true } }),
+      finishReason: "tool_calls",
       stage: "output_schema",
     },
     {
@@ -557,7 +641,7 @@ describe("private discovery Workers AI boundary", () => {
       finishReason: "length",
       stage: "incomplete_completion",
     },
-    { content: null, finishReason: "stop", stage: "missing_content" },
+    { content: null, finishReason: "tool_calls", stage: "tool_call" },
   ])(
     "rejects Kimi content at $stage without using reasoning or repair",
     async ({ content, finishReason, stage }) => {
@@ -570,7 +654,24 @@ describe("private discovery Workers AI boundary", () => {
               choices: [
                 {
                   finish_reason: finishReason,
-                  message: { content, reasoning, role: "assistant" },
+                  message: {
+                    content: null,
+                    reasoning,
+                    role: "assistant",
+                    tool_calls:
+                      content === null
+                        ? []
+                        : [
+                            {
+                              function: {
+                                arguments: content,
+                                name: "submitDiscoveryTurn",
+                              },
+                              id: "test-call",
+                              type: "function",
+                            },
+                          ],
+                  },
                 },
               ],
             })
@@ -699,16 +800,16 @@ describe("private discovery Workers AI boundary", () => {
       "the superseded additions/revisions contract",
       {
         ...output,
-        continuity: { additions: output.continuity, revisions: [] },
+        updates: { additions: output.updates, revisions: [] },
       },
     ],
     [
       "unknown continuity note fields",
       {
         ...output,
-        continuity: {
-          ...output.continuity,
-          notes: [{ ...output.continuity.notes[0], actor: "forbidden" }],
+        updates: {
+          ...output.updates,
+          notes: [{ ...output.updates.notes[0], actor: "forbidden" }],
         },
       },
     ],
@@ -728,7 +829,7 @@ describe("private discovery Workers AI boundary", () => {
             _tag: "ProposeProfileCard",
             basis: "self",
             change: {
-              _tag: "AddConfirmedProfileFact",
+              _tag: "AddFact",
               fact: { _tag: "NoKnownHardConstraints" },
             },
           },
@@ -739,18 +840,19 @@ describe("private discovery Workers AI boundary", () => {
       "removed model reply text",
       {
         ...output,
-        reply: { ...output.reply, text: "A model-authored claim." },
+        reply: {
+          _tag: "Continue",
+          text: "A model-authored claim.",
+        },
       },
     ],
     [
       "unbounded unresolved question",
       {
         ...output,
-        continuity: {
-          ...output.continuity,
-          notes: [
-            { ...output.continuity.notes[0], question: "x".repeat(2001) },
-          ],
+        updates: {
+          ...output.updates,
+          notes: [{ ...output.updates.notes[0], question: "x".repeat(2001) }],
         },
       },
     ],
@@ -761,7 +863,7 @@ describe("private discovery Workers AI boundary", () => {
         proposals: Array.from({ length: 4 }, () => ({
           _tag: "ProposeProfileCard",
           change: {
-            _tag: "AddConfirmedProfileFact",
+            _tag: "AddFact",
             fact: { _tag: "NoKnownHardConstraints" },
           },
         })),
@@ -789,7 +891,7 @@ describe("private discovery Workers AI boundary", () => {
     "response_json",
     "response_envelope",
     "incomplete_completion",
-    "missing_content",
+    "tool_call",
     "output_json",
     "output_schema",
   ] as const)(
@@ -827,11 +929,11 @@ describe("private discovery Workers AI boundary", () => {
               choices: [{ ...choice, finish_reason: privateValue }],
             });
           }
-          case "missing_content": {
+          case "tool_call": {
             return Response.json({
               ...payload,
               choices: [
-                { ...choice, message: { ...choice.message, content: null } },
+                { ...choice, message: { ...choice.message, tool_calls: [] } },
               ],
             });
           }
@@ -841,7 +943,19 @@ describe("private discovery Workers AI boundary", () => {
               choices: [
                 {
                   ...choice,
-                  message: { ...choice.message, content: `{${privateValue}` },
+                  message: {
+                    ...choice.message,
+                    tool_calls: [
+                      {
+                        function: {
+                          arguments: `{${privateValue}`,
+                          name: "submitDiscoveryTurn",
+                        },
+                        id: "test-call",
+                        type: "function",
+                      },
+                    ],
+                  },
                 },
               ],
             });
@@ -871,7 +985,6 @@ describe("private discovery Workers AI boundary", () => {
               {
                 detail: privateValue,
                 key: "private-context",
-                state: "circumstance" as const,
                 subject: "Private context",
               },
             ],

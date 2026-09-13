@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import type {
   DirectoryFrame,
+  PrivateDiscoveryScope,
   SessionFrame,
 } from "@meal-planner/private-interview-api";
 import {
@@ -45,7 +46,7 @@ const syntheticModelConfig = JSON.stringify({
   gatewayId: "synthetic-local-only",
   inputUsdPerMillionTokens: 1,
   maxOutputTokens: 1000,
-  model: "@cf/qwen/qwen3-30b-a3b-fp8",
+  model: "@cf/openai/gpt-oss-120b",
   outputUsdPerMillionTokens: 2,
   timeoutMs: 5000,
 });
@@ -152,10 +153,14 @@ const successful = async <A>(
   expect(response.status, await response.clone().text()).toBe(200);
   return ((await response.json()) as { readonly result: A }).result;
 };
-const begin = async (input: PrivateSessionBinding) => {
+const begin = async (
+  input: PrivateSessionBinding,
+  discoveryScope: PrivateDiscoveryScope | null = "ProfileEdit"
+) => {
   await successful({
     action: "initialize",
     binding: input,
+    discoveryScope,
     sessionReference: input.sessionReference,
   });
   return successful<string>({
@@ -166,9 +171,10 @@ const begin = async (input: PrivateSessionBinding) => {
 };
 const open = async (
   input: PrivateSessionBinding,
-  expiresAt = Date.now() + 60_000
+  expiresAt = Date.now() + 60_000,
+  scope: PrivateDiscoveryScope | null = "ProfileEdit"
 ) => {
-  const generation = await begin(input);
+  const generation = await begin(input, scope);
   await successful({
     action: "authorize",
     binding: input,
@@ -1077,12 +1083,17 @@ describe("participant directory reservations and shared output fences", () => {
   it("recovers one exact reservation after a lost reply and restart, with private stable pages", async () => {
     const owner = await binding();
     const first = await openDirectory(owner);
-    const start = { mutationId: crypto.randomUUID(), type: "StartSession" };
+    const start = {
+      mutationId: crypto.randomUUID(),
+      scope: "ProfileEdit",
+      type: "StartSession",
+    };
     const receipt = await exchange(first, start);
     expect(receipt).toMatchObject({
       reservation: {
         createdAt: expect.any(Number),
         ordinal: 1,
+        scope: "ProfileEdit",
         sessionReference: expect.any(String),
       },
       type: "SessionStarted",
@@ -1091,6 +1102,9 @@ describe("participant directory reservations and shared output fences", () => {
     runtime = makeRuntime();
     const resumed = await openDirectory(owner);
     expect(await exchange(resumed, start)).toEqual(receipt);
+    expect(
+      await exchange(resumed, { ...start, scope: "InitialDiscovery" })
+    ).toMatchObject({ reason: "mutation_collision", type: "Rejected" });
     const second = await exchange(resumed, {
       ...start,
       mutationId: crypto.randomUUID(),
@@ -1112,6 +1126,7 @@ describe("participant directory reservations and shared output fences", () => {
     expect(Object.keys(receipt.reservation).toSorted()).toEqual([
       "createdAt",
       "ordinal",
+      "scope",
       "sessionReference",
     ]);
     const retainedBinding = {
@@ -1194,6 +1209,7 @@ describe("participant directory reservations and shared output fences", () => {
       const session = await open(owner);
       await exchange(directory, {
         mutationId: crypto.randomUUID(),
+        scope: "ProfileEdit",
         type: "StartSession",
       });
       await successful(
@@ -1359,7 +1375,7 @@ describe("ordered native storage upgrade", () => {
       await port.prepareMutation(operation);
       await port.markDispatched(operation);
       await port.completeMutation(operation);
-      const reopened = await open(session);
+      const reopened = await open(session, Date.now() + 60_000, null);
       expect(await history(reopened)).toMatchObject({
         messages: [],
         state: { status: "open", version: 0 },
@@ -1439,6 +1455,7 @@ it("rejects expired directory and session reads or mutations without another cli
       now: expiresAt,
       payload: JSON.stringify({
         mutationId: crypto.randomUUID(),
+        scope: "ProfileEdit",
         type: "StartSession",
       }),
     })
@@ -1571,6 +1588,7 @@ it("keeps fixture producers and directory HTTP, SDK, and storage capabilities ab
               now: Date.now(),
               payload: JSON.stringify({
                 mutationId: crypto.randomUUID(),
+                scope: "ProfileEdit",
                 type: "StartSession",
               }),
             })
@@ -1600,6 +1618,7 @@ it("keeps fixture producers and directory HTTP, SDK, and storage capabilities ab
       {
         mutationId: crypto.randomUUID(),
         personId: "caller-supplied-person",
+        scope: "ProfileEdit",
         type: "StartSession",
       },
     ];
@@ -1638,9 +1657,9 @@ const newTomatoProposalMessage = [
   finishMessage,
 ].join("\n\n");
 const output = {
-  continuity: emptyPrivateDiscoveryContinuityUpdates(),
+  _tag: "Continue",
   proposals: [] as unknown[],
-  reply: { _tag: "Continue" },
+  updates: emptyPrivateDiscoveryContinuityUpdates(),
 };
 const noteUpdates = (
   notes: readonly (typeof PrivateDiscoveryContinuityNote.Type)[]
@@ -1671,8 +1690,21 @@ const response = (
   const completion = {
     choices: [
       {
-        finish_reason: "stop",
-        message: { content: JSON.stringify(result), role: "assistant" },
+        finish_reason: "tool_calls",
+        message: {
+          content: null,
+          role: "assistant",
+          tool_calls: [
+            {
+              function: {
+                arguments: JSON.stringify({ intent: result }),
+                name: "submitDiscoveryTurn",
+              },
+              id: "test-call",
+              type: "function",
+            },
+          ],
+        },
       },
     ],
   };
@@ -1789,7 +1821,10 @@ describe("native adaptive assistant attempts through the production model adapte
             : JSON.stringify({
                 ...output,
                 proposals: [{ _tag: privateValue }],
-                reply: { ...output.reply, text: privateValue },
+                reply: {
+                  _tag: "Continue",
+                  text: privateValue,
+                },
               });
         return Promise.resolve(
           new LocalResponse(
@@ -1802,8 +1837,21 @@ describe("native adaptive assistant attempts through the production model adapte
                         finish_reason:
                           stage === "incomplete_completion"
                             ? privateValue
-                            : "stop",
-                        message: { content, role: "assistant" },
+                            : "tool_calls",
+                        message: {
+                          content: null,
+                          role: "assistant",
+                          tool_calls: [
+                            {
+                              function: {
+                                arguments: content,
+                                name: "submitDiscoveryTurn",
+                              },
+                              id: "synthetic-call",
+                              type: "function",
+                            },
+                          ],
+                        },
                       },
                     ],
                     usage: defaultUsage,
@@ -1877,7 +1925,7 @@ describe("native adaptive assistant attempts through the production model adapte
           {
             _tag: "ProposeProfileCard",
             change: {
-              _tag: "AddConfirmedProfileFact",
+              _tag: "AddFact",
               fact: {
                 _tag: "FoodPreference",
                 label: "tomatoes",
@@ -1979,16 +2027,157 @@ describe("native adaptive assistant attempts through the production model adapte
   const routineNote = {
     detail: "The adult has little time to cook in the evening.",
     key: "cooking_window",
-    state: "circumstance" as const,
     subject: "Short evening cooking window",
   };
   const equipmentTopic = {
     detail: "Cooking equipment is not yet known.",
     key: "equipment",
-    question: "What cooking equipment is available?",
-    state: "unresolved" as const,
     subject: "Available cooking equipment",
   };
+
+  it("retains explicit initial-discovery scope across a failed first response and native restart", async () => {
+    modelCalls = [];
+    modelResponse = () =>
+      Promise.resolve(
+        response({
+          _tag: "Continue",
+          proposals: [],
+          updates: {
+            mealFallbackNeeds: { declarations: [], updates: [] },
+            notes: [],
+          },
+        })
+      );
+    const session = await binding();
+    const first = await open(session, Date.now() + 60_000, "InitialDiscovery");
+    await successful(await queue(session, first));
+    expect(await readTurn(first)).toMatchObject({
+      turn: { failure: "invalid_output", status: "failed" },
+    });
+    expect(capturedContext(0).scope).toBe("InitialDiscovery");
+    const attempts = await audit(session);
+    expect(attempts[0]?.summary).toBeNull();
+    first.socket.close();
+    await runtime.dispose();
+    runtime = makeRuntime();
+    const resumed = await open(
+      session,
+      Date.now() + 60_000,
+      "InitialDiscovery"
+    );
+    modelResponse = () => Promise.resolve(response());
+    await successful(await queue(session, resumed, 1, "Please continue."));
+    expect(capturedContext(1).scope).toBe("InitialDiscovery");
+    expect(await readTurn(resumed)).toMatchObject({
+      turn: { status: "succeeded" },
+    });
+    expect(await history(resumed)).toMatchObject({
+      messages: [
+        { role: "participant" },
+        { role: "participant" },
+        {
+          role: "assistant",
+          text: "Do you have any food allergies, intolerances or dietary restrictions?",
+        },
+      ],
+    });
+    await expectStatus(
+      command({
+        action: "initialize",
+        binding: session,
+        discoveryScope: "ProfileEdit",
+        sessionReference: session.sessionReference,
+      }),
+      409
+    );
+    resumed.socket.close();
+  });
+
+  it.each(["foodRestrictions", "usualMeals"] as const)(
+    "atomically rejects omitted required %s alongside a valid proposal",
+    async (omitted) => {
+      modelCalls = [];
+      modelResponse = () =>
+        Promise.resolve(
+          response({
+            ...output,
+            proposals: [
+              {
+                _tag: "ProposeProfileCard",
+                change: {
+                  _tag: "AddFact",
+                  fact: {
+                    _tag: "FoodPreference",
+                    label: "tomatoes",
+                    sentiment: "like",
+                    targetKind: "ingredient",
+                  },
+                },
+              },
+            ],
+            updates: {
+              ...emptyPrivateDiscoveryContinuityUpdates(),
+              coverage:
+                omitted === "foodRestrictions"
+                  ? { usualMeals: null }
+                  : { foodRestrictions: null },
+            },
+          })
+        );
+      const session = await binding();
+      const connection = await open(
+        session,
+        Date.now() + 60_000,
+        "InitialDiscovery"
+      );
+      await successful(await queue(session, connection));
+      expect(await readTurn(connection)).toMatchObject({
+        state: { version: 1 },
+        turn: { failure: "invalid_output", status: "failed" },
+      });
+      expect(await cards(connection)).toMatchObject({ cards: [] });
+      expect(await history(connection)).toMatchObject({
+        messages: [{ role: "participant" }],
+      });
+      const attempts = await audit(session);
+      expect(attempts[0]?.summary).toBeNull();
+      connection.socket.close();
+    }
+  );
+
+  it("keeps unscoped legacy history readable and rejects generation before any provider call", async () => {
+    modelCalls = [];
+    modelResponse = () => Promise.resolve(response());
+    const session = await binding();
+    const connection = await open(session, Date.now() + 60_000, null);
+    await successful(
+      await queue(session, connection, 0, "Retained private history.")
+    );
+    expect(modelCalls).toHaveLength(0);
+    expect(await readTurn(connection)).toMatchObject({
+      turn: { failure: "invalid_output", status: "failed" },
+    });
+    expect(await history(connection)).toMatchObject({
+      messages: [{ role: "participant", text: "Retained private history." }],
+    });
+    connection.socket.close();
+    await runtime.dispose();
+    runtime = makeRuntime();
+    const resumed = await open(session, Date.now() + 60_000, null);
+    expect(await history(resumed)).toMatchObject({
+      messages: [{ text: "Retained private history." }],
+    });
+    await expectStatus(
+      command({
+        action: "initialize",
+        binding: session,
+        discoveryScope: "InitialDiscovery",
+        sessionReference: session.sessionReference,
+      }),
+      409
+    );
+    resumed.socket.close();
+  });
 
   it("persists typed needs with cards, retains omitted fields across native restart, and derives review only after every field is addressed", async () => {
     modelCalls = [];
@@ -1997,7 +2186,24 @@ describe("native adaptive assistant attempts through the production model adapte
       return Promise.resolve(
         response({
           ...output,
-          continuity: {
+          _tag: "Continue",
+          proposals: [
+            {
+              _tag: "ProposeProfileCard",
+              change: {
+                _tag: "AddFact",
+                fact: {
+                  _tag: "FoodPreference",
+                  label: "carrots",
+                  sentiment: "like",
+                  targetKind: "ingredient",
+                },
+              },
+            },
+          ],
+          updates: {
+            clarification: null,
+            coverage: { foodRestrictions: null, usualMeals: null },
             mealFallbackNeeds: {
               declarations: [
                 {
@@ -2012,21 +2218,6 @@ describe("native adaptive assistant attempts through the production model adapte
             },
             notes: [],
           },
-          proposals: [
-            {
-              _tag: "ProposeProfileCard",
-              change: {
-                _tag: "AddConfirmedProfileFact",
-                fact: {
-                  _tag: "FoodPreference",
-                  label: "carrots",
-                  sentiment: "like",
-                  targetKind: "ingredient",
-                },
-              },
-            },
-          ],
-          reply: output.reply,
         })
       );
     };
@@ -2086,7 +2277,7 @@ describe("native adaptive assistant attempts through the production model adapte
       Promise.resolve(
         response({
           ...output,
-          reply: output.reply,
+          _tag: "Continue",
         })
       );
     await successful(
@@ -2124,7 +2315,10 @@ describe("native adaptive assistant attempts through the production model adapte
       return Promise.resolve(
         response({
           ...output,
-          continuity: {
+          _tag: "Continue",
+          updates: {
+            clarification: null,
+            coverage: { foodRestrictions: null, usualMeals: null },
             mealFallbackNeeds: {
               declarations: [],
               updates: [
@@ -2158,7 +2352,6 @@ describe("native adaptive assistant attempts through the production model adapte
             },
             notes: [],
           },
-          reply: output.reply,
         })
       );
     };
@@ -2230,7 +2423,9 @@ describe("native adaptive assistant attempts through the production model adapte
         return Promise.resolve(
           response({
             ...output,
-            continuity: {
+            updates: {
+              clarification: null,
+              coverage: { foodRestrictions: null, usualMeals: null },
               mealFallbackNeeds: {
                 declarations: [{ evidence, subject: "Jordan" }],
                 updates: [
@@ -2295,7 +2490,23 @@ describe("native adaptive assistant attempts through the production model adapte
           return Promise.resolve(
             response({
               ...output,
-              continuity: {
+              proposals: [
+                {
+                  _tag: "ProposeProfileCard",
+                  change: {
+                    _tag: "AddFact",
+                    fact: {
+                      _tag: "FoodPreference",
+                      label: "tomatoes",
+                      sentiment: "like",
+                      targetKind: "ingredient",
+                    },
+                  },
+                },
+              ],
+              updates: {
+                clarification: null,
+                coverage: { foodRestrictions: null, usualMeals: null },
                 mealFallbackNeeds: {
                   declarations: [],
                   updates: [
@@ -2314,20 +2525,6 @@ describe("native adaptive assistant attempts through the production model adapte
                 },
                 notes: [],
               },
-              proposals: [
-                {
-                  _tag: "ProposeProfileCard",
-                  change: {
-                    _tag: "AddConfirmedProfileFact",
-                    fact: {
-                      _tag: "FoodPreference",
-                      label: "tomatoes",
-                      sentiment: "like",
-                      targetKind: "ingredient",
-                    },
-                  },
-                },
-              ],
             })
           );
         };
@@ -2465,7 +2662,7 @@ describe("native adaptive assistant attempts through the production model adapte
       modelCalls = [];
       modelResponse = () =>
         Promise.resolve(
-          response({ ...output, continuity: noteUpdates([routineNote]) })
+          response({ ...output, updates: noteUpdates([routineNote]) })
         );
       const session = await binding();
       const connection = await open(session);
@@ -2485,7 +2682,7 @@ describe("native adaptive assistant attempts through the production model adapte
           value: "The shared meal is too spicy.",
         };
         let typed: unknown = { declarations: [declaration], updates: [] };
-        let reply: unknown = output.reply;
+        let reply: Record<string, unknown> = { _tag: "Continue" };
         switch (kind) {
           case "old_evidence":
           case "assistant_evidence": {
@@ -2578,12 +2775,12 @@ describe("native adaptive assistant attempts through the production model adapte
         }
         return Promise.resolve(
           response({
-            continuity: { mealFallbackNeeds: typed, notes: [] },
+            _tag: "Continue",
             proposals: [
               {
                 _tag: "ProposeProfileCard",
                 change: {
-                  _tag: "AddConfirmedProfileFact",
+                  _tag: "AddFact",
                   fact: {
                     _tag: "FoodPreference",
                     label: "tomatoes",
@@ -2593,7 +2790,13 @@ describe("native adaptive assistant attempts through the production model adapte
                 },
               },
             ],
-            reply,
+            updates: {
+              clarification: null,
+              coverage: { foodRestrictions: null, usualMeals: null },
+              mealFallbackNeeds: typed,
+              notes: [],
+            },
+            ...reply,
           })
         );
       };
@@ -2631,13 +2834,12 @@ describe("native adaptive assistant attempts through the production model adapte
 
   it("applies mixed continuity updates with a card atomically, retains omitted notes across restart, and isolates a fresh session", async () => {
     modelCalls = [];
-    const { reply } = output;
     modelResponse = () =>
       Promise.resolve(
         response({
-          continuity: noteUpdates([routineNote, equipmentTopic]),
+          _tag: "Continue",
           proposals: [],
-          reply,
+          updates: noteUpdates([routineNote, equipmentTopic]),
         })
       );
     const session = await binding();
@@ -2658,32 +2860,29 @@ describe("native adaptive assistant attempts through the production model adapte
         expect.objectContaining({ role: "participant" }),
         expect.objectContaining({
           role: "assistant",
-          text: equipmentTopic.question,
+          text: finishMessage,
         }),
       ],
     });
     const answered = {
       detail: "The adult has a hob.",
       key: equipmentTopic.key,
-      state: "answered" as const,
       subject: "Available hob",
     };
     const newNote = {
       detail: "The adult cooks at weekends.",
       key: "weekend_cooking",
-      state: "circumstance" as const,
       subject: "Weekend cooking",
     };
     modelResponse = () =>
       Promise.resolve(
         response({
           ...output,
-          continuity: noteUpdates([newNote, answered]),
           proposals: [
             {
               _tag: "ProposeProfileCard",
               change: {
-                _tag: "AddConfirmedProfileFact",
+                _tag: "AddFact",
                 fact: {
                   _tag: "FoodPreference",
                   label: "tomatoes",
@@ -2693,6 +2892,7 @@ describe("native adaptive assistant attempts through the production model adapte
               },
             },
           ],
+          updates: noteUpdates([newNote, answered]),
         })
       );
     await successful(
@@ -2755,14 +2955,11 @@ describe("native adaptive assistant attempts through the production model adapte
     modelResponse = () =>
       Promise.resolve(
         response({
-          ...output,
-          reply: {
-            _tag: "Stop",
-            evidence: {
-              messageId: capturedContext(modelCalls.length - 1).messages.at(-1)
-                ?.id,
-              quote: "Please stop asking questions.",
-            },
+          _tag: "Stop",
+          evidence: {
+            messageId: capturedContext(modelCalls.length - 1).messages.at(-1)
+              ?.id,
+            quote: "Please stop asking questions.",
           },
         })
       );
@@ -2807,7 +3004,6 @@ describe("native adaptive assistant attempts through the production model adapte
     expect(nextContext.cards).toEqual([]);
     expect(nextContext.messages).toHaveLength(1);
     expect(JSON.stringify(nextContext)).not.toContain(routineNote.detail);
-    expect(JSON.stringify(nextContext)).not.toContain(equipmentTopic.question);
     expect(
       await exchange(resumed, {
         expectedVersion: 6,
@@ -2820,15 +3016,15 @@ describe("native adaptive assistant attempts through the production model adapte
   });
 
   it.each(["no_information", "declined"] as const)(
-    "persists %s distinctly and rejects a superseded model-authored follow-up",
+    "persists explicit %s private context and rejects a superseded model-authored follow-up",
     async (state) => {
       modelCalls = [];
       modelResponse = () =>
         Promise.resolve(
           response({
             ...output,
-            continuity: noteUpdates([equipmentTopic]),
-            reply: output.reply,
+            _tag: "Continue",
+            updates: noteUpdates([equipmentTopic]),
           })
         );
       const session = await binding();
@@ -2840,14 +3036,13 @@ describe("native adaptive assistant attempts through the production model adapte
             ? "The adult has no further information about this."
             : "The adult declined to discuss this topic.",
         key: equipmentTopic.key,
-        state,
         subject: equipmentTopic.subject,
       };
       modelResponse = () =>
         Promise.resolve(
           response({
             ...output,
-            continuity: noteUpdates([closed]),
+            updates: noteUpdates([closed]),
           })
         );
       await successful(await queue(session, connection, 2));
@@ -2879,41 +3074,44 @@ describe("native adaptive assistant attempts through the production model adapte
 
   it.each([
     {
-      continuity: { additions: [routineNote], revisions: [] },
-      reply: output.reply,
+      _tag: "Continue",
       stage: "output_schema",
       title: "the superseded additions/revisions shape",
+      updates: { additions: [routineNote], revisions: [] },
     },
     {
-      continuity: noteUpdates([equipmentTopic, equipmentTopic]),
-      reply: output.reply,
+      _tag: "Continue",
       stage: "continuity_updates",
       title: "duplicate new keys",
+      updates: noteUpdates([equipmentTopic, equipmentTopic]),
     },
     {
-      continuity: noteUpdates([
+      _tag: "Continue",
+      stage: "continuity_updates",
+      title: "duplicate retained keys",
+      updates: noteUpdates([
         routineNote,
         { ...routineNote, detail: "Another update." },
       ]),
-      reply: output.reply,
-      stage: "continuity_updates",
-      title: "duplicate retained keys",
     },
     {
-      continuity: noteUpdates([
+      _tag: "Continue",
+      stage: "output_schema",
+      title: "seven updates",
+      updates: noteUpdates([
         ...Array.from({ length: 6 }, (_, i) => ({
           ...routineNote,
           key: `new-${i}`,
         })),
         routineNote,
       ]),
-      reply: output.reply,
-      stage: "output_schema",
-      title: "seven updates",
     },
     {
-      continuity: {
-        ...output.continuity,
+      _tag: "Continue",
+      stage: "output_schema",
+      title: "the removed unresolved note state",
+      updates: {
+        ...output.updates,
         notes: [
           {
             detail: equipmentTopic.detail,
@@ -2923,48 +3121,49 @@ describe("native adaptive assistant attempts through the production model adapte
           },
         ],
       },
-      reply: output.reply,
-      stage: "output_schema",
-      title: "an unresolved note missing its question",
     },
     {
-      continuity: output.continuity,
       reply: supersededFollowUpReply("missing", "What else?"),
       stage: "output_schema",
       title: "the superseded model-authored followUp field",
+      updates: output.updates,
     },
     {
-      continuity: output.continuity,
-      reply: { ...output.reply, text: "Private reply." },
+      reply: {
+        _tag: "Continue",
+        text: "Private reply.",
+      },
       stage: "output_schema",
       title: "the superseded model-authored text field",
+      updates: output.updates,
     },
     {
-      continuity: {
-        ...output.continuity,
-        notes: [{ ...routineNote, question: "What else?" }],
-      },
-      reply: output.reply,
+      _tag: "Continue",
       stage: "output_schema",
       title: "a question on a settled circumstance",
+      updates: {
+        ...output.updates,
+        notes: [{ ...routineNote, question: "What else?" }],
+      },
     },
     {
-      continuity: noteUpdates([
-        { ...equipmentTopic, question: "q".repeat(2000) },
-      ]),
-      reply: output.reply,
-      stage: "reply_limit",
-      title: "an app-rendered proposal and question exceeding the reply limit",
+      _tag: "Continue",
+      stage: "output_schema",
+      title: "an arbitrary model-authored question",
+      updates: {
+        ...output.updates,
+        notes: [{ ...equipmentTopic, question: "q".repeat(2000) }],
+      },
     },
   ])(
     "atomically rejects $title before storing a reply, card or replacement snapshot",
-    async ({ continuity, reply, stage }) => {
+    async ({ updates, reply, stage }) => {
       modelCalls = [];
       modelResponse = () =>
         Promise.resolve(
           response({
             ...output,
-            continuity: noteUpdates([routineNote]),
+            updates: noteUpdates([routineNote]),
           })
         );
       const session = await binding();
@@ -2972,27 +3171,30 @@ describe("native adaptive assistant attempts through the production model adapte
       await successful(await queue(session, connection));
       const beforeInvalidUpdate = await audit(session);
       const saved = beforeInvalidUpdate[0]?.summary;
-      modelResponse = () =>
-        Promise.resolve(
-          response({
-            continuity,
-            proposals: [
-              {
-                _tag: "ProposeProfileCard",
-                change: {
-                  _tag: "AddConfirmedProfileFact",
-                  fact: {
-                    _tag: "FoodPreference",
-                    label: "tomatoes",
-                    sentiment: "like",
-                    targetKind: "ingredient",
-                  },
+      modelResponse = () => {
+        const intent: SyntheticOutput = {
+          _tag: "Continue",
+          proposals: [
+            {
+              _tag: "ProposeProfileCard",
+              change: {
+                _tag: "AddFact",
+                fact: {
+                  _tag: "FoodPreference",
+                  label: "tomatoes",
+                  sentiment: "like",
+                  targetKind: "ingredient",
                 },
               },
-            ],
-            reply,
-          })
-        );
+            },
+          ],
+          updates,
+        };
+        if (reply !== undefined) {
+          intent["reply"] = reply;
+        }
+        return Promise.resolve(response(intent));
+      };
       const start = nativeLogs.length;
       await successful(await queue(session, connection, 2));
       await expectDiagnostic(start, stage, [routineNote.detail]);
@@ -3182,10 +3384,9 @@ describe("native adaptive assistant attempts through the production model adapte
             _tag: "ReviseProposedProfileCard",
             cardId: "00000000-0000-0000-0000-000000000000",
             change: {
-              _tag: "AddConfirmedProfileFact",
+              _tag: "AddFact",
               fact: { _tag: "NoKnownHardConstraints" },
             },
-            expectedRevision: 0,
           },
         ],
       },
@@ -3199,7 +3400,7 @@ describe("native adaptive assistant attempts through the production model adapte
           {
             _tag: "ProposeProfileCard",
             change: {
-              _tag: "RemoveOrdinaryProfileFact",
+              _tag: "RemoveFact",
               factId: `fact_${crypto.randomUUID()}`,
             },
           },
@@ -3220,14 +3421,14 @@ describe("native adaptive assistant attempts through the production model adapte
           {
             _tag: "ProposeProfileCard",
             change: {
-              _tag: "AddConfirmedProfileFact",
+              _tag: "AddFact",
               fact: { _tag: "NoKnownHardConstraints" },
             },
           },
           {
             _tag: "ProposeProfileCard",
             change: {
-              _tag: "AddConfirmedProfileFact",
+              _tag: "AddFact",
               fact: { _tag: "NoKnownHardConstraints" },
             },
           },
@@ -3267,12 +3468,12 @@ describe("native adaptive assistant attempts through the production model adapte
       connection.socket.close();
     }
   );
-  it.each(["correct", "stale", "rejected", "duplicate"] as const)(
+  it.each(["correct", "rejected", "duplicate"] as const)(
     "handles a model card revision with a %s target",
     async (target) => {
       modelCalls = [];
       const initialChange = {
-        _tag: "AddConfirmedProfileFact",
+        _tag: "AddFact",
         fact: {
           _tag: "FoodPreference",
           label: "tomatoes",
@@ -3314,17 +3515,15 @@ describe("native adaptive assistant attempts through the production model adapte
         Promise.resolve(
           response({
             ...output,
+            _tag: "Continue",
             proposals: Array.from(
               { length: target === "duplicate" ? 2 : 1 },
               () => ({
                 _tag: "ReviseProposedProfileCard",
                 cardId: card.id,
                 change: correctedChange,
-                expectedRevision:
-                  target === "stale" ? card.revision + 1 : card.revision,
               })
             ),
-            reply: output.reply,
           })
         );
       const diagnosticStart = nativeLogs.length;
@@ -3361,7 +3560,10 @@ describe("native adaptive assistant attempts through the production model adapte
       }
       expect(retained.cards).toHaveLength(1);
       expect(retained.cards[0]).toMatchObject({
-        change: target === "correct" ? correctedChange : initialChange,
+        change: {
+          ...(target === "correct" ? correctedChange : initialChange),
+          _tag: "AddConfirmedProfileFact",
+        },
         id: card.id,
         ordinal: card.ordinal,
         revision: target === "correct" ? card.revision + 1 : card.revision,
@@ -3450,8 +3652,8 @@ describe("native adaptive assistant attempts through the production model adapte
     connection.socket.close();
   });
   it.each([
-    "ordinary-safety-removal",
-    "reviewed-safety-reduction",
+    "safety-removal",
+    "safety-replacement",
     "ordinary-strong-dislike",
     "redundant-confirmation",
   ] as const)("matches canonical profile policy for %s", async (scenario) => {
@@ -3486,19 +3688,13 @@ describe("native adaptive assistant attempts through the production model adapte
       value,
     };
     const changes = {
-      "ordinary-safety-removal": {
-        _tag: "RemoveOrdinaryProfileFact",
+      "ordinary-strong-dislike": { _tag: "RemoveFact", factId: fact.id },
+      "redundant-confirmation": { _tag: "ConfirmFact", factId: fact.id },
+      "safety-removal": { _tag: "RemoveFact", factId: fact.id },
+      "safety-replacement": {
+        _tag: "ReplaceFact",
+        fact: { _tag: "NoKnownHardConstraints" },
         factId: fact.id,
-      },
-      "ordinary-strong-dislike": {
-        _tag: "RemoveOrdinaryProfileFact",
-        factId: fact.id,
-      },
-      "redundant-confirmation": { _tag: "ConfirmProfileFact", factId: fact.id },
-      "reviewed-safety-reduction": {
-        _tag: "ConfirmHardConstraintReduction",
-        factId: fact.id,
-        replacement: null,
       },
     };
     const change = changes[scenario];
@@ -3514,9 +3710,7 @@ describe("native adaptive assistant attempts through the production model adapte
       ...attempt,
       profile: { ...attempt.profile, facts: [fact], version: 1 },
     });
-    const rejected =
-      scenario === "ordinary-safety-removal" ||
-      scenario === "redundant-confirmation";
+    const rejected = scenario === "redundant-confirmation";
     if (rejected) {
       await expectDiagnostic(
         diagnosticStart,
@@ -3539,7 +3733,17 @@ describe("native adaptive assistant attempts through the production model adapte
         ? []
         : [
             expect.objectContaining({
-              change,
+              change:
+                scenario === "ordinary-strong-dislike"
+                  ? { _tag: "RemoveOrdinaryProfileFact", factId: fact.id }
+                  : {
+                      _tag: "ConfirmHardConstraintReduction",
+                      factId: fact.id,
+                      replacement:
+                        scenario === "safety-replacement"
+                          ? { _tag: "NoKnownHardConstraints" }
+                          : null,
+                    },
               expectedProfileVersion: 1,
               reviewedFact: value,
               status: "proposed",
@@ -3584,7 +3788,7 @@ describe("native adaptive assistant attempts through the production model adapte
       });
       const retained = await audit(session);
       expect(JSON.parse(retained[0]?.provenanceJson ?? "null")).toMatchObject({
-        model: "@cf/qwen/qwen3-30b-a3b-fp8",
+        model: "@cf/openai/gpt-oss-120b",
         provider: "cloudflare-workers-ai",
       });
       expect(await history(connection)).toMatchObject({
@@ -3636,7 +3840,7 @@ describe("native adaptive assistant attempts through the production model adapte
     const dispatched = await audit(session);
     expect(dispatched[0]?.status).toBe("running");
     expect(JSON.parse(dispatched[0]?.provenanceJson ?? "null")).toMatchObject({
-      model: "@cf/qwen/qwen3-30b-a3b-fp8",
+      model: "@cf/openai/gpt-oss-120b",
     });
     await runtime.dispose();
     release.resolve(response());

@@ -23,8 +23,14 @@ const PageSize = Schema.Number.pipe(
 const Text = Schema.String.pipe(
   Schema.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_MESSAGE_LENGTH))
 );
+export const PrivateDiscoveryScope = Schema.Literals([
+  "InitialDiscovery",
+  "ProfileEdit",
+]);
+export type PrivateDiscoveryScope = typeof PrivateDiscoveryScope.Type;
 export const StartSession = Schema.Struct({
   mutationId: Id,
+  scope: PrivateDiscoveryScope,
   type: Schema.Literal("StartSession"),
 });
 export const ListSessions = Schema.Struct({
@@ -193,6 +199,7 @@ export const SessionState = Schema.Struct({
 export const Reservation = Schema.Struct({
   createdAt: Schema.Number,
   ordinal: Ordinal,
+  scope: Schema.NullOr(PrivateDiscoveryScope),
   sessionReference: Id,
 });
 export const Message = Schema.Struct({

@@ -60,6 +60,13 @@ export const PrivateResponseStatus = ({
   if (turn === null || turn.status === "succeeded") {
     return null;
   }
+  if (
+    view.reservations.find(
+      (reservation) => reservation.sessionReference === view.sessionReference
+    )?.scope === null
+  ) {
+    return null;
+  }
   const active = isAssistantTurnActive(turn);
   const disabled =
     view.pending !== null ||

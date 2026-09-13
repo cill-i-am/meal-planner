@@ -1,5 +1,7 @@
 # Typed private fallback discovery
 
+The current coverage, question, scope and model-output contract is [Application-owned discovery coverage](03-deterministic-discovery-contract.md). The generic-note question path below is historical and superseded; typed fallback fields and their evidence/confirmation boundaries remain.
+
 This is the implementation design for [Work Item 03](03-adaptive-discovery-and-evaluation.md). The product owner authorized deterministic follow-up after the prompt-only experiment again ended before discovering the reported fallback and preparation constraints. Model recognition and extraction remain semantic tasks; the application owns the unanswered fields of a declared need.
 
 ## Contract and ownership
