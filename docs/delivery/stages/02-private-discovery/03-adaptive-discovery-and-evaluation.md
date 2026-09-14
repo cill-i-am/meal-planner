@@ -1,11 +1,15 @@
 # Work Item 03 — Adaptive discovery and evaluation
 
-- Status: In progress (2026-09-13); v25 implementation, independent review, exact-source CI and browser checks pass; first live request stopped at HTTP 408 with no model acceptance; historical failures retained; [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218), not ready to merge.
+- Status: In progress (2026-09-14); the accepted base Agent/TanStack migration is applied locally and undergoing native acceptance. Earlier v25 and live-model results remain historical; [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218) is not ready to merge.
 - Authorized by the product owner to continue after Work Item 02.
 - Implementation base: `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`.
 - Owning stage: [Stage 2](README.md).
 
 ## Current evaluation status
+
+The user accepted [base Agent and TanStack chat](../../../architecture/decisions/0004-household-agent-coordinator-and-isolated-chat-agents.md#base-agent-and-tanstack-chat--accepted-2026-09-13) for durable lifetime, model orchestration, chat transport, persistence interfaces and React state. Application transactions retain authorization, discovery acceptance and explicit household confirmation. Missing provider terminal markers alone no longer reject a complete, contract-valid proposal; streamed usage remains unknown and retains its full reservation.
+
+The replacement is applied in the isolated checkout. All 87 household boundary cases pass directly against the replacement source; frontend checks pass 140 tests and type checking. A recorded actual-app synthetic run produced one validated proposal and the required next question. Its explicit profile-confirmation click remains paused by automatic approval review. All 107 private-session cases now pass, including actual disconnect/replay, overlapping reconnects and revocation. Local workspace checks cover 1,521 passing cases across the root and package suites, with type checking, lint and formatting passing. The initial root architecture failure concerned new files not yet staged; its exact check passed after staging. Final immutable-head review and a new live Kimi run remain outstanding; current gateway settings could not be read with the available CLI permission. No new paid model call or deployment has occurred. These results do not accept the model or satisfy the family and human-review gates below.
 
 The current implementation is [application-owned discovery coverage](03-deterministic-discovery-contract.md),
 prompt v25/policy v6. It uses explicit session scope, fixed required coverage,

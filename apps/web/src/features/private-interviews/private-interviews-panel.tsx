@@ -1,120 +1,22 @@
-import {
-  AppendParticipantMessage,
-  MAX_MESSAGE_LENGTH,
-} from "@meal-planner/private-interview-api";
-import { useForm } from "@tanstack/react-form";
-import { Schema } from "effect";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { Alert } from "../../components/ui/alert.js";
-import { Badge } from "../../components/ui/badge.js";
 import { Button } from "../../components/ui/button.js";
-import { Label } from "../../components/ui/label.js";
+import { PrivateInterviewChat } from "./private-interview-chat.js";
 import {
   browserPrivateInterviewDependencies,
-  isAssistantTurnActive,
   PrivateInterviewClient,
 } from "./private-interview-client.js";
 import type {
   PrivateInterviewDependencies,
   PrivateInterviewView,
 } from "./private-interview-client.js";
-import { PrivateProfileCards } from "./private-profile-cards.js";
-import { PrivateResponseStatus } from "./private-response-status.js";
 
 const dateLabel = (timestamp: number) =>
   new Date(timestamp).toLocaleString(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
   });
-
-const MessageForm = ({
-  client,
-  view,
-}: {
-  readonly client: PrivateInterviewClient;
-  readonly view: PrivateInterviewView;
-}) => {
-  const form = useForm({
-    defaultValues: {
-      text:
-        view.pending?.command.type === "AppendParticipantMessage"
-          ? view.pending.command.text
-          : "",
-    },
-    onSubmit: ({ value }) => {
-      client.append(value.text);
-    },
-  });
-  const disabled =
-    view.pending !== null ||
-    view.pendingConfirmation !== null ||
-    isAssistantTurnActive(view.assistantTurn) ||
-    view.notice !== null ||
-    !view.historyLoaded;
-  return (
-    <form
-      className="private-message-form field-stack"
-      onSubmit={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void form.handleSubmit();
-      }}
-    >
-      <form.Field
-        name="text"
-        validators={{
-          onChange: Schema.toStandardSchemaV1(
-            AppendParticipantMessage.fields.text
-          ),
-        }}
-      >
-        {(field) => (
-          <>
-            <Label htmlFor="private-message">Your message</Label>
-            <textarea
-              aria-describedby="private-message-help private-message-error"
-              aria-invalid={field.state.meta.errors.length > 0}
-              className="input private-message-input"
-              disabled={disabled}
-              id="private-message"
-              maxLength={MAX_MESSAGE_LENGTH}
-              name={field.name}
-              onBlur={field.handleBlur}
-              onChange={(event) => field.handleChange(event.target.value)}
-              rows={4}
-              value={field.state.value}
-            />
-            <p className="helper" id="private-message-help">
-              Up to {MAX_MESSAGE_LENGTH.toLocaleString()} characters. We’ll
-              confirm when your message is saved.
-            </p>
-            {field.state.meta.errors.length > 0 && (
-              <p className="field-error" id="private-message-error">
-                Enter a message within the character limit.
-              </p>
-            )}
-          </>
-        )}
-      </form.Field>
-      <form.Subscribe
-        selector={(state) => ({
-          canSubmit: state.canSubmit,
-          text: state.values.text,
-        })}
-      >
-        {({ canSubmit, text }) => (
-          <Button
-            disabled={disabled || !canSubmit || text.trim().length === 0}
-            type="submit"
-          >
-            Save message
-          </Button>
-        )}
-      </form.Subscribe>
-    </form>
-  );
-};
 
 const Notice = ({
   client,
@@ -172,7 +74,9 @@ const Notice = ({
             This session changed on another connection. Review its history
             before deciding whether to submit again.
           </p>
-          <Button onClick={client.reviewHistory}>Review updated history</Button>
+          <Button onClick={client.refreshSession}>
+            Review updated history
+          </Button>
         </Alert>
       );
     }
@@ -229,91 +133,6 @@ const Notice = ({
     }
   }
 };
-
-const SessionHistory = ({
-  client,
-  view,
-}: {
-  readonly client: PrivateInterviewClient;
-  readonly view: PrivateInterviewView;
-}) => (
-  <section aria-labelledby="private-history-title" className="private-history">
-    <div className="review-heading">
-      <h3 id="private-history-title">Session history</h3>
-      {view.sessionState !== null && (
-        <Badge>
-          {view.sessionState.status === "completed"
-            ? "Completed · history only"
-            : "Open"}
-        </Badge>
-      )}
-    </div>
-    {view.historyLoaded && view.messages.length === 0 && (
-      <p>
-        Tell me about foods you enjoy, foods you avoid, or what makes meals easy
-        or difficult for you. Start wherever you like.
-      </p>
-    )}
-    {!view.historyLoaded && <p role="status">Loading private history…</p>}
-    <ol aria-label="Saved messages" className="private-messages">
-      {view.messages.map((message) => (
-        <li key={message.id}>
-          <div className="private-message-meta">
-            <strong>
-              {message.role === "participant" ? "You" : "Assistant"}
-            </strong>
-            <time dateTime={new Date(message.createdAt).toISOString()}>
-              {dateLabel(message.createdAt)}
-            </time>
-          </div>
-          <p>{message.text}</p>
-        </li>
-      ))}
-    </ol>
-    {view.moreHistory && (
-      <Button onClick={client.loadHistory}>Load more messages</Button>
-    )}
-    <PrivateResponseStatus client={client} view={view} />
-    <PrivateProfileCards client={client} view={view} />
-    {view.sessionState?.status === "open" && (
-      <>
-        {view.reservations.find(
-          (reservation) =>
-            reservation.sessionReference === view.sessionReference
-        )?.scope === null ? (
-          <p>
-            Start a new food discovery or profile update to continue. This older
-            conversation remains available to read.
-          </p>
-        ) : (
-          <MessageForm
-            client={client}
-            key={`${view.sessionReference}:${view.lastAppendReceipt ?? "draft"}`}
-            view={view}
-          />
-        )}
-        <div className="private-complete">
-          <p>
-            Finish when you’re done. Your history stays available; new messages
-            will need a new session.
-          </p>
-          <Button
-            disabled={
-              view.pendingConfirmation !== null ||
-              isAssistantTurnActive(view.assistantTurn) ||
-              view.pending !== null ||
-              view.notice !== null ||
-              !view.historyLoaded
-            }
-            onClick={client.complete}
-          >
-            Complete session
-          </Button>
-        </div>
-      </>
-    )}
-  </section>
-);
 
 const ConnectedPanel = ({
   client,
@@ -409,9 +228,18 @@ const ConnectedPanel = ({
       </nav>
     )}
     {!view.sessionsLoaded && <p role="status">Loading your sessions…</p>}
-    {view.sessionReference !== null && (
-      <SessionHistory client={client} view={view} />
-    )}
+    {view.sessionReference !== null &&
+      (view.generation === null ? (
+        <p role="status">Loading private session…</p>
+      ) : (
+        <PrivateInterviewChat
+          client={client}
+          generation={view.generation}
+          key={`${view.sessionReference}:${view.generation}`}
+          sessionReference={view.sessionReference}
+          view={view}
+        />
+      ))}
   </>
 );
 

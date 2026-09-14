@@ -81,9 +81,8 @@ export const privateDiscoverySessionScopes = sqliteTable(
 export const privateMessages = sqliteTable("private_messages", {
   createdAt: integer("created_at").notNull(),
   id: text("id").notNull().unique(),
+  messageJson: text("message_json").notNull(),
   ordinal: integer("ordinal").primaryKey({ autoIncrement: true }),
-  role: text("role", { enum: ["participant", "assistant"] }).notNull(),
-  text: text("text").notNull(),
 });
 export const privateReceipts = sqliteTable("private_receipts", {
   frame: text("frame").notNull(),
@@ -109,6 +108,9 @@ export const privatePendingConfirmation = sqliteTable(
 
 /** Every attempt remains private and durable, including cancelled or unknown provider outcomes. */
 export const privateAssistantTurns = sqliteTable("private_assistant_turns", {
+  cancelRequested: integer("cancel_requested", { mode: "boolean" })
+    .notNull()
+    .default(false),
   completedAt: integer("completed_at"),
   createdAt: integer("created_at").notNull(),
   expectedSessionVersion: integer("expected_session_version").notNull(),
@@ -142,3 +144,19 @@ export const privateAssistantTurns = sqliteTable("private_assistant_turns", {
   summary: text("summary"),
   usageJson: text("usage_json"),
 });
+
+/** Delivery replay only. The canonical transcript remains private_messages. */
+export const privateChatStreams = sqliteTable("private_chat_streams", {
+  closed: integer("closed", { mode: "boolean" }).notNull().default(false),
+  runId: text("run_id").primaryKey(),
+  wireBytes: integer("wire_bytes").notNull().default(0),
+});
+export const privateChatEvents = sqliteTable(
+  "private_chat_events",
+  {
+    eventJson: text("event_json").notNull(),
+    runId: text("run_id").notNull(),
+    sequence: integer("sequence").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.runId, table.sequence] })]
+);

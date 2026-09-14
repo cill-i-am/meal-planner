@@ -11,6 +11,14 @@ export const MAX_PRIVATE_FRAME_BYTES = 32_768;
 export const MAX_MESSAGE_LENGTH = 4000;
 export const MAX_PAGE_SIZE = 25;
 const Id = Schema.String.pipe(Schema.check(Schema.isUUID()));
+/** Native TanStack run identifiers are opaque, bounded strings. */
+export const AssistantTurnId = Schema.String.pipe(
+  Schema.check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(128),
+    Schema.isPattern(/^[A-Za-z0-9_-]+$/u)
+  )
+);
 const Ordinal = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
 );
@@ -23,6 +31,7 @@ const PageSize = Schema.Number.pipe(
 const Text = Schema.String.pipe(
   Schema.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_MESSAGE_LENGTH))
 );
+export const ParticipantMessageText = Text;
 export const PrivateDiscoveryScope = Schema.Literals([
   "InitialDiscovery",
   "ProfileEdit",
@@ -41,22 +50,10 @@ export const ListSessions = Schema.Struct({
 });
 export const DirectoryCommand = Schema.Union([StartSession, ListSessions]);
 export type DirectoryCommand = typeof DirectoryCommand.Type;
-export const AppendParticipantMessage = Schema.Struct({
-  expectedVersion: Ordinal,
-  mutationId: Id,
-  text: Text,
-  type: Schema.Literal("AppendParticipantMessage"),
-});
 export const CompleteSession = Schema.Struct({
   expectedVersion: Ordinal,
   mutationId: Id,
   type: Schema.Literal("CompleteSession"),
-});
-export const ReadHistory = Schema.Struct({
-  afterOrdinal: Ordinal,
-  limit: PageSize,
-  requestId: Id,
-  type: Schema.Literal("ReadHistory"),
 });
 
 /** A private proposal has no actor, target person, confirmation basis, or source. */
@@ -150,7 +147,7 @@ export const AssistantTurn = Schema.Struct({
       "runtime_restarted",
     ])
   ),
-  id: Id,
+  id: AssistantTurnId,
   sourceMessageId: Id,
   status: Schema.Literals([
     "queued",
@@ -162,30 +159,9 @@ export const AssistantTurn = Schema.Struct({
   ]),
 });
 export type AssistantTurn = typeof AssistantTurn.Type;
-export const ReadAssistantTurn = Schema.Struct({
-  requestId: Id,
-  type: Schema.Literal("ReadAssistantTurn"),
-});
-export const CancelAssistantTurn = Schema.Struct({
-  expectedVersion: Ordinal,
-  mutationId: Id,
-  turnId: Id,
-  type: Schema.Literal("CancelAssistantTurn"),
-});
-export const RetryAssistantTurn = Schema.Struct({
-  expectedVersion: Ordinal,
-  mutationId: Id,
-  turnId: Id,
-  type: Schema.Literal("RetryAssistantTurn"),
-});
 
 export const SessionCommand = Schema.Union([
-  ReadAssistantTurn,
-  CancelAssistantTurn,
-  RetryAssistantTurn,
-  AppendParticipantMessage,
   CompleteSession,
-  ReadHistory,
   ReadCards,
   ReviseProfileCard,
   RejectProfileCard,
@@ -246,18 +222,6 @@ export const DirectoryFrame = Schema.Union([
 export type DirectoryFrame = typeof DirectoryFrame.Type;
 export const SessionFrame = Schema.Union([
   Schema.Struct({
-    requestId: Id,
-    state: SessionState,
-    turn: Schema.NullOr(AssistantTurn),
-    type: Schema.Literal("AssistantTurnRead"),
-  }),
-  Schema.Struct({
-    mutationId: Id,
-    state: SessionState,
-    turn: AssistantTurn,
-    type: Schema.Literal("AssistantTurnChanged"),
-  }),
-  Schema.Struct({
     state: SessionState,
     turn: AssistantTurn,
     type: Schema.Literal("AssistantTurnUpdated"),
@@ -299,23 +263,9 @@ export const SessionFrame = Schema.Union([
     type: Schema.Literal("SessionReady"),
   }),
   Schema.Struct({
-    assistantTurn: AssistantTurn,
-    message: Message,
-    mutationId: Id,
-    state: SessionState,
-    type: Schema.Literal("MessageAppended"),
-  }),
-  Schema.Struct({
     mutationId: Id,
     state: SessionState,
     type: Schema.Literal("SessionCompleted"),
-  }),
-  Schema.Struct({
-    hasMore: Schema.Boolean,
-    messages: Schema.Array(Message),
-    requestId: Id,
-    state: SessionState,
-    type: Schema.Literal("HistoryRead"),
   }),
   Rejected,
 ]);

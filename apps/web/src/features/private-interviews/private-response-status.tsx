@@ -1,7 +1,6 @@
 import type { AssistantTurn } from "@meal-planner/private-interview-api";
 
 import { Button } from "../../components/ui/button.js";
-import { isAssistantTurnActive } from "./private-interview-client.js";
 import type {
   PrivateInterviewClient,
   PrivateInterviewView,
@@ -13,7 +12,7 @@ const failureMessage = (turn: AssistantTurn) => {
       return "Assistant replies are not available for this session right now. Your message is saved.";
     }
     case "refused": {
-      return "The assistant could not respond to this message. You can add more context or try a new response.";
+      return "The assistant could not respond to this message. You can add more context in another message.";
     }
     case "context_limit": {
       return "This session has reached the response limit. You can review its history and start a new session.";
@@ -24,80 +23,66 @@ const failureMessage = (turn: AssistantTurn) => {
     case "outcome_unknown":
     case "connection_lost":
     case "runtime_restarted": {
-      return "The response was interrupted. The previous request may have been processed, but no reply was saved. Trying again starts a new response.";
+      return "The response was interrupted. The previous request may have been processed, but no reply was saved. You can add another message after checking the saved conversation.";
     }
     default: {
       return turn.status === "cancelled"
         ? "Response stopped. The previous request may have been processed, but no reply from it will be added."
-        : "The assistant could not finish this response. Your message is saved. You can try a new response.";
+        : "The assistant could not finish this response. Your message is saved. You can add another message.";
     }
   }
 };
 
-const responseMessage = (
-  turn: AssistantTurn,
-  requestStatus: PrivateInterviewView["turnRequestStatus"]
-) => {
-  if (turn.status === "running") {
-    return "Preparing a response… Your message is saved.";
-  }
-  if (turn.status === "queued") {
-    return requestStatus === "idle"
-      ? "Your message is saved. Continue when you’re ready for a response."
-      : "Your message is saved. Waiting for the response status…";
-  }
-  return failureMessage(turn);
-};
-
 export const PrivateResponseStatus = ({
+  active,
+  cancelStatus,
+  chatError,
   client,
+  stop,
   view,
 }: {
+  readonly active: boolean;
+  readonly cancelStatus: "idle" | "sending" | "failed";
+  readonly chatError: boolean;
   readonly client: PrivateInterviewClient;
+  readonly stop: () => Promise<void>;
   readonly view: PrivateInterviewView;
 }) => {
   const turn = view.assistantTurn;
-  if (turn === null || turn.status === "succeeded") {
-    return null;
-  }
   if (
-    view.reservations.find(
-      (reservation) => reservation.sessionReference === view.sessionReference
-    )?.scope === null
+    !active &&
+    !chatError &&
+    cancelStatus !== "failed" &&
+    (turn === null || turn.status === "succeeded")
   ) {
     return null;
   }
-  const active = isAssistantTurnActive(turn);
-  const disabled =
-    view.pending !== null ||
-    view.pendingConfirmation !== null ||
-    view.notice !== null ||
-    !view.historyLoaded;
+  let message =
+    "The connection to the response was interrupted. Reconnect to recover the saved conversation.";
+  if (cancelStatus === "failed") {
+    message =
+      "Stop could not be confirmed. Reconnect to check whether the response is still running.";
+  } else if (active) {
+    message = "Preparing a response…";
+  } else if (turn !== null && turn.status !== "succeeded") {
+    message = failureMessage(turn);
+  }
   return (
     <div className="private-request-status" role="status">
-      <p>{responseMessage(turn, view.turnRequestStatus)}</p>
-      {active ? (
-        <div className="private-session-actions">
-          {turn.status === "queued" && view.turnRequestStatus === "idle" && (
-            <Button disabled={disabled} onClick={client.continueResponse}>
-              Continue response
-            </Button>
-          )}
-          {view.turnRequestStatus === "reconcile_required" && (
-            <Button onClick={client.reconnectSession}>
-              Reconnect to check response
-            </Button>
-          )}
-          <Button disabled={disabled} onClick={client.stopResponse}>
-            Stop response
-          </Button>
-        </div>
-      ) : (
+      <p>{message}</p>
+      {active && (
         <Button
-          disabled={disabled || view.sessionState?.status !== "open"}
-          onClick={client.tryNewResponse}
+          disabled={cancelStatus === "sending"}
+          onClick={() => {
+            void stop();
+          }}
         >
-          Try new response
+          Stop response
+        </Button>
+      )}
+      {(!active || cancelStatus === "failed") && (
+        <Button onClick={client.reconnectSession}>
+          Reconnect to check response
         </Button>
       )}
     </div>

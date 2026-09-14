@@ -9,7 +9,6 @@ import {
   SettleConfirmation,
 } from "./private-confirmation.contract.js";
 import type { ReleasedConfirmation } from "./private-confirmation.contract.js";
-import { RunAssistantTurn } from "./private-discovery.contract.js";
 import {
   OutputMutation,
   OutputMutationIntent,
@@ -91,9 +90,6 @@ interface OutputWorkerEnvironment {
       readonly authorizeConnection: (
         input: typeof AuthorizedSession.Type
       ) => Promise<void>;
-      readonly runAssistantTurn: (
-        input: typeof RunAssistantTurn.Type
-      ) => Promise<void>;
       readonly releaseConfirmation: (
         input: typeof ReleaseConfirmation.Type
       ) => Promise<ReleasedConfirmation>;
@@ -151,17 +147,6 @@ export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> 
     ).authorizeConnection(input);
   }
 
-  async runAssistantTurn(
-    untrusted: typeof RunAssistantTurn.Type
-  ): Promise<void> {
-    const input = Schema.decodeUnknownSync(RunAssistantTurn, {
-      onExcessProperty: "error",
-    })(untrusted);
-    await this.env.PrivateInterviewSession.getByName(
-      await privateOutputKey("session", input.binding.sessionReference)
-    ).runAssistantTurn(input);
-  }
-
   async releaseConfirmation(untrusted: typeof ReleaseConfirmation.Type) {
     const input = Schema.decodeUnknownSync(ReleaseConfirmation, {
       onExcessProperty: "error",
@@ -182,6 +167,19 @@ export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> 
     request: Request | NativeCloudflare.Request
   ): Promise<NativeCloudflare.Response> {
     const url = new URL(request.url);
+    if (
+      url.origin === "https://private-output.internal" &&
+      url.pathname === "/chat" &&
+      ["GET", "POST", "DELETE"].includes(request.method) &&
+      !request.headers.has("private-output-directory")
+    ) {
+      const session = Schema.decodeUnknownSync(Session)({
+        sessionReference: request.headers.get("private-output-session"),
+      });
+      return this.env.PrivateInterviewSession.getByName(
+        await privateOutputKey("session", session.sessionReference)
+      ).fetch(request);
+    }
     if (
       url.origin !== "https://private-output.internal" ||
       url.pathname !== "/upgrade" ||

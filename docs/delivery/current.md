@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-09-13
+- Last updated: 2026-09-14
 - Delivery source of truth: this repository
 
 ## Latest Completed Stage
@@ -25,6 +25,17 @@
   merged as `41b2a3e3f12c83edd3ddd9d184b9e138827101e6` on 2026-09-06.
   [Work Item 03 — adaptive discovery and evaluation](stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
   is in progress in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218).
+  The user has accepted [base Agent and TanStack chat](../architecture/decisions/0004-household-agent-coordinator-and-isolated-chat-agents.md#base-agent-and-tanstack-chat--accepted-2026-09-13)
+  for the private session runtime. This migration is in progress: application
+  transactions retain authority over discovery acceptance and confirmed facts,
+  while TanStack owns model orchestration, chat transport and client history.
+  Missing provider terminal metadata alone does not reject a complete,
+  contract-valid proposal; unknown usage retains the full cost reservation.
+  The replacement session is applied locally and all 87 household boundary tests
+  pass against it. Recorded synthetic proposal rendering passes; the explicit
+  confirmation click is paused by automatic approval review. All 107 native
+  session cases and local workspace checks pass. Final review and new live-model
+  evaluation remain incomplete, and the existing evaluation gates below still apply.
   The current v25/policy-v6 [deterministic discovery contract](stages/02-private-discovery/03-deterministic-discovery-contract.md)
   moves required coverage, scope, all question wording, clarification, card revision
   binding and ordinary/safety proposal routing into application code. One strict

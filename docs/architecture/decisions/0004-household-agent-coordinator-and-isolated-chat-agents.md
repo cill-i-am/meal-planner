@@ -378,3 +378,46 @@ private snapshot, remain noncanonical and survive restart. The model supplies
 semantic profile changes, while application code derives safety versus ordinary
 proposal paths and binds revisions from the generation snapshot. Existing explicit
 card confirmation remains the only route to canonical household mutation.
+
+## Base Agent and TanStack chat — accepted 2026-09-13
+
+The selected replacement uses Cloudflare's base `Agent` for the durable instance,
+SQLite and producer lifetime, and TanStack AI for model/tool orchestration, the
+chat event protocol, persistence interfaces and React chat state. This supersedes
+the plain Durable Object and custom chat transport choice above. It does not use
+`AIChatAgent` or combine its Vercel protocol with TanStack. Implementation and
+runtime acceptance are tracked in the existing adaptive-discovery work item;
+this decision alone is not evidence that the replacement has passed.
+
+Application Effect handlers continue to own private-session authorization,
+admission and idempotency, required topic coverage, evidence and state-transition
+validation, and explicit confirmation before canonical household changes. One
+canonical conversation and one attempt record live in the private instance's
+SQLite database. A run event log serves transport replay; it is not another
+conversation history. Reasoning is excluded from both rendered and retained
+conversation messages. The private WorkerEntrypoint remains a closed capability
+boundary; inheriting Agent does not expose its state, SQL, RPC or protocol routes
+to the API worker or public HTTP.
+
+A complete, schema- and state-valid `submitDiscoveryTurn` proposal may be accepted
+when the provider's final stream markers are unavailable. Application acceptance
+does not assert that the provider completed normally. Incomplete or invalid data,
+reported errors and cancellation still prevent acceptance. Missing final usage
+remains unknown and retains the conservative budget reservation; interim counters
+must not reduce that reservation. Restoring raw SSE terminal markers does not
+justify a replacement parser or chat engine.
+
+Reconnect replays the existing run without new inference. Network disconnect
+detaches delivery; explicit Stop, revoked authority and expiry terminate the
+producer. A fresh authenticated connection for the same binding may join an
+active run, but cannot revive a cancelled or revoked attempt. Every private
+delivery checks its current authority immediately before writing. Provider retry
+and fallback remain disabled, independently of the chat library's iteration cap.
+
+Ordinary Durable Object hibernation may preserve an OPEN native WebSocket. Waking
+that instance preserves its existing connected generation only when the socket's
+server-written attachment matches and the durable grant is still unexpired.
+Waking never promotes a pending, unauthorized or revoked generation. Missing,
+closed or mismatched sockets require fresh admission. This distinction prevents
+the constructor from revoking a valid idle interview, while canonical revocation
+and every physical delivery remain fenced by the durable generation record.

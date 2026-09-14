@@ -7,10 +7,13 @@ import type {
   ProfileCardChange,
   SessionFrame,
 } from "@meal-planner/private-interview-api";
+import { RUN_CANCEL_REASON } from "@tanstack/ai";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import type { drizzle } from "drizzle-orm/durable-sqlite";
-import { Cause, Effect, Exit, Option, Schema } from "effect";
+import type { SQLiteAsyncDatabase } from "drizzle-orm/sqlite-core";
+import { Effect, Schema } from "effect";
 
+import { PrivateChatPersistence } from "./private-chat-persistence.js";
+import type { PrivateChatReply } from "./private-chat-reply.js";
 import { PrivateDiscoveryClarificationFailure } from "./private-discovery-clarification.js";
 import {
   applyPrivateDiscoveryContinuation,
@@ -33,7 +36,6 @@ import {
 import type {
   DiscoveryProfileCardChange,
   PrivateDiscoveryInvalidOutputStage,
-  PrivateDiscoveryModel,
   PrivateDiscoveryProfile,
   PrivateDiscoveryResult,
 } from "./private-discovery-model.js";
@@ -43,7 +45,6 @@ import type { PrivateOutputSocket } from "./private-output-socket.js";
 import { PrivateOutputUnavailable } from "./private-output.contract.js";
 import {
   privateAssistantTurns,
-  privateMessages,
   privatePendingConfirmation,
   privateProfileCards,
   privateSessionBinding,
@@ -207,16 +208,25 @@ export const reviewPrivateDiscoveryProposals = (
 };
 
 /** Owns durable model attempts and their local abort lifetime; never exposed as a native RPC target. */
-export class PrivateAssistantTurns {
-  #database: ReturnType<typeof drizzle>;
-  #socket: PrivateOutputSocket;
-  #controllers = new Map<string, AbortController>();
+export class PrivateAssistantTurns<TRunResult = unknown> {
+  #database: SQLiteAsyncDatabase<"sync", TRunResult>;
+  #socket: Pick<PrivateOutputSocket, "isCurrent" | "read" | "send">;
+  #chat: PrivateChatPersistence<TRunResult>;
+  #resources = new Map<
+    string,
+    {
+      controller: AbortController;
+      release: () => void;
+    }
+  >();
+  #expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   constructor(
-    database: ReturnType<typeof drizzle>,
-    socket: PrivateOutputSocket
+    database: SQLiteAsyncDatabase<"sync", TRunResult>,
+    socket: Pick<PrivateOutputSocket, "isCurrent" | "read" | "send">
   ) {
     this.#database = database;
     this.#socket = socket;
+    this.#chat = new PrivateChatPersistence(database);
   }
   latest(): AssistantTurn | null {
     const row = this.#database
@@ -234,6 +244,13 @@ export class PrivateAssistantTurns {
       .get();
     return row === undefined ? undefined : publicTurn(row);
   }
+  pendingGeneration(): string | undefined {
+    return this.#database
+      .select({ generation: privateAssistantTurns.generation })
+      .from(privateAssistantTurns)
+      .where(active)
+      .get()?.generation;
+  }
   queue(input: QueuedTurn): AssistantTurn {
     const row = this.#database
       .insert(privateAssistantTurns)
@@ -244,15 +261,6 @@ export class PrivateAssistantTurns {
   }
   canCancel(turnId: string): boolean {
     return this.pending()?.id === turnId;
-  }
-  canRetry(turnId: string): boolean {
-    const latest = this.latest();
-    return (
-      latest?.id === turnId &&
-      (latest.status === "failed" ||
-        latest.status === "interrupted" ||
-        latest.status === "cancelled")
-    );
   }
   cancel(turnId: string): AssistantTurn {
     const row = this.#database
@@ -266,8 +274,45 @@ export class PrivateAssistantTurns {
         "Assistant turn cancellation requires its active attempt"
       );
     }
-    this.#controllers.get(turnId)?.abort();
+    const resources = this.#resources.get(turnId);
+    resources?.controller.abort(RUN_CANCEL_REASON);
+    resources?.release();
+    this.#clearExpiry(turnId);
     return publicTurn(row);
+  }
+  reauthorize(previousGeneration: string, generation: string): void {
+    const rebound = this.#database
+      .update(privateAssistantTurns)
+      .set({ generation })
+      .where(
+        and(active, eq(privateAssistantTurns.generation, previousGeneration))
+      )
+      .returning()
+      .all();
+    for (const turn of rebound) {
+      this.#armExpiry(turn.id);
+    }
+  }
+  #clearExpiry(turnId: string): void {
+    const timer = this.#expiryTimers.get(turnId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.#expiryTimers.delete(turnId);
+    }
+  }
+  #armExpiry(turnId: string): void {
+    this.#clearExpiry(turnId);
+    const lifecycle = this.#socket.read();
+    if (lifecycle === null || lifecycle === undefined) {
+      return;
+    }
+    const timer = setTimeout(
+      () => {
+        this.interrupt("connection_lost", lifecycle.generation);
+      },
+      Math.max(0, lifecycle.expiresAt - Date.now())
+    );
+    this.#expiryTimers.set(turnId, timer);
   }
   interrupt(
     failure: "connection_lost" | "runtime_restarted",
@@ -284,7 +329,10 @@ export class PrivateAssistantTurns {
       .returning()
       .all();
     for (const turn of interrupted) {
-      this.#controllers.get(turn.id)?.abort();
+      const resources = this.#resources.get(turn.id);
+      resources?.controller.abort();
+      resources?.release();
+      this.#clearExpiry(turn.id);
     }
   }
   #eligible(turn: StoredTurn, status: "queued" | "running"): boolean {
@@ -296,7 +344,7 @@ export class PrivateAssistantTurns {
     const session = this.#database.select().from(privateSessionBinding).get();
     return (
       current?.status === status &&
-      this.#socket.isCurrent(turn.generation) &&
+      this.#socket.isCurrent(current.generation) &&
       session?.status === "open" &&
       session.version === turn.expectedSessionVersion &&
       this.#database.select().from(privatePendingConfirmation).get() ===
@@ -306,13 +354,9 @@ export class PrivateAssistantTurns {
   #context(
     profile: (typeof RunAssistantTurn.Type)["profile"]
   ): PrivateDiscoveryContext {
-    const messages = this.#database
-      .select()
-      .from(privateMessages)
-      .orderBy(desc(privateMessages.ordinal))
-      .limit(PRIVATE_DISCOVERY_MESSAGE_LIMIT)
-      .all()
-      .toReversed()
+    const messages = this.#chat
+      .history()
+      .slice(-PRIVATE_DISCOVERY_MESSAGE_LIMIT)
       .map(({ id, role, text }) => ({ id, role, text }));
     const cards = this.#database
       .select()
@@ -395,7 +439,15 @@ export class PrivateAssistantTurns {
       turn: publicTurn(turn),
       type: "AssistantTurnUpdated",
     };
-    this.#socket.send(turn.generation, JSON.stringify(frame));
+    const current = this.#database
+      .select()
+      .from(privateAssistantTurns)
+      .where(eq(privateAssistantTurns.id, turn.id))
+      .get();
+    this.#socket.send(
+      current?.generation ?? turn.generation,
+      JSON.stringify(frame)
+    );
   }
   #recordMeasurements(
     turn: StoredTurn,
@@ -404,12 +456,7 @@ export class PrivateAssistantTurns {
     const current = this.#database
       .select()
       .from(privateAssistantTurns)
-      .where(
-        and(
-          eq(privateAssistantTurns.id, turn.id),
-          eq(privateAssistantTurns.generation, turn.generation)
-        )
-      )
+      .where(eq(privateAssistantTurns.id, turn.id))
       .get();
     if (current === undefined) {
       return;
@@ -448,7 +495,13 @@ export class PrivateAssistantTurns {
   ): Effect.Effect<void> {
     return Effect.gen({ self: this }, function* recordPrivateFailure() {
       const row = this.#database.transaction(() => {
-        if (!this.#eligible(turn, expectedStatus)) {
+        const current = this.#database
+          .select()
+          .from(privateAssistantTurns)
+          .where(eq(privateAssistantTurns.id, turn.id))
+          .get();
+        // Failure metadata may settle after a delivery generation detached.
+        if (current?.status !== expectedStatus) {
           return;
         }
         this.#recordMeasurements(turn, failure);
@@ -478,10 +531,11 @@ export class PrivateAssistantTurns {
     turn: StoredTurn,
     result: PrivateDiscoveryResult,
     context: PrivateDiscoveryContext
-  ): void {
+  ): PrivateChatReply {
+    let reply: PrivateChatReply | undefined;
     const row = this.#database.transaction(() => {
       if (!this.#eligible(turn, "running")) {
-        return;
+        throw new PrivateOutputUnavailable({ reason: "output_disabled" });
       }
       const storedCards = this.#database
         .select()
@@ -503,15 +557,7 @@ export class PrivateAssistantTurns {
         context,
         storedCards
       );
-      const participant = this.#database
-        .select({
-          id: privateMessages.id,
-          role: privateMessages.role,
-          text: privateMessages.text,
-        })
-        .from(privateMessages)
-        .where(eq(privateMessages.id, turn.sourceMessageId))
-        .get();
+      const participant = this.#chat.participant(turn.sourceMessageId);
       if (participant === undefined) {
         throw invalidOutput("need_evidence");
       }
@@ -538,15 +584,17 @@ export class PrivateAssistantTurns {
         }
         throw error;
       }
-      this.#database
-        .insert(privateMessages)
-        .values({
-          createdAt: Date.now(),
-          id: crypto.randomUUID(),
-          role: "assistant",
-          text: continuation.message,
-        })
-        .run();
+      reply = {
+        createdAt: Date.now(),
+        messageId: crypto.randomUUID(),
+        text: continuation.message,
+        type: "PrivateDiscoveryReply",
+      };
+      this.#chat.appendAssistant({
+        createdAt: reply.createdAt,
+        id: reply.messageId,
+        text: reply.text,
+      });
       for (const { card: existing, proposal } of proposals) {
         let card: ProfileCard;
         if (existing === null) {
@@ -602,160 +650,89 @@ export class PrivateAssistantTurns {
     if (row !== undefined) {
       this.#notify(row);
     }
+    if (reply === undefined) {
+      throw new PrivateOutputUnavailable({ reason: "output_disabled" });
+    }
+    return reply;
   }
-  run(
-    input: typeof RunAssistantTurn.Type,
-    model: PrivateDiscoveryModel
-  ): Effect.Effect<void> {
-    return Effect.gen({ self: this }, function* runPrivateAttempt() {
-      const turn = this.#database
-        .select()
-        .from(privateAssistantTurns)
-        .where(eq(privateAssistantTurns.id, input.turnId))
-        .get();
-      if (
-        turn === undefined ||
-        turn.generation !== input.generation ||
-        !this.#eligible(turn, "queued")
-      ) {
-        return;
+  /** Application callbacks for the library-owned chat run; this class does not iterate a model. */
+  async prepare(input: typeof RunAssistantTurn.Type) {
+    const turn = this.#database
+      .select()
+      .from(privateAssistantTurns)
+      .where(eq(privateAssistantTurns.id, input.turnId))
+      .get();
+    if (
+      turn === undefined ||
+      turn.generation !== input.generation ||
+      !this.#eligible(turn, "queued")
+    ) {
+      throw new PrivateOutputUnavailable({ reason: "output_disabled" });
+    }
+    let context: PrivateDiscoveryContext;
+    try {
+      context = this.#context(input.profile);
+    } catch (error) {
+      const failure =
+        error instanceof PrivateDiscoveryFailure
+          ? error
+          : invalidOutput("context_preparation");
+      await Effect.runPromise(this.#fail(turn, "queued", failure));
+      throw failure;
+    }
+    let claimed = false;
+    const controller = new AbortController();
+    const completion = Promise.withResolvers<null>();
+    const release = () => {
+      if (this.#resources.get(turn.id)?.controller === controller) {
+        this.#resources.delete(turn.id);
+        this.#clearExpiry(turn.id);
       }
-      const prepared = yield* Effect.exit(
-        Effect.try({
-          catch: (error) =>
-            error instanceof PrivateDiscoveryFailure
-              ? error
-              : invalidOutput("context_preparation"),
-          try: () => this.#context(input.profile),
-        })
-      );
-      if (Exit.isFailure(prepared)) {
-        yield* this.#fail(
-          turn,
-          "queued",
-          Option.getOrElse(Cause.findErrorOption(prepared.cause), () =>
-            invalidOutput("context_preparation")
-          )
-        );
-        return;
-      }
-      const context = prepared.value;
-      let claimed = false;
-      const controller = new AbortController();
-      const beforeDispatch = (
-        provenance: PrivateDiscoveryResult["provenance"]
-      ) => {
-        this.#database.transaction(() => {
-          if (claimed || !this.#eligible(turn, "queued")) {
-            throw new PrivateOutputUnavailable({ reason: "output_disabled" });
-          }
-          this.#database
-            .update(privateAssistantTurns)
-            .set({
-              provenanceJson: JSON.stringify(provenance),
-              status: "running",
-            })
-            .where(eq(privateAssistantTurns.id, turn.id))
-            .run();
-          claimed = true;
-          this.#controllers.set(turn.id, controller);
-        });
-        this.#notify({ ...turn, status: "running" });
-      };
-      const outcome = yield* Effect.exit(
-        model.generate({ beforeDispatch, context, signal: controller.signal })
-      ).pipe(
-        Effect.ensuring(
-          Effect.sync(() => {
-            if (this.#controllers.get(turn.id) === controller) {
-              this.#controllers.delete(turn.id);
-            }
+      completion.resolve(null);
+    };
+    const beforeDispatch = (
+      provenance: PrivateDiscoveryResult["provenance"]
+    ) => {
+      this.#database.transaction(() => {
+        if (claimed || !this.#eligible(turn, "queued")) {
+          throw new PrivateOutputUnavailable({ reason: "output_disabled" });
+        }
+        this.#database
+          .update(privateAssistantTurns)
+          .set({
+            provenanceJson: JSON.stringify(provenance),
+            status: "running",
           })
-        )
-      );
-      // A duplicate continuation that lost dispatch may never settle the winner.
-      if (!claimed) {
-        if (Exit.isFailure(outcome)) {
-          yield* this.#fail(
-            turn,
-            "queued",
-            Option.getOrElse(
-              Cause.findErrorOption(outcome.cause),
-              () =>
-                new PrivateDiscoveryFailure({
-                  provenance: null,
-                  reason: "provider_unavailable",
-                  stage: null,
-                  usage: null,
-                })
-            )
-          );
+          .where(eq(privateAssistantTurns.id, turn.id))
+          .run();
+        claimed = true;
+        this.#resources.set(turn.id, { controller, release });
+        this.#armExpiry(turn.id);
+      });
+      this.#notify({ ...turn, status: "running" });
+    };
+    return {
+      abortController: controller,
+      accept: (result: PrivateDiscoveryResult): PrivateChatReply => {
+        if (!claimed || controller.signal.aborted) {
+          throw new PrivateOutputUnavailable({ reason: "output_disabled" });
         }
-        return;
-      }
-      // Only this invocation's successful claim permits metadata-only late cost settlement.
-      // Terminal lifecycle decisions remain authoritative and no private content is retained here.
-      if (Exit.isSuccess(outcome)) {
-        this.#recordMeasurements(turn, outcome.value);
-      } else {
-        const failure = Cause.findErrorOption(outcome.cause);
-        if (Option.isSome(failure)) {
-          this.#recordMeasurements(turn, failure.value);
+        this.#recordMeasurements(turn, result);
+        return this.#succeed(turn, result, context);
+      },
+      beforeDispatch,
+      context,
+      dispose: release,
+      done: completion.promise,
+      fail: async (failure: PrivateDiscoveryFailure) => {
+        if (claimed) {
+          this.#recordMeasurements(turn, failure);
         }
-      }
-      if (!this.#socket.isCurrent(turn.generation)) {
-        this.interrupt("connection_lost", turn.generation);
-        return;
-      }
-      if (Exit.isFailure(outcome)) {
-        yield* this.#fail(
-          turn,
-          "running",
-          Option.getOrElse(
-            Cause.findErrorOption(outcome.cause),
-            () =>
-              new PrivateDiscoveryFailure({
-                provenance: null,
-                reason: "outcome_unknown",
-                stage: null,
-                usage: null,
-              })
-          )
+        await Effect.runPromise(
+          this.#fail(turn, claimed ? "running" : "queued", failure)
         );
-        return;
-      }
-      const persisted = yield* Effect.exit(
-        Effect.try({
-          catch: (error) => {
-            if (error instanceof PrivateDiscoveryFailure) {
-              return new PrivateDiscoveryFailure({
-                provenance: outcome.value.provenance,
-                reason: error.reason,
-                stage: error.stage,
-                usage: outcome.value.usage,
-              });
-            }
-            throw error;
-          },
-          try: () => this.#succeed(turn, outcome.value, context),
-        })
-      );
-      if (Exit.isFailure(persisted)) {
-        yield* this.#fail(
-          turn,
-          "running",
-          Option.getOrElse(
-            Cause.findErrorOption(persisted.cause),
-            () =>
-              new PrivateDiscoveryFailure({
-                provenance: outcome.value.provenance,
-                reason: "outcome_unknown",
-                stage: null,
-                usage: outcome.value.usage,
-              })
-          )
-        );
-      }
-    });
+      },
+      signal: controller.signal,
+    };
   }
 }

@@ -1,0 +1,72 @@
+diff --git a/src/use-chat.ts b/src/use-chat.ts
+--- a/src/use-chat.ts
++++ b/src/use-chat.ts
+@@ -145,7 +145,9 @@
+       callback()
+     }
+     const instance = new ChatClient<TTools, TContext, TInterrupts>({
+-      devtoolsBridgeFactory: createChatDevtoolsBridge,
++      ...(initialOptions.devtools === false
++        ? {}
++        : { devtoolsBridgeFactory: createChatDevtoolsBridge }),
+       ...transport,
+       initialMessages: messagesToUse,
+       ...(typeof initialOptions.threadId === 'string' &&
+@@ -172,7 +174,7 @@
+         context: initialOptions.context,
+       }),
+       devtools: {
+-        ...initialOptions.devtools,
++        ...(initialOptions.devtools === false ? {} : initialOptions.devtools),
+         framework: 'react',
+         hookName: 'useChat',
+         outputKind: initialOptions.outputSchema ? 'structured' : 'chat',
+diff --git a/src/types.ts b/src/types.ts
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -101,8 +101,8 @@
+   | 'context'
+   | 'devtools'
+ > & {
+-  /** Display options for TanStack AI Devtools. */
+-  devtools?: AIDevtoolsDisplayOptions
++  /** Display options for TanStack AI Devtools; false disables chat diagnostics. */
++  devtools?: AIDevtoolsDisplayOptions | false
+   /**
+    * Opt into mount-time live subscription behavior.
+    * When enabled, the hook subscribes on mount and unsubscribes on unmount.
+diff --git a/dist/esm/use-chat.js b/dist/esm/use-chat.js
+--- a/dist/esm/use-chat.js
++++ b/dist/esm/use-chat.js
+@@ -61,7 +61,7 @@
+ 			callback();
+ 		};
+ 		const instance = new ChatClient({
+-			devtoolsBridgeFactory: createChatDevtoolsBridge,
++			...initialOptions.devtools === false ? {} : { devtoolsBridgeFactory: createChatDevtoolsBridge },
+ 			...transport,
+ 			initialMessages: messagesToUse,
+ 			...typeof initialOptions.threadId === "string" && initialOptions.persistence ? {
+@@ -75,7 +75,7 @@
+ 			...initialOptions.initialResumeSnapshot !== void 0 && { initialResumeSnapshot: initialOptions.initialResumeSnapshot },
+ 			...initialOptions.context !== void 0 && { context: initialOptions.context },
+ 			devtools: {
+-				...initialOptions.devtools,
++				...initialOptions.devtools === false ? {} : initialOptions.devtools,
+ 				framework: "react",
+ 				hookName: "useChat",
+ 				outputKind: initialOptions.outputSchema ? "structured" : "chat"
+diff --git a/dist/esm/types.d.ts b/dist/esm/types.d.ts
+--- a/dist/esm/types.d.ts
++++ b/dist/esm/types.d.ts
+@@ -36,8 +36,8 @@
+  * To update these options, remount the component or use a key prop.
+  */
+ export type UseChatOptions<TTools extends ReadonlyArray<AnyClientTool> = any, TSchema extends SchemaInput | undefined = undefined, TContext = InferredClientContext<TTools>, TInterrupts extends ReadonlyArray<InterruptDefinition<any, any, any, any>> = readonly []> = DistributedOmit<ChatClientOptions<TTools, TContext, TInterrupts>, 'onMessagesChange' | 'onLoadingChange' | 'onErrorChange' | 'onStatusChange' | 'onSubscriptionChange' | 'onConnectionStatusChange' | 'onSessionGeneratingChange' | 'onQueueChange' | 'onResumeStateChange' | 'onRunIdChange' | 'context' | 'devtools'> & {
+-    /** Display options for TanStack AI Devtools. */
+-    devtools?: AIDevtoolsDisplayOptions;
++    /** Display options for TanStack AI Devtools; false disables chat diagnostics. */
++    devtools?: AIDevtoolsDisplayOptions | false;
+     /**
+      * Opt into mount-time live subscription behavior.
+      * When enabled, the hook subscribes on mount and unsubscribes on unmount.

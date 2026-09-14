@@ -1,8 +1,5 @@
 import type { PersonProfile } from "@meal-planner/household-api";
 import {
-  AppendParticipantMessage,
-  CancelAssistantTurn,
-  RetryAssistantTurn,
   CompleteSession,
   ConfirmProfileCard,
   RejectProfileCard,
@@ -17,7 +14,6 @@ import type {
   AssistantTurn,
   DirectoryCommand,
   PrivateDiscoveryScope,
-  Message,
   ProfileCard,
   ProfileCardChange,
   Rejected,
@@ -33,12 +29,8 @@ import {
   continuePrivateConfirmation,
 } from "./private-profile-browser.js";
 import { matchesCurrentProfileReview } from "./private-profile-review.js";
-import { continuePrivateAssistantTurn } from "./private-turn-browser.js";
 
 const SessionMutation = Schema.Union([
-  CancelAssistantTurn,
-  RetryAssistantTurn,
-  AppendParticipantMessage,
   CompleteSession,
   ReviseProfileCard,
   RejectProfileCard,
@@ -73,11 +65,7 @@ type Notice =
 
 export interface PrivateInterviewView {
   readonly assistantTurn: AssistantTurn | null;
-  readonly turnRequestStatus:
-    | "idle"
-    | "sending"
-    | "waiting"
-    | "reconcile_required";
+  readonly generation: string | null;
   readonly connection: Connection;
   readonly cards: readonly ProfileCard[];
   readonly cardsLoaded: boolean;
@@ -96,12 +84,8 @@ export interface PrivateInterviewView {
   readonly moreSessions: boolean;
   readonly sessionReference: string | null;
   readonly sessionState: typeof SessionState.Type | null;
-  readonly messages: readonly (typeof Message.Type)[];
-  readonly historyLoaded: boolean;
-  readonly moreHistory: boolean;
   readonly pending: PendingCommand | null;
   readonly notice: Notice;
-  readonly lastAppendReceipt: string | null;
 }
 
 export interface PrivateInterviewSocket {
@@ -117,12 +101,7 @@ export interface PrivateInterviewDependencies {
   readonly storage: Pick<Storage, "getItem" | "setItem" | "removeItem">;
   readonly makeId: () => string;
   readonly readCurrentProfile: () => Promise<PersonProfile>;
-  readonly continueAssistantTurn: (
-    sessionReference: string,
-    turnId: string,
-    generation: string,
-    signal: AbortSignal
-  ) => Promise<"accepted" | "authentication_required" | "unavailable">;
+  readonly fetchChat: typeof globalThis.fetch;
   readonly continueConfirmation: (
     sessionReference: string,
     mutationId: string,
@@ -137,11 +116,8 @@ const initialView = (): PrivateInterviewView => ({
   cardsLoaded: false,
   confirmationStatus: "idle",
   connection: "connecting",
-  historyLoaded: false,
-  lastAppendReceipt: null,
-  messages: [],
+  generation: null,
   moreCards: false,
-  moreHistory: false,
   moreSessions: false,
   notice: null,
   pending: null,
@@ -153,7 +129,6 @@ const initialView = (): PrivateInterviewView => ({
   sessionReference: null,
   sessionState: null,
   sessionsLoaded: false,
-  turnRequestStatus: "idle",
 });
 
 const mergeById = <T extends { readonly ordinal: number }>(
@@ -182,7 +157,7 @@ const decodeFrame = <A>(
 export const isAssistantTurnActive = (turn: AssistantTurn | null) =>
   turn?.status === "queued" || turn?.status === "running";
 
-/** A mounted authenticated context owns its sockets and all rendered private data. */
+/** Owns session admission and profile review; the mounted chat owns its transcript. */
 export class PrivateInterviewClient {
   readonly #dependencies: PrivateInterviewDependencies;
   readonly #onConfirmationSettled: (() => void) | undefined;
@@ -196,17 +171,11 @@ export class PrivateInterviewClient {
   #directoryReady = false;
   #sessionReady = false;
   #listRequest: string | null = null;
-  #historyRequest: string | null = null;
   #listCursor = 0;
-  #historyCursor = 0;
   #cardsRequest: string | null = null;
   #cardsCursor = 0;
   #confirmationAbort: AbortController | null = null;
   #sessionGeneration: string | null = null;
-  #turnAbort: AbortController | null = null;
-  #turnRequest: string | null = null;
-  #dispatchedTurn: string | null = null;
-  #automaticTurnMutation: string | null = null;
   #automaticConfirmationMutation: string | null = null;
   #recoveryAllowed = false;
   #admitted = false;
@@ -255,15 +224,9 @@ export class PrivateInterviewClient {
     this.#admitted = false;
     this.#sessionReady = false;
     this.#sessionGeneration = null;
-    this.#turnAbort?.abort();
-    this.#turnAbort = null;
-    this.#turnRequest = null;
-    this.#dispatchedTurn = null;
-    this.#automaticTurnMutation = null;
     this.#automaticConfirmationMutation = null;
     this.#bindingKey = null;
     this.#listRequest = null;
-    this.#historyRequest = null;
     this.#cardsRequest = null;
     this.#confirmationAbort?.abort();
     this.#confirmationAbort = null;
@@ -365,9 +328,7 @@ export class PrivateInterviewClient {
     }
     if (
       this.#view.sessionReference !== null &&
-      (!this.#sessionReady ||
-        !this.#view.historyLoaded ||
-        !this.#view.cardsLoaded)
+      (!this.#sessionReady || !this.#view.cardsLoaded)
     ) {
       return;
     }
@@ -445,7 +406,6 @@ export class PrivateInterviewClient {
       this.#dependencies.storage.removeItem(this.#storageKey);
       this.#unreadablePending = null;
       this.#recovery = null;
-      this.#automaticTurnMutation = null;
       this.#update({ notice: null, pending: null });
       this.connect();
     } catch {
@@ -662,14 +622,7 @@ export class PrivateInterviewClient {
     previous?.close();
     this.#sessionReady = false;
     this.#sessionGeneration = null;
-    this.#turnAbort?.abort();
-    this.#turnAbort = null;
-    this.#turnRequest = null;
-    this.#dispatchedTurn = null;
-    this.#automaticTurnMutation = null;
     this.#automaticConfirmationMutation = null;
-    this.#historyCursor = 0;
-    this.#historyRequest = null;
     this.#cardsCursor = 0;
     this.#cardsRequest = null;
     this.#confirmationAbort?.abort();
@@ -679,18 +632,14 @@ export class PrivateInterviewClient {
       cards: [],
       cardsLoaded: false,
       confirmationStatus: "idle",
-      historyLoaded: false,
-      lastAppendReceipt: null,
-      messages: [],
+      generation: null,
       moreCards: false,
-      moreHistory: false,
       pendingConfirmation: null,
       profile: null,
       profileLoading: false,
       profileUnavailable: false,
       sessionReference,
       sessionState: null,
-      turnRequestStatus: "idle",
     });
     try {
       const socket = this.#dependencies.connect(
@@ -747,6 +696,7 @@ export class PrivateInterviewClient {
     this.#state(frame.state);
     this.#update({
       assistantTurn: frame.assistantTurn,
+      generation: frame.generation,
       notice:
         this.#view.notice === "assistant_turn_conflict" ||
         this.#view.notice === "assistant_turn_pending"
@@ -754,30 +704,8 @@ export class PrivateInterviewClient {
           : this.#view.notice,
       pendingConfirmation: frame.pendingConfirmation,
     });
-    this.loadHistory();
     this.loadCards();
     this.#replayRecoveredIntent();
-  }
-
-  #readHistory(frame: Extract<SessionFrame, { type: "HistoryRead" }>) {
-    if (frame.requestId !== this.#historyRequest) {
-      return;
-    }
-    if (frame.messages.length > MAX_PAGE_SIZE) {
-      throw new Error("Page too large");
-    }
-    this.#historyRequest = null;
-    this.#historyCursor = frame.messages.at(-1)?.ordinal ?? this.#historyCursor;
-    this.#state(frame.state);
-    this.#update({
-      historyLoaded: true,
-      messages: mergeById(
-        this.#view.messages,
-        frame.messages,
-        (item) => item.id
-      ),
-      moreHistory: frame.hasMore,
-    });
   }
 
   #onSession(frame: SessionFrame) {
@@ -789,20 +717,8 @@ export class PrivateInterviewClient {
       throw new Error("Session not ready");
     }
     switch (frame.type) {
-      case "AssistantTurnRead": {
-        if (frame.requestId !== this.#turnRequest) {
-          return;
-        }
-        this.#turnRequest = null;
-        this.#receiveTurn(frame.turn, frame.state);
-        return;
-      }
       case "AssistantTurnUpdated": {
         this.#receiveTurn(frame.turn, frame.state);
-        return;
-      }
-      case "AssistantTurnChanged": {
-        this.#assistantTurnChanged(frame);
         return;
       }
       case "CardsRead": {
@@ -819,14 +735,6 @@ export class PrivateInterviewClient {
       }
       case "ConfirmationSettled": {
         this.#confirmationSettled(frame);
-        return;
-      }
-      case "HistoryRead": {
-        this.#readHistory(frame);
-        return;
-      }
-      case "MessageAppended": {
-        this.#messageAppended(frame);
         return;
       }
       case "SessionCompleted": {
@@ -849,47 +757,6 @@ export class PrivateInterviewClient {
     }
   }
 
-  #assistantTurnChanged(
-    frame: Extract<SessionFrame, { type: "AssistantTurnChanged" }>
-  ) {
-    const pending = this.#acknowledge(frame.mutationId);
-    this.#receiveTurn(frame.turn, frame.state);
-    if (
-      pending?.command.type === "RetryAssistantTurn" &&
-      this.#automaticTurnMutation === frame.mutationId &&
-      this.#view.assistantTurn?.id === frame.turn.id &&
-      frame.turn.status === "queued"
-    ) {
-      void this.#dispatchResponse();
-    }
-  }
-
-  #messageAppended(frame: Extract<SessionFrame, { type: "MessageAppended" }>) {
-    if (
-      this.#view.pending?.command.type !== "AppendParticipantMessage" ||
-      this.#acknowledge(frame.mutationId) === null
-    ) {
-      return;
-    }
-    this.#state(frame.state);
-    this.#update({
-      lastAppendReceipt: frame.mutationId,
-      messages: mergeById(
-        this.#view.messages,
-        [frame.message],
-        (item) => item.id
-      ),
-    });
-    this.#receiveTurn(frame.assistantTurn, frame.state);
-    if (
-      this.#automaticTurnMutation === frame.mutationId &&
-      this.#view.assistantTurn?.id === frame.assistantTurn.id &&
-      frame.assistantTurn.status === "queued"
-    ) {
-      void this.#dispatchResponse();
-    }
-  }
-
   #sessionRejected(frame: Extract<SessionFrame, { type: "Rejected" }>) {
     if (
       this.#view.pending?.sessionReference !== this.#view.sessionReference ||
@@ -901,12 +768,6 @@ export class PrivateInterviewClient {
       this.#state(frame.state);
     }
     this.#update({ notice: frame.reason });
-    if (
-      frame.reason === "assistant_turn_pending" ||
-      frame.reason === "assistant_turn_conflict"
-    ) {
-      this.readAssistantTurn();
-    }
     if (frame.reason === "confirmation_pending") {
       this.loadCards();
     }
@@ -1024,124 +885,13 @@ export class PrivateInterviewClient {
     }
     this.#state(state);
     this.#update({ assistantTurn: turn });
-    if (!isAssistantTurnActive(turn)) {
-      this.#turnAbort?.abort();
-      this.#turnAbort = null;
-      this.#update({ turnRequestStatus: "idle" });
-    }
     if (
       turn?.status === "succeeded" &&
       (previous?.id !== turn.id || previous.status !== "succeeded")
     ) {
-      this.reviewHistory();
+      this.refreshCards();
     }
   }
-
-  readAssistantTurn = () => {
-    if (!this.#sessionReady || this.#turnRequest !== null) {
-      return;
-    }
-    this.#turnRequest = this.#dependencies.makeId();
-    this.#send(this.#session, {
-      requestId: this.#turnRequest,
-      type: "ReadAssistantTurn",
-    });
-  };
-
-  continueResponse = () => {
-    this.#recoveryAllowed = true;
-    return this.#dispatchResponse();
-  };
-
-  #dispatchResponse = async () => {
-    const socket = this.#session;
-    const turn = this.#view.assistantTurn;
-    const reference = this.#view.sessionReference;
-    const generation = this.#sessionGeneration;
-    if (
-      !this.#sessionReady ||
-      socket === null ||
-      reference === null ||
-      generation === null ||
-      turn?.status !== "queued" ||
-      this.#turnAbort !== null ||
-      this.#dispatchedTurn === turn.id
-    ) {
-      return;
-    }
-    const controller = new AbortController();
-    this.#turnAbort = controller;
-    this.#dispatchedTurn = turn.id;
-    this.#update({ turnRequestStatus: "sending" });
-    try {
-      const outcome = await this.#dependencies.continueAssistantTurn(
-        reference,
-        turn.id,
-        generation,
-        controller.signal
-      );
-      this.#turnDispatchFinished(socket, turn.id, outcome);
-    } catch {
-      this.#turnDispatchFinished(socket, turn.id, "unavailable");
-    } finally {
-      if (this.#turnAbort === controller) {
-        this.#turnAbort = null;
-      }
-    }
-  };
-
-  #turnDispatchFinished(
-    socket: PrivateInterviewSocket,
-    turnId: string,
-    outcome: "accepted" | "authentication_required" | "unavailable"
-  ) {
-    if (this.#session !== socket || this.#view.assistantTurn?.id !== turnId) {
-      return;
-    }
-    if (outcome === "authentication_required") {
-      this.#lost(1008);
-      return;
-    }
-    if (isAssistantTurnActive(this.#view.assistantTurn)) {
-      this.#update({
-        turnRequestStatus:
-          outcome === "accepted" ? "waiting" : "reconcile_required",
-      });
-    }
-    this.readAssistantTurn();
-  }
-
-  stopResponse = () => {
-    const turn = this.#view.assistantTurn;
-    const state = this.#view.sessionState;
-    if (!isAssistantTurnActive(turn) || turn === null || state === null) {
-      return;
-    }
-    this.#mutateSession({
-      expectedVersion: state.version,
-      mutationId: this.#dependencies.makeId(),
-      turnId: turn.id,
-      type: "CancelAssistantTurn",
-    });
-  };
-
-  tryNewResponse = () => {
-    const turn = this.#view.assistantTurn;
-    const state = this.#view.sessionState;
-    if (
-      turn === null ||
-      state === null ||
-      !["failed", "interrupted", "cancelled"].includes(turn.status)
-    ) {
-      return;
-    }
-    this.#mutateSession({
-      expectedVersion: state.version,
-      mutationId: this.#dependencies.makeId(),
-      turnId: turn.id,
-      type: "RetryAssistantTurn",
-    });
-  };
 
   loadCards = () => {
     if (!this.#sessionReady || this.#cardsRequest !== null) {
@@ -1340,34 +1090,21 @@ export class PrivateInterviewClient {
     });
   };
 
-  loadHistory = () => {
-    if (!this.#sessionReady || this.#historyRequest !== null) {
-      return;
-    }
-    this.#historyRequest = this.#dependencies.makeId();
-    this.#send(this.#session, {
-      afterOrdinal: this.#historyCursor,
-      limit: MAX_PAGE_SIZE,
-      requestId: this.#historyRequest,
-      type: "ReadHistory",
-    });
-  };
-
-  reviewHistory = () => {
-    if (!this.#sessionReady) {
-      return;
-    }
-    this.#historyCursor = 0;
-    this.#historyRequest = null;
-    this.#update({
-      historyLoaded: false,
-      messages: [],
-      moreHistory: false,
-      notice: null,
-    });
-    this.loadHistory();
+  refreshSession = () => {
     this.refreshCards();
   };
+
+  hasGeneration = (generation: string) =>
+    this.#sessionGeneration === generation;
+
+  authenticationRequired = (generation: string) => {
+    if (this.hasGeneration(generation)) {
+      this.#lost(1008);
+    }
+  };
+
+  fetchChat: typeof globalThis.fetch = (input, init) =>
+    this.#dependencies.fetchChat(input, init);
 
   #mutateSession(command: SessionMutation) {
     if (
@@ -1377,9 +1114,8 @@ export class PrivateInterviewClient {
       this.#view.pending !== null ||
       this.#view.pendingConfirmation !== null ||
       this.#view.notice !== null ||
-      (isAssistantTurnActive(this.#view.assistantTurn) &&
-        command.type !== "CancelAssistantTurn") ||
-      !this.#view.historyLoaded ||
+      isAssistantTurnActive(this.#view.assistantTurn) ||
+      !this.#view.cardsLoaded ||
       this.#view.sessionState?.status !== "open"
     ) {
       return;
@@ -1394,28 +1130,9 @@ export class PrivateInterviewClient {
       if (command.type === "ConfirmProfileCard") {
         this.#automaticConfirmationMutation = command.mutationId;
       }
-      if (
-        command.type === "AppendParticipantMessage" ||
-        command.type === "RetryAssistantTurn"
-      ) {
-        this.#automaticTurnMutation = command.mutationId;
-      }
       this.#send(this.#session, command);
     }
   }
-
-  append = (text: string) => {
-    if (this.#view.sessionState === null || text.trim().length === 0) {
-      return;
-    }
-    const command = Schema.decodeUnknownSync(AppendParticipantMessage)({
-      expectedVersion: this.#view.sessionState.version,
-      mutationId: this.#dependencies.makeId(),
-      text,
-      type: "AppendParticipantMessage",
-    });
-    this.#mutateSession(command);
-  };
 
   complete = () => {
     if (this.#view.sessionState === null) {
@@ -1473,8 +1190,8 @@ export const browserPrivateInterviewDependencies =
       socket.addEventListener("error", () => transport.onFailure?.());
       return transport;
     },
-    continueAssistantTurn: continuePrivateAssistantTurn,
     continueConfirmation: continuePrivateConfirmation,
+    fetchChat: (input, init) => fetch(input, init),
     makeId: () => crypto.randomUUID(),
     readCurrentProfile: readCurrentPrivateProfile,
     storage: {

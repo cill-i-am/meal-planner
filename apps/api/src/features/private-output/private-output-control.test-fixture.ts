@@ -2,13 +2,13 @@
 import type * as NativeCloudflare from "@cloudflare/workers-types";
 import { PersonProfile } from "@meal-planner/household-api";
 import { PrivateDiscoveryScope } from "@meal-planner/private-interview-api";
-import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import { Schema } from "effect";
 
 import { PrivateInterviewDirectory as ProductionDirectory } from "./private-interview-directory.js";
 import { PrivateInterviewSession as ProductionSession } from "./private-interview-session.js";
 import type { PrivateInterviewEnvironment } from "./private-output-socket.js";
+import { PrivateOutputSocket } from "./private-output-socket.js";
 import {
   PrivateSessionBinding,
   PrivateParticipantBinding,
@@ -16,12 +16,7 @@ import {
   privateOutputKey,
 } from "./private-output.contract.js";
 import type { OutputLifecyclePort } from "./private-output.contract.js";
-import {
-  privateAssistantTurns,
-  privateMessages,
-  privateOutputGeneration,
-  privateSessionBinding,
-} from "./private-output.database-schema.js";
+import { privateAssistantTurns } from "./private-output.database-schema.js";
 
 export {
   AccountOutputLifecycle,
@@ -35,6 +30,11 @@ type SyntheticModelBody = Readonly<Record<string, unknown>>;
 /** Test-only acknowledgment faults and a synchronous clock around the production session. */
 export class PrivateInterviewSession extends ProductionSession {
   #fixtureDatabase = drizzle(this.ctx.storage);
+  #fixtureSocket = new PrivateOutputSocket(
+    this.ctx,
+    this.#fixtureDatabase,
+    this.env
+  );
 
   constructor(
     context: NativeCloudflare.DurableObjectState,
@@ -74,58 +74,13 @@ export class PrivateInterviewSession extends ProductionSession {
     readonly generation: string;
     readonly payload: string;
   }) {
-    const emitted = this.#fixtureDatabase.transaction((transaction) => {
-      const generation = transaction
-        .select()
-        .from(privateOutputGeneration)
-        .get();
-      const session = transaction.select().from(privateSessionBinding).get();
-      const socket = this.ctx.getWebSockets().find((candidate) => {
-        const attachment = candidate.deserializeAttachment() as {
-          generation?: string;
-        };
-        return attachment.generation === input.generation;
-      });
-      if (
-        generation?.generation !== input.generation ||
-        generation.status !== "connected" ||
-        Date.now() >= generation.expiresAt ||
-        session?.status !== "open" ||
-        socket === undefined
-      ) {
-        return null;
-      }
-      const record = transaction
-        .insert(privateMessages)
-        .values({
-          createdAt: Date.now(),
-          id: crypto.randomUUID(),
-          role: "assistant",
-          text: input.payload,
-        })
-        .returning()
-        .get();
-      transaction
-        .update(privateSessionBinding)
-        .set({ version: session.version + 1 })
-        .where(
-          eq(privateSessionBinding.sessionReference, session.sessionReference)
-        )
-        .run();
-      return { ordinal: record.ordinal, socket };
-    });
-    if (emitted !== null) {
-      // Synthetic production exists only here. Physical emission uses the production history command and its final guard.
-      super.webSocketMessage(
-        emitted.socket,
-        JSON.stringify({
-          afterOrdinal: emitted.ordinal - 1,
-          limit: 1,
-          requestId: crypto.randomUUID(),
-          type: "ReadHistory",
-        })
-      );
-    }
+    this.#fixtureSocket.send(
+      input.generation,
+      JSON.stringify({
+        text: input.payload,
+        type: "PrivateTransportProbe",
+      })
+    );
   }
 
   enqueueOutputAtTime(
@@ -179,7 +134,6 @@ type SessionPort = {
   [
     Key in
       | "initialize"
-      | "runAssistantTurn"
       | "readTurns"
       | "beginConnection"
       | "authorizeConnection"
@@ -381,7 +335,7 @@ export default {
         });
       } else if (input.action === "connect") {
         return child.fetch(
-          new Request(request.url, {
+          new Request("https://private-output.internal/upgrade", {
             headers: {
               Upgrade: "websocket",
               "private-output-generation": generation.generation,
@@ -406,18 +360,39 @@ export default {
           ...generation,
           payload: input.payload ?? "",
         });
-      } else if (
-        input.action === "run-turn" &&
-        input.binding &&
-        input.profile &&
-        input.turnId
-      ) {
-        result = await child.runAssistantTurn({
-          ...generation,
+      } else if (input.action === "chat" && input.binding) {
+        const url = new URL("https://private-output.internal/chat");
+        url.search = new URL(request.url).search;
+        const context = {
           binding: input.binding,
-          profile: input.profile,
-          turnId: input.turnId,
-        });
+          generation: generation.generation,
+          profile: request.method === "POST" ? (input.profile ?? null) : null,
+        };
+        const headers = new Headers();
+        const cursor = request.headers.get("Last-Event-ID");
+        if (cursor !== null) {
+          headers.set("Last-Event-ID", cursor);
+        }
+        if (request.method === "POST") {
+          const body = Schema.decodeUnknownSync(
+            Schema.Record(Schema.String, Schema.Unknown)
+          )(await request.json());
+          headers.set("content-type", "application/json");
+          return child.fetch(
+            new Request(url, {
+              body: JSON.stringify({ ...body, privateChatContext: context }),
+              headers,
+              method: "POST",
+            })
+          );
+        }
+        headers.set(
+          "private-chat-context",
+          encodeURIComponent(JSON.stringify(context))
+        );
+        return child.fetch(
+          new Request(url, { headers, method: request.method })
+        );
       } else if (input.action === "turns") {
         result = await child.readTurns();
       } else if (input.action === "metadata") {

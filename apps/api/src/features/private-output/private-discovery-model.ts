@@ -9,9 +9,11 @@ import {
   ProfileCard,
   ProfileCardChange,
 } from "@meal-planner/private-interview-api";
+import type { ChatMiddleware, ModelMessage, StreamChunk } from "@tanstack/ai";
 import type { Effect } from "effect";
 import { Data, Schema } from "effect";
 
+import type { PrivateChatReply } from "./private-chat-reply.js";
 import type { PrivateDiscoveryClarificationFailure } from "./private-discovery-clarification.js";
 import {
   PrivateDiscoveryContinuity,
@@ -215,4 +217,27 @@ export interface PrivateDiscoveryModel {
     readonly context: PrivateDiscoveryContext;
     readonly signal: AbortSignal;
   }) => Effect.Effect<PrivateDiscoveryResult, PrivateDiscoveryFailure>;
+}
+
+export interface PrivateDiscoveryStreamInput {
+  readonly beforeDispatch: (provenance: PrivateDiscoveryProvenance) => void;
+  readonly context: PrivateDiscoveryContext;
+  readonly signal: AbortSignal;
+  readonly chat: {
+    readonly threadId: string;
+    readonly runId: string;
+    readonly messages: ModelMessage[];
+    readonly middleware: ChatMiddleware[];
+    readonly fail?: (failure: PrivateDiscoveryFailure) => void | Promise<void>;
+    readonly dispose?: () => void;
+    readonly accept: (
+      result: PrivateDiscoveryResult
+    ) => PrivateChatReply | Promise<PrivateChatReply>;
+  };
+}
+
+export interface PrivateDiscoveryStreamingModel extends PrivateDiscoveryModel {
+  readonly stream: (
+    input: PrivateDiscoveryStreamInput
+  ) => AsyncIterable<StreamChunk>;
 }
