@@ -181,6 +181,7 @@ const fixture = (
     },
   };
   const input = {
+    abortController: new AbortController(),
     beforeDispatch,
     chat: {
       accept,
@@ -192,13 +193,17 @@ const fixture = (
       threadId: ids.thread,
     },
     context: context(),
-    signal: new AbortController().signal,
   };
   return {
     accept,
     beforeDispatch,
     dispose,
     fail,
+    generateInput: {
+      beforeDispatch,
+      context: input.context,
+      signal: input.abortController.signal,
+    },
     input,
     model,
     onFinish,
@@ -240,7 +245,9 @@ afterAll(() => providerLogs.mockRestore());
 describe("private discovery native TanStack provider", () => {
   it("sends the exact forced Effect tool contract and preserves Kimi and gateway controls", async () => {
     const test = fixture();
-    const result = await Effect.runPromise(test.model.generate(test.input));
+    const result = await Effect.runPromise(
+      test.model.generate(test.generateInput)
+    );
     const standard = Schema.toStandardJSONSchemaV1(
       Schema.toStandardSchemaV1(
         makePrivateDiscoveryProviderOutput(test.input.context.cards)
@@ -303,7 +310,9 @@ describe("private discovery native TanStack provider", () => {
       model: "@cf/openai/gpt-oss-120b",
       timeoutMs: 60_000,
     });
-    const result = await Effect.runPromise(test.model.generate(test.input));
+    const result = await Effect.runPromise(
+      test.model.generate(test.generateInput)
+    );
     expect(result.output).toEqual(output);
     expect(test.run).toHaveBeenCalledOnce();
     expect(test.run.mock.calls[0]?.[1]).toMatchObject({
@@ -366,7 +375,9 @@ describe("private discovery native TanStack provider", () => {
       "data: [DONE]\n\n",
     ].join("");
     const test = fixture(() => Promise.resolve(response(body)));
-    const result = await Effect.runPromise(test.model.generate(test.input));
+    const result = await Effect.runPromise(
+      test.model.generate(test.generateInput)
+    );
     expect(result.usage).toEqual(unknownUsage);
     expect(test.run).toHaveBeenCalledOnce();
   });
@@ -414,7 +425,9 @@ describe("private discovery native TanStack provider", () => {
         )
       )
     );
-    const result = await Effect.runPromise(test.model.generate(test.input));
+    const result = await Effect.runPromise(
+      test.model.generate(test.generateInput)
+    );
     expect(result.output).toEqual(output);
     expect(test.run).toHaveBeenCalledOnce();
   });
@@ -654,7 +667,9 @@ describe("private discovery native TanStack provider", () => {
     const test = fixture();
     const caller = new AbortController();
     caller.abort();
-    await observe(test.model.stream({ ...test.input, signal: caller.signal }));
+    await observe(
+      test.model.stream({ ...test.input, abortController: caller })
+    );
     expectRejected(test, "outcome_unknown");
     expect(test.run).not.toHaveBeenCalled();
     expect(test.beforeDispatch).not.toHaveBeenCalled();
@@ -677,7 +692,7 @@ describe("private discovery native TanStack provider", () => {
     });
     const caller = new AbortController();
     const running = observe(
-      test.model.stream({ ...test.input, signal: caller.signal })
+      test.model.stream({ ...test.input, abortController: caller })
     );
     const options = await dispatched.promise;
     caller.abort();
@@ -717,7 +732,7 @@ describe("private discovery native TanStack provider", () => {
     );
     const caller = new AbortController();
     const running = observe(
-      test.model.stream({ ...test.input, signal: caller.signal })
+      test.model.stream({ ...test.input, abortController: caller })
     );
     const options = await reading.promise;
     caller.abort();
@@ -761,7 +776,7 @@ describe("private discovery native TanStack provider", () => {
       );
       const caller = new AbortController();
       const running = observe(
-        test.model.stream({ ...test.input, signal: caller.signal })
+        test.model.stream({ ...test.input, abortController: caller })
       );
       const options = await reading.promise;
       if (cause === "deadline") {
@@ -796,6 +811,46 @@ describe("private discovery native TanStack provider", () => {
     expect(test.run).toHaveBeenCalledOnce();
   });
 
+  it("prevents late authorization from committing after the provider deadline", async () => {
+    vi.useFakeTimers();
+    const test = fixture(undefined, { ...config, timeoutMs: 1000 });
+    const caller = new AbortController();
+    const accepting = Promise.withResolvers<null>();
+    const authorization = Promise.withResolvers<null>();
+    const commit = vi.fn();
+    const running = observe(
+      test.model.stream({
+        ...test.input,
+        abortController: caller,
+        chat: {
+          ...test.input.chat,
+          accept: async () => {
+            accepting.resolve(null);
+            await authorization.promise;
+            caller.signal.throwIfAborted();
+            commit();
+            return reply;
+          },
+        },
+      })
+    );
+    await accepting.promise;
+    await vi.advanceTimersByTimeAsync(1000);
+    authorization.resolve(null);
+    const result = await running;
+    expect(caller.signal.aborted).toBe(true);
+    expect(commit).not.toHaveBeenCalled();
+    expect(test.fail).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "outcome_unknown" })
+    );
+    expect(test.onFinish).not.toHaveBeenCalled();
+    expect(test.dispose).toHaveBeenCalledOnce();
+    expect(
+      result.chunks.some((chunk) => chunk.type === "TEXT_MESSAGE_CONTENT")
+    ).toBe(false);
+    expect(test.run).toHaveBeenCalledOnce();
+  });
+
   it("propagates Effect interruption to a pending native binding request", async () => {
     const dispatched = Promise.withResolvers<CapturedOptions>();
     const test = fixture((options) => {
@@ -803,9 +858,12 @@ describe("private discovery native TanStack provider", () => {
       return Promise.withResolvers<Response>().promise;
     });
     const caller = new AbortController();
-    const running = Effect.runPromiseExit(test.model.generate(test.input), {
-      signal: caller.signal,
-    });
+    const running = Effect.runPromiseExit(
+      test.model.generate(test.generateInput),
+      {
+        signal: caller.signal,
+      }
+    );
     const options = await dispatched.promise;
     caller.abort();
     const result = await running;

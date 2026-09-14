@@ -228,8 +228,7 @@ const streamDiscovery = (
   ) {
     return reject(failed("context_limit"));
   }
-  const controller = new AbortController();
-  const abort = () => controller.abort(input.signal.reason);
+  const controller = input.abortController;
   let deadline: ReturnType<typeof setTimeout> | undefined;
   let dispatched = false;
   let prepared: SubmitDiscoveryTurn | undefined;
@@ -240,7 +239,6 @@ const streamDiscovery = (
     if (deadline !== undefined) {
       clearTimeout(deadline);
     }
-    input.signal.removeEventListener("abort", abort);
     input.chat.dispose?.();
   };
   const binding: Pick<NativeCloudflare.Ai, "run"> = {
@@ -391,10 +389,6 @@ const streamDiscovery = (
       await input.chat.fail?.(rejected);
     },
     onStart: () => {
-      input.signal.addEventListener("abort", abort, { once: true });
-      if (input.signal.aborted) {
-        abort();
-      }
       deadline = setTimeout(() => controller.abort(), config.timeoutMs);
     },
     onToolPhaseComplete: (_ctx, info) => {
@@ -434,6 +428,9 @@ const streamDiscovery = (
       );
       return accepted;
     } catch (error) {
+      if (controller.signal.aborted) {
+        return reject(failed("outcome_unknown"));
+      }
       return reject(
         error instanceof PrivateDiscoveryFailure
           ? error
@@ -491,39 +488,51 @@ export const makePrivateDiscoveryModel = (
       try: async (signal) => {
         let result: PrivateDiscoveryResult | undefined;
         let problem: PrivateDiscoveryFailure | undefined;
-        const stream = streamDiscovery(environment, {
-          ...input,
-          chat: {
-            accept: (received) => {
-              result = received;
-              return {
-                createdAt: Date.now(),
-                messageId: crypto.randomUUID(),
-                text: "Validated private discovery proposal.",
-                type: "PrivateDiscoveryReply",
-              };
+        const controller = new AbortController();
+        const cancellation = AbortSignal.any([input.signal, signal]);
+        const abort = () => controller.abort(cancellation.reason);
+        cancellation.addEventListener("abort", abort, { once: true });
+        if (cancellation.aborted) {
+          abort();
+        }
+        try {
+          const stream = streamDiscovery(environment, {
+            abortController: controller,
+            beforeDispatch: input.beforeDispatch,
+            chat: {
+              accept: (received) => {
+                result = received;
+                return {
+                  createdAt: Date.now(),
+                  messageId: crypto.randomUUID(),
+                  text: "Validated private discovery proposal.",
+                  type: "PrivateDiscoveryReply",
+                };
+              },
+              fail: (error) => {
+                problem = error;
+              },
+              messages: [],
+              middleware: [],
+              runId: crypto.randomUUID(),
+              threadId: crypto.randomUUID(),
             },
-            fail: (error) => {
-              problem = error;
-            },
-            messages: [],
-            middleware: [],
-            runId: crypto.randomUUID(),
-            threadId: crypto.randomUUID(),
-          },
-          signal: AbortSignal.any([input.signal, signal]),
-        });
-        // This non-chat host consumes the same native SDK stream; it has no separate inference path.
-        for await (const _chunk of stream) {
-          /* The caller receives the validated domain result. */
+            context: input.context,
+          });
+          // This non-chat host consumes the same native SDK stream; it has no separate inference path.
+          for await (const _chunk of stream) {
+            /* The caller receives the validated domain result. */
+          }
+          if (problem) {
+            throw problem;
+          }
+          if (result === undefined) {
+            throw failure("invalid_output", null, null, "tool_call");
+          }
+          return result;
+        } finally {
+          cancellation.removeEventListener("abort", abort);
         }
-        if (problem) {
-          throw problem;
-        }
-        if (result === undefined) {
-          throw failure("invalid_output", null, null, "tool_call");
-        }
-        return result;
       },
     }),
   stream: (input) => streamDiscovery(environment, input),

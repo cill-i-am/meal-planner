@@ -88,6 +88,11 @@ const lifecycle = (binding: PrivateSessionBinding) =>
     action: "lifecycle",
     sessionReference: binding.sessionReference,
   });
+const keepAliveReferences = (binding: PrivateSessionBinding) =>
+  harness.successful<number>({
+    action: "keep-alive-references",
+    sessionReference: binding.sessionReference,
+  });
 const authorize = (binding: PrivateSessionBinding, generation: string) =>
   harness.command({
     action: "authorize",
@@ -168,6 +173,128 @@ const expectAcceptedOnce = async (
 };
 
 describe("native private chat reconnect authorization", () => {
+  it("expires a complete tool waiting for pending authorization and never commits after reconnect", async () => {
+    const timeoutMs = 1000;
+    await harness.setConfiguration(
+      JSON.stringify({
+        gatewayId: "synthetic-local-only",
+        inputUsdPerMillionTokens: 1,
+        maxOutputTokens: 65_536,
+        model: "@cf/moonshotai/kimi-k2.6",
+        outputUsdPerMillionTokens: 2,
+        timeoutMs,
+      })
+    );
+    harness.clearCalls();
+    const release = Promise.withResolvers<LocalResponse>();
+    const consumed = Promise.withResolvers<null>();
+    let renewed: PrivateNativeConnection | undefined;
+    try {
+      const encoded = new TextEncoder().encode(
+        await completedResponse().text()
+      );
+      let sent = false;
+      const body = new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            if (sent) {
+              controller.close();
+              consumed.resolve(null);
+            } else {
+              sent = true;
+              controller.enqueue(encoded);
+            }
+          },
+        },
+        { highWaterMark: 0 }
+      );
+      harness.setModelResponse(() => release.promise);
+      const binding = await harness.binding();
+      const original = await harness.open(binding);
+      const dispatchedAt = Date.now();
+      const attempt = await harness.startTurn(original);
+      await expect.poll(() => harness.calls.length).toBe(1);
+      const pendingGeneration = await beginPending(binding);
+      expect(await lifecycle(binding)).toMatchObject({
+        generation: pendingGeneration,
+        status: "pending",
+      });
+      const detached = await attempt.finished;
+      expect(detached).not.toContain(proposalText);
+      release.resolve(
+        new LocalResponse(body, {
+          headers: { "content-type": "text/event-stream" },
+        })
+      );
+      await consumed.promise;
+      // The full valid tool reaches the native transport while B is pending, before the actual deadline.
+      expect(Date.now() - dispatchedAt).toBeLessThan(timeoutMs);
+      const waiting = await harness.turns(binding);
+      expect(waiting).toMatchObject([
+        { id: attempt.turnId, status: "running", summary: null },
+      ]);
+      expect(await keepAliveReferences(binding)).toBe(1);
+      await expect
+        .poll(
+          async () => {
+            const [current] = await harness.turns(binding);
+            return {
+              failure: current?.failure,
+              references: await keepAliveReferences(binding),
+              status: current?.status,
+            };
+          },
+          { timeout: timeoutMs + 2000 }
+        )
+        .toEqual({
+          failure: "outcome_unknown",
+          references: 0,
+          status: "interrupted",
+        });
+      const expired = await harness.turns(binding);
+      const expiredReferences = await keepAliveReferences(binding);
+      expect(await lifecycle(binding)).toMatchObject({
+        generation: pendingGeneration,
+        status: "pending",
+      });
+      renewed = await harness.open(binding);
+      const resumed = await replay(renewed, attempt.turnId);
+      expect(resumed.status).toBe(200);
+      const terminal = await resumed.text();
+      expect(expired).toMatchObject([
+        {
+          failure: "outcome_unknown",
+          id: attempt.turnId,
+          status: "interrupted",
+          summary: null,
+        },
+      ]);
+      expect(expiredReferences).toBe(0);
+      expect(terminal).not.toContain("RUN_FINISHED");
+      expect(terminal).not.toContain(proposalText);
+      expect(await harness.hydrate(renewed)).toMatchObject({
+        activeRun: null,
+        messages: [{ role: "user" }],
+      });
+      expect(await cards(renewed)).toMatchObject({ cards: [] });
+      expect(await harness.turns(binding)).toMatchObject([
+        {
+          failure: "outcome_unknown",
+          id: attempt.turnId,
+          status: "interrupted",
+          summary: null,
+        },
+      ]);
+      expect(await harness.metadata(binding)).toMatchObject({ version: 1 });
+      expect(harness.calls).toHaveLength(1);
+      expect(await keepAliveReferences(binding)).toBe(0);
+    } finally {
+      release.resolve(completedResponse());
+      renewed?.socket.close();
+      await harness.setConfiguration(syntheticPrivateDiscoveryConfiguration);
+    }
+  });
+
   it("detaches an HTTP delivery and replays the same durable run after a real socket reconnect", async () => {
     harness.clearCalls();
     const release = Promise.withResolvers<LocalResponse>();

@@ -536,6 +536,7 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       });
       try {
         const stream = makePrivateDiscoveryModel(this.env).stream({
+          abortController: prepared.abortController,
           beforeDispatch: prepared.beforeDispatch,
           chat: {
             accept: async (result) => {
@@ -559,7 +560,6 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
             threadId,
           },
           context: prepared.context,
-          signal: prepared.signal,
         });
         this.ctx.waitUntil(this.keepAliveWhile(() => prepared.done));
         return this.#deliver(

@@ -220,9 +220,9 @@ export interface PrivateDiscoveryModel {
 }
 
 export interface PrivateDiscoveryStreamInput {
+  readonly abortController: AbortController;
   readonly beforeDispatch: (provenance: PrivateDiscoveryProvenance) => void;
   readonly context: PrivateDiscoveryContext;
-  readonly signal: AbortSignal;
   readonly chat: {
     readonly threadId: string;
     readonly runId: string;

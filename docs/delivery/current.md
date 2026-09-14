@@ -33,9 +33,10 @@
   contract-valid proposal; unknown usage retains the full cost reservation.
   The replacement session is applied locally and all 87 household boundary tests
   pass against it. Recorded synthetic proposal rendering passes; the explicit
-  confirmation click is paused by automatic approval review. All 107 native
-  session cases and local workspace checks pass. Final review and new live-model
-  evaluation remain incomplete, and the existing evaluation gates below still apply.
+  confirmation click is paused by automatic approval review. All 108 native
+  session cases and local workspace checks pass, including the deadline
+  correction. Final review and CI are tracked in the draft PR; new live-model
+  evaluation is incomplete, and the existing evaluation gates below still apply.
   The current v25/policy-v6 [deterministic discovery contract](stages/02-private-discovery/03-deterministic-discovery-contract.md)
   moves required coverage, scope, all question wording, clarification, card revision
   binding and ordinary/safety proposal routing into application code. One strict

@@ -69,6 +69,9 @@ export class PrivateInterviewSession extends ProductionSession {
   readTurns() {
     return this.#fixtureDatabase.select().from(privateAssistantTurns).all();
   }
+  readKeepAliveReferences() {
+    return this._keepAliveRefs;
+  }
 
   enqueueOutput(input: {
     readonly generation: string;
@@ -135,6 +138,7 @@ type SessionPort = {
     Key in
       | "initialize"
       | "readTurns"
+      | "readKeepAliveReferences"
       | "beginConnection"
       | "authorizeConnection"
       | "invalidateOutput"
@@ -395,6 +399,8 @@ export default {
         );
       } else if (input.action === "turns") {
         result = await child.readTurns();
+      } else if (input.action === "keep-alive-references") {
+        result = await child.readKeepAliveReferences();
       } else if (input.action === "metadata") {
         result = await child.readMetadata();
       } else if (input.action === "lifecycle") {
