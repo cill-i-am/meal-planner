@@ -23,7 +23,7 @@
 - [Current delivery state](delivery/current.md)
 - [Work-item template](delivery/work-item-template.md)
 - [Seven-pass cleanup](delivery/anti-slop-cleanup.md)
-- [Library consolidation — Phase 1 browser runtime plan](delivery/library-consolidation/01-effect-browser-runtime.md)
+- [Library consolidation plans and agent handoffs](delivery/library-consolidation/README.md)
 
 The library-consolidation plans are a separate proposed technical work track,
 not a replacement for the current product-stage sequence. Each phase has its
