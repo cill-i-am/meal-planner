@@ -4,11 +4,7 @@ This file governs the repository. Add nested instructions only for a real local 
 
 ## Product intent
 
-Meal Planner is an AI-native household food service. It learns how a household
-eats and lives, creates a practical personalised week, and turns the approved
-plan into a supermarket shop. It is similar to HelloFresh in its goal of
-reducing meal-planning work, but it adapts to the household rather than
-prescribing a fixed box.
+Meal Planner is an AI-native household food service. It learns how a household eats and lives, creates a practical personalised week, and turns the approved plan into a supermarket shop. It is similar to HelloFresh in its goal of reducing meal-planning work, but it adapts to the household rather than prescribing a fixed box.
 
 The intended flow is:
 
@@ -23,26 +19,17 @@ private discovery
   -> optional basket or purchase
 ```
 
-The repository implements the household and profile foundation, private adult
-discovery, evidence-grounded recipe import, an early meal-plan backend, and a
-read-only Tesco catalogue facade. The complete routines, weekly planning,
-shopping, basket, and purchase experience remains outside the implemented scope.
+The repository implements the household and profile foundation, private adult discovery, evidence-grounded recipe import, an early meal-plan backend, and a read-only Tesco catalogue facade. The complete routines, weekly planning, shopping, basket, and purchase experience remains outside the implemented scope.
 
 When changing code, preserve these constraints:
 
 - AI proposes; deterministic application code validates and commits.
 - Private transcripts are not household planning authority.
 - Household product state has one canonical authority.
-- Retailer adapters consume approved retailer-neutral demand and own
-  provider-specific behaviour.
-- Basket creation, checkout, payment, and other external mutations require
-  explicit user approval.
+- Retailer adapters consume approved retailer-neutral demand and own provider-specific behaviour.
+- Basket creation, checkout, payment, and other external mutations require explicit user approval.
 
-Product meaning lives in [the blueprint](docs/product-blueprint/), and the
-current implementation state lives in [current delivery](docs/delivery/current.md).
-Use the [household architecture](docs/architecture/household-domain.md) and
-[recipe import architecture](docs/architecture/recipe-import-intent.md) for
-technical boundaries.
+Product meaning lives in [the blueprint](docs/product-blueprint/), and the current implementation state lives in [current delivery](docs/delivery/current.md). Use the [household architecture](docs/architecture/household-domain.md) and [recipe import architecture](docs/architecture/recipe-import-intent.md) for technical boundaries.
 
 ## Working here
 
