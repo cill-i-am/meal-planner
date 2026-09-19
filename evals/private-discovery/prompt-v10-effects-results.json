@@ -1,0 +1,855 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-09",
+  "label": "Prompt v10: intended profile effects confirmed; dependency discovery incomplete",
+  "phaseId": "family-v10-effects-v1",
+  "status": "stopped_for_incomplete_coverage",
+  "source": {
+    "head": "974609a999fa5f8e04fe4563771172b45951c97b",
+    "tree": "2bf0a8d4335abc2369d3f84a919d93069155b46b",
+    "freezeSha256": "1fe031e8fd64d07be4ce8a694aba3fdd75402ea65e41d9a0200ad8ab6f2f47c6",
+    "files": {
+      "scenarioPack": {
+        "path": "evals/private-discovery/scenarios.json",
+        "sha256": "c9ea216e30dac5499410e61e29a6824d270ca323f8329c741d35b5b5dab8cf00"
+      },
+      "rubric": {
+        "path": "evals/private-discovery/rubric.json",
+        "sha256": "ab5882d124d1c231ae102e173c0d420482b6d17d8412acc3da5458ae410b8588"
+      },
+      "judgePrompt": {
+        "path": "evals/private-discovery/judge.md",
+        "sha256": "b1f10ab5e4f4124bee09895291bb2a557bbf50053a5592c181bae35eb4b86a48"
+      }
+    }
+  },
+  "versions": {
+    "provider": "Cloudflare Workers AI",
+    "model": "@cf/openai/gpt-oss-120b",
+    "promptVersion": "private-discovery-prompt-v10",
+    "policyVersion": "private-discovery-policy-v1",
+    "toolVersion": "profile-card-change-v1",
+    "driverPolicyVersion": "private-discovery-driver-v1",
+    "driverMode": "assisted_root_immediate_append_ack_generate_pipeline",
+    "candidateConfiguration": {
+      "maxOutputTokens": 4096,
+      "temperature": 0,
+      "stream": false,
+      "adapterDeadlineMs": 120000,
+      "maximumProviderAttempts": 1,
+      "gatewayPayloadCollection": false,
+      "gatewayCaching": false
+    },
+    "canonicalOutputSchemaSha256": "7baef48657d13389aac5af6ae5db2e98199ee6ec04d734da4a87d47dd147df8a",
+    "providerSchema": "Derived separately for each request from independently validated and identically trimmed native cards. Per-call hashes below; no global schema hash is assumed.",
+    "judge": {
+      "model": "@cf/openai/gpt-oss-120b",
+      "maxOutputTokens": 2048,
+      "promptVersion": "private-discovery-judge-v1",
+      "promptSha256": "b1f10ab5e4f4124bee09895291bb2a557bbf50053a5592c181bae35eb4b86a48",
+      "calls": 0,
+      "status": "not_run"
+    }
+  },
+  "coverage": {
+    "canonicalFamilies": 8,
+    "familiesStarted": 1,
+    "fixtureId": "dependency_and_repair",
+    "participantIntents": 8,
+    "fixtureIntentLimit": 8,
+    "familiesPassed": 0,
+    "familiesNotRun": 7,
+    "caseComplete": false,
+    "requiredDiscoveriesNotReached": ["repair.dependency"],
+    "profileOnlyChallengeReached": true,
+    "liveAToBRepeatCompleted": false
+  },
+  "calls": [
+    {
+      "ordinal": 1,
+      "interaction": "opening",
+      "fixtureId": "dependency_and_repair",
+      "scenarioPhase": "A",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-09T02:04:46.321Z",
+        "dispatchRecorded": "2026-09-09T02:04:46.408Z",
+        "nativeCompletionRecorded": "2026-09-09T02:04:56.467Z"
+      },
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "transportFailure": false,
+        "finishReason": "stop",
+        "choiceCount": 1
+      },
+      "native": {
+        "known": true,
+        "status": "succeeded",
+        "failure": null,
+        "assistantMessageAdmitted": true
+      },
+      "usage": {
+        "promptTokens": 2909,
+        "completionTokens": 320,
+        "totalTokens": 3229,
+        "cachedInputTokens": null,
+        "reasoningTokens": null
+      },
+      "estimatedCostUsd": "0.00125815",
+      "invoiceCostUsd": null,
+      "reservationMicroUsd": 47872,
+      "latencyMs": {
+        "ticketToNativeCompletion": 10146,
+        "dispatchToNativeCompletion": 10059,
+        "ticketToDispatch": 87,
+        "providerOnly": null,
+        "timeToFirstToken": null
+      },
+      "schemaObservation": {
+        "nativeContextMatched": true,
+        "bothRequestSchemaFieldsMatched": true,
+        "nativeContextCardCount": 0,
+        "eligibleProposedCardCount": 0,
+        "canonicalProfileVersionInRequest": 1,
+        "proposalOperations": []
+      },
+      "manualQuestionClassification": {
+        "topic": "Desired preference change",
+        "substantiveUnits": 1,
+        "classification": "new"
+      },
+      "hashes": {
+        "requestBodySha256": "e06ad266658036e65c28cd74b42776839a5e228d7a58183c130531e005a643d4",
+        "responseBytesSha256": "d47cea114f8a3ed381fcb7181e9916a801dc0824dfdfd643e42152a52425ca05",
+        "providerOutputSchemaSha256": "8609665e11ef385e4fed0da9fab9e6a4a71c5114b829140fdfb7543f09042cdb",
+        "systemInstructionsAndSchemaSha256": "cee13cbfe75fb074ed8d216e421dad34c6557f207f2040c918c8b9c5aaa05ef7",
+        "persistedSummarySha256": "3c59b19883e853d48c5616d62698592fcc31a8d143468c6ef8a1c69313941746"
+      },
+      "receiptSha256": {
+        "ticket.json": "3e0c9efa80b3028d31514485e59d83703450a6f7ae41294dca389fc583ba7ccf",
+        "dispatch.json": "2076f3adc3dc214ed0a9fc15711b2c3c72d8eb333422edaa7553abbbfa220ea7",
+        "completion.json": "e4e3d84cc7652c2d1530ff14f7211eb0a3f90cd75c3781d3de1bd75af86d20c4",
+        "response.json": "2fa7a397b2a9a75d6ad2152627ecbcc180bc394543e4a70ab4081562cd8ef135",
+        "assistant-content.json": "cb20b66718519cbf91215e328368b036e193c46cecaffafc9ee9279dc81ea093",
+        "native-before.json": "8d13063d47a2ab0c6fee4a271cfcb04894517d33deb37b55036f9362e8f52433",
+        "request.json": "08bf8c32118da7cae9e78fdd0d4816cc0bf1a220427e74f338888d87366afa31"
+      }
+    },
+    {
+      "ordinal": 2,
+      "interaction": "requested replacement",
+      "fixtureId": "dependency_and_repair",
+      "scenarioPhase": "A",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-09T02:05:33.107Z",
+        "dispatchRecorded": "2026-09-09T02:05:33.169Z",
+        "nativeCompletionRecorded": "2026-09-09T02:05:48.541Z"
+      },
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "transportFailure": false,
+        "finishReason": "stop",
+        "choiceCount": 1
+      },
+      "native": {
+        "known": true,
+        "status": "succeeded",
+        "failure": null,
+        "assistantMessageAdmitted": true
+      },
+      "usage": {
+        "promptTokens": 3075,
+        "completionTokens": 577,
+        "totalTokens": 3652,
+        "cachedInputTokens": null,
+        "reasoningTokens": null
+      },
+      "estimatedCostUsd": "0.00150900",
+      "invoiceCostUsd": null,
+      "reservationMicroUsd": 47872,
+      "latencyMs": {
+        "ticketToNativeCompletion": 15434,
+        "dispatchToNativeCompletion": 15372,
+        "ticketToDispatch": 62,
+        "providerOnly": null,
+        "timeToFirstToken": null
+      },
+      "schemaObservation": {
+        "nativeContextMatched": true,
+        "bothRequestSchemaFieldsMatched": true,
+        "nativeContextCardCount": 0,
+        "eligibleProposedCardCount": 0,
+        "canonicalProfileVersionInRequest": 1,
+        "proposalOperations": [
+          {
+            "operation": "ProposeProfileCard",
+            "change": "ReplaceOrdinaryProfileFact"
+          }
+        ]
+      },
+      "manualQuestionClassification": {
+        "topic": "Future batch cooking of replacement dish",
+        "substantiveUnits": 1,
+        "classification": "new_followup"
+      },
+      "hashes": {
+        "requestBodySha256": "c86d68a1dd1cfd7c01a4315f863b744e2fb77ab9800dca4c7075c60e6eb9130c",
+        "responseBytesSha256": "c87b77b978589ac4d9e90f251b789f4ad9624a02be6a936381483e83522e8916",
+        "providerOutputSchemaSha256": "8609665e11ef385e4fed0da9fab9e6a4a71c5114b829140fdfb7543f09042cdb",
+        "systemInstructionsAndSchemaSha256": "cee13cbfe75fb074ed8d216e421dad34c6557f207f2040c918c8b9c5aaa05ef7",
+        "persistedSummarySha256": "b6ec020abed6aa569fd8de39db033119daecb16fe8282829d4e8a520f1f280f4"
+      },
+      "receiptSha256": {
+        "ticket.json": "ed2d0a1f096e864e909ba1f565b18a61770e1b808035d813e8dabc249490fcd7",
+        "dispatch.json": "4edc9471e7333c7dae80f92649cde2b5dcf4cfc6c6ef729c4c5efd3c7998e51b",
+        "completion.json": "bc32e117b1e1961dd0c1e909c511e9de3f8acf58bda120fcf484f8dbc0982867",
+        "response.json": "3b5740bc243d73040d8ddda9534e6dc37524bd86e1ebd0764d03dd75808996bd",
+        "assistant-content.json": "271f833cbebaed38525617a8f9e4eb924f58b36630a4984a025f8e7fb6416e3a",
+        "native-before.json": "c424c3fa18b3cbb36656ceda0b35ec05d1505f9d47533592705f736c51511984",
+        "request.json": "4bb7305bce5a13604fd0985465e8d92cd7f703e9122a97bc5499f419afb31207"
+      }
+    },
+    {
+      "ordinal": 3,
+      "interaction": "profile-only scope challenge",
+      "fixtureId": "dependency_and_repair",
+      "scenarioPhase": "A",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-09T02:07:16.362Z",
+        "dispatchRecorded": "2026-09-09T02:07:16.427Z",
+        "nativeCompletionRecorded": "2026-09-09T02:07:21.366Z"
+      },
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "transportFailure": false,
+        "finishReason": "stop",
+        "choiceCount": 1
+      },
+      "native": {
+        "known": true,
+        "status": "succeeded",
+        "failure": null,
+        "assistantMessageAdmitted": true
+      },
+      "usage": {
+        "promptTokens": 4587,
+        "completionTokens": 584,
+        "totalTokens": 5171,
+        "cachedInputTokens": null,
+        "reasoningTokens": null
+      },
+      "estimatedCostUsd": "0.00204345",
+      "invoiceCostUsd": null,
+      "reservationMicroUsd": 47872,
+      "latencyMs": {
+        "ticketToNativeCompletion": 5004,
+        "dispatchToNativeCompletion": 4939,
+        "ticketToDispatch": 65,
+        "providerOnly": null,
+        "timeToFirstToken": null
+      },
+      "schemaObservation": {
+        "nativeContextMatched": true,
+        "bothRequestSchemaFieldsMatched": true,
+        "nativeContextCardCount": 1,
+        "eligibleProposedCardCount": 1,
+        "canonicalProfileVersionInRequest": 1,
+        "proposalOperations": []
+      },
+      "manualQuestionClassification": {
+        "topic": "Confirm pending replacement",
+        "substantiveUnits": 0,
+        "classification": "confirmation_only"
+      },
+      "hashes": {
+        "requestBodySha256": "60c7eb5162072f4d3409b60bfe071cbd39b968a796676abc23c24284b9f395cb",
+        "responseBytesSha256": "f9ac51e8fe2db7e61e1f58f3265d499cb2cd602b17132526e570800383681180",
+        "providerOutputSchemaSha256": "8f674f3367b0a10764903b57c2614ec9ea38df7d4b2039e815540806c9cdc0a1",
+        "systemInstructionsAndSchemaSha256": "f4ea0f368acb48723246fc8dd8e9906e1874b09d71e3b477a5e9273d7286ce7f",
+        "persistedSummarySha256": "b988ea9b90d4bbb7bf338444ee3d1a7b62872c927780b5e41145f5378c798dd7"
+      },
+      "receiptSha256": {
+        "ticket.json": "67e6d4b1d899c5f7d9b5b9df115d09d6c42bbe87d7ad674a2611efce783fb76c",
+        "dispatch.json": "c094494355357795e7a6d14c1207f19ec6153980225c16c9219a7392d440ff07",
+        "completion.json": "bce09af3a2fd7525acb3f673d189f709b4effaee624991aea27b05a41f71de3a",
+        "response.json": "f46992d0e1ae1215fd9473ff4b5ceb9b932a384294dfb59c92e0b21bee8a1ece",
+        "assistant-content.json": "865bbbe05559b4e4f7fcaea468dead113cb0701b36e7c7a834f04a8b2559e0b9",
+        "native-before.json": "435758ee97e43a8a73840e372edff7f9ba5d4086f779946cf5ee904e48d2841d",
+        "request.json": "d2e578f3a3e433c3f0fe0349d6b34cfa7d0f6df8b19cf16d6aead5d6e957bbcf"
+      }
+    },
+    {
+      "ordinal": 4,
+      "interaction": "fixed neutral reply",
+      "fixtureId": "dependency_and_repair",
+      "scenarioPhase": "A",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-09T02:11:17.085Z",
+        "dispatchRecorded": "2026-09-09T02:11:17.199Z",
+        "nativeCompletionRecorded": "2026-09-09T02:11:29.686Z"
+      },
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "transportFailure": false,
+        "finishReason": "stop",
+        "choiceCount": 1
+      },
+      "native": {
+        "known": true,
+        "status": "succeeded",
+        "failure": null,
+        "assistantMessageAdmitted": true
+      },
+      "usage": {
+        "promptTokens": 3491,
+        "completionTokens": 579,
+        "totalTokens": 4070,
+        "cachedInputTokens": null,
+        "reasoningTokens": null
+      },
+      "estimatedCostUsd": "0.00165610",
+      "invoiceCostUsd": null,
+      "reservationMicroUsd": 47872,
+      "latencyMs": {
+        "ticketToNativeCompletion": 12601,
+        "dispatchToNativeCompletion": 12487,
+        "ticketToDispatch": 114,
+        "providerOnly": null,
+        "timeToFirstToken": null
+      },
+      "schemaObservation": {
+        "nativeContextMatched": true,
+        "bothRequestSchemaFieldsMatched": true,
+        "nativeContextCardCount": 1,
+        "eligibleProposedCardCount": 0,
+        "canonicalProfileVersionInRequest": 2,
+        "proposalOperations": []
+      },
+      "manualQuestionClassification": {
+        "topic": "Hard food constraints",
+        "substantiveUnits": 1,
+        "classification": "new"
+      },
+      "hashes": {
+        "requestBodySha256": "40f0944f2f8b0433333cb8f60d78426ce9a9a3d09108c636d147e7c33b0a62dc",
+        "responseBytesSha256": "e4d359f3ce51496e2a9a046cc1a15106173366998caa304cfced6f017084843c",
+        "providerOutputSchemaSha256": "8609665e11ef385e4fed0da9fab9e6a4a71c5114b829140fdfb7543f09042cdb",
+        "systemInstructionsAndSchemaSha256": "cee13cbfe75fb074ed8d216e421dad34c6557f207f2040c918c8b9c5aaa05ef7",
+        "persistedSummarySha256": "17397e8e417d157c806343832e5f1389e0c358ce3196a1349ccc8f42b8974757"
+      },
+      "receiptSha256": {
+        "ticket.json": "44e991070e2fd2e00d444cf28d6397c812109c1aeab32344f0d01073ae79c4fb",
+        "dispatch.json": "823f02b37b6cf1e6794daff80a929ecf872ff793ed751675044bc756ee445430",
+        "completion.json": "d5e88a32bdffe556066fe5ea52b0e9f8e8e3b40d3c19ef1e8fb82c4ca94e2909",
+        "response.json": "9ab9238227afb92cbf4c8f169a9d3a7c87a645f6e2e2ec6223a7743f175f33e3",
+        "assistant-content.json": "d96050bae6d0c0dc4443f740679200bd72010a475c1a1e4bd6ed24a2e28d2c45",
+        "native-before.json": "459d75a5fe7d430da1b5ae75add50bee8d146c444b9aa02649c4e514237667f5",
+        "request.json": "40de3be636f86eab2bcf51681c64e9554de0eba446da14eb6b5e04ef95e0afe8"
+      }
+    },
+    {
+      "ordinal": 5,
+      "interaction": "disclosed safety answer",
+      "fixtureId": "dependency_and_repair",
+      "scenarioPhase": "A",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-09T02:16:49.749Z",
+        "dispatchRecorded": "2026-09-09T02:16:49.836Z",
+        "nativeCompletionRecorded": "2026-09-09T02:17:02.734Z"
+      },
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "transportFailure": false,
+        "finishReason": "stop",
+        "choiceCount": 1
+      },
+      "native": {
+        "known": true,
+        "status": "succeeded",
+        "failure": null,
+        "assistantMessageAdmitted": true
+      },
+      "usage": {
+        "promptTokens": 3614,
+        "completionTokens": 638,
+        "totalTokens": 4252,
+        "cachedInputTokens": null,
+        "reasoningTokens": null
+      },
+      "estimatedCostUsd": "0.00174340",
+      "invoiceCostUsd": null,
+      "reservationMicroUsd": 47872,
+      "latencyMs": {
+        "ticketToNativeCompletion": 12985,
+        "dispatchToNativeCompletion": 12898,
+        "ticketToDispatch": 87,
+        "providerOnly": null,
+        "timeToFirstToken": null
+      },
+      "schemaObservation": {
+        "nativeContextMatched": true,
+        "bothRequestSchemaFieldsMatched": true,
+        "nativeContextCardCount": 1,
+        "eligibleProposedCardCount": 0,
+        "canonicalProfileVersionInRequest": 2,
+        "proposalOperations": [
+          {
+            "operation": "ProposeProfileCard",
+            "change": "AddConfirmedProfileFact"
+          }
+        ]
+      },
+      "manualQuestionClassification": {
+        "topic": "Additional dish preferences",
+        "substantiveUnits": 1,
+        "classification": "new_inventory"
+      },
+      "hashes": {
+        "requestBodySha256": "0415692304c6417f3c10044d682ab094f98f3926dcf366f1446afa08b68e11e8",
+        "responseBytesSha256": "06c1b27153c4b4b26328613b6f3f502bb00dda090c6a13c896e6b87faf794746",
+        "providerOutputSchemaSha256": "8609665e11ef385e4fed0da9fab9e6a4a71c5114b829140fdfb7543f09042cdb",
+        "systemInstructionsAndSchemaSha256": "cee13cbfe75fb074ed8d216e421dad34c6557f207f2040c918c8b9c5aaa05ef7",
+        "persistedSummarySha256": "2452ab9609c31d873d8603096eae9d22ce9cad869cde61f9b214c3110de31415"
+      },
+      "receiptSha256": {
+        "ticket.json": "294576adcf52735773f2d9d639e7cd792621626155027ea5886f670f8a15363e",
+        "dispatch.json": "3e61ecf2dc098ae9c86956d359e29cb5de860a72f9b022d4872dd42eecd4b658",
+        "completion.json": "62121372459914759774af6812aec68be1a4dd9c0827515c112aaa13ce75cbc9",
+        "response.json": "03dbf61c45e948b4ba99cda44409fd26092c27ccf8f397f40f4060a3f2f523c6",
+        "assistant-content.json": "344a2a1498806370eaa92550429e7b45ff59a97bb7937d00e03420386735ceb1",
+        "native-before.json": "d95d0688a772eb00abbc8e20364f007ebd4fecec88de0f9f6a03cb448b731f6f",
+        "request.json": "f736322906b7e2e1e0420f0f3395c1c51fc3152b70ff0a5bd316c48ada8bcc03"
+      }
+    },
+    {
+      "ordinal": 6,
+      "interaction": "fixed neutral reply",
+      "fixtureId": "dependency_and_repair",
+      "scenarioPhase": "A",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-09T02:18:18.344Z",
+        "dispatchRecorded": "2026-09-09T02:18:18.642Z",
+        "nativeCompletionRecorded": "2026-09-09T02:18:36.203Z"
+      },
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "transportFailure": false,
+        "finishReason": "stop",
+        "choiceCount": 1
+      },
+      "native": {
+        "known": true,
+        "status": "succeeded",
+        "failure": null,
+        "assistantMessageAdmitted": true
+      },
+      "usage": {
+        "promptTokens": 3870,
+        "completionTokens": 781,
+        "totalTokens": 4651,
+        "cachedInputTokens": null,
+        "reasoningTokens": null
+      },
+      "estimatedCostUsd": "0.00194025",
+      "invoiceCostUsd": null,
+      "reservationMicroUsd": 47872,
+      "latencyMs": {
+        "ticketToNativeCompletion": 17859,
+        "dispatchToNativeCompletion": 17561,
+        "ticketToDispatch": 298,
+        "providerOnly": null,
+        "timeToFirstToken": null
+      },
+      "schemaObservation": {
+        "nativeContextMatched": true,
+        "bothRequestSchemaFieldsMatched": true,
+        "nativeContextCardCount": 2,
+        "eligibleProposedCardCount": 0,
+        "canonicalProfileVersionInRequest": 3,
+        "proposalOperations": []
+      },
+      "manualQuestionClassification": {
+        "topic": "Ingredient preferences",
+        "substantiveUnits": 1,
+        "classification": "category_narrowing"
+      },
+      "hashes": {
+        "requestBodySha256": "57ed5b79beb72e340588f5a8de76fd1d28ed027ce0de94b920d22aa0bd5dfda6",
+        "responseBytesSha256": "735035e0c702321c2edc7c51cbb863553d963d3b711c59f88cada5057aa2d75b",
+        "providerOutputSchemaSha256": "8609665e11ef385e4fed0da9fab9e6a4a71c5114b829140fdfb7543f09042cdb",
+        "systemInstructionsAndSchemaSha256": "cee13cbfe75fb074ed8d216e421dad34c6557f207f2040c918c8b9c5aaa05ef7",
+        "persistedSummarySha256": "529210de86230d4ba3e59add23a2af0538d2df26dd99877077a4eeecad463f96"
+      },
+      "receiptSha256": {
+        "ticket.json": "1ac4c35d94559d8ae4a36c2e318cabf58c9b19a4bb28dd86788ca3831f894fea",
+        "dispatch.json": "015adada12fcc4e5919629bbcbd47a70b80b94fbb22e1f17a24724f841d2bb24",
+        "completion.json": "6f9d36b0599b674c5782a76ac1d001105afbfdaab28ed9f63b1180209b225982",
+        "response.json": "362e54adaae63ca2c48bfb2aee306ed42e8f4f539778831e92696c57e5f76be4",
+        "assistant-content.json": "6fa704a482caece325b279692690c5d5d42d8373764a3876bceb10038687abe4",
+        "native-before.json": "48e24b071c990ed3938efa5fcb0da38ed8d8de8e42ba27c582ae7919f26ab948",
+        "request.json": "84ba2f16581c625ebde4e9c51dab892578116a8bbcbd25466712ccd1a10553df"
+      }
+    },
+    {
+      "ordinal": 7,
+      "interaction": "fixed neutral reply",
+      "fixtureId": "dependency_and_repair",
+      "scenarioPhase": "A",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-09T02:19:35.225Z",
+        "dispatchRecorded": "2026-09-09T02:19:35.364Z",
+        "nativeCompletionRecorded": "2026-09-09T02:19:49.996Z"
+      },
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "transportFailure": false,
+        "finishReason": "stop",
+        "choiceCount": 1
+      },
+      "native": {
+        "known": true,
+        "status": "succeeded",
+        "failure": null,
+        "assistantMessageAdmitted": true
+      },
+      "usage": {
+        "promptTokens": 3999,
+        "completionTokens": 440,
+        "totalTokens": 4439,
+        "cachedInputTokens": null,
+        "reasoningTokens": null
+      },
+      "estimatedCostUsd": "0.00172965",
+      "invoiceCostUsd": null,
+      "reservationMicroUsd": 47872,
+      "latencyMs": {
+        "ticketToNativeCompletion": 14771,
+        "dispatchToNativeCompletion": 14632,
+        "ticketToDispatch": 139,
+        "providerOnly": null,
+        "timeToFirstToken": null
+      },
+      "schemaObservation": {
+        "nativeContextMatched": true,
+        "bothRequestSchemaFieldsMatched": true,
+        "nativeContextCardCount": 2,
+        "eligibleProposedCardCount": 0,
+        "canonicalProfileVersionInRequest": 3,
+        "proposalOperations": []
+      },
+      "manualQuestionClassification": {
+        "topic": "Ingredient preferences again",
+        "substantiveUnits": 1,
+        "classification": "strict_repeat_after_fixed_neutral"
+      },
+      "hashes": {
+        "requestBodySha256": "1e1396ea534ece618f7bb0eb5d0b7b0b4707d05310a41fb3f401c94b4dcfecbd",
+        "responseBytesSha256": "631e0fd64f02708db2a566d87be7d16113fe0d31b54e24dabfead4defb7d613f",
+        "providerOutputSchemaSha256": "8609665e11ef385e4fed0da9fab9e6a4a71c5114b829140fdfb7543f09042cdb",
+        "systemInstructionsAndSchemaSha256": "cee13cbfe75fb074ed8d216e421dad34c6557f207f2040c918c8b9c5aaa05ef7",
+        "persistedSummarySha256": "e57a5a1c3942df072cbe6669839e4db6af6a86c95debbdd145a513bc35896e17"
+      },
+      "receiptSha256": {
+        "ticket.json": "07ffbcec569c198d1fb0fa0267a60d8cff881ba9ec9e88ffcae2195908237589",
+        "dispatch.json": "f5f3d1867d83ce2905a167886b4ce629d3593bf635e6289b1dc89b6013648c19",
+        "completion.json": "8ae49dbdb709b2ddec3977caa24779b74e717d05efaa111b796d057232363fa2",
+        "response.json": "1f2c04bcb084d461187c0b0f01852a9e87c651d61eb730c7ab98e3cbf0f7c6df",
+        "assistant-content.json": "57bbc91ff7bb5c2f93cc40952d9cf087efcad541e1159362c7b2df66636c2254",
+        "native-before.json": "a007754a42ab68df40b7b145b791c25619e8c250ed2f32a8b1feb25dc28140cf",
+        "request.json": "fb65ba3fd56583b0d5ffa623c579ae2785a8fc028147a8078934e672dbcb92f7"
+      }
+    },
+    {
+      "ordinal": 8,
+      "interaction": "fixed neutral reply",
+      "fixtureId": "dependency_and_repair",
+      "scenarioPhase": "A",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-09T02:20:47.183Z",
+        "dispatchRecorded": "2026-09-09T02:20:47.282Z",
+        "nativeCompletionRecorded": "2026-09-09T02:21:01.885Z"
+      },
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "transportFailure": false,
+        "finishReason": "stop",
+        "choiceCount": 1
+      },
+      "native": {
+        "known": true,
+        "status": "succeeded",
+        "failure": null,
+        "assistantMessageAdmitted": true
+      },
+      "usage": {
+        "promptTokens": 4140,
+        "completionTokens": 488,
+        "totalTokens": 4628,
+        "cachedInputTokens": null,
+        "reasoningTokens": null
+      },
+      "estimatedCostUsd": "0.00181500",
+      "invoiceCostUsd": null,
+      "reservationMicroUsd": 47872,
+      "latencyMs": {
+        "ticketToNativeCompletion": 14702,
+        "dispatchToNativeCompletion": 14603,
+        "ticketToDispatch": 99,
+        "providerOnly": null,
+        "timeToFirstToken": null
+      },
+      "schemaObservation": {
+        "nativeContextMatched": true,
+        "bothRequestSchemaFieldsMatched": true,
+        "nativeContextCardCount": 2,
+        "eligibleProposedCardCount": 0,
+        "canonicalProfileVersionInRequest": 3,
+        "proposalOperations": []
+      },
+      "manualQuestionClassification": {
+        "topic": "Cooking constraints or preferences",
+        "substantiveUnits": 1,
+        "classification": "new_category"
+      },
+      "hashes": {
+        "requestBodySha256": "1b292aabe99f9d6d7229214add6e5341c45f183c931c01ad1beb43dd88252c9e",
+        "responseBytesSha256": "ff4022f6f47cbea9f23948e33ae8707af98d80bcc1e9d00451f3337f5950e078",
+        "providerOutputSchemaSha256": "8609665e11ef385e4fed0da9fab9e6a4a71c5114b829140fdfb7543f09042cdb",
+        "systemInstructionsAndSchemaSha256": "cee13cbfe75fb074ed8d216e421dad34c6557f207f2040c918c8b9c5aaa05ef7",
+        "persistedSummarySha256": "2c2e5f1d3ade4067f21bf25ff1c607b1c8346a2287c3e18e24dcfff18f0aaeed"
+      },
+      "receiptSha256": {
+        "ticket.json": "c940f9e7366a8210973e9a63e4fec880415c248d3edaea14e672ed2c56dc8812",
+        "dispatch.json": "adcdcb748f56b6fbe1ab20ca109376bb0fd4931acce005b4c467df6e40904185",
+        "completion.json": "e82fcf51e5840d2308b54802b15afc65a154e20d9c4b545c40376692d47fe748",
+        "response.json": "abef970d634aaf65045c7fea47e63e764aea62b215d83b37f29f2d0bc0b1df71",
+        "assistant-content.json": "c9463897e48911271216af31aaf105c8cd045fac870aecc99468b650ac137fd7",
+        "native-before.json": "546c4d4a0617181013210212ba0fd0021cd911023439d02d9457b98b9d7d9a66",
+        "request.json": "e9fc73cc6495db7a61217dcc38c732df69015c3fa21d99924d0a4b0feeb9b854"
+      }
+    }
+  ],
+  "aggregate": {
+    "actualCandidateCalls": 8,
+    "nativeSuccesses": 8,
+    "nativeFailures": 0,
+    "unknownNativeOutcomes": 0,
+    "judgeCalls": 0,
+    "participantIntents": 8,
+    "admittedAssistantMessages": 8,
+    "usage": {
+      "knownUsageCalls": 8,
+      "unknownUsageCalls": 0,
+      "promptTokens": 29685,
+      "completionTokens": 4407,
+      "totalTokens": 34092,
+      "cachedInputTokens": null,
+      "reasoningTokens": null
+    },
+    "estimatedCostUsd": "0.01369500",
+    "invoiceCostUsd": null,
+    "phaseReservationMicroUsd": 382976,
+    "ticketToNativeCompletionMs": {
+      "count": 8,
+      "sum": 103502,
+      "mean": 12937.75,
+      "median": 13843.5,
+      "min": 5004,
+      "max": 17859
+    },
+    "dispatchToNativeCompletionMs": {
+      "count": 8,
+      "sum": 102551,
+      "mean": 12818.875,
+      "median": 13750.5,
+      "min": 4939,
+      "max": 17561
+    },
+    "outputContractFailures": 0,
+    "provenSemanticHardFailures": 0,
+    "providerOnlyLatencyMs": null,
+    "timeToFirstTokenMs": null
+  },
+  "confirmedEffects": [
+    {
+      "operation": "ReplaceOrdinaryProfileFact",
+      "description": "Existing bean-chilli preference replaced in place with lentil soup",
+      "proposalCallOrdinal": 2,
+      "confirmationAfterCallOrdinal": 3,
+      "previousVersion": 1,
+      "nextVersion": 2,
+      "preservedActualFactIdentity": true,
+      "subsequentCallOrdinalObservingNewVersion": 4
+    },
+    {
+      "operation": "AddConfirmedProfileFact",
+      "factType": "NoKnownHardConstraints",
+      "proposalCallOrdinal": 5,
+      "confirmationAfterCallOrdinal": 5,
+      "previousVersion": 2,
+      "nextVersion": 3,
+      "priorReplacementFactPreserved": true,
+      "subsequentCallOrdinalObservingNewVersion": 6
+    }
+  ],
+  "canonicalState": {
+    "profileVersionBefore": 1,
+    "profileVersionAfter": 3,
+    "finalConfirmedFactCount": 2,
+    "confirmedCards": 2,
+    "confirmationCommands": 2,
+    "pendingConfirmations": 0,
+    "duplicateFactCommitted": false,
+    "nativeConfirmationAuthorityPreserved": true,
+    "falseCompletedReplacementSummaryObserved": false,
+    "inventedCommittedOrPlanRepairClaimObserved": false,
+    "sessionStatusAtFinalInspection": "open",
+    "sessionVersionAtFinalInspection": 20
+  },
+  "conversationMeasures": {
+    "classificationMethod": "Manual semantic classification by reporting assistants, checked against admitted dialogue and disclosure receipts; not a human calibration score or a judge-model run. One unit per independently requested substantive answer; alternatives for one answer count once. Confirmation-only invitations are excluded and listed separately.",
+    "substantiveQuestionUnits": 7,
+    "assistantTurnsWithSubstantiveQuestion": 7,
+    "strictRepeatedQuestionUnits": 1,
+    "strictRepeatCallOrdinals": [7],
+    "repeatDefinition": "Same ingredient-information request after the fixed no-further-information reply; no material narrowing. A neutral reply is not an affirmative or negative ingredient preference.",
+    "categoryNarrowingFollowups": 1,
+    "categoryNarrowingCallOrdinals": [6],
+    "categoryNarrowingMeaning": "Dishes to ingredients is recorded separately, not counted as a strict repeat or asserted model intent.",
+    "directConfirmationInvitations": 1,
+    "directConfirmationCallOrdinals": [3],
+    "conditionalConfirmationReminders": 2,
+    "conditionalConfirmationCallOrdinals": [2, 5],
+    "alternativeCountingNote": "Including the confirmation-only turn would yield eight question units under a different definition. Broad repetition including category narrowing would be two, rather than the primary strict count of one."
+  },
+  "driverProvenance": {
+    "mode": "assisted_root_immediate_pipeline",
+    "openingMessages": 1,
+    "disclosedFactIds": ["repair.replacement", "repair.safety"],
+    "challengeMessages": 1,
+    "challengeId": "repair.correction",
+    "fixedNeutralMessages": 4,
+    "neutralBindings": [
+      {
+        "participantCallOrdinal": 4,
+        "referencedAssistantCallOrdinal": 2
+      },
+      {
+        "participantCallOrdinal": 6,
+        "referencedAssistantCallOrdinal": 5
+      },
+      {
+        "participantCallOrdinal": 7,
+        "referencedAssistantCallOrdinal": 6
+      },
+      {
+        "participantCallOrdinal": 8,
+        "referencedAssistantCallOrdinal": 7
+      }
+    ],
+    "neutralMeaning": "No additional fixture information for that question; not a disclosure of preferences, dependency facts or participant refusal.",
+    "exactNeutralTextAndActualQuestionBindingsVerified": true,
+    "independentNeutralBindingChecksReported": 17,
+    "independentDriverReviewAccepted": true,
+    "providerRetries": 0,
+    "disclosuresReceiptSha256": "eb05ef7c6423f6c914464d3e48a2cc8d1ec94ed3e45bc6be28ac31b4d82cf4fa"
+  },
+  "qualityAndStop": {
+    "classification": "incomplete_coverage_and_conversation_quality",
+    "provenHardFailure": null,
+    "hardAssertionIds": [],
+    "familyAccepted": false,
+    "stopReason": "Eight-intent fixture limit reached while repair.dependency remained undiscovered.",
+    "concerns": [
+      "Lost the unresolved batch-cook dependency despite retained native opening context.",
+      "Asked extra dish preferences, then ingredients, then repeated the ingredient question after a fixed neutral answer.",
+      "Summaries narrated profile/card status and omitted relevant disclosed circumstances.",
+      "The final summary described no further fixture information as declined to provide; no invented food fact or authority effect was observed."
+    ],
+    "clarifications": [
+      "The opening batch-cook context remained in native requests; the future batch-intent question did not establish current dependencies.",
+      "Call 3 invited conversational confirmation while the admitted card command owns confirmation; actual native authority held.",
+      "The final summary overstated fixed no-further-information as declined to provide. This was classified as a fidelity quality concern, not an invented food fact or authority effect."
+    ],
+    "qualityScores": null
+  },
+  "measurementMethod": {
+    "inputUsdPerMillionTokens": "0.35",
+    "outputUsdPerMillionTokens": "0.75",
+    "cost": "All eight recorded token usages at frozen rates, including turns after which coverage remained incomplete. Estimated cost is not an invoice.",
+    "ticketToNativeCompletionMs": "completion.at minus ticket.createdAt; includes admission, local dispatch, provider work and native completion handling.",
+    "dispatchToNativeCompletionMs": "completion.at minus dispatch.at; starts at local capture and includes provider work and native completion handling. It is not isolated provider latency.",
+    "usageSubtotals": "Cached-input and reasoning-token subtotals were not retained. Total tokens are prompt plus completion tokens.",
+    "unmeasured": "Provider-only latency, first-token time, cached/reasoning-token subtotals and model/human scores remain null. Question counts below are manual classifications."
+  },
+  "financialSnapshotAtClosure": {
+    "journalBytes": 12914,
+    "journalSha256": "c5bd08a808b1ed788da3b8ab3bd153661bd5a9c1f0b41944b367099122512de9",
+    "callsReserved": 84,
+    "reservedMicroUsd": 4012032,
+    "higherCapCallsReserved": 78,
+    "judgeCallsReserved": 0,
+    "phaseReservationMicroUsd": 382976,
+    "existingAdditionalAuthorityMicroUsd": 20000000,
+    "authorityAnchorCallsReserved": 68,
+    "authorityAnchorReservedMicroUsd": 3246080,
+    "additionalCallsSinceAuthorityAnchor": 16,
+    "additionalConservativeReservedMicroUsd": 765952,
+    "meaning": "Historical conservative reservations at closure; not invoice cost."
+  },
+  "closure": {
+    "closedAtUtc": "2026-09-09T02:22:34.997Z",
+    "graceful": true,
+    "runtimeDisposed": true,
+    "transportDisposed": true,
+    "gateDisposed": true,
+    "remoteSessionDisposed": true,
+    "participantLockAbsent": true,
+    "financialLockAbsent": true,
+    "actorCloseAcknowledgedAndJoined": true,
+    "runtimeJoinedExitZero": true,
+    "listenerClosed": true,
+    "providerRevocationVerified": false,
+    "scenarioComplete": false
+  },
+  "evaluation": {
+    "acceptedBaseline": false,
+    "acceptedBaselineId": null,
+    "allHardAssertionsPassed": false,
+    "provenHardFailureCount": 0,
+    "modelScores": null,
+    "humanScores": null,
+    "judgeCalls": 0,
+    "qualityBand": "unscored",
+    "releaseDecision": "not_assessed"
+  },
+  "receiptSha256": {
+    "source-build-proof.json": "1fe031e8fd64d07be4ce8a694aba3fdd75402ea65e41d9a0200ad8ab6f2f47c6",
+    "pipeline-native-proof.json": "1317b9e5675e88e4ac24a57e7d44e9335648990353850a65bb3667b003d6aafc",
+    "reused-proof-provenance.json": "4527fa9badbde1f412930d54108e5c85d34324afa02b0737a1845d1d8251fefb",
+    "run-state/root-phase-result.receipt.json": "36abdfcee5d9c047842ff6bd50fbe934f5a4c93db9bf267e3f3fbdea4a702c78",
+    "run-state/root-semantic-observations.jsonl": "1fb56215b5b14b558ed2995f9533ee94c318afac8979465f921e9153f75d0b09",
+    "run-state/closed.json": "0ab03b147cfdd0dc736694dd06dbb8e8e1e8540b86e1b803ed8b055c4b9821d8",
+    "run-state/actor-run/commands.jsonl": "282816ede8d959422a1a3e79f6cb8843cc1e1e2572baaff1f7fba762e58337b8",
+    "run-state/actor-run/responses.jsonl": "70de89502142450b55afa7cda13b3d7f94ad9a1c8c6783e9a044c7148b87a81d",
+    "run-state/participant-admissions.jsonl": "158879360d2784e6f34d7ec6616dd7d5669414660429c76e5d6450fd41b400f1",
+    "run-state/disclosures.jsonl": "eb05ef7c6423f6c914464d3e48a2cc8d1ec94ed3e45bc6be28ac31b4d82cf4fa",
+    "terminalNativeInspection": "25b33a463eafb50f138c36e56aa79e8a920a005cfb207d16af9643d41153f74f"
+  },
+  "privateReceiptIndexSha256": "884c83cc98b103f1fa7e97145a9116c1b16135e012730ad6ac4ea8e242dc5419",
+  "limitations": [
+    "Only dependency_and_repair ran; eight successful generations and two confirmations do not establish a completed family.",
+    "Missing dependency discovery and question quality prevent acceptance; the other seven families and A/B repeat were not run.",
+    "Question and repeat counts are explicitly manual classifications, not calibrated quality scores.",
+    "No live draft revision or later prompt outcome is established.",
+    "No statistical speed, cost or model-quality improvement is claimed."
+  ],
+  "sanitization": "Allowlisted metadata, paraphrased findings and receipt hashes; no transcript, reasoning text, private native identifier or private receipt location."
+}

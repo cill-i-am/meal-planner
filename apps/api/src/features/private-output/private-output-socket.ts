@@ -1,8 +1,9 @@
 import type * as NativeCloudflare from "@cloudflare/workers-types";
 import { and, eq } from "drizzle-orm";
-import type { drizzle } from "drizzle-orm/durable-sqlite";
+import type { SQLiteAsyncDatabase } from "drizzle-orm/sqlite-core";
 import { Schema } from "effect";
 
+import type { PrivateDiscoveryModelEnvironment } from "./private-discovery-workers-ai.js";
 import { PrivateOutputUnavailable } from "./private-output.contract.js";
 import type {
   OutputLifecyclePort,
@@ -16,7 +17,8 @@ declare const Response: typeof NativeCloudflare.Response;
 export const Generation = Schema.Struct({
   generation: Schema.String.pipe(Schema.check(Schema.isUUID())),
 });
-export interface PrivateInterviewEnvironment {
+export interface PrivateInterviewEnvironment
+  extends Cloudflare.Env, PrivateDiscoveryModelEnvironment {
   readonly AccountOutputLifecycle: {
     readonly getByName: (name: string) => OutputLifecyclePort;
   };
@@ -24,27 +26,60 @@ export interface PrivateInterviewEnvironment {
     readonly getByName: (name: string) => OutputLifecyclePort;
   };
 }
+type OutputSocket = Pick<
+  NativeCloudflare.WebSocket,
+  "close" | "deserializeAttachment" | "readyState" | "send"
+>;
+interface OutputSocketContext {
+  readonly acceptWebSocket: (socket: NativeCloudflare.WebSocket) => void;
+  readonly getWebSockets: () => readonly OutputSocket[];
+}
+type OutputSocketEnvironment = Pick<
+  PrivateInterviewEnvironment,
+  "AccountOutputLifecycle" | "HouseholdAgent"
+>;
 /** A private child owns this concrete native socket fence; it is never an RPC target. */
-export class PrivateOutputSocket {
-  #context: NativeCloudflare.DurableObjectState;
-  #database: ReturnType<typeof drizzle>;
-  #environment: PrivateInterviewEnvironment;
+export class PrivateOutputSocket<TRunResult = unknown> {
+  #context: OutputSocketContext;
+  #database: SQLiteAsyncDatabase<"sync", TRunResult>;
+  #environment: OutputSocketEnvironment;
   constructor(
-    context: NativeCloudflare.DurableObjectState,
-    database: ReturnType<typeof drizzle>,
-    environment: PrivateInterviewEnvironment
+    context: OutputSocketContext,
+    database: SQLiteAsyncDatabase<"sync", TRunResult>,
+    environment: OutputSocketEnvironment
   ) {
     this.#context = context;
     this.#database = database;
     this.#environment = environment;
   }
   restart(): void {
-    this.#database
-      .update(privateOutputGeneration)
-      .set({ status: "invalidated" })
-      .run();
-    for (const socket of this.#context.getWebSockets()) {
-      socket.close(1008, "Reauthentication required");
+    const current = this.read();
+    const sockets = this.#context.getWebSockets();
+    const resumed = new Set<OutputSocket>();
+    // Hibernation preserves native sockets and their server-written attachments.
+    // Keep only an already-connected, unexpired grant with a matching OPEN socket.
+    if (current?.status === "connected" && Date.now() < current.expiresAt) {
+      for (const socket of sockets) {
+        const attachment: unknown = socket.deserializeAttachment();
+        if (
+          socket.readyState === WebSocket.OPEN &&
+          Schema.is(Generation)(attachment) &&
+          attachment.generation === current.generation
+        ) {
+          resumed.add(socket);
+        }
+      }
+    }
+    if (resumed.size === 0) {
+      this.#database
+        .update(privateOutputGeneration)
+        .set({ status: "invalidated" })
+        .run();
+    }
+    for (const socket of sockets) {
+      if (!resumed.has(socket)) {
+        socket.close(1008, "Reauthentication required");
+      }
     }
   }
   async begin(
@@ -147,6 +182,9 @@ export class PrivateOutputSocket {
   }
   send(generation: string, payload: string): void {
     for (const socket of this.#context.getWebSockets()) {
+      if (socket.readyState !== WebSocket.OPEN) {
+        continue;
+      }
       const attached = Schema.decodeUnknownSync(Generation)(
         socket.deserializeAttachment()
       );

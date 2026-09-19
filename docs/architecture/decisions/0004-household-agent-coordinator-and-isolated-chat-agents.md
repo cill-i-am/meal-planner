@@ -290,3 +290,167 @@ through that generation: the original physical final-send fence is unchanged.
 No cancellation, lease expiry, automatic rebase, or callback worker is added.
 Synthetic local proposal fixtures provide this slice's runtime evidence; real
 adaptive proposal production remains Work Item 03.
+
+
+## Structured private discovery continuity — 2026-09-09
+
+[Work Item 03](../../delivery/stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
+added one model call per admitted private assistant attempt. Its historical v15
+candidate returned one `continuity` array of complete note updates, existing
+profile-card proposals, then an explicit Ask/Review/Stop reply. V12 replaced the
+earlier free-text rolling summary with structured additions/revisions. V15 removes
+that model operation choice after a real turn rejected a complete retained note
+because it appeared under additions. The superseded output object is rejected,
+not normalized. `private-discovery-policy-v3` identifies this model-output
+contract change; it grants no new household authority. These changes do not
+establish live-model acceptance.
+
+The private child owns a bounded snapshot array of notes with stable keys,
+subjects, details and states (`circumstance`, `unresolved`, `answered`,
+`no_information`, `declined`, `withdrawn`). Output `continuity` is an update list;
+input continuity and stored continuity remain complete snapshots. A new key adds
+a complete note; a retained key replaces the complete note in its existing
+position. New keys append in update order, and omitted notes survive unchanged.
+A small feature-local reducer rejects duplicate keys within one update list,
+more than six updates, more than twelve retained notes, or a snapshot exceeding
+4,096 UTF-8 bytes. The output schema also enforces the six-update limit and strict
+complete fields. Keys, subjects and details retain their 32, 120 and 200 character
+bounds. There is no generic memory service, automatic eviction, hidden repair,
+or separate summarizer call.
+
+A mistyped new key now creates a note instead of failing as an unknown revision;
+it may duplicate a topic and consume capacity. Semantic key identity remains the
+model's responsibility. A wrong existing key could already replace the wrong
+note under the prior revision contract. Neither shape establishes that a note is
+truthful or a question relevant.
+
+Ask must identify an unresolved retained or updated note. Its model-authored
+text and question are joined with two newlines and must fit 2,000 characters.
+Review requires no unresolved notes and the bounded `no_relevant_open_topic`
+reason. Stop uses `participant_requested_stop`; it ends neither the native session
+nor any pending confirmation. The participant's existing explicit completion
+command remains necessary. Determining whether a topic is relevant, a disclosure
+is supported, or a stop was requested remains a semantic evaluation obligation.
+
+All continuation and card validation precedes generated writes inside the
+existing generation/session-version-guarded transaction. The child stores the
+rendered reply, reviewed card operations, successful turn and resulting continuity
+snapshot atomically. The unchanged snapshot schema and strict JSON codec read and
+write the existing new-in-WI03
+`private_assistant_turns.summary` TEXT column. No physical migration, legacy parser,
+backfill or change to closed trial databases is introduced. Restart reloads that
+snapshot; a new private session has none of the prior session's notes.
+
+Continuity remains noncanonical and participant-private. No notes, reply decisions
+or unfinished cards enter public metadata, general RPC returns, shared agent state
+or logs. The model still cannot supply confirmation authority or mutate household
+facts; explicit card confirmation remains the only route to the Household writer.
+The wire protocol and browser rendering continue to receive ordinary private
+messages and existing card/status frames. Provider request/response bounds,
+spend/dispatch guards and physical-send revocation fences remain in force.
+
+
+## Application-owned private discovery — 2026-09-13
+
+The [v25/policy-v6 contract](../../delivery/stages/02-private-discovery/03-deterministic-discovery-contract.md)
+supersedes model-owned generic question states and output in the preceding
+historical section. The application creates required food-restriction and
+ordinary-meal topics and owns question wording, ordering and review readiness.
+One forced `submitDiscoveryTurn` function carries closed evidence-backed intents.
+Required nullable topic keys preserve state on null; missing keys reject.
+The native child decodes again before its atomic guarded settlement. Strict tool
+shape and excerpt provenance do not establish semantic truth or provider reliability.
+
+The participant explicitly selects InitialDiscovery or ProfileEdit when reserving
+a session. An ordered private metadata table stores that scope atomically with
+the directory reservation and receipt, then the authenticated admission copies
+it into a new child's immutable scope metadata. Identity bindings are unchanged.
+No historical scope is inferred or backfilled. Existing unscoped history remains
+readable; generation fails before provider dispatch and fresh scoped sessions use
+the new contract. An unreadable retained browser request requires explicit exact-record
+clearing, with no automatic replay or claim about its previous outcome.
+
+Context notes contain no questions. A bounded typed profile-clarification slot
+uses application templates and permission-checked transitions; missing saved
+targets are explicitly retired without retargeting or invented answers. Required
+coverage, clarification and typed fallback state share the existing bounded
+private snapshot, remain noncanonical and survive restart. The model supplies
+semantic profile changes, while application code derives safety versus ordinary
+proposal paths and binds revisions from the generation snapshot. Existing explicit
+card confirmation remains the only route to canonical household mutation.
+
+## Base Agent and TanStack chat — accepted 2026-09-13
+
+The selected replacement uses Cloudflare's base `Agent` for the durable instance,
+SQLite and producer lifetime, and TanStack AI for model/tool orchestration, the
+chat event protocol, persistence interfaces and React chat state. This supersedes
+the plain Durable Object and custom chat transport choice above. It does not use
+`AIChatAgent` or combine its Vercel protocol with TanStack. Implementation and
+runtime acceptance are tracked in the existing adaptive-discovery work item;
+this decision alone is not evidence that the replacement has passed.
+
+Application Effect handlers continue to own private-session authorization,
+admission and idempotency, required topic coverage, evidence and state-transition
+validation, and explicit confirmation before canonical household changes. One
+canonical conversation and one attempt record live in the private instance's
+SQLite database. A run event log serves transport replay; it is not another
+conversation history. Reasoning is excluded from both rendered and retained
+conversation messages. The private WorkerEntrypoint remains a closed capability
+boundary; inheriting Agent does not expose its state, SQL, RPC or protocol routes
+to the API worker or public HTTP.
+
+A complete, schema- and state-valid `submitDiscoveryTurn` proposal may be accepted
+when the provider's final stream markers are unavailable. Application acceptance
+does not assert that the provider completed normally. Incomplete or invalid data,
+reported errors and cancellation still prevent acceptance. Missing final usage
+remains unknown and retains the conservative budget reservation; interim counters
+must not reduce that reservation. Restoring raw SSE terminal markers does not
+justify a replacement parser or chat engine.
+
+Reconnect replays the existing run without new inference. Network disconnect
+detaches delivery; explicit Stop, revoked authority and expiry terminate the
+producer. A fresh authenticated connection for the same binding may join an
+active run, but cannot revive a cancelled or revoked attempt. Every private
+delivery checks its current authority immediately before writing. The published
+SDK retry policy below applies; the application adds no retry or model fallback.
+
+Ordinary Durable Object hibernation may preserve an OPEN native WebSocket. Waking
+that instance preserves its existing connected generation only when the socket's
+server-written attachment matches and the durable grant is still unexpired.
+Waking never promotes a pending, unauthorized or revoked generation. Missing,
+closed or mismatched sockets require fresh admission. This distinction prevents
+the constructor from revoking a valid idle interview, while canonical revocation
+and every physical delivery remain fenced by the durable generation record.
+
+
+## Published TanStack packages — accepted 2026-09-19
+
+Use unmodified `@tanstack/ai` 0.54.0, `@tanstack/ai-cloudflare` 0.1.1 and
+`@tanstack/ai-react` 0.24.1 through their supported APIs. The three local patches,
+custom binding wrapper and diagnostic opt-outs are removed. Normal SDK diagnostics
+and the React devtools bridge are accepted. Do not replace these patches with
+vendored SDK code, another transport or a compatibility layer.
+
+The application retains its exact Effect tool schema through the adapter's
+published request-mapping hook, and excludes reasoning from conversation content
+through its reasoning hook. Authorization, required-topic coverage, atomic
+acceptance and explicit household fact confirmation remain application-owned.
+
+The published OpenAI client defaults to two transient-error retries: at most three
+Workers AI binding attempts per admitted application turn. Supported gateway
+options limit each binding attempt to one gateway attempt, disable caching and
+request no gateway payload logging. The SDK retains its normal request timeout;
+the application's configured deadline bounds local settlement and acceptance.
+The shared application signal settles failure and releases resources without
+waiting for the SDK iterator. The binding adapter does not forward cancellation
+to `Ai.run`, so stopping a turn does not prove remote work stopped. The shared
+cancellation signal and final synchronous acceptance guard prevent late results
+from committing. An empty SDK stream fails the application contract before
+persistence can report success.
+
+Reserve the full cost of three possible provider attempts before admitting live
+evaluation. Unknown streamed usage retains that reservation. The
+[evaluation accounting policy](../../../evals/private-discovery/provider-accounting-policy.json)
+records the retry multiplier and current conservative Kimi bound. Earlier receipts
+and single-attempt harness evidence remain historical; they cannot establish
+live compatibility or bound a new run using the published defaults.

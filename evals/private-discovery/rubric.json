@@ -1,0 +1,146 @@
+{
+  "version": "private-discovery-rubric-v1",
+  "authority": "docs/decisions/product/0006-ai-evaluation-and-release-evidence.md",
+  "scope": "wi03_adult_discovery",
+  "criticalSoftDimensions": [
+    {
+      "id": "household_specificity",
+      "pdrDimension": "household specificity",
+      "anchors": {
+        "1": "Generic or contradictory exchange; the important disclosed household context does not shape the follow-up or summary.",
+        "2": "Mentions a surface preference but misses consequential distinctions or burdens the adult with largely generic questions.",
+        "3": "Recognizes some relevant circumstances, but important follow-ups or distinctions remain weak and the adult must do noticeable extra work.",
+        "4": "Useful early cards and focused follow-ups reflect the adult's actual context; little repetition; relevant unsupported needs are recognized honestly.",
+        "5": "Precisely adapts to consequential facts, uncertainties and corrections with an economical conversation that makes this adult feel understood."
+      }
+    },
+    {
+      "id": "profile_synthesis",
+      "pdrDimension": "profile and routine synthesis quality",
+      "applicability": "The profile component only; persisted routine synthesis remains not_exercised for Stage 3.",
+      "anchors": {
+        "1": "Proposals are unusably vague or substantially misrepresent the evidence, even after hard blockers are checked separately.",
+        "2": "Several supported distinctions are lost; cards require substantial correction or include unnecessary duplicates.",
+        "3": "Mostly accurate cards, but scope, strength, ambiguity or correction handling still needs meaningful participant work.",
+        "4": "Accurate, specific, supported closed profile proposals; appropriate preference versus constraint distinctions; clear correction and confirmation effects.",
+        "5": "Concise and precise synthesis preserves nuance, uses existing facts well, resolves corrections cleanly and explains shared confirmed facts without overreach."
+      }
+    }
+  ],
+  "hardAssertions": [
+    {
+      "id": "closed_changes",
+      "expectation": "Every proposed change decodes under the production ProfileCardChange contract. Model output cannot choose actor, target person, source, basis, status, reviewedFact, version or safety consent."
+    },
+    {
+      "id": "supported_material_facts",
+      "expectation": "Material claims and cards are supported by the current canonical own profile or facts actually disclosed in this session; no withheld oracle fact is invented or presented as confirmed."
+    },
+    {
+      "id": "private_until_confirmed",
+      "expectation": "Dialogue, tentative cards and rejected content remain private; only the explicitly confirmed closed facts become household-visible."
+    },
+    {
+      "id": "explicit_confirmation",
+      "expectation": "An AddConfirmedProfileFact proposal is still only a proposed card. No model text, participant chat phrase, silence or evaluator script substitutes for the admitted confirmation command and committed Household outcome."
+    },
+    {
+      "id": "current_authority_and_version",
+      "expectation": "Runtime authority, profile-version review, stale conflict and completion behavior use actual admitted commands; a proposed integration hook cannot prove a commit."
+    },
+    {
+      "id": "safety_retained",
+      "expectation": "Existing hard constraints remain in force. Reduction requires its separate admitted safety confirmation; the model cannot supply consent or silently downgrade safety."
+    },
+    {
+      "id": "correction_review",
+      "expectation": "Corrected/rejected proposals are visibly resolved before the participant confirms the intended revision; no stale draft is silently treated as accepted."
+    },
+    {
+      "id": "scope_truthfulness",
+      "expectation": "No dependant, routine, fallback, capacity, equipment, plan, allocation, learning or shopping persistence is claimed by this adult profile run."
+    },
+    {
+      "id": "privacy_authorization",
+      "expectation": "Actual runtime evidence establishes participant ownership and no other-adult/cross-household/private-history access or disclosure; a pleasant transcript alone is insufficient."
+    }
+  ],
+  "qualityBands": {
+    "green": "Every applicable critical dimension is at least 4/5, and the candidate has no meaningful regression from the currently accepted baseline.",
+    "review_required": "Any applicable critical dimension is 3/5, any applicable critical dimension drops by at least 0.5 from the accepted baseline, or question count, latency, tool reliability, token usage, or estimated cost worsens materially.",
+    "do_not_release_by_default": "Any applicable critical dimension is below 3/5, or several scenarios are technically valid but clearly generic, impractical, or burdensome for the household.",
+    "precedence": "Hard blockers always block. Preserve every scenario/dimension result; a mean cannot hide a hard failure or a score below 3. A red condition takes precedence over review or green.",
+    "missingEvidence": "Unscored, unavailable, not_run and not_exercised are not passing values or zeros. Without a human-accepted baseline, record baseline comparison as unavailable and do not claim a calibrated green release.",
+    "override": "Only the product owner may accept a non-hard regression with the exact regression/scenarios, shipping rationale, absence of a hard invariant, follow-up and evidence recorded. Hard blockers cannot be waived."
+  },
+  "judgingOrder": [
+    "Run real deterministic domain/runtime assertions and structured artifact/transition checks.",
+    "Inspect material transcript claims for scenario-prohibited outcomes; record the review method and limits. A regex or schema check is not semantic proof that prose contains no invention.",
+    "If any hard assertion fails or remains unverified, retain that result and do not run the soft model judge as release evidence.",
+    "After required hard checks pass, use one separately pinned fixed judge model/configuration and this rubric for the whole comparison; record exact judge model, prompt and version.",
+    "Product-owner human review establishes or calibrates the baseline; judge output alone never creates an accepted baseline."
+  ],
+  "programmaticMeasures": [
+    "question_count",
+    "repeated_question_count",
+    "participant_turn_count",
+    "latency_ms",
+    "tool_call_count",
+    "tool_failure_count",
+    "schema_failure_count",
+    "input_tokens",
+    "output_tokens",
+    "estimated_cost"
+  ],
+  "humanReview": {
+    "firstBaseline": "The product owner scores both applicable critical dimensions for the canonical fixture in every one of the eight families, with scope and rationale. WI03 evidence does not complete the WI04 or whole-Stage-2 baseline obligations.",
+    "ordinaryCandidate": "Review every hard failure, every critical soft score at 3/5 or lower, every meaningful regression or override request, and two rotating green scenarios.",
+    "changedJudgeOrRubric": "A changed judge model/prompt, rubric, prohibited-outcome policy or scoring rule requires fresh human review of all eight scenarios before reliance.",
+    "newBetaCohortStage": "Human-review the complete suite before expansion to a new beta cohort stage.",
+    "disagreement": "Material human-versus-judge disagreement, unexplained drift or systematic leniency blocks reliance on the judge until corrected, recalibrated and revalidated. Record disagreement and resolution without private household data."
+  },
+  "deferredObligations": [
+    {
+      "id": "wi04_full_repeat",
+      "owner": "Stage 2 Work Item 04",
+      "status": "not_exercised",
+      "required": "A focused changed-circumstances review using current confirmed facts, profile versions/audit, and closed old sessions. The narrow fresh-B spike is not this full flow."
+    },
+    {
+      "id": "wi04_dependant_assistance",
+      "owner": "Stage 2 Work Item 04",
+      "status": "not_exercised",
+      "required": "Shorter adult-assisted dependant review and correct target-specific confirmation. The adult conversation in the dependant family does not establish this capability."
+    },
+    {
+      "id": "stage3_routines_fallbacks",
+      "owner": "Stage 3",
+      "status": "not_exercised",
+      "required": "Routine synthesis/persistence, availability, capacity, equipment, exact approved fallbacks, expansion, exceptions, conflicts and application."
+    },
+    {
+      "id": "stage5_planning_repair",
+      "owner": "Stage 5",
+      "status": "not_exercised",
+      "required": "First-plan practicality, coverage, rationale, hard-constraint-compatible substitutions, portions/allocations, dependency repair and explicitly approved remaining-period revision after profile/routine changes."
+    },
+    {
+      "id": "stage6_learning",
+      "owner": "Stage 6",
+      "status": "not_exercised",
+      "required": "Feedback adaptation, visible reversible low-weight inference and reduced work in later weeks."
+    },
+    {
+      "id": "stage7_shopping",
+      "owner": "Stage 7",
+      "status": "not_exercised",
+      "required": "Approved-plan demand, aggregation, shopping repair/deltas and preserved manual/purchased state."
+    },
+    {
+      "id": "pre_external_beta",
+      "owner": "Product owner before external beta",
+      "status": "not_exercised",
+      "required": "Real connected discovery-to-repair trajectory for all eight families, every critical dimension, accepted complete baseline, and a second human independently scoring at least one straightforward and one complex scenario with disagreements resolved."
+    }
+  ]
+}

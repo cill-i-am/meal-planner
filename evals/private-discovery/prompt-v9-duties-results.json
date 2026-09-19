@@ -1,0 +1,399 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-09",
+  "label": "Prompt v9: wrong proposed addition for an explicit replacement request",
+  "phaseId": "family-v9-duties-v1",
+  "status": "stopped_semantic_hard_failure",
+  "source": {
+    "head": "c187a4af47c5af5d8e86d762af39c28317b9f406",
+    "tree": "e00d37c3d5f8a5d647373e99fed1056f27d7bcd3",
+    "freezeSha256": "034f562bd8e3cc21d555db5c4a43aa7ae53639ceb1ae8f008ce2481c76971003",
+    "files": {
+      "scenarioPack": {
+        "path": "evals/private-discovery/scenarios.json",
+        "sha256": "c9ea216e30dac5499410e61e29a6824d270ca323f8329c741d35b5b5dab8cf00"
+      },
+      "rubric": {
+        "path": "evals/private-discovery/rubric.json",
+        "sha256": "ab5882d124d1c231ae102e173c0d420482b6d17d8412acc3da5458ae410b8588"
+      },
+      "judgePrompt": {
+        "path": "evals/private-discovery/judge.md",
+        "sha256": "b1f10ab5e4f4124bee09895291bb2a557bbf50053a5592c181bae35eb4b86a48"
+      }
+    }
+  },
+  "versions": {
+    "provider": "Cloudflare Workers AI",
+    "model": "@cf/openai/gpt-oss-120b",
+    "promptVersion": "private-discovery-prompt-v9",
+    "policyVersion": "private-discovery-policy-v1",
+    "toolVersion": "profile-card-change-v1",
+    "driverPolicyVersion": "private-discovery-driver-v1",
+    "driverMode": "assisted_root_immediate_append_ack_generate_pipeline",
+    "candidateConfiguration": {
+      "maxOutputTokens": 4096,
+      "temperature": 0,
+      "stream": false,
+      "adapterDeadlineMs": 120000,
+      "maximumProviderAttempts": 1,
+      "gatewayPayloadCollection": false,
+      "gatewayCaching": false
+    },
+    "canonicalOutputSchemaSha256": "7baef48657d13389aac5af6ae5db2e98199ee6ec04d734da4a87d47dd147df8a",
+    "providerSchema": "Derived separately for each request from independently validated and identically trimmed native cards. Per-call hashes below; no global schema hash is assumed.",
+    "judge": {
+      "model": "@cf/openai/gpt-oss-120b",
+      "maxOutputTokens": 2048,
+      "promptVersion": "private-discovery-judge-v1",
+      "promptSha256": "b1f10ab5e4f4124bee09895291bb2a557bbf50053a5592c181bae35eb4b86a48",
+      "calls": 0,
+      "status": "not_run"
+    }
+  },
+  "coverage": {
+    "canonicalFamilies": 8,
+    "familiesStarted": 1,
+    "fixtureId": "dependency_and_repair",
+    "familiesPassed": 0,
+    "familiesNotRun": 7,
+    "caseComplete": false,
+    "requiredDiscoveriesNotReached": ["repair.dependency", "repair.safety"],
+    "actualReplacementCardChallengeReached": false
+  },
+  "calls": [
+    {
+      "ordinal": 1,
+      "interaction": "opening",
+      "fixtureId": "dependency_and_repair",
+      "scenarioPhase": "A",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-09T01:32:47.140Z",
+        "dispatchRecorded": "2026-09-09T01:32:47.294Z",
+        "nativeCompletionRecorded": "2026-09-09T01:32:57.396Z"
+      },
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "transportFailure": false,
+        "envelopeJsonAccepted": true,
+        "finishReason": "stop",
+        "choiceCount": 1
+      },
+      "native": {
+        "known": true,
+        "status": "succeeded",
+        "failure": null,
+        "assistantMessageAdmitted": true,
+        "summaryPersisted": true
+      },
+      "semanticHardFailureObserved": false,
+      "semanticHardFailureAssertion": null,
+      "usage": {
+        "promptTokens": 2813,
+        "completionTokens": 421,
+        "totalTokens": 3234,
+        "cachedInputTokens": null,
+        "reasoningTokens": null
+      },
+      "estimatedCostUsd": "0.00130030",
+      "invoiceCostUsd": null,
+      "reservationMicroUsd": 47872,
+      "latencyMs": {
+        "ticketToNativeCompletion": 10256,
+        "dispatchToNativeCompletion": 10102,
+        "ticketToDispatch": 154,
+        "providerOnly": null,
+        "timeToFirstToken": null
+      },
+      "schemaObservation": {
+        "nativeContextMatched": true,
+        "bothRequestSchemaFieldsMatched": true,
+        "nativeContextCardCount": 0,
+        "eligibleProposedCardCount": 0,
+        "revisionOptionAvailable": false,
+        "proposalOperations": []
+      },
+      "provenance": {
+        "model": "@cf/openai/gpt-oss-120b",
+        "policyVersion": "private-discovery-policy-v1",
+        "promptVersion": "private-discovery-prompt-v9",
+        "provider": "cloudflare-workers-ai",
+        "toolVersion": "profile-card-change-v1"
+      },
+      "hashes": {
+        "requestBodySha256": "15ec49e34a4bb53b6295f2c9e0f3ab029d4787c3bf71c4f171f0ea6678f88671",
+        "responseBytesSha256": "7b5f06e6192ca9b68b374ea72a70d6abb5ffa07d7c42fb73f82c0e26e23bcf7d",
+        "providerOutputSchemaSha256": "8609665e11ef385e4fed0da9fab9e6a4a71c5114b829140fdfb7543f09042cdb",
+        "systemInstructionsAndSchemaSha256": "6e0608c67207e53846b2c6e352882c74d6a703153c27d7df617743e1ffe68279",
+        "persistedSummarySha256": "ea65929807bc1eaafcbebefe546c6e6c193143b2c66804721bb7006ee2bd587a"
+      },
+      "receiptSha256": {
+        "ticket.json": "0b924d9fdf6d4fae415da9882673a626e9c951e94735f17f12d76f0f04173e0f",
+        "dispatch.json": "d402089909a2431553135261f1eb93a767a4a6a90c38b37b2820f4163c49b415",
+        "completion.json": "150bf57a17061384cef7f49c4d3b92d0027e5bbfb40fc68449557062dd001d3c",
+        "response.json": "937f2db74e190c78f445ce8189dec218393252555f751d0644973ef92ad304d1",
+        "assistant-content.json": "87985ea907c54b8d5b394fa2e636a7efe2c5a726deeb2194a3fb0ab87a21b105",
+        "native-before.json": "229e2db3196d417eaaa407f70e2c0b2ee45437a539731f09090b0b745fd85365",
+        "request.json": "abe80016eede0c92ca134ae4646e4aad3f12091ab638a11656e3b55b076c5eb4"
+      }
+    },
+    {
+      "ordinal": 2,
+      "interaction": "explicit replacement request",
+      "fixtureId": "dependency_and_repair",
+      "scenarioPhase": "A",
+      "timestampsUtc": {
+        "ticketCreated": "2026-09-09T01:35:40.460Z",
+        "dispatchRecorded": "2026-09-09T01:35:40.586Z",
+        "nativeCompletionRecorded": "2026-09-09T01:35:52.131Z"
+      },
+      "provider": {
+        "httpStatus": 200,
+        "responseComplete": true,
+        "transportFailure": false,
+        "envelopeJsonAccepted": true,
+        "finishReason": "stop",
+        "choiceCount": 1
+      },
+      "native": {
+        "known": true,
+        "status": "succeeded",
+        "failure": null,
+        "assistantMessageAdmitted": true,
+        "summaryPersisted": true
+      },
+      "semanticHardFailureObserved": true,
+      "semanticHardFailureAssertion": "family_1",
+      "usage": {
+        "promptTokens": 3011,
+        "completionTokens": 986,
+        "totalTokens": 3997,
+        "cachedInputTokens": null,
+        "reasoningTokens": null
+      },
+      "estimatedCostUsd": "0.00179335",
+      "invoiceCostUsd": null,
+      "reservationMicroUsd": 47872,
+      "latencyMs": {
+        "ticketToNativeCompletion": 11671,
+        "dispatchToNativeCompletion": 11545,
+        "ticketToDispatch": 126,
+        "providerOnly": null,
+        "timeToFirstToken": null
+      },
+      "schemaObservation": {
+        "nativeContextMatched": true,
+        "bothRequestSchemaFieldsMatched": true,
+        "nativeContextCardCount": 0,
+        "eligibleProposedCardCount": 0,
+        "revisionOptionAvailable": false,
+        "proposalOperations": [
+          {
+            "operation": "ProposeProfileCard",
+            "change": "AddConfirmedProfileFact"
+          }
+        ]
+      },
+      "provenance": {
+        "model": "@cf/openai/gpt-oss-120b",
+        "policyVersion": "private-discovery-policy-v1",
+        "promptVersion": "private-discovery-prompt-v9",
+        "provider": "cloudflare-workers-ai",
+        "toolVersion": "profile-card-change-v1"
+      },
+      "hashes": {
+        "requestBodySha256": "1063bb1f78ce9fe2d11f232631221fcf464fcaa2bacdc0186635c857c5d94670",
+        "responseBytesSha256": "33082b9eef1a182349bf95a582c1d5167900da5e20d78e6da91d4a79b1220898",
+        "providerOutputSchemaSha256": "8609665e11ef385e4fed0da9fab9e6a4a71c5114b829140fdfb7543f09042cdb",
+        "systemInstructionsAndSchemaSha256": "6e0608c67207e53846b2c6e352882c74d6a703153c27d7df617743e1ffe68279",
+        "persistedSummarySha256": "6bcd344bf252cfcda3dd10d63a0dff99688fde215ef33f5edbe1d6c8087e1ef3"
+      },
+      "receiptSha256": {
+        "ticket.json": "9191c914684ff0137252a395affc4ad8d444a1d53a73ffeafa211c5ac5b31a61",
+        "dispatch.json": "6d8e86c25f8abcac681185a23829f63e1c260cadaff87f8fb1a65a5f25366f31",
+        "completion.json": "5662622c0c9ae514aa9475cd3be3f7fb6e5c140030a5c387f9e381d5af8a6d38",
+        "response.json": "f7a71744725e3bc1e07d5f0f030c2749290db5c72e9f53bd23f913f1575c5a2d",
+        "assistant-content.json": "0592e308df3054b2f1c7ab744a92dc1b6da6f282426a6cd1acf4cab06f2b21da",
+        "native-before.json": "6a329722acb056e8137b789ff4c3cf0dbc4e468f12d26616fe8f160367f2b585",
+        "request.json": "71b15559f00f9267155146e56e9a8dde3f9aa8f56c5c5d92193f2baae6f84b1e"
+      }
+    }
+  ],
+  "aggregate": {
+    "actualCandidateCalls": 2,
+    "nativeSuccesses": 2,
+    "nativeFailures": 0,
+    "unknownNativeOutcomes": 0,
+    "judgeCalls": 0,
+    "participantIntents": 2,
+    "admittedAssistantMessages": 2,
+    "usage": {
+      "knownUsageCalls": 2,
+      "unknownUsageCalls": 0,
+      "promptTokens": 5824,
+      "completionTokens": 1407,
+      "totalTokens": 7231,
+      "cachedInputTokens": null,
+      "reasoningTokens": null
+    },
+    "estimatedCostUsd": "0.00309365",
+    "invoiceCostUsd": null,
+    "phaseReservationMicroUsd": 95744,
+    "ticketToNativeCompletionMs": {
+      "count": 2,
+      "sum": 21927,
+      "mean": 10963.5,
+      "median": 10963.5,
+      "min": 10256,
+      "max": 11671
+    },
+    "dispatchToNativeCompletionMs": {
+      "count": 2,
+      "sum": 21647,
+      "mean": 10823.5,
+      "median": 10823.5,
+      "min": 10102,
+      "max": 11545
+    },
+    "providerOnlyLatencyMs": null,
+    "timeToFirstTokenMs": null,
+    "questionCount": null,
+    "repeatedQuestionCount": null,
+    "outputContractFailures": 0,
+    "observedSemanticHardFailures": 1
+  },
+  "semanticFailure": {
+    "assertion": "family_1",
+    "callOrdinal": 2,
+    "stage": "post_generation_semantic_review_of_actual_proposed_effect",
+    "finding": "The participant explicitly requested replacement of an existing bean-chilli preference with lentil soup. The actual ProposeProfileCard contained AddConfirmedProfileFact, with no target fact ID and reviewedFact null. This draft can add a new preference but cannot perform the requested replacement.",
+    "visibleReplyFinding": "The reply described adding lentil soup to replace the old preference, but the actual card encoded only addition.",
+    "expectedChange": "ReplaceOrdinaryProfileFact referencing the actual existing canonical fact",
+    "actualChange": "AddConfirmedProfileFact",
+    "proposalHasTargetFactId": false,
+    "reviewedFact": null,
+    "failedCallNativeOutcome": "succeeded",
+    "failedCallUsage": {
+      "promptTokens": 3011,
+      "completionTokens": 986,
+      "totalTokens": 3997,
+      "cachedInputTokens": null,
+      "reasoningTokens": null
+    },
+    "failedCallEstimatedCostUsd": "0.00179335",
+    "nativeConfirmationAuthorityPreserved": true,
+    "wholeCanonicalProfileUnchanged": true,
+    "duplicateFactCommitted": false,
+    "independentlyReviewed": true,
+    "automaticRetry": false
+  },
+  "otherObservations": {
+    "opening": {
+      "classification": "quality_concern_not_proven_hard_failure",
+      "finding": "The opening ambiguously combined confirmed profile preference and disclosed batch-cooking context. Its summary repeated known confirmed state but remained grounded; no saved routine was explicitly claimed."
+    },
+    "summaryAtStop": {
+      "falseCompletedReplacementObserved": false,
+      "finding": "The summary described the requested replacement and an open question, not a completed replacement."
+    },
+    "qualityScore": null,
+    "scope": "These observations do not establish a passing family, a full prompt improvement or a calibrated quality score."
+  },
+  "schemaFinding": {
+    "requestChecksPassed": 2,
+    "contextsWithNoCards": 2,
+    "providerSchemaRestrictedToPropose": true,
+    "canonicalOutputShapeAccepted": true,
+    "liveRevisionExecuted": false,
+    "scope": "The output shape and native request checks succeeded; the chosen proposed effect was semantically wrong."
+  },
+  "canonicalState": {
+    "profileVersionBefore": 1,
+    "profileVersionAfter": 1,
+    "wholeCanonicalProfileUnchanged": true,
+    "confirmedFactCount": 1,
+    "cardsProduced": 1,
+    "cardStatusAtStop": "proposed",
+    "cardRevisionAtStop": 0,
+    "cardChangeAtStop": "AddConfirmedProfileFact",
+    "reviewedFactAtStop": null,
+    "confirmationCommandsIssued": 0,
+    "pendingConfirmations": 0,
+    "duplicateFactCommitted": false,
+    "sessionStatusAtFinalInspection": "open"
+  },
+  "measurementMethod": {
+    "inputUsdPerMillionTokens": "0.35",
+    "outputUsdPerMillionTokens": "0.75",
+    "cost": "Recorded prompt and completion tokens at frozen rates, including the semantically failed second call. Estimated cost is not an invoice.",
+    "ticketToNativeCompletionMs": "completion.at minus ticket.createdAt; includes admission, local dispatch, provider work and native completion handling.",
+    "dispatchToNativeCompletionMs": "completion.at minus dispatch.at; starts at local capture and includes provider work and native completion handling. It is not isolated provider latency.",
+    "usageSubtotals": "Cached-input and reasoning-token subtotals were not retained. Total tokens are prompt plus completion tokens.",
+    "unmeasured": "Provider-only latency, first-token time, question/repetition counts and model/human scores remain null."
+  },
+  "financialSnapshotAtClosure": {
+    "journalBytes": 11714,
+    "journalSha256": "c1fa9f6cedf8ea73056aba4e219d5e5731d317eeb4b5425beb5b8e8f3fbd34d7",
+    "callsReserved": 76,
+    "reservedMicroUsd": 3629056,
+    "higherCapCallsReserved": 70,
+    "judgeCallsReserved": 0,
+    "phaseReservationMicroUsd": 95744,
+    "existingAdditionalAuthorityMicroUsd": 20000000,
+    "authorityAnchorCallsReserved": 68,
+    "authorityAnchorReservedMicroUsd": 3246080,
+    "additionalCallsSinceAuthorityAnchor": 8,
+    "additionalConservativeReservedMicroUsd": 382976,
+    "meaning": "Historical conservative reservation counters at closure, separate from token estimates and invoice cost."
+  },
+  "closure": {
+    "closedAtUtc": "2026-09-09T01:39:43.500Z",
+    "graceful": true,
+    "runtimeDisposed": true,
+    "transportDisposed": true,
+    "gateDisposed": true,
+    "remoteSessionDisposed": true,
+    "participantLockAbsent": true,
+    "financialLockAbsent": true,
+    "actorCloseAcknowledgedAndJoined": true,
+    "runtimeJoinedExitZero": true,
+    "listenerClosed": true,
+    "providerRevocationVerified": false,
+    "scenarioComplete": false
+  },
+  "evaluation": {
+    "acceptedBaseline": false,
+    "acceptedBaselineId": null,
+    "allHardAssertionsPassed": false,
+    "modelScores": null,
+    "humanScores": null,
+    "judgeCalls": 0,
+    "qualityBand": "unscored",
+    "releaseDecision": "not_assessed"
+  },
+  "receiptSha256": {
+    "source-build-proof.json": "034f562bd8e3cc21d555db5c4a43aa7ae53639ceb1ae8f008ce2481c76971003",
+    "pipeline-native-proof.json": "e0c4664755a82805972e0fdfc62f5d1363024943f78687c39014bbd45c81cfff",
+    "reused-proof-provenance.json": "ae664eed642357d24d02ea3e0a0c803bdc6b906575d196c50991a178226a162f",
+    "run-state/root-phase-result.receipt.json": "f40e06b634661a08a531becc711e6c621d0b248df035f436b556954a70f48af8",
+    "run-state/root-semantic-observations.jsonl": "13484009e67f1c872044dab3e5d1af6ff35debd5ebe5b2774156ecedaae1b4dc",
+    "run-state/closed.json": "2a8327bf293c62fc71a7e31126f51a5ff99d68dd050f0fe18c265820ad72ff29",
+    "run-state/stopped.json": "1fa901bb365b867955c0cda0e2e1df99cb080efa715c2e1bb8c4b17c6e40ffaa",
+    "run-state/actor-run/commands.jsonl": "36255190e51c466b59c24f77847de10bd558140000761c6ddb930349f3da4117",
+    "run-state/actor-run/responses.jsonl": "ce8aa068bf14831fd2ab44e28585c99238204952915e1c5f306cb5b391f471ee",
+    "run-state/participant-admissions.jsonl": "d06e7c08f1efae468b60e061d3041a33500d0e2aad8140e6fc880d1b85fa6ddb",
+    "run-state/disclosures.jsonl": "daf9fde7e9fa8eb1270b090e35560c2fe69c39262082dbabb69631a01b5a52c7",
+    "terminalNativeInspection": "a6ea00894e57c6df280aeb1bc25c3148251e52ea250698b395a12b3373a3388a"
+  },
+  "privateReceiptIndexSha256": "3ab97b682fd061e59d06ef1b8933a65a95d91889a367147b601e313df2a45ac4",
+  "limitations": [
+    "Only the first family started; dependency/safety disclosures, the actual-replacement-card challenge and seven families were not reached.",
+    "Native success means the response was accepted by the native path, not that its proposed effect satisfied the participant request.",
+    "No confirmation, committed duplicate, live revision, completed family, judge score or accepted baseline occurred.",
+    "This two-call run does not establish a general fix for the prior summary failure or a statistically supported performance comparison.",
+    "No later prompt-version outcome is represented.",
+    "Graceful local closure does not establish provider-side revocation."
+  ],
+  "sanitization": "Allowlisted metadata, counts, paraphrased findings and hashes only; no transcript, reasoning text, private native object identifier or private receipt location."
+}

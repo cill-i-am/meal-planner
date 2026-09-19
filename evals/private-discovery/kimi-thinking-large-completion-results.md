@@ -1,0 +1,15 @@
+# Kimi thinking: larger allowance produced a valid standalone opening
+
+**One standalone opening passed JSON, source output-schema and continuity checks** with a **65,536-token** completion allowance. Its complete HTTP 200 response ended with `stop`, using **2,942 input / 5,537 completion tokens** in **133,577 ms** from dispatch through inspection. This was one provider attempt, with no retry or output repair.
+
+The captured system and context messages, embedded output schema and source validation were unchanged from the failed native opening. The only provider-request change was `max_completion_tokens`, from **4,096** to **65,536**. Local worker, forwarding and caller deadlines were raised to **900 / 905 / 920 seconds**, and the response-body limit to **2 MiB**. The actual captured request matched the prepared request. Both runs used source `aeb70ac2821ffde31f154db99fef299ff4402e83`, prompt `private-discovery-prompt-v19`, policy `private-discovery-policy-v3`, Kimi K2.6 thinking enabled, temperature **1**, top_p **0.95**, `json_object`, one choice and nonstreaming output.
+
+Root semantic inspection found a supported proposal for the adult's curry preference and an adult safety question with a matching unresolved continuity note. The dependant's fallback need stayed in private context, and the response did not claim that a confirmed profile save had occurred. The raw envelope included legacy `reasoning_content` metadata and no `reasoning` field; that metadata was ignored as final output and its text is excluded from this record.
+
+This diagnostic had **no household bindings, participant admissions, native card settlement, reopened session, tool execution, judge calls or human ratings**. No family completed or was accepted. It proves that this opening can complete with more tokens and time; it does not establish native multi-turn quality, a complete eight-family result or model acceptance. Earlier complete non-thinking failures remain unresolved.
+
+The full-input token estimate is **$0.0249429**; accounting for **2,880 cached input tokens** gives **$0.0226677** using the rates retained in the sealed result. Aggregate completion tokens are counted once. Actual billing is unknown. This call reserved **511,181 microUSD** within a **3,000,000-microUSD** diagnostic phase ceiling. The cumulative ledger closed at **134 calls / 12,523,679 microUSD**, below the 20,000,000-microUSD ceiling. Estimates and conservative reservations are not invoices.
+
+The runtime joined with exit 0, shutdown was graceful, and the process, listener and financial lock were absent. Provider-side revocation was not verified. The observed completion exceeded both the old token cap and the old 120-second application deadline; higher native limits are needed before this configuration can be evaluated across a full interview.
+
+Companion JSON: `kimi-thinking-large-completion-results.json`; SHA-256 `e89a669562d5fe825e4964a6f1afc17a23b78ddac685f11ab64f870e3e7823a1`. It retains the source, exact request and response hashes, and selected validation and closure receipts. Private origins are excluded.
