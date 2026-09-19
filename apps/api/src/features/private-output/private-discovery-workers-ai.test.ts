@@ -1,7 +1,5 @@
-import type * as NativeCloudflare from "@cloudflare/workers-types";
-import { chat, maxIterations } from "@tanstack/ai";
 import type { ChatMiddleware, ModelMessage, StreamChunk } from "@tanstack/ai";
-import { createCloudflareText } from "@tanstack/ai-cloudflare";
+import type { CloudflareBindingConfig } from "@tanstack/ai-cloudflare";
 import { Cause, Effect, Exit, Schema } from "effect";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
@@ -138,16 +136,18 @@ const response = (body = wire()) =>
     headers: { "content-type": "text/event-stream; charset=utf-8" },
   });
 interface CapturedOptions {
-  readonly extraHeaders: Readonly<Record<string, string>>;
   readonly gateway: {
     readonly collectLog: boolean;
     readonly id: string;
     readonly requestTimeoutMs: number;
+    readonly retries: { readonly maxAttempts: number };
     readonly skipCache: boolean;
   };
   readonly returnRawResponse: boolean;
-  readonly signal: AbortSignal;
 }
+const unsupportedBindingMethod = (): never => {
+  throw new Error("Unexpected Workers AI binding method");
+};
 const fixture = (
   respond: (options: CapturedOptions) => Promise<Response> = () =>
     Promise.resolve(response()),
@@ -163,8 +163,14 @@ const fixture = (
   const model = makePrivateDiscoveryModel({
     PRIVATE_DISCOVERY_CONFIG: JSON.stringify(configuration),
     PrivateDiscoveryAI: {
-      // SAFETY: This recording fake implements only the native raw-response overload used by the maintained adapter.
-      run: run as unknown as NativeCloudflare.Ai["run"],
+      aiGatewayLogId: null,
+      aiSearch: unsupportedBindingMethod,
+      autorag: unsupportedBindingMethod,
+      gateway: unsupportedBindingMethod,
+      models: unsupportedBindingMethod,
+      // SAFETY: The complete binding fixture records only the raw-response overload used by the published adapter.
+      run: run as unknown as CloudflareBindingConfig["binding"]["run"],
+      toMarkdown: unsupportedBindingMethod,
     },
   });
   const beforeDispatch = vi.fn();
@@ -289,15 +295,14 @@ describe("private discovery native TanStack provider", () => {
         top_p: 0.95,
       },
       {
-        extraHeaders: { "cf-aig-max-attempts": "1" },
         gateway: {
           collectLog: false,
           id: config.gatewayId,
           requestTimeoutMs: 900_000,
+          retries: { maxAttempts: 1 },
           skipCache: true,
         },
         returnRawResponse: true,
-        signal: expect.any(AbortSignal),
       },
     ]);
     expect(result).toMatchObject({ output, usage: unknownUsage });
@@ -472,76 +477,34 @@ describe("private discovery native TanStack provider", () => {
     expect(test.run).toHaveBeenCalledOnce();
   });
 
-  it("disables diagnostic transcript emission while ordinary SDK chats retain the opt-in default", async () => {
-    const eventClient = Reflect.get(
-      globalThis,
-      Symbol.for("tanstack.ai.devtools.eventClient")
-    );
-    expect(eventClient).toBeDefined();
-    const emitted = vi.spyOn(eventClient, "emit").mockImplementation(() => {});
-    try {
-      const ordinary = fixture();
-      await observe(
-        chat({
-          adapter: createCloudflareText(config.model, {
-            binding: {
-              // SAFETY: This fake implements the SDK's native raw-response overload only.
-              run: ordinary.run as unknown as NativeCloudflare.Ai["run"],
-            },
-            maxRetries: 0,
-          }),
-          agentLoopStrategy: maxIterations(1),
-          debug: false,
-          messages: canonicalMessages(),
-        })
-      );
-      expect(emitted).toHaveBeenCalled();
-      expect(JSON.stringify(emitted.mock.calls)).toContain(
-        canonicalMessages().at(-1)?.content
-      );
-      emitted.mockClear();
-      const privateChat = fixture();
-      privateChat.input.chat.middleware.push({
-        name: "synthetic-canonical-history-load",
-        onConfig: (_ctx, current) => ({ messages: current.messages }),
-      });
-      await observe(privateChat.model.stream(privateChat.input));
-      expect(privateChat.accept).toHaveBeenCalledOnce();
-      expect(emitted).not.toHaveBeenCalled();
-    } finally {
-      emitted.mockRestore();
-    }
-  });
-
-  it("rejects malformed provider JSON without logging the private event", async () => {
+  it("rejects malformed provider JSON before application acceptance", async () => {
     const body = `${prefix()}data: {"private_detail":"Synthetic log sentinel"\n\n`;
-    const ordinary = fixture(() => Promise.resolve(response(body)));
-    await observe(
-      chat({
-        adapter: createCloudflareText(config.model, {
-          binding: {
-            // SAFETY: This fake implements the SDK's native raw-response overload only.
-            run: ordinary.run as unknown as NativeCloudflare.Ai["run"],
-          },
-          maxRetries: 0,
-        }),
-        agentLoopStrategy: maxIterations(1),
-        debug: false,
-        messages: canonicalMessages(),
-      })
-    );
-    expect(JSON.stringify(providerLogs.mock.calls)).toContain(
-      "Synthetic log sentinel"
-    );
-    providerLogs.mockClear();
     const test = fixture(() => Promise.resolve(response(body)));
     const result = await observe(test.model.stream(test.input));
     expect(result.error).toBeInstanceOf(PrivateDiscoveryFailure);
     expectRejected(test);
-    expect(providerLogs).not.toHaveBeenCalled();
+    expect(test.run).toHaveBeenCalledOnce();
   });
 
-  it("reports HTTP 503 after one binding call without retry or fallback", async () => {
+  it("rejects an empty native stream before persistence completion", async () => {
+    const test = fixture(() =>
+      Promise.resolve(
+        Response.json({ choices: "Synthetic non-stream response" })
+      )
+    );
+    await observe(test.model.stream(test.input));
+    expectRejected(test);
+    expect(test.fail).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        reason: "invalid_output",
+        stage: "tool_call",
+      })
+    );
+    expect(test.dispose).toHaveBeenCalledOnce();
+    expect(test.run).toHaveBeenCalledOnce();
+  });
+
+  it("uses the published SDK default of three attempts for HTTP 503", async () => {
     const test = fixture(() =>
       Promise.resolve(
         new Response('{"error":{"message":"Synthetic unavailable"}}', {
@@ -555,7 +518,8 @@ describe("private discovery native TanStack provider", () => {
     );
     await observe(test.model.stream(test.input));
     expectRejected(test, "provider_unavailable");
-    expect(test.run).toHaveBeenCalledOnce();
+    expect(test.run).toHaveBeenCalledTimes(3);
+    expect(test.beforeDispatch).toHaveBeenCalledOnce();
   });
 
   it.each([
@@ -675,138 +639,70 @@ describe("private discovery native TanStack provider", () => {
     expect(test.beforeDispatch).not.toHaveBeenCalled();
   });
 
-  it("cancels a pending binding request without accepting or completing persistence", async () => {
-    const dispatched = Promise.withResolvers<CapturedOptions>();
-    const test = fixture((options) => {
-      dispatched.resolve(options);
+  it.each(["participant stop", "deadline"] as const)(
+    "rejects a binding response arriving after %s",
+    async (cause) => {
+      if (cause === "deadline") {
+        vi.useFakeTimers();
+      }
+      const dispatched = Promise.withResolvers<CapturedOptions>();
       const pending = Promise.withResolvers<Response>();
-      options.signal.addEventListener(
-        "abort",
-        () =>
-          pending.reject(
-            new DOMException("Synthetic cancellation", "AbortError")
-          ),
-        { once: true }
+      const test = fixture(
+        (options) => {
+          dispatched.resolve(options);
+          return pending.promise;
+        },
+        { ...config, timeoutMs: 1000 }
       );
-      return pending.promise;
-    });
-    const caller = new AbortController();
-    const running = observe(
-      test.model.stream({ ...test.input, abortController: caller })
-    );
-    const options = await dispatched.promise;
-    caller.abort();
-    await running;
-    expect(options.signal.aborted).toBe(true);
-    expectRejected(test, "outcome_unknown");
-    expect(test.run).toHaveBeenCalledOnce();
-  });
+      const running = observe(test.model.stream(test.input));
+      const options = await dispatched.promise;
+      // The published binding adapter does not forward the SDK request signal.
+      expect(options).not.toHaveProperty("signal");
+      if (cause === "deadline") {
+        await vi.advanceTimersByTimeAsync(1000);
+      } else {
+        test.input.abortController.abort();
+      }
+      expect(test.input.abortController.signal.aborted).toBe(true);
+      pending.resolve(response());
+      await running;
+      expectRejected(test, "outcome_unknown");
+      expect(test.run).toHaveBeenCalledOnce();
+      expect(test.dispose).toHaveBeenCalledOnce();
+    }
+  );
 
-  it("keeps caller cancellation authoritative after a valid tool prefix", async () => {
-    const reading = Promise.withResolvers<CapturedOptions>();
-    const test = fixture((options) =>
+  it("rejects a tool stream completed after participant cancellation", async () => {
+    const reading =
+      Promise.withResolvers<ReadableStreamDefaultController<Uint8Array>>();
+    let sentPrefix = false;
+    const test = fixture(() =>
       Promise.resolve(
         new Response(
-          new ReadableStream({
-            pull() {
-              reading.resolve(options);
-            },
-            start(controller) {
-              options.signal.addEventListener(
-                "abort",
-                () =>
-                  controller.error(
-                    new DOMException(
-                      "Synthetic native body cancellation",
-                      "AbortError"
-                    )
-                  ),
-                { once: true }
-              );
-              controller.enqueue(new TextEncoder().encode(prefix()));
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              if (sentPrefix) {
+                reading.resolve(controller);
+              } else {
+                sentPrefix = true;
+                controller.enqueue(new TextEncoder().encode(prefix()));
+              }
             },
           }),
           { headers: { "content-type": "text/event-stream" } }
         )
       )
     );
-    const caller = new AbortController();
-    const running = observe(
-      test.model.stream({ ...test.input, abortController: caller })
-    );
-    const options = await reading.promise;
-    caller.abort();
-    await running;
-    expect(options.signal.aborted).toBe(true);
-    expectRejected(test, "outcome_unknown");
-    expect(test.run).toHaveBeenCalledOnce();
-  });
-
-  it.each(["participant stop", "deadline"] as const)(
-    "cancels the original stalled body after %s even when the body ignores its signal",
-    async (cause) => {
-      if (cause === "deadline") {
-        vi.useFakeTimers();
-      }
-      const reading = Promise.withResolvers<CapturedOptions>();
-      const cancel = vi.fn();
-      let sentPrefix = false;
-      const test = fixture(
-        (options) =>
-          Promise.resolve(
-            new Response(
-              new ReadableStream(
-                {
-                  cancel,
-                  pull(controller) {
-                    if (sentPrefix) {
-                      reading.resolve(options);
-                    } else {
-                      sentPrefix = true;
-                      controller.enqueue(new TextEncoder().encode(prefix()));
-                    }
-                  },
-                },
-                { highWaterMark: 0 }
-              ),
-              { headers: { "content-type": "text/event-stream" } }
-            )
-          ),
-        { ...config, timeoutMs: 1000 }
-      );
-      const caller = new AbortController();
-      const running = observe(
-        test.model.stream({ ...test.input, abortController: caller })
-      );
-      const options = await reading.promise;
-      if (cause === "deadline") {
-        await vi.advanceTimersByTimeAsync(1000);
-      } else {
-        caller.abort();
-      }
-      await running;
-      expect(options.signal.aborted).toBe(true);
-      expect(cancel).toHaveBeenCalledOnce();
-      expectRejected(test, "outcome_unknown");
-      expect(test.run).toHaveBeenCalledOnce();
-    }
-  );
-
-  it("enforces the application deadline while a binding request is stalled", async () => {
-    vi.useFakeTimers();
-    const dispatched = Promise.withResolvers<CapturedOptions>();
-    const test = fixture(
-      (options) => {
-        dispatched.resolve(options);
-        return Promise.withResolvers<Response>().promise;
-      },
-      { ...config, timeoutMs: 1000 }
-    );
     const running = observe(test.model.stream(test.input));
-    const options = await dispatched.promise;
-    await vi.advanceTimersByTimeAsync(1000);
+    const controller = await reading.promise;
+    test.input.abortController.abort();
+    controller.enqueue(
+      new TextEncoder().encode(
+        kimiEvent(kimiChunk([kimiChoice({}, "tool_calls")]))
+      )
+    );
+    controller.close();
     await running;
-    expect(options.signal.aborted).toBe(true);
     expectRejected(test, "outcome_unknown");
     expect(test.run).toHaveBeenCalledOnce();
   });
@@ -851,26 +747,26 @@ describe("private discovery native TanStack provider", () => {
     expect(test.run).toHaveBeenCalledOnce();
   });
 
-  it("propagates Effect interruption to a pending native binding request", async () => {
-    const dispatched = Promise.withResolvers<CapturedOptions>();
-    const test = fixture((options) => {
-      dispatched.resolve(options);
-      return Promise.withResolvers<Response>().promise;
+  it("rejects a late binding result after Effect interruption", async () => {
+    const dispatched = Promise.withResolvers<null>();
+    const pending = Promise.withResolvers<Response>();
+    const test = fixture(() => {
+      dispatched.resolve(null);
+      return pending.promise;
     });
     const caller = new AbortController();
     const running = Effect.runPromiseExit(
       test.model.generate(test.generateInput),
-      {
-        signal: caller.signal,
-      }
+      { signal: caller.signal }
     );
-    const options = await dispatched.promise;
+    await dispatched.promise;
     caller.abort();
     const result = await running;
     expect(Exit.isFailure(result) && Cause.hasInterrupts(result.cause)).toBe(
       true
     );
-    expect(options.signal.aborted).toBe(true);
+    pending.resolve(response());
     expect(test.run).toHaveBeenCalledOnce();
+    expect(test.beforeDispatch).toHaveBeenCalledOnce();
   });
 });

@@ -12,7 +12,6 @@ import type {
   SessionFrame,
   ProfileCard as ProfileCardType,
 } from "@meal-planner/private-interview-api";
-import { fetchServerSentEvents, useChat } from "@tanstack/ai-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
@@ -1532,69 +1531,6 @@ it("ignores a late authentication failure belonging to the previous mounted acco
   expect(screen.getByText(message.text)).toBeInTheDocument();
   expect(f.sockets).toHaveLength(count);
   expect(f.latest().closed).toBe(false);
-});
-
-const DefaultDiagnosticChat = () => {
-  useChat({
-    connection: fetchServerSentEvents("/diagnostic-control", {
-      fetchClient: async () => Response.json({ activeRun: null, messages: [] }),
-    }),
-    initialMessages: [
-      {
-        id: "diagnostic-control-message",
-        parts: [{ content: "diagnostic-default-control", type: "text" }],
-        role: "user",
-      },
-    ],
-    threadId: "diagnostic-control",
-  });
-  return null;
-};
-
-it("disables private transcript diagnostics during hydration, send, response and unmount", async () => {
-  const eventClient = Reflect.get(
-    globalThis,
-    Symbol.for("tanstack.ai.devtools.eventClient")
-  );
-  const emitted = vi.spyOn(eventClient, "emit");
-  try {
-    const control = render(<DefaultDiagnosticChat />);
-    await waitFor(() =>
-      expect(JSON.stringify(emitted.mock.calls)).toContain(
-        "diagnostic-default-control"
-      )
-    );
-    control.unmount();
-    emitted.mockClear();
-    const f = fixture();
-    f.dependencies.fetchChat.mockImplementation(async (_input, init) => {
-      if (init?.method !== "POST") {
-        return chatHistory();
-      }
-      const { runId } = JSON.parse(String(init.body));
-      return eventResponse(chatEvents(runId, "private-diagnostics-reply"));
-    });
-    const { mounted, user } = await openChat(f);
-    await user.type(
-      screen.getByLabelText("Your message"),
-      "private-diagnostics-sentinel"
-    );
-    await user.click(screen.getByRole("button", { name: "Send message" }));
-    expect(
-      await screen.findByText("private-diagnostics-reply")
-    ).toBeInTheDocument();
-    mounted.unmount();
-    await act(async () => {});
-    expect(JSON.stringify(emitted.mock.calls)).not.toContain(message.text);
-    expect(JSON.stringify(emitted.mock.calls)).not.toContain(
-      "private-diagnostics-sentinel"
-    );
-    expect(JSON.stringify(emitted.mock.calls)).not.toContain(
-      "private-diagnostics-reply"
-    );
-  } finally {
-    emitted.mockRestore();
-  }
 });
 
 it("renders accepted text arriving after the native run-finished event and restores it from server history", async () => {

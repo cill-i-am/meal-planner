@@ -1,7 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 
-import type * as NativeCloudflare from "@cloudflare/workers-types";
 import {
   chat,
   EventType,
@@ -13,6 +12,7 @@ import {
 } from "@tanstack/ai";
 import type { ModelMessage, StreamChunk } from "@tanstack/ai";
 import { createCloudflareText } from "@tanstack/ai-cloudflare";
+import type { CloudflareBindingConfig } from "@tanstack/ai-cloudflare";
 import { reconstructChat, withPersistence } from "@tanstack/ai-persistence";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-sqlite";
@@ -34,6 +34,10 @@ const collect = async <T>(source: AsyncIterable<T>): Promise<T[]> => {
     values.push(value);
   }
   return values;
+};
+
+const unexpectedBindingMethod = (): never => {
+  throw new Error("Unexpected Workers AI binding method");
 };
 const data = (value: string) =>
   value
@@ -330,14 +334,18 @@ describe("private chat canonical SQLite persistence", () => {
     const streamed = chat({
       adapter: createCloudflareText("@cf/moonshotai/kimi-k2.6", {
         binding: {
+          aiGatewayLogId: null,
+          aiSearch: unexpectedBindingMethod,
+          autorag: unexpectedBindingMethod,
+          gateway: unexpectedBindingMethod,
+          models: unexpectedBindingMethod,
           // SAFETY: The inert binding implements only the native raw-response overload used by this maintained adapter.
-          run: run as unknown as NativeCloudflare.Ai["run"],
+          run: run as unknown as CloudflareBindingConfig["binding"]["run"],
+          toMarkdown: unexpectedBindingMethod,
         },
-        maxRetries: 0,
       }),
       agentLoopStrategy: maxIterations(1),
       debug: false,
-      devtools: false,
       messages: await persistence.stores.messages.loadThread(threadId),
       middleware: [withPersistence(persistence)],
       runId,

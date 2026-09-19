@@ -94,6 +94,14 @@ The v25 forced-tool adapter admits Kimi and GPT-OSS for synthetic evaluation und
 
 The simple-household and repair challenge expectations explicitly mean reviewing the visible card and using its Confirm action, without asking the participant to repeat already-explicit intent in chat. This wording clarifies the existing confirmation requirement; it introduces no new scoring dimension, threshold, driver behavior or framework.
 
+## Published SDK retries and accounting
+
+Current discovery uses unmodified published TanStack packages. The OpenAI client retries transient errors twice, so a single admitted turn can make three provider attempts. Supported gateway options allow one gateway attempt per SDK request. The application does not automatically start another turn after failure.
+
+[`provider-accounting-policy.json`](provider-accounting-policy.json) is the current live-evaluation reservation policy. With the retained Kimi limits/rates, reserve **1,533,546 microUSD ($1.533546) per application turn**, covering three full 511,182-microUSD attempts. Usage remains unknown when the SDK does not provide trustworthy final measurements; retain the entire turn reservation. A cancelled turn can still incur upstream cost. Historical single-attempt receipts keep their original accounting and must not be reused as the current admission bound.
+
+The former custom single-forward evaluation proxy is retired for this path. A new live run must use the native binding and published SDK, reserve the multiplied amount before admission, and record logical turns separately from provider attempts. No live evaluation on the unmodified packages has yet been completed.
+
 ## Assisted disclosure policy: private-discovery-driver-v1
 
 Version 1 is a manually facilitated scenario pack, not an automated semantic driver. A facilitator follows the fixed policy below while the real candidate model, private runtime and admitted commands produce the actual interaction. Record the facilitator role and policy version. Do not script assistant replies, profile cards, successful commands or model outcomes.

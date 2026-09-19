@@ -167,7 +167,7 @@ describe("native adaptive assistant attempts through the production model adapte
     }
   };
   it.each([
-    { kind: "response_envelope", stage: "response_envelope" },
+    { kind: "response_envelope", stage: "tool_call" },
     { kind: "reported_error", stage: "response_body_read" },
     { kind: "output_json", stage: "tool_call" },
     { kind: "output_schema", stage: "tool_call" },
@@ -234,10 +234,22 @@ describe("native adaptive assistant attempts through the production model adapte
         failure: "invalid_output",
         status: "failed",
       });
-      expect(await harness.hydrate(connection)).toMatchObject({
+      const hydration = await harness.hydrate(connection);
+      expect(hydration).toMatchObject({
         activeRun: null,
         messages: [{ role: "user" }],
       });
+      expect(JSON.stringify(hydration)).not.toContain(privateValue);
+      if (kind === "response_envelope") {
+        await expect
+          .poll(() =>
+            harness.successful<number>({
+              action: "keep-alive-references",
+              sessionReference: session.sessionReference,
+            })
+          )
+          .toBe(0);
+      }
       expect(await cards(connection)).toMatchObject({ cards: [] });
       expect(stream).not.toContain(privateValue);
       const duplicate = await harness.chatRequest(connection, {
@@ -363,13 +375,12 @@ describe("native adaptive assistant attempts through the production model adapte
         }[];
       };
       gateway: unknown;
-      extraHeaders: unknown;
     };
-    expect(request.extraHeaders).toEqual({ "cf-aig-max-attempts": "1" });
     expect(request.gateway).toEqual({
       collectLog: false,
       id: "synthetic-local-only",
       requestTimeoutMs: 5000,
+      retries: { maxAttempts: 1 },
       skipCache: true,
     });
     const context = JSON.parse(request.body.messages[1]?.content ?? "null") as {
@@ -2282,7 +2293,7 @@ describe("native adaptive assistant attempts through the production model adapte
     connection.socket.close();
   });
   it.each(["refused", "provider_unavailable"] as const)(
-    "retains a %s response without implicit provider retry",
+    "retains a %s response and replays the same attempt without redispatch",
     async (scenario) => {
       harness.clearCalls();
       harness.setModelResponse(() =>
@@ -2309,13 +2320,16 @@ describe("native adaptive assistant attempts through the production model adapte
       const connection = await harness.open(session);
       const attempt = await harness.startTurn(connection);
       await attempt.finished;
+      const expectedProviderAttempts =
+        scenario === "provider_unavailable" ? 3 : 1;
+      expect(harness.calls).toHaveLength(expectedProviderAttempts);
       const duplicate = await harness.chatRequest(connection, {
         body: attempt.input,
         method: "POST",
       });
       expect(duplicate.status).toBe(200);
       await duplicate.text();
-      expect(harness.calls).toHaveLength(1);
+      expect(harness.calls).toHaveLength(expectedProviderAttempts);
       expect(await latestAttempt(connection)).toMatchObject({
         failure: scenario === "refused" ? "invalid_output" : scenario,
         status: "failed",

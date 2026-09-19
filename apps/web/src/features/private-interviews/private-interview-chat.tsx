@@ -80,7 +80,6 @@ export const PrivateInterviewChat = ({
   }, [client, endpoint, generation]);
   const chat = useChat({
     connection,
-    devtools: false,
     onError: client.refreshSession,
     onFinish: client.refreshSession,
     persistence: true,

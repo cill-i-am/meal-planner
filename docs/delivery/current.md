@@ -1,6 +1,6 @@
 # Current Delivery State
 
-- Last updated: 2026-09-14
+- Last updated: 2026-09-19
 - Delivery source of truth: this repository
 
 ## Latest Completed Stage
@@ -31,12 +31,14 @@
   while TanStack owns model orchestration, chat transport and client history.
   Missing provider terminal metadata alone does not reject a complete,
   contract-valid proposal; unknown usage retains the full cost reservation.
-  The replacement session is applied locally and all 87 household boundary tests
-  pass against it. Recorded synthetic proposal rendering passes; the explicit
-  confirmation click is paused by automatic approval review. All 108 native
-  session cases and local workspace checks pass, including the deadline
-  correction. Final review and CI are tracked in the draft PR; new live-model
-  evaluation is incomplete, and the existing evaluation gates below still apply.
+  The patched runtime at `0048854` passed hosted checks and a recorded synthetic
+  confirmation/reload test. The current simplification removes all three TanStack
+  patches, accepts normal SDK diagnostics and uses supported binding/gateway APIs.
+  The application still owns schema/coverage, authorization, confirmation and
+  rejection of cancelled results. SDK retries require a three-attempt reservation
+  per turn; earlier single-attempt harness evidence is superseded. Checks and
+  recorded browser verification are being refreshed. New live-model evaluation
+  remains incomplete and the existing evaluation gates below still apply.
   The current v25/policy-v6 [deterministic discovery contract](stages/02-private-discovery/03-deterministic-discovery-contract.md)
   moves required coverage, scope, all question wording, clarification, card revision
   binding and ordinary/safety proposal routing into application code. One strict

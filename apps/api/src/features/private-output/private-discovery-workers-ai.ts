@@ -2,6 +2,7 @@ import type * as NativeCloudflare from "@cloudflare/workers-types";
 import { chat, EventType, maxIterations, toolDefinition } from "@tanstack/ai";
 import type { ChatMiddleware, StreamChunk } from "@tanstack/ai";
 import { CloudflareTextAdapter } from "@tanstack/ai-cloudflare";
+import type { CloudflareBindingConfig } from "@tanstack/ai-cloudflare";
 import { Effect, Option, Schema } from "effect";
 
 import { PrivateChatReply } from "./private-chat-reply.js";
@@ -61,7 +62,7 @@ export type PrivateDiscoveryConfiguration =
   typeof PrivateDiscoveryConfiguration.Type;
 export interface PrivateDiscoveryModelEnvironment {
   readonly PRIVATE_DISCOVERY_CONFIG?: string | null;
-  readonly PrivateDiscoveryAI?: Pick<NativeCloudflare.Ai, "run">;
+  readonly PrivateDiscoveryAI?: CloudflareBindingConfig["binding"];
 }
 
 const failure = (
@@ -165,19 +166,6 @@ const safeReplyChunks = (reply: PrivateChatReply): StreamChunk[] => [
   { messageId: reply.messageId, type: EventType.TEXT_MESSAGE_END },
 ];
 
-/** Promise boundary only: cancellation cannot wait for an unresponsive binding. */
-const abortable = <T>(pending: Promise<T>, signal: AbortSignal): Promise<T> => {
-  signal.throwIfAborted();
-  const { promise, resolve, reject } = Promise.withResolvers<T>();
-  const aborted = () => reject(signal.reason);
-  signal.addEventListener("abort", aborted, { once: true });
-  // oxlint-disable-next-line promise/prefer-await-to-then -- Release cancellation registration after either native settlement without awaiting a stalled binding.
-  void pending.then(resolve, reject).finally(() => {
-    signal.removeEventListener("abort", aborted);
-  });
-  return promise;
-};
-
 const streamDiscovery = (
   environment: PrivateDiscoveryModelEnvironment,
   input: PrivateDiscoveryStreamInput
@@ -218,7 +206,6 @@ const streamDiscovery = (
     context,
     standard["~standard"].jsonSchema.input({ target: "draft-2020-12" })
   );
-  const { model: _model, ...requestBody } = request;
   const encoder = new TextEncoder();
   if (
     encoder.encode(JSON.stringify(context)).byteLength >
@@ -230,7 +217,6 @@ const streamDiscovery = (
   }
   const controller = input.abortController;
   let deadline: ReturnType<typeof setTimeout> | undefined;
-  let dispatched = false;
   let prepared: SubmitDiscoveryTurn | undefined;
   let accepted: PrivateChatReply | undefined;
   let emittedReply = false;
@@ -240,56 +226,6 @@ const streamDiscovery = (
       clearTimeout(deadline);
     }
     input.chat.dispose?.();
-  };
-  const binding: Pick<NativeCloudflare.Ai, "run"> = {
-    // SAFETY: The SDK and app use different Workers type versions for the same native raw-response overload.
-    run: (async (...args: Parameters<NativeCloudflare.Ai["run"]>) => {
-      if (dispatched || controller.signal.aborted) {
-        return reject(failed("outcome_unknown"));
-      }
-      dispatched = true;
-      input.beforeDispatch(provenance);
-      try {
-        const response = await abortable(
-          ai.run(config.model, requestBody, {
-            ...args[2],
-            returnRawResponse: true,
-          }),
-          controller.signal
-        );
-        if (!response.ok) {
-          return reject(failed("provider_unavailable"));
-        }
-        if (response.body === null) {
-          return reject(failed("invalid_output", "response_body_missing"));
-        }
-        if (
-          !response.headers
-            .get("content-type")
-            ?.toLowerCase()
-            .includes("text/event-stream")
-        ) {
-          return reject(failed("invalid_output", "response_envelope"));
-        }
-        // Native pipe cancellation owns body cleanup; no application SSE parser is involved.
-        return new Response(
-          (response.body as unknown as ReadableStream<Uint8Array>).pipeThrough(
-            new TransformStream<Uint8Array, Uint8Array>(),
-            { signal: controller.signal }
-          ),
-          {
-            headers: response.headers as unknown as Headers,
-            status: response.status,
-          }
-        );
-      } catch (error) {
-        return reject(
-          error instanceof PrivateDiscoveryFailure
-            ? error
-            : failed("outcome_unknown")
-        );
-      }
-    }) as NativeCloudflare.Ai["run"],
   };
   const guard: ChatMiddleware = {
     name: "private-discovery-contract",
@@ -339,9 +275,16 @@ const streamDiscovery = (
     },
     onChunk: (_ctx, chunk) => {
       if (chunk.type === "RUN_ERROR") {
-        return reject(
-          rejected ?? failed("invalid_output", "response_body_read")
-        );
+        if (rejected) {
+          throw rejected;
+        }
+        if (controller.signal.aborted || chunk.code === "aborted") {
+          return reject(failed("outcome_unknown"));
+        }
+        if (chunk.code !== undefined && /^[45]\d{2}$/u.test(chunk.code)) {
+          return reject(failed("provider_unavailable"));
+        }
+        return reject(failed("invalid_output", "response_body_read"));
       }
       if (chunk.type === "RUN_STARTED") {
         return {
@@ -388,7 +331,26 @@ const streamDiscovery = (
           : failed("invalid_output", "output_schema");
       await input.chat.fail?.(rejected);
     },
+    onIteration: () => {
+      if (controller.signal.aborted) {
+        return reject(failed("outcome_unknown"));
+      }
+      input.beforeDispatch(provenance);
+    },
+    onShouldContinue: () => {
+      if (rejected) {
+        throw rejected;
+      }
+      if (controller.signal.aborted) {
+        return reject(failed("outcome_unknown"));
+      }
+      // The SDK can finish an empty provider stream without emitting a terminal chunk or a tool phase.
+      if (accepted === undefined) {
+        return reject(failed("invalid_output", "tool_call"));
+      }
+    },
     onStart: () => {
+      // The published binding bridge does not forward abort; this deadline fences application acceptance.
       deadline = setTimeout(() => controller.abort(), config.timeoutMs);
     },
     onToolPhaseComplete: (_ctx, info) => {
@@ -442,23 +404,19 @@ const streamDiscovery = (
     abortController: controller,
     adapter: new PrivateDiscoveryTextAdapter(
       {
-        binding,
-        extraHeaders: { "cf-aig-max-attempts": "1" },
+        binding: ai,
         gateway: {
           collectLog: false,
           id: config.gatewayId,
           requestTimeoutMs: config.timeoutMs,
+          retries: { maxAttempts: 1 },
           skipCache: true,
         },
-        logLevel: "off",
-        maxRetries: 0,
-        timeout: config.timeoutMs,
       },
       request
     ),
     agentLoopStrategy: maxIterations(1),
     debug: false,
-    devtools: false,
     messages: input.chat.messages,
     middleware: [
       guard,

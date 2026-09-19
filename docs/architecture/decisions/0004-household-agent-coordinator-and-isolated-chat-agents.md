@@ -411,8 +411,8 @@ Reconnect replays the existing run without new inference. Network disconnect
 detaches delivery; explicit Stop, revoked authority and expiry terminate the
 producer. A fresh authenticated connection for the same binding may join an
 active run, but cannot revive a cancelled or revoked attempt. Every private
-delivery checks its current authority immediately before writing. Provider retry
-and fallback remain disabled, independently of the chat library's iteration cap.
+delivery checks its current authority immediately before writing. The published
+SDK retry policy below applies; the application adds no retry or model fallback.
 
 Ordinary Durable Object hibernation may preserve an OPEN native WebSocket. Waking
 that instance preserves its existing connected generation only when the socket's
@@ -421,3 +421,33 @@ Waking never promotes a pending, unauthorized or revoked generation. Missing,
 closed or mismatched sockets require fresh admission. This distinction prevents
 the constructor from revoking a valid idle interview, while canonical revocation
 and every physical delivery remain fenced by the durable generation record.
+
+
+## Published TanStack packages — accepted 2026-09-19
+
+Use unmodified `@tanstack/ai` 0.54.0, `@tanstack/ai-cloudflare` 0.1.1 and
+`@tanstack/ai-react` 0.24.1 through their supported APIs. The three local patches,
+custom binding wrapper and diagnostic opt-outs are removed. Normal SDK diagnostics
+and the React devtools bridge are accepted. Do not replace these patches with
+vendored SDK code, another transport or a compatibility layer.
+
+The application retains its exact Effect tool schema through the adapter's
+published request-mapping hook, and excludes reasoning from conversation content
+through its reasoning hook. Authorization, required-topic coverage, atomic
+acceptance and explicit household fact confirmation remain application-owned.
+
+The published OpenAI client defaults to two transient-error retries: at most three
+Workers AI binding attempts per admitted application turn. Supported gateway
+options limit each binding attempt to one gateway attempt, disable caching and
+request no gateway payload logging. The SDK retains its normal request timeout;
+the application's configured deadline bounds acceptance. The binding adapter does
+not forward cancellation to `Ai.run`, so stopping a turn does not prove remote
+work stopped. The shared cancellation signal and final synchronous acceptance
+guard prevent late results from committing.
+
+Reserve the full cost of three possible provider attempts before admitting live
+evaluation. Unknown streamed usage retains that reservation. The
+[evaluation accounting policy](../../../evals/private-discovery/provider-accounting-policy.json)
+records the retry multiplier and current conservative Kimi bound. Earlier receipts
+and single-attempt harness evidence remain historical; they cannot establish
+live compatibility or bound a new run using the published defaults.

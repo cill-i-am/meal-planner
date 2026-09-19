@@ -105,13 +105,7 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  '@tanstack/ai-cloudflare>@cloudflare/workers-types': 5.20260904.1
-
 patchedDependencies:
-  '@tanstack/ai-cloudflare@0.1.1': 98961a67176473219dd49f2c8e0a97f6f99e3b86f2b1565913f84a47cb28067f
-  '@tanstack/ai-react@0.24.1': 8240c22e9451f11820f650a9aead83ccf4976439ebeb823a465a076ac5efa074
-  '@tanstack/ai@0.54.0': ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa
   alchemy@2.0.0-beta.76: 2e204dae01e34e401548a6a3fbd7f20fc2d824b7f1b713ef373d7db263d56bce
 
 importers:
@@ -180,16 +174,16 @@ importers:
         version: link:../../packages/recipe-import-api
       '@tanstack/ai':
         specifier: 0.54.0
-        version: 0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4)
+        version: 0.54.0(zod@4.5.4)
       '@tanstack/ai-cloudflare':
         specifier: 0.1.1
-        version: 0.1.1(patch_hash=98961a67176473219dd49f2c8e0a97f6f99e3b86f2b1565913f84a47cb28067f)(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.7.3)(@tanstack/ai@0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4))(ws@8.21.3)(zod@4.5.4)
+        version: 0.1.1(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.7.3)(@tanstack/ai@0.54.0(zod@4.5.4))(ws@8.21.3)(zod@4.5.4)
       '@tanstack/ai-persistence':
         specifier: 0.5.7
-        version: 0.5.7(@tanstack/ai@0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4))(vitest@4.1.11(@types/node@24.13.3)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)))
+        version: 0.5.7(@tanstack/ai@0.54.0(zod@4.5.4))(vitest@4.1.11(@types/node@24.13.3)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)))
       agents:
         specifier: 0.22.0
-        version: 0.22.0(@babel/core@8.0.1)(@babel/runtime@7.29.7)(@modelcontextprotocol/client@2.0.0)(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.5.4))(@modelcontextprotocol/server@2.0.0)(@tanstack/ai@0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4))(react@19.2.8)(rolldown@1.2.7)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))(zod@4.5.4)
+        version: 0.22.0(@babel/core@8.0.1)(@babel/runtime@7.29.7)(@modelcontextprotocol/client@2.0.0)(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.5.4))(@modelcontextprotocol/server@2.0.0)(@tanstack/ai@0.54.0(zod@4.5.4))(react@19.2.8)(rolldown@1.2.7)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))(zod@4.5.4)
       better-auth:
         specifier: 1.7.2
         version: 1.7.2(@cloudflare/workers-types@5.20260904.1)(@tanstack/react-start@1.168.49(crossws@0.4.12(srvx@1.0.3))(esbuild@0.28.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(rolldown@1.2.7)(supports-color@10.2.2)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)))(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260904.1)(@effect/sql-d1@4.0.0-rc.112(effect@4.0.0-rc.112))(@effect/sql-sqlite-do@4.0.0-rc.112(effect@4.0.0-rc.112))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0-rc.112)(mysql2@3.24.3(@types/node@24.13.3))(valibot@1.2.0(typescript@6.0.3))(zod@4.5.4))(mysql2@3.24.3(@types/node@24.13.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@4.1.11(@types/node@24.13.3)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)))
@@ -262,10 +256,10 @@ importers:
         version: 2.1.15(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@tanstack/ai':
         specifier: 0.54.0
-        version: 0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4)
+        version: 0.54.0(zod@4.5.4)
       '@tanstack/ai-react':
         specifier: 0.24.1
-        version: 0.24.1(patch_hash=8240c22e9451f11820f650a9aead83ccf4976439ebeb823a465a076ac5efa074)(@tanstack/ai@0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(supports-color@10.2.2)(zod@4.5.4)
+        version: 0.24.1(@tanstack/ai@0.54.0(zod@4.5.4))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(supports-color@10.2.2)(zod@4.5.4)
       '@tanstack/react-form':
         specifier: 1.33.5
         version: 1.33.5(@tanstack/react-start@1.168.49(crossws@0.4.12(srvx@1.0.3))(esbuild@0.28.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(rolldown@1.2.5)(supports-color@10.2.2)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -1002,6 +996,9 @@ packages:
     engines: {node: '>=16'}
     cpu: [x64]
     os: [win32]
+
+  '@cloudflare/workers-types@4.20260702.1':
+    resolution: {integrity: sha512-mOhf5TUEB1m2vPrxtqoIGfz0fUC9xyxRDx5gWHy5s+OCo6dcV+g7wI1R7gYCMFohhqF/2y2xeKVwMwCJjfn/WA==}
 
   '@cloudflare/workers-types@5.20260904.1':
     resolution: {integrity: sha512-SbulPvrdb4j5iISDr81Iw+YpNCG4Bb6xRqV3arkgn/Ib6STMaoG63lhPnuWqmZdakOn0qS1OUudBMdxtBFx0Jg==}
@@ -6882,6 +6879,8 @@ snapshots:
   '@cloudflare/workerd-windows-64@1.20260903.1':
     optional: true
 
+  '@cloudflare/workers-types@4.20260702.1': {}
+
   '@cloudflare/workers-types@5.20260904.1': {}
 
   '@cspotcode/source-map-support@0.8.1':
@@ -8227,19 +8226,19 @@ snapshots:
 
   '@tanstack/ai-client@0.31.1(zod@4.5.4)':
     dependencies:
-      '@tanstack/ai': 0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4)
+      '@tanstack/ai': 0.54.0(zod@4.5.4)
       '@tanstack/ai-event-client': 0.11.3
       '@tanstack/ai-utils': 0.4.0
     transitivePeerDependencies:
       - '@opentelemetry/api'
       - zod
 
-  '@tanstack/ai-cloudflare@0.1.1(patch_hash=98961a67176473219dd49f2c8e0a97f6f99e3b86f2b1565913f84a47cb28067f)(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.7.3)(@tanstack/ai@0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4))(ws@8.21.3)(zod@4.5.4)':
+  '@tanstack/ai-cloudflare@0.1.1(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.7.3)(@tanstack/ai@0.54.0(zod@4.5.4))(ws@8.21.3)(zod@4.5.4)':
     dependencies:
-      '@cloudflare/workers-types': 5.20260904.1
-      '@tanstack/ai': 0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4)
+      '@cloudflare/workers-types': 4.20260702.1
+      '@tanstack/ai': 0.54.0(zod@4.5.4)
       '@tanstack/ai-utils': 0.4.0
-      '@tanstack/openai-base': 0.10.11(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.7.3)(@tanstack/ai@0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4))(ws@8.21.3)(zod@4.5.4)
+      '@tanstack/openai-base': 0.10.11(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.7.3)(@tanstack/ai@0.54.0(zod@4.5.4))(ws@8.21.3)(zod@4.5.4)
       openai: 6.49.0(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.7.3)(ws@8.21.3)(zod@4.5.4)
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
@@ -8252,16 +8251,16 @@ snapshots:
     dependencies:
       '@tanstack/devtools-event-client': 0.4.4
 
-  '@tanstack/ai-persistence@0.5.7(@tanstack/ai@0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4))(vitest@4.1.11(@types/node@24.13.3)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)))':
+  '@tanstack/ai-persistence@0.5.7(@tanstack/ai@0.54.0(zod@4.5.4))(vitest@4.1.11(@types/node@24.13.3)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)))':
     dependencies:
-      '@tanstack/ai': 0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4)
+      '@tanstack/ai': 0.54.0(zod@4.5.4)
       '@tanstack/ai-utils': 0.4.0
     optionalDependencies:
       vitest: 4.1.11(@types/node@24.13.3)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
 
-  '@tanstack/ai-react@0.24.1(patch_hash=8240c22e9451f11820f650a9aead83ccf4976439ebeb823a465a076ac5efa074)(@tanstack/ai@0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(supports-color@10.2.2)(zod@4.5.4)':
+  '@tanstack/ai-react@0.24.1(@tanstack/ai@0.54.0(zod@4.5.4))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(supports-color@10.2.2)(zod@4.5.4)':
     dependencies:
-      '@tanstack/ai': 0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4)
+      '@tanstack/ai': 0.54.0(zod@4.5.4)
       '@tanstack/ai-client': 0.31.1(zod@4.5.4)
       '@types/react': 19.2.18
       react: 19.2.8
@@ -8279,7 +8278,7 @@ snapshots:
 
   '@tanstack/ai-utils@0.4.0': {}
 
-  '@tanstack/ai@0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4)':
+  '@tanstack/ai@0.54.0(zod@4.5.4)':
     dependencies:
       '@ag-ui/core': 0.1.1-canary.beta.0(zod@4.5.4)
       '@standard-schema/spec': 1.1.0
@@ -8299,9 +8298,9 @@ snapshots:
 
   '@tanstack/history@1.162.1': {}
 
-  '@tanstack/openai-base@0.10.11(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.7.3)(@tanstack/ai@0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4))(ws@8.21.3)(zod@4.5.4)':
+  '@tanstack/openai-base@0.10.11(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.7.3)(@tanstack/ai@0.54.0(zod@4.5.4))(ws@8.21.3)(zod@4.5.4)':
     dependencies:
-      '@tanstack/ai': 0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4)
+      '@tanstack/ai': 0.54.0(zod@4.5.4)
       '@tanstack/ai-utils': 0.4.0
       openai: 6.49.0(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.7.3)(ws@8.21.3)(zod@4.5.4)
     transitivePeerDependencies:
@@ -8838,7 +8837,7 @@ snapshots:
 
   acorn@8.18.0: {}
 
-  agents@0.22.0(@babel/core@8.0.1)(@babel/runtime@7.29.7)(@modelcontextprotocol/client@2.0.0)(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.5.4))(@modelcontextprotocol/server@2.0.0)(@tanstack/ai@0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4))(react@19.2.8)(rolldown@1.2.7)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))(zod@4.5.4):
+  agents@0.22.0(@babel/core@8.0.1)(@babel/runtime@7.29.7)(@modelcontextprotocol/client@2.0.0)(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.5.4))(@modelcontextprotocol/server@2.0.0)(@tanstack/ai@0.54.0(zod@4.5.4))(react@19.2.8)(rolldown@1.2.7)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))(zod@4.5.4):
     dependencies:
       '@babel/plugin-proposal-decorators': 8.0.2(@babel/core@8.0.1)
       '@cfworker/json-schema': 4.1.1
@@ -8854,7 +8853,7 @@ snapshots:
       yaml: 2.9.0
       zod: 4.5.4
     optionalDependencies:
-      '@tanstack/ai': 0.54.0(patch_hash=ec9ed73be54b5ea4781f13ff37dc47e925d9d89b89bb9279b686a47e5a10f6aa)(zod@4.5.4)
+      '@tanstack/ai': 0.54.0(zod@4.5.4)
       react: 19.2.8
       vite: 8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)
     transitivePeerDependencies:

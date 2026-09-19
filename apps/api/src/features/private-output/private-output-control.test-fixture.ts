@@ -2,6 +2,7 @@
 import type * as NativeCloudflare from "@cloudflare/workers-types";
 import { PersonProfile } from "@meal-planner/household-api";
 import { PrivateDiscoveryScope } from "@meal-planner/private-interview-api";
+import type { CloudflareBindingConfig } from "@tanstack/ai-cloudflare";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import { Schema } from "effect";
 
@@ -27,6 +28,10 @@ export {
 
 type SyntheticModelBody = Readonly<Record<string, unknown>>;
 
+const unexpectedBindingMethod = (): never => {
+  throw new Error("Unexpected Workers AI binding method");
+};
+
 /** Test-only acknowledgment faults and a synchronous clock around the production session. */
 export class PrivateInterviewSession extends ProductionSession {
   #fixtureDatabase = drizzle(this.ctx.storage);
@@ -43,6 +48,11 @@ export class PrivateInterviewSession extends ProductionSession {
     super(context, {
       ...environment,
       PrivateDiscoveryAI: {
+        aiGatewayLogId: null,
+        aiSearch: unexpectedBindingMethod,
+        autorag: unexpectedBindingMethod,
+        gateway: unexpectedBindingMethod,
+        models: unexpectedBindingMethod,
         // Native Ai.run is overloaded across every provider model. This test adapter replaces only its external transport.
         run: ((
           model: string,
@@ -50,19 +60,18 @@ export class PrivateInterviewSession extends ProductionSession {
           options: {
             signal?: AbortSignal;
             gateway?: unknown;
-            extraHeaders?: Readonly<Record<string, string>>;
           }
         ) =>
           fetch("https://private-model.test/run", {
             body: JSON.stringify({
               body,
-              extraHeaders: options.extraHeaders,
               gateway: options.gateway,
               model,
             }),
             method: "POST",
             // The synthetic provider deliberately ignores cancellation to prove the durable late-output fence.
-          })) as NativeCloudflare.Ai["run"],
+          })) as CloudflareBindingConfig["binding"]["run"],
+        toMarkdown: unexpectedBindingMethod,
       },
     });
   }

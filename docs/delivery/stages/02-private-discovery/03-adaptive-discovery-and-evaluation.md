@@ -1,15 +1,32 @@
 # Work Item 03 — Adaptive discovery and evaluation
 
-- Status: In progress (2026-09-14); the accepted base Agent/TanStack migration is applied locally and undergoing native acceptance. Earlier v25 and live-model results remain historical; [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218) is not ready to merge.
+- Status: In progress (2026-09-19); the base Agent/TanStack runtime is delivered in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218). The published-package simplification is undergoing verification. Earlier live-model results remain historical; the PR is not ready to merge.
 - Authorized by the product owner to continue after Work Item 02.
 - Implementation base: `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`.
 - Owning stage: [Stage 2](README.md).
 
 ## Current evaluation status
 
+The 19 September simplification removes all three TanStack dependency patches and
+uses the published APIs and normal diagnostics. Application schema/coverage,
+authorization, explicit confirmation and cancelled-result rejection remain in
+place. The SDK may make three provider attempts per admitted turn; the updated
+[evaluation reservation policy](../../../../evals/private-discovery/provider-accounting-policy.json)
+reserves all three. Earlier patched-runtime browser proof and live-harness pins
+are historical. Current checks and recorded browser verification are being
+refreshed; live evaluation on the unmodified packages remains outstanding.
+
+
 The user accepted [base Agent and TanStack chat](../../../architecture/decisions/0004-household-agent-coordinator-and-isolated-chat-agents.md#base-agent-and-tanstack-chat--accepted-2026-09-13) for durable lifetime, model orchestration, chat transport, persistence interfaces and React state. Application transactions retain authorization, discovery acceptance and explicit household confirmation. Missing provider terminal markers alone no longer reject a complete, contract-valid proposal; streamed usage remains unknown and retains its full reservation.
 
-The replacement is applied in the isolated checkout. All 87 household boundary cases pass directly against the replacement source; frontend checks pass 140 tests and type checking. A recorded actual-app synthetic run produced one validated proposal and the required next question. Its explicit profile-confirmation click remains paused by automatic approval review. All 108 private-session cases now pass, including actual disconnect/replay, overlapping reconnects and revocation. Local workspace checks cover 1,523 passing cases across the root and package suites and affected reruns, with type checking, lint and formatting passing. The initial root architecture failure concerned new files not yet staged; its exact check passed after staging. Independent review identified a deadline/reconnection race: the provider and acceptance wait used separate cancellation signals. They now share one controller, and the regression proves timeout releases resources and prevents late acceptance. Final review and CI are tracked in the draft PR. A new live Kimi run remains outstanding; current gateway settings could not be read with the available CLI permission. No new paid model call or deployment has occurred. These results do not accept the model or satisfy the family and human-review gates below.
+The patched predecessor at `00488549423cee43b90cca5e55370090f607e7da`
+passed hosted Quality and Synthetic media container checks. Its recorded synthetic
+browser test verified one proposal, explicit confirmation from profile version 0
+to 1, a committed receipt and persistence after reload. The prior deadline/reconnect
+race was fixed and independently reviewed. The user then requested the unmodified
+SDK implementation described above; predecessor evidence does not prove the new
+package path. Cloudflare gateway settings have been verified, but no new paid
+model call or deployment has occurred. Family and human-review gates remain open.
 
 The current implementation is [application-owned discovery coverage](03-deterministic-discovery-contract.md),
 prompt v25/policy v6. It uses explicit session scope, fixed required coverage,
@@ -584,8 +601,9 @@ The native `PrivateInterviewSession` remains the only owner of private messages,
 unfinished proposals, generated output, and model-turn receipts. An authenticated
 metadata-only HTTP continuation provides the bound adult's freshly read canonical
 profile to that child; neither API nor coordinator reads the transcript. The
-continuation captures the original admitted socket generation. Private values do
-not enter HTTP responses, shared agent state, general RPC reads, or logs.
+continuation captures the original admitted socket generation. Application
+diagnostics use fixed failure classifications. Normal SDK diagnostic behaviour
+is accepted under the published-package decision.
 
 A participant append durably records its message and a queued assistant turn.
 One active turn prevents new conversation/card mutations; an explicit stop can
@@ -595,21 +613,22 @@ guard verifies the original connected generation, open session, exact queued
 turn, captured session version, and absence of a pending confirmation, then
 atomically claims the attempt. Preparation awaits cannot bypass this last check.
 
-There is no automatic provider retry. Each native Workers AI invocation explicitly
-sets AI Gateway `cf-aig-max-attempts: 1`, disables response caching, and requests
-no gateway payload logging. The experiment gateway must also disable retries. Duplicate continuations never dispatch a
-claimed attempt again. Restart, connection replacement, revocation, cancellation,
+The application admits one logical turn. The published SDK can retry transient
+provider errors twice; supported gateway options set `retries.maxAttempts: 1`,
+disable response caching and request no gateway payload logging. Normal SDK
+diagnostics are accepted. Duplicate continuations never dispatch a claimed
+application attempt again. Restart, connection replacement, revocation, cancellation,
 or an ambiguous provider result interrupts that attempt. The original participant
 message remains; an explicit retry creates a new attempt identity. Best-effort
 abort does not claim to undo provider work. A late result can persist only for the
 same active attempt, original generation, and session version. Every physical
 socket send retains the existing final-send authorization fence.
 
-One cancellation signal remains active through provider dispatch and complete
-bounded response consumption. Stop, deadline and caller interruption cancel the
-owned body reader without awaiting a potentially stalled cleanup promise. An
-unread cancelled response has unknown usage; already decoded measurements remain
-eligible for metadata-only retention without restoring private output.
+One application cancellation signal remains active through dispatch and acceptance.
+Stop, deadline and caller interruption reject later generated results and release
+application resources. The published binding may continue upstream work, so
+remote termination is not guaranteed. Untrusted or absent final usage remains
+unknown and cannot reduce the three-attempt reservation.
 
 The browser clears private rendered state when an established connection is lost.
 It allows one fresh authenticated admission and exact retained WebSocket mutation
