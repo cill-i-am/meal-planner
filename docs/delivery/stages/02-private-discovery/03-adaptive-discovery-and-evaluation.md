@@ -1,6 +1,6 @@
 # Work Item 03 — Adaptive discovery and evaluation
 
-- Status: In progress (2026-09-19); the base Agent/TanStack runtime is delivered in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218). The published-package simplification is undergoing verification. Earlier live-model results remain historical; the PR is not ready to merge.
+- Status: In progress (2026-09-19); the base Agent/TanStack runtime is delivered in [draft PR #218](https://github.com/cill-i-am/meal-planner/pull/218). The published-package simplification passes local checks, review and a recorded live opening. Full evaluation gates remain open; the PR is not ready to merge.
 - Authorized by the product owner to continue after Work Item 02.
 - Implementation base: `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`.
 - Owning stage: [Stage 2](README.md).
@@ -13,8 +13,19 @@ authorization, explicit confirmation and cancelled-result rejection remain in
 place. The SDK may make three provider attempts per admitted turn; the updated
 [evaluation reservation policy](../../../../evals/private-discovery/provider-accounting-policy.json)
 reserves all three. Earlier patched-runtime browser proof and live-harness pins
-are historical. Current checks and recorded browser verification are being
-refreshed; live evaluation on the unmodified packages remains outstanding.
+are historical. Local checks and independent review pass. The
+[recorded live Kimi opening](../../../../evals/private-discovery/kimi-published-sdk-opening-results.md)
+on `9f4ed3d84b544d929e28b4fb6d9587449cfcce3d` succeeded in 31.818 seconds.
+The application asked its required allergy question, proposed a tomato preference,
+and changed the synthetic household profile only after explicit UI confirmation.
+The confirmed card persisted after reload. This one-turn proof does not complete
+the family, candidate-comparison, A-to-B or human-rating gates.
+
+The unmodified SDK exposed two application lifecycle gaps, now fixed through
+public middleware and the shared application signal: an empty stream rejects
+before persistence can report success, and a stalled provider no longer delays
+local deadline settlement or resource release. Native regressions prove both;
+a valid response released after timeout cannot save generated state.
 
 
 The user accepted [base Agent and TanStack chat](../../../architecture/decisions/0004-household-agent-coordinator-and-isolated-chat-agents.md#base-agent-and-tanstack-chat--accepted-2026-09-13) for durable lifetime, model orchestration, chat transport, persistence interfaces and React state. Application transactions retain authorization, discovery acceptance and explicit household confirmation. Missing provider terminal markers alone no longer reject a complete, contract-valid proposal; streamed usage remains unknown and retains its full reservation.
@@ -25,8 +36,8 @@ browser test verified one proposal, explicit confirmation from profile version 0
 to 1, a committed receipt and persistence after reload. The prior deadline/reconnect
 race was fixed and independently reviewed. The user then requested the unmodified
 SDK implementation described above; predecessor evidence does not prove the new
-package path. Cloudflare gateway settings have been verified, but no new paid
-model call or deployment has occurred. Family and human-review gates remain open.
+package path. The new live proof above uses the native Workers AI binding directly;
+no application deployment occurred. Family and human-review gates remain open.
 
 The current implementation is [application-owned discovery coverage](03-deterministic-discovery-contract.md),
 prompt v25/policy v6. It uses explicit session scope, fixed required coverage,

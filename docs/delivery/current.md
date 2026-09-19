@@ -36,9 +36,12 @@
   patches, accepts normal SDK diagnostics and uses supported binding/gateway APIs.
   The application still owns schema/coverage, authorization, confirmation and
   rejection of cancelled results. SDK retries require a three-attempt reservation
-  per turn; earlier single-attempt harness evidence is superseded. Checks and
-  recorded browser verification are being refreshed. New live-model evaluation
-  remains incomplete and the existing evaluation gates below still apply.
+  per turn; earlier single-attempt harness evidence is superseded. Local checks,
+  independent review and recorded browser verification pass. The
+  [unpatched Kimi opening](../../evals/private-discovery/kimi-published-sdk-opening-results.md)
+  succeeded in 31.818 seconds on `9f4ed3d`; explicit confirmation advanced the
+  synthetic profile from version 0 to 1 and persisted after reload. This proves
+  one live opening, not the full family/candidate or human-rating gates below.
   The current v25/policy-v6 [deterministic discovery contract](stages/02-private-discovery/03-deterministic-discovery-contract.md)
   moves required coverage, scope, all question wording, clarification, card revision
   binding and ordinary/safety proposal routing into application code. One strict

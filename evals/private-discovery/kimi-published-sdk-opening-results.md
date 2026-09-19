@@ -1,0 +1,17 @@
+# Kimi opening with the published TanStack packages
+
+**One live opening, explicit confirmation and reload persistence passed on 19 September 2026.** The tested code was `9f4ed3d84b544d929e28b4fb6d9587449cfcce3d`, using unmodified `@tanstack/ai` 0.54.0, `@tanstack/ai-cloudflare` 0.1.1 and `@tanstack/ai-react` 0.24.1. All 978 tracked source files matched before and after the recording.
+
+The real application frontend and native private-session runtime used a fresh synthetic household and the native remote Workers AI binding directly. The model was `@cf/moonshotai/kimi-k2.6`, with prompt v25, policy v6 and tool `submit-discovery-turn-v2`, a 65,536-token allowance and a 900-second application deadline. The user authorized the synthetic opening and transmission of the application's instructions and schema. No custom model transport, patched dependency or scripted model response was used.
+
+Exactly one application turn was sent. It reached native `succeeded` status, with no failure, in **31.818 seconds** from turn creation to completion. Two private messages and one proposed tomato preference card persisted. The application rendered its required allergy, intolerance and dietary-restriction question. At that point the canonical profile remained version 0, with no confirmation receipt.
+
+Clicking **Confirm for household** committed the proposed ingredient preference, advanced the synthetic profile to version 1 and produced one committed receipt. The confirmed card and required question remained visible after reload and reopening the same session. No second model turn, repair or manual retry followed.
+
+The agent-browser video is 276.77 seconds long; all 8,303 frames decoded successfully. Its SHA-256 is `7ff307bdd7a09a04890d583fc8a4f8a9e3d4434b162c5556a2d4176846218b33`. Local evidence includes the recording, screenshots, source comparisons and selected native state receipts. Dialogue and raw provider payloads are excluded from repository records.
+
+The SDK may make up to three provider attempts within this logical turn; the actual upstream attempt count and final token usage were unavailable. The full **1,533,546-microUSD reservation** remains retained. Historical post-anchor exposure of 7,319,299 plus this reservation equals **8,852,845 microUSD**, leaving 11,147,155 under the authorized additional 20,000,000-microUSD allowance. These are conservative exposure figures, not reconciled billing. The old single-forward evaluation proxy was not used.
+
+Local validation separately covered 29 provider tests, 35 frontend panel tests, native persistence/authorization/replay behavior, and the corrected empty-stream and held-binding deadline cases. The deadline regression verifies interruption and resource release before a held provider returns, then rejects its valid late response. Whole-workspace types, lint, formatting and build passed, with a final API build after the deadline correction. Independent review of the simplification and correction found no remaining material defects.
+
+This result establishes a live opening through the published package path and the explicit confirmation boundary. It does not establish completed required-topic coverage across a conversation, eight-family acceptance, candidate comparison, A-to-B progression, fixed-judge acceptance or human ratings. PR #218 remains draft. The browser and local runtime are closed, with the runtime process and local listeners absent. No application deployment is included; graceful remote-session cleanup and remote preview revocation are not verified.

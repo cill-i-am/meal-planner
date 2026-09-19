@@ -440,10 +440,13 @@ The published OpenAI client defaults to two transient-error retries: at most thr
 Workers AI binding attempts per admitted application turn. Supported gateway
 options limit each binding attempt to one gateway attempt, disable caching and
 request no gateway payload logging. The SDK retains its normal request timeout;
-the application's configured deadline bounds acceptance. The binding adapter does
-not forward cancellation to `Ai.run`, so stopping a turn does not prove remote
-work stopped. The shared cancellation signal and final synchronous acceptance
-guard prevent late results from committing.
+the application's configured deadline bounds local settlement and acceptance.
+The shared application signal settles failure and releases resources without
+waiting for the SDK iterator. The binding adapter does not forward cancellation
+to `Ai.run`, so stopping a turn does not prove remote work stopped. The shared
+cancellation signal and final synchronous acceptance guard prevent late results
+from committing. An empty SDK stream fails the application contract before
+persistence can report success.
 
 Reserve the full cost of three possible provider attempts before admitting live
 evaluation. Unknown streamed usage retains that reservation. The

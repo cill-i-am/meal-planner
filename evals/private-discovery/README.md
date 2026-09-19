@@ -100,7 +100,7 @@ Current discovery uses unmodified published TanStack packages. The OpenAI client
 
 [`provider-accounting-policy.json`](provider-accounting-policy.json) is the current live-evaluation reservation policy. With the retained Kimi limits/rates, reserve **1,533,546 microUSD ($1.533546) per application turn**, covering three full 511,182-microUSD attempts. Usage remains unknown when the SDK does not provide trustworthy final measurements; retain the entire turn reservation. A cancelled turn can still incur upstream cost. Historical single-attempt receipts keep their original accounting and must not be reused as the current admission bound.
 
-The former custom single-forward evaluation proxy is retired for this path. A new live run must use the native binding and published SDK, reserve the multiplied amount before admission, and record logical turns separately from provider attempts. No live evaluation on the unmodified packages has yet been completed.
+The former custom single-forward evaluation proxy is retired for this path. A new live run must use the native binding and published SDK, reserve the multiplied amount before admission, and record logical turns separately from provider attempts. The [recorded Kimi opening](kimi-published-sdk-opening-results.md) on `9f4ed3d` passed native acceptance, explicit confirmation and reload persistence. It establishes one live opening; full family/candidate evaluation and human ratings remain incomplete.
 
 ## Assisted disclosure policy: private-discovery-driver-v1
 
