@@ -664,10 +664,14 @@ describe("private discovery native TanStack provider", () => {
         test.input.abortController.abort();
       }
       expect(test.input.abortController.signal.aborted).toBe(true);
+      await expect.poll(() => test.dispose.mock.calls.length).toBe(1);
+      expectRejected(test, "outcome_unknown");
+      expect(test.fail).toHaveBeenCalledOnce();
       pending.resolve(response());
       await running;
       expectRejected(test, "outcome_unknown");
       expect(test.run).toHaveBeenCalledOnce();
+      expect(test.fail).toHaveBeenCalledOnce();
       expect(test.dispose).toHaveBeenCalledOnce();
     }
   );
@@ -696,6 +700,9 @@ describe("private discovery native TanStack provider", () => {
     const running = observe(test.model.stream(test.input));
     const controller = await reading.promise;
     test.input.abortController.abort();
+    await expect.poll(() => test.dispose.mock.calls.length).toBe(1);
+    expectRejected(test, "outcome_unknown");
+    expect(test.fail).toHaveBeenCalledOnce();
     controller.enqueue(
       new TextEncoder().encode(
         kimiEvent(kimiChunk([kimiChoice({}, "tool_calls")]))
@@ -705,6 +712,8 @@ describe("private discovery native TanStack provider", () => {
     await running;
     expectRejected(test, "outcome_unknown");
     expect(test.run).toHaveBeenCalledOnce();
+    expect(test.fail).toHaveBeenCalledOnce();
+    expect(test.dispose).toHaveBeenCalledOnce();
   });
 
   it("prevents late authorization from committing after the provider deadline", async () => {

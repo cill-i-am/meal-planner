@@ -221,18 +221,45 @@ const streamDiscovery = (
   let accepted: PrivateChatReply | undefined;
   let emittedReply = false;
   let toolCallId: string | undefined;
+  let disposed = false;
+  let removeAbortListener: (() => void) | undefined;
+  let failureSettlement: Promise<void> | undefined;
   const cleanup = () => {
+    if (disposed) {
+      return;
+    }
+    disposed = true;
+    removeAbortListener?.();
     if (deadline !== undefined) {
       clearTimeout(deadline);
     }
     input.chat.dispose?.();
   };
+  const settleFailure = (problem: PrivateDiscoveryFailure) => {
+    rejected ??= problem;
+    const rejection = rejected;
+    failureSettlement ??= (async () => {
+      try {
+        await input.chat.fail?.(rejection);
+      } finally {
+        cleanup();
+      }
+    })();
+    return failureSettlement;
+  };
+  const settleAfterAbort = async () => {
+    // The application settles without waiting for the published binding bridge to return.
+    try {
+      await settleFailure(failed("outcome_unknown"));
+    } catch {
+      Effect.runSync(
+        Effect.logError("private_discovery.failure_settlement_failed")
+      );
+    }
+  };
   const guard: ChatMiddleware = {
     name: "private-discovery-contract",
-    onAbort: async () => {
-      rejected ??= failed("outcome_unknown");
-      await input.chat.fail?.(rejected);
-    },
+    onAbort: () => settleFailure(failed("outcome_unknown")),
     onAfterToolCall: (_ctx, info) => {
       if (!info.ok) {
         rejected ??= failed("invalid_output", "output_schema");
@@ -324,13 +351,12 @@ const streamDiscovery = (
       }
       return null;
     },
-    onError: async (_ctx, info) => {
-      rejected ??=
+    onError: (_ctx, info) =>
+      settleFailure(
         info.error instanceof PrivateDiscoveryFailure
           ? info.error
-          : failed("invalid_output", "output_schema");
-      await input.chat.fail?.(rejected);
-    },
+          : failed("invalid_output", "output_schema")
+      ),
     onIteration: () => {
       if (controller.signal.aborted) {
         return reject(failed("outcome_unknown"));
@@ -350,8 +376,17 @@ const streamDiscovery = (
       }
     },
     onStart: () => {
-      // The published binding bridge does not forward abort; this deadline fences application acceptance.
-      deadline = setTimeout(() => controller.abort(), config.timeoutMs);
+      const aborted = () => {
+        void settleAfterAbort();
+      };
+      controller.signal.addEventListener("abort", aborted, { once: true });
+      removeAbortListener = () =>
+        controller.signal.removeEventListener("abort", aborted);
+      if (controller.signal.aborted) {
+        aborted();
+      } else {
+        deadline = setTimeout(() => controller.abort(), config.timeoutMs);
+      }
     },
     onToolPhaseComplete: (_ctx, info) => {
       if (controller.signal.aborted) {

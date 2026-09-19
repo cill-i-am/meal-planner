@@ -173,6 +173,78 @@ const expectAcceptedOnce = async (
 };
 
 describe("native private chat reconnect authorization", () => {
+  it("settles the application deadline while the native binding remains unresolved", async () => {
+    const timeoutMs = 1000;
+    await harness.setConfiguration(
+      JSON.stringify({
+        gatewayId: "synthetic-local-only",
+        inputUsdPerMillionTokens: 1,
+        maxOutputTokens: 65_536,
+        model: "@cf/moonshotai/kimi-k2.6",
+        outputUsdPerMillionTokens: 2,
+        timeoutMs,
+      })
+    );
+    harness.clearCalls();
+    const release = Promise.withResolvers<LocalResponse>();
+    let connection: PrivateNativeConnection | undefined;
+    try {
+      harness.setModelResponse(() => release.promise);
+      const binding = await harness.binding();
+      connection = await harness.open(binding);
+      const attempt = await harness.startTurn(connection);
+      await expect.poll(() => harness.calls.length).toBe(1);
+      expect(await keepAliveReferences(binding)).toBe(1);
+      await expect
+        .poll(
+          async () => {
+            const [current] = await harness.turns(binding);
+            return {
+              failure: current?.failure,
+              references: await keepAliveReferences(binding),
+              status: current?.status,
+            };
+          },
+          { timeout: timeoutMs + 2000 }
+        )
+        .toEqual({
+          failure: "outcome_unknown",
+          references: 0,
+          status: "interrupted",
+        });
+      // The application is terminal and released while Workers AI is still awaiting this fixture's response.
+      expect(await harness.hydrate(connection)).toMatchObject({
+        activeRun: null,
+        messages: [{ role: "user" }],
+      });
+      expect(await cards(connection)).toMatchObject({ cards: [] });
+      release.resolve(completedResponse());
+      const stream = await attempt.finished;
+      expect(stream).not.toContain("RUN_FINISHED");
+      expect(stream).not.toContain(proposalText);
+      expect(await harness.hydrate(connection)).toMatchObject({
+        activeRun: null,
+        messages: [{ role: "user" }],
+      });
+      expect(await cards(connection)).toMatchObject({ cards: [] });
+      expect(await harness.turns(binding)).toMatchObject([
+        {
+          failure: "outcome_unknown",
+          id: attempt.turnId,
+          status: "interrupted",
+          summary: null,
+        },
+      ]);
+      expect(await harness.metadata(binding)).toMatchObject({ version: 1 });
+      expect(await keepAliveReferences(binding)).toBe(0);
+      expect(harness.calls).toHaveLength(1);
+    } finally {
+      release.resolve(completedResponse());
+      connection?.socket.close();
+      await harness.setConfiguration(syntheticPrivateDiscoveryConfiguration);
+    }
+  });
+
   it("expires a complete tool waiting for pending authorization and never commits after reconnect", async () => {
     const timeoutMs = 1000;
     await harness.setConfiguration(
