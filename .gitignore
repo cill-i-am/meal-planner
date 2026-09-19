@@ -10,3 +10,5 @@ coverage/
 !.env.example
 .DS_Store
 *.log
+# Impeccable's platform-specific engine is fetched locally, not tracked.
+**/skills/impeccable/scripts/bin/
