@@ -12,15 +12,18 @@ CI runs Node `24.20.0`.
 
 Version-sensitive APIs were checked against the installed package and the
 official [`v2.0.0-beta.76` source tag](https://github.com/alchemy-run/alchemy/tree/v2.0.0-beta.76).
+The live Alchemy site currently advertises `2.0.0-beta.79`; that newer release
+is not adopted here without a separate upgrade and regression pass.
 
 ## Stages, profiles, and accounts
 
 Stages own isolated stack resources. Profiles select credentials; a profile is
 not an environment and its name does not prove which account is active.
 
-- Local defaults are Alchemy's `dev_$USER` stage and the `$ALCHEMY_PROFILE`
-  environment variable, which falls back to the profile named `default`. The
-  local plan wrapper preserves those defaults when its flags are omitted.
+- Upstream defaults are Alchemy's `live_$USER` stage for plan/deploy/destroy
+  and `dev_$USER` for `alchemy dev`; the `$ALCHEMY_PROFILE` environment
+  variable falls back to the profile named `default`. The local plan wrapper
+  preserves the upstream default when its flags are omitted.
 - Future preview automation uses `pr-<number>` and must pass both `--stage` and
   `--profile` explicitly.
 - Production uses explicit `prod`, an explicit production profile, and a fresh
