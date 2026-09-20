@@ -78,4 +78,4 @@ Use shadcn Input, Button, Field, FieldLabel, FieldDescription, FieldError, Alert
 
 Keep labels visible, place helper and error text beside the relevant field, and use one clear primary action. Controls support keyboard use with visible focus. Selected, focused, invalid, and disabled states remain visually distinct.
 
-Field validation and service errors belong to the [error contract](.impeccable/onboarding-error-contract.md). Flow behavior belongs to the [transition contract](.impeccable/onboarding-transitions.md). The [implementation ledger](.impeccable/onboarding-implementation-gaps.md) tracks the work required to bring these designs into the application.
+Field validation and service errors belong to the [error contract](.impeccable/onboarding-error-contract.md). Flow behavior belongs to the [transition contract](.impeccable/onboarding-transitions.md). The [implementation ledger](../../docs/plans/onboarding.md) tracks the work required to bring these designs into the application.

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Worktree Isolation"
-  short_description: "Create a checkout that preserves existing work"
-  default_prompt: "Use $worktree-isolation to establish a separate checkout from the intended source without disturbing existing work."

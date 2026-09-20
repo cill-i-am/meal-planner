@@ -1,7 +1,7 @@
-# Web interface design
+# Web interface work
 
-Use [PRODUCT.md](PRODUCT.md) for the interface's product context. The [Impeccable config](.impeccable/config.json) owns the build-path default.
+For UI changes, inspect the relevant live [Paper design](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0) and [DESIGN.md](DESIGN.md). Paper owns visual truth; Markdown/snapshots are dated references. Preserve shadcn component behavior and semantic tokens while theming.
 
-[Paper](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0) is the source of truth for the visual design. Before adding or changing screens, components, or other UI, inspect the relevant live Paper screens, states, and tokens. Use [DESIGN.md](DESIGN.md) for the design rules and links. Markdown and exported snapshots record a dated baseline; they do not override Paper. shadcn owns component structure, behavior, and semantic token conventions; theme those components to match Paper.
+Implement an already agreed design without seeking approval again. For a new surface or substantial redesign, agree the composition in Paper before application UI coding. When Paper is unavailable, report that evidence limit and continue only work supported by committed references; do not invent a new visual authority.
 
-For new surfaces and substantial visual redesigns, develop the composition in Paper and refine it with the user before application UI coding. If Paper has no design for the requested surface, extend the agreed visual system there first. Keep the design reference and affected documentation aligned with the agreed result. If Paper is unavailable, report that limitation and use the committed snapshots only for work the available evidence supports; do not present them as the latest live design.
+For changed form behavior, read [the form contract](../../docs/reference/forms.md). [PRODUCT.md](PRODUCT.md) and [.impeccable/config.json](.impeccable/config.json) remain tool inputs. Do not bulk-regenerate or override them during an unrelated edit.

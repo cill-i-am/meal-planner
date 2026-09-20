@@ -8,7 +8,7 @@ Effect v4 API with a private Cloudflare Worker for household meal planning and r
 
 Household state lives in the household Durable Object. Global D1 stores Better Auth and provider accounting. Alchemy owns infrastructure; Drizzle Kit owns database schemas and migrations.
 
-See [the infrastructure guide](../../docs/infrastructure/alchemy.md) for bindings, configuration, local runtime proof, and deployment boundaries. [The recipe-import architecture](../../docs/architecture/recipe-import-intent.md) describes import authority and processing.
+See [the infrastructure guide](../../docs/how-to/operate-infrastructure.md) for bindings, configuration, local runtime proof, and deployment boundaries. [The recipe-import architecture](../../docs/reference/recipe-import.md) describes import authority and processing.
 
 ## Local Tesco catalogue host
 

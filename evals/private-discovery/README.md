@@ -1,6 +1,6 @@
 # Private discovery evaluation assets
 
-These synthetic product-quality assets implement the adult-discovery portion of [PDR-0006](../../docs/decisions/product/0006-ai-evaluation-and-release-evidence.md). They contain no real household data, accepted baseline or release verdict. [PR #218](https://github.com/cill-i-am/meal-planner/pull/218) merged the implementation; the product owner explicitly deferred broader evaluation and human ratings. Those outcomes remain unproven, rather than being counted as passed.
+These synthetic product-quality assets implement the adult-discovery portion of [PDR-0006](../../docs/decisions/pdr-0006-ai-evaluation-and-release-evidence.md). They contain no real household data, accepted baseline or release verdict. [PR #218](https://github.com/cill-i-am/meal-planner/pull/218) merged the implementation; the product owner explicitly deferred broader evaluation and human ratings. Those outcomes remain unproven, rather than being counted as passed.
 
 | Asset | Purpose |
 | --- | --- |
@@ -13,7 +13,7 @@ These synthetic product-quality assets implement the adult-discovery portion of 
 | `validate.ts` | Offline asset and accounting-policy validation. |
 | [Published SDK live opening](kimi-published-sdk-opening-results.md) | Current implementation's successful native opening, explicit confirmation, reload proof and cost checkpoint. |
 
-The [Stage 2 plan](../../docs/delivery/stages/02-private-discovery/README.md) retains shorter dependant assistance and the full repeat-review flow in Work Item 04. This pack exercises adult discovery across all eight families. Discussing a dependant or fallback does not prove a dependant-targeted confirmation flow. Routine, capacity, equipment and fallback needs remain private context, not food-preference facts. Later-stage obligations stay `not_exercised` and are excluded from pass counts and quality aggregates.
+The [Stage 2 plan](../../docs/plans/private-discovery/README.md) retains shorter dependant assistance and the full repeat-review flow in Work Item 04. This pack exercises adult discovery across all eight families. Discussing a dependant or fallback does not prove a dependant-targeted confirmation flow. Routine, capacity, equipment and fallback needs remain private context, not food-preference facts. Later-stage obligations stay `not_exercised` and are excluded from pass counts and quality aggregates.
 
 ## Historical findings
 

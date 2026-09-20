@@ -44,4 +44,4 @@ The reference CSS is not imported by the application. Static screenshots do not 
 
 Both critique passes attempted the Impeccable detector. It failed because its engine was unavailable; detector counts are unavailable. The critiques therefore record manual design review and source inspection, not an automated accessibility pass.
 
-All [G01–G14 implementation gaps](../onboarding-implementation-gaps.md) remain open. The [transition contract](../onboarding-transitions.md) specifies safe pending-step resumption. The historical critique scores have not been re-scored or presented as runtime evidence.
+All [G01–G14 implementation gaps](../../../../docs/plans/onboarding.md) remain open. The [transition contract](../onboarding-transitions.md) specifies safe pending-step resumption. The historical critique scores have not been re-scored or presented as runtime evidence.

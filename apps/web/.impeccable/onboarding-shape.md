@@ -38,7 +38,7 @@ Private discovery, portions, routines, meal planning, and shopping remain outsid
 - **Save & exit** saves the pending step. Resume checks canonical state before continuing that operation. A failed checkpoint save stays on the origin with an error.
 - Omit **Get help signing in**. Do not invent a support destination or claim password-reset delivery exists.
 
-The user asked whether age is needed for portions. The inspected person/profile schemas contain no DOB, age, or portion default. [PDR-0004](../../../docs/decisions/product/0004-meal-content-portions-recipes-and-shopping.md) specifies appetite-based portions. Keep DOB out of this setup; portion implementation belongs to later discovery/profile work.
+The user asked whether age is needed for portions. The inspected person/profile schemas contain no DOB, age, or portion default. [PDR-0004](../../../docs/decisions/pdr-0004-meal-content-portions-recipes-and-shopping.md) specifies appetite-based portions. Keep DOB out of this setup; portion implementation belongs to later discovery/profile work.
 
 ## Screens and states
 
@@ -58,7 +58,7 @@ Each feature has matching desktop and mobile designs. Paper groups main screens 
 
 - [Error contract](onboarding-error-contract.md): field validation and Better Auth/household API failures.
 - [Transition contract](onboarding-transitions.md): recovery destinations, saved setup, and segmented-field behavior.
-- [Implementation gaps](onboarding-implementation-gaps.md): 14 open gaps and code evidence.
+- [Implementation gaps](../../../docs/plans/onboarding.md): 14 open gaps and code evidence.
 - [Design decisions and checks](experiments/compact-themed-shadcn.md): the resolved critique findings and static verification.
 - [First critique](onboarding-critique-2026-09-20.md) and [second critique](onboarding-critique-round2-2026-09-20.md): historical findings and resolutions.
 
