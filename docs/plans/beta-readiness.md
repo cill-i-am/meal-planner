@@ -1,4 +1,4 @@
-# Connected invite-only beta evidence
+# Check the complete product before invite-only beta
 
 Status: proposed
 Owner: unassigned
@@ -6,19 +6,15 @@ Depends on: [capability sequence](README.md#capability-sequence)
 
 ## Outcome
 
-Prove the complete household journey before expanding beyond supported dogfood
-and pilot use. [Beta evidence](../explanation/product/beta-and-success.md),
+Check the full household journey before expanding beyond internal use and the supported pilot. [Beta evidence](../explanation/product/beta-and-success.md),
 [PDR-0006](../decisions/pdr-0006-ai-evaluation-and-release-evidence.md),
 [PDR-0015](../decisions/pdr-0015-invite-only-beta-cohort-and-learning-cadence.md) and
-[PDR-0016](../decisions/pdr-0016-beta-support-incidents-and-operator-repair.md) own
-cohort, safety, quality, human-calibration and support requirements.
+[PDR-0016](../decisions/pdr-0016-beta-support-incidents-and-operator-repair.md) define the household group, safety, quality, human-rating and support requirements.
 
 ## Acceptance
 
-- [ ] The complete connected eight-family trajectory covers discovery, routines,
-  planning, approval, remaining-period repair, feedback and shopping consequences.
-- [ ] Hard blockers, quality bands and actual human calibration satisfy PDR-0006;
-  synthetic/local proof and model ratings are not substituted for unmet gates.
+- [ ] Run the complete eight-family scenario through discovery, routines, planning, approval, repairs to the rest of a week, feedback and shopping changes.
+- [ ] Meet PDR-0006's failure limits, quality bands and human-rating requirements. Synthetic tests, local checks and model ratings do not replace those requirements.
 - [ ] The staged dogfood/pilot/cohort, four real weekly cycles and time/correction
   targets meet PDR-0015; targets are not presented as observed performance.
 - [ ] Contextual reporting, containment/communication, consent-limited support,
@@ -28,6 +24,4 @@ cohort, safety, quality, human-calibration and support requirements.
 
 ## Limits
 
-No beta readiness, scores, production deployment, support runbook implementation
-or retailer fulfillment is established by this record. Each capability owns its
-slice; this plan owns integration/release acceptance, not copies of child tasks.
+This plan does not claim that the beta is ready, any score has been achieved, production is deployed, support procedures are implemented or retailer fulfilment works. Each feature plan tracks its own tasks. This plan checks the combined product before release.

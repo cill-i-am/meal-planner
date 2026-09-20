@@ -1,4 +1,4 @@
-# PDR-0006 — AI Evaluation And Release Evidence
+# PDR-0006 — Evaluate the AI and collect release evidence
 
 - Status: Accepted
 - Date: 2026-08-24
@@ -10,15 +10,14 @@
 
 ## Context
 
-Meal Planner depends on an unusually capable AI-led discovery and planning
-experience, but conversational fluency is not proof that the product understood
-the household or produced a usable week. Equally, deterministic domain tests
-cannot measure whether the agent asked the right questions, synthesized useful
-routines, or explained a recommendation well.
+The quality of discovery and planning matters, but fluent conversation does not
+prove that the AI understood a household or produced a useful week. Deterministic
+domain tests cannot tell us whether it asked good questions, found useful
+routines, or explained its recommendation well either.
 
-The product therefore needs distinct evidence for domain correctness, agent
-quality, and real household value. Model or prompt selection must follow that
-evidence rather than becoming an architectural assumption chosen in advance.
+We need separate evidence for correct application behavior, good AI decisions,
+and value to real households. That evidence must guide model and prompt choices,
+rather than treating an early choice as a permanent architectural requirement.
 
 ## Decision
 

@@ -1,4 +1,4 @@
-# ADR-0005 — Separate Shared Catalogue From Household Recipe Authority
+# ADR-0005 — Keep the shared catalogue separate from private recipes
 
 - Status: Accepted
 - Date: 2026-08-25
@@ -6,16 +6,15 @@
 
 ## Context
 
-Meal Planner needs recipes that are visible to every household and recipes that
-remain private to one household. The existing `HouseholdObject` is the canonical
-per-household authority for private imports, reviews, recipes, plans, and related
-product state. Turning it into a fleet-wide catalogue query surface would break
-that isolation model, while projecting private household banks into a shared
-store would create an accidental publication channel.
+Some recipes must be available to every household; others must stay private.
+`HouseholdObject` owns each household's imports, reviews, recipes, plans, and
+related product data. Querying those objects as a shared catalogue would break
+their isolation. Copying private Recipe Banks into shared storage could publish
+private recipes by accident.
 
-Bulk import also produces untrusted or incomplete candidates. Candidate
-acquisition, curation, publication, and household use have different authority
-and lifecycle requirements.
+Bulk imports also contain untrusted or incomplete candidates. Acquiring a
+candidate, reviewing it, publishing it, and using it in a household need different
+permissions and lifecycle rules.
 
 ## Decision
 
@@ -112,7 +111,7 @@ and lifecycle requirements.
 - Household forks preserve source ancestry but own their later lifecycle and
   versions independently.
 
-## Alternatives Rejected
+## Alternatives rejected
 
 ### Store the shared catalogue in one designated HouseholdObject
 

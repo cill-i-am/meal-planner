@@ -10,7 +10,7 @@ stack entrypoint and relevant [source reference](references/doc-map.md). Preserv
 the lockfile and patches unless an upgrade is in scope; do not upgrade merely
 because an upstream example uses another version.
 
-Alchemy is an Effect program with two related boundaries:
+Alchemy uses Effect at two points:
 
 - `Alchemy.Stack(name, { providers, state }, effect)` is the deployable graph.
   Yield resources inside the Stack and return only safe, useful Outputs.
@@ -29,14 +29,15 @@ and bind environment values. Keep `Redacted` values redacted through Outputs,
 state, logs, and provider errors. In an async Worker, use `env` plus
 `Cloudflare.InferEnv` rather than handwritten binding types.
 
-Bindings are capability contracts plus an implementation Layer. Yield the
-narrowest capability, provide its exact native or HTTP Layer once at the
-platform boundary, and keep provider resources, credentials, and SDK clients
-out of domain/public contracts. Prefer `Layer`-owned services when a feature
-needs to carry resources and permissions together. Prefer native schemaless
-RPC for trusted Worker/DO/Container calls; use Effect RPC or Effect HTTP when
-data crosses a browser, partner, webhook, or other trust boundary. Typed RPC
-still needs domain decoding/reconstruction at runtime boundaries.
+A binding pairs the operations a service exposes with the Layer that implements
+them. Request only the operations needed and provide the matching native or HTTP
+Layer once, where the app meets the platform. Keep provider resources, credentials,
+and SDK clients out of domain and public contracts.
+
+Prefer services owned by a Layer when a feature needs resources and permissions
+together. Use native schemaless RPC for trusted Worker/DO/Container calls. Use
+Effect RPC or HTTP across browser, partner, webhook, or other trust boundaries.
+Typed RPC still needs decoding and reconstruction at runtime boundaries.
 
 Stages select isolated infrastructure; profiles select credentials. Current
 upstream defaults are `live_$USER` for deploy/plan/destroy and `dev_$USER` for
@@ -47,13 +48,13 @@ export Cloudflare credentials for local login. CI may use provider environment
 credentials under its own resolver, after `provider check-env` and event/stage
 guards.
 
-Treat `Cloudflare.state()` bootstrap, deploy, destroy, adoption, credential or
-token creation, state/profile clearing, and real-cloud tests as mutations of
-their actual target. A plan is normally non-applying, but first use of remote
-state can still bootstrap infrastructure. Resolve the actual target and effects
-and use existing task authorization; do not ask again for the same authorized
-operation. Preserve the repository wrapper's controls, including any rejection
-of `--yes`. A command name does not establish that it is read-only.
+`Cloudflare.state()` bootstrap, deploy, destroy, adoption, credential/token
+creation, state/profile clearing, and real-cloud tests can change their target.
+A plan normally does not apply changes, but first use of remote state can create
+infrastructure. Check the actual target and effects, and use the task's existing
+authorization without asking again for the same operation. Keep repository
+wrapper checks, including rejection of `--yes`. A command's name does not prove
+that it is read-only.
 
 Use the relevant provider guide and generated API page immediately before
 writing unfamiliar props. A routine edit does not need a full workspace audit
@@ -75,5 +76,5 @@ approval.
 - Operational investigation: [observability](references/observability.md), [gotchas](references/gotchas.md).
 - Requested infrastructure audit or deployment review: [audit checklist](references/audit-checklist.md).
 
-Verify the changed binding/runtime with relevant local proof and required checks.
-A cloud plan is not mandatory evidence for an ordinary code edit.
+Check the changed binding or runtime with relevant local tests and required
+checks. An ordinary code edit does not require a cloud plan.

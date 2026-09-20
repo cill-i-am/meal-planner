@@ -1,14 +1,15 @@
 ---
 name: app-forms
-description: Integrate TanStack Form with Effect Schema validation and typed command submission.
+description: Connect TanStack Form to Effect Schema validation and typed commands.
 ---
 
 # Forms
 
-Use the [shared form contract](../../../docs/reference/forms.md) and
-[implementation example](../../../docs/how-to/build-a-form.md) for a changed form
-flow. Preserve explicit submit decoding, safety confirmation and exact-command
-recovery; generic validity is not consent. Keep one owner for field and mutation
-state. Inspect the current primitive/adapter instead of introducing another form
-framework. Use relevant field, command and browser evidence; copy-only changes do
-not require a form redesign.
+For form behavior changes, use the [form rules](../../../docs/reference/forms.md)
+and [worked example](../../../docs/how-to/build-a-form.md). Decode submitted values
+before building commands. Keep explicit safety confirmation and recovery of the
+exact original request; valid fields do not establish consent.
+
+Give field values and pending mutations one owner each. Check the existing UI
+components and adapter before adding anything new. Use relevant field, command,
+and browser checks. A copy edit does not require redesigning the form.

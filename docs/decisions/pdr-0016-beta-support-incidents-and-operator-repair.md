@@ -1,4 +1,4 @@
-# PDR-0016 — Beta Support, Incidents, And Operator Repair
+# PDR-0016 — Support beta households and repair failures
 
 - Status: Accepted
 - Date: 2026-08-26
@@ -6,15 +6,15 @@
 
 ## Context
 
-The invite-only beta is intentionally small and closely supported. Participants
-need a simple way to report that a profile, conversation, plan, recipe import, or
-shopping list is wrong without diagnosing the underlying architecture.
+The small invite-only beta includes close support. Participants need a simple
+way to report problems with a profile, conversation, plan, recipe import, or
+shopping list. They should not have to diagnose the code first.
 
-Support must not weaken the privacy and authority boundaries accepted elsewhere.
-A support operator should not gain implicit access to private transcripts, and a
-quiet database edit must not make a broken product journey appear successful.
-The beta also needs a consistent way to distinguish a severe product incident
-from a blocked workflow or an ordinary quality problem.
+Support must respect the existing privacy and data-ownership rules. Being a
+support operator does not grant access to private transcripts. A hidden database
+edit must not make a broken user journey look successful. The beta also needs
+a consistent way to tell a serious incident from a blocked task or an ordinary
+quality problem.
 
 ## Decision
 

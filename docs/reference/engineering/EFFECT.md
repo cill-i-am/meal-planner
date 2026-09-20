@@ -2,7 +2,7 @@
 
 Status: **Work in progress**.
 
-This file captures the currently settled Effect standards. Do not invent additional Effect style rules beyond this file and the repository's local conventions.
+This page records the agreed Effect rules. Follow these and the relevant local conventions; do not invent more style rules.
 
 Load this file when changed behavior is already organized around Effect or uses Effect-specific semantics: Services, Tags, Layers, typed error channels, Schema, Redacted values, Effect-aware tests, Schema-derived generation, scoped resources, or established Effect RPC.
 
@@ -20,7 +20,7 @@ Load this file when changed behavior is already organized around Effect or uses 
 
 ## Adoption boundary
 
-Do not require Effect adoption for code that is not already organized around Effect. General standards still apply: typed expected failures, boundary parsing, deep modules, real-seam tests, cancellation, observability, and TypeScript contracts.
+Do not require code to adopt Effect just because it follows these standards. The general rules still apply: typed failures, input parsing, useful module interfaces, tests through real dependency interfaces, cancellation, logging and precise TypeScript types.
 
 When a local responsibility is Effect-based, preserve the local Effect style unless it violates a settled standard here.
 
@@ -47,7 +47,7 @@ Domain operation
   -> performs business decision
 ```
 
-Raw config parsing remains a boundary/composition concern. General module cohesion and seam design still apply.
+Parse raw configuration at the boundary or composition root. Keep related behavior together and define useful dependency interfaces.
 
 ## Typed errors
 

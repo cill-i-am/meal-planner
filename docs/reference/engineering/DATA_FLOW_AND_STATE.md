@@ -1,6 +1,6 @@
 # Data Flow and State
 
-Data flow needs ownership. Every value should have a clear source of truth, boundary parser, projection owner, cache owner, invalidation path, and UI representation. Do not let convenience fetching grow into hidden architecture.
+For each kind of data, define where it is stored, where it is parsed, how it is sent to callers, who caches it and when the cache is refreshed. Make its loading and failure states clear in the UI. Do not let scattered fetch helpers make these decisions by accident.
 
 ## Contents
 
@@ -32,7 +32,7 @@ Use this file when work touches:
 - data fetching, cache keys, loaders, server functions, or query options;
 - frontend server state, local state, forms, optimistic updates, or realtime subscriptions.
 
-Stack-specific skills own concrete APIs. This file owns the architecture: which boundary owns the data, when to parse, when to cache, when to retry, when to invalidate, and when not to abstract.
+Use the relevant library guidance for API details. This page explains data ownership, parsing, caching, retries and invalidation, and when a shared abstraction is justified.
 
 Load [`FEATURE_SLICE_ARCHITECTURE.md`](FEATURE_SLICE_ARCHITECTURE.md) when the data path crosses feature/package boundaries, introduces a public contract, adds schema ownership, or changes import/export surfaces.
 
@@ -42,13 +42,13 @@ Load [`FEATURE_SLICE_ARCHITECTURE.md`](FEATURE_SLICE_ARCHITECTURE.md) when the d
 
 **Service View** - Domain/service data after persistence rows or external data have been parsed into meaningful values.
 
-**Protocol View** - A serializable projection for HTTP, RPC, MCP, queues, events, or another runtime boundary.
+**Protocol View** - The serializable form sent over HTTP, RPC, MCP, a queue, an event or another runtime boundary.
 
 **Client View** - The parsed shape a frontend, mobile app, MCP client, SDK, or other consumer receives from a protocol boundary.
 
 **Server State** - Data owned by a server or external system and cached in a UI or client runtime.
 
-**Local UI State** - Ephemeral view state owned only by the current interface: open panels, active tabs, draft input, focus, selection, sorting controls, and other display concerns.
+**Local UI State** - Temporary state used only by this interface: open panels, active tabs, draft input, focus, selection, sorting controls, and other display concerns.
 
 **Command** - A mutation request with intent, authorization context, idempotency semantics when needed, and explicit success/failure outcomes.
 
@@ -116,7 +116,7 @@ They own:
 
 Service Modules should not receive raw ORM rows, SQL result objects, or database-client types unless the service itself is the persistence adapter.
 
-Avoid repository-per-table symmetry. Persistence adapters should expose behavior the service needs, not table mirrors.
+Do not create a repository for every table by default. A storage adapter should expose the operations the service needs, not mirror the table layout.
 
 Feature-owned schema should preserve the best physical database model. Put table definitions with the owning feature, compose them at the database/migration boundary, and keep database foreign keys for core relational integrity unless a strong provider/sync/modeling reason prevents it.
 
@@ -135,7 +135,7 @@ They own:
 
 Service Modules should not know whether a caller is HTTP, RPC, MCP, mobile, web, CLI, queue, or cron unless that distinction is part of the domain.
 
-Do not grow separate service logic per protocol. Add a protocol adapter over shared service behavior.
+Share service logic across protocols. Add an adapter for each protocol instead of copying the business rules.
 
 ## Protocol to Client
 
@@ -164,7 +164,7 @@ Use local UI state only for ephemeral interface concerns:
 - open/closed disclosure;
 - selected row or tab;
 - local sort/filter controls;
-- pending visual affordances.
+- visual feedback for pending actions.
 
 Avoid:
 
@@ -174,7 +174,7 @@ Avoid:
 - using effects to synchronize two sources of truth;
 - using fallback objects to avoid handling loading/error/empty states.
 
-Derived display values should be computed from cached server state and local UI state, not stored as another mutable state source.
+Compute display values from cached server data and local UI state. Do not store another editable copy of the same information.
 
 Prefer form libraries for form drafts, router/search params for URL-visible controls, query keys for server-relevant controls, and render-time derivation for filtering, sorting, and display values. Use `useState` only for genuinely local ephemeral UI state. Use `useEffect` only for real external synchronization, not to copy one React value into another.
 
@@ -189,7 +189,7 @@ A query should have:
 - a retry policy appropriate to the operation;
 - a clear owner for invalidation or refresh.
 
-Query functions should be boring: call the typed client, parse or receive parsed values, classify failures, and return data. UI components should not learn transport details.
+A query function calls the typed client, parses the response if needed, classifies failures and returns the data. Keep transport details out of UI components.
 
 Do not prebuild broad query factories for hypothetical resources. Add query helpers when at least two call sites need the same identity, freshness, or invalidation policy.
 

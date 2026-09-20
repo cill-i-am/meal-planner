@@ -1,4 +1,4 @@
-# ADR-0003 — Separate Meal Content, Preparation, And Prepared Stock
+# ADR-0003 — Separate food, cooking, and prepared stock
 
 - Status: Accepted
 - Date: 2026-08-24
@@ -6,15 +6,15 @@
 
 ## Context
 
-A household plan includes recipes, assembled meals, packaged products, opaque
-external meals, leftovers, and simple repeated foods. One preparation may
-produce several meals or reusable components, while many meal occasions require
-no cooking. Prepared portions may persist into another week, but the MVP must
-not require per-meal logging or a complete pantry.
+A household week includes recipes, assembled meals, packaged food, meals eaten
+elsewhere without ingredient details, leftovers, and simple repeated foods. One
+cooking session may produce several meals or reusable components. Many meals
+need no cooking at all.
 
-Treating a recipe, meal consumption, cook event, and inventory item as one
-record would make scaling, leftovers, shopping, revision, and feedback
-ambiguous.
+Prepared food can carry into another week. The MVP must support this without
+requiring people to log every meal or maintain a complete pantry inventory.
+Combining a recipe, a meal eaten, a cooking session, and a stock item in one record
+would make portions, leftovers, shopping, revisions, and feedback unclear.
 
 ## Decision
 
@@ -79,7 +79,7 @@ ambiguous.
 - Domain code needs quantity semantics that do not assume every value is a
   decimal number in a universally convertible unit.
 
-## Alternatives Rejected
+## Alternatives rejected
 
 ### Store leftovers as notes on a meal
 

@@ -13,8 +13,8 @@ whether that adult may read or confirm the profile.
 
 ## Acceptance preserved
 
-The following describes this completed slice's historical acceptance, not new
-workflow requirements. Consult current contracts for an assigned change.
+These are the checks recorded when this work was completed, not new workflow
+steps. For a new assignment, read the current contracts.
 
 - [x] Both extended real-runtime tracers pass locally; exact-head review accepted.
 - [x] Existing household boundary suite passes, including outsider profile read,
@@ -33,9 +33,9 @@ or real-email operation is authorized or required here.
 ## Delivery evidence
 
 Delivered by [PR #205](https://github.com/cill-i-am/meal-planner/pull/205).
-The [original complete record](https://github.com/cill-i-am/meal-planner/blob/1912513fefd35c009c09168035b9c0e0b872c1fb/docs/delivery/stages/01-household-people/05-cumulative-exit-proof.md) preserves the exact heads, checks,
-acceptance, decisions, findings and limitations. This refactor did not rerun or
-promote that historical evidence. Completed records do not grant new scope.
+The [original complete record](https://github.com/cill-i-am/meal-planner/blob/1912513fefd35c009c09168035b9c0e0b872c1fb/docs/delivery/stages/01-household-people/05-cumulative-exit-proof.md) keeps the tested commits, checks, decisions, findings, and limits. The docs refactor
+did not rerun those tests or change what they proved. This completed record does
+not assign new work.
 
 Use [current household contracts](../../reference/household.md) and
 [private-discovery contracts](../../reference/private-discovery.md)

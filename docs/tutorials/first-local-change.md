@@ -1,28 +1,27 @@
 # Make and verify a documentation change
 
-Learn the repository's documentation path without provider credentials or an
-application install. Start at the repository root with Python 3 and a clean
-working tree (or an isolated checkout).
+Try the documentation checker without provider credentials or an application
+install. You need Python 3 and a clean working tree or a separate checkout.
+Start at the repository root.
 
-First, run `python3 scripts/check-docs.py`. A successful result reports the
-checked documents with no errors.
+1. Run `python3 scripts/check-docs.py`. It should report the documents checked
+   and no errors.
+2. Create `docs/tutorials/local-link-exercise.md` with this content:
 
-Create a temporary file named `docs/tutorials/local-link-exercise.md` containing:
+   ```markdown
+   # Local link exercise
 
-```markdown
-# Local link exercise
+   [Documentation map](../README.md)
+   ```
 
-[Documentation map](../README.md)
-```
+3. Run the checker again. The link points to the docs map and should pass.
+4. Change the link target to `../missing-page.md` and run the checker. It should
+   exit with a nonzero status and name the missing target in your exercise file.
+5. Restore `../README.md` and check again. The same command should pass.
+6. Delete the exercise file. Run `git status --short` and `git diff --check`.
+   There should be no tracked changes from the exercise.
 
-Run the checker again. The relative link resolves to the docs map and passes.
-Change its target to `../missing-page.md` and rerun. The checker must exit nonzero
-and identify the missing target in your exercise file. Restore `../README.md`;
-the same command passes again.
-
-Delete the temporary exercise file. Run `git status --short` and
-`git diff --check`; the exercise should leave no tracked changes. You have now
-followed a documentation link, observed a real failing check and repaired it.
-For a real change, update its [owning record](../reference/documentation.md), verify
-it and include only the intended diff. This exercise does not test application
-behavior or establish that a coding agent read a document.
+You have checked a real link, seen a failure and fixed it. For an actual change,
+update the [page that owns the information](../reference/documentation.md), check
+it and include only the intended changes in the PR. This exercise does not test
+the application or prove that an agent read a document.

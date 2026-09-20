@@ -1,17 +1,15 @@
-# Beta And Success Evidence
+# Beta and success evidence
 
-## Beta Objective
+## Beta objective
 
-The first beta should determine whether Meal Planner can materially reduce the
-weekly work of feeding a real household while delivering an AI experience that
-feels unusually perceptive, trustworthy, and easy to use.
+The beta should test whether Meal Planner reduces the weekly work of feeding a
+household and whether its AI is useful, trustworthy, and easy to use.
 
-The beta is invite-only and intentionally small. It is a product-learning phase,
-not a scale demonstration. Manual curation, direct support, and operator review
-are acceptable where they help distinguish missing product capability from
-premature automation.
+The beta is small and invite-only. It tests the product, not its ability to serve
+large numbers of users. Manual recipe review, direct support, and operator checks
+are acceptable when they help identify what the product needs before automating it.
 
-## Product Thesis To Validate
+## Product thesis to validate
 
 A household will return each week when the system:
 
@@ -24,9 +22,9 @@ A household will return each week when the system:
 4. makes changes easy through conversation and visual controls; and
 5. remembers useful feedback so future weeks need less correction.
 
-## First Complete Vertical
+## First complete vertical
 
-The first meaningful beta tracer is one household that can:
+The first complete example is one household that can:
 
 - create and link adult and dependant people;
 - complete private adult interviews;
@@ -51,11 +49,11 @@ scenario exercises shared meals, account linking, private interviews, dependant
 management, and exceptions. The domain must not require exactly that household
 shape.
 
-## Catalogue Readiness Evidence
+## Catalogue readiness evidence
 
-The shared catalogue is not ready merely because it reaches a recipe count. The
-roughly `100–200` active-item target is operating guidance; the beta gate is
-coverage and planning usefulness.
+A recipe count alone does not make the catalogue ready. Roughly `100–200` active
+items is a starting target. Readiness depends on whether those items can produce
+useful, complete plans.
 
 Before external invitations, catalogue evidence should show a practical spread
 across:
@@ -69,26 +67,25 @@ across:
 - low-burden options that can support person-specific fallbacks; and
 - enough variety to avoid accidental dependence on the same small set of meals.
 
-The accepted synthetic household suite must be able to receive complete,
-realistic weeks without catalogue shortage creating unresolved requirements or
-absurd repetition. Specialized needs may still use private household imports;
-the shared catalogue does not need to support every possible diet before beta.
+The synthetic test households must receive complete, realistic weeks. Missing
+catalogue options must not leave meals unresolved or force unreasonable
+repetition. Private household imports can meet specialized needs; the shared
+catalogue need not cover every possible diet before beta.
 
-## Cohort And Learning Cadence
+## Cohort and learning cadence
 
 [PDR-0015](../../decisions/pdr-0015-invite-only-beta-cohort-and-learning-cadence.md)
-defines the first beta as a staged longitudinal exercise:
+sets out a beta that grows in stages and follows households over several weeks:
 
 1. dogfood with Cillian's household;
 2. add two or three closely supported friendly households; and
 3. expand to approximately six to eight participating households in total once
    the complete flow is reliable enough that new failures are informative.
 
-Each household is recruited for at least four genuine weekly planning cycles.
-A holiday, planning suspension, illness, or week without a real planning need is
-not treated as a failed return merely because no plan was generated. Week-one
-success is necessary but insufficient; the evidence must show whether weeks two
-through four require less active planning work and fewer meaningful corrections.
+Recruit each household for at least four real weekly planning cycles. Do not
+count a holiday, planning pause, illness, or week with no planning need as a
+failed return. A good first week is not enough: check whether weeks two through
+four take less active planning time and need fewer significant corrections.
 
 Recruitment prioritizes variation in planning problems rather than participant
 volume. Across the cohort, include where practical:
@@ -114,7 +111,7 @@ private conversations is not a condition of participation.
 Expansion between cohort stages is explicit and evidence-based. Dates, available
 invites, or delivery milestones do not open the next stage automatically.
 
-## Stage Readiness Gates
+## Stage readiness gates
 
 ### Hard gates
 
@@ -133,8 +130,8 @@ planning speed or positive qualitative feedback:
 - a known critical incident whose cause and required corrective action remain
   unresolved.
 
-Hands-on support and explanation are acceptable. Quietly fixing canonical data
-behind the product so a household appears successful is not.
+Support and explanations are acceptable. Hidden database fixes that make a
+household appear successful are not.
 
 ### Dogfood to closely supported pilot
 
@@ -148,9 +145,9 @@ Before adding the first external households:
 - a representative initial setup through first approved plan is achievable in
   approximately `30 minutes` of active household interaction.
 
-The `30-minute` value is an operating target and review trigger. A longer complex
-case may still be acceptable when its cause and correction burden are understood;
-it must not be hidden by rushing high-impact confirmation.
+The `30-minute` target prompts a review; it is not an absolute limit. A longer
+complex case can be acceptable when its cause and correction burden are
+understood. Do not rush important confirmations to meet the target.
 
 ### Closely supported pilot to first full cohort
 
@@ -189,7 +186,7 @@ household wants something different—is not counted as a major planner failure.
 Metrics retain correction reason and target rather than relying on raw edit
 count.
 
-## Primary Measures
+## Primary measures
 
 ### Time to approved plan
 
@@ -247,10 +244,9 @@ For each household, compare later weeks with the initial baseline:
 - planned-meal use; and
 - household-rated confidence in the proposal.
 
-The core learning claim is not merely that the product remembers data; it is
-that the household has to do less work.
+Remembering data is not enough. The household must have less work to do.
 
-## AI Experience Measures
+## AI experience measures
 
 The AI conversation is evaluated as a product capability. Measure:
 
@@ -269,7 +265,7 @@ A fluent but generic conversation should score poorly. A shorter conversation
 that identifies the right household structure and produces an excellent routine
 may score highly.
 
-## Evaluation Evidence Stack
+## Evaluation evidence stack
 
 [PDR-0006](../../decisions/pdr-0006-ai-evaluation-and-release-evidence.md)
 defines three distinct forms of evidence.
@@ -289,21 +285,20 @@ households. Each scenario includes required discoveries, prohibited assumptions,
 hard invariants, expected artifacts, representative user changes, and a scored
 quality rubric.
 
-A scenario need not prescribe one exact golden week where several plans could be
-valid. It must reject hard-invariant violations and score the complete
-interaction trajectory, including unnecessary questions, missed facts, first-plan
-practicality, automatic application of known routines and fallbacks, explanation
-quality, and repair behaviour.
+Several weekly plans may be valid, so a test need not demand one exact result.
+It must reject broken hard rules and assess the whole interaction: unnecessary
+questions, missed facts, first-plan practicality, use of known routines and
+fallbacks, explanations, and handling of requested changes.
 
-The accepted 2026-09-06 staging in
+The 2026-09-06 decision in
 [PDR-0006](../../decisions/pdr-0006-ai-evaluation-and-release-evidence.md#stage-specific-evidence-and-the-complete-beta-gate)
-lets Stage 2 establish discovery/profile evidence across all eight families.
-Routines, planning/repair, feedback learning, and shopping are exercised in
-their owning stages. Unimplemented dimensions are recorded as not exercised, not
-passing. Before inviting the first external beta household, the complete
-connected eight-family discovery-to-repair journey, including shopping
-consequences, must pass with full human calibration. A discovery-only baseline
-cannot satisfy that gate.
+lets Stage 2 test discovery and profiles across all eight families. Test routines,
+planning, repair, learning, and shopping in their own stages. Mark features not
+yet implemented as not exercised, not passing.
+
+Before inviting an external household, the connected eight-family journey from
+discovery through plan changes and shopping must pass with full human
+calibration. Discovery-only results do not meet that requirement.
 
 ### Live beta product evidence
 
@@ -316,7 +311,7 @@ must run the relevant deterministic tests and synthetic evals. Results record th
 exact model, prompt, tool, policy, scenario, and rubric versions. Offline evals
 are a release gate, not a substitute for beta evidence.
 
-## Representative Evaluation Households
+## Representative evaluation households
 
 Before and during beta, maintain privacy-safe synthetic scenarios covering at
 least:
@@ -338,7 +333,7 @@ validation, the final plan, and at least one meaningful repair request rather
 than prompt output in isolation. New reusable classes of production failure
 should become privacy-safe regression scenarios where practical.
 
-## Privacy-Safe Instrumentation
+## Privacy-safe instrumentation
 
 Operational events should use opaque household and session correlations and
 record only the data required for product learning. Useful events include:
@@ -357,7 +352,7 @@ record only the data required for product learning. Useful events include:
 Do not place transcripts, raw health disclosures, ingredient free text, source
 URLs, recipe evidence, or credentials in analytics events.
 
-## Qualitative Beta Practice
+## Qualitative beta practice
 
 For a small cohort, the team should regularly review:
 
@@ -373,7 +368,7 @@ For a small cohort, the team should regularly review:
 Households should have a straightforward way to report that a profile or plan
 feels wrong without having to identify the underlying technical failure.
 
-## Beta Readiness Evidence
+## Beta readiness evidence
 
 Before inviting external households, the product should demonstrate:
 
@@ -395,7 +390,7 @@ Before inviting external households, the product should demonstrate:
   the beta path; and
 - a clear mechanism to pause or remove a household from the beta.
 
-## Exit Criteria
+## Exit criteria
 
 The stage thresholds above are the initial operating gates for the invite-only
 beta. Broader product thresholds should be refined from evidence rather than
@@ -413,5 +408,5 @@ The beta may be considered directionally successful when:
 - returning households use the product because it saves work, not only because
   they are helping test it.
 
-Failure to meet those conditions should trigger product-model or experience
-changes before retailer, MCP, embedded, or scale expansion.
+If these conditions are not met, change the product or experience before adding
+retailer, MCP, embedded, or large-scale features.

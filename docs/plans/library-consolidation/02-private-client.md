@@ -1,175 +1,185 @@
-# Consolidate remaining private-client state
+# Simplify private interview state
 
 Status: proposed
 Owner: unassigned
-Depends on: [delivered browser runtime](01-browser-runtime.md)
-Delivery: verified removal of remaining generic client-state duplication without changing private authority
+Depends on: [working browser runtime](01-browser-runtime.md)
+Delivery: remove duplicated client-state code while preserving private data and commands
 
 ## Outcome and context
 
-Adults can start, resume and complete private discovery, review cards and recover
-interrupted commands while the browser maintains less bespoke subscription state.
-Private history, explicit profile confirmation and exact-command recovery retain
-their existing meaning.
+Adults must still be able to start, resume, and complete discovery, review cards,
+and recover interrupted commands. The browser should need less custom code to
+track state and notify screens of changes. Keep private history, explicit profile
+confirmation, and retries of the exact original command.
 
-The original proposals also planned TanStack chat adoption. That work is already
-merged in [#218](https://github.com/cill-i-am/meal-planner/pull/218), on September 19,
-2026, using base Agent sessions and published TanStack packages. This outcome is
-remaining client-state consolidation, not another chat migration. The merge did
-not establish deployment or complete the broader discovery evaluation gates.
+The original proposals included TanStack chat adoption. That already merged in
+[#218](https://github.com/cill-i-am/meal-planner/pull/218) on September 19, 2026,
+using base Agent sessions and published TanStack packages. This plan covers the
+remaining client-state cleanup, not another chat migration. That merge did not
+establish deployment or finish the wider discovery evaluation.
 
-[Private-discovery reference](../../reference/private-discovery.md) owns current
-contracts; [ADR-0004](../../decisions/adr-0004-household-agent-coordinator-and-isolated-chat-agents.md)
-owns the consequential authority decision. Use their current meaning rather than
-restoring the old proposals' plain-session runtime or custom package patches.
+The [private-discovery reference](../../reference/private-discovery.md) describes
+the current contracts.
+[ADR-0004](../../decisions/adr-0004-household-agent-coordinator-and-isolated-chat-agents.md)
+records the data-ownership decision. Do not restore the old proposals' plain
+session runtime or custom package patches.
 
 ## Scope
 
-Inventory and simplify connection/session selection, pagination, cards, derived
-control state, profile refresh and generic subscriptions in the actual client.
-Keep one supported connection adapter and domain command/recovery seam where they
-are needed. Remove only machinery still present and actually superseded.
+Inspect connection and session selection, pagination, cards, derived screen state,
+profile refresh, and subscriptions. Keep one supported connection adapter and the
+domain command/recovery interface where needed. Remove only code that still
+exists and has actually been replaced.
 
-Exclude model/provider changes, prompt or retry-policy changes, new discovery
-features, accounting rewrites, transcript replication, a second chat database,
-persistence cutovers and LiveStore rollout. Existing SDK retry behavior remains
-owned by discovery; this refactor adds no application retry or automatic new turn.
+Do not change models, providers, prompts, retries, discovery features, accounting,
+storage, or LiveStore. Do not replicate transcripts or add another chat database.
+Discovery still owns SDK retry behavior. This change adds no application retry or
+automatic new turn.
 
 ## Approach and trade-offs
 
-### Keep one owner for each kind of state
+### Give each kind of data one owner
 
-| Concern | Owner after consolidation |
+Use the following owners after the cleanup:
+
+| Data | Owner |
 | --- | --- |
-| Local and derived control state | The compatible shared browser runtime/state composition |
-| Chat presentation and in-flight messages | The existing published TanStack integration |
-| Durable private history and canonical message identity | The admitted private session and its transactions |
-| Confirmed profile facts, versions and receipts | Household authority |
-| Unresolved exact commands | Existing identity-bound retention, independent of disposable view state |
+| Local and derived screen controls | The compatible shared browser runtime/state setup |
+| Chat display and messages arriving now | The existing published TanStack integration |
+| Saved private history and message IDs | The authorized private session and its transactions |
+| Confirmed profiles, versions, and saved command results | Household authority |
+| Unresolved commands | Existing identity-bound storage, separate from disposable screen state |
 
-Inspect the current client and consumers before extraction. Replace listener,
-snapshot or fan-out plumbing only where the chosen library genuinely takes over.
-Do not replace it with a new generic event bus or independently mutable transcript
-copies in atoms, Query and the SDK. Provisional/private cards remain distinct from
-confirmed Household data.
+Read the client and its consumers before extracting code. Replace listeners,
+snapshots, and notification code only where the chosen library takes over. Do not
+build a generic event bus or keep separate writable transcripts in atoms, Query,
+and the SDK. Private or provisional cards are not confirmed Household facts.
 
-Reuse the [browser outcome's](01-browser-runtime.md) delivered registry/lifetime and
-package result. A Query fallback does not prove atom bindings work: resolve any
-actual compatibility gap in the shared composition rather than installing another
-Effect version or creating a parallel runtime. Provider-free characterization can
-proceed independently of that production-state cutover.
+Reuse the [browser runtime's](01-browser-runtime.md) working registry, lifetime
+rules, and package choice. A Query fallback does not prove that atom bindings
+work. Resolve package gaps in the shared setup, rather than adding another Effect
+version or runtime. Tests using no real provider can proceed before the runtime
+switch.
 
-### Preserve admission, recovery and publication
+### Keep access checks, recovery, and saving behavior
 
-Use current supported SDK interfaces and the existing validated event mapping.
-Preserve one intended connection/lifetime and canonical reconciliation by durable
-identities. Client message arrays, optimistic IDs and run completion do not establish
-server history, admission or Household commitment. Reconnect joins/replays existing
-work; it is not permission for another inference or a new command identity.
+Use supported SDK interfaces and the existing validated event mapping. Keep the
+intended connection lifetime and match messages using saved server IDs. Browser
+message arrays, optimistic IDs, and a completed SDK run are not proof of saved
+history, access, or a Household write. Reconnection resumes or retries existing
+work; it must not start another inference or give a command a new identity.
 
-Keep every private payload, including buffered and replayed output, behind the
-native physical-send fence. No parent bridge, transcript HTTP/RPC response or SDK
-synchronization shortcut may bypass it. Accepted model output remains behind the
-current schema/policy and persistence boundary; rejected tokens, tool arguments or
-internal content must never appear transiently or durably. Preserve actual current
-size/order/cursor rules instead of reviving deleted parser limits.
+Every private payload, including buffered and replayed output, must pass the
+access check immediately before the native socket sends it. No parent bridge,
+transcript-returning HTTP/RPC call, or SDK sync shortcut may bypass that check.
+Keep the existing schema/policy checks before saving model output. Rejected
+tokens, tool arguments, and internal content must not appear on screen or in
+saved history. Use current size, ordering, and cursor rules, not deleted parser
+limits.
 
-Retained intent survives permitted matching-context recovery, not arbitrary remounts
-under another identity. Storage failure must be visible before unsafe dispatch.
-Disconnect, Stop, unmount and authority loss are distinct: local cancellation proves
-neither upstream cancellation nor rollback. Old frames and callbacks cannot update a
-new context or clear its newer command. Completion still waits for canonical profile
-confirmation, including current-version and explicit safety requirements.
+Recover saved requests only in their permitted matching context, never just
+because a screen remounts under another identity. Show storage failures before
+sending a command that requires saved recovery data. Disconnect, Stop, unmount,
+and loss of access mean different things. Local cancellation does not prove
+upstream cancellation or rollback.
+
+Old frames and callbacks must not update a new context or clear its newer command.
+Completion still waits for the Household's profile-confirmation result, including
+current-version and explicit safety confirmation.
 
 ## Source and coordination
 
-Inspect `apps/web/src/features/private-interviews/`, its current client/panel/card
-consumers and tests; `packages/private-interview-api/`; and
-`apps/api/src/features/private-output/`, including production session/output classes
-and persistence, admission, reconnect and confirmation tests. Trace the published
-adapter actually used after #218 rather than constructing one from old examples.
-Coordinate profile schemas, forms, registry composition and lockfile changes with
-[runtime](01-browser-runtime.md) and [forms](03-forms-and-json.md).
+Read the client, panels, cards, and tests in
+`apps/web/src/features/private-interviews/`, the contracts in
+`packages/private-interview-api/`, and production code and tests in
+`apps/api/src/features/private-output/`. Include saving, access, reconnection, and
+confirmation. Trace the published adapter used after #218, rather than building
+one from an old example.
+
+Coordinate profile schemas, forms, shared registry, and lockfile edits with the
+[browser runtime](01-browser-runtime.md) and [form work](03-forms-and-json.md).
 
 ## Acceptance
 
 - [ ] The actual React/client integration supports start, rediscover, history
-  pagination, resume and completed read-only history with canonical order, cursor
-  bounds and participant identity. Optimistic IDs cannot replace durable identities.
-- [ ] Mount/unmount, remount and two consumers create only the intended connections
-  and submissions, with no leaked listeners, fibers or alternate writable transcript.
-- [ ] Loss after participant append, assistant acceptance or profile confirmation,
-  followed by restart/reconnect, preserves the original payload/ID/versions and
-  produces one canonical result. Reconciliation does not resubmit history as trusted
-  input, regenerate a turn, duplicate a record or add an application retry; installed
-  SDK retry/accounting behavior is unchanged rather than falsely claimed single-attempt.
-- [ ] Delayed/ambiguous confirmation cannot be mistaken for failure or success.
-  Completion remains blocked until canonical settlement; an SDK terminal event cannot
-  settle Household state or clear a newer retained command.
-- [ ] Correction, rejection, refreshed review, provisional facts and safety reductions
-  preserve explicit current-version consent. A kind/target or card-revision change
-  cannot reuse stale confirmation or promote a private proposal to a shared fact.
-- [ ] Another participant, adult or household is denied directory/session/history,
-  output and recovery access through the real admission boundary. Private values stay
-  out of shared caches, unintended SSR/hydration and telemetry.
-- [ ] Pause output after buffering but before physical send; invalidate admission via
-  sign-out, passive expiry, departure or unlink, then release it. Native production
-  classes send no private bytes after the fence closes. Repeat relevant restart and
-  re-admission cases rather than treating a mocked WebSocket as proof of adjacency.
-- [ ] Account/household/session change hides old private UI; delayed callbacks and
-  queued events cannot repopulate the new context, including after remount or while
-  a newer exact command is pending.
-- [ ] Malformed, oversized, unexpected or interrupted events fail under the current
-  contract. Rejected model output never becomes transient or durable history; no
-  repair, hidden success, alternative transcript route or fabricated token streaming
-  is introduced to accommodate a library helper.
-- [ ] Unavailable browser recovery storage is visible before any command requiring
-  retention is dispatched. Stop, disconnect and unmount release owned resources
-  without discarding permitted recovery or asserting upstream cancellation/rollback;
-  late producer results cannot commit after the application's terminal boundary.
-- [ ] Installed SDK/React types, production web/Worker bundles and affected contract
-  tests pass. The removal inventory shows genuine generic simplification while
-  retaining native admission, domain commands and canonical history/receipts.
+  pagination, resume, and completed read-only history. Preserve server ordering,
+  cursor limits, and participant identity. Optimistic IDs do not replace saved IDs.
+- [ ] Mount, unmount, remount, and two consumers create only the intended connections
+  and submissions, with no leaked listeners, fibers, or second writable transcript.
+- [ ] Lose a reply after a participant message is saved, an assistant reply is
+  accepted, or a profile is confirmed. After restart/reconnect, the original
+  payload, ID, and versions produce one result. Recovery must not trust re-sent
+  browser history, regenerate a turn, duplicate a record, or add an application
+  retry. Keep the installed SDK's retry and accounting behavior; do not falsely
+  describe it as single-attempt.
+- [ ] A delayed or unknown confirmation result is neither failure nor success.
+  Completion waits for the Household's saved result. An SDK terminal event cannot
+  settle Household state or clear a newer saved command.
+- [ ] Correction, rejection, refreshed review, provisional facts, and reduced safety
+  constraints require the existing explicit consent for the current version.
+  Changing kind, target, or card revision cannot reuse old consent or turn a
+  private proposal into a shared fact.
+- [ ] The real access checks deny another participant, adult, or household access
+  to the directory, session, history, output, and recovery. Keep private values out
+  of shared caches, unintended server-rendered/hydrated output, and telemetry.
+- [ ] Pause buffered output before physical send. Revoke access by sign-out, passive
+  expiry, departure, or unlink, then release the output. Production native classes
+  must send no private bytes after access closes. Repeat relevant restart and
+  renewed-access cases; a mocked socket does not prove the check happens beside send.
+- [ ] Account, household, or session changes hide old private UI. Late callbacks and
+  queued events cannot fill the new context with old data, including after remount
+  or while a newer command is pending.
+- [ ] Malformed, oversized, unexpected, and interrupted events follow the current
+  contract. Rejected output reaches neither display nor storage. Do not add repair,
+  hidden success, another transcript route, or invented token streaming to fit a
+  library helper.
+- [ ] Report unavailable browser recovery storage before sending a command that
+  needs it. Stop, disconnect, and unmount release their resources without dropping
+  permitted recovery or claiming upstream cancellation/rollback. Late model results
+  cannot commit after the application has reached its terminal state.
+- [ ] Installed SDK/React types, production web/Worker bundles, and affected contract
+  tests pass. List the generic code removed and the native access checks, domain
+  commands, saved history, and saved command results retained.
 
 ### Evidence and limits
 
-Use synthetic fixtures through an actual browser and the pinned local
-workerd/Miniflare production classes. Cover both visible flows and native persisted
-state, especially the buffered-send race, lost acknowledgements, retained commands
-and canonical profile confirmation. Component mocks supplement those checks; they
-do not establish native output fencing or durable replay.
+Use synthetic fixtures in a real browser and production classes on the pinned
+workerd/Miniflare runtime. Check visible behavior and saved state, especially the
+buffered-send race, lost replies, saved requests, and profile confirmation.
+Component mocks can help but do not prove native access checks or durable recovery.
 
-Discover exact suites and commands from current manifests/CI and the
-[local development guide](../../how-to/local-development.md). Record tested heads,
-fixtures and results without real customer transcripts, tokens or private evidence.
-Existing #218 evidence is baseline provenance, not a pass for a changed client.
-Synthetic provider tests establish integration behavior, not model quality, final
-provider usage or success of the outstanding family/candidate evaluation.
+Find exact suites and commands in current manifests, CI, and the
+[local development guide](../../how-to/local-development.md). Record tested commits,
+fixtures, and results without customer transcripts, tokens, or private evidence.
+#218 provides the starting point, not a passing result for this changed client.
+Synthetic providers test integration, not model quality, final provider usage, or
+the unfinished family/candidate evaluation.
 
 ## Delivery and open questions
 
-Next action: inventory the post-#218 client, characterize the current behavior and
-match remaining generic state to the delivered runtime pattern. Continue through
-consumer cutover, deletion and native/browser verification for the assigned scope.
-An unresolved runtime compatibility issue blocks its dependent cutover, not safe
-independent characterization; record the exact failing interface or fixture here.
+Start with the post-#218 client, test its existing behavior, and identify remaining
+custom state code that the working shared runtime can replace. Finish consumer
+changes, deletions, and browser/native checks. A package mismatch blocks the switch
+that depends on it, not independent tests. Record the exact failing interface or
+fixture here.
 
-Use synthetic providers with the real browser and workerd/Miniflare production
-classes, including invalidation between buffering and final send. Run affected
-contracts/confirmation tests, builds and repository checks. Record actual tested
-heads, removed/retained responsibilities and unresolved acceptance in this plan;
-promote reusable knowledge to the private-discovery reference, not another handoff.
-A state refactor or synthetic transport test does not complete the separate
+Use synthetic providers with a real browser and the production classes on
+workerd/Miniflare. Include access loss after buffering but before sending. Run
+relevant contract and confirmation tests, builds, and required repository checks.
+Record tested commits, removed and retained code, and unfinished acceptance here.
+Update the private-discovery reference with reusable knowledge.
+
+These checks do not finish the separate
 [discovery evaluation and tone work](../private-discovery/03-adaptive-discovery-and-evaluation.md).
-Revert a bounded state cutover without rewriting durable history or undoing #218.
+A rollback reverts this state change, not saved history or #218.
 
-## Proposal provenance
+## Original proposals
 
-This is the single successor to the overlapping September 16 proposals. Their
-baseline `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`, then-unmerged #218 assumptions,
-permission pointers and migration instructions are historical, not current policy.
-The [review sequence](README.md) keeps proposal and acceptance edits in this record.
-No remaining client consolidation or runtime proof is claimed by this planning edit.
+This plan replaces the overlapping September 16 proposals, based on
+`c07e48c6f6709f02c054e5110cb7178a9e5d1b93`. Their assumptions that #218 was still
+open, old migration steps, and permission links are historical. The
+[review sequence](README.md) keeps the approach and detailed checks in this one
+record. No remaining client cleanup or runtime verification is claimed here.
 
 - [Original #221 proposal](https://github.com/cill-i-am/meal-planner/blob/5f2c027701de565d7763041e72c69396d3f2d082/docs/delivery/library-consolidation/02-private-interview-client-and-streaming.md).
 - [Original #222 proposal](https://github.com/cill-i-am/meal-planner/blob/027c4b66c19e67a4512fd30334d8471fe063456f/docs/delivery/library-consolidation/02-private-interview-state-and-streaming.md).

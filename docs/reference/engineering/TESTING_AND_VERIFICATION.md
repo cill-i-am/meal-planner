@@ -1,10 +1,10 @@
 # Testing and Verification
 
-Tests should prove behavior through the same interfaces callers use. Confidence comes from observable outcomes at real seams, not from spying on implementation details.
+Test behavior through the same interfaces the application uses. Check results, saved data and visible effects rather than spying on private implementation details.
 
 ## Vocabulary
 
-**Behavior Test** — A test that asserts observable input/output behavior through a module's public interface or intentional system seam.
+**Behavior Test** — A test that checks inputs and results through a public interface or a place designed to accept a substitute dependency.
 
 **Real Seam Test** — A test that replaces behavior through an intentional production seam: constructor-injected dependency, Effect service/layer, local database, in-memory/fake adapter, or runtime-provided binding.
 
@@ -12,7 +12,7 @@ Tests should prove behavior through the same interfaces callers use. Confidence 
 
 **Arbitrary** — A Fast-Check generator for valid or intentionally invalid test values, preferably colocated with the domain module it supports.
 
-**Risk-Matched Evidence** — Verification where each material changed invariant, failure path, boundary, async behavior, persistence/runtime assumption, or user-visible consequence has proportionate evidence through the caller-facing interface or representative runtime.
+**Risk-Matched Evidence** — Checks suited to the consequences of the change. They cover important rules, failures, boundaries, async behavior, storage and runtime assumptions, and user-visible results through public interfaces or a representative runtime.
 
 ## Non-negotiables
 
@@ -27,7 +27,7 @@ Tests should prove behavior through the same interfaces callers use. Confidence 
 
 ## Verification completion criterion
 
-Verification is complete when every material changed behavior, invariant, failure path, boundary, async behavior, persistence/runtime assumption, or user-visible consequence has proportionate evidence through the caller-facing interface or representative runtime.
+Verification is complete when the important behavior and risks affected by the change have suitable checks. Use public interfaces or a representative runtime to check rules, failures, boundaries, async behavior, storage assumptions and user-visible results. Do not add redundant tests or a release gate without a concrete reason.
 
 If a representative environment is unavailable, name the unproven claim instead of presenting a lower-level test as proof.
 
@@ -56,7 +56,7 @@ expect(emailAdapter.sentEmails).toContainEqual({
 });
 ```
 
-The fake adapter is supplied through the production seam and exposes records for assertions.
+The fake adapter uses the same dependency interface as the production adapter. Its recorded messages let the test check the result.
 
 Avoid:
 
@@ -83,7 +83,7 @@ const emails = new RecordingEmails();
 const passwordReset = new PasswordReset(users, emails, clock);
 ```
 
-Module mocks patch hidden dependencies. They encourage code without seams and tests coupled to implementation structure.
+Module mocks replace hidden dependencies. That ties tests to file structure instead of an interface designed for a substitute dependency.
 
 ## Risk-matched evidence
 
@@ -93,7 +93,7 @@ Match evidence to risk:
 - **Elevated changes** also verify affected external, persistence, concurrency, or runtime seams.
 - **Critical/high-consequence flows** verify the end-to-end flow when a representative environment exists.
 
-Do not demand tests just because lines changed. Map each material changed invariant, failure path, boundary, async behavior, or runtime assumption to evidence, and prefer the highest-confidence proof that remains proportionate. If a representative environment is unavailable, state which claim remains unproven rather than pretending a lower-level test proves it.
+Do not add a test just because a line changed. Identify which important behavior, failure, boundary, async rule or runtime assumption needs checking. Choose the check that gives useful confidence without repeating other tests. If a representative environment is unavailable, state which claim remains unproven rather than pretending a lower-level test proves it.
 
 ## Domain behavior and properties
 
@@ -107,7 +107,7 @@ it.prop("normalization is idempotent", [emailAddressArbitrary], (email) => {
 });
 ```
 
-Valid arbitraries construct through production parsers/schemas/smart constructors or derive from them. Do not bypass invariants to create convenient test data.
+Generate valid test values through the production parsers, schemas or smart constructors, or derive generators from them. Do not bypass a rule just to make test data easier to create.
 
 Generate invalid boundary inputs when testing rejection, but do not label them valid domain values.
 
@@ -169,7 +169,7 @@ Avoid:
 
 ## Review checklist
 
-Use this as the final scan after applying the rules above; the rule source of truth remains in the relevant sections.
+Check the relevant items below when reviewing a change. The sections above explain the rules.
 
 - Exporting internals just to test them.
 - Verifying interactions with spies instead of observing fake adapter records.
