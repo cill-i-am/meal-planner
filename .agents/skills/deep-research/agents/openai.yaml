@@ -1,4 +1,0 @@
-interface:
-  display_name: "Deep Research"
-  short_description: "Research a decision with cited evidence"
-  default_prompt: "Use $deep-research to answer the research question with primary evidence and clear uncertainty."
