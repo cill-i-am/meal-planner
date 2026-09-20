@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Meal Planner — background motion study</title>
+    <link rel="stylesheet" href="shadcn-theme.css" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        color: var(--foreground);
+        background: var(--background);
+        font-family: Inter, system-ui, sans-serif;
+      }
+      .study-controls {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--border);
+        background: var(--muted);
+      }
+      .study-controls strong {
+        display: block;
+        font-size: 14px;
+        font-weight: 500;
+      }
+      .study-controls p {
+        margin: 4px 0 0;
+        color: var(--muted-foreground);
+        font-size: 14px;
+        line-height: 20px;
+      }
+      .motion-control {
+        min-height: 44px;
+        padding: 8px 16px;
+        flex-shrink: 0;
+        border: 1px solid var(--input);
+        border-radius: 12px;
+        background: white;
+        color: var(--foreground);
+        font: inherit;
+        font-size: 14px;
+      }
+      button:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 3px;
+      }
+      .app-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        height: 64px;
+        padding: 0 28px;
+        border-bottom: 1px solid var(--border);
+        font-size: 18px;
+        font-weight: 500;
+      }
+      .progress {
+        display: flex;
+        justify-content: center;
+        gap: 24px;
+        padding: 18px 24px;
+        font-size: 14px;
+        color: var(--muted-foreground);
+      }
+      .progress strong {
+        color: var(--foreground);
+        font-weight: 500;
+      }
+      main {
+        min-height: max(650px, calc(100svh - 200px));
+        padding: 40px 24px 80px;
+      }
+      .form-column {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        width: min(100%, 432px);
+        margin: 0 auto;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 36px;
+        line-height: 40px;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      label,
+      .field-label {
+        font-size: 14px;
+        line-height: 20px;
+      }
+      input {
+        width: 100%;
+        height: 44px;
+        padding: 0 14px;
+        border: 1px solid var(--input);
+        border-radius: 12px;
+        background: var(--muted);
+        color: var(--foreground);
+        font: inherit;
+        font-size: 14px;
+        line-height: 20px;
+      }
+      .segments {
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+        height: 52px;
+        border-radius: 12px;
+        background: var(--muted);
+      }
+      .segments span {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: 1;
+        border-radius: 9.6px;
+        font-size: 14px;
+        color: var(--muted-foreground);
+      }
+      .segments .selected {
+        background: white;
+        border: 1px solid var(--input);
+        color: var(--foreground);
+      }
+      .helper {
+        margin: 0;
+        color: var(--muted-foreground);
+        font-size: 14px;
+        line-height: 20px;
+      }
+      .primary {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 0 20px;
+        border-radius: 999px;
+        background: var(--primary);
+        color: var(--primary-foreground);
+        font-size: 14px;
+        font-weight: 500;
+      }
+      @media (max-width: 767px) {
+        .study-controls {
+          align-items: flex-start;
+          gap: 12px;
+          padding: 12px 24px;
+        }
+        .motion-control {
+          padding: 8px 12px;
+        }
+        .app-header {
+          height: 60px;
+          padding: 0 24px;
+        }
+        main {
+          padding-top: 24px;
+        }
+        h1 {
+          font-size: 28px;
+          line-height: 32px;
+        }
+        input {
+          font-size: 16px;
+          line-height: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <aside class="study-controls" aria-label="Motion preview controls">
+      <div>
+        <strong>Background motion study</strong>
+        <p>42-second drift. Focus a field to pause. Read-only form preview.</p>
+      </div>
+      <button class="motion-control" type="button" id="motion-control">
+        Pause motion
+      </button>
+    </aside>
+    <header class="app-header">
+      <svg width="24" height="26" viewBox="0 0 24 26" aria-hidden="true">
+        <circle cx="5" cy="6" r="5" fill="currentColor" />
+        <circle cx="18" cy="6" r="5" fill="currentColor" />
+        <circle cx="5" cy="19" r="5" fill="currentColor" />
+        <circle cx="18" cy="19" r="5" fill="currentColor" />
+      </svg>
+      Meal Planner
+    </header>
+    <div class="progress" aria-label="Setup progress">
+      <span>Account</span><span>Family</span><strong>People</strong>
+    </div>
+    <main class="onboarding-atmosphere" data-motion-paused="false">
+      <section class="form-column" aria-labelledby="task-title">
+        <h1 id="task-title">Add someone</h1>
+        <div class="field">
+          <label for="preview-name">Name</label
+          ><input id="preview-name" value="Jamie" readonly />
+        </div>
+        <div class="field">
+          <div class="field-label">How will they take part?</div>
+          <div class="segments" aria-label="Invite adult selected">
+            <span class="selected">Invite adult</span
+            ><span>Manage profile</span>
+          </div>
+          <p class="helper">We’ll email them an invitation.</p>
+        </div>
+        <div class="field">
+          <label for="preview-email">Email</label
+          ><input
+            id="preview-email"
+            type="email"
+            value="jamie@example.com"
+            readonly
+          />
+        </div>
+        <div class="primary" aria-label="Add and invite, visual reference only">
+          Add and invite
+        </div>
+      </section>
+    </main>
+    <script>
+      const surface = document.querySelector(".onboarding-atmosphere");
+      const control = document.querySelector("#motion-control");
+      let manuallyPaused = false;
+      let inView = true;
+      function syncMotion() {
+        surface.dataset.motionPaused = String(
+          manuallyPaused || document.hidden || !inView
+        );
+        control.textContent = manuallyPaused ? "Play motion" : "Pause motion";
+      }
+      control.addEventListener("click", () => {
+        manuallyPaused = !manuallyPaused;
+        syncMotion();
+      });
+      document.addEventListener("visibilitychange", syncMotion);
+      new IntersectionObserver(([entry]) => {
+        inView = entry.isIntersecting;
+        syncMotion();
+      }).observe(surface);
+      syncMotion();
+    </script>
+  </body>
+</html>
