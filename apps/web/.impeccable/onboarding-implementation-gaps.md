@@ -65,4 +65,6 @@ The [second critique](onboarding-critique-round2-2026-09-20.md) supports the cur
 
 ## Verification boundary
 
+The pastel gradient is restored in Paper. [The motion study](reference/onboarding-motion.md) demonstrates its proposed 42-second drift, focus/offscreen pause, and reduced-motion behavior. G12 includes integrating that decorative layer into the real app shell, pausing it when hidden, and checking performance on target devices. The reference preview does not close G12.
+
 Research and Paper review only. No application behavior, schema, auth configuration, email delivery or production data has been changed. Each gap remains open until implementation and relevant behavior checks demonstrate it is closed.

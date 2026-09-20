@@ -1,6 +1,6 @@
 ---
 name: Meal Planner
-description: Calm family setup with white and lilac surfaces and focused forms.
+description: Calm family setup with a soft pastel glow and focused forms.
 ---
 
 # Meal Planner design
@@ -9,7 +9,7 @@ description: Calm family setup with white and lilac surfaces and focused forms.
 
 [Paper is the source of truth for the visual design](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0). This document records the onboarding design reviewed on 20 September 2026. Check the relevant live screens, states, and tokens before adding or changing UI. The working rules are in [AGENTS.md](AGENTS.md).
 
-The application uses a white surface, a light lilac wash, grey filled fields, blue links, pastel avatars, and black pill buttons. Keep the task easy to scan. Brand details support the form without adding extra steps or explanatory copy.
+The application uses a white surface with a diffuse lilac, blue, rose, and peach gradient behind the upper content. Grey filled fields, blue links, pastel avatars, and black pill buttons complete the theme. Keep the task easy to scan. Brand details support the form without adding extra steps or explanatory copy.
 
 The sky around desktop mockups represents desktop wallpaper. It is presentation context outside the application, not an application background, border, or asset to ship. The application starts at the white surface. Mobile has no sky strip.
 
@@ -28,7 +28,7 @@ The [reference theme](.impeccable/reference/shadcn-theme.css) records the agreed
 | Filled fields and secondary surfaces | `muted`, `secondary` | `#F4F4F6` |
 | Supporting text | `muted-foreground` | `#65656F` |
 | Soft accent surface | `accent` | `#F0ECFA` |
-| Task-area wash | `brand-wash` | `#F6F4FC` |
+| Pastel background light | `glow-lilac`, `glow-blue`, `glow-rose`, `glow-peach` | `#ECE3F8`, `#DEEFFB`, `#F7E4F0`, `#FAEBDD` |
 | Links and focus | `link`, `ring` | `#245BCE` |
 | Invalid input and error text | `destructive` | `#9B2431` |
 | Separators | `border` | `#E9E9ED` |
@@ -62,7 +62,9 @@ Keep the add-person action before the existing roster on long mobile forms. Do n
 
 ## Elevation & Depth
 
-Use surface color, the lilac wash, and fine separators to establish depth within the application. Keep routine form content directly on the application surface. Selected segments use a white surface and visible boundary. Focus and validation halos communicate interaction state rather than decoration.
+Use the diffuse pastel gradient and fine separators to establish depth within the white application surface. The gradient fades to white around its edges and below the upper content. Keep routine form content directly on that surface. Selected segments use a white surface and visible boundary. Focus and validation halos communicate interaction state rather than decoration.
+
+Paper shows the static gradient. The [motion study](.impeccable/reference/onboarding-motion.html) demonstrates a 42-second alternating drift with at most 1.5% translation and 2.5% scale. Animate only the decorative layer; keep content and controls still. Pause while a field is focused, when the page is hidden, or when the surface is offscreen. Reduced motion keeps the full static gradient. The [motion reference](.impeccable/reference/onboarding-motion.md) records the Ceird source and implementation boundary.
 
 The [component reference](.impeccable/snapshots/overview/component-states.webp) shows default, focus, invalid, disabled, loading, hover, and pressed examples. A focused segment has a solid `ring` edge plus a 3px translucent halo. Its focus rule must win over the selected-border rule. The invalid group has a destructive outline and halo.
 
@@ -85,7 +87,7 @@ Preserve pending operations and safe drafts through recovery. **Save & exit** re
 ## Do's and Don'ts
 
 - Check live Paper before adding or changing UI, including desktop, mobile, and exceptional states.
-- Preserve the white/lilac theme while using shadcn structure and semantic tokens.
+- Preserve the white surface and soft multicolour gradient while using shadcn structure and semantic tokens.
 - Keep one clear primary action and retain entered values where safe.
 - Support keyboard use, visible focus, readable contrast, 44px targets, and reduced motion.
 - Do not replace the segmented choice with radio circles or remove the agreed theme.

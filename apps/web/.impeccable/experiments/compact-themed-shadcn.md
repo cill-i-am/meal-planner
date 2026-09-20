@@ -26,11 +26,17 @@ The user clarified that the sky is desktop wallpaper used to present the mockups
 
 Desktop and mobile screenshots were reviewed across the main flow, representative validation and recovery states, and the component reference. Content-driven heights avoid clipping longer forms. The final set retains all 54 original design boards and adds eight, for 62 screen/state boards. Paper has 80 total artboards, including navigation and reference boards.
 
-The 47 live tokens have hash `4edac556`. The original 54 JSX exports referenced 38 token names with no missing definitions. The eight additions plus the notes/component reference referenced 35 names, all defined. These checks establish token coverage for the inspected exports, not application behavior.
+Before the gradient restoration, 47 live tokens had hash `4edac556`. The original 54 JSX exports referenced 38 token names with no missing definitions. The eight additions plus the notes/component reference referenced 35 names, all defined. These checks establish token coverage for those inspected exports, not application behavior.
 
 Static contrast measurements were 3.32:1 for the input boundary against field fill, 5.25:1 for muted text against field fill, and 7.81:1 for error text against white. Computed styles confirmed the solid focus border, group invalid outline, and 44px exit target.
 
 The saved reference theme compiled with Tailwind 4.3.3. The explicit unlayered focus rule follows the equally specific selected-border rule. The output includes the invalid-group outline and translucent halos with color-mix fallbacks. The compiler check used an installed local compiler after the pnpm launcher could not verify its registry signature with restricted network access.
+
+## Pastel gradient restoration
+
+The user identified that the original multicolour glow had been reduced to a uniform lilac wash. All 62 task surfaces now use layered lilac, blue, rose, and peach radial gradients, with a white fade at the upper edge. Four glow tokens replace the single `brand-wash` token, giving 50 live tokens with hash `d5cbbe01`.
+
+The [motion reference](../reference/onboarding-motion.md) adapts Ceird's slow decorative glow into a 42-second alternating drift. It includes a browser preview without changing application source. Paper owns the static visual frame; the reference records the timing, amplitude, and pause behavior. The desktop sky remains presentation-only wallpaper.
 
 ## Verification limits
 

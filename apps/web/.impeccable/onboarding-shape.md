@@ -6,7 +6,7 @@ This brief records the Paper design reviewed on 20 September 2026. It covers log
 
 [Live Paper](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0) is the source of truth for visual design. Check the relevant live screens, states, and tokens before adding or changing UI. [DESIGN.md](../DESIGN.md) explains the design system. The [snapshot index](snapshots/index.md) and [manifest](paper-onboarding-state.json) preserve a dated baseline.
 
-shadcn owns component structure, behavior, and semantic token conventions. The [reference theme](reference/shadcn-theme.css) maps those conventions to the white surface, lilac wash, grey fields, blue links, pastel avatars, pill buttons, and segmented control shown in Paper.
+shadcn owns component structure, behavior, and semantic token conventions. The [reference theme](reference/shadcn-theme.css) maps those conventions to the white surface, diffuse pastel gradient, grey fields, blue links, pastel avatars, pill buttons, and segmented control shown in Paper. The [motion reference](reference/onboarding-motion.md) defines the gradient's subtle movement and static alternative.
 
 The sky outside desktop windows represents desktop wallpaper. It is presentation context, not application UI. Implement the white application viewport and its content. Do not copy the outer sky, mockup padding, window framing, or phone status bar. Mobile designs have no sky strip.
 

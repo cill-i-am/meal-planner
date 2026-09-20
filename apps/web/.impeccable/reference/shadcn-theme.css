@@ -20,7 +20,10 @@
   --border: #e9e9ed;
   --input: #858591;
   --ring: #245bce;
-  --brand-wash: #f6f4fc;
+  --glow-lilac: #ece3f8;
+  --glow-blue: #deeffb;
+  --glow-rose: #f7e4f0;
+  --glow-peach: #faebdd;
   --font-sans: Inter;
   --text-sm: 14px;
   --text-base: 16px;
@@ -73,7 +76,77 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-brand-wash: var(--brand-wash);
+  --color-glow-lilac: var(--glow-lilac);
+  --color-glow-blue: var(--glow-blue);
+  --color-glow-rose: var(--glow-rose);
+  --color-glow-peach: var(--glow-peach);
+}
+
+/* Decorative app-surface light; separate from the desktop mockup wallpaper.
+ * Paper shows the static frame. The preview demonstrates proposed motion.
+ * The caller pauses when hidden/offscreen with data-motion-paused="true".
+ */
+.onboarding-atmosphere {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  background: var(--background);
+}
+.onboarding-atmosphere::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(
+      180deg,
+      var(--background) 0%,
+      transparent 7%,
+      transparent 100%
+    ),
+    radial-gradient(
+      circle farthest-corner at 38% 12% in oklab,
+      var(--glow-lilac) 0%,
+      transparent 35%
+    ),
+    radial-gradient(
+      circle farthest-corner at 62% 10% in oklab,
+      var(--glow-blue) 0%,
+      transparent 35%
+    ),
+    radial-gradient(
+      circle farthest-corner at 57% 22% in oklab,
+      var(--glow-rose) 0%,
+      transparent 30%
+    ),
+    radial-gradient(
+      circle farthest-corner at 40% 25% in oklab,
+      var(--glow-peach) 0%,
+      transparent 28%
+    );
+  animation: onboarding-glow-drift 42s ease-in-out infinite alternate;
+}
+.onboarding-atmosphere[data-motion-paused="true"]::before,
+.onboarding-atmosphere:focus-within::before {
+  animation-play-state: paused;
+}
+@keyframes onboarding-glow-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.88;
+  }
+  to {
+    transform: translate3d(1.5%, -0.75%, 0) scale(1.025);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-atmosphere::before {
+    animation: none;
+    transform: none;
+    opacity: 1;
+  }
 }
 
 /* Explicit theme variants layered onto the official component classes. */
