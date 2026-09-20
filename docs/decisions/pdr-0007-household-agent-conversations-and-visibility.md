@@ -1,4 +1,4 @@
-# PDR-0007 — Household Agent Conversations And Visibility
+# PDR-0007 — Decide who can see each conversation
 
 - Status: Accepted
 - Date: 2026-08-25
@@ -6,20 +6,17 @@
 
 ## Context
 
-Meal Planner needs a durable conversational surface beyond the initial profile
-interview. Adults should be able to return later and ask the agent to review a
-profile, build routines, explain a plan, revise the active week, or discuss a
-household planning problem without losing prior context.
+Adults need conversations they can return to after the first profile interview.
+They should be able to review a profile, build routines, discuss a planning
+problem, or understand and revise a week without losing useful context.
 
-The household also has two different privacy needs:
+Shared planning should be visible to all adults. A private interview or personal
+conversation must not become visible to another adult simply because they share
+a household.
 
-- shared planning work should be visible to all adults; and
-- a candid adult interview or personal conversation must not become visible to
-  another household adult merely because both belong to the same household.
-
-Durable history is useful, but durable storage does not mean every historical
-message should be injected into every future model call. Confirmed structured
-household state remains the reliable planning context.
+Saved history is useful, but not every old message belongs in every later model
+call. Confirmed, structured household facts remain the reliable input for
+planning.
 
 ## Decision
 

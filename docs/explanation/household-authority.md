@@ -2,11 +2,11 @@
 
 ## Completed status
 
-The shared household D1 retirement is complete for the implemented household
-capabilities. One SQLite-backed `HouseholdObject` per Better Auth organization
-owns household product state. Better Auth D1 remains the identity control plane;
-the dedicated provider-accounting database owns the explicitly global provider
-budget and settlement controls. Large private bytes remain in R2.
+The implemented household features no longer use shared household D1 storage.
+Each Better Auth organization has one SQLite-backed `HouseholdObject` for its
+product data. Better Auth D1 owns accounts and membership. The separate provider
+accounting database owns global budgets and settlement. R2 stores large private
+files.
 
 The [household domain boundary](../reference/household.md) describes the current
 implementation. [Recipe import intent](../reference/recipe-import.md) describes the
@@ -16,24 +16,25 @@ and [membership departure coordination](../decisions/adr-0010-coordinate-members
 [Plans](../plans/README.md) own delivery evidence; the
 [documentation standard](../reference/documentation.md) defines record ownership.
 
-This document retains the migration's architectural constraints and future
-requirements. It is no longer a slice-by-slice delivery plan. Later preferences,
-shopping, and retailer approval capabilities start directly in household-local
-modules. Superseded shared-D1 paths are deleted; there are no compatibility
-reads, dual writes, backfills, or preserved experimental schemas.
+This document explains the migration's architecture and future requirements. It
+is not an implementation checklist. Later preferences, shopping, and retailer
+approval features should start directly in household-local modules. The old
+shared-D1 code is deleted. There are no compatibility reads, dual writes,
+backfills, or retained experimental schemas.
 
 ## Household consistency and authority
 
-`HouseholdObject` is a tenant actor, private database, and consistency host.
-Feature-first capability modules own their models, commands, repositories,
-tables, and failures. They need not form one domain aggregate. Explicit
-cross-capability operations coordinate required local transactions; repositories
-do not hide orchestration or reach into another capability's internals.
+`HouseholdObject` gives each household a private database and a place to run
+consistent transactions. Feature modules own their models, commands,
+repositories, tables, and errors; they need not form one domain aggregate.
+Operations spanning features coordinate local transactions explicitly.
+Repositories must not hide that coordination or reach into another feature's
+internals.
 
-An atomic command cannot be split across canonical authorities without an
-explicit product and API decision establishing eventual consistency. Import
-confirmation therefore commits review approval, active-action resolution,
-publication, lifecycle success, history, and replay receipts together.
+Do not split an atomic command across owning services unless an explicit product
+and API decision accepts eventual consistency. Import confirmation therefore
+saves review approval, action completion, publication, success status, history,
+and the retry result together.
 
 Public requests cannot choose organization, object name, actor, authoritative
 time, generation, result version, ordinal, or receipt. The API proves the Better
@@ -59,11 +60,11 @@ local transaction. That transaction records the domain outcome, receipt, and any
 required outbox intent together. Network calls, D1, R2, providers, containers,
 Workflows, Queues, and service bindings stay outside the transaction.
 
-After commit, the host or alarm dispatches recorded work idempotently. Dispatch
-failure cannot turn a committed command into an uncommitted one. Replay returns
-the original domain result; pending or exhausted delivery is separate processing
-state. An uncertain start response remains pending until reconciled. Exhaustion
-requires proof that no Workflow started.
+After commit, the host or alarm dispatches the saved work in a way that is safe
+to retry. A dispatch failure does not undo a committed command. Retrying the
+command returns its original result; pending or exhausted dispatch is separate
+processing state. A start with an unknown result remains pending until checked.
+Only proof that no Workflow started can exhaust dispatch.
 
 Each admitted import execution generation owns a deterministic, privacy-safe
 Workflow ID derived from its intent, generation, and versioned purpose. Admission
@@ -80,13 +81,12 @@ media and manifest before advancing an absent, incomplete, or invalid attempt.
 Each provider dispatch reuses its persisted household-owned start time across
 claim, failure, artifact, and replay commands.
 
-Workflows own external waits and execution; Queues own delivery. Neither is
-canonical household state. R2 holds large bytes behind admitted ownership,
-generation, checksum, and retention metadata. Missing or expired bytes change
-availability observations, not the admitted result. Direct Workflow integrity
-probes reconcile R2; there is no evidence-event routing index or Queue. The
-seven-day `imports/` lifecycle is asynchronous defense-in-depth, not an
-authorization or correctness clock.
+Workflows handle external waits and execution; Queues handle delivery. Neither
+owns household product data. R2 keeps large files, with ownership, generation,
+checksum, and retention checks. A missing or expired file changes availability,
+not the saved result. Workflows check R2 directly; no evidence-event index or Queue
+routes these checks. The seven-day `imports/` cleanup runs asynchronously as a
+second protection, not as an access rule or correctness deadline.
 
 ## Object lifecycle and decomposition
 
@@ -128,12 +128,12 @@ are noncanonical. Reconciliation and deletion may use a minimal operational inde
 of opaque object/Workflow IDs and safe statuses. Strict provider budget
 reservation is a separately named global authority.
 
-An operational index cannot become a household directory or a mirror of recipes,
-imports, reviews, plans, or shopping lists. Fleet-wide product queries require an
-explicit architecture and privacy decision. A global product read model would add
-projection lag, replay, and duplicate deletion obligations. Product projections,
-dual stores, and compatibility mechanisms require the user's explicit approval
-under the greenfield policy.
+An operational index must not become a household directory or copy recipes,
+imports, reviews, plans, or shopping lists. Queries across households need an
+explicit architecture and privacy decision. A global product read model would
+introduce delayed updates, retries, and deletion in more than one place.
+Do not add duplicate stores or compatibility mechanisms merely to preserve the
+old design. Follow the greenfield rules in the root instructions.
 
 ## Future household deletion requirement
 

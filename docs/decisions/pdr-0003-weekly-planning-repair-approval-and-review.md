@@ -1,4 +1,4 @@
-# PDR-0003 — Complete Weekly Planning, Repair, Approval, And Review
+# PDR-0003 — Build, change, approve, and review a complete week
 
 - Status: Accepted
 - Date: 2026-08-24
@@ -6,11 +6,12 @@
 
 ## Context
 
-The product promises to remove planning work, not to create a meal-tracking
-obligation. It must account for every person and managed meal occasion while
-presenting one understandable household week. Changes to one meal may affect
-leftovers, alternatives, cook events, and shopping demand, so revisions need a
-coherent repair model.
+Meal Planner should reduce planning work, not require meal tracking. It must
+cover every person and managed meal occasion while showing one understandable
+household week.
+
+Changing a meal can affect leftovers, individual alternatives, cooking sessions,
+and shopping. The app therefore needs to update those related parts together.
 
 ## Decision
 

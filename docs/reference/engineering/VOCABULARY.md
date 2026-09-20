@@ -1,6 +1,6 @@
 # Vocabulary
 
-These definitions clarify recurring concepts. Use the terminology that makes the current explanation clearest; the glossary does not dictate wording or capitalization.
+Use these definitions when a term in the standards is unfamiliar. Choose the clearest wording for the reader; the glossary does not require special capitalization or repeated jargon.
 
 ## Failure language
 
@@ -10,7 +10,7 @@ These definitions clarify recurring concepts. Use the terminology that makes the
 
 **Custom Error** — A typed, tagged error value for an Expected Failure. It has a stable tag, useful message, structured safe context, and may retain an `unknown` cause.
 
-**Precise Error Union** — The explicit set of Expected Failures a function can return, kept narrow enough that callers can handle cases semantically.
+**Precise Error Union** — The specific Expected Failures a function can return, so callers know which cases to handle.
 
 ## Boundary language
 
@@ -44,7 +44,7 @@ These definitions clarify recurring concepts. Use the terminology that makes the
 
 **Implementation** — What sits behind the interface.
 
-**Seam** — A place where behavior can vary without editing the caller at that point. The seam is where the interface lives.
+**Seam** — A defined interface where an implementation can be replaced without changing its caller.
 
 **Service Module** — A dependency-bearing module in the **Imperative Shell** that coordinates a cohesive use case, workflow, or service capability. It composes **Domain Modules** and interfaces implemented by **External Adapter Modules** through explicit dependencies, sequences effects, owns use-case policy, classifies dependency failures, and returns typed outcomes. It receives parsed service/domain values, not raw framework, protocol, persistence, or third-party shapes. Pure domain behavior remains in Domain Modules even when other literature might call it a domain service.
 
@@ -52,7 +52,7 @@ These definitions clarify recurring concepts. Use the terminology that makes the
 
 **External Adapter Module** — A specialized **Adapter** at an external boundary. It includes inbound adapters such as HTTP/RPC/queue handlers and outbound adapters such as persistence, SDK, platform, and third-party integrations. Service Modules depend on narrow behavior-shaped interfaces; External Adapter Modules implement those interfaces at composition seams.
 
-**Deep Module** — A module with high leverage: a cohesive, low-burden interface hiding substantial behavior, invariants, and incidental steps.
+**Deep Module** — A module whose small, focused interface hides substantial behavior, rules and intermediate steps.
 
 **Accidental Interface** — A leaky or wide interface that forces callers to know unrelated methods, raw DTOs, nullable state bags, ordering constraints, hidden side effects, or implementation details.
 
@@ -76,6 +76,6 @@ These definitions clarify recurring concepts. Use the terminology that makes the
 
 **Adoption Rule** — In established codebases, prefer these standards for new/changed paths while respecting compatible local architecture. Improve the local design without forcing broad migrations unless explicitly requested.
 
-**Project Convention Audit** — The required inspection before adding libraries or patterns: errors, schemas, testing, dependency injection, observability, External Adapter Modules, Service Modules, and module layout.
+**Project Convention Audit** — Checking relevant existing conventions before adding a library or pattern. These may cover errors, schemas, tests, dependencies, logging, External Adapter Modules, Service Modules and layout. It is not a whole-repository review.
 
-**Compatibility Glue** — Small temporary adapter/config/integration code used only because current tooling or surrounding architecture cannot express the preferred pattern yet. Keep it isolated and removable.
+**Compatibility Glue** — Temporary adapter, config or integration code used to preserve compatibility. Meal Planner is greenfield: do not add this to keep obsolete APIs or designs working. A supported adapter for a real external system is a different responsibility.

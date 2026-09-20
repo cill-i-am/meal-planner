@@ -1,164 +1,174 @@
-# One browser Effect runtime
+# Share the browser's Effect setup
 
 Status: proposed
 Owner: unassigned
-Delivery: verified profile/people runtime consolidation, including the selected fallback if needed
+Delivery: working profile and people screens using one tested setup, with the fallback if needed
 
 ## Outcome and context
 
-Household members retain the existing profile and people behavior while the web
-application stops rebuilding Effect client Layers, Promise runners and error
-bridges per feature. Success means one owner for each migrated operation and
-removal of replaced generic machinery, not another wrapper around both old paths.
+Keep the existing people and profile behavior while removing repeated Effect
+client Layers, Promise runners, and error handling. Each migrated operation should
+have one owner. Adding a wrapper around both old implementations is not enough.
 
-This is the evolving plan for that outcome. The [review sequence](README.md)
-separates its proposal and verification changes without creating another plan.
-The original September 16 package observations are historical; the implementation
-checkout's manifests, lockfile, source and tests establish the actual baseline.
+The [review sequence](README.md) splits the approach and its detailed checks
+between two PRs. They edit this same plan. Package observations from September 16
+are historical; use the implementation checkout's manifests, lockfile, source,
+and tests to establish the starting point.
 
 ## Scope
 
-Pilot a complete profile read, mutation and canonical refresh, then finish profile
-and people consumers, including roster, invitations and departure. Keep generated
-Effect HTTP contracts, Household authority and existing exact-command recovery.
-Inventory household/import adapters, but migrate them only when shared composition
-requires an in-scope change; report what remains rather than claiming a whole-app
-migration.
+First make one complete profile flow work: read, save, and refresh from the server.
+Then migrate the other profile and people operations, including the roster,
+invitations, and departure. Keep the generated Effect HTTP contracts, household
+writes, and recovery that retries the exact original command.
 
-Exclude RPC replacement, LiveStore rollout, authentication or persistence changes,
-private-interview behavior, a universal frontend-services framework and unrelated
-Query removal. [Household contracts](../../reference/household.md) and the
-[people API](../../reference/household-people-api.md) own domain guarantees.
+Inspect household and import adapters too, but change them only where the shared
+setup requires it within this scope. List the adapters left unchanged; do not
+claim that the whole app has migrated.
+
+Do not replace HTTP with RPC, roll out LiveStore, change authentication or storage,
+change interview behavior, build a universal frontend service framework, or remove
+unrelated Query uses. The [household contract](../../reference/household.md) and
+[people API](../../reference/household-people-api.md) define behavior to preserve.
 
 ## Approach and trade-offs
 
-### Prove the integration before widening the cutover
+### Prove one working flow first
 
-Characterize existing operation results, cache ownership and retained intents.
-Compile a real generated HttpApi profile read/write slice through the installed
-`AtomHttpApi` and compatible React bindings. Record actual exports, peers, resolved
-versions and the production build result. Test where that version exposes HTTP,
-decoding, defect and interrupted outcomes; a type signature or upstream example
-does not prove the full Cause is preserved.
+Record how existing operations return results, which caches own their data, and
+how unresolved requests are saved. Run a real generated HttpApi profile read and
+write through the installed `AtomHttpApi` and compatible React bindings. Check the
+actual exports, peer dependencies, resolved versions, and production web build.
+Test how that version exposes HTTP failures, decoding errors, defects, and
+interruption. A type signature or upstream example cannot prove that it preserves
+the full Effect Cause.
 
-Prefer native atoms when the complete slice works without forced peers, copied
-internals or a broad stack upgrade. Otherwise retain Query and centralize one
-scoped Effect execution/error bridge. Record the concrete incompatibility and
-selected fallback here. The fallback must still remove repeated runners; an
-inconclusive spike or retaining both alternatives does not complete this outcome.
-An ordinary integration choice stays in this plan; use the decision register only
-if a consequential architectural choice actually needs a separate decision.
+Prefer native atoms when the full flow works without suppressing peer checks,
+copying library internals, or upgrading the whole stack. Otherwise keep Query and
+share one account/household-scoped Effect runner and error adapter. Record the
+failing case and the chosen fallback here. The fallback must remove the repeated
+runners too. An unfinished experiment, or leaving both options running, is not a
+completed change.
 
-### Own lifetime and recovery separately
+Record routine integration choices in this plan. Create a separate decision
+record only for a consequential architecture choice.
 
-Scope the browser registry/runtime by account, household and the current binding
-or generation. Prefer preserving current client-side loading. Any new server
-execution uses request-local state and proves concurrent SSR/hydration isolation;
-never serialize private or pending-command state by default.
+### Separate screen lifetime from saved commands
 
-Dispose subscriptions and obsolete reads on teardown. Hide old-context values
-and ignore late callbacks and invalidations. Retained unresolved commands keep
-their original payload, ID, expected versions and binding outside disposable view
-state, under existing matching-context recovery rules. Cancelling a dispatched
-mutation is not rollback; a cache partition is not authorization. Preserve each
-workflow's existing exclusions rather than inventing a household-global lock.
+Scope the browser registry and runtime to the account, household, and current
+binding or generation. Prefer keeping client-side loading. If adding server
+execution, use per-request state and test simultaneous server rendering and
+hydration for different users. Do not serialize private data or pending commands
+by default.
 
-### Cut over and remove the superseded owner
+When a screen is disposed, remove subscriptions and cancel obsolete reads. Hide
+old-context data and ignore late results or cache invalidations. An unresolved
+command must keep its original payload, ID, expected versions, and binding outside
+the disposable screen state. Recover it only under the existing matching-context
+rules.
 
-Complete the profile slice, then the remaining profile and people operations.
-Promise-based consumers may use one thin boundary to the same runtime. Keep
-feature-specific rejection/recovery meanings; replace structural Cause traversal
-only where public Effect APIs preserve characterized behavior, including any
-legitimate serialized/wrapped failure seam.
+Cancelling a sent request does not undo a server write. A cache key does not grant
+access. Keep each workflow's existing rules for which actions can run while
+another is unresolved; do not add a lock across the whole household.
 
-Refresh only relevant canonical data after confirmed success. Preserve unresolved
-intent on ambiguous outcomes. Remove migrated Query ownership, duplicate client
-construction, obsolete subscriptions and unused exports only when replacement
-coverage exists. Unrelated Query consumers remain. A future replicated resource
-must not gain another independently mutable atom/Query copy.
+### Replace the old code, then remove it
+
+Finish the profile flow, then the other profile and people operations. Promise
+consumers may use one thin adapter to the same runtime. Keep each feature's
+rejection and recovery behavior. Replace manual Cause traversal only when public
+Effect APIs preserve the tested behavior, including any legitimate serialized or
+wrapped failure interface.
+
+After confirmed success, refresh only the affected server data. When the result is
+unknown, keep the original saved request. Once replacement tests cover the
+behavior, remove its old Query ownership, repeated client creation, obsolete
+subscriptions, and unused exports. Leave unrelated Query consumers alone. A
+future replicated resource must not also have separate writable copies in atoms
+or Query.
 
 ## Source and coordination
 
-Inspect both `household-profiles/browser-operations.ts` and
-`household-people/browser-operations.ts` under `apps/web/src/features/`, their public
-operation contracts/tests, people retained intents and feature panels. Check the
-auth boundary/state, `apps/web/src/router.tsx`, `packages/household-api/` and current
-manifests. Coordinate shared profile submit/schema and lockfile changes with
+Start with `household-profiles/browser-operations.ts` and
+`household-people/browser-operations.ts` under `apps/web/src/features/`. Read their
+public operation contracts and tests, people saved-request handling, and panels.
+Check auth state, `apps/web/src/router.tsx`, `packages/household-api/`, and the
+manifests. Coordinate shared profile submission, schemas, and lockfile edits with
 [forms and JSON](03-forms-and-json.md).
 
-[Private-client consolidation](02-private-client.md) consumes the delivered runtime
-and lifecycle result, not a merged planning PR. #218 is merged; use the resulting
-current interfaces rather than the old discovery branch snapshot.
+The [private-client work](02-private-client.md) needs the working runtime and its
+lifetime rules, not just a merged plan. #218 is merged: use its resulting
+interfaces, not an old discovery-branch snapshot.
 
 ## Acceptance
 
-- [ ] The real generated-client profile read/mutate/refetch path renders loading,
-  errors and canonical success in a local browser. Roster, invitation, departure
-  and profile recovery retain their distinct results and existing exclusions.
-- [ ] A sole decoded canonical rejection is definitive, displayed and single-attempt;
-  authentication-required remains distinct. Transport/5xx/decode failures, defects,
-  interruption and mixed Causes retain unknown commitment where it is unproven.
-  The bridge never classifies solely from the first failure in a mixed Cause.
-- [ ] Inject loss after a server commitment and malformed success/error bodies through
-  the real generated HTTP client. Original payload, mutation ID, expected versions
-  and binding survive; matching-context replay returns one canonical result without
-  a replacement ID or an application-added automatic mutation retry.
-- [ ] While a command is unresolved, existing sibling exclusions hold. Edit the draft
-  and start a later eligible command in a new context: an older completion cannot
-  clear the newer retained intent, change its payload or invalidate unrelated data.
-- [ ] Expiry, sign-out and account/household switches hide old data. Re-admission
-  recovers only matching original intent; delayed reads, mutations and invalidations
-  cannot cross the binding/generation boundary, including after remount.
-- [ ] Teardown disposes subscriptions and interrupts obsolete reads without view
-  updates or unhandled work. Cancelling a dispatched mutation preserves its unknown
-  outcome and recovery instead of treating browser abort as server rollback.
-- [ ] Any introduced SSR/hydration proves isolation using simultaneous identities and
-  distinct registries/caches; no private or pending-command value enters unintended
-  serialized output and browser globals are not used during server evaluation.
-- [ ] Resolved package versions, exports and peers compile in the production web
-  build with no suppression. Native atoms or the documented Query fallback supplies
-  one tested execution boundary; unrelated Query consumers continue to work.
-- [ ] The final inventory names removed runners, client construction, subscriptions,
-  Cause plumbing and obsolete cache ownership, plus remaining adapters and genuine
-  domain seams. Equivalent behavioral coverage survives deletion; both alternatives
-  and duplicate authoritative caches are not left running.
+- [ ] The real generated-client profile read/save/refresh flow shows loading,
+  errors, and confirmed server success in a local browser. Roster, invitation,
+  departure, and profile recovery keep their distinct results and action restrictions.
+- [ ] A single decoded server rejection is final, shown to the user, and not retried.
+  A sign-in requirement remains a distinct result. Transport, 5xx, and decoding
+  failures, defects, interruption, and mixed Causes keep the write result unknown
+  when there is no proof. Do not classify a mixed Cause using only its first failure.
+- [ ] Test a lost reply after the server commits, plus malformed success and error
+  bodies through the real HTTP client. Keep the original payload, mutation ID,
+  expected versions, and binding. A retry in the matching context returns one
+  server result without creating an ID or adding automatic mutation retries.
+- [ ] While a command is unresolved, keep the existing restrictions on related
+  actions. Change the draft and start a later permitted command in a new context.
+  The earlier completion must not clear the newer saved request, change its
+  payload, or invalidate unrelated data.
+- [ ] Expiry, sign-out, and account/household switches hide old data. After access
+  is checked again, recover only the matching original request. Late reads,
+  mutations, and invalidations must not cross the binding/generation boundary,
+  including after remount.
+- [ ] Disposal removes subscriptions and interrupts obsolete reads without screen
+  updates or unhandled work. Cancelling a sent mutation keeps its unknown result
+  and recovery path; browser abort is not server rollback.
+- [ ] Any added server rendering and hydration use separate registries/caches for
+  simultaneous identities. Private or pending-command values must not enter
+  unintended serialized output. Server execution must not use browser globals.
+- [ ] Resolved package versions, exports, and peer dependencies compile in the
+  production web build without suppression. Native atoms or the documented Query
+  fallback provides one tested execution adapter. Unrelated Query consumers work.
+- [ ] List the removed runners, client creation, subscriptions, Cause handling, and
+  cache ownership, as well as the adapters and domain interfaces that remain.
+  Preserve equivalent behavioral tests. Do not leave both alternatives or two
+  authoritative caches running.
 
-### Verification at the changed seams
+### Verify the changed interfaces
 
-Characterization tests establish the old behavior before the pilot; then exercise
-the same failure corpus at the replacement's public operation boundary. Mock-only
-atom tests do not prove generated-client decoding, browser lifetime or server replay.
-Use a real local request/response failure case and actual browser journey, adding
-native/API/shared-contract tests where the changed boundary needs them.
+Before the pilot, capture existing behavior in tests. Run the same failure cases
+through the replacement's public operations. Mock-only atom tests do not establish
+HTTP decoding, browser lifetime, or server retry behavior. Use a real local
+request/response failure and browser flow. Add native, API, or shared-contract
+tests where those interfaces change.
 
-Discover targeted suites and required commands from the current manifests/CI and
-[local development guide](../../how-to/local-development.md). Finish with the real
-production build and repository-required checks; after intentional dependency
-changes, verify the resulting lockfile with a frozen install. Use synthetic
-households/invitations rather than dispatching real notifications or calling a paid
-provider. Record unexecuted scenarios explicitly, not as inferred passes.
+Find targeted suites and required commands in the current manifests, CI, and
+[local development guide](../../how-to/local-development.md). Run the production
+build and required checks. After intentional dependency changes, check the lockfile
+with a frozen install. Use synthetic households and invitations, not real
+notifications or paid providers. Mark scenarios not run as unverified.
 
 ## Delivery and open questions
 
-Next action: establish the actual source/package baseline and run the complete
-profile compatibility slice. Resolve native atoms versus the bounded Query bridge
-from that evidence, then continue through people migration and verification.
-Compatibility and replay/isolation are unresolved acceptance, not assumed results.
+Start by checking the source and packages and running the complete profile pilot.
+Use those results to choose native atoms or the shared Query adapter. Then finish
+the people migration and its checks. Package fit and replay/isolation behavior
+remain to be proved.
 
-Use affected web/API/shared-contract tests, a real generated-client failure request,
-an actual local browser and production builds, plus the current repository checks.
-At completion, retain exact tested heads, commands/results, selected composition,
-removed/remaining responsibilities and limitations here. Promote reusable current
-behavior to the owning reference instead of adding a handoff or status ledger.
-Rollback reverts the bounded cutover; no dual writes or persistence migration are
-expected. This record currently claims planning review, not runtime proof.
+Use affected web, API, and shared-contract tests, a failure sent through the real
+generated HTTP client, a local browser, production builds, and required repository
+checks. Record tested commits, commands and results, the chosen setup, what was
+removed, what remains, and any limits here. Put reusable behavior in the relevant
+reference rather than another handoff or status document.
 
-## Proposal provenance
+A rollback reverts this code change. No dual writes or storage migration are
+expected. This plan does not claim that runtime checks have passed.
 
-This record replaces the two overlapping work-item layouts, preserving their
-technical scope and immutable history. The original baseline was
-`c07e48c6f6709f02c054e5110cb7178a9e5d1b93`; its workflow/permission pointers and
-package observations are not current instructions.
+## Original proposals
+
+This plan replaces two overlapping September 16 proposals. Their original base
+was `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`. The links retain their technical
+scope and history, not instructions to use old packages or retired workflow rules.
 
 - [Original #219 proposal](https://github.com/cill-i-am/meal-planner/blob/53d249715b6d530d38951ed257d23e59970ba05b/docs/delivery/library-consolidation/01-effect-browser-runtime.md).
 - [Original #220 proposal](https://github.com/cill-i-am/meal-planner/blob/a6adfe00f6c887367e2dea79629f9f1a03cb13db/docs/delivery/library-consolidation/01-effect-browser-integration.md).

@@ -7,14 +7,14 @@ metadata:
 
 # Interface design
 
-This is the repository's task adapter for the existing Impeccable engine/assets.
-Follow the owning web AGENTS.md, live Paper design and current PRODUCT.md/DESIGN.md.
-The brief and agreed visual system govern; refinement does not authorize redesign.
+Use the existing Impeccable engine and assets. Follow the web AGENTS.md, live
+Paper design, and PRODUCT.md/DESIGN.md. Keep the agreed design when refining a
+screen; a refinement request is not permission for a redesign.
 
-Use the reference for the actual question below, not every playbook. For new
-surfaces use [new-work](reference/new-work.md); for a planning-only brief use
-[shape](reference/shape.md). On an already agreed design, continue implementation
-and relevant browser verification without another concept/approval workshop.
+Read the reference for the task, not every guide. Use
+[new-work](reference/new-work.md) for a new screen and [shape](reference/shape.md)
+for a planning-only brief. When a design is already agreed, implement and check it
+without asking for another design workshop.
 
 The launcher is `scripts/impeccable` relative to this skill (or `.cmd` on Windows).
 Inspect setup effects before first use: it may download an engine and write a
@@ -23,15 +23,15 @@ Reuse unchanged context; refresh it when the target or relevant inputs change.
 If unavailable, read the actual PRODUCT.md/DESIGN.md and continue supported work;
 missing tooling alone is not a new permission gate. Never fabricate live Paper access.
 
-Choose design checks for the changed surface/states and actual device sizes. Fix
-in-scope defects, rerun affected checks and continue to the assigned endpoint.
-No compulsory number of concepts, review roles, question rounds or polish passes.
-[Craft guidance](reference/craft-floor.md) supplies relevant design techniques,
-not a mandatory reading step before every small edit.
+Check the screens, states, and device sizes affected by the change. Fix related
+defects, repeat the affected checks, and complete the assignment. No fixed number
+of concepts, reviewers, question rounds, or polish passes is required.
+[Craft guidance](reference/craft-floor.md) offers techniques when needed; it is
+not required reading before every small edit.
 
-Keep required tool inputs, assets, schemas and metadata compatible. Explicitly
-requested tool maintenance can use doctor/hooks commands; do not bulk-regenerate
-project context or introduce build-phase state just because the skill was loaded.
+Keep the files, assets, schemas, and metadata the engine reads compatible.
+Use doctor/hooks commands for requested tool maintenance. Loading this skill does
+not require regenerating project context or adding another build phase.
 
 ## Commands
 
@@ -61,8 +61,7 @@ project context or introduce build-phase state just because the skill was loaded
 | `optimize [target]` | Fix | Diagnose and fix UI performance | [reference/optimize.md](reference/optimize.md) |
 | `live` | Iterate | Visual variant mode: pick elements in the browser, generate alternatives | [reference/live.md](reference/live.md) |
 
-
-For an explicit command, use its reference within the task's scope. A bare skill
-invocation can use [routing](reference/routing.md). A skill or tool directive does
-not invent approval, additional scope or a mandatory handoff. Project-specific
-new-design agreement remains meaningful; reuse agreement already obtained.
+For an explicit command, read its guide and stay within the assignment. For a
+bare skill invocation, use [routing](reference/routing.md). A tool directive does
+not grant approval, widen scope, or require a handoff. Keep the project's rule for
+agreeing new designs, but do not ask again for agreement already given.

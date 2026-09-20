@@ -1,17 +1,14 @@
-# Stage 3 — Person And Household Routine Builder
+# Stage 3 — Build personal and household routines
 
 Status: proposed
 Owner: unassigned
 Depends on: [preceding capability](private-discovery/README.md)
 
-Accepted product direction from the roadmap; implementation is not claimed.
-Sequence expresses dependencies and learning, not a requirement to finish every
-possible preceding feature before an end-to-end tracer.
+This is approved product direction, not a claim that the feature is built. The order reflects dependencies and what we need to learn. It does not require every possible earlier feature to be finished before trying a small end-to-end flow.
 
 ## Outcome
 
-Recurring patterns are represented once and reused, so all-meal coverage does
-not become repetitive weekly data entry.
+Save regular eating patterns once and reuse them, so planning every meal does not mean entering the same information each week.
 
 ## Scope
 
@@ -32,10 +29,9 @@ not become repetitive weekly data entry.
 - plan rationale from confirmed facts; and
 - visual routine editing.
 
-This stage owns the routine/fallback expansion, exception, and confirmation
-evaluation deferred from discovery by PDR-0006.
+This stage tests how routines and fallback meals expand into a week, how exceptions work and how users confirm changes. PDR-0006 deferred those checks from discovery.
 
-## Vertical tracer
+## Example flow
 
 The agent builds weekday breakfast routines, office and school lunch context,
 planned leftover lunches, Friday eating out, a weekend cooked breakfast, one
@@ -45,8 +41,8 @@ baseline.
 
 ## Acceptance
 
-- [ ] routine evaluation deterministically produces expected concrete entries;
-- [ ] exceptions override without corrupting enduring routines;
-- [ ] conflicts and applied rationale remain visible;
+- [ ] the same routine inputs produce the expected dated meal entries;
+- [ ] a one-off exception changes the right dates without changing the saved routine;
+- [ ] users can see conflicting rules and why a rule was applied;
 - [ ] repeated patterns substantially reduce weekly input; and
 - [ ] adults understand and edit the rules the agent created.

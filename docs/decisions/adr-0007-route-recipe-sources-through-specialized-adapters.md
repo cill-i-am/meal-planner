@@ -1,4 +1,4 @@
-# ADR-0007 — Route Recipe Sources Through Specialized Adapters
+# ADR-0007 — Use a separate adapter for each recipe source
 
 - Status: Accepted
 - Date: 2026-08-26
@@ -6,19 +6,17 @@
 
 ## Context
 
-The current recipe-import API accepts only `{ kind: "tiktok", url }`, and the
-current `SourceResolver` accepts a `TikTokIdentity` and returns a resolved video
-source. That implementation is appropriately specialized for TikTok media, but
-it is not the correct global abstraction for arbitrary recipe URLs.
+The recipe-import API accepts only `{ kind: "tiktok", url }`. Its `SourceResolver`
+accepts a `TikTokIdentity` and returns a resolved video source. That design fits
+TikTok media, not arbitrary recipe URLs.
 
-General web-page import needs different acquisition, security, canonicalization,
-content parsing, and evidence semantics. Turning the existing TikTok resolver
-into one large conditional service would mix unrelated provider logic and make
-future source support increasingly fragile.
+Web pages need different fetching, security checks, URL normalization, parsing,
+and evidence handling. Putting all of that inside the TikTok resolver would mix
+unrelated provider code and make new sources harder to add.
 
-At the same time, creating a complete import workflow for every source family
-would duplicate idempotency, workflow, review, recipe-admission, and household
-authority behaviour.
+Building a complete import workflow for each source would cause a different
+problem: duplicated retry handling, workflows, review, recipe validation, and
+household writes. Source-specific adapters should share those common steps.
 
 ## Decision
 
@@ -213,7 +211,7 @@ concrete source demonstrates the need for a specialized boundary.
 - API and shared-contract changes will be required because the current protocol
   encodes TikTok as the only source kind.
 
-## Alternatives Rejected
+## Alternatives rejected
 
 ### Require the user to choose the source type
 
