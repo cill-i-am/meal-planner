@@ -1,27 +1,28 @@
-# <Observable outcome>
+# <Result to deliver>
 
 Status: proposed
 Owner: unassigned
-Depends on: <owning outcomes, only where applicable>
-Delivery: <requested endpoint>
+Depends on: <other work required first, if any>
+Delivery: <where this assignment ends>
 
 ## Outcome and context
 
-<Who benefits, what problem is removed, observable success. Facts vs assumptions.>
+<Who benefits, what problem this solves and how to recognize success.
+Separate known facts from assumptions.>
 
 ## Scope
 
-<Goals and meaningful non-goals.>
+<What is included and what is deliberately excluded.>
 
 ## Approach and trade-offs
 
-<Smallest viable approach, consequential alternatives, risks and contract links.>
+<How to do it, why this approach, other serious options, risks and relevant rules.>
 
 ## Acceptance
 
-- [ ] <Scenario, expected result and meaningful evidence.>
+- [ ] <Situation to test, expected result and evidence needed.>
 
 ## Delivery and open questions
 
-<Next useful action or actual blocker. At completion: result, evidence, limitations
-and linked remaining obligations. Do not add an iteration diary or another handoff.>
+<Next step or specific blocker. At completion, record the result, checks,
+limitations and links to unfinished work. Do not add a diary or separate handoff.>

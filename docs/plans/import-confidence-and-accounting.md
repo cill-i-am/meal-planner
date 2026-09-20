@@ -1,4 +1,4 @@
-# Import confidence and unknown-usage correctness
+# Fix import confidence and unknown usage costs
 
 Status: proposed
 Owner: unassigned
@@ -6,9 +6,7 @@ Delivery: verified fixes in a separately assigned implementation PR
 
 ## Outcome and context
 
-The discovery audit recorded the following import issues. This documentation
-migration preserves the findings; it does not claim to have reproduced or fixed
-them. Recheck actual callers before implementation.
+The discovery review reported these import issues. They have not been reproduced or fixed as part of this documentation edit. Check the current callers before implementing a fix.
 
 Two import findings remain outside this discovery implementation:
 
@@ -18,19 +16,15 @@ Two import findings remain outside this discovery implementation:
   a retained contract requires percentage input. Low percentages must remain
   low, and malformed or missing confidence must never become high confidence.
 - The visual provider converts unknown token usage into known actual spend equal
-  to the reservation maximum. Use conservative settlement: retain the charge
-  while actual spend remains unknown, with bounded replay that never repeats a
-  paid invocation after restart.
+  to the reservation maximum. Keep the reserved charge while actual spend is unknown. Recovery must be bounded and must not make another paid call after restart.
 
 ## Scope and acceptance
 
-- [ ] Characterize the confidence input domain, preserve explicit low percentages,
-  reject malformed/absent confidence safely and verify threshold behavior.
-- [ ] Preserve conservative charges while usage remains unknown; verify exact
-  recovery across restart without a second paid invocation.
+- [ ] Test the accepted confidence inputs. Keep low percentages low, reject missing or malformed confidence safely and check the threshold behavior.
+- [ ] Keep the reserved charge while usage is unknown. Check recovery across restart without a second paid call.
 - [ ] Use the [import contract](../reference/recipe-import.md) and
   [settlement decision](../decisions/adr-0011-canonicalize-completed-conservative-settlements.md).
-  Prove the changed domain/runtime seam without unrelated provider rewrites.
+  Test the changed data and runtime behavior without rewriting unrelated provider code.
 
 ## Evidence
 

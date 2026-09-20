@@ -1,4 +1,4 @@
-# PDR-0015 — Invite-Only Beta Cohort And Learning Cadence
+# PDR-0015 — Run a small beta across several weeks
 
 - Status: Accepted
 - Date: 2026-08-26
@@ -6,19 +6,17 @@
 
 ## Context
 
-The first beta exists to learn whether Meal Planner reduces the recurring work of
-feeding a real household. It is not a scale demonstration, a growth launch, or a
-single-session usability test.
+The first beta tests whether Meal Planner reduces the repeated work of feeding
+a household. It is not a launch, a scale test, or a one-session usability study.
 
-The product claim depends on repeated weekly use: the household should need less
-planning work as profiles, routines, fallbacks, portions, and feedback improve.
-One successful generated week cannot establish that claim. At the same time, a
-large early cohort would dilute support, make failures harder to understand, and
-encourage premature automation.
+That claim needs several weeks of use. Planning should take less effort as
+profiles, routines, fallbacks, portions, and feedback improve. One generated week
+cannot establish this. Too many early households would spread support thin,
+make failures harder to understand, and encourage automation before it is needed.
 
-The initial catalogue and cultural assumptions are also Ireland-first. The beta
-should begin with households for whom that content is reasonably relevant while
-keeping the domain model portable to other places and cultures.
+The first catalogue and cultural assumptions focus on Ireland. Start with
+households for whom that content is relevant, while keeping the domain model
+usable in other places and cultures.
 
 ## Decision
 

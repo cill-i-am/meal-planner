@@ -1,6 +1,6 @@
 # Boundaries and Parsing
 
-Every external, serialized, persisted, or framework-shaped value is less structured than your domain model. Parse at the seam, pass refined values inward, and project explicitly on the way out.
+Parse data when it enters the application from a request, storage, a framework or another runtime. Pass the parsed value to the code that uses it. When sending data out, explicitly build the shape the recipient needs.
 
 ## Vocabulary
 
@@ -16,11 +16,11 @@ Every external, serialized, persisted, or framework-shaped value is less structu
 
 ## Non-negotiables
 
-- Unknown boundary input stays `unknown` or boundary DTO-shaped until parsed.
-- External input is parsed in the External Adapter Module, handler, composition entrypoint, or receiving runtime-hop handler before service/core code sees it; correct-by-construction values are passed inward.
+- Keep incoming data as `unknown` or a data-transfer object (DTO) until it has been parsed.
+- The External Adapter Module, handler, composition entrypoint or receiving runtime handler parses external input before passing it to service or core code. Pass the resulting valid value, not the original input.
 - Decoded JSON, response bodies, env values, queue messages, storage JSON, and similar data are not cast into domain/service types.
 - A successful parse returns the refined value; do not validate and then keep passing the unrefined input.
-- Core/service code does not repeatedly downcast, shape-check, or defensively revalidate values already parsed, unless they crossed a new boundary.
+- Service and core code must not repeatedly cast, inspect or revalidate a parsed value unless it has crossed another boundary.
 - Storage/ORM rows are boundary input and are parsed before service logic sees them.
 - Runtime-hop payloads satisfy the transport serialization contract and are parsed/reconstructed on receipt.
 - Protocol DTOs and persistence records are different projections; do not reuse one as the other by convenience.
@@ -40,7 +40,7 @@ Every external, serialized, persisted, or framework-shaped value is less structu
 
 ## Parse early
 
-Parser failure shape follows the repository's error-handling convention. A parser may return a `Result`, throw inside a schema-library adapter that is immediately classified at the boundary, or use the established typed parse-failure channel; the successful path returns the refined value that flows inward to Service Modules and Domain Modules.
+Follow the repository's error-handling convention for parse failures. A parser may return a `Result`, use the established typed failure channel, or throw within a schema adapter that immediately classifies the error. On success, pass the parsed value to Service Modules and Domain Modules.
 
 Prefer:
 
@@ -65,7 +65,7 @@ async function handle(body: any) {
 }
 ```
 
-Avoid validation that discards knowledge:
+Do not validate a value and then pass the unparsed input:
 
 ```ts
 CreateUserSchema.parse(body);
@@ -124,7 +124,7 @@ Use permissive shapes only for explicitly extensible sub-objects, such as third-
 
 ## Persistence boundary parsing
 
-Treat inferred storage DTOs as infrastructure facts, not domain proof:
+An inferred database row type describes the columns. It does not prove that the row is a valid domain value:
 
 ```ts
 type InvoiceRow = typeof invoices.$inferSelect;
@@ -164,7 +164,7 @@ This applies to result and error values too.
 
 ## Protocol and persistence projections
 
-Own each projection at its boundary:
+Keep each conversion with the adapter that sends or stores the data:
 
 ```ts
 UserHttp.toPublicJson(user);
@@ -187,7 +187,7 @@ type AppConfig = {
 };
 ```
 
-Avoid reading `process.env` or platform env bindings throughout the app. Missing/invalid config is a startup defect with safe diagnostic context.
+Avoid reading `process.env` or platform env bindings throughout the app. Missing or invalid required config is a startup defect. Report enough safe detail to diagnose it without exposing secrets.
 
 ## Rejected framings
 
@@ -199,7 +199,7 @@ Avoid reading `process.env` or platform env bindings throughout the app. Missing
 
 ## Review checklist
 
-Use this as the final scan after applying the rules above; the rule source of truth remains in the relevant sections.
+Check the relevant items below when reviewing a change. The sections above explain the rules.
 
 - Typing request bodies as `any` for convenience.
 - Casting `Response.json()` output to an app type.

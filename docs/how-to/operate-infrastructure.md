@@ -1,24 +1,24 @@
 # Meal Planner Alchemy operations
 
-The repository owns one Alchemy v2 stack named `MealPlanner`. Its stable
-resource identities include the `MealPlannerApi` Cloudflare Worker,
-`MealPlannerAuthDatabase` Better Auth D1, and `ProviderAccountingDatabase`
-operational D1. Changing any of these logical IDs is a resource-identity
-decision and must not be treated as a cosmetic rename.
+The repo defines one Alchemy v2 stack, `MealPlanner`. It includes the
+`MealPlannerApi` Cloudflare Worker, `MealPlannerAuthDatabase` for Better Auth,
+and `ProviderAccountingDatabase` for provider operations. These logical IDs
+identify resources. Renaming one is not a cosmetic change.
 
 The pinned infrastructure toolchain is Alchemy `2.0.0-beta.76`, Effect and
 `@effect/platform-node` `4.0.0-rc.112`, Node `>=24.20.0`, and pnpm `12.3.4`.
 CI runs Node `24.20.0`.
 
-Version-sensitive APIs were checked against the installed package and the
-official [`v2.0.0-beta.76` source tag](https://github.com/alchemy-run/alchemy/tree/v2.0.0-beta.76).
-The live Alchemy site currently advertises `2.0.0-beta.79`; that newer release
-is not adopted here without a separate upgrade and regression pass.
+The API review used the installed package and official
+[`v2.0.0-beta.76` source tag](https://github.com/alchemy-run/alchemy/tree/v2.0.0-beta.76).
+That review noted `2.0.0-beta.79` on the Alchemy site, but did not adopt it.
+Check official guidance against the installed version when changing this code;
+a newer example is not a reason to upgrade.
 
 ## Stages, profiles, and accounts
 
-Stages own isolated stack resources. Profiles select credentials; a profile is
-not an environment and its name does not prove which account is active.
+A stage identifies an isolated set of stack resources. A profile selects
+credentials. Its name does not establish the environment or active account.
 
 - Upstream defaults are Alchemy's `live_$USER` stage for plan/deploy/destroy
   and `dev_$USER` for `alchemy dev`; the `$ALCHEMY_PROFILE` environment
@@ -95,12 +95,12 @@ mutation, and cleanup boundary.
 
 ## Existing D1 release inspection
 
-This preflight covers the two existing Meal Planner databases. New-stage
-provisioning remains a separate, explicitly authorized infrastructure operation;
-missing databases, absent ledgers and query failures never imply permission to
-provision or adopt resources. No preflight command invokes Alchemy plan,
-bootstrap, deploy or SQL mutation. Reading an existing Alchemy auth profile can
-refresh its OAuth credentials; complete new sign-in or grants separately.
+These checks inspect the two existing Meal Planner databases. Creating resources
+for a new stage is a separate operation that needs authorization. A missing
+database, absent ledger, or failed query is not permission to create or adopt
+resources. No preflight command runs Alchemy plan, bootstrap, deploy, or SQL
+writes. Reading an existing auth profile can refresh OAuth credentials; new
+sign-in or grants remain separate.
 
 After account access is established, discover metadata using the intended
 profile and account:

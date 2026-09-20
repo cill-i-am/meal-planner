@@ -6,16 +6,16 @@ Depends on: [household foundation](../household-people/README.md)
 
 ## Outcome and context
 
-An adult has a private adaptive conversation that produces useful profile cards,
-can correct and explicitly confirm facts, and obtains an accurate household-visible
-profile. Later focused reviews use a new session; completed transcripts remain
-private read-only history. Adults can complete a shorter assisted dependant review.
+Adults use a private conversation to create profile cards, correct them, and
+confirm the facts to share with the household. A later focused review uses a new
+session. Earlier completed transcripts stay private and read-only. Adults can
+also complete a shorter guided review for a dependant.
 
-The product owner accepted this bounded outcome and stage-specific evaluation on
+The product owner accepted this work and its stage-specific evaluation on
 2026-09-06. [PDR-0006](../../decisions/pdr-0006-ai-evaluation-and-release-evidence.md#stage-specific-evidence-and-the-complete-beta-gate)
-retains all eight scenario families, hard blockers, quality bands and human
-calibration. Later routine/planning/repair/shopping dimensions remain not exercised
-here; the connected journey is still required before external beta.
+still requires all eight scenario families, failure checks, quality scores, and
+human calibration. This stage does not test routines, planning, repair, or
+shopping. The complete connected journey must still pass before external beta.
 
 ## Delivery sequence
 
@@ -44,8 +44,8 @@ delete, general chat platform or retailer work belongs to this outcome.
 
 ## Open decisions and limits
 
-Candidate model/provider and fixed-judge selection must follow quality, cost,
-privacy and latency evidence. Whether production experimentation is needed in
-invite-only beta remains unresolved; no production model configuration is selected
-by this plan. A recorded live opening is not a calibrated baseline. Broader
-quality/evaluation was explicitly deferred at the implementation merge, not passed.
+Choose the model, provider, and fixed judge using quality, cost, privacy, and
+latency results. Whether the invite-only beta needs production experiments is
+still undecided. This plan selects no production model configuration. One
+recorded live opening is not a calibrated baseline. The implementation merge
+explicitly deferred broader evaluation; it did not pass it.
