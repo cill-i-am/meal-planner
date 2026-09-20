@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   snapshot:
@@ -18,10 +19,21 @@ jobs:
         with:
           ref: 1912513fefd35c009c09168035b9c0e0b872c1fb
           persist-credentials: false
-      - name: Archive the reviewed baseline without running project code
-        run: git archive --format=tar HEAD > "$RUNNER_TEMP/meal-planner-baseline.tar"
+      - name: Read planning proposals without executing their code
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/proposals"
+          for pr in 219 220 221 222 223 224 225; do
+            mkdir -p "$RUNNER_TEMP/proposals/$pr"
+            gh api "repos/cill-i-am/meal-planner/pulls/$pr" > "$RUNNER_TEMP/proposals/$pr/pr.json"
+            sha=$(jq -r '.head.sha' "$RUNNER_TEMP/proposals/$pr/pr.json")
+            git fetch --no-tags --depth=1 origin "$sha"
+            git archive "$sha" docs/delivery/library-consolidation | tar -x -C "$RUNNER_TEMP/proposals/$pr"
+          done
+          tar -C "$RUNNER_TEMP" -cf "$RUNNER_TEMP/planning-proposals.tar" proposals
       - uses: actions/upload-artifact@v4
         with:
-          name: docs-refactor-baseline
-          path: ${{ runner.temp }}/meal-planner-baseline.tar
+          name: docs-refactor-proposals
+          path: ${{ runner.temp }}/planning-proposals.tar
           retention-days: 1
