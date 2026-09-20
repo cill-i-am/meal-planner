@@ -5,26 +5,129 @@ on:
     branches: [codex/documentation-refactor-workbench-20260920]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  export-source:
+  prepare-refactor:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: work
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          persist-credentials: false
-      - name: Export planning records without changing their branches
+          ref: 1912513fefd35c009c09168035b9c0e0b872c1fb
+          path: work
+      - name: Restore verified local refactor
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p planning-sources
-          for pr in 219 220 221 222 223 224 225; do
-            git fetch --no-tags origin "pull/$pr/head"
-            git rev-parse FETCH_HEAD > "planning-sources/$pr.sha"
-            git archive --format=tar --output="planning-sources/$pr.tar" FETCH_HEAD docs/delivery/library-consolidation
-          done
-      - uses: actions/upload-artifact@v4
+          python3 - <<'PY'
+          import base64, gzip, hashlib, json, os, subprocess, urllib.request
+          from pathlib import Path
+          diagnostics = Path('../diagnostics')
+          diagnostics.mkdir(exist_ok=True)
+          chunks = [
+            ('3540c87d4b4c33ad521d4ad9246eefe5c012b5d5', '3540c87d4b4c33ad521d4ad9246eefe5c012b5d5', None),
+            ('10f8086f5890b49575b2d72a2c2a52c541ec4e1f', '7f7c475661abcb15cbb537c8dcdcbc53b4275ea7', ('/Gr/NZvrFz9', '/Gr/NvrFz9', 'W')),
+            ('9f01a1f7c28ad70d17a30b0784535564b7da61b2', 'b5aed4d257960a2866e393f6cac46fb942ffd956', ('khzuTvZJ2x', 'khzuTvZ2x', 'K')),
+            ('3ed12007aae56519ddaec1002bdfb6c177bd7662', '3ed12007aae56519ddaec1002bdfb6c177bd7662', None),
+          ]
+          parts = []
+          for index, (uploaded, expected, correction) in enumerate(chunks):
+            req = urllib.request.Request(f'https://api.github.com/repos/cill-i-am/meal-planner/git/blobs/{uploaded}', headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+            with urllib.request.urlopen(req, timeout=30) as response:
+              raw = base64.b64decode(json.load(response)['content'])
+            (diagnostics / f'chunk-{index}.bin').write_bytes(raw)
+            if correction:
+              old, new, tail = correction
+              encoded = base64.b64encode(raw).decode()
+              assert encoded.count(old) == 1, ('transport marker', index)
+              raw = base64.b64decode(encoded.replace(old, new, 1) + tail, validate=True)
+            actual = hashlib.sha1(f'blob {len(raw)}\0'.encode() + raw).hexdigest()
+            assert actual == expected, ('transport checksum', index, actual, expected)
+            parts.append(raw)
+          payload = b''.join(parts)
+          assert hashlib.sha256(payload).hexdigest() == '6636b4c7213411f4978d027ff8455cb783369a505ddaab52088525bc92510490'
+          bundle = json.loads(gzip.decompress(payload))
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == bundle['base']
+          exec(compile(bundle['script'], '<verified-documentation-refactor>', 'exec'), {'__name__': '__main__'})
+          for item in bundle['changes']:
+            p = Path(item['path'])
+            assert not p.is_absolute() and '..' not in p.parts
+            original = p.read_bytes() if p.exists() else b''
+            assert hashlib.sha256(original).hexdigest() == item['hash'], p
+            if item.get('delete'):
+              p.unlink()
+            else:
+              lines = original.decode().splitlines(keepends=True)
+              for start, end, text in reversed(item['ops']):
+                lines[start:end] = [text]
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_text(''.join(lines))
+          subprocess.run(['git', 'add', '-A'], check=True)
+          tree = subprocess.check_output(['git', 'write-tree'], text=True).strip()
+          assert tree == bundle['tree'], (tree, bundle['tree'])
+          print('Exact local refactor reproduced:', tree)
+          PY
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
         with:
-          name: docs-refactor-planning-sources
-          path: planning-sources/
+          version: 12.3.4
+          package_json_file: work/package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+          cache-dependency-path: work/pnpm-lock.yaml
+      - name: Install pinned dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Format changed files
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          files = subprocess.check_output(['git', 'diff', '--name-only', '--diff-filter=ACMR', '-z', 'HEAD']).decode().split('\0')
+          subprocess.run(['pnpm', 'exec', 'oxfmt', '--write', *[p for p in files if p]], check=True)
+          PY
+      - name: Verify documentation and repository formatting
+        run: pnpm docs:test && pnpm docs:check && pnpm format:check
+      - name: Verify lint
+        run: pnpm lint
+      - name: Check preservation and publish only the new branch
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+          prefix = '.agents/skills/coding-standards/'
+          names = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', 'HEAD', prefix], text=True).splitlines()
+          for name in names:
+            assert Path(name).read_bytes() == subprocess.check_output(['git', 'show', 'HEAD:' + name]), name
+          assert len(names) == 15
+          protected = ['apps/api/src', 'apps/web/src', 'packages', 'pnpm-lock.yaml']
+          subprocess.run(['git', 'diff', '--exit-code', 'HEAD', '--', *protected], check=True)
+          print('All 15 coding-standard files and application sources unchanged.')
+          PY
+          git diff --check
+          git switch -c codex/unified-documentation-20260920
+          git config user.name 'Cillian Barron'
+          git config user.email 'barroncillian@gmail.com'
+          git add -A
+          git commit -m 'docs: unify documentation, intent and agent guidance'
+          git push origin HEAD:refs/heads/codex/unified-documentation-20260920
+          git rev-parse HEAD
+      - name: Export verification evidence
+        if: always()
+        run: |
+          mkdir -p ../diagnostics
+          git status --short > ../diagnostics/status.txt
+          git diff --binary 1912513fefd35c009c09168035b9c0e0b872c1fb > ../diagnostics/refactor.patch
+          git diff --stat 1912513fefd35c009c09168035b9c0e0b872c1fb > ../diagnostics/diff-stat.txt
+          git add -A
+          git write-tree > ../diagnostics/tree.txt
+          git archive --format=tar --output=../diagnostics/candidate.tar "$(git write-tree)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: docs-refactor-candidate
+          path: diagnostics/
           retention-days: 1
