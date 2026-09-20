@@ -14,12 +14,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 1912513fefd35c009c09168035b9c0e0b872c1fb
           persist-credentials: false
-      - name: Export reviewed tracked source
-        run: git archive --format=tar --output=source.tar HEAD
+      - name: Export planning records without changing their branches
+        run: |
+          mkdir -p planning-sources
+          for pr in 219 220 221 222 223 224 225; do
+            git fetch --no-tags origin "pull/$pr/head"
+            git rev-parse FETCH_HEAD > "planning-sources/$pr.sha"
+            git archive --format=tar --output="planning-sources/$pr.tar" FETCH_HEAD docs/delivery/library-consolidation
+          done
       - uses: actions/upload-artifact@v4
         with:
-          name: docs-refactor-source
-          path: source.tar
+          name: docs-refactor-planning-sources
+          path: planning-sources/
           retention-days: 1
