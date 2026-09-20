@@ -1,6 +1,5 @@
 import type { PersonProfile } from "@meal-planner/household-api";
 import {
-  AppendParticipantMessage,
   CompleteSession,
   ConfirmProfileCard,
   RejectProfileCard,
@@ -12,8 +11,9 @@ import {
   StartSession,
 } from "@meal-planner/private-interview-api";
 import type {
+  AssistantTurn,
   DirectoryCommand,
-  Message,
+  PrivateDiscoveryScope,
   ProfileCard,
   ProfileCardChange,
   Rejected,
@@ -31,7 +31,6 @@ import {
 import { matchesCurrentProfileReview } from "./private-profile-review.js";
 
 const SessionMutation = Schema.Union([
-  AppendParticipantMessage,
   CompleteSession,
   ReviseProfileCard,
   RejectProfileCard,
@@ -59,11 +58,14 @@ type Connection =
   | "authentication_required";
 type Notice =
   | "storage_unavailable"
+  | "unreadable_request"
   | "binding_changed"
   | typeof Rejected.Type.reason
   | null;
 
 export interface PrivateInterviewView {
+  readonly assistantTurn: AssistantTurn | null;
+  readonly generation: string | null;
   readonly connection: Connection;
   readonly cards: readonly ProfileCard[];
   readonly cardsLoaded: boolean;
@@ -82,12 +84,8 @@ export interface PrivateInterviewView {
   readonly moreSessions: boolean;
   readonly sessionReference: string | null;
   readonly sessionState: typeof SessionState.Type | null;
-  readonly messages: readonly (typeof Message.Type)[];
-  readonly historyLoaded: boolean;
-  readonly moreHistory: boolean;
   readonly pending: PendingCommand | null;
   readonly notice: Notice;
-  readonly lastAppendReceipt: string | null;
 }
 
 export interface PrivateInterviewSocket {
@@ -103,6 +101,7 @@ export interface PrivateInterviewDependencies {
   readonly storage: Pick<Storage, "getItem" | "setItem" | "removeItem">;
   readonly makeId: () => string;
   readonly readCurrentProfile: () => Promise<PersonProfile>;
+  readonly fetchChat: typeof globalThis.fetch;
   readonly continueConfirmation: (
     sessionReference: string,
     mutationId: string,
@@ -112,15 +111,13 @@ export interface PrivateInterviewDependencies {
 }
 
 const initialView = (): PrivateInterviewView => ({
+  assistantTurn: null,
   cards: [],
   cardsLoaded: false,
   confirmationStatus: "idle",
   connection: "connecting",
-  historyLoaded: false,
-  lastAppendReceipt: null,
-  messages: [],
+  generation: null,
   moreCards: false,
-  moreHistory: false,
   moreSessions: false,
   notice: null,
   pending: null,
@@ -157,26 +154,36 @@ const decodeFrame = <A>(
   );
 };
 
-/** A mounted authenticated context owns its sockets and all rendered private data. */
+export const isAssistantTurnActive = (turn: AssistantTurn | null) =>
+  turn?.status === "queued" || turn?.status === "running";
+
+/** Owns session admission and profile review; the mounted chat owns its transcript. */
 export class PrivateInterviewClient {
   readonly #dependencies: PrivateInterviewDependencies;
   readonly #onConfirmationSettled: (() => void) | undefined;
   readonly #storageKey: string;
   readonly #listeners = new Set<() => void>();
   #view = initialView();
+  #unreadablePending: string | null = null;
   #directory: PrivateInterviewSocket | null = null;
   #session: PrivateInterviewSocket | null = null;
   #bindingKey: string | null = null;
   #directoryReady = false;
   #sessionReady = false;
   #listRequest: string | null = null;
-  #historyRequest: string | null = null;
   #listCursor = 0;
-  #historyCursor = 0;
   #cardsRequest: string | null = null;
   #cardsCursor = 0;
   #confirmationAbort: AbortController | null = null;
   #sessionGeneration: string | null = null;
+  #automaticConfirmationMutation: string | null = null;
+  #recoveryAllowed = false;
+  #admitted = false;
+  #recovery: {
+    readonly bindingKey: string;
+    readonly sessionReference: string | null;
+    replayed: boolean;
+  } | null = null;
 
   constructor(
     context: { readonly accountId: string; readonly householdId: string },
@@ -196,7 +203,14 @@ export class PrivateInterviewClient {
     };
   };
   #update(patch: Partial<PrivateInterviewView>) {
-    this.#view = { ...this.#view, ...patch };
+    const next = { ...this.#view, ...patch };
+    if (
+      this.#unreadablePending !== null &&
+      next.notice !== "storage_unavailable"
+    ) {
+      next.notice = "unreadable_request";
+    }
+    this.#view = next;
     for (const listener of this.#listeners) {
       listener();
     }
@@ -207,11 +221,12 @@ export class PrivateInterviewClient {
     this.#directory = null;
     this.#session = null;
     this.#directoryReady = false;
+    this.#admitted = false;
     this.#sessionReady = false;
     this.#sessionGeneration = null;
+    this.#automaticConfirmationMutation = null;
     this.#bindingKey = null;
     this.#listRequest = null;
-    this.#historyRequest = null;
     this.#cardsRequest = null;
     this.#confirmationAbort?.abort();
     this.#confirmationAbort = null;
@@ -221,11 +236,25 @@ export class PrivateInterviewClient {
   }
 
   disconnect = () => {
+    this.#recovery = null;
+    this.#recoveryAllowed = false;
     this.#closeSockets();
     this.#update({ ...initialView(), connection: "unavailable" });
   };
 
   #lost(code: number) {
+    if (this.#recoveryAllowed && this.#admitted && this.#bindingKey !== null) {
+      this.#recoveryAllowed = false;
+      this.#recovery = {
+        bindingKey: this.#bindingKey,
+        replayed: false,
+        sessionReference: this.#view.sessionReference,
+      };
+      this.#openDirectory();
+      return;
+    }
+    this.#recovery = null;
+    this.#recoveryAllowed = false;
     this.#closeSockets();
     this.#update({
       ...initialView(),
@@ -248,6 +277,12 @@ export class PrivateInterviewClient {
   }
 
   connect = () => {
+    this.#recoveryAllowed = true;
+    this.#recovery = null;
+    this.#openDirectory();
+  };
+
+  #openDirectory() {
     this.#closeSockets();
     this.#update(initialView());
     this.#listCursor = 0;
@@ -267,6 +302,7 @@ export class PrivateInterviewClient {
               Schema.decodeUnknownSync(Schema.String)(event.data)
             )
           );
+          this.#finishAdmission();
         } catch {
           this.#lost(1006);
         }
@@ -284,29 +320,104 @@ export class PrivateInterviewClient {
     } catch {
       this.#lost(1006);
     }
-  };
+  }
+
+  #finishAdmission() {
+    if (!this.#directoryReady || !this.#view.sessionsLoaded) {
+      return;
+    }
+    if (
+      this.#view.sessionReference !== null &&
+      (!this.#sessionReady || !this.#view.cardsLoaded)
+    ) {
+      return;
+    }
+    if (
+      this.#recovery !== null &&
+      this.#view.pending !== null &&
+      this.#view.pendingConfirmation === null
+    ) {
+      return;
+    }
+    this.#admitted = true;
+    this.#recovery = null;
+  }
+
+  #replayRecoveredIntent() {
+    if (
+      this.#recovery === null ||
+      this.#recovery.replayed ||
+      this.#view.pending === null
+    ) {
+      return;
+    }
+    if (this.#view.pending.sessionReference !== null && !this.#sessionReady) {
+      return;
+    }
+    this.#recovery.replayed = true;
+    this.#retryPending();
+  }
 
   #loadPending(bindingKey: string) {
+    let raw: string | null;
     try {
-      const raw = this.#dependencies.storage.getItem(this.#storageKey);
-      if (raw === null) {
-        return;
-      }
-      const pending = decodeFrame(PendingCommand, raw);
-      if (pending.bindingKey !== bindingKey) {
-        this.#update({ notice: "binding_changed" });
-        return;
-      }
-      this.#update({ pending });
-      if (pending.sessionReference !== null) {
-        this.select(pending.sessionReference);
-      }
+      raw = this.#dependencies.storage.getItem(this.#storageKey);
     } catch {
       this.#update({ notice: "storage_unavailable" });
+      return;
+    }
+    this.#unreadablePending = null;
+    if (raw === null) {
+      this.#update({ notice: null });
+      return;
+    }
+    let pending: PendingCommand;
+    try {
+      pending = decodeFrame(PendingCommand, raw);
+    } catch {
+      this.#unreadablePending = raw;
+      this.#update({ notice: "unreadable_request" });
+      return;
+    }
+    if (pending.bindingKey !== bindingKey) {
+      this.#update({ notice: "binding_changed" });
+      return;
+    }
+    this.#update({ notice: null, pending });
+    if (pending.sessionReference !== null) {
+      this.#selectSession(pending.sessionReference);
     }
   }
 
+  discardUnreadableRequest = () => {
+    if (
+      this.#view.notice !== "unreadable_request" ||
+      this.#unreadablePending === null ||
+      !this.#view.sessionsLoaded
+    ) {
+      return;
+    }
+    try {
+      const current = this.#dependencies.storage.getItem(this.#storageKey);
+      if (current !== this.#unreadablePending) {
+        this.connect();
+        return;
+      }
+      this.#dependencies.storage.removeItem(this.#storageKey);
+      this.#unreadablePending = null;
+      this.#recovery = null;
+      this.#update({ notice: null, pending: null });
+      this.connect();
+    } catch {
+      this.#update({ notice: "storage_unavailable" });
+    }
+  };
+
   #retain(pending: PendingCommand): boolean {
+    if (this.#unreadablePending !== null) {
+      this.#update({ notice: "unreadable_request" });
+      return false;
+    }
     try {
       this.#dependencies.storage.setItem(
         this.#storageKey,
@@ -360,16 +471,37 @@ export class PrivateInterviewClient {
     }
   }
 
+  #activateDirectory(
+    frame: Extract<DirectoryFrame, { type: "DirectoryReady" }>
+  ) {
+    if (this.#directoryReady) {
+      throw new Error("Duplicate directory activation");
+    }
+    if (
+      this.#recovery !== null &&
+      this.#recovery.bindingKey !== frame.bindingKey
+    ) {
+      this.#lost(1008);
+      return;
+    }
+    this.#bindingKey = frame.bindingKey;
+    this.#directoryReady = true;
+    this.#update({ connection: "ready" });
+    this.#loadPending(frame.bindingKey);
+    if (
+      this.#view.sessionReference === null &&
+      this.#recovery !== null &&
+      this.#recovery.sessionReference !== null
+    ) {
+      this.#selectSession(this.#recovery.sessionReference);
+    }
+    this.loadSessions();
+    this.#replayRecoveredIntent();
+  }
+
   #onDirectory(frame: DirectoryFrame) {
     if (frame.type === "DirectoryReady") {
-      if (this.#directoryReady) {
-        throw new Error("Duplicate directory activation");
-      }
-      this.#bindingKey = frame.bindingKey;
-      this.#directoryReady = true;
-      this.#update({ connection: "ready" });
-      this.#loadPending(frame.bindingKey);
-      this.loadSessions();
+      this.#activateDirectory(frame);
       return;
     }
     if (!this.#directoryReady) {
@@ -411,7 +543,7 @@ export class PrivateInterviewClient {
             (item) => item.sessionReference
           ),
         });
-        this.select(frame.reservation.sessionReference);
+        this.#selectSession(frame.reservation.sessionReference);
         return;
       }
       case "Rejected": {
@@ -442,22 +574,25 @@ export class PrivateInterviewClient {
     });
   };
 
-  start = () => {
+  start = (scope: PrivateDiscoveryScope) => {
     if (
       !this.#directoryReady ||
       this.#bindingKey === null ||
       this.#view.pending !== null ||
       this.#view.pendingConfirmation !== null ||
       this.#view.notice === "binding_changed" ||
-      this.#view.notice === "storage_unavailable"
+      this.#view.notice === "storage_unavailable" ||
+      this.#view.notice === "unreadable_request"
     ) {
       return;
     }
+    this.#recoveryAllowed = true;
     this.#update({ notice: null });
     const pending = {
       bindingKey: this.#bindingKey,
       command: {
         mutationId: this.#dependencies.makeId(),
+        scope,
         type: "StartSession" as const,
       },
       sessionReference: null,
@@ -468,6 +603,11 @@ export class PrivateInterviewClient {
   };
 
   select = (sessionReference: string) => {
+    this.#recoveryAllowed = true;
+    this.#selectSession(sessionReference);
+  };
+
+  #selectSession(sessionReference: string) {
     if (
       !this.#directoryReady ||
       (this.#view.pendingConfirmation !== null &&
@@ -482,21 +622,18 @@ export class PrivateInterviewClient {
     previous?.close();
     this.#sessionReady = false;
     this.#sessionGeneration = null;
-    this.#historyCursor = 0;
-    this.#historyRequest = null;
+    this.#automaticConfirmationMutation = null;
     this.#cardsCursor = 0;
     this.#cardsRequest = null;
     this.#confirmationAbort?.abort();
     this.#confirmationAbort = null;
     this.#update({
+      assistantTurn: null,
       cards: [],
       cardsLoaded: false,
       confirmationStatus: "idle",
-      historyLoaded: false,
-      lastAppendReceipt: null,
-      messages: [],
+      generation: null,
       moreCards: false,
-      moreHistory: false,
       pendingConfirmation: null,
       profile: null,
       profileLoading: false,
@@ -520,6 +657,7 @@ export class PrivateInterviewClient {
               Schema.decodeUnknownSync(Schema.String)(event.data)
             )
           );
+          this.#finishAdmission();
         } catch {
           this.#lost(1006);
         }
@@ -537,7 +675,7 @@ export class PrivateInterviewClient {
     } catch {
       this.#lost(1006);
     }
-  };
+  }
 
   #state(state: typeof SessionState.Type) {
     if (state.version >= (this.#view.sessionState?.version ?? 0)) {
@@ -556,30 +694,18 @@ export class PrivateInterviewClient {
     this.#sessionReady = true;
     this.#sessionGeneration = frame.generation;
     this.#state(frame.state);
-    this.#update({ pendingConfirmation: frame.pendingConfirmation });
-    this.loadHistory();
-    this.loadCards();
-  }
-
-  #readHistory(frame: Extract<SessionFrame, { type: "HistoryRead" }>) {
-    if (frame.requestId !== this.#historyRequest) {
-      return;
-    }
-    if (frame.messages.length > MAX_PAGE_SIZE) {
-      throw new Error("Page too large");
-    }
-    this.#historyRequest = null;
-    this.#historyCursor = frame.messages.at(-1)?.ordinal ?? this.#historyCursor;
-    this.#state(frame.state);
     this.#update({
-      historyLoaded: true,
-      messages: mergeById(
-        this.#view.messages,
-        frame.messages,
-        (item) => item.id
-      ),
-      moreHistory: frame.hasMore,
+      assistantTurn: frame.assistantTurn,
+      generation: frame.generation,
+      notice:
+        this.#view.notice === "assistant_turn_conflict" ||
+        this.#view.notice === "assistant_turn_pending"
+          ? null
+          : this.#view.notice,
+      pendingConfirmation: frame.pendingConfirmation,
     });
+    this.loadCards();
+    this.#replayRecoveredIntent();
   }
 
   #onSession(frame: SessionFrame) {
@@ -591,6 +717,10 @@ export class PrivateInterviewClient {
       throw new Error("Session not ready");
     }
     switch (frame.type) {
+      case "AssistantTurnUpdated": {
+        this.#receiveTurn(frame.turn, frame.state);
+        return;
+      }
       case "CardsRead": {
         this.#readCards(frame);
         return;
@@ -605,28 +735,6 @@ export class PrivateInterviewClient {
       }
       case "ConfirmationSettled": {
         this.#confirmationSettled(frame);
-        return;
-      }
-      case "HistoryRead": {
-        this.#readHistory(frame);
-        return;
-      }
-      case "MessageAppended": {
-        if (
-          this.#view.pending?.command.type !== "AppendParticipantMessage" ||
-          this.#acknowledge(frame.mutationId) === null
-        ) {
-          return;
-        }
-        this.#state(frame.state);
-        this.#update({
-          lastAppendReceipt: frame.mutationId,
-          messages: mergeById(
-            this.#view.messages,
-            [frame.message],
-            (item) => item.id
-          ),
-        });
         return;
       }
       case "SessionCompleted": {
@@ -730,10 +838,11 @@ export class PrivateInterviewClient {
     this.#update({ pendingConfirmation: frame.mutationId });
     if (
       this.#view.confirmationStatus === "idle" &&
+      this.#automaticConfirmationMutation === frame.mutationId &&
       this.#view.pending?.command.type === "ConfirmProfileCard" &&
       this.#view.pending.command.mutationId === frame.mutationId
     ) {
-      void this.checkConfirmation();
+      void this.#dispatchConfirmation();
     }
   }
 
@@ -757,6 +866,30 @@ export class PrivateInterviewClient {
     if (currentVersion) {
       this.#onConfirmationSettled?.();
       void this.refreshProfile();
+    }
+  }
+
+  #receiveTurn(turn: AssistantTurn | null, state: typeof SessionState.Type) {
+    if (state.version < (this.#view.sessionState?.version ?? 0)) {
+      return;
+    }
+    const previous = this.#view.assistantTurn;
+    if (
+      turn !== null &&
+      previous !== null &&
+      turn.id === previous.id &&
+      ((turn.status === "queued" && previous.status !== "queued") ||
+        (turn.status === "running" && !isAssistantTurnActive(previous)))
+    ) {
+      return;
+    }
+    this.#state(state);
+    this.#update({ assistantTurn: turn });
+    if (
+      turn?.status === "succeeded" &&
+      (previous?.id !== turn.id || previous.status !== "succeeded")
+    ) {
+      this.refreshCards();
     }
   }
 
@@ -814,7 +947,12 @@ export class PrivateInterviewClient {
     }
   };
 
-  checkConfirmation = async () => {
+  checkConfirmation = () => {
+    this.#recoveryAllowed = true;
+    return this.#dispatchConfirmation();
+  };
+
+  #dispatchConfirmation = async () => {
     const socket = this.#session;
     const mutationId = this.#view.pendingConfirmation;
     const reference = this.#view.sessionReference;
@@ -952,34 +1090,21 @@ export class PrivateInterviewClient {
     });
   };
 
-  loadHistory = () => {
-    if (!this.#sessionReady || this.#historyRequest !== null) {
-      return;
-    }
-    this.#historyRequest = this.#dependencies.makeId();
-    this.#send(this.#session, {
-      afterOrdinal: this.#historyCursor,
-      limit: MAX_PAGE_SIZE,
-      requestId: this.#historyRequest,
-      type: "ReadHistory",
-    });
-  };
-
-  reviewHistory = () => {
-    if (!this.#sessionReady) {
-      return;
-    }
-    this.#historyCursor = 0;
-    this.#historyRequest = null;
-    this.#update({
-      historyLoaded: false,
-      messages: [],
-      moreHistory: false,
-      notice: null,
-    });
-    this.loadHistory();
+  refreshSession = () => {
     this.refreshCards();
   };
+
+  hasGeneration = (generation: string) =>
+    this.#sessionGeneration === generation;
+
+  authenticationRequired = (generation: string) => {
+    if (this.hasGeneration(generation)) {
+      this.#lost(1008);
+    }
+  };
+
+  fetchChat: typeof globalThis.fetch = (input, init) =>
+    this.#dependencies.fetchChat(input, init);
 
   #mutateSession(command: SessionMutation) {
     if (
@@ -989,7 +1114,8 @@ export class PrivateInterviewClient {
       this.#view.pending !== null ||
       this.#view.pendingConfirmation !== null ||
       this.#view.notice !== null ||
-      !this.#view.historyLoaded ||
+      isAssistantTurnActive(this.#view.assistantTurn) ||
+      !this.#view.cardsLoaded ||
       this.#view.sessionState?.status !== "open"
     ) {
       return;
@@ -1000,22 +1126,13 @@ export class PrivateInterviewClient {
       sessionReference: this.#view.sessionReference,
     };
     if (this.#retain(pending)) {
+      this.#recoveryAllowed = true;
+      if (command.type === "ConfirmProfileCard") {
+        this.#automaticConfirmationMutation = command.mutationId;
+      }
       this.#send(this.#session, command);
     }
   }
-
-  append = (text: string) => {
-    if (this.#view.sessionState === null || text.trim().length === 0) {
-      return;
-    }
-    const command = Schema.decodeUnknownSync(AppendParticipantMessage)({
-      expectedVersion: this.#view.sessionState.version,
-      mutationId: this.#dependencies.makeId(),
-      text,
-      type: "AppendParticipantMessage",
-    });
-    this.#mutateSession(command);
-  };
 
   complete = () => {
     if (this.#view.sessionState === null) {
@@ -1029,6 +1146,11 @@ export class PrivateInterviewClient {
   };
 
   retry = () => {
+    this.#recoveryAllowed = true;
+    this.#retryPending();
+  };
+
+  #retryPending() {
     const { pending } = this.#view;
     if (pending === null || pending.bindingKey !== this.#bindingKey) {
       return;
@@ -1043,7 +1165,7 @@ export class PrivateInterviewClient {
     ) {
       this.#send(this.#session, pending.command);
     }
-  };
+  }
 }
 
 export const browserPrivateInterviewDependencies =
@@ -1069,6 +1191,7 @@ export const browserPrivateInterviewDependencies =
       return transport;
     },
     continueConfirmation: continuePrivateConfirmation,
+    fetchChat: (input, init) => fetch(input, init),
     makeId: () => crypto.randomUUID(),
     readCurrentProfile: readCurrentPrivateProfile,
     storage: {

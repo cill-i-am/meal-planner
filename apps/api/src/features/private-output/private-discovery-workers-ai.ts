@@ -1,0 +1,532 @@
+import type * as NativeCloudflare from "@cloudflare/workers-types";
+import { chat, EventType, maxIterations, toolDefinition } from "@tanstack/ai";
+import type { ChatMiddleware, StreamChunk } from "@tanstack/ai";
+import { CloudflareTextAdapter } from "@tanstack/ai-cloudflare";
+import type { CloudflareBindingConfig } from "@tanstack/ai-cloudflare";
+import { Effect, Option, Schema } from "effect";
+
+import { PrivateChatReply } from "./private-chat-reply.js";
+import {
+  makePrivateDiscoveryProviderOutput,
+  PRIVATE_DISCOVERY_CONTEXT_BYTES,
+  PRIVATE_DISCOVERY_POLICY_VERSION,
+  PRIVATE_DISCOVERY_PROMPT_VERSION,
+  PRIVATE_DISCOVERY_TOOL_VERSION,
+  PrivateDiscoveryContext,
+  PrivateDiscoveryFailure,
+  SubmitDiscoveryTurn,
+} from "./private-discovery-model.js";
+import type {
+  PrivateDiscoveryInvalidOutputStage,
+  PrivateDiscoveryProvenance,
+  PrivateDiscoveryResult,
+  PrivateDiscoveryStreamInput,
+  PrivateDiscoveryStreamingModel,
+  PrivateDiscoveryUsage,
+} from "./private-discovery-model.js";
+import { privateDiscoveryInstructions } from "./private-discovery-prompt.js";
+
+export const PRIVATE_DISCOVERY_INPUT_BYTES = 32_768;
+export const PRIVATE_DISCOVERY_RESPONSE_BYTES = 65_536;
+const PositiveAmount = Schema.Number.pipe(
+  Schema.check(Schema.isGreaterThanOrEqualTo(0))
+);
+export const PrivateDiscoveryConfiguration = Schema.Struct({
+  gatewayId: Schema.String.pipe(
+    Schema.check(Schema.isNonEmpty(), Schema.isMaxLength(64))
+  ),
+  inputUsdPerMillionTokens: PositiveAmount,
+  maxOutputTokens: Schema.Int.pipe(
+    Schema.check(Schema.isBetween({ maximum: 65_536, minimum: 1 }))
+  ),
+  model: Schema.Literals([
+    "@cf/openai/gpt-oss-120b",
+    "@cf/moonshotai/kimi-k2.6",
+  ]),
+  outputUsdPerMillionTokens: PositiveAmount,
+  timeoutMs: Schema.Int.pipe(
+    Schema.check(Schema.isBetween({ maximum: 900_000, minimum: 1000 }))
+  ),
+}).pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (config) =>
+        config.model === "@cf/moonshotai/kimi-k2.6" ||
+        (config.maxOutputTokens <= 4096 && config.timeoutMs <= 120_000),
+      { expected: "token and deadline limits supported by the selected model" }
+    )
+  ),
+  Schema.annotate({ parseOptions: { onExcessProperty: "error" } })
+);
+export type PrivateDiscoveryConfiguration =
+  typeof PrivateDiscoveryConfiguration.Type;
+export interface PrivateDiscoveryModelEnvironment {
+  readonly PRIVATE_DISCOVERY_CONFIG?: string | null;
+  readonly PrivateDiscoveryAI?: CloudflareBindingConfig["binding"];
+}
+
+const failure = (
+  reason: PrivateDiscoveryFailure["reason"],
+  usage: PrivateDiscoveryUsage | null = null,
+  provenance: PrivateDiscoveryProvenance | null = null,
+  stage: PrivateDiscoveryInvalidOutputStage | null = null
+) => new PrivateDiscoveryFailure({ provenance, reason, stage, usage });
+const configuration = Schema.decodeUnknownOption(
+  Schema.fromJsonString(PrivateDiscoveryConfiguration)
+);
+
+const unknownUsage: PrivateDiscoveryUsage = {
+  estimatedCostUsd: null,
+  inputTokens: null,
+  outputTokens: null,
+};
+
+const kimiThinking: NonNullable<
+  NativeCloudflare.AiModels["@cf/moonshotai/kimi-k2.6"]["inputs"]["chat_template_kwargs"]
+> & { readonly thinking: true } = { thinking: true };
+
+const submissionDescription =
+  "Submit one private discovery intent for application validation. This never confirms a household fact.";
+
+const providerRequest = (
+  config: PrivateDiscoveryConfiguration,
+  context: PrivateDiscoveryContext,
+  parameters: Record<string, unknown>
+) => ({
+  messages: [
+    { content: privateDiscoveryInstructions, role: "system" as const },
+    { content: JSON.stringify(context), role: "user" as const },
+  ],
+  model: config.model,
+  parallel_tool_calls: false,
+  stream: true as const,
+  stream_options: { include_usage: true },
+  temperature: 1,
+  tool_choice: {
+    function: { name: "submitDiscoveryTurn" },
+    type: "function" as const,
+  },
+  tools: [
+    {
+      function: {
+        description: submissionDescription,
+        name: "submitDiscoveryTurn",
+        parameters,
+        strict: true,
+      },
+      type: "function" as const,
+    },
+  ],
+  ...(config.model === "@cf/moonshotai/kimi-k2.6"
+    ? {
+        chat_template_kwargs: kimiThinking,
+        max_completion_tokens: config.maxOutputTokens,
+        n: 1,
+        top_p: 0.95,
+      }
+    : { max_tokens: config.maxOutputTokens, top_p: 1 }),
+});
+
+/** App-owned request contract; the maintained adapter owns SDK streaming and tool assembly. */
+class PrivateDiscoveryTextAdapter extends CloudflareTextAdapter<
+  PrivateDiscoveryConfiguration["model"]
+> {
+  readonly #request: ReturnType<typeof providerRequest>;
+
+  constructor(
+    config: ConstructorParameters<typeof CloudflareTextAdapter>[0],
+    request: ReturnType<typeof providerRequest>
+  ) {
+    super(config, request.model);
+    this.#request = request;
+  }
+
+  protected override mapOptionsToRequest() {
+    // Preserve the Effect schema's closed definitions instead of the SDK's generic strict downgrade.
+    return this.#request;
+  }
+
+  // oxlint-disable-next-line class-methods-use-this -- The provider hook deliberately suppresses reasoning before SDK history accumulation.
+  protected override extractReasoning(): undefined {
+    // Reasoning never enters TanStack's live events or internal message history.
+  }
+}
+
+const safeReplyChunks = (reply: PrivateChatReply): StreamChunk[] => [
+  {
+    messageId: reply.messageId,
+    role: "assistant",
+    type: EventType.TEXT_MESSAGE_START,
+  },
+  {
+    delta: reply.text,
+    messageId: reply.messageId,
+    type: EventType.TEXT_MESSAGE_CONTENT,
+  },
+  { messageId: reply.messageId, type: EventType.TEXT_MESSAGE_END },
+];
+
+const streamDiscovery = (
+  environment: PrivateDiscoveryModelEnvironment,
+  input: PrivateDiscoveryStreamInput
+) => {
+  const configured = configuration(environment.PRIVATE_DISCOVERY_CONFIG);
+  const ai = environment.PrivateDiscoveryAI;
+  if (Option.isNone(configured) || ai === undefined) {
+    throw failure("not_configured");
+  }
+  const config = configured.value;
+  const provenance: PrivateDiscoveryProvenance = {
+    model: config.model,
+    policyVersion: PRIVATE_DISCOVERY_POLICY_VERSION,
+    promptVersion: PRIVATE_DISCOVERY_PROMPT_VERSION,
+    provider: "cloudflare-workers-ai",
+    toolVersion: PRIVATE_DISCOVERY_TOOL_VERSION,
+  };
+  const failed = (
+    reason: PrivateDiscoveryFailure["reason"],
+    stage: PrivateDiscoveryInvalidOutputStage | null = null
+  ) => failure(reason, unknownUsage, provenance, stage);
+  let rejected: PrivateDiscoveryFailure | undefined;
+  const reject = (problem: PrivateDiscoveryFailure): never => {
+    rejected ??= problem;
+    throw rejected;
+  };
+  let context: PrivateDiscoveryContext;
+  try {
+    context = Schema.decodeUnknownSync(PrivateDiscoveryContext)(input.context);
+  } catch {
+    return reject(failed("context_limit"));
+  }
+  const standard = Schema.toStandardJSONSchemaV1(
+    Schema.toStandardSchemaV1(makePrivateDiscoveryProviderOutput(context.cards))
+  );
+  const request = providerRequest(
+    config,
+    context,
+    standard["~standard"].jsonSchema.input({ target: "draft-2020-12" })
+  );
+  const encoder = new TextEncoder();
+  if (
+    encoder.encode(JSON.stringify(context)).byteLength >
+      PRIVATE_DISCOVERY_CONTEXT_BYTES ||
+    encoder.encode(JSON.stringify(request)).byteLength >
+      PRIVATE_DISCOVERY_INPUT_BYTES
+  ) {
+    return reject(failed("context_limit"));
+  }
+  const controller = input.abortController;
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  let prepared: SubmitDiscoveryTurn | undefined;
+  let accepted: PrivateChatReply | undefined;
+  let emittedReply = false;
+  let toolCallId: string | undefined;
+  let disposed = false;
+  let removeAbortListener: (() => void) | undefined;
+  let failureSettlement: Promise<void> | undefined;
+  const cleanup = () => {
+    if (disposed) {
+      return;
+    }
+    disposed = true;
+    removeAbortListener?.();
+    if (deadline !== undefined) {
+      clearTimeout(deadline);
+    }
+    input.chat.dispose?.();
+  };
+  const settleFailure = (problem: PrivateDiscoveryFailure) => {
+    rejected ??= problem;
+    const rejection = rejected;
+    failureSettlement ??= (async () => {
+      try {
+        await input.chat.fail?.(rejection);
+      } finally {
+        cleanup();
+      }
+    })();
+    return failureSettlement;
+  };
+  const settleAfterAbort = async () => {
+    // The application settles without waiting for the published binding bridge to return.
+    try {
+      await settleFailure(failed("outcome_unknown"));
+    } catch {
+      Effect.runSync(
+        Effect.logError("private_discovery.failure_settlement_failed")
+      );
+    }
+  };
+  const guard: ChatMiddleware = {
+    name: "private-discovery-contract",
+    onAbort: () => settleFailure(failed("outcome_unknown")),
+    onAfterToolCall: (_ctx, info) => {
+      if (!info.ok) {
+        rejected ??= failed("invalid_output", "output_schema");
+      }
+    },
+    onBeforeToolCall: (_ctx, info) => {
+      if (rejected) {
+        throw rejected;
+      }
+      if (controller.signal.aborted) {
+        return reject(failed("outcome_unknown"));
+      }
+      if (
+        toolCallId === undefined ||
+        info.toolCallId !== toolCallId ||
+        info.toolName !== "submitDiscoveryTurn" ||
+        accepted !== undefined
+      ) {
+        return reject(failed("invalid_output", "tool_call"));
+      }
+      if (
+        encoder.encode(info.toolCall.function.arguments).byteLength >
+        PRIVATE_DISCOVERY_RESPONSE_BYTES
+      ) {
+        return reject(failed("invalid_output", "response_body_limit"));
+      }
+      let value: unknown;
+      try {
+        value = JSON.parse(info.toolCall.function.arguments);
+      } catch {
+        return reject(failed("invalid_output", "output_json"));
+      }
+      try {
+        prepared = Schema.decodeUnknownSync(SubmitDiscoveryTurn, {
+          onExcessProperty: "error",
+        })(value);
+      } catch {
+        return reject(failed("invalid_output", "output_schema"));
+      }
+    },
+    onChunk: (_ctx, chunk) => {
+      if (chunk.type === "RUN_ERROR") {
+        if (rejected) {
+          throw rejected;
+        }
+        if (controller.signal.aborted || chunk.code === "aborted") {
+          return reject(failed("outcome_unknown"));
+        }
+        if (chunk.code !== undefined && /^[45]\d{2}$/u.test(chunk.code)) {
+          return reject(failed("provider_unavailable"));
+        }
+        return reject(failed("invalid_output", "response_body_read"));
+      }
+      if (chunk.type === "RUN_STARTED") {
+        return {
+          runId: input.chat.runId,
+          threadId: input.chat.threadId,
+          type: EventType.RUN_STARTED,
+        };
+      }
+      if (chunk.type === "TOOL_CALL_START") {
+        if (toolCallId !== undefined) {
+          return reject(failed("invalid_output", "tool_call"));
+        }
+        ({ toolCallId } = chunk);
+      }
+      if (chunk.type === "TEXT_MESSAGE_CONTENT" && chunk.delta !== "") {
+        return reject(failed("invalid_output", "tool_call"));
+      }
+      if (chunk.type === "RUN_FINISHED") {
+        if (toolCallId === undefined) {
+          return reject(failed("invalid_output", "tool_call"));
+        }
+        // The SDK defers this until the tool phase and atomic application acceptance succeed.
+        return {
+          outcome: { type: "success" },
+          runId: input.chat.runId,
+          threadId: input.chat.threadId,
+          type: EventType.RUN_FINISHED,
+        };
+      }
+      if (
+        chunk.type === "TOOL_CALL_RESULT" &&
+        accepted !== undefined &&
+        !emittedReply
+      ) {
+        emittedReply = true;
+        return safeReplyChunks(accepted);
+      }
+      return null;
+    },
+    onError: (_ctx, info) =>
+      settleFailure(
+        info.error instanceof PrivateDiscoveryFailure
+          ? info.error
+          : failed("invalid_output", "output_schema")
+      ),
+    onIteration: () => {
+      if (controller.signal.aborted) {
+        return reject(failed("outcome_unknown"));
+      }
+      input.beforeDispatch(provenance);
+    },
+    onShouldContinue: () => {
+      if (rejected) {
+        throw rejected;
+      }
+      if (controller.signal.aborted) {
+        return reject(failed("outcome_unknown"));
+      }
+      // The SDK can finish an empty provider stream without emitting a terminal chunk or a tool phase.
+      if (accepted === undefined) {
+        return reject(failed("invalid_output", "tool_call"));
+      }
+    },
+    onStart: () => {
+      const aborted = () => {
+        void settleAfterAbort();
+      };
+      controller.signal.addEventListener("abort", aborted, { once: true });
+      removeAbortListener = () =>
+        controller.signal.removeEventListener("abort", aborted);
+      if (controller.signal.aborted) {
+        aborted();
+      } else {
+        deadline = setTimeout(() => controller.abort(), config.timeoutMs);
+      }
+    },
+    onToolPhaseComplete: (_ctx, info) => {
+      if (controller.signal.aborted) {
+        return reject(failed("outcome_unknown"));
+      }
+      if (rejected) {
+        throw rejected;
+      }
+      if (info.toolCalls.length !== 1 || accepted === undefined) {
+        return reject(failed("invalid_output", "tool_call"));
+      }
+    },
+  };
+  const submit = toolDefinition({
+    description: submissionDescription,
+    inputSchema: standard,
+    name: "submitDiscoveryTurn",
+  }).server(async () => {
+    if (controller.signal.aborted) {
+      return reject(failed("outcome_unknown"));
+    }
+    if (rejected) {
+      throw rejected;
+    }
+    if (prepared === undefined) {
+      return reject(failed("invalid_output", "output_schema"));
+    }
+    try {
+      accepted = Schema.decodeUnknownSync(PrivateChatReply)(
+        await input.chat.accept({
+          output: prepared,
+          provenance,
+          // Parsed SDK usage may be interim. Unknown accounting never credits a reservation.
+          usage: unknownUsage,
+        })
+      );
+      return accepted;
+    } catch (error) {
+      if (controller.signal.aborted) {
+        return reject(failed("outcome_unknown"));
+      }
+      return reject(
+        error instanceof PrivateDiscoveryFailure
+          ? error
+          : failed("invalid_output", "output_schema")
+      );
+    }
+  });
+  return chat({
+    abortController: controller,
+    adapter: new PrivateDiscoveryTextAdapter(
+      {
+        binding: ai,
+        gateway: {
+          collectLog: false,
+          id: config.gatewayId,
+          requestTimeoutMs: config.timeoutMs,
+          retries: { maxAttempts: 1 },
+          skipCache: true,
+        },
+      },
+      request
+    ),
+    agentLoopStrategy: maxIterations(1),
+    debug: false,
+    messages: input.chat.messages,
+    middleware: [
+      guard,
+      ...input.chat.middleware,
+      {
+        name: "private-discovery-lifecycle",
+        onAbort: cleanup,
+        onError: cleanup,
+        onFinish: cleanup,
+      },
+    ],
+    runId: input.chat.runId,
+    threadId: input.chat.threadId,
+    tools: [submit],
+  });
+};
+
+export const makePrivateDiscoveryModel = (
+  environment: PrivateDiscoveryModelEnvironment
+): PrivateDiscoveryStreamingModel => ({
+  generate: (input) =>
+    Effect.tryPromise({
+      catch: (error) =>
+        error instanceof PrivateDiscoveryFailure
+          ? error
+          : failure("outcome_unknown"),
+      try: async (signal) => {
+        let result: PrivateDiscoveryResult | undefined;
+        let problem: PrivateDiscoveryFailure | undefined;
+        const controller = new AbortController();
+        const cancellation = AbortSignal.any([input.signal, signal]);
+        const abort = () => controller.abort(cancellation.reason);
+        cancellation.addEventListener("abort", abort, { once: true });
+        if (cancellation.aborted) {
+          abort();
+        }
+        try {
+          const stream = streamDiscovery(environment, {
+            abortController: controller,
+            beforeDispatch: input.beforeDispatch,
+            chat: {
+              accept: (received) => {
+                result = received;
+                return {
+                  createdAt: Date.now(),
+                  messageId: crypto.randomUUID(),
+                  text: "Validated private discovery proposal.",
+                  type: "PrivateDiscoveryReply",
+                };
+              },
+              fail: (error) => {
+                problem = error;
+              },
+              messages: [],
+              middleware: [],
+              runId: crypto.randomUUID(),
+              threadId: crypto.randomUUID(),
+            },
+            context: input.context,
+          });
+          // This non-chat host consumes the same native SDK stream; it has no separate inference path.
+          for await (const _chunk of stream) {
+            /* The caller receives the validated domain result. */
+          }
+          if (problem) {
+            throw problem;
+          }
+          if (result === undefined) {
+            throw failure("invalid_output", null, null, "tool_call");
+          }
+          return result;
+        } finally {
+          cancellation.removeEventListener("abort", abort);
+        }
+      },
+    }),
+  stream: (input) => streamDiscovery(environment, input),
+});

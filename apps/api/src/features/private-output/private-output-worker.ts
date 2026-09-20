@@ -1,5 +1,6 @@
 /* eslint-disable max-classes-per-file -- Named native entrypoints separate admission and mutation capabilities in one worker. */
 import type * as NativeCloudflare from "@cloudflare/workers-types";
+import type { Reservation } from "@meal-planner/private-interview-api";
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { Schema } from "effect";
 
@@ -17,7 +18,10 @@ import {
   privateDirectoryKey,
   privateOutputKey,
 } from "./private-output.contract.js";
-import type { OutputLifecyclePort } from "./private-output.contract.js";
+import type {
+  OutputLifecyclePort,
+  InitializePrivateSession,
+} from "./private-output.contract.js";
 
 export { AccountOutputLifecycle, HouseholdAgent } from "./output-lifecycle.js";
 export { PrivateInterviewDirectory } from "./private-interview-directory.js";
@@ -67,9 +71,9 @@ interface OutputWorkerEnvironment {
       readonly authorizeConnection: (
         input: typeof AuthorizedDirectory.Type
       ) => Promise<void>;
-      readonly hasReservation: (
+      readonly readReservation: (
         input: PrivateSessionBinding
-      ) => Promise<boolean>;
+      ) => Promise<typeof Reservation.Type | null>;
       readonly fetch: (
         request: Request | NativeCloudflare.Request
       ) => Promise<NativeCloudflare.Response>;
@@ -77,7 +81,9 @@ interface OutputWorkerEnvironment {
   };
   readonly PrivateInterviewSession: {
     readonly getByName: (name: string) => {
-      readonly initialize: (input: PrivateSessionBinding) => Promise<void>;
+      readonly initialize: (
+        input: typeof InitializePrivateSession.Type
+      ) => Promise<void>;
       readonly beginConnection: (
         input: PrivateSessionBinding
       ) => Promise<string>;
@@ -97,7 +103,7 @@ interface OutputWorkerEnvironment {
   };
 }
 
-/** Trusted service-binding entrypoint. Only confirmed closed commands cross its narrow continuation boundary. */
+/** Trusted service-binding entrypoint for admission, model turns, and confirmed commands. */
 export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> {
   async beginDirectoryConnection(untrusted: PrivateParticipantBinding) {
     const binding = Schema.decodeUnknownSync(PrivateParticipantBinding, {
@@ -121,16 +127,16 @@ export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> 
   }
   async beginConnection(untrusted: PrivateSessionBinding) {
     const binding = Schema.decodeUnknownSync(PrivateSessionBinding)(untrusted);
-    const reserved = await this.env.PrivateInterviewDirectory.getByName(
+    const reservation = await this.env.PrivateInterviewDirectory.getByName(
       await privateDirectoryKey(binding)
-    ).hasReservation(binding);
-    if (!reserved) {
+    ).readReservation(binding);
+    if (reservation === null) {
       throw new PrivateOutputUnavailable({ reason: "binding_conflict" });
     }
     const child = this.env.PrivateInterviewSession.getByName(
       await privateOutputKey("session", binding.sessionReference)
     );
-    await child.initialize(binding);
+    await child.initialize({ binding, scope: reservation.scope });
     return child.beginConnection(binding);
   }
 
@@ -161,6 +167,19 @@ export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> 
     request: Request | NativeCloudflare.Request
   ): Promise<NativeCloudflare.Response> {
     const url = new URL(request.url);
+    if (
+      url.origin === "https://private-output.internal" &&
+      url.pathname === "/chat" &&
+      ["GET", "POST", "DELETE"].includes(request.method) &&
+      !request.headers.has("private-output-directory")
+    ) {
+      const session = Schema.decodeUnknownSync(Session)({
+        sessionReference: request.headers.get("private-output-session"),
+      });
+      return this.env.PrivateInterviewSession.getByName(
+        await privateOutputKey("session", session.sessionReference)
+      ).fetch(request);
+    }
     if (
       url.origin !== "https://private-output.internal" ||
       url.pathname !== "/upgrade" ||

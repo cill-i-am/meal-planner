@@ -1,0 +1,524 @@
+{
+  "schemaVersion": 1,
+  "fileId": "01M2YNGSS3QW4T1ENVYSS0ZXNP",
+  "source": "https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0",
+  "capturedOn": "2026-09-20",
+  "sourceCommit": "e93406b81313c16aebbdd63859e52b05a3dd2083",
+  "tokenHash": "d5cbbe01",
+  "status": "reviewed-design-baseline-not-implemented",
+  "visualAuthority": "Live Paper; these exports are a dated reference.",
+  "designBoardCount": 62,
+  "componentReferenceCount": 1,
+  "boards": [
+    {
+      "nodeId": "U-0",
+      "pageId": "p-6-0",
+      "pageName": "Auth",
+      "name": "D · Screen 1 · Log in",
+      "snapshot": "snapshots/auth/desktop/screen-1-log-in.webp",
+      "sha256": "09a4900cbee3006428e847d0b36412617f4ac260e0fdf3a6fe79420e22d8c10f"
+    },
+    {
+      "nodeId": "1-0",
+      "pageId": "p-6-0",
+      "pageName": "Auth",
+      "name": "D · Screen 2 · Create account",
+      "snapshot": "snapshots/auth/desktop/screen-2-create-account.webp",
+      "sha256": "72d6899d94f4e05c954efe62eec4bfe14be30472f56c212439813574537b40d4"
+    },
+    {
+      "nodeId": "F3-0",
+      "pageId": "p-6-0",
+      "pageName": "Auth",
+      "name": "M · Screen 1 · Log in",
+      "snapshot": "snapshots/auth/mobile/screen-1-log-in.webp",
+      "sha256": "b4bb0196496bf3d1069c6e9d8a80267b7818ebfed545ff191091400cf38105b2"
+    },
+    {
+      "nodeId": "DH-0",
+      "pageId": "p-6-0",
+      "pageName": "Auth",
+      "name": "M · Screen 2 · Create account",
+      "snapshot": "snapshots/auth/mobile/screen-2-create-account.webp",
+      "sha256": "8a880c0c048089b7ad251cfc9b9c9ea14fe3819f51f4eb71f71606608e03efd5"
+    },
+    {
+      "nodeId": "1YL-0",
+      "pageId": "p-6-0",
+      "pageName": "Auth",
+      "name": "D · State 1 · Log in Validation",
+      "snapshot": "snapshots/auth/desktop/state-1-log-in-validation.webp",
+      "sha256": "676ee44bf097717347427c08c1c56f87124531cb0ab66283d73d0ee2f4158a16"
+    },
+    {
+      "nodeId": "25G-0",
+      "pageId": "p-6-0",
+      "pageName": "Auth",
+      "name": "D · State 2 · Log in Rejected",
+      "snapshot": "snapshots/auth/desktop/state-2-log-in-rejected.webp",
+      "sha256": "ecd1af9ebd647d5aecc5f7c243d9d2f5ae40e3eac4a0deb954ee8ca880932bbf"
+    },
+    {
+      "nodeId": "1WL-0",
+      "pageId": "p-6-0",
+      "pageName": "Auth",
+      "name": "D · State 3 · Signup Validation",
+      "snapshot": "snapshots/auth/desktop/state-3-signup-validation.webp",
+      "sha256": "da44b149aaecf892de9f087a1e3b5dd08d542b6dd06fb73d81b91f4f8f431722"
+    },
+    {
+      "nodeId": "1BM-0",
+      "pageId": "p-6-0",
+      "pageName": "Auth",
+      "name": "M · State 1 · Log in Validation",
+      "snapshot": "snapshots/auth/mobile/state-1-log-in-validation.webp",
+      "sha256": "555f763539e2b5206a3eec514ee677a5b1464edaa776385735cf121c25fa0314"
+    },
+    {
+      "nodeId": "WJ-0",
+      "pageId": "p-6-0",
+      "pageName": "Auth",
+      "name": "M · State 2 · Log in Rejected",
+      "snapshot": "snapshots/auth/mobile/state-2-log-in-rejected.webp",
+      "sha256": "45341f9170ad72e5e12e39a3940321dfc0c54e8179cf250432f8857484b79418"
+    },
+    {
+      "nodeId": "19G-0",
+      "pageId": "p-6-0",
+      "pageName": "Auth",
+      "name": "M · State 3 · Signup Validation",
+      "snapshot": "snapshots/auth/mobile/state-3-signup-validation.webp",
+      "sha256": "961f835c1e75cfb7932048cbc2552b45eb5940f875089d2e1094e4ac127adf23"
+    },
+    {
+      "nodeId": "11U-0",
+      "pageId": "p-4-0",
+      "pageName": "People",
+      "name": "D · Screen 1 · Add and invite adult",
+      "snapshot": "snapshots/people/desktop/screen-1-add-and-invite-adult.webp",
+      "sha256": "ec4e62813634cd8bb0d7c565a9c8134d54e187d84b4f710019212d5d2a9150a1"
+    },
+    {
+      "nodeId": "26-0",
+      "pageId": "p-4-0",
+      "pageName": "People",
+      "name": "D · Screen 2 · Add dependant",
+      "snapshot": "snapshots/people/desktop/screen-2-add-dependant.webp",
+      "sha256": "dea76f252bc09ac897c1cb1b99d83df19cb7d014ab87111b39d2e5c5e4982376"
+    },
+    {
+      "nodeId": "142-0",
+      "pageId": "p-4-0",
+      "pageName": "People",
+      "name": "M · Screen 1 · Add and invite adult",
+      "snapshot": "snapshots/people/mobile/screen-1-add-and-invite-adult.webp",
+      "sha256": "f29326f794ff2bf71db74e0cbaf0f48ba9e479852d74a11dff7ffe71cfd10739"
+    },
+    {
+      "nodeId": "JR-0",
+      "pageId": "p-4-0",
+      "pageName": "People",
+      "name": "M · Screen 2 · Add dependant",
+      "snapshot": "snapshots/people/mobile/screen-2-add-dependant.webp",
+      "sha256": "a594adf99b45218280c541d7a63a60b87336c3dd04a1e9fa3e1a73a0396f3b74"
+    },
+    {
+      "nodeId": "225-0",
+      "pageId": "p-4-0",
+      "pageName": "People",
+      "name": "D · State 1 · Adult Validation",
+      "snapshot": "snapshots/people/desktop/state-1-adult-validation.webp",
+      "sha256": "1e0aeb4ee2218ecbba2767fd35a74a6113be7950deab3536bc8da8516f78e7d7"
+    },
+    {
+      "nodeId": "2CZ-0",
+      "pageId": "p-4-0",
+      "pageName": "People",
+      "name": "D · State 2 · Dependant Validation",
+      "snapshot": "snapshots/people/desktop/state-2-dependant-validation.webp",
+      "sha256": "104605b0059584f70ff7b1db238cb695d7e205ecc364ba22e20fffb201a5d446"
+    },
+    {
+      "nodeId": "2I0-0",
+      "pageId": "p-4-0",
+      "pageName": "People",
+      "name": "D · State 3 · Adult Finish invitation",
+      "snapshot": "snapshots/people/desktop/state-3-adult-finish-invitation.webp",
+      "sha256": "af80b3bd48246623a78fe029b1e2fdba2199bb0bec4051d8c49c2fa448467f91"
+    },
+    {
+      "nodeId": "1GE-0",
+      "pageId": "p-4-0",
+      "pageName": "People",
+      "name": "M · State 1 · Adult Validation",
+      "snapshot": "snapshots/people/mobile/state-1-adult-validation.webp",
+      "sha256": "3b51810948fc32df60e15cd05a10967e215e7f5480dab1baed448dfa5bf8f85c"
+    },
+    {
+      "nodeId": "1J4-0",
+      "pageId": "p-4-0",
+      "pageName": "People",
+      "name": "M · State 2 · Dependant Validation",
+      "snapshot": "snapshots/people/mobile/state-2-dependant-validation.webp",
+      "sha256": "92966e59808c6e6c74b9114dfb0b377a2c1a3413cecb3d8aaf2327c32c55f9dc"
+    },
+    {
+      "nodeId": "1PO-0",
+      "pageId": "p-4-0",
+      "pageName": "People",
+      "name": "M · State 3 · Adult Finish invitation",
+      "snapshot": "snapshots/people/mobile/state-3-adult-finish-invitation.webp",
+      "sha256": "b003a0a9b23c18381f75a5d59ee2cc36a55e12746587b9c983a5a64a34dbaccd"
+    },
+    {
+      "nodeId": "2V1-0",
+      "pageId": "p-1-0",
+      "pageName": "Overview",
+      "name": "shadcn · Themed components and states",
+      "snapshot": "snapshots/overview/component-states.webp",
+      "sha256": "f47d1b464f427c268598e9165a5c95213222bb0e04969f550f646b8dfee21fdf"
+    },
+    {
+      "nodeId": "332-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "D · State 6 · Setup saved",
+      "snapshot": "snapshots/family/desktop/state-6-setup-saved.webp",
+      "sha256": "4c3a42384a544549fae0e423bfb4b00a5bc39d4278516e6acb080e6b9d6e05a3"
+    },
+    {
+      "nodeId": "33K-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "M · State 6 · Setup saved",
+      "snapshot": "snapshots/family/mobile/state-6-setup-saved.webp",
+      "sha256": "9ebc4503efc128c7ff8895640f372f19119715c156271468d94d09b6b24828a8"
+    },
+    {
+      "nodeId": "1I-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "D · Screen 1 · Name family",
+      "snapshot": "snapshots/family/desktop/screen-1-name-family.webp",
+      "sha256": "be962cc48ba3347c0d4155c460d283428d0e2a99f991c7a7e21158b4d900fedc"
+    },
+    {
+      "nodeId": "2U-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "D · Screen 2 · Review family",
+      "snapshot": "snapshots/family/desktop/screen-2-review-family.webp",
+      "sha256": "218fe67394f520b2f27d6c73d315e8684110666e31840b098f84c221ab31759e"
+    },
+    {
+      "nodeId": "3I-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "D · Screen 3 · Ready for discovery",
+      "snapshot": "snapshots/family/desktop/screen-3-ready-for-discovery.webp",
+      "sha256": "4b498bb7cad42a0e2648b399fac5b74d20fd08a5032c897d1dbd4581b05fd114"
+    },
+    {
+      "nodeId": "H6-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "M · Screen 1 · Name family",
+      "snapshot": "snapshots/family/mobile/screen-1-name-family.webp",
+      "sha256": "eca7d348f9fb96d6b2ba31792d92b99a112cdef84fb32cf040a0bd63c4fe7450"
+    },
+    {
+      "nodeId": "MR-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "M · Screen 2 · Review family",
+      "snapshot": "snapshots/family/mobile/screen-2-review-family.webp",
+      "sha256": "236243b6cf84be77ef0c967c7a8b4e83b839f734c27227a8f8e4be19abb4f544"
+    },
+    {
+      "nodeId": "PO-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "M · Screen 3 · Ready for discovery",
+      "snapshot": "snapshots/family/mobile/screen-3-ready-for-discovery.webp",
+      "sha256": "48564267bae8e4e8741324e687de8d07878a88474b46a3cded4f2e509887f0ff"
+    },
+    {
+      "nodeId": "205-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "D · State 1 · Name Validation",
+      "snapshot": "snapshots/family/desktop/state-1-name-validation.webp",
+      "sha256": "19527e89a7b9b15c1ab8407a4c9ae4916e7b56d501ad81cb1259eb6674d8a589"
+    },
+    {
+      "nodeId": "26R-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "D · State 2 · Name Saving",
+      "snapshot": "snapshots/family/desktop/state-2-name-saving.webp",
+      "sha256": "0e32491939b5227be2794d58dde79a73aea2c7127ca7e36f3b241e6c15eb1ccf"
+    },
+    {
+      "nodeId": "28G-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "D · State 3 · Name Check save",
+      "snapshot": "snapshots/family/desktop/state-3-name-check-save.webp",
+      "sha256": "d8e0a67d60b7d4e7838d0d0f9c9850c44789889602856f553b9ff924ad08fcdf"
+    },
+    {
+      "nodeId": "2A8-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "D · State 4 · Review One person",
+      "snapshot": "snapshots/family/desktop/state-4-review-one-person.webp",
+      "sha256": "778f0fe8be0b7460bfef3845172e04ad5f27cd39bcaf1cd93856ac5339d05557"
+    },
+    {
+      "nodeId": "2IX-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "D · State 5 · Review Unavailable",
+      "snapshot": "snapshots/family/desktop/state-5-review-unavailable.webp",
+      "sha256": "9809fe6dfa1f3bf6b58fa81373be6bffb11aa85b2a8c2c2fbd58307ee1d1ee52"
+    },
+    {
+      "nodeId": "1D9-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "M · State 1 · Name Validation",
+      "snapshot": "snapshots/family/mobile/state-1-name-validation.webp",
+      "sha256": "3df2965caf805e3cb6599e2f541c8a0d4fe0e93e6e04b649b51a7fbe8642d70b"
+    },
+    {
+      "nodeId": "Y0-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "M · State 2 · Name Saving",
+      "snapshot": "snapshots/family/mobile/state-2-name-saving.webp",
+      "sha256": "77ca268f7acbbd96adadd4a468e13fcc9fba358b1070e221236e0d674cc7fec3"
+    },
+    {
+      "nodeId": "ZP-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "M · State 3 · Name Check save",
+      "snapshot": "snapshots/family/mobile/state-3-name-check-save.webp",
+      "sha256": "af1f6235ca57a4e407e5889ed144240884566522f01fea9d0439fadbde1e4f34"
+    },
+    {
+      "nodeId": "179-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "M · State 4 · Review One person",
+      "snapshot": "snapshots/family/mobile/state-4-review-one-person.webp",
+      "sha256": "510e279e07cc0ddec1e2a24e006c11cfc05ff94bf77c5cc6f5e5df79849a02f7"
+    },
+    {
+      "nodeId": "1QZ-0",
+      "pageId": "p-5-0",
+      "pageName": "Household",
+      "name": "M · State 5 · Review Unavailable",
+      "snapshot": "snapshots/family/mobile/state-5-review-unavailable.webp",
+      "sha256": "f024c7871959b69f3b30981c20bb3d306a5bf8446c5ee22085c25e8ffb93d15a"
+    },
+    {
+      "nodeId": "46-0",
+      "pageId": "p-3-0",
+      "pageName": "Invitations",
+      "name": "D · Screen 1 · Join or decline",
+      "snapshot": "snapshots/invitations/desktop/screen-1-join-or-decline.webp",
+      "sha256": "94b7e8caa436a33373008b196d170e8dd9c0cbfc07b76ae5ffc7ef4923c3a1e1"
+    },
+    {
+      "nodeId": "SB-0",
+      "pageId": "p-3-0",
+      "pageName": "Invitations",
+      "name": "M · Screen 1 · Join or decline",
+      "snapshot": "snapshots/invitations/mobile/screen-1-join-or-decline.webp",
+      "sha256": "9ffa4006e676181ee6f1385a4418da4d8ac255f65cd8e18c54c3dfa686c68c16"
+    },
+    {
+      "nodeId": "2G6-0",
+      "pageId": "p-3-0",
+      "pageName": "Invitations",
+      "name": "D · State 1 · Wrong account",
+      "snapshot": "snapshots/invitations/desktop/state-1-wrong-account.webp",
+      "sha256": "6334559642edc78bac46d96782c182be6c2f53c9faa7f61e43ef23d8e78f83bf"
+    },
+    {
+      "nodeId": "2F9-0",
+      "pageId": "p-3-0",
+      "pageName": "Invitations",
+      "name": "D · State 2 · Unavailable invitation",
+      "snapshot": "snapshots/invitations/desktop/state-2-unavailable-invitation.webp",
+      "sha256": "d7191aad6070dcb055a60680d5d86f0352cde2fc071cacaffee343f97bd40623"
+    },
+    {
+      "nodeId": "2H3-0",
+      "pageId": "p-3-0",
+      "pageName": "Invitations",
+      "name": "D · State 3 · Invitation declined",
+      "snapshot": "snapshots/invitations/desktop/state-3-invitation-declined.webp",
+      "sha256": "23018bec4ed0af23b0059790700ccf2dcabc2c3f86eaa7c322d47ffca53fde3b"
+    },
+    {
+      "nodeId": "2JU-0",
+      "pageId": "p-3-0",
+      "pageName": "Invitations",
+      "name": "D · State 4 · Finish profile linking",
+      "snapshot": "snapshots/invitations/desktop/state-4-finish-profile-linking.webp",
+      "sha256": "4413ab460be37bd07070ce957b955821f7b6bf8c2b35bc97e659ea83fb3d88a9"
+    },
+    {
+      "nodeId": "1N2-0",
+      "pageId": "p-3-0",
+      "pageName": "Invitations",
+      "name": "M · State 1 · Wrong account",
+      "snapshot": "snapshots/invitations/mobile/state-1-wrong-account.webp",
+      "sha256": "65ab22dd24bad8b10508f62752a5534f12caa23591bb72dadcfe35a416117f11"
+    },
+    {
+      "nodeId": "1LR-0",
+      "pageId": "p-3-0",
+      "pageName": "Invitations",
+      "name": "M · State 2 · Unavailable invitation",
+      "snapshot": "snapshots/invitations/mobile/state-2-unavailable-invitation.webp",
+      "sha256": "b192545a73ba1c6aff970adae38672c62a2ee236325de37011fa3ad801ee6500"
+    },
+    {
+      "nodeId": "1OD-0",
+      "pageId": "p-3-0",
+      "pageName": "Invitations",
+      "name": "M · State 3 · Invitation declined",
+      "snapshot": "snapshots/invitations/mobile/state-3-invitation-declined.webp",
+      "sha256": "f9b37c23efbbaf743c6b19742e3c6aebca21250dcc54d5cbdb1c17a5ebf15390"
+    },
+    {
+      "nodeId": "1SA-0",
+      "pageId": "p-3-0",
+      "pageName": "Invitations",
+      "name": "M · State 4 · Finish profile linking",
+      "snapshot": "snapshots/invitations/mobile/state-4-finish-profile-linking.webp",
+      "sha256": "44f0e122999278d64e32aabbbb7fa6e4909642fd3af60f018d774ea9934f0bee"
+    },
+    {
+      "nodeId": "4U-0",
+      "pageId": "p-2-0",
+      "pageName": "Recovery",
+      "name": "D · Screen 1 · Request reset Proposed",
+      "snapshot": "snapshots/recovery/desktop/screen-1-request-reset-proposed.webp",
+      "sha256": "e8a713966f6baaefeaa1c70cdb7c334ff5f16a4c4fa256c3c250d97cebe0b2de"
+    },
+    {
+      "nodeId": "UC-0",
+      "pageId": "p-2-0",
+      "pageName": "Recovery",
+      "name": "M · Screen 1 · Request reset Proposed",
+      "snapshot": "snapshots/recovery/mobile/screen-1-request-reset-proposed.webp",
+      "sha256": "f24471b44a470a00bc62b4cf34524f4f622b97b54221cb03943d06f9455e21a4"
+    },
+    {
+      "nodeId": "2BV-0",
+      "pageId": "p-2-0",
+      "pageName": "Recovery",
+      "name": "D · State 1 · Email Validation",
+      "snapshot": "snapshots/recovery/desktop/state-1-email-validation.webp",
+      "sha256": "b937edb292f931dd14102327a388ad9e237dfe961fb4eb602f505a6f47e3a967"
+    },
+    {
+      "nodeId": "2LO-0",
+      "pageId": "p-2-0",
+      "pageName": "Recovery",
+      "name": "D · State 2 · New password Validation",
+      "snapshot": "snapshots/recovery/desktop/state-2-new-password-validation.webp",
+      "sha256": "a65f810569e71c37b0abb30d7e03034614be0122c95ffd98f839852270fa1077"
+    },
+    {
+      "nodeId": "2KR-0",
+      "pageId": "p-2-0",
+      "pageName": "Recovery",
+      "name": "D · State 3 · Reset unavailable",
+      "snapshot": "snapshots/recovery/desktop/state-3-reset-unavailable.webp",
+      "sha256": "e461c9d6bb9b4a2f63257c08f78d18c3d539f474543556b4f7165d647965db5d"
+    },
+    {
+      "nodeId": "1F5-0",
+      "pageId": "p-2-0",
+      "pageName": "Recovery",
+      "name": "M · State 1 · Email Validation",
+      "snapshot": "snapshots/recovery/mobile/state-1-email-validation.webp",
+      "sha256": "160d5bbbb8b18b3cf9237f79355cdc06192c0fa91fd11158d73d1f97f28fbbe5"
+    },
+    {
+      "nodeId": "1UW-0",
+      "pageId": "p-2-0",
+      "pageName": "Recovery",
+      "name": "M · State 2 · New password Validation",
+      "snapshot": "snapshots/recovery/mobile/state-2-new-password-validation.webp",
+      "sha256": "25cd45feaa7343d075a2b576318aae48f8989dec1e5394d26cdac87f0f7c0758"
+    },
+    {
+      "nodeId": "1TL-0",
+      "pageId": "p-2-0",
+      "pageName": "Recovery",
+      "name": "M · State 3 · Reset unavailable",
+      "snapshot": "snapshots/recovery/mobile/state-3-reset-unavailable.webp",
+      "sha256": "4a8e2cfa7b505db9d7aa764be85bad5b0d84c94ad727071dc1722afe202684f4"
+    },
+    {
+      "nodeId": "2ZO-0",
+      "pageId": "p-2-0",
+      "pageName": "Recovery",
+      "name": "D · Screen 3 · New password",
+      "snapshot": "snapshots/recovery/desktop/screen-3-new-password.webp",
+      "sha256": "1d46e5dd271d2c57c6d10f50383fa3268e476a26d57cd8a5a06da72a38f69983"
+    },
+    {
+      "nodeId": "2YD-0",
+      "pageId": "p-2-0",
+      "pageName": "Recovery",
+      "name": "D · Screen 2 · Check email",
+      "snapshot": "snapshots/recovery/desktop/screen-2-check-email.webp",
+      "sha256": "4f7e6e31f5cec12bf0e13ffaab57731df9bf776da613b0af4f31536ae08a46ca"
+    },
+    {
+      "nodeId": "31R-0",
+      "pageId": "p-2-0",
+      "pageName": "Recovery",
+      "name": "D · Screen 4 · Password updated",
+      "snapshot": "snapshots/recovery/desktop/screen-4-password-updated.webp",
+      "sha256": "f9a0568be13a5aa13ca7a70f94e99ca5bf87d34690cd878a247a3c09ea2d4173"
+    },
+    {
+      "nodeId": "30K-0",
+      "pageId": "p-2-0",
+      "pageName": "Recovery",
+      "name": "M · Screen 3 · New password",
+      "snapshot": "snapshots/recovery/mobile/screen-3-new-password.webp",
+      "sha256": "66ce1443c113235440b4082845f6d0f62e8ee1876f59d1800df02d7ce868db1b"
+    },
+    {
+      "nodeId": "2YV-0",
+      "pageId": "p-2-0",
+      "pageName": "Recovery",
+      "name": "M · Screen 2 · Check email",
+      "snapshot": "snapshots/recovery/mobile/screen-2-check-email.webp",
+      "sha256": "13f80227d65c211256b8e87857fb59eaa502c1753e1ae4f3e4aa188ddfda9149"
+    },
+    {
+      "nodeId": "329-0",
+      "pageId": "p-2-0",
+      "pageName": "Recovery",
+      "name": "M · Screen 4 · Password updated",
+      "snapshot": "snapshots/recovery/mobile/screen-4-password-updated.webp",
+      "sha256": "1fafb4a217404d073747e75ee3cc4e9441281dbda8645664b32ad6e20c3e8245"
+    }
+  ],
+  "presentationContext": {
+    "desktop": "Sky wallpaper, outer padding, and window framing are mockup presentation only. The application begins at the white viewport.",
+    "mobile": "Phone status bars are presentation context. The application has no sky strip."
+  },
+  "tokenCount": 50,
+  "motionReference": "reference/onboarding-motion.html"
+}

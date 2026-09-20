@@ -180,6 +180,8 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     );
     expect(stackSource).toContain("env: { MEAL_PLANNER_API: api }");
     expect(stackSource).toContain('main: "src/worker.ts"');
+    expect(stackSource).toContain('"../../packages/*/src/**"');
+    expect(stackSource).toContain("lockfile: true");
     expect(apiWorkerSource).toContain("auth.fetch(webRequest)");
     expect(apiWorkerSource).toContain('Config.redacted("BETTER_AUTH_SECRET")');
   });
@@ -255,7 +257,9 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     );
 
     expect(stackSource).toContain("TikTokMediaContainerLive");
-    expect(stackSource).toContain("Effect.provide(TikTokMediaContainerLive)");
+    expect(stackSource).toContain(
+      "Layer.mergeAll(HouseholdDomainWorkerLive, TikTokMediaContainerLive)"
+    );
     expect(containerSource).toContain('"TikTokMediaContainer"');
     expect(runtimeSource).toContain("node:24.20.0-bookworm-slim@sha256:");
     expect(runtimeSource).toContain("2026.08.19/yt-dlp_linux");
