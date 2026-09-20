@@ -1,50 +1,38 @@
 name: Plain English editing workspace
+
 on:
   push:
     branches: [codex/plain-english-workbench-20260920]
     paths: [.github/workflows/plain-english-workbench.yml]
+
 permissions:
-  contents: read
+  contents: write
+
 jobs:
-  snapshot:
+  publish-reviewed-writing:
     if: github.repository == 'cill-i-am/meal-planner'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: f9a576ba526d3a1a578dbc75f18033a3aab7b70f
+          ref: ${{ github.sha }}
           fetch-depth: 0
-          persist-credentials: false
-      - name: Capture source without running project code
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -eu
-          mkdir -p "$RUNNER_TEMP/writing/branches"
-          git archive --format=tar HEAD > "$RUNNER_TEMP/writing/main.tar"
-          git diff --name-status -M 1912513fefd35c009c09168035b9c0e0b872c1fb HEAD > "$RUNNER_TEMP/writing/merged-pr-paths.txt"
-          gh api 'repos/cill-i-am/meal-planner/pulls?state=open&per_page=100' > "$RUNNER_TEMP/writing/pulls.json"
-          python3 - <<'PY'
-          import json, os, pathlib, subprocess
-          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'writing'
-          for pr in json.loads((root / 'pulls.json').read_text()):
-              number, sha = pr['number'], pr['head']['sha']
-              if number not in range(219, 226):
-                  raise RuntimeError(f'Additional open PR needs inspection: {number}')
-              dest = root / 'branches' / str(number)
-              dest.mkdir()
-              changed = subprocess.check_output(['git','diff','--name-only',pr['base']['sha'],sha],text=True).splitlines()
-              for name in changed:
-                  if not name.endswith('.md') or not name.startswith('docs/plans/library-consolidation/'):
-                      raise RuntimeError(f'Unexpected changed path for PR {number}: {name}')
-                  data = subprocess.check_output(['git','show',f'{sha}:{name}'])
-                  out = dest / name
-                  out.parent.mkdir(parents=True, exist_ok=True)
-                  out.write_bytes(data)
-          PY
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          version: 12.3.4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install the repository-pinned tools
+        run: pnpm install --frozen-lockfile
+      - name: Verify the reviewed edits and publish objects on the workbench only
+        run: python3 .plain-english-transfer/apply.py
       - uses: actions/upload-artifact@v4
         with:
-          name: plain-english-sources
-          path: ${{ runner.temp }}/writing/
+          name: plain-writing-results
+          path: ${{ runner.temp }}/plain-writing-results/results.json
           retention-days: 1
+          if-no-files-found: error
