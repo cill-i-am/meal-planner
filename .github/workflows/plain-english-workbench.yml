@@ -1,0 +1,50 @@
+name: Plain English editing workspace
+on:
+  push:
+    branches: [codex/plain-english-workbench-20260920]
+    paths: [.github/workflows/plain-english-workbench.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    if: github.repository == 'cill-i-am/meal-planner'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: f9a576ba526d3a1a578dbc75f18033a3aab7b70f
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Capture source without running project code
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/writing/branches"
+          git archive --format=tar HEAD > "$RUNNER_TEMP/writing/main.tar"
+          git diff --name-status -M 1912513fefd35c009c09168035b9c0e0b872c1fb HEAD > "$RUNNER_TEMP/writing/merged-pr-paths.txt"
+          gh api 'repos/cill-i-am/meal-planner/pulls?state=open&per_page=100' > "$RUNNER_TEMP/writing/pulls.json"
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'writing'
+          for pr in json.loads((root / 'pulls.json').read_text()):
+              number, sha = pr['number'], pr['head']['sha']
+              if number not in range(219, 226):
+                  raise RuntimeError(f'Additional open PR needs inspection: {number}')
+              dest = root / 'branches' / str(number)
+              dest.mkdir()
+              changed = subprocess.check_output(['git','diff','--name-only',pr['base']['sha'],sha],text=True).splitlines()
+              for name in changed:
+                  if not name.endswith('.md') or not name.startswith('docs/plans/library-consolidation/'):
+                      raise RuntimeError(f'Unexpected changed path for PR {number}: {name}')
+                  data = subprocess.check_output(['git','show',f'{sha}:{name}'])
+                  out = dest / name
+                  out.parent.mkdir(parents=True, exist_ok=True)
+                  out.write_bytes(data)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plain-english-sources
+          path: ${{ runner.temp }}/writing/
+          retention-days: 1
