@@ -106,14 +106,18 @@ jobs:
           PY
           pnpm format:check
           python3 scripts/check-docs.py
-      - name: Commit the refactor on the isolated branch
+      - name: Commit documentation without changing workflow definitions
         run: |
           set -eu
           branch=codex/unified-docs-intent-20260920
           remote=$(git ls-remote origin "refs/heads/$branch" | cut -f1)
           test "$remote" = "$SOURCE_SHA"
+          # The Actions token lacks workflows permission. The connected GitHub
+          # editor will publish the reviewed CI edit and remove this helper.
+          git restore --source "$SOURCE_SHA" -- .github/workflows/ci.yml .github/workflows/docs-refactor-workspace.yml
           git add -A
           git diff --cached --check
+          test -z "$(git diff --cached --name-only -- .github/workflows)"
           git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'docs: unify documentation, intent and skills while preserving engineering standards'
           git push origin "HEAD:refs/heads/$branch"
           printf 'Published candidate: '
