@@ -1,0 +1,25 @@
+name: Documentation refactor workbench
+
+on:
+  push:
+    branches: [codex/documentation-refactor-workbench-20260920]
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 1912513fefd35c009c09168035b9c0e0b872c1fb
+          persist-credentials: false
+      - name: Export reviewed tracked source
+        run: git archive --format=tar --output=source.tar HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-refactor-source
+          path: source.tar
+          retention-days: 1
