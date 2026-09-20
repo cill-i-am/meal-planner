@@ -186,12 +186,7 @@
         <strong>Background motion study</strong>
         <p>42-second drift. Focus a field to pause. Read-only form preview.</p>
       </div>
-      <button
-        class="motion-control"
-        type="button"
-        aria-pressed="false"
-        id="motion-control"
-      >
+      <button class="motion-control" type="button" id="motion-control">
         Pause motion
       </button>
     </aside>
@@ -245,7 +240,6 @@
         surface.dataset.motionPaused = String(
           manuallyPaused || document.hidden || !inView
         );
-        control.setAttribute("aria-pressed", String(manuallyPaused));
         control.textContent = manuallyPaused ? "Play motion" : "Pause motion";
       }
       control.addEventListener("click", () => {
