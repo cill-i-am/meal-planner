@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "packages": {
+    "@tanstack/ai-cloudflare": "0.1.1",
+    "openai": "6.49.0"
+  },
+  "sdkMaximumRetries": 2,
+  "gatewayMaximumAttemptsPerSdkRequest": 1,
+  "maximumProviderAttemptsPerTurn": 3,
+  "kimi": {
+    "model": "@cf/moonshotai/kimi-k2.6",
+    "maximumInputTokens": 262144,
+    "maximumOutputTokens": 65536,
+    "inputUsdPerMillionTokens": 0.950004,
+    "outputUsdPerMillionTokens": 4,
+    "reservationPerProviderAttemptMicroUsd": 511182,
+    "reservationPerApplicationTurnMicroUsd": 1533546
+  },
+  "unknownUsageSettlement": "retain_full_application_turn_reservation",
+  "applicationAutomaticRetry": false,
+  "historicalRecords": "unchanged"
+}

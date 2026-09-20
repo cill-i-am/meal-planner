@@ -378,7 +378,7 @@ const PeopleList = ({
               if (person.lifecycle === "archived") {
                 return (
                   <Button
-                    className="button-secondary"
+                    variant="secondary"
                     disabled={isPending || retryIntent}
                     onClick={() => transitionPerson("restore")}
                     type="button"
@@ -401,7 +401,7 @@ const PeopleList = ({
                       Confirm archive
                     </Button>
                     <Button
-                      className="button-secondary"
+                      variant="secondary"
                       onClick={() =>
                         archiveConfirmation.setFieldValue("personId", null)
                       }
@@ -414,7 +414,7 @@ const PeopleList = ({
               }
               return (
                 <Button
-                  className="button-secondary"
+                  variant="secondary"
                   disabled={isPending || retryIntent}
                   onClick={() =>
                     archiveConfirmation.setFieldValue("personId", person.id)
@@ -1032,7 +1032,7 @@ export const HouseholdPeoplePanel = ({
             <h2 id="household-people-heading">People</h2>
           </div>
           <Button
-            className="button-secondary"
+            variant="secondary"
             disabled={roster.isFetching}
             onClick={() => {
               void roster.refetch();

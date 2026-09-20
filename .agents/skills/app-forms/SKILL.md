@@ -1,14 +1,14 @@
 ---
 name: app-forms
-description: Build or change TanStack Form flows using Effect Schema and the project’s UI fields.
+description: Integrate TanStack Form with Effect Schema validation and typed command submission.
 ---
 
 # Forms
 
-Use TanStack Form for field values and reactivity, the project's UI field primitives, and Effect Schema for validation and submit-time decoding. [Implementation reference](references/tanstack-form-effect-schema.md) covers the integration when needed.
-
-Keep one owner for form and mutation state. Use Form subscriptions/listeners rather than mirroring values, validity, or pending state with React effects. Local UI state unrelated to the form is a separate concern.
-
-Standard Schema validation may not return branded/transformed domain output. Decode the submitted value with the owning Effect Schema before calling the typed client mutation. Reuse the API input schema when it is the same contract; distinguish UI draft values when the shapes actually differ.
-
-Keep one-off layout, copy, and submit behaviour route-local. Share a form abstraction only when repeated behaviour justifies it. Invalidate affected queries after success and expose honest validation, pending, and failure states with labels and accessible error associations.
+Use the [shared form contract](../../../docs/reference/forms.md) and
+[implementation example](../../../docs/how-to/build-a-form.md) for a changed form
+flow. Preserve explicit submit decoding, safety confirmation and exact-command
+recovery; generic validity is not consent. Keep one owner for field and mutation
+state. Inspect the current primitive/adapter instead of introducing another form
+framework. Use relevant field, command and browser evidence; copy-only changes do
+not require a form redesign.

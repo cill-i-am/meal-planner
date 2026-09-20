@@ -112,7 +112,7 @@ export const DepartureRecovery = ({
       operation.state === "finalization_repair_required");
 
   return (
-    <div className="people-departure-recovery">
+    <div>
       {operation === null && onRecover !== undefined ? (
         <section className="people-form">
           <h3>Recover departure status</h3>
@@ -138,7 +138,7 @@ export const DepartureRecovery = ({
           <div className="people-confirmation">
             {onRead === undefined ? null : (
               <Button
-                className="button-secondary"
+                variant="secondary"
                 disabled={disabled}
                 onClick={() => onRead(operation)}
                 type="button"
@@ -148,7 +148,7 @@ export const DepartureRecovery = ({
             )}
             {operation.state === "prepared" && onCancel !== undefined ? (
               <Button
-                className="button-secondary"
+                variant="secondary"
                 disabled={disabled}
                 onClick={() => onCancel(operation)}
                 type="button"
@@ -217,7 +217,7 @@ const DepartureControl = ({
               Confirm leave
             </Button>
             <Button
-              className="button-secondary"
+              variant="secondary"
               disabled={disabled}
               onClick={() => form.setFieldValue("confirmed", false)}
               type="button"
@@ -227,7 +227,7 @@ const DepartureControl = ({
           </div>
         ) : (
           <Button
-            className="button-secondary"
+            variant="secondary"
             disabled={disabled}
             onClick={() => form.setFieldValue("confirmed", true)}
             type="button"
@@ -554,7 +554,7 @@ export const HouseholdAssociationControls = ({
     (person) => person.id === roster.currentPersonId
   );
   return (
-    <div className="people-association-controls">
+    <div>
       {onInvite === undefined ? null : (
         <InviteAdultForm
           disabled={disabled}

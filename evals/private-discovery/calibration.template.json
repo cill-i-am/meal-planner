@@ -1,0 +1,115 @@
+{
+  "version": "private-discovery-calibration-v1",
+  "scope": "wi03_adult_discovery",
+  "scenarioVersion": "private-discovery-scenarios-v1",
+  "rubricVersion": "private-discovery-rubric-v1",
+  "status": "unscored",
+  "acceptedBaselineId": null,
+  "runEvidenceReference": null,
+  "productOwnerReview": [
+    {
+      "scenarioId": "simple_household_baseline",
+      "status": "unscored",
+      "reviewerRole": null,
+      "reviewedAt": null,
+      "household_specificity": null,
+      "profile_synthesis": null,
+      "rationale": null,
+      "judgeComparison": "unavailable",
+      "disagreements": [],
+      "resolution": null
+    },
+    {
+      "scenarioId": "conflicting_adult_routines",
+      "status": "unscored",
+      "reviewerRole": null,
+      "reviewedAt": null,
+      "household_specificity": null,
+      "profile_synthesis": null,
+      "rationale": null,
+      "judgeComparison": "unavailable",
+      "disagreements": [],
+      "resolution": null
+    },
+    {
+      "scenarioId": "dependants_and_fallbacks",
+      "status": "unscored",
+      "reviewerRole": null,
+      "reviewedAt": null,
+      "household_specificity": null,
+      "profile_synthesis": null,
+      "rationale": null,
+      "judgeComparison": "unavailable",
+      "disagreements": [],
+      "resolution": null
+    },
+    {
+      "scenarioId": "mixed_dietary_household",
+      "status": "unscored",
+      "reviewerRole": null,
+      "reviewedAt": null,
+      "household_specificity": null,
+      "profile_synthesis": null,
+      "rationale": null,
+      "judgeComparison": "unavailable",
+      "disagreements": [],
+      "resolution": null
+    },
+    {
+      "scenarioId": "hard_constraint_household",
+      "status": "unscored",
+      "reviewerRole": null,
+      "reviewedAt": null,
+      "household_specificity": null,
+      "profile_synthesis": null,
+      "rationale": null,
+      "judgeComparison": "unavailable",
+      "disagreements": [],
+      "resolution": null
+    },
+    {
+      "scenarioId": "routine_heavy_household",
+      "status": "unscored",
+      "reviewerRole": null,
+      "reviewedAt": null,
+      "household_specificity": null,
+      "profile_synthesis": null,
+      "rationale": null,
+      "judgeComparison": "unavailable",
+      "disagreements": [],
+      "resolution": null
+    },
+    {
+      "scenarioId": "capacity_constrained_week",
+      "status": "unscored",
+      "reviewerRole": null,
+      "reviewedAt": null,
+      "household_specificity": null,
+      "profile_synthesis": null,
+      "rationale": null,
+      "judgeComparison": "unavailable",
+      "disagreements": [],
+      "resolution": null
+    },
+    {
+      "scenarioId": "dependency_and_repair",
+      "status": "unscored",
+      "reviewerRole": null,
+      "reviewedAt": null,
+      "household_specificity": null,
+      "profile_synthesis": null,
+      "rationale": null,
+      "judgeComparison": "unavailable",
+      "disagreements": [],
+      "resolution": null
+    }
+  ],
+  "secondHumanBeforeExternalBeta": {
+    "status": "not_exercised",
+    "requiredSample": "At least one straightforward and one complex dependency/exception/repair scenario from the complete connected baseline.",
+    "reviews": [],
+    "disagreements": [],
+    "resolutions": []
+  },
+  "acceptance": "Only actual product-owner scores and rationale can establish this scoped baseline. Agent or judge scores cannot populate human review. WI04 and later-stage obligations remain open."
+}

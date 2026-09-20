@@ -1,11 +1,17 @@
 import m0000 from "./20260906070746_private_output_lifecycle/migration.sql";
 import m0001 from "./20260906130748_private_output_lifecycle/migration.sql";
 import m0002 from "./20260906145049_private_output_lifecycle/migration.sql";
+import m0003 from "./20260906215914_private_output_lifecycle/migration.sql";
+import m0004 from "./20260913121441_private_output_lifecycle/migration.sql";
+import m0005 from "./20260913221618_private_chat_persistence/migration.sql";
 
 export default {
   migrations: {
     "20260906070746_private_output_lifecycle": m0000,
     "20260906130748_private_output_lifecycle": m0001,
     "20260906145049_private_output_lifecycle": m0002,
+    "20260906215914_private_output_lifecycle": m0003,
+    "20260913121441_private_output_lifecycle": m0004,
+    "20260913221618_private_chat_persistence": m0005,
   },
 };

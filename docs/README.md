@@ -1,54 +1,28 @@
-# Meal Planner Documentation
+# Documentation
 
-## Product Direction
+Start with the question, not a reading list. Humans and agents share the same
+contracts. Source and tests establish implementation; a plan or accepted decision
+is not evidence of deployment or successful evaluation.
 
-- [Household product blueprint](product-blueprint/README.md)
-- [Vision and scope](product-blueprint/vision-and-scope.md)
-- [Experience blueprint](product-blueprint/experience-blueprint.md)
-- [Domain model](product-blueprint/domain-model.md)
-- [Recipe strategy](product-blueprint/recipe-strategy.md)
-- [Beta and success evidence](product-blueprint/beta-and-success.md)
-- [Capability roadmap](product-blueprint/delivery-roadmap.md)
-- [Open product decisions](product-blueprint/open-decisions.md)
+| Task | Start here |
+| --- | --- |
+| Understand the product | [Vision and scope](explanation/product/vision-and-scope.md), [experience](explanation/product/experience-blueprint.md) |
+| Find remaining work | [Plans and sequence](plans/README.md) |
+| Implement or review code | [Engineering standards](reference/engineering/README.md) — required index and relevant topics |
+| Learn the repository's verification path | [First local change](tutorials/first-local-change.md) |
+| Run the appropriate host | [Local development](how-to/local-development.md) |
+| Change a form | [Form procedure](how-to/build-a-form.md), [form contract](reference/forms.md) |
+| Change household state or people APIs | [Household authority](reference/household.md), [people API](reference/household-people-api.md) |
+| Change private discovery or its transport | [Private discovery](reference/private-discovery.md), [coverage contract](reference/discovery-coverage.md) |
+| Change recipe import | [Import contract](reference/recipe-import.md), [content strategy](explanation/product/recipe-strategy.md) |
+| Change infrastructure or media lifetime | [Operations](how-to/operate-infrastructure.md), [media lifetime](reference/media-container-lifetime.md) |
+| Change UI appearance | [Web instructions](../apps/web/AGENTS.md), [Paper/design reference](../apps/web/DESIGN.md) |
+| Investigate rendering performance | [Context-specific examples](reference/react-performance/README.md) |
+| Understand a consequential choice | [Decision register](decisions/README.md) |
+| Write or maintain documentation | [Documentation standard](reference/documentation.md) |
 
-## Decisions
-
-- [Decision-record index](decisions/README.md)
-- [Product decision records](decisions/product/)
-- [Architecture decision records](architecture/decisions/README.md)
-
-## Delivery
-
-- [Repository-owned delivery workflow](delivery/README.md)
-- [Current delivery state](delivery/current.md)
-- [Work-item template](delivery/work-item-template.md)
-- [Seven-pass cleanup](delivery/anti-slop-cleanup.md)
-
-The repository owns product intent, accepted decisions, active delivery scope,
-status, blockers, and evidence. Pull requests are the review boundary for an
-exact change; merged repository records remain the durable source of truth.
-
-## Current Architecture
-
-- [Household domain boundary](architecture/household-domain.md)
-- [Household capability migration plan](architecture/household-capability-migration-plan.md)
-- [Recipe import intent authority and lifecycle](architecture/recipe-import-intent.md)
-- [Infrastructure documentation](infrastructure/)
-
-Blueprint and decision records may describe accepted future direction. Current
-architecture documents must describe what production composition owns now.
-
-## Product And Operator Research
-
-- [TikTok recipe-import feasibility report](tiktok-recipe-import-feasibility.html)
-- [Tesco API facade](../apps/api/README.md)
-
-## Agent Workflow
-
-- [Agent workflow documentation](agents/README.md)
-- [Repository-owned agent workflow](agents/repository-workflow.md)
-- [Domain-document conventions](agents/domain.md)
-- [Execution policy](agents/execution-policy.md)
-
-Legacy Linear-oriented workflow files may remain for history, but they are not
-authoritative for new Meal Planner work.
+[Product domain](reference/product-domain.md) describes accepted target concepts;
+not every capability is implemented. [Household architecture](explanation/household-authority.md)
+explains the authority split. [Beta evidence](explanation/product/beta-and-success.md)
+describes release expectations, not achieved scores. Evaluation procedures and
+results remain [beside their fixtures](../evals/private-discovery/README.md).

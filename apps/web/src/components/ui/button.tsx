@@ -4,7 +4,18 @@ import type { ButtonHTMLAttributes } from "react";
 export const Button = ({
   className,
   type = "button",
+  variant = "primary",
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement>) => (
-  <button className={clsx("button", className)} type={type} {...props} />
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: "primary" | "secondary";
+}) => (
+  <button
+    className={clsx(
+      "button",
+      variant === "secondary" && "button-secondary",
+      className
+    )}
+    type={type}
+    {...props}
+  />
 );
