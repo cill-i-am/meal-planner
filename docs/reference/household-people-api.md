@@ -1,11 +1,14 @@
 # Household people public API
 
-The household people API is same-origin and session-authenticated. Clients do
-not send an organization, actor, role, email, membership, or bearer token. The
-API resolves the Better Auth session, active organization, and membership before
-private household routing. Creator bootstrap additionally requires the active
-membership's exact Better Auth `owner` role; another member receives
-`creator_required` before the private Worker or household object is invoked.
+The people API uses a same-origin session to identify the caller. It resolves
+Better Auth's session, active organization, and membership before routing to
+household storage. It does not trust request fields to establish the caller's
+organization, actor, role, email, membership, or bearer credentials. Some commands
+include target identities or an invitation email, as listed below.
+
+Creating the first linked adult additionally requires the exact Better Auth
+`owner` role. Other members receive `creator_required` before the private Worker
+or household object is called.
 
 ## Operations
 
@@ -32,10 +35,9 @@ lifecycle, version, timestamps, and whether the person is the current linked
 adult. Archived people are omitted from the roster unless explicitly included;
 direct lookup remains household-authorized.
 
-The list projection includes only whether the household creator slot is
-`available` or `occupied`. That state comes from the canonical creator
-association, not from roster non-emptiness or the requesting account's link,
-and reveals no person or account identity.
+The roster reports the creator slot as `available` or `occupied`. It reads the
+stored creator association, rather than guessing from whether the roster is empty
+or the caller is linked. It reveals no creator person or account identity.
 
 ## Closed failures and replay
 
@@ -46,61 +48,61 @@ failures are `person_not_found`, `mutation_collision`, `bootstrap_conflict`,
 the generated contract. Session or membership failure returns the shared
 `unauthorized` response before household routing.
 
-The server derives two closed, one-way identities from the immutable Better
-Auth user ID and admitted organization ID. Both use a versioned
-`meal-planner/household-people` domain plus a distinct purpose:
-`audit-actor` records authorization-safe audit correlation, while
-`linkage-subject` is the account-to-person association key. The linkage subject
-is byte-stable across sessions, membership-row replacement, and Worker/object
-restart, but differs for the same user in another organization and for another
-user. The private boundary and `HouseholdObject` receive neither the raw inputs
-nor session, member, role, or email values.
+The server derives two one-way identities from the immutable Better Auth user ID
+and the authorized organization ID. Both use the versioned
+`meal-planner/household-people` domain, with different purposes: `audit-actor` links
+audit events safely; `linkage-subject` links an account to a person.
 
-A mutation ID identifies one admitted intent within one household. Retrying the
-same intent returns the byte-identical recorded projection. Reusing it for a
-different command or payload returns `mutation_collision` without changing
-person state, audit history, association, or receipt state. Archive and restore
-also require the exact current person version; failures do not reveal another
-household's current version or existence.
+The linkage subject stays byte-identical across sessions, replacement membership
+rows, and restarts. It differs for another user or for the same user in another
+organization. Neither the private Worker nor `HouseholdObject` receives the raw
+inputs, session, member, role, or email values.
 
-The first admitted owner bootstrap occupies the household database's single
-creator slot. A distinct owner racing or retrying afterward receives
-`bootstrap_conflict`: the household already has a creator person and the
-requesting account remains unlinked. The response reveals neither identity and
-is a durable conflict, not a temporary outage; owner role alone cannot create a
-second creator person. The losing attempt commits no person, association,
-audit, or replay receipt. The roster UI does not retry that conflict or offer
-creator setup again once the occupied slot is visible. It keeps the admitted
-account on the shared roster while account linking remains outside this work
-item.
+A mutation ID names one accepted request in one household. Retrying the same
+request returns the byte-identical saved response. Reusing it with a different
+command or payload returns `mutation_collision` and changes nothing in the
+person, audit history, association, or receipt.
 
-Invitation association stores only the purpose-bound invitation digest in the
-household object. After Better Auth authenticates the accepting user and
-verifies that user is the invitation recipient, its `beforeAcceptInvitation`
-hook commits the corresponding household-scoped linkage subject to that
-association. Link and return require that exact recorded subject; another
-admitted member cannot consume the accepted invitation. Link, repair,
-departure, and return never infer identity from email or display name. The
-API-owned native departure Workflow is durable
-before the live typed Better Auth membership mutation; it reconciles canonical
-membership after either a missing removal or a lost outcome signal, and only
-confirmed absence permits exact-purpose detach/archive finalization. Public
-Better Auth remove-member and leave routes remain disabled, organization
-deletion is disabled at the plugin, and credentials never enter Workflow or
-Household state. The complete access-first protocol is recorded in
+Archive and restore also require the exact current person version. Errors do not
+reveal another household's existence or version.
+
+The first authorized owner to create the creator person takes the one creator
+slot. Another owner racing that request or trying later receives
+`bootstrap_conflict`: the slot is occupied and their account remains unlinked.
+The response reveals neither identity. This is a lasting conflict, not an outage.
+Being an owner does not allow creation of a second creator person.
+
+The losing request writes no person, association, audit, or retry receipt. Once
+the UI sees the occupied slot, it neither retries the conflict nor offers creator
+setup again. The account stays on the shared roster. Account linking is separate
+from this work item.
+
+Household storage keeps only a purpose-specific invitation digest. After Better
+Auth authenticates the accepting user and checks they are the recipient,
+`beforeAcceptInvitation` saves their household-scoped linkage subject on the
+association. Link and return require that exact subject. Another member cannot
+use the invitation. Link, repair, departure, and return never infer identity from
+email or display name.
+
+Before the typed Better Auth membership mutation, the API durably creates the
+native departure Workflow. It reads actual membership to recover a missing
+removal or a lost result signal. Only confirmed membership absence allows the
+specific detach/archive command. Public Better Auth remove-member and leave
+routes stay disabled, as does plugin organization deletion. Credentials never
+enter Workflow or Household storage.
+
+The full access-first process is in
 [Stage 1 Work Item 02](../plans/household-people/02-account-linking-invitations-and-departure.md)
-and
-[ADR-0010](../decisions/adr-0010-coordinate-membership-departure-before-person-archival.md).
+and [ADR-0010](../decisions/adr-0010-coordinate-membership-departure-before-person-archival.md).
 
 ## Household-visible profiles
 
-Work Item 03 adds current-profile, exact-version, paginated version and audit
-queries, plus one closed profile-command endpoint for a household person.
-The API admits current Better Auth membership before private routing. Inside
-the object, the immutable linkage subject must resolve to an active linked
-adult. It is not inferred from the purpose-separated audit actor. Only the
-linked subject can claim self confirmation; an admitted adult can confirm a
-dependant's facts or make honestly attributed household-adult edits.
+Work Item 03 adds reads for the current profile, a specific version, paged
+versions, and audit history, plus one profile-command endpoint. The API checks
+current membership before routing. The household object resolves the linkage
+subject to an active linked adult; it must not infer it from the separate audit
+actor. Only that subject can self-confirm. An authorized adult can confirm a
+dependant's facts or make a household-adult edit attributed to themselves.
 
 The initial fact union is `FoodPreference`, `HardConstraint`, and the explicit
 reviewed `NoKnownHardConstraints` statement. Missing facts never imply safety
@@ -110,29 +112,29 @@ source. Ordinary edits cannot change a safety fact; the distinct safety-change
 command requires an explicit confirmation and the UI displays old and proposed
 meaning before submission.
 
-One immutable `household_profile_versions` row commits the full typed snapshot,
-changed fact before/after, actor and actor-person identities, time, command,
-prior/next version, and mutation receipt. Current state is the latest snapshot;
-version and audit queries read that same ledger rather than a second writer.
-The transaction checks active adult, subject lifecycle, receipt collision,
-expected version, and fact policy before inserting exactly one row. An exact
-receipt replay precedes the archived-subject write guard but still requires
-current adult authorization. Archive and restoration never delete history.
+Each change inserts one immutable `household_profile_versions` row containing
+the typed snapshot, before/after fact, actor and actor-person identities, time,
+command, old/new version, and mutation receipt. The latest snapshot is current
+state. Version and audit reads use this same ledger, not another writer.
 
-The profile UI keeps one unresolved command per household, including its exact
-payload and mutation ID, across feature navigation. Other profile mutations and
-form changes remain disabled until that command has a definitive result. A
-network or malformed-response failure does not authorize a new mutation. A
-definitive conflict requires reloading current state before an explicit new
-submission. This narrow gate is separate from invitation/departure coordination
-and does not introduce a generic saga framework.
+Before insertion, the transaction checks the active adult, subject lifecycle,
+receipt collision, expected version, and fact rules. An exact retry can return a
+receipt before the archived-subject write check, but still requires current adult
+authorization. Archiving and restoring never delete history.
 
-Completion callbacks may release only the retained command with the same person
-and mutation ID. An older request completing after remount cannot release a newer
-command. A decoded authentication rejection enters an explicit sign-in-required
-state while retaining the exact payload and ID, including across remount. The
-user signs in in another tab and explicitly retries that command; a later
-authentication rejection does not prove that an earlier attempt failed to commit.
+The profile UI keeps one unresolved command per household across feature
+navigation, including its exact payload and mutation ID. Other profile mutations
+and form changes stay disabled until its result is known. A network error or
+malformed reply does not allow a new mutation. After a definite conflict, reload
+current state before explicitly submitting again. This restriction is separate
+from invitations and departure; it does not introduce a general saga framework.
+
+A completion callback may release only the saved command with the same person
+and mutation ID. An earlier request finishing after remount cannot release a
+newer one. A decoded authentication rejection shows that sign-in is required but
+keeps the original payload and ID, including across remount. The user signs in
+in another tab and explicitly retries that command. A later authentication
+rejection does not prove that an earlier attempt failed to save.
 
 
 Stage 2 Work Item 02 adds a dedicated internal `mutateInterviewProfile` command.

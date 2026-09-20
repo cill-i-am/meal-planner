@@ -1,16 +1,16 @@
 ---
 name: coding-standards
-description: Apply Meal Planner's engineering contracts when implementing or reviewing code.
+description: Use Meal Planner's engineering rules when implementing or reviewing code.
 ---
 
 # Engineering standards
 
-Read [the shared standards index](../../../docs/reference/engineering/README.md)
-and the topics relevant to the change. Root AGENTS.md also requires this for code
-work, so discovery does not depend on selecting this skill.
+Read [the standards index](../../../docs/reference/engineering/README.md) and the
+topics relevant to the change. Root AGENTS.md requires this for code work, even
+when this skill is not selected.
 
-The shared references retain the full domain-modeling, boundaries, state,
-module-design, error, async, TypeScript, Effect, Cloudflare, observability and
-verification conventions. They are the canonical text for humans and agents.
-Use relevant examples; do not turn them into an audit of unchanged code or
-additional approval phases. Do not duplicate or bulk-reinstall this library.
+The full rules and examples live in those shared pages: domain models, parsing,
+state, modules, errors, async work, TypeScript, Effect, Cloudflare, logging, and
+testing. Humans and agents use the same text. Apply it to the requested change,
+not as a reason to audit unrelated code or ask for more approval. Do not copy the
+library into another location or replace it with an upstream bundle.

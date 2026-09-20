@@ -1,6 +1,7 @@
 # Audit Checklist
 
-Use this for explicit reviews, nontrivial infrastructure changes, real-cloud test preparation, and pre-deploy evidence. Load only the references matching touched surfaces.
+Use this for requested reviews, substantial infrastructure changes, real-cloud
+tests, and deployment preparation. Read only the references for the work involved.
 
 ## Route The Audit
 
@@ -18,7 +19,7 @@ Use this for explicit reviews, nontrivial infrastructure changes, real-cloud tes
 - GitHub resources and workflows: `github.md`.
 - Workspaces and stack boundaries: `monorepos.md`.
 - Custom providers/extensions: `provider-extension.md`.
-- Always: `gotchas.md`.
+- Known pitfalls in the affected area: `gotchas.md`.
 
 ## Evidence First
 
@@ -45,7 +46,7 @@ Do not claim a plan, deploy, integration test, or cleanup happened without comma
 - Stage/profile/state/account assumptions are explicit.
 - Secrets stay `Redacted` and out of logs/state outputs.
 - Stack outputs support verification and operations.
-- No mutation occurred without confirmation.
+- Every mutation is covered by the existing task authorization for its target.
 
 ## Runtime And Bindings
 
@@ -125,4 +126,8 @@ AWS:
 
 ## Report
 
-For workflow reviews, use the finding dispositions owned by `AGENTS.md`; this capability does not define authority. Include file/line evidence before assumptions, skipped checks, and verification. For implementation completion, summarize only relevant evidence: versions, tests, physical proof, stage/profile/account, migrations, cloud mutation, and retained resources.
+For review findings, give the file, line, and evidence. Separate observed problems
+from assumptions and checks not run. For implementation, report only relevant
+results: versions, tests, runtime checks, stage/profile/account, migrations,
+actual cloud changes, and resources left behind. Follow AGENTS.md for task scope;
+this checklist adds no approval steps.

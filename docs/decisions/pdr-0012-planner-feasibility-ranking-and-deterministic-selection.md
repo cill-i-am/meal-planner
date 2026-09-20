@@ -1,4 +1,4 @@
-# PDR-0012 — Planner Feasibility, Ranking, And Deterministic Selection
+# PDR-0012 — Choose a workable week using a repeatable policy
 
 - Status: Accepted
 - Date: 2026-08-26
@@ -6,20 +6,17 @@
 
 ## Context
 
-Meal Planner must choose one strong recommended week from many meals that could
-technically cover the household. A single opaque score would be dangerous and
-hard to explain: enough variety or ingredient-overlap points must never
-compensate for an incompatible meal, impossible preparation window, excessive
-cooking burden, or ignored routine.
+The planner must recommend one good week, not merely fill every meal slot. A
+single unexplained score could hide serious problems: variety or ingredient reuse
+must never outweigh an unsuitable meal, an impossible cooking window, too much
+cooking, or an ignored routine.
 
-Selection also happens in the context of the whole week. A meal that looks good
-in isolation may consume the wrong prepared portion, create an extra substantial
-cook, break later leftovers, or duplicate a meal whose cadence says it should be
-paused.
+Meals also affect each other. A choice that looks good alone may consume food
+reserved for later, require another substantial cooking session, break a leftover
+plan, or repeat a meal too often.
 
-The product therefore needs an ordered selection policy that first proves a
-candidate is feasible, then compares valid candidates according to the
-household's real planning priorities.
+The selection policy must first check that a candidate works, then compare valid
+candidates in the order that matters to the household.
 
 ## Decision
 

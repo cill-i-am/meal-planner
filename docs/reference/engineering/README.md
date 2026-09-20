@@ -1,40 +1,52 @@
-# TypeScript Conventions
+# Engineering standards
 
-Keep domain invariants, data ownership, and expected failures explicit. Parse serialized/untrusted inputs at their owning boundary and pass the refined result inward. Preserve the repository's accepted architecture; improve the changed path without adding compatibility machinery or unrelated migrations.
+These standards explain how to model data, divide responsibilities, handle errors
+and test changes in Meal Planner. Before implementing or reviewing code, read this
+index and the topics that apply. Give coding subagents the same links.
 
-Prefer direct feature-local code and small intentional interfaces. Abstractions earn their place by owning policy, hiding complexity, translating a real boundary, or supporting a real caller. Pure synchronous work can remain ordinary functions; Effect owns effectful backend workflows.
+Keep the rules for valid data close to the code that creates or changes it. Parse
+untrusted data when it enters the system, then pass the parsed value to the code
+that uses it. Make it clear which component owns each value and which failures a
+caller needs to handle.
 
-Use topic references when a concrete question needs detail. They describe project design defaults, not a requirement to audit every concern or reproduce every example. Root instructions and accepted decisions govern scope and authority. Do not turn a pattern preference into an approval gate.
+This is a greenfield app. Follow the requirements, but replace a poor design when
+needed. Update its callers rather than keeping backward-compatible shims, legacy
+guards or parallel paths. Keep validation, access control and data-safety checks.
 
-| Question                                     | Reference                                       |
-| -------------------------------------------- | ----------------------------------------------- |
-| Domain invariants, brands, state transitions | [Domain modeling](DOMAIN_MODELING.md)           |
-| Parsing, serialization, DTOs                 | [Boundaries](BOUNDARIES_AND_PARSING.md)         |
-| Data/cache/state ownership                   | [Data flow](DATA_FLOW_AND_STATE.md)             |
-| Expected failures and defects                | [Errors](ERROR_HANDLING.md)                     |
-| Secret-safe logging and tracing              | [Observability](OBSERVABILITY.md)               |
-| Feature boundaries and public exports        | [Feature slices](FEATURE_SLICE_ARCHITECTURE.md) |
-| Dependencies, interfaces, adapters           | [Modules](DESIGNING_MODULES.md)                 |
-| Cancellation, transactions, retries          | [Async workflows](ASYNC_AND_WORKFLOWS.md)       |
-| Meaningful tests and runtime evidence        | [Testing](TESTING_AND_VERIFICATION.md)          |
-| Type escape hatches and public contracts     | [TypeScript](TYPESCRIPT_CONTRACTS.md)           |
-| Workers, Durable Objects, storage, queues    | [Cloudflare](CLOUDFLARE_ARCHITECTURE.md)        |
-| Effect integration                           | [Effect conventions](EFFECT.md)                 |
-| Meaning of a standard's term                 | [Vocabulary](VOCABULARY.md)                     |
+Prefer straightforward code within a feature and small interfaces with a real
+purpose. Use a reliable, secure library when it meets the need; use its supported
+extension points before writing a replacement. Pure calculations can be ordinary
+functions. Effect handles backend work with external effects and resource lifetimes.
+Check current official documentation against the installed package version.
+
+| When changing… | Read… |
+| --- | --- |
+| Valid values, branded types or state transitions | [Domain modeling](DOMAIN_MODELING.md) |
+| Parsing, serialization or data-transfer objects | [Boundaries](BOUNDARIES_AND_PARSING.md) |
+| Data, cache or state ownership | [Data flow](DATA_FLOW_AND_STATE.md) |
+| Expected failures or defects | [Errors](ERROR_HANDLING.md) |
+| Logging or tracing | [Observability](OBSERVABILITY.md) |
+| Feature boundaries or public exports | [Feature slices](FEATURE_SLICE_ARCHITECTURE.md) |
+| Dependencies, interfaces or adapters | [Modules](DESIGNING_MODULES.md) |
+| Cancellation, transactions or retries | [Async workflows](ASYNC_AND_WORKFLOWS.md) |
+| Tests or runtime checks | [Testing](TESTING_AND_VERIFICATION.md) |
+| Type assertions or public types | [TypeScript](TYPESCRIPT_CONTRACTS.md) |
+| Workers, Durable Objects, storage or queues | [Cloudflare](CLOUDFLARE_ARCHITECTURE.md) |
+| Effect integration | [Effect conventions](EFFECT.md) |
+| An unfamiliar term in these standards | [Vocabulary](VOCABULARY.md) |
 
 ## Reading and enforcement
 
-All thirteen topic documents are preserved from the original coding-standards
-library. For code work, AGENTS.md requires this index and the relevant topics;
-the retained coding-standards skill provides a second explicit entrypoint.
-Library examples explain conventions, not an assertion that every illustrated
-helper or folder already exists. Inspect the actual caller and installed version.
+The thirteen topic documents retain the original coding-standards library's rules
+and examples. The `coding-standards` skill is another route to the same pages, not
+a separate copy. Examples teach a pattern; they do not claim that every helper or
+folder shown already exists. Check the actual code and installed version.
 
-These are shared engineering requirements, not a sequence of agent workflow
-phases. Apply them to the changed contract. No new approval is needed for an
-ordinary in-scope choice. Prefer the simplest implementation that preserves the
-real boundary; compatibility machinery needs a real existing consumer/contract.
+Apply these standards to the work you are doing. They are not a requirement to
+audit unchanged code or ask for approval for routine choices. Add tests only when
+they give useful confidence or prevent regressions; do not add redundant checks or
+unjustified release gates.
 
-Types, lint, architecture guards and behavioral tests enforce the parts they
-can express. Documentation checks verify these links remain reachable; neither
-a link nor a successful check proves a model read or followed the prose.
+Types, lint rules, architecture checks and behavior tests enforce the rules they
+can express. The documentation checker verifies that the links work. Neither a
+link nor a passing checker proves that an agent read or followed a page.
