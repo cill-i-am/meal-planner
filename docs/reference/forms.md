@@ -1,37 +1,37 @@
 # Forms and commands
 
-TanStack Form owns field values/reactivity. Effect Schema owns input validation
-and domain decoding. Reuse the canonical input contract where shapes match;
-distinguish raw UI drafts from domain values where they do not. Standard Schema
-validation does not establish that submission received transformed/branded output:
-decode at submission before constructing the typed command.
+TanStack Form manages field values and updates. Effect Schema validates input and
+converts it into the values the application uses. Reuse the API input schema when
+the form submits the same shape. When a draft has a different shape, keep that
+conversion explicit. Standard Schema validation may not return a transformed or
+branded value. Decode the submitted data before creating the typed command.
 
-Keep one owner for form state and for the outstanding mutation. Use subscriptions
-and listeners rather than mirrored React state/effects. Field errors, labels,
-blur/change timing, disabled/pending state and service errors must remain honest
-and accessible. Use current primitives and the agreed [design contract](../../apps/web/DESIGN.md);
-shadcn adoption is [unfinished work](../plans/onboarding.md), not a claim that every
-prototype field already uses it.
+Keep one owner for the form state and one for an unfinished save. Use subscriptions
+and listeners instead of copying the same values into React state or effects.
+Show accurate, accessible labels, field errors, validation timing, pending states
+and service failures. Follow the [agreed design](../../apps/web/DESIGN.md).
+Moving every prototype field to shadcn is still [unfinished work](../plans/onboarding.md).
 
-Validation cannot imply safety consent or promote a provisional fact. A change
-of fact kind/target invalidates stale consent. Preserve the original command,
-payload, mutation ID and applicable version/binding across ambiguous responses;
-a changed draft or late callback cannot replace that unresolved intent. Automatic
-retry needs the command's explicit idempotency contract. Server admission and
-validation remain authoritative regardless of client validation.
+A valid form is not consent to confirm a safety-related fact or share a private
+proposal. If the fact kind or target changes, discard consent for the previous
+version. If a response is lost and you cannot tell whether a save succeeded, keep
+the original command, payload, mutation ID and required version/account binding.
+A new draft or late callback must not replace that unresolved request. Retry
+automatically only when the command's rules make repeating it safe. The server
+still checks access and validates input, even when the client has done so.
 
-Login validates required credentials; it does not reapply new-password creation
-rules. Reset/invitation UI cannot claim email delivery from a created record alone.
-The [onboarding error](../../apps/web/.impeccable/onboarding-error-contract.md) and
-[transition](../../apps/web/.impeccable/onboarding-transitions.md) specifications
-own the agreed target flow, with remaining implementation in its plan.
+Login requires credentials but must not apply the rules for creating a new
+password. Creating an invitation or reset record does not prove an email was sent.
+The [onboarding error rules](../../apps/web/.impeccable/onboarding-error-contract.md)
+and [screen transitions](../../apps/web/.impeccable/onboarding-transitions.md)
+describe the agreed flow. The onboarding plan tracks what remains to be built.
 
 ## Implementation and verification
 
-Use [the form procedure](../how-to/build-a-form.md) and the
-[boundary standards](engineering/BOUNDARIES_AND_PARSING.md). Inspect
+Use [the form guide](../how-to/build-a-form.md) and
+[parsing standards](engineering/BOUNDARIES_AND_PARSING.md). Start with the
 [profile form](../../apps/web/src/features/household-profiles/profile-fact-form.tsx),
-[profile contracts](../../packages/household-api/src/profiles.ts) and their colocated
-tests. Verify actual submissions, transformation, stale safety consent, unknown
-outcomes and keyboard/error behavior for the changed flow. Do not replace domain
-confirmation with generic form validity or introduce a new form framework.
+[profile API types](../../packages/household-api/src/profiles.ts) and their tests.
+Check submissions, converted values, expired consent, uncertain save results,
+keyboard use and error messages for the flow you change. Form validity must not
+replace explicit confirmation. Do not introduce another form framework.

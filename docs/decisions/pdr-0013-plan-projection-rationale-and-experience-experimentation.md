@@ -1,4 +1,4 @@
-# PDR-0013 — Plan Projection, Rationale, And Experience Experimentation
+# PDR-0013 — Present the plan clearly and test the experience
 
 - Status: Accepted
 - Date: 2026-08-26
@@ -6,18 +6,16 @@
 
 ## Context
 
-The planning domain accounts for every managed `person × date × meal occasion`
-requirement, while also modelling shared meals, personal alternatives, routines,
-cook events, prepared outputs, leftovers, shopping effects, and revisions. A UI
-that renders those internal structures literally would be complete but difficult
-to understand. A UI that hides too much would make the agent feel arbitrary and
-make mistakes hard to spot.
+The planner accounts for every managed `person × date × meal occasion`, including
+shared meals, alternatives, routines, cooking, prepared food, leftovers, shopping,
+and revisions. Showing all of those internal records directly would be hard to
+read. Hiding too much would make recommendations seem arbitrary and mistakes
+hard to notice.
 
-The product therefore needs a clear information hierarchy, but the exact weekly
-layout, interaction patterns, density, navigation, and component structure will
-require prototyping, beta observation, iteration, and controlled experiments.
-The decision should preserve the household outcomes and trust requirements
-without freezing a speculative frontend before real use.
+The interface needs a clear order of information. Its layout, interactions,
+density, navigation, and components still need prototypes, beta observation,
+iteration, and controlled experiments. This decision sets the outcomes and trust
+requirements without fixing an untested frontend design.
 
 ## Decision
 

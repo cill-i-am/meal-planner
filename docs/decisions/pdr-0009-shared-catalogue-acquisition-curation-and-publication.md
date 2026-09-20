@@ -1,4 +1,4 @@
-# PDR-0009 — Shared Catalogue Acquisition, Curation, And Publication
+# PDR-0009 — Collect, review, and publish shared recipes
 
 - Status: Accepted
 - Date: 2026-08-25
@@ -6,19 +6,15 @@
 
 ## Context
 
-Meal Planner needs a useful shared recipe catalogue before the invite-only beta,
-but acquiring a recipe candidate is not the same as curating and publishing a
-trusted product asset. Bulk ingestion is an efficient way to create candidates;
-it is not permission to expose every extracted recipe to households.
+The invite-only beta needs a useful shared recipe catalogue. Bulk import can
+collect candidates efficiently, but collection alone does not make a recipe
+reviewed, trusted, or ready to publish. Extracted recipes must not become visible
+to households without review.
 
-The product also has two deliberately different content domains:
-
-- a shared catalogue available across households; and
-- private household recipe banks containing household imports, manual recipes,
-  forks, and adaptations.
-
-Those domains must not leak into one another merely because they share recipe
-normalization and planning contracts.
+The product keeps two separate kinds of content: a shared catalogue, and private
+household Recipe Banks containing imports, manual recipes, forks, and adaptations.
+Sharing normalization code and planning contracts must not allow content to leak
+between them.
 
 ## Decision
 

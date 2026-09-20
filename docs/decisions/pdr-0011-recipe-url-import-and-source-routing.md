@@ -1,4 +1,4 @@
-# PDR-0011 — Recipe URL Import And Source Routing
+# PDR-0011 — Import a recipe by pasting its URL
 
 - Status: Accepted
 - Date: 2026-08-26
@@ -6,15 +6,14 @@
 
 ## Context
 
-A household should not need to understand the acquisition architecture before
-importing a recipe. The ordinary interaction is simply pasting a URL. The system
-may receive a TikTok video, TikTok carousel, public recipe page, or another
-supported source later, but source-specific acquisition must not create separate
-product journeys or separate recipe-review semantics.
+Importing a recipe should mean pasting a URL, not learning how the app fetches
+it. Supported sources may include a TikTok video, a TikTok carousel, a public
+recipe page, or other sources later. Each source needs its own fetching code,
+but not a separate import or review experience.
 
-The current implementation and public contract are TikTok-specific. General
-recipe-page import therefore needs an explicit product boundary rather than
-adding unrelated URL logic throughout the existing workflow.
+The implementation and public API are TikTok-specific. Recipe-page support needs
+an explicit product design, rather than scattered URL handling in the existing
+workflow.
 
 ## Decision
 
