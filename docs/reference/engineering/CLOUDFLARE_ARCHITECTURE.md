@@ -1,6 +1,6 @@
 # Cloudflare Architecture
 
-Cloudflare platform objects are infrastructure. Keep raw bindings at composition seams, cross runtime hops with explicit DTOs/context, and make stateful objects own coordination rather than accidental global compute.
+Keep Cloudflare objects and raw bindings in infrastructure and composition code. Pass explicit data-transfer objects and context between runtimes. Give each stateful object a defined coordination role instead of routing unrelated work through one global object.
 
 ## Vocabulary
 
@@ -30,7 +30,7 @@ Cloudflare platform objects are infrastructure. Keep raw bindings at composition
 
 - New Worker projects use the Cloudflare Vite integration and root `cloudflare.config.ts` as the primary configuration source.
 - Enable Node compatibility for Cloudflare Workers projects.
-- Generate Worker environment declarations from deployment configuration; keep hand-written compatibility declarations tiny and removable.
+- Generate Worker environment declarations from deployment configuration. Do not add hand-written compatibility declarations to preserve an obsolete API.
 - New non-Effect multi-route Cloudflare HTTP apps use Hono unless the repo has another established framework or the Worker is tiny/pass-through/static/direct Agent routing.
 - New stateful-object modules use the Agents SDK `Agent` abstraction unless a documented lower-level/dependency/interoperability/performance reason justifies raw Durable Objects.
 - Agent-backed classes are named for their domain role: `TenantWorkspace`, `DocumentSession`, `ChatRoom`, not `SomethingAgent` by habit.
@@ -191,7 +191,7 @@ Pure domain/service behavior can stay in ordinary fast tests. SQL persistence te
 
 ## Review checklist
 
-Use this as the final scan after applying the rules above; the rule source of truth remains in the relevant sections.
+Check the relevant items below when reviewing a change. The sections above explain the rules.
 
 - Passing `Env`, `DurableObjectNamespace`, `D1Database`, `Queue`, or stubs into Service Modules.
 - Hand-authoring broad global `Env` declarations when generated types exist.

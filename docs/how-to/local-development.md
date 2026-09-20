@@ -1,35 +1,36 @@
 # Choose the local runtime
 
-Read the root [manifest](../../package.json), [API scripts](../../apps/api/package.json)
-and [web scripts](../../apps/web/package.json) for required versions and exact
-commands. Install the pinned dependencies with `pnpm install --frozen-lockfile`
-when the task needs application tools; documentation checks need only Python 3.
+The repository has more than one way to run code locally. Check
+[package.json](../../package.json), the [API scripts](../../apps/api/package.json)
+and the [web scripts](../../apps/web/package.json) for the required versions and
+commands. Install application tools with `pnpm install --frozen-lockfile` when
+needed. Documentation checks need only Python 3.
 
 ## Local Tesco catalogue host
 
-`pnpm dev` starts the API's Node host. It is not the full household web/Worker
-application. Its [API README](../../apps/api/README.md) lists required shell
-configuration. The host reads Effect Config from the process environment, not
-`.env` files. Use only approved provider credentials and keep them out of records.
+`pnpm dev` starts the API's Node host, not the full household web and Worker app.
+The [API README](../../apps/api/README.md) lists the required shell settings.
+The host uses Effect Config to read process environment variables; it does not
+load `.env` files. Use authorized provider credentials and keep them out of records.
 
 ## Web and Cloudflare behavior
 
-Use the [web workspace](../../apps/web/README.md) for its entrypoints and the
-[infrastructure procedure](operate-infrastructure.md) for actual bindings,
-stages and native local proof. A frontend-only dev server does not prove routed
-Worker, D1, Durable Object or private-output behavior. Follow the existing
-native test configurations for those seams.
+See the [web README](../../apps/web/README.md) for web entrypoints and the
+[infrastructure guide](operate-infrastructure.md) for bindings, stages and local
+runtime checks. Running the frontend alone does not test Worker routing, D1,
+Durable Objects or private output. Use the existing native test configurations
+when changing those parts.
 
-Do not infer that `alchemy dev` or `plan` is local/read-only: remote state setup
-can have effects. Inspect the repository wrapper and target before executing.
-This guide does not invent a one-command full-product bootstrap that has not
-been established by the repository.
+Do not assume `alchemy dev` or `plan` is read-only or local. Setting up remote
+state can change infrastructure. Inspect the wrapper and target before running it.
+This guide does not claim that the repository has a single command to start the
+complete product.
 
 ## Verification
 
-Use focused package tests/checks for the changed contract, plus repository-required
-CI. Root commands are `pnpm check`, `pnpm lint`, `pnpm format:check`, `pnpm test`
-and `pnpm build`; synthetic media verification is `pnpm test:container`.
+Run the relevant package checks and required CI checks. Root commands are
+`pnpm check`, `pnpm lint`, `pnpm format:check`, `pnpm test` and `pnpm build`.
+Use `pnpm test:container` for synthetic media tests.
 [Testing standards](../reference/engineering/TESTING_AND_VERIFICATION.md) explain
-which runtime is evidence for which claim. `python3 scripts/check-docs.py` checks
-document links and record structure without installing application dependencies.
+which runtime to use for each kind of check. `python3 scripts/check-docs.py`
+checks document links and record structure without application dependencies.

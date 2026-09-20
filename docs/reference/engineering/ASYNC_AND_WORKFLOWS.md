@@ -1,6 +1,6 @@
 # Async and Workflows
 
-Async code needs clear ownership: cancellation lifetime, promise lifetime, concurrency, retries, transactions, and durable progress. Hidden waterfalls and fire-and-forget work are correctness bugs, not style issues.
+For async work, define who starts it, who can cancel it and who handles failures. Make concurrency, retries, transactions and saved progress explicit. Accidental sequential waits and unhandled background work can break behavior, not just slow it down.
 
 ## Vocabulary
 
@@ -21,8 +21,8 @@ Async code needs clear ownership: cancellation lifetime, promise lifetime, concu
 - A received cancellation signal reaches every downstream cancellable operation.
 - Lower-level modules do not replace the caller's cancellation lifetime with a hidden `AbortController` or timeout.
 - New cancellable interfaces accept cancellation in a final options object, not positional signals or boolean flags.
-- Every promise is awaited, returned, collected, or handed to explicit detached-work machinery.
-- Detached work identifies owner, lifetime, cancellation behavior, rejection handling, and observability.
+- Await or return every promise, collect it with a concurrency helper, or give it to a runtime mechanism that manages background work.
+- Background work must have an owner, a lifetime, a cancellation rule, error handling and a way to observe failures.
 - Independent async work starts concurrently unless ordering/backpressure/rate limit/transaction/workflow/external contract requires serialization.
 - User-sized, database-sized, file-sized, queue-sized, or otherwise unbounded collections use bounded concurrency.
 - Retried mutating commands define how repeated execution avoids duplicate resources, transitions, messages, and external side effects.
@@ -142,7 +142,7 @@ Avoid magic limits:
 await mapConcurrentBounded(users, { concurrency: 10 }, sendEmail);
 ```
 
-Sequential execution is not the safety fallback; bounded concurrency is.
+To avoid overload, limit concurrency rather than making all operations sequential.
 
 ## Retry-safe commands
 
@@ -172,11 +172,11 @@ insert payment
 call payment provider
 ```
 
-A crash between save and external call creates an ambiguous side-effect window unless durable delivery closes it.
+If the process crashes between saving data and making the external call, the result may be uncertain. Persist delivery progress so the system can recover without duplicating the action.
 
 ## Atomic transition guards
 
-For retry/concurrency-exposed lifecycle transitions, use guarded persistence operations:
+When a state change can race with another change or be retried, check the allowed starting state in the database operation:
 
 ```sql
 UPDATE invoices
@@ -194,7 +194,7 @@ if row.state == sent
 
 Retries should not overwrite original transition metadata like `completedAt` or `paidAt`.
 
-Deletion semantics should be explicit: if delete is idempotent, name/document that. If the result claims whether this request deleted the entity, derive it from the atomic delete result, not a stale pre-read.
+State whether repeating a delete is safe. If the result says this request deleted the entity, use the atomic delete result to decide that—not a read taken before the delete.
 
 ## Workflow selection
 
@@ -211,7 +211,7 @@ Use a durable workflow, saga, or equivalent explicit orchestration record when a
 - cross-service coordination;
 - multiple transaction boundaries.
 
-Durable multi-step work externalizes progress, retry, and compensation state. It does not rely on an in-memory call stack surviving.
+Save the progress, retry information and recovery actions for durable multi-step work. Do not rely on the process staying in memory.
 
 Do not introduce a workflow just for layering when ordinary calls/transactions are enough.
 
@@ -225,7 +225,7 @@ Do not introduce a workflow just for layering when ordinary calls/transactions a
 
 ## Review checklist
 
-Use this as the final scan after applying the rules above; the rule source of truth remains in the relevant sections.
+Check the relevant items below when reviewing a change. The sections above explain the rules.
 
 - Accepting `signal` at the top and dropping it before `fetch`, retry, sleep, or adapter calls.
 - Using `Promise.all` for partial-failure batches.

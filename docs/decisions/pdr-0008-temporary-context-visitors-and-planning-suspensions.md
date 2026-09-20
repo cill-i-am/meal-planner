@@ -1,4 +1,4 @@
-# PDR-0008 — Temporary Context, Visitors, And Planning Suspensions
+# PDR-0008 — Handle visitors, temporary changes, and planning pauses
 
 - Status: Accepted
 - Date: 2026-08-26
@@ -6,14 +6,13 @@
 
 ## Context
 
-Household routines describe the normal week, but real weeks contain temporary
-changes: travel, school holidays, unusual office days, overnight shifts,
-visitors, split-custody changes, and whole-household holidays.
+Normal routines do not describe every week. Travel, school holidays, unusual
+office days, overnight shifts, visitors, split-custody changes, and family
+holidays can all change what needs planning.
 
-Those changes must not silently mutate enduring routines. A household travelling
-abroad for a week also should not need to create dozens of fake intentional
-skips, external meals, or unresolved cells merely to tell Meal Planner that it
-is not responsible for that period.
+These temporary changes must not silently rewrite regular routines. A household
+away for a week should be able to pause planning, rather than enter dozens of
+fake skips, external meals, or unresolved slots.
 
 ## Decision
 

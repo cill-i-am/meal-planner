@@ -2,11 +2,11 @@
 
 ## Purpose
 
-This document defines stable product language and invariants for household food
-planning. It deliberately avoids prescribing every table, RPC, service, or
-frontend projection. The [household contract](household.md) describes implemented authority and
-[decisions](../decisions/README.md) preserve accepted choices. This target domain
-includes future capabilities; [plans](../plans/README.md) distinguish what remains.
+This page defines the product's terms and rules, not every table, RPC, service,
+or screen layout. The [household contract](household.md) describes implemented
+storage and access rules. [Decisions](../decisions/README.md) explain agreed choices.
+This target model includes future features; [plans](../plans/README.md) show what
+still needs to be built.
 
 ## Core Model
 
@@ -33,17 +33,17 @@ Household
           └── Approval
 ```
 
-The shared curated recipe catalogue is separate from household product state. A
-household may reference or fork a catalogue recipe, but the catalogue must not
-become a global projection of private household content.
+The shared recipe catalogue is separate from private household data. Households
+may use catalogue recipes or make private copies. The shared catalogue must not
+be built by exposing private household content.
 
 ## Identity And People
 
 ### Authenticated member
 
 Better Auth owns accounts, sessions, organizations, memberships, invitations,
-and roles. An authenticated member represents authority to operate the
-household; it is not the complete model of a person who eats.
+and roles. Membership determines who may use the household's data. It does not
+represent everyone whose meals need planning.
 
 ### Household person
 

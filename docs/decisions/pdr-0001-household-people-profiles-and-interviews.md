@@ -1,4 +1,4 @@
-# PDR-0001 — Household People, Profiles, And Interviews
+# PDR-0001 — Household people, profiles, and private interviews
 
 - Status: Accepted
 - Date: 2026-08-24
@@ -6,15 +6,14 @@
 
 ## Context
 
-A household contains people who eat and authenticated users who can operate the
-product. Those concepts overlap for adults but are not identical. Dependants
-need planning profiles without accounts, an invited adult may exist before
-accepting an invitation, and the product must preserve a person's planning
-history while account state changes.
+A household includes people who eat and account holders who use the app. Adults
+can be both, but these are different roles. Dependants need profiles without
+accounts, and invited adults can have profiles before they join. A person's meal
+planning history must survive changes to their account.
 
-The AI discovery experience also creates a privacy boundary. The conversation
-must be private enough to feel candid, while the resulting household profile
-must remain useful and editable by the people planning food together.
+Discovery also has a privacy requirement. Adults need a private conversation
+where they can speak candidly. The profile facts they confirm must still be
+useful and editable by the people planning food together.
 
 ## Decision
 

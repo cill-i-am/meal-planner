@@ -1,16 +1,16 @@
-# ADR-0011 — Canonicalize completed conservative settlements
+# ADR-0011 — Record completed conservative settlements consistently
 
 Status: Accepted
 Date: 2026-09-05
 
 ## Decision
 
-The user approved the narrowly scoped completed-settlement correction during
-PR #203 review and authorized merge after verification. The ordered provider
-accounting migration converts stored `settled_unknown` rows to
-`settled_conservative` only when their existing authoritative conservative audit,
-recipe-extraction stage, reservation amount, and unknown actual cost prove that
-representation. No deployed data was inspected to make this decision.
+During PR #203 review, the user approved this limited settlement correction and
+merge after verification. The ordered provider-accounting migration changes
+`settled_unknown` to `settled_conservative` only when existing records establish
+that result: the conservative audit, recipe-extraction stage, reservation amount,
+and unknown actual cost must all match. No deployed data was inspected for this
+decision.
 
 The conversion changes only the dispatch state. It preserves all amounts,
 timestamps, audit records, reconciliation records, and replay data, including
@@ -18,11 +18,11 @@ expired replay rows. The migration temporarily removes the transition guard and
 update-triggered replay cleanup, performs the conversion, and reinstalls both
 within Alchemy's atomic migration batch. Genuine unknown outcomes stay unchanged.
 
-This is a one-time state conversion, not a compatibility reader. Retained replay
-is not required as accounting evidence: the immutable audit remains authoritative
-after replay expiry. Existing expiry semantics remain: the accounting record is
-readable, but an expired recipe result cannot be replayed or trigger another
-provider invocation. Normal replay cleanup resumes after migration.
+This is a one-time conversion, not a compatibility reader. The immutable audit
+remains the accounting evidence even after retry data expires. Existing expiry
+rules still apply: the accounting record is readable, but an expired recipe
+result cannot be replayed or start another provider call. Normal retry-data
+cleanup resumes after migration.
 
 ## Evidence and boundary
 

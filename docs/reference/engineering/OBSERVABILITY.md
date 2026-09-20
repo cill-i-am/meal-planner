@@ -1,6 +1,6 @@
 # Observability
 
-Observability should make failures diagnosable without leaking secrets or coupling domain decisions to logging. The imperative shell observes typed outcomes; the core stays pure.
+Use logs and traces to explain failures without exposing secrets. Keep logging outside pure domain decisions. Code that runs external operations can report their typed results.
 
 ## Core vocabulary
 
@@ -22,14 +22,14 @@ Observability should make failures diagnosable without leaking secrets or coupli
 
 ## Apply this file
 
-An observability pass is complete when every touched External Adapter Module, error translator, framework handler, workflow step, or background task has been checked for:
+For each External Adapter Module, error translator, framework handler, workflow step or background task you change, check:
 
 - secret redaction at the boundary;
 - safe error summaries and safe telemetry fields;
 - preservation of existing logs, traces, metrics, error reporting, and correlation hooks;
 - no new telemetry dependency inside domain decisions.
 
-If the existing repo has no reporting/correlation mechanism for the touched path, say so instead of inventing one incidentally.
+If that path has no existing reporting or correlation mechanism, say so. Do not add an unrelated system as part of the edit.
 
 ## Strong defaults
 
@@ -134,7 +134,7 @@ Before adding an External Adapter Module, error translator, framework handler, w
 
 Do not bypass established hooks. If the existing system is exception-based, typed local failures can still be translated at the boundary while preserving the same reporting path.
 
-This check is complete when the changed path uses the same reporting/correlation path as comparable code, or when absence of an established mechanism is explicitly noted.
+The changed code should use the same reporting and correlation mechanisms as similar code. If none exist, record that limitation.
 
 ## Keep the core independent
 
@@ -165,7 +165,7 @@ Domain Modules may expose explicit telemetry projections for safe fields when us
 
 ## Review checklist
 
-Use this as the final scan after applying the rules above; the rule source of truth remains in the relevant sections.
+Check the relevant items below when reviewing a change. The sections above explain the rules.
 
 - Including API keys, tokens, raw credentials, env values, or request bodies in thrown messages.
 - Adding a new External Adapter Module that returns typed errors but skips existing error reporting.
