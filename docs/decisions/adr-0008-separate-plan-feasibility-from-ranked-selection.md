@@ -1,4 +1,4 @@
-# ADR-0008 — Separate Plan Feasibility From Ranked Selection
+# ADR-0008 — Check that a plan works before ranking it
 
 - Status: Accepted
 - Date: 2026-08-26
@@ -6,16 +6,15 @@
 
 ## Context
 
-The household planner must choose one coherent recommended week while enforcing
-hard constraints, explicit coverage, routine and fallback behaviour, preparation
-capacity, portion arithmetic, prepared-stock availability, and plan dependencies.
-It must then compare the remaining valid possibilities according to household
-fit, effort, cadence, reuse, and gentle variety.
+The planner must recommend one complete week that obeys dietary restrictions,
+meal coverage, routines, fallbacks, cooking capacity, portion amounts, available
+prepared food, and dependencies between meals. It must then compare the valid
+options for household fit, effort, frequency, reuse, and variety.
 
-A single compensatory scalar would blur those responsibilities. It could allow a
-candidate with a hard or practical failure to appear competitive because it
-scores well on softer dimensions. A model-only selection path would also make
-replay, evaluation, explanation, and exact-head verification unreliable.
+One combined score would blur those jobs. A meal that fails a hard requirement
+could appear competitive because it scores well for variety. Letting a model
+alone make the final choice would also make the result harder to reproduce,
+evaluate, explain, and verify at a specific code revision.
 
 ## Decision
 
@@ -125,7 +124,7 @@ validation and selection.
 - The planner may use heuristics, search, constraint solving, or a hybrid later
   without changing the accepted domain boundary.
 
-## Alternatives Rejected
+## Alternatives rejected
 
 ### One weighted scalar for every concern
 

@@ -1,10 +1,10 @@
 # Domain Modeling
 
-Model domain concepts so illegal states are hard to create and legal operations are easy to call. The goal is not decorative types; it is caller leverage, local invariants, and fewer impossible runtime states.
+Use types and constructors to prevent invalid states and make valid operations easy to call. Keep each invariant—the rule that must remain true—with the code that enforces it. Types should prevent mistakes, not just give ordinary values more names.
 
 ## Core vocabulary
 
-**Domain Module** — A TypeScript module centered on one primary domain type or tightly related type family. It exposes parsers, smart constructors, combinators, predicates, transitions, projections, arbitraries, and formatting helpers for that concept. It is pure domain code, not a dependency-bearing Service Module.
+**Domain Module** — A TypeScript module for one domain type or a closely related group of types. It exposes parsers, smart constructors, combinators, predicates, transitions, projections, arbitraries, and formatting helpers for that concept. It contains pure logic, not a Service Module with external dependencies.
 
 **Branded Type** — A primitive with domain meaning established by a parser or smart constructor: `UserId`, `EmailAddress`, `Cents`, `Milliseconds`.
 
@@ -16,7 +16,7 @@ Model domain concepts so illegal states are hard to create and legal operations 
 
 ## Apply this file
 
-When a change affects domain semantics, use the relevant questions:
+When changing what a domain value means or how it can change, check the relevant rules:
 
 - construction or parsing invariants;
 - required vs optional values;
@@ -25,12 +25,12 @@ When a change affects domain semantics, use the relevant questions:
 - exhaustive handling of closed variants;
 - persistence constraints or guarded writes when the invariant is persisted.
 
-If a proposed improvement requires unrelated migration, keep the current task scoped and explain any material unresolved invariant. Do not add compatibility machinery without the repository's required approval.
+If an improvement needs a migration outside the task, explain which rule remains unresolved. Within the task, replace obsolete code and update its callers rather than adding a compatibility path.
 
 ## Non-negotiables
 
-- Domain values and interfaces prevent or reject known invalid states at the owning constructor or transition.
-- Functions that semantically require a value do not accept `null`, `undefined`, or optional input. Branch or parse before calling.
+- Constructors, transitions and interfaces must prevent or reject known invalid states.
+- If a function needs a value, its input must not allow `null`, `undefined`, or an omitted value. Check or parse the value before calling it.
 - A branded/refined type is only created by code that establishes the invariant.
 - A value class is immutable and is only instantiated through parsers or smart constructors.
 - Lifecycle transitions accept only legal source states and produce legal target states.
@@ -142,7 +142,7 @@ A value class is immutable, parser/smart-constructor-created, and owns value beh
 
 ## Required values
 
-Push optionality outward:
+Handle a missing value before calling code that requires it:
 
 ```ts
 if (session.userId === undefined) {
@@ -152,7 +152,7 @@ if (session.userId === undefined) {
 return createInvoice({ actor: session.userId, input });
 ```
 
-Avoid making the callee accept uncertainty it cannot semantically handle:
+Do not pass an optional value to a function that cannot handle its absence:
 
 ```ts
 createInvoice({ actor: session.userId, input }); // actor?: UserId
@@ -182,7 +182,7 @@ function changeBillingEmail(input: Partial<Account>) {}
 
 ## State machines
 
-Prefer legal states by construction:
+Give each state only the fields it allows:
 
 ```ts
 type Invoice =
@@ -195,7 +195,7 @@ type Invoice =
   | { readonly _tag: "Paid"; readonly id: InvoiceId; readonly paidAt: Instant };
 ```
 
-Avoid contradictory bags:
+Avoid combinations of flags and optional fields that can contradict each other:
 
 ```ts
 type Invoice = {
@@ -206,7 +206,7 @@ type Invoice = {
 };
 ```
 
-Transitions should encode legal source states:
+Make the input type allow only states from which this transition is valid:
 
 ```ts
 function markPaid(invoice: SentInvoice, paidAt: Instant): PaidInvoice;
@@ -258,7 +258,7 @@ If the domain forbids `Paid` without `paidAt`, the database should help enforce 
 
 ## Review checklist
 
-Use this as the final scan after applying the rules above; the rule source of truth remains in the relevant sections.
+Check the relevant items below when reviewing a change. The sections above explain the rules.
 
 - Accepting raw strings for IDs because the database column is a string.
 - Returning `undefined` for required lookup absence instead of a not-found failure.

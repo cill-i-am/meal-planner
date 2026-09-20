@@ -1,21 +1,18 @@
-# Stage 5 — Complete Household Planning And Prepared Output
+# Stage 5 — Plan a complete household week
 
 Status: proposed
 Owner: unassigned
 Depends on: [preceding capability](meal-content.md)
 
-Accepted product direction from the roadmap; implementation is not claimed.
-Sequence expresses dependencies and learning, not a requirement to finish every
-possible preceding feature before an end-to-end tracer.
+This is approved product direction, not a claim that the feature is built. The order reflects dependencies and what we need to learn. It does not require every possible earlier feature to be finished before trying a small end-to-end flow.
 
 ## Outcome
 
-The system proposes and revises one complete personalised week for every managed
-person and meal occasion while presenting a simple human plan.
+Propose and revise one understandable week of meals that covers every managed person and meal occasion.
 
 ## Scope
 
-- planning period and meal-requirement materialization;
+- the planning period and the required meals for its dates;
 - explicit coverage for every managed person-date-occasion requirement;
 - shared and individual meal coverage;
 - routine-derived coverage;
@@ -33,10 +30,10 @@ person and meal occasion while presenting a simple human plan.
 - visible person-level rationale;
 - pinned profile/routine versions, affected-meal analysis after a profile
   change, and an explicit remaining-period replan offer;
-- compressed visual projection; and
-- revisioned adult approval.
+- a concise visual plan; and
+- adult approval tied to a specific plan revision.
 
-## Vertical tracer
+## Example flow
 
 A full household week covers all managed meals using routines, shared meals, one
 person-level exception, one packaged fallback, eating out, an intentional skip,
@@ -50,10 +47,8 @@ change produces a visible revision rather than a silent rewrite.
 - [ ] the UI groups ordinary shared coverage while retaining person exceptions;
 - [ ] hard constraints cannot be overridden by model suggestions;
 - [ ] allocations cannot exceed produced portions;
-- [ ] no per-meal confirmation is required on the happy path;
+- [ ] ordinary use does not require confirming every meal;
 - [ ] plan revisions are idempotent and auditable; and
 - [ ] active planning time is measured from proposal to approval.
 
-This stage owns real planning, rationale, allocation, active-plan impact, and
-dependency-repair evaluation under PDR-0006; discovery-stage fixtures cannot
-substitute for this evidence.
+Under PDR-0006, this stage tests actual planning, explanations, food allocation, changes to an active plan and repairs to dependent meals. Discovery test data does not replace those checks.

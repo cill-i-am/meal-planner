@@ -1,17 +1,14 @@
-# Stage 7 — Retailer-Neutral Shopping List
+# Stage 7 — Build a shared shopping list
 
 Status: proposed
 Owner: unassigned
 Depends on: [preceding capability](weekly-planning.md)
 
-Accepted product direction from the roadmap; implementation is not claimed.
-Sequence expresses dependencies and learning, not a requirement to finish every
-possible preceding feature before an end-to-end tracer.
+This is approved product direction, not a claim that the feature is built. The order reflects dependencies and what we need to learn. It does not require every possible earlier feature to be finished before trying a small end-to-end flow.
 
 ## Outcome
 
-An approved plan becomes a practical consolidated list without introducing
-retailer integration risk or a pretend live pantry.
+Turn an approved plan into one usable shopping list. Do not add retailer integration or pretend to know the household's live pantry contents.
 
 ## Scope
 
@@ -27,20 +24,17 @@ retailer integration risk or a pretend live pantry.
 - plan-revision shopping delta; and
 - preservation of manual and purchased state.
 
-This stage owns approved-demand and shopping-delta/repair evaluation under
-PDR-0006. Before external beta, the complete connected eight-family trajectory
-must also pass, including the planning and shopping consequences of revisions.
+Under PDR-0006, this stage checks that the list follows the approved plan and updates correctly when that plan changes. Before external beta, the complete eight-family scenario must also pass, including how revisions affect planning and shopping.
 
-## Vertical tracer
+## Example flow
 
 The approved full-week plan produces one consolidated list, combines only
 reliably equivalent ingredients, includes exact fallback products, excludes
-external/flexible/skip coverage, preserves manual items, and applies a visible
-delta after plan revision.
+external/flexible/skip coverage, preserves manual items, and shows the changes to the shopping list after a plan revision.
 
 ## Acceptance
 
-- [ ] quantities trace back to approved plan demand;
+- [ ] each quantity can be traced to the approved plan;
 - [ ] unresolved recipe quantities remain visible rather than fabricated;
-- [ ] revision does not silently erase purchased or manual state; and
+- [ ] a plan revision does not silently remove manually added items or forget which items were bought; and
 - [ ] beta households report that the list is usable for a real shop.

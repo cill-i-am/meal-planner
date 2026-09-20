@@ -1,18 +1,16 @@
-# Meal Content And Recipe Strategy
+# Meal content and recipe strategy
 
 ## Purpose
 
-Meal Planner needs enough trustworthy food options to produce practical plans,
-while preserving the difference between shared product content, private
-household knowledge, exact packaged products, simple assembled meals, and
-external meals.
+Meal Planner needs reliable food options for practical weekly plans. It must
+distinguish shared catalogue recipes from private household recipes, exact
+packaged products, simple assembled meals, and meals eaten elsewhere.
 
-The planner uses a common meal-option concept, but does not force every option
-into a recipe shape. Accepted product detail lives in
-[`../decisions/product`](../../decisions/), while durable authority
-boundaries live in [`../architecture/decisions`](../../decisions/).
+The planner treats these as kinds of meal option, not as interchangeable
+recipes. [Product and architecture decisions](../../decisions/) define their
+behavior and which service owns each kind of data.
 
-## Meal-Option Kinds
+## Meal-option kinds
 
 ### Recipe meal
 
@@ -48,18 +46,18 @@ another opaque food event. It covers one or more meal requirements without
 pretending the product knows ingredients, quantities, or nutrition. It normally
 contributes no shopping demand.
 
-## Two Recipe Authorities
+## Two recipe authorities
 
 The product has two recipe domains:
 
 1. a shared curated catalogue; and
 2. a private household recipe bank.
 
-They may share normalization and planning contracts, but they do not share
-visibility or authority by accident. The durable split is accepted in
+Both recipe stores may use the same normalization code and planning contracts.
+They still have separate visibility and write permissions, as specified in
 [ADR-0005](../../decisions/adr-0005-separate-shared-catalogue-from-household-recipe-authority.md).
 
-## Shared Curated Catalogue
+## Shared curated catalogue
 
 The catalogue contains recipes deliberately selected, reviewed, and made
 available to beta households. It prioritizes planning usefulness and quality
@@ -79,15 +77,13 @@ A catalogue recipe should have:
 - lifecycle state for candidate, reviewed, active, retired, or rejected; and
 - audit history for material correction.
 
-The initial target is roughly `100–200` active, high-quality recipes and meal
-options. It is a directional starting point rather than a permanent maximum or
-an invented hard beta gate. A smaller reliable catalogue is more useful than a
-large weakly normalized bank.
+Start with roughly `100–200` active, high-quality recipes and meal options. This
+is neither a permanent maximum nor a required count for beta. A smaller reliable
+catalogue is more useful than a larger collection with inconsistent data.
 
 ### Bulk candidate acquisition
 
-The initial catalogue may be bootstrapped through operator-managed bulk recipe
-ingestion:
+An operator may build the initial catalogue by importing recipes in batches:
 
 1. collect a larger batch of promising TikTok links;
 2. submit them through the existing import pipeline;
@@ -97,10 +93,10 @@ ingestion:
 5. review and normalize the useful candidates; and
 6. explicitly publish accepted immutable versions.
 
-Processing several hundred candidates to obtain roughly `100–200` publishable
-recipes is acceptable. Extraction success never implies shared publication.
-The candidate model remains source-neutral so future web-page or manual operator
-input can use the same curation boundary.
+It is acceptable to process several hundred candidates to obtain roughly
+`100–200` publishable recipes. Successful extraction does not publish a recipe.
+Candidates are not tied to one source type, so future web-page imports and manual
+operator entries can use the same review process.
 
 ### Curation and publication
 
@@ -135,7 +131,7 @@ See
 [PDR-0009](../../decisions/pdr-0009-shared-catalogue-acquisition-curation-and-publication.md)
 for the accepted governance and version-adoption policy.
 
-## Private Household Content
+## Private household content
 
 A household recipe may originate from:
 
@@ -152,7 +148,7 @@ Household content is private by default. Importing, reviewing, approving, or
 adapting content does not contribute it to the shared catalogue. Ordinary
 household adults cannot publish globally in the MVP.
 
-## Recipe And Version Identity
+## Recipe and version identity
 
 A recipe is a stable concept. A `RecipeVersion` is an immutable snapshot used by
 planning and history.
@@ -192,10 +188,10 @@ the exact source version. Ordinary edits to an existing household recipe create
 a new version. A materially different dish is an explicit **save as a separate
 recipe** action.
 
-Ancestry supports attribution, update notification, and selective adoption
-without forcing later catalogue changes into household versions.
+Keeping the source-version link supports attribution, update notifications, and
+selective adoption. It does not force catalogue changes into household recipes.
 
-## Food Concepts And Exact Products
+## Food concepts and exact products
 
 Meal Planner owns a small food-concept registry grown from reviewed content and
 real planning needs. The accepted semantic and authority boundaries are in
@@ -265,7 +261,7 @@ The MVP creates only the concepts and product references needed by reviewed
 catalogue recipes, household content, fallbacks, and shopping lists. It does not
 preload a comprehensive food or retail-product taxonomy.
 
-## Original Batch And Reference Serving
+## Original batch and reference serving
 
 The original recipe batch and stated yield remain authoritative. Where scaling
 is meaningful, the system derives a reference-serving projection for planning.
@@ -296,7 +292,7 @@ A lasagne tray, loaf, cake, slow-cooker batch, or geometry-sensitive recipe may
 have a supported yield range or minimum practical batch. The planner may
 recommend eight portions rather than forcing exactly seven.
 
-## Plan-Specific Scaling
+## Plan-specific scaling
 
 Scaling from four to seven serving-equivalents for one week is cook-event state,
 not a new recipe version.
@@ -316,7 +312,7 @@ changes are surfaced rather than blindly multiplied. Missing quantities or
 yield are never invented. An adult may save a confirmed adaptation as a new
 household recipe version.
 
-## Recipe Completeness
+## Recipe completeness
 
 A recipe may remain saved as a draft or review item while incomplete. To drive
 reliable planning, scaling, and shopping it needs:
@@ -329,13 +325,13 @@ Salt to taste, optional garnish, or an unresolved exact brand may remain open
 when they do not prevent truthful planning. A missing primary ingredient
 quantity cannot.
 
-## Normalized Ingredients
+## Normalized ingredients
 
 Free-text ingredient lines remain valuable evidence and display content, but
 they are not sufficient for scaling or shopping demand.
 
-A normalized ingredient preserves both source text and structured
-interpretation, directionally:
+A normalized ingredient keeps both the original text and its structured meaning.
+For example:
 
 ```ts
 interface RecipeIngredient {
@@ -351,10 +347,10 @@ interface RecipeIngredient {
 }
 ```
 
-The model preserves unresolved quantity, unit, concept mapping, and scaling
-uncertainty rather than manufacturing precision.
+Keep unknown quantities, units, food mappings, and scaling rules explicit. Do
+not make uncertain values look precise.
 
-## Units And Measurement
+## Units and measurement
 
 Meal Planner is metric-first wherever a quantity can be represented truthfully.
 Preferred normalized units include:
@@ -383,7 +379,7 @@ Uncertain conversion has explicit consequences:
 
 Packaged and discrete products use item or pack counts where appropriate.
 
-## Effort And Planning Metadata
+## Effort and planning metadata
 
 Useful reviewed metadata includes:
 
@@ -401,7 +397,7 @@ Useful reviewed metadata includes:
 Friendly labels such as quick or hands-off are derived summaries. Provider or
 model labels do not bypass review.
 
-## Import Source Adapters
+## Import source adapters
 
 The existing TikTok pipeline is the first acquisition adapter, not the complete
 content domain. Source descriptors remain extensible:
@@ -442,18 +438,18 @@ Supported sites, robots, and acquisition policy remain open decisions.
 Manual entry creates explicit user-authored content without pretending source
 evidence exists. It may create a recipe, assembled meal, or packaged meal.
 
-## Evidence, Review, And Publication
+## Evidence, review, and publication
 
 Every imported recipe begins as a draft. Evidence-grounded fields retain
 citations, confidence, origin, and unresolved state. A reviewer may correct
 facts while preserving the distinction between extracted and corrected values.
 
-Only admitted reviewed versions may enter meal-plan generation. Household
-approval publishes only to that household's private bank. Shared catalogue
-publication is a separate operator-only command with its own audit, curation,
-attribution, and lifecycle policy.
+Only reviewed versions that pass validation may be used to generate meal plans.
+Household approval adds a recipe only to that household's private bank. Publishing
+to the shared catalogue is a separate operator-only command with its own review,
+audit, attribution, and lifecycle rules.
 
-## Search And Discovery
+## Search and discovery
 
 Beta discovery should support practical filtering before advanced semantic
 recommendation. Useful dimensions include:
@@ -471,7 +467,7 @@ recommendation. Useful dimensions include:
 Semantic search may later provide a rebuildable derived index. It must not
 become recipe authority or replace structured hard-constraint filtering.
 
-## Initial Beta Boundary
+## Initial beta boundary
 
 The beta content system should prove:
 

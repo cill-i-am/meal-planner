@@ -1,4 +1,4 @@
-# PDR-0010 — Food Concepts, Exact Products, And Retailer Preferences
+# PDR-0010 — Generic foods, exact products, and retailer preferences
 
 - Status: Accepted
 - Date: 2026-08-26
@@ -6,16 +6,15 @@
 
 ## Context
 
-Meal Planner needs to understand both generic food demand and exact products.
-A recipe may require `ribeye steak`, while one household may prefer a specific
-Tesco dry-aged ribeye. Another household may accept any suitable ribeye, and a
-future retailer integration may need to choose different preferred products at
-Tesco and SuperValu.
+Meal Planner must distinguish a generic food from a specific product. A recipe
+might call for `ribeye steak`. One household might prefer a particular Tesco
+dry-aged ribeye; another might accept any suitable ribeye. Future retailer
+support may need different preferred products at Tesco and SuperValu.
 
-Treating every branded product as unrelated text would prevent useful planning,
-shopping aggregation, substitutions, and cross-retailer choice. Treating an
-exact product as merely an alias of a generic food concept would erase brand,
-pack, quality, retailer, and substitution preferences.
+Unrelated product-name strings would make planning, combined shopping lists,
+substitution, and retailer choice unreliable. Treating an exact product as only
+another name for a generic food would lose brand, pack, quality, retailer, and
+substitution preferences.
 
 ## Decision
 

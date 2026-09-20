@@ -1,6 +1,6 @@
 # Feature Slice Architecture
 
-Prefer feature-slice-first architecture everywhere: backend apps, frontend apps, shared packages, integrations, platform capabilities, and generated clients. Layers are useful inside a slice, but layer-first directory structures are not the default.
+Group code by feature in backend apps, frontend apps, shared packages, integrations, platform code and generated clients. Add layers inside a feature when they help. Do not split every feature across global layer folders by default.
 
 ## Contents
 
@@ -41,7 +41,7 @@ Use this file when work touches:
 
 ## Vocabulary
 
-**Feature Slice** - A cohesive capability with a reason to change together. A feature can be a product domain, platform capability, integration, auth system, sync engine, email module, billing module, or generated client.
+**Feature Slice** - A group of related code that changes for the same reason. A feature can be a product domain, platform capability, integration, auth system, sync engine, email module, billing module, or generated client.
 
 **Public Feature API** - The explicit entrypoint or package export other slices may import.
 
@@ -132,7 +132,7 @@ Only add subpaths that exist. Do not create empty boundary files.
 
 Public exports are contracts. Export only intentional feature APIs, public types, schemas, clients, and boundary contracts. Internal DTOs, rows, helper types, intermediate states, and implementation errors stay private unless another feature or app genuinely consumes them.
 
-Avoid uncurated barrels. `export *` is acceptable only when the file itself is the curated public surface.
+Avoid barrel files that export internals indiscriminately. `export *` is acceptable only when the file itself is the curated public surface.
 
 ## App-Local Feature Or Package
 
@@ -191,7 +191,7 @@ features/projects/
 
 Domain owns pure concepts, invariants, constructors, state transitions, and domain-specific parsing. Application owns use cases, commands, queries, typed expected failures, and ports. Infrastructure owns concrete adapters such as Drizzle, external APIs, queues, email providers, SDKs, and filesystem/cloud mechanics. Interfaces own HTTP/RPC/MCP/queue/cron entrypoints and projections.
 
-This is Clean/Hexagonal/DDD taste with TypeScript pragmatism, not ceremony by default. Do not create a use-case class, repository interface, or folder taxonomy unless it removes real complexity.
+Use these boundaries where they make TypeScript code easier to understand. Do not add a use-case class, repository interface or set of folders unless it removes real complexity.
 
 ## Frontend Feature Shape
 
@@ -217,7 +217,7 @@ The feature that owns a data path owns its boundary parser, projection, cache po
 
 ## Database Schema Ownership
 
-Feature-owned schema must not degrade relational modeling. Choose the correct physical database model first, then place definitions with the feature that owns the concept or relationship.
+Choose the right database model first. Then put each definition with the feature that owns the concept or relationship. File organization must not weaken relational constraints.
 
 Example:
 
@@ -321,7 +321,7 @@ Generated code lives at the nearest owning boundary:
 
 Never edit generated code manually. Wrap generated clients only when the wrapper adds real boundary policy such as parsing, auth, retries, errors, observability, or ergonomics.
 
-Do not create a central `generated/` dumping ground unless the generator itself owns a shared package.
+Keep generated files with the code that uses them. Use a central `generated/` folder only when the generator itself owns a shared package.
 
 ## Tests
 
@@ -331,7 +331,7 @@ Do not move ordinary feature tests into a distant global test folder unless the 
 
 ## Boundary Enforcement
 
-Scale enforcement with maturity:
+Choose checks that fit the size and needs of the codebase:
 
 - convention for tiny local slices;
 - `index.ts` or `public.ts` boundaries for app-local features;

@@ -1,4 +1,4 @@
-# ADR-0002 — Model Plans Through Meal Requirements And Explicit Coverage
+# ADR-0002 — Account for every person's meal
 
 - Status: Accepted
 - Date: 2026-08-24
@@ -8,14 +8,14 @@
 
 ## Context
 
-The current proof-of-concept planner places recipes into dated meal slots with a
-serving count. The intended product must account for every managed person and
-meal occasion while supporting shared meals, person exceptions, routines,
-leftovers, takeaway, intentional skips, and flexible slots.
+The proof-of-concept planner assigns recipes and serving counts to dated meal
+slots. The intended product must also account for every person and meal occasion:
+shared meals, individual alternatives, routines, leftovers, takeaway, deliberate
+skips, and meals left flexible.
 
-A recipe-calendar aggregate cannot reliably prove complete coverage or explain
-which people are excluded. A raw person-by-meal matrix is complete but is not an
-appropriate default user experience.
+A calendar of recipes cannot prove that everyone is covered or show who was left
+out. A person-by-meal grid can account for everyone, but it should not dictate the
+main screen people use.
 
 ## Decision
 
@@ -60,7 +60,7 @@ show rationale more effectively.
 - The internal matrix may be inspectable for diagnosis while the ordinary UI
   remains a compressed household week.
 
-## Alternatives Rejected
+## Alternatives rejected
 
 ### Keep recipe-in-slot as the canonical aggregate
 

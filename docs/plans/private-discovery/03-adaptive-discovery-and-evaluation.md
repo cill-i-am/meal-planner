@@ -10,19 +10,21 @@ Owner: unassigned — remaining evaluation and tone work
 
 ## Outcome and scope
 
-An adult receives private profile proposals and application-selected follow-up
-questions, with correction, rejection, explicit confirmation, completion and
-retained history. The model cannot confirm facts or write household state. A new
-session receives the adult's current canonical profile and its own conversation,
-without an earlier session's transcript.
+Adults receive private profile proposals and follow-up questions selected by the
+application. They can correct, reject, and explicitly confirm proposals, complete
+the session, and read saved history. The model cannot confirm facts or write
+household data. A new session receives the adult's current profile and its own
+conversation, not transcripts from earlier sessions.
 
-The application owns required-topic coverage, question wording, clarification,
-proposal revision binding, safety routing and atomic acceptance. Cloudflare's
-base Agent owns durable lifetime; published TanStack packages own orchestration,
-chat events and client history. The three TanStack patches and custom binding
-wrapper are removed. Authorization, final-send fences and explicit household
-confirmation remain application-owned. The contract above owns the detailed
-rules, including typed fallback discovery and cancellation.
+The application decides required topics, question wording, clarification, which
+proposal revision is being changed, safety handling, and which changes to save
+atomically. Cloudflare's base Agent manages durable lifetime. Published TanStack
+packages manage orchestration, chat events, and client history. The three
+TanStack patches and custom binding wrapper have been removed.
+
+The application still owns access checks, the check immediately before physical
+send, and explicit household confirmation. The linked contract describes these
+rules, typed fallback discovery, and cancellation.
 
 ## Current evaluation status
 
@@ -73,14 +75,13 @@ the application or accept a production model configuration.
 
 ### Warmer conversation
 
-The product owner qualitatively accepted the earlier dependant-and-fallback
-example, but found the responses robotic and requested more empathy. This was
-not a numerical human rating. Improve acknowledgements, follow-up questions and
-review invitations to recognize the person's actual circumstances and practical
-burden, use warm plain language, and reduce repeated administrative wording.
-Avoid stock sympathy, invented feelings, excessive reassurance and unnecessary
-questions. Application-rendered wording is part of this work; prompt changes
-alone cannot address it.
+The product owner liked the earlier dependant-and-fallback example but found its
+wording robotic and asked for more empathy. This was feedback, not a numerical
+human rating. Improve acknowledgements, follow-up questions, and review
+invitations so they respond to the person's circumstances and practical effort.
+Use warm, plain language without stock sympathy, invented feelings, excessive
+reassurance, repeated administrative wording, or unnecessary questions. Some
+wording comes from the application, so prompt changes alone cannot fix it.
 
 Preserve attribution, uncertainty, privacy and explicit confirmation. Warmth must
 not imply that a proposal is already saved. Review representative conversations
@@ -88,8 +89,8 @@ with the product owner after the changes.
 
 ## Historical evidence
 
-The pre-cleanup [evaluation records](https://github.com/cill-i-am/meal-planner/tree/04e97e8389e531bd2bc4af46945f2ed349674d12/evals/private-discovery) and
-[work-item diary](https://github.com/cill-i-am/meal-planner/blob/04e97e8389e531bd2bc4af46945f2ed349674d12/docs/delivery/stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
-remain available at merge `04e97e8`. The evaluation README retains the useful
-findings and their limits. Historical failures remain failures, unknown provider
-outcomes remain unknown, and deleting duplicate reports releases no reservation.
+The [evaluation records](https://github.com/cill-i-am/meal-planner/tree/04e97e8389e531bd2bc4af46945f2ed349674d12/evals/private-discovery)
+and [work-item diary](https://github.com/cill-i-am/meal-planner/blob/04e97e8389e531bd2bc4af46945f2ed349674d12/docs/delivery/stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
+remain available at merge `04e97e8`. The evaluation README keeps their findings
+and limits. Removing duplicate reports does not turn a failed run into a pass,
+resolve unknown provider usage, or release reserved budget.

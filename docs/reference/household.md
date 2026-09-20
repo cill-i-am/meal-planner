@@ -2,212 +2,184 @@
 
 ## Authority
 
-Better Auth remains the global identity and organization control plane. Its
-dedicated D1 database owns users, sessions, organizations, memberships,
-invitations, and roles. An immutable Better Auth organization identifier is the
-household identifier at the application boundary.
+Better Auth manages identity and organizations in a separate D1 database. It stores
+users, sessions, organizations, memberships, invitations and roles. The application
+uses the immutable Better Auth organization ID as the household ID.
 
-The API Worker is the authorization boundary for household and meal-plan
-requests. It resolves the same-origin Better Auth session, reads the active
-organization, and validates the caller's membership through Better Auth's
-public API before any household routing occurs. The browser does not send an
-organization identifier. The active organization value alone never grants
-access.
+The API Worker checks access before routing household or meal-plan requests. It
+reads the same-origin Better Auth session, finds the active organization and checks
+membership through Better Auth's public API. The browser does not supply an
+organization ID. Selecting an active organization does not by itself grant access.
 
 ## Private household storage
 
 The private `HouseholdDomainWorker` owns the `HouseholdObject` Durable Object
-namespace. The API Worker calls it through a Cloudflare service binding only
-after authorization. It sends a closed admitted envelope: a member actor is a
-one-way digest, while a system actor has one enumerated internal purpose. The
-private Worker Schema-decodes that envelope, derives the route, and admits only
-the command purposes allowed for that actor category. The object Schema-decodes
-the clone again before domain code. Neither boundary imports or queries Better
-Auth.
+namespace. After checking access, the API Worker calls it through a Cloudflare
+service binding. The command envelope allows only defined fields. A member actor
+is represented by a one-way digest; a system actor has one listed internal purpose.
+The private Worker decodes the envelope with Schema, finds the route and allows
+only commands permitted for that actor category. The object decodes the cloned
+value again before domain code uses it. Neither component imports or queries
+Better Auth.
 
-The central locator addresses one object as
-`household:v1:<sha256(canonical-v1-organization-payload)>`. The opaque versioned
-name contains no raw organization identifier. Only the locator may derive the
-name, and it runs after Better Auth session and membership proof. The object
-stores one `household_meta` row through Drizzle SQLite, including the immutable
-organization ID and its creation time. Every operation asserts that persisted
-provenance matches the admitted organization before reading or mutating
-capability state. A mismatch exposes only a closed privacy-safe failure.
+Only the central locator derives the object name:
+`household:v1:<sha256(canonical-v1-organization-payload)>`. It runs after the session
+and membership checks. The versioned name contains no raw organization ID.
+The object stores the immutable organization ID and creation time in one
+`household_meta` row through Drizzle SQLite. Before every read or write, it checks
+that the stored organization matches the authorized command. A mismatch returns
+a defined error that reveals no private data.
 
 Drizzle Kit owns the checked-in Durable SQLite migration under
 `apps/api/household-migrations`. Alchemy's Durable Object Drizzle runtime
 applies it inside the object. Application data access uses Drizzle; it does not
 issue raw SQL.
 
-The Alchemy class host is deliberately thin and stable: it owns Cloudflare
-class/namespace lifecycle and installs the runtime layers. Feature-first
-runtime modules own command composition. Per-object Drizzle migrations alone
-own SQLite schema evolution; a class deployment is not a database migration.
+The Alchemy class host manages the Cloudflare class and namespace lifecycle and
+installs runtime layers. Feature modules compose commands. Only per-object Drizzle
+migrations change the SQLite schema; deploying a class is not a database migration.
 
 ## Authority services and post-commit dispatch
 
-Effect services provide authoritative Clock access, identity generation,
-canonical encoding, and SHA-256 digests. Domain operations and repositories do
-not call ambient `Date.now()`, `crypto.randomUUID()`, or hashing APIs. Tests
-replace those services with deterministic implementations, and structural
-guards keep ambient APIs confined to the live adapter.
+Effect services supply the Clock, IDs, canonical encoding and SHA-256 digests.
+Domain operations and repositories must not call `Date.now()`, `crypto.randomUUID()`
+or hashing APIs directly. Tests substitute deterministic services. Structural
+checks keep those runtime APIs inside the live adapter.
 
-Recipe-import admission uses these services in one short SQLite transaction to
-record the intent, idempotency ledger, command digest, immutable committed
-result, deterministic privacy-safe Workflow identity, and compact outbox
-intent. External I/O is forbidden in that transaction. The host starts or
-reconciles the Workflow only after commit, records every delivery outcome, and
-retries the same persisted Workflow identity. Dispatch status can move from
-`pending` to `dispatched` or `exhausted`, but only a proven pre-start refusal
-can exhaust it. A lost response or unavailable reconciliation remains pending
-under the same identity until a later retry converges. Replay always returns
-the original committed domain result.
+When accepting a recipe import, one short SQLite transaction saves the request,
+idempotency record, command digest, immutable result, deterministic private
+Workflow ID and outbox entry. The transaction performs no external I/O.
+After commit, the host starts the Workflow or checks whether it already started.
+It records each delivery result and retries with the same saved Workflow ID.
+Dispatch moves from `pending` to `dispatched` or `exhausted`, but only a confirmed
+refusal before startup can mark it exhausted. A lost response or an unavailable
+status check leaves it pending under the same ID until a later retry resolves it.
+Repeating the command returns the original committed result.
 
 ## Meal-plan authority
 
-`HouseholdObject` SQLite is the canonical store for a household's meal-plan
-aggregate. It owns the plan state and revision, the create-request fingerprint,
-and the mutation receipts used to make swaps, approvals, and rejections safe to
-retry. The repository updates plan state and its mutation receipt in one
-Drizzle transaction. A repeated mutation returns its recorded result; reusing
-the mutation identifier for a different request is a conflict.
+`HouseholdObject` SQLite stores the household's meal plans. It owns plan state and
+revision, the create-request fingerprint and mutation receipts for safely retrying
+swaps, approvals and rejections. One Drizzle transaction updates both plan state
+and the receipt. Repeating a mutation returns the saved result. Reusing its ID
+with a different request returns a conflict.
 
-The authenticated API derives the organization and actor from the Better Auth
-session. Public meal-plan requests do not accept either value. After checking
-organization membership, the API calls the private `HouseholdDomainWorker`
-through its service binding. The domain Worker validates the admitted command
-and asks the central locator for the corresponding opaque object name. The
-object verifies the admitted actor category and its persisted organization
-provenance; it does not query Better Auth. Mutation commands cannot supply an
-independent actor or audit timestamp: the object binds the admitted member
-digest and an Effect-provided Clock instant only after those checks pass.
+The authenticated API gets the organization and actor from the Better Auth
+session; public meal-plan requests cannot supply them. After checking membership,
+the API calls `HouseholdDomainWorker` through its private service binding. The
+Worker validates the authorized command and asks the locator for the object name.
+The object checks the actor category and stored organization without querying
+Better Auth. Only then does it attach the authorized member digest and the
+Effect Clock time. A mutation cannot provide another actor or audit timestamp.
 
-Better Auth D1 remains the global identity and organization control plane. It
-does not store meal-plan aggregate state.
+Better Auth D1 manages identity and organizations. It does not store meal-plan state.
 
 ## Household person registry authority
 
-`HouseholdObject` SQLite is the sole canonical writer for household people,
-their active/archived lifecycle, the creator's purpose-bound association,
-per-person optimistic versions, immutable lifecycle audits, and mutation
-receipts. Person IDs are opaque UUID-backed values generated inside household
-authority; archive and restore preserve the same ID and advance its version.
-There is no shared household D1 mirror, compatibility path, hard delete, merge,
-or link inferred from a name or email.
+Only `HouseholdObject` SQLite writes household people, active or archived status,
+the creator's account association, per-person versions, immutable lifecycle audits
+and mutation receipts. It generates opaque UUID-based person IDs. Archive and
+restore keep the ID and increase its version. There is no shared household D1
+copy, compatibility path, hard delete, merge or link inferred from a name or email.
 
-The authenticated API resolves the Better Auth session, active organization,
-and membership before constructing two separately branded SHA-256 identities
-from a versioned, domain-separated encoding of the immutable Better Auth user
-ID and organization ID. `audit-actor` is used only for household audit
-correlation. `linkage-subject` identifies the user-specific side of the durable
-creator association. The association itself occupies one fixed creator slot in
-each household database, with linkage subject and person also unique. The
-linkage is stable across sessions, membership-row changes, and Worker/object
-restart, while remaining household-scoped and user-specific. Raw user,
-membership, session, invitation, role, and email values never enter household
-commands or storage.
+After checking the session, active organization and membership, the API creates
+two separately branded SHA-256 identities from the immutable Better Auth user and
+organization IDs. Their encoding is versioned and uses separate domains.
+`audit-actor` links household audit records. `linkage-subject` identifies the account
+side of the saved creator association. Each household database has one fixed
+creator slot, and both the linkage subject and person are unique. The link stays
+stable across sessions, membership-row changes and Worker or object restarts,
+while remaining specific to that account and household. Raw user, membership,
+session, invitation, role and email values never enter household commands or storage.
 
-Ordinary people commands receive a closed people-member admission. Creator
-bootstrap is different: only Better Auth's actual active membership
-`role === "owner"` produces the closed `better_auth_owner` creator authority.
-A non-owner is rejected by the public API before gateway invocation, private
-Worker routing, or object location. The private Worker and object independently
-require the creator admission for the bootstrap purpose. The object repeats
-exact-purpose admission and persisted organization provenance checks before
-opening the repository.
+Ordinary people commands carry a defined member authorization. Creating the
+household's first linked person requires more: the active Better Auth membership
+must have `role === "owner"` to receive `better_auth_owner` authority. The public
+API rejects a non-owner before calling the gateway, routing to the Worker or
+locating the object. The private Worker and object each check that creator
+permission. Before opening the repository, the object also checks the exact
+purpose and the stored organization.
 
-Creator bootstrap, unlinked person creation, archive, and restore each commit
-the person row, version, audit, creator association where applicable, and
-privacy-safe replay receipt in one Drizzle SQLite transaction. Bootstrap checks
-an exact receipt first, then atomically reserves the household's fixed creator
-slot before inserting the person; another admitted owner receives the closed
-bootstrap conflict without a person, audit, association, or receipt. That
-conflict means the household creator slot is occupied while the requesting
-account remains unlinked; it neither identifies the winner nor represents a
-retryable storage failure. The mutation ID is unique across people commands in
-one household. Exact intent
-replay returns the recorded projection without another write; changed intent
-collides, stale versions and invalid lifecycle transitions fail closed, and
-another household's object has an independent identity and receipt namespace.
-No external I/O is performed by a person transaction.
+Creating the linked creator, creating an unlinked person, archiving and restoring
+each save the person, version, audit, any creator association and private retry
+receipt in one Drizzle SQLite transaction. Creator setup first checks for an exact
+receipt, then atomically reserves the fixed creator slot before inserting the person.
+Another authorized owner receives a defined conflict without any new person, audit,
+association or receipt. That conflict means the slot is occupied and the requesting
+account is unlinked. It neither names the winner nor indicates a retryable storage
+failure. Mutation IDs are unique across people commands within one household.
+An exact retry returns the saved result without another write. Changed input
+conflicts; stale versions and invalid transitions are rejected. Each household has
+its own IDs and receipt namespace. People transactions perform no external I/O.
 
-Roster queries project the creator slot only as `available` or `occupied`,
-derived from that same canonical association row. The projection does not infer
-slot state from roster membership or the requesting account's link and does not
-expose the associated person or account identity.
+The roster reports the creator slot as only `available` or `occupied`, based on
+the saved association row. It does not infer that status from roster size or the
+requesting account's link, and it does not reveal the associated person or account.
 
 The public contract and generated same-origin client are documented in
 [household-people-api.md](household-people-api.md).
 
-Work Item 02 extends this authority with explicit invitation association,
-accepted-member account linking, reasoned link repair, and same-person return.
-Household SQLite stores only a purpose-bound invitation digest and a stable
-household-scoped linkage subject derived from immutable Better Auth user and
-organization identity; raw email, invitation identity, member identity, and
-session material never enter household state or projections. Better Auth
-remains the sole membership, role, and invitation authority.
+Work Item 02 adds explicit invitation associations, account linking after
+membership acceptance, reasoned link repair and return to the same person record.
+Household SQLite stores only a purpose-specific invitation digest and a stable
+household-specific linkage subject derived from immutable Better Auth user and
+organization IDs. Raw email, invitation IDs, member IDs and session data stay out
+of household storage and responses. Better Auth alone manages membership, roles
+and invitations.
 
-Departure composition is owned by
-[ADR-0010](../decisions/adr-0010-coordinate-membership-departure-before-person-archival.md):
-`MealPlannerApi` coordinates Better Auth access revocation through one dedicated
-native Workflow, while `HouseholdObject` owns the visible versioned departure
-operation and permits system-purpose detach/archive only after confirmed
-membership absence. The Household prepare/start transition and deterministic
-Workflow existence are durable before the authenticated typed Better Auth
-removal. Missing removal and lost outcome signals reconcile by canonical
-membership read; a last owner stays linked and enters explicit repair state.
-No credential crosses into Workflow or Household persistence, and no external
-I/O occurs inside the Household transaction.
+[ADR-0010](../decisions/adr-0010-coordinate-membership-departure-before-person-archival.md)
+defines departure. `MealPlannerApi` uses a dedicated native Workflow to revoke
+Better Auth access. `HouseholdObject` stores the visible, versioned departure
+operation and allows system-purpose detach or archive only after membership is
+confirmed absent. Save the Household prepare/start transition and create the
+deterministic Workflow before the authenticated Better Auth removal. If removal
+or its response is missing, read membership from Better Auth to resolve the result.
+A last owner stays linked and enters a repair state. Credentials never enter
+Workflow or Household storage. Household transactions perform no external I/O.
 
 ## Recipe-import and Recipe Bank authority
 
-`HouseholdObject` SQLite is the canonical store for import admission, source
-ownership and deduplication, public lifecycle and timeline, execution fences,
-active review, answers and corrections, cancellation, approval, publication,
-recipes, and replay receipts. Public handlers and internal Workflow commands
-reach that state only through the private household boundary.
+`HouseholdObject` SQLite stores accepted import requests, source ownership and
+deduplication, lifecycle and timeline, execution-generation checks, active review,
+answers, corrections, cancellation, approval, publication, recipes and retry
+receipts. Public handlers and internal Workflow commands access this data only
+through the private household API.
 
-Review confirmation is a cross-capability local transaction: it completes the
-active action, publishes the Recipe Bank record, advances the import through
-finalizing to succeeded, appends timeline facts, and stores the replay receipt
-atomically. Source-dedup and cancel-versus-confirm races therefore serialize in
-the same household authority.
+One local transaction confirms a review: it completes the active action, publishes
+the Recipe Bank record, moves the import through finalizing to succeeded, appends
+timeline facts and saves the retry receipt. Source deduplication and a race between
+cancel and confirm are therefore ordered by the same household storage.
 
-Meal-plan creation and swaps query the local Recipe Bank capability directly.
-Iteration is cursor-, item-, and byte-bounded, and publication rejects an
-encoded recipe above the planning page's safe per-item budget. Planning can
-therefore consume more than 128 approved recipes without an unbounded snapshot
-or one oversized row blocking iteration. The bounded frontier selects assignments
-once; those assignments are hydrated with their real review versions and
-fingerprints before proposal persistence. Create and swap commands accept recipe
-identifiers, not caller-supplied approved recipe snapshots. Shared planning schemas
-live in `@meal-planner/recipe-domain`.
+Meal-plan creation and swaps read the local Recipe Bank directly. Reads use cursors
+and limit both item count and bytes. Publication rejects an encoded recipe larger
+than the planning page's safe per-item budget. The planner can read more than 128
+approved recipes without loading an unlimited snapshot or getting stuck on an
+oversized row. It selects assignments once within a bounded search, then loads
+their actual review versions and fingerprints before saving the proposal. Create
+and swap commands accept recipe IDs, not caller-supplied snapshots claiming to be
+approved recipes. Shared planning schemas live in `@meal-planner/recipe-domain`.
 
 ## Recipe-import batch authority
 
-`HouseholdObject` SQLite is also the only authority for recipe-import batch and
-item membership, idempotency replay, status, generation, completion, failure,
-and queue-dispatch outbox state. Admission commits the aggregate, all items,
-and one outbox row per item in a single local Drizzle transaction. Exact replay
-returns the original public aggregate; conflicting replay and stale item
-generations fail without mutation.
+Only `HouseholdObject` SQLite stores import batches, item membership, retry results,
+status, generation, completion, failure and queue outbox state. One local Drizzle
+transaction saves the batch, all items and an outbox row per item. An exact retry
+returns the original public batch result. Conflicting retries and stale item
+generations fail without changing state.
 
-The object alarm reads only committed outbox rows and sends a closed Queue
-message containing immutable organization, batch, item, and generation IDs.
-Queue and its DLQ are transport evidence, not product state. The Queue consumer
-starts one deterministic Workflow per item generation. Queue and DLQ retries
-reconcile that identity. Transport delivery remains recorded while the
-household outbox stays alarm-eligible until its item settles, so the object
-alarm remains a durable production reconciliation signal. Queued, running,
-paused, and waiting instances remain active; errored or terminated instances
-restart through the same identity.
-Unavailable or unknown status preserves the nonterminal item and outbox, while
-only proof that no Workflow started permits `dispatch_exhausted`. That Workflow
-claims the local item, admits the ordinary
-recipe import, coordinates its external dispatch after commit, and settles
-success or failure back in household SQLite. Queue, Workflow, provider,
-network, and other external I/O never run inside a
-household transaction.
+The object alarm reads committed outbox rows and sends a defined Queue message
+with immutable organization, batch, item and generation IDs. Queue and DLQ results
+describe transport delivery, not product state. The consumer starts one deterministic
+Workflow for each item generation. Queue and DLQ retries look up that same ID.
+The system records delivery, but keeps the household outbox eligible for the alarm
+until the item finishes, so the alarm can keep reconciling unfinished work.
+Queued, running, paused and waiting Workflows remain active. Errored or terminated
+ones restart under the same ID. If status is unavailable or unknown, keep the item
+unfinished and retain its outbox entry. Only proof that no Workflow started allows
+`dispatch_exhausted`. The Workflow claims the local item, accepts the ordinary
+recipe import, starts external dispatch after commit and saves success or failure
+back to household SQLite. Queue, Workflow, provider, network and other external I/O
+must not run inside a household transaction.
 
 Global D1 has no batch tables, idempotency ledger, route, repository, service,
 or writer. There is no compatibility read, dual write, backfill, or fallback to
@@ -215,80 +187,73 @@ the retired prototype authority.
 
 ## Evidence metadata and R2 references
 
-`HouseholdObject` SQLite also owns the compact acquisition, transcription,
-visual, carousel, and extraction outcomes needed by the household product. A
-single generation-fenced transaction commits each closed stage result, its
-integrity metadata, compact R2 references, and replay receipt. Exact retries
-return the same privacy-safe result; a changed command under the same mutation
-identity or a stale generation fails without mutation.
+`HouseholdObject` SQLite stores the compact acquisition, transcription, visual,
+carousel and extraction results needed by the product. One transaction checks the
+execution generation and saves the defined stage result, integrity metadata, compact
+R2 references and retry receipt. An exact retry returns the same private result.
+Changed input under the same mutation ID or a stale generation fails without a write.
 
-The household also checkpoints one stable start time for every provider
-dispatch and recovery dispatch. Claim, Fail, artifact, and retry commands reuse
-that value, so a lost native Workflow response cannot change the command digest.
-Execution generation fences household state; acquisition-attempt generation is
-tracked separately for retry-scoped R2 objects. Before acquisition, the
-Workflow claims a deterministic `(intent, execution generation, attempt
-ordinal)` identity in household SQLite. A restarted Workflow reads those
-claims and verifies the corresponding create-only R2 media and manifest pair
-before allocating another generation. Valid evidence is reused and committed;
-only absent, incomplete, or invalid evidence advances to a new attempt. If a
-claim response is lost, retrying the same identity returns the same generation.
+The household saves one stable start time for each provider dispatch and recovery
+dispatch. Claim, Fail, artifact and retry commands reuse it, so a lost Workflow
+response cannot change the command digest. Execution generation protects household
+state; acquisition-attempt generation separately identifies retry-specific R2 objects.
+Before acquisition, the Workflow claims a deterministic
+`(intent, execution generation, attempt ordinal)` in household SQLite. After restart,
+it reads the claims and checks the create-only R2 media and manifest pair before
+allocating another generation. It reuses and commits valid evidence. Only missing,
+incomplete or invalid evidence starts another attempt. Retrying a lost claim
+response with the same identity returns the same generation.
 
-Large media, transcripts, manifests, and other evidence bytes remain private
-R2 objects. Their references carry generation, byte length, SHA-256, and
-retention time. Reference reads preserve the committed source shape: video
-acquisition starts with media and manifest references, while a carousel starts
-with its single manifest and the carousel stage's stable commit identity and
-time. Workflows inspect R2 before or after a household
-command, never during the local transaction. Missing or deleted objects change
-only the household-local availability observation; they do not rewrite the
-committed reference or corrupt the current result. R2 lifecycle deletion
-remains asynchronous defense in depth. The acquisition and recovery Workflows
-carry admitted organization provenance to the household boundary, read the
-household's committed references, and validate generation, object key, native
-checksum, and custom metadata before recording an availability observation.
-No import-to-organization route, R2 event Queue, event consumer, or event DLQ
-exists. The application does not treat an asynchronous R2 lifecycle
-notification as product truth.
+Large media, transcripts, manifests and other evidence stay in private R2 objects.
+References record generation, byte length, SHA-256 and retention time. Reading a
+reference preserves its saved source shape: video acquisition has media and manifest
+references; a carousel has one manifest plus the carousel stage's stable commit ID
+and time. Workflows inspect R2 before or after a household command, never inside
+its transaction. Missing or deleted objects change only the household's availability
+observation, not the saved reference or current result. Asynchronous R2 lifecycle
+deletion is an additional safeguard.
+
+Acquisition and recovery Workflows carry the authorized organization to the
+household API, read its saved references and check generation, object key, native
+checksum and custom metadata before recording availability. There is no
+import-to-organization route, R2 event Queue, event consumer or event DLQ. The app
+does not treat an asynchronous R2 lifecycle notification as authoritative product data.
 
 ## Current scope
 
-The household storage cutover is complete. Its durable constraints and delivery
-history are summarized in the
-[household capability migration record](../explanation/household-authority.md).
+The move to household storage is complete. The
+[household migration record](../explanation/household-authority.md) summarizes its
+requirements and delivery history.
 
-The existing frontend tracer displays household storage state for the selected
-organization using an organization-keyed TanStack Query. Its generated
-same-origin client calls `GET /v1/household` without placing an organization ID,
-bearer token, or household scope in the request.
+The existing frontend example shows storage state for the selected organization
+using an organization-keyed TanStack Query. Its generated same-origin client calls
+`GET /v1/household` without putting an organization ID, bearer token or household
+scope in the request.
 
-The product authorities in `HouseholdObject` are household people, meal planning, the
-complete recipe-import/review/Recipe Bank capability, compact evidence and
-extraction metadata, terminal checkpoints, and recovery attempts. R2 retains
-only large private bytes. `ProviderAccountingDatabase` retains the five global
-provider cost-accounting tables. It has no organization column, household
-table, import route, execution projection, or household product writer.
-`MealPlannerAuthDatabase` remains the separate Better Auth control plane.
-Provider dispatches store `settled_conservative` explicitly; immutable audit and
-recipe replay evidence fence that transition, and its transaction updates the
-budget exactly once. Recovery does not depend on this global accounting store.
-Shopping lists and preferences are not yet implemented. There is no shared registry,
-organization-to-object lookup table, shared product read model, dual write,
-legacy adapter, fallback, or compatibility path.
+`HouseholdObject` owns household people, meal planning, recipe import, review,
+Recipe Bank, compact evidence and extraction metadata, terminal checkpoints and
+recovery attempts. R2 holds only large private files. `ProviderAccountingDatabase`
+stores the five global provider-cost tables. It has no organization column,
+household table, import route, execution view or household product writer.
+`MealPlannerAuthDatabase` is the separate Better Auth database. Provider dispatches
+explicitly store `settled_conservative`; immutable audit and recipe-retry evidence
+protect that transition, and its transaction updates the budget exactly once.
+Recovery does not depend on the global accounting store. Shopping lists and
+preferences are not yet implemented. There is no shared registry,
+organization-to-object lookup table, shared product read model, dual write, legacy
+adapter, fallback or compatibility path.
 
 ## Proof boundary
 
-Provider-free Miniflare coverage traverses the exact Website API-proxy
-functions, a private API service binding, the production household request
-composition, Better Auth D1 membership checks, the private household service
-binding, the production domain Worker entrypoint, Durable Object RPC, and real
-SQLite storage. The Website host is a narrow shell because the complete
-TanStack entrypoint depends on Vite-generated virtual modules; the API host
-supplies disposable D1 and secret bindings rather than initializing unrelated
-recipe-import resources. The proof therefore covers the production security
-and domain compositions, not either full deployable entrypoint. Separate
-structural guards tie those compositions and private bindings to the real
-Workers.
+Provider-free Miniflare tests call the exact Website API-proxy functions, private
+API service binding, production household request code, Better Auth D1 membership
+checks, private household service binding, production domain Worker, Durable Object
+RPC and real SQLite storage. The Website test host is small because the complete
+TanStack entrypoint needs Vite-generated virtual modules. The API test host supplies
+disposable D1 and secret bindings without starting unrelated import resources.
+These tests therefore cover the production security and domain code, not the full
+deployable entrypoints. Separate structural checks tie that code and its private
+bindings to the real Workers.
 
 The runtime tests prove first activation, idempotent/repeated migrations,
 fail-closed migration failure, provenance mismatch rejection, double-decode

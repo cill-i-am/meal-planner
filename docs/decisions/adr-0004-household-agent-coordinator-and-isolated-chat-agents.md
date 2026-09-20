@@ -1,4 +1,4 @@
-# ADR-0004 — Household Agent Coordinator And Isolated Chat Agents
+# ADR-0004 — Keep private chats separate from household data
 
 Current implementation: [private-discovery reference](../reference/private-discovery.md).
 The dated sections below preserve the decision history; later scoped decisions
@@ -10,23 +10,21 @@ supersede the earlier plain-child and custom-transport selections.
 
 ## Context
 
-Meal Planner needs durable, resumable conversation state for private interviews,
-private adult chats, and shared household planning. The runtime should support
-long-lived identity, message persistence, reconnection, streaming, tool
-orchestration, and future ad hoc agent use.
+Meal Planner needs to save and resume private interviews, private adult chats,
+and shared planning conversations. The chat runtime should retain identities and
+messages, reconnect, stream replies, coordinate tools, and support later ad hoc
+agent use.
 
-The repository already has one canonical SQLite-backed `HouseholdObject` per
-Better Auth organization. That object owns household product truth and local
-cross-capability transactions. Storing model loops, WebSocket connections,
-streaming state, or raw private transcripts in the same object would mix a
-long-lived conversational runtime with canonical product authority and create a
-hotter, broader privacy boundary.
+Each Better Auth organization already has one SQLite-backed `HouseholdObject`.
+It owns the household's product data and transactions across its features.
+Putting model loops, WebSocket connections, streaming state, and raw transcripts
+there would mix chat activity with product writes, increase load on that object,
+and broaden the area responsible for protecting private content.
 
-Cloudflare's Agents SDK provides an agent runtime built on Durable Objects. A
-household-scoped parent agent and isolated child or thread agents satisfy the
-existing child-object criteria: they have independent connection and session
-lifecycles, different privacy and retention concerns, durable runtime identity,
-and no need for atomic transactions with household product state.
+Cloudflare's Agents SDK runs on Durable Objects. A household parent with isolated
+child or thread agents fits the existing criteria for separate objects: chats
+have their own connections, sessions, identities, privacy, and retention rules.
+They do not need to share atomic transactions with household product data.
 
 ## Decision
 
@@ -145,7 +143,7 @@ idempotent commands.
 - The exact Agents SDK API and package version remain implementation details to
   verify against the pinned Cloudflare and Alchemy stack.
 
-## Alternatives Rejected
+## Alternatives rejected
 
 ### Put every conversation in one household chat agent
 

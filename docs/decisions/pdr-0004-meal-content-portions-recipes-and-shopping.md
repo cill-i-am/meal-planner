@@ -1,4 +1,4 @@
-# PDR-0004 — Meal Content, Portions, Prepared Food, Recipes, And Shopping
+# PDR-0004 — Food, portions, prepared meals, recipes, and shopping
 
 - Status: Accepted
 - Date: 2026-08-24
@@ -6,14 +6,14 @@
 
 ## Context
 
-A real household week contains full recipes, cereal, sandwiches, exact frozen
-products, takeaway, leftovers, and meals assembled from prepared components.
-Forcing those into one recipe shape creates fake instructions and unreliable
-shopping demand. Conversely, modelling every food as unrelated would fragment
-the planner.
+A household week includes full recipes, cereal, sandwiches, exact frozen
+products, takeaway, leftovers, and meals made from prepared components. Treating
+everything as a recipe would create fake instructions and unreliable shopping
+quantities. Treating each food as unrelated would make them hard to plan together.
 
-The product also needs deliberate batch cooking and useful cross-week prepared
-stock without turning the MVP into a high-friction pantry or food-safety ledger.
+The product also needs batch cooking and prepared food carried into later weeks.
+The MVP must support these without demanding detailed pantry tracking or
+presenting itself as a food-safety record.
 
 ## Decision
 

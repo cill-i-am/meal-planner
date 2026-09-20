@@ -1,4 +1,4 @@
-# PDR-0002 — Routines, Fallbacks, And Personalised Plan Rationale
+# PDR-0002 — Routines, fallback meals, and reasons for a plan
 
 - Status: Accepted
 - Date: 2026-08-24
@@ -6,14 +6,13 @@
 
 ## Context
 
-Covering all meals must not create a week of individually planned recipes or a
-large configuration burden. Real households rely on repeated breakfasts,
-packed lunches, intentional skips, takeaway, dependable child alternatives,
-location-dependent meals, and a limited amount of cooking energy.
+Planning all meals must not mean choosing a separate recipe for every person and
+occasion. Households rely on repeated breakfasts, packed lunches, deliberate
+skips, takeaway, reliable alternatives for children, meals tied to a location,
+and a limited amount of cooking energy.
 
-The first recommended week must already understand those patterns. Adults may
-change it, but they should not be required to manually personalise a generic
-plan after generation.
+The first proposed week must account for these patterns. Adults can change the
+plan, but they should not have to turn a generic result into a personal one.
 
 ## Decision
 
