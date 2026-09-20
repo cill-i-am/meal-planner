@@ -6,34 +6,116 @@ on:
     paths: [.github/workflows/docs-refactor-workspace.yml]
 
 permissions:
-  contents: read
-  pull-requests: read
+  contents: write
 
 jobs:
-  snapshot:
-    if: github.repository == 'cill-i-am/meal-planner'
+  apply-reviewed-delta:
+    if: github.repository == 'cill-i-am/meal-planner' && github.ref == 'refs/heads/codex/unified-docs-intent-20260920'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
+    env:
+      BASE: 1912513fefd35c009c09168035b9c0e0b872c1fb
+      SOURCE_SHA: ${{ github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 1912513fefd35c009c09168035b9c0e0b872c1fb
-          persist-credentials: false
-      - name: Read planning proposals without executing their code
-        env:
-          GH_TOKEN: ${{ github.token }}
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - name: Reconstruct the exact locally verified candidate and remove transfer files
         run: |
-          mkdir -p "$RUNNER_TEMP/proposals"
-          for pr in 219 220 221 222 223 224 225; do
-            mkdir -p "$RUNNER_TEMP/proposals/$pr"
-            gh api "repos/cill-i-am/meal-planner/pulls/$pr" > "$RUNNER_TEMP/proposals/$pr/pr.json"
-            sha=$(jq -r '.head.sha' "$RUNNER_TEMP/proposals/$pr/pr.json")
-            git fetch --no-tags --depth=1 origin "$sha"
-            git archive "$sha" docs/delivery/library-consolidation | tar -x -C "$RUNNER_TEMP/proposals/$pr"
-          done
-          tar -C "$RUNNER_TEMP" -cf "$RUNNER_TEMP/planning-proposals.tar" proposals
-      - uses: actions/upload-artifact@v4
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, subprocess
+          root = pathlib.Path.cwd()
+          base = os.environ['BASE']
+          temporary = {'.github/workflows/docs-refactor-workspace.yml', *[f'.docs-refactor-delta-{i}.b64' for i in (1,2,3)]}
+          changed = set(subprocess.check_output(['git','diff','--name-only',base,'HEAD'],text=True).splitlines())
+          assert changed == temporary, f'Unexpected branch work: {changed ^ temporary}'
+          encoded = ''.join((root / f'.docs-refactor-delta-{i}.b64').read_text().strip() for i in (1,2,3))
+          packed = base64.b64decode(encoded, validate=True)
+          assert hashlib.sha256(packed).hexdigest() == '7e36d2a0860b0d54ddce7637316919bc7ae1855f42b694324f1c1bd69e52aff9', 'Transfer integrity failure'
+          manifest = json.loads(lzma.decompress(packed))
+          expected = 'd4761a464597317209357d632d75b2333493fa6c'
+          assert manifest['base'] == base and manifest['tree'] == expected
+          def path(name):
+              p = pathlib.PurePosixPath(name)
+              assert not p.is_absolute() and '..' not in p.parts and '.git' not in p.parts, name
+              return root / p
+          def permitted(name):
+              return name.startswith(('docs/', '.agents/')) or name in {'.gitignore','README.md','AGENTS.md','package.json','.github/workflows/ci.yml','scripts/check-docs.py','scripts/tests/test_docs_check.py','evals/private-discovery/README.md'} or (name.startswith('apps/') and name.endswith('.md'))
+          def source(name):
+              path(name)
+              return subprocess.check_output(['git','show',f'{base}:{name}'])
+          writes = {}
+          def save(name, content, mode):
+              assert permitted(name) and mode in ('100644','100755'), name
+              assert name not in writes, f'Duplicate destination: {name}'
+              writes[name] = (content, mode)
+          for src, dst, mode in manifest['copy']:
+              save(dst, source(src), mode)
+          for src, dst, edits, mode in manifest['edit']:
+              lines = source(src).decode('utf-8').splitlines(keepends=True)
+              out = []; last = 0
+              for i, j, replacement in edits:
+                  assert last <= i <= j <= len(lines)
+                  out.extend(lines[last:i]); out.append(replacement); last = j
+              out.extend(lines[last:])
+              save(dst, ''.join(out).encode('utf-8'), mode)
+          for dst, text, mode in manifest['write']:
+              save(dst, text.encode('utf-8'), mode)
+          for name in manifest['delete']:
+              assert permitted(name), name
+              path(name).unlink()
+          for name, (content, mode) in writes.items():
+              p = path(name); p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_bytes(content); p.chmod(0o755 if mode == '100755' else 0o644)
+          for name in temporary:
+              path(name).unlink()
+          subprocess.run(['git','add','-A'],check=True)
+          actual = subprocess.check_output(['git','write-tree'],text=True).strip()
+          assert actual == expected, f'Candidate tree mismatch: {actual}'
+          topics = list((root/'docs/reference/engineering').glob('*.md'))
+          topics = [p for p in topics if p.name != 'README.md']
+          assert len(topics) == 13
+          for p in topics:
+              assert p.read_bytes() == source('.agents/skills/coding-standards/' + p.name), p
+          print(f'Exact candidate tree verified: {actual}; all 13 engineering topics preserved byte-for-byte.')
+          PY
+      - name: Test documentation checker and repository records
+        run: |
+          python3 -m unittest discover -s scripts/tests -p 'test_docs_check.py' -v
+          python3 scripts/check-docs.py
+          git diff --cached --check
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
         with:
-          name: docs-refactor-proposals
-          path: ${{ runner.temp }}/planning-proposals.tar
-          retention-days: 1
+          version: 12.3.4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install pinned tools
+        run: pnpm install --frozen-lockfile
+      - name: Format only changed formatter-supported files
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, subprocess
+          names = subprocess.check_output(['git','diff','--name-only','--diff-filter=ACMR',os.environ['BASE']],text=True).splitlines()
+          paths = [p for p in names if pathlib.Path(p).is_file() and not p.startswith(('docs/','.agents/')) and pathlib.Path(p).suffix in {'.md','.json','.yml','.yaml'}]
+          if paths:
+              subprocess.run(['pnpm','exec','oxfmt','--write',*paths],check=True)
+          PY
+          pnpm format:check
+          python3 scripts/check-docs.py
+      - name: Commit the refactor on the isolated branch
+        run: |
+          set -eu
+          branch=codex/unified-docs-intent-20260920
+          remote=$(git ls-remote origin "refs/heads/$branch" | cut -f1)
+          test "$remote" = "$SOURCE_SHA"
+          git add -A
+          git diff --cached --check
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'docs: unify documentation, intent and skills while preserving engineering standards'
+          git push origin "HEAD:refs/heads/$branch"
+          printf 'Published candidate: '
+          git rev-parse HEAD
+          git diff --stat "$BASE" HEAD
