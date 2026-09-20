@@ -1,4 +1,4 @@
-# ADR-0006 — Separate Food Concepts, Products, And Retailer Listings
+# ADR-0006 — Distinguish foods, exact products, and retailer listings
 
 - Status: Accepted
 - Date: 2026-08-26
@@ -6,16 +6,14 @@
 
 ## Context
 
-The planner needs stable generic food identity for recipe normalization,
-preferences, shopping aggregation, and future substitutions. It also needs to
-preserve exact products and, later, retailer-specific listings, prices, and
-availability.
+The planner needs stable identities for generic foods so it can normalize
+recipes, store preferences, combine shopping needs, and later suggest
+substitutions. It must also retain exact products and, later, each retailer's
+listings, prices, and availability.
 
-Using one string for all three concerns would make identity unstable and prevent
-reliable cross-retailer behaviour. Using a retailer SKU as food identity would
-couple recipes and household preferences to one retailer. Treating exact
-products as aliases would erase meaningful brand, pack, attribute, and
-substitution constraints.
+One string cannot reliably represent all three. A retailer SKU would tie recipes
+and preferences to one retailer. Treating an exact product as just another name
+for a generic food would lose its brand, pack, attributes, and substitution rules.
 
 ## Decision
 
@@ -182,7 +180,7 @@ demand and exact selection constraints remain distinct and traceable.
 - Household mapping correction can improve one household immediately without
   silently redefining the shared registry.
 
-## Alternatives Rejected
+## Alternatives rejected
 
 ### Store only free-text ingredient and product names
 

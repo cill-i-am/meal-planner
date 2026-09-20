@@ -1,4 +1,4 @@
-# PDR-0005 — MVP Scope And Deliberately Deferred Capabilities
+# PDR-0005 — First-release scope and deferred features
 
 - Status: Accepted
 - Date: 2026-08-24
@@ -6,15 +6,13 @@
 
 ## Context
 
-The long-term product may support nutrition goals, pantry state, retailer
-fulfilment, MCP, embedded distribution, and other household optimizations. The
-MVP must instead prove that a small beta cohort reaches a practical,
-fully-personalised weekly plan in less time and needs less correction over
-successive weeks.
+The long-term product may include nutrition goals, pantry inventory, supermarket
+orders, MCP, embedded access, and other household features. The MVP has a narrower
+job: show that a small beta group can reach a practical, personalized weekly plan
+in less time, with fewer corrections over successive weeks.
 
-Adding broad goal systems or fulfilment integrations before the core household
-loop is proven would increase complexity, risk, and user friction without
-validating the primary promise.
+Adding broad goal systems or supermarket ordering before that works would add
+complexity, risk, and effort for users without testing the main promise.
 
 ## Decision
 

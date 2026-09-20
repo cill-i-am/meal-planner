@@ -1,4 +1,4 @@
-# ADR-0010 — Coordinate Membership Departure Before Person Archival
+# ADR-0010 — Remove access before archiving a departing person
 
 - Status: Accepted
 - Date: 2026-09-01
@@ -11,31 +11,30 @@
 
 ## Context
 
-An adult's departure changes two canonical authorities. Better Auth D1 owns
-organization membership and therefore access. The routed `HouseholdObject`
-owns the stable household person, the account-link fact, lifecycle, audit,
-mutation receipts, and any durable departure operation. PDR-0001 requires
-membership removal to revoke access immediately while retaining and archiving
-the same person and their history.
+When an adult leaves, two stores must change. Better Auth D1 owns membership and
+access. `HouseholdObject` owns the person, account link, lifecycle, audit history,
+saved mutation results, and any saved departure operation. PDR-0001 requires
+access to end immediately while the same person and their history are archived,
+not deleted.
 
-Those authorities cannot share a database transaction. Treating either commit
-as proof that the other committed would create an unsafe partial success:
+The stores cannot share a database transaction. A successful write to one does
+not prove that the other succeeded:
 
-- archiving first could leave a departed member able to read household history;
-- reporting completion after membership removal but before household archival
-  would hide repair work; and
-- blindly repeating a timed-out membership removal could act on a replacement
-  membership created during recovery.
+- Archiving first could leave the former member able to read household history.
+- Reporting success after membership removal but before archival would hide
+  unfinished repair work.
+- Blindly repeating a timed-out removal could remove a replacement membership
+  created during recovery.
 
-The live application already establishes the usable seams. `MealPlannerApi`
-constructs the pinned Better Auth organization plugin over its dedicated D1,
-proves membership before household routing, binds the private
-`HouseholdDomainWorker`, and owns native `Cloudflare.Workflow` classes.
-`HouseholdObject` performs local Drizzle/SQLite transactions and never queries
-Better Auth. The existing household import batch-item Workflow supplies a
-bounded durable-step precedent. The departure protocol should use those live
-primitives rather than introduce a generic saga framework, another store, or
-direct external I/O from the household object.
+The application already has the parts needed for this work. `MealPlannerApi`
+sets up the pinned Better Auth organization plugin on its own D1, checks
+membership before routing, binds the private `HouseholdDomainWorker`, and owns
+native `Cloudflare.Workflow` classes. `HouseholdObject` runs local
+Drizzle/SQLite transactions and never queries Better Auth. The import batch-item
+Workflow provides an existing example of bounded, durable steps.
+
+Use these parts rather than adding a general saga framework, another store, or
+external network calls from the household object.
 
 ## Decision
 
@@ -423,7 +422,7 @@ authorized next action.
   the departure coordination and does not claim that any Work Item 02 behavior
   is already implemented.
 
-## Alternatives Rejected
+## Alternatives rejected
 
 ### Archive the person before removing membership
 

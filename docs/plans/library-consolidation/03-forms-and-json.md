@@ -1,81 +1,84 @@
-# Consolidate form validation and JSON equality
+# Simplify forms and JSON comparison
 
 Status: proposed
 Owner: unassigned
-
-Delivery: a separately assigned, verified implementation or bounded no-adoption result
+Delivery: checked form changes and a tested choice to replace or keep the JSON helper
 
 ## Outcome and scope
 
-Remove redundant generic validation/equality machinery only where behavior is
-preserved. Keep profile commands, safety meaning, provider acceptance and domain
-conversion explicit. These are two bounded changes, not a new form framework,
-JSON repair layer or provider rewrite. Generic architecture assessment has its
-own [optional plan](04-architecture-guard.md), not a hidden third requirement here.
+Remove repeated validation and data-comparison code where the behavior can be
+preserved. Keep profile commands, safety confirmation, provider-response checks and
+conversion into domain values explicit. These are two separate tasks, not a new
+form framework, JSON repair layer or provider rewrite. Dependency tooling has its
+own [optional plan](04-architecture-guard.md); it is not a third requirement here.
 
 ## Approach and trade-offs
 
-For JSON equality, characterize every caller's admitted domain: validated JSON
-and explicitly permitted top-level absence, not arbitrary JavaScript values.
-Compare the installed Effect facility and a pinned library such as fast-deep-equal.
-Popularity does not prove equality semantics. Adopt only if equivalent tests pass
-and custom recursion disappears without comparable compatibility scaffolding;
-otherwise retain the small helper with concrete no-adoption fixtures.
+For JSON comparison, first test what each caller accepts: validated JSON and any
+explicitly allowed top-level absence, not arbitrary JavaScript objects. Compare a
+suitable installed Effect function and a pinned library such as fast-deep-equal.
+Popularity does not prove that two comparison functions behave the same.
 
-For the profile form, reuse canonical constraints in an appropriate raw-input
-Effect Schema, validated through the installed Standard Schema adapter. Preserve
-explicit decoding/transformation at submission before `commandFor`, since generic
-validation does not return an earned domain value. Safety consent remains separate
-from validity. Changed fact kind/target must retire obsolete consent. Share private
-card-correction validation only where its meaning actually matches, not by merging
-private proposals with shared writes.
+Replace the helper only if the tests show equivalent behavior and the custom
+recursion can be deleted without building a similar compatibility layer. Otherwise,
+keep the small helper and record concrete test cases showing why the alternatives
+are unsuitable.
+
+For profile forms, reuse the input rules in an appropriate raw-input Effect Schema
+and validate through the installed Standard Schema adapter. Decode and transform
+submitted data before `commandFor`; generic validation may not return the domain
+value the command needs. Consent to reduce a safety restriction is separate from
+form validity. Changing the fact kind or target clears consent for the old value.
+Share validation with private card correction only where the rules mean the same
+thing. Do not combine private proposals with shared writes.
 
 ## Source and coordination
 
 Inspect `import-forced-tool-response.ts`, its tests and the
-`import-provider-kernel.ts` caller under `apps/api/src/features/imports/`;
-`apps/web/src/features/household-profiles/profile-fact-form.tsx`, private card
-correction and `packages/household-api/src/profiles.ts`. Use [form contracts](../../reference/forms.md)
-and the current import/settlement rules. Coordinate profile submit/lockfile ownership
-with [runtime](01-browser-runtime.md) and [private client](02-private-client.md).
-Equality characterization is independent; no stale #218 branch may be restored.
+`import-provider-kernel.ts` caller in `apps/api/src/features/imports/`.
+For forms, inspect `apps/web/src/features/household-profiles/profile-fact-form.tsx`,
+private card correction and `packages/household-api/src/profiles.ts`.
+Follow the [form rules](../../reference/forms.md) and current import and settlement rules.
+
+Coordinate submit code and lockfile edits with [browser setup](01-browser-runtime.md)
+and [private interview state](02-private-client.md). JSON comparison tests can proceed
+independently. Do not restore the old #218 branch.
 
 ## Acceptance
 
-- [ ] Equality covers nested arrays/objects, key permutations, array order, scalar
-  types, null, missing/present fields and admitted undefined/numeric edge cases,
-  including signed zero. Test `constructor`, `valueOf`, `toString` and `__proto__`
-  keys using JSON-parsed fixtures, not JavaScript prototype syntax.
-- [ ] Both callers preserve forced-tool cardinality/name, mirror-conflict,
-  malformed-envelope and unknown-provider outcomes; no JSON repair, stringification
-  equivalence, permissive parser or second paid invocation appears.
-- [ ] Selected runtime dependency works in actual API typecheck/Worker bundle, or
-  concrete incompatible fixtures justify no adoption with no unused dependency.
-- [ ] Preference, hard-constraint and no-known-constraint variants validate correctly;
-  irrelevant fields do not enter commands. Trimming/transforms earn the domain
-  value before submission; authoritative server validation remains.
-- [ ] Blur/change/submit timing, labels, focus, keyboard submission, errors and
-  disabled/loading behavior work in the real browser.
-- [ ] Safety-reduction consent and provisional meaning survive kind/target changes;
-  validation never manufactures confirmation.
-- [ ] Editing a draft, refresh or late callback cannot replace the original unresolved
-  command/payload/ID. Revalidation does not overwrite an already dispatched intent.
-- [ ] Duplicate generic plumbing is removed, not domain conversion or meaningful
-  behavioral tests; no competing validation/state framework is introduced.
+- [ ] Check nested arrays and objects, object key order, array order, scalar types,
+  null, missing versus present fields, allowed undefined values and numeric edge
+  cases including signed zero. Test `constructor`, `valueOf`, `toString` and
+  `__proto__` using JSON-parsed data, not JavaScript prototype syntax.
+- [ ] Both callers retain the rules for forced-tool count and name, conflicting
+  mirrors, malformed envelopes and unknown provider results. Do not add JSON repair,
+  stringification-based comparison, a permissive parser or another paid call.
+- [ ] A new runtime dependency passes the API typecheck and Worker build. Otherwise,
+  retain the helper with concrete incompatible test cases and no unused dependency.
+- [ ] Preference, hard-constraint and no-known-constraint forms validate correctly.
+  Irrelevant fields stay out of commands. Trim and transform data before submitting
+  it; server validation remains authoritative.
+- [ ] Blur, change and submit timing, labels, focus, keyboard submission, errors and
+  disabled or loading states work in a real browser.
+- [ ] Safety-reduction consent and private or provisional meaning remain correct
+  when the kind or target changes. Validation never supplies confirmation.
+- [ ] Editing a draft, refreshing or receiving a late callback cannot replace an
+  unresolved command, payload or ID. Revalidation cannot rewrite a dispatched request.
+- [ ] Remove duplicate generic code, not domain conversion or useful behavior tests.
+  Do not introduce another validation or state framework.
 
-Use the affected import/form/panel suites, real browser, native build seams and
-repository-required checks. Compatibility and runtime results are not established
-by this plan. No cloud, retailer or paid provider action is required.
+Use affected import, form and panel tests, a real browser, the relevant runtime
+builds and required repository checks. This plan does not establish compatibility
+or runtime results. No cloud, retailer or paid provider action is needed.
 
+## Original proposals
 
-## Proposal provenance
-
-Consolidated from the overlapping planning PRs below. Those PRs remain open and
-unchanged; this is the owning proposed scope on the refactor branch, not evidence
-of implementation or dependency compatibility. The original planning baseline was
-`c07e48c6f6709f02c054e5110cb7178a9e5d1b93`; recheck actual source/versions when
-assigned. #218 has since merged. Old first-pass/handoff instructions and the
-then-current plain-session runtime assumption are not new implementation rules.
+These proposals were written against
+`c07e48c6f6709f02c054e5110cb7178a9e5d1b93`. The linked commits preserve that
+history; they do not prove that the work or package compatibility checks are done.
+Check current code and versions when starting implementation. #218 has since
+merged, so do not repeat its migration or restore its old private-session design.
+Historical handoff instructions do not override a new implementation assignment.
 
 - [#223 source](https://github.com/cill-i-am/meal-planner/blob/483c853c9f4506301f45de2dbe4a9bc86bd79c60/docs/delivery/library-consolidation/03-schema-and-json-utilities.md), head `483c853c9f4506301f45de2dbe4a9bc86bd79c60`.
 - [#224 source](https://github.com/cill-i-am/meal-planner/blob/133dc9ec26b40ece7de230e387308c15a76ba974/docs/delivery/library-consolidation/03-utilities-forms-and-architecture-guard.md), head `133dc9ec26b40ece7de230e387308c15a76ba974`.

@@ -1,4 +1,4 @@
-# ADR-0001 — Separate Household People From Authenticated Members
+# ADR-0001 — Keep household people separate from accounts
 
 - Status: Accepted
 - Date: 2026-08-24
@@ -6,19 +6,18 @@
 
 ## Context
 
-Better Auth owns users, sessions, organizations, memberships, invitations, and
-roles. The planning domain must also represent dependants without accounts,
-invited adults before account acceptance, and stable eater history across
-account-link changes.
+Better Auth manages accounts, sessions, organizations, memberships, invitations,
+and roles. Meal planning also needs to represent dependants who have no account
+and adults who have not yet accepted an invitation. Each person's food history
+must survive changes to their account link.
 
-Using an auth member as the person identity would either exclude dependants or
-force fake accounts. Creating a new person when an invitation is accepted would
-split profile, routine, plan, and feedback history.
+Using membership as the person's identity would exclude dependants or require
+fake accounts. Creating another person when an invitation is accepted would split
+that person's profiles, routines, plans, and feedback across two records.
 
-The product must also define link cardinality. One user may legitimately belong
-to several households, but two eater profiles in the same household must not
-silently claim the same account identity. Incorrect links require repair without
-rewriting or discarding product history.
+One user can belong to several households. Within one household, however, an
+account must not silently link to two people. Incorrect links need a repair path
+that keeps the person's history.
 
 ## Decision
 
@@ -64,7 +63,7 @@ not a particular persistence layout.
 - A future dependant account can link to existing history without migration to a
   new person identity.
 
-## Alternatives Rejected
+## Alternatives rejected
 
 ### Use Better Auth membership as the eater
 

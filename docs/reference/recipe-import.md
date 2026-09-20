@@ -1,9 +1,9 @@
-# Recipe import intent architecture
+# Recipe import architecture
 
 ## Canonical authority
 
-One per-organization SQLite-backed `HouseholdObject` is the only authority for
-the moved recipe-import product state. It owns:
+Each organization has one SQLite-backed `HouseholdObject`. It is the only writer
+for the recipe-import product data moved into household storage. It owns:
 
 - admission, import identity, idempotency, and deterministic Workflow identity;
 - submitted-source ownership, canonical-source deduplication, redirects, and
@@ -20,36 +20,36 @@ Meal planning reads bounded pages of approved recipes directly from that local
 capability. There is no shared-D1 recipe projection, recipe-source gateway,
 dual write, legacy read, or compatibility adapter.
 
-The production acquisition Workflow commits acquisition, transcription,
-visual, carousel, and extraction metadata only through the private household
-boundary. Terminal checkpoints and recovery attempts are committed and read
-only through that boundary. The dedicated `ProviderAccountingDatabase` D1
-retains only production-owned provider budgets, reservations, settlement,
-reconciliation, and receipt facts. Those global operational records have no
-organization or household ownership column and cannot author household
-evidence or recovery, publish a recipe, answer a review, change public lifecycle
-state, or serve a public Recipe Bank read. Better Auth uses its own separate D1.
+The production acquisition Workflow saves acquisition, transcription, visual,
+carousel, and extraction metadata only through the private household interface.
+It reads and writes terminal checkpoints and recovery attempts there too.
 
-`ImportMediaAcquisitionObject` remains a noncanonical, generation-fenced
-execution coordinator. It transports temporary media and artifacts but is not
-a tenancy, lifecycle, review, Recipe Bank, or recovery authority.
+`ProviderAccountingDatabase` D1 stores only provider budgets, reservations,
+settlement, reconciliation, and receipts used by production. Those global
+operational records have no organization or household ownership column. They
+cannot create household evidence, recover an import, publish a recipe, answer a
+review, change public status, or serve a Recipe Bank read. Better Auth has its
+own separate D1.
+
+`ImportMediaAcquisitionObject` coordinates execution for a specific generation.
+It transports temporary media and artifacts. It does not own tenancy, public
+status, review, the Recipe Bank, or recovery.
 
 ## Media artifact ownership
 
-The acquisition coordinator owns the original artifact and its derived audio and
-bounded frame variants. Artifact reads decode the full identifier, compare its
-acquisition owner with the coordinator, and preserve its variant when forwarding
-to the container registry. Other owners, generations, and malformed suffixes are
-rejected before streaming. Completed transcription, visual, and carousel outcomes
-carry their required integrity and replay metadata.
+The acquisition coordinator owns the original artifact, derived audio, and
+bounded frame variants. Before streaming an artifact, decode its full ID and
+check that its acquisition owner matches the coordinator. When forwarding to the
+container registry, keep the variant. Reject other owners, other generations, and
+malformed suffixes. Completed speech, visual, and carousel results include the
+metadata needed for integrity checks and safe retries.
 
 ## Authorization and private routing
 
-Better Auth D1 remains the global identity and organization control plane. The
-public API resolves the same-origin session, reads the active organization, and
-proves a matching membership through Better Auth's public API before creating
-an admitted member command. Possession of an active organization identifier is
-not sufficient authorization.
+Better Auth D1 owns global accounts and organizations. The public API resolves
+the same-origin session and active organization, then checks membership through
+Better Auth's public API before building the authorized member command. An active
+organization ID alone does not grant access.
 
 The API then calls the private `HouseholdDomainWorker` through a service
 binding. The Worker and `HouseholdObject` both Schema-decode a closed command.
@@ -78,13 +78,15 @@ different request is a conflict. The object owns authoritative time, generated
 identities, canonical encoding, digests, versions, ordinals, and receipts;
 callers cannot supply them.
 
-The host attempts Workflow dispatch only after commit. Each retry reconciles
-the same persisted Workflow identity. A confirmed start records `started`; only
-a proven pre-start refusal advances the bounded `unavailable` attempts toward
-exhaustion. A lost response or unavailable status probe preserves the pending
-outbox and fails the durable task so a later replay can reconcile. A dispatch
-failure never rolls back or rewrites the committed domain result. Retrying the
-outbox cannot duplicate admission.
+The host starts the Workflow only after the transaction commits. Each retry
+checks the same saved Workflow identity. A confirmed start records `started`.
+Only proof that the Workflow refused to start counts toward the bounded
+`unavailable` attempt limit.
+
+After a lost response or unavailable status check, keep the outbox row pending
+and fail the durable task so a later retry can reconcile it. A dispatch failure
+does not undo or rewrite the saved domain result. Retrying the outbox cannot
+admit the same import again.
 
 No D1, R2, `fetch`, Workflow, Queue, service binding, provider, container, or
 other network I/O occurs inside a household transaction.
@@ -142,18 +144,18 @@ current result, and a replay receipt. The private result exposes no storage key
 or provider payload. Exact retries are stable; conflicting replays and stale
 generations leave no mutation.
 
-Each provider dispatch, including a recovery dispatch, checkpoints one
-household-owned start time and reuses it in every Claim, Fail, artifact, and
-replay command. The execution generation remains the household lifecycle
-fence, while a separate acquisition-attempt generation scopes retry-created R2
-keys. Each attempt generation is claimed through a deterministic intent,
-execution-generation, and attempt-ordinal identity in household SQLite. After
-a Worker restart, the Workflow verifies the previously claimed generation's
-create-only R2 media and manifest before allocating another attempt. A valid
-pair is recovered and committed, while absent, incomplete, or invalid evidence
-permits the next claim. Claim-response loss replays the same identity and
-generation. Native Workflow response loss therefore reconstructs the same
-encoded command instead of changing the mutation digest.
+Each provider call, including recovery, records one household-owned start time.
+Reuse it in every Claim, Fail, artifact, and retry command. The execution
+generation controls which lifecycle writes are allowed. A separate acquisition
+attempt generation scopes R2 keys created by retries.
+
+Claim each attempt in household SQLite using a deterministic identity derived
+from the intent, execution generation, and attempt ordinal. After a Worker
+restart, check the previous generation's create-only R2 media and manifest before
+claiming another attempt. Recover and save a valid pair. Missing, incomplete, or
+invalid evidence allows the next claim. A lost claim reply retries the same
+identity and generation. A lost Workflow response therefore reconstructs the same
+encoded command without changing its mutation digest.
 
 R2 references include byte length, SHA-256, deletion time, object kind, and
 generation. Reads return the video acquisition's media-and-manifest set or the
@@ -167,15 +169,15 @@ before committing the reference. Recovery repeats that verification through
 the same household and Workflow authority. No global import route, R2 event
 Queue, event consumer, or event DLQ exists.
 
-Terminal ambiguity commits an immutable household checkpoint before recovery.
-Speech and visual recovery each prepare a generation-, predecessor-, and
-dispatch-fenced household attempt, then activate the matching Workflow step.
-Preparation reuses the originally admitted correlation trace and exact
-generation-specific Workflow identity stored by the household; an operator
-retry cannot replace either value.
-If activation reports an error after the Workflow has already progressed,
-settlement accepts only matching terminal household authority; Workflow status
-alone cannot turn a still-dispatching recovery into success.
+Before recovery from an unknown terminal result, save an immutable household
+checkpoint. Speech and visual recovery prepare a household attempt tied to its
+generation, predecessor, and dispatch, then activate the matching Workflow step.
+Reuse the original correlation trace and generation-specific Workflow identity
+stored by the household. Operator retries cannot replace either.
+
+If activation reports an error after the Workflow has progressed, settle only
+from a matching terminal result in household storage. Workflow status alone cannot
+turn a still-dispatching recovery into success.
 
 ## Public lifecycle and review
 
@@ -205,13 +207,12 @@ Failure before commit leaves none of those facts behind.
 
 ## Recipe Bank pagination
 
-Recipe Bank iteration is ordered by stable recipe ID and uses an exclusive
-cursor. Every page is bounded independently by item count and encoded byte
-size. Confirmation rejects any encoded public or planning recipe at 500,000
-bytes, below planning's 524,288-byte page budget, so an approved row cannot
-poison iteration. Meal planning consumes pages through the local capability
-rather than loading an unbounded snapshot. There is no product-level
-128-recipe ceiling.
+Read Recipe Bank pages in stable recipe-ID order with an exclusive cursor.
+Each page has an item limit and an encoded-byte limit. Confirmation rejects an
+encoded public or planning recipe at 500,000 bytes, below the 524,288-byte planning
+page budget. This prevents one approved recipe from making pagination fail.
+Planning reads these local pages, not an unbounded snapshot. There is no
+product-level limit of 128 recipes.
 
 ## Public API
 
@@ -248,12 +249,12 @@ former shared household migration history and production repositories are
 deleted rather than migrated, preserved, or backfilled. Structural tests reject
 reintroducing household product state or tenant-filtered global persistence.
 
-Provider-free Workerd tests exercise the actual Website/API/private-Worker/
-`HouseholdObject` composition with Better Auth membership, first activation,
-restart, repeated migrations, cross-household isolation, admission through
-confirmation and planning, replay/collision behavior, source and terminal
-races, post-commit dispatch failure, and pagination beyond 128 recipes. These
-tests also prove direct R2 integrity checks, evidence replay,
-stale-generation rejection, restart persistence, retention, and missing or
-deleted R2 objects. They do not claim provider, deployment, cloud migration, or
-production proof.
+Workerd tests with no real provider calls use the production Website, API,
+private Worker, and `HouseholdObject`. They exercise Better Auth membership,
+first activation, restart, repeated migrations, household isolation, import
+admission through confirmation and planning, retries and ID conflicts, source
+and terminal races, post-commit dispatch failures, and more than 128 recipes.
+
+They also check R2 integrity, evidence retries, rejection of stale generations,
+restart persistence, retention, and missing or deleted objects. These are not
+proof of real providers, deployment, cloud migration, or production operation.

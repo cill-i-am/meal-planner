@@ -8,12 +8,12 @@ Owner: historical delivery in PR #198
 An authenticated adult can establish a truthful household roster containing
 themselves, other adults, and dependants. Every person keeps one stable identity
 when archived and restored, and the roster survives object restart without
-becoming readable or mutable from another household.
+another household gaining read or write access.
 
 ## Acceptance preserved
 
-The following describes this completed slice's historical acceptance, not new
-workflow requirements. Consult current contracts for an assigned change.
+These are the checks recorded when this work was completed, not new workflow
+steps. For a new assignment, read the current contracts.
 
 ### Focused domain and contract tests
 
@@ -37,7 +37,7 @@ workflow requirements. Consult current contracts for an assigned change.
   account with an occupied creator slot, and an unlinked owner with non-creator
   people but an available creator slot.
 
-### Real runtime and persistence proof
+### Tests using the real runtime and storage
 
 - [x] A real Workerd or Miniflare test runs Better Auth session/membership,
   public API, private Worker routing, `HouseholdObject`, and actual SQLite
@@ -63,9 +63,9 @@ workflow requirements. Consult current contracts for an assigned change.
 ## Delivery evidence
 
 Delivered by [PR #198](https://github.com/cill-i-am/meal-planner/pull/198).
-The [original complete record](https://github.com/cill-i-am/meal-planner/blob/1912513fefd35c009c09168035b9c0e0b872c1fb/docs/delivery/stages/01-household-people/01-person-registry-and-lifecycle.md) preserves the exact heads, checks,
-acceptance, decisions, findings and limitations. This refactor did not rerun or
-promote that historical evidence. Completed records do not grant new scope.
+The [original complete record](https://github.com/cill-i-am/meal-planner/blob/1912513fefd35c009c09168035b9c0e0b872c1fb/docs/delivery/stages/01-household-people/01-person-registry-and-lifecycle.md) keeps the tested commits, checks, decisions, findings, and limits. The docs refactor
+did not rerun those tests or change what they proved. This completed record does
+not assign new work.
 
 Use [current household contracts](../../reference/household.md) and
 [private-discovery contracts](../../reference/private-discovery.md)

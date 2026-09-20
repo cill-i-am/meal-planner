@@ -1,11 +1,11 @@
 # TypeScript Contracts
 
-TypeScript should preserve proof obligations instead of erasing them. Keep contracts precise, immutable by default, documented at exports, and enforced by boring toolchain checks.
+Use TypeScript to express what values and operations are valid. Do not use assertions to skip checks that have not happened. Keep interfaces precise, make values immutable by default, document exports and preserve compiler and lint checks.
 
 ## Non-negotiables
 
-- Do not use `any`, non-`as const` assertions, or non-null assertions to erase unproven obligations; permitted escape hatches follow the local proof rule below.
-- Permitted type escape hatches are local, hidden behind precise interfaces, and justified with `SAFETY:`.
+- Do not use `any`, assertions other than `as const`, or non-null assertions to claim a check has happened when it has not. Any permitted exception must follow the local proof rule below.
+- Keep permitted type assertions local, hide them behind precise interfaces and explain why they are safe with `SAFETY:`.
 - Rare `any` also gets a targeted lint suppression whose reason includes the safety justification.
 - Catch variables and rejection reasons are treated as `unknown` until classified.
 - Ordinary domain values, builders, interfaces, and classes do not expose callable `then` unless intentionally promise-like and documented.
@@ -90,7 +90,7 @@ type QueryBuilder = {
 };
 ```
 
-`await` and `Promise.resolve` assimilate thenables and may invoke `then` unexpectedly.
+`await` and `Promise.resolve` treat an object with a callable `then` as promise-like and may call that method unexpectedly.
 
 ## Immutability and mutation ownership
 
@@ -220,7 +220,7 @@ Optional chaining is for meaningful optionality:
 const city = user.shippingAddress?.city;
 ```
 
-Do not hide missing required refinement:
+Do not use optional chaining instead of checking a required value:
 
 ```ts
 const userId = session?.user?.id; // in code that requires authentication
@@ -310,7 +310,7 @@ Comments explain invariants, trade-offs, safety, and non-obvious domain rules. A
 
 ## Toolchain
 
-This section is loaded with TypeScript contracts for now; split it into a disclosed toolchain reference only if Vite+/toolchain detail grows beyond what ordinary TypeScript-contract work needs.
+Keep toolchain guidance here while it remains useful for ordinary TypeScript work. Split it into a linked reference only if it becomes too detailed for this page.
 
 For new TypeScript projects, prefer Vite+ as formatter/linter/type checker/test runner/task interface.
 
@@ -331,7 +331,7 @@ Use strict compiler settings including exact optional-property behavior, uncheck
 
 ## Review checklist
 
-Use this as the final scan after applying the rules above; the rule source of truth remains in the relevant sections.
+Check the relevant items below when reviewing a change. The sections above explain the rules.
 
 - `as Type` on decoded JSON or database rows.
 - `!` after indexing or optional fields instead of refining.

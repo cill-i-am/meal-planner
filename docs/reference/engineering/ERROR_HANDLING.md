@@ -1,10 +1,10 @@
 # Error Handling
 
-Expected failures are part of the contract. Defects are not. Keep that line sharp so callers can handle normal failures and defects remain loud.
+Return expected failures in a form callers can handle. Keep programming defects separate so they are not mistaken for normal failures.
 
 ## Core vocabulary
 
-**Expected Failure** — A normal-operation failure: domain rejection, parse failure, authorization denial, dependency unavailability, I/O/persistence failure, workflow failure, or modeled cancellation outcome.
+**Expected Failure** — A failure that can occur during normal use: a rejected domain action, invalid input, denied access, unavailable dependency, I/O or storage failure, workflow failure, or defined cancellation result.
 
 **Unrecoverable Defect** — An impossible branch, violated invariant, startup misconfiguration, catastrophic condition, or explicit temporary unimplemented path.
 
@@ -12,11 +12,11 @@ Expected failures are part of the contract. Defects are not. Keep that line shar
 
 **Custom Error** — A typed, tagged error value with a stable tag, useful message, structured safe fields, and optional `unknown` cause.
 
-**Precise Error Union** — The local set of failures a caller can handle semantically.
+**Precise Error Union** — The specific failures this caller can understand and handle.
 
 ## Non-negotiables
 
-- Expected failures are visible in the local return type through a typed value channel.
+- The return type lists the expected failures a caller may receive.
 - Promise rejection is equivalent to throwing; do not use it for ordinary expected failures in local code.
 - Domain and functional-core code do not use `try/catch` as normal expected-failure control flow.
 - External Adapter Modules may catch exception-based APIs, but they classify `unknown` before translating.
@@ -27,7 +27,7 @@ Expected failures are part of the contract. Defects are not. Keep that line shar
 
 ## Strong defaults
 
-Failure representation order:
+Choose how to return failures in this order:
 
 1. In Effect-based responsibilities, use Effect's typed error channel and the established Effect tagged-error mechanism such as `Schema.TaggedErrorClass`.
 2. Outside Effect, use `better-result` for typed results when it is already a dependency, explicitly accepted for the package, or adding it is in scope for new code with no established result convention.
@@ -72,7 +72,7 @@ if (result._tag === "err") {
 return result.value;
 ```
 
-Do not let the framework's exception style leak inward as the service/domain contract. When the external exception-style contract remains public, document or encode the expected variants through that framework's established mechanism so consumers can distinguish them.
+Keep the framework's exception handling at the adapter; do not make it the error contract for service or domain code. When the external exception-style contract remains public, document or encode the expected variants through that framework's established mechanism so consumers can distinguish them.
 
 ## Defects may throw
 
@@ -142,7 +142,7 @@ Avoid:
 Result<User, AppError>;
 ```
 
-A broad error type hides caller decisions: retry, render not-found, ask for auth, stop workflow, compensate, or report dependency outage.
+A broad error type makes it harder for the caller to decide whether to retry, show not-found, request sign-in, stop a workflow, undo an earlier step or report an outage.
 
 ## Lookup absence
 
@@ -152,7 +152,7 @@ For required lookups, absence is a typed not-found failure:
 findById(id: UserId): Promise<Result<User, UserNotFound | UserStoreUnavailable>>;
 ```
 
-Use optional results only when optionality is intentional and obvious:
+Return an optional value only when absence is an intended result and the API makes that clear:
 
 ```ts
 maybeFindById(id: UserId): Promise<Result<User | undefined, UserStoreUnavailable>>;
@@ -206,7 +206,7 @@ Only boundary/rendering/logging code should normalize unknown thrown values for 
 
 ## Review checklist
 
-Use this as the final scan after applying the rules above; the rule source of truth remains in the relevant sections.
+Check the relevant items below when reviewing a change. The sections above explain the rules.
 
 - `async` functions rejecting for ordinary dependency failures.
 - Catching `error` and using `.message` without classification.
