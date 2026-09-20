@@ -1,6 +1,7 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
 import HouseholdDomainWorkerLive from "./apps/api/src/features/households/household-domain-worker.js";
 import TikTokMediaContainerLive from "./apps/api/src/features/imports/import-media-container.runtime.js";
@@ -27,6 +28,17 @@ export default Alchemy.Stack(
       assets: { runWorkerFirst: ["/api/auth/*", "/v1/*"] },
       env: { MEAL_PLANNER_API: api },
       main: "src/worker.ts",
+      memo: {
+        include: [
+          "src/**",
+          "package.json",
+          "tsconfig.json",
+          "vite.config.ts",
+          "../../packages/*/package.json",
+          "../../packages/*/src/**",
+        ],
+        lockfile: true,
+      },
       observability: {
         enabled: true,
         headSamplingRate: 1,
@@ -53,7 +65,8 @@ export default Alchemy.Stack(
       websiteWorkerName: website.workerName,
     };
   }).pipe(
-    Effect.provide(HouseholdDomainWorkerLive),
-    Effect.provide(TikTokMediaContainerLive)
+    Effect.provide(
+      Layer.mergeAll(HouseholdDomainWorkerLive, TikTokMediaContainerLive)
+    )
   )
 );
