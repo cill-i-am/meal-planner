@@ -5,19 +5,29 @@ import { fileURLToPath } from "node:url";
 
 import type {
   DirectoryFrame,
-  SessionFrame,
+  PrivateDiscoveryScope,
 } from "@meal-planner/private-interview-api";
 import {
   MAX_MESSAGE_LENGTH,
   MAX_PAGE_SIZE,
   MAX_PRIVATE_FRAME_BYTES,
+  SessionFrame,
 } from "@meal-planner/private-interview-api";
-import { Miniflare } from "miniflare";
+import { Schema } from "effect";
+import { Miniflare, Response as LocalResponse } from "miniflare";
+import type { WorkerdStructuredLog } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import { emptyPrivateDiscoveryContinuityUpdates } from "./private-discovery-continuity.js";
+import { encodeKimiCompletion } from "./private-discovery-kimi-stream.test-fixtures.js";
 import type { PrivateOutputMutationPort } from "./private-output-binding.js";
 import { runOutputFencedMutation } from "./private-output-mutation.js";
+import {
+  NativePrivateHistory,
+  nativePrivateChatInput as nativeChatInput,
+  requestNativePrivateChat,
+} from "./private-output-native.test-fixture.js";
 import {
   privateOutputControlWorker,
   privateOutputRuntimeWorker,
@@ -32,12 +42,56 @@ let runtime: Miniflare;
 let temporaryDirectory: string;
 let manifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
 let legacyManifest: typeof manifest;
-const makeRuntime = (selectedManifest = manifest) =>
-  new Miniflare({
+const syntheticModelConfig = JSON.stringify({
+  gatewayId: "synthetic-local-only",
+  inputUsdPerMillionTokens: 1,
+  maxOutputTokens: 1000,
+  model: "@cf/openai/gpt-oss-120b",
+  outputUsdPerMillionTokens: 2,
+  timeoutMs: 5000,
+});
+let modelConfiguration: string | undefined;
+let modelCalls: unknown[] = [];
+const nativeLogs: WorkerdStructuredLog[] = [];
+let modelResponse: () => Promise<LocalResponse> = () =>
+  Promise.resolve(new LocalResponse(null, { status: 503 }));
+const makeRuntime = (selectedManifest = manifest) => {
+  const worker = privateOutputRuntimeWorker(selectedManifest);
+  return new Miniflare({
     cf: false,
+    handleStructuredLogs: (entry) => nativeLogs.push(entry),
     resourcePersistencePath: `${temporaryDirectory}/storage`,
-    workers: [privateOutputRuntimeWorker(selectedManifest)],
+    workers: [
+      {
+        config: {
+          ...worker.config,
+          env: {
+            ...worker.config.env,
+            PRIVATE_DISCOVERY_CONFIG: {
+              type: "text" as const,
+              value: modelConfiguration ?? "",
+            },
+          },
+        },
+        // Every fetch stays in this process. No network fallback, including unexpected URLs.
+        dev: {
+          outboundService: {
+            handler: async (request) => {
+              if (request.url !== "https://private-model.test/run") {
+                throw new Error(
+                  "External network is forbidden in private model tests"
+                );
+              }
+              modelCalls.push(await request.json());
+              return modelResponse();
+            },
+            type: "fetcher",
+          },
+        },
+      },
+    ],
   });
+};
 
 beforeAll(async () => {
   temporaryDirectory = await mkdtemp(
@@ -99,10 +153,14 @@ const successful = async <A>(
   expect(response.status, await response.clone().text()).toBe(200);
   return ((await response.json()) as { readonly result: A }).result;
 };
-const begin = async (input: PrivateSessionBinding) => {
+const begin = async (
+  input: PrivateSessionBinding,
+  discoveryScope: PrivateDiscoveryScope | null = "ProfileEdit"
+) => {
   await successful({
     action: "initialize",
     binding: input,
+    discoveryScope,
     sessionReference: input.sessionReference,
   });
   return successful<string>({
@@ -113,9 +171,10 @@ const begin = async (input: PrivateSessionBinding) => {
 };
 const open = async (
   input: PrivateSessionBinding,
-  expiresAt = Date.now() + 60_000
+  expiresAt = Date.now() + 60_000,
+  scope: PrivateDiscoveryScope | null = "ProfileEdit"
 ) => {
-  const generation = await begin(input);
+  const generation = await begin(input, scope);
   await successful({
     action: "authorize",
     binding: input,
@@ -134,25 +193,31 @@ const open = async (
     throw new Error("Expected the child's physical WebSocket");
   }
   const frames: SessionFrame[] = [];
-  socket.addEventListener("message", (event) =>
-    frames.push(JSON.parse(String(event.data)) as SessionFrame)
-  );
+  const probes: string[] = [];
+  const Probe = Schema.Struct({
+    text: Schema.String,
+    type: Schema.Literal("PrivateTransportProbe"),
+  });
+  socket.addEventListener("message", (event) => {
+    const value: unknown = JSON.parse(String(event.data));
+    if (Schema.is(Probe)(value)) {
+      probes.push(value.text);
+    } else {
+      frames.push(Schema.decodeUnknownSync(SessionFrame)(value));
+    }
+  });
   socket.accept();
   await expect
     .poll(() => frames.some((frame) => frame.type === "SessionReady"))
     .toBe(true);
   return {
+    binding: input,
     frames,
     generation,
     get messages() {
-      return frames.flatMap((frame) =>
-        frame.type === "HistoryRead"
-          ? frame.messages
-              .filter((message) => message.role === "assistant")
-              .map((message) => message.text)
-          : []
-      );
+      return probes;
     },
+    probes,
     socket,
   };
 };
@@ -197,17 +262,29 @@ const exchange = async (
   }
   return received;
 };
-const history = (
+const chatRequest = (
   connection: Connection,
-  afterOrdinal = 0,
-  limit = MAX_PAGE_SIZE
-) =>
-  exchange(connection, {
-    afterOrdinal,
-    limit,
-    requestId: crypto.randomUUID(),
-    type: "ReadHistory",
+  input: Parameters<typeof requestNativePrivateChat>[2]
+) => requestNativePrivateChat(runtime, connection, input);
+const readChat = async (connection: Connection) => {
+  const response = await chatRequest(connection, { method: "GET" });
+  expect(response.status, await response.clone().text()).toBe(200);
+  return Schema.decodeUnknownSync(NativePrivateHistory)(await response.json());
+};
+const readMetadata = async (connection: Connection) => {
+  const row = await successful<{
+    status: "open" | "completed";
+    version: number;
+  }>({
+    action: "metadata",
+    sessionReference: connection.binding.sessionReference,
   });
+  return { status: row.status, version: row.version };
+};
+const snapshot = async (connection: Connection) => ({
+  ...(await readChat(connection)),
+  state: await readMetadata(connection),
+});
 const emit = (
   input: PrivateSessionBinding,
   generation: string,
@@ -415,9 +492,10 @@ describe("private output on physical native WebSockets", () => {
       connection.generation,
       "synthetic-owner-still-connected"
     );
-    await delay(10);
-    expect(connection.messages).toEqual([]);
-    expect(await history(connection)).toMatchObject({
+    await expect
+      .poll(() => connection.probes)
+      .toEqual(["synthetic-owner-still-connected"]);
+    expect(await snapshot(connection)).toMatchObject({
       messages: [],
       state: { status: "completed", version: 1 },
     });
@@ -644,297 +722,462 @@ describe("private output on physical native WebSockets", () => {
   });
 });
 
-describe("durable private conversation protocol", () => {
-  it("recovers exact append and completion receipts across restart without duplicate records", async () => {
+const completedNativeResponse = () =>
+  new LocalResponse(
+    encodeKimiCompletion({
+      choices: [
+        {
+          finish_reason: "tool_calls",
+          message: {
+            content: null,
+            role: "assistant",
+            tool_calls: [
+              {
+                function: {
+                  arguments: JSON.stringify({
+                    intent: {
+                      _tag: "Continue",
+                      proposals: [],
+                      updates: emptyPrivateDiscoveryContinuityUpdates(),
+                    },
+                  }),
+                  name: "submitDiscoveryTurn",
+                },
+                id: "call",
+                type: "function",
+              },
+            ],
+          },
+        },
+      ],
+    }),
+    { headers: { "content-type": "text/event-stream" } }
+  );
+
+describe("durable native private conversation", () => {
+  let previousModelConfiguration: string | undefined;
+  beforeAll(async () => {
+    previousModelConfiguration = modelConfiguration;
+    await runtime.dispose();
+    modelConfiguration = syntheticModelConfig;
+    runtime = makeRuntime();
+  });
+  afterAll(async () => {
+    await runtime.dispose();
+    modelConfiguration = previousModelConfiguration;
+    runtime = makeRuntime();
+  });
+
+  it("replays an exact native run and completion receipt across restart without duplicate messages", async () => {
+    modelCalls = [];
+    modelResponse = () => Promise.resolve(completedNativeResponse());
     const session = await binding();
     const first = await open(session);
-    const append = {
-      expectedVersion: 0,
-      mutationId: crypto.randomUUID(),
-      text: "synthetic-retained-participant",
-      type: "AppendParticipantMessage",
-    };
-    // Receipt is deliberately discarded by the caller before the runtime is restarted.
-    const appended = await exchange(first, append);
-    expect(appended).toMatchObject({
-      state: { status: "open", version: 1 },
-      type: "MessageAppended",
+    const runId = `run-${crypto.randomUUID()}`;
+    const text = "synthetic-retained-participant";
+    const input = nativeChatInput(first, text, 0, runId);
+    const initial = await chatRequest(first, { body: input, method: "POST" });
+    expect(initial.status).toBe(200);
+    expect(await initial.text()).toContain("RUN_FINISHED");
+    const accepted = await readChat(first);
+    expect(accepted).toMatchObject({
+      activeRun: null,
+      messages: [
+        { parts: [{ content: text, type: "text" }], role: "user" },
+        { role: "assistant" },
+      ],
     });
+    expect(await readMetadata(first)).toMatchObject({
+      status: "open",
+      version: 2,
+    });
+
+    // The caller loses its acknowledgement, then redelivers the same native run.
     await runtime.dispose();
     runtime = makeRuntime();
     const resumed = await open(session);
     expect(resumed.generation).not.toBe(first.generation);
-    expect(await exchange(resumed, append)).toEqual(appended);
-    expect(
-      await exchange(resumed, { ...append, text: "changed intent" })
-    ).toMatchObject({ reason: "mutation_collision", type: "Rejected" });
-    expect(await history(resumed)).toMatchObject({
-      messages: [
-        expect.objectContaining({
-          ordinal: 1,
-          role: "participant",
-          text: append.text,
-        }),
-      ],
-      state: { status: "open", version: 1 },
-      type: "HistoryRead",
-    });
+    const replay = await chatRequest(resumed, { body: input, method: "POST" });
+    expect(replay.status).toBe(200);
+    expect(await replay.text()).toContain("RUN_FINISHED");
+    expect(modelCalls).toHaveLength(1);
+    expect(await readChat(resumed)).toEqual(accepted);
+    await expectStatus(
+      chatRequest(resumed, {
+        body: nativeChatInput(resumed, "changed intent", 0, runId),
+        method: "POST",
+      }),
+      409
+    );
+
     const complete = {
-      expectedVersion: 1,
+      expectedVersion: 2,
       mutationId: crypto.randomUUID(),
       type: "CompleteSession",
     };
     const completed = await exchange(resumed, complete);
     expect(completed).toMatchObject({
-      state: { status: "completed", version: 2 },
+      state: { status: "completed", version: 3 },
       type: "SessionCompleted",
     });
     await runtime.dispose();
     runtime = makeRuntime();
     const retained = await open(session);
     expect(await exchange(retained, complete)).toEqual(completed);
-    expect(await exchange(retained, append)).toEqual(appended);
     expect(
-      await exchange(retained, { ...complete, expectedVersion: 2 })
+      await exchange(retained, { ...complete, expectedVersion: 3 })
     ).toMatchObject({ reason: "mutation_collision", type: "Rejected" });
-    expect(
-      await exchange(retained, {
-        ...append,
-        expectedVersion: 2,
-        mutationId: crypto.randomUUID(),
-      })
-    ).toMatchObject({ reason: "session_completed", type: "Rejected" });
-    expect(await history(retained)).toMatchObject({
-      messages: [expect.objectContaining({ text: append.text })],
-      state: { status: "completed", version: 2 },
+    const retainedReplay = await chatRequest(retained, {
+      body: input,
+      method: "POST",
     });
+    expect(retainedReplay.status).toBe(200);
+    await retainedReplay.text();
+    await expectStatus(
+      chatRequest(retained, {
+        body: nativeChatInput(retained, "new completed-session message", 3),
+        method: "POST",
+      }),
+      409
+    );
+    expect(await readChat(retained)).toEqual(accepted);
+    expect(await readMetadata(retained)).toMatchObject({
+      status: "completed",
+      version: 3,
+    });
+    expect(modelCalls).toHaveLength(1);
     retained.socket.close();
   });
 
-  it("serializes identical and competing commands with stable bounded history ordering", async () => {
+  it("shares a duplicate live run and admits only one competing next run with stable native history", async () => {
+    modelCalls = [];
+    const firstRelease = Promise.withResolvers<LocalResponse>();
+    modelResponse = () => firstRelease.promise;
     const session = await binding();
     const connection = await open(session);
-    const first = {
-      expectedVersion: 0,
-      mutationId: crypto.randomUUID(),
-      text: "first",
-      type: "AppendParticipantMessage",
-    };
-    connection.socket.send(JSON.stringify(first));
-    connection.socket.send(JSON.stringify(first));
-    await expect
-      .poll(
-        () =>
-          connection.frames.filter((frame) => frame.type === "MessageAppended")
-            .length
-      )
-      .toBe(2);
-    expect(connection.frames[1]).toEqual(connection.frames[2]);
-    const competing = ["second", "competing"].map((text) => ({
-      expectedVersion: 1,
-      mutationId: crypto.randomUUID(),
-      text,
-      type: "AppendParticipantMessage",
-    }));
-    for (const input of competing) {
-      connection.socket.send(JSON.stringify(input));
+    const firstInput = nativeChatInput(connection, "first");
+    const first = await chatRequest(connection, {
+      body: firstInput,
+      method: "POST",
+    });
+    expect(first.status).toBe(200);
+    const firstBody = first.text();
+    await expect.poll(() => modelCalls.length).toBe(1);
+    const duplicate = await chatRequest(connection, {
+      body: firstInput,
+      method: "POST",
+    });
+    expect(duplicate.status).toBe(200);
+    const duplicateBody = duplicate.text();
+    expect(await readChat(connection)).toMatchObject({
+      activeRun: { runId: firstInput.runId },
+      messages: [{ parts: [{ content: "first", type: "text" }], role: "user" }],
+    });
+    expect(modelCalls).toHaveLength(1);
+    firstRelease.resolve(completedNativeResponse());
+    await Promise.all([firstBody, duplicateBody]);
+
+    const secondRelease = Promise.withResolvers<LocalResponse>();
+    modelResponse = () => secondRelease.promise;
+    const competing = ["second", "competing"].map((text) =>
+      nativeChatInput(connection, text, 2)
+    );
+    const responses = await Promise.all(
+      competing.map((body) => chatRequest(connection, { body, method: "POST" }))
+    );
+    expect(responses.map((item) => item.status).toSorted()).toEqual([200, 409]);
+    const winnerIndex = responses.findIndex((item) => item.status === 200);
+    const winner = responses[winnerIndex];
+    const winnerInput = competing[winnerIndex];
+    if (winner === undefined || winnerInput === undefined) {
+      throw new Error("Expected one admitted next native run");
     }
-    await expect.poll(() => connection.frames.length).toBe(5);
-    expect(connection.frames.slice(3).map((frame) => frame.type)).toEqual([
-      "MessageAppended",
-      "Rejected",
+    const winnerBody = winner.text();
+    await expect.poll(() => modelCalls.length).toBe(2);
+    secondRelease.resolve(completedNativeResponse());
+    await winnerBody;
+    const beforeReconnect = await readChat(connection);
+    expect(beforeReconnect.activeRun).toBeNull();
+    expect(beforeReconnect.messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
     ]);
-    expect(connection.frames[4]).toMatchObject({
-      reason: "version_conflict",
-      state: { version: 2 },
+    expect(beforeReconnect.messages[0]).toMatchObject({
+      parts: [{ content: "first", type: "text" }],
     });
-    await emit(session, connection.generation, "synthetic-assistant-third");
-    const firstPage = await history(connection, 0, 2);
-    expect(firstPage).toMatchObject({
-      hasMore: true,
-      messages: [
-        expect.objectContaining({
-          ordinal: 1,
-          role: "participant",
-          text: "first",
-        }),
-        expect.objectContaining({
-          ordinal: 2,
-          role: "participant",
-          text: "second",
-        }),
+    expect(beforeReconnect.messages[2]).toMatchObject({
+      parts: [
+        { content: winnerIndex === 0 ? "second" : "competing", type: "text" },
       ],
-      state: { version: 3 },
-      type: "HistoryRead",
     });
-    const lastPage = await history(connection, 2, 2);
-    expect(lastPage).toMatchObject({
-      hasMore: false,
-      messages: [
-        expect.objectContaining({
-          ordinal: 3,
-          role: "assistant",
-          text: "synthetic-assistant-third",
-        }),
-      ],
-      type: "HistoryRead",
+    expect(
+      new Set(beforeReconnect.messages.map((message) => message.id)).size
+    ).toBe(4);
+    expect(await readMetadata(connection)).toMatchObject({
+      status: "open",
+      version: 4,
     });
-    const beforeReconnect = await history(connection);
     connection.socket.close();
     const resumed = await open(session);
-    const afterReconnect = await history(resumed);
-    if (
-      beforeReconnect.type !== "HistoryRead" ||
-      afterReconnect.type !== "HistoryRead"
-    ) {
-      throw new Error("History expected");
-    }
-    expect(afterReconnect.messages).toEqual(beforeReconnect.messages);
-    expect(
-      new Set(afterReconnect.messages.map((message) => message.id)).size
-    ).toBe(3);
+    expect(await readChat(resumed)).toEqual(beforeReconnect);
+    expect(modelCalls).toHaveLength(2);
     resumed.socket.close();
   });
 
-  it("completion suppresses queued assistant records and old generations cannot adopt a replacement socket", async () => {
+  it("rejects a delayed old-generation POST and new messages after completion without retaining output", async () => {
+    modelCalls = [];
+    modelResponse = () => Promise.resolve(completedNativeResponse());
     const session = await binding();
     const first = await open(session);
-    const producer = Promise.withResolvers<null>();
-    const delayed = producer.promise.then(() =>
-      emit(session, first.generation, "must-never-persist")
+    const release = Promise.withResolvers<null>();
+    const delayed = release.promise.then(() =>
+      chatRequest(first, {
+        body: nativeChatInput(first, "must-never-persist"),
+        method: "POST",
+      })
     );
-    const completed = await exchange(first, {
-      expectedVersion: 0,
-      mutationId: crypto.randomUUID(),
-      type: "CompleteSession",
-    });
-    expect(completed).toMatchObject({
+    expect(
+      await exchange(first, {
+        expectedVersion: 0,
+        mutationId: crypto.randomUUID(),
+        type: "CompleteSession",
+      })
+    ).toMatchObject({
       state: { status: "completed", version: 1 },
       type: "SessionCompleted",
     });
     const replacement = await open(session);
-    producer.resolve(null);
-    await delayed;
-    await emit(
-      session,
-      replacement.generation,
-      "completed-session-must-not-question"
+    release.resolve(null);
+    const delayedResponse = await delayed;
+    expect(delayedResponse.status).toBe(403);
+    await expectStatus(
+      chatRequest(replacement, {
+        body: nativeChatInput(
+          replacement,
+          "completed-session-must-not-question",
+          1
+        ),
+        method: "POST",
+      }),
+      409
     );
-    expect(await history(replacement)).toMatchObject({
+    expect(await readChat(replacement)).toMatchObject({
+      activeRun: null,
       messages: [],
-      state: { status: "completed", version: 1 },
     });
-    expect(replacement.messages).toEqual([]);
+    expect(await readMetadata(replacement)).toMatchObject({
+      status: "completed",
+      version: 1,
+    });
+    expect(modelCalls).toHaveLength(0);
     replacement.socket.close();
   });
 
-  it.each(["append-first", "complete-first"] as const)(
-    "commits only the valid serialized completion race: %s",
+  it.each(["post-first", "complete-first"] as const)(
+    "commits only the valid completion admission order: %s",
     async (order) => {
+      modelCalls = [];
+      const release = Promise.withResolvers<LocalResponse>();
+      modelResponse = () => release.promise;
       const session = await binding();
       const connection = await open(session);
-      const append = {
-        expectedVersion: 0,
-        mutationId: crypto.randomUUID(),
-        text: "racing participant",
-        type: "AppendParticipantMessage",
-      };
+      const body = nativeChatInput(connection, "racing participant");
       const complete = {
         expectedVersion: 0,
         mutationId: crypto.randomUUID(),
         type: "CompleteSession",
       };
-      for (const input of order === "append-first"
-        ? [append, complete]
-        : [complete, append]) {
-        connection.socket.send(JSON.stringify(input));
-      }
-      await expect.poll(() => connection.frames.length).toBe(3);
-      expect(connection.frames[2]).toMatchObject({
-        reason:
-          order === "append-first" ? "version_conflict" : "session_completed",
-        type: "Rejected",
-      });
-      expect(await history(connection)).toMatchObject({
-        messages:
-          order === "append-first"
-            ? [expect.objectContaining({ text: append.text })]
-            : [],
-        state: {
-          status: order === "append-first" ? "open" : "completed",
+      if (order === "post-first") {
+        const admitted = await chatRequest(connection, {
+          body,
+          method: "POST",
+        });
+        expect(admitted.status).toBe(200);
+        const settled = admitted.text();
+        await expect.poll(() => modelCalls.length).toBe(1);
+        expect(await exchange(connection, complete)).toMatchObject({
+          reason: "assistant_turn_pending",
+          type: "Rejected",
+        });
+        expect(await readMetadata(connection)).toMatchObject({
+          status: "open",
           version: 1,
-        },
-      });
+        });
+        expect(await readChat(connection)).toMatchObject({
+          activeRun: { runId: body.runId },
+          messages: [
+            {
+              parts: [{ content: "racing participant", type: "text" }],
+              role: "user",
+            },
+          ],
+        });
+        release.resolve(completedNativeResponse());
+        await settled;
+      } else {
+        expect(await exchange(connection, complete)).toMatchObject({
+          state: { status: "completed", version: 1 },
+          type: "SessionCompleted",
+        });
+        await expectStatus(
+          chatRequest(connection, { body, method: "POST" }),
+          409
+        );
+        expect(await readChat(connection)).toMatchObject({
+          activeRun: null,
+          messages: [],
+        });
+        expect(await readMetadata(connection)).toMatchObject({
+          status: "completed",
+          version: 1,
+        });
+        expect(modelCalls).toHaveLength(0);
+        release.resolve(completedNativeResponse());
+      }
       connection.socket.close();
     }
   );
 
   it.each([
-    {
-      expectedVersion: 0,
-      mutationId: crypto.randomUUID(),
-      text: "x".repeat(MAX_MESSAGE_LENGTH + 1),
-      type: "AppendParticipantMessage",
-    },
-    {
-      expectedVersion: 0,
-      mutationId: crypto.randomUUID(),
-      text: "",
-      type: "AppendParticipantMessage",
-    },
-    {
-      expectedVersion: 0,
-      mutationId: crypto.randomUUID(),
-      role: "assistant",
-      text: "actor spoof",
-      type: "AppendParticipantMessage",
-    },
-    {
-      expectedVersion: 0,
-      mutationId: crypto.randomUUID(),
-      personId: "another-person",
-      text: "identity spoof",
-      type: "AppendParticipantMessage",
-    },
-    {
-      expectedVersion: -1,
-      mutationId: crypto.randomUUID(),
-      type: "CompleteSession",
-    },
-    {
-      afterOrdinal: 0,
-      limit: MAX_PAGE_SIZE + 1,
-      requestId: crypto.randomUUID(),
-      type: "ReadHistory",
-    },
-    {
-      afterOrdinal: 0.5,
-      limit: 1,
-      requestId: crypto.randomUUID(),
-      type: "ReadHistory",
-    },
-  ])(
-    "rejects malformed or unbounded commands before persistence: $type",
-    async (input) => {
+    "oversized text",
+    "empty text",
+    "assistant role",
+    "negative version",
+    "oversized run ID",
+  ] as const)(
+    "rejects native POST with %s before participant persistence",
+    async (scenario) => {
+      modelCalls = [];
+      modelResponse = () => Promise.resolve(completedNativeResponse());
       const session = await binding();
       const connection = await open(session);
-      const closed = Promise.withResolvers<number>();
-      connection.socket.addEventListener("close", (event) =>
-        closed.resolve(event.code)
+      const input = nativeChatInput(connection, "synthetic participant");
+      const malformed = {
+        "assistant role": {
+          ...input,
+          messages: input.messages.map((message) => ({
+            ...message,
+            role: "assistant",
+          })),
+        },
+        "empty text": nativeChatInput(connection, ""),
+        "negative version": nativeChatInput(
+          connection,
+          "synthetic participant",
+          -1
+        ),
+        "oversized run ID": nativeChatInput(
+          connection,
+          "synthetic participant",
+          0,
+          "r".repeat(129)
+        ),
+        "oversized text": nativeChatInput(
+          connection,
+          "x".repeat(MAX_MESSAGE_LENGTH + 1)
+        ),
+      };
+      await expectStatus(
+        chatRequest(connection, { body: malformed[scenario], method: "POST" }),
+        400
       );
-      connection.socket.send(JSON.stringify(input));
-      expect(await closed.promise).toBe(1008);
-      expect(connection.frames).toHaveLength(1);
-      const fresh = await open(session);
-      expect(await history(fresh)).toMatchObject({
+      expect(await readChat(connection)).toMatchObject({
+        activeRun: null,
         messages: [],
-        state: { status: "open", version: 0 },
       });
-      fresh.socket.close();
+      expect(await readMetadata(connection)).toMatchObject({
+        status: "open",
+        version: 0,
+      });
+      expect(modelCalls).toHaveLength(0);
+      connection.socket.close();
     }
   );
 
-  it("rejects oversized UTF-8 frames before persistence", async () => {
+  it("rejects foreign bindings, threads and generations without exposing or closing the owner's conversation", async () => {
+    modelCalls = [];
+    modelResponse = () => Promise.resolve(completedNativeResponse());
+    const owner = await binding();
+    const foreign = await binding();
+    const connection = await open(owner);
+    const text = `synthetic-private-${crypto.randomUUID()}`;
+    const body = nativeChatInput(connection, text);
+    const admitted = await chatRequest(connection, { body, method: "POST" });
+    expect(admitted.status).toBe(200);
+    await admitted.text();
+    const retained = await readChat(connection);
+    const denied = await Promise.all([
+      chatRequest(connection, { binding: foreign, method: "GET" }),
+      chatRequest(connection, {
+        method: "GET",
+        query: `?threadId=${foreign.sessionReference}`,
+      }),
+      chatRequest(connection, {
+        generation: crypto.randomUUID(),
+        method: "GET",
+      }),
+      chatRequest(connection, {
+        body: {
+          ...nativeChatInput(connection, "spoofed thread", 2),
+          threadId: foreign.sessionReference,
+        },
+        method: "POST",
+      }),
+      chatRequest(connection, {
+        body: nativeChatInput(connection, "stale generation", 2),
+        generation: crypto.randomUUID(),
+        method: "POST",
+      }),
+      chatRequest(connection, {
+        generation: crypto.randomUUID(),
+        method: "DELETE",
+        query: `?runId=${body.runId}`,
+      }),
+    ]);
+    expect(denied.map((item) => item.status)).toEqual([
+      403, 403, 403, 403, 403, 403,
+    ]);
+    const deniedBodies = await Promise.all(denied.map((item) => item.text()));
+    expect(deniedBodies.join("")).not.toContain(text);
+    expect(await readChat(connection)).toEqual(retained);
+    expect(await readMetadata(connection)).toMatchObject({
+      status: "open",
+      version: 2,
+    });
+    expect(modelCalls).toHaveLength(1);
+    connection.socket.close();
+  });
+
+  it("rejects a malformed completion command before changing native history", async () => {
+    const session = await binding();
+    const connection = await open(session);
+    const closed = Promise.withResolvers<number>();
+    connection.socket.addEventListener("close", (event) =>
+      closed.resolve(event.code)
+    );
+    connection.socket.send(
+      JSON.stringify({
+        expectedVersion: -1,
+        mutationId: crypto.randomUUID(),
+        type: "CompleteSession",
+      })
+    );
+    expect(await closed.promise).toBe(1008);
+    const fresh = await open(session);
+    expect(await readChat(fresh)).toMatchObject({
+      activeRun: null,
+      messages: [],
+    });
+    expect(await readMetadata(fresh)).toMatchObject({
+      status: "open",
+      version: 0,
+    });
+    fresh.socket.close();
+  });
+
+  it("rejects oversized UTF-8 control frames before changing native history", async () => {
     const session = await binding();
     const connection = await open(session);
     const closed = Promise.withResolvers<number>();
@@ -944,12 +1187,54 @@ describe("durable private conversation protocol", () => {
     connection.socket.send("é".repeat(MAX_PRIVATE_FRAME_BYTES));
     expect(await closed.promise).toBe(1009);
     const fresh = await open(session);
-    expect(await history(fresh)).toMatchObject({
+    expect(await readChat(fresh)).toMatchObject({
+      activeRun: null,
       messages: [],
-      state: { version: 0 },
+    });
+    expect(await readMetadata(fresh)).toMatchObject({
+      status: "open",
+      version: 0,
     });
     fresh.socket.close();
   });
+
+  it.each([
+    "AppendParticipantMessage",
+    "ReadHistory",
+    "ReadAssistantTurn",
+    "CancelAssistantTurn",
+    "RetryAssistantTurn",
+  ])(
+    "rejects retired WebSocket chat command %s without changing canonical history",
+    async (type) => {
+      const selected = await binding();
+      const connection = await open(selected);
+      const closed = Promise.withResolvers<number>();
+      connection.socket.addEventListener("close", (event) =>
+        closed.resolve(event.code)
+      );
+      connection.socket.send(
+        JSON.stringify({
+          afterOrdinal: 0,
+          expectedVersion: 0,
+          limit: 25,
+          mutationId: crypto.randomUUID(),
+          requestId: crypto.randomUUID(),
+          text: "Synthetic retired command",
+          turnId: "run-retired",
+          type,
+        })
+      );
+      expect(await closed.promise).toBe(1008);
+      const fresh = await open(selected);
+      expect(await readChat(fresh)).toMatchObject({
+        activeRun: null,
+        messages: [],
+      });
+      expect(await readMetadata(fresh)).toEqual({ status: "open", version: 0 });
+      fresh.socket.close();
+    }
+  );
 });
 
 const directoryCommand = (
@@ -1010,12 +1295,17 @@ describe("participant directory reservations and shared output fences", () => {
   it("recovers one exact reservation after a lost reply and restart, with private stable pages", async () => {
     const owner = await binding();
     const first = await openDirectory(owner);
-    const start = { mutationId: crypto.randomUUID(), type: "StartSession" };
+    const start = {
+      mutationId: crypto.randomUUID(),
+      scope: "ProfileEdit",
+      type: "StartSession",
+    };
     const receipt = await exchange(first, start);
     expect(receipt).toMatchObject({
       reservation: {
         createdAt: expect.any(Number),
         ordinal: 1,
+        scope: "ProfileEdit",
         sessionReference: expect.any(String),
       },
       type: "SessionStarted",
@@ -1024,6 +1314,9 @@ describe("participant directory reservations and shared output fences", () => {
     runtime = makeRuntime();
     const resumed = await openDirectory(owner);
     expect(await exchange(resumed, start)).toEqual(receipt);
+    expect(
+      await exchange(resumed, { ...start, scope: "InitialDiscovery" })
+    ).toMatchObject({ reason: "mutation_collision", type: "Rejected" });
     const second = await exchange(resumed, {
       ...start,
       mutationId: crypto.randomUUID(),
@@ -1045,6 +1338,7 @@ describe("participant directory reservations and shared output fences", () => {
     expect(Object.keys(receipt.reservation).toSorted()).toEqual([
       "createdAt",
       "ordinal",
+      "scope",
       "sessionReference",
     ]);
     const retainedBinding = {
@@ -1127,6 +1421,7 @@ describe("participant directory reservations and shared output fences", () => {
       const session = await open(owner);
       await exchange(directory, {
         mutationId: crypto.randomUUID(),
+        scope: "ProfileEdit",
         type: "StartSession",
       });
       await successful(
@@ -1183,7 +1478,7 @@ describe("participant directory reservations and shared output fences", () => {
         reservations: [expect.objectContaining({ ordinal: 1 })],
       });
       const freshSession = await open(owner);
-      expect(await history(freshSession)).toMatchObject({
+      expect(await snapshot(freshSession)).toMatchObject({
         messages: [],
         state: { status: "open", version: 0 },
       });
@@ -1292,8 +1587,8 @@ describe("ordered native storage upgrade", () => {
       await port.prepareMutation(operation);
       await port.markDispatched(operation);
       await port.completeMutation(operation);
-      const reopened = await open(session);
-      expect(await history(reopened)).toMatchObject({
+      const reopened = await open(session, Date.now() + 60_000, null);
+      expect(await snapshot(reopened)).toMatchObject({
         messages: [],
         state: { status: "open", version: 0 },
       });
@@ -1360,7 +1655,7 @@ it("rejects expired directory and session reads or mutations without another cli
       afterOrdinal: 0,
       limit: 1,
       requestId: crypto.randomUUID(),
-      type: "ReadHistory",
+      type: "ReadCards",
     }),
     sessionReference: owner.sessionReference,
   });
@@ -1372,6 +1667,7 @@ it("rejects expired directory and session reads or mutations without another cli
       now: expiresAt,
       payload: JSON.stringify({
         mutationId: crypto.randomUUID(),
+        scope: "ProfileEdit",
         type: "StartSession",
       }),
     })
@@ -1383,8 +1679,7 @@ it("rejects expired directory and session reads or mutations without another cli
     payload: JSON.stringify({
       expectedVersion: 0,
       mutationId: crypto.randomUUID(),
-      text: "must-not-persist-after-expiry",
-      type: "AppendParticipantMessage",
+      type: "CompleteSession",
     }),
     sessionReference: owner.sessionReference,
   });
@@ -1395,7 +1690,7 @@ it("rejects expired directory and session reads or mutations without another cli
   expect(await listSessions(freshDirectory)).toMatchObject({
     reservations: [],
   });
-  expect(await history(freshSession)).toMatchObject({
+  expect(await snapshot(freshSession)).toMatchObject({
     messages: [],
     state: { status: "open", version: 0 },
   });
@@ -1403,51 +1698,57 @@ it("rejects expired directory and session reads or mutations without another cli
   freshSession.socket.close();
 });
 
-it("bounds encoded history frames while retaining every long multibyte and escaped record", async () => {
+it("reconstructs every long multibyte and escaped native message with stable identities across restart", async () => {
+  expect(modelConfiguration).toBeUndefined();
+  modelCalls = [];
   const session = await binding();
   const connection = await open(session);
-  const ids: string[] = [];
-  for (let index = 0; index < MAX_PAGE_SIZE; index += 1) {
-    // eslint-disable-next-line no-await-in-loop -- Each optimistic version depends on the preceding committed receipt.
-    const reply = await exchange(connection, {
-      expectedVersion: index,
-      mutationId: crypto.randomUUID(),
-      text: "\u0000é".repeat(MAX_MESSAGE_LENGTH / 2),
-      type: "AppendParticipantMessage",
+  const texts = Array.from(
+    { length: MAX_PAGE_SIZE },
+    (_, index) =>
+      `${String(index).padStart(4, "0")}\u0000${"\u0000é".repeat((MAX_MESSAGE_LENGTH - 6) / 2)}`
+  );
+  for (const [index, text] of texts.entries()) {
+    // eslint-disable-next-line no-await-in-loop -- Each admitted participant advances the next expected version.
+    const failed = await chatRequest(connection, {
+      body: nativeChatInput(connection, text, index),
+      method: "POST",
     });
-    if (reply.type !== "MessageAppended") {
-      throw new Error("Expected append receipt");
-    }
-    ids.push(reply.message.id);
-    expect(
-      new TextEncoder().encode(JSON.stringify(reply)).byteLength
-    ).toBeLessThanOrEqual(MAX_PRIVATE_FRAME_BYTES);
+    // No model is configured: the participant remains canonical and the attempt settles as failed.
+    expect(failed.status).toBe(400);
+    // eslint-disable-next-line no-await-in-loop -- Release this response before the next durable admission.
+    await failed.text();
   }
-  const retainedIds: string[] = [];
-  let afterOrdinal = 0;
-  let hasMore = true;
-  while (hasMore) {
-    // eslint-disable-next-line no-await-in-loop -- Each cursor comes from the preceding bounded physical frame.
-    const page = await history(connection, afterOrdinal, MAX_PAGE_SIZE);
-    if (page.type !== "HistoryRead") {
-      throw new Error("Expected history page");
-    }
-    expect(page.messages.length).toBeGreaterThan(0);
-    expect(
-      new TextEncoder().encode(JSON.stringify(page)).byteLength
-    ).toBeLessThanOrEqual(MAX_PRIVATE_FRAME_BYTES);
-    retainedIds.push(...page.messages.map((message) => message.id));
-    const last = page.messages.at(-1);
-    if (last === undefined) {
-      throw new Error("Expected nonempty history page");
-    }
-    afterOrdinal = last.ordinal;
-    ({ hasMore } = page);
-    expect(retainedIds.length).toBeLessThanOrEqual(MAX_PAGE_SIZE);
-  }
-  expect(retainedIds).toEqual(ids);
-  connection.socket.close();
-});
+  const beforeRestart = await readChat(connection);
+  expect(beforeRestart.activeRun).toBeNull();
+  expect(beforeRestart.messages).toHaveLength(MAX_PAGE_SIZE);
+  expect(beforeRestart.messages.map((message) => message.role)).toEqual(
+    texts.map(() => "user")
+  );
+  expect(beforeRestart.messages.map((message) => message.parts)).toEqual(
+    texts.map((content) => [{ content, type: "text" }])
+  );
+  const ids = beforeRestart.messages.map((message) => message.id);
+  expect(new Set(ids).size).toBe(MAX_PAGE_SIZE);
+  expect(
+    new TextEncoder().encode(JSON.stringify(beforeRestart)).byteLength
+  ).toBeGreaterThan(MAX_PRIVATE_FRAME_BYTES);
+  expect(await readMetadata(connection)).toMatchObject({
+    status: "open",
+    version: MAX_PAGE_SIZE,
+  });
+  expect(modelCalls).toHaveLength(0);
+  await runtime.dispose();
+  runtime = makeRuntime();
+  const resumed = await open(session);
+  expect(await readChat(resumed)).toEqual(beforeRestart);
+  expect(await readMetadata(resumed)).toMatchObject({
+    status: "open",
+    version: MAX_PAGE_SIZE,
+  });
+  expect(modelCalls).toHaveLength(0);
+  resumed.socket.close();
+}, 15_000);
 
 it("keeps fixture producers and directory HTTP, SDK, and storage capabilities absent from the production bundle", async () => {
   const productionManifest = await bundleWorkerFixture(
@@ -1497,6 +1798,7 @@ it("keeps fixture producers and directory HTTP, SDK, and storage capabilities ab
               now: Date.now(),
               payload: JSON.stringify({
                 mutationId: crypto.randomUUID(),
+                scope: "ProfileEdit",
                 type: "StartSession",
               }),
             })
@@ -1509,7 +1811,7 @@ it("keeps fixture producers and directory HTTP, SDK, and storage capabilities ab
       command(directoryCommand(owner, { action: "directory-private-http" })),
       404
     );
-    expect(await history(session)).toMatchObject({
+    expect(await snapshot(session)).toMatchObject({
       messages: [],
       state: { status: "open", version: 0 },
     });
@@ -1526,6 +1828,7 @@ it("keeps fixture producers and directory HTTP, SDK, and storage capabilities ab
       {
         mutationId: crypto.randomUUID(),
         personId: "caller-supplied-person",
+        scope: "ProfileEdit",
         type: "StartSession",
       },
     ];
@@ -1543,7 +1846,7 @@ it("keeps fixture producers and directory HTTP, SDK, and storage capabilities ab
     }
     const recovered = await openDirectory(owner);
     expect(await listSessions(recovered)).toMatchObject({ reservations: [] });
-    expect(await history(session)).toMatchObject({
+    expect(await snapshot(session)).toMatchObject({
       messages: [],
       state: { status: "open", version: 0 },
     });

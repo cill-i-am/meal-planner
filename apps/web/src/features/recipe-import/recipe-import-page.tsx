@@ -468,8 +468,8 @@ const ProcessingStatus = ({
           Cancel import
         </Button>
       ) : null}
-      <Skeleton className="skeleton-line" />
-      <Skeleton className="skeleton-line short" />
+      <Skeleton variant="line" />
+      <Skeleton variant="short-line" />
     </section>
   );
 };
@@ -608,8 +608,8 @@ const SavedRecipeStatus = ({
   if (intent?.status === "succeeded" && recipe === undefined) {
     return hasRecipeError ? null : (
       <section aria-label="Loading saved recipe">
-        <Skeleton className="skeleton-title" />
-        <Skeleton className="skeleton-line" />
+        <Skeleton variant="title" />
+        <Skeleton variant="line" />
       </section>
     );
   }
@@ -832,8 +832,8 @@ export const RecipeImportPage = ({
             action === undefined &&
             !actionQuery.isError ? (
               <section aria-label="Loading recipe review">
-                <Skeleton className="skeleton-title" />
-                <Skeleton className="skeleton-line" />
+                <Skeleton variant="title" />
+                <Skeleton variant="line" />
               </section>
             ) : null}
             {intent?.status === "requires_action" &&

@@ -1,27 +1,15 @@
-# Meal Planner
+# Agent instructions
 
-This file governs the repository. Add nested instructions only for a real local constraint; keep each rule in one place.
+Use pnpm and repository scripts; inspect unfamiliar commands for side effects. Complete the assigned plan through implementation, relevant verification, in-scope fixes and the requested delivery. Milestones are not approval checkpoints. Make routine choices from evidence and continue.
 
-## Working here
+Implementation requests include ordinary repository delivery through merge once required checks and reviews pass, unless the request sets a narrower endpoint. They do not authorize deployment or non-repository effects. Reuse existing in-scope authorization. For a genuine blocker, continue independent work and report the exact unmet requirement; never weaken acceptance to declare success.
 
-Use pnpm and the scripts in `package.json`; choose checks for the changed behaviour. Preserve unrelated work. Use an isolated worktree for substantial changes when the current checkout is dirty, stale, or shared.
+## Code changes
 
-Carry implementation requests through verified delivery under the standing authority in [execution policy](docs/agents/execution-policy.md). Inspect unfamiliar scripts before assuming they are local or read-only. Ask only when a missing decision or unauthorized effect prevents the next step; continue independent work in the meantime.
+Read the [engineering standards index](docs/reference/engineering/README.md) and the topics relevant to the changed code before implementation or review. This is required, not dependent on automatic skill selection. Pass these links to coding subagents. Copy-only and documentation-only tasks need no standards tour.
 
-Keep greenfield designs direct. Delete superseded experimental paths. Compatibility shims, dual writes, backfills, and portability machinery require a concrete existing contract and explicit approval; do not build them for hypothetical future consumers.
+Preserve typed domain invariants; decode at owning boundaries and use the decoded value. Keep one authoritative state owner, explicit failures and exact-command recovery. Keep pure logic direct and effectful workflows scoped. Prefer cohesive local code over speculative abstractions or compatibility layers. Verify behavior, not implementation-shaped assertions; do not weaken types, checks or privacy.
 
-## Context when needed
+## Context and delivery
 
-- Product meaning: [blueprint](docs/product-blueprint/), [accepted product decisions](docs/decisions/product/), and [domain conventions](docs/agents/domain.md).
-- Technical boundaries: [architecture](docs/architecture/) and [ADRs](docs/architecture/decisions/).
-- Ongoing product work: [current delivery](docs/delivery/current.md) and its owning work item. Repository records own delivery; Linear is not used for new work.
-- Delivery and review: [repository workflow](docs/agents/repository-workflow.md) and [execution policy](docs/agents/execution-policy.md).
-- Skills: load a skill only when its task-specific guidance helps; read supporting references as needed. These project copies are maintained locally, not bulk-synced from an upstream skill bundle.
-
-Use these links to answer the task's questions, not as a reading checklist. A clear, bounded user request does not need a new work item, planner, or handoff. Record consequential product/architecture choices and update affected documentation when behaviour or authority changes.
-
-## External effects and private data
-
-Tesco/provider mutations, basket changes, checkout, payment, external messages and publication beyond repository delivery, deployment, destructive cloud operations, and irreversible data changes need explicit authorization covering the actual effect and target. Repository delivery is covered by [execution policy](docs/agents/execution-policy.md). Existing authorization remains valid within its scope; record it where needed rather than asking again. Finish safe preparation before seeking missing approval.
-
-Keep credentials, cookies, authorization values, raw private provider data, and interview transcripts out of source, logs, work records, PRs, and handoffs. Draft meal plans and shopping previews are not household approval.
+Read nested instructions applicable to changed paths. Use [the docs map](docs/README.md) for missing context and capability contracts when changing boundaries. Skills supply methods, not extra phases. Preserve unrelated work and isolate shared/dirty checkouts. Keep credentials and private data out of source, logs and work records. Keep the owning plan and affected docs current. Planning/review-only requests stay in scope. Report results, evidence and unfinished acceptance honestly.

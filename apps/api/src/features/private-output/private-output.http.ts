@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect";
 
 import type { MealPlannerAuth } from "../auth/auth.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
+import { handlePrivateChatRequest } from "./private-chat.http.js";
 import { ReleasedConfirmation } from "./private-confirmation.contract.js";
 import type { PrivateOutputApiPort } from "./private-output-binding.js";
 import { resolvePrivateOutputAuthority } from "./private-output.authority.js";
@@ -13,17 +14,36 @@ import {
 
 const SessionReference = Schema.String.pipe(Schema.check(Schema.isUUID()));
 
+const hasEmptyBody = (request: Request) =>
+  Effect.tryPromise(async () => {
+    const { body } = request;
+    if (body === null) {
+      return true;
+    }
+    const reader = body.getReader();
+    try {
+      const first = await reader.read();
+      return first.done === true;
+    } finally {
+      await reader.cancel();
+    }
+  });
+
 /** Only this authenticated route can invoke the named session-admission capability. */
 export const handlePrivateInterviewRequest = Effect.fn(
   function* handlePrivateInterviewRequest(input: {
     readonly auth: MealPlannerAuth;
     readonly household: Pick<
       HouseholdDomainWorkerMethods,
-      "listHouseholdPeople" | "mutateInterviewProfile"
+      "listHouseholdPeople" | "mutateInterviewProfile" | "readPersonProfile"
     >;
     readonly output: PrivateOutputApiPort;
     readonly request: Request;
   }) {
+    const chat = yield* handlePrivateChatRequest(input);
+    if (chat !== null) {
+      return chat;
+    }
     const url = new URL(input.request.url);
     const confirmation =
       /^\/v1\/private-interviews\/(?<sessionReference>[^/]+)\/confirmations\/(?<mutationId>[^/]+)$/u.exec(
@@ -38,17 +58,8 @@ export const handlePrivateInterviewRequest = Effect.fn(
       }
       return yield* Effect.gen(function* continueConfirmation() {
         // No private HTTP payload or response body is accepted by this continuation.
-        const { body } = input.request;
-        if (body !== null) {
-          const empty = yield* Effect.tryPromise(async () => {
-            const reader = body.getReader();
-            const first = await reader.read();
-            await reader.cancel();
-            return first.done;
-          });
-          if (!empty) {
-            return new Response(null, { status: 403 });
-          }
+        if (!(yield* hasEmptyBody(input.request))) {
+          return new Response(null, { status: 403 });
         }
         const sessionReference = yield* Schema.decodeUnknownEffect(
           SessionReference

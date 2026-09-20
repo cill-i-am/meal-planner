@@ -98,7 +98,9 @@ Avoid provider tests that merely assert mocked SDK call order. The contract is c
 - In-memory state is appropriate for provider lifecycle tests that do not need cross-process persistence.
 - Never point tests at production state.
 
-When a failed suite leaves resources behind, report the exact stack/stage/profile and obtain confirmation before cleanup. Do not run broad deletion commands as an automatic fallback.
+When a suite leaves resources behind, use its authorized exact-target cleanup.
+If the scope is not covered, report that specific stack/stage/profile and continue
+independent work. Do not substitute broad deletion for bounded fixture cleanup.
 
 ## Observability Tests
 

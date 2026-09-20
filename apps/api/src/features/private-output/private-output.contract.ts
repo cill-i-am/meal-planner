@@ -1,3 +1,4 @@
+import { PrivateDiscoveryScope } from "@meal-planner/private-interview-api";
 import { Data, Schema } from "effect";
 
 const opaqueKey = Schema.String.pipe(
@@ -18,6 +19,12 @@ export const PrivateSessionBinding = Schema.Struct({
   sessionReference: operationId,
 });
 export type PrivateSessionBinding = typeof PrivateSessionBinding.Type;
+
+/** Scope comes only from the owning directory reservation, never client reconnect data. */
+export const InitializePrivateSession = Schema.Struct({
+  binding: PrivateSessionBinding,
+  scope: Schema.NullOr(PrivateDiscoveryScope),
+});
 
 export const OutputRegistration = Schema.Struct({
   childName: opaqueKey,

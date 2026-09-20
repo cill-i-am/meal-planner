@@ -1,10 +1,11 @@
 import { defineConfig } from "oxlint";
 import core from "ultracite/oxlint/core";
+import shadcn from "ultracite/oxlint/shadcn";
 
 export default defineConfig({
   // The current Vitest add-on enforces assertion-count and exact thrown-text
   // policies that conflict with these comprehensive Effect schema tests.
-  extends: [core],
+  extends: [core, shadcn],
   // Project-scoped vendor skills are executable tooling, not application source.
   ignorePatterns: [
     ...core.ignorePatterns,
@@ -20,6 +21,7 @@ export default defineConfig({
     "tools/oxlint/anti-slop/no-runtime-typeof.ts",
   ],
   jsPlugins: [
+    ...shadcn.jsPlugins,
     {
       name: "anti-slop",
       specifier: "./tools/oxlint/anti-slop/index.ts",

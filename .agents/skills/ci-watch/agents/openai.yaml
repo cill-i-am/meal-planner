@@ -1,4 +1,0 @@
-interface:
-  display_name: "CI Watch"
-  short_description: "Follow one pull request and resolve failures"
-  default_prompt: "Use $ci-watch to check the current PR head, resolve authorized failures, and report meaningful changes."

@@ -31,7 +31,7 @@ providers: Layer.mergeAll(Cloudflare.providers(), GitHub.providers());
 - `GitHub.Secret`
 - `GitHub.Variable`
 - `GitHub.Webhook`
-- auth provider integration for `alchemy login`
+- auth provider integration for `alchemy profile`
 
 Auth methods:
 
@@ -43,8 +43,8 @@ Commands:
 
 ```sh
 gh auth login
-pnpm exec alchemy login --configure
-pnpm exec alchemy login --profile admin --configure
+pnpm exec alchemy profile edit --add GitHub
+pnpm exec alchemy profile edit --profile admin --add GitHub
 ```
 
 Token scopes depend on resources:
@@ -122,7 +122,7 @@ export default Alchemy.Stack(
             "Workers Tail Read",
           ],
           resources: {
-            [`com.cloudflare.api.account.${accountId}`]: "*",
+            [`com.cloudflare.api.account.${accountId}`]: %22%2A%22%2C
           },
         },
       ],
