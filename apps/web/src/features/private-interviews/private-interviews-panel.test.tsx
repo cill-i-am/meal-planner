@@ -5,6 +5,7 @@ import {
 // @vitest-environment jsdom
 import { ProfileCard } from "@meal-planner/private-interview-api";
 import type {
+  AssistantTurn,
   DirectoryCommand,
   DirectoryFrame,
   SessionCommand,
@@ -12,7 +13,14 @@ import type {
   ProfileCard as ProfileCardType,
 } from "@meal-planner/private-interview-api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Schema } from "effect";
 import { afterEach, expect, it, vi } from "vitest";
@@ -28,6 +36,7 @@ const messageId = "00000000-0000-4000-8000-000000000201";
 const reservation = {
   createdAt: 1_788_691_200_000,
   ordinal: 1,
+  scope: "ProfileEdit" as const,
   sessionReference: reference,
 };
 const state = { status: "open" as const, version: 0 };
@@ -93,6 +102,9 @@ const fixture = () => {
         _signal: AbortSignal
       ) => "accepted" as "accepted" | "unavailable" | "authentication_required"
     ),
+    fetchChat: vi.fn<typeof fetch>(async () =>
+      Response.json({ activeRun: null, messages: [] })
+    ),
     makeId: () => {
       ordinal += 1;
       return `00000000-0000-4000-8000-${String(ordinal).padStart(12, "0")}`;
@@ -131,23 +143,18 @@ const fixture = () => {
     sessionState = state,
     cards: readonly ProfileCardType[] = [],
     pendingConfirmation: string | null = null,
-    generation = "00000000-0000-4000-8000-000000000301"
+    generation = "00000000-0000-4000-8000-000000000301",
+    assistantTurn: AssistantTurn | null = null
   ) => {
     const socket = latest();
     socket.receive({
+      assistantTurn,
       bindingKey: "binding-a",
       generation,
       pendingConfirmation,
       sessionReference: reference,
       state: sessionState,
       type: "SessionReady",
-    });
-    socket.receive({
-      hasMore: false,
-      messages: [],
-      requestId: socket.last("ReadHistory").requestId,
-      state: sessionState,
-      type: "HistoryRead",
     });
     socket.receive({
       cards,
@@ -172,15 +179,19 @@ const fixture = () => {
 
 afterEach(cleanup);
 
-it("offers a fresh connection after an authority close and retries the same request without a new login", async () => {
+it("offers explicit reconnect when a fresh automatic admission fails and retains the same request", async () => {
   const user = userEvent.setup();
   const f = fixture();
   render(<PrivateInterviewsPanel {...context} dependencies={f.dependencies} />);
   act(() => f.list(f.directoryReady(), []));
   await user.click(
-    screen.getByRole("button", { name: "Start private session" })
+    screen.getByRole("button", { name: "Start food discovery" })
   );
   const request = f.latest().last("StartSession");
+  act(() => f.latest().lose(1008));
+  expect(
+    screen.getByText(/Connecting to your private sessions/u)
+  ).toBeInTheDocument();
   act(() => f.latest().lose(1008));
   expect(
     screen.getByText(/Reconnect to continue\. If your sign-in has expired/u)
@@ -191,150 +202,6 @@ it("offers a fresh connection after an authority close and retries the same requ
   expect(f.latest().last("StartSession")).toEqual(request);
 });
 
-it("starts, saves an acknowledged message, completes, and rediscovers history after refresh", async () => {
-  const user = userEvent.setup();
-  const f = fixture();
-  const view = () => (
-    <PrivateInterviewsPanel {...context} dependencies={f.dependencies} />
-  );
-  const first = render(view());
-  expect(
-    screen.getByText(/Assistant replies are not available yet/u)
-  ).toBeInTheDocument();
-  act(() => {
-    f.list(f.directoryReady(), []);
-  });
-  await user.click(
-    screen.getByRole("button", { name: "Start private session" })
-  );
-  const directory = f.latest();
-  const start = directory.last("StartSession");
-  expect(f.storage.size).toBe(1);
-  act(() => {
-    directory.receive({
-      mutationId: start.mutationId,
-      reservation,
-      type: "SessionStarted",
-    });
-    f.sessionReady();
-  });
-  await user.type(screen.getByLabelText("Your message"), message.text);
-  await user.click(screen.getByRole("button", { name: "Save message" }));
-  const session = f.latest();
-  const append = session.last("AppendParticipantMessage");
-  expect(screen.getByRole("button", { name: "Save message" })).toBeDisabled();
-  expect(
-    screen.queryByText(message.text, { selector: "p" })
-  ).not.toBeInTheDocument();
-  act(() =>
-    session.receive({
-      message,
-      mutationId: append.mutationId,
-      state: { status: "open", version: 1 },
-      type: "MessageAppended",
-    })
-  );
-  expect(screen.getByText(message.text, { selector: "p" })).toBeInTheDocument();
-  expect(screen.getByLabelText("Your message")).toHaveValue("");
-  await user.click(screen.getByRole("button", { name: "Complete session" }));
-  act(() =>
-    session.receive({
-      mutationId: session.last("CompleteSession").mutationId,
-      state: { status: "completed", version: 2 },
-      type: "SessionCompleted",
-    })
-  );
-  expect(screen.queryByLabelText("Your message")).not.toBeInTheDocument();
-  expect(f.storage.size).toBe(0);
-  first.unmount();
-  render(view());
-  act(() => f.list(f.directoryReady()));
-  await user.click(screen.getByRole("button", { name: /Session 1/u }));
-  act(() => {
-    const socket = f.latest();
-    socket.receive({
-      bindingKey: "binding-a",
-      generation: "00000000-0000-4000-8000-000000000301",
-      pendingConfirmation: null,
-      sessionReference: reference,
-      state: { status: "completed", version: 2 },
-      type: "SessionReady",
-    });
-    socket.receive({
-      hasMore: false,
-      messages: [message],
-      requestId: socket.last("ReadHistory").requestId,
-      state: { status: "completed", version: 2 },
-      type: "HistoryRead",
-    });
-  });
-  expect(screen.getByText("Completed · history only")).toBeInTheDocument();
-  expect(screen.getByText(message.text)).toBeInTheDocument();
-  expect(
-    screen.queryByRole("button", { name: "Complete session" })
-  ).not.toBeInTheDocument();
-});
-
-it.each([
-  "StartSession",
-  "AppendParticipantMessage",
-  "CompleteSession",
-] as const)(
-  "retains the exact %s command through lost response, remount, and reauthentication",
-  (type) => {
-    const f = fixture();
-    const first = new PrivateInterviewClient(context, f.dependencies);
-    first.connect();
-    const directory = f.directoryReady();
-    f.list(directory);
-    if (type === "StartSession") {
-      first.start();
-    } else {
-      first.select(reference);
-      f.sessionReady();
-      if (type === "AppendParticipantMessage") {
-        first.append(message.text);
-      } else {
-        first.complete();
-      }
-    }
-    const command = f.latest().last(type);
-    f.latest().lose(1008);
-    expect(first.getSnapshot().connection).toBe("authentication_required");
-    expect(first.getSnapshot().messages).toEqual([]);
-    first.disconnect();
-    const second = new PrivateInterviewClient(context, f.dependencies);
-    second.connect();
-    const nextDirectory = f.directoryReady();
-    f.list(nextDirectory);
-    if (type !== "StartSession") {
-      const socket = f.latest();
-      const recoveredState = { status: "completed" as const, version: 2 };
-      socket.receive({
-        bindingKey: "binding-a",
-        generation: "00000000-0000-4000-8000-000000000301",
-        pendingConfirmation: null,
-        sessionReference: reference,
-        state: recoveredState,
-        type: "SessionReady",
-      });
-      socket.receive({
-        hasMore: false,
-        messages: [message],
-        requestId: socket.last("ReadHistory").requestId,
-        state: recoveredState,
-        type: "HistoryRead",
-      });
-    }
-    expect(f.latest().commands.filter((item) => item.type === type)).toEqual(
-      []
-    );
-    second.retry();
-    expect(f.latest().last(type)).toEqual(command);
-    expect(f.storage.size).toBe(1);
-  }
-);
-
 it("cannot replay or display retained private contents under another account, household, or repaired linkage", () => {
   const f = fixture();
   const first = new PrivateInterviewClient(context, f.dependencies);
@@ -342,7 +209,7 @@ it("cannot replay or display retained private contents under another account, ho
   f.directoryReady();
   first.select(reference);
   f.sessionReady();
-  first.append(message.text);
+  first.complete();
   first.disconnect();
   for (const nextContext of [
     { ...context, accountId: "adult-b" },
@@ -369,7 +236,7 @@ it("cannot replay or display retained private contents under another account, ho
     "ListSessions",
   ]);
   repaired.discardPreviousRequest();
-  repaired.start();
+  repaired.start("ProfileEdit");
   expect(f.latest().commands.map((command) => command.type)).toEqual([
     "ListSessions",
     "StartSession",
@@ -377,206 +244,59 @@ it("cannot replay or display retained private contents under another account, ho
   expect(repaired.getSnapshot().pending?.bindingKey).toBe("binding-repaired");
 });
 
-it("keeps old receipts from clearing a newer unresolved mutation", () => {
-  const f = fixture();
-  const client = new PrivateInterviewClient(context, f.dependencies);
-  client.connect();
-  f.directoryReady();
-  client.select(reference);
-  const socket = f.sessionReady();
-  client.append(message.text);
-  const first = socket.last("AppendParticipantMessage");
-  const receipt: SessionFrame = {
-    message,
-    mutationId: first.mutationId,
-    state: { status: "open", version: 1 },
-    type: "MessageAppended",
-  };
-  socket.receive(receipt);
-  client.append("Another message");
-  const second = socket.last("AppendParticipantMessage");
-  socket.receive(receipt);
-  expect(client.getSnapshot().pending?.command).toEqual(second);
-  socket.lose();
-  client.connect();
-  f.directoryReady();
-  f.sessionReady();
-  client.retry();
-  expect(f.latest().last("AppendParticipantMessage")).toEqual(second);
-});
-
-it("allows a new session after a definitive completed-session rejection", () => {
-  const f = fixture();
-  const client = new PrivateInterviewClient(context, f.dependencies);
-  client.connect();
-  const directory = f.directoryReady();
-  client.select(reference);
-  const socket = f.sessionReady();
-  client.append(message.text);
-  socket.receive({
-    commandId: socket.last("AppendParticipantMessage").mutationId,
-    reason: "session_completed",
-    state: { status: "completed", version: 1 },
-    type: "Rejected",
-  });
-  expect(client.getSnapshot().notice).toBe("session_completed");
-  client.start();
-  expect(directory.last("StartSession").type).toBe("StartSession");
-});
-
-it("hides content immediately on account change and ignores late frames from the old socket", async () => {
-  const user = userEvent.setup();
-  const f = fixture();
-  const mounted = render(
-    <PrivateInterviewsPanel {...context} dependencies={f.dependencies} />
-  );
-  act(() => f.list(f.directoryReady()));
-  await user.click(screen.getByRole("button", { name: /Session 1/u }));
-  const old = f.latest();
-  act(() => {
-    old.receive({
-      bindingKey: "binding-a",
-      generation: "00000000-0000-4000-8000-000000000301",
-      pendingConfirmation: null,
-      sessionReference: reference,
-      state,
-      type: "SessionReady",
-    });
-    old.receive({
-      hasMore: false,
-      messages: [message],
-      requestId: old.last("ReadHistory").requestId,
-      state,
-      type: "HistoryRead",
-    });
-  });
-  expect(screen.getByText(message.text)).toBeInTheDocument();
-  mounted.rerender(
-    <PrivateInterviewsPanel
-      {...context}
-      accountId="adult-b"
-      dependencies={f.dependencies}
-    />
-  );
-  expect(screen.queryByText(message.text)).not.toBeInTheDocument();
-  expect(old.closed).toBe(true);
-  act(() =>
-    old.receive({
-      hasMore: false,
-      messages: [message],
-      requestId: old.last("ReadHistory").requestId,
-      state,
-      type: "HistoryRead",
-    })
-  );
-  expect(screen.queryByText(message.text)).not.toBeInTheDocument();
-});
-
-it("requires refreshed review after version conflict and preserves the text for explicit resubmission", async () => {
-  const user = userEvent.setup();
-  const f = fixture();
-  render(<PrivateInterviewsPanel {...context} dependencies={f.dependencies} />);
-  act(() => f.list(f.directoryReady()));
-  await user.click(screen.getByRole("button", { name: /Session 1/u }));
-  act(() => {
-    f.sessionReady();
-  });
-  await user.type(screen.getByLabelText("Your message"), message.text);
-  await user.click(screen.getByRole("button", { name: "Save message" }));
-  const socket = f.latest();
-  const original = socket.last("AppendParticipantMessage");
-  act(() =>
-    socket.receive({
-      commandId: original.mutationId,
-      reason: "version_conflict",
-      state: { status: "open", version: 2 },
-      type: "Rejected",
-    })
-  );
-  expect(screen.getByRole("button", { name: "Save message" })).toBeDisabled();
-  expect(
-    screen.queryByRole("button", { name: "Retry saved request" })
-  ).not.toBeInTheDocument();
-  await user.click(
-    screen.getByRole("button", { name: "Review updated history" })
-  );
-  expect(screen.getByRole("button", { name: "Save message" })).toBeDisabled();
-  act(() =>
-    socket.receive({
-      hasMore: false,
-      messages: [],
-      requestId: socket.last("ReadHistory").requestId,
-      state: { status: "open", version: 2 },
-      type: "HistoryRead",
-    })
-  );
-  expect(
-    socket.commands.filter(
-      (command) => command.type === "AppendParticipantMessage"
-    )
-  ).toHaveLength(1);
-  expect(screen.getByLabelText("Your message")).toHaveValue(message.text);
-  await user.click(screen.getByRole("button", { name: "Save message" }));
-  expect(socket.last("AppendParticipantMessage")).toMatchObject({
-    expectedVersion: 2,
-    text: original.text,
-  });
-  expect(socket.last("AppendParticipantMessage").mutationId).not.toBe(
-    original.mutationId
-  );
-});
-
-it("deduplicates replayed history and does not skip unread pages when an append receipt arrives", () => {
-  const f = fixture();
-  const client = new PrivateInterviewClient(context, f.dependencies);
-  client.connect();
-  f.directoryReady();
-  client.select(reference);
-  const socket = f.latest();
-  socket.receive({
-    bindingKey: "binding-a",
-    generation: "00000000-0000-4000-8000-000000000301",
-    pendingConfirmation: null,
-    sessionReference: reference,
-    state,
-    type: "SessionReady",
-  });
-  socket.receive({
-    hasMore: true,
-    messages: [message],
-    requestId: socket.last("ReadHistory").requestId,
-    state: { status: "open", version: 3 },
-    type: "HistoryRead",
-  });
-  client.append("New message");
-  socket.receive({
-    message: {
-      ...message,
-      id: "00000000-0000-4000-8000-000000000204",
-      ordinal: 4,
-      text: "New message",
-    },
-    mutationId: socket.last("AppendParticipantMessage").mutationId,
-    state: { status: "open", version: 4 },
-    type: "MessageAppended",
-  });
-  client.loadHistory();
-  expect(socket.last("ReadHistory").afterOrdinal).toBe(1);
-  socket.receive({
-    hasMore: false,
-    messages: [
-      message,
-      { ...message, id: "00000000-0000-4000-8000-000000000202", ordinal: 2 },
-    ],
-    requestId: socket.last("ReadHistory").requestId,
-    state: { status: "open", version: 3 },
-    type: "HistoryRead",
-  });
-  expect(client.getSnapshot().messages.map((item) => item.ordinal)).toEqual([
-    1, 2, 4,
-  ]);
-  expect(client.getSnapshot().sessionState?.version).toBe(4);
-});
+it.each(["clear", "changed"] as const)(
+  "recovers an unreadable saved start only through an explicit %s action",
+  (outcome) => {
+    const f = fixture();
+    const first = new PrivateInterviewClient(context, f.dependencies);
+    first.connect();
+    const initialDirectory = f.directoryReady();
+    f.list(initialDirectory);
+    first.start("ProfileEdit");
+    const [entry] = [...f.storage];
+    if (entry === undefined) {
+      throw new Error("Expected retained request");
+    }
+    const [key, valid] = entry;
+    const decoded = JSON.parse(valid);
+    delete decoded.command.scope;
+    const unreadable = JSON.stringify(decoded);
+    f.storage.set(key, unreadable);
+    first.disconnect();
+    const resumed = new PrivateInterviewClient(context, f.dependencies);
+    resumed.connect();
+    const directory = f.directoryReady();
+    f.list(directory);
+    expect(resumed.getSnapshot().notice).toBe("unreadable_request");
+    expect(f.storage.get(key)).toBe(unreadable);
+    resumed.start("InitialDiscovery");
+    expect(
+      directory.commands.filter((command) => command.type === "StartSession")
+    ).toEqual([]);
+    if (outcome === "changed") {
+      f.storage.set(key, valid);
+    }
+    resumed.discardUnreadableRequest();
+    expect(f.storage.get(key)).toBe(outcome === "changed" ? valid : undefined);
+    const refreshed = f.directoryReady();
+    f.list(refreshed);
+    if (outcome === "clear") {
+      expect(resumed.getSnapshot().notice).toBeNull();
+      resumed.start("InitialDiscovery");
+      expect(refreshed.last("StartSession")).toMatchObject({
+        scope: "InitialDiscovery",
+      });
+    } else {
+      expect(resumed.getSnapshot().pending?.command).toMatchObject({
+        scope: "ProfileEdit",
+        type: "StartSession",
+      });
+      expect(
+        refreshed.commands.filter((command) => command.type === "StartSession")
+      ).toEqual([]);
+    }
+  }
+);
 
 it("does not send a mutation when browser storage fails", () => {
   const f = fixture();
@@ -591,7 +311,7 @@ it("does not send a mutation when browser storage fails", () => {
   });
   client.connect();
   f.directoryReady();
-  client.start();
+  client.start("ProfileEdit");
   expect(f.latest().commands.map((command) => command.type)).toEqual([
     "ListSessions",
   ]);
@@ -605,6 +325,7 @@ it("rejects oversized or unbound frames without rendering private content", () =
   f.directoryReady();
   client.select(reference);
   f.latest().receive({
+    assistantTurn: null,
     bindingKey: "binding-other",
     generation: "00000000-0000-4000-8000-000000000301",
     pendingConfirmation: null,
@@ -616,7 +337,7 @@ it("rejects oversized or unbound frames without rendering private content", () =
   client.connect();
   f.latest().onFrame?.({ data: " ".repeat(32_769) });
   expect(client.getSnapshot().connection).toBe("unavailable");
-  expect(client.getSnapshot().messages).toEqual([]);
+  expect(client.getSnapshot().generation).toBeNull();
 });
 
 const proposal = (patch: Record<string, unknown> = {}) =>
@@ -866,6 +587,72 @@ it("requires an explicit revised proposal and a new confirmation after a shared 
   expect(socket.last("ConfirmProfileCard").mutationId).not.toBe(
     revise.mutationId
   );
+});
+
+it("preserves an unreadable request through confirmation reconciliation until explicit clearing", async () => {
+  const f = fixture();
+  const first = new PrivateInterviewClient(context, f.dependencies);
+  first.connect();
+  f.list(f.directoryReady());
+  first.start("ProfileEdit");
+  const [entry] = [...f.storage];
+  if (entry === undefined) {
+    throw new Error("Expected retained request");
+  }
+  const [key, valid] = entry;
+  const decoded = JSON.parse(valid);
+  delete decoded.command.scope;
+  const unreadable = JSON.stringify(decoded);
+  f.storage.set(key, unreadable);
+  first.disconnect();
+
+  const client = new PrivateInterviewClient(context, f.dependencies);
+  client.connect();
+  const directory = f.directoryReady();
+  f.list(directory);
+  client.select(reference);
+  const pendingId = "00000000-0000-4000-8000-000000000601";
+  const card = proposal({ status: "pending" });
+  const socket = f.sessionReady(
+    { status: "open", version: 1 },
+    [card],
+    pendingId
+  );
+  expect(client.getSnapshot().notice).toBe("unreadable_request");
+  await client.checkConfirmation();
+  expect(f.dependencies.continueConfirmation).toHaveBeenCalledOnce();
+  const outcome = {
+    profileVersion: Schema.decodeUnknownSync(PersonProfile.fields.version)(1),
+    type: "committed" as const,
+  };
+  socket.receive({
+    card: { ...card, outcome, status: "confirmed" },
+    mutationId: pendingId,
+    outcome,
+    state: { status: "open", version: 2 },
+    type: "ConfirmationSettled",
+  });
+  expect(client.getSnapshot().pendingConfirmation).toBeNull();
+  expect(client.getSnapshot().notice).toBe("unreadable_request");
+  client.start("InitialDiscovery");
+  client.complete();
+  expect(f.storage.get(key)).toBe(unreadable);
+  expect(
+    directory.commands.filter((command) => command.type === "StartSession")
+  ).toEqual([]);
+  expect(
+    socket.commands.filter((command) => command.type === "CompleteSession")
+  ).toEqual([]);
+
+  client.discardUnreadableRequest();
+  expect(f.storage.has(key)).toBe(false);
+  const refreshed = f.directoryReady();
+  f.list(refreshed);
+  expect(client.getSnapshot().notice).toBeNull();
+  client.start("InitialDiscovery");
+  expect(refreshed.last("StartSession")).toMatchObject({
+    scope: "InitialDiscovery",
+  });
 });
 
 it("discovers another device's pending confirmation and retries the same ID only after fresh admission", async () => {
@@ -1248,4 +1035,586 @@ it("refreshes the sibling shared profile and history on canonical settlement whi
   });
   expect(operations.get).toHaveBeenCalledTimes(2);
   expect(operations.versions).toHaveBeenCalledTimes(2);
+});
+
+it("transparently re-admits an idle directory and reconciles the exact Start request", async () => {
+  const f = fixture();
+  const user = userEvent.setup();
+  render(<PrivateInterviewsPanel {...context} dependencies={f.dependencies} />);
+  let original: Socket | undefined;
+  act(() => {
+    original = f.directoryReady();
+    f.list(original, []);
+  });
+  await user.click(
+    screen.getByRole("button", { name: "Start food discovery" })
+  );
+  const start = f.latest().last("StartSession");
+  act(() => original?.lose(1008));
+  expect(
+    screen.getByText(/Connecting to your private sessions/u)
+  ).toBeInTheDocument();
+  const fresh = f.latest();
+  act(() => {
+    f.directoryReady();
+    f.list(fresh, []);
+  });
+  expect(fresh.last("StartSession")).toEqual(start);
+  act(() => {
+    fresh.receive({
+      mutationId: start.mutationId,
+      reservation,
+      type: "SessionStarted",
+    });
+    f.sessionReady();
+  });
+  await waitFor(() =>
+    expect(screen.getByLabelText("Your message")).toBeEnabled()
+  );
+  expect(f.storage.size).toBe(0);
+  expect(f.dependencies.continueConfirmation).not.toHaveBeenCalled();
+});
+
+const establishedClient = (f: ReturnType<typeof fixture>) => {
+  const client = new PrivateInterviewClient(context, f.dependencies);
+  client.connect();
+  f.list(f.directoryReady());
+  client.select(reference);
+  const socket = f.sessionReady();
+  return { client, socket };
+};
+
+it("restores only selection metadata after idle loss and rejects a different participant binding", () => {
+  const f = fixture();
+  const { client, socket } = establishedClient(f);
+  expect(client.getSnapshot().generation).not.toBeNull();
+  socket.lose(1008);
+  expect(client.getSnapshot().generation).toBeNull();
+  expect(client.getSnapshot().sessionReference).toBeNull();
+  const count = f.sockets.length;
+  const admission = f.latest();
+  f.directoryReady("binding-other");
+  expect(client.getSnapshot().connection).toBe("authentication_required");
+  expect(client.getSnapshot().generation).toBeNull();
+  expect(f.sockets.length).toBe(count);
+  expect(admission.commands).toEqual([]);
+  expect(admission.closed).toBe(true);
+});
+
+it.each(["admission", "initial_reads"])(
+  "stops automatic recovery after a revoked %s without looping",
+  (failurePoint) => {
+    const f = fixture();
+    const { client, socket } = establishedClient(f);
+    socket.lose(1008);
+    if (failurePoint === "initial_reads") {
+      f.list(f.directoryReady());
+      f.latest().receive({
+        assistantTurn: null,
+        bindingKey: "binding-a",
+        generation: "00000000-0000-4000-8000-000000000302",
+        pendingConfirmation: null,
+        sessionReference: reference,
+        state,
+        type: "SessionReady",
+      });
+    }
+    const failed = f.latest();
+    const count = f.sockets.length;
+    failed.lose(1008);
+    failed.lose(1008);
+    expect(f.sockets.length).toBe(count);
+    expect(client.getSnapshot().connection).toBe("authentication_required");
+    expect(client.getSnapshot().generation).toBeNull();
+    expect(client.getSnapshot().cards).toEqual([]);
+  }
+);
+
+it("does not let two established tabs endlessly replace one another after repeated authority closes", () => {
+  const left = fixture();
+  const right = fixture();
+  const a = establishedClient(left);
+  const b = establishedClient(right);
+  a.socket.lose(1008);
+  left.list(left.directoryReady());
+  left.sessionReady();
+  expect(a.client.getSnapshot().sessionReference).toBe(reference);
+  b.socket.lose(1008);
+  right.list(right.directoryReady());
+  right.sessionReady();
+  const leftCount = left.sockets.length;
+  const rightCount = right.sockets.length;
+  left.latest().lose(1008);
+  right.latest().lose(1008);
+  expect(left.sockets.length).toBe(leftCount);
+  expect(right.sockets.length).toBe(rightCount);
+  expect(a.client.getSnapshot().connection).toBe("authentication_required");
+  expect(b.client.getSnapshot().connection).toBe("authentication_required");
+  a.client.connect();
+  left.list(left.directoryReady());
+  a.client.start("ProfileEdit");
+  const exact = left.latest().last("StartSession");
+  left.latest().lose(1008);
+  const fresh = left.directoryReady();
+  expect(fresh.last("StartSession")).toEqual(exact);
+  expect(left.sockets.length).toBe(leftCount + 2);
+});
+
+it("reconciles recovered confirmation once without automatic household continuation", async () => {
+  const f = fixture();
+  const client = new PrivateInterviewClient(context, f.dependencies);
+  client.connect();
+  f.list(f.directoryReady());
+  client.select(reference);
+  const card = proposal();
+  const original = f.sessionReady(state, [card]);
+  await Promise.resolve();
+  client.confirmCard(card, null);
+  const exact = original.last("ConfirmProfileCard");
+  original.lose(1008);
+  f.list(f.directoryReady());
+  const fresh = f.sessionReady(state, [card]);
+  expect(fresh.last("ConfirmProfileCard")).toEqual(exact);
+  fresh.receive({
+    card: { ...card, status: "pending" },
+    mutationId: exact.mutationId,
+    state: { ...state, version: 1 },
+    type: "ConfirmationPending",
+  });
+  await Promise.resolve();
+  expect(
+    fresh.commands.filter((command) => command.type === "ConfirmProfileCard")
+  ).toHaveLength(1);
+  expect(f.dependencies.continueConfirmation).not.toHaveBeenCalled();
+  expect(client.getSnapshot().confirmationStatus).toBe("idle");
+  expect(client.getSnapshot().pendingConfirmation).toBe(exact.mutationId);
+});
+
+const chatHistory = (activeRun: { runId: string } | null = null) =>
+  Response.json({
+    activeRun,
+    messages: [
+      {
+        id: messageId,
+        parts: [{ content: message.text, type: "text" }],
+        role: "user",
+      },
+    ],
+  });
+const chatEvents = (
+  runId: string,
+  reply = "What foods do you need to avoid?"
+) => [
+  { runId, threadId: reference, timestamp: 1, type: "RUN_STARTED" },
+  {
+    messageId: "accepted-reply",
+    role: "assistant",
+    type: "TEXT_MESSAGE_START",
+  },
+  { delta: reply, messageId: "accepted-reply", type: "TEXT_MESSAGE_CONTENT" },
+  { messageId: "accepted-reply", type: "TEXT_MESSAGE_END" },
+  {
+    outcome: { type: "success" },
+    runId,
+    threadId: reference,
+    timestamp: 2,
+    type: "RUN_FINISHED",
+  },
+];
+const eventResponse = (events: readonly unknown[], start = 0) =>
+  new Response(
+    events
+      .map(
+        (event, index) =>
+          `id: ${index + start}\ndata: ${JSON.stringify(event)}\n\n`
+      )
+      .join(""),
+    { headers: { "content-type": "text/event-stream" } }
+  );
+const openChat = async (f: ReturnType<typeof fixture>) => {
+  const user = userEvent.setup();
+  const mounted = render(
+    <PrivateInterviewsPanel {...context} dependencies={f.dependencies} />
+  );
+  act(() => f.list(f.directoryReady()));
+  await user.click(screen.getByRole("button", { name: /Session 1/u }));
+  await act(async () => f.sessionReady());
+  await screen.findByText(message.text);
+  return { mounted, socket: f.latest(), user };
+};
+it("hydrates the sole server transcript and sends native chat input using the current domain version", async () => {
+  const f = fixture();
+  f.dependencies.fetchChat.mockImplementation(async (_input, init) => {
+    if (init?.method !== "POST") {
+      return chatHistory();
+    }
+    const body = JSON.parse(String(init.body));
+    return eventResponse(chatEvents(body.runId));
+  });
+  const { user, socket } = await openChat(f);
+  expect(screen.getByText(message.text)).toBeInTheDocument();
+  expect(socket.commands.map((command) => command.type)).not.toContain(
+    "ReadHistory"
+  );
+  act(() =>
+    socket.receive({
+      state: { ...state, version: 7 },
+      turn: {
+        failure: "invalid_output",
+        id: "00000000-0000-4000-8000-000000000401",
+        sourceMessageId: messageId,
+        status: "failed",
+      },
+      type: "AssistantTurnUpdated",
+    })
+  );
+  await user.type(screen.getByLabelText("Your message"), "I avoid peanuts.");
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  expect(
+    await screen.findByText("What foods do you need to avoid?")
+  ).toBeInTheDocument();
+  const posts = f.dependencies.fetchChat.mock.calls.filter(
+    ([, init]) => init?.method === "POST"
+  );
+  expect(posts).toHaveLength(1);
+  const [input, init] = posts[0] ?? [];
+  expect(input).toBe(`/v1/private-interviews/${reference}/chat`);
+  expect(new Headers(init?.headers).get("x-private-output-generation")).toBe(
+    "00000000-0000-4000-8000-000000000301"
+  );
+  const body = JSON.parse(String(init?.body));
+  expect(body).toMatchObject({
+    data: { expectedVersion: 7 },
+    forwardedProps: { expectedVersion: 7 },
+    threadId: reference,
+    tools: [],
+  });
+  expect(body.runId).toMatch(/^run-[0-9]+-[a-z0-9]*$/u);
+  expect(body.data).not.toHaveProperty("mutationId");
+  expect(body.messages.at(-1)).toMatchObject({
+    content: "I avoid peanuts.",
+    role: "user",
+  });
+  expect(socket.commands.map((command) => command.type)).not.toContain(
+    "AppendParticipantMessage"
+  );
+  expect([...f.storage.values()].join(",")).not.toContain("I avoid peanuts.");
+});
+it("reconnects the same native run and deduplicates replay without submitting another intent", async () => {
+  const f = fixture();
+  let posts = 0;
+  f.dependencies.fetchChat.mockImplementation(async (_input, init) => {
+    if (init?.method !== "POST") {
+      return chatHistory();
+    }
+    const { runId } = JSON.parse(String(init.body));
+    posts += 1;
+    return eventResponse(
+      posts === 1 ? chatEvents(runId).slice(0, 1) : chatEvents(runId)
+    );
+  });
+  const { user } = await openChat(f);
+  await user.type(screen.getByLabelText("Your message"), "No allergies.");
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  expect(
+    await screen.findByText("What foods do you need to avoid?")
+  ).toBeInTheDocument();
+  const requests = f.dependencies.fetchChat.mock.calls.filter(
+    ([, init]) => init?.method === "POST"
+  );
+  expect(requests).toHaveLength(2);
+  expect(requests[1]?.[1]?.body).toBe(requests[0]?.[1]?.body);
+  expect(new Headers(requests[1]?.[1]?.headers).get("Last-Event-ID")).toBe("0");
+  expect(screen.getAllByText("What foods do you need to avoid?")).toHaveLength(
+    1
+  );
+});
+it("joins the hydrated active run with read-only GET and never launches inference on mount", async () => {
+  const f = fixture();
+  const runId = "00000000-0000-4000-8000-000000000501";
+  f.dependencies.fetchChat.mockImplementation(async (input) =>
+    String(input).includes("runId=")
+      ? eventResponse(chatEvents(runId))
+      : chatHistory({ runId })
+  );
+  await openChat(f);
+  expect(
+    await screen.findByText("What foods do you need to avoid?")
+  ).toBeInTheDocument();
+  expect(
+    f.dependencies.fetchChat.mock.calls.every(
+      ([, init]) => init?.method === "GET"
+    )
+  ).toBe(true);
+  expect(
+    f.dependencies.fetchChat.mock.calls.some(
+      ([input]) =>
+        String(input).includes(`runId=${runId}`) &&
+        String(input).includes("offset=-1")
+    )
+  ).toBe(true);
+});
+it("Stop cancels the server run and aborts the local stream", async () => {
+  const f = fixture();
+  let streamSignal: AbortSignal | null | undefined;
+  f.dependencies.fetchChat.mockImplementation(async (_input, init) => {
+    if (init?.method === "DELETE") {
+      return new Response(null, { status: 204 });
+    }
+    if (init?.method !== "POST") {
+      return chatHistory();
+    }
+    streamSignal = init.signal;
+    const { runId } = JSON.parse(String(init.body));
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              `id: 0\ndata: ${JSON.stringify(chatEvents(runId)[0])}\n\n`
+            )
+          );
+          init.signal?.addEventListener(
+            "abort",
+            () => controller.error(new DOMException("Stopped", "AbortError")),
+            { once: true }
+          );
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } }
+    );
+  });
+  const { user } = await openChat(f);
+  await user.type(
+    screen.getByLabelText("Your message"),
+    "Please help me explore my preferences."
+  );
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  const stopButton = await screen.findByRole("button", {
+    name: "Stop response",
+  });
+  expect(
+    screen.getByRole("button", { name: "Complete session" })
+  ).toBeDisabled();
+  expect(
+    screen.getByRole("group", { name: "Profile proposal review" })
+  ).toBeDisabled();
+  await user.click(stopButton);
+  await waitFor(() =>
+    expect(
+      f.dependencies.fetchChat.mock.calls.some(
+        ([, init]) => init?.method === "DELETE"
+      )
+    ).toBe(true)
+  );
+  expect(streamSignal?.aborted).toBe(true);
+  const post = f.dependencies.fetchChat.mock.calls.find(
+    ([, init]) => init?.method === "POST"
+  );
+  const cancel = f.dependencies.fetchChat.mock.calls.find(
+    ([, init]) => init?.method === "DELETE"
+  );
+  expect(String(cancel?.[0])).toContain(
+    `runId=${JSON.parse(String(post?.[1]?.body)).runId}`
+  );
+  expect(cancel?.[1]?.body).toBeUndefined();
+});
+it("clears the transcript immediately on account change", async () => {
+  const f = fixture();
+  f.dependencies.fetchChat.mockImplementation(async () => chatHistory());
+  const { mounted } = await openChat(f);
+  expect(screen.getByText(message.text)).toBeInTheDocument();
+  mounted.rerender(
+    <PrivateInterviewsPanel
+      {...context}
+      accountId="adult-b"
+      dependencies={f.dependencies}
+    />
+  );
+  expect(screen.queryByText(message.text)).not.toBeInTheDocument();
+  expect(
+    screen.getByText(/Connecting to your private sessions/u)
+  ).toBeInTheDocument();
+  expect(f.sockets.slice(0, -1).every(({ socket }) => socket.closed)).toBe(
+    true
+  );
+});
+it("keeps invalid output out of the conversation and never automatically retries the model", async () => {
+  const f = fixture();
+  f.dependencies.fetchChat.mockImplementation(async (_input, init) => {
+    if (init?.method !== "POST") {
+      return chatHistory();
+    }
+    const { runId } = JSON.parse(String(init.body));
+    return eventResponse([
+      chatEvents(runId)[0],
+      {
+        code: "invalid_output",
+        error: {
+          code: "invalid_output",
+          message: "The response failed validation.",
+        },
+        message: "The response failed validation.",
+        runId,
+        threadId: reference,
+        type: "RUN_ERROR",
+      },
+    ]);
+  });
+  const { user } = await openChat(f);
+  await user.type(screen.getByLabelText("Your message"), "My latest answer.");
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  expect(
+    await screen.findByText(/The connection to the response was interrupted/u)
+  ).toBeInTheDocument();
+  expect(
+    f.dependencies.fetchChat.mock.calls.filter(
+      ([, init]) => init?.method === "POST"
+    )
+  ).toHaveLength(1);
+  expect(
+    screen.queryByText("What foods do you need to avoid?")
+  ).not.toBeInTheDocument();
+});
+
+it("shows a failed hydration honestly and prevents sending before server history is available", async () => {
+  const f = fixture();
+  f.dependencies.fetchChat.mockResolvedValue(
+    new Response(null, { status: 503 })
+  );
+  const user = userEvent.setup();
+  render(<PrivateInterviewsPanel {...context} dependencies={f.dependencies} />);
+  act(() => f.list(f.directoryReady()));
+  await user.click(screen.getByRole("button", { name: /Session 1/u }));
+  await act(async () => f.sessionReady());
+  expect(
+    await screen.findByText("Your private history could not be loaded.")
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText("Your message")).toBeDisabled();
+  expect(f.dependencies.fetchChat.mock.calls).toHaveLength(1);
+  expect(f.dependencies.fetchChat.mock.calls[0]?.[1]?.method).toBe("GET");
+});
+
+it("ignores a late authentication failure belonging to the previous mounted account", async () => {
+  const f = fixture();
+  let resolveOld: ((response: Response) => void) | undefined;
+  f.dependencies.fetchChat
+    .mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveOld = resolve;
+        })
+    )
+    .mockImplementation(async () => chatHistory());
+  const user = userEvent.setup();
+  const mounted = render(
+    <PrivateInterviewsPanel {...context} dependencies={f.dependencies} />
+  );
+  act(() => f.list(f.directoryReady()));
+  await user.click(screen.getByRole("button", { name: /Session 1/u }));
+  await act(async () => f.sessionReady());
+  mounted.rerender(
+    <PrivateInterviewsPanel
+      {...context}
+      accountId="adult-b"
+      dependencies={f.dependencies}
+    />
+  );
+  act(() => f.list(f.directoryReady()));
+  await user.click(screen.getByRole("button", { name: /Session 1/u }));
+  await act(async () =>
+    f.sessionReady(state, [], null, "00000000-0000-4000-8000-000000000302")
+  );
+  expect(await screen.findByText(message.text)).toBeInTheDocument();
+  const count = f.sockets.length;
+  await act(async () => resolveOld?.(new Response(null, { status: 401 })));
+  expect(screen.getByText(message.text)).toBeInTheDocument();
+  expect(f.sockets).toHaveLength(count);
+  expect(f.latest().closed).toBe(false);
+});
+
+it("renders accepted text arriving after the native run-finished event and restores it from server history", async () => {
+  const f = fixture();
+  const reply = "Do you have any foods you need to avoid for safety?";
+  let accepted = false;
+  f.dependencies.fetchChat.mockImplementation(async (_input, init) => {
+    if (init?.method !== "POST") {
+      return accepted
+        ? Response.json({
+            activeRun: null,
+            messages: [
+              {
+                id: messageId,
+                parts: [{ content: message.text, type: "text" }],
+                role: "user",
+              },
+              {
+                id: "accepted-reply",
+                parts: [{ content: reply, type: "text" }],
+                role: "assistant",
+              },
+            ],
+          })
+        : chatHistory();
+    }
+    const { runId } = JSON.parse(String(init.body));
+    accepted = true;
+    f.latest().receive({
+      state: { ...state, version: 2 },
+      turn: {
+        failure: null,
+        id: runId,
+        sourceMessageId: messageId,
+        status: "succeeded",
+      },
+      type: "AssistantTurnUpdated",
+    });
+    const [started, textStart, content, textEnd, finished] = chatEvents(
+      runId,
+      reply
+    );
+    return eventResponse([started, finished, textStart, content, textEnd]);
+  });
+  const { mounted, socket, user } = await openChat(f);
+  await user.type(
+    screen.getByLabelText("Your message"),
+    "Help me explore my food preferences."
+  );
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  expect(await screen.findByText(reply)).toBeInTheDocument();
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Stop response" })
+    ).not.toBeInTheDocument()
+  );
+  act(() =>
+    socket.receive({
+      cards: [],
+      hasMore: false,
+      pendingConfirmation: null,
+      requestId: socket.last("ReadCards").requestId,
+      state: { ...state, version: 2 },
+      type: "CardsRead",
+    })
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText("Your message")).toBeEnabled()
+  );
+  expect(
+    screen.queryByRole("button", { name: "Stop response" })
+  ).not.toBeInTheDocument();
+  expect(
+    f.dependencies.fetchChat.mock.calls.filter(
+      ([, init]) => init?.method === "POST"
+    )
+  ).toHaveLength(1);
+  mounted.unmount();
+  await openChat(f);
+  expect(screen.getAllByText(reply)).toHaveLength(1);
+  expect(screen.getByLabelText("Your message")).toBeEnabled();
+  expect(
+    f.dependencies.fetchChat.mock.calls.filter(
+      ([, init]) => init?.method === "POST"
+    )
+  ).toHaveLength(1);
 });

@@ -21,6 +21,7 @@ import {
 } from "./private-output.contract.js";
 import {
   privateDirectoryBinding,
+  privateDiscoverySessionScopes,
   privateReservations,
   privateReceipts,
 } from "./private-output.database-schema.js";
@@ -99,19 +100,29 @@ export class PrivateInterviewDirectory extends DurableObject<PrivateInterviewEnv
     this.#binding(input.binding);
     this.#socket.authorize(input.generation, input.expiresAt);
   }
-  hasReservation(untrusted: PrivateSessionBinding): boolean {
+  readReservation(untrusted: PrivateSessionBinding) {
     const binding = Schema.decodeUnknownSync(PrivateSessionBinding, {
       onExcessProperty: "error",
     })(untrusted);
     this.#binding(binding);
+    const reservation = this.#database
+      .select()
+      .from(privateReservations)
+      .where(eq(privateReservations.sessionReference, binding.sessionReference))
+      .get();
+    return reservation === undefined
+      ? null
+      : { ...reservation, scope: this.#scope(reservation.sessionReference) };
+  }
+  #scope(sessionReference: string) {
     return (
       this.#database
         .select()
-        .from(privateReservations)
+        .from(privateDiscoverySessionScopes)
         .where(
-          eq(privateReservations.sessionReference, binding.sessionReference)
+          eq(privateDiscoverySessionScopes.sessionReference, sessionReference)
         )
-        .get() !== undefined
+        .get()?.scope ?? null
     );
   }
   override fetch(
@@ -165,7 +176,12 @@ export class PrivateInterviewDirectory extends DurableObject<PrivateInterviewEnv
           return {
             hasMore: reservations.length > command.limit,
             requestId: command.requestId,
-            reservations: reservations.slice(0, command.limit),
+            reservations: reservations
+              .slice(0, command.limit)
+              .map((reservation) => ({
+                ...reservation,
+                scope: this.#scope(reservation.sessionReference),
+              })),
             type: "SessionsListed",
           };
         }
@@ -196,9 +212,16 @@ export class PrivateInterviewDirectory extends DurableObject<PrivateInterviewEnv
           })
           .returning()
           .get();
+        transaction
+          .insert(privateDiscoverySessionScopes)
+          .values({
+            scope: command.scope,
+            sessionReference: reservation.sessionReference,
+          })
+          .run();
         const result: DirectoryFrame = {
           mutationId: command.mutationId,
-          reservation,
+          reservation: { ...reservation, scope: command.scope },
           type: "SessionStarted",
         };
         transaction

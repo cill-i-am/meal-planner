@@ -1,0 +1,243 @@
+import {
+  ProfileFactId,
+  ProfileFactStanding,
+  ProfileFactValue,
+  ProfileVersion,
+} from "@meal-planner/household-api";
+import {
+  PrivateDiscoveryScope,
+  ProfileCard,
+  ProfileCardChange,
+} from "@meal-planner/private-interview-api";
+import type { ChatMiddleware, ModelMessage, StreamChunk } from "@tanstack/ai";
+import type { Effect } from "effect";
+import { Data, Schema } from "effect";
+
+import type { PrivateChatReply } from "./private-chat-reply.js";
+import type { PrivateDiscoveryClarificationFailure } from "./private-discovery-clarification.js";
+import {
+  PrivateDiscoveryContinuity,
+  PrivateDiscoveryContinuityUpdates,
+} from "./private-discovery-continuity.js";
+import type { PrivateDiscoveryContinuationFailure } from "./private-discovery-continuity.js";
+import type { PrivateDiscoveryCoverageFailure } from "./private-discovery-coverage.js";
+import {
+  PrivateDiscoveryEvidence,
+  PrivateDiscoveryEvidenceMessage,
+} from "./private-discovery-needs.js";
+import type { PrivateDiscoveryNeedFailure } from "./private-discovery-needs.js";
+
+export const PRIVATE_DISCOVERY_CONTEXT_BYTES = 24_576;
+export const PRIVATE_DISCOVERY_MESSAGE_LIMIT = 16;
+export const PRIVATE_DISCOVERY_CARD_LIMIT = 25;
+export const PRIVATE_DISCOVERY_PROMPT_VERSION = "private-discovery-prompt-v25";
+export const PRIVATE_DISCOVERY_POLICY_VERSION = "private-discovery-policy-v6";
+export const PRIVATE_DISCOVERY_TOOL_VERSION = "submit-discovery-turn-v2";
+
+const Id = Schema.String.pipe(Schema.check(Schema.isUUID()));
+export const PrivateDiscoveryProfile = Schema.Struct({
+  facts: Schema.Array(
+    Schema.Struct({
+      id: ProfileFactId,
+      standing: ProfileFactStanding,
+      value: ProfileFactValue,
+    })
+  ),
+  version: ProfileVersion,
+});
+export type PrivateDiscoveryProfile = typeof PrivateDiscoveryProfile.Type;
+
+/** Only the bound adult's own profile and this private session enter the model. */
+export const PrivateDiscoveryContext = Schema.Struct({
+  cards: Schema.Array(
+    Schema.Struct({
+      change: ProfileCardChange,
+      id: Id,
+      reviewedFact: Schema.NullOr(ProfileFactValue),
+      revision: ProfileCard.fields.revision,
+      status: Schema.Literals([
+        "proposed",
+        "rejected",
+        "pending",
+        "confirmed",
+        "conflict",
+      ]),
+    })
+  ).pipe(Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_CARD_LIMIT))),
+  continuity: PrivateDiscoveryContinuity,
+  messages: Schema.Array(PrivateDiscoveryEvidenceMessage).pipe(
+    Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_MESSAGE_LIMIT))
+  ),
+  profile: PrivateDiscoveryProfile,
+  scope: PrivateDiscoveryScope,
+});
+export type PrivateDiscoveryContext = typeof PrivateDiscoveryContext.Type;
+
+export const DiscoveryProfileCardChange = Schema.Union([
+  Schema.Struct({ _tag: Schema.Literal("AddFact"), fact: ProfileFactValue }),
+  Schema.Struct({ _tag: Schema.Literal("ConfirmFact"), factId: ProfileFactId }),
+  Schema.Struct({ _tag: Schema.Literal("RemoveFact"), factId: ProfileFactId }),
+  Schema.Struct({
+    _tag: Schema.Literal("ReplaceFact"),
+    fact: ProfileFactValue,
+    factId: ProfileFactId,
+  }),
+]).pipe(
+  Schema.annotate({
+    identifier: "PrivateDiscoveryProfileCardChange",
+    parseOptions: { onExcessProperty: "error" },
+  })
+);
+export type DiscoveryProfileCardChange = typeof DiscoveryProfileCardChange.Type;
+const ProposeProfileCard = Schema.Struct({
+  _tag: Schema.Literal("ProposeProfileCard"),
+  change: DiscoveryProfileCardChange,
+});
+const ReviseProposedProfileCard = Schema.Struct({
+  _tag: Schema.Literal("ReviseProposedProfileCard"),
+  cardId: Id,
+  change: DiscoveryProfileCardChange,
+});
+const PrivateDiscoveryProposal = Schema.Union([
+  ProposeProfileCard,
+  ReviseProposedProfileCard,
+]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+
+const outputSchema = <S extends Schema.Constraint>(proposal: S) =>
+  Schema.Union([
+    Schema.Struct({
+      _tag: Schema.Literal("Stop"),
+      evidence: PrivateDiscoveryEvidence,
+    }),
+    Schema.Struct({
+      _tag: Schema.Literal("Continue"),
+      proposals: Schema.Array(proposal).pipe(
+        Schema.check(Schema.isMaxLength(3))
+      ),
+      updates: PrivateDiscoveryContinuityUpdates,
+    }),
+  ]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+
+/** Model extractions and unfinished proposals have no canonical authority. */
+export const PrivateDiscoveryTurnIntent = outputSchema(
+  PrivateDiscoveryProposal
+);
+export type PrivateDiscoveryTurnIntent = typeof PrivateDiscoveryTurnIntent.Type;
+export const SubmitDiscoveryTurn = Schema.Struct({
+  intent: PrivateDiscoveryTurnIntent,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type SubmitDiscoveryTurn = typeof SubmitDiscoveryTurn.Type;
+
+/** Narrows provider choices; canonical decoding and native revision checks still apply. */
+export const makePrivateDiscoveryProviderOutput = (
+  cards: PrivateDiscoveryContext["cards"]
+) => {
+  const eligibleIds = cards
+    .filter((card) => card.status === "proposed")
+    .map((card) => card.id);
+  const proposal =
+    eligibleIds.length === 0
+      ? ProposeProfileCard
+      : Schema.Union([
+          ProposeProfileCard,
+          Schema.Struct({
+            ...ReviseProposedProfileCard.fields,
+            cardId: Schema.Literals(eligibleIds),
+          }),
+        ]);
+  return Schema.Struct({ intent: outputSchema(proposal) }).pipe(
+    Schema.annotate({ parseOptions: { onExcessProperty: "error" } })
+  );
+};
+
+const TokenCount = Schema.Int.pipe(
+  Schema.check(Schema.isGreaterThanOrEqualTo(0))
+);
+export const PrivateDiscoveryUsage = Schema.Struct({
+  estimatedCostUsd: Schema.NullOr(Schema.Number),
+  inputTokens: Schema.NullOr(TokenCount),
+  outputTokens: Schema.NullOr(TokenCount),
+});
+export type PrivateDiscoveryUsage = typeof PrivateDiscoveryUsage.Type;
+export const PrivateDiscoveryProvenance = Schema.Struct({
+  model: Schema.String,
+  policyVersion: Schema.String,
+  promptVersion: Schema.String,
+  provider: Schema.Literal("cloudflare-workers-ai"),
+  toolVersion: Schema.String,
+});
+export type PrivateDiscoveryProvenance = typeof PrivateDiscoveryProvenance.Type;
+export const PrivateDiscoveryResult = Schema.Struct({
+  output: SubmitDiscoveryTurn,
+  provenance: PrivateDiscoveryProvenance,
+  usage: PrivateDiscoveryUsage,
+});
+export type PrivateDiscoveryResult = typeof PrivateDiscoveryResult.Type;
+
+export type PrivateDiscoveryInvalidOutputStage =
+  | PrivateDiscoveryContinuationFailure["stage"]
+  | PrivateDiscoveryNeedFailure["stage"]
+  | PrivateDiscoveryCoverageFailure["stage"]
+  | PrivateDiscoveryClarificationFailure["stage"]
+  | "context_preparation"
+  | "response_body_missing"
+  | "response_body_limit"
+  | "response_body_read"
+  | "response_json"
+  | "response_envelope"
+  | "incomplete_completion"
+  | "tool_call"
+  | "output_json"
+  | "output_schema"
+  | "proposal_unknown_fact"
+  | "proposal_revision_target"
+  | "proposal_duplicate"
+  | "proposal_fact_kind"
+  | "proposal_already_confirmed"
+  | "proposal_review";
+
+export class PrivateDiscoveryFailure extends Data.TaggedError(
+  "PrivateDiscoveryFailure"
+)<{
+  readonly reason:
+    | "not_configured"
+    | "provider_unavailable"
+    | "invalid_output"
+    | "refused"
+    | "context_limit"
+    | "outcome_unknown";
+  readonly stage: PrivateDiscoveryInvalidOutputStage | null;
+  readonly usage: PrivateDiscoveryUsage | null;
+  readonly provenance: PrivateDiscoveryProvenance | null;
+}> {}
+
+export interface PrivateDiscoveryModel {
+  readonly generate: (input: {
+    readonly beforeDispatch: (provenance: PrivateDiscoveryProvenance) => void;
+    readonly context: PrivateDiscoveryContext;
+    readonly signal: AbortSignal;
+  }) => Effect.Effect<PrivateDiscoveryResult, PrivateDiscoveryFailure>;
+}
+
+export interface PrivateDiscoveryStreamInput {
+  readonly abortController: AbortController;
+  readonly beforeDispatch: (provenance: PrivateDiscoveryProvenance) => void;
+  readonly context: PrivateDiscoveryContext;
+  readonly chat: {
+    readonly threadId: string;
+    readonly runId: string;
+    readonly messages: ModelMessage[];
+    readonly middleware: ChatMiddleware[];
+    readonly fail?: (failure: PrivateDiscoveryFailure) => void | Promise<void>;
+    readonly dispose?: () => void;
+    readonly accept: (
+      result: PrivateDiscoveryResult
+    ) => PrivateChatReply | Promise<PrivateChatReply>;
+  };
+}
+
+export interface PrivateDiscoveryStreamingModel extends PrivateDiscoveryModel {
+  readonly stream: (
+    input: PrivateDiscoveryStreamInput
+  ) => AsyncIterable<StreamChunk>;
+}

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Grilling"
-  short_description: "Challenge consequential assumptions in a plan"
-  default_prompt: "Use $grilling to resolve the plan's important uncertainties against actual code and product decisions."
