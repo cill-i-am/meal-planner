@@ -1,0 +1,195 @@
+/* Design reference only. Not imported by the application.
+ * Source components: shadcn base-nova registry snapshots beside this file.
+ * shadcn owns the component contracts and semantic token vocabulary.
+ * This theme preserves the approved Meal Planner visual direction.
+ */
+:root {
+  --radius: 12px;
+  --muted: #f4f4f6;
+  --link: #245bce;
+  --background: #ffffff;
+  --foreground: #111114;
+  --primary: #111114;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f4f6;
+  --secondary-foreground: #111114;
+  --muted-foreground: #65656f;
+  --accent: #f0ecfa;
+  --accent-foreground: #111114;
+  --destructive: #9b2431;
+  --border: #e9e9ed;
+  --input: #858591;
+  --ring: #245bce;
+  --glow-lilac: #ece3f8;
+  --glow-blue: #deeffb;
+  --glow-rose: #f7e4f0;
+  --glow-peach: #faebdd;
+  --font-sans: Inter;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 18px;
+  --text-task-desktop: 36px;
+  --text-task-mobile: 28px;
+  --text-welcome-desktop: 48px;
+  --text-welcome-mobile: 32px;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --tracking-tight: -0.025em;
+  --leading-sm: 20px;
+  --leading-base: 24px;
+  --leading-task-desktop: 40px;
+  --leading-task-mobile: 32px;
+  --leading-welcome-desktop: 52px;
+  --leading-welcome-mobile: 36px;
+  --breakpoint-md: 768px;
+  --container-form: 432px;
+  --spacing-control: 44px;
+  --spacing-2: 8px;
+  --spacing-2-5: 10px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --radius-pill: 999px;
+  --radius-lg: 12px;
+  --radius-md: 9.6px;
+  --radius-sm: 7.2px;
+}
+
+@theme inline {
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --color-muted: var(--muted);
+  --color-link: var(--link);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-glow-lilac: var(--glow-lilac);
+  --color-glow-blue: var(--glow-blue);
+  --color-glow-rose: var(--glow-rose);
+  --color-glow-peach: var(--glow-peach);
+}
+
+/* Decorative app-surface light; separate from the desktop mockup wallpaper.
+ * Paper shows the static frame. The preview demonstrates proposed motion.
+ * The caller pauses when hidden/offscreen with data-motion-paused="true".
+ */
+.onboarding-atmosphere {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  background: var(--background);
+}
+.onboarding-atmosphere::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(
+      180deg,
+      var(--background) 0%,
+      transparent 7%,
+      transparent 100%
+    ),
+    radial-gradient(
+      circle farthest-corner at 38% 12% in oklab,
+      var(--glow-lilac) 0%,
+      transparent 35%
+    ),
+    radial-gradient(
+      circle farthest-corner at 62% 10% in oklab,
+      var(--glow-blue) 0%,
+      transparent 35%
+    ),
+    radial-gradient(
+      circle farthest-corner at 57% 22% in oklab,
+      var(--glow-rose) 0%,
+      transparent 30%
+    ),
+    radial-gradient(
+      circle farthest-corner at 40% 25% in oklab,
+      var(--glow-peach) 0%,
+      transparent 28%
+    );
+  animation: onboarding-glow-drift 42s ease-in-out infinite alternate;
+}
+.onboarding-atmosphere[data-motion-paused="true"]::before,
+.onboarding-atmosphere:focus-within::before {
+  animation-play-state: paused;
+}
+@keyframes onboarding-glow-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.88;
+  }
+  to {
+    transform: translate3d(1.5%, -0.75%, 0) scale(1.025);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-atmosphere::before {
+    animation: none;
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* Explicit theme variants layered onto the official component classes. */
+.onboarding-input {
+  @apply bg-muted h-11;
+  /* Input retains the registry's text-base md:text-sm and focus/invalid rules. */
+}
+.onboarding-primary {
+  @apply h-11 rounded-full;
+  /* Button retains text-sm font-medium, hover:bg-primary/80 and focus rings. */
+}
+.onboarding-secondary-action {
+  @apply min-h-11 min-w-11;
+}
+.onboarding-link {
+  @apply text-link underline-offset-4 hover:underline;
+}
+.onboarding-segments {
+  @apply bg-muted w-full gap-1 rounded-lg p-1;
+}
+.onboarding-segments[aria-invalid="true"] {
+  outline: 1px solid var(--destructive);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--destructive) 20%, transparent);
+}
+.onboarding-segment {
+  @apply h-11 min-w-0 flex-1 rounded-md border border-transparent;
+  @apply aria-pressed:border-input aria-pressed:bg-background aria-pressed:text-foreground;
+  /* Single selection; values map explicitly to adult/dependant command drafts. */
+}
+.onboarding-segment:focus-visible {
+  /* Keep this after the selected border: focus must win in both states. */
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
+}
+.onboarding-task-heading {
+  font-size: var(--text-task-mobile);
+  line-height: var(--leading-task-mobile);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-tight);
+}
+@media (min-width: 768px) {
+  .onboarding-task-heading {
+    font-size: var(--text-task-desktop);
+    line-height: var(--leading-task-desktop);
+  }
+}

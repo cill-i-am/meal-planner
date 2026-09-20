@@ -1,4 +1,0 @@
-interface:
-  display_name: "Systematic Debugging"
-  short_description: "Find and fix the cause of a failure"
-  default_prompt: "Use $systematic-debugging to establish the failure, identify its cause, fix it, and verify the affected behaviour."

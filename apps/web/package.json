@@ -16,6 +16,8 @@
     "@meal-planner/recipe-domain": "workspace:*",
     "@meal-planner/recipe-import-api": "workspace:*",
     "@radix-ui/react-label": "2.1.15",
+    "@tanstack/ai": "0.54.0",
+    "@tanstack/ai-react": "0.24.1",
     "@tanstack/react-form": "1.33.5",
     "@tanstack/react-query": "5.102.8",
     "@tanstack/react-router": "1.170.32",

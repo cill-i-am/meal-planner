@@ -1,15 +1,8 @@
-import {
-  AppendParticipantMessage,
-  MAX_MESSAGE_LENGTH,
-} from "@meal-planner/private-interview-api";
-import { useForm } from "@tanstack/react-form";
-import { Schema } from "effect";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { Alert } from "../../components/ui/alert.js";
-import { Badge } from "../../components/ui/badge.js";
 import { Button } from "../../components/ui/button.js";
-import { Label } from "../../components/ui/label.js";
+import { PrivateInterviewChat } from "./private-interview-chat.js";
 import {
   browserPrivateInterviewDependencies,
   PrivateInterviewClient,
@@ -18,100 +11,12 @@ import type {
   PrivateInterviewDependencies,
   PrivateInterviewView,
 } from "./private-interview-client.js";
-import { PrivateProfileCards } from "./private-profile-cards.js";
 
 const dateLabel = (timestamp: number) =>
   new Date(timestamp).toLocaleString(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
   });
-
-const MessageForm = ({
-  client,
-  view,
-}: {
-  readonly client: PrivateInterviewClient;
-  readonly view: PrivateInterviewView;
-}) => {
-  const form = useForm({
-    defaultValues: {
-      text:
-        view.pending?.command.type === "AppendParticipantMessage"
-          ? view.pending.command.text
-          : "",
-    },
-    onSubmit: ({ value }) => {
-      client.append(value.text);
-    },
-  });
-  const disabled =
-    view.pending !== null ||
-    view.pendingConfirmation !== null ||
-    view.notice !== null ||
-    !view.historyLoaded;
-  return (
-    <form
-      className="private-message-form field-stack"
-      onSubmit={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void form.handleSubmit();
-      }}
-    >
-      <form.Field
-        name="text"
-        validators={{
-          onChange: Schema.toStandardSchemaV1(
-            AppendParticipantMessage.fields.text
-          ),
-        }}
-      >
-        {(field) => (
-          <>
-            <Label htmlFor="private-message">Your message</Label>
-            <textarea
-              aria-describedby="private-message-help private-message-error"
-              aria-invalid={field.state.meta.errors.length > 0}
-              className="input private-message-input"
-              disabled={disabled}
-              id="private-message"
-              maxLength={MAX_MESSAGE_LENGTH}
-              name={field.name}
-              onBlur={field.handleBlur}
-              onChange={(event) => field.handleChange(event.target.value)}
-              rows={4}
-              value={field.state.value}
-            />
-            <p className="helper" id="private-message-help">
-              Up to {MAX_MESSAGE_LENGTH.toLocaleString()} characters. We’ll
-              confirm when your message is saved.
-            </p>
-            {field.state.meta.errors.length > 0 && (
-              <p className="field-error" id="private-message-error">
-                Enter a message within the character limit.
-              </p>
-            )}
-          </>
-        )}
-      </form.Field>
-      <form.Subscribe
-        selector={(state) => ({
-          canSubmit: state.canSubmit,
-          text: state.values.text,
-        })}
-      >
-        {({ canSubmit, text }) => (
-          <Button
-            disabled={disabled || !canSubmit || text.trim().length === 0}
-            type="submit"
-          >
-            Save message
-          </Button>
-        )}
-      </form.Subscribe>
-    </form>
-  );
-};
 
 const Notice = ({
   client,
@@ -128,6 +33,23 @@ const Notice = ({
             This browser could not retain the request safely. Enable browser
             storage, then reconnect before making changes.
           </p>
+        </Alert>
+      );
+    }
+    case "unreadable_request": {
+      return (
+        <Alert>
+          <p>
+            This browser has a saved request it can no longer read. Its previous
+            outcome is unknown. Check your sessions before clearing the saved
+            request; clearing it does not undo any changes already made.
+          </p>
+          <Button
+            disabled={!view.sessionsLoaded}
+            onClick={client.discardUnreadableRequest}
+          >
+            Clear unreadable saved request
+          </Button>
         </Alert>
       );
     }
@@ -152,7 +74,9 @@ const Notice = ({
             This session changed on another connection. Review its history
             before deciding whether to submit again.
           </p>
-          <Button onClick={client.reviewHistory}>Review updated history</Button>
+          <Button onClick={client.refreshSession}>
+            Review updated history
+          </Button>
         </Alert>
       );
     }
@@ -177,6 +101,20 @@ const Notice = ({
         </Alert>
       );
     }
+    case "assistant_turn_pending":
+    case "assistant_turn_conflict": {
+      return (
+        <Alert>
+          <p>
+            This response changed on another connection. Refresh before
+            continuing.
+          </p>
+          <Button onClick={client.reconnectSession}>
+            Review response status
+          </Button>
+        </Alert>
+      );
+    }
     case "confirmation_pending":
     case "card_not_found":
     case "card_conflict":
@@ -195,76 +133,6 @@ const Notice = ({
     }
   }
 };
-
-const SessionHistory = ({
-  client,
-  view,
-}: {
-  readonly client: PrivateInterviewClient;
-  readonly view: PrivateInterviewView;
-}) => (
-  <section aria-labelledby="private-history-title" className="private-history">
-    <div className="review-heading">
-      <h3 id="private-history-title">Session history</h3>
-      {view.sessionState !== null && (
-        <Badge>
-          {view.sessionState.status === "completed"
-            ? "Completed · history only"
-            : "Open"}
-        </Badge>
-      )}
-    </div>
-    {view.historyLoaded && view.messages.length === 0 && (
-      <p>No messages saved in this session.</p>
-    )}
-    {!view.historyLoaded && <p role="status">Loading private history…</p>}
-    <ol aria-label="Saved messages" className="private-messages">
-      {view.messages.map((message) => (
-        <li key={message.id}>
-          <div className="private-message-meta">
-            <strong>
-              {message.role === "participant" ? "You" : "Assistant"}
-            </strong>
-            <time dateTime={new Date(message.createdAt).toISOString()}>
-              {dateLabel(message.createdAt)}
-            </time>
-          </div>
-          <p>{message.text}</p>
-        </li>
-      ))}
-    </ol>
-    {view.moreHistory && (
-      <Button onClick={client.loadHistory}>Load more messages</Button>
-    )}
-    <PrivateProfileCards client={client} view={view} />
-    {view.sessionState?.status === "open" && (
-      <>
-        <MessageForm
-          client={client}
-          key={`${view.sessionReference}:${view.lastAppendReceipt ?? "draft"}`}
-          view={view}
-        />
-        <div className="private-complete">
-          <p>
-            Finish when you’re done. Your history stays available; new messages
-            will need a new session.
-          </p>
-          <Button
-            disabled={
-              view.pendingConfirmation !== null ||
-              view.pending !== null ||
-              view.notice !== null ||
-              !view.historyLoaded
-            }
-            onClick={client.complete}
-          >
-            Complete session
-          </Button>
-        </div>
-      </>
-    )}
-  </section>
-);
 
 const ConnectedPanel = ({
   client,
@@ -297,11 +165,24 @@ const ConnectedPanel = ({
           view.pendingConfirmation !== null ||
           view.pending !== null ||
           view.notice === "binding_changed" ||
-          view.notice === "storage_unavailable"
+          view.notice === "storage_unavailable" ||
+          view.notice === "unreadable_request"
         }
-        onClick={client.start}
+        onClick={() => client.start("InitialDiscovery")}
       >
-        Start private session
+        Start food discovery
+      </Button>
+      <Button
+        disabled={
+          view.pendingConfirmation !== null ||
+          view.pending !== null ||
+          view.notice === "binding_changed" ||
+          view.notice === "storage_unavailable" ||
+          view.notice === "unreadable_request"
+        }
+        onClick={() => client.start("ProfileEdit")}
+      >
+        Update my food profile
       </Button>
       <Button onClick={client.connect}>Refresh sessions</Button>
     </div>
@@ -347,9 +228,18 @@ const ConnectedPanel = ({
       </nav>
     )}
     {!view.sessionsLoaded && <p role="status">Loading your sessions…</p>}
-    {view.sessionReference !== null && (
-      <SessionHistory client={client} view={view} />
-    )}
+    {view.sessionReference !== null &&
+      (view.generation === null ? (
+        <p role="status">Loading private session…</p>
+      ) : (
+        <PrivateInterviewChat
+          client={client}
+          generation={view.generation}
+          key={`${view.sessionReference}:${view.generation}`}
+          sessionReference={view.sessionReference}
+          view={view}
+        />
+      ))}
   </>
 );
 
@@ -395,9 +285,9 @@ const BoundPrivateInterviewsPanel = ({
         adult account can access these sessions.
       </p>
       <p className="private-foundation-note">
-        You can save messages and return to them later. Assistant replies are
-        not available yet. Notes stay private; only profile proposals you
-        explicitly confirm update household food profiles.
+        Your messages and replies stay private. Review any profile proposals
+        before deciding what to share. Only proposals you explicitly confirm
+        update household food profiles.
       </p>
       {view.connection === "connecting" && (
         <p role="status">Connecting to your private sessions…</p>
