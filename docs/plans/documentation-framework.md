@@ -2,7 +2,7 @@
 
 Status: active
 Owner: Codex — assigned repository refactor
-Delivery: one open PR; no merge, deployment or application behavior change
+Delivery: [PR #234](https://github.com/cill-i-am/meal-planner/pull/234) open; no merge, deployment or application behavior change
 
 ## Outcome and scope
 
@@ -41,14 +41,29 @@ remain available, with an explicit route to the current contract.
 - [x] Preserve all thirteen complete coding-standard topics and both instruction
   entrypoints; require relevant reading for code without a whole-repo reading tour.
 - [x] Preserve decision IDs/provenance, all G01–G14 items, unfinished discovery
-  evaluation, sixteen actual human ratings, tone work and later-stage beta gates.
+  evaluation (including the requirement for sixteen actual human ratings), tone
+  work and later-stage beta gates; none is represented as newly completed.
 - [x] Consolidate ownership and remove the redundant process documents/skill wrappers.
 - [x] Preserve PRODUCT.md/DESIGN.md consumer paths, visual assets and engine/hook
   configuration; repair affected links instead of inventing a replacement loader.
 - [ ] Pass documentation fixtures, repository link/metadata checks and required CI.
-- [ ] Publish the verified candidate as an open PR and report actual limitations.
+- [x] Publish the structurally verified candidate as an open PR and report actual limitations.
 
 ## Evidence and limits
+
+[Preparation run](https://github.com/cill-i-am/meal-planner/actions/runs/35530449658)
+reconstructed the exact candidate tree, verified all thirteen standards files
+against baseline bytes, passed all 24 documentation-checker fixture tests and
+checked 273 Markdown files with zero errors. Frozen installation and repository
+formatting checks passed on the pinned pnpm/Node toolchain. All app/package
+changes are Markdown only; application source and lockfile are unchanged.
+
+[PR #234](https://github.com/cill-i-am/meal-planner/pull/234) contains the published
+refactor. Its first [CI run](https://github.com/cill-i-am/meal-planner/actions/runs/35530597940)
+on `bca82b5aa4ac1d6aa7f60890235cd484e78affa1` passed documentation, formatting,
+lint and typechecking before this evidence update. Full Quality and Synthetic
+media container results remain pending; use the PR's checks for the latest head.
+The outstanding CI acceptance above stays open rather than claiming success.
 
 The documentation checker tests real temporary file trees and failures, not source
 wording. It checks routes, not whether Astra actually read or obeyed them. Exact
