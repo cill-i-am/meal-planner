@@ -26,12 +26,12 @@ existing entrypoint. Common options include `--stage`, `--profile`,
 `live_$USER` for deploy/plan/destroy and `dev_$USER` for `alchemy dev`; pass
 stage and profile explicitly in CI, previews, and production.
 
-## Safety Classes
+## Command effects
 
-Read-only or non-applying:
+Read-only or non-applying after inspecting setup and target:
 
 - `pnpm alchemy plan`
-- `pnpm alchemy state list|read|delete`
+- `pnpm alchemy state list|read`
 - `pnpm alchemy profile show`
 - `pnpm alchemy logs` and `pnpm alchemy logs --tail`
 
@@ -51,7 +51,10 @@ Catastrophic:
 
 - `unsafe nuke`
 
-Obtain explicit confirmation for every mutating class. For `unsafe nuke`, show the exact provider, stack file, stage, profile/account, and expected resource boundary immediately before running it.
+Match the operation to existing task authorization and the actual target. Do not
+repeat an approval already covering the same effects. `unsafe nuke` requires an
+explicitly authorized destructive scope; a broad implementation request is not
+that scope. Preserve the exact provider, stack, stage, account and resource boundary.
 
 ## Plan First
 
@@ -122,7 +125,7 @@ With no state, providers call `read`:
 2. Record its current owner, tags, and configuration.
 3. Review what reconcile will overwrite.
 4. Confirm state store, stage, profile/account, and logical ID.
-5. Obtain explicit approval.
+5. Confirm that the actual target/effects are covered by the task; reuse existing authorization.
 
 Prefer restoring ownership metadata or choosing a new physical name when takeover is not intended.
 

@@ -25,4 +25,4 @@ This reference adapts the slow glow to Meal Planner's pastel palette. Ceird's bl
 
 Browser checks cover a changing gradient transform with stable form bounds, manual pause, field-focus pause, offscreen pause, a static reduced-motion gradient, and no horizontal overflow at 320px. Mobile inputs remain 16px. The darkest full-strength gradient stop has at least 4.5:1 contrast against the existing muted text color; fields keep their opaque fill.
 
-The preview and CSS are design references. They are not imported by the app. Integrating the layer, verifying real-page visibility handling, and measuring performance on target devices remain part of G12 in the [implementation ledger](../onboarding-implementation-gaps.md).
+The preview and CSS are design references. They are not imported by the app. Integrating the layer, verifying real-page visibility handling, and measuring performance on target devices remain part of G12 in the [implementation ledger](../../../../docs/plans/onboarding.md).

@@ -1,6 +1,6 @@
 # Onboarding errors and validation
 
-Design specification, checked 2026-09-20 against Better Auth **1.7.2**, TanStack Form **1.33.5**, the current auth configuration and household API. This is not implemented behavior. See [implementation gaps](onboarding-implementation-gaps.md).
+Design specification, checked 2026-09-20 against Better Auth **1.7.2**, TanStack Form **1.33.5**, the current auth configuration and household API. This is not implemented behavior. See [implementation gaps](../../../docs/plans/onboarding.md).
 
 ## Presentation contract
 

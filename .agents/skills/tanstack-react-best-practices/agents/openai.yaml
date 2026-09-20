@@ -1,4 +1,0 @@
-interface:
-  display_name: "TanStack React"
-  short_description: "Improve React data flow and performance"
-  default_prompt: "Use $tanstack-react-best-practices for relevant data-flow and performance concerns in the changed React code."

@@ -1,6 +1,6 @@
 # Family onboarding transitions
 
-Design contract, 20 September 2026. The user approved Save & exit with resumption of the pending step. These are Paper destinations and implementation acceptance rules; the application does not implement them yet. See [implementation gaps](onboarding-implementation-gaps.md) and [error mapping](onboarding-error-contract.md).
+Design contract, 20 September 2026. The user approved Save & exit with resumption of the pending step. These are Paper destinations and implementation acceptance rules; the application does not implement them yet. See [implementation gaps](../../../docs/plans/onboarding.md) and [error mapping](onboarding-error-contract.md).
 
 ## Password recovery
 

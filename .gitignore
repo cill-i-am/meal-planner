@@ -12,3 +12,5 @@ coverage/
 *.log
 # Impeccable's platform-specific engine is fetched locally, not tracked.
 **/skills/impeccable/scripts/bin/
+# Local documentation-check test bytecode.
+__pycache__/

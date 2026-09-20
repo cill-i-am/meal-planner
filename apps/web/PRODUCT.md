@@ -20,7 +20,7 @@ The initial audience is Ireland-first households in a small, invite-only beta, b
 
 Meal Planner is an AI-native household food service. It learns how the household eats and lives, proposes one practical personalised week, and turns an approved plan into consolidated shopping demand. Supermarket fulfilment is a later part of the full vision.
 
-Success means less active planning time, fewer substantive corrections over successive weeks, and households returning because the service remembers what works for them. Beta targets are evaluation gates, not demonstrated performance claims; their owner is [PDR-0015](../../docs/decisions/product/0015-invite-only-beta-cohort-and-learning-cadence.md).
+Success means less active planning time, fewer substantive corrections over successive weeks, and households returning because the service remembers what works for them. Beta targets are evaluation gates, not demonstrated performance claims; their owner is [PDR-0015](../../docs/decisions/pdr-0015-invite-only-beta-cohort-and-learning-cadence.md).
 
 ## Positioning
 
@@ -45,7 +45,7 @@ The intended journey is:
 
 The web app provides household account/setup flows, people and dependant management, invitations, versioned food profiles, private adult discovery with reviewable profile cards and explicit confirmation, and evidence-grounded recipe import. Discovery includes application-owned required coverage and adaptive questioning; broader model-quality evaluation and conversation-tone work remain pending. Import currently accepts one public TikTok HTTPS URL per attempt.
 
-An early meal-plan backend and a read-only Tesco catalogue facade exist in the repository. Their existence does not establish a complete planning or shopping experience in the web app. Live deployment and beta readiness are not established by this record. [Current delivery](../../docs/delivery/current.md) owns changing implementation status and acceptance evidence.
+An early meal-plan backend and a read-only Tesco catalogue facade exist in the repository. Their existence does not establish a complete planning or shopping experience in the web app. Live deployment and beta readiness are not established by this record. [Current delivery](../../docs/plans/README.md) owns changing implementation status and acceptance evidence.
 
 ### Planned experience and release boundaries
 
@@ -69,13 +69,13 @@ The current product name is Meal Planner. Explain questions, assumptions, trade-
 
 ## Evidence on Hand
 
-This record summarizes the confirmed product direction for interface work. Detailed product meaning and accepted decisions remain in the [product blueprint](../../docs/product-blueprint/README.md) and [product decision records](../../docs/decisions/product/). Consult those owners when a design changes product semantics, privacy, authority, or release scope.
+This record summarizes the confirmed product direction for interface work. Detailed product meaning and accepted decisions remain in the [product blueprint](../../docs/README.md) and [product decision records](../../docs/decisions/). Consult those owners when a design changes product semantics, privacy, authority, or release scope.
 
-- [Vision and scope](../../docs/product-blueprint/vision-and-scope.md) establish users, purpose, capabilities, and non-goals.
-- [Experience blueprint](../../docs/product-blueprint/experience-blueprint.md) describes the intended household journey.
-- [PDR-0013](../../docs/decisions/product/0013-plan-projection-rationale-and-experience-experimentation.md) establishes plan comprehension, progressive rationale, and experimentation boundaries without freezing a layout.
-- [Current delivery](../../docs/delivery/current.md) links implementation, local runtime evidence, and remaining evaluation obligations.
-- [Open decisions](../../docs/product-blueprint/open-decisions.md) owns unresolved choices, including model/provider strategy and future acquisition policy.
+- [Vision and scope](../../docs/explanation/product/vision-and-scope.md) establish users, purpose, capabilities, and non-goals.
+- [Experience blueprint](../../docs/explanation/product/experience-blueprint.md) describes the intended household journey.
+- [PDR-0013](../../docs/decisions/pdr-0013-plan-projection-rationale-and-experience-experimentation.md) establishes plan comprehension, progressive rationale, and experimentation boundaries without freezing a layout.
+- [Current delivery](../../docs/plans/README.md) links implementation, local runtime evidence, and remaining evaluation obligations.
+- [Open decisions](../../docs/plans/README.md) owns unresolved choices, including model/provider strategy and future acquisition policy.
 
 No customer testimonials, measured time-saving claims, pricing, or public launch claims are established here. Synthetic examples must be labelled as such; private household data and discovery transcripts are not promotional assets.
 
