@@ -101,20 +101,52 @@ interfaces, not an old discovery-branch snapshot.
 
 ## Acceptance
 
-- [ ] The generated-client integration works with the resolved package versions in
-  the production web build, without suppressing peer checks. A fallback removes
-  repeated runners rather than just wrapping them.
-- [ ] Profile read/save/refresh and each people operation keep their success,
-  rejection, sign-in, and recovery behavior.
-- [ ] A confirmed server rejection stays distinct from an unknown write result.
-  Lost replies retain the exact command; recovery returns one server result.
-- [ ] Context changes, expiry, disposal, and late callbacks cannot show old data,
-  invalidate a new context, or clear a newer saved command.
-- [ ] Any added server rendering and hydration isolate concurrent requests and
-  expose no unintended private or pending-command data. Cancelled reads no longer
-  update the screen.
-- [ ] Each migrated operation has one cache/runtime owner. Remove replaced generic
-  code and list the adapters that remain.
+- [ ] The real generated-client profile read/save/refresh flow shows loading,
+  errors, and confirmed server success in a local browser. Roster, invitation,
+  departure, and profile recovery keep their distinct results and action restrictions.
+- [ ] A single decoded server rejection is final, shown to the user, and not retried.
+  A sign-in requirement remains a distinct result. Transport, 5xx, and decoding
+  failures, defects, interruption, and mixed Causes keep the write result unknown
+  when there is no proof. Do not classify a mixed Cause using only its first failure.
+- [ ] Test a lost reply after the server commits, plus malformed success and error
+  bodies through the real HTTP client. Keep the original payload, mutation ID,
+  expected versions, and binding. A retry in the matching context returns one
+  server result without creating an ID or adding automatic mutation retries.
+- [ ] While a command is unresolved, keep the existing restrictions on related
+  actions. Change the draft and start a later permitted command in a new context.
+  The earlier completion must not clear the newer saved request, change its
+  payload, or invalidate unrelated data.
+- [ ] Expiry, sign-out, and account/household switches hide old data. After access
+  is checked again, recover only the matching original request. Late reads,
+  mutations, and invalidations must not cross the binding/generation boundary,
+  including after remount.
+- [ ] Disposal removes subscriptions and interrupts obsolete reads without screen
+  updates or unhandled work. Cancelling a sent mutation keeps its unknown result
+  and recovery path; browser abort is not server rollback.
+- [ ] Any added server rendering and hydration use separate registries/caches for
+  simultaneous identities. Private or pending-command values must not enter
+  unintended serialized output. Server execution must not use browser globals.
+- [ ] Resolved package versions, exports, and peer dependencies compile in the
+  production web build without suppression. Native atoms or the documented Query
+  fallback provides one tested execution adapter. Unrelated Query consumers work.
+- [ ] List the removed runners, client creation, subscriptions, Cause handling, and
+  cache ownership, as well as the adapters and domain interfaces that remain.
+  Preserve equivalent behavioral tests. Do not leave both alternatives or two
+  authoritative caches running.
+
+### Verify the changed interfaces
+
+Before the pilot, capture existing behavior in tests. Run the same failure cases
+through the replacement's public operations. Mock-only atom tests do not establish
+HTTP decoding, browser lifetime, or server retry behavior. Use a real local
+request/response failure and browser flow. Add native, API, or shared-contract
+tests where those interfaces change.
+
+Find targeted suites and required commands in the current manifests, CI, and
+[local development guide](../../how-to/local-development.md). Run the production
+build and required checks. After intentional dependency changes, check the lockfile
+with a frozen install. Use synthetic households and invitations, not real
+notifications or paid providers. Mark scenarios not run as unverified.
 
 ## Delivery and open questions
 
