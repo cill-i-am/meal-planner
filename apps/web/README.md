@@ -2,6 +2,12 @@
 
 This TanStack Start website provides same-origin authentication, household people/profiles, private discovery and the recipe-import flow. The [plans](../../docs/plans/README.md) distinguish implemented slices from remaining work. Better Auth owns identity and organization membership. The browser never receives a bearer token or selects a synthetic profile.
 
+## Account routes
+
+`/login` and `/signup` implement the Paper Auth screens with shadcn components. The `redirect` search parameter preserves a same-origin destination through account navigation. The protected workspace sends anonymous visitors to `/login`. Successful authentication refreshes account/family queries before navigation.
+
+`/forgot-password` shows the agreed unavailable state because reset-email delivery is not configured. It does not request or claim to send an email. The wider family onboarding and recovery implementation remains in the [onboarding plan](../../docs/plans/onboarding.md).
+
 ## Runtime boundary
 
 The public Website Worker forwards `/api/auth/*` and `/v1/*` to the private API Worker through a Cloudflare service binding. It forwards the original `Request` and returns the upstream `Response`, preserving `Cookie` and `Set-Cookie` without copying credentials into application code.

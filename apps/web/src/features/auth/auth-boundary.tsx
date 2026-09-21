@@ -1,5 +1,7 @@
 import { useForm } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
+import { useRouter } from "@tanstack/react-router";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 
 import { Alert } from "../../components/ui/alert.js";
@@ -20,16 +22,7 @@ export interface AuthBoundaryActions {
   }) => Promise<void>;
   readonly retry: () => Promise<void>;
   readonly selectHousehold: (organizationId: string) => Promise<void>;
-  readonly signIn: (input: {
-    readonly email: string;
-    readonly password: string;
-  }) => Promise<void>;
   readonly signOut: () => Promise<void>;
-  readonly signUp: (input: {
-    readonly email: string;
-    readonly name: string;
-    readonly password: string;
-  }) => Promise<void>;
 }
 
 export type AuthBoundaryState =
@@ -59,138 +52,6 @@ const MutationError = ({ error }: { readonly error: Error | null }) =>
       <p>{error.message}</p>
     </Alert>
   );
-
-const SignInForm = ({
-  action,
-}: {
-  readonly action: AuthBoundaryActions["signIn"];
-}) => {
-  const mutation = useMutation({ mutationFn: action });
-  const form = useForm({
-    defaultValues: { email: "", password: "" },
-    onSubmit: ({ value }) => mutation.mutate(value),
-  });
-  return (
-    <form
-      className="auth-form field-stack"
-      onSubmit={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void form.handleSubmit();
-      }}
-    >
-      <h2>Log in</h2>
-      <form.Field name="email">
-        {(field) => (
-          <div className="field-stack">
-            <Label htmlFor="login-email">Email</Label>
-            <Input
-              autoComplete="email"
-              id="login-email"
-              onChange={(event) => field.handleChange(event.target.value)}
-              required
-              type="email"
-              value={field.state.value}
-            />
-          </div>
-        )}
-      </form.Field>
-      <form.Field name="password">
-        {(field) => (
-          <div className="field-stack">
-            <Label htmlFor="login-password">Password</Label>
-            <Input
-              autoComplete="current-password"
-              id="login-password"
-              minLength={8}
-              onChange={(event) => field.handleChange(event.target.value)}
-              required
-              type="password"
-              value={field.state.value}
-            />
-          </div>
-        )}
-      </form.Field>
-      <MutationError error={mutation.error} />
-      <Button disabled={mutation.isPending} type="submit">
-        Log in
-      </Button>
-    </form>
-  );
-};
-
-const SignUpForm = ({
-  action,
-}: {
-  readonly action: AuthBoundaryActions["signUp"];
-}) => {
-  const mutation = useMutation({ mutationFn: action });
-  const form = useForm({
-    defaultValues: { email: "", name: "", password: "" },
-    onSubmit: ({ value }) => mutation.mutate(value),
-  });
-  return (
-    <form
-      className="auth-form field-stack"
-      onSubmit={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void form.handleSubmit();
-      }}
-    >
-      <h2>Create account</h2>
-      <form.Field name="name">
-        {(field) => (
-          <div className="field-stack">
-            <Label htmlFor="signup-name">Name</Label>
-            <Input
-              autoComplete="name"
-              id="signup-name"
-              onChange={(event) => field.handleChange(event.target.value)}
-              required
-              value={field.state.value}
-            />
-          </div>
-        )}
-      </form.Field>
-      <form.Field name="email">
-        {(field) => (
-          <div className="field-stack">
-            <Label htmlFor="signup-email">Email</Label>
-            <Input
-              autoComplete="email"
-              id="signup-email"
-              onChange={(event) => field.handleChange(event.target.value)}
-              required
-              type="email"
-              value={field.state.value}
-            />
-          </div>
-        )}
-      </form.Field>
-      <form.Field name="password">
-        {(field) => (
-          <div className="field-stack">
-            <Label htmlFor="signup-password">Password</Label>
-            <Input
-              autoComplete="new-password"
-              id="signup-password"
-              minLength={8}
-              onChange={(event) => field.handleChange(event.target.value)}
-              required
-              type="password"
-              value={field.state.value}
-            />
-          </div>
-        )}
-      </form.Field>
-      <MutationError error={mutation.error} />
-      <Button disabled={mutation.isPending} type="submit">
-        Create account
-      </Button>
-    </form>
-  );
-};
 
 const HouseholdSetup = ({
   actions,
@@ -270,6 +131,18 @@ const HouseholdSetup = ({
   );
 };
 
+const LoginRedirect = () => {
+  const router = useRouter();
+  useEffect(() => {
+    void router.navigate({
+      replace: true,
+      search: { redirect: router.state.location.href },
+      to: "/login",
+    });
+  }, [router]);
+  return null;
+};
+
 export const AuthBoundary = ({
   actions,
   children,
@@ -305,21 +178,7 @@ export const AuthBoundary = ({
     );
   }
   if (state.kind === "anonymous") {
-    return (
-      <main className="auth-shell">
-        <section className="auth-panel" aria-labelledby="auth-title">
-          <p className="eyebrow">Meal Planner</p>
-          <h1 id="auth-title">Plan together at home</h1>
-          <p className="lede">
-            Log in or create an account with email and password.
-          </p>
-          <div className="auth-grid">
-            <SignInForm action={actions.signIn} />
-            <SignUpForm action={actions.signUp} />
-          </div>
-        </section>
-      </main>
-    );
+    return <LoginRedirect />;
   }
   if (state.activeHousehold === null) {
     return (
