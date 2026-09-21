@@ -28,7 +28,7 @@ export const AuthLayout = ({ children }: { readonly children: ReactNode }) => {
   return (
     <div
       data-theme="auth"
-      className="group/auth bg-background text-foreground font-auth selection:text-foreground scrollbar-thumb-input scrollbar-track-background flex min-h-svh flex-col text-base/6 antialiased selection:bg-(--glow-lilac)"
+      className="group/auth bg-background text-foreground font-auth selection:text-foreground scrollbar-thumb-input scrollbar-track-background flex min-h-svh flex-col text-base/6 antialiased selection:bg-(--glow-lilac) motion-safe:[&_[data-slot=card-content]]:[view-transition-name:auth-fields] motion-safe:[&_[data-slot=card-footer]]:[view-transition-name:auth-footer] motion-safe:[&_[data-slot=card-header]]:[view-transition-name:auth-heading] motion-safe:[&_[data-slot=card]]:[view-transition-name:auth-card]"
       ref={surface}
     >
       <header className="border-border flex min-h-16 items-center justify-between gap-4 border-b px-6 md:px-10">

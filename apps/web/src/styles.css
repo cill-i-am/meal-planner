@@ -654,6 +654,80 @@ body {
   --color-control: var(--control);
   --color-primary-hover: var(--primary-hover);
 }
+
+/* Native view-transition pseudo-elements cannot be targeted by component utilities. */
+:root:active-view-transition-type(auth)::view-transition {
+  pointer-events: none;
+}
+
+:root:active-view-transition-type(auth)::view-transition-old(root) {
+  display: none;
+}
+
+:root:active-view-transition-type(auth)::view-transition-new(root) {
+  animation: none;
+}
+
+::view-transition-group(auth-card),
+::view-transition-group(auth-heading),
+::view-transition-group(auth-fields),
+::view-transition-group(auth-footer) {
+  animation-duration: 300ms;
+  animation-timing-function: ease-out;
+}
+
+::view-transition-old(auth-card) {
+  display: none;
+}
+
+::view-transition-new(auth-card) {
+  height: 100%;
+  animation: none;
+}
+
+::view-transition-old(auth-heading),
+::view-transition-new(auth-heading),
+::view-transition-old(auth-fields),
+::view-transition-new(auth-fields),
+::view-transition-old(auth-footer),
+::view-transition-new(auth-footer) {
+  height: 100%;
+  object-fit: none;
+  object-position: top left;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(auth-heading),
+::view-transition-old(auth-fields),
+::view-transition-old(auth-footer) {
+  animation: auth-view-out 100ms ease-out both;
+}
+
+::view-transition-new(auth-heading),
+::view-transition-new(auth-fields),
+::view-transition-new(auth-footer) {
+  animation: auth-view-in 200ms ease-out 100ms both;
+}
+
+@keyframes auth-view-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes auth-view-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:active-view-transition-type(auth)::view-transition-group(*),
+  :root:active-view-transition-type(auth)::view-transition-old(*),
+  :root:active-view-transition-type(auth)::view-transition-new(*) {
+    animation: none;
+  }
+}
 [data-theme="auth"] {
   --primary-hover: oklch(0.311145 0.008858 285.874229);
   --secondary-foreground: oklch(0.179001 0.006108 285.766684);
