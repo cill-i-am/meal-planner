@@ -856,7 +856,7 @@ h3 {
   font-weight: 500;
   box-shadow: none;
 }
-.auth-experience .button:hover:not(:disabled) {
+.auth-experience .button[data-variant="default"]:hover:not(:disabled) {
   background: #303035;
 }
 .auth-experience .button:focus-visible {
