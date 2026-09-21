@@ -11,7 +11,7 @@ const Card = ({
     data-slot="card"
     data-size={size}
     className={cn(
-      "group/card border-border bg-muted/72 text-card-foreground shadow-foreground/8 flex flex-col rounded-2xl border text-sm shadow-xs [--card-spacing:--spacing(6)] data-[size=sm]:[--card-spacing:--spacing(4)] max-[360px]:[--card-spacing:--spacing(4)] md:[--card-spacing:--spacing(10)]",
+      "group/card bg-muted/72 text-card-foreground shadow-surface flex flex-col rounded-2xl text-sm [--card-spacing:--spacing(6)] data-[size=sm]:[--card-spacing:--spacing(4)] max-[360px]:[--card-spacing:--spacing(4)] md:[--card-spacing:--spacing(10)]",
       className
     )}
     {...props}

@@ -17,9 +17,7 @@ This baseline covers login, signup, family setup, people, invitations, and passw
 
 ## Colors
 
-OKLCH is the canonical colour format, following shadcn's theme convention. Define
-colours once in semantic theme tokens and use those tokens throughout components.
-Authored colour mixes use OKLCH too. The conversion preserves the existing palette.
+OKLCH is the canonical colour format, following shadcn's theme convention. Define colours once in semantic theme tokens and use those tokens throughout components. Authored colour mixes use OKLCH too. The conversion preserves the existing palette.
 
 The [reference theme](.impeccable/reference/shadcn-theme.css) records the agreed values and their shadcn mapping. It is not imported by the application. Read live Paper tokens when checking or extending the design, then update this reference if an agreed value changes.
 
@@ -68,9 +66,11 @@ Keep form actions before supporting lists on long mobile screens. Let the layout
 
 ## Elevation and motion
 
-Use the diffuse pastel gradient and fine separators to establish depth within the white application surface. The gradient fades to white around its edges and below the upper content. Place the task on an opaque white card so the gradient stays outside the controls. Compose shadcn Card with a rounded primary-content surface and CardFooter when secondary navigation or supporting people lists exist. A single-action state needs no empty footer. Use a fine theme border and shallow lower shadow; avoid nested elevated person rows. Selected segments keep their visible boundary. Focus and validation halos communicate interaction state rather than decoration.
+Use the diffuse pastel gradient and fine separators to establish depth within the white application surface. The gradient fades to white around its edges and below the upper content. Place the task on an opaque white card so the gradient stays outside the controls. Compose shadcn Card with a rounded primary-content surface and CardFooter when secondary navigation or supporting people lists exist. A single-action state needs no empty footer. Use the three-layer neutral `shadow-surface` token for the card edge and elevation, following the [better-ui polish review](.impeccable/better-ui-review-2026-09-21.md). Retain the structural footer divider and avoid nested elevated person rows. Selected segments keep their visible boundary. Focus and validation halos communicate interaction state rather than decoration.
 
 Primary and destructive buttons use a 1px white inset highlight and a small lower shadow. Secondary buttons use a lighter highlight; outline variants use a subtle lower edge. Pressed and disabled buttons lose external elevation. Ghost buttons, inline links and repeated row actions stay flat. Inputs use a barely tinted `control` surface (30% muted mixed into the background), a visible `input` edge and a shallow inset shadow (0px 2px 4px, foreground at 8%). This makes editable fields feel recessed into the card. Focus, invalid and disabled states remove decorative inset depth; input groups own the shadow around the whole control. Keep focus and invalid borders stronger than decorative depth. Implement all styling with Tailwind utilities and semantic tokens.
+
+Shared buttons press to scale 0.96 over 150ms with ease-out. Links default to static; input actions explicitly use the `static` prop to keep their target stationary. Transition only color, background, border, shadow and scale. Reduced motion removes press scaling and transitions. Tooltips fade over 150ms with ease-out.
 
 Paper shows the static gradient. The [motion study](.impeccable/reference/onboarding-motion.html) demonstrates a 42-second alternating drift with at most 1.5% translation and 2.5% scale. Animate only the decorative layer; keep content and controls still. Pause while a field is focused, when the page is hidden, or when the surface is offscreen. Reduced motion keeps the full static gradient. The [motion reference](.impeccable/reference/onboarding-motion.md) records the Ceird source and implementation boundary.
 
@@ -78,17 +78,15 @@ The live Paper Overview component reference shows default, focus, invalid, disab
 
 ## Shapes
 
-Task cards use a 16px outer radius. Primary actions use a pill radius. Fields and the segmented track use a 12px radius; segments use 9.6px. The reference theme also defines a 7.2px small radius. Main inputs, buttons, and segments are 44px high. The segmented track is 52px high, including padding.
+Task cards use a 16px outer radius. The body shares that radius where it meets the outer surface without an inset. Primary actions use a pill radius. Fields and the segmented track use a 12px radius; segments use 9.6px. The reference theme also defines a 7.2px small radius. Main inputs, buttons, and segments are 44px high. The segmented track is 52px high, including padding.
 
 Give secondary actions such as the password eye toggle, **Edit**, and **Save & exit** a minimum 44px target without increasing their visible text. Single-selection choices use a segmented control.
 
 Icon-only actions have an accessible name and a shadcn Tooltip on hover and keyboard focus. Password visibility uses Show password / Hide password for both. Keep its 44px target transparent and change the eye from muted to foreground on hover; do not fill the input end with a large hover shape.
 
-Password visibility also plays a quiet, 20ms activation click, inspired by the
-[Nexvyn clipboard field](https://ui.nexvyn.dev/components/clipboard-field).
-Use the same feedback for pointer and keyboard activation. Sound supplements the
-icon, tooltip and pressed state; the action still works if audio is unavailable.
-Create audio only after activation and release it when the control unmounts.
+Password visibility keeps both Lucide icons mounted, using 16px icons with a 1.5px stroke. Cross-fade opacity 0–1, scale 0.25–1 and blur 4–0px over 300ms with `cubic-bezier(0.2, 0, 0, 1)`. Reduced motion switches immediately. The accessible name, tooltip and pressed state remain the static feedback.
+
+Password visibility also plays a quiet, 20ms activation click, inspired by the [Nexvyn clipboard field](https://ui.nexvyn.dev/components/clipboard-field). Use the same feedback for pointer and keyboard activation. Sound supplements the icon, tooltip and pressed state; the action still works if audio is unavailable. Create audio only after activation and release it when the control unmounts.
 
 ## Components
 

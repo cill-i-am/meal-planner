@@ -59,6 +59,20 @@ signup at 320px and 390px, validation, password visibility and 44px controls.
 The final signup accessibility scan reported no violations. CI and PR review
 remain deferred at the user's request.
 
+## Better UI polish — 21 September 2026
+
+Applied the [better-ui review](../../apps/web/.impeccable/better-ui-review-2026-09-21.md)
+to the shared shadcn card, button, tooltip and password-icon components. Cards use
+layered neutral shadow edges; buttons have explicit transitions and restrained
+press feedback; password icons cross-fade with an immediate reduced-motion state.
+The recovery heading now follows the agreed line height.
+
+All 62 canonical Paper onboarding screens/states use the matching surface edge.
+Password icons and the Overview motion guidance match the implementation. This
+polish does not close the behavioral gaps below. Local tests, TypeScript, focused
+lint and the production build passed. The review records browser checks and the
+unavailable 10% motion playback check. CI and PR work remain deferred.
+
 ## Decisions from this review
 
 - Use shadcn as the component base and retain TanStack Form plus Effect Schema.

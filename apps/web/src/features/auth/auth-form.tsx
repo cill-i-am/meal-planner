@@ -15,6 +15,7 @@ import {
   FieldError,
   FieldLabel,
 } from "../../components/ui/field.js";
+import { IconSwap } from "../../components/ui/icon-swap.js";
 import {
   InputGroup,
   InputGroupAddon,
@@ -115,6 +116,7 @@ const PasswordField = (props: FieldProps & { readonly action?: ReactNode }) => {
             <TooltipTrigger
               render={
                 <InputGroupButton
+                  static
                   size="icon-sm"
                   aria-label={visibilityLabel}
                   aria-pressed={visible}
@@ -127,11 +129,11 @@ const PasswordField = (props: FieldProps & { readonly action?: ReactNode }) => {
                 />
               }
             >
-              {visible ? (
-                <EyeOffIcon aria-hidden="true" />
-              ) : (
-                <EyeIcon aria-hidden="true" />
-              )}
+              <IconSwap
+                active={visible}
+                activeIcon={EyeOffIcon}
+                inactiveIcon={EyeIcon}
+              />
             </TooltipTrigger>
             <TooltipContent data-theme="auth">{visibilityLabel}</TooltipContent>
           </Tooltip>

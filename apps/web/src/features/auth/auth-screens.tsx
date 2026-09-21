@@ -338,7 +338,7 @@ export const RecoveryUnavailablePage = ({
             <h1
               id="auth-title"
               tabIndex={-1}
-              className="text-task-mobile/9 md:text-task-desktop/10 font-semibold tracking-tight focus:outline-none"
+              className="text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight focus:outline-none"
             >
               Password reset unavailable
             </h1>
