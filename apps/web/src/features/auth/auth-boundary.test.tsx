@@ -17,9 +17,7 @@ const makeActions = (): AuthBoundaryActions => ({
   createHousehold: vi.fn(async () => {}),
   retry: vi.fn(async () => {}),
   selectHousehold: vi.fn(async () => {}),
-  signIn: vi.fn(async () => {}),
   signOut: vi.fn(async () => {}),
-  signUp: vi.fn(async () => {}),
 });
 
 const renderBoundary = (
@@ -47,48 +45,6 @@ describe("AuthBoundary", () => {
     await user.click(screen.getByRole("button", { name: "Try again" }));
 
     expect(actions.retry).toHaveBeenCalledOnce();
-  });
-
-  it("submits an email/password login", async () => {
-    const actions = renderBoundary({ kind: "anonymous" });
-    const user = userEvent.setup();
-    await user.type(
-      screen.getByLabelText("Email", { selector: "#login-email" }),
-      "cook@example.com"
-    );
-    await user.type(
-      screen.getByLabelText("Password", { selector: "#login-password" }),
-      "correct-horse"
-    );
-    await user.click(screen.getByRole("button", { name: "Log in" }));
-
-    await waitFor(() => expect(actions.signIn).toHaveBeenCalledOnce());
-    expect(vi.mocked(actions.signIn).mock.calls[0]?.[0]).toEqual({
-      email: "cook@example.com",
-      password: "correct-horse",
-    });
-  });
-
-  it("creates an email/password account", async () => {
-    const actions = renderBoundary({ kind: "anonymous" });
-    const user = userEvent.setup();
-    await user.type(screen.getByLabelText("Name"), "Cillian");
-    await user.type(
-      screen.getByLabelText("Email", { selector: "#signup-email" }),
-      "new@example.com"
-    );
-    await user.type(
-      screen.getByLabelText("Password", { selector: "#signup-password" }),
-      "correct-horse"
-    );
-    await user.click(screen.getByRole("button", { name: "Create account" }));
-
-    await waitFor(() => expect(actions.signUp).toHaveBeenCalledOnce());
-    expect(vi.mocked(actions.signUp).mock.calls[0]?.[0]).toEqual({
-      email: "new@example.com",
-      name: "Cillian",
-      password: "correct-horse",
-    });
   });
 
   it("offers existing households and creates a new one", async () => {

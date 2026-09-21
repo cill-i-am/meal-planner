@@ -1,11 +1,36 @@
 # Onboarding implementation gaps
 
-Status: proposed
-Owner: unassigned — application onboarding implementation
-Delivery: implement agreed Paper design in a separately assigned change
+Status: active
+Owner: auth route delivery in `codex/paper-auth-screens`; remaining onboarding implementation unassigned
+Delivery: auth screens from live Paper on 21 September 2026; household, people, invitations and configured recovery remain separate
 Updated 2026-09-20 during the Paper review. This is the running implementation checklist; designs are not evidence that the behavior is implemented. The dated design agreements below do not establish completed application work. Reuse agreements already obtained when implementation is assigned.
 
 Design: [Login and household setup in Paper](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0). Error and validation specification: [onboarding-error-contract.md](../../apps/web/.impeccable/onboarding-error-contract.md).
+
+## Auth route delivery — 21 September 2026
+
+The application now has separate `/login`, `/signup`, and `/forgot-password`
+routes. The protected workspace redirects anonymous visitors to login with a
+validated local return destination. Signup and login refresh session and family
+queries before continuing to the existing workspace or family setup.
+
+The login and signup screens use the live Paper Auth page, shadcn Base UI Button
+and Input, shadcn Field primitives, self-hosted Inter, and the agreed pastel theme.
+Forms validate through Effect Schema and TanStack Form, preserve entered values
+on rejection, focus invalid fields, expose password visibility, and prevent
+parallel submissions. Better Auth error codes/statuses remain available without
+rendering raw server messages. Rate limits honor validated `X-Retry-After`.
+
+- G01 is implemented for login/signup. Other onboarding endpoint mappings remain open.
+- G02 is implemented for login/signup. Other onboarding forms remain open.
+- G07 has a working reset-unavailable route. Email delivery and the configured recovery journey remain open.
+- G12 is implemented for auth, including 44px controls, accessible errors, mobile scrolling, and reduced-motion/focus/visibility pause. Other onboarding screens remain open.
+
+Verification: 157 web tests and the production build passed. A disposable local
+Miniflare D1 database with the real Better Auth configuration verified signup,
+invalid credentials, login, logout, and the family-setup destination. Browser
+checks cover desktop/mobile layout and keyboard/error states. This does not
+claim deployment, email delivery, or completion of the wider family setup design.
 
 ## Decisions from this review
 
@@ -21,8 +46,8 @@ paths are relative to the repository root.
 
 | ID | Current evidence | Required implementation / acceptance | Status |
 | --- | --- | --- | --- |
-| G01 · Auth error identity | `src/features/auth/auth-client.ts` decodes only `message` and throws a plain Error, losing code, status and retry timing. | Preserve safe typed errors and map endpoint + code + status to field, form, or route errors. For 429, use Better Auth 1.7.2's `X-Retry-After`. Use safe fallback text for unknown errors; never show raw server messages. | Open |
-| G02 · Input validation | `auth-boundary.tsx` has browser required/email/minLength but no TanStack validators, onBlur binding or inline field errors. | Use shadcn Field, FieldLabel, FieldDescription, and FieldError with aria-invalid and describedby. Use Effect Standard Schema for validation and decode on submit. Show errors on blur/submit, then recheck corrections on change. Login needs a password but must not apply new-password length rules. | Open |
+| G01 · Auth error identity | `auth-client.ts` now preserves safe codes/status and login/signup retry timing; the auth routes map these to safe field/form errors. Other onboarding mappings remain incomplete. | Preserve safe typed errors and map endpoint + code + status to field, form, or route errors. For 429, use Better Auth 1.7.2's `X-Retry-After`. Use safe fallback text for unknown errors; never show raw server messages. | Partial — auth implemented |
+| G02 · Input validation | Login/signup now use Effect and TanStack validation with linked shadcn field errors. The existing household form still uses browser validation. | Use shadcn Field, FieldLabel, FieldDescription, and FieldError with aria-invalid and describedby. Use Effect Standard Schema for validation and decode on submit. Show errors on blur/submit, then recheck corrections on change. Login needs a password but must not apply new-password length rules. | Partial — auth implemented |
 | G03 · Add and invite | `CreateHouseholdPersonPayload` and `InviteHouseholdAdultPayload` are separate in `packages/household-api/src/people.ts`. | Offer one Add and invite action. Coordinate both commands and save the created person ID and exact invitation request. If one step fails, retry that step without creating another person or invitation. Keep entered form values. | Open |
 | G04 · Invitation delivery | `apps/api/src/features/auth/auth.ts` configures organization without `sendInvitationEmail`. Creating an invitation record is not email delivery. | Implement email delivery. Distinguish sending, invitation pending, delivery failed, and joined. Show “Invitation sent” only with delivery evidence. Design work sent no email. | Open |
 | G05 · Invitation decline | Better Auth exposes rejectInvitation; household association enum has unlinked/invitation_pending/linked/departure_pending/detached, no declined projection. | Connect recipient decline to the actual invitation and update the household association. Refresh the sender's status without inventing membership or deleting the person. Handle processed/expired invitations, wrong recipients, and failed declines. | Open |
@@ -32,13 +57,13 @@ paths are relative to the repository root.
 | G09 · Session and setup resume | Current auth boundary chooses auth/household surfaces; the proposed wizard and Save & exit behavior are not implemented. | Save an authenticated checkpoint before showing Setup saved. Keep the pending step and exact command ID. On resume, check saved server state. Cover partial invitations, unavailable rosters, and unfinished links. Preserve safe drafts and the intended sign-in/invitation destination. Resolve an active person draft before continuing. Never store passwords or reset tokens in the browser. If checkpoint saving fails, remain on the original screen and show the save error. | Open |
 | G10 · Creator bootstrap and final linking | Household/person bootstrap and invitation acceptance/person linking cross separate boundaries. | Keep exact mutation IDs and show partial completion. Resume the link rather than create another profile or accept an already-accepted invitation. A one-person household must be able to continue. | Open |
 | G11 · Portions and DOB | Person payload, SQL registry and ProfileFactValue have no DOB, age or serving-factor field. Profile facts currently cover food preferences and hard constraints. PDR-0004 defines half 0.5 / small 0.75 / standard 1 / large 1.25 portions per person and occasion. | Add appetite-based portion defaults in discovery/profile work, with explicit confirmation and meal-specific overrides. Do not infer portions from adult/dependant type. Neither the code nor the accepted decision requires DOB. | Open; outside auth implementation |
-| G12 · shadcn adoption and accessibility | Existing UI wrappers are prototype components. Paper shapes are not installed shadcn components. | Use and theme the actual shadcn components. Preserve keyboard use, focus, linked errors, 44px targets, password visibility, autocomplete, reduced motion, and narrow-screen scrolling. Check these in the browser during implementation. | Open |
+| G12 · shadcn adoption and accessibility | Auth routes now use installed shadcn Button/Input and Field primitives with the Paper theme. Remaining onboarding surfaces still need migration. | Use and theme the actual shadcn components. Preserve keyboard use, focus, linked errors, 44px targets, password visibility, autocomplete, reduced motion, and narrow-screen scrolling. Check these in the browser during implementation. | Partial — auth implemented |
 | G13 · Verification-dependent failures | Login verification is not required by current config. Better Auth invitation verification policies and list-user-invitations can require verified email; verification delivery is absent. | Distinguish errors possible under current settings from those that depend on future settings. Do not offer resend verification before email delivery exists. Check the final invitation entry route and deterministic invitation IDs against the chosen policy. | Open |
 | G14 · Pending roster status | The roster currently exposes invitation_pending, not email-delivery success or recipient decline. | Extend the safe roster response, or combine it with the appropriate authoritative status, to show Pending, Declined, Delivery failed, and Joined. `invitation_pending` alone proves neither delivery nor decline. | Open |
 
 ## Critique follow-up — 20 September 2026
 
-The [independent design and shadcn review](../../apps/web/.impeccable/onboarding-critique-2026-09-20.md) was approved for a Paper experiment. The [revised design](../../apps/web/.impeccable/experiments/compact-themed-shadcn.md) uses shadcn structure and semantic tokens with the original branded theme and segmented control. Product copy uses family. All implementation gaps remain open.
+The [independent design and shadcn review](../../apps/web/.impeccable/onboarding-critique-2026-09-20.md) was approved for a Paper experiment. The [revised design](../../apps/web/.impeccable/experiments/compact-themed-shadcn.md) uses shadcn structure and semantic tokens with the original branded theme and segmented control. Product copy uses family. The dated review left all gaps open; the auth delivery section above records subsequent implementation.
 
 - G12: define the shadcn semantic mapping, bind the largely unused type/spacing tokens, strengthen normal field and selected-control boundaries, and specify focus plus 44px secondary hit areas.
 - G03/G13: retain safe account and invitation destination context in wrong-account and partial-invitation recovery.
@@ -48,7 +73,7 @@ The [independent design and shadcn review](../../apps/web/.impeccable/onboarding
 
 ## Independent critique round 2 — 20 September 2026
 
-The [second critique](../../apps/web/.impeccable/onboarding-critique-round2-2026-09-20.md) supports the current themed style and sizing. The user approved all five fixes and Save & exit with pending-step resumption. These findings are now addressed in Paper and its reference contract; all G01–G14 implementation gaps remain open.
+The [second critique](../../apps/web/.impeccable/onboarding-critique-round2-2026-09-20.md) supports the current themed style and sizing. The user approved all five fixes and Save & exit with pending-step resumption. These findings are now addressed in Paper and its reference contract; all G01–G14 gaps were open at that review; see the auth delivery section for subsequent implementation.
 
 - G12 / R2-01: Paper now has a solid ring-colored segment edge. The explicit theme focus rule follows the selected-border rule; a Tailwind 4.3.3 compile confirmed this cascade ordering.
 - G02/G12 / R2-02–03: removed branch-specific help from the empty choice in both sizes. The theme now defines the group invalid modifier; the labelled group, linked FieldError and focus behavior are specified in [onboarding-transitions.md](../../apps/web/.impeccable/onboarding-transitions.md).
@@ -73,4 +98,4 @@ The [second critique](../../apps/web/.impeccable/onboarding-critique-round2-2026
 
 The pastel gradient is restored in Paper. [The motion study](../../apps/web/.impeccable/reference/onboarding-motion.md) demonstrates its proposed 42-second drift, focus/offscreen pause, and reduced-motion behavior. G12 includes integrating that decorative layer into the real app shell, pausing it when hidden, and checking performance on target devices. The reference preview does not close G12.
 
-Research and Paper review only. No application behavior, schema, auth configuration, email delivery or production data has been changed. Each gap remains open until implementation and relevant behavior checks demonstrate it is closed.
+The 20 September evidence records design review only. The auth delivery section records the later application implementation and verification; no email delivery or production data changes are claimed.

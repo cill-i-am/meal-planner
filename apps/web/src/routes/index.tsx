@@ -52,15 +52,7 @@ const MealPlannerRoute = () => {
         authClient.organization.setActive({ organizationId })
       );
     },
-    signIn: async (input) => {
-      await requireAuthSuccess(authClient.signIn.email(input));
-      await refreshAccount();
-    },
     signOut,
-    signUp: async (input) => {
-      await requireAuthSuccess(authClient.signUp.email(input));
-      await refreshAccount();
-    },
   };
 
   const state = deriveAuthBoundaryState({
