@@ -2,86 +2,141 @@
 
 Status: proposed
 Owner: unassigned
-Delivery: a checked implementation, or a tested decision not to adopt the proposed integration
+Delivery: working profile and people screens using one tested setup, with the fallback if needed
 
-## Outcome and scope
+## Outcome and context
 
-Remove repeated API-client setup, Promise runners and error handling from the
-people and profile screens without changing their behavior. Start with one complete
-profile read, save and refresh, then move the people operations to the same setup.
+Keep the existing people and profile behavior while removing repeated Effect
+client Layers, Promise runners, and error handling. Each migrated operation should
+have one owner. Adding a wrapper around both old implementations is not enough.
 
-Keep the generated Effect HTTP APIs, the Cloudflare/Alchemy backend and Household
-writes. This work does not introduce RPC, LiveStore replication, new authentication
-or storage, interview features, or a general frontend service framework.
+The [review sequence](README.md) splits the approach and its detailed checks
+between two PRs. They edit this same plan. Package observations from September 16
+are historical; use the implementation checkout's manifests, lockfile, source,
+and tests to establish the starting point.
+
+## Scope
+
+First make one complete profile flow work: read, save, and refresh from the server.
+Then migrate the other profile and people operations, including the roster,
+invitations, and departure. Keep the generated Effect HTTP contracts, household
+writes, and recovery that retries the exact original command.
+
+Inspect household and import adapters too, but change them only where the shared
+setup requires it within this scope. List the adapters left unchanged; do not
+claim that the whole app has migrated.
+
+Do not replace HTTP with RPC, roll out LiveStore, change authentication or storage,
+change interview behavior, build a universal frontend service framework, or remove
+unrelated Query uses. The [household contract](../../reference/household.md) and
+[people API](../../reference/household-people-api.md) define behavior to preserve.
 
 ## Approach and trade-offs
 
-Prefer `AtomHttpApi` and compatible React bindings after checking their installed
-versions, peer dependencies, exports, types and production build. Check how that
-release handles decoding errors, HTTP errors and full Effect Causes. Looking only
-at the first failure can hide an uncertain save result.
+### Prove one working flow first
 
-If the integration is incompatible or adds too much complexity, keep Query and
-share one scoped Effect runner and error adapter instead. Check any wrapper's
-actual peer requirements. Do not force dependency versions, copy library internals,
-install a moving latest release or ship both approaches.
+Record how existing operations return results, which caches own their data, and
+how unresolved requests are saved. Run a real generated HttpApi profile read and
+write through the installed `AtomHttpApi` and compatible React bindings. Check the
+actual exports, peer dependencies, resolved versions, and production web build.
+Test how that version exposes HTTP failures, decoding errors, defects, and
+interruption. A type signature or upstream example cannot prove that it preserves
+the full Effect Cause.
 
-Tie runtime and registry lifetime to the account and household. Keep client-side
-loading unless new server-side rendering (SSR) or hydration is tested for isolation
-between requests. Do not serialize unfinished requests into unintended outputs.
-Recover them only in the matching account and household. Dispose of reads and
-subscriptions, and ignore callbacks from old contexts. Cancelling a dispatched
-write does not undo it. A cache key is not an access check.
+Prefer native atoms when the full flow works without suppressing peer checks,
+copying library internals, or upgrading the whole stack. Otherwise keep Query and
+share one account/household-scoped Effect runner and error adapter. Record the
+failing case and the chosen fallback here. The fallback must remove the repeated
+runners too. An unfinished experiment, or leaving both options running, is not a
+completed change.
 
-Move profiles first, then roster, invitations and departure. Keep the different
-failure and recovery rules for each. List other adapters, but change them only
-when the shared setup needs it. Remove old Query ownership and runners after the
-replacement behaves correctly. Record any adapters left behind. A future LiveStore
-copy and an atom or Query cache must not both manage the same data independently.
+Record routine integration choices in this plan. Create a separate decision
+record only for a consequential architecture choice.
+
+### Separate screen lifetime from saved commands
+
+Scope the browser registry and runtime to the account, household, and current
+binding or generation. Prefer keeping client-side loading. If adding server
+execution, use per-request state and test simultaneous server rendering and
+hydration for different users. Do not serialize private data or pending commands
+by default.
+
+When a screen is disposed, remove subscriptions and cancel obsolete reads. Hide
+old-context data and ignore late results or cache invalidations. An unresolved
+command must keep its original payload, ID, expected versions, and binding outside
+the disposable screen state. Recover it only under the existing matching-context
+rules.
+
+Cancelling a sent request does not undo a server write. A cache key does not grant
+access. Keep each workflow's existing rules for which actions can run while
+another is unresolved; do not add a lock across the whole household.
+
+### Replace the old code, then remove it
+
+Finish the profile flow, then the other profile and people operations. Promise
+consumers may use one thin adapter to the same runtime. Keep each feature's
+rejection and recovery behavior. Replace manual Cause traversal only when public
+Effect APIs preserve the tested behavior, including any legitimate serialized or
+wrapped failure interface.
+
+After confirmed success, refresh only the affected server data. When the result is
+unknown, keep the original saved request. Once replacement tests cover the
+behavior, remove its old Query ownership, repeated client creation, obsolete
+subscriptions, and unused exports. Leave unrelated Query consumers alone. A
+future replicated resource must not also have separate writable copies in atoms
+or Query.
 
 ## Source and coordination
 
-Start with `apps/web/src/features/household-{profiles,people}/browser-operations.ts`,
-the people panels and saved requests, auth state, `apps/web/src/router.tsx`,
-`packages/household-api/` and their tests. Check manifests and the lockfile for versions.
-Coordinate forms and lockfile edits with [forms and JSON](03-forms-and-json.md).
-The [private-client cleanup](02-private-client.md) needs this work implemented,
-not just this plan merged. No dual writes or storage migration are expected.
-A small switch-over should be reversible without rewriting another branch's work.
+Start with `household-profiles/browser-operations.ts` and
+`household-people/browser-operations.ts` under `apps/web/src/features/`. Read their
+public operation contracts and tests, people saved-request handling, and panels.
+Check auth state, `apps/web/src/router.tsx`, `packages/household-api/`, and the
+manifests. Coordinate shared profile submission, schemas, and lockfile edits with
+[forms and JSON](03-forms-and-json.md).
+
+The [private-client work](02-private-client.md) needs the working runtime and its
+lifetime rules, not just a merged plan. #218 is merged: use its resulting
+interfaces, not an old discovery-branch snapshot.
 
 ## Acceptance
 
-- [ ] The chosen versions compile in the production web build without ignoring peer
-  requirements. Keeping Query must still remove the repeated runners.
-- [ ] Profile read, save and refresh work through the generated HTTP client in a real
-  browser. Then check roster, invitation, departure and profile recovery.
-- [ ] A single decoded server rejection is definitive and attempted once. Transport,
-  5xx and decoding failures, defects and mixed causes leave the write result unknown
-  unless there is proof it committed. Keep authentication-required separate.
-- [ ] A lost result keeps the original payload, mutation ID, versions and account
-  binding. Retrying that request produces one result. Existing rules that block
-  conflicting actions while a request is unresolved still hold.
-- [ ] Expiry, account switches, unmounts and late callbacks cannot reveal old data,
-  invalidate a new context or clear a newer pending request. Aborting a write keeps
-  its recovery information; disposed reads no longer update the view.
-- [ ] If SSR or hydration is added, concurrent requests have separate caches and
-  registries. Private data and pending requests do not appear in unintended output.
-- [ ] Each migrated operation has one cache and runtime owner. Remove obsolete
-  subscriptions, duplicate Cause handling and runners only after checking behavior.
+- [ ] The generated-client integration works with the resolved package versions in
+  the production web build, without suppressing peer checks. A fallback removes
+  repeated runners rather than just wrapping them.
+- [ ] Profile read/save/refresh and each people operation keep their success,
+  rejection, sign-in, and recovery behavior.
+- [ ] A confirmed server rejection stays distinct from an unknown write result.
+  Lost replies retain the exact command; recovery returns one server result.
+- [ ] Context changes, expiry, disposal, and late callbacks cannot show old data,
+  invalidate a new context, or clear a newer saved command.
+- [ ] Any added server rendering and hydration isolate concurrent requests and
+  expose no unintended private or pending-command data. Cancelled reads no longer
+  update the screen.
+- [ ] Each migrated operation has one cache/runtime owner. Remove replaced generic
+  code and list the adapters that remain.
 
-Use affected web, API and shared-type tests, at least one failing request through
-the real client, a local browser, production builds and required repository checks.
-No live provider call, real invitation, cloud plan, deployment or retailer change
-is needed. An unresolved isolation or retry failure leaves acceptance incomplete.
+## Delivery and open questions
+
+Start by checking the source and packages and running the complete profile pilot.
+Use those results to choose native atoms or the shared Query adapter. Then finish
+the people migration and its checks. Package fit and replay/isolation behavior
+remain to be proved.
+
+Use affected web, API, and shared-contract tests, a failure sent through the real
+generated HTTP client, a local browser, production builds, and required repository
+checks. Record tested commits, commands and results, the chosen setup, what was
+removed, what remains, and any limits here. Put reusable behavior in the relevant
+reference rather than another handoff or status document.
+
+A rollback reverts this code change. No dual writes or storage migration are
+expected. This plan does not claim that runtime checks have passed.
 
 ## Original proposals
 
-These proposals were written against
-`c07e48c6f6709f02c054e5110cb7178a9e5d1b93`. The linked commits preserve that
-history; they do not prove that the work or package compatibility checks are done.
-Check current code and versions when starting implementation. #218 has since
-merged, so do not repeat its migration or restore its old private-session design.
-Historical handoff instructions do not override a new implementation assignment.
+This plan replaces two overlapping September 16 proposals. Their original base
+was `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`. The links retain their technical
+scope and history, not instructions to use old packages or retired workflow rules.
 
-- [#219 source](https://github.com/cill-i-am/meal-planner/blob/53d249715b6d530d38951ed257d23e59970ba05b/docs/delivery/library-consolidation/01-effect-browser-runtime.md), head `53d249715b6d530d38951ed257d23e59970ba05b`.
-- [#220 source](https://github.com/cill-i-am/meal-planner/blob/a6adfe00f6c887367e2dea79629f9f1a03cb13db/docs/delivery/library-consolidation/01-effect-browser-integration.md), head `a6adfe00f6c887367e2dea79629f9f1a03cb13db`.
+- [Original #219 proposal](https://github.com/cill-i-am/meal-planner/blob/53d249715b6d530d38951ed257d23e59970ba05b/docs/delivery/library-consolidation/01-effect-browser-runtime.md).
+- [Original #220 proposal](https://github.com/cill-i-am/meal-planner/blob/a6adfe00f6c887367e2dea79629f9f1a03cb13db/docs/delivery/library-consolidation/01-effect-browser-integration.md).
