@@ -60,17 +60,36 @@ needs a decision record, not a hidden change in a utility refactor.
 
 ### Share validation, but keep conversion into domain values
 
-Use the installed Standard Schema adapter with TanStack Form. Define the smallest
-raw-input Effect Schema the form needs and reuse existing constraints where they
-fit. Form field values and validated domain commands are different. Decode and
-transform the submission before `commandFor` builds the command.
+Follow the [form procedure](../../how-to/build-a-form.md) and reference. Compile
+the installed Effect `Schema.toStandardSchemaV1` adapter against TanStack Form's
+actual validation interface. Define only the raw fields this form needs. Reuse
+constraints rather than copying enums or forcing a command schema onto unrelated
+screen fields.
 
-Valid fields do not establish consent or authority. A kind or target change clears
-outdated confirmation. Provisional information does not become confirmed by
-passing validation. Private-card correction may share truly common validation,
-but private proposals and shared Household writes retain separate commands.
-A command with an unknown result keeps its original payload and ID even when the
-visible form changes.
+Validate at the appropriate existing field/form events. Keep touched, blur,
+change, and submit timing. Show useful field and form errors with accessible
+associations; do not ignore submission silently or show errors before interaction.
+Validate conditional fields for the selected variant. Hidden irrelevant fields
+must neither block a valid command nor enter it.
+
+Decode and transform on submission. Successful Standard Schema validation does
+not prove that `onSubmit` receives the transformed domain value. Keep
+`decodeFact`/`commandFor`, or an equally direct conversion from fields to variant
+to command. Preserve trimming and validated branded/transformed values, and keep
+server validation. These conversions are not redundant plumbing.
+
+Keep safety consent, provisional facts, and current-version checks separate from
+field validity. Changes to kind, target, or proposed meaning clear outdated consent.
+No-known-constraints and reductions in safety constraints still need explicit
+confirmation. Keep ordinary edits and removals. Share private-card validation only
+when the meaning matches and shared-file ownership permits it. Private proposals
+and Household writes keep their own commands and confirmation rules.
+
+The visible draft may change while an earlier command is unresolved. Revalidation
+must not replace that command's original payload, mutation ID, versions, or binding.
+Keep pending/disabled behavior and the caller's recovery path. Remove only repeated
+validation and error-state code; do not add another schema/form library or generic
+form generator.
 
 ## Source and coordination
 
@@ -108,15 +127,27 @@ obsolete package.
 
 ### Form validation
 
-- [ ] Preferences, hard constraints, and no-known-constraint variants validate
-  correctly. Commands exclude irrelevant fields. Decode transformed domain values
-  before submission and keep server validation.
-- [ ] Live and submit errors, labels, focus, keyboard controls, and disabled/loading
-  behavior work in a real browser, not only schema tests.
-- [ ] Safety-reduction consent, kind/target changes, provisional facts, and current
-  review/version checks retain their meaning. Validation does not create consent.
-- [ ] Draft edits, refresh, and late callbacks cannot replace an unresolved command's
-  submitted payload or mutation ID. Remove redundant mechanics, not domain conversion.
+- [ ] New preferences, hard constraints, no-known-constraints, ordinary edits, and
+  removals keep their domain results. Changing kind cannot let hidden fields evade
+  validation, block a valid variant, or enter its command.
+- [ ] Invalid input followed by a correction shows useful errors at the expected
+  touched/blur/change/submit times. Test labels, error associations, focus, keyboard
+  submission, and disabled/loading controls in a real browser with synthetic profiles.
+- [ ] Decode whitespace, normalization, and branded/transformed values before
+  building the command. Submission keeps its old meaning. Validation success alone
+  is not treated as the converted domain value.
+- [ ] Safety reduction and no-known-constraint confirmation remain explicit.
+  Changes to kind, target, or proposed meaning cannot reuse old consent. Keep
+  provisional facts, current review/version checks, and private-card boundaries.
+- [ ] While a command is unresolved, draft edits, refresh, and revalidation cannot
+  replace its payload, ID, or versions, or send a forbidden related action. Late
+  callbacks cannot clear a newer pending request or imply an unproved result.
+- [ ] The installed schema/form integration passes relevant form/panel tests and
+  the production web build. Test shared correction validation at both callers.
+  Keep server checks and explicit conversion into domain values.
+- [ ] List the repeated validation/error-state code removed, not merely renamed
+  domain functions. Leave no extra form/schema framework, unused dependency, or
+  second status record. Keep architecture assessment separate.
 
 ## Delivery and open questions
 
