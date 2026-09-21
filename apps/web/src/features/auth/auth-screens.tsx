@@ -286,37 +286,13 @@ export const SignupPage = ({ redirect }: { readonly redirect: string }) => {
         header={
           <Link
             disabled={pending}
-            className="text-foreground focus-visible:outline-ring inline-flex min-h-11 items-center rounded-lg text-sm no-underline hover:underline focus-visible:outline-2 focus-visible:outline-offset-3"
+            className="text-foreground focus-visible:outline-ring inline-flex min-h-11 items-center gap-1 rounded-lg text-sm no-underline hover:underline focus-visible:outline-2 focus-visible:outline-offset-3"
             to="/login"
             search={{ redirect }}
           >
             <span className="hidden md:inline">Already have an account? </span>
             Log in
           </Link>
-        }
-        progress={
-          <nav
-            aria-label="Setup progress"
-            className="flex h-13 items-center justify-center"
-          >
-            <ol className="text-muted-foreground m-0 flex list-none items-center gap-3 p-0 text-sm md:gap-4.5">
-              <li
-                aria-current="step"
-                className="text-foreground flex items-center gap-2"
-              >
-                <span className="bg-foreground text-background flex size-5.5 items-center justify-center rounded-full text-xs">
-                  1
-                </span>
-                Account
-              </li>
-              <li className="before:bg-border flex items-center gap-2 before:mr-1 before:h-px before:w-6 md:before:mr-2.5">
-                Family
-              </li>
-              <li className="before:bg-border flex items-center gap-2 before:mr-1 before:h-px before:w-6 md:before:mr-2.5">
-                People
-              </li>
-            </ol>
-          </nav>
         }
       >
         <SignupForm redirect={redirect} />

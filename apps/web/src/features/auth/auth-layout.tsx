@@ -4,11 +4,9 @@ import type { ReactNode } from "react";
 export const AuthLayout = ({
   children,
   header,
-  progress,
 }: {
   readonly children: ReactNode;
   readonly header?: ReactNode;
-  readonly progress?: ReactNode;
 }) => {
   const surface = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -55,7 +53,6 @@ export const AuthLayout = ({
         </div>
         {header}
       </header>
-      {progress}
       <main className="relative isolate flex min-h-140 flex-1 flex-col items-center overflow-clip px-6 pt-8 pb-8 md:pt-10">
         <div
           aria-hidden="true"

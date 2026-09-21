@@ -52,6 +52,8 @@ Keep headings short and task-specific. Use **family** in product copy. Remove in
 
 ## Layout
 
+Signup is a standalone account-creation screen. Do not show an Account / Family / People progress stepper on signup, including validation states. This was agreed and applied to the desktop and mobile Paper screens on 21 September 2026.
+
 Onboarding uses a centered form column with left-aligned routine content and one primary action. The desktop form is 432px wide. The 390px mobile reference has a 342px form and 24px side insets. Keep width fluid below those limits; let long content scroll.
 
 The white application surface fills the browser viewport on desktop and mobile. Sky wallpaper, outer window framing, and phone status bars belong to the mockup presentation. The reference breakpoint is 768px. The main spacing steps are 8px, 10px, 12px, 16px, 20px, and 24px. Group each label, control, and helper; use larger gaps between tasks and sections.
