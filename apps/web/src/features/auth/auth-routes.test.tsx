@@ -12,9 +12,10 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { Route as RecoveryRoute } from "../../routes/forgot-password.js";
-import { Route as LoginRoute } from "../../routes/login.js";
-import { Route as SignupRoute } from "../../routes/signup.js";
+import { Route as RecoveryRoute } from "@/routes/forgot-password.js";
+import { Route as LoginRoute } from "@/routes/login.js";
+import { Route as SignupRoute } from "@/routes/signup.js";
+
 import { AuthBoundary } from "./auth-boundary.js";
 import {
   AuthClientContext,
