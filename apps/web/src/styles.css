@@ -16,7 +16,6 @@
   --border: #d8d2c6;
   --input: #a9b0ab;
   --ring: #1f6b50;
-  --link: #1f6b50;
   --control: #fcfaf6;
   --control-height: 48px;
   --control-radius: 7px;
@@ -635,14 +634,12 @@ body {
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-link: var(--link);
   --color-control: var(--control);
   --color-primary-hover: var(--primary-hover);
 }
 [data-theme="auth"] {
   --primary-hover: #303035;
   --secondary-foreground: #111114;
-  --link: #245bce;
   --control: #f4f4f6;
   --control-height: 44px;
   --control-radius: 12px;

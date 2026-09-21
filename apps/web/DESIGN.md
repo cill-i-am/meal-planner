@@ -9,7 +9,7 @@ description: Calm family setup with a soft pastel glow and focused forms.
 
 [Paper is the source of truth for the visual design](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0). This document records the onboarding design reviewed on 20 September 2026. Check the relevant live screens, states, and tokens before adding or changing UI. The working rules are in [AGENTS.md](AGENTS.md).
 
-The application uses a white surface with a diffuse lilac, blue, rose, and peach gradient behind the upper content. Grey filled fields, blue links, pastel avatars, and black pill buttons complete the theme. Keep the task easy to scan. Brand details support the form without adding extra steps or explanatory copy.
+The application uses a white surface with a diffuse lilac, blue, rose, and peach gradient behind the upper content. Grey filled fields, primary-colored links, pastel avatars, and black pill buttons complete the theme. Keep the task easy to scan. Brand details support the form without adding extra steps or explanatory copy.
 
 shadcn provides the component structure, behavior, and semantic token conventions. The Meal Planner theme gives those components the appearance shown in Paper.
 
@@ -22,15 +22,17 @@ The [reference theme](.impeccable/reference/shadcn-theme.css) records the agreed
 | Role | Tokens | Baseline value |
 | --- | --- | --- |
 | Application surface and primary-button text | `background`, `primary-foreground` | `#FFFFFF` |
-| Main text and primary action | `foreground`, `primary` | `#111114` |
+| Main text, primary actions and links | `foreground`, `primary` | `#111114` |
 | Filled fields and secondary surfaces | `muted`, `secondary` | `#F4F4F6` |
 | Supporting text | `muted-foreground` | `#65656F` |
 | Soft accent surface | `accent` | `#F0ECFA` |
 | Pastel background light | `glow-lilac`, `glow-blue`, `glow-rose`, `glow-peach` | `#ECE3F8`, `#DEEFFB`, `#F7E4F0`, `#FAEBDD` |
-| Links and focus | `link`, `ring` | `#245BCE` |
+| Focus | `ring` | `#245BCE` |
 | Invalid input and error text | `destructive` | `#9B2431` |
 | Separators | `border` | `#E9E9ED` |
 | Field and selected-segment boundary | `input` | `#858591` |
+
+Auth navigation uses shadcn Button’s link variant and inherits `primary`, including the signup header. Keep a visible gap between the header prompt and “Log in”. This replaces the earlier blue auth-link treatment.
 
 Use `foreground` on secondary and accent surfaces. Keep a visible input boundary; the light field fill alone does not identify the control clearly. Use error text as well as color. Avatar pastels identify people without implying status.
 

@@ -284,15 +284,17 @@ export const SignupPage = ({ redirect }: { readonly redirect: string }) => {
     <AnonymousOnly redirect={redirect}>
       <AuthLayout
         header={
-          <Link
+          <Button
+            variant="link"
+            className="gap-1 px-0"
             disabled={pending}
-            className="text-foreground focus-visible:outline-ring inline-flex min-h-11 items-center gap-1 rounded-lg text-sm no-underline hover:underline focus-visible:outline-2 focus-visible:outline-offset-3"
-            to="/login"
-            search={{ redirect }}
+            render={<Link to="/login" search={{ redirect }} />}
+            nativeButton={false}
+            role="link"
           >
             <span className="hidden md:inline">Already have an account? </span>
             Log in
-          </Link>
+          </Button>
         }
       >
         <SignupForm redirect={redirect} />
