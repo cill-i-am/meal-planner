@@ -647,7 +647,7 @@ body {
 [data-theme="auth"] {
   --primary-hover: #303035;
   --secondary-foreground: #111114;
-  --control: #fff;
+  --control: color-mix(in oklab, var(--background), var(--muted) 30%);
   --control-height: 44px;
   --control-radius: 12px;
   --button-radius: 999px;
