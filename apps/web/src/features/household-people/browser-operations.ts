@@ -144,8 +144,11 @@ export const classifyHouseholdPeopleOperationCause = (
   });
 };
 
-const makeClientRunner = (baseUrl: string | URL) => {
-  const layer = makeHouseholdPeopleApiClientLayer({ baseUrl }).pipe(
+const makeClientRunner = (
+  baseUrl: string | URL,
+  headers?: Readonly<Record<string, string>>
+) => {
+  const layer = makeHouseholdPeopleApiClientLayer({ baseUrl, headers }).pipe(
     Layer.provide(FetchHttpClient.layer)
   );
   return async <A, E>(
@@ -165,64 +168,68 @@ const makeClientRunner = (baseUrl: string | URL) => {
 };
 
 /** Same-origin generated client; membership authority remains server-side. */
-export const makeBrowserHouseholdPeopleOperations =
-  (): HouseholdPeopleOperations => {
-    let clientRunner: ReturnType<typeof makeClientRunner> | undefined;
-    const run: ReturnType<typeof makeClientRunner> = (operation) => {
-      clientRunner ??= makeClientRunner(globalThis.location.origin);
-      return clientRunner(operation);
-    };
-    return {
-      archive: (personId, payload) =>
-        run((client) =>
-          client.people.archive({ params: { personId }, payload })
-        ),
-      associateInvitation: (payload) =>
-        run((client) => client.people.associateInvitation({ payload })),
-      bootstrapCreator: (payload) =>
-        run((client) => client.people.bootstrapCreator({ payload })),
-      cancelDeparture: (operationId, payload) =>
-        run((client) =>
-          client.people.cancelDeparture({
-            params: { operationId },
-            payload,
-          })
-        ),
-      completeAdultLink: (payload) =>
-        run((client) => client.people.completeAdultLink({ payload })),
-      create: (payload) => run((client) => client.people.create({ payload })),
-      departAdult: (payload) =>
-        run((client) => client.people.departAdult({ payload })),
-      getDeparture: (operationId) =>
-        run((client) =>
-          client.people.getDeparture({ params: { operationId } })
-        ),
-      getDepartureByMutation: (mutationId) =>
-        run((client) =>
-          client.people.getDepartureByMutation({ params: { mutationId } })
-        ),
-      inviteAdult: (payload) =>
-        run((client) => client.people.inviteAdult({ payload })),
-      list: (includeArchived) =>
-        run((client) =>
-          client.people.list({
-            query: { includeArchived: includeArchived ? "true" : "false" },
-          })
-        ),
-      repairAdultLink: (payload) =>
-        run((client) => client.people.repairAdultLink({ payload })),
-      restore: (personId, payload) =>
-        run((client) =>
-          client.people.restore({ params: { personId }, payload })
-        ),
-      retryDeparture: (operationId, payload) =>
-        run((client) =>
-          client.people.retryDeparture({
-            params: { operationId },
-            payload,
-          })
-        ),
-      returnAdult: (payload) =>
-        run((client) => client.people.returnAdult({ payload })),
-    };
+export const makeBrowserHouseholdPeopleOperations = (scope?: {
+  readonly userId: string;
+  readonly organizationId: string;
+}): HouseholdPeopleOperations => {
+  let clientRunner: ReturnType<typeof makeClientRunner> | undefined;
+  const run: ReturnType<typeof makeClientRunner> = (operation) => {
+    clientRunner ??= makeClientRunner(
+      globalThis.location.origin,
+      scope
+        ? {
+            "x-meal-planner-household": scope.organizationId,
+            "x-meal-planner-user": scope.userId,
+          }
+        : undefined
+    );
+    return clientRunner(operation);
   };
+  return {
+    archive: (personId, payload) =>
+      run((client) => client.people.archive({ params: { personId }, payload })),
+    associateInvitation: (payload) =>
+      run((client) => client.people.associateInvitation({ payload })),
+    bootstrapCreator: (payload) =>
+      run((client) => client.people.bootstrapCreator({ payload })),
+    cancelDeparture: (operationId, payload) =>
+      run((client) =>
+        client.people.cancelDeparture({
+          params: { operationId },
+          payload,
+        })
+      ),
+    completeAdultLink: (payload) =>
+      run((client) => client.people.completeAdultLink({ payload })),
+    create: (payload) => run((client) => client.people.create({ payload })),
+    departAdult: (payload) =>
+      run((client) => client.people.departAdult({ payload })),
+    getDeparture: (operationId) =>
+      run((client) => client.people.getDeparture({ params: { operationId } })),
+    getDepartureByMutation: (mutationId) =>
+      run((client) =>
+        client.people.getDepartureByMutation({ params: { mutationId } })
+      ),
+    inviteAdult: (payload) =>
+      run((client) => client.people.inviteAdult({ payload })),
+    list: (includeArchived) =>
+      run((client) =>
+        client.people.list({
+          query: { includeArchived: includeArchived ? "true" : "false" },
+        })
+      ),
+    repairAdultLink: (payload) =>
+      run((client) => client.people.repairAdultLink({ payload })),
+    restore: (personId, payload) =>
+      run((client) => client.people.restore({ params: { personId }, payload })),
+    retryDeparture: (operationId, payload) =>
+      run((client) =>
+        client.people.retryDeparture({
+          params: { operationId },
+          payload,
+        })
+      ),
+    returnAdult: (payload) =>
+      run((client) => client.people.returnAdult({ payload })),
+  };
+};

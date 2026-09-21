@@ -44,15 +44,7 @@ const MealPlannerRoute = () => {
     ]);
   };
   const actions: AuthBoundaryActions = {
-    createHousehold: async (input) => {
-      await requireAuthSuccess(authClient.organization.create(input));
-    },
     retry: refreshAccount,
-    selectHousehold: async (organizationId) => {
-      await requireAuthSuccess(
-        authClient.organization.setActive({ organizationId })
-      );
-    },
     signOut,
   };
 

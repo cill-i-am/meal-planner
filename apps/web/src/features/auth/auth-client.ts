@@ -1,14 +1,27 @@
-import { organizationClient } from "better-auth/client/plugins";
+import { setupProgressField } from "@meal-planner/household-api";
+import {
+  inferAdditionalFields,
+  organizationClient,
+} from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import { createContext, useContext } from "react";
 
 import { AuthRequestError, parseRetryAfter } from "./auth-errors.js";
 import type { parseSignIn, parseSignUp } from "./auth-input.js";
 
-export const makeAuthClient = (transport: typeof fetch = fetch) =>
+export const makeAuthClient = (
+  transport: typeof fetch = fetch,
+  expectedUserId?: string
+) =>
   createAuthClient({
-    fetchOptions: { customFetchImpl: transport },
-    plugins: [organizationClient()],
+    fetchOptions: {
+      customFetchImpl: transport,
+      headers: expectedUserId ? { "x-meal-planner-user": expectedUserId } : {},
+    },
+    plugins: [
+      organizationClient(),
+      inferAdditionalFields({ user: { setupProgress: setupProgressField } }),
+    ],
   });
 export const AuthClientContext = createContext(makeAuthClient());
 export const useAuthClient = () => useContext(AuthClientContext);

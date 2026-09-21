@@ -1,0 +1,1 @@
+ALTER TABLE `user` ADD `setup_progress` text;

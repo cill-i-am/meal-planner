@@ -1,4 +1,5 @@
 import { Context, Layer, Schema } from "effect";
+import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 import {
   HttpApi,
   HttpApiClient,
@@ -609,8 +610,22 @@ export const HouseholdPeopleApiClient =
 /** Construct a generated household people client layer. */
 export const makeHouseholdPeopleApiClientLayer = (options: {
   readonly baseUrl: string | URL;
+  readonly headers?: Readonly<Record<string, string>> | undefined;
 }) =>
   Layer.effect(
     HouseholdPeopleApiClient,
-    HttpApiClient.make(HouseholdPeopleApi, { baseUrl: options.baseUrl })
+    HttpApiClient.make(HouseholdPeopleApi, {
+      baseUrl: options.baseUrl,
+      transformClient: (client) =>
+        HttpClient.mapRequest(
+          client,
+          HttpClientRequest.setHeaders(options.headers ?? {})
+        ),
+    })
   );
+export {
+  FamilyName,
+  SetupCheckpoint,
+  SetupProgress,
+  setupProgressField,
+} from "./onboarding.js";

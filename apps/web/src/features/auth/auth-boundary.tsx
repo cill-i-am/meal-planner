@@ -1,13 +1,9 @@
-import { useForm } from "@tanstack/react-form";
-import { useMutation } from "@tanstack/react-query";
-import { useRouter } from "@tanstack/react-router";
+import type { SetupProgress } from "@meal-planner/household-api";
+import { Navigate, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 
-import { Alert } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
-import { Input } from "../../components/ui/input.js";
-import { Label } from "../../components/ui/label.js";
 
 export interface HouseholdSummary {
   readonly id: string;
@@ -16,12 +12,7 @@ export interface HouseholdSummary {
 }
 
 export interface AuthBoundaryActions {
-  readonly createHousehold: (input: {
-    readonly name: string;
-    readonly slug: string;
-  }) => Promise<void>;
   readonly retry: () => Promise<void>;
-  readonly selectHousehold: (organizationId: string) => Promise<void>;
   readonly signOut: () => Promise<void>;
 }
 
@@ -33,103 +24,12 @@ export type AuthBoundaryState =
       readonly activeHousehold: HouseholdSummary | null;
       readonly households: readonly HouseholdSummary[];
       readonly kind: "authenticated";
-      readonly user: { readonly email: string; readonly name: string };
+      readonly user: {
+        readonly email: string;
+        readonly name: string;
+        readonly setupProgress?: SetupProgress;
+      };
     };
-
-export const householdSlug = (name: string, suffix: string): string => {
-  const stem = name
-    .normalize("NFKD")
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9]+/gu, "-")
-    .replaceAll(/^-|-$/gu, "")
-    .slice(0, 40);
-  return `${stem || "household"}-${suffix.toLowerCase()}`;
-};
-
-const MutationError = ({ error }: { readonly error: Error | null }) =>
-  error === null ? null : (
-    <Alert>
-      <p>{error.message}</p>
-    </Alert>
-  );
-
-const HouseholdSetup = ({
-  actions,
-  households,
-  userName,
-}: {
-  readonly actions: AuthBoundaryActions;
-  readonly households: readonly HouseholdSummary[];
-  readonly userName: string;
-}) => {
-  const createMutation = useMutation({ mutationFn: actions.createHousehold });
-  const selectMutation = useMutation({ mutationFn: actions.selectHousehold });
-  const form = useForm({
-    defaultValues: { name: `${userName}'s household` },
-    onSubmit: ({ value }) =>
-      createMutation.mutate({
-        name: value.name,
-        slug: householdSlug(value.name, crypto.randomUUID().slice(0, 8)),
-      }),
-  });
-  return (
-    <main className="auth-shell">
-      <section className="auth-panel" aria-labelledby="household-title">
-        <p className="eyebrow">Household setup</p>
-        <h1 id="household-title">Choose your household</h1>
-        {households.length > 0 && (
-          <div className="household-list">
-            {households.map((household) => (
-              <Button
-                disabled={selectMutation.isPending}
-                key={household.id}
-                onClick={() => selectMutation.mutate(household.id)}
-                type="button"
-              >
-                Continue to {household.name}
-              </Button>
-            ))}
-          </div>
-        )}
-        <form
-          className="auth-form field-stack"
-          onSubmit={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            void form.handleSubmit();
-          }}
-        >
-          <h2>Create a household</h2>
-          <form.Field name="name">
-            {(field) => (
-              <div className="field-stack">
-                <Label htmlFor="household-name">Household name</Label>
-                <Input
-                  id="household-name"
-                  onChange={(event) => field.handleChange(event.target.value)}
-                  required
-                  value={field.state.value}
-                />
-              </div>
-            )}
-          </form.Field>
-          <MutationError error={createMutation.error ?? selectMutation.error} />
-          <Button disabled={createMutation.isPending} type="submit">
-            Create household
-          </Button>
-        </form>
-        <Button
-          onClick={() => {
-            void actions.signOut();
-          }}
-          type="button"
-        >
-          Log out
-        </Button>
-      </section>
-    </main>
-  );
-};
 
 const LoginRedirect = () => {
   const router = useRouter();
@@ -180,14 +80,12 @@ export const AuthBoundary = ({
   if (state.kind === "anonymous") {
     return <LoginRedirect />;
   }
-  if (state.activeHousehold === null) {
-    return (
-      <HouseholdSetup
-        actions={actions}
-        households={state.households}
-        userName={state.user.name}
-      />
-    );
+  if (
+    state.activeHousehold === null ||
+    (state.user.setupProgress &&
+      state.user.setupProgress.checkpoint.stage !== "complete")
+  ) {
+    return <Navigate to="/setup" replace />;
   }
   return children(state.activeHousehold, actions.signOut);
 };

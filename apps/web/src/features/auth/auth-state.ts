@@ -1,3 +1,6 @@
+import { SetupProgress } from "@meal-planner/household-api";
+import { Option, Schema } from "effect";
+
 import type { AuthBoundaryState, HouseholdSummary } from "./auth-boundary.js";
 
 interface AuthQuery<T> {
@@ -13,7 +16,11 @@ interface OrganizationView {
 }
 
 interface SessionView {
-  readonly user: { readonly email: string; readonly name: string };
+  readonly user: {
+    readonly email: string;
+    readonly name: string;
+    readonly setupProgress?: unknown;
+  };
 }
 
 const toHousehold = (organization: OrganizationView): HouseholdSummary => ({
@@ -45,6 +52,22 @@ export const deriveAuthBoundaryState = (queries: {
   if (queries.organizations.isPending || queries.activeOrganization.isPending) {
     return { kind: "loading" };
   }
+  const rawProgress = queries.session.data.user.setupProgress;
+  const progress =
+    rawProgress === null || rawProgress === undefined
+      ? undefined
+      : Schema.decodeUnknownOption(SetupProgress)(rawProgress);
+  if (progress && Option.isNone(progress)) {
+    return { kind: "error" };
+  }
+  const user = {
+    email: queries.session.data.user.email,
+    name: queries.session.data.user.name,
+  };
+  const userWithProgress =
+    progress && Option.isSome(progress)
+      ? { ...user, setupProgress: progress.value }
+      : user;
   return {
     activeHousehold:
       queries.activeOrganization.data === null
@@ -52,6 +75,6 @@ export const deriveAuthBoundaryState = (queries: {
         : toHousehold(queries.activeOrganization.data),
     households: (queries.organizations.data ?? []).map(toHousehold),
     kind: "authenticated",
-    user: queries.session.data.user,
+    user: userWithProgress,
   };
 };

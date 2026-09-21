@@ -1,7 +1,15 @@
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
-export const AuthLayout = ({ children }: { readonly children: ReactNode }) => {
+export const AuthLayout = ({
+  children,
+  headerAction,
+  progress,
+}: {
+  readonly children: ReactNode;
+  readonly headerAction?: ReactNode;
+  readonly progress?: ReactNode;
+}) => {
   const surface = useRef<HTMLDivElement>(null);
   useEffect(() => {
     surface.current?.querySelector<HTMLElement>("h1")?.focus();
@@ -45,7 +53,9 @@ export const AuthLayout = ({ children }: { readonly children: ReactNode }) => {
           </svg>
           <span>Meal Planner</span>
         </div>
+        {headerAction}
       </header>
+      {progress}
       <main className="relative isolate flex min-h-140 flex-1 flex-col items-center overflow-clip px-4 py-8 md:px-8 md:py-18">
         <div
           aria-hidden="true"

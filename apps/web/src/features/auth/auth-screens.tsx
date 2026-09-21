@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
+import { useAppForm } from "../../components/forms/form.js";
 import { Alert, AlertDescription } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
 import {
@@ -18,7 +19,6 @@ import { FieldGroup } from "../../components/ui/field.js";
 import type { AuthenticationInput } from "./auth-client.js";
 import { useAuthClient, authenticate } from "./auth-client.js";
 import { AuthRequestError, authFeedback } from "./auth-errors.js";
-import { useAuthForm } from "./auth-form.js";
 import {
   parseSignIn,
   parseSignUp,
@@ -92,7 +92,7 @@ const useAuthentication = (redirect: string) => {
 
 const LoginForm = ({ redirect }: { readonly redirect: string }) => {
   const auth = useAuthentication(redirect);
-  const form = useAuthForm({
+  const form = useAppForm({
     defaultValues: { email: "", password: "" },
     listeners: { onChange: auth.clearError },
     onSubmit: ({ value }) =>
@@ -197,7 +197,7 @@ const LoginForm = ({ redirect }: { readonly redirect: string }) => {
 
 const SignupForm = ({ redirect }: { readonly redirect: string }) => {
   const auth = useAuthentication(redirect);
-  const form = useAuthForm({
+  const form = useAppForm({
     defaultValues: { email: "", name: "", password: "" },
     listeners: { onChange: auth.clearError },
     onSubmit: ({ value }) =>

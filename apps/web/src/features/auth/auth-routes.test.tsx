@@ -105,9 +105,7 @@ const TestWorkspace = () => {
   return (
     <AuthBoundary
       actions={{
-        createHousehold: unused,
         retry: unused,
-        selectHousehold: unused,
         signOut: unused,
       }}
       state={state}
@@ -125,6 +123,11 @@ const setup = async (
   const client = makeAuthClient(fixture.transport);
   const root = createRootRoute({ component: Outlet });
   const routes = [
+    createRoute({
+      component: () => <h1>Name your family</h1>,
+      getParentRoute: () => root,
+      path: "/setup",
+    }),
     createRoute({
       component: TestWorkspace,
       getParentRoute: () => root,

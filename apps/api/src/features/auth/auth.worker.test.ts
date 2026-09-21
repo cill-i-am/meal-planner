@@ -58,6 +58,71 @@ describe("Better Auth D1 control plane", () => {
     );
   });
 
+  it("persists only valid account-owned setup checkpoints", async () => {
+    const auth = makeMealPlannerAuth({
+      baseURL,
+      database: drizzle(testEnv.MealPlannerAuthDatabase),
+      outputFence: (_input, canonical) => canonical(),
+      schema: authSchema,
+      secret,
+    });
+    const signup = await auth.fetch(
+      authRequest("/sign-up/email", {
+        email: "checkpoint@example.test",
+        name: "Checkpoint",
+        password: "correct horse battery staple",
+      })
+    );
+    const cookie = cookieHeader(signup);
+    const progress = {
+      checkpoint: { name: "The Morgan family", stage: "family-name" },
+      status: "paused",
+    };
+    const saved = await auth.fetch(
+      authRequest("/update-user", { setupProgress: progress }, cookie)
+    );
+    expect(saved.status).toBe(200);
+    const wrongAccount = authRequest(
+      "/update-user",
+      { setupProgress: { ...progress, status: "active" } },
+      cookie
+    );
+    wrongAccount.headers.set("x-meal-planner-user", "different-account");
+    const rejectedAccount = await auth.fetch(wrongAccount);
+    expect(rejectedAccount.status).toBe(401);
+    const wrongCreation = authRequest(
+      "/organization/create",
+      { name: "Wrong account", slug: "wrong-account" },
+      cookie
+    );
+    wrongCreation.headers.set("x-meal-planner-user", "different-account");
+    const rejectedCreation = await auth.fetch(wrongCreation);
+    expect(rejectedCreation.status).toBe(401);
+    const session = await auth.fetch(
+      new Request(`${baseURL}/api/auth/get-session`, { headers: { cookie } })
+    );
+    expect(await session.json()).toMatchObject({
+      user: { setupProgress: progress },
+    });
+    const rejected = await auth.fetch(
+      authRequest(
+        "/update-user",
+        {
+          setupProgress: {
+            ...progress,
+            checkpoint: { ...progress.checkpoint, password: "never-persist" },
+          },
+        },
+        cookie
+      )
+    );
+    expect(rejected.status).toBe(400);
+    const anonymous = await auth.fetch(
+      authRequest("/update-user", { setupProgress: progress })
+    );
+    expect(anonymous.status).toBe(401);
+  });
+
   it("signs up, resolves a session, and creates an active household organization", async () => {
     const database = drizzle(testEnv.MealPlannerAuthDatabase);
     const auth = makeMealPlannerAuth({
@@ -91,6 +156,14 @@ describe("Better Auth D1 control plane", () => {
       headers: new Headers({ cookie }),
     });
     expect(session?.session.activeOrganizationId).toBe(organization.id);
+    const mismatched = new Headers({
+      cookie,
+      "x-meal-planner-household": "another-family",
+    });
+    const refused = await Effect.runPromiseExit(
+      resolveAuthenticatedOrganization({ auth, headers: mismatched })
+    );
+    expect(refused._tag).toBe("Failure");
 
     const principal = await Effect.runPromise(
       resolveAuthPrincipal({
