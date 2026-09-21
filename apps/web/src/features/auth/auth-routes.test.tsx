@@ -10,99 +10,122 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useSyncExternalStore } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { Route as RecoveryRoute } from "../../routes/forgot-password.js";
-import { Route as IndexRoute } from "../../routes/index.js";
 import { Route as LoginRoute } from "../../routes/login.js";
 import { Route as SignupRoute } from "../../routes/signup.js";
+import { AuthBoundary } from "./auth-boundary.js";
+import {
+  AuthClientContext,
+  makeAuthClient,
+  useAuthClient,
+} from "./auth-client.js";
+import { parseSignIn, parseSignUp } from "./auth-input.js";
 import { decodeAuthSearch } from "./auth-navigation.js";
+import { deriveAuthBoundaryState } from "./auth-state.js";
 
-const client = vi.hoisted(() => ({
-  signIn: { email: vi.fn() },
-  signUp: { email: vi.fn() },
-  useActiveOrganization: vi.fn(),
-  useListOrganizations: vi.fn(),
-  useSession: vi.fn(),
-}));
-vi.mock("better-auth/react", () => ({ createAuthClient: () => client }));
-vi.mock("../recipe-import/recipe-import-page.js", () => ({
-  RecipeImportPage: () => <p>Authenticated workspace</p>,
-}));
-
-interface QuerySnapshot<T> {
-  data: T | null;
-  error: { status: number } | null;
-  isPending: boolean;
-}
-const queryStore = <T,>(initial: QuerySnapshot<T>, refreshed: T) => {
-  let snapshot = initial;
-  const listeners = new Set<() => void>();
-  const subscribe = (listener: () => void) => {
-    listeners.add(listener);
-    return () => {
-      listeners.delete(listener);
-    };
-  };
-  const refetch = vi.fn(async () => {
-    snapshot = { data: refreshed, error: null, isPending: false };
-    for (const listener of listeners) {
-      listener();
-    }
-  });
-  return {
-    refetch,
-    useQuery: function useQuery() {
-      return { ...useSyncExternalStore(subscribe, () => snapshot), refetch };
-    },
-  };
-};
-const setup = async (entry = "/login", authenticated = false) => {
+const makeTransport = (initiallyAuthenticated = false) => {
+  let authenticated = initiallyAuthenticated;
+  const requests: string[] = [];
+  const submissions: { email: string; password: string; name?: string }[] = [];
   const household = {
     id: "household-1",
     members: [],
     name: "Test family",
     slug: "test-family",
   };
-  const session = queryStore(
-    {
-      data: authenticated
-        ? { user: { email: "cook@example.com", id: "adult-1", name: "Cook" } }
-        : null,
-      error: null,
-      isPending: false,
+  const account = {
+    session: {
+      expiresAt: "2099-01-01T00:00:00Z",
+      id: "session-1",
+      userId: "adult-1",
     },
-    { user: { email: "cook@example.com", id: "adult-1", name: "Cook" } }
-  );
-  const organizations = queryStore(
-    {
-      data: authenticated ? [household] : null,
-      error: authenticated ? null : { status: 401 },
-      isPending: false,
+    user: { email: "cook@example.com", id: "adult-1", name: "Cook" },
+  };
+  const fixture: {
+    reply: (() => Promise<Response>) | null;
+    requests: string[];
+    submissions: typeof submissions;
+    transport: typeof fetch;
+  } = {
+    reply: null,
+    requests,
+    submissions,
+    transport: async (input, init) => {
+      const request = new Request(input, init);
+      const path = new URL(request.url).pathname;
+      requests.push(path);
+      if (path.endsWith("/sign-in/email") || path.endsWith("/sign-up/email")) {
+        const body: unknown = await request.json();
+        submissions.push(
+          path.endsWith("/sign-up/email")
+            ? parseSignUp(body)
+            : parseSignIn(body)
+        );
+        if (fixture.reply !== null) {
+          return fixture.reply();
+        }
+        authenticated = true;
+        return Response.json(account);
+      }
+      if (path.endsWith("/get-session")) {
+        return Response.json(authenticated ? account : null);
+      }
+      if (!authenticated) {
+        return Response.json({ code: "UNAUTHORIZED" }, { status: 401 });
+      }
+      if (path.endsWith("/organization/list")) {
+        return Response.json([household]);
+      }
+      if (path.endsWith("/organization/get-full-organization")) {
+        return Response.json(household);
+      }
+      throw new Error(`Unexpected auth fixture path: ${path}`);
     },
-    [household]
+  };
+  return fixture;
+};
+
+// The protected destination exercises the real session/organization projection;
+// recipe and household feature rendering is covered by their own suites.
+const unused = async () => {
+  throw new Error("Unexpected household mutation");
+};
+
+const TestWorkspace = () => {
+  const client = useAuthClient();
+  const state = deriveAuthBoundaryState({
+    activeOrganization: client.useActiveOrganization(),
+    organizations: client.useListOrganizations(),
+    session: client.useSession(),
+  });
+
+  return (
+    <AuthBoundary
+      actions={{
+        createHousehold: unused,
+        retry: unused,
+        selectHousehold: unused,
+        signOut: unused,
+      }}
+      state={state}
+    >
+      {() => <p>Authenticated workspace</p>}
+    </AuthBoundary>
   );
-  const activeOrganization = queryStore(
-    {
-      data: authenticated ? household : null,
-      error: authenticated ? null : { status: 401 },
-      isPending: false,
-    },
-    household
-  );
-  client.useSession.mockImplementation(session.useQuery);
-  client.useListOrganizations.mockImplementation(organizations.useQuery);
-  client.useActiveOrganization.mockImplementation(activeOrganization.useQuery);
-  for (const route of [IndexRoute, LoginRoute, SignupRoute, RecoveryRoute]) {
-    if (route.options.component === undefined) {
-      throw new Error("Missing route component");
-    }
-  }
+};
+
+const setup = async (
+  entry = "/login",
+  fixture = makeTransport(),
+  authenticated = false
+) => {
+  const client = makeAuthClient(fixture.transport);
   const root = createRootRoute({ component: Outlet });
   const routes = [
     createRoute({
-      component: IndexRoute.options.component ?? Outlet,
+      component: TestWorkspace,
       getParentRoute: () => root,
       path: "/",
     }),
@@ -135,19 +158,15 @@ const setup = async (entry = "/login", authenticated = false) => {
         new QueryClient({ defaultOptions: { mutations: { retry: false } } })
       }
     >
-      <RouterProvider router={router} />
+      <AuthClientContext value={client}>
+        <RouterProvider router={router} />
+      </AuthClientContext>
     </QueryClientProvider>
   );
   await (authenticated
     ? screen.findByText("Authenticated workspace")
     : screen.findByRole("heading"));
-  return {
-    activeOrganization,
-    organizations,
-    router,
-    session,
-    user: userEvent.setup(),
-  };
+  return { fixture, router, user: userEvent.setup() };
 };
 const fillCredentials = async (
   user: ReturnType<typeof userEvent.setup>,
@@ -157,7 +176,6 @@ const fillCredentials = async (
   await user.type(screen.getByLabelText("Password"), password);
 };
 beforeEach(() => {
-  vi.resetAllMocks();
   vi.stubGlobal(
     "IntersectionObserver",
     class {
@@ -175,13 +193,7 @@ afterEach(() => {
 it.each(["login", "signup"] as const)(
   "refreshes anonymous caches and returns to the workspace after %s",
   async (kind) => {
-    client[kind === "login" ? "signIn" : "signUp"].email.mockResolvedValue({
-      data: { user: { id: "adult-1" } },
-      error: null,
-    });
-    const { user, organizations, activeOrganization, session } = await setup(
-      `/${kind}`
-    );
+    const { user, fixture } = await setup(`/${kind}`);
     if (kind === "signup") {
       await user.type(screen.getByLabelText("Your name"), "  Cook  ");
     }
@@ -194,11 +206,12 @@ it.each(["login", "signup"] as const)(
     expect(
       await screen.findByText("Authenticated workspace")
     ).toBeInTheDocument();
-    expect(organizations.refetch).toHaveBeenCalledOnce();
-    expect(activeOrganization.refetch).toHaveBeenCalledOnce();
-    expect(session.refetch).toHaveBeenCalledOnce();
+    expect(fixture.requests).toContain("/api/auth/organization/list");
+    expect(fixture.requests).toContain(
+      "/api/auth/organization/get-full-organization"
+    );
     if (kind === "signup") {
-      expect(client.signUp.email.mock.calls[0]?.[0].name).toBe("Cook");
+      expect(fixture.submissions[0]?.name).toBe("Cook");
     }
   }
 );
@@ -226,7 +239,7 @@ it("redirects anonymous home requests and keeps their destination across auth ro
 });
 
 it("validates on blur and submit, focuses the first invalid field, and clears corrected errors", async () => {
-  const { user } = await setup("/signup");
+  const { user, fixture } = await setup("/signup");
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   await user.type(screen.getByLabelText("Email"), "bad");
   expect(
@@ -236,7 +249,7 @@ it("validates on blur and submit, focuses the first invalid field, and clears co
   expect(screen.getByText("Enter a valid email address.")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Create account" }));
   await waitFor(() => expect(screen.getByLabelText("Your name")).toHaveFocus());
-  expect(client.signUp.email).not.toHaveBeenCalled();
+  expect(fixture.submissions).toHaveLength(0);
   await user.type(screen.getByLabelText("Your name"), "Cook");
   await user.clear(screen.getByLabelText("Email"));
   await user.type(screen.getByLabelText("Email"), "cook@example.com");
@@ -250,15 +263,13 @@ it("validates on blur and submit, focuses the first invalid field, and clears co
 });
 
 it("allows short existing passwords, preserves rejected credentials, and toggles visibility", async () => {
-  client.signIn.email.mockResolvedValue({
-    data: null,
-    error: {
-      code: "INVALID_EMAIL_OR_PASSWORD",
-      message: "private server detail",
-      status: 401,
-    },
-  });
-  const { user, session } = await setup();
+  const fixture = makeTransport();
+  fixture.reply = async () =>
+    Response.json(
+      { code: "INVALID_EMAIL_OR_PASSWORD", message: "private server detail" },
+      { status: 401 }
+    );
+  const { user } = await setup("/login", fixture);
   await fillCredentials(user, "short");
   await user.click(screen.getByRole("button", { name: "Show password" }));
   expect(screen.getByLabelText("Password")).toHaveAttribute("type", "text");
@@ -268,19 +279,20 @@ it("allows short existing passwords, preserves rejected credentials, and toggles
   ).toBeInTheDocument();
   expect(screen.queryByText("private server detail")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Password")).toHaveValue("short");
-  expect(session.refetch).not.toHaveBeenCalled();
+  expect(fixture.submissions[0]?.password).toBe("short");
 });
 
 it("maps duplicate accounts to the email field without exposing raw errors", async () => {
-  client.signUp.email.mockResolvedValue({
-    data: null,
-    error: {
-      code: "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL",
-      message: "private detail",
-      status: 422,
-    },
-  });
-  const { user } = await setup("/signup");
+  const fixture = makeTransport();
+  fixture.reply = async () =>
+    Response.json(
+      {
+        code: "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL",
+        message: "private detail",
+      },
+      { status: 422 }
+    );
+  const { user } = await setup("/signup", fixture);
   await user.type(screen.getByLabelText("Your name"), "Cook");
   await fillCredentials(user);
   await user.click(screen.getByRole("button", { name: "Create account" }));
@@ -294,16 +306,13 @@ it("maps duplicate accounts to the email field without exposing raw errors", asy
 });
 
 it("disables duplicate submits and sibling navigation while awaiting the server", async () => {
-  let settle:
-    | ((value: { data: null; error: { code: string } }) => void)
-    | undefined;
-  client.signUp.email.mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        settle = resolve;
-      })
-  );
-  const { user } = await setup("/signup");
+  let settle: ((value: Response) => void) | undefined;
+  const fixture = makeTransport();
+  fixture.reply = () =>
+    new Promise((resolve) => {
+      settle = resolve;
+    });
+  const { user } = await setup("/signup", fixture);
   await user.type(screen.getByLabelText("Your name"), "Cook");
   await fillCredentials(user);
   await user.click(screen.getByRole("button", { name: "Create account" }));
@@ -314,7 +323,9 @@ it("disables duplicate submits and sibling navigation while awaiting the server"
   expect(
     screen.getByText(/Already have an account/u).closest("a")
   ).toHaveAttribute("aria-disabled", "true");
-  settle?.({ data: null, error: { code: "FAILED_TO_CREATE_SESSION" } });
+  settle?.(
+    Response.json({ code: "FAILED_TO_CREATE_SESSION" }, { status: 400 })
+  );
   expect(
     await screen.findByText(/Your account may be ready/u)
   ).toBeInTheDocument();
@@ -322,16 +333,13 @@ it("disables duplicate submits and sibling navigation while awaiting the server"
 });
 
 it("honors the response retry header and re-enables login after the wait", async () => {
-  client.signIn.email.mockImplementation(async (_input, options) => {
-    options.onError({
-      response: new Response(null, {
-        headers: { "X-Retry-After": "1" },
-        status: 429,
-      }),
-    });
-    return { data: null, error: { status: 429 } };
-  });
-  const { user } = await setup();
+  const fixture = makeTransport();
+  fixture.reply = async () =>
+    Response.json(
+      { code: "TOO_MANY_REQUESTS" },
+      { headers: { "X-Retry-After": "1" }, status: 429 }
+    );
+  const { user } = await setup("/login", fixture);
   await fillCredentials(user);
   await user.click(screen.getByRole("button", { name: "Log in" }));
   expect(await screen.findByText(/Too many attempts/u)).toBeInTheDocument();
@@ -343,13 +351,14 @@ it("honors the response retry header and re-enables login after the wait", async
 });
 
 it("returns an already signed-in account to its path and query without another login", async () => {
-  const { router } = await setup(
+  const { router, fixture } = await setup(
     "/login?redirect=%2F%3FintentId%3Dpreserved-intent",
+    makeTransport(true),
     true
   );
   expect(router.state.location.pathname).toBe("/");
   expect(router.state.location.search).toEqual({
     intentId: "preserved-intent",
   });
-  expect(client.signIn.email).not.toHaveBeenCalled();
+  expect(fixture.submissions).toHaveLength(0);
 });

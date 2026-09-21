@@ -26,7 +26,7 @@ rendering raw server messages. Rate limits honor validated `X-Retry-After`.
 - G07 has a working reset-unavailable route. Email delivery and the configured recovery journey remain open.
 - G12 is implemented for auth, including 44px controls, accessible errors, mobile scrolling, and reduced-motion/focus/visibility pause. Other onboarding screens remain open.
 
-Verification: 157 web tests and the production build passed. A disposable local
+Verification: 159 web tests and the production build passed. A disposable local
 Miniflare D1 database with the real Better Auth configuration verified signup,
 invalid credentials, login, logout, and the family-setup destination. Browser
 checks cover desktop/mobile layout and keyboard/error states. This does not

@@ -1,11 +1,16 @@
 import { organizationClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
+import { createContext, useContext } from "react";
 
 import { AuthRequestError, parseRetryAfter } from "./auth-errors.js";
 
-export const authClient = createAuthClient({
-  plugins: [organizationClient()],
-});
+export const makeAuthClient = (transport: typeof fetch = fetch) =>
+  createAuthClient({
+    fetchOptions: { customFetchImpl: transport },
+    plugins: [organizationClient()],
+  });
+export const AuthClientContext = createContext(makeAuthClient());
+export const useAuthClient = () => useContext(AuthClientContext);
 
 export const requireAuthSuccess = async <T>(
   request: Promise<{
@@ -25,6 +30,7 @@ export const requireAuthSuccess = async <T>(
 };
 
 export const authenticate = async (
+  authClient: ReturnType<typeof makeAuthClient>,
   kind: "login" | "signup",
   input: {
     readonly email: string;

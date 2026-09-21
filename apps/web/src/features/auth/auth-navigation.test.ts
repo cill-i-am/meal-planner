@@ -7,6 +7,8 @@ describe("auth return destinations", () => {
   it.each([
     "https://other.test",
     "//other.test",
+    "/.//other.test",
+    "/%2e//other.test",
     "/\\other.test",
     "/\t/other.test",
     "/login",

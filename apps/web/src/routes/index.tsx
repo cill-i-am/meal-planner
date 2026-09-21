@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import { AuthBoundary } from "../features/auth/auth-boundary.js";
 import type { AuthBoundaryActions } from "../features/auth/auth-boundary.js";
 import {
-  authClient,
+  useAuthClient,
   requireAuthSuccess,
 } from "../features/auth/auth-client.js";
 import { deriveAuthBoundaryState } from "../features/auth/auth-state.js";
@@ -23,6 +23,7 @@ import { RecipeImportPage } from "../features/recipe-import/recipe-import-page.j
 const MealPlannerRoute = () => {
   const { intentId } = useSearch({ from: "/" });
   const queryClient = useQueryClient();
+  const authClient = useAuthClient();
   const session = authClient.useSession();
   const organizations = authClient.useListOrganizations();
   const activeOrganization = authClient.useActiveOrganization();

@@ -13,7 +13,7 @@ import {
   FieldLabel,
 } from "../../components/ui/field.js";
 import { Input } from "../../components/ui/input.js";
-import { authClient, authenticate } from "./auth-client.js";
+import { useAuthClient, authenticate } from "./auth-client.js";
 import { AuthRequestError, authFeedback } from "./auth-errors.js";
 import {
   parseSignIn,
@@ -81,6 +81,7 @@ export const AccountForm = ({
   readonly redirect: string;
 }) => {
   const navigate = useNavigate();
+  const authClient = useAuthClient();
   const session = authClient.useSession();
   const organizations = authClient.useListOrganizations();
   const activeOrganization = authClient.useActiveOrganization();
@@ -94,7 +95,7 @@ export const AccountForm = ({
       const input = signup
         ? parseSignUp(values)
         : { ...parseSignIn(values), name: "" };
-      await authenticate(signup ? "signup" : "login", input);
+      await authenticate(authClient, signup ? "signup" : "login", input);
       await Promise.all([
         session.refetch(),
         organizations.refetch(),
@@ -392,6 +393,7 @@ export const AccountPage = ({
   readonly signup: boolean;
   readonly redirect: string;
 }) => {
+  const authClient = useAuthClient();
   const session = authClient.useSession();
   const pending = useIsMutating({ mutationKey: ["authenticate"] });
   if (session.data !== null && pending === 0) {

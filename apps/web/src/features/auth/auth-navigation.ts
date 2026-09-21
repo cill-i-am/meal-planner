@@ -20,6 +20,7 @@ export const decodeAuthSearch = (
   }
   const destination = new URL(redirect, "https://meal-planner.invalid");
   if (
+    destination.pathname.startsWith("//") ||
     ["/login", "/signup", "/forgot-password"].includes(destination.pathname)
   ) {
     return { redirect: "/" };
