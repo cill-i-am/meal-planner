@@ -100,6 +100,20 @@ Use the project's `Field` primitives and TanStack Form field state together:
 
 Normalize validation errors for `FieldError` with a tiny local helper when needed. Keep it local unless several forms need the same helper.
 
+## Shared field components
+
+When multiple forms repeat field wiring, use TanStack Form's supported
+`createFormHook` and `createFormHookContexts` APIs. Register the field components
+once, then compose explicit `form.AppField` elements inside shadcn `FieldGroup`.
+Keep the schema, fields and actions visible in each form. Do not select an entire
+screen's structure with a boolean mode or a field-name loop.
+
+The [auth form components](../../apps/web/src/features/auth/auth-form.tsx) show
+this pattern for text and password fields. Their [login and signup compositions](../../apps/web/src/features/auth/auth-screens.tsx)
+share field behavior while keeping separate draft shapes and validation schemas.
+Use `InputGroupInput`, `InputGroupAddon` and `InputGroupButton` for a password
+visibility control. Let component variants and semantic theme tokens own styling.
+
 ## Submit Buttons
 
 Use `form.Subscribe` for submit state instead of `useState`:

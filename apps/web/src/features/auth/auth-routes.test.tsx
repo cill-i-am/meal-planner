@@ -273,6 +273,14 @@ it("allows short existing passwords, preserves rejected credentials, and toggles
   await fillCredentials(user, "short");
   await user.click(screen.getByRole("button", { name: "Show password" }));
   expect(screen.getByLabelText("Password")).toHaveAttribute("type", "text");
+  expect(fixture.submissions).toHaveLength(0);
+  expect(screen.getByRole("button", { name: "Hide password" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await user.keyboard("{Enter}");
+  expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
+  expect(fixture.submissions).toHaveLength(0);
   await user.click(screen.getByRole("button", { name: "Log in" }));
   expect(
     await screen.findByText(/Email or password doesn’t match/u)
@@ -320,6 +328,7 @@ it("disables duplicate submits and sibling navigation while awaiting the server"
     screen.getByRole("button", { name: "Creating account…" })
   ).toBeDisabled();
   expect(screen.getByLabelText("Email")).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Show password" })).toBeDisabled();
   expect(
     screen.getByText(/Already have an account/u).closest("a")
   ).toHaveAttribute("aria-disabled", "true");

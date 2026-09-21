@@ -24,9 +24,7 @@ export const SignUpInput = Schema.Struct({
     Schema.isMaxLength(128, { message: "Use 128 characters or fewer." })
   ),
 });
-export const signInValidator = Schema.toStandardSchemaV1(
-  Schema.Struct({ ...SignInInput.fields, name: Schema.String })
-);
+export const signInValidator = Schema.toStandardSchemaV1(SignInInput);
 export const signUpValidator = Schema.toStandardSchemaV1(SignUpInput);
 export const parseSignIn = Schema.decodeUnknownSync(SignInInput);
 export const parseSignUp = Schema.decodeUnknownSync(SignUpInput);
