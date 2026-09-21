@@ -1,22 +1,22 @@
 # <ADR/PDR identifier> — <Decision>
 
 - Status: Proposed
-- Date: <actual decision date once established>
-- Acceptance: <real approval/review evidence>
-- Supersedes: <record and scope only where applicable>
+- Date: <actual decision date, once known>
+- Acceptance: <link to the actual approval or review>
+- Supersedes: <which earlier decision this replaces, and to what extent, if any>
 
 ## Context
 
-<Problem and consequential constraints.>
+<The problem and the requirements that affect this choice.>
 
 ## Decision
 
-<One explicit choice and its scope.>
+<What was chosen and where it applies.>
 
 ## Alternatives and consequences
 
-<Important rejected options, trade-offs and costs.>
+<Other serious options, why they were rejected, and the costs of this choice.>
 
 ## Related records
 
-<Current contract, explanation, owning plan and relevant evidence.>
+<Relevant reference, explanation, plan and evidence.>

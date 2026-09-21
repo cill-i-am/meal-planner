@@ -1,21 +1,21 @@
-# Vision And Scope
+# Vision and scope
 
-## Product Promise
+## Product promise
 
-Meal Planner removes the recurring mental load of deciding what every person in
-a household will eat. It learns the household, turns routines and constraints
-into a complete weekly food plan, makes the plan easy to revise, and improves
-from week to week.
+Meal Planner's promise is to reduce the repeated work of deciding what everyone
+in a household will eat. It learns about the people, their routines, and their
+constraints, proposes a complete week, makes it easy to change, and learns from
+one week to the next.
 
 The primary version-one promise is **less time spent planning**. Effort,
 repetition, ingredient reuse, and light qualitative observations may influence
 recommendations, but a generic nutrition or personal-goals system is outside the
 MVP.
 
-## Experience Ambition
+## Experience ambition
 
-The AI-led experience is a product differentiator, not decorative chat around a
-form. It should feel like working with an excellent nutrition-aware family meal
+The conversation should do useful planning work, not sit around a form as an
+extra interface. It should feel like working with a nutrition-aware family meal
 planner who:
 
 - understands the whole household rather than one generic user;
@@ -31,7 +31,7 @@ The experience must not claim to diagnose, treat, certify food safety, or replac
 a qualified health professional. It may make transparent qualitative
 observations without turning them into medical or calorie claims.
 
-## Initial Users
+## Initial users
 
 The first users are households in a small, invite-only beta. A household may
 contain:
@@ -41,11 +41,11 @@ contain:
 - adults represented as people before accepting an invitation and linking an
   account.
 
-The product is designed for households, not generic organizations. Better Auth
-may remain a reusable organization control plane, but sports teams, workplaces,
-and other group types are outside the first product domain.
+The product serves households, not general organizations. Better Auth may still
+provide reusable account and organization management. Sports teams, workplaces,
+and other groups are outside the first product.
 
-## Core Jobs
+## Core jobs
 
 A household should be able to:
 
@@ -64,7 +64,7 @@ A household should be able to:
 9. derive a consolidated retailer-neutral shopping list; and
 10. optionally review the previous week so the next proposal requires less work.
 
-## Version-One Capability Boundary
+## Version-one capability boundary
 
 Version one includes:
 
@@ -89,7 +89,7 @@ Version one includes:
 - a consolidated retailer-neutral shopping list; and
 - an optional weekly review and learning loop.
 
-## Product Principles
+## Product principles
 
 ### Save work rather than manufacture it
 
@@ -101,15 +101,15 @@ confirmation.
 
 ### Account for everyone
 
-The system reasons over the complete household. A shared meal may satisfy many
-people at once, while one person may require a simple alternative. The
-presentation can be compressed; the underlying coverage cannot be accidental.
+The system accounts for the whole household. A shared meal can feed several
+people, with a simple alternative for someone who needs one. The screen can
+combine those details, but the plan must still account for each person.
 
-### Make the agent impressive and accountable
+### Make the agent useful and accountable
 
-The agent should synthesize, anticipate, repair, and explain. It must expose the
-facts, routines, assumptions, rationale, and consequential plan changes it
-proposes so adults can inspect and edit them.
+The agent should connect facts, anticipate problems, update affected parts of a
+plan, and explain its choices. Adults must be able to inspect and edit its facts,
+routines, assumptions, reasons, and significant proposed changes.
 
 ### Respect hard boundaries
 
@@ -119,10 +119,10 @@ a score or complete a plan.
 
 ### Prefer one practical preparation over two impressive recipes
 
-Individualization should reduce household friction. When a shared meal does not
-fit one person, the planner should prefer an approved low-effort fallback,
-shared-component variation, assembled meal, packaged option, or external meal
-rather than inventing a second elaborate cook.
+Personalizing meals should reduce work. When a shared meal does not suit someone,
+prefer an approved easy fallback, a variation using shared ingredients, an
+assembled meal, packaged food, or a meal eaten elsewhere. Do not automatically
+add another elaborate cooking session.
 
 ### Preserve truth and provenance
 
@@ -143,7 +143,7 @@ The product assumes the approved plan happened unless the household reports a
 deviation. Weekly review is optional and valuable, not a gate or a daily
 tracking obligation.
 
-## Explicit Non-Goals For The Initial Beta
+## Explicit non-goals for the initial beta
 
 - retailer login, price scraping, product matching, offers, basket mutation,
   checkout, or payment;
@@ -158,13 +158,12 @@ tracking obligation.
 - embedded retailer journeys or white-label distribution;
 - external calendar integration in the first vertical;
 - generalizing the household domain to teams or workplaces; and
-- optimizing prematurely for fleet-wide anonymous scale before the household
-  loop is proven.
+- optimizing for large numbers of anonymous households before the full household
+  experience works.
 
-## Definition Of Product Success
+## Definition of product success
 
-The product is succeeding when beta households approve useful complete plans in
-less time, make fewer corrections over successive weeks, and return because the
-system remembers how their household actually works. A delightful conversation
-matters because it should produce that result more accurately and with less
-friction, not because conversation length is valuable by itself.
+Success means beta households approve useful, complete plans in less time, need
+fewer corrections in later weeks, and return because the app remembers what works
+for them. A good conversation matters because it helps reach that result. A long
+conversation is not valuable by itself.

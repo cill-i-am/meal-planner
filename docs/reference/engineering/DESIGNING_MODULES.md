@@ -1,6 +1,6 @@
 # Designing Modules
 
-Design deep modules: cohesive behavior behind low-burden interfaces at intentional seams. A module earns its keep when deleting it would push meaningful complexity into callers.
+Give related behavior a small interface that is easy to use. A module is useful when it handles complexity that callers would otherwise have to repeat.
 
 ## Vocabulary
 
@@ -8,11 +8,11 @@ Shared module terms — **Module**, **Interface**, **Implementation**, **Seam**,
 
 This file uses these local terms:
 
-**Depth** — Caller leverage per unit of interface burden. Deep modules hide substantial behavior behind cohesive interfaces.
+**Depth** — How much useful behavior a module provides compared with what callers must learn to use it.
 
-**Leverage** — What callers get when one interface gives them a lot of capability.
+**Leverage** — How much work a caller can do through one interface.
 
-**Locality** — What maintainers get when behavior, invariants, bugs, and verification concentrate in one place.
+**Locality** — Keeping related behavior, rules, fixes and tests in one place.
 
 ## Apply this file
 
@@ -51,7 +51,7 @@ Shallow abstraction:
 └──────────────────────────────┘
 ```
 
-Use the deletion test: if deleting the module makes complexity disappear, it was pass-through waste. If deleting it spreads complexity across callers, it was earning its keep.
+Ask what would happen if the module were removed. If the code becomes simpler, the module was unnecessary. If callers must repeat its logic, the module was doing useful work.
 
 ## Domain Modules, Service Modules, and External Adapter Modules
 
@@ -73,7 +73,7 @@ Despite the word "service," pure domain behavior that does not depend on externa
 - Dependency-bearing modules accept dependencies through intentional seams rather than hidden globals.
 - Modules depend on the smallest meaningful behavior they use.
 - New service/domain designs compose behavior through modules and explicit dependencies rather than inheritance, except for framework-required or genuine substitutability cases.
-- New libraries, patterns, External Adapter Modules, Service Modules, and abstractions require a project convention audit first.
+- Before adding a library, pattern, External Adapter Module, Service Module or abstraction, check the relevant existing code and conventions for something you can reuse.
 - Raw framework/platform bindings stay at composition seams or tightly local External Adapter Modules.
 - Entrypoints do not duplicate business or domain policy that should be shared across protocols.
 - Domain logic and pure decisions live in a functional core without hidden I/O.
@@ -133,7 +133,7 @@ export class PostgresUsers {
 
 Avoid requiring a mega-repository because one concrete External Adapter Module happens to expose it.
 
-Also avoid interface confetti:
+Do not add interfaces that only repeat an existing type:
 
 ```ts
 interface FindUserByEmail {
@@ -163,7 +163,7 @@ Use the dependency category to choose the seam and test strategy:
 3. **Remote but owned** — your own service across a network. Define a port at the seam; production uses transport adapter, tests use in-memory/fake adapter.
 4. **True external** — third-party services. Inject a port; tests use a fake/mock adapter through that seam.
 
-One adapter is a hypothetical seam. Two adapters — usually production plus test, or two real runtimes — make it real.
+Use an interface to support real variation, such as production and test adapters or two runtimes. A single implementation does not by itself justify another interface.
 
 ## Functional core and imperative shell
 
@@ -210,7 +210,7 @@ Do not put domain invariants, service policy, or miscellaneous convenience piles
 
 ## Resource ownership
 
-Resource creation and cleanup belong in bootstrap, composition roots, imperative shell code, or managed runtime layers. Imported modules should not start servers, open connections, register handlers, read env, or perform I/O at import time except in true entrypoints.
+Create and clean up resources in startup code, composition roots, the imperative shell or managed runtime layers. Imported modules should not start servers, open connections, register handlers, read env, or perform I/O at import time except in true entrypoints.
 
 Avoid mutable singletons. If a framework requires singleton-like behavior, isolate it at the boundary.
 
@@ -225,7 +225,7 @@ Avoid mutable singletons. If a framework requires singleton-like behavior, isola
 
 ## Review checklist
 
-Use this as the final scan after applying the rules above; the rule source of truth remains in the relevant sections.
+Check the relevant items below when reviewing a change. The sections above explain the rules.
 
 - Adding a new Service Module without checking existing Service Modules and External Adapter Modules.
 - Passing raw framework `Request`, Cloudflare `Env`, database rows, or DTOs into Service Modules.

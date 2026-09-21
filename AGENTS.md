@@ -1,15 +1,29 @@
 # Agent instructions
 
-Use pnpm and repository scripts; inspect unfamiliar commands for side effects. Complete the assigned plan through implementation, relevant verification, in-scope fixes and the requested delivery. Milestones are not approval checkpoints. Make routine choices from evidence and continue.
+## Build the right thing
 
-Implementation requests include ordinary repository delivery through merge once required checks and reviews pass, unless the request sets a narrower endpoint. They do not authorize deployment or non-repository effects. Reuse existing in-scope authorization. For a genuine blocker, continue independent work and report the exact unmet requirement; never weaken acceptance to declare success.
+This is a greenfield application. Replace obsolete code rather than adding backward-compatible shims, legacy guards, workarounds or parallel implementations. Rearchitect when the requirements call for it, and update affected callers together. Keep validation, access checks and protections against data loss; these are not compatibility workarounds.
 
-## Code changes
+Prefer reliable, secure open-source libraries to custom code. Use supported extensions when a library needs adapting. Build from scratch only when existing options cannot meet the requirements efficiently.
 
-Read the [engineering standards index](docs/reference/engineering/README.md) and the topics relevant to the changed code before implementation or review. This is required, not dependent on automatic skill selection. Pass these links to coding subagents. Copy-only and documentation-only tasks need no standards tour.
+Choose the simplest solution that meets the requirements. Avoid speculative abstractions and overengineering.
 
-Preserve typed domain invariants; decode at owning boundaries and use the decoded value. Keep one authoritative state owner, explicit failures and exact-command recovery. Keep pure logic direct and effectful workflows scoped. Prefer cohesive local code over speculative abstractions or compatibility layers. Verify behavior, not implementation-shaped assertions; do not weaken types, checks or privacy.
+When using or changing an API or library, always check its current official documentation against the installed version. Do not upgrade just to match an example.
 
-## Context and delivery
+Write tests that provide meaningful confidence and prevent regressions. Avoid redundant tests and unjustified release gates. Run checks suited to the change and any required checks; repeat them when changes, failures or unresolved concerns justify it. Never weaken a valid check to claim success.
 
-Read nested instructions applicable to changed paths. Use [the docs map](docs/README.md) for missing context and capability contracts when changing boundaries. Skills supply methods, not extra phases. Preserve unrelated work and isolate shared/dirty checkouts. Keep credentials and private data out of source, logs and work records. Keep the owning plan and affected docs current. Planning/review-only requests stay in scope. Report results, evidence and unfinished acceptance honestly.
+## Read the relevant guidance
+
+Before implementing or reviewing code, read the [engineering standards index](docs/reference/engineering/README.md) and its relevant topics. This is required even when no skill is selected. Give coding subagents the same links. Documentation-only edits need no coding-standards tour.
+
+Keep domain rules in types. Decode inputs at the responsible boundary and use the decoded values. Give state one authoritative owner, handle failures explicitly, and preserve the original request when its result is unknown. Keep pure logic direct and give effectful work a clear lifetime.
+
+Read nested instructions for the files you change. Use [the docs map](docs/README.md) for missing context. Follow [the writing guidelines](docs/reference/documentation.md#writing-style) for docs, plans, PR descriptions and explanations: use plain English without losing technical meaning. Skills provide methods, not extra approval steps.
+
+## Finish the assigned work
+
+Complete the assigned plan, check the result, fix related failures and reach the requested delivery point. Do not ask whether to continue at each milestone. Make routine decisions from the available evidence.
+
+Implementation requests include repository work through merge after required checks and reviews pass, unless the request sets a narrower endpoint. This does not authorize deployment or other external actions. Use permission already given for the same work. If something is genuinely blocked, finish the independent work and report the exact problem. Planning-only and review-only requests stay in scope.
+
+Preserve unrelated changes and use a separate checkout when work would conflict. Keep credentials and private data out of source, logs and work records. Update the plan and affected docs. Report what changed, what was checked and what remains.

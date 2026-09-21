@@ -1,4 +1,4 @@
-# PDR-0014 — Shared Shopping-List Collaboration And Offline Use
+# PDR-0014 — Share shopping lists and support limited offline use
 
 - Status: Accepted
 - Date: 2026-08-26
@@ -6,17 +6,14 @@
 
 ## Context
 
-An approved plan creates one active household shopping list. Several adults may
-shop, add household items, or update the list at the same time, and supermarket
-connectivity is often unreliable. The product therefore needs useful shared and
-offline behaviour without turning the MVP into a general collaborative document
-system.
+An approved plan creates one shared shopping list. Several adults may shop, add
+items, and update the list at once. Shops can have poor connectivity, so the MVP
+needs limited offline use without becoming a general collaborative document app.
 
-A whole-list last-write-wins model would be unsafe: one adult checking milk
-should not erase another adult's newly added nappies, and an offline device must
-not overwrite a newer derived list when it reconnects. At the same time, forcing
-an online round trip for every checkbox would make the list unreliable in the
-place where it matters most.
+The latest whole-list write must not overwrite everything else. Checking milk
+must not erase another adult's newly added nappies. An offline device must not
+replace newer plan-derived items when it reconnects. Requiring a server reply
+for every checkbox would also make the list unreliable while shopping.
 
 ## Decision
 

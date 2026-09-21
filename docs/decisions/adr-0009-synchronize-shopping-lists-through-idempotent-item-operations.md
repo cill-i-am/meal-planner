@@ -1,4 +1,4 @@
-# ADR-0009 — Synchronize Shopping Lists Through Idempotent Item Operations
+# ADR-0009 — Sync shopping items with operations that are safe to retry
 
 - Status: Accepted
 - Date: 2026-08-26
@@ -6,14 +6,13 @@
 
 ## Context
 
-The active shopping list is shared household product state. Several authorized
-adults may change it concurrently, while clients also need limited offline use in
-shops with unreliable connectivity.
+Adults share one shopping list and may edit it at the same time. They also need
+limited offline use when a shop has poor connectivity.
 
-Replacing the whole list from a client snapshot would lose concurrent edits.
-Blind `toggle` operations are also unsafe under retries: replaying one operation
-twice can return an item to the wrong state. A general CRDT would add significant
-complexity before the product needs arbitrary collaborative document editing.
+Replacing the whole list with a browser's saved copy could erase someone else's
+edits. A blind `toggle` is unsafe to retry: applying it twice reverses the intended
+change. A general conflict-free replicated data type (CRDT) would add complexity
+before the product needs full collaborative document editing.
 
 ## Decision
 
@@ -124,7 +123,7 @@ silently overwriting newer work.
   superseding synchronization design without changing current shopping-list
   authority.
 
-## Alternatives Rejected
+## Alternatives rejected
 
 ### Replace the full list from the client
 

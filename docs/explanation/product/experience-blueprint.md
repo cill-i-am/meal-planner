@@ -1,10 +1,11 @@
-# Experience Blueprint
+# Experience blueprint
 
-## Experience Thesis
+## Experience thesis
 
-Meal Planner should feel like a thoughtful household planning session that
-happens to produce structured product state. The agent is not a decorative chat
-box and the UI is not a questionnaire disguised as a conversation.
+Meal Planner should feel like a useful household planning session. The
+conversation creates facts, routines, and plans people can inspect and edit. It
+should not be a chat box added to a form, or a fixed questionnaire dressed up as
+conversation.
 
 The best experience combines:
 
@@ -15,7 +16,7 @@ The best experience combines:
 - deterministic validation for permissions, coverage, constraints, portions,
   preparation, and approval.
 
-## End-To-End Household Journey
+## End-to-end household journey
 
 ### 1. Create the household
 
@@ -33,18 +34,17 @@ An adult completes a private AI-led interview. The raw transcript and
 intermediate conversation remain private to that participant. The session
 progressively proposes household-visible person-profile facts for confirmation.
 
-The interview is not one and done. An adult may start a new review whenever
-tastes, routines, work patterns, or circumstances change.
+Adults can start another review when tastes, routines, work patterns, or
+circumstances change. The interview is not limited to initial setup.
 
-The conversation should demonstrate synthesis as it proceeds. For example:
+The agent should connect what it learns to a practical suggestion. For example:
 
 > You are in the office Tuesday through Thursday and do not want to prepare
 > lunch in the morning. Should Monday and Wednesday dinner normally produce a
 > portable leftover portion for the following day?
 
-The agent should ask enough to create a useful first plan, expose uncertainty,
-and leave lower-value detail for later refinement. It should not collect facts
-without a defined planning use.
+Ask what is needed for a useful first plan, show what is uncertain, and leave
+less important details for later. Each question needs a clear planning purpose.
 
 ### 3. Build dependant profiles
 
@@ -102,9 +102,8 @@ An agent-proposed routine offers **apply this period**, **save as recurring**, o
 **reject**. A proposed fallback offers **use once**, **approve for future use**,
 or **reject**. The agent never quietly creates enduring state.
 
-The routine builder creates visible rules rather than hiding repeated
-instructions in prompts. Adults can edit those rules visually or through
-conversation.
+The routine builder saves visible rules, not repeated instructions hidden in
+prompts. Adults can change the rules on screen or through conversation.
 
 ### 6. Plan the week
 
@@ -212,7 +211,7 @@ The review also confirms any expected cross-week fridge or freezer portions
 before the next plan relies on them. The agent asks a focused follow-up only
 when it would materially improve future planning.
 
-## Conversation Design Requirements
+## Conversation design requirements
 
 ### Progressive artifact creation
 
@@ -229,7 +228,8 @@ The conversation creates and updates visible artifacts throughout:
 - planning rationale; and
 - a change summary before approval.
 
-A user should never need to trust that the transcript alone contains the truth.
+The visible facts and plans must show what the system knows. Users should not
+have to search the transcript to find out.
 
 ### Demonstrate understanding
 
@@ -239,14 +239,14 @@ jointly suggest a larger hands-off cook on the preceding morning.
 
 ### Ask fewer, better questions
 
-Questions are chosen for expected planning value. The agent avoids exhaustive
-interrogation, repeated questions, and collection without a product use.
+Ask questions that are likely to improve the plan. Avoid exhaustive interviews,
+repeated questions, and collecting facts that the product does not use.
 
 ### Make assumptions explicit
 
-High-impact constraints and enduring routines require confirmation. Soft
-inferred preferences remain visible and low-weight. New routines and fallbacks
-always offer a clear accept-once, save, or reject transition.
+Confirm important constraints and lasting routines. Show inferred preferences
+and give them less weight. For every new routine or fallback, offer a clear
+choice to use it once, save it, or reject it.
 
 ### Stay nutrition-aware without becoming clinical
 
@@ -254,7 +254,7 @@ The agent may provide transparent qualitative observations, such as a repetitive
 or unusually high-effort week. It does not implement calorie, macro, weight,
 muscle, medical, or therapeutic-goal optimization in the MVP.
 
-## Routine Builder Requirements
+## Routine builder requirements
 
 A routine is a reusable, versioned planning rule rather than copied calendar
 cells. It may define:
@@ -275,7 +275,7 @@ cells. It may define:
 Routine evaluation produces concrete plan input for one period. One-off
 exceptions override the baseline without silently rewriting the enduring rule.
 
-## Compressed Visual Model
+## Compressed visual model
 
 Internally, the plan accounts for every managed `person × date × meal occasion`
 requirement. The default UI should compress that model by:
@@ -287,10 +287,10 @@ requirement. The default UI should compress that model by:
 - showing applied rationale; and
 - highlighting only unresolved or conflicting coverage.
 
-The internal domain union is not automatically the frontend contract. Build the
-projection that best communicates the household week.
+The frontend does not have to display the domain's internal union types directly.
+Use a view that makes the household week easy to understand.
 
-## Privacy Experience
+## Privacy experience
 
 - Raw adult interview transcripts are private to the participant.
 - Confirmed person-profile facts are household-visible by default.
@@ -301,7 +301,7 @@ projection that best communicates the household week.
 - Planning rationale references confirmed product facts and does not quote the
   private transcript.
 
-## Experience Evaluation
+## Experience evaluation
 
 Evaluate the AI experience with representative household scenarios, not only
 schema and prompt tests. Measure:
@@ -317,5 +317,5 @@ schema and prompt tests. Measure:
 - user-rated sense of being understood; and
 - time to reach approval.
 
-A long or fluent conversation that does not improve planning accuracy is not a
-successful interaction.
+A conversation is not successful just because it is long or fluent. It needs to
+improve the plan.

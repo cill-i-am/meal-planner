@@ -14,17 +14,17 @@ TanStack Start with React, TanStack Query, TanStack Form, Better Auth, Effect Sc
 
 Adults managing food for a whole household, including other adults and dependants with different preferences, routines, and dietary constraints. The job is to make a practical week of food work with less deciding, coordinating, cooking, and shopping effort.
 
-The initial audience is Ireland-first households in a small, invite-only beta, beginning with dogfood and a closely supported pilot. Dependants have managed profiles rather than accounts. Adults may be represented in the household before accepting an invitation and linking an account.
+The first users are households in Ireland, starting with Cillian's household, then a small, closely supported invite-only beta. Dependants have managed profiles, not accounts. An adult can have a household profile before accepting an invitation and linking an account.
 
 ## Product Purpose
 
-Meal Planner is an AI-native household food service. It learns how the household eats and lives, proposes one practical personalised week, and turns an approved plan into consolidated shopping demand. Supermarket fulfilment is a later part of the full vision.
+Meal Planner uses AI to help a household decide what to eat. It learns about the people and their routines, proposes a practical week, and turns an approved plan into a combined shopping list. Supermarket ordering comes later.
 
 Success means less active planning time, fewer substantive corrections over successive weeks, and households returning because the service remembers what works for them. Beta targets are evaluation gates, not demonstrated performance claims; their owner is [PDR-0015](../../docs/decisions/pdr-0015-invite-only-beta-cohort-and-learning-cadence.md).
 
 ## Positioning
 
-The service combines private discovery, confirmed household knowledge, routines, food content, and deterministic feasibility checks to produce one personalised recommendation. It accounts for shared meals, person-specific alternatives, leftovers, cooking capacity, existing food, and exceptions. The AI-led conversation produces visible, editable artifacts and reaches a useful result quickly.
+Private discovery, confirmed facts, routines, food options, and deterministic checks contribute to one personalized recommendation. The plan accounts for shared meals, individual alternatives, leftovers, cooking capacity, food already available, and exceptions. The conversation should produce useful facts and plans people can see and edit, without making them wait until the end.
 
 ## Operating Context
 
@@ -45,11 +45,11 @@ The intended journey is:
 
 The web app provides household account/setup flows, people and dependant management, invitations, versioned food profiles, private adult discovery with reviewable profile cards and explicit confirmation, and evidence-grounded recipe import. Discovery includes application-owned required coverage and adaptive questioning; broader model-quality evaluation and conversation-tone work remain pending. Import currently accepts one public TikTok HTTPS URL per attempt.
 
-An early meal-plan backend and a read-only Tesco catalogue facade exist in the repository. Their existence does not establish a complete planning or shopping experience in the web app. Live deployment and beta readiness are not established by this record. [Current delivery](../../docs/plans/README.md) owns changing implementation status and acceptance evidence.
+The repo contains an early planning backend and a read-only Tesco catalogue API. That is not a complete planning or shopping experience in the web app. This record establishes neither deployment nor beta readiness. [Plans](../../docs/plans/README.md) record implementation status and the checks still needed.
 
 ### Planned experience and release boundaries
 
-The full product includes routines and fallbacks, curated and household food content, a feasible recommended week, repair and revisioned approval, prepared food and leftover allocation, a collaborative retailer-neutral shopping list, and optional weekly learning. These are accepted direction, not all implemented capabilities.
+The agreed full product includes routines, fallbacks, shared and private food options, a workable recommended week, and changes that update related parts of the plan. It also includes versioned approval, prepared food and leftovers, a shared retailer-neutral shopping list, and optional weekly learning. These are agreed goals, not a list of finished features.
 
 Supermarket product matching, pricing, availability, basket creation, checkout, and payment are beyond the initial beta. Medical or clinical nutrition, calorie and macro tracking, continuous pantry inference, food-safety certification, dependant login, public recipe marketplaces, and generic organization management are outside that release.
 
@@ -69,7 +69,7 @@ The current product name is Meal Planner. Explain questions, assumptions, trade-
 
 ## Evidence on Hand
 
-This record summarizes the confirmed product direction for interface work. Detailed product meaning and accepted decisions remain in the [product blueprint](../../docs/README.md) and [product decision records](../../docs/decisions/). Consult those owners when a design changes product semantics, privacy, authority, or release scope.
+This is the product summary used for interface work. Use the [documentation map](../../docs/README.md) and [decision records](../../docs/decisions/) for details, especially when a design affects product behavior, privacy, permissions, data ownership, or release scope.
 
 - [Vision and scope](../../docs/explanation/product/vision-and-scope.md) establish users, purpose, capabilities, and non-goals.
 - [Experience blueprint](../../docs/explanation/product/experience-blueprint.md) describes the intended household journey.
