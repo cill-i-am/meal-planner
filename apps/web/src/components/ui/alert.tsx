@@ -13,9 +13,9 @@ const alertVariants = cva(
     variants: {
       variant: {
         default:
-          "border-destructive/28 text-foreground [&_h2]:text-destructive [&_p]:text-muted-foreground bg-[color-mix(in_srgb,var(--destructive)_4%,var(--control))] p-5 [&_h2]:text-[28px] [&_p]:leading-[1.6]",
+          "border-destructive/28 text-foreground [&_h2]:text-destructive [&_p]:text-muted-foreground bg-[color-mix(in_oklch,var(--destructive)_4%,var(--control))] p-5 [&_h2]:text-[28px] [&_p]:leading-[1.6]",
         destructive:
-          "border-destructive/35 text-destructive *:data-[slot=alert-description]:text-destructive bg-[color-mix(in_srgb,var(--destructive)_4%,var(--background))] *:[svg]:text-current",
+          "border-destructive/35 text-destructive *:data-[slot=alert-description]:text-destructive bg-[color-mix(in_oklch,var(--destructive)_4%,var(--background))] *:[svg]:text-current",
       },
     },
   }

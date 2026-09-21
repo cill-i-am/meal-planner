@@ -17,20 +17,24 @@ This baseline covers login, signup, family setup, people, invitations, and passw
 
 ## Colors
 
+OKLCH is the canonical colour format, following shadcn's theme convention. Define
+colours once in semantic theme tokens and use those tokens throughout components.
+Authored colour mixes use OKLCH too. The conversion preserves the existing palette.
+
 The [reference theme](.impeccable/reference/shadcn-theme.css) records the agreed values and their shadcn mapping. It is not imported by the application. Read live Paper tokens when checking or extending the design, then update this reference if an agreed value changes.
 
 | Role | Tokens | Baseline value |
 | --- | --- | --- |
-| Application surface and primary-button text | `background`, `primary-foreground` | `#FFFFFF` |
-| Main text, primary actions and links | `foreground`, `primary` | `#111114` |
-| Secondary surfaces | `muted`, `secondary` | `#F4F4F6` |
-| Supporting text | `muted-foreground` | `#65656F` |
-| Soft accent surface | `accent` | `#F0ECFA` |
-| Pastel background light | `glow-lilac`, `glow-blue`, `glow-rose`, `glow-peach` | `#ECE3F8`, `#DEEFFB`, `#F7E4F0`, `#FAEBDD` |
-| Focus | `ring` | `#245BCE` |
-| Invalid input and error text | `destructive` | `#9B2431` |
-| Separators | `border` | `#E9E9ED` |
-| Field and selected-segment boundary | `input` | `#909098` |
+| Application surface and primary-button text | `background`, `primary-foreground` | `oklch(1 0 0)` |
+| Main text, primary actions and links | `foreground`, `primary` | `oklch(0.179001 0.006108 285.766684)` |
+| Secondary surfaces | `muted`, `secondary` | `oklch(0.967717 0.002652 286.345148)` |
+| Supporting text | `muted-foreground` | `oklch(0.510232 0.015661 285.831807)` |
+| Soft accent surface | `accent` | `oklch(0.950249 0.019117 299.064627)` |
+| Pastel background light | `glow-lilac`, `glow-blue`, `glow-rose`, `glow-peach` | `oklch(0.929125 0.029673 305.111474)`, `oklch(0.943093 0.024302 238.405236)`, `oklch(0.937506 0.025952 339.383457)`, `oklch(0.948203 0.024788 65.581335)` |
+| Focus | `ring` | `oklch(0.50632 0.187655 262.537119)` |
+| Invalid input and error text | `destructive` | `oklch(0.457944 0.154117 20.207901)` |
+| Separators | `border` | `oklch(0.935168 0.005355 286.294472)` |
+| Field and selected-segment boundary | `input` | `oklch(0.655904 0.011736 286.073499)` |
 
 Auth navigation uses Button’s link variant and inherits `primary`. Account-switch links live in the muted card footer, with an explicit gap after the prompt. Underline links and retain a 44px target. Signup has no duplicate header login action.
 
