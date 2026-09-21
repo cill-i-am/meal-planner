@@ -7,7 +7,7 @@
   --primary: #1f6b50;
   --primary-hover: #18573f;
   --primary-foreground: #fff;
-  --secondary: transparent;
+  --secondary: #e8e3da;
   --secondary-foreground: #1f6b50;
   --muted: #e8e3da;
   --accent: #e8e3da;
@@ -621,6 +621,13 @@ body {
   --radius-lg: var(--control-radius);
   --radius-md: calc(var(--control-radius) * 0.8);
   --radius-sm: calc(var(--control-radius) * 0.6);
+  --radius-xl: 14px;
+  --radius-2xl: 16px;
+  --color-card: var(--background);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--background);
+  --color-popover-foreground: var(--foreground);
+  --font-heading: inherit;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-primary: var(--primary);
@@ -640,7 +647,7 @@ body {
 [data-theme="auth"] {
   --primary-hover: #303035;
   --secondary-foreground: #111114;
-  --control: #f4f4f6;
+  --control: #fff;
   --control-height: 44px;
   --control-radius: 12px;
   --button-radius: 999px;
@@ -654,7 +661,7 @@ body {
   --muted-foreground: #65656f;
   --destructive: #9b2431;
   --border: #e9e9ed;
-  --input: #858591;
+  --input: #909098;
   --ring: #245bce;
   --glow-lilac: #ece3f8;
   --glow-blue: #deeffb;
@@ -666,7 +673,8 @@ body {
   --text-task-mobile: 1.75rem;
   --text-welcome-mobile: 2rem;
   --font-auth: "Inter Variable", Inter, system-ui, sans-serif;
-  --container-auth: 27rem;
+  --container-auth: 30rem;
+  --text-task-desktop: 2rem;
   --background-image-auth-glow:
     linear-gradient(180deg, var(--background) 0%, transparent 7%),
     radial-gradient(circle at 38% 12%, var(--glow-lilac), transparent 35%),

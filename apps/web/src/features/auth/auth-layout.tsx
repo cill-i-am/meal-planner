@@ -1,13 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
-export const AuthLayout = ({
-  children,
-  header,
-}: {
-  readonly children: ReactNode;
-  readonly header?: ReactNode;
-}) => {
+export const AuthLayout = ({ children }: { readonly children: ReactNode }) => {
   const surface = useRef<HTMLDivElement>(null);
   useEffect(() => {
     surface.current?.querySelector<HTMLElement>("h1")?.focus();
@@ -37,7 +31,7 @@ export const AuthLayout = ({
       className="group/auth bg-background text-foreground font-auth selection:text-foreground scrollbar-thumb-input scrollbar-track-background flex min-h-svh flex-col text-base/6 antialiased selection:bg-(--glow-lilac)"
       ref={surface}
     >
-      <header className="border-border flex min-h-16 items-center justify-between gap-4 border-b px-6 md:px-7">
+      <header className="border-border flex min-h-16 items-center justify-between gap-4 border-b px-6 md:px-10">
         <div className="flex items-center gap-3 text-lg font-medium tracking-tight whitespace-nowrap">
           <svg
             aria-hidden="true"
@@ -51,9 +45,8 @@ export const AuthLayout = ({
           </svg>
           <span>Meal Planner</span>
         </div>
-        {header}
       </header>
-      <main className="relative isolate flex min-h-140 flex-1 flex-col items-center overflow-clip px-6 pt-8 pb-8 md:pt-10">
+      <main className="relative isolate flex min-h-140 flex-1 flex-col items-center overflow-clip px-4 py-8 md:px-8 md:py-18">
         <div
           aria-hidden="true"
           className="bg-auth-glow motion-safe:animate-auth-drift motion-safe:group-has-[[data-slot=field]:focus-within]/auth:animate-auth-drift-paused motion-safe:group-data-[paused=true]/auth:animate-auth-drift-paused pointer-events-none absolute inset-0 -z-10 origin-[50%_20%] motion-reduce:animate-none"

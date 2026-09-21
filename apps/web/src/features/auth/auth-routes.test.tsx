@@ -225,9 +225,7 @@ it("redirects anonymous home requests and keeps their destination across auth ro
   expect(router.state.location.search).toEqual({
     redirect: "/?intentId=preserved-intent",
   });
-  await user.click(
-    screen.getByRole("link", { name: /Already have an account/u })
-  );
+  await user.click(screen.getByRole("link", { name: "Log in" }));
   await user.click(screen.getByRole("link", { name: "Forgot password?" }));
   expect(
     await screen.findByRole("heading", { name: "Password reset unavailable" })
@@ -330,9 +328,10 @@ it("disables duplicate submits and sibling navigation while awaiting the server"
   ).toBeDisabled();
   expect(screen.getByLabelText("Email")).toBeDisabled();
   expect(screen.getByRole("button", { name: "Show password" })).toBeDisabled();
-  expect(
-    screen.getByText(/Already have an account/u).closest("a")
-  ).toHaveAttribute("aria-disabled", "true");
+  expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute(
+    "aria-disabled",
+    "true"
+  );
   settle?.(
     Response.json({ code: "FAILED_TO_CREATE_SESSION" }, { status: 400 })
   );

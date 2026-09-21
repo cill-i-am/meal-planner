@@ -32,6 +32,33 @@ invalid credentials, login, logout, and the family-setup destination. Browser
 checks cover desktop/mobile layout and keyboard/error states. This does not
 claim deployment, email delivery, or completion of the wider family setup design.
 
+## Framed shadcn direction — 21 September 2026
+
+The user approved the framed card and soft-depth direction after the Stripe and
+coss references. The [independent Impeccable review](../../apps/web/.impeccable/critique/2026-09-21T21-02-50Z__ign-file-01m2yngss3qw4t1envyss0zxnp-p-7-0-ebc73719.md)
+supported it and identified mobile width, target sizing and component-reference
+consistency corrections.
+
+Auth now composes shadcn Card sections, white inputs and a password eye
+toggle. Shared shadcn buttons use coss-inspired depth for primary, secondary, outline and
+destructive variants; links and ghost actions stay flat. Account-switch navigation
+moves into the muted footer. shadcn remains the component foundation, with TanStack Form, Effect validation
+and current auth routes retained. Other libraries inform styling without replacing
+component APIs.
+
+All 62 desktop/mobile screens and states in Paper Auth, Household, People,
+Invitations and Recovery adopt the new direction. Dense mobile setup uses 16px
+inner padding; supporting people lists remain after form actions. The Overview
+records the component variants and state treatment. Existing behavioral gaps above
+remain open; updating a design does not implement household or recovery delivery.
+Historical screenshots remain labelled as the earlier baseline.
+
+Local verification passed: 159 web tests, TypeScript, production build, focused
+lint and the documentation check. Browser checks covered desktop login, mobile
+signup at 320px and 390px, validation, password visibility and 44px controls.
+The final signup accessibility scan reported no violations. CI and PR review
+remain deferred at the user's request.
+
 ## Decisions from this review
 
 - Use shadcn as the component base and retain TanStack Form plus Effect Schema.

@@ -6,7 +6,7 @@
 :root {
   --radius: 12px;
   --muted: #f4f4f6;
-  --link: #245bce;
+  --link: var(--primary);
   --background: #ffffff;
   --foreground: #111114;
   --primary: #111114;
@@ -18,7 +18,7 @@
   --accent-foreground: #111114;
   --destructive: #9b2431;
   --border: #e9e9ed;
-  --input: #858591;
+  --input: #909098;
   --ring: #245bce;
   --glow-lilac: #ece3f8;
   --glow-blue: #deeffb;
@@ -28,7 +28,7 @@
   --text-sm: 14px;
   --text-base: 16px;
   --text-lg: 18px;
-  --text-task-desktop: 36px;
+  --text-task-desktop: 32px;
   --text-task-mobile: 28px;
   --text-welcome-desktop: 48px;
   --text-welcome-mobile: 32px;

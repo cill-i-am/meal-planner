@@ -4,9 +4,11 @@ import {
   useStore,
 } from "@tanstack/react-form";
 import type { AnyFieldMeta } from "@tanstack/react-form";
+import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { useRef, useState } from "react";
-import type { ComponentProps, ReactNode } from "react";
+import type { ReactNode } from "react";
 
+import { Card, CardTitle } from "../../components/ui/card.js";
 import {
   Field,
   FieldDescription,
@@ -20,7 +22,6 @@ import {
   InputGroupInput,
 } from "../../components/ui/input-group.js";
 import { Input } from "../../components/ui/input.js";
-import { cn } from "../../lib/utils.js";
 
 const { fieldContext, formContext, useFieldContext, useFormContext } =
   createFormHookContexts();
@@ -90,24 +91,31 @@ const TextField = (
   );
 };
 
-const PasswordField = (props: FieldProps) => {
+const PasswordField = (props: FieldProps & { readonly action?: ReactNode }) => {
   const { errors, isInvalid, inputProps } = useAuthField(props);
   const [visible, setVisible] = useState(false);
   return (
     <Field data-invalid={isInvalid} data-disabled={props.disabled}>
-      <FieldLabel htmlFor={props.id}>{props.label}</FieldLabel>
+      <div className="flex flex-wrap items-center justify-between gap-x-3">
+        <FieldLabel htmlFor={props.id}>{props.label}</FieldLabel>
+        {props.action}
+      </div>
       <InputGroup>
         <InputGroupInput {...inputProps} type={visible ? "text" : "password"} />
         <InputGroupAddon align="inline-end">
           <InputGroupButton
-            size="sm"
+            size="icon-sm"
             aria-label={visible ? "Hide password" : "Show password"}
             aria-pressed={visible}
             aria-controls={props.id}
             onClick={() => setVisible(!visible)}
             disabled={props.disabled}
           >
-            {visible ? "Hide" : "Show"}
+            {visible ? (
+              <EyeOffIcon aria-hidden="true" />
+            ) : (
+              <EyeIcon aria-hidden="true" />
+            )}
           </InputGroupButton>
         </InputGroupAddon>
       </InputGroup>
@@ -137,7 +145,7 @@ const Frame = ({
   return (
     <form
       ref={element}
-      className="max-w-auth flex w-full flex-col gap-5"
+      className="max-w-auth w-full"
       noValidate
       aria-labelledby="auth-title"
       aria-busy={pending}
@@ -150,7 +158,7 @@ const Frame = ({
           ?.focus();
       }}
     >
-      {children}
+      <Card>{children}</Card>
       <form.Subscribe
         selector={(state) =>
           state.submissionAttempts > 0 && state.errors.length > 0
@@ -172,12 +180,11 @@ const Heading = ({
   children,
   errorTitle,
   rejected,
-  className,
 }: {
   readonly children: ReactNode;
   readonly errorTitle: string;
   readonly rejected: boolean;
-} & Pick<ComponentProps<"h1">, "className">) => {
+}) => {
   const form = useFormContext();
   return (
     <form.Subscribe
@@ -191,18 +198,15 @@ const Heading = ({
       }
     >
       {(invalid) => (
-        <h1
-          tabIndex={-1}
-          id="auth-title"
-          className={cn(
-            "font-auth m-0 pb-2 tracking-tight focus:outline-none",
-            invalid || rejected
-              ? "text-task-mobile/8 font-semibold md:text-4xl/10"
-              : className
-          )}
-        >
-          {invalid || rejected ? errorTitle : children}
-        </h1>
+        <CardTitle>
+          <h1
+            tabIndex={-1}
+            id="auth-title"
+            className="text-task-mobile/9 md:text-task-desktop/10 font-semibold tracking-tight focus:outline-none"
+          >
+            {invalid || rejected ? errorTitle : children}
+          </h1>
+        </CardTitle>
       )}
     </form.Subscribe>
   );

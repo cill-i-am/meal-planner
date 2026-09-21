@@ -5,6 +5,15 @@ import type { ReactNode } from "react";
 
 import { Alert, AlertDescription } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  CardFooter,
+  CardBody,
+  CardDescription,
+} from "../../components/ui/card.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import type { AuthenticationInput } from "./auth-client.js";
 import { useAuthClient, authenticate } from "./auth-client.js";
@@ -93,73 +102,94 @@ const LoginForm = ({ redirect }: { readonly redirect: string }) => {
   return (
     <form.AppForm>
       <form.Frame pending={auth.pending}>
-        <form.Heading
-          className="text-task-mobile/8 font-semibold md:text-4xl/10"
-          errorTitle="Log in"
-          rejected={auth.feedback !== null}
-        >
-          Welcome back
-        </form.Heading>
-        <FieldGroup>
-          <form.AppField name="email">
-            {(field) => (
-              <field.TextField
-                id="login-email"
-                label="Email"
-                type="email"
-                autoComplete="email"
-                disabled={auth.pending}
-                serverError={
-                  auth.feedback?.field === "email"
-                    ? auth.feedback.message
-                    : undefined
-                }
-              />
+        <CardBody>
+          <CardHeader>
+            <form.Heading errorTitle="Log in" rejected={auth.feedback !== null}>
+              Welcome back
+            </form.Heading>
+          </CardHeader>
+          <CardContent>
+            <FieldGroup>
+              <form.AppField name="email">
+                {(field) => (
+                  <field.TextField
+                    id="login-email"
+                    label="Email"
+                    type="email"
+                    autoComplete="email"
+                    disabled={auth.pending}
+                    serverError={
+                      auth.feedback?.field === "email"
+                        ? auth.feedback.message
+                        : undefined
+                    }
+                  />
+                )}
+              </form.AppField>
+              <form.AppField name="password">
+                {(field) => (
+                  <field.PasswordField
+                    action={
+                      <Button
+                        variant="link"
+                        className="rounded-lg px-0"
+                        disabled={auth.pending}
+                        render={
+                          <Link
+                            to="/forgot-password"
+                            search={{ redirect }}
+                            disabled={auth.pending}
+                          />
+                        }
+                        nativeButton={false}
+                        role="link"
+                      >
+                        Forgot password?
+                      </Button>
+                    }
+                    id="login-password"
+                    label="Password"
+                    autoComplete="current-password"
+                    disabled={auth.pending}
+                    serverError={
+                      auth.feedback?.field === "password"
+                        ? auth.feedback.message
+                        : undefined
+                    }
+                  />
+                )}
+              </form.AppField>
+            </FieldGroup>
+            {auth.feedback && !auth.feedback.field && (
+              <Alert variant="destructive">
+                <AlertDescription>{auth.message}</AlertDescription>
+              </Alert>
             )}
-          </form.AppField>
-          <form.AppField name="password">
-            {(field) => (
-              <field.PasswordField
-                id="login-password"
-                label="Password"
-                autoComplete="current-password"
+
+            <Button className="w-full" type="submit" disabled={auth.blocked}>
+              {auth.pending ? "Logging in…" : "Log in"}
+            </Button>
+          </CardContent>
+        </CardBody>
+        <CardFooter>
+          <span>New here?</span>
+          <Button
+            variant="link"
+            className="px-0"
+            disabled={auth.pending}
+            render={
+              <Link
+                to="/signup"
+                search={{ redirect }}
                 disabled={auth.pending}
-                serverError={
-                  auth.feedback?.field === "password"
-                    ? auth.feedback.message
-                    : undefined
-                }
               />
-            )}
-          </form.AppField>
-        </FieldGroup>
-        {auth.feedback && !auth.feedback.field && (
-          <Alert variant="destructive">
-            <AlertDescription>{auth.message}</AlertDescription>
-          </Alert>
-        )}
-        <Button
-          variant="link"
-          className="self-end rounded-lg p-0"
-          disabled={auth.pending}
-          render={<Link to="/forgot-password" search={{ redirect }} />}
-          nativeButton={false}
-          role="link"
-        >
-          Forgot password?
-        </Button>
-        <Button type="submit" disabled={auth.blocked}>
-          {auth.pending ? "Logging in…" : "Log in"}
-        </Button>
-        <Button
-          variant="link"
-          disabled={auth.pending}
-          render={<Link to="/signup" search={{ redirect }} />}
-          nativeButton={false}
-          role="link"
-        >
-          Create an account
-        </Button>
+            }
+            nativeButton={false}
+            role="link"
+          >
+            Create an account
+          </Button>
+        </CardFooter>
       </form.Frame>
     </form.AppForm>
   );
@@ -177,77 +207,86 @@ const SignupForm = ({ redirect }: { readonly redirect: string }) => {
   return (
     <form.AppForm>
       <form.Frame pending={auth.pending}>
-        <form.Heading
-          className="text-welcome-mobile/9 text-center font-medium md:text-5xl/13"
-          errorTitle="Create your account"
-          rejected={auth.feedback !== null}
-        >
-          <span className="text-muted-foreground block">Less planning.</span>
-          <span className="block">More living.</span>
-        </form.Heading>
-        <FieldGroup>
-          <form.AppField name="name">
-            {(field) => (
-              <field.TextField
-                id="signup-name"
-                label="Your name"
-                autoComplete="name"
-                disabled={auth.pending}
-              />
+        <CardBody>
+          <CardHeader>
+            <form.Heading
+              errorTitle="Create your account"
+              rejected={auth.feedback !== null}
+            >
+              Create your account
+            </form.Heading>
+          </CardHeader>
+          <CardContent>
+            <FieldGroup>
+              <form.AppField name="name">
+                {(field) => (
+                  <field.TextField
+                    id="signup-name"
+                    label="Your name"
+                    autoComplete="name"
+                    disabled={auth.pending}
+                  />
+                )}
+              </form.AppField>
+              <form.AppField name="email">
+                {(field) => (
+                  <field.TextField
+                    id="signup-email"
+                    label="Email"
+                    type="email"
+                    autoComplete="email"
+                    disabled={auth.pending}
+                    serverError={
+                      auth.feedback?.field === "email"
+                        ? auth.feedback.message
+                        : undefined
+                    }
+                  />
+                )}
+              </form.AppField>
+              <form.AppField name="password">
+                {(field) => (
+                  <field.PasswordField
+                    id="signup-password"
+                    label="Password"
+                    autoComplete="new-password"
+                    description="At least 8 characters."
+                    disabled={auth.pending}
+                    serverError={
+                      auth.feedback?.field === "password"
+                        ? auth.feedback.message
+                        : undefined
+                    }
+                  />
+                )}
+              </form.AppField>
+            </FieldGroup>
+            {auth.feedback && !auth.feedback.field && (
+              <Alert variant="destructive">
+                <AlertDescription>{auth.message}</AlertDescription>
+              </Alert>
             )}
-          </form.AppField>
-          <form.AppField name="email">
-            {(field) => (
-              <field.TextField
-                id="signup-email"
-                label="Email"
-                type="email"
-                autoComplete="email"
-                disabled={auth.pending}
-                serverError={
-                  auth.feedback?.field === "email"
-                    ? auth.feedback.message
-                    : undefined
-                }
-              />
-            )}
-          </form.AppField>
-          <form.AppField name="password">
-            {(field) => (
-              <field.PasswordField
-                id="signup-password"
-                label="Password"
-                autoComplete="new-password"
-                description="At least 8 characters."
-                disabled={auth.pending}
-                serverError={
-                  auth.feedback?.field === "password"
-                    ? auth.feedback.message
-                    : undefined
-                }
-              />
-            )}
-          </form.AppField>
-        </FieldGroup>
-        {auth.feedback && !auth.feedback.field && (
-          <Alert variant="destructive">
-            <AlertDescription>{auth.message}</AlertDescription>
-          </Alert>
-        )}
-        <Button type="submit" disabled={auth.blocked}>
-          {auth.pending ? "Creating account…" : "Create account"}
-        </Button>
-        {auth.feedback && (
+
+            <Button className="w-full" type="submit" disabled={auth.blocked}>
+              {auth.pending ? "Creating account…" : "Create account"}
+            </Button>
+          </CardContent>
+        </CardBody>
+        <CardFooter>
+          <span>Already have an account?</span>
           <Button
             variant="link"
+            className="px-0"
             disabled={auth.pending}
-            render={<Link to="/login" search={{ redirect }} />}
+            render={
+              <Link to="/login" search={{ redirect }} disabled={auth.pending} />
+            }
             nativeButton={false}
             role="link"
           >
             Log in
           </Button>
-        )}
+        </CardFooter>
       </form.Frame>
     </form.AppForm>
   );
@@ -278,30 +317,13 @@ export const LoginPage = ({ redirect }: { readonly redirect: string }) => (
   </AnonymousOnly>
 );
 
-export const SignupPage = ({ redirect }: { readonly redirect: string }) => {
-  const pending = useIsMutating({ mutationKey: ["authenticate"] }) > 0;
-  return (
-    <AnonymousOnly redirect={redirect}>
-      <AuthLayout
-        header={
-          <Button
-            variant="link"
-            className="gap-1 px-0"
-            disabled={pending}
-            render={<Link to="/login" search={{ redirect }} />}
-            nativeButton={false}
-            role="link"
-          >
-            <span className="hidden md:inline">Already have an account? </span>
-            Log in
-          </Button>
-        }
-      >
-        <SignupForm redirect={redirect} />
-      </AuthLayout>
-    </AnonymousOnly>
-  );
-};
+export const SignupPage = ({ redirect }: { readonly redirect: string }) => (
+  <AnonymousOnly redirect={redirect}>
+    <AuthLayout>
+      <SignupForm redirect={redirect} />
+    </AuthLayout>
+  </AnonymousOnly>
+);
 
 export const RecoveryUnavailablePage = ({
   redirect,
@@ -309,29 +331,34 @@ export const RecoveryUnavailablePage = ({
   readonly redirect: string;
 }) => (
   <AuthLayout>
-    <section
-      className="max-w-auth flex w-full flex-col gap-5"
-      aria-labelledby="auth-title"
-    >
-      <div className="flex flex-col gap-2 pb-2">
-        <h1
-          className="font-auth text-task-mobile/8 m-0 pb-2 font-semibold tracking-tight focus:outline-none md:text-4xl/10"
-          id="auth-title"
-          tabIndex={-1}
+    <Card className="w-full max-w-[30rem]" aria-labelledby="auth-title">
+      <CardBody>
+        <CardHeader>
+          <CardTitle>
+            <h1
+              id="auth-title"
+              tabIndex={-1}
+              className="text-task-mobile/9 md:text-task-desktop/10 font-semibold tracking-tight focus:outline-none"
+            >
+              Password reset unavailable
+            </h1>
+          </CardTitle>
+          <CardDescription>
+            You can’t reset your password right now. Please try again later.
+          </CardDescription>
+        </CardHeader>
+      </CardBody>
+      <CardFooter>
+        <Button
+          variant="link"
+          className="px-0"
+          render={<Link to="/login" search={{ redirect }} />}
+          nativeButton={false}
+          role="link"
         >
-          Password reset unavailable
-        </h1>
-        <p className="text-muted-foreground m-0">
-          You can’t reset your password right now. Please try again later.
-        </p>
-      </div>
-      <Button
-        render={<Link to="/login" search={{ redirect }} />}
-        nativeButton={false}
-        role="link"
-      >
-        Back to log in
-      </Button>
-    </section>
+          Back to log in
+        </Button>
+      </CardFooter>
+    </Card>
   </AuthLayout>
 );
