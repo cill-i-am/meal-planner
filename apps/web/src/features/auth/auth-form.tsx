@@ -20,6 +20,7 @@ import {
   InputGroupInput,
 } from "../../components/ui/input-group.js";
 import { Input } from "../../components/ui/input.js";
+import { cn } from "../../lib/utils.js";
 
 const { fieldContext, formContext, useFieldContext, useFormContext } =
   createFormHookContexts();
@@ -136,7 +137,7 @@ const Frame = ({
   return (
     <form
       ref={element}
-      className="auth-content"
+      className="max-w-auth flex w-full flex-col gap-5"
       noValidate
       aria-labelledby="auth-title"
       aria-busy={pending}
@@ -193,7 +194,12 @@ const Heading = ({
         <h1
           tabIndex={-1}
           id="auth-title"
-          className={invalid || rejected ? "auth-heading" : className}
+          className={cn(
+            "font-auth m-0 pb-2 tracking-tight focus:outline-none",
+            invalid || rejected
+              ? "text-task-mobile/8 font-semibold md:text-4xl/10"
+              : className
+          )}
         >
           {invalid || rejected ? errorTitle : children}
         </h1>

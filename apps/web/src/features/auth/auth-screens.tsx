@@ -3,7 +3,7 @@ import { Link, Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
-import { Alert } from "../../components/ui/alert.js";
+import { Alert, AlertDescription } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import type { AuthenticationInput } from "./auth-client.js";
@@ -94,7 +94,7 @@ const LoginForm = ({ redirect }: { readonly redirect: string }) => {
     <form.AppForm>
       <form.Frame pending={auth.pending}>
         <form.Heading
-          className="auth-heading"
+          className="text-task-mobile/8 font-semibold md:text-4xl/10"
           errorTitle="Log in"
           rejected={auth.feedback !== null}
         >
@@ -134,11 +134,13 @@ const LoginForm = ({ redirect }: { readonly redirect: string }) => {
           </form.AppField>
         </FieldGroup>
         {auth.feedback && !auth.feedback.field && (
-          <Alert data-auth-alert>{auth.message}</Alert>
+          <Alert variant="destructive">
+            <AlertDescription>{auth.message}</AlertDescription>
+          </Alert>
         )}
         <Button
           variant="link"
-          data-auth-action="forgot"
+          className="self-end rounded-lg p-0"
           disabled={auth.pending}
           render={<Link to="/forgot-password" search={{ redirect }} />}
           nativeButton={false}
@@ -176,12 +178,12 @@ const SignupForm = ({ redirect }: { readonly redirect: string }) => {
     <form.AppForm>
       <form.Frame pending={auth.pending}>
         <form.Heading
-          className="auth-welcome"
+          className="text-welcome-mobile/9 text-center font-medium md:text-5xl/13"
           errorTitle="Create your account"
           rejected={auth.feedback !== null}
         >
-          <span>Less planning.</span>
-          <span>More living.</span>
+          <span className="text-muted-foreground block">Less planning.</span>
+          <span className="block">More living.</span>
         </form.Heading>
         <FieldGroup>
           <form.AppField name="name">
@@ -228,7 +230,9 @@ const SignupForm = ({ redirect }: { readonly redirect: string }) => {
           </form.AppField>
         </FieldGroup>
         {auth.feedback && !auth.feedback.field && (
-          <Alert data-auth-alert>{auth.message}</Alert>
+          <Alert variant="destructive">
+            <AlertDescription>{auth.message}</AlertDescription>
+          </Alert>
         )}
         <Button type="submit" disabled={auth.blocked}>
           {auth.pending ? "Creating account…" : "Create account"}
@@ -282,21 +286,35 @@ export const SignupPage = ({ redirect }: { readonly redirect: string }) => {
         header={
           <Link
             disabled={pending}
-            className="auth-header-login auth-link"
+            className="text-foreground focus-visible:outline-ring inline-flex min-h-11 items-center rounded-lg text-sm no-underline hover:underline focus-visible:outline-2 focus-visible:outline-offset-3"
             to="/login"
             search={{ redirect }}
           >
-            <span>Already have an account? </span>Log in
+            <span className="hidden md:inline">Already have an account? </span>
+            Log in
           </Link>
         }
         progress={
-          <nav aria-label="Setup progress" className="auth-progress">
-            <ol>
-              <li aria-current="step">
-                <span>1</span>Account
+          <nav
+            aria-label="Setup progress"
+            className="flex h-13 items-center justify-center"
+          >
+            <ol className="text-muted-foreground m-0 flex list-none items-center gap-3 p-0 text-sm md:gap-4.5">
+              <li
+                aria-current="step"
+                className="text-foreground flex items-center gap-2"
+              >
+                <span className="bg-foreground text-background flex size-5.5 items-center justify-center rounded-full text-xs">
+                  1
+                </span>
+                Account
               </li>
-              <li>Family</li>
-              <li>People</li>
+              <li className="before:bg-border flex items-center gap-2 before:mr-1 before:h-px before:w-6 md:before:mr-2.5">
+                Family
+              </li>
+              <li className="before:bg-border flex items-center gap-2 before:mr-1 before:h-px before:w-6 md:before:mr-2.5">
+                People
+              </li>
             </ol>
           </nav>
         }
@@ -313,12 +331,21 @@ export const RecoveryUnavailablePage = ({
   readonly redirect: string;
 }) => (
   <AuthLayout>
-    <section className="auth-content" aria-labelledby="auth-title">
-      <div className="auth-recovery-heading">
-        <h1 className="auth-heading" id="auth-title" tabIndex={-1}>
+    <section
+      className="max-w-auth flex w-full flex-col gap-5"
+      aria-labelledby="auth-title"
+    >
+      <div className="flex flex-col gap-2 pb-2">
+        <h1
+          className="font-auth text-task-mobile/8 m-0 pb-2 font-semibold tracking-tight focus:outline-none md:text-4xl/10"
+          id="auth-title"
+          tabIndex={-1}
+        >
           Password reset unavailable
         </h1>
-        <p>You can’t reset your password right now. Please try again later.</p>
+        <p className="text-muted-foreground m-0">
+          You can’t reset your password right now. Please try again later.
+        </p>
       </div>
       <Button
         render={<Link to="/login" search={{ redirect }} />}

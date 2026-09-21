@@ -2,9 +2,9 @@
 
 The app uses the shadcn/ui Base UI `base-nova` registry. Run the CLI from `apps/web`; `components.json` identifies the style, aliases and theme file.
 
-Button, Input, Label, Field, InputGroup and Textarea follow the official registry source. Local changes cover imports, repository formatting and the Meal Planner theme. Field includes the standard grouping, orientation and error-list APIs. InputGroup owns the password input's border, focus state and visibility addon.
+Alert, Button, Input, Label, Field, InputGroup and Textarea follow the official registry source. Local changes cover imports, repository formatting and the Meal Planner theme. Field includes the standard grouping, orientation and error-list APIs. InputGroup owns the password input's border, focus state and visibility addon.
 
-Components own their variants and interaction styles. `src/styles.css` maps semantic colors and control dimensions to the existing workspace theme and the Paper auth theme. Avoid page-level selectors that override button variants or input states. Native controls in unfinished screens still have their existing styles; they are not shadcn components.
+Components own their variants and interaction styles in Tailwind. Auth layout, typography, responsive behavior, gradients and interaction states also use Tailwind utilities. The stylesheet retains semantic theme variables and the custom drift keyframes, with no auth layout or state selectors. `src/styles.css` maps semantic colors and control dimensions to the existing workspace theme and the Paper auth theme. Avoid page-level selectors that override button variants or input states. Native controls in unfinished screens still have their existing styles; they are not shadcn components.
 
 Authentication uses TanStack Form's `createFormHook` and `AppField` to bind shared text/password fields to shadcn controls. Login and signup explicitly compose their own fields, schemas and actions. TanStack Form owns drafts and validation; TanStack Query owns the pending authentication request and service failure.
 

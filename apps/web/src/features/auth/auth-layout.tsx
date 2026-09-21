@@ -34,10 +34,18 @@ export const AuthLayout = ({
     };
   }, []);
   return (
-    <div className="auth-experience" ref={surface}>
-      <header className="auth-header">
-        <div className="auth-brand">
-          <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24">
+    <div
+      data-theme="auth"
+      className="group/auth bg-background text-foreground font-auth selection:text-foreground scrollbar-thumb-input scrollbar-track-background flex min-h-svh flex-col text-base/6 antialiased selection:bg-(--glow-lilac)"
+      ref={surface}
+    >
+      <header className="border-border flex min-h-16 items-center justify-between gap-4 border-b px-6 md:px-7">
+        <div className="flex items-center gap-3 text-lg font-medium tracking-tight whitespace-nowrap">
+          <svg
+            aria-hidden="true"
+            className="fill-foreground size-6 shrink-0"
+            viewBox="0 0 24 24"
+          >
             <circle cx="6" cy="6" r="5" />
             <circle cx="18" cy="6" r="5" />
             <circle cx="6" cy="18" r="5" />
@@ -48,8 +56,11 @@ export const AuthLayout = ({
         {header}
       </header>
       {progress}
-      <main className="auth-main">
-        <div aria-hidden="true" className="auth-glow" />
+      <main className="relative isolate flex min-h-140 flex-1 flex-col items-center overflow-clip px-6 pt-8 pb-8 md:pt-10">
+        <div
+          aria-hidden="true"
+          className="bg-auth-glow motion-safe:animate-auth-drift motion-safe:group-has-[[data-slot=field]:focus-within]/auth:animate-auth-drift-paused motion-safe:group-data-[paused=true]/auth:animate-auth-drift-paused pointer-events-none absolute inset-0 -z-10 origin-[50%_20%] motion-reduce:animate-none"
+        />
         {children}
       </main>
     </div>
