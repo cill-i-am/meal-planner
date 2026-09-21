@@ -670,11 +670,11 @@ body {
 }
 
 @theme inline {
-  --text-task-mobile: 1.75rem;
+  --text-task-mobile: 1.5rem;
   --text-welcome-mobile: 2rem;
   --font-auth: "Inter Variable", Inter, system-ui, sans-serif;
   --container-auth: 30rem;
-  --text-task-desktop: 2rem;
+  --text-task-desktop: 1.75rem;
   --background-image-auth-glow:
     linear-gradient(180deg, var(--background) 0%, transparent 7%),
     radial-gradient(circle at 38% 12%, var(--glow-lilac), transparent 35%),

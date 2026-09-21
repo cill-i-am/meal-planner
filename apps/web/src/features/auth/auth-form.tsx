@@ -22,6 +22,11 @@ import {
   InputGroupInput,
 } from "../../components/ui/input-group.js";
 import { Input } from "../../components/ui/input.js";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "../../components/ui/tooltip.js";
 
 const { fieldContext, formContext, useFieldContext, useFormContext } =
   createFormHookContexts();
@@ -94,6 +99,7 @@ const TextField = (
 const PasswordField = (props: FieldProps & { readonly action?: ReactNode }) => {
   const { errors, isInvalid, inputProps } = useAuthField(props);
   const [visible, setVisible] = useState(false);
+  const visibilityLabel = visible ? "Hide password" : "Show password";
   return (
     <Field data-invalid={isInvalid} data-disabled={props.disabled}>
       <div className="flex flex-wrap items-center justify-between gap-x-3">
@@ -103,20 +109,27 @@ const PasswordField = (props: FieldProps & { readonly action?: ReactNode }) => {
       <InputGroup>
         <InputGroupInput {...inputProps} type={visible ? "text" : "password"} />
         <InputGroupAddon align="inline-end">
-          <InputGroupButton
-            size="icon-sm"
-            aria-label={visible ? "Hide password" : "Show password"}
-            aria-pressed={visible}
-            aria-controls={props.id}
-            onClick={() => setVisible(!visible)}
-            disabled={props.disabled}
-          >
-            {visible ? (
-              <EyeOffIcon aria-hidden="true" />
-            ) : (
-              <EyeIcon aria-hidden="true" />
-            )}
-          </InputGroupButton>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <InputGroupButton
+                  size="icon-sm"
+                  aria-label={visibilityLabel}
+                  aria-pressed={visible}
+                  aria-controls={props.id}
+                  onClick={() => setVisible(!visible)}
+                  disabled={props.disabled}
+                />
+              }
+            >
+              {visible ? (
+                <EyeOffIcon aria-hidden="true" />
+              ) : (
+                <EyeIcon aria-hidden="true" />
+              )}
+            </TooltipTrigger>
+            <TooltipContent data-theme="auth">{visibilityLabel}</TooltipContent>
+          </Tooltip>
         </InputGroupAddon>
       </InputGroup>
       {!isInvalid && props.description && (
@@ -202,7 +215,7 @@ const Heading = ({
           <h1
             tabIndex={-1}
             id="auth-title"
-            className="text-task-mobile/9 md:text-task-desktop/10 font-semibold tracking-tight focus:outline-none"
+            className="text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight focus:outline-none"
           >
             {invalid || rejected ? errorTitle : children}
           </h1>

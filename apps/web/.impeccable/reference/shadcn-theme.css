@@ -28,8 +28,8 @@
   --text-sm: 14px;
   --text-base: 16px;
   --text-lg: 18px;
-  --text-task-desktop: 32px;
-  --text-task-mobile: 28px;
+  --text-task-desktop: 28px;
+  --text-task-mobile: 24px;
   --text-welcome-desktop: 48px;
   --text-welcome-mobile: 32px;
   --font-weight-normal: 400;
@@ -38,7 +38,7 @@
   --tracking-tight: -0.025em;
   --leading-sm: 20px;
   --leading-base: 24px;
-  --leading-task-desktop: 40px;
+  --leading-task-desktop: 36px;
   --leading-task-mobile: 32px;
   --leading-welcome-desktop: 52px;
   --leading-welcome-mobile: 36px;

@@ -93,7 +93,13 @@ const InputGroupButton = ({
     type={type}
     data-size={size}
     variant={variant}
-    className={cn(inputGroupButtonVariants({ size }), className)}
+    className={cn(
+      inputGroupButtonVariants({ size }),
+      variant === "ghost" &&
+        size === "icon-sm" &&
+        "text-muted-foreground hover:text-foreground cursor-pointer hover:bg-transparent dark:hover:bg-transparent",
+      className
+    )}
     {...props}
   />
 );

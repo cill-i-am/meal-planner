@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 
 import "../styles.css";
+import { TooltipProvider } from "../components/ui/tooltip.js";
 
 const RootDocument = () => (
   <html lang="en">
@@ -13,7 +14,9 @@ const RootDocument = () => (
       <HeadContent />
     </head>
     <body>
-      <Outlet />
+      <TooltipProvider>
+        <Outlet />
+      </TooltipProvider>
       <Scripts />
     </body>
   </html>

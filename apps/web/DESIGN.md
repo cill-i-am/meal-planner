@@ -44,7 +44,7 @@ The following sizes are the reviewed baseline. Sizes are font size / line height
 
 | Role | Desktop | Mobile |
 | --- | --- | --- |
-| Routine task heading | 32px / 40px | 28px / 36px |
+| Routine task heading | 28px / 36px | 24px / 32px |
 | Welcome or completion emphasis, where shown in Paper | 48px / 52px | 32px / 36px |
 | Body | 16px / 24px | 16px / 24px |
 | Input text | 14px / 20px | 16px / 24px |
@@ -77,6 +77,8 @@ The live Paper Overview component reference shows default, focus, invalid, disab
 Task cards use a 16px outer radius. Primary actions use a pill radius. Fields and the segmented track use a 12px radius; segments use 9.6px. The reference theme also defines a 7.2px small radius. Main inputs, buttons, and segments are 44px high. The segmented track is 52px high, including padding.
 
 Give secondary actions such as the password eye toggle, **Edit**, and **Save & exit** a minimum 44px target without increasing their visible text. Single-selection choices use a segmented control.
+
+Icon-only actions have an accessible name and a shadcn Tooltip on hover and keyboard focus. Password visibility uses Show password / Hide password for both. Keep its 44px target transparent and change the eye from muted to foreground on hover; do not fill the input end with a large hover shape.
 
 ## Components
 
