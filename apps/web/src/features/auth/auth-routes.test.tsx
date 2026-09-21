@@ -261,6 +261,49 @@ it("validates on blur and submit, focuses the first invalid field, and clears co
   );
 });
 
+it.each([
+  { path: "/login", submit: "Log in" },
+  { path: "/signup", submit: "Create account" },
+])(
+  "shows only the applicable email error on $path",
+  async ({ path, submit }) => {
+    const { user, fixture } = await setup(path);
+    await user.click(screen.getByRole("button", { name: submit }));
+    expect(screen.getAllByText("Enter your email.")).toHaveLength(1);
+    expect(
+      screen.queryByText("Enter a valid email address.")
+    ).not.toBeInTheDocument();
+    if (path === "/signup") {
+      expect(screen.getByText("Create a password.")).toBeInTheDocument();
+      expect(
+        screen.queryByText("Use at least 8 characters.")
+      ).not.toBeInTheDocument();
+      await user.type(screen.getByLabelText("Password"), "short");
+      expect(screen.queryByText("Create a password.")).not.toBeInTheDocument();
+      expect(
+        screen.getByText("Use at least 8 characters.")
+      ).toBeInTheDocument();
+    }
+    const email = screen.getByLabelText("Email");
+    await user.type(email, "   ");
+    expect(screen.getAllByText("Enter your email.")).toHaveLength(1);
+    expect(
+      screen.queryByText("Enter a valid email address.")
+    ).not.toBeInTheDocument();
+    await user.clear(email);
+    await user.type(email, "bad");
+    expect(screen.queryByText("Enter your email.")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Enter a valid email address.")).toHaveLength(1);
+    await user.clear(email);
+    await user.type(email, "cook@example.com");
+    expect(screen.queryByText("Enter your email.")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Enter a valid email address.")
+    ).not.toBeInTheDocument();
+    expect(fixture.submissions).toHaveLength(0);
+  }
+);
+
 it("allows short existing passwords, preserves rejected credentials, and toggles visibility", async () => {
   const fixture = makeTransport();
   fixture.reply = async () =>
