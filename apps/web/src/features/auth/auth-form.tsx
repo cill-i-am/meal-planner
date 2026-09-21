@@ -27,6 +27,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "../../components/ui/tooltip.js";
+import { useInteractionSound } from "../../hooks/use-interaction-sound.js";
 
 const { fieldContext, formContext, useFieldContext, useFormContext } =
   createFormHookContexts();
@@ -99,6 +100,7 @@ const TextField = (
 const PasswordField = (props: FieldProps & { readonly action?: ReactNode }) => {
   const { errors, isInvalid, inputProps } = useAuthField(props);
   const [visible, setVisible] = useState(false);
+  const playInteractionSound = useInteractionSound();
   const visibilityLabel = visible ? "Hide password" : "Show password";
   return (
     <Field data-invalid={isInvalid} data-disabled={props.disabled}>
@@ -117,7 +119,10 @@ const PasswordField = (props: FieldProps & { readonly action?: ReactNode }) => {
                   aria-label={visibilityLabel}
                   aria-pressed={visible}
                   aria-controls={props.id}
-                  onClick={() => setVisible(!visible)}
+                  onClick={() => {
+                    setVisible(!visible);
+                    void playInteractionSound();
+                  }}
                   disabled={props.disabled}
                 />
               }

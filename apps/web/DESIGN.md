@@ -80,6 +80,12 @@ Give secondary actions such as the password eye toggle, **Edit**, and **Save & e
 
 Icon-only actions have an accessible name and a shadcn Tooltip on hover and keyboard focus. Password visibility uses Show password / Hide password for both. Keep its 44px target transparent and change the eye from muted to foreground on hover; do not fill the input end with a large hover shape.
 
+Password visibility also plays a quiet, 20ms activation click, inspired by the
+[Nexvyn clipboard field](https://ui.nexvyn.dev/components/clipboard-field).
+Use the same feedback for pointer and keyboard activation. Sound supplements the
+icon, tooltip and pressed state; the action still works if audio is unavailable.
+Create audio only after activation and release it when the control unmounts.
+
 ## Components
 
 Use shadcn Button, Input, InputGroup, Textarea, Card, Field, FieldLabel, FieldDescription, FieldError, Alert, Avatar, Separator and ToggleGroup as applicable. Card composition uses CardHeader, CardTitle, CardContent and CardFooter. The local CardBody groups the white primary surface above the secondary footer. Keep TanStack Form and Effect Schema as the form state and validation owners. The [earlier shadcn registry references](.impeccable/reference/shadcn-base-nova/SOURCES.md) remain historical source material.
