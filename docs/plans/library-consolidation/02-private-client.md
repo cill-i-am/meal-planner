@@ -101,22 +101,59 @@ Coordinate profile schemas, forms, shared registry, and lockfile edits with the
 
 ## Acceptance
 
-- [ ] Start, rediscover, paginate, resume, and complete through the actual browser
-  and native runtime. Preserve ordering, participant identity, and read-only
-  history after completion.
-- [ ] Mounting, unmounting, and multiple consumers leave no leaked subscriptions or
-  fibers and create no extra connection, command, or writable chat state.
-- [ ] Lost replies and reconnection keep the original payload, ID, and version,
-  returning one saved message or confirmed fact without another application turn.
-- [ ] Current-version review, safety reductions, correction, rejection, and pending
-  confirmation preserve explicit consent and private/provisional meaning.
-- [ ] Access by the wrong participant, expiry, revocation, restart, and buffered
-  output obey the native send check. Late callbacks cannot show old private data
-  under a new identity.
-- [ ] Invalid or oversized events and failed recovery storage are visible and safe.
-  Rejected model output never appears on screen or in saved history.
-- [ ] The installed SDK/React integration and production bundles work. Each migrated
-  responsibility has one owner, with no replaced generic code still running.
+- [ ] The actual React/client integration supports start, rediscover, history
+  pagination, resume, and completed read-only history. Preserve server ordering,
+  cursor limits, and participant identity. Optimistic IDs do not replace saved IDs.
+- [ ] Mount, unmount, remount, and two consumers create only the intended connections
+  and submissions, with no leaked listeners, fibers, or second writable transcript.
+- [ ] Lose a reply after a participant message is saved, an assistant reply is
+  accepted, or a profile is confirmed. After restart/reconnect, the original
+  payload, ID, and versions produce one result. Recovery must not trust re-sent
+  browser history, regenerate a turn, duplicate a record, or add an application
+  retry. Keep the installed SDK's retry and accounting behavior; do not falsely
+  describe it as single-attempt.
+- [ ] A delayed or unknown confirmation result is neither failure nor success.
+  Completion waits for the Household's saved result. An SDK terminal event cannot
+  settle Household state or clear a newer saved command.
+- [ ] Correction, rejection, refreshed review, provisional facts, and reduced safety
+  constraints require the existing explicit consent for the current version.
+  Changing kind, target, or card revision cannot reuse old consent or turn a
+  private proposal into a shared fact.
+- [ ] The real access checks deny another participant, adult, or household access
+  to the directory, session, history, output, and recovery. Keep private values out
+  of shared caches, unintended server-rendered/hydrated output, and telemetry.
+- [ ] Pause buffered output before physical send. Revoke access by sign-out, passive
+  expiry, departure, or unlink, then release the output. Production native classes
+  must send no private bytes after access closes. Repeat relevant restart and
+  renewed-access cases; a mocked socket does not prove the check happens beside send.
+- [ ] Account, household, or session changes hide old private UI. Late callbacks and
+  queued events cannot fill the new context with old data, including after remount
+  or while a newer command is pending.
+- [ ] Malformed, oversized, unexpected, and interrupted events follow the current
+  contract. Rejected output reaches neither display nor storage. Do not add repair,
+  hidden success, another transcript route, or invented token streaming to fit a
+  library helper.
+- [ ] Report unavailable browser recovery storage before sending a command that
+  needs it. Stop, disconnect, and unmount release their resources without dropping
+  permitted recovery or claiming upstream cancellation/rollback. Late model results
+  cannot commit after the application has reached its terminal state.
+- [ ] Installed SDK/React types, production web/Worker bundles, and affected contract
+  tests pass. List the generic code removed and the native access checks, domain
+  commands, saved history, and saved command results retained.
+
+### Evidence and limits
+
+Use synthetic fixtures in a real browser and production classes on the pinned
+workerd/Miniflare runtime. Check visible behavior and saved state, especially the
+buffered-send race, lost replies, saved requests, and profile confirmation.
+Component mocks can help but do not prove native access checks or durable recovery.
+
+Find exact suites and commands in current manifests, CI, and the
+[local development guide](../../how-to/local-development.md). Record tested commits,
+fixtures, and results without customer transcripts, tokens, or private evidence.
+#218 provides the starting point, not a passing result for this changed client.
+Synthetic providers test integration, not model quality, final provider usage, or
+the unfinished family/candidate evaluation.
 
 ## Delivery and open questions
 
