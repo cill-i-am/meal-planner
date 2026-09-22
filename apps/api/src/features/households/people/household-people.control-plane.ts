@@ -1,7 +1,11 @@
-import type { HouseholdOrganizationId } from "@meal-planner/household-api";
+import type {
+  InvitationRejectionReason,
+  HouseholdOrganizationId,
+} from "@meal-planner/household-api";
+import { isAPIError } from "better-auth/api";
 import { and, eq } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import { Effect } from "effect";
+import { Data, Effect } from "effect";
 
 import * as authSchema from "../../auth/auth.database-schema.js";
 import type { MealPlannerAuth } from "../../auth/auth.js";
@@ -11,7 +15,28 @@ import { HouseholdPeopleControlPlaneUnavailable } from "./household-people.contr
 export { HouseholdPeopleControlPlaneNotFound } from "./household-people.control-plane-not-found.js";
 export { HouseholdPeopleControlPlaneUnavailable } from "./household-people.control-plane-unavailable.js";
 
+export class HouseholdInvitationRejected extends Data.TaggedError(
+  "HouseholdInvitationRejected"
+)<{ readonly reason: InvitationRejectionReason }> {}
+const invitationFailure = (code: string | undefined) => {
+  const reasons: Readonly<Record<string, InvitationRejectionReason>> = {
+    INVALID_EMAIL: "invalid_email",
+    INVITATION_LIMIT_REACHED: "limit",
+    USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION: "already_member",
+    USER_IS_ALREADY_INVITED_TO_THIS_ORGANIZATION: "already_invited",
+    YOU_ARE_NOT_ALLOWED_TO_INVITE_USERS_TO_THIS_ORGANIZATION: "forbidden",
+    YOU_ARE_NOT_ALLOWED_TO_INVITE_USER_WITH_THIS_ROLE: "forbidden",
+  };
+  const reason = code ? reasons[code] : undefined;
+  return reason
+    ? new HouseholdInvitationRejected({ reason })
+    : new HouseholdPeopleControlPlaneUnavailable();
+};
+
 export interface HouseholdControlPlaneInvitation {
+  readonly email: string;
+  readonly householdPersonId: string | null;
+  readonly inviterId: string;
   readonly id: string;
   readonly status: string;
 }
@@ -23,14 +48,26 @@ export interface HouseholdControlPlaneMember {
 }
 
 export interface HouseholdPeopleControlPlane {
+  readonly listInvitationStates: (
+    organizationId: HouseholdOrganizationId
+  ) => Effect.Effect<
+    readonly {
+      readonly id: string;
+      readonly status: string;
+      readonly expiresAt: Date;
+    }[],
+    HouseholdPeopleControlPlaneUnavailable
+  >;
+
   readonly createInvitation: (input: {
+    readonly personId: string;
     readonly email: string;
     readonly headers: Headers;
     readonly invitationId: string;
     readonly organizationId: HouseholdOrganizationId;
   }) => Effect.Effect<
     HouseholdControlPlaneInvitation,
-    HouseholdPeopleControlPlaneUnavailable
+    HouseholdPeopleControlPlaneUnavailable | HouseholdInvitationRejected
   >;
   readonly getInvitation: (input: {
     readonly invitationId: string;
@@ -73,7 +110,10 @@ export const makeHouseholdPeopleControlPlane = (options: {
       try: () =>
         options.database
           .select({
+            email: authSchema.invitation.email,
+            householdPersonId: authSchema.invitation.householdPersonId,
             id: authSchema.invitation.id,
+            inviterId: authSchema.invitation.inviterId,
             status: authSchema.invitation.status,
           })
           .from(authSchema.invitation)
@@ -124,11 +164,13 @@ export const makeHouseholdPeopleControlPlane = (options: {
   return {
     createInvitation: (input) =>
       Effect.tryPromise({
-        catch: unavailable,
+        catch: (error) =>
+          invitationFailure(isAPIError(error) ? error.body?.code : undefined),
         try: async () => {
           const invitation = await options.auth.api.createInvitation({
             body: {
               email: input.email,
+              householdPersonId: input.personId,
               id: input.invitationId,
               organizationId: input.organizationId,
               role: "member",
@@ -136,13 +178,37 @@ export const makeHouseholdPeopleControlPlane = (options: {
             headers: input.headers,
           });
           return {
+            email: invitation.email,
+            householdPersonId: invitation.householdPersonId ?? null,
             id: invitation.id,
+            inviterId: invitation.inviterId,
             status: invitation.status,
           };
         },
-      }),
+      }).pipe(
+        Effect.catchTag("HouseholdInvitationRejected", (rejection) =>
+          findInvitation(input).pipe(
+            Effect.catchTag("HouseholdPeopleControlPlaneNotFound", () =>
+              Effect.fail(rejection)
+            )
+          )
+        )
+      ),
     getInvitation: findInvitation,
     getMember: findMember,
+    listInvitationStates: (organizationId) =>
+      Effect.tryPromise({
+        catch: unavailable,
+        try: () =>
+          options.database
+            .select({
+              expiresAt: authSchema.invitation.expiresAt,
+              id: authSchema.invitation.id,
+              status: authSchema.invitation.status,
+            })
+            .from(authSchema.invitation)
+            .where(eq(authSchema.invitation.organizationId, organizationId)),
+      }),
     listMemberUserIds: (organizationId) =>
       Effect.tryPromise({
         catch: unavailable,

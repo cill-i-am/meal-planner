@@ -6,10 +6,13 @@ import { betterAuth } from "better-auth";
 import type { BetterAuthOptions } from "better-auth";
 import { organization } from "better-auth/plugins";
 
+import { mockInvitationMail } from "./auth-mail.js";
+import type { InvitationMail } from "./auth-mail.js";
 import { fenceAuthAdapter } from "./auth-output-fence.js";
 import type { AuthOutputFence } from "./auth-output-fence.js";
 
 export interface MealPlannerAuthOptions {
+  readonly sendInvitationEmail?: (mail: InvitationMail) => Promise<void>;
   readonly outputFence: AuthOutputFence;
   readonly baseURL: string;
   readonly database: Parameters<typeof drizzleAdapter>[0];
@@ -30,6 +33,7 @@ export const makeMealPlannerAuth = ({
   schema,
   secret,
   verifyInvitationRecipient,
+  sendInvitationEmail = mockInvitationMail,
 }: MealPlannerAuthOptions) => {
   const adapterOptions =
     schema === undefined
@@ -80,6 +84,11 @@ export const makeMealPlannerAuth = ({
         schema: {
           invitation: {
             additionalFields: {
+              householdPersonId: {
+                input: true,
+                required: false,
+                type: "string",
+              },
               id: {
                 input: true,
                 required: false,
@@ -88,6 +97,11 @@ export const makeMealPlannerAuth = ({
             },
           },
         },
+        sendInvitationEmail: ({ id, email }) =>
+          sendInvitationEmail({
+            email,
+            url: `${baseURL}/invitation/${encodeURIComponent(id)}`,
+          }),
       }),
     ],
     secret,

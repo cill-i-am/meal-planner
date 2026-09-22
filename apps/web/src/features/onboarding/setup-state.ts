@@ -10,6 +10,8 @@ export const parseSetupProgress = Schema.decodeUnknownSync(SetupProgress);
 export const setupDestination = (
   progress: SetupProgress
 ):
+  | "/setup/people"
+  | "/setup/edit-person"
   | "/setup/saved"
   | "/setup/family"
   | "/setup/review"
@@ -19,6 +21,16 @@ export const setupDestination = (
     return "/setup/saved";
   }
   switch (progress.checkpoint.stage) {
+    case "person-draft":
+    case "person-create":
+    case "person-invite-draft":
+    case "person-invite": {
+      return "/setup/people";
+    }
+    case "person-edit":
+    case "person-rename": {
+      return "/setup/edit-person";
+    }
     case "family-name":
     case "family-create": {
       return "/setup/family";

@@ -13,7 +13,6 @@ import {
   CardContent,
   CardFooter,
 } from "../../components/ui/card.js";
-import { requireAuthSuccess } from "../auth/auth-client.js";
 import { useSetup } from "./setup-context.js";
 import { SetupError, SetupFrame, SetupStatus } from "./setup-ui.js";
 
@@ -28,9 +27,7 @@ export const useSetupRoster = () => {
       if (organizationId === undefined) {
         throw new Error("A family is required.");
       }
-      await requireAuthSuccess(
-        setup.auth.organization.setActive({ organizationId })
-      );
+      await setup.selectFamily(organizationId);
       return setup.peopleForFamily(organizationId).list(false);
     },
     queryKey: ["setup-roster", organizationId, setup.user.id],
@@ -47,10 +44,16 @@ const personStatus = (person: HouseholdPerson): string => {
   if (person.associationState === "linked") {
     return "Joined";
   }
+  if (person.associationState === "invitation_declined") {
+    return "Invitation declined";
+  }
+  if (person.associationState === "invitation_unavailable") {
+    return "Invitation unavailable";
+  }
   if (person.associationState === "invitation_pending") {
     return "Invitation pending";
   }
-  return "Managed profile";
+  return "Invitation needed";
 };
 
 export const PersonRow = ({ person }: { readonly person: HouseholdPerson }) => (
@@ -74,23 +77,73 @@ export const FamilyReviewPage = () => {
   const navigate = useNavigate();
   const roster = useSetupRoster();
   const { checkpoint } = setup.progress;
-  const action = useMutation({
-    mutationFn: async (destination: "ready" | "saved") => {
+  const invite = useMutation({
+    mutationFn: async (person: HouseholdPerson) => {
       if (checkpoint.stage !== "family-review") {
         return;
       }
       await setup.save({
-        checkpoint:
-          destination === "saved"
-            ? checkpoint
-            : { ...checkpoint, stage: "ready" },
-        status: destination === "saved" ? "paused" : "active",
+        checkpoint: {
+          displayName: person.displayName,
+          email: "",
+          organizationId: checkpoint.organizationId,
+          personId: person.id,
+          reason: "not_sent",
+          stage: "person-invite-draft",
+        },
+        status: "active",
       });
-      await navigate({
-        href: destination === "saved" ? "/setup/saved" : "/setup/ready",
-      });
+      await navigate({ to: "/setup/people" });
     },
   });
+  const edit = useMutation({
+    mutationFn: async (person: HouseholdPerson) => {
+      if (checkpoint.stage !== "family-review") {
+        return;
+      }
+      await setup.save({
+        checkpoint: {
+          name: person.displayName,
+          organizationId: checkpoint.organizationId,
+          personId: person.id,
+          stage: "person-edit",
+          version: person.version,
+        },
+        status: "active",
+      });
+      await navigate({ to: "/setup/edit-person" });
+    },
+  });
+  const action = useMutation({
+    mutationFn: async (destination: "ready" | "saved" | "people") => {
+      if (checkpoint.stage !== "family-review") {
+        return;
+      }
+      if (destination === "saved") {
+        await setup.save({ checkpoint, status: "paused" });
+        await navigate({ to: "/setup/saved" });
+      } else if (destination === "people") {
+        await setup.save({
+          checkpoint: {
+            draft: { email: "", name: "", participation: "" },
+            organizationId: checkpoint.organizationId,
+            stage: "person-draft",
+          },
+          status: "active",
+        });
+        await navigate({ to: "/setup/people" });
+      } else {
+        await setup.save({
+          checkpoint: { ...checkpoint, stage: "ready" },
+          status: "active",
+        });
+        await navigate({ to: "/setup/ready" });
+      }
+    },
+  });
+  const pendingAction = [action, edit, invite].some(
+    (operation) => operation.isPending
+  );
   if (roster.isPending) {
     return <SetupStatus title="Loading your family…" />;
   }
@@ -100,7 +153,7 @@ export const FamilyReviewPage = () => {
       action={
         <Button
           variant="link"
-          disabled={action.isPending}
+          disabled={pendingAction}
           onClick={() => action.mutate("saved")}
         >
           Save & exit
@@ -127,15 +180,38 @@ export const FamilyReviewPage = () => {
           </CardHeader>
           <CardContent>
             {roster.data?.people.map((person) => (
-              <PersonRow key={person.id} person={person} />
+              <div key={person.id} className="flex items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <PersonRow person={person} />
+                </div>
+                {person.kind === "adult" &&
+                  person.associationState === "unlinked" && (
+                    <Button
+                      variant="link"
+                      disabled={pendingAction}
+                      aria-label={`Invite ${person.displayName}`}
+                      onClick={() => invite.mutate(person)}
+                    >
+                      Invite
+                    </Button>
+                  )}
+                <Button
+                  variant="link"
+                  disabled={pendingAction}
+                  aria-label={`Edit ${person.displayName}`}
+                  onClick={() => edit.mutate(person)}
+                >
+                  Edit
+                </Button>
+              </div>
             ))}
-            {roster.data?.currentPersonId === null && (
+            {roster.data && roster.data.currentPersonId === null && (
               <SetupError>
                 Your account is not linked to a person in this family. Open your
                 invitation to finish joining.
               </SetupError>
             )}
-            {action.error && (
+            {(action.error || edit.error || invite.error) && (
               <SetupError>We couldn’t save your place. Try again.</SetupError>
             )}
             {roster.isError ? (
@@ -148,7 +224,7 @@ export const FamilyReviewPage = () => {
               </Button>
             ) : (
               <Button
-                disabled={action.isPending || !roster.data?.currentPersonId}
+                disabled={pendingAction || !roster.data?.currentPersonId}
                 onClick={() => action.mutate("ready")}
               >
                 Continue
@@ -156,6 +232,17 @@ export const FamilyReviewPage = () => {
             )}
           </CardContent>
         </CardBody>
+        {roster.data?.currentPersonId && (
+          <CardFooter>
+            <Button
+              variant="link"
+              disabled={pendingAction}
+              onClick={() => action.mutate("people")}
+            >
+              Add someone else
+            </Button>
+          </CardFooter>
+        )}
       </Card>
     </SetupFrame>
   );

@@ -1,9 +1,9 @@
-import { HouseholdPeopleRoster } from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
 
 import type { MealPlannerAuth } from "../auth/auth.js";
 import { resolveAuthenticatedOrganization } from "../auth/auth.principal.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
+import { HouseholdPeoplePrivateRoster } from "../households/people/household-people.contract.js";
 import {
   deriveHouseholdPeopleAuditActorId,
   deriveHouseholdPersonLinkageSubject,
@@ -49,9 +49,11 @@ export const resolvePrivateOutputAuthority = (input: {
       linkageSubject,
       organizationId: principal.organizationId,
     });
-    const roster = yield* input.household
+    const { roster } = yield* input.household
       .listHouseholdPeople({ admission, query: {} })
-      .pipe(Effect.flatMap(Schema.decodeUnknownEffect(HouseholdPeopleRoster)));
+      .pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(HouseholdPeoplePrivateRoster))
+      );
     const person = roster.people.find(
       (candidate) => candidate.id === roster.currentPersonId
     );

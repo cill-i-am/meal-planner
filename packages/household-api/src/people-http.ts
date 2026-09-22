@@ -1,6 +1,8 @@
 import { Context, Schema } from "effect";
+import { HttpApiSchema } from "effect/unstable/httpapi";
 
 import { HouseholdOrganizationId } from "./household-principal.js";
+import { InvitationRejectionReason } from "./people.js";
 import { ProblemDetails } from "./problem-details.js";
 
 /** Domain-separated household-scoped digest used only for people audit attribution. */
@@ -107,4 +109,12 @@ export const HouseholdPeopleUnavailableProblem = ProblemDetails(
 export const HouseholdPeopleControlPlaneUnavailableProblem = ProblemDetails(
   503,
   "control_plane_unavailable"
+);
+
+export const HouseholdInvitationRejectedProblem = Schema.Struct({
+  ...ProblemDetails(409, "invitation_rejected").fields,
+  reason: InvitationRejectionReason,
+}).pipe(
+  HttpApiSchema.status(409),
+  HttpApiSchema.asJson({ contentType: "application/problem+json" })
 );

@@ -69,6 +69,7 @@ import type {
   HouseholdCompleteAcceptedAdultLinkInput,
   HouseholdConfirmMemberAccessRevokedInput,
   HouseholdCreatePersonInput,
+  HouseholdRenamePersonInput,
   HouseholdFinalizeMemberDepartureInput,
   HouseholdGetMemberDepartureInput,
   HouseholdGetPersonInput,
@@ -511,6 +512,9 @@ interface HouseholdObjectClient {
   readonly createMealPlanFromRecipeBank: (
     input: typeof HouseholdCreateMealPlanFromRecipeBankInput.Type
   ) => Effect.Effect<typeof MealPlanWire.Type, unknown>;
+  readonly renameHouseholdPerson: (
+    input: HouseholdRenamePersonInput
+  ) => Effect.Effect<unknown, unknown>;
   readonly createHouseholdPerson: (
     input: HouseholdCreatePersonInput
   ) => Effect.Effect<unknown, unknown>;
@@ -771,6 +775,17 @@ const HouseholdTestCommand = Schema.Union([
       "bootstrapCreatorPersonAsMember",
     ]),
     organizationId: HouseholdOrganizationId,
+  }),
+  Schema.Struct({
+    actorId: Schema.String,
+    displayName: CreateHouseholdPersonPayload.fields.displayName,
+    expectedVersion: HouseholdPersonVersion,
+    linkageSubject: Schema.String,
+    mutationId: HouseholdPersonMutationId,
+    objectName: Schema.String,
+    operation: Schema.Literal("renameHouseholdPerson"),
+    organizationId: HouseholdOrganizationId,
+    personId: HouseholdPersonId,
   }),
   Schema.Struct({
     actorId: Schema.String,
@@ -1518,6 +1533,23 @@ const routeHouseholdPeopleTestCommand = (
           mutationId: command.mutationId,
         },
       } as never)
+    );
+  }
+  if (command.operation === "renameHouseholdPerson") {
+    return respond(
+      household.renameHouseholdPerson({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        payload: {
+          displayName: command.displayName,
+          expectedVersion: command.expectedVersion,
+          mutationId: command.mutationId,
+        },
+        personId: command.personId,
+      })
     );
   }
   if (command.operation === "createHouseholdPerson") {

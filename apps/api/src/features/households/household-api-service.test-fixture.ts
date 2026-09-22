@@ -915,7 +915,7 @@ export default {
     const peopleControlPlane: HouseholdPeopleControlPlane = {
       ...nativePeopleControlPlane,
       createInvitation: (input) =>
-        invitationFailure === "after-association-before-create"
+        invitationFailure === "before-invitation-create"
           ? Effect.fail(new HouseholdPeopleControlPlaneUnavailable())
           : nativePeopleControlPlane
               .createInvitation(input)
@@ -977,6 +977,8 @@ export default {
             householdDomain.prepareMemberDeparture(input),
           readPersonProfile: (input) =>
             householdDomain.readPersonProfile(input),
+          renameHouseholdPerson: (input) =>
+            householdDomain.renameHouseholdPerson(input),
           repairAdultAccountLink: (input) =>
             householdDomain.repairAdultAccountLink(input),
           restoreHouseholdPerson: (input) =>

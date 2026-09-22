@@ -3,6 +3,14 @@ import { Schema } from "effect";
 import {
   BootstrapHouseholdCreatorPayload,
   HouseholdAuthResourceId,
+  CreateHouseholdPersonPayload,
+  InviteHouseholdAdultPayload,
+  HouseholdPersonId,
+  HouseholdPersonVersion,
+  RenameHouseholdPersonPayload,
+  HouseholdPersonMutationId,
+  HouseholdInvitationEmail,
+  InvitationRejectionReason,
 } from "./people.js";
 
 export const FamilyName = Schema.Trim.check(
@@ -10,7 +18,71 @@ export const FamilyName = Schema.Trim.check(
   Schema.isMaxLength(80, { message: "Use 80 characters or fewer." })
 );
 
+export const PersonDraft = Schema.Struct({
+  email: Schema.String.check(Schema.isMaxLength(254)),
+  name: Schema.String.check(Schema.isMaxLength(80)),
+  participation: Schema.Literals(["", "adult", "dependant"]),
+});
+export const PersonCreation = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("managed"),
+    person: Schema.Struct({
+      ...CreateHouseholdPersonPayload.fields,
+      kind: Schema.Literal("dependant"),
+    }),
+  }),
+  Schema.Struct({
+    email: HouseholdInvitationEmail,
+    invitationMutationId: HouseholdPersonMutationId,
+    kind: Schema.Literal("invited"),
+    person: Schema.Struct({
+      ...CreateHouseholdPersonPayload.fields,
+      kind: Schema.Literal("adult"),
+    }),
+  }),
+]);
+export type PersonCreation = typeof PersonCreation.Type;
 export const SetupCheckpoint = Schema.Union([
+  Schema.Struct({
+    displayName: FamilyName,
+    email: Schema.String.check(Schema.isMaxLength(254)),
+    organizationId: HouseholdAuthResourceId,
+    personId: HouseholdPersonId,
+    reason: Schema.Union([
+      InvitationRejectionReason,
+      Schema.Literal("not_sent"),
+    ]),
+    stage: Schema.Literal("person-invite-draft"),
+  }),
+  Schema.Struct({
+    draft: PersonDraft,
+    organizationId: HouseholdAuthResourceId,
+    stage: Schema.Literal("person-draft"),
+  }),
+  Schema.Struct({
+    command: PersonCreation,
+    organizationId: HouseholdAuthResourceId,
+    stage: Schema.Literal("person-create"),
+  }),
+  Schema.Struct({
+    command: InviteHouseholdAdultPayload,
+    displayName: FamilyName,
+    organizationId: HouseholdAuthResourceId,
+    stage: Schema.Literal("person-invite"),
+  }),
+  Schema.Struct({
+    name: Schema.String.check(Schema.isMaxLength(80)),
+    organizationId: HouseholdAuthResourceId,
+    personId: HouseholdPersonId,
+    stage: Schema.Literal("person-edit"),
+    version: HouseholdPersonVersion,
+  }),
+  Schema.Struct({
+    command: RenameHouseholdPersonPayload,
+    organizationId: HouseholdAuthResourceId,
+    personId: HouseholdPersonId,
+    stage: Schema.Literal("person-rename"),
+  }),
   Schema.Struct({
     name: Schema.String.check(Schema.isMaxLength(80)),
     stage: Schema.Literal("family-name"),

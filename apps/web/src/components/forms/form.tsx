@@ -25,6 +25,7 @@ import {
   InputGroupInput,
 } from "../ui/input-group.js";
 import { Input } from "../ui/input.js";
+import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group.js";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip.js";
 
 const { fieldContext, formContext, useFieldContext, useFormContext } =
@@ -37,6 +38,7 @@ interface FieldProps {
   readonly serverError?: string | undefined;
   readonly autoComplete: string;
   readonly description?: string;
+  readonly maxLength?: number;
 }
 
 const useAuthField = ({
@@ -85,11 +87,57 @@ const TextField = (
   return (
     <Field data-invalid={isInvalid} data-disabled={props.disabled}>
       <FieldLabel htmlFor={props.id}>{props.label}</FieldLabel>
-      <Input {...inputProps} type={props.type ?? "text"} />
+      <Input
+        {...inputProps}
+        maxLength={props.maxLength}
+        type={props.type ?? "text"}
+      />
       {isInvalid && (
         <FieldError id={`${props.id}-error`} errors={errors}>
           {errors.length === 0 ? props.serverError : undefined}
         </FieldError>
+      )}
+    </Field>
+  );
+};
+
+const ParticipationField = ({
+  id,
+  disabled,
+}: {
+  readonly id: string;
+  readonly disabled: boolean;
+}) => {
+  const field = useFieldContext<string>();
+  const attempts = useStore(
+    field.form.store,
+    (state) => state.submissionAttempts
+  );
+  const errors =
+    field.state.meta.isBlurred || attempts > 0 ? field.state.meta.errors : [];
+  return (
+    <Field data-invalid={errors.length > 0} data-disabled={disabled}>
+      <FieldLabel id={`${id}-label`}>How will they take part?</FieldLabel>
+      <ToggleGroup
+        variant="segment"
+        aria-labelledby={`${id}-label`}
+        aria-describedby={errors.length ? `${id}-error` : `${id}-help`}
+        aria-invalid={errors.length > 0}
+        disabled={disabled}
+        value={field.state.value ? [field.state.value] : []}
+        onValueChange={(value) => field.handleChange(value[0] ?? "")}
+        onBlur={() => field.handleBlur()}
+      >
+        <ToggleGroupItem value="adult">Invite adult</ToggleGroupItem>
+        <ToggleGroupItem value="dependant">Manage profile</ToggleGroupItem>
+      </ToggleGroup>
+      {errors.length > 0 && <FieldError id={`${id}-error`} errors={errors} />}
+      {field.state.value && (
+        <FieldDescription id={`${id}-help`}>
+          {field.state.value === "adult"
+            ? "They’ll be invited to join with their own account."
+            : "You’ll manage their food preferences. No account needed."}
+        </FieldDescription>
       )}
     </Field>
   );
@@ -154,10 +202,12 @@ const Frame = ({
   children,
   pending,
   className = "max-w-auth",
+  size = "default",
 }: {
   readonly className?: string;
   readonly children: ReactNode;
   readonly pending: boolean;
+  readonly size?: "default" | "sm";
 }) => {
   const form = useFormContext();
   const element = useRef<HTMLFormElement>(null);
@@ -173,11 +223,13 @@ const Frame = ({
         event.stopPropagation();
         await form.handleSubmit();
         element.current
-          ?.querySelector<HTMLInputElement>('input[aria-invalid="true"]')
+          ?.querySelector<HTMLElement>(
+            'input[aria-invalid="true"], [aria-invalid="true"] button'
+          )
           ?.focus();
       }}
     >
-      <Card>{children}</Card>
+      <Card size={size}>{children}</Card>
       <form.Subscribe
         selector={(state) =>
           state.submissionAttempts > 0 && state.errors.length > 0
@@ -232,7 +284,7 @@ const Heading = ({
 };
 
 export const { useAppForm } = createFormHook({
-  fieldComponents: { PasswordField, TextField },
+  fieldComponents: { ParticipationField, PasswordField, TextField },
   fieldContext,
   formComponents: { Frame, Heading },
   formContext,

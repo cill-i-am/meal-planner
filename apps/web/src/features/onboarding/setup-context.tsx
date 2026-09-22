@@ -110,6 +110,7 @@ export const SetupProvider = ({
   };
   return (
     <SetupContext
+      key={user.id}
       value={{
         auth: scopedAuth,
         families: organizations.data ?? [],
@@ -131,13 +132,13 @@ export const SetupProvider = ({
         progress,
         save,
         selectFamily: async (id) => {
-          await requireAuthSuccess(
-            scopedAuth.organization.setActive({ organizationId: id })
-          );
+          const current = await requireAuthSuccess(scopedAuth.getSession());
+          if (current.session.activeOrganizationId !== id) {
+            await requireAuthSuccess(
+              scopedAuth.organization.setActive({ organizationId: id })
+            );
+          }
           await Promise.all([active.refetch(), organizations.refetch()]);
-          await queryClient.invalidateQueries({
-            queryKey: ["setup-roster", id],
-          });
         },
         user,
       }}

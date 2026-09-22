@@ -20,6 +20,7 @@ import {
   HouseholdPeopleBootstrapConflictProblem,
   HouseholdPeopleControlPlaneNotFoundProblem,
   HouseholdPeopleControlPlaneUnavailableProblem,
+  HouseholdInvitationRejectedProblem,
   HouseholdPeopleCreatorRequiredProblem,
   HouseholdPeopleDepartureConflictProblem,
   HouseholdPeopleLifecycleConflictProblem,
@@ -241,6 +242,14 @@ const mapPeopleTransitionError = (error: HouseholdPeopleFailure) => {
 
 const mapInviteAdultError = (error: HouseholdPeopleGatewayFailure) => {
   switch (error._tag) {
+    case "HouseholdInvitationRejected": {
+      return Schema.decodeUnknownSync(HouseholdInvitationRejectedProblem)({
+        code: "invitation_rejected",
+        message: "This invitation could not be created.",
+        reason: error.reason,
+        status: 409,
+      });
+    }
     case "HouseholdPersonAssociationConflict": {
       return peopleAssociationConflictProblem;
     }
@@ -791,6 +800,15 @@ const HouseholdPeopleHandlers = HttpApiBuilder.group(
           return yield* gateway
             .create({ payload, principal })
             .pipe(Effect.mapError(mapPeopleCreateError));
+        })
+      )
+      .handle("rename", ({ params, payload }) =>
+        Effect.gen(function* renamePerson() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .rename({ payload, personId: params.personId, principal })
+            .pipe(Effect.mapError(mapPeopleTransitionError));
         })
       )
       .handle("archive", ({ params, payload }) =>

@@ -11,7 +11,7 @@ const Card = ({
     data-slot="card"
     data-size={size}
     className={cn(
-      "group/card bg-muted/72 text-card-foreground shadow-surface flex flex-col rounded-2xl text-sm [--card-spacing:--spacing(6)] data-[size=sm]:[--card-spacing:--spacing(4)] max-[360px]:[--card-spacing:--spacing(4)] md:[--card-spacing:--spacing(10)]",
+      "group/card bg-muted/72 text-card-foreground shadow-surface flex flex-col rounded-2xl text-sm [--card-spacing:--spacing(6)] data-[size=sm]:[--card-spacing:--spacing(4)] max-[360px]:[--card-spacing:--spacing(4)] md:[--card-spacing:--spacing(10)] md:data-[size=sm]:[--card-spacing:--spacing(10)]",
       className
     )}
     {...props}
@@ -70,11 +70,16 @@ const CardContent = ({ className, ...props }: React.ComponentProps<"div">) => (
   />
 );
 
-const CardFooter = ({ className, ...props }: React.ComponentProps<"div">) => (
+const CardFooter = ({
+  className,
+  variant = "navigation",
+  ...props
+}: React.ComponentProps<"div"> & { variant?: "navigation" | "people" }) => (
   <div
     data-slot="card-footer"
     className={cn(
       "text-muted-foreground flex min-h-18 flex-wrap items-center justify-center gap-x-1 rounded-b-2xl px-6 py-3 text-sm",
+      variant === "people" && "flex-col items-stretch gap-2 px-4 py-6 md:px-10",
       className
     )}
     {...props}

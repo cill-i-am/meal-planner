@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import {
+  HouseholdPerson,
   MealPlan,
   MealPlanPolicy,
   MealPlanRequest,
@@ -80,6 +81,56 @@ const recipeImportReview = (
 
 /* eslint-disable no-use-before-define -- The cumulative tracer is grouped with its person fixture; runtime helpers are initialized before tests execute. */
 describe("household person registry on real Durable Object SQLite", () => {
+  it("renames a person once and rejects stale or changed retries", async () => {
+    const scope = {
+      actorId: "a".repeat(64),
+      linkageSubject: "b".repeat(64),
+      objectName: "rename-onboarding-person",
+      organizationId: "rename-family",
+    };
+    const created = await dispatchHouseholdCommand({
+      ...scope,
+      displayName: "Original name",
+      kind: "dependant",
+      mutationId: "create-for-rename",
+      operation: "createHouseholdPerson",
+    });
+    expect(created.ok).toBe(true);
+    const person = Schema.decodeUnknownSync(HouseholdPerson)(created.value);
+    const command = {
+      ...scope,
+      displayName: "New name",
+      expectedVersion: person.version,
+      mutationId: "rename-person-once",
+      operation: "renameHouseholdPerson",
+      personId: person.id,
+    };
+    const result = await dispatchHouseholdCommand(command);
+    expect(result).toMatchObject({
+      ok: true,
+      value: { displayName: "New name", version: 2 },
+    });
+    expect(await dispatchHouseholdCommand(command)).toEqual(result);
+    expect(
+      await dispatchHouseholdCommand({
+        ...command,
+        displayName: "Different intent",
+      })
+    ).toMatchObject({
+      error: { _tag: "HouseholdPersonMutationCollision" },
+      ok: false,
+    });
+    expect(
+      await dispatchHouseholdCommand({
+        ...command,
+        mutationId: "stale-rename-command",
+      })
+    ).toMatchObject({
+      error: { _tag: "HouseholdPersonStaleVersion" },
+      ok: false,
+    });
+  });
+
   it("requires accepted-recipient proof before linking an existing adult", async () => {
     const organizationId = "org-person-invitation-link";
     const objectName = await objectNameFor(organizationId);
@@ -148,10 +199,14 @@ describe("household person registry on real Durable Object SQLite", () => {
     });
     expect(roster).toMatchObject({
       ok: true,
-      value: { people: expect.any(Array) },
+      value: { roster: { people: expect.any(Array) } },
     });
     expect(
-      (roster.value as { readonly people: readonly unknown[] }).people
+      (
+        roster.value as {
+          readonly roster: { readonly people: readonly unknown[] };
+        }
+      ).roster.people
     ).toHaveLength(2);
   });
 
@@ -285,14 +340,16 @@ describe("household person registry on real Durable Object SQLite", () => {
     });
     const archivedPerson = (
       archivedRoster.value as {
-        readonly people: readonly {
-          readonly associationState: string;
-          readonly id: string;
-          readonly lifecycle: string;
-          readonly version: number;
-        }[];
+        readonly roster: {
+          readonly people: readonly {
+            readonly associationState: string;
+            readonly id: string;
+            readonly lifecycle: string;
+            readonly version: number;
+          }[];
+        };
       }
-    ).people.find((person) => person.id === personId);
+    ).roster.people.find((person) => person.id === personId);
     expect(archivedPerson).toMatchObject({
       associationState: "detached",
       lifecycle: "archived",
@@ -446,12 +503,14 @@ describe("household person registry on real Durable Object SQLite", () => {
     expect(rosterAfterRestart).toMatchObject({
       ok: true,
       value: {
-        creatorSlot: "occupied",
-        currentPersonId: creator.id,
-        people: [
-          { id: creator.id, version: 1 },
-          { id: dependantId, lifecycle: "active", version: 3 },
-        ],
+        roster: {
+          creatorSlot: "occupied",
+          currentPersonId: creator.id,
+          people: [
+            { id: creator.id, version: 1 },
+            { id: dependantId, lifecycle: "active", version: 3 },
+          ],
+        },
       },
     });
     const persistedPeopleState = await dispatchHouseholdCommand({

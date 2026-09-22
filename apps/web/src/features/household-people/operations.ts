@@ -4,6 +4,7 @@ import type {
   CompleteHouseholdAdultLinkPayload,
   BootstrapHouseholdCreatorPayload,
   CreateHouseholdPersonPayload,
+  RenameHouseholdPersonPayload,
   DepartHouseholdAdultPayload,
   HouseholdAdultInvitationResult,
   HouseholdMemberDepartureOperation,
@@ -18,6 +19,7 @@ import type {
   ReturnHouseholdAdultPayload,
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
+import { InvitationRejectionReason } from "@meal-planner/household-api";
 import { Option, Schema } from "effect";
 
 export const HouseholdPeopleOperationFailureCode = Schema.Literals([
@@ -31,6 +33,7 @@ export const HouseholdPeopleOperationFailureCode = Schema.Literals([
   "departure_conflict",
   "internal_error",
   "invalid_request",
+  "invitation_rejected",
   "lifecycle_conflict",
   "mutation_collision",
   "people_unavailable",
@@ -45,6 +48,7 @@ export type HouseholdPeopleOperationFailureCode =
 
 const HouseholdPeopleOperationFailureEnvelope = Schema.Struct({
   code: HouseholdPeopleOperationFailureCode,
+  reason: Schema.optional(InvitationRejectionReason),
 });
 
 export const decodeHouseholdPeopleOperationFailure = Schema.decodeUnknownOption(
@@ -55,6 +59,7 @@ export const decodeHouseholdPeopleOperationFailure = Schema.decodeUnknownOption(
 /** Closed browser-facing error used for retry and user-message decisions. */
 export class HouseholdPeopleOperationError extends Error {
   readonly code: HouseholdPeopleOperationFailureCode;
+  readonly invitationRejection: InvitationRejectionReason | undefined;
 
   constructor(
     code: HouseholdPeopleOperationFailureCode,
@@ -63,6 +68,9 @@ export class HouseholdPeopleOperationError extends Error {
     super(code, options);
     this.code = code;
     this.name = "HouseholdPeopleOperationError";
+    this.invitationRejection = Option.getOrUndefined(
+      decodeHouseholdPeopleOperationFailure(options?.cause)
+    )?.reason;
   }
 }
 
@@ -82,6 +90,10 @@ export const isAmbiguousHouseholdPeopleFailure = (error: Error | null) => {
 
 /** Browser-facing household people operations. */
 export interface HouseholdPeopleOperations {
+  readonly rename?: (
+    personId: HouseholdPersonId,
+    payload: RenameHouseholdPersonPayload
+  ) => Promise<HouseholdPerson>;
   readonly associateInvitation?: (
     payload: AssociateHouseholdAdultInvitationPayload
   ) => Promise<HouseholdPerson>;

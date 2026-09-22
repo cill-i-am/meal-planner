@@ -4,7 +4,6 @@ import {
   ProfileVersionPage,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureStart,
-  HouseholdPeopleRoster,
   HouseholdPerson,
   MealPlan,
   MealPlanPolicy,
@@ -89,6 +88,7 @@ import {
   HouseholdInvalidInput,
 } from "./household.contract.js";
 import {
+  HouseholdPeoplePrivateRoster,
   HouseholdAssociateAdultInvitationInput,
   HouseholdBootstrapCreatorPersonInput,
   HouseholdCancelMemberDepartureInput,
@@ -96,6 +96,7 @@ import {
   HouseholdConfirmAdultInvitationRecipientInput,
   HouseholdConfirmMemberAccessRevokedInput,
   HouseholdCreatePersonInput,
+  HouseholdRenamePersonInput,
   HouseholdFinalizeMemberDepartureInput,
   HouseholdGetMemberDepartureByMutationInput,
   HouseholdGetMemberDepartureInput,
@@ -574,6 +575,36 @@ export const HouseholdObjectRuntime = Effect.gen(
               request
             );
             return yield* encodeMealPlan(plan);
+          })
+        ),
+      renameHouseholdPerson: (untrustedInput: HouseholdRenamePersonInput) =>
+        scoped(
+          Effect.gen(function* renameHouseholdPerson() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdRenamePersonInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "rename_household_person"
+            );
+            const connection = yield* database;
+            yield* ensureHouseholdProvenance(
+              connection,
+              command.admission.organizationId
+            );
+            const person = yield* makeHouseholdPeopleRepository(connection, {
+              canonical: canonicalEncoding,
+              digest,
+              identity: identityGenerator,
+            }).rename({
+              actorId: command.admission.actor.actorId,
+              linkageSubject: command.admission.actor.linkageSubject,
+              now: yield* Clock.currentTimeMillis,
+              payload: command.payload,
+              personId: command.personId,
+            });
+            return yield* encodePeopleResult(HouseholdPerson, person);
           })
         ),
       createHouseholdPerson: (untrustedInput: HouseholdCreatePersonInput) =>
@@ -1413,7 +1444,10 @@ export const HouseholdObjectRuntime = Effect.gen(
               includeArchived: command.query.includeArchived === "true",
               linkageSubject: command.admission.actor.linkageSubject,
             });
-            return yield* encodePeopleResult(HouseholdPeopleRoster, roster);
+            return yield* encodePeopleResult(
+              HouseholdPeoplePrivateRoster,
+              roster
+            );
           })
         ),
       markMemberDepartureRepairRequired: (

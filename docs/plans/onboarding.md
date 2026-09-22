@@ -164,3 +164,30 @@ TypeScript, focused lint and production build. Browser exercised real family
 creation/reconciliation, pause/resume and the review/completion screens. People,
 invitations and recovery continue in the next three dependent PRs; email delivery
 is not part of this household layer. No deployment or merge is claimed.
+
+## People stack layer — 22 September 2026
+
+`/setup/people` implements the invite-adult and managed-profile forms, validation,
+saved drafts and unfinished-invitation recovery. `/setup/edit-person` renames an
+existing canonical person with an optimistic version and replay receipt. Review
+links to these operations; the supporting roster stays below form actions.
+
+Person creation and invitation use separate retained mutation identities. A lost
+result retries the same operation. Definitive invitation rejection preserves the
+person and offers email correction or family review. Better Auth's invitation row
+binds its recipient, originating inviter and household person before association;
+changed retries cannot bind an existing invitation to another person. Account and
+edit identity key mounted state, and commands retain their original targets.
+
+MOCK: `apps/api/src/features/auth/auth-mail.ts` does not send invitation emails.
+The callback boundary is injectable for tests; records, membership checks, person
+links and all non-email operations remain real. The recipient routes are the next
+stack layer.
+
+Validation: 163 web tests; real Durable Object rename/replay/version regression;
+real invitation failure/restart and changed-intent tests; D1 auth and typed duplicate
+recipient tests; TypeScript, lint and production build. Browser verified managed
+profile creation, rename, adult invitation, one field error per invalid input,
+save/resume, and duplicate-recipient correction without a duplicate person. The
+independent design assessment reached 32/40 after fixes. Local desktop/mobile
+screenshots are captured; publishing media still awaits the requested approval.

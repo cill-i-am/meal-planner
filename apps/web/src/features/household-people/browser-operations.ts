@@ -218,6 +218,8 @@ export const makeBrowserHouseholdPeopleOperations = (scope?: {
           query: { includeArchived: includeArchived ? "true" : "false" },
         })
       ),
+    rename: (personId, payload) =>
+      run((client) => client.people.rename({ params: { personId }, payload })),
     repairAdultLink: (payload) =>
       run((client) => client.people.repairAdultLink({ payload })),
     restore: (personId, payload) =>

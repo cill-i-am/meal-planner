@@ -144,6 +144,7 @@ export const householdPersonAudits = sqliteTable("household_person_audits", {
       "confirm_access_revoked",
       "complete_link",
       "create",
+      "rename",
       "archive",
       "finalize_departure",
       "prepare_departure",
