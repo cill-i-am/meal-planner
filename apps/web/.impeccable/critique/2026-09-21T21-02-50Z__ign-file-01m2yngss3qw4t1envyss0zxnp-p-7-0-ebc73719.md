@@ -9,6 +9,7 @@ target_identity: "url:https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p
 timestamp: 2026-09-21T21-02-50Z
 slug: ign-file-01m2yngss3qw4t1envyss0zxnp-p-7-0-ebc73719
 ---
+
 Method: dual-agent (A: direction_design_review; B: direction_evidence_review).
 
 # Framed card direction review — 21 September 2026
