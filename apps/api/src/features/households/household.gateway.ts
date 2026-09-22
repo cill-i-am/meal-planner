@@ -149,6 +149,12 @@ export interface HouseholdPeopleGateway {
     readonly personId: HouseholdPersonId;
     readonly principal: HouseholdPeoplePrincipal;
   }) => Effect.Effect<HouseholdPerson, HouseholdPeopleFailure>;
+  readonly remove: (input: {
+    readonly headers: Headers;
+    readonly payload: TransitionHouseholdPersonPayload;
+    readonly personId: HouseholdPersonId;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<HouseholdPerson, HouseholdPeopleGatewayFailure>;
   readonly archive: (input: {
     readonly payload: TransitionHouseholdPersonPayload;
     readonly personId: HouseholdPersonId;

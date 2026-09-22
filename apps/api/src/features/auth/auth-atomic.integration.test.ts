@@ -19,6 +19,7 @@ import { privateOutputRuntimeWorker } from "../private-output/private-output-run
 import { privateOutputKey } from "../private-output/private-output.contract.js";
 import {
   AcceptInvitationMutation,
+  CancelInvitationMutation,
   ResetPasswordMutation,
   makeAuthAtomicStore,
 } from "./auth-atomic-store.js";
@@ -194,7 +195,198 @@ const resetFixture = async () => {
     intentKey: await privateOutputKey("auth-password-reset", identifier),
   };
 };
+const cancellationFixture = async () => {
+  const f = await fixture();
+  const organizationId = crypto.randomUUID();
+  const invitationId = crypto.randomUUID();
+  const memberId = crypto.randomUUID();
+  const personId = `person_${crypto.randomUUID()}`;
+  await database.insert(schema.organization).values({
+    createdAt: f.now,
+    id: organizationId,
+    name: "Cancellation family",
+    slug: organizationId,
+  });
+  await database.insert(schema.member).values({
+    createdAt: f.now,
+    id: memberId,
+    organizationId,
+    role: "owner",
+    userId: f.userId,
+  });
+  await database.insert(schema.invitation).values({
+    createdAt: f.now,
+    email: "recipient@example.test",
+    expiresAt: f.expiresAt,
+    householdPersonId: personId,
+    id: invitationId,
+    inviterId: f.userId,
+    organizationId,
+    role: "member",
+    status: "pending",
+  });
+  const input = Schema.decodeUnknownSync(CancelInvitationMutation)({
+    householdPersonId: personId,
+    invitationId,
+    memberId,
+    memberRole: "owner",
+    mutationId: crypto.randomUUID(),
+    organizationId,
+    sessionToken: f.userId,
+    userId: f.userId,
+  });
+  const intentKey = await privateOutputKey(
+    "auth-invitation-cancel",
+    JSON.stringify({
+      invitationId,
+      mutationId: input.mutationId,
+      userId: f.userId,
+    })
+  );
+  return { ...f, input, intentKey, invitationId, organizationId, personId };
+};
+
 describe("atomic auth against the durable output fence", () => {
+  it("allows a new command after a session failure without reinterpreting the failed command", async () => {
+    const f = await cancellationFixture();
+    await database
+      .update(schema.session)
+      .set({ expiresAt: new Date(f.now.getTime() - 60_000) })
+      .where(eq(schema.session.token, f.input.sessionToken));
+    expect(await f.store.cancelInvitation(f.input)).toBe(false);
+    expect(
+      await database
+        .select()
+        .from(schema.authMutationReceipt)
+        .where(eq(schema.authMutationReceipt.id, f.intentKey))
+    ).toMatchObject([{ applied: false }]);
+    expect(
+      await database
+        .select()
+        .from(schema.invitation)
+        .where(eq(schema.invitation.id, f.invitationId))
+    ).toMatchObject([{ status: "pending" }]);
+    const freshSessionToken = crypto.randomUUID();
+    await database.insert(schema.session).values({
+      createdAt: f.now,
+      expiresAt: f.expiresAt,
+      id: crypto.randomUUID(),
+      token: freshSessionToken,
+      updatedAt: f.now,
+      userId: f.userId,
+    });
+    expect(
+      await f.store.cancelInvitation({
+        ...f.input,
+        sessionToken: freshSessionToken,
+      })
+    ).toBe(false);
+    const freshCommand = Schema.decodeUnknownSync(CancelInvitationMutation)({
+      ...f.input,
+      mutationId: crypto.randomUUID(),
+      sessionToken: freshSessionToken,
+    });
+    expect(await f.store.cancelInvitation(freshCommand)).toBe(true);
+    expect(
+      await database
+        .select()
+        .from(schema.invitation)
+        .where(eq(schema.invitation.id, f.invitationId))
+    ).toMatchObject([{ status: "canceled" }]);
+    expect(await f.store.cancelInvitation(freshCommand)).toBe(true);
+  });
+
+  it("excludes a delayed cancellation after an overlapping guard failure settles their fence", async () => {
+    const f = await cancellationFixture();
+    const admitted = Promise.withResolvers<null>();
+    const release = Promise.withResolvers<null>();
+    const delayedStore = makeAuthAtomicStore(
+      () => database,
+      (input, canonical) =>
+        makeAuthOutputFence(f.port)(input, async () => {
+          admitted.resolve(null);
+          await release.promise;
+          return canonical();
+        })
+    );
+    const delayed = Promise.allSettled([
+      delayedStore.cancelInvitation(f.input),
+    ]);
+    try {
+      await admitted.promise;
+      const retained = await f.retained(f.intentKey);
+      expect(retained.phase).toBe("dispatched");
+      await database
+        .update(schema.member)
+        .set({ role: "member" })
+        .where(eq(schema.member.id, f.input.memberId));
+      expect(await f.store.cancelInvitation(f.input)).toBe(false);
+      expect(await f.phase(retained.operationId)).toEqual({ phase: "settled" });
+      await database
+        .update(schema.member)
+        .set({ role: "owner" })
+        .where(eq(schema.member.id, f.input.memberId));
+    } finally {
+      release.resolve(null);
+      await delayed;
+    }
+    expect(await delayed).toEqual([{ status: "fulfilled", value: false }]);
+    expect(
+      await database
+        .select()
+        .from(schema.invitation)
+        .where(eq(schema.invitation.id, f.invitationId))
+    ).toMatchObject([{ status: "pending" }]);
+    expect(
+      await database
+        .select()
+        .from(schema.authMutationReceipt)
+        .where(eq(schema.authMutationReceipt.id, f.intentKey))
+    ).toMatchObject([{ applied: false }]);
+    const freshCommand = Schema.decodeUnknownSync(CancelInvitationMutation)({
+      ...f.input,
+      mutationId: crypto.randomUUID(),
+    });
+    expect(await f.store.cancelInvitation(freshCommand)).toBe(true);
+    expect(
+      await database
+        .select()
+        .from(schema.invitation)
+        .where(eq(schema.invitation.id, f.invitationId))
+    ).toMatchObject([{ status: "canceled" }]);
+  });
+
+  it("recovers cancellation under its retained durable fence without changing the bound person", async () => {
+    const f = await cancellationFixture();
+    const { input, intentKey, invitationId, organizationId, personId } = f;
+    f.failCompletion(true);
+    await expect(f.store.cancelInvitation(input)).rejects.toThrow();
+    const retained = await f.retained(intentKey);
+    expect(retained.phase).toBe("dispatched");
+    expect(
+      await database
+        .select()
+        .from(schema.invitation)
+        .where(eq(schema.invitation.id, invitationId))
+    ).toMatchObject([{ householdPersonId: personId, status: "canceled" }]);
+    f.failCompletion(false);
+    expect(await f.store.cancelInvitation(input)).toBe(true);
+    expect(await f.phase(retained.operationId)).toEqual({ phase: "settled" });
+    expect(
+      await f.store.cancelInvitation(
+        Schema.decodeUnknownSync(CancelInvitationMutation)({
+          ...input,
+          householdPersonId: `person_${crypto.randomUUID()}`,
+        })
+      )
+    ).toBe(false);
+    expect(
+      await database
+        .select()
+        .from(schema.member)
+        .where(eq(schema.member.organizationId, organizationId))
+    ).toHaveLength(1);
+  });
   it("retries a rolled-back reset after durable dispatch and settles that exact operation", async () => {
     const f = await resetFixture();
     await database.run(

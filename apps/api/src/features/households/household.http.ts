@@ -811,6 +811,31 @@ const HouseholdPeopleHandlers = HttpApiBuilder.group(
             .pipe(Effect.mapError(mapPeopleTransitionError));
         })
       )
+      .handle("remove", ({ params, payload }) =>
+        Effect.gen(function* removePerson() {
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPeopleGateway;
+          return yield* gateway
+            .remove({
+              headers: new globalThis.Headers(Object.entries(request.headers)),
+              payload,
+              personId: params.personId,
+              principal,
+            })
+            .pipe(
+              Effect.mapError((error) => {
+                if (error._tag === "HouseholdPersonAssociationConflict") {
+                  return peopleAssociationConflictProblem;
+                }
+                if (error._tag === "HouseholdPersonLifecycleConflict") {
+                  return peopleLifecycleConflictProblem;
+                }
+                return mapDepartAdultError(error);
+              })
+            );
+        })
+      )
       .handle("archive", ({ params, payload }) =>
         Effect.gen(function* archivePerson() {
           const principal = yield* HouseholdPeopleCurrentPrincipal;

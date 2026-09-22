@@ -425,6 +425,24 @@ const PeopleGroup = HttpApiGroup.make("people")
       payload: RenameHouseholdPersonPayload,
       success: HouseholdPerson,
     }),
+    HttpApiEndpoint.post("remove", "/v1/household/people/:personId/remove", {
+      error: [
+        HouseholdPeopleNotFoundProblem,
+        HouseholdPeopleLifecycleConflictProblem,
+        HouseholdPeopleMutationCollisionProblem,
+        HouseholdPeopleStaleVersionProblem,
+        HouseholdPeopleUnavailableProblem,
+        HouseholdPeopleOrganizerRequiredProblem,
+        HouseholdPeopleAssociationConflictProblem,
+        HouseholdPeopleAssociationStaleProblem,
+        HouseholdPeopleControlPlaneNotFoundProblem,
+        HouseholdPeopleControlPlaneUnavailableProblem,
+        HouseholdPeopleDepartureConflictProblem,
+      ],
+      params: { personId: HouseholdPersonId },
+      payload: TransitionHouseholdPersonPayload,
+      success: HouseholdPerson,
+    }),
     HttpApiEndpoint.post("archive", "/v1/household/people/:personId/archive", {
       error: [
         HouseholdPeopleNotFoundProblem,
@@ -663,6 +681,10 @@ export {
   PersonDraft,
   SetupCheckpoint,
   SetupProgress,
+  SetupRosterActionDraft,
+  SetupRosterCommand,
+  SetupRosterReturn,
+  SetupRosterState,
   setupProgressField,
 } from "./onboarding.js";
 

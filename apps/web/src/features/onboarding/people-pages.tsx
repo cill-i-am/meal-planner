@@ -4,8 +4,10 @@ import {
   InviteHouseholdAdultPayload,
 } from "@meal-planner/household-api";
 import type {
+  HouseholdPerson,
   HouseholdPeopleRoster,
   SetupCheckpoint,
+  SetupRosterActionDraft,
 } from "@meal-planner/household-api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -35,6 +37,11 @@ import {
   InvitationEmailInput,
 } from "./people-input.js";
 import { saveSetupPerson } from "./person-save.js";
+import {
+  RosterActions,
+  RosterManagementOverlay,
+  useRosterManagement,
+} from "./roster-management.js";
 import { useSetup } from "./setup-context.js";
 import { SetupError, SetupFrame, SetupStatus } from "./setup-ui.js";
 
@@ -47,15 +54,48 @@ type Pending = Extract<
   { stage: "person-create" | "person-invite" }
 >;
 
+const draftForAddPage = (checkpoint: SetupCheckpoint): Draft | null => {
+  if (checkpoint.stage === "person-draft") {
+    return checkpoint.draft;
+  }
+  if (
+    checkpoint.stage === "person-manage" &&
+    checkpoint.returnTo.stage === "person-draft"
+  ) {
+    return checkpoint.returnTo.draft;
+  }
+  return null;
+};
+
 const AddedPeople = ({
   roster,
+  organizer,
+  busy,
+  onAction,
 }: {
   readonly roster: HouseholdPeopleRoster;
+  readonly organizer: boolean;
+  readonly busy: boolean;
+  readonly onAction: (
+    kind: SetupRosterActionDraft["kind"],
+    person: HouseholdPerson
+  ) => void;
 }) => (
   <CardFooter variant="people">
     <p className="text-muted-foreground text-sm">Already added</p>
     {roster.people.map((person) => (
-      <PersonRow key={person.id} person={person} />
+      <div key={person.id} className="flex w-full min-w-0 items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <PersonRow person={person} />
+        </div>
+        <RosterActions
+          person={person}
+          roster={roster}
+          organizer={organizer}
+          disabled={busy}
+          onAction={onAction}
+        />
+      </div>
     ))}
   </CardFooter>
 );
@@ -68,7 +108,10 @@ const PersonDraftForm = ({
   pause,
   cancel,
   roster,
+  organizer,
   rosterError,
+  onAction,
+  managing,
 }: {
   readonly draft: Draft;
   readonly busy: boolean;
@@ -77,7 +120,14 @@ const PersonDraftForm = ({
   readonly pause: (draft: Draft) => void;
   readonly cancel: () => void;
   readonly roster: HouseholdPeopleRoster;
+  readonly organizer: boolean;
   readonly rosterError?: boolean;
+  readonly onAction: (
+    kind: SetupRosterActionDraft["kind"],
+    person: HouseholdPerson,
+    draft: Draft
+  ) => void;
+  readonly managing: boolean;
 }) => {
   const form = useAppForm({
     defaultValues: {
@@ -256,9 +306,104 @@ const PersonDraftForm = ({
               </div>
             </CardContent>
           </CardBody>
-          <AddedPeople roster={roster} />
+          <AddedPeople
+            roster={roster}
+            organizer={organizer}
+            busy={busy || managing}
+            onAction={(kind, person) =>
+              onAction(
+                kind,
+                person,
+                Schema.decodeUnknownSync(PersonDraft)(form.state.values)
+              )
+            }
+          />
         </form.Frame>
       </form.AppForm>
+      <RosterManagementOverlay />
+    </SetupFrame>
+  );
+};
+
+const PendingPersonRequest = ({
+  pending,
+  busy,
+  failed,
+  pauseFailed,
+  retry,
+  pause,
+}: {
+  readonly pending: Pending;
+  readonly busy: boolean;
+  readonly failed: boolean;
+  readonly pauseFailed: boolean;
+  readonly retry: () => void;
+  readonly pause: () => void;
+}) => {
+  const name =
+    pending.stage === "person-invite"
+      ? pending.displayName
+      : pending.command.person.displayName;
+  const retryLabel =
+    pending.stage === "person-invite"
+      ? "Finish invitation"
+      : "Check and continue";
+  return (
+    <SetupFrame
+      step="people"
+      action={
+        <Button variant="link" disabled={busy} onClick={pause}>
+          Save & exit
+        </Button>
+      }
+    >
+      <Card className="w-full max-w-140" size="sm">
+        <CardBody>
+          <CardHeader>
+            <CardTitle>
+              <h1
+                id="auth-title"
+                tabIndex={-1}
+                className="text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight focus:outline-none"
+              >
+                {pending.stage === "person-invite"
+                  ? `Finish ${name}’s invitation`
+                  : `Finish adding ${name}`}
+              </h1>
+            </CardTitle>
+            <CardDescription>
+              {pending.stage === "person-invite"
+                ? "Their profile is saved. We still need to confirm the invitation."
+                : "We’ve kept your request. Check the result before adding anyone else."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {pending.stage === "person-invite" && (
+              <div className="flex flex-col gap-1">
+                <span className="text-muted-foreground text-sm">
+                  Invitation for
+                </span>
+                <span>{pending.displayName}</span>
+                <span className="text-muted-foreground text-sm wrap-anywhere">
+                  {pending.command.email}
+                </span>
+              </div>
+            )}
+            {failed && (
+              <SetupError>
+                We couldn’t finish that request. Try again to check and complete
+                the same request.
+              </SetupError>
+            )}
+            {pauseFailed && (
+              <SetupError>We couldn’t save your place. Try again.</SetupError>
+            )}
+            <Button disabled={busy} onClick={retry}>
+              {busy ? "Saving…" : retryLabel}
+            </Button>
+          </CardContent>
+        </CardBody>
+      </Card>
     </SetupFrame>
   );
 };
@@ -269,6 +414,7 @@ export const AddPersonPage = () => {
   const queryClient = useQueryClient();
   const roster = useSetupRoster();
   const { checkpoint } = setup.progress;
+  const manage = useRosterManagement();
   const save = useMutation({
     mutationFn: async (pending: Pending) => {
       await setup.save({ checkpoint: pending, status: "active" });
@@ -309,10 +455,6 @@ export const AddPersonPage = () => {
     checkpoint.stage === "person-create" || checkpoint.stage === "person-invite"
       ? checkpoint
       : save.variables;
-  const retryLabel =
-    checkpoint.stage === "person-invite"
-      ? "Finish invitation"
-      : "Check and continue";
   const busy = [save, pause, cancel].some((operation) => operation.isPending);
   if (checkpoint.stage === "person-invite-draft") {
     return (
@@ -342,71 +484,15 @@ export const AddPersonPage = () => {
     );
   }
   if (pending) {
-    const name =
-      pending.stage === "person-invite"
-        ? pending.displayName
-        : pending.command.person.displayName;
     return (
-      <SetupFrame
-        step="people"
-        action={
-          <Button
-            variant="link"
-            disabled={busy}
-            onClick={() => pause.mutate(pending)}
-          >
-            Save & exit
-          </Button>
-        }
-      >
-        <Card className="w-full max-w-140" size="sm">
-          <CardBody>
-            <CardHeader>
-              <CardTitle>
-                <h1
-                  id="auth-title"
-                  tabIndex={-1}
-                  className="text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight focus:outline-none"
-                >
-                  {pending.stage === "person-invite"
-                    ? `Finish ${name}’s invitation`
-                    : `Finish adding ${name}`}
-                </h1>
-              </CardTitle>
-              <CardDescription>
-                {pending.stage === "person-invite"
-                  ? "Their profile is saved. We still need to confirm the invitation."
-                  : "We’ve kept your request. Check the result before adding anyone else."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {pending.stage === "person-invite" && (
-                <div className="flex flex-col gap-1">
-                  <span className="text-muted-foreground text-sm">
-                    Invitation for
-                  </span>
-                  <span>{pending.displayName}</span>
-                  <span className="text-muted-foreground text-sm wrap-anywhere">
-                    {pending.command.email}
-                  </span>
-                </div>
-              )}
-              {save.error && (
-                <SetupError>
-                  We couldn’t finish that request. Try again to check and
-                  complete the same request.
-                </SetupError>
-              )}
-              {pause.error && (
-                <SetupError>We couldn’t save your place. Try again.</SetupError>
-              )}
-              <Button disabled={busy} onClick={() => save.mutate(pending)}>
-                {busy ? "Saving…" : retryLabel}
-              </Button>
-            </CardContent>
-          </CardBody>
-        </Card>
-      </SetupFrame>
+      <PendingPersonRequest
+        pending={pending}
+        busy={busy}
+        failed={Boolean(save.error)}
+        pauseFailed={Boolean(pause.error)}
+        retry={() => save.mutate(pending)}
+        pause={() => pause.mutate(pending)}
+      />
     );
   }
   if (roster.isPending) {
@@ -442,16 +528,19 @@ export const AddPersonPage = () => {
       </SetupStatus>
     );
   }
-  if (checkpoint.stage !== "person-draft") {
+  const activeDraft = draftForAddPage(checkpoint);
+  if (!activeDraft || !("organizationId" in checkpoint)) {
     return null;
   }
   return (
     <PersonDraftForm
-      draft={checkpoint.draft}
+      draft={activeDraft}
       roster={roster.data}
+      organizer={setup.isFamilyOrganizer(checkpoint.organizationId)}
       rosterError={roster.isError}
-      busy={busy}
-      error={Boolean(pause.error || cancel.error)}
+      busy={busy || manage.isPending || checkpoint.stage === "person-manage"}
+      managing={checkpoint.stage === "person-manage"}
+      error={Boolean(pause.error || cancel.error || manage.error)}
       submit={async (command) => {
         await save
           .mutateAsync({
@@ -463,8 +552,19 @@ export const AddPersonPage = () => {
             /* Mutation retains and displays the failure. */
           });
       }}
-      pause={(draft) => pause.mutate({ ...checkpoint, draft })}
+      pause={(draft) => {
+        if (checkpoint.stage === "person-draft") {
+          pause.mutate({ ...checkpoint, draft });
+        }
+      }}
       cancel={() => cancel.mutate()}
+      onAction={(kind, person, draft) => {
+        manage.mutate({
+          kind,
+          person,
+          returnTo: { draft, stage: "person-draft" },
+        });
+      }}
     />
   );
 };

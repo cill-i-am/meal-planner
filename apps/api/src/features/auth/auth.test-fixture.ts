@@ -21,6 +21,8 @@ export const makeNativeAuthTestService = (
   auth: MealPlannerAuth
 ): MealPlannerAuthService => ({
   api: {
+    cancelInvitation: (input) =>
+      fromNative(() => auth.api.cancelInvitation(input)),
     getActiveMember: (input) =>
       fromNative(() => auth.api.getActiveMember(input)),
     getSession: (input) => fromNative(() => auth.api.getSession(input)),

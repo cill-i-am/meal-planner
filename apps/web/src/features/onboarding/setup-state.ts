@@ -22,6 +22,11 @@ export const setupDestination = (
     return "/setup/saved";
   }
   switch (progress.checkpoint.stage) {
+    case "person-manage": {
+      return progress.checkpoint.returnTo.stage === "person-draft"
+        ? "/setup/people"
+        : "/setup/review";
+    }
     case "invitation-response":
     case "invitation-link": {
       return "/setup/join";

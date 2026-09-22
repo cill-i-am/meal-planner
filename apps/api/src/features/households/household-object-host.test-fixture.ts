@@ -69,6 +69,7 @@ import type {
   HouseholdCompleteAcceptedAdultLinkInput,
   HouseholdConfirmMemberAccessRevokedInput,
   HouseholdCreatePersonInput,
+  HouseholdPreparePersonRemovalInput,
   HouseholdRenamePersonInput,
   HouseholdFinalizeMemberDepartureInput,
   HouseholdGetMemberDepartureInput,
@@ -512,6 +513,9 @@ interface HouseholdObjectClient {
   readonly createMealPlanFromRecipeBank: (
     input: typeof HouseholdCreateMealPlanFromRecipeBankInput.Type
   ) => Effect.Effect<typeof MealPlanWire.Type, unknown>;
+  readonly preparePersonRemoval: (
+    input: HouseholdPreparePersonRemovalInput
+  ) => Effect.Effect<unknown, unknown>;
   readonly renameHouseholdPerson: (
     input: HouseholdRenamePersonInput
   ) => Effect.Effect<unknown, unknown>;

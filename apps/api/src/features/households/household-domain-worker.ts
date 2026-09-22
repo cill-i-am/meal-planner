@@ -107,6 +107,7 @@ import type {
   HouseholdConfirmAdultInvitationRecipientInput,
   HouseholdConfirmMemberAccessRevokedInput,
   HouseholdCreatePersonInput,
+  HouseholdPreparePersonRemovalInput,
   HouseholdRenamePersonInput,
   HouseholdFinalizeMemberDepartureInput,
   HouseholdGetMemberDepartureByMutationInput,
@@ -122,6 +123,7 @@ import type {
   HouseholdRetryMemberDepartureInput,
   HouseholdStartMemberDepartureInput,
   HouseholdTransitionPersonInput,
+  HouseholdPersonRemovalPlan,
 } from "./people/household-people.contract.js";
 import {
   HouseholdAssociateAdultInvitationInput as HouseholdAssociateAdultInvitationInputSchema,
@@ -131,6 +133,7 @@ import {
   HouseholdConfirmAdultInvitationRecipientInput as HouseholdConfirmAdultInvitationRecipientInputSchema,
   HouseholdConfirmMemberAccessRevokedInput as HouseholdConfirmMemberAccessRevokedInputSchema,
   HouseholdCreatePersonInput as HouseholdCreatePersonInputSchema,
+  HouseholdPreparePersonRemovalInput as HouseholdPreparePersonRemovalInputSchema,
   HouseholdRenamePersonInput as HouseholdRenamePersonInputSchema,
   HouseholdFinalizeMemberDepartureInput as HouseholdFinalizeMemberDepartureInputSchema,
   HouseholdGetMemberDepartureByMutationInput as HouseholdGetMemberDepartureByMutationInputSchema,
@@ -256,6 +259,12 @@ export interface HouseholdDomainWorkerMethods {
   readonly approveMealPlan: (
     input: HouseholdDecideMealPlanInput
   ) => Effect.Effect<HouseholdMealPlanWire, HouseholdMealPlanDomainFailure>;
+  readonly preparePersonRemoval: (
+    input: HouseholdPreparePersonRemovalInput
+  ) => Effect.Effect<
+    typeof HouseholdPersonRemovalPlan.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
   readonly renameHouseholdPerson: (
     input: HouseholdRenamePersonInput
   ) => Effect.Effect<
@@ -894,6 +903,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         input,
         "prepare_member_departure",
         (household, command) => household.prepareMemberDeparture(command)
+      ),
+    preparePersonRemoval: (input: HouseholdPreparePersonRemovalInput) =>
+      route(
+        HouseholdPreparePersonRemovalInputSchema,
+        input,
+        "prepare_person_removal",
+        (household, command) => household.preparePersonRemoval(command)
       ),
     prepareRecipeRecovery: (
       input: typeof HouseholdPrepareRecipeRecoveryInputSchema.Encoded

@@ -7,6 +7,39 @@ Updated 2026-09-20 during the Paper review. This is the running implementation c
 
 Design: [Login and household setup in Paper](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0). Error and validation specification: [onboarding-error-contract.md](../../apps/web/.impeccable/onboarding-error-contract.md).
 
+## Roster management and responsive overlays · 22 September 2026
+
+The user approved [roster actions and mobile bottom sheets](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-A-0).
+Use current shadcn Base UI Drawer rather than Vaul, with one shared composition
+for desktop dialogs or side drawers and mobile bottom sheets. Keep native
+nesting, snap-point and keyboard capabilities available. The earlier mobile
+floating-dialog exploration remains in Paper for comparison.
+
+Implemented Invite, Edit name and Remove in the add-person roster and family
+review. The flow retains the unfinished form and return location. Removal
+cancels a pending invitation or revokes linked family access before archiving
+the person. The current user can edit their name but cannot remove themselves
+here. Email delivery stays mocked.
+
+The shared `Overlay` switches between desktop dialogs or side drawers and
+mobile bottom sheets. Native drawer options retain nesting and snap points;
+short roster forms use their content height. See the
+[developer examples](../../apps/web/src/components/ui/SHADCN.md#responsive-overlays).
+
+Browser checks covered mobile widths of 320px and 390px, desktop dialogs,
+draft preservation across viewport changes, invalid-email focus, rename,
+mocked invitation, cancellation and removal, focus restoration, exit animation,
+and reduced motion. Native integration tests cover authorization, accepted
+invitation races, overlapping cancellation, and replay after profile restoration.
+The keyboard provider is wired, but an actual mobile on-screen keyboard has
+not been tested on a physical device. Earlier Paper explorations remain intact.
+
+Local validation passed: 212 web tests, a final 20-test overlay/roster rerun,
+31 auth integration tests, four native removal scenarios, web and API typechecks,
+repository lint and formatting, documentation links, the production architecture
+inspection, and the production web build. The web suite ran one file at a time
+after the parallel run exceeded existing timeouts under local load.
+
 ## Auth route delivery — 21 September 2026
 
 The application now has separate `/login`, `/signup`, and `/forgot-password`

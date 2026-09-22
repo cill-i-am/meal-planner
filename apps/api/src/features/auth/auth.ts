@@ -161,7 +161,11 @@ export const makeMealPlannerAuthConfiguration = ({
         ),
         guardedFence
       ),
-    disabledPaths: ["/organization/leave", "/organization/remove-member"],
+    disabledPaths: [
+      "/organization/leave",
+      "/organization/remove-member",
+      "/organization/cancel-invitation",
+    ],
     emailAndPassword: {
       enabled: true,
       revokeSessionsOnPasswordReset: true,
