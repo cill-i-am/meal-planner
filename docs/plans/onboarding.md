@@ -278,3 +278,12 @@ membership index intentionally rejects existing duplicate membership rows;
 resolve any such records explicitly rather than silently deleting access data.
 Email delivery remains mocked as requested. This work configures neither a mail
 provider nor mailbox verification and performs no deployment.
+
+Local verification covered 1,152 API tests, 177 web tests, 80 package tests and
+180 infrastructure/architecture tests. The full runs exposed shared-IP fixture
+throttling and missing D1-consumer registrations; the affected suites and final
+architecture acceptance case passed after those fixes. Type checks, production
+builds, formatting, lint, documentation and schema-generation drift checks pass.
+Browser checks covered setup navigation, loaded household data, sign-out, signup
+validation and generic reset confirmation. Private WebSocket behavior was checked
+in native integration tests because the local HTTP preview does not proxy upgrades.
