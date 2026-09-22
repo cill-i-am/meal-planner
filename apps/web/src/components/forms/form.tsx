@@ -124,7 +124,7 @@ const ParticipationField = ({
       <ToggleGroup
         variant="segment"
         aria-labelledby={`${id}-label`}
-        aria-describedby={errors.length ? `${id}-error` : `${id}-help`}
+        aria-describedby={errors.length ? `${id}-error` : undefined}
         aria-invalid={errors.length > 0}
         disabled={disabled}
         value={field.state.value ? [field.state.value] : []}
@@ -141,13 +141,6 @@ const ParticipationField = ({
         <ToggleGroupItem value="dependant">Child</ToggleGroupItem>
       </ToggleGroup>
       {errors.length > 0 && <FieldError id={`${id}-error`} errors={errors} />}
-      {field.state.value && (
-        <FieldDescription id={`${id}-help`}>
-          {field.state.value === "adult"
-            ? "You can add them without an account or invite them to join."
-            : "You’ll manage their food preferences. No account needed."}
-        </FieldDescription>
-      )}
     </Field>
   );
 };
@@ -179,7 +172,7 @@ const InviteField = ({
             aria-hidden="true"
             className="text-muted-foreground text-sm leading-5 font-normal"
           >
-            Let them sign in and manage their preferences.
+            They can have their own account and manage food preferences.
           </span>
         </FieldLabel>
         <Checkbox

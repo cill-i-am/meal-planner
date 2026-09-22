@@ -180,6 +180,17 @@ const PersonDraftForm = ({
               <form.Heading errorTitle="Add someone" rejected={error}>
                 Add someone
               </form.Heading>
+              <CardDescription>
+                <form.Subscribe
+                  selector={(state) => state.values.participation}
+                >
+                  {(participation) =>
+                    participation === "dependant"
+                      ? "Add a child you plan meals for. You’ll manage their food preferences."
+                      : "Add an adult you plan meals for. You can invite them to join now or later."
+                  }
+                </form.Subscribe>
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <FieldGroup>

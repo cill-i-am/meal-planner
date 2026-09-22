@@ -423,6 +423,11 @@ afterEach(() => {
 
 it("adds an adult without an account unless invitation is chosen", async () => {
   const { fixture, user } = await setup();
+  expect(
+    screen.getByText(
+      "Add an adult you plan meals for. You can invite them to join now or later."
+    )
+  ).toBeInTheDocument();
   expect(screen.getByRole("group", { name: "Age" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Adult" })).toHaveAttribute(
     "aria-pressed",
@@ -984,6 +989,11 @@ it("adds a child as a managed profile without an invitation choice", async () =>
   await user.type(screen.getByLabelText("Name"), "Sam");
   await user.click(screen.getByRole("button", { name: "Child" }));
   expect(
+    screen.getByText(
+      "Add a child you plan meals for. You’ll manage their food preferences."
+    )
+  ).toBeInTheDocument();
+  expect(
     screen.queryByRole("checkbox", { name: "Invite them to join" })
   ).not.toBeInTheDocument();
   expect(screen.getByLabelText("Email")).toBeDisabled();
@@ -1035,7 +1045,9 @@ it("preserves an invitation email across checkbox changes and validates it when 
   await user.type(screen.getByLabelText("Name"), "Jamie");
   const invite = screen.getByRole("checkbox", { name: "Invite them to join" });
   await user.click(
-    screen.getByText("Let them sign in and manage their preferences.")
+    screen.getByText(
+      "They can have their own account and manage food preferences."
+    )
   );
   expect(invite).toBeChecked();
   await user.type(screen.getByRole("textbox", { name: "Email" }), "invalid");
