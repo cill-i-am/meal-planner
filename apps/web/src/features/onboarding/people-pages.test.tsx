@@ -286,6 +286,31 @@ it("requires a valid email when inviting and sends the invitation for an adult",
   expect(fixture.invitations[0]).toMatchObject({ email: "jamie@example.test" });
 });
 
+it("preserves an invitation email across checkbox changes and validates it when invited again", async () => {
+  const { fixture, user } = await setup();
+  await user.type(screen.getByLabelText("Name"), "Jamie");
+  await user.click(screen.getByRole("button", { name: "Adult" }));
+  const invite = screen.getByRole("checkbox", { name: "Invite them to join" });
+  await user.click(
+    screen.getByText("Let them sign in and manage their preferences.")
+  );
+  expect(invite).toBeChecked();
+  await user.type(screen.getByLabelText("Email"), "invalid");
+  await user.click(invite);
+  expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
+  expect(invite).toHaveFocus();
+  expect(
+    screen.getByRole("heading", { name: "Add someone" })
+  ).toBeInTheDocument();
+  await user.click(invite);
+  expect(screen.getByLabelText("Email")).toHaveValue("invalid");
+  await user.click(screen.getByRole("button", { name: "Add and invite" }));
+  expect(
+    await screen.findByText("Enter a valid email address.")
+  ).toBeInTheDocument();
+  expect(fixture.creates).toHaveLength(0);
+});
+
 it("clears invite consent and invalid email across Adult, Child, Adult changes", async () => {
   const { fixture, user } = await setup();
   await user.type(screen.getByLabelText("Name"), "Riley");
@@ -299,6 +324,10 @@ it("clears invite consent and invalid email across Adult, Child, Adult changes",
     screen.queryByRole("checkbox", { name: "Invite them to join" })
   ).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
+  expect(screen.queryByText("Enter their email.")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("Enter a valid email address.")
+  ).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Adult" }));
   expect(
     screen.getByRole("checkbox", { name: "Invite them to join" })

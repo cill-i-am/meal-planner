@@ -22,6 +22,10 @@ import {
   CardHeader,
   CardTitle,
 } from "../../components/ui/card.js";
+import {
+  Collapsible,
+  CollapsibleContent,
+} from "../../components/ui/collapsible.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import { PersonRow, useSetupRoster } from "./family-review.js";
 import { InvitationCorrectionForm } from "./invitation-correction.js";
@@ -142,60 +146,81 @@ const PersonDraftForm = ({
                     />
                   )}
                 </form.AppField>
-                <form.AppField
-                  name="participation"
-                  validators={{ onChange: participationValidator }}
-                  listeners={{
-                    onChange: () => {
-                      form.setFieldValue("invite", false);
-                      form.setFieldValue("email", "");
-                    },
-                  }}
-                >
-                  {(field) => (
-                    <field.ParticipationField
-                      id="person-participation"
-                      disabled={busy}
-                    />
-                  )}
-                </form.AppField>
-                <form.Subscribe
-                  selector={(state) => state.values.participation}
-                >
-                  {(participation) =>
-                    participation === "adult" && (
-                      <form.AppField name="invite">
-                        {(field) => <field.InviteField disabled={busy} />}
-                      </form.AppField>
-                    )
-                  }
-                </form.Subscribe>
-                <form.Subscribe
-                  selector={(state) =>
-                    state.values.participation === "adult" &&
-                    state.values.invite
-                  }
-                >
-                  {(invite) =>
-                    invite && (
-                      <form.AppField
-                        name="email"
-                        validators={{ onChange: emailValidator }}
-                      >
-                        {(field) => (
-                          <field.TextField
-                            id="person-email"
-                            label="Email"
-                            maxLength={254}
-                            autoComplete="off"
-                            type="email"
-                            disabled={busy}
-                          />
-                        )}
-                      </form.AppField>
-                    )
-                  }
-                </form.Subscribe>
+                <div>
+                  <form.AppField
+                    name="participation"
+                    validators={{ onChange: participationValidator }}
+                    listeners={{
+                      onChange: () => {
+                        form.setFieldValue("invite", false);
+                        form.setFieldValue("email", "", { dontValidate: true });
+                        form.setFieldMeta("email", (meta) => ({
+                          ...meta,
+                          errorMap: {},
+                          errors: [],
+                        }));
+                      },
+                    }}
+                  >
+                    {(field) => (
+                      <field.ParticipationField
+                        id="person-participation"
+                        disabled={busy}
+                      />
+                    )}
+                  </form.AppField>
+                  <form.Subscribe
+                    selector={(state) => ({
+                      invite: state.values.invite,
+                      participation: state.values.participation,
+                    })}
+                  >
+                    {({ invite, participation }) => (
+                      <Collapsible open={participation === "adult"}>
+                        <CollapsibleContent
+                          id="person-invite-choice"
+                          aria-labelledby="person-participation-label"
+                          inert={participation !== "adult"}
+                          variant="adult"
+                        >
+                          <div className="pt-5">
+                            <form.AppField name="invite">
+                              {(field) => (
+                                <field.InviteField
+                                  disabled={busy || participation !== "adult"}
+                                >
+                                  <form.AppField
+                                    name="email"
+                                    validators={{
+                                      onChange: invite
+                                        ? emailValidator
+                                        : undefined,
+                                    }}
+                                  >
+                                    {(emailField) => (
+                                      <emailField.TextField
+                                        id="person-email"
+                                        label="Email"
+                                        maxLength={254}
+                                        autoComplete="off"
+                                        type="email"
+                                        disabled={
+                                          busy ||
+                                          participation !== "adult" ||
+                                          !invite
+                                        }
+                                      />
+                                    )}
+                                  </form.AppField>
+                                </field.InviteField>
+                              )}
+                            </form.AppField>
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )}
+                  </form.Subscribe>
+                </div>
               </FieldGroup>
               {rosterError && (
                 <SetupError>

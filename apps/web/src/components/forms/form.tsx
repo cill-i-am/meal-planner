@@ -12,6 +12,7 @@ import { useInteractionSound } from "../../hooks/use-interaction-sound.js";
 import { cn } from "../../lib/utils.js";
 import { Card, CardTitle } from "../ui/card.js";
 import { Checkbox } from "../ui/checkbox.js";
+import { Collapsible, CollapsibleContent } from "../ui/collapsible.js";
 import {
   Field,
   FieldDescription,
@@ -151,29 +152,69 @@ const ParticipationField = ({
   );
 };
 
-const InviteField = ({ disabled }: { readonly disabled: boolean }) => {
+const InviteField = ({
+  disabled,
+  children,
+}: {
+  readonly disabled: boolean;
+  readonly children: ReactNode;
+}) => {
   const field = useFieldContext<boolean>();
+  const playInteractionSound = useInteractionSound();
   return (
-    <Field
-      orientation="horizontal"
-      data-disabled={disabled}
-      className="min-h-11"
-    >
-      <Checkbox
-        id="person-invite"
-        name={field.name}
-        checked={field.state.value}
-        onCheckedChange={field.handleChange}
-        onBlur={field.handleBlur}
-        disabled={disabled}
-      />
-      <FieldLabel
-        htmlFor="person-invite"
-        className="flex min-h-11 items-center"
+    <Collapsible open={field.state.value} variant="invite">
+      <Field
+        orientation="horizontal"
+        data-disabled={disabled}
+        className="relative"
       >
-        Invite them to join
-      </FieldLabel>
-    </Field>
+        <FieldLabel
+          id="person-invite-label"
+          htmlFor="person-invite"
+          variant="inviteCard"
+        >
+          <span>Invite them to join</span>
+          <span
+            id="person-invite-help"
+            aria-hidden="true"
+            className="text-muted-foreground text-sm leading-5 font-normal"
+          >
+            Let them sign in and manage their preferences.
+          </span>
+        </FieldLabel>
+        <Checkbox
+          id="person-invite"
+          name={field.name}
+          aria-describedby="person-invite-help"
+          aria-controls="person-invite-details"
+          aria-expanded={field.state.value}
+          checked={field.state.value}
+          onCheckedChange={(checked) => {
+            if (checked !== field.state.value) {
+              field.handleChange(checked);
+              if (!checked) {
+                field.form.setFieldMeta("email", (meta) => ({
+                  ...meta,
+                  errorMap: {},
+                  errors: [],
+                }));
+              }
+              void playInteractionSound();
+            }
+          }}
+          onBlur={field.handleBlur}
+          disabled={disabled}
+          className="absolute top-4 right-4 size-5"
+        />
+      </Field>
+      <CollapsibleContent
+        id="person-invite-details"
+        aria-labelledby="person-invite-label"
+        inert={!field.state.value}
+      >
+        <div className="border-border bg-control border-t p-4">{children}</div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 };
 
@@ -258,7 +299,7 @@ const Frame = ({
         await form.handleSubmit();
         element.current
           ?.querySelector<HTMLElement>(
-            'input[aria-invalid="true"], [aria-invalid="true"] button'
+            'input[aria-invalid="true"]:not(:disabled), [aria-invalid="true"] button:not(:disabled)'
           )
           ?.focus();
       }}
