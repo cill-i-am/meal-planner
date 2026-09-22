@@ -39,7 +39,7 @@ const personStatus = (person: HouseholdPerson): string => {
     return "You";
   }
   if (person.kind === "dependant") {
-    return "Managed profile";
+    return "Child";
   }
   if (person.associationState === "linked") {
     return "Joined";
@@ -53,7 +53,7 @@ const personStatus = (person: HouseholdPerson): string => {
   if (person.associationState === "invitation_pending") {
     return "Invitation pending";
   }
-  return "Invitation needed";
+  return "Adult · No account";
 };
 
 export const PersonRow = ({ person }: { readonly person: HouseholdPerson }) => (
@@ -125,7 +125,7 @@ export const FamilyReviewPage = () => {
       } else if (destination === "people") {
         await setup.save({
           checkpoint: {
-            draft: { email: "", name: "", participation: "" },
+            draft: { email: "", invite: false, name: "", participation: "" },
             organizationId: checkpoint.organizationId,
             stage: "person-draft",
           },

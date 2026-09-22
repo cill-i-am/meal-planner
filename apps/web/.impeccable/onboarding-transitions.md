@@ -38,8 +38,12 @@ Retain only the safe draft, intended step, owning account/family/person context 
 
 Resume setup, returning after a closed page, and logging in again all resolve the checkpoint against canonical state. An expired session goes through Log in with the intended continuation retained. Changed permissions or a removed family use the corresponding access state; they never fall back to creating a replacement family. Log out clears the session and in-memory secrets, while retaining the account-owned checkpoint for a later authenticated return.
 
-## Segmented participation field
+## Person type and optional invitation
 
 Use the shadcn single-selection ToggleGroup with the explicit theme classes. Give the group an accessible label through `aria-labelledby`; connect its FieldDescription/FieldError using `aria-describedby`. Set `aria-invalid="true"` on the group only after blur/submit validation, and `data-invalid` on its Field wrapper. Keep the two items and their focus behavior from the primitive.
 
-The group invalid modifier supplies the destructive outline and halo shown in Paper. On a failed submit, focus the selected item, or the first item when empty, and announce the linked error. Do not fabricate a selection. Show managed-profile guidance only for Manage profile and invitation guidance/email only for Invite adult; the empty state displays the choice error without either branch’s helper. The explicit focus rule follows the selected border rule, so the solid ring edge wins for selected and unselected items.
+The group invalid modifier supplies the destructive outline and halo shown in Paper. On a failed submit, focus the selected item, or the first item when empty, and announce the linked error. Do not fabricate a selection. The explicit focus rule follows the selected border rule, so the solid ring edge wins for selected and unselected items.
+
+The choices are **Adult** and **Child**. Person type is independent of account access. A child has no account; an adult can also participate in family meal planning without one. For adults, show a separate **Invite them to join** checkbox, unchecked initially. Email is required only when inviting. The primary action is **Add person**, or **Add and invite** when the checkbox is checked. Changing person type clears the invitation choice so it cannot carry over silently.
+
+Save & exit retains the draft and invitation choice. After submission, retain the exact creation and invitation commands for recovery. An adult added without an account appears as **Adult · No account**, with an optional invitation action on the family review screen. Do not describe an invitation as required.

@@ -84,6 +84,8 @@ Task cards use a 16px outer radius. The body shares that radius where it meets t
 
 Give secondary actions such as the password eye toggle, **Edit**, and **Save & exit** a minimum 44px target without increasing their visible text. Single-selection choices use a segmented control.
 
+When adding a person, use **Adult** and **Child** as the segmented choices. Account access is a separate decision: an adult can be added without an account, with an optional **Invite them to join** checkbox. Reveal the email field only when inviting. Children have managed preferences and no account. Keep the invitation optional on the review screen too.
+
 Icon-only actions have an accessible name and a shadcn Tooltip on hover and keyboard focus. Password visibility uses Show password / Hide password for both. Keep its 44px target transparent and change the eye from muted to foreground on hover; do not fill the input end with a large hover shape.
 
 Password visibility keeps both Lucide icons mounted, using 16px icons with a 1.5px stroke. Cross-fade opacity 0–1, scale 0.25–1 and blur 4–0px over 300ms with `cubic-bezier(0.2, 0, 0, 1)`. Reduced motion switches immediately. The accessible name, tooltip and pressed state remain the static feedback.

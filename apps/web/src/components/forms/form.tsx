@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import { useInteractionSound } from "../../hooks/use-interaction-sound.js";
 import { cn } from "../../lib/utils.js";
 import { Card, CardTitle } from "../ui/card.js";
+import { Checkbox } from "../ui/checkbox.js";
 import {
   Field,
   FieldDescription,
@@ -117,7 +118,7 @@ const ParticipationField = ({
     field.state.meta.isBlurred || attempts > 0 ? field.state.meta.errors : [];
   return (
     <Field data-invalid={errors.length > 0} data-disabled={disabled}>
-      <FieldLabel id={`${id}-label`}>How will they take part?</FieldLabel>
+      <FieldLabel id={`${id}-label`}>Person type</FieldLabel>
       <ToggleGroup
         variant="segment"
         aria-labelledby={`${id}-label`}
@@ -128,17 +129,43 @@ const ParticipationField = ({
         onValueChange={(value) => field.handleChange(value[0] ?? "")}
         onBlur={() => field.handleBlur()}
       >
-        <ToggleGroupItem value="adult">Invite adult</ToggleGroupItem>
-        <ToggleGroupItem value="dependant">Manage profile</ToggleGroupItem>
+        <ToggleGroupItem value="adult">Adult</ToggleGroupItem>
+        <ToggleGroupItem value="dependant">Child</ToggleGroupItem>
       </ToggleGroup>
       {errors.length > 0 && <FieldError id={`${id}-error`} errors={errors} />}
       {field.state.value && (
         <FieldDescription id={`${id}-help`}>
           {field.state.value === "adult"
-            ? "They’ll be invited to join with their own account."
+            ? "You can add them without an account or invite them to join."
             : "You’ll manage their food preferences. No account needed."}
         </FieldDescription>
       )}
+    </Field>
+  );
+};
+
+const InviteField = ({ disabled }: { readonly disabled: boolean }) => {
+  const field = useFieldContext<boolean>();
+  return (
+    <Field
+      orientation="horizontal"
+      data-disabled={disabled}
+      className="min-h-11"
+    >
+      <Checkbox
+        id="person-invite"
+        name={field.name}
+        checked={field.state.value}
+        onCheckedChange={field.handleChange}
+        onBlur={field.handleBlur}
+        disabled={disabled}
+      />
+      <FieldLabel
+        htmlFor="person-invite"
+        className="flex min-h-11 items-center"
+      >
+        Invite them to join
+      </FieldLabel>
     </Field>
   );
 };
@@ -284,7 +311,12 @@ const Heading = ({
 };
 
 export const { useAppForm } = createFormHook({
-  fieldComponents: { ParticipationField, PasswordField, TextField },
+  fieldComponents: {
+    InviteField,
+    ParticipationField,
+    PasswordField,
+    TextField,
+  },
   fieldContext,
   formComponents: { Frame, Heading },
   formContext,

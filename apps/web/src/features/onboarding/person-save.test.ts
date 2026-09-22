@@ -10,6 +10,65 @@ import { HouseholdPeopleOperationError } from "../household-people/operations.js
 import type { HouseholdPeopleOperations } from "../household-people/operations.js";
 import { saveSetupPerson } from "./person-save.js";
 
+it("saves a managed adult without inviting them", async () => {
+  const pending = Schema.decodeUnknownSync(SetupCheckpoint)({
+    command: {
+      kind: "managed",
+      person: {
+        displayName: "Jamie",
+        kind: "adult",
+        mutationId: "person-mutation-2222",
+      },
+    },
+    organizationId: "family-id",
+    stage: "person-create",
+  });
+  if (pending.stage !== "person-create") {
+    throw new Error("Expected pending creation");
+  }
+  const person = Schema.decodeUnknownSync(HouseholdPerson)({
+    associationState: "unlinked",
+    associationVersion: null,
+    createdAtEpochMs: 1,
+    displayName: "Jamie",
+    id: "person_22222222-2222-4222-8222-222222222222",
+    isCurrentAdult: false,
+    kind: "adult",
+    lifecycle: "active",
+    updatedAtEpochMs: 1,
+    version: 1,
+  });
+  const created: unknown[] = [];
+  const invitations: unknown[] = [];
+  const saved: SetupCheckpoint[] = [];
+  const people: HouseholdPeopleOperations = {
+    archive: async () => person,
+    bootstrapCreator: async () => person,
+    create: async (command) => {
+      created.push(command);
+      return person;
+    },
+    inviteAdult: async (command) => {
+      invitations.push(command);
+      throw new Error("Managed adults must not be invited");
+    },
+    list: async () => ({
+      creatorSlot: "occupied",
+      currentPersonId: null,
+      people: [person],
+    }),
+    restore: async () => person,
+  };
+  await saveSetupPerson(pending, people, async (next) => {
+    saved.push(next);
+  });
+  expect(created).toEqual([pending.command.person]);
+  expect(invitations).toHaveLength(0);
+  expect(saved).toEqual([
+    { organizationId: "family-id", stage: "family-review" },
+  ]);
+});
+
 it.each(["lost", "rejected"])(
   "resumes a %s invitation without recreating the person",
   async (outcome) => {
