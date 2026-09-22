@@ -6,11 +6,11 @@ import { betterAuth } from "better-auth";
 import type { BetterAuthOptions } from "better-auth";
 import { organization } from "better-auth/plugins";
 
-import { invitationViewPlugin } from "./invitation-view.js";
 import { mockInvitationMail } from "./auth-mail.js";
 import type { InvitationMail } from "./auth-mail.js";
 import { fenceAuthAdapter } from "./auth-output-fence.js";
 import type { AuthOutputFence } from "./auth-output-fence.js";
+import { invitationViewPlugin } from "./invitation-view.js";
 
 export interface MealPlannerAuthOptions {
   readonly sendInvitationEmail?: (mail: InvitationMail) => Promise<void>;
