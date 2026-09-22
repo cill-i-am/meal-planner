@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render as baseRender, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactElement } from "react";
 import { afterEach, expect, it } from "vitest";
 
+import { MotionProvider } from "./motion-provider.js";
 import { ToggleGroup, ToggleGroupItem } from "./toggle-group.js";
 
 afterEach(cleanup);
+
+const render = (ui: ReactElement) =>
+  baseRender(ui, { wrapper: MotionProvider });
 
 const controlledSegment = (value: string) => (
   <ToggleGroup variant="segment" value={[value]} aria-label="Person type">
@@ -30,17 +35,23 @@ it("keeps one segment indicator as the selected choice changes", async () => {
   const group = screen.getByRole("group", { name: "Person type" });
   const indicator = group.querySelector('[data-slot="toggle-group-indicator"]');
   expect(indicator).not.toBeNull();
-  expect(indicator).toHaveStyle("--segment-index: 0");
+  expect(indicator?.closest("button")).toBe(
+    screen.getByRole("button", { name: "Adult" })
+  );
   expect(screen.getByRole("button", { name: "Adult" })).toHaveAttribute(
     "aria-pressed",
     "true"
   );
 
   await user.click(screen.getByRole("button", { name: "Child" }));
-  expect(group.querySelector('[data-slot="toggle-group-indicator"]')).toBe(
-    indicator
-  );
-  expect(indicator).toHaveStyle("--segment-index: 1");
+  expect(
+    group.querySelectorAll('[data-slot="toggle-group-indicator"]')
+  ).toHaveLength(1);
+  expect(
+    group
+      .querySelector('[data-slot="toggle-group-indicator"]')
+      ?.closest("button")
+  ).toBe(screen.getByRole("button", { name: "Child" }));
   expect(screen.getByRole("button", { name: "Child" })).toHaveAttribute(
     "aria-pressed",
     "true"
@@ -51,13 +62,19 @@ it("places a controlled selection immediately and moves it when the value change
   const { rerender } = render(controlledSegment("child"));
   const group = screen.getByRole("group", { name: "Person type" });
   const indicator = group.querySelector('[data-slot="toggle-group-indicator"]');
-  expect(indicator).toHaveStyle("--segment-index: 1");
+  expect(indicator?.closest("button")).toBe(
+    screen.getByRole("button", { name: "Child" })
+  );
 
   rerender(controlledSegment("adult"));
-  expect(group.querySelector('[data-slot="toggle-group-indicator"]')).toBe(
-    indicator
-  );
-  expect(indicator).toHaveStyle("--segment-index: 0");
+  expect(
+    group.querySelectorAll('[data-slot="toggle-group-indicator"]')
+  ).toHaveLength(1);
+  expect(
+    group
+      .querySelector('[data-slot="toggle-group-indicator"]')
+      ?.closest("button")
+  ).toBe(screen.getByRole("button", { name: "Adult" }));
 });
 
 it("does not change a disabled segment selection", async () => {

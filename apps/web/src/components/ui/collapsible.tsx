@@ -1,8 +1,10 @@
 "use client";
 
 import { Collapsible as CollapsiblePrimitive } from "@base-ui/react/collapsible";
+import { useReducedMotion } from "motion/react";
 
 import { cn } from "../../lib/utils.js";
+import { BaseMotionElement } from "./base-motion-element.js";
 
 const Collapsible = ({
   className,
@@ -24,20 +26,46 @@ const Collapsible = ({
 const CollapsibleContent = ({
   className,
   variant = "default",
+  render,
   ...props
 }: CollapsiblePrimitive.Panel.Props & {
   variant?: "default" | "adult";
-}) => (
-  <CollapsiblePrimitive.Panel
-    data-slot="collapsible-content"
-    className={cn(
-      "[height:var(--collapsible-panel-height)] overflow-hidden data-ending-style:h-0 data-ending-style:opacity-0 data-starting-style:h-0 data-starting-style:opacity-0 motion-safe:transition-[height,opacity] motion-safe:duration-[220ms] motion-safe:ease-out data-ending-style:motion-safe:duration-[160ms] motion-reduce:transition-none",
-      variant === "adult" &&
-        "data-ending-style:translate-y-1 data-open:overflow-visible data-starting-style:translate-y-1 data-starting-style:overflow-hidden motion-safe:transition-[height,opacity,translate]",
-      className
-    )}
-    {...props}
-  />
-);
+}) => {
+  const reducedMotion = useReducedMotion();
+  const openingDuration = reducedMotion ? 0 : 0.22;
+  const closingDuration = reducedMotion ? 0 : 0.16;
+
+  return (
+    <CollapsiblePrimitive.Panel
+      data-slot="collapsible-content"
+      keepMounted
+      className={(state) =>
+        cn(
+          "[height:var(--collapsible-panel-height)] overflow-hidden data-ending-style:h-0 data-starting-style:h-0 motion-safe:transition-[height] motion-safe:duration-[220ms] motion-safe:ease-out data-ending-style:motion-safe:duration-[160ms]",
+          state.open && state.transitionStatus === "idle" && "overflow-visible",
+          className
+        )
+      }
+      {...props}
+      render={
+        render ??
+        ((renderProps, state) => (
+          <BaseMotionElement
+            baseProps={renderProps}
+            initial={false}
+            animate={{
+              opacity: state.open ? 1 : 0,
+              y: variant === "adult" && !state.open && !reducedMotion ? 4 : 0,
+            }}
+            transition={{
+              duration: state.open ? openingDuration : closingDuration,
+              ease: "easeOut",
+            }}
+          />
+        ))
+      }
+    />
+  );
+};
 
 export { Collapsible, CollapsibleContent };

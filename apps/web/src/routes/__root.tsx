@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 
 import "../styles.css";
+import { MotionProvider } from "../components/ui/motion-provider.js";
 import { TooltipProvider } from "../components/ui/tooltip.js";
 
 const RootDocument = () => (
@@ -14,9 +15,11 @@ const RootDocument = () => (
       <HeadContent />
     </head>
     <body className="relative">
-      <TooltipProvider>
-        <Outlet />
-      </TooltipProvider>
+      <MotionProvider>
+        <TooltipProvider>
+          <Outlet />
+        </TooltipProvider>
+      </MotionProvider>
       <Scripts />
     </body>
   </html>

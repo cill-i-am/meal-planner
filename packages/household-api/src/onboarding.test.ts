@@ -67,7 +67,7 @@ describe("setup checkpoint contract", () => {
     );
   });
 
-  it("allows unfinished invitation text only before dispatch and rejects extra stored fields", () => {
+  it("rejects unsubmitted roster drafts, invalid commands and extra stored fields", () => {
     const checkpoint = {
       organizationId: "family-1",
       returnTo: { stage: "family-review" },
@@ -77,9 +77,7 @@ describe("setup checkpoint contract", () => {
         phase: "draft",
       },
     };
-    expect(parse({ checkpoint, status: "active" }).checkpoint).toEqual(
-      checkpoint
-    );
+    expect(() => parse({ checkpoint, status: "active" })).toThrow();
     expect(() =>
       parse({
         checkpoint: {
@@ -101,7 +99,11 @@ describe("setup checkpoint contract", () => {
       parse({
         checkpoint: {
           ...checkpoint,
-          state: { ...checkpoint.state, password: "never-store" },
+          state: {
+            command: { kind: "remove", mutationId: "remove-alex-1", person },
+            password: "never-store",
+            phase: "pending",
+          },
         },
         status: "active",
       })

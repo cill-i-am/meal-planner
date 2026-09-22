@@ -3,6 +3,7 @@
 import { Toggle as TogglePrimitive } from "@base-ui/react/toggle";
 import { ToggleGroup as ToggleGroupPrimitive } from "@base-ui/react/toggle-group";
 import type { VariantProps } from "class-variance-authority";
+import { LayoutGroup, m } from "motion/react";
 import * as React from "react";
 
 import { cn } from "../../lib/utils.js";
@@ -12,9 +13,11 @@ const ToggleGroupContext = React.createContext<
   VariantProps<typeof toggleVariants> & {
     spacing?: number;
     orientation?: "horizontal" | "vertical";
+    selectedValue: string | undefined;
   }
 >({
   orientation: "horizontal",
+  selectedValue: undefined,
   size: "default",
   spacing: 2,
   variant: "default",
@@ -46,7 +49,25 @@ const ToggleGroupItem = ({
       )}
       {...props}
     >
-      {children}
+      {context.variant === "segment" ? (
+        <>
+          {context.selectedValue === props.value && (
+            <m.span
+              aria-hidden="true"
+              data-slot="toggle-group-indicator"
+              layoutId="segment-indicator"
+              initial={false}
+              transition={{
+                layout: { duration: 0.22, ease: "easeOut", type: "tween" },
+              }}
+              className="border-primary bg-primary to-primary shadow-foreground/12 inset-shadow-[0_1px_--theme(--color-primary-foreground/25%)] pointer-events-none absolute -inset-px z-0 rounded-md border bg-linear-to-b/oklch from-[color-mix(in_oklch,var(--primary),var(--primary-foreground)_10%)] shadow-[0_1px_2px] group-has-[[aria-pressed=true]:active]/toggle-group:shadow-none group-has-[[aria-pressed=true]:active]/toggle-group:inset-shadow-none group-has-[[aria-pressed=true]:focus-visible]/toggle-group:shadow-none group-has-[[aria-pressed=true]:focus-visible]/toggle-group:inset-shadow-none group-data-disabled/toggle-group:shadow-none group-data-disabled/toggle-group:inset-shadow-none"
+            />
+          )}
+          <span className="relative z-10">{children}</span>
+        </>
+      ) : (
+        children
+      )}
     </TogglePrimitive>
   );
 };
@@ -88,15 +109,8 @@ const ToggleGroup = ({
   const [defaultSegmentValue, setDefaultSegmentValue] = React.useState(
     defaultValue ?? []
   );
+  const layoutGroupId = React.useId();
   const segmentValue = value ?? defaultSegmentValue;
-  const segmentItems = React.Children.toArray(children).filter(
-    (child): child is React.ReactElement<TogglePrimitive.Props> =>
-      React.isValidElement<TogglePrimitive.Props>(child) &&
-      child.props.value !== undefined
-  );
-  const selectedIndex = segmentItems.findIndex(
-    (child) => child.props.value === segmentValue[0]
-  );
 
   return (
     <ToggleGroupPrimitive
@@ -126,24 +140,19 @@ const ToggleGroup = ({
       }
       {...props}
     >
-      <ToggleGroupContext.Provider
-        value={{ orientation, size, spacing, variant }}
-      >
-        {variant === "segment" && selectedIndex !== -1 && (
-          <span
-            aria-hidden="true"
-            data-slot="toggle-group-indicator"
-            className="border-primary bg-primary to-primary shadow-foreground/12 inset-shadow-[0_1px_--theme(--color-primary-foreground/25%)] pointer-events-none absolute inset-y-[3px] left-1 w-[calc((100%-0.5rem-(var(--segment-count)-1)*0.25rem)/var(--segment-count))] translate-x-[calc(var(--segment-index)*(100%+0.25rem))] rounded-md border bg-linear-to-b/oklch from-[color-mix(in_oklch,var(--primary),var(--primary-foreground)_10%)] shadow-[0_1px_2px] transition-transform duration-220 ease-out group-has-[[aria-pressed=true]:active]/toggle-group:shadow-none group-has-[[aria-pressed=true]:active]/toggle-group:inset-shadow-none group-has-[[aria-pressed=true]:focus-visible]/toggle-group:shadow-none group-has-[[aria-pressed=true]:focus-visible]/toggle-group:inset-shadow-none group-data-disabled/toggle-group:shadow-none group-data-disabled/toggle-group:inset-shadow-none motion-reduce:transition-none"
-            style={
-              {
-                "--segment-count": segmentItems.length,
-                "--segment-index": selectedIndex,
-              } as React.CSSProperties
-            }
-          />
-        )}
-        {children}
-      </ToggleGroupContext.Provider>
+      <LayoutGroup id={layoutGroupId}>
+        <ToggleGroupContext.Provider
+          value={{
+            orientation,
+            selectedValue: segmentValue[0],
+            size,
+            spacing,
+            variant,
+          }}
+        >
+          {children}
+        </ToggleGroupContext.Provider>
+      </LayoutGroup>
     </ToggleGroupPrimitive>
   );
 };

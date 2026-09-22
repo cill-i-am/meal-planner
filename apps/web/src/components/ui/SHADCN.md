@@ -8,6 +8,14 @@ Components own their variants and interaction styles in Tailwind. Auth layout, t
 
 Authentication uses TanStack Form's `createFormHook` and `AppField` to bind shared text/password fields to shadcn controls. Login and signup explicitly compose their own fields, schemas and actions. TanStack Form owns drafts and validation; TanStack Query owns the pending authentication request and service failure.
 
+## Motion
+
+The root `MotionProvider` supplies `MotionConfig reducedMotion="user"` and `LazyMotion` with layout features. Shared components use Motion's `m` elements for coordinated animations while their Base UI primitives retain accessibility and interaction behavior. Render the provider in component tests that exercise these animations.
+
+Motion owns dialog opacity/scale, segmented indicator layout, icon swaps and collapsible opacity/settling. Base UI retains measured collapsible height and the native drawer's drag, snap-point and nested-stack movement. Tailwind still owns static styles and simple hover/focus feedback. Give each animated property one owner; do not add a CSS transition to a property Motion already controls.
+
+References: [Base UI animation integration](https://base-ui.com/react/handbook/animation), [Motion configuration](https://motion.dev/docs/react-motion-config), and [layout animation](https://motion.dev/docs/react-layout-animations).
+
 ## Responsive overlays
 
 `Overlay` composes the shadcn Dialog and current Base UI Drawer. Below 768px it uses a bottom sheet with Base UI keyboard handling; on desktop it uses a dialog by default. Keep the form owner and draft state in the feature component above `Overlay.Root`, so the draft survives a viewport change. Include `Overlay.Title` and `Overlay.Description` in every content surface.

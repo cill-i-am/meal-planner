@@ -9,6 +9,22 @@ Design: [Login and household setup in Paper](https://app.paper.design/file/01M2Y
 
 ## Roster management and responsive overlays · 22 September 2026
 
+Follow-up: roster dialog visibility and unsubmitted drafts now live in local UI
+state. Opening or cancelling a dialog no longer writes a checkpoint or waits for
+a session refresh. The server checkpoint contains only a submitted command;
+unknown results keep their original request identity. Motion for React now
+animates the existing Base UI dialogs, selection indicator, reveals and icon
+changes. Base UI retains focus, dismissal and native drawer behavior. LiveStore remains a
+[future research option](../research/2026-09-22-livestore-local-first-sync.md),
+not an adopted dependency.
+
+Follow-up validation: 221 web tests and 31 household contract tests passed,
+along with web/API typechecks, repository lint and the production web build.
+Browser checks confirmed zero API requests on Invite open/cancel, retained email
+across desktop/mobile changes, animated collapse, reduced motion and no console
+errors. A second review checked pending-request recovery, including a late
+response arriving after another pending command was observed.
+
 The user approved [roster actions and mobile bottom sheets](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-A-0).
 Use current shadcn Base UI Drawer rather than Vaul, with one shared composition
 for desktop dialogs or side drawers and mobile bottom sheets. Keep native

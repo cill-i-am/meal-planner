@@ -110,9 +110,7 @@ export const FamilyReviewPage = () => {
       }
     },
   });
-  const pendingAction =
-    [action, manage].some((operation) => operation.isPending) ||
-    checkpoint.stage === "person-manage";
+  const pendingAction = action.isPending || manage.managing;
   if (roster.isPending) {
     return <SetupStatus title="Loading your family…" />;
   }
@@ -163,7 +161,7 @@ export const FamilyReviewPage = () => {
                     }
                     disabled={pendingAction}
                     onAction={(kind, target) =>
-                      manage.mutate({
+                      manage.begin({
                         kind,
                         person: target,
                         returnTo: { stage: "family-review" },
@@ -179,7 +177,7 @@ export const FamilyReviewPage = () => {
                 invitation to finish joining.
               </SetupError>
             )}
-            {(action.error || manage.error) && (
+            {action.error && (
               <SetupError>We couldn’t save your place. Try again.</SetupError>
             )}
             {roster.isError ? (
@@ -212,7 +210,7 @@ export const FamilyReviewPage = () => {
           </CardFooter>
         )}
       </Card>
-      <RosterManagementOverlay />
+      <RosterManagementOverlay management={manage} />
     </SetupFrame>
   );
 };

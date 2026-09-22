@@ -681,10 +681,8 @@ export {
   PersonDraft,
   SetupCheckpoint,
   SetupProgress,
-  SetupRosterActionDraft,
   SetupRosterCommand,
   SetupRosterReturn,
-  SetupRosterState,
   setupProgressField,
 } from "./onboarding.js";
 

@@ -1,9 +1,7 @@
 import type { LucideIcon } from "lucide-react";
+import { m, useReducedMotion } from "motion/react";
 
-import { cn } from "../../lib/utils.js";
-
-const iconTransition =
-  "motion-safe:transition-[opacity,filter,scale] motion-safe:duration-300 motion-safe:ease-icon-swap";
+const iconEase = [0.2, 0, 0, 1] as const;
 
 const IconSwap = ({
   active,
@@ -13,28 +11,38 @@ const IconSwap = ({
   readonly active: boolean;
   readonly activeIcon: LucideIcon;
   readonly inactiveIcon: LucideIcon;
-}) => (
-  <span className="relative inline-grid" aria-hidden="true">
-    <ActiveIcon
-      strokeWidth={1.5}
-      className={cn(
-        "absolute inset-0",
-        iconTransition,
-        active
-          ? "scale-100 opacity-100 blur-[0px]"
-          : "scale-25 opacity-0 blur-xs"
-      )}
-    />
-    <InactiveIcon
-      strokeWidth={1.5}
-      className={cn(
-        iconTransition,
-        active
-          ? "scale-25 opacity-0 blur-xs"
-          : "scale-100 opacity-100 blur-[0px]"
-      )}
-    />
-  </span>
-);
+}) => {
+  const reducedMotion = useReducedMotion();
+  const transition = { duration: reducedMotion ? 0 : 0.3, ease: iconEase };
+
+  return (
+    <span className="relative inline-grid" aria-hidden="true">
+      <m.span
+        className="absolute inset-0 grid"
+        initial={false}
+        animate={{
+          filter: active ? "blur(0px)" : "blur(4px)",
+          opacity: active ? 1 : 0,
+          scale: active ? 1 : 0.25,
+        }}
+        transition={transition}
+      >
+        <ActiveIcon strokeWidth={1.5} />
+      </m.span>
+      <m.span
+        className="inline-grid"
+        initial={false}
+        animate={{
+          filter: active ? "blur(4px)" : "blur(0px)",
+          opacity: active ? 0 : 1,
+          scale: active ? 0.25 : 1,
+        }}
+        transition={transition}
+      >
+        <InactiveIcon strokeWidth={1.5} />
+      </m.span>
+    </span>
+  );
+};
 
 export { IconSwap };

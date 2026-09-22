@@ -50,21 +50,6 @@ export const SetupRosterReturn = Schema.Union([
 ]);
 export type SetupRosterReturn = typeof SetupRosterReturn.Type;
 
-export const SetupRosterActionDraft = Schema.Union([
-  Schema.Struct({
-    email: Schema.String.check(Schema.isMaxLength(254)),
-    kind: Schema.Literal("invite"),
-    person: HouseholdPerson,
-  }),
-  Schema.Struct({
-    kind: Schema.Literal("rename"),
-    name: Schema.String.check(Schema.isMaxLength(80)),
-    person: HouseholdPerson,
-  }),
-  Schema.Struct({ kind: Schema.Literal("remove"), person: HouseholdPerson }),
-]);
-export type SetupRosterActionDraft = typeof SetupRosterActionDraft.Type;
-
 /** Retains the target, version and mutation identity until the result is known. */
 export const SetupRosterCommand = Schema.Union([
   Schema.Struct({
@@ -87,24 +72,15 @@ export const SetupRosterCommand = Schema.Union([
 ]);
 export type SetupRosterCommand = typeof SetupRosterCommand.Type;
 
-export const SetupRosterState = Schema.Union([
-  Schema.Struct({
-    action: SetupRosterActionDraft,
-    phase: Schema.Literal("draft"),
-  }),
-  Schema.Struct({
-    command: SetupRosterCommand,
-    phase: Schema.Literal("pending"),
-  }),
-]);
-export type SetupRosterState = typeof SetupRosterState.Type;
-
 export const FamilySetupCheckpoint = Schema.Union([
   Schema.Struct({
     organizationId: HouseholdOrganizationId,
     returnTo: SetupRosterReturn,
     stage: Schema.Literal("person-manage"),
-    state: SetupRosterState,
+    state: Schema.Struct({
+      command: SetupRosterCommand,
+      phase: Schema.Literal("pending"),
+    }),
   }),
   Schema.Struct({
     displayName: FamilyName,

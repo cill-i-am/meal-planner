@@ -1,10 +1,20 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render as baseRender,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { MotionProvider } from "./motion-provider.js";
 import { Overlay } from "./responsive-overlay.js";
+
+const render = (ui: React.ReactElement) =>
+  baseRender(ui, { wrapper: MotionProvider });
 
 const mediaListeners = new Set<() => void>();
 let mobile = false;
@@ -30,8 +40,14 @@ afterEach(() => {
   setMobile(false);
 });
 
-const Example = ({ desktop = "dialog" }: { desktop?: "dialog" | "drawer" }) => {
-  const [open, setOpen] = React.useState(false);
+const Example = ({
+  desktop = "dialog",
+  initialOpen = false,
+}: {
+  desktop?: "dialog" | "drawer";
+  initialOpen?: boolean;
+}) => {
+  const [open, setOpen] = React.useState(initialOpen);
   const [draft, setDraft] = React.useState("");
   return (
     <Overlay.Root
@@ -60,6 +76,15 @@ const Example = ({ desktop = "dialog" }: { desktop?: "dialog" | "drawer" }) => {
     </Overlay.Root>
   );
 };
+
+it("keeps a dialog mounted open on first render and lets Escape dismiss it", async () => {
+  const user = userEvent.setup();
+  render(<Example initialOpen />);
+
+  expect(screen.getByRole("dialog", { name: "People" })).toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog", { name: "People" })).toBeNull();
+});
 
 it("opens an accessible desktop dialog and closes through its action", async () => {
   const user = userEvent.setup();

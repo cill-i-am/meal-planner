@@ -102,6 +102,10 @@ Both the Already added list and family review offer Invite for eligible adults p
 
 Roster dialogs and mobile sheets contain their primary action and Cancel. Keep Save & exit in the setup page header only.
 
+Opening and cancelling a roster action are immediate local UI changes. They do not save setup progress or refetch the session. Only submitted commands are checkpointed before dispatch, retaining their target, version and mutation ID across unknown outcomes. A newly observed pending command takes precedence over an unsubmitted local draft; a different unresolved local command must not be overwritten.
+
+Motion for React coordinates dialog opacity and scale, segmented selection movement, icon swaps and collapsible content feedback. Keep shadcn/Base UI as the component foundation and owner of focus, keyboard behavior, dismissal, collapsible measurement and drawer gestures/snap points. Do not animate the same property with both Motion and CSS. Use the shared Motion provider with the system reduced-motion preference; native auth view transitions and simple Tailwind hover states retain their existing owners.
+
 Password visibility keeps both Lucide icons mounted, using 16px icons with a 1.5px stroke. Cross-fade opacity 0–1, scale 0.25–1 and blur 4–0px over 300ms with `cubic-bezier(0.2, 0, 0, 1)`. Reduced motion switches immediately. The accessible name, tooltip and pressed state remain the static feedback.
 
 Password visibility also plays a quiet, 20ms activation click, inspired by the [Nexvyn clipboard field](https://ui.nexvyn.dev/components/clipboard-field). Use the same feedback for pointer and keyboard activation. Sound supplements the icon, tooltip and pressed state; the action still works if audio is unavailable. Create audio only after activation and release it when the control unmounts.

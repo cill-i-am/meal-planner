@@ -7,11 +7,11 @@ import type {
   HouseholdPerson,
   HouseholdPeopleRoster,
   SetupCheckpoint,
-  SetupRosterActionDraft,
 } from "@meal-planner/household-api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Schema } from "effect";
+import type { ReactNode } from "react";
 
 import { useAppForm } from "../../components/forms/form.js";
 import { Button } from "../../components/ui/button.js";
@@ -42,6 +42,7 @@ import {
   RosterManagementOverlay,
   useRosterManagement,
 } from "./roster-management.js";
+import type { RosterAction } from "./roster-management.js";
 import { useSetup } from "./setup-context.js";
 import { SetupError, SetupFrame, SetupStatus } from "./setup-ui.js";
 
@@ -76,10 +77,7 @@ const AddedPeople = ({
   readonly roster: HouseholdPeopleRoster;
   readonly organizer: boolean;
   readonly busy: boolean;
-  readonly onAction: (
-    kind: SetupRosterActionDraft["kind"],
-    person: HouseholdPerson
-  ) => void;
+  readonly onAction: (kind: RosterAction, person: HouseholdPerson) => void;
 }) => (
   <CardFooter variant="people">
     <p className="text-muted-foreground text-sm">Already added</p>
@@ -103,6 +101,7 @@ const AddedPeople = ({
 const PersonDraftForm = ({
   draft,
   busy,
+  disabled,
   error,
   submit,
   pause,
@@ -111,10 +110,11 @@ const PersonDraftForm = ({
   organizer,
   rosterError,
   onAction,
-  managing,
+  overlay,
 }: {
   readonly draft: Draft;
   readonly busy: boolean;
+  readonly disabled: boolean;
   readonly error: boolean;
   readonly submit: (command: PersonCreation) => Promise<void>;
   readonly pause: (draft: Draft) => void;
@@ -123,11 +123,11 @@ const PersonDraftForm = ({
   readonly organizer: boolean;
   readonly rosterError?: boolean;
   readonly onAction: (
-    kind: SetupRosterActionDraft["kind"],
+    kind: RosterAction,
     person: HouseholdPerson,
     draft: Draft
   ) => void;
-  readonly managing: boolean;
+  readonly overlay: ReactNode;
 }) => {
   const form = useAppForm({
     defaultValues: {
@@ -163,7 +163,7 @@ const PersonDraftForm = ({
       action={
         <Button
           variant="link"
-          disabled={busy}
+          disabled={disabled}
           onClick={() =>
             pause(Schema.decodeUnknownSync(PersonDraft)(form.state.values))
           }
@@ -192,7 +192,7 @@ const PersonDraftForm = ({
                       label="Name"
                       maxLength={80}
                       autoComplete="off"
-                      disabled={busy}
+                      disabled={disabled}
                     />
                   )}
                 </form.AppField>
@@ -215,7 +215,7 @@ const PersonDraftForm = ({
                     {(field) => (
                       <field.ParticipationField
                         id="person-participation"
-                        disabled={busy}
+                        disabled={disabled}
                       />
                     )}
                   </form.AppField>
@@ -237,7 +237,9 @@ const PersonDraftForm = ({
                             <form.AppField name="invite">
                               {(field) => (
                                 <field.InviteField
-                                  disabled={busy || participation !== "adult"}
+                                  disabled={
+                                    disabled || participation !== "adult"
+                                  }
                                 >
                                   <form.AppField
                                     name="email"
@@ -255,7 +257,7 @@ const PersonDraftForm = ({
                                         autoComplete="off"
                                         type="email"
                                         disabled={
-                                          busy ||
+                                          disabled ||
                                           participation !== "adult" ||
                                           !invite
                                         }
@@ -294,13 +296,13 @@ const PersonDraftForm = ({
                         ? "Add and invite"
                         : "Add person";
                     return (
-                      <Button type="submit" disabled={busy}>
+                      <Button type="submit" disabled={disabled}>
                         {busy ? "Saving…" : label}
                       </Button>
                     );
                   }}
                 </form.Subscribe>
-                <Button variant="link" disabled={busy} onClick={cancel}>
+                <Button variant="link" disabled={disabled} onClick={cancel}>
                   Cancel
                 </Button>
               </div>
@@ -309,7 +311,7 @@ const PersonDraftForm = ({
           <AddedPeople
             roster={roster}
             organizer={organizer}
-            busy={busy || managing}
+            busy={disabled}
             onAction={(kind, person) =>
               onAction(
                 kind,
@@ -320,7 +322,7 @@ const PersonDraftForm = ({
           />
         </form.Frame>
       </form.AppForm>
-      <RosterManagementOverlay />
+      {overlay}
     </SetupFrame>
   );
 };
@@ -538,9 +540,10 @@ export const AddPersonPage = () => {
       roster={roster.data}
       organizer={setup.isFamilyOrganizer(checkpoint.organizationId)}
       rosterError={roster.isError}
-      busy={busy || manage.isPending || checkpoint.stage === "person-manage"}
-      managing={checkpoint.stage === "person-manage"}
-      error={Boolean(pause.error || cancel.error || manage.error)}
+      busy={busy}
+      disabled={busy || manage.managing}
+      overlay={<RosterManagementOverlay management={manage} />}
+      error={Boolean(pause.error || cancel.error)}
       submit={async (command) => {
         await save
           .mutateAsync({
@@ -559,7 +562,7 @@ export const AddPersonPage = () => {
       }}
       cancel={() => cancel.mutate()}
       onAction={(kind, person, draft) => {
-        manage.mutate({
+        manage.begin({
           kind,
           person,
           returnTo: { draft, stage: "person-draft" },

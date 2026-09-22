@@ -8,14 +8,12 @@ import type {
   HouseholdPeopleRoster,
   HouseholdPerson,
   SetupCheckpoint,
-  SetupRosterActionDraft,
   SetupRosterReturn,
 } from "@meal-planner/household-api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
 import { Schema } from "effect";
 import { MoreHorizontalIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useAppForm } from "../../components/forms/form.js";
 import { Button } from "../../components/ui/button.js";
@@ -43,12 +41,30 @@ import { InvitationEmailInput, PersonNameInput } from "./people-input.js";
 import { useSetup } from "./setup-context.js";
 import { SetupError } from "./setup-ui.js";
 
-type ManagementCheckpoint = Extract<
-  SetupCheckpoint,
-  { stage: "person-manage" }
->;
-type RosterAction = SetupRosterActionDraft["kind"];
-type RosterIntent = SetupRosterActionDraft | SetupRosterCommand;
+type PendingCheckpoint = Extract<SetupCheckpoint, { stage: "person-manage" }>;
+type RosterActionDraft =
+  | {
+      readonly kind: "invite";
+      readonly email: string;
+      readonly person: HouseholdPerson;
+    }
+  | {
+      readonly kind: "rename";
+      readonly name: string;
+      readonly person: HouseholdPerson;
+    }
+  | { readonly kind: "remove"; readonly person: HouseholdPerson };
+export type RosterAction = RosterActionDraft["kind"];
+type RosterIntent = RosterActionDraft | SetupRosterCommand;
+type ManagementCheckpoint = Omit<PendingCheckpoint, "state"> & {
+  readonly state:
+    | { readonly action: RosterActionDraft; readonly phase: "draft" }
+    | PendingCheckpoint["state"];
+};
+interface Presentation {
+  readonly checkpoint: ManagementCheckpoint;
+  readonly open: boolean;
+}
 
 const emailValidator = Schema.toStandardSchemaV1(InvitationEmailInput);
 const nameValidator = Schema.toStandardSchemaV1(PersonNameInput);
@@ -56,7 +72,7 @@ const nameValidator = Schema.toStandardSchemaV1(PersonNameInput);
 const makeDraftAction = (
   kind: RosterAction,
   person: HouseholdPerson
-): SetupRosterActionDraft => {
+): RosterActionDraft => {
   if (kind === "invite") {
     return { email: "", kind, person };
   }
@@ -66,7 +82,7 @@ const makeDraftAction = (
   return { kind, person };
 };
 
-const commandDraft = (command: SetupRosterCommand): SetupRosterActionDraft => {
+const commandDraft = (command: SetupRosterCommand): RosterActionDraft => {
   if (command.kind === "invite") {
     return { email: command.email, kind: "invite", person: command.person };
   }
@@ -77,7 +93,7 @@ const commandDraft = (command: SetupRosterCommand): SetupRosterActionDraft => {
 };
 
 const commandFromForm = (
-  action: SetupRosterActionDraft,
+  action: RosterActionDraft,
   value: { readonly email: string; readonly name: string }
 ): SetupRosterCommand => {
   const mutationId = crypto.randomUUID();
@@ -364,97 +380,178 @@ export const RosterActions = ({
 
 export const useRosterManagement = () => {
   const setup = useSetup();
-  const open = useMutation({
-    mutationFn: async ({
-      kind,
-      person,
-      returnTo,
-    }: {
-      kind: RosterAction;
-      person: HouseholdPerson;
-      returnTo: SetupRosterReturn;
-    }) => {
-      const { checkpoint } = setup.progress;
-      if (!("organizationId" in checkpoint)) {
-        throw new Error("A family is required.");
-      }
-      const action = makeDraftAction(kind, person);
-      await setup.save({
-        checkpoint: {
-          organizationId: checkpoint.organizationId,
-          returnTo,
-          stage: "person-manage",
-          state: { action, phase: "draft" },
-        },
-        status: "active",
-      });
-    },
-  });
-  return open;
-};
-
-const useManagementMutations = (checkpoint: ManagementCheckpoint) => {
-  const setup = useSetup();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const destination =
-    checkpoint.returnTo.stage === "person-draft"
-      ? ("/setup/people" as const)
-      : ("/setup/review" as const);
-  const close = useMutation({
-    mutationFn: async () => {
-      await setup.save({
-        checkpoint: {
-          ...checkpoint.returnTo,
-          organizationId: checkpoint.organizationId,
-        },
-        status: "active",
-      });
-      await navigate({ to: destination });
-    },
+  const submitting = useRef(false);
+  const savedPending =
+    setup.progress.checkpoint.stage === "person-manage"
+      ? setup.progress.checkpoint
+      : null;
+  const [observedPendingId, setObservedPendingId] = useState(
+    savedPending?.state.command.mutationId ?? null
+  );
+  const [presentation, setPresentation] = useState<Presentation | null>(() => {
+    const { checkpoint } = setup.progress;
+    return checkpoint.stage === "person-manage"
+      ? { checkpoint, open: true }
+      : null;
   });
+  const savedPendingId = savedPending?.state.command.mutationId ?? null;
+  const latestSavedPendingId = useRef(savedPendingId);
+  useLayoutEffect(() => {
+    latestSavedPendingId.current = savedPendingId;
+  }, [savedPendingId]);
+  if (savedPendingId !== observedPendingId) {
+    setObservedPendingId(savedPendingId);
+    // An account refresh can reveal a request submitted from another page or tab.
+    if (
+      savedPending &&
+      (!presentation?.open || presentation.checkpoint.state.phase === "draft")
+    ) {
+      setPresentation({ checkpoint: savedPending, open: true });
+    }
+  }
+  const conflictingRequest =
+    savedPending !== null &&
+    presentation?.open === true &&
+    presentation.checkpoint.state.phase === "pending" &&
+    savedPending.state.command.mutationId !==
+      presentation.checkpoint.state.command.mutationId;
   const mutation = useMutation({
-    mutationFn: async (command: SetupRosterCommand) => {
-      const pending: ManagementCheckpoint = {
-        ...checkpoint,
-        state: { command, phase: "pending" },
+    mutationFn: async (pending: PendingCheckpoint) => {
+      const { command } = pending.state;
+      const returnCheckpoint = {
+        ...pending.returnTo,
+        organizationId: pending.organizationId,
+      };
+      const saveReturnCheckpoint = async () => {
+        const currentId = latestSavedPendingId.current;
+        if (currentId !== null && currentId !== command.mutationId) {
+          throw new Error(
+            "Another setup request must finish before this request can be cleared."
+          );
+        }
+        await setup.save({ checkpoint: returnCheckpoint, status: "active" });
       };
       await setup.save({ checkpoint: pending, status: "active" });
-      await setup.selectFamily(checkpoint.organizationId);
-      const people = setup.peopleForFamily(checkpoint.organizationId);
+      await setup.selectFamily(pending.organizationId);
+      const people = setup.peopleForFamily(pending.organizationId);
       try {
         await runRosterCommand(command, people);
       } catch (error) {
         if (error instanceof Error && terminalFailure(error)) {
-          const draft = commandDraft(command);
-          await setup.save({
-            checkpoint: {
-              ...checkpoint,
-              state: { action: draft, phase: "draft" },
-            },
-            status: "active",
-          });
+          await saveReturnCheckpoint();
           await queryClient.invalidateQueries({
-            queryKey: ["setup-roster", checkpoint.organizationId],
+            queryKey: ["setup-roster", pending.organizationId],
+          });
+          setPresentation({
+            checkpoint: {
+              ...pending,
+              state: { action: commandDraft(command), phase: "draft" },
+            },
+            open: true,
           });
         }
         throw error;
       }
       await queryClient.invalidateQueries({
-        queryKey: ["setup-roster", checkpoint.organizationId],
+        queryKey: ["setup-roster", pending.organizationId],
       });
-      await setup.save({
-        checkpoint: {
-          ...checkpoint.returnTo,
-          organizationId: checkpoint.organizationId,
-        },
-        status: "active",
-      });
-      await navigate({ to: destination });
+      await saveReturnCheckpoint();
+      setPresentation({ checkpoint: pending, open: false });
     },
   });
-  return { close, mutation };
+  const submit = async (command: SetupRosterCommand) => {
+    if (!presentation?.open || submitting.current) {
+      return;
+    }
+    const { checkpoint } = presentation;
+    if (
+      savedPending &&
+      (checkpoint.state.phase !== "pending" ||
+        checkpoint.state.command.mutationId !==
+          savedPending.state.command.mutationId)
+    ) {
+      return;
+    }
+    const pending: PendingCheckpoint = {
+      ...checkpoint,
+      state: {
+        command:
+          checkpoint.state.phase === "pending"
+            ? checkpoint.state.command
+            : command,
+        phase: "pending",
+      },
+    };
+    submitting.current = true;
+    // Retain the exact request before the checkpoint write can fail or lose its response.
+    setPresentation({ checkpoint: pending, open: true });
+    try {
+      await mutation.mutateAsync(pending);
+    } catch {
+      // The retained command owns uncertain checkpoint and operation outcomes.
+    } finally {
+      submitting.current = false;
+    }
+  };
+  return {
+    begin: ({
+      kind,
+      person,
+      returnTo,
+    }: {
+      readonly kind: RosterAction;
+      readonly person: HouseholdPerson;
+      readonly returnTo: SetupRosterReturn;
+    }) => {
+      if (presentation !== null || submitting.current) {
+        return;
+      }
+      const { checkpoint } = setup.progress;
+      if (checkpoint.stage === "person-manage") {
+        return;
+      }
+      if (!("organizationId" in checkpoint)) {
+        throw new Error("A family is required.");
+      }
+      mutation.reset();
+      setPresentation({
+        checkpoint: {
+          organizationId: checkpoint.organizationId,
+          returnTo,
+          stage: "person-manage",
+          state: { action: makeDraftAction(kind, person), phase: "draft" },
+        },
+        open: true,
+      });
+    },
+    busy: mutation.isPending,
+    close: () => {
+      if (
+        !presentation ||
+        submitting.current ||
+        presentation.checkpoint.state.phase === "pending"
+      ) {
+        return;
+      }
+      setPresentation({ ...presentation, open: false });
+    },
+    conflictingRequest,
+    error:
+      presentation?.checkpoint.state.phase === "pending" &&
+      mutation.variables?.state.command.mutationId !==
+        presentation.checkpoint.state.command.mutationId
+        ? null
+        : mutation.error,
+    finishExit: () => {
+      setPresentation((current) => (current?.open ? current : null));
+    },
+    managing: presentation !== null,
+    presentation,
+    submit,
+  };
 };
+type RosterManagement = ReturnType<typeof useRosterManagement>;
 
 const PendingResultNotice = ({
   pending,
@@ -478,15 +575,17 @@ const RosterManagementDialog = ({
   checkpoint,
   open,
   onExited,
+  management,
 }: {
+  readonly management: RosterManagement;
   readonly checkpoint: ManagementCheckpoint;
   readonly open: boolean;
   readonly onExited: () => void;
 }) => {
   const { state } = checkpoint;
   const action = state.phase === "draft" ? state.action : state.command;
+  const { busy, close, error, submit } = management;
   const formElement = useRef<HTMLFormElement>(null);
-  const { close, mutation } = useManagementMutations(checkpoint);
   const form = useAppForm({
     defaultValues: {
       email: action.kind === "invite" ? action.email : "",
@@ -497,17 +596,25 @@ const RosterManagementDialog = ({
         return;
       }
       const command = commandFromForm(state.action, value);
-      await mutation.mutateAsync(command).catch(() => {
-        // The persisted command owns uncertain results.
-      });
+      await submit(command);
     },
   });
-  const busy = !open || close.isPending || mutation.isPending;
+  const pendingCommand = state.phase === "pending" ? state.command : null;
+  useEffect(() => {
+    if (pendingCommand) {
+      form.reset({
+        email: pendingCommand.kind === "invite" ? pendingCommand.email : "",
+        name: pendingCommand.kind === "rename" ? pendingCommand.name : "",
+      });
+    }
+  }, [form, pendingCommand]);
+  const disabled = !open || busy;
   const pending = state.phase === "pending";
   const reviewRequired =
-    mutation.error !== null &&
-    terminalFailure(mutation.error) &&
-    householdPeopleFailureCode(mutation.error) !== "invitation_rejected";
+    !pending &&
+    error !== null &&
+    terminalFailure(error) &&
+    householdPeopleFailureCode(error) !== "invitation_rejected";
   return (
     <Overlay.Root
       open={open}
@@ -519,7 +626,7 @@ const RosterManagementDialog = ({
         if (busy || pending) {
           return;
         }
-        close.mutate();
+        close();
       }}
       desktop="dialog"
       dialogProps={{
@@ -537,7 +644,10 @@ const RosterManagementDialog = ({
         },
       }}
     >
-      <Overlay.Content data-theme="auth" showCloseButton={!pending && !busy}>
+      <Overlay.Content
+        data-theme="auth"
+        showCloseButton={!pending && !disabled}
+      >
         <Overlay.Header>
           <Overlay.Title>{actionTitle(action)}</Overlay.Title>
           <Overlay.Description>{actionDescription(action)}</Overlay.Description>
@@ -576,7 +686,7 @@ const RosterManagementDialog = ({
                         type="email"
                         maxLength={254}
                         autoComplete="off"
-                        disabled={busy || pending}
+                        disabled={disabled || pending}
                       />
                     )}
                   </form.AppField>
@@ -595,7 +705,7 @@ const RosterManagementDialog = ({
                         label="Name"
                         maxLength={80}
                         autoComplete="off"
-                        disabled={busy || pending}
+                        disabled={disabled || pending}
                       />
                     )}
                   </form.AppField>
@@ -603,17 +713,19 @@ const RosterManagementDialog = ({
               </FieldGroup>
             </form>
           </form.AppForm>
-          <PendingResultNotice pending={pending} busy={busy} />
-          {mutation.error && (
-            <SetupError>{failureMessage(mutation.error)}</SetupError>
-          )}
-          {close.error && (
-            <SetupError>We couldn’t save your place. Try again.</SetupError>
+          <PendingResultNotice pending={pending && open} busy={busy} />
+          {management.conflictingRequest ? (
+            <SetupError>
+              Another setup request is pending. Finish it in the other tab, then
+              retry this request.
+            </SetupError>
+          ) : (
+            error && <SetupError>{failureMessage(error)}</SetupError>
           )}
         </Overlay.Body>
         <Overlay.Footer>
           {reviewRequired ? (
-            <Button size="xl" disabled={busy} onClick={() => close.mutate()}>
+            <Button size="xl" disabled={disabled} onClick={() => close()}>
               Review family
             </Button>
           ) : (
@@ -622,12 +734,12 @@ const RosterManagementDialog = ({
               form="roster-management-form"
               variant={action.kind === "remove" ? "destructive" : "default"}
               size="xl"
-              disabled={busy}
+              disabled={disabled || management.conflictingRequest}
               onClick={
                 pending
-                  ? (event) => {
+                  ? async (event) => {
                       event.preventDefault();
-                      mutation.mutate(state.command);
+                      await submit(state.command);
                     }
                   : undefined
               }
@@ -637,8 +749,8 @@ const RosterManagementDialog = ({
           )}
           <Button
             variant="link"
-            disabled={busy || pending}
-            onClick={() => close.mutate()}
+            disabled={disabled || pending}
+            onClick={() => close()}
           >
             Cancel
           </Button>
@@ -648,30 +760,28 @@ const RosterManagementDialog = ({
   );
 };
 
-export const RosterManagementOverlay = () => {
-  const { checkpoint } = useSetup().progress;
-  const active = checkpoint.stage === "person-manage" ? checkpoint : null;
-  const [snapshot, setSnapshot] = useState<ManagementCheckpoint | null>(active);
-  useEffect(() => {
-    if (active) {
-      setSnapshot(active);
-    }
-  }, [active]);
-  const presented = active ?? snapshot;
-  if (!presented) {
+export const RosterManagementOverlay = ({
+  management,
+}: {
+  readonly management: RosterManagement;
+}) => {
+  const { presentation } = management;
+  if (!presentation) {
     return null;
   }
+  const { checkpoint, open } = presentation;
   const action =
-    presented.state.phase === "draft"
-      ? presented.state.action
-      : presented.state.command;
+    checkpoint.state.phase === "draft"
+      ? checkpoint.state.action
+      : checkpoint.state.command;
   return (
     <RosterManagementDialog
       key={`${action.kind}-${action.person.id}`}
-      checkpoint={presented}
-      open={active !== null}
+      checkpoint={checkpoint}
+      management={management}
+      open={open}
       onExited={() => {
-        setSnapshot(null);
+        management.finishExit();
         restoreRosterFocus(action.person.id);
       }}
     />
