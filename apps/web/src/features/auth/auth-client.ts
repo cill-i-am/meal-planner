@@ -19,6 +19,15 @@ export const makeAuthClient = (
       headers: expectedUserId ? { "x-meal-planner-user": expectedUserId } : {},
     },
     plugins: [
+      {
+        atomListeners: [
+          {
+            matcher: (path) => path === "/reset-password",
+            signal: "$sessionSignal",
+          },
+        ],
+        id: "recovery-session-refresh",
+      },
       organizationClient(),
       inferAdditionalFields({ user: { setupProgress: setupProgressField } }),
     ],
