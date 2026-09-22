@@ -27,7 +27,7 @@ import type {
   MealPlanTransitionRejected,
   MealPlanVersionConflict,
 } from "@meal-planner/household-api";
-import { Effect, Layer, Schema } from "effect";
+import { Clock, Effect, Layer, Schema } from "effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 
 import type { AuthenticatedOrganizationResolver } from "../auth/auth.principal.js";
@@ -790,6 +790,7 @@ export const makeHouseholdPeopleGateway = (options: {
             )
           )
         );
+        const now = yield* Clock.currentTimeMillis;
         const people = roster.people.map((person) => {
           const binding = pendingInvitations.find(
             (pending) => pending.personId === person.id
@@ -803,8 +804,7 @@ export const makeHouseholdPeopleGateway = (options: {
             !record ||
             person.associationState !== "invitation_pending" ||
             record.status === "accepted" ||
-            (record.status === "pending" &&
-              record.expiresAt.getTime() > Date.now())
+            (record.status === "pending" && record.expiresAt.getTime() > now)
           ) {
             return person;
           }

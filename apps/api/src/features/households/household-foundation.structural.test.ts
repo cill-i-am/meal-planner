@@ -135,7 +135,21 @@ describe("household foundation structural boundaries", () => {
     expect(`${composition}\n${controlPlane}`).not.toContain(
       "getAcceptedInvitationMember"
     );
-    expect(`${composition}\n${controlPlane}`).not.toContain("invitation.email");
+    // Email is valid for checking the organiser's original invitation intent;
+    // acceptance and profile linking must still use authenticated subject proof.
+    const recipientProof = composition
+      .split("export const makeHouseholdInvitationRecipientVerifier =")[1]
+      ?.split("const persistenceFailure")[0];
+    const acceptedLink = composition
+      .split("completeAdultLink: ({ payload, principal }) =>")[1]
+      ?.split("    create:")[0];
+    for (const subjectBoundary of [recipientProof, acceptedLink]) {
+      expect(subjectBoundary).toBeDefined();
+      expect(subjectBoundary).not.toMatch(/\bemail\b/iu);
+    }
+    expect(recipientProof).toContain("input.userId");
+    expect(recipientProof).toContain("deriveHouseholdPersonLinkageSubject");
+    expect(acceptedLink).toContain("memberAdmission(principal)");
   });
 
   it("keeps external I/O outside the atomic admission/outbox repository", async () => {
