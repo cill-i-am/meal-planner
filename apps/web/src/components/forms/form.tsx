@@ -204,7 +204,7 @@ const InviteField = ({
           }}
           onBlur={field.handleBlur}
           disabled={disabled}
-          className="absolute top-4 right-4 size-5"
+          className="absolute top-1/2 right-4 size-5 -translate-y-1/2"
         />
       </Field>
       <CollapsibleContent

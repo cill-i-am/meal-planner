@@ -31,9 +31,9 @@ const CollapsibleContent = ({
   <CollapsiblePrimitive.Panel
     data-slot="collapsible-content"
     className={cn(
-      "[height:var(--collapsible-panel-height)] overflow-hidden data-closed:h-0 data-closed:opacity-0 data-ending-style:h-0 data-ending-style:opacity-0 data-starting-style:h-0 data-starting-style:opacity-0 motion-safe:transition-[height,opacity] motion-safe:duration-[220ms] motion-safe:ease-out data-ending-style:motion-safe:duration-[160ms] motion-reduce:transition-none",
+      "[height:var(--collapsible-panel-height)] overflow-hidden data-ending-style:h-0 data-ending-style:opacity-0 data-starting-style:h-0 data-starting-style:opacity-0 motion-safe:transition-[height,opacity] motion-safe:duration-[220ms] motion-safe:ease-out data-ending-style:motion-safe:duration-[160ms] motion-reduce:transition-none",
       variant === "adult" &&
-        "data-closed:translate-y-1 data-ending-style:translate-y-1 data-open:overflow-visible data-starting-style:translate-y-1 data-starting-style:overflow-hidden motion-safe:transition-[height,opacity,translate]",
+        "data-ending-style:translate-y-1 data-open:overflow-visible data-starting-style:translate-y-1 data-starting-style:overflow-hidden motion-safe:transition-[height,opacity,translate]",
       className
     )}
     {...props}
