@@ -13,7 +13,7 @@ const RootDocument = () => (
     <head>
       <HeadContent />
     </head>
-    <body>
+    <body className="relative">
       <TooltipProvider>
         <Outlet />
       </TooltipProvider>
