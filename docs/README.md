@@ -19,6 +19,7 @@ deployed or passed its quality evaluation.
 | Change the interface's appearance | [Web instructions](../apps/web/AGENTS.md), [Paper design reference](../apps/web/DESIGN.md) |
 | Investigate rendering performance | [Performance examples](reference/react-performance/README.md) |
 | Understand a design choice | [Decision records](decisions/README.md) |
+| Assess a future local-first sync engine | [LiveStore research](research/2026-09-22-livestore-local-first-sync.md) |
 | Write docs, plans or PR descriptions | [Documentation and writing guidelines](reference/documentation.md) |
 
 The [product domain](reference/product-domain.md) defines the planned concepts;
