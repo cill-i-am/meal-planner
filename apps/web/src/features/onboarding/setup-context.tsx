@@ -44,7 +44,7 @@ interface SetupContextValue {
   readonly selectFamily: (
     id: typeof HouseholdOrganizationId.Type
   ) => Promise<void>;
-  readonly logout: () => Promise<void>;
+  readonly logout: (progress?: SetupProgress) => Promise<void>;
 }
 const SetupContext = createContext<SetupContextValue | null>(null);
 export const useSetup = () => {
@@ -141,9 +141,12 @@ export const SetupProvider = ({
     ...family,
     id: Schema.decodeUnknownSync(HouseholdOrganizationId)(family.id),
   }));
-  const save = async (next: SetupProgress) => {
+  const persistProgress = async (next: SetupProgress) => {
     const decoded = Schema.decodeUnknownSync(SetupProgress)(next);
     await requireAuthSuccess(scopedAuth.updateUser({ setupProgress: decoded }));
+  };
+  const save = async (next: SetupProgress) => {
+    await persistProgress(next);
     await session.refetch();
   };
   return (
@@ -157,7 +160,10 @@ export const SetupProvider = ({
           active.data.members.some(
             (member) => member.userId === user.id && member.role === "owner"
           ),
-        logout: async () => {
+        logout: async (next) => {
+          if (next !== undefined) {
+            await persistProgress(next);
+          }
           const redirect = router.state.location.pathname.startsWith(
             "/invitation/"
           )

@@ -84,13 +84,12 @@ export const FamilyReviewPage = () => {
   const { checkpoint } = setup.progress;
   const manage = useRosterManagement();
   const action = useMutation({
-    mutationFn: async (destination: "ready" | "saved" | "people") => {
+    mutationFn: async (destination: "ready" | "logout" | "people") => {
       if (checkpoint.stage !== "family-review") {
         return;
       }
-      if (destination === "saved") {
-        await setup.save({ checkpoint, status: "paused" });
-        await navigate({ to: "/setup/saved" });
+      if (destination === "logout") {
+        await setup.logout({ checkpoint, status: "paused" });
       } else if (destination === "people") {
         await setup.save({
           checkpoint: {
@@ -126,9 +125,11 @@ export const FamilyReviewPage = () => {
         <Button
           variant="link"
           disabled={pendingAction}
-          onClick={() => action.mutate("saved")}
+          onClick={() => action.mutate("logout")}
         >
-          Save & exit
+          {action.isPending && action.variables === "logout"
+            ? "Logging out…"
+            : "Log out"}
         </Button>
       }
     >
@@ -183,7 +184,11 @@ export const FamilyReviewPage = () => {
               </SetupError>
             )}
             {action.error && (
-              <SetupError>We couldn’t save your place. Try again.</SetupError>
+              <SetupError>
+                {action.variables === "logout"
+                  ? "We couldn’t save your place or log you out. Try again."
+                  : "We couldn’t save your place. Try again."}
+              </SetupError>
             )}
             {roster.isError ? (
               <Button
@@ -230,13 +235,12 @@ export const FamilyReadyPage = () => {
       "organizationId" in checkpoint && item.id === checkpoint.organizationId
   );
   const finish = useMutation({
-    mutationFn: async (destination: "discovery" | "later" | "saved") => {
+    mutationFn: async (destination: "discovery" | "later" | "logout") => {
       if (checkpoint.stage !== "ready") {
         return;
       }
-      if (destination === "saved") {
-        await setup.save({ checkpoint, status: "paused" });
-        await navigate({ to: "/setup/saved" });
+      if (destination === "logout") {
+        await setup.logout({ checkpoint, status: "paused" });
         return;
       }
       await setup.selectFamily(checkpoint.organizationId);
@@ -257,7 +261,22 @@ export const FamilyReadyPage = () => {
       <SetupStatus
         title="Your family didn’t load"
         retry={() => roster.refetch()}
-      />
+        action={
+          <Button
+            variant="link"
+            disabled={finish.isPending}
+            onClick={() => finish.mutate("logout")}
+          >
+            {finish.isPending ? "Logging out…" : "Log out"}
+          </Button>
+        }
+      >
+        {finish.error && (
+          <SetupError>
+            We couldn’t save your place or log you out. Try again.
+          </SetupError>
+        )}
+      </SetupStatus>
     );
   }
   return (
@@ -267,9 +286,11 @@ export const FamilyReadyPage = () => {
         <Button
           variant="link"
           disabled={finish.isPending}
-          onClick={() => finish.mutate("saved")}
+          onClick={() => finish.mutate("logout")}
         >
-          Save & exit
+          {finish.isPending && finish.variables === "logout"
+            ? "Logging out…"
+            : "Log out"}
         </Button>
       }
     >
@@ -317,8 +338,8 @@ export const FamilyReadyPage = () => {
             </p>
             {finish.error && (
               <SetupError>
-                {finish.variables === "saved"
-                  ? "We couldn’t save your place. Try again."
+                {finish.variables === "logout"
+                  ? "We couldn’t save your place or log you out. Try again."
                   : "We couldn’t open your workspace. Try again."}
               </SetupError>
             )}

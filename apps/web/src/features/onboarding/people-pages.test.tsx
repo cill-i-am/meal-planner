@@ -92,12 +92,15 @@ const makeTransport = (
   failures: {
     readonly completion?: boolean;
     readonly pending?: boolean;
+    readonly logoutSave?: boolean;
     readonly invitationReply?: Promise<null>;
   } = {}
 ) => {
   let progress = start;
   let completionRejected = false;
   let pendingRejected = false;
+  let signedOut = false;
+  let signOutCalls = 0;
   const saveAttempts: SetupProgress[] = [];
   const removedPeople = new Map<string, HouseholdPerson>();
   let people = [creator, ...added];
@@ -238,6 +241,9 @@ const makeTransport = (
     const request = new Request(input, init);
     const path = new URL(request.url).pathname;
     if (path.endsWith("/get-session")) {
+      if (signedOut) {
+        return Response.json(null);
+      }
       return Response.json({
         session: {
           activeOrganizationId: familyId,
@@ -258,6 +264,12 @@ const makeTransport = (
         Schema.Struct({ setupProgress: SetupProgress })
       )(await request.json());
       saveAttempts.push(body.setupProgress);
+      if (failures.logoutSave && body.setupProgress.status === "paused") {
+        return Response.json(
+          { message: "Could not save before logging out." },
+          { status: 503 }
+        );
+      }
       if (
         failures.pending &&
         !pendingRejected &&
@@ -291,6 +303,11 @@ const makeTransport = (
         { id: familyId, name: "Morgan family", slug: "morgan" },
       ]);
     }
+    if (path.endsWith("/sign-out")) {
+      signOutCalls += 1;
+      signedOut = true;
+      return Response.json({ success: true });
+    }
     if (path.endsWith("/organization/get-full-organization")) {
       return Response.json({
         id: familyId,
@@ -320,6 +337,9 @@ const makeTransport = (
     renames,
     saveAttempts,
     saves,
+    get signOutCalls() {
+      return signOutCalls;
+    },
     transport,
   };
 };
@@ -361,6 +381,11 @@ const setup = async (
         ),
         getParentRoute: () => root,
         path: "/setup/review",
+      }),
+      createRoute({
+        component: () => <h1>Log in</h1>,
+        getParentRoute: () => root,
+        path: "/login",
       }),
       createRoute({
         component: () => <h1>Setup home</h1>,
@@ -748,7 +773,7 @@ it("retains an uncertain removal across reload and retries the exact request", a
     screen.queryByRole("button", { name: "Close" })
   ).not.toBeInTheDocument();
   expect(
-    screen.queryByRole("button", { name: "Save & exit" })
+    screen.queryByRole("button", { name: "Log out" })
   ).not.toBeInTheDocument();
   expect(fixture.saves.at(-1)).toMatchObject({
     checkpoint: {
@@ -1100,7 +1125,7 @@ it("clears invite consent and invalid email across Adult, Child, Adult changes",
   expect(fixture.invitations).toHaveLength(0);
 });
 
-it("preserves an opted-in invitation email through Save & exit and resume", async () => {
+it("saves an opted-in invitation email before logging out", async () => {
   const { fixture, user } = await setup();
   await user.type(screen.getByLabelText("Name"), "Jamie");
   await user.click(
@@ -1109,8 +1134,8 @@ it("preserves an opted-in invitation email through Save & exit and resume", asyn
   fireEvent.change(screen.getByRole("textbox", { name: "Email" }), {
     target: { value: "jamie@example.test" },
   });
-  await user.click(screen.getByRole("button", { name: "Save & exit" }));
-  await screen.findByRole("heading", { name: "Setup saved" });
+  await user.click(screen.getByRole("button", { name: "Log out" }));
+  await screen.findByRole("heading", { name: "Log in" });
   expect(fixture.saves.at(-1)).toMatchObject({
     checkpoint: {
       draft: {
@@ -1122,13 +1147,22 @@ it("preserves an opted-in invitation email through Save & exit and resume", asyn
     },
     status: "paused",
   });
-  await user.click(screen.getByRole("button", { name: "Resume setup" }));
-  expect(
-    await screen.findByRole("checkbox", { name: "Invite them to join" })
-  ).toBeChecked();
-  expect(screen.getByRole("textbox", { name: "Email" })).toHaveValue(
-    "jamie@example.test"
+  expect(fixture.signOutCalls).toBe(1);
+});
+
+it("keeps the draft and session when saving before logout fails", async () => {
+  const fixture = makeTransport(initial, [], false, "owner", false, {
+    logoutSave: true,
+  });
+  const { user } = await setup(fixture);
+  await user.type(screen.getByLabelText("Name"), "Jamie");
+  await user.click(screen.getByRole("button", { name: "Log out" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "couldn’t save your place or log you out"
   );
+  expect(screen.getByLabelText("Name")).toHaveValue("Jamie");
+  expect(fixture.signOutCalls).toBe(0);
+  expect(fixture.saves).toHaveLength(0);
 });
 
 it("restores an opted-in invitation email after loading a saved setup afresh", async () => {

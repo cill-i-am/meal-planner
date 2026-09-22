@@ -90,14 +90,16 @@ export const SetupStatus = ({
   retry,
   children,
   footer,
+  action,
 }: {
   readonly title: string;
   readonly description?: string;
   readonly retry?: () => Promise<unknown>;
   readonly children?: ReactNode;
   readonly footer?: ReactNode;
+  readonly action?: ReactNode;
 }) => (
-  <AuthLayout>
+  <AuthLayout headerAction={action}>
     <Card className="w-full max-w-140">
       <CardBody>
         <CardHeader>

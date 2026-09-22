@@ -1,9 +1,9 @@
 # Onboarding implementation gaps
 
 Status: active
-Owner: auth route delivery in `codex/paper-auth-screens`; remaining onboarding implementation unassigned
-Delivery: auth screens from live Paper on 21 September 2026; household, people, invitations and configured recovery remain separate
-Updated 2026-09-20 during the Paper review. This is the running implementation checklist; designs are not evidence that the behavior is implemented. The dated design agreements below do not establish completed application work. Reuse agreements already obtained when implementation is assigned.
+Owner: onboarding implementation in the current stacked branches
+Delivery: auth, household, people, invitations and recovery screens are being validated together; email delivery remains mocked
+Updated 2026-09-22 after the Paper consolidation and setup-header change. This is the running implementation checklist; designs are not evidence that the behavior is implemented. The dated design agreements below do not establish completed application work. Reuse agreements already obtained when implementation is assigned.
 
 Design: [Login and household setup in Paper](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0). Error and validation specification: [onboarding-error-contract.md](../../apps/web/.impeccable/onboarding-error-contract.md).
 
@@ -25,7 +25,7 @@ across desktop/mobile changes, animated collapse, reduced motion and no console
 errors. A second review checked pending-request recovery, including a late
 response arriving after another pending command was observed.
 
-The user approved [roster actions and mobile bottom sheets](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-A-0).
+The user approved [roster actions and mobile bottom sheets](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-D-0).
 Use current shadcn Base UI Drawer rather than Vaul, with one shared composition
 for desktop dialogs or side drawers and mobile bottom sheets. Keep native
 nesting, snap-point and keyboard capabilities available. The earlier mobile
@@ -144,7 +144,7 @@ paths are relative to the repository root.
 | G06 · Invitation error transport | `household-people.control-plane.ts` wraps all createInvitation failures as unavailable. | Return safe, useful errors for invalid email, already invited/member, permissions, and limits through the household endpoint. Keep an unknown result distinct from a definite rejection. | Open |
 | G07 · Recovery delivery and completion | Auth config only sets emailAndPassword.enabled; no sendResetPassword. Better Auth currently returns RESET_PASSWORD_DISABLED. | Implement delivery and the request, sent, new-password, completed, and expired-token screens. Keep request confirmation generic and safe. Until delivery works, hide recovery or mark it unavailable. Never claim an email was sent when it was not. | Open |
 | G08 · Household creation recovery | `auth-boundary.tsx` creates a random slug at submit time and has no retained creation command or unknown-outcome reconciliation. | Keep the same creation ID on retry. Check whether the first operation saved before creating another household; do not match by display name alone. A session failure after creation may mean creation succeeded but sign-in did not. | Open |
-| G09 · Session and setup resume | Current auth boundary chooses auth/household surfaces; the proposed wizard and Save & exit behavior are not implemented. | Save an authenticated checkpoint before showing Setup saved. Keep the pending step and exact command ID. On resume, check saved server state. Cover partial invitations, unavailable rosters, and unfinished links. Preserve safe drafts and the intended sign-in/invitation destination. Resolve an active person draft before continuing. Never store passwords or reset tokens in the browser. If checkpoint saving fails, remain on the original screen and show the save error. | Open |
+| G09 · Session and setup resume | Setup screens now put Log out in the header. The action saves the safe draft and exact pending command before signing out; a failed save leaves the session and draft in place. Submitted commands are checkpointed at dispatch. | Finish validating resumption against canonical state for partial invitations, unavailable rosters and unfinished links. Preserve the intended sign-in/invitation destination; never store passwords or reset tokens in setup progress. | Partial |
 | G10 · Creator bootstrap and final linking | Household/person bootstrap and invitation acceptance/person linking cross separate boundaries. | Keep exact mutation IDs and show partial completion. Resume the link rather than create another profile or accept an already-accepted invitation. A one-person household must be able to continue. | Open |
 | G11 · Portions and DOB | Person payload, SQL registry and ProfileFactValue have no DOB, age or serving-factor field. Profile facts currently cover food preferences and hard constraints. PDR-0004 defines half 0.5 / small 0.75 / standard 1 / large 1.25 portions per person and occasion. | Add appetite-based portion defaults in discovery/profile work, with explicit confirmation and meal-specific overrides. Do not infer portions from adult/dependant type. Neither the code nor the accepted decision requires DOB. | Open; outside auth implementation |
 | G12 · shadcn adoption and accessibility | Auth routes now use installed shadcn Button/Input and Field primitives with the Paper theme. Remaining onboarding surfaces still need migration. | Use and theme the actual shadcn components. Preserve keyboard use, focus, linked errors, 44px targets, password visibility, autocomplete, reduced motion, and narrow-screen scrolling. Check these in the browser during implementation. | Partial — auth implemented |
@@ -163,12 +163,12 @@ The [independent design and shadcn review](../../apps/web/.impeccable/onboarding
 
 ## Independent critique round 2 — 20 September 2026
 
-The [second critique](../../apps/web/.impeccable/onboarding-critique-round2-2026-09-20.md) supports the current themed style and sizing. The user approved all five fixes and Save & exit with pending-step resumption. These findings are now addressed in Paper and its reference contract; all G01–G14 gaps were open at that review; see the auth delivery section for subsequent implementation.
+The [second critique](../../apps/web/.impeccable/onboarding-critique-round2-2026-09-20.md) supports the themed style and sizing. At that review, the user approved all five fixes and Save & exit with pending-step resumption. The header action was later changed to Log out with a save before sign-out. All G01–G14 gaps were open at that review; see the later delivery notes for implementation evidence.
 
 - G12 / R2-01: Paper now has a solid ring-colored segment edge. The explicit theme focus rule follows the selected-border rule; a Tailwind 4.3.3 compile confirmed this cascade ordering.
 - G02/G12 / R2-02–03: removed branch-specific help from the empty choice in both sizes. The theme now defines the group invalid modifier; the labelled group, linked FieldError and focus behavior are specified in [onboarding-transitions.md](../../apps/web/.impeccable/onboarding-transitions.md).
 - G07 / R2-04: added paired check-email, ordinary new-password and password-updated screens and their destinations. Recovery remains proposed until delivery exists; Get help remains removed.
-- G09/G10 / R2-05: all three exceptional states now offer Save & exit in both sizes. A shared Setup saved state names the pending step and offers Resume setup / Log out. The transition contract requires a durable checkpoint and reconciliation of the original operation.
+- G09/G10 / R2-05: the earlier Paper states offered Save & exit and a Setup saved destination. The current header offers Log out, which saves the draft and exact pending command before signing out. Resume still requires reconciliation of the original operation.
 - Minor affordance: Create an account uses the blue link treatment throughout the login states.
 
 ## Evidence anchors
@@ -372,7 +372,7 @@ Changing person type clears invitation consent. The family list labels unlinked
 adults as “Adult · No account” and offers an invitation later.
 
 Paper's People screens and validation states include the new choice and matching
-desktop/mobile states. Save & exit retains the draft and invitation choice;
+desktop/mobile states. Log out retains the draft and invitation choice;
 pending creation/invitation commands keep their existing recovery behavior.
 
 Validation: 191 web tests and 29 household-contract tests pass, along with web
