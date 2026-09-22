@@ -369,7 +369,7 @@ The add-person form separates Adult / Child from account access. Adults can be
 added without an email or account; an unchecked invitation choice reveals the
 email field only when selected. Children have managed preferences and no account.
 Changing person type clears invitation consent. The family list labels unlinked
-adults as “Adult · No account” and offers an invitation later.
+adults as “Adult” and offers “Invite to join” as a separate action later.
 
 Paper's People screens and validation states include the new choice and matching
 desktop/mobile states. Log out retains the draft and invitation choice;

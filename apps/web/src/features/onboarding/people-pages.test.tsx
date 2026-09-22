@@ -483,7 +483,7 @@ it("invites an existing adult without creating a second person and restores the 
   const fixture = makeTransport(initial, [managedAdult]);
   const { user } = await setup(fixture);
   await user.type(screen.getByLabelText("Name"), "Taylor");
-  await user.click(screen.getByRole("button", { name: "Invite" }));
+  await user.click(screen.getByRole("button", { name: "Invite to join" }));
   expect(
     await screen.findByRole("heading", { name: "Invite Jamie" })
   ).toBeInTheDocument();
@@ -525,7 +525,7 @@ it("invites an existing adult without creating a second person and restores the 
 it("explains a rejected invitation without claiming success or creating another person", async () => {
   const fixture = makeTransport(initial, [managedAdult], false, "owner", true);
   const { user } = await setup(fixture);
-  await user.click(screen.getByRole("button", { name: "Invite" }));
+  await user.click(screen.getByRole("button", { name: "Invite to join" }));
   await user.type(
     await screen.findByRole("textbox", { name: "Email" }),
     "jamie@example.test"
@@ -644,7 +644,7 @@ it("retains the submitted command when its checkpoint write fails and dispatches
     { pending: true }
   );
   const { user } = await setup(fixture);
-  await user.click(screen.getByRole("button", { name: "Invite" }));
+  await user.click(screen.getByRole("button", { name: "Invite to join" }));
   await user.type(
     screen.getByRole("textbox", { name: "Email" }),
     "jamie@example.test"
@@ -735,7 +735,7 @@ it("shows members only their own edit action", async () => {
     "/setup/review"
   );
   expect(
-    screen.queryByRole("button", { name: "Invite" })
+    screen.queryByRole("button", { name: "Invite to join" })
   ).not.toBeInTheDocument();
   expect(
     screen.queryByRole("button", { name: "Manage Jamie" })
@@ -806,7 +806,7 @@ it("replaces an unsubmitted local draft with a pending request received on sessi
   });
   const fixture = makeTransport(review, [managedAdult]);
   const { auth, user } = await setup(fixture, "/setup/review");
-  await user.click(screen.getByRole("button", { name: "Invite" }));
+  await user.click(screen.getByRole("button", { name: "Invite to join" }));
   await user.type(
     screen.getByRole("textbox", { name: "Email" }),
     "local-draft@example.test"
@@ -853,7 +853,7 @@ it("replaces an unsubmitted local draft with a pending request received on sessi
 it("preserves the editable roster form while switching between desktop dialog and mobile drawer", async () => {
   const fixture = makeTransport(initial, [managedAdult]);
   const { user } = await setup(fixture);
-  await user.click(screen.getByRole("button", { name: "Invite" }));
+  await user.click(screen.getByRole("button", { name: "Invite to join" }));
   await user.type(screen.getByRole("textbox", { name: "Email" }), "jamie@");
   await act(async () => {
     setMobileViewport(true);
@@ -881,7 +881,7 @@ it("keeps a locally retained request when another tab saves a different pending 
     pending: true,
   });
   const { auth, user } = await setup(fixture, "/setup/review");
-  await user.click(screen.getByRole("button", { name: "Invite" }));
+  await user.click(screen.getByRole("button", { name: "Invite to join" }));
   await user.type(
     screen.getByRole("textbox", { name: "Email" }),
     "jamie@example.test"
@@ -950,7 +950,7 @@ it.each(["success", "rejected"] as const)(
       { invitationReply: invitationReply.promise }
     );
     const { auth, user } = await setup(fixture, "/setup/review");
-    await user.click(screen.getByRole("button", { name: "Invite" }));
+    await user.click(screen.getByRole("button", { name: "Invite to join" }));
     await user.type(
       screen.getByRole("textbox", { name: "Email" }),
       "jamie@example.test"

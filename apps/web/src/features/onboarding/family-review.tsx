@@ -58,7 +58,7 @@ const personStatus = (person: HouseholdPerson): string => {
   if (person.associationState === "invitation_pending") {
     return "Invitation pending";
   }
-  return "Adult · No account";
+  return "Adult";
 };
 
 export const PersonRow = ({ person }: { readonly person: HouseholdPerson }) => (
