@@ -19,6 +19,7 @@ import {
   MealPlanSwapRejected,
   MealPlanVersionConflict,
   SwapMealPlanPayload,
+  UserId,
 } from "@meal-planner/household-api";
 import { Effect, Layer, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
@@ -44,6 +45,9 @@ import {
 const organizationId = Schema.decodeUnknownSync(HouseholdOrganizationId)(
   "organization-a"
 );
+const authenticatedUserId =
+  Schema.decodeUnknownSync(UserId)("authenticated-user");
+const betterAuthUserA = Schema.decodeUnknownSync(UserId)("better-auth-user-a");
 const householdStatus = Schema.decodeUnknownSync(HouseholdStatus)({
   createdAtEpochMs: 1_777_777_777_777,
   organizationId,
@@ -186,7 +190,7 @@ describe("household HttpApi boundary", () => {
           Effect.succeed({
             membershipRole: "owner",
             organizationId,
-            userId: "authenticated-user",
+            userId: authenticatedUserId,
           }),
       }),
     });
@@ -268,7 +272,7 @@ describe("household people identity and owner boundary", () => {
     readonly gateway: HouseholdPeopleGateway;
     readonly membershipRole: string;
     readonly admittedOrganizationId?: typeof organizationId;
-    readonly userId?: string;
+    readonly userId?: typeof UserId.Type;
   }) => {
     const requestServices = Layer.mergeAll(
       Layer.succeed(
@@ -278,7 +282,7 @@ describe("household people identity and owner boundary", () => {
             Effect.succeed({
               membershipRole: options.membershipRole,
               organizationId: options.admittedOrganizationId ?? organizationId,
-              userId: options.userId ?? "better-auth-user-a",
+              userId: options.userId ?? betterAuthUserA,
             }),
         })
       ),
@@ -305,22 +309,22 @@ describe("household people identity and owner boundary", () => {
       {
         admittedOrganizationId: organizationId,
         membershipRole: "owner",
-        userId: "better-auth-user-a",
+        userId: betterAuthUserA,
       },
       {
         admittedOrganizationId: organizationId,
         membershipRole: "member",
-        userId: "better-auth-user-a",
+        userId: betterAuthUserA,
       },
       {
         admittedOrganizationId: otherOrganizationId,
         membershipRole: "owner",
-        userId: "better-auth-user-a",
+        userId: betterAuthUserA,
       },
       {
         admittedOrganizationId: organizationId,
         membershipRole: "owner",
-        userId: "better-auth-user-b",
+        userId: Schema.decodeUnknownSync(UserId)("better-auth-user-b"),
       },
     ];
 
@@ -445,7 +449,7 @@ describe("household meal-plan HttpApi boundary", () => {
       Effect.succeed({
         membershipRole: "member",
         organizationId,
-        userId: "authenticated-user",
+        userId: authenticatedUserId,
       }),
   });
 

@@ -1,4 +1,8 @@
-import { SetupProgress, InvitationView } from "@meal-planner/household-api";
+import {
+  SetupProgress,
+  InvitationView,
+  InvitationId,
+} from "@meal-planner/household-api";
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -16,7 +20,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { makeAuthClient } from "../auth/auth-client.js";
 import { completeInvitation, readInvitation } from "./invitation-operations.js";
-import { InvitationPage } from "./invitation-page.js";
+import { InvitationPage, InvitationPageForRoute } from "./invitation-page.js";
 
 vi.mock("./invitation-operations.js", () => ({
   completeInvitation: vi.fn(),
@@ -53,15 +57,13 @@ const checkpoint = {
   returnCheckpoint: original,
   stage: "invitation-response",
 };
+class TestIntersectionObserver {
+  observe = vi.fn();
+  disconnect = vi.fn();
+}
 const setup = async (status: InvitationView["status"]) => {
   vi.stubGlobal("scrollTo", vi.fn());
-  vi.stubGlobal(
-    "IntersectionObserver",
-    class {
-      observe = vi.fn();
-      disconnect = vi.fn();
-    }
-  );
+  vi.stubGlobal("IntersectionObserver", TestIntersectionObserver);
   vi.mocked(readInvitation).mockResolvedValue(
     Schema.decodeUnknownSync(InvitationView)({
       email: "recipient@example.test",
@@ -74,7 +76,13 @@ const setup = async (status: InvitationView["status"]) => {
   );
   const root = createRootRoute({ component: Outlet });
   const route = createRoute({
-    component: () => <InvitationPage invitationId="synthetic-invite" />,
+    component: () => (
+      <InvitationPage
+        invitationId={Schema.decodeUnknownSync(InvitationId)(
+          "synthetic-invite"
+        )}
+      />
+    ),
     getParentRoute: () => root,
     path: "/",
   });
@@ -113,6 +121,16 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
+});
+it("shows the unavailable invitation without loading an invalid route ID", () => {
+  vi.stubGlobal("IntersectionObserver", TestIntersectionObserver);
+  render(<InvitationPageForRoute invitationId="invalid invitation" />);
+  expect(
+    screen.getByRole("heading", {
+      name: "This invitation is no longer available",
+    })
+  ).toBeInTheDocument();
+  expect(readInvitation).not.toHaveBeenCalled();
 });
 it("restores the full previous draft when a saved invitation expires", async () => {
   progress = Schema.decodeUnknownSync(SetupProgress)({

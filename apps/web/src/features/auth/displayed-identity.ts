@@ -1,13 +1,10 @@
-import {
-  HouseholdAuthResourceId,
-  HouseholdOrganizationId,
-} from "@meal-planner/household-api";
+import { HouseholdOrganizationId, UserId } from "@meal-planner/household-api";
 import { Schema } from "effect";
 
 /** The identity this view was rendered for, checked against the live session by the API. */
 export const DisplayedIdentity = Schema.Struct({
   organizationId: HouseholdOrganizationId,
-  userId: HouseholdAuthResourceId,
+  userId: UserId,
 });
 export type DisplayedIdentity = typeof DisplayedIdentity.Type;
 

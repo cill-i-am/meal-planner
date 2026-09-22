@@ -1,5 +1,5 @@
 import {
-  HouseholdAuthResourceId,
+  UserId,
   HouseholdOrganizationId,
   InterviewProfileOutcome,
 } from "@meal-planner/household-api";
@@ -147,9 +147,9 @@ export const handlePrivateInterviewRequest = Effect.fn(
         url.searchParams.has("expectedUserId") ||
         url.searchParams.has("expectedOrganizationId")
       ) {
-        const expectedUserId = yield* Schema.decodeUnknownEffect(
-          HouseholdAuthResourceId
-        )(url.searchParams.get("expectedUserId"));
+        const expectedUserId = yield* Schema.decodeUnknownEffect(UserId)(
+          url.searchParams.get("expectedUserId")
+        );
         const expectedOrganizationId = yield* Schema.decodeUnknownEffect(
           HouseholdOrganizationId
         )(url.searchParams.get("expectedOrganizationId"));

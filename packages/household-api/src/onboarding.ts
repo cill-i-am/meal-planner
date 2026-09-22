@@ -1,15 +1,15 @@
 import { Schema } from "effect";
 
+import { EmailAddress, InvitationId } from "./auth-values.js";
+import { HouseholdOrganizationId } from "./household-principal.js";
 import {
   BootstrapHouseholdCreatorPayload,
-  HouseholdAuthResourceId,
   CreateHouseholdPersonPayload,
   InviteHouseholdAdultPayload,
   HouseholdPersonId,
   HouseholdPersonVersion,
   RenameHouseholdPersonPayload,
   HouseholdPersonMutationId,
-  HouseholdInvitationEmail,
   InvitationRejectionReason,
 } from "./people.js";
 
@@ -32,7 +32,7 @@ export const PersonCreation = Schema.Union([
     }),
   }),
   Schema.Struct({
-    email: HouseholdInvitationEmail,
+    email: EmailAddress,
     invitationMutationId: HouseholdPersonMutationId,
     kind: Schema.Literal("invited"),
     person: Schema.Struct({
@@ -46,7 +46,7 @@ export const FamilySetupCheckpoint = Schema.Union([
   Schema.Struct({
     displayName: FamilyName,
     email: Schema.String.check(Schema.isMaxLength(254)),
-    organizationId: HouseholdAuthResourceId,
+    organizationId: HouseholdOrganizationId,
     personId: HouseholdPersonId,
     reason: Schema.Union([
       InvitationRejectionReason,
@@ -56,30 +56,30 @@ export const FamilySetupCheckpoint = Schema.Union([
   }),
   Schema.Struct({
     draft: PersonDraft,
-    organizationId: HouseholdAuthResourceId,
+    organizationId: HouseholdOrganizationId,
     stage: Schema.Literal("person-draft"),
   }),
   Schema.Struct({
     command: PersonCreation,
-    organizationId: HouseholdAuthResourceId,
+    organizationId: HouseholdOrganizationId,
     stage: Schema.Literal("person-create"),
   }),
   Schema.Struct({
     command: InviteHouseholdAdultPayload,
     displayName: FamilyName,
-    organizationId: HouseholdAuthResourceId,
+    organizationId: HouseholdOrganizationId,
     stage: Schema.Literal("person-invite"),
   }),
   Schema.Struct({
     name: Schema.String.check(Schema.isMaxLength(80)),
-    organizationId: HouseholdAuthResourceId,
+    organizationId: HouseholdOrganizationId,
     personId: HouseholdPersonId,
     stage: Schema.Literal("person-edit"),
     version: HouseholdPersonVersion,
   }),
   Schema.Struct({
     command: RenameHouseholdPersonPayload,
-    organizationId: HouseholdAuthResourceId,
+    organizationId: HouseholdOrganizationId,
     personId: HouseholdPersonId,
     stage: Schema.Literal("person-rename"),
   }),
@@ -94,15 +94,15 @@ export const FamilySetupCheckpoint = Schema.Union([
     stage: Schema.Literal("family-create"),
   }),
   Schema.Struct({
-    organizationId: HouseholdAuthResourceId,
+    organizationId: HouseholdOrganizationId,
     stage: Schema.Literal("family-review"),
   }),
   Schema.Struct({
-    organizationId: HouseholdAuthResourceId,
+    organizationId: HouseholdOrganizationId,
     stage: Schema.Literal("ready"),
   }),
   Schema.Struct({
-    organizationId: HouseholdAuthResourceId,
+    organizationId: HouseholdOrganizationId,
     stage: Schema.Literal("complete"),
   }),
 ]);
@@ -110,16 +110,16 @@ export const SetupCheckpoint = Schema.Union([
   FamilySetupCheckpoint,
   Schema.Struct({
     decision: Schema.Literals(["accept", "decline"]),
-    invitationId: HouseholdAuthResourceId,
+    invitationId: InvitationId,
     linkMutationId: HouseholdPersonMutationId,
-    organizationId: HouseholdAuthResourceId,
+    organizationId: HouseholdOrganizationId,
     returnCheckpoint: FamilySetupCheckpoint,
     stage: Schema.Literal("invitation-response"),
   }),
   Schema.Struct({
-    invitationId: HouseholdAuthResourceId,
+    invitationId: InvitationId,
     linkMutationId: HouseholdPersonMutationId,
-    organizationId: HouseholdAuthResourceId,
+    organizationId: HouseholdOrganizationId,
     returnCheckpoint: FamilySetupCheckpoint,
     stage: Schema.Literal("invitation-link"),
   }),

@@ -1,4 +1,4 @@
-import { HouseholdOrganizationId } from "@meal-planner/household-api";
+import { HouseholdOrganizationId, UserId } from "@meal-planner/household-api";
 import {
   RecipeImportActorId,
   RecipeImportHouseholdScopeId,
@@ -51,9 +51,7 @@ const AuthenticatedOrganization = Schema.Struct({
     Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
   ),
   organizationId: HouseholdOrganizationId,
-  userId: Schema.String.pipe(
-    Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
-  ),
+  userId: UserId,
 });
 export type AuthenticatedOrganization = typeof AuthenticatedOrganization.Type;
 

@@ -1,3 +1,4 @@
+import { InvitationId, UserId } from "@meal-planner/household-api";
 import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthEndpoint, resetPassword } from "better-auth/api";
 import { getOrgAdapter, organization } from "better-auth/plugins/organization";
@@ -7,7 +8,16 @@ import type {
 } from "better-auth/plugins/organization";
 import { Clock, Effect, Schema } from "effect";
 
+import {
+  AcceptInvitationMutation,
+  ResetPasswordMutation,
+} from "./auth-atomic-store.js";
 import type { AuthAtomicStore } from "./auth-atomic-store.js";
+
+const parseAcceptance = Schema.decodeUnknownSync(AcceptInvitationMutation);
+const parseReset = Schema.decodeUnknownSync(ResetPasswordMutation);
+const parseInvitationId = Schema.decodeUnknownSync(InvitationId);
+const parseUserId = Schema.decodeUnknownSync(UserId);
 
 const requiresVerifiedEmail = (
   options: OrganizationOptions,
@@ -97,19 +107,19 @@ export const atomicPasswordResetPlugin = (
             throw invalidToken();
           }
           const passwordHash = await ctx.context.password.hash(newPassword);
-          const accountId = Schema.decodeUnknownSync(Schema.String)(
-            ctx.context.generateId({ model: "account" })
+          const accountId = ctx.context.generateId({ model: "account" });
+          const committed = await store.resetPassword(
+            parseReset({
+              accountId,
+              identifier,
+              // Better Auth 1.7.2's local credential issuer, also used by its canonical schema.
+              issuer: "local:credential",
+              passwordHash,
+              requestPassword: newPassword,
+              userId: user.id,
+              verificationId: verification.id,
+            })
           );
-          const committed = await store.resetPassword({
-            accountId,
-            identifier,
-            // Better Auth 1.7.2's local credential issuer, also used by its canonical schema.
-            issuer: "local:credential",
-            passwordHash,
-            requestPassword: newPassword,
-            userId: user.id,
-            verificationId: verification.id,
-          });
           if (!committed) {
             throw invalidToken();
           }
@@ -187,7 +197,10 @@ export const atomicOrganization = <Options extends OrganizationOptions>(
             invitation.status !== "pending" ||
             invitation.expiresAt.getTime() < now
           ) {
-            await store.reconcileInvitation(invitation.id, session.user.id);
+            await store.reconcileInvitation(
+              parseInvitationId(invitation.id),
+              parseUserId(session.user.id)
+            );
             throw unavailableInvitation();
           }
           // Matches native 1.7.2's default for opaque IDs; custom generation requires verification.
@@ -224,24 +237,22 @@ export const atomicOrganization = <Options extends OrganizationOptions>(
             organization: acceptedOrganization,
             user: session.user,
           });
-          const memberId = Schema.decodeUnknownSync(Schema.String)(
-            ctx.context.generateId({ model: "member" })
-          );
-          const committed = await store.acceptInvitation({
+          const acceptance = parseAcceptance({
             email: session.user.email,
             invitationId: invitation.id,
-            memberId,
+            memberId: ctx.context.generateId({ model: "member" }),
             membershipLimit,
             organizationId: invitation.organizationId,
             sessionToken: session.session.token,
             userId: session.user.id,
           });
+          const committed = await store.acceptInvitation(acceptance);
           if (!committed) {
             throw unavailableInvitation();
           }
           const [acceptedInvitation, member] = await Promise.all([
             adapter.findInvitationById(invitation.id),
-            adapter.findMemberById(memberId),
+            adapter.findMemberById(acceptance.memberId),
           ]);
           if (!acceptedInvitation || !member) {
             throw new Error("Atomic invitation commit is missing its records.");

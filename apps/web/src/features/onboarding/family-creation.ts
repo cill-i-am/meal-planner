@@ -1,5 +1,5 @@
 import type { SetupCheckpoint } from "@meal-planner/household-api";
-import { HouseholdAuthResourceId } from "@meal-planner/household-api";
+import { HouseholdOrganizationId } from "@meal-planner/household-api";
 import { Schema } from "effect";
 
 import { requireAuthSuccess } from "../auth/auth-client.js";
@@ -12,7 +12,7 @@ export const completeFamilyCreation = async (
   command: Creation,
   auth: ReturnType<typeof makeAuthClient>,
   peopleForFamily: (
-    id: string
+    id: typeof HouseholdOrganizationId.Type
   ) => Pick<HouseholdPeopleOperations, "list" | "bootstrapCreator">
 ): Promise<Extract<SetupCheckpoint, { stage: "family-review" }>> => {
   const families = await requireAuthSuccess(auth.organization.list());
@@ -25,16 +25,17 @@ export const completeFamilyCreation = async (
   await requireAuthSuccess(
     auth.organization.setActive({ organizationId: family.id })
   );
-  const people = peopleForFamily(family.id);
+  const organizationId = Schema.decodeUnknownSync(HouseholdOrganizationId)(
+    family.id
+  );
+  const people = peopleForFamily(organizationId);
   const roster = await people.list(false);
   if (roster.currentPersonId === null) {
     // Backend owns creator-slot and mutation-id uniqueness; retry this exact payload.
     await people.bootstrapCreator(command.creator);
   }
   return {
-    organizationId: Schema.decodeUnknownSync(HouseholdAuthResourceId)(
-      family.id
-    ),
+    organizationId,
     stage: "family-review",
   };
 };

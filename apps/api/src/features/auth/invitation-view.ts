@@ -1,21 +1,32 @@
-import { InvitationView } from "@meal-planner/household-api";
+import {
+  EmailAddress,
+  HouseholdOrganizationId,
+  InvitationId,
+  InvitationView,
+  UserId,
+} from "@meal-planner/household-api";
 import type { BetterAuthPlugin } from "better-auth";
 import {
   APIError,
   createAuthEndpoint,
   sessionMiddleware,
 } from "better-auth/api";
-import { Schema } from "effect";
+import { Result, Schema } from "effect";
 
 const StoredInvitation = Schema.Struct({
-  email: Schema.String,
+  email: EmailAddress,
   expiresAt: Schema.Date,
-  id: Schema.String,
-  inviterId: Schema.String,
-  organizationId: Schema.String,
+  id: InvitationId,
+  inviterId: UserId,
+  organizationId: HouseholdOrganizationId,
   status: Schema.Literals(["pending", "accepted", "rejected", "canceled"]),
 });
 const NamedRecord = Schema.Struct({ name: Schema.String });
+const parseInvitationId = Schema.decodeUnknownResult(InvitationId);
+const parseInvitationPathId = Schema.decodeUnknownResult(
+  Schema.StringFromUriComponent.pipe(Schema.decodeTo(InvitationId))
+);
+const parseStoredInvitation = Schema.decodeUnknownResult(StoredInvitation);
 
 /** Better Auth's pending-only read cannot reconcile an accepted or declined response. */
 export const invitationViewPlugin = () =>
@@ -26,9 +37,20 @@ export const invitationViewPlugin = () =>
         { method: "GET", use: [sessionMiddleware] },
         async (ctx) => {
           ctx.setHeader("cache-control", "no-store");
+          // Better Call leaves HTTP route parameters percent-encoded; direct API
+          // callers already supply the underlying identity.
+          const parsedId = ctx.request
+            ? parseInvitationPathId(ctx.params.id)
+            : parseInvitationId(ctx.params.id);
+          if (Result.isFailure(parsedId)) {
+            throw new APIError("BAD_REQUEST", {
+              code: "INVALID_INVITATION_ID",
+              message: "This invitation is unavailable.",
+            });
+          }
           const stored = await ctx.context.adapter.findOne({
             model: "invitation",
-            where: [{ field: "id", value: ctx.params.id }],
+            where: [{ field: "id", value: parsedId.success }],
           });
           if (stored === null) {
             throw new APIError("NOT_FOUND", {
@@ -36,7 +58,14 @@ export const invitationViewPlugin = () =>
               message: "This invitation is unavailable.",
             });
           }
-          const invitation = Schema.decodeUnknownSync(StoredInvitation)(stored);
+          const parsedInvitation = parseStoredInvitation(stored);
+          if (Result.isFailure(parsedInvitation)) {
+            throw new APIError("NOT_FOUND", {
+              code: "INVITATION_NOT_FOUND",
+              message: "This invitation is unavailable.",
+            });
+          }
+          const invitation = parsedInvitation.success;
           if (
             invitation.email.toLowerCase() !==
             ctx.context.session.user.email.toLowerCase()

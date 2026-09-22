@@ -1,4 +1,9 @@
-import { HouseholdOrganizationId } from "@meal-planner/household-api";
+import {
+  EmailAddress,
+  HouseholdOrganizationId,
+  HouseholdPersonId,
+  InvitationId,
+} from "@meal-planner/household-api";
 import { applyD1Migrations, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import type { AnyD1Database } from "drizzle-orm/d1";
@@ -64,6 +69,137 @@ describe("Better Auth D1 control plane", () => {
   beforeEach(async () => {
     // Each scenario has its own request window; rate-limit behavior has a dedicated suite.
     await drizzle(testEnv.MealPlannerAuthDatabase).delete(authSchema.rateLimit);
+  });
+
+  it("enforces the shared email contract on native HTTP and server calls before writes or mail", async () => {
+    const database = drizzle(testEnv.MealPlannerAuthDatabase);
+    const mails: string[] = [];
+    const auth = makeMealPlannerAuth({
+      baseURL,
+      database,
+      outputFence: (_input, canonical) => canonical(),
+      schema: authSchema,
+      secret,
+      sendInvitationEmail: ({ email }) => {
+        mails.push(email);
+        return Promise.resolve();
+      },
+      sendPasswordResetEmail: ({ email }) => {
+        mails.push(email);
+        return Promise.resolve();
+      },
+    });
+    const tooLong = `${"a".repeat(50)}@${Array.from({ length: 5 }, () => "b".repeat(40)).join(".")}.test`;
+    expect(tooLong.length).toBeGreaterThan(254);
+    const invalidEmails = [tooLong, " invalid@example.test "];
+    await Promise.all(
+      invalidEmails.map(async (email) => {
+        const rejected = await auth.fetch(
+          authRequest("/sign-up/email", {
+            email,
+            name: "Invalid mailbox",
+            password: "local-test-password-only",
+          })
+        );
+        expect(rejected.status).toBe(400);
+        await expect(rejected.json()).resolves.toMatchObject({
+          code: "INVALID_EMAIL",
+        });
+        await expect(
+          auth.api.signUpEmail({
+            body: {
+              email,
+              name: "Invalid mailbox",
+              password: "local-test-password-only",
+            },
+          })
+        ).rejects.toMatchObject({
+          body: { code: "INVALID_EMAIL" },
+        });
+        expect(
+          await database
+            .select({ id: authSchema.user.id })
+            .from(authSchema.user)
+            .where(eq(authSchema.user.email, email))
+        ).toEqual([]);
+      })
+    );
+
+    const ownerEmail = "native-email-owner@example.test";
+    const signup = await auth.fetch(
+      authRequest("/sign-up/email", {
+        email: ownerEmail,
+        name: "Native email owner",
+        password: "local-test-password-only",
+      })
+    );
+    expect(signup.status).toBe(200);
+    const cookie = cookieHeader(signup);
+    const invalidSignIn = await auth.fetch(
+      authRequest("/sign-in/email", {
+        email: tooLong,
+        password: "local-test-password-only",
+      })
+    );
+    expect(invalidSignIn.status).toBe(400);
+    const invalidReset = await auth.fetch(
+      authRequest("/request-password-reset", { email: tooLong })
+    );
+    expect(invalidReset.status).toBe(400);
+    expect(mails).toEqual([]);
+
+    const organizationResponse = await auth.fetch(
+      authRequest(
+        "/organization/create",
+        { name: "Native email household", slug: "native-email-household" },
+        cookie
+      )
+    );
+    expect(organizationResponse.status).toBe(200);
+    const organization = Schema.decodeUnknownSync(
+      Schema.Struct({ id: Schema.String })
+    )(await organizationResponse.json());
+    const invitationBody = {
+      email: tooLong,
+      organizationId: organization.id,
+      role: "member" as const,
+    };
+    const invalidInvitation = await auth.fetch(
+      authRequest("/organization/invite-member", invitationBody, cookie)
+    );
+    expect(invalidInvitation.status).toBe(400);
+    await expect(
+      auth.api.createInvitation({
+        body: invitationBody,
+        headers: new Headers({ cookie }),
+      })
+    ).rejects.toMatchObject({
+      body: { code: "INVALID_EMAIL" },
+    });
+    expect(
+      await database
+        .select({ id: authSchema.invitation.id })
+        .from(authSchema.invitation)
+        .where(eq(authSchema.invitation.email, tooLong))
+    ).toEqual([]);
+    expect(mails).toEqual([]);
+
+    const disabledChange = await auth.fetch(
+      authRequest("/change-email", { newEmail: tooLong }, cookie)
+    );
+    expect(disabledChange.status).toBe(400);
+    await expect(disabledChange.json()).resolves.toMatchObject({
+      code: "INVALID_EMAIL",
+    });
+    const validInvitation = await auth.fetch(
+      authRequest(
+        "/organization/invite-member",
+        { ...invitationBody, email: "valid-invitee@example.test" },
+        cookie
+      )
+    );
+    expect(validInvitation.status).toBe(200);
+    expect(mails).toEqual(["valid-invitee@example.test"]);
   });
 
   it("uses real single-use reset tokens with generic confirmation and session revocation", async () => {
@@ -226,6 +362,61 @@ describe("Better Auth D1 control plane", () => {
         familyName: "Synthetic Family",
         status: "pending",
       });
+      if (decision === "accept") {
+        const invalidId = await auth.fetch(
+          new Request(`${baseURL}/api/auth/setup/invitation/invalid%20id`, {
+            headers: { cookie: recipientCookie },
+          })
+        );
+        expect(invalidId.status).toBe(400);
+        await expect(invalidId.json()).resolves.toMatchObject({
+          code: "INVALID_INVITATION_ID",
+        });
+
+        await database
+          .update(authSchema.invitation)
+          .set({ email: "malformed address" })
+          .where(eq(authSchema.invitation.id, invitationId));
+        const malformedStoredEmail = await view(recipientCookie);
+        expect(malformedStoredEmail.status).toBe(404);
+        await expect(malformedStoredEmail.json()).resolves.toMatchObject({
+          code: "INVITATION_NOT_FOUND",
+        });
+        await database
+          .update(authSchema.invitation)
+          .set({ email: `view-recipient-${decision}@example.test` })
+          .where(eq(authSchema.invitation.id, invitationId));
+
+        const malformedInviterId = "malformed inviter id";
+        const now = new Date();
+        await database.insert(authSchema.user).values({
+          createdAt: now,
+          email: "malformed-inviter-fixture@example.test",
+          id: malformedInviterId,
+          name: "Invalid inviter identity fixture",
+          updatedAt: now,
+        });
+        await database
+          .update(authSchema.invitation)
+          .set({ inviterId: malformedInviterId })
+          .where(eq(authSchema.invitation.id, invitationId));
+        const malformedStoredId = await view(recipientCookie);
+        expect(malformedStoredId.status).toBe(404);
+        await expect(malformedStoredId.json()).resolves.toMatchObject({
+          code: "INVITATION_NOT_FOUND",
+        });
+        const [originalInvitation] = await database
+          .select({ inviterId: authSchema.member.userId })
+          .from(authSchema.member)
+          .where(eq(authSchema.member.organizationId, family.id));
+        if (!originalInvitation) {
+          throw new Error("Expected inviter membership");
+        }
+        await database
+          .update(authSchema.invitation)
+          .set({ inviterId: originalInvitation.inviterId })
+          .where(eq(authSchema.invitation.id, invitationId));
+      }
       const [inviterMembership] = await database
         .select()
         .from(authSchema.member)
@@ -428,7 +619,12 @@ describe("Better Auth D1 control plane", () => {
       )
     );
     const organization = (await createOrganization.json()) as { id: string };
-    const invitationId = "invitation-operation-fixed-0001";
+    const invitationId = Schema.decodeUnknownSync(InvitationId)(
+      "invitation-operation-fixed-0001"
+    );
+    const personId = Schema.decodeUnknownSync(HouseholdPersonId)(
+      "person_00000000-0000-4000-8000-000000000001"
+    );
 
     const untrustedResponse = await auth.fetch(
       authRequest(
@@ -450,13 +646,15 @@ describe("Better Auth D1 control plane", () => {
     const controlPlane = makeHouseholdPeopleControlPlane({ auth, database });
     const invitation = await Effect.runPromise(
       controlPlane.createInvitation({
-        email: "retained-invitation-recipient@example.test",
+        email: Schema.decodeUnknownSync(EmailAddress)(
+          "retained-invitation-recipient@example.test"
+        ),
         headers: new Headers({ cookie }),
         invitationId,
         organizationId: Schema.decodeUnknownSync(HouseholdOrganizationId)(
           organization.id
         ),
-        personId: "synthetic-person",
+        personId,
       })
     );
     expect(invitation.id).toBe(invitationId);
@@ -469,13 +667,17 @@ describe("Better Auth D1 control plane", () => {
     const rejected = await Effect.runPromise(
       Effect.flip(
         controlPlane.createInvitation({
-          email: "exact-invitation-owner@example.test",
+          email: Schema.decodeUnknownSync(EmailAddress)(
+            "exact-invitation-owner@example.test"
+          ),
           headers: new Headers({ cookie }),
-          invitationId: "cannot-invite-existing-member",
+          invitationId: Schema.decodeUnknownSync(InvitationId)(
+            "cannot-invite-existing-member"
+          ),
           organizationId: Schema.decodeUnknownSync(HouseholdOrganizationId)(
             organization.id
           ),
-          personId: "synthetic-person",
+          personId,
         })
       )
     );

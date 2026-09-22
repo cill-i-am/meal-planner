@@ -189,6 +189,38 @@ describe("HouseholdPeoplePanel", () => {
     expect(screen.getByLabelText("Email")).toHaveValue("");
   });
 
+  it.each(["person@localhost", "a..b@example.test"])(
+    "keeps an invalid invitation email in the form without sending it: %s",
+    async (email) => {
+      const inviteAdult = vi.fn();
+      const operations: HouseholdPeopleOperations = {
+        archive: vi.fn(),
+        bootstrapCreator: vi.fn(),
+        create: vi.fn(),
+        inviteAdult,
+        list: vi.fn().mockResolvedValue(unlinkedRoster),
+        restore: vi.fn(),
+      };
+      renderPanel(operations);
+      await userEvent.selectOptions(
+        await screen.findByLabelText("Person"),
+        personId
+      );
+      const field = screen.getByLabelText("Email");
+      await userEvent.type(field, email);
+      await userEvent.click(
+        screen.getByRole("button", { name: "Send invitation" })
+      );
+
+      expect(field).toHaveValue(email);
+      expect(field).toHaveAttribute("aria-invalid", "true");
+      expect(screen.getAllByText("Enter a valid email address.")).toHaveLength(
+        1
+      );
+      expect(inviteAdult).not.toHaveBeenCalled();
+    }
+  );
+
   it("confirms self departure before submitting the exact current link", async () => {
     const departAdult = vi.fn().mockResolvedValue({
       canRetry: false,

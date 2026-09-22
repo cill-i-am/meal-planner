@@ -2,8 +2,10 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
+import { UserId } from "@meal-planner/household-api";
 import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
+import { Schema } from "effect";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -15,7 +17,11 @@ import {
 } from "../private-output/private-output-mutation.js";
 import { privateOutputRuntimeWorker } from "../private-output/private-output-runtime.test-fixture.js";
 import { privateOutputKey } from "../private-output/private-output.contract.js";
-import { makeAuthAtomicStore } from "./auth-atomic-store.js";
+import {
+  AcceptInvitationMutation,
+  ResetPasswordMutation,
+  makeAuthAtomicStore,
+} from "./auth-atomic-store.js";
 import * as schema from "./auth.database-schema.js";
 
 let runtime: Miniflare;
@@ -76,7 +82,7 @@ afterAll(async () => {
 });
 
 const fixture = async () => {
-  const userId = crypto.randomUUID();
+  const userId = Schema.decodeUnknownSync(UserId)(crypto.randomUUID());
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 3_600_000);
   await database.insert(schema.user).values({
@@ -173,7 +179,7 @@ const resetFixture = async () => {
     updatedAt: f.now,
     value: f.userId,
   });
-  const input = {
+  const input = Schema.decodeUnknownSync(ResetPasswordMutation)({
     accountId: f.userId,
     identifier,
     issuer: "local:credential",
@@ -181,7 +187,7 @@ const resetFixture = async () => {
     requestPassword: "synthetic-new-password",
     userId: f.userId,
     verificationId,
-  };
+  });
   return {
     ...f,
     input,
@@ -304,7 +310,7 @@ describe("atomic auth against the durable output fence", () => {
       role: "member",
       status: "pending",
     });
-    const input = {
+    const input = Schema.decodeUnknownSync(AcceptInvitationMutation)({
       email: `${f.userId}@example.test`,
       invitationId,
       memberId: crypto.randomUUID(),
@@ -312,7 +318,7 @@ describe("atomic auth against the durable output fence", () => {
       organizationId,
       sessionToken: f.userId,
       userId: f.userId,
-    };
+    });
     const intentKey = await privateOutputKey(
       "auth-invitation-accept",
       JSON.stringify({ invitationId, userId: f.userId })
@@ -344,8 +350,13 @@ describe("atomic auth against the durable output fence", () => {
     await database
       .delete(schema.member)
       .where(eq(schema.member.id, input.memberId));
-    await f.store.reconcileInvitation(invitationId, f.userId);
-    await f.store.acceptInvitation({ ...input, memberId: crypto.randomUUID() });
+    await f.store.reconcileInvitation(input.invitationId, f.userId);
+    await f.store.acceptInvitation(
+      Schema.decodeUnknownSync(AcceptInvitationMutation)({
+        ...input,
+        memberId: crypto.randomUUID(),
+      })
+    );
     expect(await membership()).toEqual([]);
   });
   it("settles a rolled-back reset even after native cleanup removes its token, fencing delayed writes with a terminal receipt", async () => {

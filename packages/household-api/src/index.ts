@@ -124,9 +124,7 @@ export {
   HouseholdPeopleUnavailable,
   HouseholdInvitationDigest,
   HouseholdInvitationRequestDigest,
-  HouseholdInvitationEmail,
   HouseholdPerson,
-  HouseholdAuthResourceId,
   HouseholdPersonAssociationConflict,
   HouseholdPersonAssociationState,
   HouseholdPersonDisplayName,
@@ -151,6 +149,14 @@ export {
   RetryHouseholdAdultDeparturePayload,
   TransitionHouseholdPersonPayload,
 } from "./people.js";
+export {
+  AuthAccountId,
+  AuthVerificationId,
+  EmailAddress,
+  InvitationId,
+  MemberId,
+  UserId,
+} from "./auth-values.js";
 export type { HouseholdPeopleFailure } from "./people.js";
 export {
   HouseholdPeopleBootstrapConflictProblem,

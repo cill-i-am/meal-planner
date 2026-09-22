@@ -2,7 +2,13 @@ import type {
   InvitationRejectionReason,
   HouseholdOrganizationId,
 } from "@meal-planner/household-api";
-import { HouseholdAuthResourceId } from "@meal-planner/household-api";
+import {
+  EmailAddress,
+  HouseholdPersonId,
+  InvitationId,
+  MemberId,
+  UserId,
+} from "@meal-planner/household-api";
 import { isAPIError } from "better-auth/api";
 import { and, eq } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
@@ -34,51 +40,68 @@ const invitationFailure = (code: string | undefined) => {
     : new HouseholdPeopleControlPlaneUnavailable();
 };
 
-export interface HouseholdControlPlaneInvitation {
-  readonly email: string;
-  readonly householdPersonId: string | null;
-  readonly inviterId: string;
-  readonly id: string;
-  readonly status: string;
-}
+const HouseholdControlPlaneInvitationSchema = Schema.Struct({
+  email: EmailAddress,
+  householdPersonId: Schema.NullOr(HouseholdPersonId),
+  id: InvitationId,
+  inviterId: UserId,
+  status: Schema.String,
+});
+export type HouseholdControlPlaneInvitation =
+  typeof HouseholdControlPlaneInvitationSchema.Type;
 
-export interface HouseholdControlPlaneMember {
-  readonly id: string;
-  readonly role: string;
-  readonly userId: string;
-}
+const HouseholdControlPlaneMemberSchema = Schema.Struct({
+  id: MemberId,
+  role: Schema.String,
+  userId: UserId,
+});
+export type HouseholdControlPlaneMember =
+  typeof HouseholdControlPlaneMemberSchema.Type;
+
+const HouseholdControlPlaneInvitationStateSchema = Schema.Struct({
+  expiresAt: Schema.Date,
+  id: InvitationId,
+  status: Schema.String,
+});
+
+const decodeInvitation = Schema.decodeUnknownEffect(
+  HouseholdControlPlaneInvitationSchema
+);
+const decodeMember = Schema.decodeUnknownEffect(
+  HouseholdControlPlaneMemberSchema
+);
+const decodeInvitationStates = Schema.decodeUnknownEffect(
+  Schema.Array(HouseholdControlPlaneInvitationStateSchema)
+);
+const decodeMemberUserIds = Schema.decodeUnknownEffect(Schema.Array(UserId));
 
 export interface HouseholdPeopleControlPlane {
   readonly listInvitationStates: (
     organizationId: HouseholdOrganizationId
   ) => Effect.Effect<
-    readonly {
-      readonly id: string;
-      readonly status: string;
-      readonly expiresAt: Date;
-    }[],
+    readonly (typeof HouseholdControlPlaneInvitationStateSchema.Type)[],
     HouseholdPeopleControlPlaneUnavailable
   >;
 
   readonly createInvitation: (input: {
-    readonly personId: string;
-    readonly email: string;
+    readonly personId: HouseholdPersonId;
+    readonly email: EmailAddress;
     readonly headers: Headers;
-    readonly invitationId: string;
+    readonly invitationId: InvitationId;
     readonly organizationId: HouseholdOrganizationId;
   }) => Effect.Effect<
     HouseholdControlPlaneInvitation,
     HouseholdPeopleControlPlaneUnavailable | HouseholdInvitationRejected
   >;
   readonly getInvitation: (input: {
-    readonly invitationId: string;
+    readonly invitationId: InvitationId;
     readonly organizationId: HouseholdOrganizationId;
   }) => Effect.Effect<
     HouseholdControlPlaneInvitation,
     HouseholdPeopleControlPlaneNotFound | HouseholdPeopleControlPlaneUnavailable
   >;
   readonly getMember: (input: {
-    readonly memberId: string;
+    readonly memberId: MemberId;
     readonly organizationId: HouseholdOrganizationId;
   }) => Effect.Effect<
     HouseholdControlPlaneMember,
@@ -86,10 +109,10 @@ export interface HouseholdPeopleControlPlane {
   >;
   readonly listMemberUserIds: (
     organizationId: HouseholdOrganizationId
-  ) => Effect.Effect<readonly string[], HouseholdPeopleControlPlaneUnavailable>;
+  ) => Effect.Effect<readonly UserId[], HouseholdPeopleControlPlaneUnavailable>;
   readonly removeMember: (input: {
     readonly headers: Headers;
-    readonly memberId: string;
+    readonly memberId: MemberId;
     readonly organizationId: HouseholdOrganizationId;
     readonly self: boolean;
   }) => Effect.Effect<void, HouseholdPeopleControlPlaneUnavailable>;
@@ -103,7 +126,7 @@ export const makeHouseholdPeopleControlPlane = (options: {
   readonly database: DrizzleD1Database;
 }): HouseholdPeopleControlPlane => {
   const findInvitation = (input: {
-    readonly invitationId: string;
+    readonly invitationId: InvitationId;
     readonly organizationId: HouseholdOrganizationId;
   }) =>
     Effect.tryPromise({
@@ -127,14 +150,21 @@ export const makeHouseholdPeopleControlPlane = (options: {
           .limit(1),
     }).pipe(
       Effect.flatMap(([invitation]) =>
-        invitation === undefined
-          ? Effect.fail(new HouseholdPeopleControlPlaneNotFound())
-          : Effect.succeed(invitation)
+        Effect.gen(function* parseInvitationRow() {
+          if (invitation === undefined) {
+            return yield* Effect.fail(
+              new HouseholdPeopleControlPlaneNotFound()
+            );
+          }
+          return yield* decodeInvitation(invitation).pipe(
+            Effect.mapError(unavailable)
+          );
+        })
       )
     );
 
   const findMember = (input: {
-    readonly memberId: string;
+    readonly memberId: MemberId;
     readonly organizationId: HouseholdOrganizationId;
   }) =>
     Effect.tryPromise({
@@ -156,9 +186,14 @@ export const makeHouseholdPeopleControlPlane = (options: {
           .limit(1),
     }).pipe(
       Effect.flatMap(([member]) =>
-        member === undefined
-          ? Effect.fail(new HouseholdPeopleControlPlaneNotFound())
-          : Effect.succeed(member)
+        Effect.gen(function* parseMemberRow() {
+          if (member === undefined) {
+            return yield* Effect.fail(
+              new HouseholdPeopleControlPlaneNotFound()
+            );
+          }
+          return yield* decodeMember(member).pipe(Effect.mapError(unavailable));
+        })
       )
     );
 
@@ -176,9 +211,7 @@ export const makeHouseholdPeopleControlPlane = (options: {
               role: "member",
             },
             headers: input.headers,
-            invitationId: Schema.decodeUnknownSync(HouseholdAuthResourceId)(
-              input.invitationId
-            ),
+            invitationId: input.invitationId,
           });
           return {
             email: invitation.email,
@@ -189,6 +222,9 @@ export const makeHouseholdPeopleControlPlane = (options: {
           };
         },
       }).pipe(
+        Effect.flatMap((invitation) =>
+          decodeInvitation(invitation).pipe(Effect.mapError(unavailable))
+        ),
         Effect.catchTag("HouseholdInvitationRejected", (rejection) =>
           findInvitation(input).pipe(
             Effect.catchTag("HouseholdPeopleControlPlaneNotFound", () =>
@@ -211,7 +247,11 @@ export const makeHouseholdPeopleControlPlane = (options: {
             })
             .from(authSchema.invitation)
             .where(eq(authSchema.invitation.organizationId, organizationId)),
-      }),
+      }).pipe(
+        Effect.flatMap((states) =>
+          decodeInvitationStates(states).pipe(Effect.mapError(unavailable))
+        )
+      ),
     listMemberUserIds: (organizationId) =>
       Effect.tryPromise({
         catch: unavailable,
@@ -220,7 +260,13 @@ export const makeHouseholdPeopleControlPlane = (options: {
             .select({ userId: authSchema.member.userId })
             .from(authSchema.member)
             .where(eq(authSchema.member.organizationId, organizationId)),
-      }).pipe(Effect.map((members) => members.map(({ userId }) => userId))),
+      }).pipe(
+        Effect.flatMap((members) =>
+          decodeMemberUserIds(members.map(({ userId }) => userId)).pipe(
+            Effect.mapError(unavailable)
+          )
+        )
+      ),
     removeMember: (input) =>
       Effect.tryPromise({
         catch: unavailable,

@@ -1,11 +1,17 @@
+import { EmailAddress } from "@meal-planner/household-api";
 import { Schema } from "effect";
 
+const isEmailAddress = Schema.is(EmailAddress);
 const Email = Schema.Trim.check(
   Schema.isMinLength(1, { message: "Enter your email." }).abort(),
-  Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/u, {
-    message: "Enter a valid email address.",
-  })
-);
+  Schema.makeFilter(
+    (value) =>
+      isEmailAddress(value) || {
+        issue: "Enter a valid email address.",
+        path: [],
+      }
+  )
+).pipe(Schema.decodeTo(EmailAddress));
 export const SignInInput = Schema.Struct({
   email: Email,
   password: Schema.String.check(

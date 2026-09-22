@@ -1,6 +1,15 @@
+import {
+  AuthAccountId,
+  AuthVerificationId,
+  EmailAddress,
+  HouseholdOrganizationId,
+  InvitationId,
+  MemberId,
+  UserId,
+} from "@meal-planner/household-api";
 import { and, eq, exists, gte, lt, sql } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import { Clock, Effect } from "effect";
+import { Clock, Effect, Schema } from "effect";
 
 import { privateOutputKey } from "../private-output/private-output.contract.js";
 import type { AuthOutputFence } from "./auth-output-fence.js";
@@ -19,12 +28,35 @@ export type AuthAtomicDatabase = Pick<
   "insert" | "update" | "delete" | "select" | "batch"
 >;
 
+/** Decoded Better Auth acceptance command at the native endpoint boundary. */
+export const AcceptInvitationMutation = Schema.Struct({
+  email: EmailAddress,
+  invitationId: InvitationId,
+  memberId: MemberId,
+  membershipLimit: Schema.Number,
+  organizationId: HouseholdOrganizationId,
+  sessionToken: Schema.NonEmptyString,
+  userId: UserId,
+});
+
+/** Decoded Better Auth reset command; secrets remain transient and are never returned. */
+export const ResetPasswordMutation = Schema.Struct({
+  accountId: AuthAccountId,
+  identifier: Schema.NonEmptyString,
+  issuer: Schema.NonEmptyString,
+  passwordHash: Schema.NonEmptyString,
+  requestPassword: Schema.String,
+  userId: UserId,
+  verificationId: AuthVerificationId,
+});
+const parseUserId = Schema.decodeUnknownSync(UserId);
+
 /** D1's Drizzle batch commits every statement together, including the single-use proof. */
 export const makeAuthAtomicStore = (
   getDatabase: () => AuthAtomicDatabase,
   fence: AuthOutputFence
 ) => {
-  const retainIntent = async (id: string, accountId: string) => {
+  const retainIntent = async (id: string, accountId: UserId) => {
     const database = getDatabase();
     await database
       .insert(authMutationIntent)
@@ -35,21 +67,22 @@ export const makeAuthAtomicStore = (
       })
       .onConflictDoNothing();
   };
-  const reconcile = async (id: string, accountId?: string) => {
+  const reconcile = async (id: string, accountId?: UserId) => {
     const database = getDatabase();
     const [intent] = await database
       .select()
       .from(authMutationIntent)
       .where(eq(authMutationIntent.id, id));
-    if (
-      !intent ||
-      (accountId !== undefined && intent.accountId !== accountId)
-    ) {
+    if (!intent) {
+      return;
+    }
+    const retainedAccountId = parseUserId(intent.accountId);
+    if (accountId !== undefined && retainedAccountId !== accountId) {
       return;
     }
     await fence(
       {
-        accountId: intent.accountId,
+        accountId: retainedAccountId,
         intentKey: id,
         reconcileOnly: true,
         replayable: true,
@@ -59,7 +92,7 @@ export const makeAuthAtomicStore = (
         await database
           .insert(authMutationReceipt)
           .values({
-            accountId: intent.accountId,
+            accountId: retainedAccountId,
             applied: false,
             attemptId: crypto.randomUUID(),
             createdAt: new Date(
@@ -73,15 +106,7 @@ export const makeAuthAtomicStore = (
     );
   };
   return {
-    acceptInvitation: async (input: {
-      readonly invitationId: string;
-      readonly organizationId: string;
-      readonly userId: string;
-      readonly email: string;
-      readonly sessionToken: string;
-      readonly memberId: string;
-      readonly membershipLimit: number;
-    }) => {
+    acceptInvitation: async (input: typeof AcceptInvitationMutation.Type) => {
       const database = getDatabase();
       const requestDigest = await privateOutputKey(
         "auth-invitation-accept-request",
@@ -221,7 +246,7 @@ export const makeAuthAtomicStore = (
         }
       );
     },
-    reconcileInvitation: async (invitationId: string, userId: string) =>
+    reconcileInvitation: async (invitationId: InvitationId, userId: UserId) =>
       reconcile(
         await privateOutputKey(
           "auth-invitation-accept",
@@ -231,15 +256,7 @@ export const makeAuthAtomicStore = (
       ),
     reconcilePasswordReset: async (identifier: string) =>
       reconcile(await privateOutputKey("auth-password-reset", identifier)),
-    resetPassword: async (input: {
-      readonly verificationId: string;
-      readonly identifier: string;
-      readonly userId: string;
-      readonly accountId: string;
-      readonly issuer: string;
-      readonly passwordHash: string;
-      readonly requestPassword: string;
-    }) => {
+    resetPassword: async (input: typeof ResetPasswordMutation.Type) => {
       const database = getDatabase();
       const intentKey = await privateOutputKey(
         "auth-password-reset",

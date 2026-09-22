@@ -3,10 +3,13 @@ import {
   HouseholdInvitationRequestDigest,
   HouseholdPeopleAuditActorId,
   HouseholdPersonLinkageSubject,
+  InvitationId,
 } from "@meal-planner/household-api";
 import type {
+  EmailAddress,
   HouseholdOrganizationId,
   HouseholdPersonMutationId,
+  UserId,
 } from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
 
@@ -16,6 +19,8 @@ import { HouseholdDigestLive } from "../shared-kernel/authority-services.live.js
 export class HouseholdPeopleIdentityFailure {
   readonly _tag = "HouseholdPeopleIdentityFailure";
 }
+
+const decodeInvitationId = Schema.decodeUnknownEffect(InvitationId);
 
 const peopleIdentityMaterial = (
   purpose:
@@ -60,7 +65,7 @@ const derive = <A>(
 /** Household-scoped account subject derived only from immutable Better Auth user id. */
 export const deriveHouseholdPersonLinkageSubject = (
   organizationId: HouseholdOrganizationId,
-  userId: string
+  userId: UserId
 ) =>
   derive(
     HouseholdPersonLinkageSubject,
@@ -72,13 +77,13 @@ export const deriveHouseholdPersonLinkageSubject = (
 /** Household-scoped, purpose-separated actor used only in audit records. */
 export const deriveHouseholdPeopleAuditActorId = (
   organizationId: HouseholdOrganizationId,
-  userId: string
+  userId: UserId
 ) => derive(HouseholdPeopleAuditActorId, "audit-actor", organizationId, userId);
 
 /** Purpose-bound digest of a Better Auth invitation id; raw ids stay API-local. */
 export const deriveHouseholdInvitationDigest = (
   organizationId: HouseholdOrganizationId,
-  invitationId: string
+  invitationId: typeof InvitationId.Type
 ) =>
   derive(HouseholdInvitationDigest, "invitation", organizationId, invitationId);
 
@@ -92,14 +97,19 @@ export const deriveHouseholdInvitationId = (
     "invitation-operation",
     organizationId,
     mutationId
-  ).pipe(Effect.map((digest) => `household_invitation_${digest}`));
+  ).pipe(
+    Effect.flatMap((digest) =>
+      decodeInvitationId(`household_invitation_${digest}`)
+    ),
+    Effect.mapError(() => new HouseholdPeopleIdentityFailure())
+  );
 
 /** Digest retaining the exact API-local invitation payload without storing email in Household. */
 export const deriveHouseholdInvitationRequestDigest = (
   organizationId: HouseholdOrganizationId,
   input: {
-    readonly email: string;
-    readonly invitationId: string;
+    readonly email: EmailAddress;
+    readonly invitationId: typeof InvitationId.Type;
   }
 ) =>
   derive(

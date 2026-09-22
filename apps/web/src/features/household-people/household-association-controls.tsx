@@ -1,8 +1,6 @@
 import {
   CompleteHouseholdAdultLinkPayload,
   DepartHouseholdAdultPayload,
-  HouseholdAuthResourceId,
-  HouseholdInvitationEmail,
   HouseholdPeopleOperationReason,
   HouseholdPersonMutationId,
   InviteHouseholdAdultPayload,
@@ -10,6 +8,7 @@ import {
   ReturnHouseholdAdultPayload,
 } from "@meal-planner/household-api";
 import type {
+  MemberId,
   HouseholdMemberDepartureOperation,
   HouseholdPeopleRoster,
   InviteHouseholdAdultPayload as InviteHouseholdAdultPayloadType,
@@ -18,11 +17,22 @@ import { useForm } from "@tanstack/react-form";
 import { Schema } from "effect";
 
 import { Button } from "../../components/ui/button.js";
+import { FieldError } from "../../components/ui/field.js";
 import { Input } from "../../components/ui/input.js";
 import { Label } from "../../components/ui/label.js";
+import { InvitationEmailInput } from "../onboarding/people-input.js";
 
 const newMutationId = () =>
   Schema.decodeUnknownSync(HouseholdPersonMutationId)(crypto.randomUUID());
+
+const InviteAdultFormInput = Schema.Struct({
+  email: InvitationEmailInput,
+  personId: Schema.String.check(
+    Schema.isMinLength(1, { message: "Select an adult." })
+  ),
+});
+const inviteAdultFormValidator =
+  Schema.toStandardSchemaV1(InviteAdultFormInput);
 
 const departureStatusMessage = (
   state: HouseholdMemberDepartureOperation["state"]
@@ -102,9 +112,9 @@ export const DepartureRecovery = ({
   readonly onRecover?: () => void;
   readonly onRetry?: (
     operation: HouseholdMemberDepartureOperation,
-    memberId: typeof HouseholdAuthResourceId.Type
+    memberId: MemberId
   ) => void;
-  readonly retainedMemberId: typeof HouseholdAuthResourceId.Type | undefined;
+  readonly retainedMemberId: MemberId | undefined;
 }) => {
   const canRepair =
     operation?.canRetry === true &&
@@ -185,7 +195,7 @@ const DepartureControl = ({
   onDepart,
   person,
 }: {
-  readonly currentMemberId: string;
+  readonly currentMemberId: MemberId;
   readonly disabled: boolean;
   readonly onDepart: (payload: DepartHouseholdAdultPayload) => void;
   readonly person: HouseholdPeopleRoster["people"][number];
@@ -196,9 +206,7 @@ const DepartureControl = ({
       Schema.decodeUnknownSync(DepartHouseholdAdultPayload)({
         expectedLinkVersion: person.associationVersion,
         expectedPersonVersion: person.version,
-        memberId: Schema.decodeUnknownSync(HouseholdAuthResourceId)(
-          currentMemberId
-        ),
+        memberId: currentMemberId,
         mutationId: newMutationId(),
         personId: person.id,
         reason: Schema.decodeUnknownSync(HouseholdPeopleOperationReason)(
@@ -305,16 +313,19 @@ const InviteAdultForm = ({
   const form = useForm({
     defaultValues: { email: "", personId: "" },
     onSubmit: ({ formApi, value }) => {
+      const input = Schema.decodeUnknownSync(InviteAdultFormInput)(value);
       onSubmit(
         Schema.decodeUnknownSync(InviteHouseholdAdultPayload)({
-          email: Schema.decodeUnknownSync(HouseholdInvitationEmail)(
-            value.email
-          ),
+          email: input.email,
           mutationId: newMutationId(),
-          personId: value.personId,
+          personId: input.personId,
         })
       );
       formApi.reset();
+    },
+    validators: {
+      onChange: inviteAdultFormValidator,
+      onSubmit: inviteAdultFormValidator,
     },
   });
   if (adults.length === 0) {
@@ -323,6 +334,7 @@ const InviteAdultForm = ({
   return (
     <form
       className="people-form"
+      noValidate
       onSubmit={(event) => {
         event.preventDefault();
         void form.handleSubmit();
@@ -338,6 +350,12 @@ const InviteAdultForm = ({
           <>
             <Label htmlFor="invite-person">Person</Label>
             <select
+              aria-describedby={
+                field.state.meta.errors.length > 0
+                  ? "invite-person-error"
+                  : undefined
+              }
+              aria-invalid={field.state.meta.errors.length > 0}
               className="field-select"
               disabled={disabled}
               id="invite-person"
@@ -351,6 +369,10 @@ const InviteAdultForm = ({
                 </option>
               ))}
             </select>
+            <FieldError
+              id="invite-person-error"
+              errors={field.state.meta.errors}
+            />
           </>
         )}
       </form.Field>
@@ -359,12 +381,22 @@ const InviteAdultForm = ({
           <>
             <Label htmlFor="invite-email">Email</Label>
             <Input
+              aria-describedby={
+                field.state.meta.errors.length > 0
+                  ? "invite-email-error"
+                  : undefined
+              }
+              aria-invalid={field.state.meta.errors.length > 0}
               disabled={disabled}
               id="invite-email"
               onBlur={field.handleBlur}
               onChange={(event) => field.handleChange(event.target.value)}
               type="email"
               value={field.state.value}
+            />
+            <FieldError
+              id="invite-email-error"
+              errors={field.state.meta.errors}
             />
           </>
         )}
@@ -382,7 +414,7 @@ const RepairLinkForm = ({
   onSubmit,
   roster,
 }: {
-  readonly currentMemberId: string;
+  readonly currentMemberId: MemberId;
   readonly disabled: boolean;
   readonly onSubmit: (payload: RepairHouseholdAdultLinkPayload) => void;
   readonly roster: HouseholdPeopleRoster;
@@ -403,9 +435,7 @@ const RepairLinkForm = ({
       onSubmit(
         Schema.decodeUnknownSync(RepairHouseholdAdultLinkPayload)({
           expectedPersonVersion: person.version,
-          memberId: Schema.decodeUnknownSync(HouseholdAuthResourceId)(
-            currentMemberId
-          ),
+          memberId: currentMemberId,
           mutationId: newMutationId(),
           personId: person.id,
           reason: Schema.decodeUnknownSync(HouseholdPeopleOperationReason)(
@@ -539,7 +569,7 @@ export const HouseholdAssociationControls = ({
   onReturn,
   roster,
 }: {
-  readonly currentMemberId?: string;
+  readonly currentMemberId?: MemberId;
   readonly disabled: boolean;
   readonly onCompleteLink?: (
     payload: CompleteHouseholdAdultLinkPayload

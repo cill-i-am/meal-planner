@@ -5,6 +5,7 @@ import {
   HouseholdPeopleOperationReason,
   HouseholdPersonDisplayName,
   HouseholdPersonMutationId,
+  MemberId,
   RetryHouseholdAdultDeparturePayload,
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
@@ -523,6 +524,13 @@ export const HouseholdPeoplePanel = ({
     () => parseDisplayedIdentity({ organizationId, userId: accountId }),
     [accountId, organizationId]
   );
+  const parsedMemberId = useMemo(
+    () =>
+      currentMemberId === undefined
+        ? undefined
+        : Schema.decodeUnknownSync(MemberId)(currentMemberId),
+    [currentMemberId]
+  );
   const queryKey = ["household-people", organizationId] as const;
   const roster = useQuery({ queryFn: () => operations.list(true), queryKey });
   const refresh = () => queryClient.invalidateQueries({ queryKey });
@@ -987,7 +995,9 @@ export const HouseholdPeoplePanel = ({
             retryIntent={hasUnresolvedIntent}
           />
           <HouseholdAssociationControls
-            {...(currentMemberId === undefined ? {} : { currentMemberId })}
+            {...(parsedMemberId === undefined
+              ? {}
+              : { currentMemberId: parsedMemberId })}
             disabled={isPersonMutationPending || hasUnresolvedIntent}
             {...(operations.completeAdultLink === undefined
               ? {}

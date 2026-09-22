@@ -1,14 +1,15 @@
 import { Schema } from "effect";
 
-import { HouseholdAuthResourceId } from "./people.js";
+import { EmailAddress, InvitationId } from "./auth-values.js";
+import { HouseholdOrganizationId } from "./household-principal.js";
 
 /** Recipient-authorized projection. Closed outcomes remain readable for safe reconciliation. */
 export const InvitationView = Schema.Struct({
-  email: Schema.String,
+  email: EmailAddress,
   familyName: Schema.String,
-  id: HouseholdAuthResourceId,
+  id: InvitationId,
   inviterName: Schema.String,
-  organizationId: HouseholdAuthResourceId,
+  organizationId: HouseholdOrganizationId,
   status: Schema.Literals([
     "pending",
     "accepted",

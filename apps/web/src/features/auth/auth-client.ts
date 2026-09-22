@@ -1,4 +1,5 @@
 import { setupProgressField } from "@meal-planner/household-api";
+import type { UserId } from "@meal-planner/household-api";
 import {
   inferAdditionalFields,
   organizationClient,
@@ -11,7 +12,7 @@ import type { parseSignIn, parseSignUp } from "./auth-input.js";
 
 export const makeAuthClient = (
   transport: typeof fetch = fetch,
-  expectedUserId?: string
+  expectedUserId?: UserId
 ) =>
   createAuthClient({
     fetchOptions: {

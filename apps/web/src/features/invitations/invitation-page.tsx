@@ -1,8 +1,8 @@
 import type { InvitationView } from "@meal-planner/household-api";
-import { SetupCheckpoint } from "@meal-planner/household-api";
+import { InvitationId, SetupCheckpoint } from "@meal-planner/household-api";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Schema } from "effect";
+import { Option, Schema } from "effect";
 import type { ReactNode } from "react";
 
 import { Avatar, AvatarFallback } from "../../components/ui/avatar.js";
@@ -19,7 +19,7 @@ import {
 import { Separator } from "../../components/ui/separator.js";
 import { AuthRequestError } from "../auth/auth-errors.js";
 import { AuthLayout } from "../auth/auth-layout.js";
-import { useSetup } from "../onboarding/setup-context.js";
+import { SetupProvider, useSetup } from "../onboarding/setup-context.js";
 import { SetupError } from "../onboarding/setup-ui.js";
 import { completeInvitation, readInvitation } from "./invitation-operations.js";
 import type { InvitationCommand } from "./invitation-operations.js";
@@ -152,7 +152,7 @@ const pendingInvitation = (
   return undefined;
 };
 
-const useInvitationFlow = (invitationId: string) => {
+const useInvitationFlow = (invitationId: InvitationId) => {
   const setup = useSetup();
   const navigate = useNavigate();
   const { checkpoint } = setup.progress;
@@ -411,7 +411,7 @@ const InvitationContent = ({
 export const InvitationPage = ({
   invitationId,
 }: {
-  readonly invitationId: string;
+  readonly invitationId: InvitationId;
 }) => {
   const flow = useInvitationFlow(invitationId);
   const {
@@ -515,6 +515,25 @@ export const InvitationPage = ({
       header={header}
       failure={failure}
       recoveryAction={recoveryAction}
+    />
+  );
+};
+
+/** Render an invalid route identity as an unavailable invitation. */
+export const InvitationPageForRoute = ({
+  invitationId,
+}: {
+  readonly invitationId: string;
+}) => {
+  const parsed = Schema.decodeUnknownOption(InvitationId)(invitationId);
+  return Option.isSome(parsed) ? (
+    <SetupProvider>
+      <InvitationPage key={parsed.value} invitationId={parsed.value} />
+    </SetupProvider>
+  ) : (
+    <InvitationCard
+      title="This invitation is no longer available"
+      description="Ask the family organiser for a new invitation."
     />
   );
 };

@@ -1,4 +1,7 @@
-import { HouseholdMemberDepartureOperation } from "@meal-planner/household-api";
+import {
+  HouseholdMemberDepartureOperation,
+  UserId,
+} from "@meal-planner/household-api";
 import type { HouseholdOrganizationId } from "@meal-planner/household-api";
 import type { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -51,6 +54,7 @@ const decodeSystemState = Schema.decodeUnknownEffect(
   HouseholdMemberDepartureSystemState,
   { onExcessProperty: "error" }
 );
+const decodeMemberUserIds = Schema.decodeUnknownEffect(Schema.Array(UserId));
 
 export interface MemberDepartureWorkflowPorts {
   readonly confirmAccessRevoked: (
@@ -251,8 +255,11 @@ export const makeMemberDepartureWorkflowPorts = (options: {
               eq(authSchema.member.organizationId, options.input.organizationId)
             )
         );
+        const userIds = yield* decodeMemberUserIds(
+          members.map(({ userId }) => userId)
+        );
         const linkageSubjects = yield* Effect.all(
-          members.map(({ userId }) =>
+          userIds.map((userId) =>
             deriveHouseholdPersonLinkageSubject(
               options.input.organizationId,
               userId

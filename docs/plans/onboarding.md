@@ -287,3 +287,29 @@ builds, formatting, lint, documentation and schema-generation drift checks pass.
 Browser checks covered setup navigation, loaded household data, sign-out, signup
 validation and generic reset confirmation. Private WebSocket behavior was checked
 in native integration tests because the local HTTP preview does not proxy upgrades.
+
+## Auth value contracts · 22 September 2026
+
+Auth boundaries now share an `EmailAddress` schema and separate user, invitation,
+member, credential-account and verification-record ID brands. The existing
+`HouseholdOrganizationId` remains the organization identity. Opaque IDs accept
+Better Auth's generated values and server-retained IDs without requiring UUIDs;
+empty, oversized, whitespace and control-character values are rejected.
+
+Email syntax uses the installed Zod email pattern inside Effect Schema, with a
+254-character limit. Native auth entry points and browser commands use the same
+rule. Draft form text may remain incomplete, but submitted commands and persisted
+auth projections must decode successfully. This validates syntax, not mailbox
+ownership or delivery. The generic auth-resource and invitation-email brands have
+been removed, and their callers use the appropriate domain types.
+
+Malformed invitation URLs use the unavailable screen; invalid stored invitation
+data produces a generic unavailable response. Runtime validation tests and
+compile-time checks cover the shared values and prevent interchanging ID types.
+
+Validation: 1,153 API tests, 184 web tests and 29 household-contract tests pass,
+along with workspace type checks, production builds, lint, formatting, docs and
+the tracked D1 architecture check. Better Auth schema regeneration has no diff.
+Browser checks confirm the unavailable screen for malformed invitation links and
+a single field error for invalid recovery emails. The household invitation form
+also preserves invalid input and blocks dispatch, covered by a regression test.

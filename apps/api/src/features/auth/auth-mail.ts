@@ -1,5 +1,7 @@
+import type { EmailAddress } from "@meal-planner/household-api";
+
 export interface InvitationMail {
-  readonly email: string;
+  readonly email: EmailAddress;
   readonly url: string;
 }
 
@@ -10,7 +12,7 @@ export const mockInvitationMail = (_mail: InvitationMail): Promise<void> =>
   Promise.resolve();
 
 export interface PasswordResetMail {
-  readonly email: string;
+  readonly email: EmailAddress;
   readonly url: string;
 }
 

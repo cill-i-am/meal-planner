@@ -1,11 +1,8 @@
 import { Context, Schema } from "effect";
 
-export const HouseholdOrganizationId = Schema.String.pipe(
-  Schema.check(
-    Schema.isTrimmed(),
-    Schema.isNonEmpty(),
-    Schema.isMaxLength(255)
-  ),
+import { OpaqueAuthId } from "./auth-values.js";
+
+export const HouseholdOrganizationId = OpaqueAuthId.pipe(
   Schema.brand("HouseholdOrganizationId")
 );
 export type HouseholdOrganizationId = typeof HouseholdOrganizationId.Type;

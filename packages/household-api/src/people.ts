@@ -1,5 +1,7 @@
 import { Schema } from "effect";
 
+import { EmailAddress, InvitationId, MemberId } from "./auth-values.js";
+
 /** Stable opaque identity generated inside one household authority. */
 export const HouseholdPersonId = Schema.String.pipe(
   Schema.check(
@@ -161,33 +163,9 @@ export const HouseholdPerson = Schema.Struct({
 /** Privacy-safe household roster projection. */
 export type HouseholdPerson = typeof HouseholdPerson.Type;
 
-/** Opaque Better Auth resource identity accepted only at the public API edge. */
-export const HouseholdAuthResourceId = Schema.String.pipe(
-  Schema.check(
-    Schema.isTrimmed(),
-    Schema.isNonEmpty(),
-    Schema.isMaxLength(255)
-  ),
-  Schema.brand("HouseholdAuthResourceId")
-);
-/** Opaque Better Auth resource identity accepted only at the public API edge. */
-export type HouseholdAuthResourceId = typeof HouseholdAuthResourceId.Type;
-
-/** Invitation email accepted only by the Better Auth control-plane adapter. */
-export const HouseholdInvitationEmail = Schema.String.pipe(
-  Schema.check(
-    Schema.isTrimmed(),
-    Schema.isNonEmpty(),
-    Schema.isMaxLength(320)
-  ),
-  Schema.brand("HouseholdInvitationEmail")
-);
-/** Invitation email accepted only by the Better Auth control-plane adapter. */
-export type HouseholdInvitationEmail = typeof HouseholdInvitationEmail.Type;
-
 /** Organizer request to create and associate one Better Auth invitation. */
 export const InviteHouseholdAdultPayload = Schema.Struct({
-  email: HouseholdInvitationEmail,
+  email: EmailAddress,
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
@@ -196,7 +174,7 @@ export type InviteHouseholdAdultPayload =
 
 /** Explicit retry after invitation creation committed but association did not. */
 export const AssociateHouseholdAdultInvitationPayload = Schema.Struct({
-  email: HouseholdInvitationEmail,
+  email: EmailAddress,
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
@@ -205,7 +183,7 @@ export type AssociateHouseholdAdultInvitationPayload =
 
 /** Accepted member request to link the explicitly associated adult. */
 export const CompleteHouseholdAdultLinkPayload = Schema.Struct({
-  invitationId: HouseholdAuthResourceId,
+  invitationId: InvitationId,
   mutationId: HouseholdPersonMutationId,
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type CompleteHouseholdAdultLinkPayload =
@@ -214,7 +192,7 @@ export type CompleteHouseholdAdultLinkPayload =
 /** Organizer request to explicitly repair one member-to-person link. */
 export const RepairHouseholdAdultLinkPayload = Schema.Struct({
   expectedPersonVersion: HouseholdPersonVersion,
-  memberId: HouseholdAuthResourceId,
+  memberId: MemberId,
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
   reason: HouseholdPeopleOperationReason,
@@ -226,7 +204,7 @@ export type RepairHouseholdAdultLinkPayload =
 export const DepartHouseholdAdultPayload = Schema.Struct({
   expectedLinkVersion: HouseholdAssociationVersion,
   expectedPersonVersion: HouseholdPersonVersion,
-  memberId: HouseholdAuthResourceId,
+  memberId: MemberId,
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
   reason: HouseholdPeopleOperationReason,
@@ -245,7 +223,7 @@ export type CancelHouseholdAdultDeparturePayload =
 /** Explicit member-or-owner repair of one visible departure operation. */
 export const RetryHouseholdAdultDeparturePayload = Schema.Struct({
   expectedOperationVersion: HouseholdAssociationVersion,
-  memberId: HouseholdAuthResourceId,
+  memberId: MemberId,
   mutationId: HouseholdPersonMutationId,
   reason: HouseholdPeopleOperationReason,
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
@@ -255,7 +233,7 @@ export type RetryHouseholdAdultDeparturePayload =
 /** Returning member request to restore and relink one archived adult. */
 export const ReturnHouseholdAdultPayload = Schema.Struct({
   expectedPersonVersion: HouseholdPersonVersion,
-  invitationId: HouseholdAuthResourceId,
+  invitationId: InvitationId,
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
@@ -265,7 +243,7 @@ export type ReturnHouseholdAdultPayload =
 /** Definitive result after one exact invitation intent exists in both authorities. */
 export const HouseholdAdultInvitationResult = Schema.Struct({
   association: Schema.Literal("associated"),
-  invitationId: HouseholdAuthResourceId,
+  invitationId: InvitationId,
   person: HouseholdPerson,
 });
 export type HouseholdAdultInvitationResult =

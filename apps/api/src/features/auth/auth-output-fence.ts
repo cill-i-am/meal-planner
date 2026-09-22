@@ -1,3 +1,4 @@
+import { UserId } from "@meal-planner/household-api";
 import type { DBAdapter, DBTransactionAdapter, Where } from "better-auth";
 import { Schema } from "effect";
 
@@ -8,7 +9,7 @@ import {
 
 export type AuthOutputFence = <A>(
   input: {
-    readonly accountId: string;
+    readonly accountId: UserId;
     readonly intentKey: string;
     readonly replayable?: true;
     readonly reconcileOnly?: true;
@@ -16,7 +17,9 @@ export type AuthOutputFence = <A>(
   canonical: () => Promise<A>
 ) => Promise<A>;
 
-const Identity = Schema.Struct({ userId: Schema.String });
+const Identity = Schema.Struct({ userId: UserId });
+const parseIdentity = Schema.decodeUnknownSync(Identity);
+const parseUserId = Schema.decodeUnknownSync(UserId);
 const protectedModel = (model: string) =>
   model === "session" || model === "member";
 const unsupported = () =>
@@ -114,12 +117,12 @@ export const fenceAuthAdapter = (
           model: input.model,
           where: input.where,
         });
-        return row === null
-          ? null
-          : Schema.decodeUnknownSync(Identity)(row).userId;
+        return row === null ? null : parseIdentity(row).userId;
       };
       const accountId =
-        selected.field === "userId" ? selected.value : await readAccount();
+        selected.field === "userId"
+          ? parseUserId(selected.value)
+          : await readAccount();
       if (accountId === null) {
         return absent;
       }
