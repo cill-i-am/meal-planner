@@ -80,7 +80,7 @@ const AddedPeople = ({
   readonly onAction: (kind: RosterAction, person: HouseholdPerson) => void;
 }) => (
   <CardFooter variant="people">
-    <p className="text-muted-foreground text-sm">Already added</p>
+    <p className="text-muted-foreground text-sm">Your family so far</p>
     {roster.people.map((person) => (
       <div key={person.id} className="flex w-full min-w-0 items-center gap-2">
         <div className="min-w-0 flex-1">
