@@ -11,6 +11,28 @@ reads the same-origin Better Auth session, finds the active organization and che
 membership through Better Auth's public API. The browser does not supply an
 organization ID. Selecting an active organization does not by itself grant access.
 
+### Auth runtime
+
+The API uses `@alchemy.run/better-auth`, pinned to the Alchemy version. Its auth
+instance belongs to the request's execution scope, which also owns pending
+background work. Application callers use Effect operations for sessions,
+membership and invitations. Provider failures fail closed at the admission and
+control-plane boundaries.
+
+The integration supplies Alchemy's `Database` service with the existing guarded
+Drizzle relations-v2 adapter. The built-in Drizzle layer does not expose this
+adapter variant or its output fence. Native HTTP handling and server-retained
+invitation IDs use Alchemy's documented native-instance access so their
+AsyncLocalStorage guards enclose the actual Promise execution.
+
+`BETTER_AUTH_SECRET` remains the signing secret. Automatic Better Auth migrations
+are disabled: Drizzle Kit and `apps/api/auth-migrations` still own the schema,
+applied through `MealPlannerAuthDatabase`. The CLI and native adapter tests share
+the same plugin and policy configuration as the Alchemy runtime. See Alchemy's
+[Better Auth guide](https://alchemy.run/better-auth/),
+[Drizzle layer](https://alchemy.run/providers/betterauth/drizzle/) and
+[migration ownership](https://alchemy.run/better-auth/migrations/).
+
 ## Private household storage
 
 The private `HouseholdDomainWorker` owns the `HouseholdObject` Durable Object

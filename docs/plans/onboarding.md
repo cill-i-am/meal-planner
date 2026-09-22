@@ -331,3 +331,26 @@ type checking, production build, focused lint/formatting and documentation check
 Local browser checks cover adult creation without email, child creation after an
 invitation validation error, and invitation draft resumption after reload. Desktop
 and 390px screenshots cover both person types. Email delivery remains mocked.
+
+## Alchemy Better Auth integration · 22 September 2026
+
+Use the official `@alchemy.run/better-auth` package at `2.0.0-beta.76`, matching
+Alchemy, with the existing Better Auth and Effect versions. Alchemy owns the
+per-request auth instance and background-task lifetime. Session, membership and
+household invitation callers use Effect operations. The native CLI/test factory
+shares the runtime's configuration rather than duplicating its plugins.
+
+The custom Database layer retains the guarded Drizzle relations-v2 adapter;
+`migrate: false` keeps checked-in Drizzle migrations authoritative. Preserve the
+current signing secret, identity checks, output fence, atomic reset/invitation
+plugins and retained invitation IDs. Email delivery remains mocked. No deployment
+or database changes are part of this integration. See the
+[auth runtime reference](../reference/household.md#auth-runtime).
+
+Validation: 1,157 API tests pass, including real Workerd/D1 coverage of typed API
+errors, account mismatch, failed revocation, background-task draining and concurrent
+invitation identities. API and infrastructure type checks, API production build,
+formatting, lint, docs and the tracked D1 architecture check pass. Better Auth CLI
+schema regeneration has no diff. The local browser retained the existing session,
+created a pending invitation, signed out and resumed the saved family after sign-in.
+Independent review found no actionable regression. CI has not been awaited.

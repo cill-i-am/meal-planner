@@ -2313,6 +2313,82 @@ describe("household public API to private Durable Object boundary", () => {
     });
   }, 30_000);
 
+  it("keeps concurrent household invitation identities attached to their people", async () => {
+    const {
+      adult: first,
+      organization,
+      ownerCookie,
+    } = await prepareInvitableAdult("Parallel Auth Invitation");
+    const secondResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people",
+      {
+        body: JSON.stringify({
+          displayName: "Parallel Auth Second Adult",
+          kind: "adult",
+          mutationId: "parallel-auth-second-adult",
+        }),
+        headers: { "content-type": "application/json", cookie: ownerCookie },
+        method: "POST",
+      }
+    );
+    expect(secondResponse.status, await secondResponse.clone().text()).toBe(
+      201
+    );
+    const second = await Schema.decodeUnknownPromise(HouseholdPerson)(
+      await secondResponse.json()
+    );
+    const recipients = [
+      { email: "parallel-first@example.test", personId: first.id },
+      { email: "parallel-second@example.test", personId: second.id },
+    ] as const;
+    const responses = await Promise.all(
+      recipients.map((recipient, index) =>
+        getRuntime().dispatchFetch(
+          "https://meal-planner.test/v1/household/people/invitations",
+          {
+            body: JSON.stringify({
+              ...recipient,
+              mutationId: `parallel-auth-invite-${index}`,
+            }),
+            headers: {
+              "content-type": "application/json",
+              cookie: ownerCookie,
+            },
+            method: "POST",
+          }
+        )
+      )
+    );
+    const invitations = await Promise.all(
+      responses.map(async (response) => {
+        expect(response.status, await response.clone().text()).toBe(201);
+        return Schema.decodeUnknownPromise(HouseholdAdultInvitationResult)(
+          await response.json()
+        );
+      })
+    );
+    expect(invitations[0]?.invitationId).not.toBe(invitations[1]?.invitationId);
+
+    const database = drizzle(
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+    );
+    const rows = await database
+      .select({
+        email: authSchema.invitation.email,
+        householdPersonId: authSchema.invitation.householdPersonId,
+        id: authSchema.invitation.id,
+      })
+      .from(authSchema.invitation)
+      .where(eq(authSchema.invitation.organizationId, organization.id));
+    for (const [index, recipient] of recipients.entries()) {
+      expect(rows).toContainEqual({
+        email: recipient.email,
+        householdPersonId: recipient.personId,
+        id: invitations[index]?.invitationId,
+      });
+    }
+  }, 30_000);
+
   it("runs the public people lifecycle through Better Auth, private Worker, and household SQLite", async () => {
     const cookie = await signUp("People Boundary Member");
     await createOrganization("People Boundary Household", cookie);

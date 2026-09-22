@@ -1,7 +1,7 @@
 import { PersonProfile } from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
 
-import type { MealPlannerAuth } from "../auth/auth.js";
+import type { MealPlannerAuthService } from "../auth/auth.alchemy.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { PrivateChatContext } from "./private-chat.contract.js";
 import type { PrivateOutputApiPort } from "./private-output-binding.js";
@@ -13,7 +13,7 @@ const JsonObject = Schema.Record(Schema.String, Schema.Unknown);
 /** Authenticate each native TanStack request before the private worker sees it. */
 export const handlePrivateChatRequest = Effect.fn(
   function* handlePrivateChatRequest(input: {
-    readonly auth: MealPlannerAuth;
+    readonly auth: MealPlannerAuthService;
     readonly household: Pick<
       HouseholdDomainWorkerMethods,
       "listHouseholdPeople" | "readPersonProfile"

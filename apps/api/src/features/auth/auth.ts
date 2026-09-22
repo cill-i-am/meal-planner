@@ -48,7 +48,7 @@ const invitationSchema = {
   },
 } as const;
 
-type MealPlannerAuthConfiguration = Omit<
+export type MealPlannerAuthConfiguration = Omit<
   BetterAuthOptions,
   "plugins" | "user"
 > & {
@@ -60,7 +60,7 @@ type MealPlannerAuthConfiguration = Omit<
   user: { additionalFields: { setupProgress: typeof setupProgressField } };
 };
 type AuthCore = Auth<MealPlannerAuthConfiguration>;
-interface HouseholdInvitationRequest {
+export interface HouseholdInvitationRequest {
   readonly invitationId: InvitationId;
   readonly headers: Headers;
   readonly body: {
@@ -92,8 +92,8 @@ export interface MealPlannerAuthOptions {
   }) => Promise<void>;
 }
 
-/** Construct the Better Auth control plane with the same plugins in every runtime. */
-export const makeMealPlannerAuth = ({
+/** Share one plugin and policy configuration between the CLI and Alchemy runtime. */
+export const makeMealPlannerAuthConfiguration = ({
   baseURL,
   database,
   outputFence,
@@ -102,7 +102,7 @@ export const makeMealPlannerAuth = ({
   verifyInvitationRecipient,
   sendInvitationEmail = mockInvitationMail,
   sendPasswordResetEmail = mockPasswordResetMail,
-}: MealPlannerAuthOptions): MealPlannerAuth => {
+}: MealPlannerAuthOptions) => {
   const adapterOptions =
     schema === undefined
       ? { provider: "sqlite" as const }
@@ -148,7 +148,7 @@ export const makeMealPlannerAuth = ({
     }
     return database;
   }, guardedFence);
-  const auth = betterAuth<MealPlannerAuthConfiguration>({
+  const configuration: MealPlannerAuthConfiguration = {
     advanced: {
       ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
     },
@@ -215,36 +215,61 @@ export const makeMealPlannerAuth = ({
     secret,
     trustedOrigins: [baseURL],
     user: { additionalFields: { setupProgress: setupProgressField } },
-  });
-  const guard = <A>(operation: () => Promise<A>): Promise<A> =>
-    failures.run({ failure: undefined }, async () => {
-      const result = await operation();
-      const failure = failures.getStore()?.failure;
-      if (failure !== undefined) {
-        throw failure;
-      }
-      return result;
-    });
-  const fetch = async (request: Request): Promise<Response> => {
-    try {
-      const expectedUserId = request.headers.get("x-meal-planner-user");
-      if (expectedUserId !== null) {
-        const session = await auth.api.getSession({ headers: request.headers });
-        if (session?.user.id !== expectedUserId) {
-          return Response.json(
-            {
-              code: "ACCOUNT_CHANGED",
-              message: "Your account changed. Reload to continue.",
-            },
-            { status: 401 }
-          );
-        }
-      }
-      return await guard(() => auth.fetch(request));
-    } catch {
-      return new Response(null, { status: 503 });
-    }
   };
+  return {
+    configuration,
+    guard: <A>(operation: () => Promise<A>): Promise<A> =>
+      failures.run({ failure: undefined }, async () => {
+        const result = await operation();
+        const failure = failures.getStore()?.failure;
+        if (failure !== undefined) {
+          throw failure;
+        }
+        return result;
+      }),
+    invitationIdentity,
+  };
+};
+
+export type MealPlannerAuthSecurity = ReturnType<
+  typeof makeMealPlannerAuthConfiguration
+>;
+
+/** A native HTTP request must complete inside its ALS fence before returning a response. */
+export const fetchGuardedMealPlannerAuth = async (
+  auth: AuthCore,
+  security: MealPlannerAuthSecurity,
+  request: Request
+): Promise<Response> => {
+  try {
+    const expectedUserId = request.headers.get("x-meal-planner-user");
+    if (expectedUserId !== null) {
+      const session = await auth.api.getSession({ headers: request.headers });
+      if (session?.user.id !== expectedUserId) {
+        return Response.json(
+          {
+            code: "ACCOUNT_CHANGED",
+            message: "Your account changed. Reload to continue.",
+          },
+          { status: 401 }
+        );
+      }
+    }
+    return await security.guard(() => auth.fetch(request));
+  } catch {
+    return new Response(null, { status: 503 });
+  }
+};
+
+/** Preserve the native Better Auth control plane for CLI schema generation and tests. */
+export const makeMealPlannerAuth = (
+  options: MealPlannerAuthOptions
+): MealPlannerAuth => {
+  const security = makeMealPlannerAuthConfiguration(options);
+  const { configuration, guard, invitationIdentity } = security;
+  const auth = betterAuth<MealPlannerAuthConfiguration>(configuration);
+  const fetch = (request: Request) =>
+    fetchGuardedMealPlannerAuth(auth, security, request);
   const guarded: typeof auth = {
     ...auth,
     api: {

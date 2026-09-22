@@ -11,16 +11,19 @@ import type {
   RecipeImportTimeline,
   SucceededRecipeImportIntent,
 } from "@meal-planner/recipe-import-api";
+import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { makeWorkflowBridge } from "alchemy/Cloudflare/Workflows";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Layer, Option, Schema } from "effect";
+import { Effect, Layer, Option, Redacted, Schema } from "effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
+import { makeAlchemyMealPlannerAuth } from "../auth/auth.alchemy.js";
 import * as authSchema from "../auth/auth.database-schema.js";
-import { makeMealPlannerAuth } from "../auth/auth.js";
 import {
   AuthenticatedOrganizationResolver,
   AuthPrincipalResolver,
@@ -130,6 +133,16 @@ import type {
 import { HouseholdRecordRecipeImportDispatchInput } from "./recipe-import/household-recipe-import.contract.js";
 
 const baseURL = "https://meal-planner.test";
+
+const testRuntimeContext = RuntimeContext.of({
+  Type: "HouseholdApiTestRuntimeContext",
+  env: {},
+  get: <T>() =>
+    // eslint-disable-next-line unicorn/no-useless-undefined -- The test context models an absent Alchemy binding.
+    Effect.succeed<T | undefined>(undefined),
+  id: "household-api-test",
+  set: (id) => Effect.succeed(id),
+});
 
 const RpcErrorEnvelope = Schema.Struct({
   _tag: Schema.Literal("~alchemy/rpc/error"),
@@ -667,7 +680,7 @@ export class MemberDepartureTestWorkflow extends MemberDepartureWorkflowBridge {
  * routing, recipe selection, and meal-plan mutation all use production code.
  */
 export default {
-  fetch: async (request: Request, env: HouseholdApiFixtureEnv) => {
+  fetch: (request: Request, env: HouseholdApiFixtureEnv) => {
     if (request.headers.get("x-test-native-log-probe") === "1") {
       console.info("Synthetic native log capture probe");
       return new Response(null, { status: 204 });
@@ -685,332 +698,363 @@ export default {
       Cloudflare.makeRpcStub<HouseholdDomainWorkerMethods>(
         env.HouseholdDomainWorker
       );
-    const auth = makeMealPlannerAuth({
-      baseURL,
-      database: drizzle(env.MealPlannerAuthDatabase),
-      outputFence: makeAuthOutputFence(env.PrivateOutputMutations),
-      schema: authSchema,
-      secret: env.BETTER_AUTH_SECRET,
-      verifyInvitationRecipient:
-        makeHouseholdInvitationRecipientVerifier(householdDomain),
-    });
-    if (new URL(request.url).pathname.startsWith("/api/auth/")) {
-      return auth.fetch(request);
-    }
-    let privateAuthorityReads = 0;
-    const privateAuthorityBarrier = request.headers.get(
-      "x-test-private-output-authority-barrier"
-    );
-    const confirmationBarrier = (
-      phase: "before" | "after" | "before-release"
-    ) =>
-      Effect.gen(function* awaitConfirmationBarrier() {
-        const barrier = request.headers.get(
-          `x-test-private-confirmation-${phase}`
-        );
-        if (barrier === null) {
-          return;
-        }
-        yield* Effect.promise(() =>
-          env.HOUSEHOLD_TEST_OBSERVATIONS.put(
-            `private-confirmation-${phase}:${barrier}`,
-            "ready"
-          )
-        );
-        let release: string | null = null;
-        while (release === null) {
-          release = yield* Effect.promise(() =>
-            env.HOUSEHOLD_TEST_OBSERVATIONS.get(
-              `private-confirmation-release:${barrier}`
-            )
-          );
-          if (release === null) {
-            yield* Effect.sleep("10 millis");
+    return Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* scopedHouseholdApiRequest() {
+          const auth = yield* makeAlchemyMealPlannerAuth({
+            baseURL,
+            database: drizzle(env.MealPlannerAuthDatabase),
+            outputFence: makeAuthOutputFence(env.PrivateOutputMutations),
+            schema: authSchema,
+            secret: Redacted.make(env.BETTER_AUTH_SECRET),
+            verifyInvitationRecipient:
+              makeHouseholdInvitationRecipientVerifier(householdDomain),
+          });
+          if (new URL(request.url).pathname.startsWith("/api/auth/")) {
+            return HttpServerResponse.toWeb(
+              yield* auth.fetchHttpEffect(request)
+            );
           }
-        }
-        if (release === "drop") {
-          return yield* Effect.die(
-            new Error("Synthetic lost canonical confirmation result")
-          );
-        }
-      });
-    const privateHousehold = {
-      listHouseholdPeople: (
-        input: Parameters<
-          HouseholdDomainWorkerMethods["listHouseholdPeople"]
-        >[0]
-      ) =>
-        householdDomain.listHouseholdPeople(input).pipe(
-          Effect.tap(() =>
-            Effect.gen(function* listHouseholdPeople() {
-              privateAuthorityReads += 1;
-              if (privateAuthorityReads === 1) {
-                yield* confirmationBarrier("before-release");
-              }
-              if (
-                request.headers.get(
-                  "x-test-private-output-authority-failure"
-                ) === "1" &&
-                privateAuthorityReads === 2
-              ) {
-                return yield* Effect.fail(HouseholdPeopleUnavailable.make({}));
-              }
-              if (
-                privateAuthorityBarrier !== null &&
-                privateAuthorityReads === 2
-              ) {
+          return yield* Effect.gen(function* routeHouseholdApiRequest() {
+            let privateAuthorityReads = 0;
+            const privateAuthorityBarrier = request.headers.get(
+              "x-test-private-output-authority-barrier"
+            );
+            const confirmationBarrier = (
+              phase: "before" | "after" | "before-release"
+            ) =>
+              Effect.gen(function* awaitConfirmationBarrier() {
+                const barrier = request.headers.get(
+                  `x-test-private-confirmation-${phase}`
+                );
+                if (barrier === null) {
+                  return;
+                }
                 yield* Effect.promise(() =>
                   env.HOUSEHOLD_TEST_OBSERVATIONS.put(
-                    `private-output-read:${privateAuthorityBarrier}`,
+                    `private-confirmation-${phase}:${barrier}`,
                     "ready"
                   )
                 );
-                while (
-                  yield* Effect.promise(() =>
+                let release: string | null = null;
+                while (release === null) {
+                  release = yield* Effect.promise(() =>
                     env.HOUSEHOLD_TEST_OBSERVATIONS.get(
-                      `private-output-release:${privateAuthorityBarrier}`
+                      `private-confirmation-release:${barrier}`
                     )
-                  ).pipe(Effect.map((value) => value !== "release"))
-                ) {
-                  yield* Effect.sleep("10 millis");
-                }
-              }
-            })
-          )
-        ),
-      mutateInterviewProfile: (
-        input: Parameters<
-          HouseholdDomainWorkerMethods["mutateInterviewProfile"]
-        >[0]
-      ) =>
-        confirmationBarrier("before").pipe(
-          Effect.tap(() =>
-            Effect.promise(async () => {
-              const observation = request.headers.get(
-                "x-test-private-confirmation-observation"
-              );
-              if (observation === null) {
-                return;
-              }
-              const key = `private-confirmation-household-calls:${observation}`;
-              const count = Number(
-                (await env.HOUSEHOLD_TEST_OBSERVATIONS.get(key)) ?? "0"
-              );
-              await env.HOUSEHOLD_TEST_OBSERVATIONS.put(key, String(count + 1));
-            })
-          ),
-          Effect.andThen(() => {
-            const substitutedCommand = request.headers.get(
-              "x-test-private-confirmation-command"
-            );
-            return householdDomain.mutateInterviewProfile(
-              substitutedCommand === null
-                ? input
-                : {
-                    ...input,
-                    payload: {
-                      ...input.payload,
-                      command: Schema.decodeUnknownSync(ProfileCommand)(
-                        JSON.parse(substitutedCommand)
-                      ),
-                    },
+                  );
+                  if (release === null) {
+                    yield* Effect.sleep("10 millis");
                   }
+                }
+                if (release === "drop") {
+                  return yield* Effect.die(
+                    new Error("Synthetic lost canonical confirmation result")
+                  );
+                }
+              });
+            const privateHousehold = {
+              listHouseholdPeople: (
+                input: Parameters<
+                  HouseholdDomainWorkerMethods["listHouseholdPeople"]
+                >[0]
+              ) =>
+                householdDomain.listHouseholdPeople(input).pipe(
+                  Effect.tap(() =>
+                    Effect.gen(function* listHouseholdPeople() {
+                      privateAuthorityReads += 1;
+                      if (privateAuthorityReads === 1) {
+                        yield* confirmationBarrier("before-release");
+                      }
+                      if (
+                        request.headers.get(
+                          "x-test-private-output-authority-failure"
+                        ) === "1" &&
+                        privateAuthorityReads === 2
+                      ) {
+                        return yield* Effect.fail(
+                          HouseholdPeopleUnavailable.make({})
+                        );
+                      }
+                      if (
+                        privateAuthorityBarrier !== null &&
+                        privateAuthorityReads === 2
+                      ) {
+                        yield* Effect.promise(() =>
+                          env.HOUSEHOLD_TEST_OBSERVATIONS.put(
+                            `private-output-read:${privateAuthorityBarrier}`,
+                            "ready"
+                          )
+                        );
+                        while (
+                          yield* Effect.promise(() =>
+                            env.HOUSEHOLD_TEST_OBSERVATIONS.get(
+                              `private-output-release:${privateAuthorityBarrier}`
+                            )
+                          ).pipe(Effect.map((value) => value !== "release"))
+                        ) {
+                          yield* Effect.sleep("10 millis");
+                        }
+                      }
+                    })
+                  )
+                ),
+              mutateInterviewProfile: (
+                input: Parameters<
+                  HouseholdDomainWorkerMethods["mutateInterviewProfile"]
+                >[0]
+              ) =>
+                confirmationBarrier("before").pipe(
+                  Effect.tap(() =>
+                    Effect.promise(async () => {
+                      const observation = request.headers.get(
+                        "x-test-private-confirmation-observation"
+                      );
+                      if (observation === null) {
+                        return;
+                      }
+                      const key = `private-confirmation-household-calls:${observation}`;
+                      const count = Number(
+                        (await env.HOUSEHOLD_TEST_OBSERVATIONS.get(key)) ?? "0"
+                      );
+                      await env.HOUSEHOLD_TEST_OBSERVATIONS.put(
+                        key,
+                        String(count + 1)
+                      );
+                    })
+                  ),
+                  Effect.andThen(() => {
+                    const substitutedCommand = request.headers.get(
+                      "x-test-private-confirmation-command"
+                    );
+                    return householdDomain.mutateInterviewProfile(
+                      substitutedCommand === null
+                        ? input
+                        : {
+                            ...input,
+                            payload: {
+                              ...input.payload,
+                              command: Schema.decodeUnknownSync(ProfileCommand)(
+                                JSON.parse(substitutedCommand)
+                              ),
+                            },
+                          }
+                    );
+                  }),
+                  Effect.tap(() => confirmationBarrier("after"))
+                ),
+              readPersonProfile: (
+                input: Parameters<
+                  HouseholdDomainWorkerMethods["readPersonProfile"]
+                >[0]
+              ) => householdDomain.readPersonProfile(input),
+            };
+            const privateResponse = yield* handlePrivateInterviewRequest({
+              auth,
+              household: privateHousehold,
+              output: env.PrivateOutputApi,
+              request,
+            });
+            if (privateResponse !== null) {
+              return privateResponse;
+            }
+            const resolver = makeAuthenticatedOrganizationResolver({ auth });
+            const principalResolver = makeAuthPrincipalResolver({ auth });
+            const importServices = Layer.mergeAll(
+              Layer.succeed(AuthPrincipalResolver, principalResolver),
+              Layer.succeed(AuthenticatedOrganizationResolver, resolver),
+              Layer.succeed(RecipeImportHouseholdDomain, householdDomain),
+              Layer.succeed(
+                RecipeImportWorkflowDispatcher,
+                RecipeImportWorkflowDispatcher.of({
+                  dispatch: ({ admission, committed }) =>
+                    Schema.decodeUnknownEffect(
+                      HouseholdRecordRecipeImportDispatchInput
+                    )({
+                      admission: {
+                        actor: {
+                          _tag: "System",
+                          purpose: "import_workflow_dispatch",
+                        },
+                        organizationId: admission.organizationId,
+                      },
+                      dispatchId: committed.dispatchId,
+                      originalTrace: {
+                        correlationId: "00000000-0000-4000-8000-000000000188",
+                      },
+                      outcome: "started",
+                      workflowIdentity: committed.workflowIdentity,
+                    }).pipe(
+                      Effect.flatMap(
+                        householdDomain.recordRecipeImportDispatch
+                      ),
+                      Effect.asVoid,
+                      Effect.orDie
+                    ),
+                })
+              )
             );
-          }),
-          Effect.tap(() => confirmationBarrier("after"))
-        ),
-      readPersonProfile: (
-        input: Parameters<HouseholdDomainWorkerMethods["readPersonProfile"]>[0]
-      ) => householdDomain.readPersonProfile(input),
-    };
-    const privateResponse = await Effect.runPromise(
-      handlePrivateInterviewRequest({
-        auth,
-        household: privateHousehold,
-        output: env.PrivateOutputApi,
-        request,
-      })
-    );
-    if (privateResponse !== null) {
-      return privateResponse;
-    }
-    const resolver = makeAuthenticatedOrganizationResolver({ auth });
-    const principalResolver = makeAuthPrincipalResolver({ auth });
-    const importServices = Layer.mergeAll(
-      Layer.succeed(AuthPrincipalResolver, principalResolver),
-      Layer.succeed(AuthenticatedOrganizationResolver, resolver),
-      Layer.succeed(RecipeImportHouseholdDomain, householdDomain),
-      Layer.succeed(
-        RecipeImportWorkflowDispatcher,
-        RecipeImportWorkflowDispatcher.of({
-          dispatch: ({ admission, committed }) =>
-            Schema.decodeUnknownEffect(
-              HouseholdRecordRecipeImportDispatchInput
-            )({
-              admission: {
-                actor: {
-                  _tag: "System",
-                  purpose: "import_workflow_dispatch",
+            const householdLayer = makeHouseholdRequestLayer({
+              gateway: makeHouseholdDomainGateway({
+                ensureHousehold: householdDomain.ensureHousehold,
+              }),
+              resolver,
+            });
+            const mealPlanLayer = makeHouseholdMealPlanRequestLayer({
+              gateway: makeHouseholdMealPlanGateway({
+                domain: householdDomain,
+              }),
+              resolver,
+            });
+            const nativeDepartureWorkflow =
+              makeNativeMemberDepartureStarter(env);
+            const departureCrash = request.headers.get(
+              "x-test-member-departure-crash"
+            );
+            const forceFinalizationRepair =
+              request.headers.get(
+                "x-test-member-departure-finalization-repair"
+              ) === "1";
+            const departureWorkflow: MemberDepartureWorkflowStarter = {
+              confirmTerminal: nativeDepartureWorkflow.confirmTerminal,
+              ensureStarted: (input) =>
+                Effect.gen(function* startFixtureDeparture() {
+                  if (forceFinalizationRepair) {
+                    yield* Effect.promise(() =>
+                      env.HOUSEHOLD_TEST_OBSERVATIONS.put(
+                        `member-departure-finalization-repair:${input.operationId}`,
+                        "1"
+                      )
+                    );
+                  }
+                  yield* nativeDepartureWorkflow.ensureStarted(input);
+                  if (departureCrash === "before-removal") {
+                    return yield* Effect.die(
+                      "Injected crash before membership removal"
+                    );
+                  }
+                }),
+              signalRemovalOutcome: (input, outcome) =>
+                departureCrash === "after-removal-before-signal"
+                  ? Effect.die("Injected crash after membership removal")
+                  : nativeDepartureWorkflow.signalRemovalOutcome(
+                      input,
+                      outcome
+                    ),
+            };
+            const invitationFailure = request.headers.get(
+              "x-test-invitation-failure"
+            );
+            const nativePeopleControlPlane = makeHouseholdPeopleControlPlane({
+              auth,
+              database: drizzle(env.MealPlannerAuthDatabase),
+            });
+            const peopleControlPlane: HouseholdPeopleControlPlane = {
+              ...nativePeopleControlPlane,
+              createInvitation: (input) =>
+                invitationFailure === "before-invitation-create"
+                  ? Effect.fail(new HouseholdPeopleControlPlaneUnavailable())
+                  : nativePeopleControlPlane
+                      .createInvitation(input)
+                      .pipe(
+                        Effect.flatMap((invitation) =>
+                          invitationFailure === "after-create-before-response"
+                            ? Effect.fail(
+                                new HouseholdPeopleControlPlaneUnavailable()
+                              )
+                            : Effect.succeed(invitation)
+                        )
+                      ),
+            };
+            const peopleLayer = makeHouseholdPeopleRequestLayer({
+              gateway: makeHouseholdPeopleGateway({
+                controlPlane: peopleControlPlane,
+                departureWorkflow,
+                domain: {
+                  archiveHouseholdPerson: (input) =>
+                    householdDomain.archiveHouseholdPerson(input),
+                  associateAdultInvitation: (input) =>
+                    invitationFailure === "after-create-before-association"
+                      ? Effect.fail(HouseholdPeopleUnavailable.make({}))
+                      : householdDomain.associateAdultInvitation(input),
+                  bootstrapCreatorPerson: (input) =>
+                    Effect.promise(async () => {
+                      await Promise.all([
+                        env.HOUSEHOLD_TEST_OBSERVATIONS.put(
+                          "people-bootstrap-private-invoked",
+                          "true"
+                        ),
+                        env.HOUSEHOLD_TEST_OBSERVATIONS.put(
+                          `people-bootstrap-private-invoked:${input.payload.mutationId}`,
+                          "true"
+                        ),
+                      ]);
+                    }).pipe(
+                      Effect.flatMap(() =>
+                        householdDomain.bootstrapCreatorPerson(input)
+                      )
+                    ),
+                  cancelMemberDeparture: (input) =>
+                    householdDomain.cancelMemberDeparture(input),
+                  completeAcceptedAdultLink: (input) =>
+                    householdDomain.completeAcceptedAdultLink(input),
+                  createHouseholdPerson: (input) =>
+                    householdDomain.createHouseholdPerson(input),
+                  getHouseholdPerson: (input) =>
+                    householdDomain.getHouseholdPerson(input),
+                  getMemberDeparture: (input) =>
+                    householdDomain.getMemberDeparture(input),
+                  getMemberDepartureByMutation: (input) =>
+                    householdDomain.getMemberDepartureByMutation(input),
+                  listHouseholdPeople: (input) =>
+                    householdDomain.listHouseholdPeople(input),
+                  listProfileVersions: (input) =>
+                    householdDomain.listProfileVersions(input),
+                  mutatePersonProfile: (input) =>
+                    householdDomain.mutatePersonProfile(input),
+                  prepareMemberDeparture: (input) =>
+                    householdDomain.prepareMemberDeparture(input),
+                  readPersonProfile: (input) =>
+                    householdDomain.readPersonProfile(input),
+                  renameHouseholdPerson: (input) =>
+                    householdDomain.renameHouseholdPerson(input),
+                  repairAdultAccountLink: (input) =>
+                    householdDomain.repairAdultAccountLink(input),
+                  restoreHouseholdPerson: (input) =>
+                    householdDomain.restoreHouseholdPerson(input),
+                  restoreReturningAdultLink: (input) =>
+                    householdDomain.restoreReturningAdultLink(input),
+                  retryMemberDeparture: (input) =>
+                    householdDomain.retryMemberDeparture(input),
+                  startMemberDeparture: (input) =>
+                    departureCrash === "after-prepare-before-start"
+                      ? Effect.die("Injected crash after departure preparation")
+                      : householdDomain.startMemberDeparture(input),
                 },
-                organizationId: admission.organizationId,
-              },
-              dispatchId: committed.dispatchId,
-              originalTrace: {
-                correlationId: "00000000-0000-4000-8000-000000000188",
-              },
-              outcome: "started",
-              workflowIdentity: committed.workflowIdentity,
-            }).pipe(
-              Effect.flatMap(householdDomain.recordRecipeImportDispatch),
-              Effect.asVoid,
-              Effect.orDie
-            ),
-        })
+              }),
+              resolver,
+            });
+            const routeHandler = yield* HttpRouter.toHttpEffect(
+              Layer.mergeAll(
+                householdLayer,
+                mealPlanLayer,
+                peopleLayer,
+                makeRecipeImportHttpApiLayer().pipe(
+                  Layer.provide(importServices),
+                  HttpRouter.provideRequest(importServices)
+                )
+              )
+            );
+            const response = yield* routeHandler.pipe(
+              Effect.provideService(
+                HttpServerRequest.HttpServerRequest,
+                HttpServerRequest.fromWeb(request)
+              )
+            );
+            return HttpServerResponse.toWeb(response);
+          });
+        }).pipe(Effect.provideService(RuntimeContext, testRuntimeContext))
       )
     );
-    const householdLayer = makeHouseholdRequestLayer({
-      gateway: makeHouseholdDomainGateway({
-        ensureHousehold: householdDomain.ensureHousehold,
-      }),
-      resolver,
-    });
-    const mealPlanLayer = makeHouseholdMealPlanRequestLayer({
-      gateway: makeHouseholdMealPlanGateway({ domain: householdDomain }),
-      resolver,
-    });
-    const nativeDepartureWorkflow = makeNativeMemberDepartureStarter(env);
-    const departureCrash = request.headers.get("x-test-member-departure-crash");
-    const forceFinalizationRepair =
-      request.headers.get("x-test-member-departure-finalization-repair") ===
-      "1";
-    const departureWorkflow: MemberDepartureWorkflowStarter = {
-      confirmTerminal: nativeDepartureWorkflow.confirmTerminal,
-      ensureStarted: (input) =>
-        Effect.gen(function* startFixtureDeparture() {
-          if (forceFinalizationRepair) {
-            yield* Effect.promise(() =>
-              env.HOUSEHOLD_TEST_OBSERVATIONS.put(
-                `member-departure-finalization-repair:${input.operationId}`,
-                "1"
-              )
-            );
-          }
-          yield* nativeDepartureWorkflow.ensureStarted(input);
-          if (departureCrash === "before-removal") {
-            return yield* Effect.die(
-              "Injected crash before membership removal"
-            );
-          }
-        }),
-      signalRemovalOutcome: (input, outcome) =>
-        departureCrash === "after-removal-before-signal"
-          ? Effect.die("Injected crash after membership removal")
-          : nativeDepartureWorkflow.signalRemovalOutcome(input, outcome),
-    };
-    const invitationFailure = request.headers.get("x-test-invitation-failure");
-    const nativePeopleControlPlane = makeHouseholdPeopleControlPlane({
-      auth,
-      database: drizzle(env.MealPlannerAuthDatabase),
-    });
-    const peopleControlPlane: HouseholdPeopleControlPlane = {
-      ...nativePeopleControlPlane,
-      createInvitation: (input) =>
-        invitationFailure === "before-invitation-create"
-          ? Effect.fail(new HouseholdPeopleControlPlaneUnavailable())
-          : nativePeopleControlPlane
-              .createInvitation(input)
-              .pipe(
-                Effect.flatMap((invitation) =>
-                  invitationFailure === "after-create-before-response"
-                    ? Effect.fail(new HouseholdPeopleControlPlaneUnavailable())
-                    : Effect.succeed(invitation)
-                )
-              ),
-    };
-    const peopleLayer = makeHouseholdPeopleRequestLayer({
-      gateway: makeHouseholdPeopleGateway({
-        controlPlane: peopleControlPlane,
-        departureWorkflow,
-        domain: {
-          archiveHouseholdPerson: (input) =>
-            householdDomain.archiveHouseholdPerson(input),
-          associateAdultInvitation: (input) =>
-            invitationFailure === "after-create-before-association"
-              ? Effect.fail(HouseholdPeopleUnavailable.make({}))
-              : householdDomain.associateAdultInvitation(input),
-          bootstrapCreatorPerson: (input) =>
-            Effect.promise(async () => {
-              await Promise.all([
-                env.HOUSEHOLD_TEST_OBSERVATIONS.put(
-                  "people-bootstrap-private-invoked",
-                  "true"
-                ),
-                env.HOUSEHOLD_TEST_OBSERVATIONS.put(
-                  `people-bootstrap-private-invoked:${input.payload.mutationId}`,
-                  "true"
-                ),
-              ]);
-            }).pipe(
-              Effect.flatMap(() =>
-                householdDomain.bootstrapCreatorPerson(input)
-              )
-            ),
-          cancelMemberDeparture: (input) =>
-            householdDomain.cancelMemberDeparture(input),
-          completeAcceptedAdultLink: (input) =>
-            householdDomain.completeAcceptedAdultLink(input),
-          createHouseholdPerson: (input) =>
-            householdDomain.createHouseholdPerson(input),
-          getHouseholdPerson: (input) =>
-            householdDomain.getHouseholdPerson(input),
-          getMemberDeparture: (input) =>
-            householdDomain.getMemberDeparture(input),
-          getMemberDepartureByMutation: (input) =>
-            householdDomain.getMemberDepartureByMutation(input),
-          listHouseholdPeople: (input) =>
-            householdDomain.listHouseholdPeople(input),
-          listProfileVersions: (input) =>
-            householdDomain.listProfileVersions(input),
-          mutatePersonProfile: (input) =>
-            householdDomain.mutatePersonProfile(input),
-          prepareMemberDeparture: (input) =>
-            householdDomain.prepareMemberDeparture(input),
-          readPersonProfile: (input) =>
-            householdDomain.readPersonProfile(input),
-          renameHouseholdPerson: (input) =>
-            householdDomain.renameHouseholdPerson(input),
-          repairAdultAccountLink: (input) =>
-            householdDomain.repairAdultAccountLink(input),
-          restoreHouseholdPerson: (input) =>
-            householdDomain.restoreHouseholdPerson(input),
-          restoreReturningAdultLink: (input) =>
-            householdDomain.restoreReturningAdultLink(input),
-          retryMemberDeparture: (input) =>
-            householdDomain.retryMemberDeparture(input),
-          startMemberDeparture: (input) =>
-            departureCrash === "after-prepare-before-start"
-              ? Effect.die("Injected crash after departure preparation")
-              : householdDomain.startMemberDeparture(input),
-        },
-      }),
-      resolver,
-    });
-    const mounted = HttpRouter.toWebHandler(
-      Layer.mergeAll(
-        householdLayer,
-        mealPlanLayer,
-        peopleLayer,
-        makeRecipeImportHttpApiLayer().pipe(
-          Layer.provide(importServices),
-          HttpRouter.provideRequest(importServices)
-        )
-      ),
-      { disableLogger: true }
-    );
-    try {
-      return await mounted.handler(request);
-    } finally {
-      await mounted.dispose();
-    }
   },
 };
