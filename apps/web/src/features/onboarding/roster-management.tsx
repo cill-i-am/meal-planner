@@ -104,19 +104,6 @@ const commandFromForm = (
   });
 };
 
-const currentDraft = (
-  action: RosterIntent,
-  value: { readonly email: string; readonly name: string }
-): SetupRosterActionDraft => {
-  if (action.kind === "invite") {
-    return { email: value.email, kind: "invite", person: action.person };
-  }
-  if (action.kind === "rename") {
-    return { kind: "rename", name: value.name, person: action.person };
-  }
-  return { kind: "remove", person: action.person };
-};
-
 const actionTitle = (action: RosterIntent): string => {
   const name = action.person.displayName;
   if (action.kind === "invite") {
@@ -426,16 +413,6 @@ const useManagementMutations = (checkpoint: ManagementCheckpoint) => {
       await navigate({ to: destination });
     },
   });
-  const pause = useMutation({
-    mutationFn: async (draft: SetupRosterActionDraft | null) => {
-      const next: ManagementCheckpoint =
-        draft === null
-          ? checkpoint
-          : { ...checkpoint, state: { action: draft, phase: "draft" } };
-      await setup.save({ checkpoint: next, status: "paused" });
-      await navigate({ to: "/setup/saved" });
-    },
-  });
   const mutation = useMutation({
     mutationFn: async (command: SetupRosterCommand) => {
       const pending: ManagementCheckpoint = {
@@ -476,7 +453,7 @@ const useManagementMutations = (checkpoint: ManagementCheckpoint) => {
       await navigate({ to: destination });
     },
   });
-  return { close, mutation, pause };
+  return { close, mutation };
 };
 
 const PendingResultNotice = ({
@@ -509,7 +486,7 @@ const RosterManagementDialog = ({
   const { state } = checkpoint;
   const action = state.phase === "draft" ? state.action : state.command;
   const formElement = useRef<HTMLFormElement>(null);
-  const { close, mutation, pause } = useManagementMutations(checkpoint);
+  const { close, mutation } = useManagementMutations(checkpoint);
   const form = useAppForm({
     defaultValues: {
       email: action.kind === "invite" ? action.email : "",
@@ -525,15 +502,12 @@ const RosterManagementDialog = ({
       });
     },
   });
-  const busy =
-    !open || close.isPending || pause.isPending || mutation.isPending;
+  const busy = !open || close.isPending || mutation.isPending;
   const pending = state.phase === "pending";
   const reviewRequired =
     mutation.error !== null &&
     terminalFailure(mutation.error) &&
     householdPeopleFailureCode(mutation.error) !== "invitation_rejected";
-  const draft = (): SetupRosterActionDraft | null =>
-    pending ? null : currentDraft(action, form.state.values);
   return (
     <Overlay.Root
       open={open}
@@ -633,7 +607,7 @@ const RosterManagementDialog = ({
           {mutation.error && (
             <SetupError>{failureMessage(mutation.error)}</SetupError>
           )}
-          {(close.error || pause.error) && (
+          {close.error && (
             <SetupError>We couldn’t save your place. Try again.</SetupError>
           )}
         </Overlay.Body>
@@ -667,13 +641,6 @@ const RosterManagementDialog = ({
             onClick={() => close.mutate()}
           >
             Cancel
-          </Button>
-          <Button
-            variant="link"
-            disabled={busy}
-            onClick={() => pause.mutate(draft())}
-          >
-            Save & exit
           </Button>
         </Overlay.Footer>
       </Overlay.Content>

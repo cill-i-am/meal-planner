@@ -100,6 +100,8 @@ Short Invite and Edit forms use content-sized mobile sheets with 24px top corner
 
 Both the Already added list and family review offer Invite for eligible adults plus an accessible, labelled menu for Edit name and Remove. The current person's menu only offers editing. Opening an action preserves the add-person draft and return location. A removal confirmation explains whether it also cancels an invitation or removes a joined adult's family access. Keep unresolved requests and their exact mutation identity until the result is confirmed; do not make a person disappear before access changes finish. Email delivery remains mocked.
 
+Roster dialogs and mobile sheets contain their primary action and Cancel. Keep Save & exit in the setup page header only.
+
 Password visibility keeps both Lucide icons mounted, using 16px icons with a 1.5px stroke. Cross-fade opacity 0–1, scale 0.25–1 and blur 4–0px over 300ms with `cubic-bezier(0.2, 0, 0, 1)`. Reduced motion switches immediately. The accessible name, tooltip and pressed state remain the static feedback.
 
 Password visibility also plays a quiet, 20ms activation click, inspired by the [Nexvyn clipboard field](https://ui.nexvyn.dev/components/clipboard-field). Use the same feedback for pointer and keyboard activation. Sound supplements the icon, tooltip and pressed state; the action still works if audio is unavailable. Create audio only after activation and release it when the control unmounts.

@@ -582,7 +582,7 @@ it("shows members only their own edit action", async () => {
   ).not.toBeInTheDocument();
 });
 
-it("retains an uncertain removal through Save & exit and retries the exact request", async () => {
+it("retains an uncertain removal and retries the exact request", async () => {
   const review = Schema.decodeUnknownSync(SetupProgress)({
     checkpoint: { organizationId: familyId, stage: "family-review" },
     status: "active",
@@ -602,18 +602,16 @@ it("retains an uncertain removal through Save & exit and retries the exact reque
   expect(
     screen.queryByRole("button", { name: "Close" })
   ).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Save & exit" }));
   expect(
-    await screen.findByRole("heading", { name: "Setup saved" })
-  ).toBeInTheDocument();
+    screen.queryByRole("button", { name: "Save & exit" })
+  ).not.toBeInTheDocument();
   expect(fixture.saves.at(-1)).toMatchObject({
     checkpoint: {
       stage: "person-manage",
       state: { command: { mutationId: expect.any(String) }, phase: "pending" },
     },
-    status: "paused",
+    status: "active",
   });
-  await user.click(screen.getByRole("button", { name: "Resume setup" }));
   await user.click(
     await screen.findByRole("button", { name: "Check and continue" })
   );
