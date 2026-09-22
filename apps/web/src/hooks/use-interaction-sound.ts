@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 
+import { isInteractionSoundEnabled } from "./interaction-sound-preference.js";
+
 const closeAudio = async (audio: AudioContext) => {
   try {
     await audio.close();
@@ -24,7 +26,7 @@ export const useInteractionSound = () => {
   );
 
   return async () => {
-    if (!("AudioContext" in window)) {
+    if (!isInteractionSoundEnabled() || !("AudioContext" in window)) {
       return;
     }
     try {
@@ -33,7 +35,11 @@ export const useInteractionSound = () => {
       if (audio.state === "suspended") {
         await audio.resume();
       }
-      if (context.current !== audio || audio.state !== "running") {
+      if (
+        context.current !== audio ||
+        audio.state !== "running" ||
+        !isInteractionSoundEnabled()
+      ) {
         return;
       }
 

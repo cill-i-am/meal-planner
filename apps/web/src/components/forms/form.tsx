@@ -110,6 +110,7 @@ const ParticipationField = ({
   readonly disabled: boolean;
 }) => {
   const field = useFieldContext<string>();
+  const playInteractionSound = useInteractionSound();
   const attempts = useStore(
     field.form.store,
     (state) => state.submissionAttempts
@@ -126,7 +127,13 @@ const ParticipationField = ({
         aria-invalid={errors.length > 0}
         disabled={disabled}
         value={field.state.value ? [field.state.value] : []}
-        onValueChange={(value) => field.handleChange(value[0] ?? "")}
+        onValueChange={(value) => {
+          const next = value[0] ?? "";
+          if (next !== field.state.value) {
+            field.handleChange(next);
+            void playInteractionSound();
+          }
+        }}
         onBlur={() => field.handleBlur()}
       >
         <ToggleGroupItem value="adult">Adult</ToggleGroupItem>
