@@ -22,6 +22,8 @@ Read nested instructions for the files you change. Use [the docs map](docs/READM
 
 ## Finish the assigned work
 
+When creating subagents, choose the model best suited to the job from Sol, Luna and Astra, with reasoning effort appropriate to the task's complexity and risk. Use `fork_turns="none"` when a self-contained task brief is sufficient; provide full context only when the subagent needs it.
+
 Complete the assigned plan, check the result, fix related failures and reach the requested delivery point. Do not ask whether to continue at each milestone. Make routine decisions from the available evidence.
 
 Implementation requests include repository work through merge after required checks and reviews pass, unless the request sets a narrower endpoint. This does not authorize deployment or other external actions. Use permission already given for the same work. If something is genuinely blocked, finish the independent work and report the exact problem. Planning-only and review-only requests stay in scope.
