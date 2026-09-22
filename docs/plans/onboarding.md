@@ -191,3 +191,27 @@ profile creation, rename, adult invitation, one field error per invalid input,
 save/resume, and duplicate-recipient correction without a duplicate person. The
 independent design assessment reached 32/40 after fixes. Local desktop/mobile
 screenshots are captured; publishing media still awaits the requested approval.
+
+## Invitations stack layer — 22 September 2026
+
+`/invitation/:invitationId` provides recipient-only details, join/decline,
+wrong-account switching, unavailable and declined outcomes, and partial-linking
+recovery. `/setup/join` resumes a saved response. The checkpoint preserves the
+whole previous setup draft; an unresolved family/person mutation must finish
+before responding to a new invitation. Terminal outcomes restore that prior
+checkpoint rather than trapping the account in a redirect loop. A decline that
+was accepted in another session requires an explicit choice to finish linking.
+
+A private Better Auth read exposes closed invitation outcomes only to the invited
+account, so a lost acceptance or decline response can be reconciled. The original
+profile-link mutation survives pause/restart. Sender status matches the exact
+Durable Object invitation association; unrelated invitation records cannot mask
+a decline. The private association digest is never returned in the public roster.
+
+The two independent reviews identified command preservation, terminal-state
+recovery, account-switch redirects, long-address wrapping, cross-session response
+conflicts and link composition. These were corrected. Browser verified anonymous
+invitation entry, wrong-account switching, actual recipient acceptance/linking,
+decline, and mobile wrapping. Unit/UI tests exercise lost responses, restored
+drafts and the deliberate cross-session linking choice. Native boundary tests
+cover exact invitation status projection and returning former members.

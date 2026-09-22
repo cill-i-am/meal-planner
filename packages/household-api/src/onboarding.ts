@@ -42,7 +42,7 @@ export const PersonCreation = Schema.Union([
   }),
 ]);
 export type PersonCreation = typeof PersonCreation.Type;
-export const SetupCheckpoint = Schema.Union([
+export const FamilySetupCheckpoint = Schema.Union([
   Schema.Struct({
     displayName: FamilyName,
     email: Schema.String.check(Schema.isMaxLength(254)),
@@ -104,6 +104,24 @@ export const SetupCheckpoint = Schema.Union([
   Schema.Struct({
     organizationId: HouseholdAuthResourceId,
     stage: Schema.Literal("complete"),
+  }),
+]);
+export const SetupCheckpoint = Schema.Union([
+  FamilySetupCheckpoint,
+  Schema.Struct({
+    decision: Schema.Literals(["accept", "decline"]),
+    invitationId: HouseholdAuthResourceId,
+    linkMutationId: HouseholdPersonMutationId,
+    organizationId: HouseholdAuthResourceId,
+    returnCheckpoint: FamilySetupCheckpoint,
+    stage: Schema.Literal("invitation-response"),
+  }),
+  Schema.Struct({
+    invitationId: HouseholdAuthResourceId,
+    linkMutationId: HouseholdPersonMutationId,
+    organizationId: HouseholdAuthResourceId,
+    returnCheckpoint: FamilySetupCheckpoint,
+    stage: Schema.Literal("invitation-link"),
   }),
 ]);
 export type SetupCheckpoint = typeof SetupCheckpoint.Type;

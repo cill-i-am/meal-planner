@@ -24,6 +24,8 @@ export const SetupSavedPage = () => {
     "family-create": "Finish creating your family",
     "family-name": "Name your family",
     "family-review": "Review your family",
+    "invitation-link": "Finish joining your family",
+    "invitation-response": "Respond to your invitation",
     "person-create": "Finish adding your person",
     "person-draft": "Add someone",
     "person-edit": "Edit their name",

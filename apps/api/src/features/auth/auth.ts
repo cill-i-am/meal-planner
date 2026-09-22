@@ -6,6 +6,7 @@ import { betterAuth } from "better-auth";
 import type { BetterAuthOptions } from "better-auth";
 import { organization } from "better-auth/plugins";
 
+import { invitationViewPlugin } from "./invitation-view.js";
 import { mockInvitationMail } from "./auth-mail.js";
 import type { InvitationMail } from "./auth-mail.js";
 import { fenceAuthAdapter } from "./auth-output-fence.js";
@@ -64,6 +65,7 @@ export const makeMealPlannerAuth = ({
     disabledPaths: ["/organization/leave", "/organization/remove-member"],
     emailAndPassword: { enabled: true },
     plugins: [
+      invitationViewPlugin(),
       organization({
         disableOrganizationDeletion: true,
         organizationHooks:

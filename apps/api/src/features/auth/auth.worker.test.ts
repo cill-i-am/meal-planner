@@ -60,6 +60,103 @@ describe("Better Auth D1 control plane", () => {
     );
   });
 
+  it.each(["accept", "reject"])(
+    "reads recipient-only invitation outcomes after %s",
+    async (decision) => {
+      const database = drizzle(testEnv.MealPlannerAuthDatabase);
+      const auth = makeMealPlannerAuth({
+        baseURL,
+        database,
+        outputFence: (_input, canonical) => canonical(),
+        schema: authSchema,
+        secret,
+      });
+      const owner = await auth.fetch(
+        authRequest("/sign-up/email", {
+          email: `view-owner-${decision}@example.test`,
+          name: "Synthetic Owner",
+          password: "local-test-password-only",
+        })
+      );
+      const ownerCookie = cookieHeader(owner);
+      const createdFamily = await auth.fetch(
+        authRequest(
+          "/organization/create",
+          { name: "Synthetic Family", slug: `view-family-${decision}` },
+          ownerCookie
+        )
+      );
+      const family = Schema.decodeUnknownSync(
+        Schema.Struct({ id: Schema.String })
+      )(await createdFamily.json());
+      const invitationId = `recipient-view-${decision}`;
+      await auth.fetch(
+        authRequest(
+          "/organization/invite-member",
+          {
+            email: `view-recipient-${decision}@example.test`,
+            id: invitationId,
+            organizationId: family.id,
+            role: "member",
+          },
+          ownerCookie
+        )
+      );
+      const view = (cookie?: string) =>
+        auth.fetch(
+          new Request(`${baseURL}/api/auth/setup/invitation/${invitationId}`, {
+            headers: cookie ? { cookie } : {},
+          })
+        );
+      const anonymous = await view();
+      expect(anonymous.status).toBe(401);
+      const wrong = await view(ownerCookie);
+      expect(wrong.status).toBe(403);
+      expect(await wrong.text()).not.toContain(
+        `view-recipient-${decision}@example.test`
+      );
+      const recipient = await auth.fetch(
+        authRequest("/sign-up/email", {
+          email: `view-recipient-${decision}@example.test`,
+          name: "Synthetic Recipient",
+          password: "local-test-password-only",
+        })
+      );
+      const recipientCookie = cookieHeader(recipient);
+      const pending = await view(recipientCookie);
+      expect(await pending.json()).toMatchObject({
+        familyName: "Synthetic Family",
+        status: "pending",
+      });
+      const [inviterMembership] = await database
+        .select()
+        .from(authSchema.member)
+        .where(eq(authSchema.member.organizationId, family.id));
+      if (!inviterMembership) {
+        throw new Error("Expected inviter membership");
+      }
+      await database
+        .delete(authSchema.member)
+        .where(eq(authSchema.member.id, inviterMembership.id));
+      const unavailableInviter = await view(recipientCookie);
+      expect(unavailableInviter.status).toBe(404);
+      await database.insert(authSchema.member).values(inviterMembership);
+      const response = await auth.fetch(
+        authRequest(
+          `/organization/${decision}-invitation`,
+          { invitationId },
+          recipientCookie
+        )
+      );
+      expect(response.status).toBe(200);
+      const completed = await view(recipientCookie);
+      expect(await completed.json()).toMatchObject({
+        status: decision === "accept" ? "accepted" : "rejected",
+      });
+      expect(completed.headers.get("cache-control")).toBe("no-store");
+    }
+  );
+
   it("persists only valid account-owned setup checkpoints", async () => {
     const auth = makeMealPlannerAuth({
       baseURL,
