@@ -423,8 +423,17 @@ afterEach(() => {
 
 it("adds an adult without an account unless invitation is chosen", async () => {
   const { fixture, user } = await setup();
-  await user.type(screen.getByLabelText("Name"), "Jamie");
+  expect(screen.getByRole("group", { name: "Age" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Adult" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
   await user.click(screen.getByRole("button", { name: "Adult" }));
+  expect(screen.getByRole("button", { name: "Adult" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await user.type(screen.getByLabelText("Name"), "Jamie");
   expect(
     screen.getByRole("checkbox", { name: "Invite them to join" })
   ).not.toBeChecked();
@@ -444,7 +453,6 @@ it("invites an existing adult without creating a second person and restores the 
   const fixture = makeTransport(initial, [managedAdult]);
   const { user } = await setup(fixture);
   await user.type(screen.getByLabelText("Name"), "Taylor");
-  await user.click(screen.getByRole("button", { name: "Adult" }));
   await user.click(screen.getByRole("button", { name: "Invite" }));
   expect(
     await screen.findByRole("heading", { name: "Invite Jamie" })
@@ -540,7 +548,6 @@ it("closes an unsubmitted edit without changing the person or losing the Add dra
   const fixture = makeTransport(initial, [managedAdult]);
   const { user } = await setup(fixture);
   await user.type(screen.getByLabelText("Name"), "Taylor");
-  await user.click(screen.getByRole("button", { name: "Adult" }));
   await user.click(
     screen.getByRole("checkbox", { name: "Invite them to join" })
   );
@@ -994,7 +1001,6 @@ it("adds a child as a managed profile without an invitation choice", async () =>
 it("requires a valid email when inviting and sends the invitation for an adult", async () => {
   const { fixture, user } = await setup();
   await user.type(screen.getByLabelText("Name"), "Jamie");
-  await user.click(screen.getByRole("button", { name: "Adult" }));
   await user.click(
     screen.getByRole("checkbox", { name: "Invite them to join" })
   );
@@ -1027,7 +1033,6 @@ it("requires a valid email when inviting and sends the invitation for an adult",
 it("preserves an invitation email across checkbox changes and validates it when invited again", async () => {
   const { fixture, user } = await setup();
   await user.type(screen.getByLabelText("Name"), "Jamie");
-  await user.click(screen.getByRole("button", { name: "Adult" }));
   const invite = screen.getByRole("checkbox", { name: "Invite them to join" });
   await user.click(
     screen.getByText("Let them sign in and manage their preferences.")
@@ -1055,7 +1060,6 @@ it("preserves an invitation email across checkbox changes and validates it when 
 it("clears invite consent and invalid email across Adult, Child, Adult changes", async () => {
   const { fixture, user } = await setup();
   await user.type(screen.getByLabelText("Name"), "Riley");
-  await user.click(screen.getByRole("button", { name: "Adult" }));
   await user.click(
     screen.getByRole("checkbox", { name: "Invite them to join" })
   );
@@ -1087,7 +1091,6 @@ it("clears invite consent and invalid email across Adult, Child, Adult changes",
 it("preserves an opted-in invitation email through Save & exit and resume", async () => {
   const { fixture, user } = await setup();
   await user.type(screen.getByLabelText("Name"), "Jamie");
-  await user.click(screen.getByRole("button", { name: "Adult" }));
   await user.click(
     screen.getByRole("checkbox", { name: "Invite them to join" })
   );

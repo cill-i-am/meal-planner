@@ -129,12 +129,13 @@ const PersonDraftForm = ({
   ) => void;
   readonly overlay: ReactNode;
 }) => {
+  const defaultParticipation: string = draft.participation || "adult";
   const form = useAppForm({
     defaultValues: {
       email: draft.email,
       invite: draft.invite ?? false,
       name: draft.name,
-      participation: draft.participation as string,
+      participation: defaultParticipation,
     },
     onSubmit: async ({ value }) => {
       const person = {

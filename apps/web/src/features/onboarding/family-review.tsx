@@ -94,7 +94,12 @@ export const FamilyReviewPage = () => {
       } else if (destination === "people") {
         await setup.save({
           checkpoint: {
-            draft: { email: "", invite: false, name: "", participation: "" },
+            draft: {
+              email: "",
+              invite: false,
+              name: "",
+              participation: "adult",
+            },
             organizationId: checkpoint.organizationId,
             stage: "person-draft",
           },

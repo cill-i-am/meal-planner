@@ -120,7 +120,7 @@ const ParticipationField = ({
     field.state.meta.isBlurred || attempts > 0 ? field.state.meta.errors : [];
   return (
     <Field data-invalid={errors.length > 0} data-disabled={disabled}>
-      <FieldLabel id={`${id}-label`}>Person type</FieldLabel>
+      <FieldLabel id={`${id}-label`}>Age</FieldLabel>
       <ToggleGroup
         variant="segment"
         aria-labelledby={`${id}-label`}
@@ -129,8 +129,8 @@ const ParticipationField = ({
         disabled={disabled}
         value={field.state.value ? [field.state.value] : []}
         onValueChange={(value) => {
-          const next = value[0] ?? "";
-          if (next !== field.state.value) {
+          const [next] = value;
+          if (next !== undefined && next !== field.state.value) {
             field.handleChange(next);
             void playInteractionSound();
           }
