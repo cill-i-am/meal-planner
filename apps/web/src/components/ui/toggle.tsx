@@ -22,7 +22,7 @@ const toggleVariants = cva(
         default: "bg-transparent",
         outline: "border-input hover:bg-muted border bg-transparent",
         segment:
-          "text-muted-foreground aria-pressed:border-input aria-pressed:bg-background aria-pressed:text-foreground focus-visible:border-ring focus-visible:ring-ring/30 border border-transparent aria-pressed:shadow-sm",
+          "text-muted-foreground aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:to-primary aria-pressed:shadow-foreground/12 aria-pressed:inset-shadow-[0_1px_--theme(--color-primary-foreground/25%)] aria-pressed:hover:bg-primary aria-pressed:hover:text-primary-foreground focus-visible:border-ring focus-visible:ring-ring/30 rounded-md border border-transparent aria-pressed:bg-linear-to-b/oklch aria-pressed:from-[color-mix(in_oklch,var(--primary),var(--primary-foreground)_10%)] aria-pressed:shadow-[0_1px_2px] aria-pressed:focus-visible:shadow-none aria-pressed:focus-visible:inset-shadow-none aria-pressed:active:shadow-none aria-pressed:active:inset-shadow-none aria-pressed:disabled:shadow-none aria-pressed:disabled:inset-shadow-none",
       },
     },
   }
