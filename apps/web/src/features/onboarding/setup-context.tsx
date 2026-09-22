@@ -10,6 +10,7 @@ import {
   useAuthClient,
   requireAuthSuccess,
 } from "../auth/auth-client.js";
+import { parseDisplayedIdentity } from "../auth/displayed-identity.js";
 import { makeBrowserHouseholdPeopleOperations } from "../household-people/browser-operations.js";
 import type { HouseholdPeopleOperations } from "../household-people/operations.js";
 import { initialSetup, parseSetupProgress } from "./setup-state.js";
@@ -130,10 +131,12 @@ export const SetupProvider = ({
           });
         },
         peopleForFamily: (organizationId) =>
-          makeBrowserHouseholdPeopleOperations({
-            organizationId,
-            userId: user.id,
-          }),
+          makeBrowserHouseholdPeopleOperations(
+            parseDisplayedIdentity({
+              organizationId,
+              userId: user.id,
+            })
+          ),
         progress,
         save,
         selectFamily: async (id) => {

@@ -52,6 +52,12 @@ export class PrivateOutputUnavailable extends Data.TaggedError(
 }> {}
 
 export interface OutputLifecyclePort {
+  readonly findPendingMutation: (input: OutputMutationIntent) => Promise<
+    | (OutputMutation & {
+        readonly phase: "fencing" | "ready" | "dispatched" | "settled";
+      })
+    | null
+  >;
   readonly beginMutation: (
     input: OutputMutationIntent
   ) => Promise<

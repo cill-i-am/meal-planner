@@ -2,10 +2,11 @@ import type {
   InvitationRejectionReason,
   HouseholdOrganizationId,
 } from "@meal-planner/household-api";
+import { HouseholdAuthResourceId } from "@meal-planner/household-api";
 import { isAPIError } from "better-auth/api";
 import { and, eq } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import { Data, Effect } from "effect";
+import { Data, Effect, Schema } from "effect";
 
 import * as authSchema from "../../auth/auth.database-schema.js";
 import type { MealPlannerAuth } from "../../auth/auth.js";
@@ -167,15 +168,17 @@ export const makeHouseholdPeopleControlPlane = (options: {
         catch: (error) =>
           invitationFailure(isAPIError(error) ? error.body?.code : undefined),
         try: async () => {
-          const invitation = await options.auth.api.createInvitation({
+          const invitation = await options.auth.createHouseholdInvitation({
             body: {
               email: input.email,
               householdPersonId: input.personId,
-              id: input.invitationId,
               organizationId: input.organizationId,
               role: "member",
             },
             headers: input.headers,
+            invitationId: Schema.decodeUnknownSync(HouseholdAuthResourceId)(
+              input.invitationId
+            ),
           });
           return {
             email: invitation.email,

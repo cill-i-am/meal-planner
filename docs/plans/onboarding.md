@@ -246,3 +246,35 @@ Household PR #239, managed through `gh stack`. CI has not been awaited. Local
 visual captures are available; automatic approval review blocked GitHub screenshot
 upload pending explicit approval of the synthetic fixture media. No deployment or
 merge is claimed.
+
+## Better Auth review fixes · 22 September 2026
+
+The follow-up security layer addresses the five implementation review findings:
+
+- Better Auth rate limiting is explicitly enabled with its atomic D1-backed
+  counter storage and Cloudflare's authoritative client-IP header.
+- Password reset and invitation acceptance retain Better Auth's endpoint
+  contracts and validation while committing their related changes in a Drizzle
+  D1 batch. An immutable receipt records the original operation and guards every
+  write. The existing private-output fence can reconcile these receipt-backed
+  operations after an uncertain dispatch; ordinary mutations still require one
+  dispatch claim. Membership is unique per organization and user.
+- Main-app HTTP and private WebSocket requests carry the account and family
+  displayed by the originating view. Identity changes dispose old queries and
+  connections; unfinished roster and profile commands remain scoped to their
+  original account and family.
+- Retained invitation IDs are supplied by the server through Better Auth's
+  `beforeCreateInvitation` hook. Core ID fields are no longer redeclared, and
+  schema generation preserves the plugin's membership index and receipt table.
+
+Recovery requires another request. A failed dispatched acceptance keeps private
+output closed until a valid retry or a retry after cancellation/expiry reconciles
+the outcome. There is no automatic background reconciliation. Retained intent
+ownership allows reconciliation even after an expired reset token is cleaned up;
+revisiting a consumed token does not start a new output invalidation.
+
+The new D1 migrations must be applied with the code before deployment. A unique
+membership index intentionally rejects existing duplicate membership rows;
+resolve any such records explicitly rather than silently deleting access data.
+Email delivery remains mocked as requested. This work configures neither a mail
+provider nor mailbox verification and performs no deployment.

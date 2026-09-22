@@ -5,12 +5,15 @@ import {
 import { Effect, Layer } from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
+import { displayedIdentityHeaders } from "../auth/displayed-identity.js";
+import type { DisplayedIdentity } from "../auth/displayed-identity.js";
 import type { HouseholdOperations } from "./operations.js";
 
-const makeClientRunner = (baseUrl: string | URL) => {
-  const layer = makeHouseholdApiClientLayer({ baseUrl }).pipe(
-    Layer.provide(FetchHttpClient.layer)
-  );
+const makeClientRunner = (baseUrl: string | URL, scope: DisplayedIdentity) => {
+  const layer = makeHouseholdApiClientLayer({
+    baseUrl,
+    headers: displayedIdentityHeaders(scope),
+  }).pipe(Layer.provide(FetchHttpClient.layer));
   return <A, E>(
     operation: (client: HouseholdApiClient) => Effect.Effect<A, E>
   ): Promise<A> =>
@@ -19,11 +22,13 @@ const makeClientRunner = (baseUrl: string | URL) => {
     );
 };
 
-/** Browser-owned same-origin tracer; organization identity never enters its request. */
-export const makeBrowserHouseholdOperations = (): HouseholdOperations => {
+/** The server verifies that the live session still matches the displayed identity. */
+export const makeBrowserHouseholdOperations = (
+  scope: DisplayedIdentity
+): HouseholdOperations => {
   let clientRunner: ReturnType<typeof makeClientRunner> | undefined;
   const run: ReturnType<typeof makeClientRunner> = (operation) => {
-    clientRunner ??= makeClientRunner(globalThis.location.origin);
+    clientRunner ??= makeClientRunner(globalThis.location.origin, scope);
     return clientRunner(operation);
   };
   return {

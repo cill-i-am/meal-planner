@@ -1,6 +1,7 @@
 /* eslint-disable max-classes-per-file -- This shared protocol module owns its related Schema-backed middleware and client service tags. */
 import { PlanningTags } from "@meal-planner/recipe-domain";
 import { Context, Layer, Schema } from "effect";
+import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 import {
   HttpApi,
   HttpApiClient,
@@ -944,8 +945,16 @@ export const RecipeImportApiClient = Context.Service<RecipeImportApiClient>(
 
 export const makeRecipeImportApiClientLayer = (options: {
   readonly baseUrl: string | URL;
+  readonly headers?: Readonly<Record<string, string>> | undefined;
 }) =>
   Layer.effect(
     RecipeImportApiClient,
-    HttpApiClient.make(RecipeImportApi, { baseUrl: options.baseUrl })
+    HttpApiClient.make(RecipeImportApi, {
+      baseUrl: options.baseUrl,
+      transformClient: (client) =>
+        HttpClient.mapRequest(
+          client,
+          HttpClientRequest.setHeaders(options.headers ?? {})
+        ),
+    })
   );

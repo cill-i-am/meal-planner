@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { drizzle } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { makeHouseholdPeopleControlPlane } from "../households/people/household-people.control-plane.js";
 import * as authSchema from "./auth.database-schema.js";
@@ -39,6 +39,7 @@ const authRequest = (
   cookie?: string
 ) => {
   const headers = new Headers({
+    "cf-connecting-ip": "192.0.2.10",
     "content-type": "application/json",
     origin: baseURL,
   });
@@ -58,6 +59,11 @@ describe("Better Auth D1 control plane", () => {
       testEnv.MealPlannerAuthDatabase,
       testEnv.AUTH_TEST_MIGRATIONS
     );
+  });
+
+  beforeEach(async () => {
+    // Each scenario has its own request window; rate-limit behavior has a dedicated suite.
+    await drizzle(testEnv.MealPlannerAuthDatabase).delete(authSchema.rateLimit);
   });
 
   it("uses real single-use reset tokens with generic confirmation and session revocation", async () => {
@@ -180,19 +186,20 @@ describe("Better Auth D1 control plane", () => {
       const family = Schema.decodeUnknownSync(
         Schema.Struct({ id: Schema.String })
       )(await createdFamily.json());
-      const invitationId = `recipient-view-${decision}`;
-      await auth.fetch(
+      const invitationResponse = await auth.fetch(
         authRequest(
           "/organization/invite-member",
           {
             email: `view-recipient-${decision}@example.test`,
-            id: invitationId,
             organizationId: family.id,
             role: "member",
           },
           ownerCookie
         )
       );
+      const { id: invitationId } = Schema.decodeUnknownSync(
+        Schema.Struct({ id: Schema.String })
+      )(await invitationResponse.json());
       const view = (cookie?: string) =>
         auth.fetch(
           new Request(`${baseURL}/api/auth/setup/invitation/${invitationId}`, {
@@ -396,7 +403,7 @@ describe("Better Auth D1 control plane", () => {
     });
   });
 
-  it("persists the exact caller-supplied invitation id supported by Better Auth rc.6", async () => {
+  it("preserves the server's retained invitation id without exposing core ID input", async () => {
     const database = drizzle(testEnv.MealPlannerAuthDatabase);
     const auth = makeMealPlannerAuth({
       baseURL,
@@ -423,7 +430,7 @@ describe("Better Auth D1 control plane", () => {
     const organization = (await createOrganization.json()) as { id: string };
     const invitationId = "invitation-operation-fixed-0001";
 
-    const response = await auth.fetch(
+    const untrustedResponse = await auth.fetch(
       authRequest(
         "/organization/invite-member",
         {
@@ -436,15 +443,29 @@ describe("Better Auth D1 control plane", () => {
       )
     );
 
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ id: invitationId });
+    expect(untrustedResponse.status).toBe(200);
+    expect(await untrustedResponse.json()).not.toMatchObject({
+      id: invitationId,
+    });
+    const controlPlane = makeHouseholdPeopleControlPlane({ auth, database });
+    const invitation = await Effect.runPromise(
+      controlPlane.createInvitation({
+        email: "retained-invitation-recipient@example.test",
+        headers: new Headers({ cookie }),
+        invitationId,
+        organizationId: Schema.decodeUnknownSync(HouseholdOrganizationId)(
+          organization.id
+        ),
+        personId: "synthetic-person",
+      })
+    );
+    expect(invitation.id).toBe(invitationId);
     expect(
       await database
         .select({ id: authSchema.invitation.id })
         .from(authSchema.invitation)
         .where(eq(authSchema.invitation.id, invitationId))
     ).toEqual([{ id: invitationId }]);
-    const controlPlane = makeHouseholdPeopleControlPlane({ auth, database });
     const rejected = await Effect.runPromise(
       Effect.flip(
         controlPlane.createInvitation({

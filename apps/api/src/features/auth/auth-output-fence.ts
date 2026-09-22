@@ -7,7 +7,12 @@ import {
 } from "../private-output/private-output.contract.js";
 
 export type AuthOutputFence = <A>(
-  input: { readonly accountId: string; readonly intentKey: string },
+  input: {
+    readonly accountId: string;
+    readonly intentKey: string;
+    readonly replayable?: true;
+    readonly reconcileOnly?: true;
+  },
   canonical: () => Promise<A>
 ) => Promise<A>;
 

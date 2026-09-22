@@ -10,5 +10,6 @@ const database = drizzle(new DatabaseSync(":memory:"));
 export const auth = makeMealPlannerAuth({
   baseURL: "http://localhost:8787",
   database,
+  outputFence: (_input, canonical) => canonical(),
   secret: "schema-generation-only-secret-at-least-32-characters",
 });

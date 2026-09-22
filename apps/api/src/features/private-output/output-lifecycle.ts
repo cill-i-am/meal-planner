@@ -106,6 +106,23 @@ class OutputLifecycle extends Agent<OutputLifecycleEnvironment> {
     });
   }
 
+  findPendingMutation(untrusted: OutputMutationIntent) {
+    const input = Schema.decodeUnknownSync(OutputMutationIntent)(untrusted);
+    const retained = this.#database
+      .select()
+      .from(outputMutations)
+      .where(
+        and(
+          eq(outputMutations.intentKey, input.intentKey),
+          ne(outputMutations.phase, "settled")
+        )
+      )
+      .get();
+    return retained === undefined
+      ? null
+      : { operationId: retained.operationId, phase: retained.phase };
+  }
+
   beginMutation(untrusted: OutputMutationIntent) {
     const input = Schema.decodeUnknownSync(OutputMutationIntent)(untrusted);
     return this.#database.transaction((transaction) => {

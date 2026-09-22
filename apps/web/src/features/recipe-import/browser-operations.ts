@@ -5,12 +5,15 @@ import {
 import { Effect, Layer } from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
+import { displayedIdentityHeaders } from "../auth/displayed-identity.js";
+import type { DisplayedIdentity } from "../auth/displayed-identity.js";
 import type { RecipeImportOperations } from "./operations.js";
 
-const makeClientRunner = (baseUrl: string | URL) => {
-  const layer = makeRecipeImportApiClientLayer({ baseUrl }).pipe(
-    Layer.provide(FetchHttpClient.layer)
-  );
+const makeClientRunner = (baseUrl: string | URL, scope: DisplayedIdentity) => {
+  const layer = makeRecipeImportApiClientLayer({
+    baseUrl,
+    headers: displayedIdentityHeaders(scope),
+  }).pipe(Layer.provide(FetchHttpClient.layer));
   return <A, E>(
     operation: (client: RecipeImportApiClient) => Effect.Effect<A, E>
   ): Promise<A> =>
@@ -23,10 +26,12 @@ const makeClientRunner = (baseUrl: string | URL) => {
 };
 
 /** Browser-owned generated client. Native fetch sends same-origin cookies by default. */
-export const makeBrowserRecipeImportOperations = (): RecipeImportOperations => {
+export const makeBrowserRecipeImportOperations = (
+  scope: DisplayedIdentity
+): RecipeImportOperations => {
   let clientRunner: ReturnType<typeof makeClientRunner> | undefined;
   const run: ReturnType<typeof makeClientRunner> = (operation) => {
-    clientRunner ??= makeClientRunner(globalThis.location.origin);
+    clientRunner ??= makeClientRunner(globalThis.location.origin, scope);
     return clientRunner(operation);
   };
   return {

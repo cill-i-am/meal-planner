@@ -1,5 +1,3 @@
-// @vitest-environment jsdom
-
 import {
   AssociateHouseholdAdultInvitationPayload,
   CancelHouseholdAdultDeparturePayload,
@@ -10,6 +8,7 @@ import {
   RetryHouseholdAdultDeparturePayload,
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
+// @vitest-environment jsdom
 import { Cause, Schema } from "effect";
 import {
   afterAll,
@@ -21,6 +20,7 @@ import {
   vi,
 } from "vitest";
 
+import { parseDisplayedIdentity } from "../auth/displayed-identity.js";
 import {
   classifyHouseholdPeopleOperationCause,
   makeBrowserHouseholdPeopleOperations,
@@ -95,7 +95,12 @@ describe("browser household people operations", () => {
           { status: 202 }
         )
       );
-    const operations = makeBrowserHouseholdPeopleOperations();
+    const operations = makeBrowserHouseholdPeopleOperations(
+      parseDisplayedIdentity({
+        organizationId: "organization-a",
+        userId: "user-a",
+      })
+    );
     const invitePayload = Schema.decodeUnknownSync(InviteHouseholdAdultPayload)(
       {
         email: "adult@example.test",
@@ -371,7 +376,12 @@ describe("browser household people operations", () => {
     });
 
     await expect(
-      makeBrowserHouseholdPeopleOperations().archive(personId, payload)
+      makeBrowserHouseholdPeopleOperations(
+        parseDisplayedIdentity({
+          organizationId: "organization-a",
+          userId: "user-a",
+        })
+      ).archive(personId, payload)
     ).rejects.toMatchObject({ code: "stale_version" });
   });
 
@@ -381,7 +391,12 @@ describe("browser household people operations", () => {
     });
 
     await expect(
-      makeBrowserHouseholdPeopleOperations().list(true)
+      makeBrowserHouseholdPeopleOperations(
+        parseDisplayedIdentity({
+          organizationId: "organization-a",
+          userId: "user-a",
+        })
+      ).list(true)
     ).rejects.toMatchObject({ code: "transport_unavailable" });
   });
 
@@ -391,7 +406,12 @@ describe("browser household people operations", () => {
     );
 
     await expect(
-      makeBrowserHouseholdPeopleOperations().list(true)
+      makeBrowserHouseholdPeopleOperations(
+        parseDisplayedIdentity({
+          organizationId: "organization-a",
+          userId: "user-a",
+        })
+      ).list(true)
     ).rejects.toMatchObject({ code: "transport_unavailable" });
   });
 
@@ -415,7 +435,12 @@ describe("browser household people operations", () => {
     });
 
     await expect(
-      makeBrowserHouseholdPeopleOperations().archive(personId, payload)
+      makeBrowserHouseholdPeopleOperations(
+        parseDisplayedIdentity({
+          organizationId: "organization-a",
+          userId: "user-a",
+        })
+      ).archive(personId, payload)
     ).rejects.toMatchObject({ code: "transport_unavailable" });
   });
 
@@ -434,7 +459,12 @@ describe("browser household people operations", () => {
       mutationId: "00000000-0000-4000-8000-000000000106",
     });
     await expect(
-      makeBrowserHouseholdPeopleOperations().archive(personId, payload)
+      makeBrowserHouseholdPeopleOperations(
+        parseDisplayedIdentity({
+          organizationId: "organization-a",
+          userId: "user-a",
+        })
+      ).archive(personId, payload)
     ).rejects.toMatchObject({ code: "transport_unavailable" });
   });
 });

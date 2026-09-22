@@ -610,10 +610,18 @@ export const HouseholdApiClient = Context.Service<HouseholdApiClient>(
 
 export const makeHouseholdApiClientLayer = (options: {
   readonly baseUrl: string | URL;
+  readonly headers?: Readonly<Record<string, string>> | undefined;
 }) =>
   Layer.effect(
     HouseholdApiClient,
-    HttpApiClient.make(HouseholdApi, { baseUrl: options.baseUrl })
+    HttpApiClient.make(HouseholdApi, {
+      baseUrl: options.baseUrl,
+      transformClient: (client) =>
+        HttpClient.mapRequest(
+          client,
+          HttpClientRequest.setHeaders(options.headers ?? {})
+        ),
+    })
   );
 
 /** Generated client for the authenticated household people API. */

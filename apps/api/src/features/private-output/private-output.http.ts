@@ -1,4 +1,8 @@
-import { InterviewProfileOutcome } from "@meal-planner/household-api";
+import {
+  HouseholdAuthResourceId,
+  HouseholdOrganizationId,
+  InterviewProfileOutcome,
+} from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
 
 import type { MealPlannerAuth } from "../auth/auth.js";
@@ -136,10 +140,26 @@ export const handlePrivateInterviewRequest = Effect.fn(
         : yield* Schema.decodeUnknownEffect(SessionReference)(
             match?.groups?.["sessionReference"]
           );
+      // Browser WebSockets cannot attach headers. These are expected identities,
+      // never authority: the canonical session and membership reads still decide access.
+      const headers = new Headers(input.request.headers);
+      if (
+        url.searchParams.has("expectedUserId") ||
+        url.searchParams.has("expectedOrganizationId")
+      ) {
+        const expectedUserId = yield* Schema.decodeUnknownEffect(
+          HouseholdAuthResourceId
+        )(url.searchParams.get("expectedUserId"));
+        const expectedOrganizationId = yield* Schema.decodeUnknownEffect(
+          HouseholdOrganizationId
+        )(url.searchParams.get("expectedOrganizationId"));
+        headers.set("x-meal-planner-user", expectedUserId);
+        headers.set("x-meal-planner-household", expectedOrganizationId);
+      }
       const resolve = () =>
         resolvePrivateOutputAuthority({
           auth: input.auth,
-          headers: input.request.headers,
+          headers,
           household: input.household,
         });
       const initial = yield* resolve();

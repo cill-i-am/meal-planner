@@ -134,6 +134,7 @@ const renderPanel = (
   return render(
     <QueryClientProvider client={queryClient}>
       <HouseholdPeoplePanel
+        accountId="user-a"
         {...(currentMemberId === undefined ? {} : { currentMemberId })}
         operations={operations}
         organizationId="org-a"

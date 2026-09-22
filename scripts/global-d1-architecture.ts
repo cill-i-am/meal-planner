@@ -59,6 +59,7 @@ const expectedD1Resources: readonly D1ResourceDeclaration[] = [
 
 const expectedD1ConsumerPaths = [
   "alchemy.run.ts",
+  "apps/api/src/features/auth/auth-atomic-store.ts",
   "apps/api/src/features/households/people/household-people.control-plane.ts",
   "apps/api/src/features/households/people/member-departure.workflow.ts",
   "apps/api/src/features/imports/import-recipe-recovery.workflow.ts",

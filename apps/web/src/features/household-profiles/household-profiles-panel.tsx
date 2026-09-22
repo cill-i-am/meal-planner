@@ -1,10 +1,10 @@
 import {
+  HouseholdPersonId,
   HouseholdPersonMutationId,
   MutatePersonProfilePayload,
 } from "@meal-planner/household-api";
 import type {
   HouseholdPerson,
-  HouseholdPersonId,
   PersonProfile,
   ProfileCommand,
   ProfileFact,
@@ -30,11 +30,12 @@ import {
 import type { HouseholdProfileOperations } from "./operations.js";
 import { describeProfileFact, ProfileFactForm } from "./profile-fact-form.js";
 
-interface PendingProfileChange {
-  readonly authenticationRequired?: boolean;
-  readonly personId: HouseholdPersonId;
-  readonly payload: MutatePersonProfilePayload;
-}
+const PendingProfileChange = Schema.Struct({
+  authenticationRequired: Schema.optional(Schema.Boolean),
+  payload: MutatePersonProfilePayload,
+  personId: HouseholdPersonId,
+});
+type PendingProfileChange = typeof PendingProfileChange.Type;
 const ownsPendingChange = (
   current: PendingProfileChange | null | undefined,
   submitted: PendingProfileChange
@@ -363,23 +364,49 @@ const SelectedProfile = ({
   );
 };
 
-/** One unresolved command per household, retained in the existing session QueryClient across feature remounts. */
+/** Unresolved profile commands stay with their original account and family across remounts. */
 export const HouseholdProfilesPanel = ({
+  accountId,
   operations,
   organizationId,
   peopleOperations,
 }: {
+  readonly accountId: string;
   readonly operations: HouseholdProfileOperations;
   readonly organizationId: string;
   readonly peopleOperations: Pick<HouseholdPeopleOperations, "list">;
 }) => {
   const client = useQueryClient();
-  const pendingKey = ["household-profile-unresolved", organizationId];
+  const pendingKey = [
+    "household-profile-unresolved",
+    accountId,
+    organizationId,
+  ];
+  const storageKey = `meal-planner.household-profile.unresolved.v1:${JSON.stringify([accountId, organizationId])}`;
+  const readPending = (): PendingProfileChange | null => {
+    const raw = globalThis.sessionStorage.getItem(storageKey);
+    return raw === null
+      ? null
+      : Schema.decodeUnknownSync(PendingProfileChange)(JSON.parse(raw));
+  };
+  const updatePending = (
+    update: (
+      current: PendingProfileChange | null
+    ) => PendingProfileChange | null
+  ) => {
+    const next = update(readPending());
+    if (next === null) {
+      globalThis.sessionStorage.removeItem(storageKey);
+    } else {
+      globalThis.sessionStorage.setItem(storageKey, JSON.stringify(next));
+    }
+    client.setQueryData(pendingKey, next);
+  };
   const pending = useQuery<PendingProfileChange | null>({
     enabled: false,
     gcTime: Infinity,
-    initialData: null,
-    queryFn: () => null,
+    initialData: readPending,
+    queryFn: readPending,
     queryKey: pendingKey,
   });
   const roster = useQuery({
@@ -391,21 +418,18 @@ export const HouseholdProfilesPanel = ({
     mutationFn: (change: PendingProfileChange) =>
       operations.mutate(change.personId, change.payload),
     onError: (error, submitted) => {
-      client.setQueryData<PendingProfileChange | null>(
-        pendingKey,
-        (current) => {
-          if (!ownsPendingChange(current, submitted)) {
-            return current;
-          }
-          if (
-            error instanceof ProfileOperationError &&
-            error.code === "authentication_required"
-          ) {
-            return { ...submitted, authenticationRequired: true };
-          }
-          return isAmbiguousProfileError(error) ? current : null;
+      updatePending((current) => {
+        if (!ownsPendingChange(current, submitted)) {
+          return current;
         }
-      );
+        if (
+          error instanceof ProfileOperationError &&
+          error.code === "authentication_required"
+        ) {
+          return { ...submitted, authenticationRequired: true };
+        }
+        return isAmbiguousProfileError(error) ? current : null;
+      });
     },
     onSuccess: async (result, submitted) => {
       client.setQueryData<PersonProfile>(
@@ -415,7 +439,7 @@ export const HouseholdProfilesPanel = ({
             ? existing
             : result
       );
-      client.setQueryData<PendingProfileChange | null>(pendingKey, (current) =>
+      updatePending((current) =>
         ownsPendingChange(current, submitted) ? null : current
       );
       await client.invalidateQueries({
@@ -429,7 +453,7 @@ export const HouseholdProfilesPanel = ({
     profile: PersonProfile,
     command: ProfileCommand
   ) => {
-    if (client.getQueryData(pendingKey) !== null || mutation.isPending) {
+    if (readPending() !== null || mutation.isPending) {
       return;
     }
     const change: PendingProfileChange = {
@@ -442,7 +466,7 @@ export const HouseholdProfilesPanel = ({
       }),
       personId,
     };
-    client.setQueryData(pendingKey, change);
+    updatePending(() => change);
     mutation.mutate(change);
   };
   return (

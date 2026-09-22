@@ -118,6 +118,12 @@ limitation does not introduce schema drift in this upgrade; the checked-in
 canonical schema and all migrations remain unchanged. No generator patch or
 normalization path was added.
 
+Resolved during the Better Auth review fixes on 22 September: the server now
+supplies retained invitation IDs through `beforeCreateInvitation`, rather than
+declaring the core ID as an additional field. The unmodified 1.7.2 generator
+produces the canonical schema without duplicate fields, including the compound
+membership index declared by the organization plugin.
+
 No provider requests, deployment, publication, production compatibility-date
 change, or applied migration edits are included in this upgrade. The browser
 proof covers the built anonymous entry flow; authenticated runtime behaviour
