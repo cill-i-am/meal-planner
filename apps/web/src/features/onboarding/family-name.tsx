@@ -23,6 +23,8 @@ import { completeFamilyCreation } from "./family-creation.js";
 import { useSetup } from "./setup-context.js";
 import { SetupError, SetupFrame } from "./setup-ui.js";
 
+type FamilyCreation = Extract<SetupCheckpoint, { stage: "family-create" }>;
+
 const FamilyForm = Schema.Struct({ name: FamilyName });
 const validator = Schema.toStandardSchemaV1(FamilyForm);
 const parse = Schema.decodeUnknownSync(FamilyForm);
@@ -32,11 +34,8 @@ export const FamilyNamePage = () => {
   const navigate = useNavigate();
   const { checkpoint } = setup.progress;
   const mutation = useMutation({
-    mutationFn: async (command: SetupCheckpoint) => {
+    mutationFn: async (command: FamilyCreation) => {
       await setup.save({ checkpoint: command, status: "active" });
-      if (command.stage !== "family-create") {
-        return;
-      }
       const next = await completeFamilyCreation(
         command,
         setup.auth,
@@ -49,11 +48,9 @@ export const FamilyNamePage = () => {
   });
   const persisted =
     checkpoint.stage === "family-create" ? checkpoint : undefined;
-  const submitted =
-    mutation.variables?.stage === "family-create"
-      ? mutation.variables
-      : undefined;
-  const retained = persisted ?? submitted;
+  const retained = persisted ?? mutation.variables;
+  const needsRecovery =
+    retained !== undefined && (mutation.isIdle || mutation.isError);
   const pause = useMutation({
     mutationFn: async (name: string) => {
       await setup.save({
@@ -107,7 +104,7 @@ export const FamilyNamePage = () => {
     },
     validators: { onChange: validator, onSubmit: validator },
   });
-  const submitLabel = retained ? "Check and continue" : "Create family";
+  const submitLabel = needsRecovery ? "Check and continue" : "Create family";
   return (
     <SetupFrame
       step="family"
@@ -134,7 +131,9 @@ export const FamilyNamePage = () => {
                   tabIndex={-1}
                   className="text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight focus:outline-none"
                 >
-                  {retained ? "Let’s check your family" : "Name your family"}
+                  {needsRecovery
+                    ? "Let’s check your family"
+                    : "Name your family"}
                 </h1>
               </CardTitle>
             </CardHeader>
@@ -162,7 +161,7 @@ export const FamilyNamePage = () => {
                   <span className="text-muted-foreground text-sm">You</span>
                 </div>
               </div>
-              {retained && (
+              {needsRecovery && (
                 <SetupError>
                   We saved your request but still need to confirm the result.
                   Check again to finish the same family setup.
