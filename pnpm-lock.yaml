@@ -363,6 +363,9 @@ importers:
       '@meal-planner/recipe-domain':
         specifier: workspace:*
         version: link:../recipe-domain
+      dequal:
+        specifier: 2.0.3
+        version: 2.0.3
       effect:
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112

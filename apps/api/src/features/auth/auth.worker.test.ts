@@ -447,7 +447,7 @@ describe("Better Auth D1 control plane", () => {
     }
   );
 
-  it("persists only valid account-owned setup checkpoints", async () => {
+  it("saves setup checkpoints once per version and preserves pending commands", async () => {
     const auth = makeMealPlannerAuth({
       baseURL,
       database: drizzle(testEnv.MealPlannerAuthDatabase),
@@ -467,13 +467,42 @@ describe("Better Auth D1 control plane", () => {
       checkpoint: { name: "The Morgan family", stage: "family-name" },
       status: "paused",
     };
-    const saved = await auth.fetch(
-      authRequest("/update-user", { setupProgress: progress }, cookie)
+    const competing = await Promise.all([
+      auth.fetch(
+        authRequest("/setup/progress", { expectedVersion: 0, progress }, cookie)
+      ),
+      auth.fetch(
+        authRequest(
+          "/setup/progress",
+          {
+            expectedVersion: 0,
+            progress: { ...progress, status: "active" },
+          },
+          cookie
+        )
+      ),
+    ]);
+    expect(competing.map((response) => response.status).toSorted()).toEqual([
+      200, 409,
+    ]);
+    const winner = competing.find((response) => response.status === 200);
+    if (!winner) {
+      throw new Error("Expected one setup write to commit.");
+    }
+    const saved = await winner.json();
+    expect(saved).toMatchObject({ version: 1 });
+    const exactRetry = await auth.fetch(
+      authRequest(
+        "/setup/progress",
+        { expectedVersion: 0, progress: saved.progress },
+        cookie
+      )
     );
-    expect(saved.status).toBe(200);
+    expect(exactRetry.status).toBe(200);
+    expect(await exactRetry.json()).toEqual(saved);
     const wrongAccount = authRequest(
-      "/update-user",
-      { setupProgress: { ...progress, status: "active" } },
+      "/setup/progress",
+      { expectedVersion: 1, progress },
       cookie
     );
     wrongAccount.headers.set("x-meal-planner-user", "different-account");
@@ -491,13 +520,14 @@ describe("Better Auth D1 control plane", () => {
       new Request(`${baseURL}/api/auth/get-session`, { headers: { cookie } })
     );
     expect(await session.json()).toMatchObject({
-      user: { setupProgress: progress },
+      user: { setupProgress: saved.progress, setupProgressVersion: 1 },
     });
     const rejected = await auth.fetch(
       authRequest(
-        "/update-user",
+        "/setup/progress",
         {
-          setupProgress: {
+          expectedVersion: 1,
+          progress: {
             ...progress,
             checkpoint: { ...progress.checkpoint, password: "never-persist" },
           },
@@ -507,9 +537,110 @@ describe("Better Auth D1 control plane", () => {
     );
     expect(rejected.status).toBe(400);
     const anonymous = await auth.fetch(
-      authRequest("/update-user", { setupProgress: progress })
+      authRequest("/setup/progress", { expectedVersion: 1, progress })
     );
     expect(anonymous.status).toBe(401);
+    const nativeUpdate = await auth.fetch(
+      authRequest("/update-user", { setupProgress: progress }, cookie)
+    );
+    expect(nativeUpdate.status).toBe(400);
+    const stored = await drizzle(testEnv.MealPlannerAuthDatabase)
+      .select({
+        progress: authSchema.user.setupProgress,
+        version: authSchema.user.setupProgressVersion,
+      })
+      .from(authSchema.user)
+      .where(eq(authSchema.user.email, "checkpoint@example.test"));
+    expect(stored).toEqual([{ progress: saved.progress, version: 1 }]);
+  });
+
+  it("rejects a new pending command even after the other tab refreshes its version", async () => {
+    const auth = makeMealPlannerAuth({
+      baseURL,
+      database: drizzle(testEnv.MealPlannerAuthDatabase),
+      outputFence: (_input, canonical) => canonical(),
+      schema: authSchema,
+      secret,
+    });
+    const signup = await auth.fetch(
+      authRequest("/sign-up/email", {
+        email: "pending-checkpoint@example.test",
+        name: "Pending checkpoint",
+        password: "correct horse battery staple",
+      })
+    );
+    const cookie = cookieHeader(signup);
+    const progress = {
+      checkpoint: {
+        creator: { displayName: "Alex", mutationId: "create-family-1" },
+        name: "The Morgan family",
+        slug: "family-11111111-1111-4111-8111-111111111111",
+        stage: "family-create",
+      },
+      status: "active",
+    };
+    const first = await auth.fetch(
+      authRequest("/setup/progress", { expectedVersion: 0, progress }, cookie)
+    );
+    expect(first.status).toBe(200);
+    const displaced = await auth.fetch(
+      authRequest(
+        "/setup/progress",
+        {
+          expectedVersion: 1,
+          progress: {
+            ...progress,
+            checkpoint: {
+              ...progress.checkpoint,
+              creator: { displayName: "Alex", mutationId: "create-family-2" },
+            },
+          },
+        },
+        cookie
+      )
+    );
+    expect(displaced.status).toBe(409);
+    await expect(displaced.json()).resolves.toMatchObject({
+      code: "SETUP_PROGRESS_CONFLICT",
+    });
+    const [stored] = await drizzle(testEnv.MealPlannerAuthDatabase)
+      .select({
+        progress: authSchema.user.setupProgress,
+        version: authSchema.user.setupProgressVersion,
+      })
+      .from(authSchema.user)
+      .where(eq(authSchema.user.email, "pending-checkpoint@example.test"));
+    expect(stored).toEqual({ progress, version: 1 });
+    const falseCompletion = await auth.fetch(
+      authRequest(
+        "/setup/progress",
+        {
+          expectedVersion: 1,
+          progress: {
+            checkpoint: { organizationId: "family-1", stage: "family-review" },
+            status: "active",
+          },
+          sourceCommandId: "create-family-2",
+        },
+        cookie
+      )
+    );
+    expect(falseCompletion.status).toBe(409);
+    const completed = await auth.fetch(
+      authRequest(
+        "/setup/progress",
+        {
+          expectedVersion: 1,
+          progress: {
+            checkpoint: { organizationId: "family-1", stage: "family-review" },
+            status: "active",
+          },
+          sourceCommandId: "create-family-1",
+        },
+        cookie
+      )
+    );
+    expect(completed.status).toBe(200);
   });
 
   it("signs up, resolves a session, and creates an active household organization", async () => {

@@ -171,7 +171,11 @@ const useInvitationFlow = (invitationId: InvitationId) => {
         auth: setup.auth,
         people: setup.peopleForFamily(command.organizationId),
         read: () => readInvitation(command.invitationId, setup.user.id),
-        save: (next) => setup.save({ checkpoint: next, status: "active" }),
+        save: (next) =>
+          setup.save(
+            { checkpoint: next, status: "active" },
+            command.linkMutationId
+          ),
       });
       await (result === "joined"
         ? navigate({ to: "/setup/ready" })
@@ -191,10 +195,13 @@ const useInvitationFlow = (invitationId: InvitationId) => {
   const recover = useMutation({
     mutationFn: async () => {
       if (pending) {
-        await setup.save({
-          checkpoint: pending.returnCheckpoint,
-          status: "active",
-        });
+        await setup.save(
+          {
+            checkpoint: pending.returnCheckpoint,
+            status: "active",
+          },
+          pending.linkMutationId
+        );
       }
       await navigate({ to: "/setup" });
     },

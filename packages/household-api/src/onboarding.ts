@@ -1,3 +1,4 @@
+import { dequal } from "dequal/lite";
 import { Schema } from "effect";
 
 import { EmailAddress, InvitationId } from "./auth-values.js";
@@ -172,9 +173,140 @@ export const SetupProgress = Schema.Struct({
 }).annotate({ parseOptions: { onExcessProperty: "error" } });
 export type SetupProgress = typeof SetupProgress.Type;
 
-/** Better Auth validates and persists this through the authenticated update-user endpoint. */
+/** Identity of an unresolved operation retained by a setup checkpoint. */
+export const setupPendingCommandId = (
+  checkpoint: SetupCheckpoint
+): string | undefined => {
+  switch (checkpoint.stage) {
+    case "family-create": {
+      return checkpoint.creator.mutationId;
+    }
+    case "person-create": {
+      return checkpoint.command.person.mutationId;
+    }
+    case "person-invite":
+    case "person-rename": {
+      return checkpoint.command.mutationId;
+    }
+    case "person-manage": {
+      return checkpoint.state.command.mutationId;
+    }
+    case "invitation-response":
+    case "invitation-link": {
+      return checkpoint.linkMutationId;
+    }
+    default: {
+      return undefined;
+    }
+  }
+};
+
+const sameCheckpoint = (left: SetupCheckpoint, right: SetupCheckpoint) =>
+  dequal(left, right);
+
+export const sameSetupProgress = (left: SetupProgress, right: SetupProgress) =>
+  dequal(left, right);
+
+const canFinishPersonCreation = (
+  from: Extract<SetupCheckpoint, { stage: "person-create" }>,
+  to: SetupCheckpoint
+) =>
+  (from.command.kind === "managed" &&
+    to.stage === "family-review" &&
+    to.organizationId === from.organizationId) ||
+  (from.command.kind === "invited" &&
+    to.stage === "person-invite" &&
+    to.organizationId === from.organizationId &&
+    to.command.mutationId === from.command.invitationMutationId);
+
+const canFinishInvitationResponse = (
+  from: Extract<SetupCheckpoint, { stage: "invitation-response" }>,
+  to: SetupCheckpoint
+) =>
+  (from.decision === "decline" && sameCheckpoint(from.returnCheckpoint, to)) ||
+  (to.stage === "invitation-link" &&
+    to.invitationId === from.invitationId &&
+    to.linkMutationId === from.linkMutationId &&
+    to.organizationId === from.organizationId &&
+    sameCheckpoint(to.returnCheckpoint, from.returnCheckpoint));
+
+const canFinishPending = (from: SetupCheckpoint, to: SetupCheckpoint) => {
+  switch (from.stage) {
+    case "family-create": {
+      return to.stage === "family-review";
+    }
+    case "person-create": {
+      return canFinishPersonCreation(from, to);
+    }
+    case "person-invite": {
+      return (
+        (to.stage === "family-review" &&
+          to.organizationId === from.organizationId) ||
+        (to.stage === "person-invite-draft" &&
+          to.organizationId === from.organizationId &&
+          to.personId === from.command.personId &&
+          to.email === from.command.email)
+      );
+    }
+    case "person-rename": {
+      return (
+        to.stage === "family-review" &&
+        to.organizationId === from.organizationId
+      );
+    }
+    case "person-manage": {
+      return sameCheckpoint(
+        { ...from.returnTo, organizationId: from.organizationId },
+        to
+      );
+    }
+    case "invitation-response": {
+      return canFinishInvitationResponse(from, to);
+    }
+    case "invitation-link": {
+      return to.stage === "ready" && to.organizationId === from.organizationId;
+    }
+    default: {
+      return true;
+    }
+  }
+};
+
+/** A retained operation must finish before a different setup command can replace it. */
+export const canReplaceSetupProgress = (
+  current: SetupProgress,
+  next: SetupProgress,
+  sourceCommandId?: string
+): boolean => {
+  const from = current.checkpoint;
+  const to = next.checkpoint;
+  if (from.stage === to.stage && sameCheckpoint(from, to)) {
+    return true;
+  }
+  const pendingId = setupPendingCommandId(from);
+  if (pendingId === undefined) {
+    return true;
+  }
+  return pendingId === sourceCommandId && canFinishPending(from, to);
+};
+
+/** Setup progress is saved only by the authenticated versioned setup endpoint. */
 export const setupProgressField = {
+  input: false as const,
   required: false as const,
   type: "json" as const,
   validator: { input: Schema.toStandardSchemaV1(SetupProgress) },
+};
+
+export const SetupProgressVersion = Schema.Int.pipe(
+  Schema.check(Schema.isGreaterThanOrEqualTo(0))
+);
+export type SetupProgressVersion = typeof SetupProgressVersion.Type;
+
+/** Server-owned compare-and-save version, exposed in session snapshots. */
+export const setupProgressVersionField = {
+  defaultValue: 0,
+  input: false as const,
+  required: true as const,
+  type: "number" as const,
 };

@@ -513,7 +513,11 @@ describe("atomic auth against the durable output fence", () => {
     });
     const intentKey = await privateOutputKey(
       "auth-invitation-accept",
-      JSON.stringify({ invitationId, userId: f.userId })
+      JSON.stringify({
+        invitationId,
+        sessionToken: input.sessionToken,
+        userId: f.userId,
+      })
     );
     const membership = () =>
       database
@@ -542,7 +546,11 @@ describe("atomic auth against the durable output fence", () => {
     await database
       .delete(schema.member)
       .where(eq(schema.member.id, input.memberId));
-    await f.store.reconcileInvitation(input.invitationId, f.userId);
+    await f.store.reconcileInvitation(
+      input.invitationId,
+      input.sessionToken,
+      f.userId
+    );
     await f.store.acceptInvitation(
       Schema.decodeUnknownSync(AcceptInvitationMutation)({
         ...input,
@@ -550,6 +558,107 @@ describe("atomic auth against the durable output fence", () => {
       })
     );
     expect(await membership()).toEqual([]);
+  });
+  it("lets a fresh session accept after the previous session's failed receipt", async () => {
+    const f = await fixture();
+    const ownerId = crypto.randomUUID();
+    const organizationId = crypto.randomUUID();
+    const invitationId = crypto.randomUUID();
+    await database.insert(schema.user).values({
+      createdAt: f.now,
+      email: `${ownerId}@example.test`,
+      id: ownerId,
+      name: "Synthetic owner",
+      updatedAt: f.now,
+    });
+    await database.insert(schema.organization).values({
+      createdAt: f.now,
+      id: organizationId,
+      name: "Synthetic family",
+      slug: organizationId,
+    });
+    await database.insert(schema.member).values({
+      createdAt: f.now,
+      id: ownerId,
+      organizationId,
+      role: "owner",
+      userId: ownerId,
+    });
+    await database.insert(schema.invitation).values({
+      createdAt: f.now,
+      email: `${f.userId}@example.test`,
+      expiresAt: f.expiresAt,
+      id: invitationId,
+      inviterId: ownerId,
+      organizationId,
+      role: "member",
+      status: "pending",
+    });
+    const stale = Schema.decodeUnknownSync(AcceptInvitationMutation)({
+      email: `${f.userId}@example.test`,
+      invitationId,
+      memberId: crypto.randomUUID(),
+      membershipLimit: 100,
+      organizationId,
+      sessionToken: f.userId,
+      userId: f.userId,
+    });
+    await database
+      .update(schema.session)
+      .set({ expiresAt: new Date(f.now.getTime() - 60_000) })
+      .where(eq(schema.session.token, stale.sessionToken));
+    expect(await f.store.acceptInvitation(stale)).toBe(false);
+    const staleKey = await privateOutputKey(
+      "auth-invitation-accept",
+      JSON.stringify({
+        invitationId,
+        sessionToken: stale.sessionToken,
+        userId: f.userId,
+      })
+    );
+    expect(
+      await database
+        .select()
+        .from(schema.authMutationReceipt)
+        .where(eq(schema.authMutationReceipt.id, staleKey))
+    ).toMatchObject([{ applied: false }]);
+    const freshSessionToken = crypto.randomUUID();
+    await database.insert(schema.session).values({
+      createdAt: f.now,
+      expiresAt: f.expiresAt,
+      id: crypto.randomUUID(),
+      token: freshSessionToken,
+      updatedAt: f.now,
+      userId: f.userId,
+    });
+    const fresh = Schema.decodeUnknownSync(AcceptInvitationMutation)({
+      ...stale,
+      memberId: crypto.randomUUID(),
+      sessionToken: freshSessionToken,
+    });
+    expect(await f.store.acceptInvitation(fresh)).toBe(true);
+    expect(await f.store.acceptInvitation(stale)).toBe(false);
+    expect(
+      await f.store.rejectInvitation({
+        email: fresh.email,
+        invitationId: fresh.invitationId,
+        organizationId: fresh.organizationId,
+        sessionToken: freshSessionToken,
+        userId: f.userId,
+      })
+    ).toBe(false);
+    expect(
+      await database
+        .select()
+        .from(schema.invitation)
+        .where(eq(schema.invitation.id, invitationId))
+    ).toMatchObject([{ status: "accepted" }]);
+    expect(
+      await database
+        .select()
+        .from(schema.member)
+        .where(eq(schema.member.userId, f.userId))
+    ).toHaveLength(1);
   });
   it("settles a rolled-back reset even after native cleanup removes its token, fencing delayed writes with a terminal receipt", async () => {
     const f = await resetFixture();

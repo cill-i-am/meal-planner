@@ -681,9 +681,14 @@ export {
   PersonDraft,
   SetupCheckpoint,
   SetupProgress,
+  canReplaceSetupProgress,
+  sameSetupProgress,
+  SetupProgressVersion,
   SetupRosterCommand,
   SetupRosterReturn,
   setupProgressField,
+  setupPendingCommandId,
+  setupProgressVersionField,
 } from "./onboarding.js";
 
 export { InvitationView } from "./invitation-view.js";

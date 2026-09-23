@@ -12,18 +12,22 @@ type PendingPerson = Extract<
 export const saveSetupPerson = async (
   pending: PendingPerson,
   people: HouseholdPeopleOperations,
-  checkpoint: (next: SetupCheckpoint) => Promise<void>
+  checkpoint: (next: SetupCheckpoint, sourceCommandId: string) => Promise<void>
 ) => {
   let next = pending;
   if (next.stage === "person-create") {
     const person = await people.create(next.command.person);
     if (next.command.kind === "managed") {
-      await checkpoint({
-        organizationId: next.organizationId,
-        stage: "family-review",
-      });
+      await checkpoint(
+        {
+          organizationId: next.organizationId,
+          stage: "family-review",
+        },
+        next.command.person.mutationId
+      );
       return;
     }
+    const creationId = next.command.person.mutationId;
     next = {
       command: Schema.decodeUnknownSync(InviteHouseholdAdultPayload)({
         email: next.command.email,
@@ -34,7 +38,7 @@ export const saveSetupPerson = async (
       organizationId: next.organizationId,
       stage: "person-invite",
     };
-    await checkpoint(next);
+    await checkpoint(next, creationId);
   }
   if (!people.inviteAdult) {
     throw new Error("Invitation operation is unavailable.");
@@ -47,20 +51,26 @@ export const saveSetupPerson = async (
       error instanceof HouseholdPeopleOperationError &&
       (error.invitationRejection || error.code === "organizer_required")
     ) {
-      await checkpoint({
-        displayName: next.displayName,
-        email: next.command.email,
-        organizationId: next.organizationId,
-        personId: next.command.personId,
-        reason: error.invitationRejection ?? "forbidden",
-        stage: "person-invite-draft",
-      });
+      await checkpoint(
+        {
+          displayName: next.displayName,
+          email: next.command.email,
+          organizationId: next.organizationId,
+          personId: next.command.personId,
+          reason: error.invitationRejection ?? "forbidden",
+          stage: "person-invite-draft",
+        },
+        next.command.mutationId
+      );
       return;
     }
     throw error;
   }
-  await checkpoint({
-    organizationId: next.organizationId,
-    stage: "family-review",
-  });
+  await checkpoint(
+    {
+      organizationId: next.organizationId,
+      stage: "family-review",
+    },
+    next.command.mutationId
+  );
 };

@@ -33,6 +33,7 @@ import {
 } from "./tooltip.js";
 
 type OverlayMode = "dialog" | "drawer";
+type OverlayVariant = "dialog" | "desktop-drawer" | "mobile-drawer";
 
 const OverlayContext = React.createContext<OverlayMode | null>(null);
 
@@ -104,8 +105,32 @@ const OverlayRoot = ({
   dialogProps,
 }: OverlayRootProps) => {
   const mobile = useMobileOverlay();
+  let desiredVariant: OverlayVariant = "dialog";
+  if (mobile) {
+    desiredVariant = "mobile-drawer";
+  } else if (desktop === "drawer") {
+    desiredVariant = "desktop-drawer";
+  }
+  const [variant, setVariant] = React.useState(desiredVariant);
   const [internalOpen, setInternalOpen] = React.useState(defaultOpen);
   const currentOpen = open ?? internalOpen;
+  const active = React.useRef(currentOpen);
+  const latestVariant = React.useRef(desiredVariant);
+  React.useLayoutEffect(() => {
+    latestVariant.current = desiredVariant;
+    if (currentOpen) {
+      if (!active.current) {
+        setVariant(desiredVariant);
+      }
+      active.current = true;
+    } else if (!active.current) {
+      setVariant(desiredVariant);
+    }
+  }, [currentOpen, desiredVariant]);
+  const closeComplete = React.useCallback(() => {
+    active.current = false;
+    setVariant(latestVariant.current);
+  }, []);
   const changeOpen = React.useCallback(
     (nextOpen: boolean, details: OverlayChangeEventDetails) => {
       onOpenChange?.(nextOpen, details);
@@ -116,20 +141,27 @@ const OverlayRoot = ({
     [onOpenChange, open]
   );
 
-  if (mobile || desktop === "drawer") {
-    const options = mobile ? drawerProps : desktopDrawerProps;
+  if (variant !== "dialog") {
+    const drawerIsMobile = variant === "mobile-drawer";
+    const options = drawerIsMobile ? drawerProps : desktopDrawerProps;
     return (
       <OverlayContext.Provider value="drawer">
         <Drawer
           {...options}
           swipeDirection={
-            mobile ? "down" : (options?.swipeDirection ?? "right")
+            drawerIsMobile ? "down" : (options?.swipeDirection ?? "right")
           }
-          showSwipeHandle={mobile}
-          virtualKeyboard={mobile}
+          showSwipeHandle={drawerIsMobile}
+          virtualKeyboard={drawerIsMobile}
           modal={modal}
           open={currentOpen}
           onOpenChange={changeOpen}
+          onOpenChangeComplete={(next) => {
+            if (!next) {
+              closeComplete();
+            }
+            options?.onOpenChangeComplete?.(next);
+          }}
         >
           {children}
         </Drawer>
@@ -144,6 +176,12 @@ const OverlayRoot = ({
         modal={modal}
         open={currentOpen}
         onOpenChange={changeOpen}
+        onOpenChangeComplete={(next) => {
+          if (!next) {
+            closeComplete();
+          }
+          dialogProps?.onOpenChangeComplete?.(next);
+        }}
       >
         {children}
       </Dialog>

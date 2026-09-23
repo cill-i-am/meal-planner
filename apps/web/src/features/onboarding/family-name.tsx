@@ -41,8 +41,10 @@ export const FamilyNamePage = () => {
         setup.auth,
         setup.peopleForFamily
       );
-      await setup.selectFamily(next.organizationId);
-      await setup.save({ checkpoint: next, status: "active" });
+      await setup.save(
+        { checkpoint: next, status: "active" },
+        command.creator.mutationId
+      );
       await navigate({ to: "/setup/review" });
     },
   });
@@ -64,7 +66,6 @@ export const FamilyNamePage = () => {
       const organizationId = Schema.decodeUnknownSync(HouseholdOrganizationId)(
         id
       );
-      await setup.selectFamily(organizationId);
       await setup.save({
         checkpoint: { organizationId, stage: "family-review" },
         status: "active",

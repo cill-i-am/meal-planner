@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import {
+  canReplaceSetupProgress,
   CreateHouseholdPersonPayload,
   HouseholdPerson,
   InviteHouseholdAdultPayload,
@@ -97,6 +98,7 @@ const makeTransport = (
   } = {}
 ) => {
   let progress = start;
+  let version = 0;
   let completionRejected = false;
   let pendingRejected = false;
   let signedOut = false;
@@ -256,15 +258,19 @@ const makeTransport = (
           id: "adult-1",
           name: "Alex",
           setupProgress: progress,
+          setupProgressVersion: version,
         },
       });
     }
-    if (path.endsWith("/update-user")) {
+    if (path.endsWith("/setup/progress")) {
       const body = Schema.decodeUnknownSync(
-        Schema.Struct({ setupProgress: SetupProgress })
+        Schema.Struct({
+          expectedVersion: Schema.Number,
+          progress: SetupProgress,
+        })
       )(await request.json());
-      saveAttempts.push(body.setupProgress);
-      if (failures.logoutSave && body.setupProgress.status === "paused") {
+      saveAttempts.push(body.progress);
+      if (failures.logoutSave && body.progress.status === "paused") {
         return Response.json(
           { message: "Could not save before logging out." },
           { status: 503 }
@@ -273,7 +279,7 @@ const makeTransport = (
       if (
         failures.pending &&
         !pendingRejected &&
-        body.setupProgress.checkpoint.stage === "person-manage"
+        body.progress.checkpoint.stage === "person-manage"
       ) {
         pendingRejected = true;
         return Response.json(
@@ -285,8 +291,8 @@ const makeTransport = (
         failures.completion &&
         !completionRejected &&
         progress.checkpoint.stage === "person-manage" &&
-        (body.setupProgress.checkpoint.stage === "person-draft" ||
-          body.setupProgress.checkpoint.stage === "family-review")
+        (body.progress.checkpoint.stage === "person-draft" ||
+          body.progress.checkpoint.stage === "family-review")
       ) {
         completionRejected = true;
         return Response.json(
@@ -294,9 +300,16 @@ const makeTransport = (
           { status: 500 }
         );
       }
-      progress = body.setupProgress;
+      if (body.expectedVersion !== version) {
+        return Response.json(
+          { code: "SETUP_PROGRESS_CONFLICT" },
+          { status: 409 }
+        );
+      }
+      ({ progress } = body);
+      version += 1;
       saves.push(progress);
-      return Response.json({ status: true });
+      return Response.json({ progress, version });
     }
     if (path.endsWith("/organization/list")) {
       return Response.json([
@@ -336,6 +349,14 @@ const makeTransport = (
     removals,
     renames,
     saveAttempts,
+    saveFromOtherTab(next: SetupProgress, sourceCommandId?: string) {
+      if (!canReplaceSetupProgress(progress, next, sourceCommandId)) {
+        return false;
+      }
+      progress = next;
+      version += 1;
+      return true;
+    },
     saves,
     get signOutCalls() {
       return signOutCalls;
@@ -521,6 +542,34 @@ it("invites an existing adult without creating a second person and restores the 
     checkpoint: { draft: { participation: "adult" }, stage: "person-draft" },
   });
 });
+
+it.each([
+  ["invitation_declined", "Invitation declined"],
+  ["invitation_unavailable", "Invitation unavailable"],
+] as const)(
+  "offers Invite again after %s",
+  async (associationState, status) => {
+    const adult = Schema.decodeUnknownSync(HouseholdPerson)({
+      ...managedAdult,
+      associationState,
+      associationVersion: 1,
+    });
+    const fixture = makeTransport(initial, [adult]);
+    const { user } = await setup(fixture);
+    expect(screen.getByText(status)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Invite again" }));
+    expect(
+      await screen.findByRole("heading", { name: "Invite Jamie" })
+    ).toBeInTheDocument();
+    await user.type(
+      screen.getByRole("textbox", { name: "Email" }),
+      "jamie@example.test"
+    );
+    await user.click(screen.getByRole("button", { name: "Invite Jamie" }));
+    await waitFor(() => expect(fixture.invitations).toHaveLength(1));
+    expect(fixture.invitations[0]).toMatchObject({ personId: adult.id });
+  }
+);
 
 it("explains a rejected invitation without claiming success or creating another person", async () => {
   const fixture = makeTransport(initial, [managedAdult], false, "owner", true);
@@ -829,7 +878,8 @@ it("replaces an unsubmitted local draft with a pending request received on sessi
     status: "active",
   });
   await act(async () => {
-    await auth.updateUser({ setupProgress: pending });
+    expect(fixture.saveFromOtherTab(pending)).toBe(true);
+    auth.$store.notify("$sessionSignal");
   });
   expect(
     await screen.findByRole("heading", { name: "Invite Jamie" })
@@ -872,7 +922,26 @@ it("preserves the editable roster form while switching between desktop dialog an
   expect(fixture.saveAttempts).toHaveLength(0);
 });
 
-it("keeps a locally retained request when another tab saves a different pending command", async () => {
+it("finishes closing a desktop roster dialog when the viewport changes", async () => {
+  const { user } = await setup(makeTransport(initial, [managedAdult]));
+  await user.click(screen.getByRole("button", { name: "Invite to join" }));
+  expect(
+    await screen.findByRole("heading", { name: "Invite Jamie" })
+  ).toBeInTheDocument();
+  await act(async () => {
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    setMobileViewport(true);
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("heading", { name: "Invite Jamie" })).toBeNull()
+  );
+  await user.click(screen.getByRole("button", { name: "Invite to join" }));
+  expect(
+    await screen.findByRole("heading", { name: "Invite Jamie" })
+  ).toBeInTheDocument();
+});
+
+it("shows the saved command while retaining an earlier unsaved request", async () => {
   const review = Schema.decodeUnknownSync(SetupProgress)({
     checkpoint: { organizationId: familyId, stage: "family-review" },
     status: "active",
@@ -908,19 +977,16 @@ it("keeps a locally retained request when another tab saves a different pending 
     status: "active",
   });
   await act(async () => {
-    await auth.updateUser({ setupProgress: otherPending });
+    expect(fixture.saveFromOtherTab(otherPending)).toBe(true);
+    auth.$store.notify("$sessionSignal");
   });
   expect(
-    await screen.findByText(/Another setup request is pending/u)
+    await screen.findByRole("heading", { name: "Remove Jamie from family?" })
   ).toBeInTheDocument();
-  expect(
-    screen.getByRole("heading", { name: "Invite Jamie" })
-  ).toBeInTheDocument();
-  expect(
-    screen.getByRole("button", { name: "Check and continue" })
-  ).toBeDisabled();
+  expect(fixture.invitations).toHaveLength(0);
   await act(async () => {
-    await auth.updateUser({ setupProgress: review });
+    expect(fixture.saveFromOtherTab(review, "other-tab-removal")).toBe(true);
+    auth.$store.notify("$sessionSignal");
   });
   await waitFor(() =>
     expect(
@@ -929,85 +995,48 @@ it("keeps a locally retained request when another tab saves a different pending 
   );
   await user.click(screen.getByRole("button", { name: "Check and continue" }));
   await waitFor(() => expect(fixture.invitations).toHaveLength(1));
-  expect(fixture.saveAttempts[3]).toEqual(original);
+  expect(fixture.saveAttempts[1]).toEqual(original);
   expect(fixture.removals).toHaveLength(0);
 });
 
-it.each(["success", "rejected"] as const)(
-  "keeps a newer saved request when an earlier invitation returns %s",
-  async (outcome) => {
-    const review = Schema.decodeUnknownSync(SetupProgress)({
-      checkpoint: { organizationId: familyId, stage: "family-review" },
-      status: "active",
-    });
-    const invitationReply = Promise.withResolvers<null>();
-    const fixture = makeTransport(
-      review,
-      [managedAdult],
-      false,
-      "owner",
-      outcome === "rejected",
-      { invitationReply: invitationReply.promise }
-    );
-    const { auth, user } = await setup(fixture, "/setup/review");
-    await user.click(screen.getByRole("button", { name: "Invite to join" }));
-    await user.type(
-      screen.getByRole("textbox", { name: "Email" }),
-      "jamie@example.test"
-    );
-    await user.click(screen.getByRole("button", { name: "Invite Jamie" }));
-    await waitFor(() => expect(fixture.invitations).toHaveLength(1));
-    const [original] = fixture.saveAttempts;
-    const otherPending = Schema.decodeUnknownSync(SetupProgress)({
-      checkpoint: {
-        organizationId: familyId,
-        returnTo: { stage: "family-review" },
-        stage: "person-manage",
-        state: {
-          command: {
-            kind: "remove",
-            mutationId: "newer-saved-request",
-            person: managedAdult,
-          },
-          phase: "pending",
+it("does not replace a saved invitation while its request is in flight", async () => {
+  const review = Schema.decodeUnknownSync(SetupProgress)({
+    checkpoint: { organizationId: familyId, stage: "family-review" },
+    status: "active",
+  });
+  const invitationReply = Promise.withResolvers<null>();
+  const fixture = makeTransport(review, [managedAdult], false, "owner", false, {
+    invitationReply: invitationReply.promise,
+  });
+  const { user } = await setup(fixture, "/setup/review");
+  await user.click(screen.getByRole("button", { name: "Invite to join" }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Email" }),
+    "jamie@example.test"
+  );
+  await user.click(screen.getByRole("button", { name: "Invite Jamie" }));
+  await waitFor(() => expect(fixture.invitations).toHaveLength(1));
+  const competing = Schema.decodeUnknownSync(SetupProgress)({
+    checkpoint: {
+      organizationId: familyId,
+      returnTo: { stage: "family-review" },
+      stage: "person-manage",
+      state: {
+        command: {
+          kind: "remove",
+          mutationId: "other-removal",
+          person: managedAdult,
         },
+        phase: "pending",
       },
-      status: "active",
-    });
-    await act(async () => {
-      await auth.updateUser({ setupProgress: otherPending });
-    });
-    expect(
-      await screen.findByText(/Another setup request is pending/u)
-    ).toBeInTheDocument();
-    await act(async () => {
-      invitationReply.resolve(null);
-    });
-    expect(
-      await screen.findByText(/kept this exact request/u)
-    ).toBeInTheDocument();
-    expect(fixture.saveAttempts).toHaveLength(2);
-    expect(fixture.saves.at(-1)).toEqual(otherPending);
-    expect(
-      screen.getByRole("heading", { name: "Invite Jamie" })
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
-    await act(async () => {
-      await auth.updateUser({ setupProgress: review });
-    });
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Check and continue" })
-      ).toBeEnabled()
-    );
-    await user.click(
-      screen.getByRole("button", { name: "Check and continue" })
-    );
-    await waitFor(() => expect(fixture.invitations).toHaveLength(2));
-    expect(fixture.invitations[1]).toEqual(fixture.invitations[0]);
-    expect(fixture.saveAttempts[3]).toEqual(original);
-  }
-);
+    },
+    status: "active",
+  });
+  expect(fixture.saveFromOtherTab(competing)).toBe(false);
+  await act(async () => invitationReply.resolve(null));
+  await waitFor(() => expect(fixture.saves.at(-1)).toEqual(review));
+  expect(fixture.invitations).toHaveLength(1);
+});
 
 it("adds a child as a managed profile without an invitation choice", async () => {
   const { fixture, user } = await setup();

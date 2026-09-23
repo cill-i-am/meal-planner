@@ -91,19 +91,21 @@ export const EditPersonPage = () => {
         },
         status: "active",
       });
-      await setup.selectFamily(pending.organizationId);
       const people = setup.peopleForFamily(pending.organizationId);
       if (!people.rename) {
         throw new Error("Name editing is unavailable.");
       }
       await people.rename(pending.personId, command);
-      await setup.save({
-        checkpoint: {
-          organizationId: pending.organizationId,
-          stage: "family-review",
+      await setup.save(
+        {
+          checkpoint: {
+            organizationId: pending.organizationId,
+            stage: "family-review",
+          },
+          status: "active",
         },
-        status: "active",
-      });
+        command.mutationId
+      );
       await queryClient.invalidateQueries({
         queryKey: ["setup-roster", pending.organizationId],
       });
