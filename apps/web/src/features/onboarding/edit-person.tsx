@@ -13,6 +13,7 @@ import {
   CardFooter,
 } from "../../components/ui/card.js";
 import { FieldGroup } from "../../components/ui/field.js";
+import { PendingButton } from "../../components/ui/pending-button.js";
 import { householdPeopleFailureCode } from "../household-people/operations.js";
 import { PersonNameInput } from "./people-input.js";
 import { useSetup } from "./setup-context.js";
@@ -214,9 +215,14 @@ export const EditPersonPage = () => {
                 </SetupError>
               )}
               {!stale && (
-                <Button type="submit" disabled={busy}>
-                  {busy ? "Saving…" : submitLabel}
-                </Button>
+                <PendingButton
+                  type="submit"
+                  disabled={busy}
+                  pending={mutation.isPending}
+                  pendingLabel="Saving name…"
+                >
+                  {submitLabel}
+                </PendingButton>
               )}
             </CardContent>
           </CardBody>

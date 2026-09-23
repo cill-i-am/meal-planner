@@ -13,6 +13,7 @@ import {
   CardContent,
   CardFooter,
 } from "../../components/ui/card.js";
+import { PendingButton } from "../../components/ui/pending-button.js";
 import {
   RosterActions,
   RosterManagementOverlay,
@@ -199,12 +200,14 @@ export const FamilyReviewPage = () => {
                 Try again
               </Button>
             ) : (
-              <Button
+              <PendingButton
                 disabled={pendingAction || !roster.data?.currentPersonId}
+                pending={action.isPending && action.variables === "ready"}
+                pendingLabel="Continuing…"
                 onClick={() => action.mutate("ready")}
               >
                 Continue
-              </Button>
+              </PendingButton>
             )}
           </CardContent>
         </CardBody>
@@ -343,12 +346,14 @@ export const FamilyReadyPage = () => {
                   : "We couldn’t open your workspace. Try again."}
               </SetupError>
             )}
-            <Button
+            <PendingButton
               disabled={finish.isPending}
+              pending={finish.isPending && finish.variables === "discovery"}
+              pendingLabel="Opening your workspace…"
               onClick={() => finish.mutate("discovery")}
             >
               Tell us how you eat
-            </Button>
+            </PendingButton>
           </CardContent>
         </CardBody>
         <CardFooter>

@@ -29,6 +29,7 @@ import {
   CollapsibleContent,
 } from "../../components/ui/collapsible.js";
 import { FieldGroup } from "../../components/ui/field.js";
+import { PendingButton } from "../../components/ui/pending-button.js";
 import { PersonRow, useSetupRoster } from "./family-review.js";
 import { InvitationCorrectionForm } from "./invitation-correction.js";
 import {
@@ -101,6 +102,7 @@ const AddedPeople = ({
 const PersonDraftForm = ({
   draft,
   busy,
+  saving,
   disabled,
   error,
   submit,
@@ -116,6 +118,7 @@ const PersonDraftForm = ({
 }: {
   readonly draft: Draft;
   readonly busy: boolean;
+  readonly saving: boolean;
   readonly disabled: boolean;
   readonly error: boolean;
   readonly submit: (command: PersonCreation) => Promise<void>;
@@ -317,9 +320,14 @@ const PersonDraftForm = ({
                         ? "Add and invite"
                         : "Add person";
                     return (
-                      <Button type="submit" disabled={disabled}>
-                        {busy ? "Saving…" : label}
-                      </Button>
+                      <PendingButton
+                        type="submit"
+                        disabled={disabled}
+                        pending={saving}
+                        pendingLabel="Saving person…"
+                      >
+                        {label}
+                      </PendingButton>
                     );
                   }}
                 </form.Subscribe>
@@ -351,6 +359,7 @@ const PersonDraftForm = ({
 const PendingPersonRequest = ({
   pending,
   busy,
+  saving,
   failed,
   logoutFailed,
   retry,
@@ -358,6 +367,7 @@ const PendingPersonRequest = ({
 }: {
   readonly pending: Pending;
   readonly busy: boolean;
+  readonly saving: boolean;
   readonly failed: boolean;
   readonly logoutFailed: boolean;
   readonly retry: () => void;
@@ -423,9 +433,14 @@ const PendingPersonRequest = ({
                 We couldn’t save your place or log you out. Try again.
               </SetupError>
             )}
-            <Button disabled={busy} onClick={retry}>
-              {busy ? "Saving…" : retryLabel}
-            </Button>
+            <PendingButton
+              disabled={busy}
+              onClick={retry}
+              pending={saving}
+              pendingLabel="Checking request…"
+            >
+              {retryLabel}
+            </PendingButton>
           </CardContent>
         </CardBody>
       </Card>
@@ -485,6 +500,7 @@ export const AddPersonPage = () => {
       <InvitationCorrectionForm
         checkpoint={checkpoint}
         busy={busy}
+        saving={save.isPending}
         error={Boolean(exit.error || cancel.error)}
         submit={async (email) => {
           await save
@@ -512,6 +528,7 @@ export const AddPersonPage = () => {
       <PendingPersonRequest
         pending={pending}
         busy={busy}
+        saving={save.isPending}
         failed={Boolean(save.error)}
         logoutFailed={Boolean(exit.error)}
         retry={() => save.mutate(pending)}
@@ -567,6 +584,7 @@ export const AddPersonPage = () => {
       organizer={setup.isFamilyOrganizer(checkpoint.organizationId)}
       rosterError={roster.isError}
       busy={busy}
+      saving={save.isPending}
       disabled={busy || manage.managing}
       overlay={<RosterManagementOverlay management={manage} />}
       error={Boolean(cancel.error)}

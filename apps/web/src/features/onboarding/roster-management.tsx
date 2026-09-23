@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu.js";
 import { FieldGroup } from "../../components/ui/field.js";
+import { PendingButton } from "../../components/ui/pending-button.js";
 import { Overlay } from "../../components/ui/responsive-overlay.js";
 import {
   Tooltip,
@@ -147,14 +148,7 @@ const actionDescription = (action: RosterIntent): string => {
   return "Their profile will be archived and removed from your family list.";
 };
 
-const actionButtonLabel = (
-  action: RosterIntent,
-  busy: boolean,
-  pending: boolean
-) => {
-  if (busy) {
-    return "Saving…";
-  }
+const actionButtonLabel = (action: RosterIntent, pending: boolean) => {
   if (pending) {
     return "Check and continue";
   }
@@ -167,6 +161,16 @@ const actionButtonLabel = (
   return action.person.associationState === "invitation_pending"
     ? "Cancel invitation & remove"
     : `Remove ${action.person.displayName}`;
+};
+
+const actionPendingLabel = (action: RosterIntent) => {
+  if (action.kind === "invite") {
+    return "Sending invitation…";
+  }
+  if (action.kind === "rename") {
+    return "Saving name…";
+  }
+  return `Removing ${action.person.displayName}…`;
 };
 
 const runRosterCommand = async (
@@ -729,12 +733,14 @@ const RosterManagementDialog = ({
               Review family
             </Button>
           ) : (
-            <Button
+            <PendingButton
               type="submit"
               form="roster-management-form"
               variant={action.kind === "remove" ? "destructive" : "default"}
               size="xl"
               disabled={disabled || management.conflictingRequest}
+              pending={busy}
+              pendingLabel={actionPendingLabel(action)}
               onClick={
                 pending
                   ? async (event) => {
@@ -744,8 +750,8 @@ const RosterManagementDialog = ({
                   : undefined
               }
             >
-              {actionButtonLabel(action, busy, pending)}
-            </Button>
+              {actionButtonLabel(action, pending)}
+            </PendingButton>
           )}
           <Button
             variant="link"

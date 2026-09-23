@@ -487,8 +487,8 @@ it("invites an existing adult without creating a second person and restores the 
   expect(
     await screen.findByRole("heading", { name: "Invite Jamie" })
   ).toBeInTheDocument();
-  expect(screen.getByText("Add person", { selector: "button" })).toBeDisabled();
-  expect(screen.queryByText("Saving…")).not.toBeInTheDocument();
+  expect(screen.getByText("Add person").closest("button")).toBeDisabled();
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
   expect(fixture.saveAttempts).toHaveLength(0);
   await user.type(
     screen.getByRole("textbox", { name: "Email" }),

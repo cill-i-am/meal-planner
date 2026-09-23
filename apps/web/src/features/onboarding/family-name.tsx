@@ -18,6 +18,7 @@ import {
   CardContent,
 } from "../../components/ui/card.js";
 import { FieldGroup } from "../../components/ui/field.js";
+import { PendingButton } from "../../components/ui/pending-button.js";
 import { completeFamilyCreation } from "./family-creation.js";
 import { useSetup } from "./setup-context.js";
 import { SetupError, SetupFrame } from "./setup-ui.js";
@@ -188,9 +189,14 @@ export const FamilyNamePage = () => {
                   We couldn’t save your place or log you out. Try again.
                 </SetupError>
               )}
-              <Button type="submit" disabled={pending}>
-                {mutation.isPending ? "Saving your family…" : submitLabel}
-              </Button>
+              <PendingButton
+                type="submit"
+                disabled={pending}
+                pending={mutation.isPending}
+                pendingLabel="Saving your family…"
+              >
+                {submitLabel}
+              </PendingButton>
             </CardContent>
           </CardBody>
         </form.Frame>

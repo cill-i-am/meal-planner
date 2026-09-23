@@ -12,6 +12,7 @@ import {
   CardBody,
 } from "../../components/ui/card.js";
 import { FieldGroup } from "../../components/ui/field.js";
+import { PendingButton } from "../../components/ui/pending-button.js";
 import type { AuthenticationInput } from "./auth-client.js";
 import { useAuthClient, authenticate } from "./auth-client.js";
 import { authFeedback } from "./auth-errors.js";
@@ -145,9 +146,15 @@ const LoginForm = ({ redirect }: { readonly redirect: string }) => {
               </Alert>
             )}
 
-            <Button className="w-full" type="submit" disabled={auth.blocked}>
-              {auth.pending ? "Logging in…" : "Log in"}
-            </Button>
+            <PendingButton
+              className="w-full"
+              type="submit"
+              disabled={auth.blocked}
+              pending={auth.pending}
+              pendingLabel="Logging in…"
+            >
+              Log in
+            </PendingButton>
           </CardContent>
         </CardBody>
         <CardFooter>
@@ -246,9 +253,15 @@ const SignupForm = ({ redirect }: { readonly redirect: string }) => {
               </Alert>
             )}
 
-            <Button className="w-full" type="submit" disabled={auth.blocked}>
-              {auth.pending ? "Creating account…" : "Create account"}
-            </Button>
+            <PendingButton
+              className="w-full"
+              type="submit"
+              disabled={auth.blocked}
+              pending={auth.pending}
+              pendingLabel="Creating account…"
+            >
+              Create account
+            </PendingButton>
           </CardContent>
         </CardBody>
         <CardFooter>

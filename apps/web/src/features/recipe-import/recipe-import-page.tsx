@@ -35,6 +35,7 @@ import { Badge } from "../../components/ui/badge.js";
 import { Button } from "../../components/ui/button.js";
 import { Input } from "../../components/ui/input.js";
 import { Label } from "../../components/ui/label.js";
+import { PendingButton } from "../../components/ui/pending-button.js";
 import { Separator } from "../../components/ui/separator.js";
 import { Skeleton } from "../../components/ui/skeleton.js";
 import { recipeImportQueryKeys } from "./household-query-isolation.js";
@@ -189,9 +190,14 @@ const NameAnswerForm = ({
           </>
         )}
       </form.Field>
-      <Button disabled={isPending} type="submit">
+      <PendingButton
+        disabled={isPending}
+        pending={isPending}
+        pendingLabel="Saving recipe name…"
+        type="submit"
+      >
         Save recipe name
-      </Button>
+      </PendingButton>
     </form>
   );
 };
@@ -343,12 +349,14 @@ const TagsAnswerForm = ({
         })}
       >
         {({ canSubmit, cuisine }) => (
-          <Button
+          <PendingButton
             disabled={!canSubmit || cuisine.trim().length === 0 || isPending}
+            pending={isPending}
+            pendingLabel="Saving planning tags…"
             type="submit"
           >
             Save planning tags
-          </Button>
+          </PendingButton>
         )}
       </form.Subscribe>
     </form>
@@ -402,12 +410,14 @@ const ImportRecipeForm = ({
                 })}
               >
                 {({ canSubmit, isSubmitting }) => (
-                  <Button
+                  <PendingButton
                     disabled={!canSubmit || isSubmitting || isPending}
+                    pending={isPending}
+                    pendingLabel="Starting import…"
                     type="submit"
                   >
                     Import recipe
-                  </Button>
+                  </PendingButton>
                 )}
               </form.Subscribe>
             </div>
@@ -455,8 +465,10 @@ const ProcessingStatus = ({
           : "Creating your import"}
       </p>
       {intent?.status === "processing" ? (
-        <Button
+        <PendingButton
           disabled={isCancelling}
+          pending={isCancelling}
+          pendingLabel="Cancelling import…"
           onClick={() =>
             cancel({
               idempotencyKey: idempotencyKey(makeRequestId),
@@ -466,7 +478,7 @@ const ProcessingStatus = ({
           }
         >
           Cancel import
-        </Button>
+        </PendingButton>
       ) : null}
       <Skeleton variant="line" />
       <Skeleton variant="short-line" />
@@ -579,8 +591,10 @@ const RecipeReview = ({
     ) : null}
     <div className="approve-bar">
       <p>Confirm this recipe to save it.</p>
-      <Button
+      <PendingButton
         disabled={isConfirming}
+        pending={isConfirming}
+        pendingLabel="Saving recipe…"
         onClick={() =>
           confirm({
             actionId: action.id,
@@ -591,7 +605,7 @@ const RecipeReview = ({
         }
       >
         Confirm recipe
-      </Button>
+      </PendingButton>
     </div>
   </article>
 );
