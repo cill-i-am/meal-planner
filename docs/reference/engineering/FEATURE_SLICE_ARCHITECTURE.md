@@ -274,6 +274,8 @@ import { ProjectsClient } from "@app/projects/client";
 
 Use Effect HttpApi for public-ish HTTP APIs, browser/mobile/MCP-adjacent APIs, or APIs that may need docs, inspection, external callers, or non-TypeScript consumers. Use Effect RPC for tightly coupled TypeScript-to-TypeScript internal communication. Avoid hand-rolled clients when a typed contract client, official SDK, or generated OpenAPI client exists.
 
+For app-owned browser calls, share the Effect HttpApi request, success and tagged failure schemas with the server. Run the generated client as an Effect through the selected React query/mutation adapter; let that adapter own pending and error presentation. Keep form values local to the form. A transport adapter should not duplicate the contract with raw `fetch`, status switches and manual JSON parsing.
+
 Treat MCP tools and resources as protocol boundaries. They parse inputs, authorize explicitly, call shared application services, and project explicit MCP-safe output. They do not leak rows, rich domain objects, secrets, or raw errors.
 
 ## Config Ownership

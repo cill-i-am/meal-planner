@@ -53,6 +53,7 @@ interface SetupContextValue {
     progress: SetupProgress,
     sourceCommandId?: string
   ) => Promise<void>;
+  readonly refresh: () => Promise<void>;
   readonly selectFamily: (
     id: typeof HouseholdOrganizationId.Type
   ) => Promise<void>;
@@ -338,6 +339,13 @@ export const SetupProvider = ({
             userId: user.id,
           }),
         progress,
+        refresh: async () => {
+          await Promise.all([
+            session.refetch(),
+            organizations.refetch(),
+            active.refetch(),
+          ]);
+        },
         save,
         selectFamily,
         user,

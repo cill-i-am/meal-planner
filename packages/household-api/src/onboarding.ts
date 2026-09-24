@@ -1,5 +1,6 @@
 import { dequal } from "dequal/lite";
 import { Schema } from "effect";
+import { HttpApiSchema } from "effect/unstable/httpapi";
 
 import { EmailAddress, InvitationId } from "./auth-values.js";
 import { HouseholdOrganizationId } from "./household-principal.js";
@@ -20,6 +21,29 @@ export const FamilyName = Schema.Trim.check(
   Schema.isMinLength(1, { message: "Enter a family name." }).abort(),
   Schema.isMaxLength(80, { message: "Use 80 characters or fewer." })
 );
+
+export const CreateSetupFamilyRequest = Schema.Struct({
+  name: FamilyName,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export const CreatedSetupFamily = Schema.Struct({
+  name: FamilyName,
+  organizationId: HouseholdOrganizationId,
+});
+export const SetupFamilyUnauthorized = Schema.TaggedStruct(
+  "SetupFamilyUnauthorized",
+  { message: Schema.String }
+).pipe(HttpApiSchema.status(401));
+export const SetupFamilyInvalidRequest = Schema.TaggedStruct(
+  "SetupFamilyInvalidRequest",
+  { message: Schema.String }
+).pipe(HttpApiSchema.status(400));
+export const SetupFamilyConflict = Schema.TaggedStruct("SetupFamilyConflict", {
+  message: Schema.String,
+}).pipe(HttpApiSchema.status(409));
+export const SetupFamilyUnavailable = Schema.TaggedStruct(
+  "SetupFamilyUnavailable",
+  { message: Schema.String }
+).pipe(HttpApiSchema.status(503));
 
 export const PersonDraft = Schema.Struct({
   email: Schema.String.check(Schema.isMaxLength(254)),
@@ -172,6 +196,10 @@ export const SetupProgress = Schema.Struct({
   status: Schema.Literals(["active", "paused"]),
 }).annotate({ parseOptions: { onExcessProperty: "error" } });
 export type SetupProgress = typeof SetupProgress.Type;
+export const initialSetupProgress: SetupProgress = {
+  checkpoint: { name: "", stage: "family-name" },
+  status: "active",
+};
 
 /** Identity of an unresolved operation retained by a setup checkpoint. */
 export const setupPendingCommandId = (

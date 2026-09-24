@@ -200,6 +200,8 @@ State whether repeating a delete is safe. If the result says this request delete
 
 Use ordinary function calls or local database transactions for simple single-boundary operations.
 
+An intent is a durable record of work that can continue after the request, as in the [recipe-import intent layer](../../../apps/api/src/features/imports/import-intent-transition.ts). Do not model an ordinary domain entity as an intent merely because its creation is asynchronous to the browser. A submitted create command can own server-side retry identity without adding a separate intent lifecycle.
+
 Use a durable workflow, saga, or equivalent explicit orchestration record when a process needs:
 
 - retries;

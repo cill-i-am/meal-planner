@@ -27,10 +27,14 @@ type AuthProps = Omit<MealPlannerAuthConfiguration, "database" | "secret"> & {
 type AlchemyAuth = BetterAuthInstance<AuthProps>;
 type AuthOperation =
   | "cancelInvitation"
+  | "createOrganization"
   | "getSession"
   | "getActiveMember"
   | "leaveOrganization"
-  | "removeMember";
+  | "listOrganizations"
+  | "removeMember"
+  | "saveSetupProgress"
+  | "setActiveOrganization";
 type BoundAuthApi = {
   readonly [K in AuthOperation]: AlchemyAuth["api"][K] extends (
     ...args: infer Args
@@ -95,12 +99,20 @@ export const makeAlchemyMealPlannerAuth = (
       api: {
         cancelInvitation: (input) =>
           provideRuntime(auth.api.cancelInvitation(input)),
+        createOrganization: (input) =>
+          provideRuntime(auth.api.createOrganization(input)),
         getActiveMember: (input) =>
           provideRuntime(auth.api.getActiveMember(input)),
         getSession: (input) => provideRuntime(auth.api.getSession(input)),
         leaveOrganization: (input) =>
           provideRuntime(auth.api.leaveOrganization(input)),
+        listOrganizations: (input) =>
+          provideRuntime(auth.api.listOrganizations(input)),
         removeMember: (input) => provideRuntime(auth.api.removeMember(input)),
+        saveSetupProgress: (input) =>
+          provideRuntime(auth.api.saveSetupProgress(input)),
+        setActiveOrganization: (input) =>
+          provideRuntime(auth.api.setActiveOrganization(input)),
       },
       createHouseholdInvitation: ({ invitationId, ...request }) =>
         provideRuntime(

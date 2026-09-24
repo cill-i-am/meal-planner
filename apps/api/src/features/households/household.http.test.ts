@@ -25,11 +25,11 @@ import { Effect, Layer, Schema } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { afterAll, describe, expect, it } from "vitest";
 
+import { JsonHttpPlatformServices } from "../../infrastructure/json-http-platform.js";
 import {
   AuthenticatedOrganizationResolver,
   AuthPrincipalResolutionError,
 } from "../auth/auth.principal.js";
-import { RecipeImportHttpPlatformServices } from "../imports/import-intent-api.http.js";
 import { makeHouseholdRequestLayer } from "./household-request-composition.js";
 import type { HouseholdDomainGateway } from "./household.gateway.js";
 import {
@@ -291,7 +291,7 @@ describe("household people identity and owner boundary", () => {
     );
     const app = HttpRouter.toWebHandler(
       HouseholdPeopleHttpApiLayer.pipe(
-        Layer.provide(RecipeImportHttpPlatformServices),
+        Layer.provide(JsonHttpPlatformServices),
         Layer.provide(requestServices),
         HttpRouter.provideRequest(requestServices)
       ),
@@ -471,7 +471,7 @@ describe("household meal-plan HttpApi boundary", () => {
     );
     const app = HttpRouter.toWebHandler(
       HouseholdMealPlanHttpApiLayer.pipe(
-        Layer.provide(RecipeImportHttpPlatformServices),
+        Layer.provide(JsonHttpPlatformServices),
         Layer.provide(requestServices),
         HttpRouter.provideRequest(requestServices)
       ),

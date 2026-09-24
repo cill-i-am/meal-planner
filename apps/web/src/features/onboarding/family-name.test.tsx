@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { HouseholdPerson, SetupProgress } from "@meal-planner/household-api";
+import { SetupProgress } from "@meal-planner/household-api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
@@ -28,19 +28,7 @@ const restored = Schema.decodeUnknownSync(SetupProgress)({
   },
   status: "active",
 });
-const creator = Schema.decodeUnknownSync(HouseholdPerson)({
-  associationState: "linked",
-  associationVersion: 1,
-  createdAtEpochMs: 1,
-  displayName: "Alex",
-  id: "person_11111111-1111-4111-8111-111111111111",
-  isCurrentAdult: true,
-  kind: "adult",
-  lifecycle: "active",
-  updatedAtEpochMs: 1,
-  version: 1,
-});
-
+let currentTransport: typeof fetch;
 const makeTransport = (initial: SetupProgress = initialSetup) => {
   let progress = initial;
   let version = 0;
@@ -48,8 +36,12 @@ const makeTransport = (initial: SetupProgress = initialSetup) => {
   let signedOut = false;
   let signOutCalls = 0;
   const saves: SetupProgress[] = [];
+  const createCalls: string[] = [];
   const fixture = {
+    createCalls,
     createReply: Promise.withResolvers<null>(),
+    failConflict: false,
+    failCreate: false,
     failSave: false,
     saves,
     get signOutCalls() {
@@ -113,23 +105,34 @@ const makeTransport = (initial: SetupProgress = initialSetup) => {
       if (path.endsWith("/organization/get-full-organization")) {
         return Response.json(family);
       }
-      if (path.endsWith("/organization/create")) {
-        const body = Schema.decodeUnknownSync(
-          Schema.Struct({ name: Schema.String, slug: Schema.String })
+      if (path === "/v1/setup/family") {
+        const { name } = Schema.decodeUnknownSync(
+          Schema.Struct({ name: Schema.String })
         )(await request.json());
+        createCalls.push(name);
+        if (fixture.failConflict) {
+          return Response.json(
+            {
+              _tag: "SetupFamilyConflict",
+              message: "Another family request is saved.",
+            },
+            { status: 409 }
+          );
+        }
+        if (fixture.failCreate) {
+          return Response.json({ code: "UNAVAILABLE" }, { status: 503 });
+        }
         await fixture.createReply.promise;
-        family = { id: "family-1", ...body };
-        return Response.json(family);
-      }
-      if (path.endsWith("/organization/set-active")) {
-        return Response.json(family);
-      }
-      if (path === "/v1/household/people") {
-        return Response.json({
-          creatorSlot: "occupied",
-          currentPersonId: creator.id,
-          people: [creator],
-        });
+        family = { id: "family-1", name, slug: "family-1" };
+        progress = {
+          checkpoint: { organizationId: family.id, stage: "family-review" },
+          status: "active",
+        } as SetupProgress;
+        version += 2;
+        return Response.json(
+          { name, organizationId: family.id },
+          { status: 201 }
+        );
       }
       throw new Error(`Unexpected setup fixture path: ${path}`);
     }) satisfies typeof fetch,
@@ -139,7 +142,10 @@ const makeTransport = (initial: SetupProgress = initialSetup) => {
 
 const setup = async (fixture = makeTransport()) => {
   // Both Better Auth clients and the generated people client use the runtime transport.
-  vi.stubGlobal("fetch", fixture.transport);
+  currentTransport = fixture.transport;
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
+    currentTransport(input, init)
+  );
   const root = createRootRoute({ component: Outlet });
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: ["/setup/family"] }),
@@ -206,13 +212,12 @@ afterAll(async () => {
   });
 });
 
-it("keeps normal creation pending without a recovery alert after saving its checkpoint", async () => {
+it("submits family creation once and shows a pending button without a recovery alert", async () => {
   const { fixture, user } = await setup();
   await user.type(screen.getByLabelText("Family name"), "Morgan family");
   await user.click(screen.getByRole("button", { name: "Create family" }));
-  await waitFor(() =>
-    expect(fixture.saves[0]?.checkpoint.stage).toBe("family-create")
-  );
+  await waitFor(() => expect(fixture.createCalls).toEqual(["Morgan family"]));
+  expect(fixture.saves).toEqual([]);
   expect(
     screen.getByRole("button", { name: "Saving your family…" })
   ).toBeDisabled();
@@ -228,25 +233,38 @@ it("keeps normal creation pending without a recovery alert after saving its chec
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
-it("retains the exact command after a failed checkpoint save and removes the alert while retrying", async () => {
+it("retries a failed submit without creating a browser-side checkpoint", async () => {
   const fixture = makeTransport();
-  fixture.failSave = true;
+  fixture.failCreate = true;
   const { user } = await setup(fixture);
   await user.type(screen.getByLabelText("Family name"), "Morgan family");
   await user.click(screen.getByRole("button", { name: "Create family" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "still need to confirm the result"
+    "couldn’t finish creating your family"
   );
-  expect(screen.getByLabelText("Family name")).toBeDisabled();
-  fixture.failSave = false;
-  await user.click(screen.getByRole("button", { name: "Check and continue" }));
-  await waitFor(() => expect(fixture.saves).toHaveLength(2));
-  expect(fixture.saves[1]).toEqual(fixture.saves[0]);
+  expect(screen.getByLabelText("Family name")).toBeEnabled();
+  fixture.failCreate = false;
+  await user.click(screen.getByRole("button", { name: "Create family" }));
+  await waitFor(() => expect(fixture.createCalls).toHaveLength(2));
+  expect(fixture.createCalls).toEqual(["Morgan family", "Morgan family"]);
+  expect(fixture.saves).toEqual([]);
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   fixture.createReply.resolve(null);
   expect(
     await screen.findByRole("heading", { name: "Review your family" })
   ).toBeInTheDocument();
+});
+
+it("shows the typed conflict from the family command", async () => {
+  const fixture = makeTransport();
+  fixture.failConflict = true;
+  const { user } = await setup(fixture);
+  await user.type(screen.getByLabelText("Family name"), "Morgan family");
+  await user.click(screen.getByRole("button", { name: "Create family" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Another family request is saved"
+  );
+  expect(fixture.saves).toEqual([]);
 });
 
 it("offers recovery for a restored unfinished creation and reuses its command", async () => {
@@ -260,7 +278,8 @@ it("offers recovery for a restored unfinished creation and reuses its command", 
   );
   expect(screen.getByLabelText("Family name")).toBeDisabled();
   await user.click(screen.getByRole("button", { name: "Check and continue" }));
-  await waitFor(() => expect(fixture.saves[0]).toEqual(restored));
+  await waitFor(() => expect(fixture.createCalls).toEqual(["Morgan family"]));
+  expect(fixture.saves).toEqual([]);
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   fixture.createReply.resolve(null);
   expect(
