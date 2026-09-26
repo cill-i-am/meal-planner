@@ -76,7 +76,18 @@ export const resolveAuthenticatedOrganization = (options: {
           reason: "invalid_session",
         });
       }
+      const expectedUser = options.headers.get("x-meal-planner-user");
+      const expectedOrganization = options.headers.get(
+        "x-meal-planner-household"
+      );
       const organizationId = authSession.session.activeOrganizationId;
+      if (
+        (expectedUser !== null && expectedUser !== authSession.user.id) ||
+        (expectedOrganization !== null &&
+          expectedOrganization !== organizationId)
+      ) {
+        throw new AuthPrincipalResolutionError({ reason: "invalid_session" });
+      }
       if (organizationId === null || organizationId === undefined) {
         throw new AuthPrincipalResolutionError({
           reason: "missing_active_household",

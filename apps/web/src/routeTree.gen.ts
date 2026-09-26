@@ -12,7 +12,13 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as SetupIndexRouteImport } from './routes/setup.index'
+import { Route as SetupFamilyRouteImport } from './routes/setup.family'
+import { Route as SetupReadyRouteImport } from './routes/setup.ready'
+import { Route as SetupReviewRouteImport } from './routes/setup.review'
+import { Route as SetupSavedRouteImport } from './routes/setup.saved'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -29,43 +35,121 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
   getParentRoute: () => rootRouteImport,
+} as any)
+const SetupIndexRoute = SetupIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SetupRoute,
+} as any)
+const SetupFamilyRoute = SetupFamilyRouteImport.update({
+  id: '/family',
+  path: '/family',
+  getParentRoute: () => SetupRoute,
+} as any)
+const SetupReadyRoute = SetupReadyRouteImport.update({
+  id: '/ready',
+  path: '/ready',
+  getParentRoute: () => SetupRoute,
+} as any)
+const SetupReviewRoute = SetupReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
+  getParentRoute: () => SetupRoute,
+} as any)
+const SetupSavedRoute = SetupSavedRouteImport.update({
+  id: '/saved',
+  path: '/saved',
+  getParentRoute: () => SetupRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/setup': typeof SetupRouteWithChildren
   '/signup': typeof SignupRoute
+  '/setup/family': typeof SetupFamilyRoute
+  '/setup/ready': typeof SetupReadyRoute
+  '/setup/review': typeof SetupReviewRoute
+  '/setup/saved': typeof SetupSavedRoute
+  '/setup/': typeof SetupIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/setup/family': typeof SetupFamilyRoute
+  '/setup/ready': typeof SetupReadyRoute
+  '/setup/review': typeof SetupReviewRoute
+  '/setup/saved': typeof SetupSavedRoute
+  '/setup': typeof SetupIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/setup': typeof SetupRouteWithChildren
   '/signup': typeof SignupRoute
+  '/setup/family': typeof SetupFamilyRoute
+  '/setup/ready': typeof SetupReadyRoute
+  '/setup/review': typeof SetupReviewRoute
+  '/setup/saved': typeof SetupSavedRoute
+  '/setup/': typeof SetupIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/forgot-password' | '/login' | '/signup'
+  fullPaths:
+    | '/'
+    | '/forgot-password'
+    | '/login'
+    | '/setup'
+    | '/signup'
+    | '/setup/family'
+    | '/setup/ready'
+    | '/setup/review'
+    | '/setup/saved'
+    | '/setup/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/forgot-password' | '/login' | '/signup'
-  id: '__root__' | '/' | '/forgot-password' | '/login' | '/signup'
+  to:
+    | '/'
+    | '/forgot-password'
+    | '/login'
+    | '/signup'
+    | '/setup/family'
+    | '/setup/ready'
+    | '/setup/review'
+    | '/setup/saved'
+    | '/setup'
+  id:
+    | '__root__'
+    | '/'
+    | '/forgot-password'
+    | '/login'
+    | '/setup'
+    | '/signup'
+    | '/setup/family'
+    | '/setup/ready'
+    | '/setup/review'
+    | '/setup/saved'
+    | '/setup/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
+  SetupRoute: typeof SetupRouteWithChildren
   SignupRoute: typeof SignupRoute
 }
 
@@ -92,6 +176,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/signup': {
       id: '/signup'
       path: '/signup'
@@ -99,13 +190,67 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/setup/': {
+      id: '/setup/'
+      path: '/'
+      fullPath: '/setup/'
+      preLoaderRoute: typeof SetupIndexRouteImport
+      parentRoute: typeof SetupRoute
+    }
+    '/setup/family': {
+      id: '/setup/family'
+      path: '/family'
+      fullPath: '/setup/family'
+      preLoaderRoute: typeof SetupFamilyRouteImport
+      parentRoute: typeof SetupRoute
+    }
+    '/setup/ready': {
+      id: '/setup/ready'
+      path: '/ready'
+      fullPath: '/setup/ready'
+      preLoaderRoute: typeof SetupReadyRouteImport
+      parentRoute: typeof SetupRoute
+    }
+    '/setup/review': {
+      id: '/setup/review'
+      path: '/review'
+      fullPath: '/setup/review'
+      preLoaderRoute: typeof SetupReviewRouteImport
+      parentRoute: typeof SetupRoute
+    }
+    '/setup/saved': {
+      id: '/setup/saved'
+      path: '/saved'
+      fullPath: '/setup/saved'
+      preLoaderRoute: typeof SetupSavedRouteImport
+      parentRoute: typeof SetupRoute
+    }
   }
 }
+
+interface SetupRouteChildren {
+  SetupFamilyRoute: typeof SetupFamilyRoute
+  SetupReadyRoute: typeof SetupReadyRoute
+  SetupReviewRoute: typeof SetupReviewRoute
+  SetupSavedRoute: typeof SetupSavedRoute
+  SetupIndexRoute: typeof SetupIndexRoute
+}
+
+const SetupRouteChildren: SetupRouteChildren = {
+  SetupFamilyRoute: SetupFamilyRoute,
+  SetupReadyRoute: SetupReadyRoute,
+  SetupReviewRoute: SetupReviewRoute,
+  SetupSavedRoute: SetupSavedRoute,
+  SetupIndexRoute: SetupIndexRoute,
+}
+
+const SetupRouteWithChildren = SetupRoute._addFileChildren(SetupRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
+  SetupRoute: SetupRouteWithChildren,
   SignupRoute: SignupRoute,
 }
 export const routeTree = rootRouteImport

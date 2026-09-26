@@ -108,7 +108,7 @@ once, then compose explicit `form.AppField` elements inside shadcn `FieldGroup`.
 Keep the schema, fields and actions visible in each form. Do not select an entire
 screen's structure with a boolean mode or a field-name loop.
 
-The [auth form components](../../apps/web/src/features/auth/auth-form.tsx) show
+The [shared form components](../../apps/web/src/components/forms/form.tsx) show
 this pattern for text and password fields. Their [login and signup compositions](../../apps/web/src/features/auth/auth-screens.tsx)
 share field behavior while keeping separate draft shapes and validation schemas.
 Use `InputGroupInput`, `InputGroupAddon` and `InputGroupButton` for a password

@@ -756,6 +756,11 @@ body {
 @theme inline {
   --text-task-mobile: 1.5rem;
   --text-welcome-mobile: 2rem;
+  --text-welcome-desktop: 3rem;
+  --color-person-lilac: var(--glow-lilac);
+  --color-person-blue: var(--glow-blue);
+  --color-person-rose: var(--glow-rose);
+  --color-person-peach: var(--glow-peach);
   --font-auth: "Inter Variable", Inter, system-ui, sans-serif;
   --container-auth: 30rem;
   --text-task-desktop: 1.75rem;

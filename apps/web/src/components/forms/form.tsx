@@ -8,27 +8,24 @@ import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-import { Card, CardTitle } from "../../components/ui/card.js";
+import { useInteractionSound } from "../../hooks/use-interaction-sound.js";
+import { cn } from "../../lib/utils.js";
+import { Card, CardTitle } from "../ui/card.js";
 import {
   Field,
   FieldDescription,
   FieldError,
   FieldLabel,
-} from "../../components/ui/field.js";
-import { IconSwap } from "../../components/ui/icon-swap.js";
+} from "../ui/field.js";
+import { IconSwap } from "../ui/icon-swap.js";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupInput,
-} from "../../components/ui/input-group.js";
-import { Input } from "../../components/ui/input.js";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "../../components/ui/tooltip.js";
-import { useInteractionSound } from "../../hooks/use-interaction-sound.js";
+} from "../ui/input-group.js";
+import { Input } from "../ui/input.js";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip.js";
 
 const { fieldContext, formContext, useFieldContext, useFormContext } =
   createFormHookContexts();
@@ -156,7 +153,9 @@ const PasswordField = (props: FieldProps & { readonly action?: ReactNode }) => {
 const Frame = ({
   children,
   pending,
+  className = "max-w-auth",
 }: {
+  readonly className?: string;
   readonly children: ReactNode;
   readonly pending: boolean;
 }) => {
@@ -165,7 +164,7 @@ const Frame = ({
   return (
     <form
       ref={element}
-      className="max-w-auth w-full"
+      className={cn("w-full", className)}
       noValidate
       aria-labelledby="auth-title"
       aria-busy={pending}
@@ -232,7 +231,7 @@ const Heading = ({
   );
 };
 
-export const { useAppForm: useAuthForm } = createFormHook({
+export const { useAppForm } = createFormHook({
   fieldComponents: { PasswordField, TextField },
   fieldContext,
   formComponents: { Frame, Heading },

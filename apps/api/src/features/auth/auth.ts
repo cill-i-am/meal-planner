@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
+import { setupProgressField } from "@meal-planner/household-api";
 import { betterAuth } from "better-auth";
 import type { BetterAuthOptions } from "better-auth";
 import { organization } from "better-auth/plugins";
@@ -91,6 +92,7 @@ export const makeMealPlannerAuth = ({
     ],
     secret,
     trustedOrigins: [baseURL],
+    user: { additionalFields: { setupProgress: setupProgressField } },
   });
   const guard = <A>(operation: () => Promise<A>): Promise<A> =>
     failures.run({ failure: undefined }, async () => {
@@ -103,6 +105,19 @@ export const makeMealPlannerAuth = ({
     });
   const fetch = async (request: Request): Promise<Response> => {
     try {
+      const expectedUserId = request.headers.get("x-meal-planner-user");
+      if (expectedUserId !== null) {
+        const session = await auth.api.getSession({ headers: request.headers });
+        if (session?.user.id !== expectedUserId) {
+          return Response.json(
+            {
+              code: "ACCOUNT_CHANGED",
+              message: "Your account changed. Reload to continue.",
+            },
+            { status: 401 }
+          );
+        }
+      }
       return await guard(() => auth.fetch(request));
     } catch {
       return new Response(null, { status: 503 });

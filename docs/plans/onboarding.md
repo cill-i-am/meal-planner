@@ -140,3 +140,27 @@ The [second critique](../../apps/web/.impeccable/onboarding-critique-round2-2026
 The pastel gradient is restored in Paper. [The motion study](../../apps/web/.impeccable/reference/onboarding-motion.md) demonstrates its proposed 42-second drift, focus/offscreen pause, and reduced-motion behavior. G12 includes integrating that decorative layer into the real app shell, pausing it when hidden, and checking performance on target devices. The reference preview does not close G12.
 
 The 20 September evidence records design review only. The auth delivery section records the later application implementation and verification; no email delivery or production data changes are claimed.
+
+## Household stack layer — 22 September 2026
+
+Household setup now uses `/setup/family`, `/setup/review`, `/setup/ready` and
+`/setup/saved`. Better Auth stores a validated account-owned checkpoint in D1.
+Creation records its exact slug and creator command before sending either write;
+retry reconciles the existing family and linked creator. Pause/resume preserves
+the current step. Fresh sessions restore and authorize the completed family.
+Requests bind their expected account and family to prevent another tab from
+redirecting an in-flight operation. These expectations never grant membership.
+
+The shared TanStack form hook moved to `components/forms/form.tsx`. Screens retain
+shadcn composition, Tailwind, OKLCH tokens and Paper's routine/completion typography.
+Two independent Impeccable assessments identified recovery copy, logout ownership,
+completion hierarchy and session-scoping issues; these were corrected. The engine
+scanner was unavailable (missing cached engine; release download failed), so the
+review used live Browser/Paper and source inspection. No automated scan pass is
+claimed. Review score before corrections: 28/40.
+
+Local verification: 161 web tests, checkpoint-schema tests, five D1 auth tests,
+TypeScript, focused lint and production build. Browser exercised real family
+creation/reconciliation, pause/resume and the review/completion screens. People,
+invitations and recovery continue in the next three dependent PRs; email delivery
+is not part of this household layer. No deployment or merge is claimed.
