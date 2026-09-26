@@ -78,6 +78,7 @@ const PersonDraftForm = ({
   const form = useAppForm({
     defaultValues: {
       email: draft.email,
+      invite: draft.invite ?? false,
       name: draft.name,
       participation: draft.participation as string,
     },
@@ -88,9 +89,11 @@ const PersonDraftForm = ({
         mutationId: crypto.randomUUID(),
       };
       const command = Schema.decodeUnknownSync(PersonCreation)(
-        value.participation === "adult"
+        value.participation === "adult" && value.invite
           ? {
-              email: value.email.trim(),
+              email: Schema.decodeUnknownSync(InvitationEmailInput)(
+                value.email
+              ),
               invitationMutationId: crypto.randomUUID(),
               kind: "invited",
               person,
@@ -142,6 +145,12 @@ const PersonDraftForm = ({
                 <form.AppField
                   name="participation"
                   validators={{ onChange: participationValidator }}
+                  listeners={{
+                    onChange: () => {
+                      form.setFieldValue("invite", false);
+                      form.setFieldValue("email", "");
+                    },
+                  }}
                 >
                   {(field) => (
                     <field.ParticipationField
@@ -155,6 +164,20 @@ const PersonDraftForm = ({
                 >
                   {(participation) =>
                     participation === "adult" && (
+                      <form.AppField name="invite">
+                        {(field) => <field.InviteField disabled={busy} />}
+                      </form.AppField>
+                    )
+                  }
+                </form.Subscribe>
+                <form.Subscribe
+                  selector={(state) =>
+                    state.values.participation === "adult" &&
+                    state.values.invite
+                  }
+                >
+                  {(invite) =>
+                    invite && (
                       <form.AppField
                         name="email"
                         validators={{ onChange: emailValidator }}
@@ -185,11 +208,14 @@ const PersonDraftForm = ({
               )}
               <div className="flex flex-col gap-2">
                 <form.Subscribe
-                  selector={(state) => state.values.participation}
+                  selector={(state) => ({
+                    invite: state.values.invite,
+                    participation: state.values.participation,
+                  })}
                 >
-                  {(participation) => {
+                  {({ invite, participation }) => {
                     const label =
-                      participation === "adult"
+                      participation === "adult" && invite
                         ? "Add and invite"
                         : "Add person";
                     return (

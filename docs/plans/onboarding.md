@@ -313,3 +313,21 @@ the tracked D1 architecture check. Better Auth schema regeneration has no diff.
 Browser checks confirm the unavailable screen for malformed invitation links and
 a single field error for invalid recovery emails. The household invitation form
 also preserves invalid input and blocks dispatch, covered by a regression test.
+
+## Person type and optional invitations · 22 September 2026
+
+The add-person form separates Adult / Child from account access. Adults can be
+added without an email or account; an unchecked invitation choice reveals the
+email field only when selected. Children have managed preferences and no account.
+Changing person type clears invitation consent. The family list labels unlinked
+adults as “Adult · No account” and offers an invitation later.
+
+Paper's People screens and validation states include the new choice and matching
+desktop/mobile states. Save & exit retains the draft and invitation choice;
+pending creation/invitation commands keep their existing recovery behavior.
+
+Validation: 191 web tests and 29 household-contract tests pass, along with web
+type checking, production build, focused lint/formatting and documentation checks.
+Local browser checks cover adult creation without email, child creation after an
+invitation validation error, and invitation draft resumption after reload. Desktop
+and 390px screenshots cover both person types. Email delivery remains mocked.

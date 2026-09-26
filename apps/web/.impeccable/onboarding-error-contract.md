@@ -12,7 +12,7 @@ Submission failures use an Alert in the form before the action. Invitation/sessi
 
 The static Paper error examples illustrate each component/state family. The tables below own the individual code-to-copy variants; every code does not need its own duplicate full-page artboard.
 
-The segmented participation Field applies `aria-invalid` to the labelled ToggleGroup and associates its FieldError through `aria-describedby`. The theme defines the whole-group destructive outline/halo, plus a solid focus edge that wins over the selected border. Do not show either branch’s helper when no value is selected. See [transition and focus rules](onboarding-transitions.md#segmented-participation-field).
+The segmented participation Field applies `aria-invalid` to the labelled ToggleGroup and associates its FieldError through `aria-describedby`. The theme defines the whole-group destructive outline/halo, plus a solid focus edge that wins over the selected border. Do not show either branch’s helper when no value is selected. See [transition and focus rules](onboarding-transitions.md#person-type-and-optional-invitation).
 
 ## Field rules
 
@@ -25,9 +25,9 @@ The segmented participation Field applies `aria-invalid` to the labelled ToggleG
 | Login · Password | Required: “Enter your password.” | Do not impose signup min/max constraints on login; pinned signInEmail verifies the supplied password. Invalid credentials belong at form level. |
 | Household · Name | Trim; required: “Enter a family name.” | Better Auth organization name min(1). Whitespace-only rejection is the proposed UI rule. No arbitrary maximum is claimed as an existing contract. Slug is internal and is not a user input. |
 | Person · Name | Trim; required: “Enter their name.”; maximum 80. | HouseholdPersonDisplayName. Do not restrict people to a first name. |
-| Person · Type | Invite adult (adult) or Manage profile (dependant); invalid/missing draft: “Choose how they’ll take part.” | HouseholdPersonKind enum. A selected valid default has no initial error. |
-| Adult · Email | Required: “Enter an email so we can invite them.”; malformed: “Enter a valid email address.”; maximum 320. | HouseholdInvitationEmail bounds plus Better Auth email validation. Adult creation now includes invitation. |
-| Dependant | Name and person type only; no account email or DOB. | Managed profile. Does not imply a portion size. |
+| Person · Type | Adult or Child (dependant); invalid/missing draft: “Choose adult or child.” | HouseholdPersonKind enum. Account access is a separate, optional choice for adults. |
+| Adult · Email | Required only when **Invite them to join** is checked: “Enter their email.”; malformed: “Enter a valid email address.”; maximum 254. | Shared EmailAddress validation. An adult without an invitation needs no email. |
+| Child | Name and person type only; no account email or DOB. | Managed preferences. Does not imply a portion size. |
 | Recovery request · Email | Required / valid email. | Endpoint schema. An unknown account receives the same successful confirmation as a known one after recovery is enabled. |
 | New password · Password | Same 8–128 rules as signup. | Better Auth resetPassword. Proposed recovery completion surface. |
 | New password · Confirm password | Required; mismatch: “Passwords don’t match.” | UI-only confirmation; send only the new password and token to Better Auth. |

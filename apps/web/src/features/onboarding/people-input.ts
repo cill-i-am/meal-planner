@@ -8,7 +8,7 @@ export const PersonNameInput = Schema.Trim.check(
 );
 export const ParticipationInput = Schema.String.check(
   Schema.isPattern(/^(?:adult|dependant)$/u, {
-    message: "Choose how they’ll take part.",
+    message: "Choose Adult or Child.",
   })
 );
 export const InvitationEmailInput = Schema.Trim.check(

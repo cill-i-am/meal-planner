@@ -20,16 +20,14 @@ export const FamilyName = Schema.Trim.check(
 
 export const PersonDraft = Schema.Struct({
   email: Schema.String.check(Schema.isMaxLength(254)),
+  invite: Schema.optional(Schema.Boolean),
   name: Schema.String.check(Schema.isMaxLength(80)),
   participation: Schema.Literals(["", "adult", "dependant"]),
 });
 export const PersonCreation = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("managed"),
-    person: Schema.Struct({
-      ...CreateHouseholdPersonPayload.fields,
-      kind: Schema.Literal("dependant"),
-    }),
+    person: CreateHouseholdPersonPayload,
   }),
   Schema.Struct({
     email: EmailAddress,
