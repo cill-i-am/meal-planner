@@ -16,7 +16,6 @@ import {
   CardHeader,
   CardTitle,
   CardContent,
-  CardFooter,
 } from "../../components/ui/card.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import { completeFamilyCreation } from "./family-creation.js";
@@ -51,16 +50,14 @@ export const FamilyNamePage = () => {
   const retained = persisted ?? mutation.variables;
   const needsRecovery =
     retained !== undefined && (mutation.isIdle || mutation.isError);
-  const pause = useMutation({
+  const exit = useMutation({
     mutationFn: async (name: string) => {
-      await setup.save({
+      await setup.logout({
         checkpoint: retained ?? { name, stage: "family-name" },
         status: "paused",
       });
-      await navigate({ to: "/setup/saved" });
     },
   });
-  const logout = useMutation({ mutationFn: setup.logout });
   const existingFamily = useMutation({
     mutationFn: async (id: string) => {
       const organizationId = Schema.decodeUnknownSync(HouseholdOrganizationId)(
@@ -75,10 +72,7 @@ export const FamilyNamePage = () => {
     },
   });
   const pending =
-    mutation.isPending ||
-    pause.isPending ||
-    logout.isPending ||
-    existingFamily.isPending;
+    mutation.isPending || exit.isPending || existingFamily.isPending;
   const form = useAppForm({
     defaultValues: {
       name:
@@ -112,9 +106,9 @@ export const FamilyNamePage = () => {
         <Button
           variant="link"
           disabled={pending}
-          onClick={() => pause.mutate(form.state.values.name)}
+          onClick={() => exit.mutate(form.state.values.name)}
         >
-          Save & exit
+          {exit.isPending ? "Logging out…" : "Log out"}
         </Button>
       }
     >
@@ -189,26 +183,16 @@ export const FamilyNamePage = () => {
                   ))}
                 </div>
               )}
-              {logout.error && (
-                <SetupError>We couldn’t log you out. Try again.</SetupError>
-              )}
-              {pause.error && (
-                <SetupError>We couldn’t save your place. Try again.</SetupError>
+              {exit.error && (
+                <SetupError>
+                  We couldn’t save your place or log you out. Try again.
+                </SetupError>
               )}
               <Button type="submit" disabled={pending}>
                 {mutation.isPending ? "Saving your family…" : submitLabel}
               </Button>
             </CardContent>
           </CardBody>
-          <CardFooter>
-            <Button
-              variant="link"
-              disabled={pending}
-              onClick={() => logout.mutate()}
-            >
-              {logout.isPending ? "Logging out…" : "Log out"}
-            </Button>
-          </CardFooter>
         </form.Frame>
       </form.AppForm>
     </SetupFrame>

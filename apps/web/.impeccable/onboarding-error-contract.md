@@ -121,7 +121,7 @@ Review and Ready contain no new data-entry inputs. Their errors are roster/sessi
 
 The [transition contract](onboarding-transitions.md) defines request → check email → valid email link → new password → confirmed success → Log in, with the original setup/invitation intent preserved. Generic confirmation is the same for known and unknown emails. New-password success is not automatic sign-in. Invalid-token recovery returns to a fresh request. Delivery remains G07; no help CTA or destination is added.
 
-Partial invitation, unavailable roster and unfinished linking each expose Save & exit. A successful checkpoint save opens Setup saved with the pending step and Resume setup / Log out. A failed checkpoint save stays on the origin with “We couldn’t save your place. Try again.” Resume reconciles canonical state and the exact pending operation before deciding what still needs work. It cannot recreate the person/family, repeat a settled invitation, or claim an uncertain change succeeded. Passwords and reset tokens are excluded from durable drafts. These are acceptance rules for open G09/G10.
+Partial invitation, unavailable roster and unfinished linking each expose Log out in the setup header. It saves the current checkpoint before signing out; a failed save keeps the person signed in on the origin with the draft intact and a retryable error. The separate Setup saved screen represents an already durable checkpoint. Resume reconciles canonical state and the exact pending operation before deciding what still needs work. It cannot recreate the person/family, repeat a settled invitation, or claim an uncertain change succeeded. Passwords and reset tokens are excluded from durable drafts. These are acceptance rules for open G09/G10.
 
 ## Evidence
 

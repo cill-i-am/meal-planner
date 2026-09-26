@@ -104,7 +104,9 @@ const PersonDraftForm = ({
   disabled,
   error,
   submit,
-  pause,
+  logout,
+  loggingOut,
+  logoutError,
   cancel,
   roster,
   organizer,
@@ -117,7 +119,9 @@ const PersonDraftForm = ({
   readonly disabled: boolean;
   readonly error: boolean;
   readonly submit: (command: PersonCreation) => Promise<void>;
-  readonly pause: (draft: Draft) => void;
+  readonly logout: (draft: Draft) => void;
+  readonly loggingOut: boolean;
+  readonly logoutError: boolean;
   readonly cancel: () => void;
   readonly roster: HouseholdPeopleRoster;
   readonly organizer: boolean;
@@ -166,10 +170,10 @@ const PersonDraftForm = ({
           variant="link"
           disabled={disabled}
           onClick={() =>
-            pause(Schema.decodeUnknownSync(PersonDraft)(form.state.values))
+            logout(Schema.decodeUnknownSync(PersonDraft)(form.state.values))
           }
         >
-          Save & exit
+          {loggingOut ? "Logging out…" : "Log out"}
         </Button>
       }
     >
@@ -292,7 +296,12 @@ const PersonDraftForm = ({
                   you can save and return later.
                 </SetupError>
               )}
-              {error && (
+              {logoutError && (
+                <SetupError>
+                  We couldn’t save your place or log you out. Try again.
+                </SetupError>
+              )}
+              {error && !logoutError && (
                 <SetupError>We couldn’t save your place. Try again.</SetupError>
               )}
               <div className="flex flex-col gap-2">
@@ -343,16 +352,16 @@ const PendingPersonRequest = ({
   pending,
   busy,
   failed,
-  pauseFailed,
+  logoutFailed,
   retry,
-  pause,
+  logout,
 }: {
   readonly pending: Pending;
   readonly busy: boolean;
   readonly failed: boolean;
-  readonly pauseFailed: boolean;
+  readonly logoutFailed: boolean;
   readonly retry: () => void;
-  readonly pause: () => void;
+  readonly logout: () => void;
 }) => {
   const name =
     pending.stage === "person-invite"
@@ -366,8 +375,8 @@ const PendingPersonRequest = ({
     <SetupFrame
       step="people"
       action={
-        <Button variant="link" disabled={busy} onClick={pause}>
-          Save & exit
+        <Button variant="link" disabled={busy} onClick={logout}>
+          Log out
         </Button>
       }
     >
@@ -409,8 +418,10 @@ const PendingPersonRequest = ({
                 the same request.
               </SetupError>
             )}
-            {pauseFailed && (
-              <SetupError>We couldn’t save your place. Try again.</SetupError>
+            {logoutFailed && (
+              <SetupError>
+                We couldn’t save your place or log you out. Try again.
+              </SetupError>
             )}
             <Button disabled={busy} onClick={retry}>
               {busy ? "Saving…" : retryLabel}
@@ -444,10 +455,9 @@ export const AddPersonPage = () => {
       await navigate({ to: "/setup" });
     },
   });
-  const pause = useMutation({
+  const exit = useMutation({
     mutationFn: async (next: SetupCheckpoint) => {
-      await setup.save({ checkpoint: next, status: "paused" });
-      await navigate({ to: "/setup/saved" });
+      await setup.logout({ checkpoint: next, status: "paused" });
     },
   });
   const cancel = useMutation({
@@ -469,13 +479,13 @@ export const AddPersonPage = () => {
     checkpoint.stage === "person-create" || checkpoint.stage === "person-invite"
       ? checkpoint
       : save.variables;
-  const busy = [save, pause, cancel].some((operation) => operation.isPending);
+  const busy = [save, exit, cancel].some((operation) => operation.isPending);
   if (checkpoint.stage === "person-invite-draft") {
     return (
       <InvitationCorrectionForm
         checkpoint={checkpoint}
         busy={busy}
-        error={Boolean(pause.error || cancel.error)}
+        error={Boolean(exit.error || cancel.error)}
         submit={async (email) => {
           await save
             .mutateAsync({
@@ -492,7 +502,7 @@ export const AddPersonPage = () => {
               /* Saved command owns uncertain outcomes. */
             });
         }}
-        pause={(email) => pause.mutate({ ...checkpoint, email })}
+        logout={(email) => exit.mutate({ ...checkpoint, email })}
         cancel={() => cancel.mutate()}
       />
     );
@@ -503,9 +513,9 @@ export const AddPersonPage = () => {
         pending={pending}
         busy={busy}
         failed={Boolean(save.error)}
-        pauseFailed={Boolean(pause.error)}
+        logoutFailed={Boolean(exit.error)}
         retry={() => save.mutate(pending)}
-        pause={() => pause.mutate(pending)}
+        logout={() => exit.mutate(pending)}
       />
     );
   }
@@ -517,27 +527,31 @@ export const AddPersonPage = () => {
       <SetupStatus
         title="Your family didn’t load"
         retry={() => roster.refetch()}
+        action={
+          <Button
+            variant="link"
+            disabled={busy}
+            onClick={() => exit.mutate(checkpoint)}
+          >
+            {exit.isPending ? "Logging out…" : "Log out"}
+          </Button>
+        }
         footer={
-          <>
-            <Button
-              variant="link"
-              disabled={busy}
-              onClick={() => pause.mutate(checkpoint)}
-            >
-              Save & exit
-            </Button>
-            <Button
-              variant="link"
-              disabled={busy}
-              onClick={() => cancel.mutate()}
-            >
-              Cancel
-            </Button>
-          </>
+          <Button
+            variant="link"
+            disabled={busy}
+            onClick={() => cancel.mutate()}
+          >
+            Cancel
+          </Button>
         }
       >
-        {(pause.error || cancel.error) && (
-          <SetupError>We couldn’t save your place. Try again.</SetupError>
+        {(exit.error || cancel.error) && (
+          <SetupError>
+            {exit.error
+              ? "We couldn’t save your place or log you out. Try again."
+              : "We couldn’t save your place. Try again."}
+          </SetupError>
         )}
       </SetupStatus>
     );
@@ -555,7 +569,9 @@ export const AddPersonPage = () => {
       busy={busy}
       disabled={busy || manage.managing}
       overlay={<RosterManagementOverlay management={manage} />}
-      error={Boolean(pause.error || cancel.error)}
+      error={Boolean(cancel.error)}
+      logoutError={Boolean(exit.error)}
+      loggingOut={exit.isPending}
       submit={async (command) => {
         await save
           .mutateAsync({
@@ -567,9 +583,11 @@ export const AddPersonPage = () => {
             /* Mutation retains and displays the failure. */
           });
       }}
-      pause={(draft) => {
+      logout={(draft) => {
         if (checkpoint.stage === "person-draft") {
-          pause.mutate({ ...checkpoint, draft });
+          exit.mutate({ ...checkpoint, draft });
+        } else {
+          exit.mutate(checkpoint);
         }
       }}
       cancel={() => cancel.mutate()}

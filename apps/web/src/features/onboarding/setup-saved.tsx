@@ -39,13 +39,13 @@ export const SetupSavedPage = () => {
     <SetupStatus
       title="Setup saved"
       description="You can close this page and pick up where you left off."
-      footer={
+      action={
         <Button
           variant="link"
           disabled={pending}
           onClick={() => logout.mutate()}
         >
-          Log out
+          {logout.isPending ? "Logging out…" : "Log out"}
         </Button>
       }
     >

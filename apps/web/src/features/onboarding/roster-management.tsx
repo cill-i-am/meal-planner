@@ -326,7 +326,7 @@ export const RosterActions = ({
           disabled={disabled}
           onClick={() => onAction("invite", person)}
         >
-          Invite
+          Invite to join
         </Button>
       )}
       {(allowed.rename || allowed.remove) && (

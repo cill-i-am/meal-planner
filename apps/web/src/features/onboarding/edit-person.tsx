@@ -21,6 +21,56 @@ import { SetupError, SetupFrame } from "./setup-ui.js";
 const validator = Schema.toStandardSchemaV1(
   Schema.Struct({ name: PersonNameInput })
 );
+const checkpointForLogout = (
+  checkpoint: SetupCheckpoint,
+  retained: Extract<SetupCheckpoint, { stage: "person-rename" }> | undefined,
+  name: string
+): SetupCheckpoint | undefined => {
+  if (checkpoint.stage === "person-edit") {
+    return retained ?? { ...checkpoint, name };
+  }
+  if (checkpoint.stage === "person-rename") {
+    return retained ?? checkpoint;
+  }
+  return undefined;
+};
+
+const renameRequestFrom = (
+  checkpoint: SetupCheckpoint,
+  retained: Extract<SetupCheckpoint, { stage: "person-rename" }> | undefined,
+  name: string
+): Extract<SetupCheckpoint, { stage: "person-rename" }> | undefined => {
+  if (
+    checkpoint.stage !== "person-edit" &&
+    checkpoint.stage !== "person-rename"
+  ) {
+    return undefined;
+  }
+  const command =
+    retained?.command ??
+    Schema.decodeUnknownSync(RenameHouseholdPersonPayload)({
+      displayName: name.trim(),
+      expectedVersion:
+        checkpoint.stage === "person-edit"
+          ? checkpoint.version
+          : checkpoint.command.expectedVersion,
+      mutationId: crypto.randomUUID(),
+    });
+  return (
+    retained ?? {
+      command,
+      organizationId: checkpoint.organizationId,
+      personId: checkpoint.personId,
+      stage: "person-rename",
+    }
+  );
+};
+
+const renameErrorMessage = (stale: boolean) =>
+  stale
+    ? "Someone updated this person. Return to your family to review their latest details."
+    : "We couldn’t confirm the change. Try again.";
+
 export const EditPersonPage = () => {
   const setup = useSetup();
   const navigate = useNavigate();
@@ -31,9 +81,6 @@ export const EditPersonPage = () => {
       pending: Extract<SetupCheckpoint, { stage: "person-rename" }>
     ) => {
       const { command } = pending;
-      if (pending.stage !== "person-rename") {
-        return;
-      }
       await setup.save({
         checkpoint: {
           command,
@@ -64,23 +111,16 @@ export const EditPersonPage = () => {
   });
   const retained =
     checkpoint.stage === "person-rename" ? checkpoint : mutation.variables;
-  const pause = useMutation({
+  const exit = useMutation({
     mutationFn: async (name: string) => {
-      if (
-        checkpoint.stage !== "person-edit" &&
-        checkpoint.stage !== "person-rename"
-      ) {
+      const next = checkpointForLogout(checkpoint, retained, name);
+      if (!next) {
         return;
       }
-      const next =
-        checkpoint.stage === "person-edit"
-          ? { ...checkpoint, name }
-          : checkpoint;
-      await setup.save({
-        checkpoint: retained ?? next,
+      await setup.logout({
+        checkpoint: next,
         status: "paused",
       });
-      await navigate({ to: "/setup/saved" });
     },
   });
   const cancel = useMutation({
@@ -106,38 +146,17 @@ export const EditPersonPage = () => {
           : (retained?.command.displayName ?? ""),
     },
     onSubmit: async ({ value }) => {
-      if (
-        checkpoint.stage !== "person-edit" &&
-        checkpoint.stage !== "person-rename"
-      ) {
+      const request = renameRequestFrom(checkpoint, retained, value.name);
+      if (!request) {
         return;
       }
-      const command =
-        retained?.command ??
-        Schema.decodeUnknownSync(RenameHouseholdPersonPayload)({
-          displayName: value.name.trim(),
-          expectedVersion:
-            checkpoint.stage === "person-edit"
-              ? checkpoint.version
-              : checkpoint.command.expectedVersion,
-          mutationId: crypto.randomUUID(),
-        });
-      await mutation
-        .mutateAsync(
-          retained ?? {
-            command,
-            organizationId: checkpoint.organizationId,
-            personId: checkpoint.personId,
-            stage: "person-rename",
-          }
-        )
-        .catch(() => {
-          /* Mutation owns the error and original request. */
-        });
+      await mutation.mutateAsync(request).catch(() => {
+        /* Mutation owns the error and original request. */
+      });
     },
     validators: { onChange: validator, onSubmit: validator },
   });
-  const busy = mutation.isPending || pause.isPending || cancel.isPending;
+  const busy = mutation.isPending || exit.isPending || cancel.isPending;
   const submitLabel = retained ? "Check and continue" : "Save name";
   const stale = householdPeopleFailureCode(mutation.error) === "stale_version";
   return (
@@ -147,9 +166,9 @@ export const EditPersonPage = () => {
         <Button
           variant="link"
           disabled={busy}
-          onClick={() => pause.mutate(form.state.values.name)}
+          onClick={() => exit.mutate(form.state.values.name)}
         >
-          Save & exit
+          {exit.isPending ? "Logging out…" : "Log out"}
         </Button>
       }
     >
@@ -185,14 +204,14 @@ export const EditPersonPage = () => {
                 </p>
               )}
               {mutation.error && (
-                <SetupError>
-                  {stale
-                    ? "Someone updated this person. Return to your family to review their latest details."
-                    : "We couldn’t confirm the change. Try again."}
-                </SetupError>
+                <SetupError>{renameErrorMessage(stale)}</SetupError>
               )}
-              {(pause.error || cancel.error) && (
-                <SetupError>We couldn’t save your place. Try again.</SetupError>
+              {(exit.error || cancel.error) && (
+                <SetupError>
+                  {exit.error
+                    ? "We couldn’t save your place or log you out. Try again."
+                    : "We couldn’t save your place. Try again."}
+                </SetupError>
               )}
               {!stale && (
                 <Button type="submit" disabled={busy}>

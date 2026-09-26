@@ -21,7 +21,7 @@ export const InvitationCorrectionForm = ({
   busy,
   error,
   submit,
-  pause,
+  logout,
   cancel,
 }: {
   readonly checkpoint: Extract<
@@ -31,7 +31,7 @@ export const InvitationCorrectionForm = ({
   readonly busy: boolean;
   readonly error: boolean;
   readonly submit: (email: string) => Promise<void>;
-  readonly pause: (email: string) => void;
+  readonly logout: (email: string) => void;
   readonly cancel: () => void;
 }) => {
   const form = useAppForm({
@@ -60,9 +60,9 @@ export const InvitationCorrectionForm = ({
         <Button
           variant="link"
           disabled={busy}
-          onClick={() => pause(form.state.values.email)}
+          onClick={() => logout(form.state.values.email)}
         >
-          Save & exit
+          Log out
         </Button>
       }
     >

@@ -44,15 +44,23 @@ const creator = Schema.decodeUnknownSync(HouseholdPerson)({
 const makeTransport = (initial: SetupProgress = initialSetup) => {
   let progress = initial;
   let family: { id: string; name: string; slug: string } | null = null;
+  let signedOut = false;
+  let signOutCalls = 0;
   const saves: SetupProgress[] = [];
   const fixture = {
     createReply: Promise.withResolvers<null>(),
     failSave: false,
     saves,
+    get signOutCalls() {
+      return signOutCalls;
+    },
     transport: (async (input, init) => {
       const request = new Request(input, init);
       const path = new URL(request.url).pathname;
       if (path.endsWith("/get-session")) {
+        if (signedOut) {
+          return Response.json(null);
+        }
         return Response.json({
           session: {
             activeOrganizationId: family?.id,
@@ -84,6 +92,11 @@ const makeTransport = (initial: SetupProgress = initialSetup) => {
       }
       if (path.endsWith("/organization/list")) {
         return Response.json(family ? [family] : []);
+      }
+      if (path.endsWith("/sign-out")) {
+        signOutCalls += 1;
+        signedOut = true;
+        return Response.json({ success: true });
       }
       if (path.endsWith("/organization/get-full-organization")) {
         return Response.json(family);
@@ -127,6 +140,11 @@ const setup = async (fixture = makeTransport()) => {
         ),
         getParentRoute: () => root,
         path: "/setup/family",
+      }),
+      createRoute({
+        component: () => <h1>Log in</h1>,
+        getParentRoute: () => root,
+        path: "/login",
       }),
       createRoute({
         component: () => <h1>Review your family</h1>,
@@ -230,4 +248,27 @@ it("offers recovery for a restored unfinished creation and reuses its command", 
   expect(
     await screen.findByRole("heading", { name: "Review your family" })
   ).toBeInTheDocument();
+});
+
+it("saves a family-name draft before logging out", async () => {
+  const { fixture, user } = await setup();
+  await user.type(screen.getByLabelText("Family name"), "Morgan family");
+  await user.click(screen.getByRole("button", { name: "Log out" }));
+  await screen.findByRole("heading", { name: "Log in" });
+  expect(fixture.saves.at(-1)).toMatchObject({
+    checkpoint: { name: "Morgan family", stage: "family-name" },
+    status: "paused",
+  });
+  expect(fixture.signOutCalls).toBe(1);
+});
+
+it("retains the exact unfinished creation when logging out", async () => {
+  const { fixture, user } = await setup(makeTransport(restored));
+  await user.click(screen.getByRole("button", { name: "Log out" }));
+  await screen.findByRole("heading", { name: "Log in" });
+  expect(fixture.saves.at(-1)).toEqual({
+    checkpoint: restored.checkpoint,
+    status: "paused",
+  });
+  expect(fixture.signOutCalls).toBe(1);
 });
