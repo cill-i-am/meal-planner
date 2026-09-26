@@ -29,11 +29,10 @@ export const useSetupRoster = () => {
     "organizationId" in checkpoint ? checkpoint.organizationId : undefined;
   return useQuery({
     enabled: organizationId !== undefined,
-    queryFn: async () => {
+    queryFn: () => {
       if (organizationId === undefined) {
         throw new Error("A family is required.");
       }
-      await setup.selectFamily(organizationId);
       return setup.peopleForFamily(organizationId).list(false);
     },
     queryKey: ["setup-roster", organizationId, setup.user.id],
@@ -246,7 +245,6 @@ export const FamilyReadyPage = () => {
         await setup.logout({ checkpoint, status: "paused" });
         return;
       }
-      await setup.selectFamily(checkpoint.organizationId);
       await setup.save({
         checkpoint: { ...checkpoint, stage: "complete" },
         status: "active",

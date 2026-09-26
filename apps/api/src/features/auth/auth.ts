@@ -6,6 +6,7 @@ import {
   HouseholdOrganizationId,
   InvitationId,
   setupProgressField,
+  setupProgressVersionField,
   UserId,
 } from "@meal-planner/household-api";
 import type { HouseholdPersonId } from "@meal-planner/household-api";
@@ -26,6 +27,7 @@ import type { InvitationMail, PasswordResetMail } from "./auth-mail.js";
 import { fenceAuthAdapter } from "./auth-output-fence.js";
 import type { AuthOutputFence } from "./auth-output-fence.js";
 import { invitationViewPlugin } from "./invitation-view.js";
+import { setupProgressPlugin } from "./setup-progress.js";
 
 const parseEmailAddress = Schema.decodeUnknownSync(EmailAddress);
 const parseOptionalEmailAddress = Schema.decodeUnknownOption(EmailAddress);
@@ -54,10 +56,16 @@ export type MealPlannerAuthConfiguration = Omit<
 > & {
   plugins: [
     ReturnType<typeof invitationViewPlugin>,
+    ReturnType<typeof setupProgressPlugin>,
     ReturnType<typeof atomicPasswordResetPlugin>,
     ReturnType<typeof atomicOrganization<{ schema: typeof invitationSchema }>>,
   ];
-  user: { additionalFields: { setupProgress: typeof setupProgressField } };
+  user: {
+    additionalFields: {
+      setupProgress: typeof setupProgressField;
+      setupProgressVersion: typeof setupProgressVersionField;
+    };
+  };
 };
 type AuthCore = Auth<MealPlannerAuthConfiguration>;
 export interface HouseholdInvitationRequest {
@@ -200,6 +208,12 @@ export const makeMealPlannerAuthConfiguration = ({
     },
     plugins: [
       invitationViewPlugin(),
+      setupProgressPlugin(() => {
+        if (!(database instanceof DrizzleD1Database)) {
+          throw new Error("Setup progress writes require a D1 database.");
+        }
+        return database;
+      }),
       atomicPasswordResetPlugin(atomicStore),
       atomicOrganization(
         {
@@ -218,7 +232,12 @@ export const makeMealPlannerAuthConfiguration = ({
     rateLimit: { enabled: true, storage: "database" },
     secret,
     trustedOrigins: [baseURL],
-    user: { additionalFields: { setupProgress: setupProgressField } },
+    user: {
+      additionalFields: {
+        setupProgress: setupProgressField,
+        setupProgressVersion: setupProgressVersionField,
+      },
+    },
   };
   return {
     configuration,

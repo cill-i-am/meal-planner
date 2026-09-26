@@ -18,6 +18,7 @@ import {
   MealPlanRequest,
 } from "@meal-planner/household-api";
 import type {
+  AssociateAdultInvitationPayload,
   EmailAddress,
   InvitationId,
   MemberId,
@@ -722,6 +723,58 @@ export const makeHouseholdPeopleGateway = (options: {
             HouseholdPersonAssociationConflict.make({})
           );
         }
+        let replacedInvitationDigest: (typeof intent)["digest"] | undefined;
+        let replayingAssociation = false;
+        if (target.associationState === "invitation_pending") {
+          const { pendingInvitations } = yield* call(
+            makeHouseholdPeopleAdmission(principal),
+            (personAdmission) =>
+              options.domain.listHouseholdPeople({
+                admission: personAdmission,
+                query: { includeArchived: "false" },
+              }),
+            HouseholdPeoplePrivateRoster
+          );
+          const binding = pendingInvitations.find(
+            (pending) => pending.personId === payload.personId
+          );
+          if (binding === undefined) {
+            return yield* Effect.fail(
+              HouseholdPersonAssociationConflict.make({})
+            );
+          }
+          if (binding.invitationDigest === intent.digest) {
+            replayingAssociation = true;
+          } else {
+            const states = yield* options.controlPlane
+              .listInvitationStates(principal.organizationId)
+              .pipe(Effect.mapError(() => HouseholdPeopleUnavailable.make({})));
+            const records = yield* Effect.all(
+              states.map((state) =>
+                invitationDigest(principal.organizationId, state.id).pipe(
+                  Effect.map((digest) => ({ ...state, digest }))
+                )
+              )
+            );
+            const prior = records.find(
+              (record) => record.digest === binding.invitationDigest
+            );
+            const now = yield* Clock.currentTimeMillis;
+            if (
+              prior === undefined ||
+              (prior.status !== "rejected" &&
+                prior.status !== "canceled" &&
+                !(
+                  prior.status === "pending" && prior.expiresAt.getTime() <= now
+                ))
+            ) {
+              return yield* Effect.fail(
+                HouseholdPersonAssociationConflict.make({})
+              );
+            }
+            replacedInvitationDigest = binding.invitationDigest;
+          }
+        }
         const invitation = yield* options.controlPlane
           .getInvitation({
             invitationId: intent.invitationId,
@@ -732,7 +785,8 @@ export const makeHouseholdPeopleGateway = (options: {
               Effect.gen(function* createEligibleInvitation() {
                 if (
                   target.associationState === "linked" ||
-                  target.associationState === "invitation_pending"
+                  (target.associationState === "invitation_pending" &&
+                    replacedInvitationDigest === undefined)
                 ) {
                   return yield* Effect.fail(
                     HouseholdPersonAssociationConflict.make({})
@@ -751,7 +805,9 @@ export const makeHouseholdPeopleGateway = (options: {
         yield* verifyInvitationBinding(principal, payload, invitation);
         if (
           invitation.id !== intent.invitationId ||
-          (invitation.status !== "pending" && invitation.status !== "accepted")
+          (invitation.status !== "pending" &&
+            invitation.status !== "accepted" &&
+            !replayingAssociation)
         ) {
           return yield* Effect.fail(
             HouseholdPersonAssociationConflict.make({})
@@ -760,15 +816,22 @@ export const makeHouseholdPeopleGateway = (options: {
         // Resolve the control-plane result first. A definitive rejection leaves the
         // existing person unlinked, so a corrected email can use that same person.
         // Acceptance is gated by recipient proof until association succeeds.
+        let associationPayload: AssociateAdultInvitationPayload = {
+          invitationDigest: intent.digest,
+          invitationRequestDigest: intent.requestDigest,
+          mutationId: payload.mutationId,
+          personId: payload.personId,
+        };
+        if (replacedInvitationDigest !== undefined) {
+          associationPayload = {
+            ...associationPayload,
+            replacedInvitationDigest,
+          };
+        }
         const wire = yield* options.domain
           .associateAdultInvitation({
             admission,
-            payload: {
-              invitationDigest: intent.digest,
-              invitationRequestDigest: intent.requestDigest,
-              mutationId: payload.mutationId,
-              personId: payload.personId,
-            },
+            payload: associationPayload,
           })
           .pipe(Effect.mapError(mapPeopleFailure));
         const person = yield* decodePerson(wire);

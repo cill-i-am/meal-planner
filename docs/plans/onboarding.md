@@ -3,9 +3,15 @@
 Status: active
 Owner: onboarding implementation in the current stacked branches
 Delivery: auth, household, people, invitations and recovery screens are being validated together; email delivery remains mocked
-Updated 2026-09-22 after the Paper consolidation and setup-header change. This is the running implementation checklist; designs are not evidence that the behavior is implemented. The dated design agreements below do not establish completed application work. Reuse agreements already obtained when implementation is assigned.
+Updated 2026-09-23 after the stacked-PR review. This is the running implementation checklist; designs are not evidence that the behavior is implemented. The dated design agreements below do not establish completed application work. Reuse agreements already obtained when implementation is assigned.
 
 Design: [Login and household setup in Paper](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0). Error and validation specification: [onboarding-error-contract.md](../../apps/web/.impeccable/onboarding-error-contract.md).
+
+## Review follow-up · 23 September 2026
+
+Setup progress now has one server-owned, versioned save command. Competing tabs cannot replace a pending request, and completing one requires its original command ID. Draft forms and overlay visibility stay in React; roster queries only read, while the setup boundary selects the active family. Invitation acceptance and decline now make mutually exclusive D1 transitions. An acceptance that failed under an expired session no longer blocks a fresh session from trying again. Adults with declined or unavailable invitations can be invited again using the same person profile; the old association is retired atomically. The responsive overlay keeps its active primitive mounted through its close transition. The member-departure workflow maps failed D1 membership reads to an unavailable observation so it can enter repair.
+
+These changes are under local and stacked-PR verification. Email delivery remains mocked. The PR containing the Alchemy Better Auth migration also contains later onboarding and UI work; split that work into its own stacked PR before review.
 
 ## Roster management and responsive overlays · 22 September 2026
 

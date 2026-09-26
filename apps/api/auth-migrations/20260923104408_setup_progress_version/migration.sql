@@ -1,0 +1,1 @@
+ALTER TABLE `user` ADD `setup_progress_version` integer DEFAULT 0 NOT NULL;

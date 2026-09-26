@@ -3315,6 +3315,81 @@ describe("household public API to private Durable Object boundary", () => {
     });
   });
 
+  it.each(["declined", "expired"] as const)(
+    "invites the same adult again after an invitation is %s",
+    async (outcome) => {
+      const setup = await prepareInvitableAdult(`Resend ${outcome}`);
+      const invitationUrl =
+        "https://meal-planner.test/v1/household/people/invitations";
+      const invite = (mutationId: string) =>
+        getRuntime().dispatchFetch(invitationUrl, {
+          body: JSON.stringify({
+            email: `resend-${outcome}@example.test`,
+            mutationId,
+            personId: setup.adult.id,
+          }),
+          headers: {
+            "content-type": "application/json",
+            cookie: setup.ownerCookie,
+          },
+          method: "POST",
+        });
+      const originalResponse = await invite(`resend-${outcome}-original`);
+      expect(originalResponse.status).toBe(201);
+      const original = Schema.decodeUnknownSync(HouseholdAdultInvitationResult)(
+        await originalResponse.json()
+      );
+      const blocked = await invite(`resend-${outcome}-too-early`);
+      expect(blocked.status).toBe(409);
+      const database = drizzle(
+        await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+      );
+      await database
+        .update(authSchema.invitation)
+        .set(
+          outcome === "declined"
+            ? { status: "rejected" }
+            : { expiresAt: new Date(0) }
+        )
+        .where(eq(authSchema.invitation.id, original.invitationId));
+
+      const originalReplay = await invite(`resend-${outcome}-original`);
+      expect(originalReplay.status).toBe(201);
+      await expect(originalReplay.json()).resolves.toEqual(
+        Schema.encodeSync(HouseholdAdultInvitationResult)(original)
+      );
+
+      const resendResponse = await invite(`resend-${outcome}-replacement`);
+      expect(resendResponse.status, await resendResponse.clone().text()).toBe(
+        201
+      );
+      const resent = Schema.decodeUnknownSync(HouseholdAdultInvitationResult)(
+        await resendResponse.json()
+      );
+      expect(resent.invitationId).not.toBe(original.invitationId);
+      expect(resent.person).toMatchObject({
+        associationState: "invitation_pending",
+        id: setup.adult.id,
+      });
+      const replay = await invite(`resend-${outcome}-replacement`);
+      expect(replay.status).toBe(201);
+      await expect(replay.json()).resolves.toEqual(
+        Schema.encodeSync(HouseholdAdultInvitationResult)(resent)
+      );
+      const rosterResponse = await getRuntime().dispatchFetch(
+        "https://meal-planner.test/v1/household/people",
+        { headers: { cookie: setup.ownerCookie } }
+      );
+      expect(rosterResponse.status).toBe(200);
+      const roster = await Schema.decodeUnknownPromise(HouseholdPeopleRoster)(
+        await rosterResponse.json()
+      );
+      expect(
+        roster.people.find((person) => person.id === setup.adult.id)
+      ).toMatchObject({ associationState: "invitation_pending" });
+    }
+  );
+
   it("replays a retained browser invitation through the real boundary after interruption before Better Auth", async () => {
     const setup = await prepareInvitableAdult("Invitation Intent Staging");
     const retainedBrowserPayload = {

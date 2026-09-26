@@ -12,7 +12,7 @@ import {
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Schema } from "effect";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { AuthClientContext, makeAuthClient } from "../auth/auth-client.js";
 import { FamilyNamePage } from "./family-name.js";
@@ -43,6 +43,7 @@ const creator = Schema.decodeUnknownSync(HouseholdPerson)({
 
 const makeTransport = (initial: SetupProgress = initialSetup) => {
   let progress = initial;
+  let version = 0;
   let family: { id: string; name: string; slug: string } | null = null;
   let signedOut = false;
   let signOutCalls = 0;
@@ -73,22 +74,33 @@ const makeTransport = (initial: SetupProgress = initialSetup) => {
             id: "adult-1",
             name: "Alex",
             setupProgress: progress,
+            setupProgressVersion: version,
           },
         });
       }
-      if (path.endsWith("/update-user")) {
+      if (path.endsWith("/setup/progress")) {
         const body = Schema.decodeUnknownSync(
-          Schema.Struct({ setupProgress: SetupProgress })
+          Schema.Struct({
+            expectedVersion: Schema.Number,
+            progress: SetupProgress,
+          })
         )(await request.json());
-        saves.push(body.setupProgress);
+        saves.push(body.progress);
         if (fixture.failSave) {
           return Response.json(
             { code: "SERVICE_UNAVAILABLE" },
             { status: 503 }
           );
         }
-        progress = body.setupProgress;
-        return Response.json({ status: true });
+        if (body.expectedVersion !== version) {
+          return Response.json(
+            { code: "SETUP_PROGRESS_CONFLICT" },
+            { status: 409 }
+          );
+        }
+        ({ progress } = body);
+        version += 1;
+        return Response.json({ progress, version });
       }
       if (path.endsWith("/organization/list")) {
         return Response.json(family ? [family] : []);
@@ -186,6 +198,12 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+});
+afterAll(async () => {
+  // Better Auth's Nanostores session cleanup is deferred for one second.
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 1100);
+  });
 });
 
 it("keeps normal creation pending without a recovery alert after saving its checkpoint", async () => {

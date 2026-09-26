@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { SetupProgress } from "./onboarding.js";
+import { canReplaceSetupProgress, SetupProgress } from "./onboarding.js";
 
 const parse = Schema.decodeUnknownSync(SetupProgress);
 const person = {
@@ -108,5 +108,45 @@ describe("setup checkpoint contract", () => {
         status: "active",
       })
     ).toThrow();
+  });
+
+  it("retains a pending roster command until its exact return checkpoint", () => {
+    const current = parse({
+      checkpoint: {
+        organizationId: "family-1",
+        returnTo: { stage: "family-review" },
+        stage: "person-manage",
+        state: {
+          command: { kind: "remove", mutationId: "remove-alex-1", person },
+          phase: "pending",
+        },
+      },
+      status: "active",
+    });
+    const replacement = parse({
+      ...current,
+      checkpoint: {
+        ...current.checkpoint,
+        state: {
+          command: { kind: "remove", mutationId: "remove-alex-2", person },
+          phase: "pending",
+        },
+      },
+    });
+    const completed = parse({
+      checkpoint: { organizationId: "family-1", stage: "family-review" },
+      status: "active",
+    });
+    expect(canReplaceSetupProgress(current, replacement)).toBe(false);
+    expect(
+      canReplaceSetupProgress(current, { ...current, status: "paused" })
+    ).toBe(true);
+    expect(canReplaceSetupProgress(current, completed)).toBe(false);
+    expect(canReplaceSetupProgress(current, completed, "remove-alex-2")).toBe(
+      false
+    );
+    expect(canReplaceSetupProgress(current, completed, "remove-alex-1")).toBe(
+      true
+    );
   });
 });

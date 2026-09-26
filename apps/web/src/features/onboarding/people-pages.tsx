@@ -458,11 +458,11 @@ export const AddPersonPage = () => {
   const save = useMutation({
     mutationFn: async (pending: Pending) => {
       await setup.save({ checkpoint: pending, status: "active" });
-      await setup.selectFamily(pending.organizationId);
       await saveSetupPerson(
         pending,
         setup.peopleForFamily(pending.organizationId),
-        (next) => setup.save({ checkpoint: next, status: "active" })
+        (next, sourceCommandId) =>
+          setup.save({ checkpoint: next, status: "active" }, sourceCommandId)
       );
       await queryClient.invalidateQueries({
         queryKey: ["setup-roster", pending.organizationId],

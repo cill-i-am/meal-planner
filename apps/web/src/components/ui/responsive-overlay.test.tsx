@@ -149,12 +149,20 @@ it("uses the native drawer on mobile and preserves owner state across a breakpoi
 
   act(() => setMobile(false));
   expect(
-    document.querySelector('[data-slot="dialog-content"]')
+    document.querySelector('[data-slot="drawer-popup"]')
   ).toBeInTheDocument();
   expect(screen.getByRole("textbox", { name: "Person draft" })).toHaveValue(
     "Alex"
   );
   expect(screen.getByRole("dialog", { name: "People" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Close" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "People" })).toBeNull()
+  );
+  await user.click(screen.getByRole("button", { name: "Open people" }));
+  expect(
+    document.querySelector('[data-slot="dialog-content"]')
+  ).toBeInTheDocument();
 });
 
 it("uses a right drawer for the desktop drawer option", async () => {

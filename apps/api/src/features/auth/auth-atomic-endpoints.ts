@@ -21,6 +21,7 @@ import { Clock, Effect, Schema } from "effect";
 import {
   AcceptInvitationMutation,
   CancelInvitationMutation,
+  RejectInvitationMutation,
   ResetPasswordMutation,
 } from "./auth-atomic-store.js";
 import type { AuthAtomicStore } from "./auth-atomic-store.js";
@@ -32,6 +33,7 @@ const parseCancellationPerson = Schema.decodeUnknownSync(
   })
 );
 const parseAcceptance = Schema.decodeUnknownSync(AcceptInvitationMutation);
+const parseRejection = Schema.decodeUnknownSync(RejectInvitationMutation);
 const parseReset = Schema.decodeUnknownSync(ResetPasswordMutation);
 const parseInvitationId = Schema.decodeUnknownSync(InvitationId);
 const parseUserId = Schema.decodeUnknownSync(UserId);
@@ -263,10 +265,11 @@ type AtomicOrganizationPlugin<Options extends OrganizationOptions> = Omit<
 > & {
   endpoints: Omit<
     DefaultOrganizationPlugin<Options>["endpoints"],
-    "acceptInvitation" | "cancelInvitation"
+    "acceptInvitation" | "cancelInvitation" | "rejectInvitation"
   > & {
     cancelInvitation: ReturnType<typeof makeAtomicCancellation>;
     acceptInvitation: DefaultOrganizationPlugin<OrganizationOptions>["endpoints"]["acceptInvitation"];
+    rejectInvitation: DefaultOrganizationPlugin<OrganizationOptions>["endpoints"]["rejectInvitation"];
   };
 };
 
@@ -322,6 +325,7 @@ export const atomicOrganization = <Options extends OrganizationOptions>(
           ) {
             await store.reconcileInvitation(
               parseInvitationId(invitation.id),
+              session.session.token,
               parseUserId(session.user.id)
             );
             throw unavailableInvitation();
@@ -390,6 +394,74 @@ export const atomicOrganization = <Options extends OrganizationOptions>(
         }
       ),
       cancelInvitation: makeAtomicCancellation(options, store),
+      rejectInvitation: createAuthEndpoint(
+        nativeEndpoints.rejectInvitation.path,
+        nativeEndpoints.rejectInvitation.options,
+        async (ctx) => {
+          const { session } = ctx.context;
+          const adapterOptions: OrganizationOptions = options;
+          const adapter = getOrgAdapter(ctx.context, adapterOptions);
+          const invitation = await adapter.findInvitationById(
+            ctx.body.invitationId
+          );
+          if (!invitation || invitation.status !== "pending") {
+            throw unavailableInvitation();
+          }
+          if (
+            invitation.email.toLowerCase() !== session.user.email.toLowerCase()
+          ) {
+            throw new APIError("FORBIDDEN", {
+              code: "YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION",
+              message: "You are not the recipient of this invitation",
+            });
+          }
+          const generation = ctx.context.options.advanced?.database?.generateId;
+          if (
+            requiresVerifiedEmail(options, generation) &&
+            !session.user.emailVerified
+          ) {
+            throw new APIError("FORBIDDEN", {
+              code: "EMAIL_VERIFICATION_REQUIRED_BEFORE_ACCEPTING_OR_REJECTING_INVITATION",
+              message: "Verify your email before rejecting this invitation",
+            });
+          }
+          const acceptedOrganization = await adapter.findOrganizationById(
+            invitation.organizationId
+          );
+          if (!acceptedOrganization) {
+            throw unavailableInvitation();
+          }
+          await options.organizationHooks?.beforeRejectInvitation?.({
+            invitation,
+            organization: acceptedOrganization,
+            user: session.user,
+          });
+          const committed = await store.rejectInvitation(
+            parseRejection({
+              email: session.user.email,
+              invitationId: invitation.id,
+              organizationId: invitation.organizationId,
+              sessionToken: session.session.token,
+              userId: session.user.id,
+            })
+          );
+          if (!committed) {
+            throw unavailableInvitation();
+          }
+          const rejectedInvitation = await adapter.findInvitationById(
+            invitation.id
+          );
+          if (!rejectedInvitation) {
+            throw new Error("Rejected invitation is missing after its commit.");
+          }
+          await options.organizationHooks?.afterRejectInvitation?.({
+            invitation: rejectedInvitation,
+            organization: acceptedOrganization,
+            user: session.user,
+          });
+          return ctx.json({ invitation: rejectedInvitation, member: null });
+        }
+      ),
     },
   };
 };

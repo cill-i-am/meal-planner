@@ -144,7 +144,10 @@ it("restores the full previous draft when a saved invitation expires", async () 
   expect(
     await screen.findByRole("heading", { name: "Saved destination" })
   ).toBeInTheDocument();
-  expect(save).toHaveBeenCalledWith({ checkpoint: original, status: "active" });
+  expect(save).toHaveBeenCalledWith(
+    { checkpoint: original, status: "active" },
+    checkpoint.linkMutationId
+  );
   expect(completeInvitation).not.toHaveBeenCalled();
 });
 it("offers an explicit linking decision when another tab accepted a saved decline", async () => {

@@ -53,6 +53,15 @@ export const CancelInvitationMutation = Schema.Struct({
   userId: UserId,
 });
 
+/** Recipient decline commits only while the invitation is still pending. */
+export const RejectInvitationMutation = Schema.Struct({
+  email: EmailAddress,
+  invitationId: InvitationId,
+  organizationId: HouseholdOrganizationId,
+  sessionToken: Schema.NonEmptyString,
+  userId: UserId,
+});
+
 /** Decoded Better Auth reset command; secrets remain transient and are never returned. */
 export const ResetPasswordMutation = Schema.Struct({
   accountId: AuthAccountId,
@@ -135,6 +144,7 @@ export const makeAuthAtomicStore = (
         "auth-invitation-accept",
         JSON.stringify({
           invitationId: input.invitationId,
+          sessionToken: input.sessionToken,
           userId: input.userId,
         })
       );
@@ -376,16 +386,49 @@ export const makeAuthAtomicStore = (
         }
       );
     },
-    reconcileInvitation: async (invitationId: InvitationId, userId: UserId) =>
+    reconcileInvitation: async (
+      invitationId: InvitationId,
+      sessionToken: string,
+      userId: UserId
+    ) =>
       reconcile(
         await privateOutputKey(
           "auth-invitation-accept",
-          JSON.stringify({ invitationId, userId })
+          JSON.stringify({ invitationId, sessionToken, userId })
         ),
         userId
       ),
     reconcilePasswordReset: async (identifier: string) =>
       reconcile(await privateOutputKey("auth-password-reset", identifier)),
+    rejectInvitation: async (input: typeof RejectInvitationMutation.Type) => {
+      const database = getDatabase();
+      const now = new Date(await Effect.runPromise(Clock.currentTimeMillis));
+      const [rejected] = await database
+        .update(invitation)
+        .set({ status: "rejected" })
+        .where(
+          and(
+            eq(invitation.id, input.invitationId),
+            eq(invitation.organizationId, input.organizationId),
+            eq(invitation.status, "pending"),
+            sql`lower(${invitation.email}) = lower(${input.email})`,
+            exists(
+              database
+                .select({ id: session.id })
+                .from(session)
+                .where(
+                  and(
+                    eq(session.token, input.sessionToken),
+                    eq(session.userId, input.userId),
+                    gte(session.expiresAt, now)
+                  )
+                )
+            )
+          )
+        )
+        .returning({ id: invitation.id });
+      return rejected !== undefined;
+    },
     resetPassword: async (input: typeof ResetPasswordMutation.Type) => {
       const database = getDatabase();
       const intentKey = await privateOutputKey(

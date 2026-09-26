@@ -247,14 +247,22 @@ export const makeMemberDepartureWorkflowPorts = (options: {
     observeMembership: (state) =>
       Effect.gen(function* inspectMembership() {
         const database = drizzle(yield* options.authDatabase);
-        const members = yield* Effect.promise(() =>
-          database
-            .select({ userId: authSchema.member.userId })
-            .from(authSchema.member)
-            .where(
-              eq(authSchema.member.organizationId, options.input.organizationId)
-            )
-        );
+        const members = yield* Effect.tryPromise({
+          catch: (cause) => ({
+            _tag: "MembershipReadUnavailable" as const,
+            cause,
+          }),
+          try: () =>
+            database
+              .select({ userId: authSchema.member.userId })
+              .from(authSchema.member)
+              .where(
+                eq(
+                  authSchema.member.organizationId,
+                  options.input.organizationId
+                )
+              ),
+        });
         const userIds = yield* decodeMemberUserIds(
           members.map(({ userId }) => userId)
         );

@@ -2,13 +2,22 @@ import {
   EmailAddress,
   HouseholdOrganizationId,
   SetupProgress,
+  SetupProgressVersion,
   UserId,
 } from "@meal-planner/household-api";
 import { useQueryClient } from "@tanstack/react-query";
 import { Navigate, useRouter } from "@tanstack/react-router";
 import { Schema } from "effect";
 import type { ReactNode } from "react";
-import { createContext, use, useMemo, useState } from "react";
+import {
+  createContext,
+  use,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   makeAuthClient,
@@ -40,7 +49,10 @@ interface SetupContextValue {
   readonly isFamilyOrganizer: (
     id: typeof HouseholdOrganizationId.Type
   ) => boolean;
-  readonly save: (progress: SetupProgress) => Promise<void>;
+  readonly save: (
+    progress: SetupProgress,
+    sourceCommandId?: string
+  ) => Promise<void>;
   readonly selectFamily: (
     id: typeof HouseholdOrganizationId.Type
   ) => Promise<void>;
@@ -61,6 +73,99 @@ const SetupLoginRedirect = () => {
   return <Navigate to="/login" search={{ redirect }} replace />;
 };
 
+const SavedProgress = Schema.Struct({
+  progress: SetupProgress,
+  version: SetupProgressVersion,
+});
+const parseSavedProgress = Schema.decodeUnknownSync(SavedProgress);
+
+const SetupFamilyActivation = ({
+  activeFamilyId,
+  children,
+  familyId,
+  selectFamily,
+}: {
+  readonly activeFamilyId: string | null | undefined;
+  readonly children: ReactNode;
+  readonly familyId: typeof HouseholdOrganizationId.Type;
+  readonly selectFamily: (
+    id: typeof HouseholdOrganizationId.Type
+  ) => Promise<void>;
+}) => {
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (activeFamilyId === familyId) {
+      return;
+    }
+    let current = true;
+    const activate = async () => {
+      try {
+        await selectFamily(familyId);
+      } catch {
+        if (current) {
+          setFailed(true);
+        }
+      }
+    };
+    void activate();
+    return () => {
+      current = false;
+    };
+  }, [activeFamilyId, familyId, selectFamily, attempt]);
+  if (activeFamilyId === familyId) {
+    return children;
+  }
+  if (failed) {
+    return (
+      <SetupStatus
+        title="Your family couldn’t be opened"
+        retry={() => {
+          setFailed(false);
+          setAttempt((value) => value + 1);
+          return Promise.resolve();
+        }}
+      />
+    );
+  }
+  return <SetupStatus title="Opening your family…" />;
+};
+
+const setupResourceStatus = (
+  session: ReturnType<AuthClient["useSession"]>,
+  organizations: ReturnType<AuthClient["useListOrganizations"]>,
+  active: ReturnType<AuthClient["useActiveOrganization"]>
+): ReactNode | null => {
+  if (session.isPending) {
+    return <SetupStatus title="Loading your setup…" />;
+  }
+  if (session.error) {
+    return (
+      <SetupStatus
+        title="Your account didn’t load"
+        retry={() => session.refetch()}
+      />
+    );
+  }
+  if (session.data === null) {
+    return <SetupLoginRedirect />;
+  }
+  if (organizations.isPending || active.isPending) {
+    return <SetupStatus title="Loading your family…" />;
+  }
+  if (organizations.error || active.error) {
+    return (
+      <SetupStatus
+        title="Your family didn’t load"
+        retry={async () => {
+          await Promise.all([organizations.refetch(), active.refetch()]);
+        }}
+      />
+    );
+  }
+  return null;
+};
+
 export const SetupProvider = ({
   children,
 }: {
@@ -72,6 +177,10 @@ export const SetupProvider = ({
   const active = auth.useActiveOrganization();
   const queryClient = useQueryClient();
   const router = useRouter();
+  const lastSaved = useRef<{ userId: string | undefined; version: number }>({
+    userId: undefined,
+    version: 0,
+  });
   const userId = session.data?.user.id;
   const email = session.data?.user.email;
   const parsedUserId = useMemo(
@@ -92,32 +201,37 @@ export const SetupProvider = ({
     () => makeAuthClient(fetch, parsedUserId),
     [parsedUserId]
   );
-  if (session.isPending) {
-    return <SetupStatus title="Loading your setup…" />;
-  }
-  if (session.error) {
-    return (
-      <SetupStatus
-        title="Your account didn’t load"
-        retry={() => session.refetch()}
-      />
-    );
+  const sessionVersion = Schema.decodeUnknownSync(SetupProgressVersion)(
+    session.data?.user.setupProgressVersion ?? 0
+  );
+  useEffect(() => {
+    if (lastSaved.current.userId === parsedUserId) {
+      lastSaved.current.version = Math.max(
+        lastSaved.current.version,
+        sessionVersion
+      );
+    } else {
+      lastSaved.current = { userId: parsedUserId, version: sessionVersion };
+    }
+  }, [parsedUserId, sessionVersion]);
+  const selectFamily = useCallback(
+    async (id: typeof HouseholdOrganizationId.Type) => {
+      const current = await requireAuthSuccess(scopedAuth.getSession());
+      if (current.session.activeOrganizationId !== id) {
+        await requireAuthSuccess(
+          scopedAuth.organization.setActive({ organizationId: id })
+        );
+      }
+      await Promise.all([active.refetch(), organizations.refetch()]);
+    },
+    [scopedAuth, active.refetch, organizations.refetch]
+  );
+  const resourceStatus = setupResourceStatus(session, organizations, active);
+  if (resourceStatus) {
+    return resourceStatus;
   }
   if (session.data === null) {
-    return <SetupLoginRedirect />;
-  }
-  if (organizations.isPending) {
-    return <SetupStatus title="Loading your family…" />;
-  }
-  if (organizations.error) {
-    return (
-      <SetupStatus
-        title="Your family didn’t load"
-        retry={async () => {
-          await Promise.all([organizations.refetch(), active.refetch()]);
-        }}
-      />
-    );
+    throw new Error("A loaded setup session is required.");
   }
   let progress: SetupProgress;
   try {
@@ -141,14 +255,54 @@ export const SetupProvider = ({
     ...family,
     id: Schema.decodeUnknownSync(HouseholdOrganizationId)(family.id),
   }));
-  const persistProgress = async (next: SetupProgress) => {
+  const persistProgress = async (
+    next: SetupProgress,
+    sourceCommandId?: string
+  ) => {
     const decoded = Schema.decodeUnknownSync(SetupProgress)(next);
-    await requireAuthSuccess(scopedAuth.updateUser({ setupProgress: decoded }));
+    const body: {
+      expectedVersion: number;
+      progress: SetupProgress;
+      sourceCommandId?: string;
+    } = { expectedVersion: lastSaved.current.version, progress: decoded };
+    if (sourceCommandId !== undefined) {
+      body.sourceCommandId = sourceCommandId;
+    }
+    const response = await fetch(
+      new URL("/api/auth/setup/progress", window.location.origin),
+      {
+        body: JSON.stringify(body),
+        credentials: "same-origin",
+        headers: {
+          "content-type": "application/json",
+          "x-meal-planner-user": user.id,
+        },
+        method: "POST",
+      }
+    );
+    if (!response.ok) {
+      if (response.status === 409) {
+        await session.refetch();
+        throw new Error(
+          "Another setup request is saved. Reload to continue that request."
+        );
+      }
+      throw new Error("Your setup progress couldn’t be saved. Try again.");
+    }
+    const saved = parseSavedProgress(await response.json());
+    lastSaved.current.version = saved.version;
   };
-  const save = async (next: SetupProgress) => {
-    await persistProgress(next);
+  const save = async (next: SetupProgress, sourceCommandId?: string) => {
+    await persistProgress(next, sourceCommandId);
     await session.refetch();
   };
+  const familyId =
+    progress.status === "paused" ||
+    progress.checkpoint.stage === "invitation-response" ||
+    progress.checkpoint.stage === "invitation-link" ||
+    !("organizationId" in progress.checkpoint)
+      ? undefined
+      : progress.checkpoint.organizationId;
   return (
     <SetupContext
       key={user.id}
@@ -185,19 +339,21 @@ export const SetupProvider = ({
           }),
         progress,
         save,
-        selectFamily: async (id) => {
-          const current = await requireAuthSuccess(scopedAuth.getSession());
-          if (current.session.activeOrganizationId !== id) {
-            await requireAuthSuccess(
-              scopedAuth.organization.setActive({ organizationId: id })
-            );
-          }
-          await Promise.all([active.refetch(), organizations.refetch()]);
-        },
+        selectFamily,
         user,
       }}
     >
-      {children}
+      {familyId === undefined ? (
+        children
+      ) : (
+        <SetupFamilyActivation
+          activeFamilyId={active.data?.id}
+          familyId={familyId}
+          selectFamily={selectFamily}
+        >
+          {children}
+        </SetupFamilyActivation>
+      )}
     </SetupContext>
   );
 };

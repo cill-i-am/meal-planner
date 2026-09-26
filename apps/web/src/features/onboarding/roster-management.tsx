@@ -13,7 +13,7 @@ import type {
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Schema } from "effect";
 import { MoreHorizontalIcon } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useAppForm } from "../../components/forms/form.js";
 import { Button } from "../../components/ui/button.js";
@@ -295,7 +295,9 @@ export const canManagePerson = (
   invite:
     organizer &&
     person.kind === "adult" &&
-    person.associationState === "unlinked" &&
+    (person.associationState === "unlinked" ||
+      person.associationState === "invitation_declined" ||
+      person.associationState === "invitation_unavailable") &&
     !person.isCurrentAdult,
   remove: organizer && !person.isCurrentAdult,
   rename:
@@ -330,7 +332,9 @@ export const RosterActions = ({
           disabled={disabled}
           onClick={() => onAction("invite", person)}
         >
-          Invite to join
+          {person.associationState === "unlinked"
+            ? "Invite to join"
+            : "Invite again"}
         </Button>
       )}
       {(allowed.rename || allowed.remove) && (
@@ -390,36 +394,18 @@ export const useRosterManagement = () => {
     setup.progress.checkpoint.stage === "person-manage"
       ? setup.progress.checkpoint
       : null;
-  const [observedPendingId, setObservedPendingId] = useState(
-    savedPending?.state.command.mutationId ?? null
-  );
-  const [presentation, setPresentation] = useState<Presentation | null>(() => {
-    const { checkpoint } = setup.progress;
-    return checkpoint.stage === "person-manage"
-      ? { checkpoint, open: true }
-      : null;
-  });
-  const savedPendingId = savedPending?.state.command.mutationId ?? null;
-  const latestSavedPendingId = useRef(savedPendingId);
-  useLayoutEffect(() => {
-    latestSavedPendingId.current = savedPendingId;
-  }, [savedPendingId]);
-  if (savedPendingId !== observedPendingId) {
-    setObservedPendingId(savedPendingId);
-    // An account refresh can reveal a request submitted from another page or tab.
-    if (
-      savedPending &&
-      (!presentation?.open || presentation.checkpoint.state.phase === "draft")
-    ) {
-      setPresentation({ checkpoint: savedPending, open: true });
+  const [localPresentation, setPresentation] = useState<Presentation | null>(
+    () => {
+      const { checkpoint } = setup.progress;
+      return checkpoint.stage === "person-manage"
+        ? { checkpoint, open: true }
+        : null;
     }
-  }
-  const conflictingRequest =
-    savedPending !== null &&
-    presentation?.open === true &&
-    presentation.checkpoint.state.phase === "pending" &&
-    savedPending.state.command.mutationId !==
-      presentation.checkpoint.state.command.mutationId;
+  );
+  // The server checkpoint wins over a local presentation after a session refresh.
+  const presentation = savedPending
+    ? { checkpoint: savedPending, open: true }
+    : localPresentation;
   const mutation = useMutation({
     mutationFn: async (pending: PendingCheckpoint) => {
       const { command } = pending.state;
@@ -428,16 +414,12 @@ export const useRosterManagement = () => {
         organizationId: pending.organizationId,
       };
       const saveReturnCheckpoint = async () => {
-        const currentId = latestSavedPendingId.current;
-        if (currentId !== null && currentId !== command.mutationId) {
-          throw new Error(
-            "Another setup request must finish before this request can be cleared."
-          );
-        }
-        await setup.save({ checkpoint: returnCheckpoint, status: "active" });
+        await setup.save(
+          { checkpoint: returnCheckpoint, status: "active" },
+          command.mutationId
+        );
       };
       await setup.save({ checkpoint: pending, status: "active" });
-      await setup.selectFamily(pending.organizationId);
       const people = setup.peopleForFamily(pending.organizationId);
       try {
         await runRosterCommand(command, people);
@@ -469,14 +451,6 @@ export const useRosterManagement = () => {
       return;
     }
     const { checkpoint } = presentation;
-    if (
-      savedPending &&
-      (checkpoint.state.phase !== "pending" ||
-        checkpoint.state.command.mutationId !==
-          savedPending.state.command.mutationId)
-    ) {
-      return;
-    }
     const pending: PendingCheckpoint = {
       ...checkpoint,
       state: {
@@ -540,7 +514,6 @@ export const useRosterManagement = () => {
       }
       setPresentation({ ...presentation, open: false });
     },
-    conflictingRequest,
     error:
       presentation?.checkpoint.state.phase === "pending" &&
       mutation.variables?.state.command.mutationId !==
@@ -718,14 +691,7 @@ const RosterManagementDialog = ({
             </form>
           </form.AppForm>
           <PendingResultNotice pending={pending && open} busy={busy} />
-          {management.conflictingRequest ? (
-            <SetupError>
-              Another setup request is pending. Finish it in the other tab, then
-              retry this request.
-            </SetupError>
-          ) : (
-            error && <SetupError>{failureMessage(error)}</SetupError>
-          )}
+          {error && <SetupError>{failureMessage(error)}</SetupError>}
         </Overlay.Body>
         <Overlay.Footer>
           {reviewRequired ? (
@@ -738,7 +704,7 @@ const RosterManagementDialog = ({
               form="roster-management-form"
               variant={action.kind === "remove" ? "destructive" : "default"}
               size="xl"
-              disabled={disabled || management.conflictingRequest}
+              disabled={disabled}
               pending={busy}
               pendingLabel={actionPendingLabel(action)}
               onClick={

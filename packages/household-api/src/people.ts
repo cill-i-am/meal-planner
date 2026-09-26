@@ -291,14 +291,15 @@ export const TransitionHouseholdPersonPayload = Schema.Struct({
 export type TransitionHouseholdPersonPayload =
   typeof TransitionHouseholdPersonPayload.Type;
 
-/** Owner command associating one unlinked adult with an invitation. */
+/** Owner command associating an adult with a new invitation. */
 export const AssociateAdultInvitationPayload = Schema.Struct({
   invitationDigest: HouseholdInvitationDigest,
   invitationRequestDigest: HouseholdInvitationRequestDigest,
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
+  replacedInvitationDigest: Schema.optionalKey(HouseholdInvitationDigest),
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
-/** Owner command associating one unlinked adult with an invitation. */
+/** Owner command associating an adult with a new invitation. */
 export type AssociateAdultInvitationPayload =
   typeof AssociateAdultInvitationPayload.Type;
 

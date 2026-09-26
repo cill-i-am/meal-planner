@@ -1106,6 +1106,7 @@ export const makeHouseholdPeopleRepository = (
             .select({
               invitationDigest:
                 householdPersonInvitationAssociations.invitationDigest,
+              version: householdPersonInvitationAssociations.version,
             })
             .from(householdPersonInvitationAssociations)
             .where(
@@ -1119,7 +1120,52 @@ export const makeHouseholdPeopleRepository = (
             )
             .limit(1)
             .pipe(queryFailure);
-          if (existingLink !== undefined || existingInvitation !== undefined) {
+          if (existingLink !== undefined) {
+            return yield* Effect.fail(
+              HouseholdPersonAssociationConflict.make({})
+            );
+          }
+          if (input.payload.replacedInvitationDigest !== undefined) {
+            if (
+              existingInvitation?.invitationDigest !==
+                input.payload.replacedInvitationDigest ||
+              existingInvitation.invitationDigest ===
+                input.payload.invitationDigest
+            ) {
+              return yield* Effect.fail(
+                HouseholdPersonAssociationConflict.make({})
+              );
+            }
+            const replaced = yield* transaction
+              .update(householdPersonInvitationAssociations)
+              .set({
+                state: "cancelled",
+                version: existingInvitation.version + 1,
+              })
+              .where(
+                and(
+                  eq(
+                    householdPersonInvitationAssociations.invitationDigest,
+                    input.payload.replacedInvitationDigest
+                  ),
+                  eq(
+                    householdPersonInvitationAssociations.personId,
+                    row.personId
+                  ),
+                  eq(householdPersonInvitationAssociations.state, "pending")
+                )
+              )
+              .returning({
+                invitationDigest:
+                  householdPersonInvitationAssociations.invitationDigest,
+              })
+              .pipe(queryFailure);
+            if (replaced.length !== 1) {
+              return yield* Effect.fail(
+                HouseholdPersonAssociationConflict.make({})
+              );
+            }
+          } else if (existingInvitation !== undefined) {
             return yield* Effect.fail(
               HouseholdPersonAssociationConflict.make({})
             );

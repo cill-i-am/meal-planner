@@ -1,4 +1,7 @@
-import { setupProgressField } from "@meal-planner/household-api";
+import {
+  setupProgressField,
+  setupProgressVersionField,
+} from "@meal-planner/household-api";
 import type { UserId } from "@meal-planner/household-api";
 import {
   inferAdditionalFields,
@@ -30,7 +33,12 @@ export const makeAuthClient = (
         id: "recovery-session-refresh",
       },
       organizationClient(),
-      inferAdditionalFields({ user: { setupProgress: setupProgressField } }),
+      inferAdditionalFields({
+        user: {
+          setupProgress: setupProgressField,
+          setupProgressVersion: setupProgressVersionField,
+        },
+      }),
     ],
   });
 export const AuthClientContext = createContext(makeAuthClient());
