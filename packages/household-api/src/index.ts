@@ -30,8 +30,10 @@ import {
   CreatedSetupFamily,
   CreateSetupFamilyRequest,
   SetupFamilyUnauthorized,
+  SetupFamilyForbidden,
   SetupFamilyInvalidRequest,
   SetupFamilyConflict,
+  SetupFamilyRateLimited,
   SetupFamilyUnavailable,
 } from "./onboarding.js";
 import type { HouseholdPeopleCurrentPrincipal } from "./people-http.js";
@@ -687,8 +689,10 @@ export const makeHouseholdPeopleApiClientLayer = (options: {
 export {
   CreatedSetupFamily,
   SetupFamilyUnauthorized,
+  SetupFamilyForbidden,
   SetupFamilyInvalidRequest,
   SetupFamilyConflict,
+  SetupFamilyRateLimited,
   SetupFamilyUnavailable,
   CreateSetupFamilyRequest,
   FamilyName,
@@ -711,8 +715,10 @@ const SetupFamilyGroup = HttpApiGroup.make("setupFamily").add(
   HttpApiEndpoint.post("create", "/v1/setup/family", {
     error: [
       SetupFamilyUnauthorized,
+      SetupFamilyForbidden,
       SetupFamilyInvalidRequest,
       SetupFamilyConflict,
+      SetupFamilyRateLimited,
       SetupFamilyUnavailable,
     ],
     payload: CreateSetupFamilyRequest,

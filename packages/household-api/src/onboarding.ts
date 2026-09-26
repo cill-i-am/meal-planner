@@ -33,6 +33,10 @@ export const SetupFamilyUnauthorized = Schema.TaggedStruct(
   "SetupFamilyUnauthorized",
   { message: Schema.String }
 ).pipe(HttpApiSchema.status(401));
+export const SetupFamilyForbidden = Schema.TaggedStruct(
+  "SetupFamilyForbidden",
+  { message: Schema.String }
+).pipe(HttpApiSchema.status(403));
 export const SetupFamilyInvalidRequest = Schema.TaggedStruct(
   "SetupFamilyInvalidRequest",
   { message: Schema.String }
@@ -40,6 +44,10 @@ export const SetupFamilyInvalidRequest = Schema.TaggedStruct(
 export const SetupFamilyConflict = Schema.TaggedStruct("SetupFamilyConflict", {
   message: Schema.String,
 }).pipe(HttpApiSchema.status(409));
+export const SetupFamilyRateLimited = Schema.TaggedStruct(
+  "SetupFamilyRateLimited",
+  { message: Schema.String }
+).pipe(HttpApiSchema.status(429));
 export const SetupFamilyUnavailable = Schema.TaggedStruct(
   "SetupFamilyUnavailable",
   { message: Schema.String }

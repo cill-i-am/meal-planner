@@ -39,15 +39,24 @@ const makeTransport = (initial: SetupProgress = initialSetup) => {
   const createCalls: string[] = [];
   const fixture = {
     createCalls,
+    createError: null as null | {
+      readonly _tag:
+        | "SetupFamilyUnauthorized"
+        | "SetupFamilyForbidden"
+        | "SetupFamilyInvalidRequest"
+        | "SetupFamilyConflict"
+        | "SetupFamilyRateLimited"
+        | "SetupFamilyUnavailable";
+      readonly status: number;
+    },
     createReply: Promise.withResolvers<null>(),
-    failConflict: false,
     failCreate: false,
     failSave: false,
     saves,
     get signOutCalls() {
       return signOutCalls;
     },
-    transport: (async (input, init) => {
+    transport: (async (input, init): Promise<Response> => {
       const request = new Request(input, init);
       const path = new URL(request.url).pathname;
       if (path.endsWith("/get-session")) {
@@ -110,13 +119,13 @@ const makeTransport = (initial: SetupProgress = initialSetup) => {
           Schema.Struct({ name: Schema.String })
         )(await request.json());
         createCalls.push(name);
-        if (fixture.failConflict) {
+        if (fixture.createError) {
           return Response.json(
             {
-              _tag: "SetupFamilyConflict",
-              message: "Another family request is saved.",
+              _tag: fixture.createError._tag,
+              message: "Family request failed.",
             },
-            { status: 409 }
+            { status: fixture.createError.status }
           );
         }
         if (fixture.failCreate) {
@@ -240,7 +249,7 @@ it("retries a failed submit without creating a browser-side checkpoint", async (
   await user.type(screen.getByLabelText("Family name"), "Morgan family");
   await user.click(screen.getByRole("button", { name: "Create family" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "couldn’t finish creating your family"
+    "couldn’t confirm your family request"
   );
   expect(screen.getByLabelText("Family name")).toBeEnabled();
   fixture.failCreate = false;
@@ -257,7 +266,7 @@ it("retries a failed submit without creating a browser-side checkpoint", async (
 
 it("shows the typed conflict from the family command", async () => {
   const fixture = makeTransport();
-  fixture.failConflict = true;
+  fixture.createError = { _tag: "SetupFamilyConflict", status: 409 };
   const { user } = await setup(fixture);
   await user.type(screen.getByLabelText("Family name"), "Morgan family");
   await user.click(screen.getByRole("button", { name: "Create family" }));
@@ -266,6 +275,25 @@ it("shows the typed conflict from the family command", async () => {
   );
   expect(fixture.saves).toEqual([]);
 });
+
+it.each([
+  ["SetupFamilyUnauthorized", 401, "Your session ended"],
+  ["SetupFamilyForbidden", 403, "This account can’t create"],
+  ["SetupFamilyInvalidRequest", 400, "Enter a valid family name"],
+  ["SetupFamilyRateLimited", 429, "Too many attempts"],
+  ["SetupFamilyUnavailable", 503, "couldn’t confirm your family request"],
+] as const)(
+  "shows %s as a typed family error",
+  async (_tag, status, message) => {
+    const fixture = makeTransport();
+    fixture.createError = { _tag, status };
+    const { user } = await setup(fixture);
+    await user.type(screen.getByLabelText("Family name"), "Morgan family");
+    await user.click(screen.getByRole("button", { name: "Create family" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(fixture.createCalls).toEqual(["Morgan family"]);
+  }
+);
 
 it("offers recovery for a restored unfinished creation and reuses its command", async () => {
   const fixture = makeTransport(restored);

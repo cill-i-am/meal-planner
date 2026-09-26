@@ -7,7 +7,9 @@ import {
   SetupProgressVersion,
   SetupFamilyApi,
   SetupFamilyConflict,
+  SetupFamilyForbidden,
   SetupFamilyInvalidRequest,
+  SetupFamilyRateLimited,
   SetupFamilySchemaErrors,
   SetupFamilyUnauthorized,
   SetupFamilyUnavailable,
@@ -38,7 +40,12 @@ type FamilyAuthApi = Pick<
 >;
 
 export class SetupFamilyFailure extends Data.TaggedError("SetupFamilyFailure")<{
-  readonly reason: "unauthorized" | "conflict" | "unavailable";
+  readonly reason:
+    | "unauthorized"
+    | "forbidden"
+    | "conflict"
+    | "rate-limited"
+    | "unavailable";
 }> {}
 
 const failure = (reason: SetupFamilyFailure["reason"]) =>
@@ -58,6 +65,12 @@ const authFailure = (error: { readonly statusCode: number }) => {
   }
   if (error.statusCode === 409) {
     return failure("conflict");
+  }
+  if (error.statusCode === 403) {
+    return failure("forbidden");
+  }
+  if (error.statusCode === 429) {
+    return failure("rate-limited");
   }
   return failure("unavailable");
 };
@@ -212,19 +225,37 @@ export const createSetupFamily = (options: {
   });
 
 const familyProblem = (error: SetupFamilyFailure) => {
-  if (error.reason === "unauthorized") {
-    return SetupFamilyUnauthorized.make({
-      message: "Sign in to create your family.",
-    });
+  switch (error.reason) {
+    case "unauthorized": {
+      return SetupFamilyUnauthorized.make({
+        message: "Sign in to create your family.",
+      });
+    }
+    case "forbidden": {
+      return SetupFamilyForbidden.make({
+        message: "This account cannot create or open this family.",
+      });
+    }
+    case "conflict": {
+      return SetupFamilyConflict.make({
+        message: "Another family request is already saved. Reload to continue.",
+      });
+    }
+    case "rate-limited": {
+      return SetupFamilyRateLimited.make({
+        message: "Too many attempts. Wait a moment and try again.",
+      });
+    }
+    case "unavailable": {
+      return SetupFamilyUnavailable.make({
+        message: "Your family couldn’t be created right now. Try again.",
+      });
+    }
+    default: {
+      const unexpected: never = error.reason;
+      return unexpected;
+    }
   }
-  if (error.reason === "conflict") {
-    return SetupFamilyConflict.make({
-      message: "Another family request is already saved. Reload to continue.",
-    });
-  }
-  return SetupFamilyUnavailable.make({
-    message: "Your family couldn’t be created right now. Try again.",
-  });
 };
 
 export const setupFamilyHttpApiLayer = (options: {

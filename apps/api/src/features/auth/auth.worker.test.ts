@@ -1,3 +1,4 @@
+import { BetterAuthApiError } from "@alchemy.run/better-auth";
 import {
   EmailAddress,
   HouseholdOrganizationId,
@@ -7,6 +8,7 @@ import {
   SetupProgress,
   InvitationId,
 } from "@meal-planner/household-api";
+import { APIError } from "better-auth/api";
 import { applyD1Migrations, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import type { AnyD1Database } from "drizzle-orm/d1";
@@ -685,6 +687,66 @@ describe("Better Auth D1 control plane", () => {
       await app.dispose();
     }
     expect(mutationIds).toHaveLength(2);
+  });
+
+  it("keeps authorization and rate-limit failures distinct in the family API", async () => {
+    const auth = makeMealPlannerAuth({
+      baseURL,
+      database: drizzle(testEnv.MealPlannerAuthDatabase),
+      outputFence: (_input, canonical) => canonical(),
+      schema: authSchema,
+      secret,
+    });
+    const signup = await auth.fetch(
+      authRequest("/sign-up/email", {
+        email: "family-failures@example.test",
+        name: "Family creator",
+        password: "correct horse battery staple",
+      })
+    );
+    expect(signup.status).toBe(200);
+    let status: "FORBIDDEN" | "TOO_MANY_REQUESTS" = "FORBIDDEN";
+    const api = {
+      ...makeNativeAuthTestService(auth).api,
+      createOrganization: () =>
+        Effect.fail(BetterAuthApiError.fromAPIError(new APIError(status))),
+    };
+    const domain: Pick<HouseholdDomainWorkerMethods, "bootstrapCreatorPerson"> =
+      {
+        bootstrapCreatorPerson: () => Effect.die("Creation must be rejected"),
+      };
+    const app = HttpRouter.toWebHandler(
+      setupFamilyHttpApiLayer({ auth: api, domain }),
+      { disableLogger: true }
+    );
+    try {
+      const expectFailure = async (
+        nextStatus: typeof status,
+        expectedStatus: number,
+        expectedTag: string
+      ) => {
+        status = nextStatus;
+        const response = await app.handler(
+          new Request(`${baseURL}/v1/setup/family`, {
+            body: JSON.stringify({ name: "Morgan family" }),
+            headers: {
+              "content-type": "application/json",
+              cookie: cookieHeader(signup),
+              origin: baseURL,
+            },
+            method: "POST",
+          })
+        );
+        expect(response.status).toBe(expectedStatus);
+        await expect(response.json()).resolves.toMatchObject({
+          _tag: expectedTag,
+        });
+      };
+      await expectFailure("FORBIDDEN", 403, "SetupFamilyForbidden");
+      await expectFailure("TOO_MANY_REQUESTS", 429, "SetupFamilyRateLimited");
+    } finally {
+      await app.dispose();
+    }
   });
 
   it("rejects a new pending command even after the other tab refreshes its version", async () => {

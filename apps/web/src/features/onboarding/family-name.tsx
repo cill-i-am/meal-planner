@@ -23,14 +23,20 @@ import { SetupError, SetupFrame } from "./setup-ui.js";
 
 const validator = Schema.toStandardSchemaV1(CreateSetupFamilyRequest);
 const parse = Schema.decodeUnknownSync(CreateSetupFamilyRequest);
+const submitLabel = (created: boolean, resumed: boolean) => {
+  if (created) {
+    return "Continue to review";
+  }
+  return resumed ? "Check and continue" : "Create family";
+};
 
 export const FamilyNamePage = () => {
   const setup = useSetup();
   const navigate = useNavigate();
   const { checkpoint } = setup.progress;
-  const mutation = useMutation({
-    ...familyCreationMutationOptions(setup.user.id),
-    onSuccess: async () => {
+  const mutation = useMutation(familyCreationMutationOptions(setup.user.id));
+  const openReview = useMutation({
+    mutationFn: async () => {
       await setup.refresh();
       await navigate({ to: "/setup/review" });
     },
@@ -58,7 +64,10 @@ export const FamilyNamePage = () => {
     },
   });
   const pending =
-    mutation.isPending || exit.isPending || existingFamily.isPending;
+    mutation.isPending ||
+    openReview.isPending ||
+    exit.isPending ||
+    existingFamily.isPending;
   const form = useAppForm({
     defaultValues: {
       name:
@@ -68,13 +77,22 @@ export const FamilyNamePage = () => {
           : "",
     },
     onSubmit: async ({ value }) => {
-      await mutation.mutateAsync(parse(value)).catch(() => {
-        // The mutation owns and displays the failure.
-      });
+      if (!mutation.isSuccess) {
+        try {
+          await mutation.mutateAsync(parse(value));
+        } catch {
+          // The typed mutation error is displayed below.
+          return;
+        }
+      }
+      try {
+        await openReview.mutateAsync();
+      } catch {
+        // Creation succeeded; review navigation can be retried without creating again.
+      }
     },
     validators: { onChange: validator, onSubmit: validator },
   });
-  const submitLabel = persisted ? "Check and continue" : "Create family";
   return (
     <SetupFrame
       step="family"
@@ -129,7 +147,7 @@ export const FamilyNamePage = () => {
                   <span className="text-muted-foreground text-sm">You</span>
                 </div>
               </div>
-              {persisted && !mutation.isPending && (
+              {persisted && !mutation.isPending && !mutation.isSuccess && (
                 <SetupError>
                   We saved your request but still need to confirm the result.
                   Check again to finish the same family setup.
@@ -139,10 +157,26 @@ export const FamilyNamePage = () => {
                 <SetupError>
                   {mutation.error.match({
                     OrElse: () =>
-                      "We couldn’t finish creating your family. Try again.",
+                      "We couldn’t confirm your family request. Try again to resume it.",
                     SetupFamilyConflict: () =>
                       "Another family request is saved. Reload to continue it.",
+                    SetupFamilyForbidden: () =>
+                      "This account can’t create or open this family. You can choose a family you’ve already joined.",
+                    SetupFamilyInvalidRequest: () =>
+                      "Enter a valid family name and try again.",
+                    SetupFamilyRateLimited: () =>
+                      "Too many attempts. Wait a moment and try again.",
+                    SetupFamilyUnauthorized: () =>
+                      "Your session ended or your account changed. Log in again to continue.",
+                    SetupFamilyUnavailable: () =>
+                      "We couldn’t confirm your family request. Try again to resume it.",
                   })}
+                </SetupError>
+              )}
+              {openReview.error && (
+                <SetupError>
+                  Your family was created, but we couldn’t open the review. Try
+                  again to continue.
                 </SetupError>
               )}
               {existingFamily.error && (
@@ -175,10 +209,12 @@ export const FamilyNamePage = () => {
               <PendingButton
                 type="submit"
                 disabled={pending}
-                pending={mutation.isPending}
-                pendingLabel="Saving your family…"
+                pending={mutation.isPending || openReview.isPending}
+                pendingLabel={
+                  mutation.isPending ? "Saving your family…" : "Opening review…"
+                }
               >
-                {submitLabel}
+                {submitLabel(mutation.isSuccess, persisted !== undefined)}
               </PendingButton>
             </CardContent>
           </CardBody>
