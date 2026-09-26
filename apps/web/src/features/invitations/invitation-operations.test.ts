@@ -3,11 +3,12 @@ import {
   InvitationView,
   SetupCheckpoint,
 } from "@meal-planner/household-api";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { expect, it } from "vitest";
 
 import { makeAuthClient } from "../auth/auth-client.js";
-import type { HouseholdPeopleOperations } from "../household-people/operations.js";
+import { HouseholdPeopleOperationError } from "../household-people/operations.js";
+import type { HouseholdPeopleEffectOperations } from "../household-people/operations.js";
 import { completeInvitation } from "./invitation-operations.js";
 
 it.each(["accept", "decline"] as const)(
@@ -44,24 +45,27 @@ it.each(["accept", "decline"] as const)(
       updatedAtEpochMs: 1,
       version: 2,
     });
-    const people: HouseholdPeopleOperations = {
-      archive: async () => person,
-      bootstrapCreator: async () => person,
-      completeAdultLink: async (command) => {
-        linkCommands.push(command);
-        links += 1;
-        if (links === 1) {
-          throw new Error("Link response lost");
-        }
-        return person;
-      },
-      create: async () => person,
-      list: async () => ({
-        creatorSlot: "occupied",
-        currentPersonId: null,
-        people: [],
-      }),
-      restore: async () => person,
+    const people: Pick<
+      HouseholdPeopleEffectOperations,
+      "list" | "completeAdultLink"
+    > = {
+      completeAdultLink: (command) =>
+        Effect.gen(function* completeLink() {
+          linkCommands.push(command);
+          links += 1;
+          if (links === 1) {
+            return yield* Effect.fail(
+              new HouseholdPeopleOperationError("transport_unavailable")
+            );
+          }
+          return person;
+        }),
+      list: () =>
+        Effect.succeed({
+          creatorSlot: "occupied",
+          currentPersonId: null,
+          people: [],
+        }),
     };
     const transport: typeof fetch = async () => {
       responses += 1;
@@ -72,7 +76,7 @@ it.each(["accept", "decline"] as const)(
       return Response.json({ id: "invite-synthetic" });
     };
     const dependencies = {
-      activate: () => Promise.resolve(),
+      activate: () => Effect.void,
       auth: makeAuthClient(transport),
       people,
       read: async () =>
@@ -84,11 +88,14 @@ it.each(["accept", "decline"] as const)(
           organizationId: "family-synthetic",
           status,
         }),
-      save: async (next: SetupCheckpoint) => {
-        saved = next;
-      },
+      save: (next: SetupCheckpoint) =>
+        Effect.sync(() => {
+          saved = next;
+        }),
     };
-    await expect(completeInvitation(pending, dependencies)).rejects.toThrow();
+    await expect(
+      Effect.runPromise(completeInvitation(pending, dependencies))
+    ).rejects.toThrow();
     const serialized = JSON.stringify(saved);
     const resumed = Schema.decodeUnknownSync(
       Schema.fromJsonString(SetupCheckpoint)
@@ -99,9 +106,9 @@ it.each(["accept", "decline"] as const)(
     ) {
       throw new Error("Expected retained invitation");
     }
-    expect(await completeInvitation(resumed, dependencies)).toBe(
-      decision === "accept" ? "joined" : "declined"
-    );
+    expect(
+      await Effect.runPromise(completeInvitation(resumed, dependencies))
+    ).toBe(decision === "accept" ? "joined" : "declined");
     expect(responses).toBe(1);
     if (decision === "accept") {
       expect(linkCommands[1]).toEqual(linkCommands[0]);

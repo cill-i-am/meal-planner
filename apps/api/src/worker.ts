@@ -13,7 +13,9 @@ import {
   makeAuthenticatedOrganizationResolver,
   makeAuthPrincipalResolver,
 } from "./features/auth/auth.principal.js";
+import { invitationReadHttpApiLayer } from "./features/auth/invitation-read.js";
 import { setupFamilyHttpApiLayer } from "./features/auth/setup-family.js";
+import { setupProgressHttpApiLayer } from "./features/auth/setup-progress-http.js";
 import { HealthRoutes } from "./features/health/health.routes.js";
 import { HouseholdDomainWorker } from "./features/households/household-domain-worker.js";
 import {
@@ -261,6 +263,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
               auth: auth.api,
               domain: householdDomain,
             }),
+            invitationReadHttpApiLayer(auth),
+            setupProgressHttpApiLayer(auth),
             makeRecipeImportHttpApiLayer(),
             householdRequestLayer,
             householdMealPlanRequestLayer,
@@ -271,7 +275,12 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
             HttpRouter.provideRequest(requestServices)
           )
         );
-        return yield* withCurrentRequestCancellation(routeHandler);
+        const response = yield* withCurrentRequestCancellation(routeHandler);
+        const path = new URL(webRequest.url).pathname;
+        return path === "/v1/setup/progress" ||
+          path.startsWith("/v1/setup/invitation/")
+          ? HttpServerResponse.setHeader(response, "cache-control", "no-store")
+          : response;
       }),
     };
   }).pipe(

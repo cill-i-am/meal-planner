@@ -3,11 +3,11 @@ import {
   InvitationId,
   SetupCheckpoint,
 } from "@meal-planner/household-api";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { expect, it } from "vitest";
 
 import { HouseholdPeopleOperationError } from "../household-people/operations.js";
-import type { HouseholdPeopleOperations } from "../household-people/operations.js";
+import type { HouseholdPeopleEffectOperations } from "../household-people/operations.js";
 import { saveSetupPerson } from "./person-save.js";
 
 it("saves a managed adult without inviting them", async () => {
@@ -41,27 +41,28 @@ it("saves a managed adult without inviting them", async () => {
   const created: unknown[] = [];
   const invitations: unknown[] = [];
   const saved: SetupCheckpoint[] = [];
-  const people: HouseholdPeopleOperations = {
-    archive: async () => person,
-    bootstrapCreator: async () => person,
-    create: async (command) => {
-      created.push(command);
-      return person;
-    },
-    inviteAdult: async (command) => {
-      invitations.push(command);
-      throw new Error("Managed adults must not be invited");
-    },
-    list: async () => ({
-      creatorSlot: "occupied",
-      currentPersonId: null,
-      people: [person],
-    }),
-    restore: async () => person,
+  const people: Pick<
+    HouseholdPeopleEffectOperations,
+    "create" | "inviteAdult"
+  > = {
+    create: (command) =>
+      Effect.sync(() => {
+        created.push(command);
+        return person;
+      }),
+    inviteAdult: (command) =>
+      Effect.sync(() => {
+        invitations.push(command);
+        throw new Error("Managed adults must not be invited");
+      }),
   };
-  await saveSetupPerson(pending, people, async (next) => {
-    saved.push(next);
-  });
+  await Effect.runPromise(
+    saveSetupPerson(pending, people, (next) =>
+      Effect.sync(() => {
+        saved.push(next);
+      })
+    )
+  );
   expect(created).toEqual([pending.command.person]);
   expect(invitations).toHaveLength(0);
   expect(saved).toEqual([
@@ -105,71 +106,80 @@ it.each(["lost", "rejected"])(
     let invitations = 0;
     let saved: SetupCheckpoint = pending;
     const commands: unknown[] = [];
-    const people: HouseholdPeopleOperations = {
-      archive: async () => person,
-      bootstrapCreator: async () => person,
-      create: async () => {
-        creates += 1;
-        return person;
-      },
-      inviteAdult: async (command) => {
-        commands.push(command);
-        invitations += 1;
-        if (invitations === 1) {
-          if (outcome === "rejected") {
-            throw new HouseholdPeopleOperationError("invitation_rejected", {
-              cause: { code: "invitation_rejected", reason: "already_member" },
-            });
+    const people: Pick<
+      HouseholdPeopleEffectOperations,
+      "create" | "inviteAdult"
+    > = {
+      create: () =>
+        Effect.sync(() => {
+          creates += 1;
+          return person;
+        }),
+      inviteAdult: (command) =>
+        Effect.suspend(() => {
+          commands.push(command);
+          invitations += 1;
+          if (invitations === 1) {
+            if (outcome === "rejected") {
+              return Effect.fail(
+                new HouseholdPeopleOperationError("invitation_rejected", {
+                  cause: {
+                    code: "invitation_rejected",
+                    reason: "already_member",
+                  },
+                })
+              );
+            }
+            return Effect.fail(
+              new HouseholdPeopleOperationError("transport_unavailable")
+            );
           }
-          throw new Error("Lost invitation response");
-        }
-        return {
-          association: "associated",
-          invitationId:
-            Schema.decodeUnknownSync(InvitationId)("invitation-111111"),
-          person,
-        };
-      },
-      list: async () => ({
-        creatorSlot: "occupied",
-        currentPersonId: null,
-        people: [person],
-      }),
-      restore: async () => person,
+          return Effect.succeed({
+            association: "associated",
+            invitationId:
+              Schema.decodeUnknownSync(InvitationId)("invitation-111111"),
+            person,
+          });
+        }),
     };
-    const checkpoint = async (next: SetupCheckpoint) => {
-      saved = next;
-    };
+    const checkpoint = (next: SetupCheckpoint) =>
+      Effect.sync(() => {
+        saved = next;
+      });
     await (outcome === "lost"
-      ? expect(saveSetupPerson(pending, people, checkpoint)).rejects.toThrow()
-      : saveSetupPerson(pending, people, checkpoint));
+      ? expect(
+          Effect.runPromise(saveSetupPerson(pending, people, checkpoint))
+        ).rejects.toThrow()
+      : Effect.runPromise(saveSetupPerson(pending, people, checkpoint)));
     const serialized = JSON.stringify(saved);
     const resumed = Schema.decodeUnknownSync(
       Schema.fromJsonString(SetupCheckpoint)
     )(serialized);
     if (resumed.stage === "person-invite-draft") {
       expect(resumed.reason).toBe("already_member");
-      await saveSetupPerson(
-        {
-          command: {
-            email:
-              pending.command.kind === "invited"
-                ? pending.command.email
-                : (() => {
-                    throw new Error("Expected invited command");
-                  })(),
-            mutationId: pending.command.person.mutationId,
-            personId: resumed.personId,
+      await Effect.runPromise(
+        saveSetupPerson(
+          {
+            command: {
+              email:
+                pending.command.kind === "invited"
+                  ? pending.command.email
+                  : (() => {
+                      throw new Error("Expected invited command");
+                    })(),
+              mutationId: pending.command.person.mutationId,
+              personId: resumed.personId,
+            },
+            displayName: resumed.displayName,
+            organizationId: resumed.organizationId,
+            stage: "person-invite",
           },
-          displayName: resumed.displayName,
-          organizationId: resumed.organizationId,
-          stage: "person-invite",
-        },
-        people,
-        checkpoint
+          people,
+          checkpoint
+        )
       );
     } else if (resumed.stage === "person-invite") {
-      await saveSetupPerson(resumed, people, checkpoint);
+      await Effect.runPromise(saveSetupPerson(resumed, people, checkpoint));
       expect(commands[1]).toEqual(commands[0]);
     } else {
       throw new Error("Expected saved invitation");

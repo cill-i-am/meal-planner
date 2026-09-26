@@ -25,7 +25,10 @@ import {
   requestValidator,
   passwordValidator,
 } from "./recovery-input.js";
-import { submitRecovery } from "./recovery-operations.js";
+import {
+  requestPasswordResetMutationOptions,
+  resetPasswordMutationOptions,
+} from "./recovery-operations.js";
 
 const LoginLink = ({ redirect }: { readonly redirect: string }) => (
   <Button
@@ -55,16 +58,15 @@ export const RecoveryRequestPage = ({
   readonly redirect: string;
 }) => {
   const auth = useAuthClient();
-  const request = useMutation({
-    mutationFn: async (email: string) => {
-      const callback = new URL("/reset-password", window.location.origin);
-      callback.searchParams.set("redirect", redirect);
-      await submitRecovery((options) =>
-        auth.requestPasswordReset({ email, redirectTo: callback.href }, options)
-      );
-    },
-  });
-  const { waiting } = useAuthRetry(request.error);
+  const request = useMutation(
+    requestPasswordResetMutationOptions(auth, redirect)
+  );
+  const requestError =
+    request.error?.match<Error>({
+      OrElse: () => request.error,
+      RecoveryFailure: (failure) => failure.authError,
+    }) ?? null;
+  const { waiting } = useAuthRetry(requestError);
   const form = useAppForm({
     defaultValues: { email: "" },
     listeners: {
@@ -138,7 +140,7 @@ export const RecoveryRequestPage = ({
                   />
                 )}
               </form.AppField>
-              <Feedback error={request.error} />
+              <Feedback error={requestError} />
               <PendingButton
                 type="submit"
                 disabled={waiting}
@@ -169,17 +171,13 @@ export const ResetPasswordPage = ({
 }) => {
   const auth = useAuthClient();
   const navigate = useNavigate();
-  const reset = useMutation({
-    mutationFn: async (password: string) => {
-      if (!token) {
-        throw new AuthRequestError({ code: "INVALID_TOKEN" });
-      }
-      await submitRecovery((options) =>
-        auth.resetPassword({ newPassword: password, token }, options)
-      );
-    },
-  });
-  const { waiting } = useAuthRetry(reset.error);
+  const reset = useMutation(resetPasswordMutationOptions(auth, token));
+  const resetError =
+    reset.error?.match<Error>({
+      OrElse: () => reset.error,
+      RecoveryFailure: (failure) => failure.authError,
+    }) ?? null;
+  const { waiting } = useAuthRetry(resetError);
   const form = useAppForm({
     defaultValues: { confirmation: "", password: "" },
     listeners: {
@@ -229,8 +227,8 @@ export const ResetPasswordPage = ({
   if (
     !token ||
     error ||
-    (reset.error instanceof AuthRequestError &&
-      ["INVALID_TOKEN", "USER_NOT_FOUND"].includes(reset.error.code ?? ""))
+    (resetError instanceof AuthRequestError &&
+      ["INVALID_TOKEN", "USER_NOT_FOUND"].includes(resetError.code ?? ""))
   ) {
     return (
       <RecoveryCard
@@ -286,7 +284,7 @@ export const ResetPasswordPage = ({
                   )}
                 </form.AppField>
               </FieldGroup>
-              <Feedback error={reset.error} />
+              <Feedback error={resetError} />
               <PendingButton
                 type="submit"
                 disabled={waiting}

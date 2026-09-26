@@ -14,7 +14,7 @@ import {
 import { FieldGroup } from "../../components/ui/field.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
 import type { AuthenticationInput } from "./auth-client.js";
-import { useAuthClient, authenticate } from "./auth-client.js";
+import { authenticationMutationOptions, useAuthClient } from "./auth-client.js";
 import { authFeedback } from "./auth-errors.js";
 import {
   parseSignIn,
@@ -32,8 +32,8 @@ const useAuthentication = (redirect: string) => {
   const organizations = authClient.useListOrganizations();
   const activeOrganization = authClient.useActiveOrganization();
   const mutation = useMutation({
-    mutationFn: async (input: AuthenticationInput) => {
-      await authenticate(authClient, input);
+    ...authenticationMutationOptions(authClient),
+    onSuccess: async () => {
       await Promise.all([
         session.refetch(),
         organizations.refetch(),
@@ -41,13 +41,22 @@ const useAuthentication = (redirect: string) => {
       ]);
       await navigate({ href: redirect, replace: true });
     },
-    mutationKey: ["authenticate"],
   });
-  const feedback = authFeedback(
-    mutation.error,
-    mutation.variables?.kind === "signup"
-  );
-  const { retryAt, retryReady, waiting } = useAuthRetry(mutation.error);
+  // TanStack also stores errors thrown by onSuccess (refresh or navigation),
+  // which are not wrapped by effect-query.
+  let error: Error | null = mutation.error;
+  if (
+    mutation.error?._tag === "EffectQueryFailure" ||
+    mutation.error?._tag === "EffectQueryDefect"
+  ) {
+    const queryError = mutation.error;
+    error = mutation.error.match<Error>({
+      AuthRequestError: (failure) => failure,
+      OrElse: () => queryError,
+    });
+  }
+  const feedback = authFeedback(error, mutation.variables?.kind === "signup");
+  const { retryAt, retryReady, waiting } = useAuthRetry(error);
   const blocked = mutation.isPending || waiting || feedback?.stop === true;
   return {
     blocked,

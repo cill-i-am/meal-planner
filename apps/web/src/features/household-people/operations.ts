@@ -21,6 +21,7 @@ import type {
 } from "@meal-planner/household-api";
 import { InvitationRejectionReason } from "@meal-planner/household-api";
 import { Option, Schema } from "effect";
+import type { Effect } from "effect";
 
 export const HouseholdPeopleOperationFailureCode = Schema.Literals([
   "bootstrap_conflict",
@@ -58,6 +59,7 @@ export const decodeHouseholdPeopleOperationFailure = Schema.decodeUnknownOption(
 
 /** Closed browser-facing error used for retry and user-message decisions. */
 export class HouseholdPeopleOperationError extends Error {
+  readonly _tag = "HouseholdPeopleOperationError" as const;
   readonly code: HouseholdPeopleOperationFailureCode;
   readonly invitationRejection: InvitationRejectionReason | undefined;
 
@@ -73,6 +75,16 @@ export class HouseholdPeopleOperationError extends Error {
     )?.reason;
   }
 }
+
+/** Generated-client operations for Effect query and mutation adapters. */
+export type HouseholdPeopleEffectOperations = {
+  readonly [K in keyof HouseholdPeopleOperations]-?: (
+    ...args: Parameters<NonNullable<HouseholdPeopleOperations[K]>>
+  ) => Effect.Effect<
+    Awaited<ReturnType<NonNullable<HouseholdPeopleOperations[K]>>>,
+    HouseholdPeopleOperationError
+  >;
+};
 
 export const householdPeopleFailureCode = (
   error: Error | null

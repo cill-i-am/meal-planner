@@ -1,6 +1,6 @@
 import type { InvitationView } from "@meal-planner/household-api";
 import { InvitationId, SetupCheckpoint } from "@meal-planner/household-api";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Option, Schema } from "effect";
 import type { ReactNode } from "react";
@@ -18,11 +18,16 @@ import {
 } from "../../components/ui/card.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
 import { Separator } from "../../components/ui/separator.js";
-import { AuthRequestError } from "../auth/auth-errors.js";
 import { AuthLayout } from "../auth/auth-layout.js";
 import { SetupProvider, useSetup } from "../onboarding/setup-context.js";
 import { SetupError } from "../onboarding/setup-ui.js";
-import { completeInvitation, readInvitation } from "./invitation-operations.js";
+import {
+  invitationReadQueryOptions,
+  logoutInvitationMutationOptions,
+  pauseInvitationMutationOptions,
+  recoverInvitationMutationOptions,
+  respondInvitationMutationOptions,
+} from "./invitation-operations.js";
 import type { InvitationCommand } from "./invitation-operations.js";
 
 const InvitationCard = ({
@@ -61,7 +66,7 @@ const InvitationCard = ({
 );
 
 const InvitationReadFailure = ({
-  error,
+  reason,
   email,
   busy,
   header,
@@ -70,7 +75,7 @@ const InvitationReadFailure = ({
   retry,
   recover,
 }: {
-  readonly error: Error;
+  readonly reason: "unauthorized" | "wrong-account" | "unavailable" | "other";
   readonly email: string;
   readonly busy: boolean;
   readonly header: ReactNode;
@@ -79,7 +84,7 @@ const InvitationReadFailure = ({
   readonly retry: () => Promise<unknown>;
   readonly recover: ReactNode;
 }) => {
-  if (error instanceof AuthRequestError && error.status === 401) {
+  if (reason === "unauthorized") {
     return (
       <InvitationCard
         title="Your account changed"
@@ -89,11 +94,8 @@ const InvitationReadFailure = ({
       </InvitationCard>
     );
   }
-  const wrongAccount =
-    error instanceof AuthRequestError &&
-    error.code === "YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION";
-  const unavailable =
-    error instanceof AuthRequestError && error.code === "INVITATION_NOT_FOUND";
+  const wrongAccount = reason === "wrong-account";
+  const unavailable = reason === "unavailable";
   const title = wrongAccount
     ? "Use the invited email"
     : "This invitation didn’t load";
@@ -156,55 +158,43 @@ const pendingInvitation = (
 const useInvitationFlow = (invitationId: InvitationId) => {
   const setup = useSetup();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { checkpoint } = setup.progress;
   const pending = pendingInvitation(checkpoint);
-  const invitation = useQuery({
-    queryFn: () => readInvitation(invitationId, setup.user.id),
-    queryKey: ["setup-invitation", setup.user.id, invitationId],
-    retry: false,
-  });
+  const invitationOptions = invitationReadQueryOptions(
+    invitationId,
+    setup.user.id
+  );
+  const invitation = useQuery(invitationOptions);
   const respond = useMutation({
-    mutationFn: async (command: InvitationCommand) => {
-      await setup.save({ checkpoint: command, status: "active" });
-      const result = await completeInvitation(command, {
-        activate: setup.selectFamily,
-        auth: setup.auth,
-        people: setup.peopleForFamily(command.organizationId),
-        read: () => readInvitation(command.invitationId, setup.user.id),
-        save: (next) =>
-          setup.save(
-            { checkpoint: next, status: "active" },
-            command.linkMutationId
-          ),
-      });
+    ...respondInvitationMutationOptions({
+      activate: setup.selectFamily,
+      auth: setup.auth,
+      peopleEffectForFamily: setup.peopleEffectForFamily,
+      read: (id) =>
+        queryClient.fetchQuery(invitationReadQueryOptions(id, setup.user.id)),
+      save: setup.save,
+    }),
+    onError: async () => {
+      await invitation.refetch();
+    },
+    onSuccess: async (result) => {
       await (result === "joined"
         ? navigate({ to: "/setup/ready" })
         : invitation.refetch());
     },
-    onError: async () => {
-      await invitation.refetch();
-    },
   });
   const pause = useMutation({
-    mutationFn: async (command: InvitationCommand) => {
-      await setup.save({ checkpoint: command, status: "paused" });
-      await navigate({ to: "/setup/saved" });
-    },
+    ...pauseInvitationMutationOptions({ save: setup.save }),
+    onSuccess: () => navigate({ to: "/setup/saved" }),
   });
-  const logout = useMutation({ mutationFn: setup.logout });
+  const logout = useMutation(logoutInvitationMutationOptions(setup.logout));
   const recover = useMutation({
-    mutationFn: async () => {
-      if (pending) {
-        await setup.save(
-          {
-            checkpoint: pending.returnCheckpoint,
-            status: "active",
-          },
-          pending.linkMutationId
-        );
-      }
-      await navigate({ to: "/setup" });
-    },
+    ...recoverInvitationMutationOptions({
+      pending,
+      save: setup.save,
+    }),
+    onSuccess: () => navigate({ to: "/setup" }),
   });
   const busy = [respond, pause, logout, recover].some(
     (operation) => operation.isPending
@@ -530,7 +520,12 @@ export const InvitationPage = ({
   if (invitation.isError) {
     return (
       <InvitationReadFailure
-        error={invitation.error}
+        reason={invitation.error.match({
+          InvitationReadForbidden: () => "wrong-account" as const,
+          InvitationReadNotFound: () => "unavailable" as const,
+          InvitationReadUnauthorized: () => "unauthorized" as const,
+          OrElse: () => "other" as const,
+        })}
         email={setup.user.email}
         busy={busy}
         header={header}

@@ -5,6 +5,7 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Schema } from "effect";
+import { useState } from "react";
 
 import { useAppForm } from "../../components/forms/form.js";
 import { Avatar, AvatarFallback } from "../../components/ui/avatar.js";
@@ -18,6 +19,7 @@ import {
 import { FieldGroup } from "../../components/ui/field.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
 import { familyCreationMutationOptions } from "./family-creation.js";
+import { setupEffectQuery } from "./onboarding-people.js";
 import { useSetup } from "./setup-context.js";
 import { SetupError, SetupFrame } from "./setup-ui.js";
 
@@ -35,37 +37,51 @@ export const FamilyNamePage = () => {
   const navigate = useNavigate();
   const { checkpoint } = setup.progress;
   const mutation = useMutation(familyCreationMutationOptions(setup.user.id));
-  const openReview = useMutation({
-    mutationFn: async () => {
+  const [openingReview, setOpeningReview] = useState(false);
+  const [openReviewFailed, setOpenReviewFailed] = useState(false);
+  const openReview = async () => {
+    setOpeningReview(true);
+    setOpenReviewFailed(false);
+    try {
       await setup.refresh();
       await navigate({ to: "/setup/review" });
-    },
-  });
+    } catch (error) {
+      setOpenReviewFailed(true);
+      throw error;
+    } finally {
+      setOpeningReview(false);
+    }
+  };
   const persisted =
     checkpoint.stage === "family-create" ? checkpoint : undefined;
-  const exit = useMutation({
-    mutationFn: async (name: string) => {
-      await setup.logout({
-        checkpoint: persisted ?? { name, stage: "family-name" },
-        status: "paused",
-      });
-    },
-  });
-  const existingFamily = useMutation({
-    mutationFn: async (id: string) => {
-      const organizationId = Schema.decodeUnknownSync(HouseholdOrganizationId)(
-        id
-      );
-      await setup.save({
-        checkpoint: { organizationId, stage: "family-review" },
-        status: "active",
-      });
-      await navigate({ to: "/setup/review" });
-    },
-  });
+  const exit = useMutation(
+    setupEffectQuery.mutationOptions({
+      mutationFn: (name: string) =>
+        setup.logout({
+          checkpoint: persisted ?? { name, stage: "family-name" },
+          status: "paused",
+        }),
+      mutationKey: ["setup-family-logout"],
+    })
+  );
+  const existingFamily = useMutation(
+    setupEffectQuery.mutationOptions({
+      mutationFn: (id: string) => {
+        const organizationId = Schema.decodeUnknownSync(
+          HouseholdOrganizationId
+        )(id);
+        return setup.save({
+          checkpoint: { organizationId, stage: "family-review" },
+          status: "active",
+        });
+      },
+      mutationKey: ["setup-existing-family"],
+      onSuccess: () => navigate({ to: "/setup/review" }),
+    })
+  );
   const pending =
     mutation.isPending ||
-    openReview.isPending ||
+    openingReview ||
     exit.isPending ||
     existingFamily.isPending;
   const form = useAppForm({
@@ -86,7 +102,7 @@ export const FamilyNamePage = () => {
         }
       }
       try {
-        await openReview.mutateAsync();
+        await openReview();
       } catch {
         // Creation succeeded; review navigation can be retried without creating again.
       }
@@ -173,7 +189,7 @@ export const FamilyNamePage = () => {
                   })}
                 </SetupError>
               )}
-              {openReview.error && (
+              {openReviewFailed && (
                 <SetupError>
                   Your family was created, but we couldn’t open the review. Try
                   again to continue.
@@ -209,7 +225,7 @@ export const FamilyNamePage = () => {
               <PendingButton
                 type="submit"
                 disabled={pending}
-                pending={mutation.isPending || openReview.isPending}
+                pending={mutation.isPending || openingReview}
                 pendingLabel={
                   mutation.isPending ? "Saving your family…" : "Opening review…"
                 }

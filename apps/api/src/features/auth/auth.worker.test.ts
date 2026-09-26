@@ -27,6 +27,7 @@ import {
 } from "./auth.principal.js";
 import { makeNativeAuthTestService } from "./auth.test-fixture.js";
 import { createSetupFamily, setupFamilyHttpApiLayer } from "./setup-family.js";
+import { setupProgressHttpApiLayer } from "./setup-progress-http.js";
 
 const testEnv = env as unknown as {
   readonly AUTH_TEST_MIGRATIONS: {
@@ -471,10 +472,10 @@ describe("Better Auth D1 control plane", () => {
       })
     );
     const cookie = cookieHeader(signup);
-    const progress = {
+    const progress = Schema.decodeUnknownSync(SetupProgress)({
       checkpoint: { name: "The Morgan family", stage: "family-name" },
       status: "paused",
-    };
+    });
     const competing = await Promise.all([
       auth.fetch(
         authRequest("/setup/progress", { expectedVersion: 0, progress }, cookie)
@@ -560,6 +561,125 @@ describe("Better Auth D1 control plane", () => {
       .from(authSchema.user)
       .where(eq(authSchema.user.email, "checkpoint@example.test"));
     expect(stored).toEqual([{ progress: saved.progress, version: 1 }]);
+
+    const app = HttpRouter.toWebHandler(
+      setupProgressHttpApiLayer(makeNativeAuthTestService(auth)),
+      { disableLogger: true }
+    );
+    const request = (
+      body: {
+        readonly expectedVersion: number;
+        readonly progress: SetupProgress | { readonly bad: true };
+      },
+      options: { readonly cookie?: string; readonly userId?: string } = {}
+    ) => {
+      const headers = new Headers({
+        "cf-connecting-ip": "192.0.2.10",
+        "content-type": "application/json",
+        origin: baseURL,
+      });
+      if (options.cookie !== undefined) {
+        headers.set("cookie", options.cookie);
+      }
+      if (options.userId !== undefined) {
+        headers.set("x-meal-planner-user", options.userId);
+      }
+      return new Request(`${baseURL}/v1/setup/progress`, {
+        body: JSON.stringify(body),
+        headers,
+        method: "POST",
+      });
+    };
+    try {
+      const foreignOrigin = request(
+        { expectedVersion: 1, progress },
+        { cookie }
+      );
+      foreignOrigin.headers.set(
+        "origin",
+        "https://untrusted.meal-planner.test"
+      );
+      foreignOrigin.headers.set("sec-fetch-site", "same-site");
+      foreignOrigin.headers.delete("content-type");
+      const forbidden = await app.handler(foreignOrigin);
+      expect(forbidden.status).toBe(403);
+      await expect(forbidden.json()).resolves.toMatchObject({
+        _tag: "SetupProgressForbidden",
+      });
+      const missingOrigin = request(
+        { expectedVersion: 1, progress },
+        { cookie }
+      );
+      missingOrigin.headers.delete("origin");
+      const missingOriginResponse = await app.handler(missingOrigin);
+      expect(missingOriginResponse.status).toBe(403);
+      await expect(missingOriginResponse.json()).resolves.toMatchObject({
+        _tag: "SetupProgressForbidden",
+      });
+      const updated = await app.handler(
+        request(
+          { expectedVersion: 1, progress: { ...progress, status: "active" } },
+          { cookie }
+        )
+      );
+      expect(updated.status).toBe(200);
+      await expect(updated.json()).resolves.toMatchObject({ version: 2 });
+      const replayed = await app.handler(
+        request(
+          { expectedVersion: 1, progress: { ...progress, status: "active" } },
+          { cookie }
+        )
+      );
+      expect(replayed.status).toBe(200);
+      await expect(replayed.json()).resolves.toMatchObject({ version: 2 });
+      const stale = await app.handler(
+        request({ expectedVersion: 1, progress }, { cookie })
+      );
+      expect(stale.status).toBe(409);
+      await expect(stale.json()).resolves.toMatchObject({
+        _tag: "SetupProgressConflict",
+      });
+      const invalid = await app.handler(
+        request({ expectedVersion: 2, progress: { bad: true } }, { cookie })
+      );
+      expect(invalid.status).toBe(400);
+      const anonymousProgress = await app.handler(
+        request({ expectedVersion: 2, progress })
+      );
+      expect(anonymousProgress.status).toBe(401);
+      const changedAccount = await app.handler(
+        request({ expectedVersion: 2, progress }, { cookie, userId: "other" })
+      );
+      expect(changedAccount.status).toBe(401);
+      const context = await auth.$context;
+      await context.adapter.update({
+        model: "rateLimit",
+        update: { count: context.rateLimit.max, lastRequest: Date.now() },
+        where: [{ field: "key", value: "192.0.2.10|/setup/progress" }],
+      });
+      const limited = await app.handler(
+        request({ expectedVersion: 2, progress }, { cookie })
+      );
+      expect(limited.status).toBe(429);
+      expect(Number(limited.headers.get("x-retry-after"))).toBeGreaterThan(0);
+      expect(limited.headers.get("cache-control")).toBe("no-store");
+      await expect(limited.json()).resolves.toMatchObject({
+        _tag: "SetupProgressRateLimited",
+      });
+      const nativeLimited = await auth.fetch(
+        authRequest("/setup/progress", { expectedVersion: 2, progress }, cookie)
+      );
+      expect(nativeLimited.status).toBe(429);
+      const [afterRejectedWrites] = await drizzle(
+        testEnv.MealPlannerAuthDatabase
+      )
+        .select({ version: authSchema.user.setupProgressVersion })
+        .from(authSchema.user)
+        .where(eq(authSchema.user.email, "checkpoint@example.test"));
+      expect(afterRejectedWrites?.version).toBe(2);
+    } finally {
+      await app.dispose();
+    }
   });
 
   it("creates a family through one command and resumes the same creator after interruption", async () => {

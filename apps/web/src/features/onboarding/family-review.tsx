@@ -1,6 +1,7 @@
 import type { HouseholdPerson } from "@meal-planner/household-api";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { Effect } from "effect";
 
 import { Avatar, AvatarFallback } from "../../components/ui/avatar.js";
 import { Button } from "../../components/ui/button.js";
@@ -15,6 +16,10 @@ import {
 } from "../../components/ui/card.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
 import {
+  onboardingRosterQueryOptions,
+  setupEffectQuery,
+} from "./onboarding-people.js";
+import {
   RosterActions,
   RosterManagementOverlay,
   useRosterManagement,
@@ -27,16 +32,7 @@ export const useSetupRoster = () => {
   const { checkpoint } = setup.progress;
   const organizationId =
     "organizationId" in checkpoint ? checkpoint.organizationId : undefined;
-  return useQuery({
-    enabled: organizationId !== undefined,
-    queryFn: () => {
-      if (organizationId === undefined) {
-        throw new Error("A family is required.");
-      }
-      return setup.peopleForFamily(organizationId).list(false);
-    },
-    queryKey: ["setup-roster", organizationId, setup.user.id],
-  });
+  return useQuery(onboardingRosterQueryOptions(setup.user.id, organizationId));
 };
 
 const personStatus = (person: HouseholdPerson): string => {
@@ -83,37 +79,44 @@ export const FamilyReviewPage = () => {
   const roster = useSetupRoster();
   const { checkpoint } = setup.progress;
   const manage = useRosterManagement();
-  const action = useMutation({
-    mutationFn: async (destination: "ready" | "logout" | "people") => {
-      if (checkpoint.stage !== "family-review") {
-        return;
-      }
-      if (destination === "logout") {
-        await setup.logout({ checkpoint, status: "paused" });
-      } else if (destination === "people") {
-        await setup.save({
-          checkpoint: {
-            draft: {
-              email: "",
-              invite: false,
-              name: "",
-              participation: "adult",
+  const action = useMutation(
+    setupEffectQuery.mutationOptions({
+      mutationFn: (destination: "ready" | "logout" | "people") => {
+        if (checkpoint.stage !== "family-review") {
+          return Effect.void;
+        }
+        if (destination === "logout") {
+          return setup.logout({ checkpoint, status: "paused" });
+        }
+        if (destination === "people") {
+          return setup.save({
+            checkpoint: {
+              draft: {
+                email: "",
+                invite: false,
+                name: "",
+                participation: "adult",
+              },
+              organizationId: checkpoint.organizationId,
+              stage: "person-draft",
             },
-            organizationId: checkpoint.organizationId,
-            stage: "person-draft",
-          },
-          status: "active",
-        });
-        await navigate({ to: "/setup/people" });
-      } else {
-        await setup.save({
+            status: "active",
+          });
+        }
+        return setup.save({
           checkpoint: { ...checkpoint, stage: "ready" },
           status: "active",
         });
-        await navigate({ to: "/setup/ready" });
-      }
-    },
-  });
+      },
+      mutationKey: ["setup-family-review"],
+      onSuccess: (_result, destination) =>
+        destination === "logout"
+          ? undefined
+          : navigate({
+              to: destination === "people" ? "/setup/people" : "/setup/ready",
+            }),
+    })
+  );
   const pendingAction = action.isPending || manage.managing;
   if (roster.isPending) {
     return <SetupStatus title="Loading your family…" />;
@@ -236,24 +239,29 @@ export const FamilyReadyPage = () => {
     (item) =>
       "organizationId" in checkpoint && item.id === checkpoint.organizationId
   );
-  const finish = useMutation({
-    mutationFn: async (destination: "discovery" | "later" | "logout") => {
-      if (checkpoint.stage !== "ready") {
-        return;
-      }
-      if (destination === "logout") {
-        await setup.logout({ checkpoint, status: "paused" });
-        return;
-      }
-      await setup.save({
-        checkpoint: { ...checkpoint, stage: "complete" },
-        status: "active",
-      });
-      await navigate({
-        href: destination === "discovery" ? "/#private-interviews" : "/",
-      });
-    },
-  });
+  const finish = useMutation(
+    setupEffectQuery.mutationOptions({
+      mutationFn: (destination: "discovery" | "later" | "logout") => {
+        if (checkpoint.stage !== "ready") {
+          return Effect.void;
+        }
+        if (destination === "logout") {
+          return setup.logout({ checkpoint, status: "paused" });
+        }
+        return setup.save({
+          checkpoint: { ...checkpoint, stage: "complete" },
+          status: "active",
+        });
+      },
+      mutationKey: ["setup-family-ready"],
+      onSuccess: (_result, destination) =>
+        destination === "logout"
+          ? undefined
+          : navigate({
+              href: destination === "discovery" ? "/#private-interviews" : "/",
+            }),
+    })
+  );
   if (roster.isPending) {
     return <SetupStatus title="Loading your family…" />;
   }

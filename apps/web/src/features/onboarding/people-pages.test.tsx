@@ -104,6 +104,7 @@ const makeTransport = (
   let signedOut = false;
   let signOutCalls = 0;
   const saveAttempts: SetupProgress[] = [];
+  const saveSourceIds: (string | undefined)[] = [];
   const removedPeople = new Map<string, HouseholdPerson>();
   let people = [creator, ...added];
   const saves: SetupProgress[] = [];
@@ -262,17 +263,23 @@ const makeTransport = (
         },
       });
     }
-    if (path.endsWith("/setup/progress")) {
+    if (path === "/v1/setup/progress") {
+      expect(request.headers.get("x-meal-planner-user")).toBe("adult-1");
       const body = Schema.decodeUnknownSync(
         Schema.Struct({
           expectedVersion: Schema.Number,
           progress: SetupProgress,
+          sourceCommandId: Schema.optional(Schema.String),
         })
       )(await request.json());
       saveAttempts.push(body.progress);
+      saveSourceIds.push(body.sourceCommandId);
       if (failures.logoutSave && body.progress.status === "paused") {
         return Response.json(
-          { message: "Could not save before logging out." },
+          {
+            _tag: "SetupProgressUnavailable",
+            message: "Could not save before logging out.",
+          },
           { status: 503 }
         );
       }
@@ -283,8 +290,11 @@ const makeTransport = (
       ) {
         pendingRejected = true;
         return Response.json(
-          { message: "Could not save request." },
-          { status: 500 }
+          {
+            _tag: "SetupProgressUnavailable",
+            message: "Could not save request.",
+          },
+          { status: 503 }
         );
       }
       if (
@@ -296,13 +306,16 @@ const makeTransport = (
       ) {
         completionRejected = true;
         return Response.json(
-          { message: "Could not save setup." },
-          { status: 500 }
+          {
+            _tag: "SetupProgressUnavailable",
+            message: "Could not save setup.",
+          },
+          { status: 503 }
         );
       }
       if (body.expectedVersion !== version) {
         return Response.json(
-          { code: "SETUP_PROGRESS_CONFLICT" },
+          { _tag: "SetupProgressConflict", message: "Reload setup." },
           { status: 409 }
         );
       }
@@ -357,6 +370,7 @@ const makeTransport = (
       version += 1;
       return true;
     },
+    saveSourceIds,
     saves,
     get signOutCalls() {
       return signOutCalls;
@@ -743,6 +757,10 @@ it("retries the original successful removal if saving its completion fails", asy
       screen.queryByRole("heading", { name: "Remove Jamie from family?" })
     ).not.toBeInTheDocument()
   );
+  const removal = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)(
+    fixture.removals[0]
+  );
+  expect(fixture.saveSourceIds.at(-1)).toBe(removal.mutationId);
 });
 
 it("removes a joined adult after explicit confirmation, keeping the exact version and mutation ID", async () => {

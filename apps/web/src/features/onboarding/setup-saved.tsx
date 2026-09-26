@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 
 import { Button } from "../../components/ui/button.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
+import { setupEffectQuery } from "./onboarding-people.js";
 import { useSetup } from "./setup-context.js";
 import { setupDestination } from "./setup-state.js";
 import { SetupError, SetupStatus } from "./setup-ui.js";
@@ -10,14 +11,25 @@ import { SetupError, SetupStatus } from "./setup-ui.js";
 export const SetupSavedPage = () => {
   const setup = useSetup();
   const navigate = useNavigate();
-  const resume = useMutation({
-    mutationFn: async () => {
-      const next = { ...setup.progress, status: "active" as const };
-      await setup.save(next);
-      await navigate({ href: setupDestination(next) });
-    },
-  });
-  const logout = useMutation({ mutationFn: setup.logout });
+  const resume = useMutation(
+    setupEffectQuery.mutationOptions({
+      mutationFn: () => {
+        const next = { ...setup.progress, status: "active" as const };
+        return setup.save(next);
+      },
+      mutationKey: ["setup-resume"],
+      onSuccess: () =>
+        navigate({
+          href: setupDestination({ ...setup.progress, status: "active" }),
+        }),
+    })
+  );
+  const logout = useMutation(
+    setupEffectQuery.mutationOptions({
+      mutationFn: () => setup.logout(),
+      mutationKey: ["setup-saved-logout"],
+    })
+  );
   const pending = resume.isPending || logout.isPending;
   const { stage } = setup.progress.checkpoint;
   const nextStep = {

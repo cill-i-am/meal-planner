@@ -11,7 +11,7 @@ import type {
   SetupRosterReturn,
 } from "@meal-planner/household-api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 import { MoreHorizontalIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -37,7 +37,8 @@ import {
   HouseholdPeopleOperationError,
   householdPeopleFailureCode,
 } from "../household-people/operations.js";
-import type { HouseholdPeopleOperations } from "../household-people/operations.js";
+import type { HouseholdPeopleEffectOperations } from "../household-people/operations.js";
+import { setupEffectQuery } from "./onboarding-people.js";
 import { InvitationEmailInput, PersonNameInput } from "./people-input.js";
 import { useSetup } from "./setup-context.js";
 import { SetupError } from "./setup-ui.js";
@@ -173,50 +174,44 @@ const actionPendingLabel = (action: RosterIntent) => {
   return `Removing ${action.person.displayName}…`;
 };
 
-const runRosterCommand = async (
+const runRosterCommand = (
   command: SetupRosterCommand,
-  people: HouseholdPeopleOperations
+  people: HouseholdPeopleEffectOperations
 ) => {
   switch (command.kind) {
     case "invite": {
-      if (!people.inviteAdult) {
-        throw new Error("Invitation operation is unavailable.");
-      }
-      await people.inviteAdult(
-        Schema.decodeUnknownSync(InviteHouseholdAdultPayload)({
-          email: command.email,
-          mutationId: command.mutationId,
-          personId: command.person.id,
-        })
-      );
-      return;
+      return people
+        .inviteAdult(
+          Schema.decodeUnknownSync(InviteHouseholdAdultPayload)({
+            email: command.email,
+            mutationId: command.mutationId,
+            personId: command.person.id,
+          })
+        )
+        .pipe(Effect.asVoid);
     }
     case "rename": {
-      if (!people.rename) {
-        throw new Error("Name editing is unavailable.");
-      }
-      await people.rename(
-        command.person.id,
-        Schema.decodeUnknownSync(RenameHouseholdPersonPayload)({
-          displayName: command.name,
-          expectedVersion: command.person.version,
-          mutationId: command.mutationId,
-        })
-      );
-      return;
+      return people
+        .rename(
+          command.person.id,
+          Schema.decodeUnknownSync(RenameHouseholdPersonPayload)({
+            displayName: command.name,
+            expectedVersion: command.person.version,
+            mutationId: command.mutationId,
+          })
+        )
+        .pipe(Effect.asVoid);
     }
     case "remove": {
-      if (!people.remove) {
-        throw new Error("Person removal is unavailable.");
-      }
-      await people.remove(
-        command.person.id,
-        Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)({
-          expectedVersion: command.person.version,
-          mutationId: command.mutationId,
-        })
-      );
-      return;
+      return people
+        .remove(
+          command.person.id,
+          Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)({
+            expectedVersion: command.person.version,
+            mutationId: command.mutationId,
+          })
+        )
+        .pipe(Effect.asVoid);
     }
     default: {
       throw new Error("Unknown roster command.");
@@ -407,42 +402,63 @@ export const useRosterManagement = () => {
     ? { checkpoint: savedPending, open: true }
     : localPresentation;
   const mutation = useMutation({
-    mutationFn: async (pending: PendingCheckpoint) => {
-      const { command } = pending.state;
-      const returnCheckpoint = {
-        ...pending.returnTo,
-        organizationId: pending.organizationId,
-      };
-      const saveReturnCheckpoint = async () => {
-        await setup.save(
-          { checkpoint: returnCheckpoint, status: "active" },
-          command.mutationId
-        );
-      };
-      await setup.save({ checkpoint: pending, status: "active" });
-      const people = setup.peopleForFamily(pending.organizationId);
-      try {
-        await runRosterCommand(command, people);
-      } catch (error) {
-        if (error instanceof Error && terminalFailure(error)) {
-          await saveReturnCheckpoint();
-          await queryClient.invalidateQueries({
-            queryKey: ["setup-roster", pending.organizationId],
-          });
-          setPresentation({
-            checkpoint: {
-              ...pending,
-              state: { action: commandDraft(command), phase: "draft" },
+    ...setupEffectQuery.mutationOptions({
+      mutationFn: (pending: PendingCheckpoint) =>
+        Effect.gen(function* manageRosterPerson() {
+          const { command } = pending.state;
+          const returnCheckpoint = {
+            ...pending.returnTo,
+            organizationId: pending.organizationId,
+          };
+          const saveReturnCheckpoint = () =>
+            setup.save(
+              { checkpoint: returnCheckpoint, status: "active" },
+              command.mutationId
+            );
+          yield* setup.save({ checkpoint: pending, status: "active" });
+          const people = setup.peopleEffectForFamily(pending.organizationId);
+          const result = yield* Effect.result(
+            runRosterCommand(command, people)
+          );
+          if (Result.isFailure(result)) {
+            const error = result.failure;
+            if (terminalFailure(error)) {
+              yield* saveReturnCheckpoint();
+            }
+            return yield* Effect.fail(error);
+          }
+          yield* saveReturnCheckpoint();
+        }),
+      mutationKey: ["setup-roster-command"],
+    }),
+    onError: async (error, pending) => {
+      const commandError =
+        error._tag === "EffectQueryFailure"
+          ? error.match({
+              HouseholdPeopleOperationError: (failure) => failure,
+              OrElse: () => null,
+            })
+          : null;
+      if (commandError && terminalFailure(commandError)) {
+        await queryClient.invalidateQueries({
+          queryKey: ["setup-roster", pending.organizationId],
+        });
+        setPresentation({
+          checkpoint: {
+            ...pending,
+            state: {
+              action: commandDraft(pending.state.command),
+              phase: "draft",
             },
-            open: true,
-          });
-        }
-        throw error;
+          },
+          open: true,
+        });
       }
+    },
+    onSuccess: async (_result, pending) => {
       await queryClient.invalidateQueries({
         queryKey: ["setup-roster", pending.organizationId],
       });
-      await saveReturnCheckpoint();
       setPresentation({ checkpoint: pending, open: false });
     },
   });
@@ -472,6 +488,20 @@ export const useRosterManagement = () => {
       submitting.current = false;
     }
   };
+  let mutationError: Error | null = mutation.error;
+  if (
+    presentation?.checkpoint.state.phase === "pending" &&
+    mutation.variables?.state.command.mutationId !==
+      presentation.checkpoint.state.command.mutationId
+  ) {
+    mutationError = null;
+  } else if (mutation.error?._tag === "EffectQueryFailure") {
+    const queryError = mutation.error;
+    mutationError = mutation.error.match<Error>({
+      HouseholdPeopleOperationError: (failure) => failure,
+      OrElse: () => queryError,
+    });
+  }
   return {
     begin: ({
       kind,
@@ -514,12 +544,7 @@ export const useRosterManagement = () => {
       }
       setPresentation({ ...presentation, open: false });
     },
-    error:
-      presentation?.checkpoint.state.phase === "pending" &&
-      mutation.variables?.state.command.mutationId !==
-        presentation.checkpoint.state.command.mutationId
-        ? null
-        : mutation.error,
+    error: mutationError,
     finishExit: () => {
       setPresentation((current) => (current?.open ? current : null));
     },

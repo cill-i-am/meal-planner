@@ -10,7 +10,8 @@ import type {
 } from "@meal-planner/household-api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import { useAppForm } from "../../components/forms/form.js";
@@ -32,6 +33,7 @@ import { FieldGroup } from "../../components/ui/field.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
 import { PersonRow, useSetupRoster } from "./family-review.js";
 import { InvitationCorrectionForm } from "./invitation-correction.js";
+import { setupEffectQuery } from "./onboarding-people.js";
 import {
   PersonNameInput,
   ParticipationInput,
@@ -455,53 +457,80 @@ export const AddPersonPage = () => {
   const roster = useSetupRoster();
   const { checkpoint } = setup.progress;
   const manage = useRosterManagement();
-  const save = useMutation({
-    mutationFn: async (pending: Pending) => {
-      await setup.save({ checkpoint: pending, status: "active" });
-      await saveSetupPerson(
-        pending,
-        setup.peopleForFamily(pending.organizationId),
-        (next, sourceCommandId) =>
-          setup.save({ checkpoint: next, status: "active" }, sourceCommandId)
-      );
+  const [openingReview, setOpeningReview] = useState(false);
+  const [openReviewFailed, setOpenReviewFailed] = useState(false);
+  const openReview = async (organizationId: Pending["organizationId"]) => {
+    setOpeningReview(true);
+    setOpenReviewFailed(false);
+    try {
       await queryClient.invalidateQueries({
-        queryKey: ["setup-roster", pending.organizationId],
+        queryKey: ["setup-roster", organizationId],
       });
       await navigate({ to: "/setup" });
-    },
-  });
-  const exit = useMutation({
-    mutationFn: async (next: SetupCheckpoint) => {
-      await setup.logout({ checkpoint: next, status: "paused" });
-    },
-  });
-  const cancel = useMutation({
-    mutationFn: async () => {
-      if (!("organizationId" in checkpoint)) {
-        return;
-      }
-      await setup.save({
-        checkpoint: {
-          organizationId: checkpoint.organizationId,
-          stage: "family-review",
-        },
-        status: "active",
-      });
-      await navigate({ to: "/setup/review" });
-    },
-  });
+    } catch {
+      setOpenReviewFailed(true);
+    } finally {
+      setOpeningReview(false);
+    }
+  };
+  const save = useMutation(
+    setupEffectQuery.mutationOptions({
+      mutationFn: (pending: Pending) =>
+        Effect.gen(function* savePersonCheckpoint() {
+          yield* setup.save({ checkpoint: pending, status: "active" });
+          yield* saveSetupPerson(
+            pending,
+            setup.peopleEffectForFamily(pending.organizationId),
+            (next, sourceCommandId) =>
+              setup.save(
+                { checkpoint: next, status: "active" },
+                sourceCommandId
+              )
+          );
+        }),
+      mutationKey: ["setup-person-save"],
+      onSuccess: (_result, pending) => openReview(pending.organizationId),
+    })
+  );
+  const exit = useMutation(
+    setupEffectQuery.mutationOptions({
+      mutationFn: (next: SetupCheckpoint) =>
+        setup.logout({ checkpoint: next, status: "paused" }),
+      mutationKey: ["setup-person-logout"],
+    })
+  );
+  const cancel = useMutation(
+    setupEffectQuery.mutationOptions({
+      mutationFn: () => {
+        if (!("organizationId" in checkpoint)) {
+          return Effect.void;
+        }
+        return setup.save({
+          checkpoint: {
+            organizationId: checkpoint.organizationId,
+            stage: "family-review",
+          },
+          status: "active",
+        });
+      },
+      mutationKey: ["setup-person-cancel"],
+      onSuccess: () => navigate({ to: "/setup/review" }),
+    })
+  );
   const pending =
     checkpoint.stage === "person-create" || checkpoint.stage === "person-invite"
       ? checkpoint
       : save.variables;
-  const busy = [save, exit, cancel].some((operation) => operation.isPending);
+  const busy =
+    openingReview ||
+    [save, exit, cancel].some((operation) => operation.isPending);
   if (checkpoint.stage === "person-invite-draft") {
     return (
       <InvitationCorrectionForm
         checkpoint={checkpoint}
         busy={busy}
         saving={save.isPending}
-        error={Boolean(exit.error || cancel.error)}
+        error={Boolean(exit.error || cancel.error || openReviewFailed)}
         submit={async (email) => {
           await save
             .mutateAsync({
@@ -529,9 +558,15 @@ export const AddPersonPage = () => {
         pending={pending}
         busy={busy}
         saving={save.isPending}
-        failed={Boolean(save.error)}
+        failed={Boolean(save.error || openReviewFailed)}
         logoutFailed={Boolean(exit.error)}
-        retry={() => save.mutate(pending)}
+        retry={async () => {
+          if (save.isSuccess) {
+            await openReview(pending.organizationId);
+          } else {
+            save.mutate(pending);
+          }
+        }}
         logout={() => exit.mutate(pending)}
       />
     );
@@ -563,7 +598,7 @@ export const AddPersonPage = () => {
           </Button>
         }
       >
-        {(exit.error || cancel.error) && (
+        {(exit.error || cancel.error || openReviewFailed) && (
           <SetupError>
             {exit.error
               ? "We couldn’t save your place or log you out. Try again."

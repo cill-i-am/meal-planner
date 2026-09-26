@@ -8,6 +8,7 @@ const parseError = Schema.decodeUnknownOption(AuthErrorResponse);
 
 /** Safe exception translation at the Better Auth / TanStack Query boundary. */
 export class AuthRequestError extends Error {
+  readonly _tag = "AuthRequestError" as const;
   readonly code: string | undefined;
   readonly status: number | undefined;
   readonly retryAt: number | undefined;
