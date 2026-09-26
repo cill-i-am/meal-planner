@@ -26,6 +26,16 @@ import {
   MealPlanDraftId,
   SwapMealPlanPayload,
 } from "./meal-plan.js";
+import {
+  CreatedSetupFamily,
+  CreateSetupFamilyRequest,
+  SetupFamilyUnauthorized,
+  SetupFamilyForbidden,
+  SetupFamilyInvalidRequest,
+  SetupFamilyConflict,
+  SetupFamilyRateLimited,
+  SetupFamilyUnavailable,
+} from "./onboarding.js";
 import type { HouseholdPeopleCurrentPrincipal } from "./people-http.js";
 import {
   HouseholdPeopleBootstrapConflictProblem,
@@ -75,6 +85,7 @@ import {
   ProfileAuditPage,
   ProfileVersionPage,
 } from "./profiles.js";
+import { SetupFamilySchemaErrors } from "./setup-family-schema-errors.js";
 
 export {
   FoodPreference,
@@ -676,7 +687,16 @@ export const makeHouseholdPeopleApiClientLayer = (options: {
     })
   );
 export {
+  CreatedSetupFamily,
+  SetupFamilyUnauthorized,
+  SetupFamilyForbidden,
+  SetupFamilyInvalidRequest,
+  SetupFamilyConflict,
+  SetupFamilyRateLimited,
+  SetupFamilyUnavailable,
+  CreateSetupFamilyRequest,
   FamilyName,
+  initialSetupProgress,
   PersonCreation,
   PersonDraft,
   SetupCheckpoint,
@@ -690,5 +710,43 @@ export {
   setupPendingCommandId,
   setupProgressVersionField,
 } from "./onboarding.js";
+
+const SetupFamilyGroup = HttpApiGroup.make("setupFamily").add(
+  HttpApiEndpoint.post("create", "/v1/setup/family", {
+    error: [
+      SetupFamilyUnauthorized,
+      SetupFamilyForbidden,
+      SetupFamilyInvalidRequest,
+      SetupFamilyConflict,
+      SetupFamilyRateLimited,
+      SetupFamilyUnavailable,
+    ],
+    payload: CreateSetupFamilyRequest,
+    success: CreatedSetupFamily.pipe(HttpApiSchema.status(201)),
+  })
+);
+export const SetupFamilyApi = HttpApi.make("setupFamilyApi")
+  .add(SetupFamilyGroup)
+  .middleware(SetupFamilySchemaErrors);
+export { SetupFamilySchemaErrors } from "./setup-family-schema-errors.js";
+export type SetupFamilyApiClient = HttpApiClient.ForApi<typeof SetupFamilyApi>;
+export const SetupFamilyApiClient = Context.Service<SetupFamilyApiClient>(
+  "meal-planner/SetupFamilyApiClient"
+);
+export const makeSetupFamilyApiClientLayer = (options: {
+  readonly baseUrl: string | URL;
+  readonly headers: Readonly<Record<string, string>>;
+}) =>
+  Layer.effect(
+    SetupFamilyApiClient,
+    HttpApiClient.make(SetupFamilyApi, {
+      baseUrl: options.baseUrl,
+      transformClient: (client) =>
+        HttpClient.mapRequest(
+          client,
+          HttpClientRequest.setHeaders(options.headers)
+        ),
+    })
+  );
 
 export { InvitationView } from "./invitation-view.js";

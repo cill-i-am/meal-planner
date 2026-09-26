@@ -24,19 +24,8 @@ import {
   UnauthorizedProblemDetails,
   VersionConflictProblemDetails,
 } from "@meal-planner/recipe-import-api";
+import { absurd, Cause, Context, Effect, Layer, Schema } from "effect";
 import {
-  absurd,
-  Cause,
-  Context,
-  Effect,
-  FileSystem,
-  Layer,
-  Path,
-  Schema,
-} from "effect";
-import {
-  Etag,
-  HttpPlatform,
   HttpRouter,
   HttpServerRequest,
   HttpServerResponse,
@@ -47,6 +36,7 @@ import {
   HttpApiSchema,
 } from "effect/unstable/httpapi";
 
+import { JsonHttpPlatformServices } from "../../infrastructure/json-http-platform.js";
 import {
   AuthenticatedOrganizationResolver,
   AuthPrincipalResolver,
@@ -597,26 +587,6 @@ const RecipeImportHttpMiddlewareLive = Layer.mergeAll(
   RecipeImportDefectBoundaryLive
 );
 
-/** The JSON-only Worker API never exposes Effect's file-response surface. */
-const RecipeImportHttpPlatformLive = Layer.succeed(HttpPlatform.HttpPlatform, {
-  compression: {
-    algorithms: new Set<HttpPlatform.CompressionAlgorithm>(),
-    compressResponse: (response) => Effect.succeed(response),
-  },
-  fileResponse: () =>
-    Effect.die("Recipe import file responses are unsupported"),
-  fileWebResponse: () =>
-    Effect.die("Recipe import file responses are unsupported"),
-  platform: "web",
-});
-
-export const RecipeImportHttpPlatformServices = Layer.mergeAll(
-  Etag.layer,
-  FileSystem.layerNoop({}),
-  RecipeImportHttpPlatformLive,
-  Path.layer
-);
-
 /** Register the complete typed API only after request-scoped services exist. */
 export const makeRecipeImportHttpApiLayer = () =>
   HttpApiBuilder.layer(RecipeImportApi, {
@@ -630,7 +600,7 @@ export const makeRecipeImportHttpApiLayer = () =>
       )
     ),
     Layer.provide(RecipeImportHttpMiddlewareLive),
-    Layer.provide(RecipeImportHttpPlatformServices)
+    Layer.provide(JsonHttpPlatformServices)
   );
 
 // eslint-disable-next-line typescript/no-explicit-any -- Effect's heterogeneous Route collection uses unconstrained error and context parameters.

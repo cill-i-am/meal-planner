@@ -1,10 +1,10 @@
-import { SetupProgress } from "@meal-planner/household-api";
+import {
+  initialSetupProgress,
+  SetupProgress,
+} from "@meal-planner/household-api";
 import { Schema } from "effect";
 
-export const initialSetup: SetupProgress = {
-  checkpoint: { name: "", stage: "family-name" },
-  status: "active",
-};
+export const initialSetup: SetupProgress = initialSetupProgress;
 export const parseSetupProgress = Schema.decodeUnknownSync(SetupProgress);
 
 export const setupDestination = (

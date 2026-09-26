@@ -1,16 +1,23 @@
+import { BetterAuthApiError } from "@alchemy.run/better-auth";
 import {
   EmailAddress,
   HouseholdOrganizationId,
   HouseholdPersonId,
+  HouseholdPerson,
+  HouseholdPeopleUnavailable,
+  SetupProgress,
   InvitationId,
 } from "@meal-planner/household-api";
+import { APIError } from "better-auth/api";
 import { applyD1Migrations, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { drizzle } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
+import { HttpRouter } from "effect/unstable/http";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { makeHouseholdPeopleControlPlane } from "../households/people/household-people.control-plane.js";
 import * as authSchema from "./auth.database-schema.js";
 import { makeMealPlannerAuth } from "./auth.js";
@@ -19,6 +26,7 @@ import {
   resolveAuthPrincipal,
 } from "./auth.principal.js";
 import { makeNativeAuthTestService } from "./auth.test-fixture.js";
+import { createSetupFamily, setupFamilyHttpApiLayer } from "./setup-family.js";
 
 const testEnv = env as unknown as {
   readonly AUTH_TEST_MIGRATIONS: {
@@ -552,6 +560,193 @@ describe("Better Auth D1 control plane", () => {
       .from(authSchema.user)
       .where(eq(authSchema.user.email, "checkpoint@example.test"));
     expect(stored).toEqual([{ progress: saved.progress, version: 1 }]);
+  });
+
+  it("creates a family through one command and resumes the same creator after interruption", async () => {
+    const database = drizzle(testEnv.MealPlannerAuthDatabase);
+    const auth = makeMealPlannerAuth({
+      baseURL,
+      database,
+      outputFence: (_input, canonical) => canonical(),
+      schema: authSchema,
+      secret,
+    });
+    const signup = await auth.fetch(
+      authRequest("/sign-up/email", {
+        email: "family-command@example.test",
+        name: "Family creator",
+        password: "correct horse battery staple",
+      })
+    );
+    expect(signup.status).toBe(200);
+    const headers = new Headers({
+      cookie: cookieHeader(signup),
+      origin: baseURL,
+    });
+    const creator = Schema.encodeSync(HouseholdPerson)(
+      Schema.decodeUnknownSync(HouseholdPerson)({
+        associationState: "linked",
+        associationVersion: 1,
+        createdAtEpochMs: 1,
+        displayName: "Family creator",
+        id: "person_00000000-0000-4000-8000-000000000001",
+        isCurrentAdult: true,
+        kind: "adult",
+        lifecycle: "active",
+        updatedAtEpochMs: 1,
+        version: 1,
+      })
+    );
+    const mutationIds: string[] = [];
+    const domain: Pick<HouseholdDomainWorkerMethods, "bootstrapCreatorPerson"> =
+      {
+        bootstrapCreatorPerson: ({ payload }) => {
+          mutationIds.push(payload.mutationId);
+          return mutationIds.length === 1
+            ? Effect.fail(HouseholdPeopleUnavailable.make({}))
+            : Effect.succeed(creator);
+        },
+      };
+    const input = {
+      auth: makeNativeAuthTestService(auth).api,
+      domain,
+      headers,
+      name: "Morgan family",
+    } as const;
+
+    const interrupted = await Effect.runPromiseExit(createSetupFamily(input));
+    expect(interrupted._tag).toBe("Failure");
+    const [saved] = await database
+      .select({ progress: authSchema.user.setupProgress })
+      .from(authSchema.user)
+      .where(eq(authSchema.user.email, "family-command@example.test"));
+    const { checkpoint } = Schema.decodeUnknownSync(SetupProgress)(
+      saved?.progress
+    );
+    expect(checkpoint.stage).toBe("family-create");
+    if (checkpoint.stage !== "family-create") {
+      throw new Error("Expected saved family command.");
+    }
+    expect(
+      await database
+        .select()
+        .from(authSchema.organization)
+        .where(eq(authSchema.organization.slug, checkpoint.slug))
+    ).toHaveLength(1);
+
+    const result = await Effect.runPromise(createSetupFamily(input));
+    expect(result.name).toBe("Morgan family");
+    expect(mutationIds).toHaveLength(2);
+    expect(mutationIds[1]).toBe(mutationIds[0]);
+    expect(
+      await database
+        .select()
+        .from(authSchema.organization)
+        .where(eq(authSchema.organization.slug, checkpoint.slug))
+    ).toHaveLength(1);
+    const [completed] = await database
+      .select({ progress: authSchema.user.setupProgress })
+      .from(authSchema.user)
+      .where(eq(authSchema.user.email, "family-command@example.test"));
+    expect(
+      Schema.decodeUnknownSync(SetupProgress)(completed?.progress).checkpoint
+        .stage
+    ).toBe("family-review");
+    const app = HttpRouter.toWebHandler(
+      setupFamilyHttpApiLayer({ auth: input.auth, domain }),
+      { disableLogger: true }
+    );
+    try {
+      const response = await app.handler(
+        new Request(`${baseURL}/v1/setup/family`, {
+          body: JSON.stringify({ name: "Morgan family" }),
+          headers: new Headers({
+            ...Object.fromEntries(headers),
+            "content-type": "application/json",
+          }),
+          method: "POST",
+        })
+      );
+      expect(response.status).toBe(201);
+      expect(await response.json()).toEqual(result);
+      const invalid = await app.handler(
+        new Request(`${baseURL}/v1/setup/family`, {
+          body: JSON.stringify({ name: "" }),
+          headers: new Headers({
+            ...Object.fromEntries(headers),
+            "content-type": "application/json",
+          }),
+          method: "POST",
+        })
+      );
+      expect(invalid.status).toBe(400);
+      await expect(invalid.json()).resolves.toMatchObject({
+        _tag: "SetupFamilyInvalidRequest",
+      });
+    } finally {
+      await app.dispose();
+    }
+    expect(mutationIds).toHaveLength(2);
+  });
+
+  it("keeps authorization and rate-limit failures distinct in the family API", async () => {
+    const auth = makeMealPlannerAuth({
+      baseURL,
+      database: drizzle(testEnv.MealPlannerAuthDatabase),
+      outputFence: (_input, canonical) => canonical(),
+      schema: authSchema,
+      secret,
+    });
+    const signup = await auth.fetch(
+      authRequest("/sign-up/email", {
+        email: "family-failures@example.test",
+        name: "Family creator",
+        password: "correct horse battery staple",
+      })
+    );
+    expect(signup.status).toBe(200);
+    let status: "FORBIDDEN" | "TOO_MANY_REQUESTS" = "FORBIDDEN";
+    const api = {
+      ...makeNativeAuthTestService(auth).api,
+      createOrganization: () =>
+        Effect.fail(BetterAuthApiError.fromAPIError(new APIError(status))),
+    };
+    const domain: Pick<HouseholdDomainWorkerMethods, "bootstrapCreatorPerson"> =
+      {
+        bootstrapCreatorPerson: () => Effect.die("Creation must be rejected"),
+      };
+    const app = HttpRouter.toWebHandler(
+      setupFamilyHttpApiLayer({ auth: api, domain }),
+      { disableLogger: true }
+    );
+    try {
+      const expectFailure = async (
+        nextStatus: typeof status,
+        expectedStatus: number,
+        expectedTag: string
+      ) => {
+        status = nextStatus;
+        const response = await app.handler(
+          new Request(`${baseURL}/v1/setup/family`, {
+            body: JSON.stringify({ name: "Morgan family" }),
+            headers: {
+              "content-type": "application/json",
+              cookie: cookieHeader(signup),
+              origin: baseURL,
+            },
+            method: "POST",
+          })
+        );
+        expect(response.status).toBe(expectedStatus);
+        await expect(response.json()).resolves.toMatchObject({
+          _tag: expectedTag,
+        });
+      };
+      await expectFailure("FORBIDDEN", 403, "SetupFamilyForbidden");
+      await expectFailure("TOO_MANY_REQUESTS", 429, "SetupFamilyRateLimited");
+    } finally {
+      await app.dispose();
+    }
   });
 
   it("rejects a new pending command even after the other tab refreshes its version", async () => {

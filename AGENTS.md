@@ -8,6 +8,8 @@ Prefer reliable, secure open-source libraries to custom code. Use supported exte
 
 Choose the simplest solution that meets the requirements. Avoid speculative abstractions and overengineering.
 
+For app-owned browser/server APIs, define a shared Effect HttpApi contract and use its generated client and Effect handler. Keep remote query/mutation state with the chosen React adapter; do not hand-write fetch and JSON decoding when the contract covers them. Use the [intent layer](apps/api/src/features/imports/import-intent-transition.ts) for durable asynchronous work, not as the default shape for creating an ordinary domain entity. See [protocol contracts](docs/reference/engineering/FEATURE_SLICE_ARCHITECTURE.md#protocol-contracts) and [workflow selection](docs/reference/engineering/ASYNC_AND_WORKFLOWS.md#workflow-selection).
+
 When using or changing an API or library, always check its current official documentation against the installed version. Do not upgrade just to match an example.
 
 Write tests that provide meaningful confidence and prevent regressions. Avoid redundant tests and unjustified release gates. Run checks suited to the change and any required checks; repeat them when changes, failures or unresolved concerns justify it. Never weaken a valid check to claim success.

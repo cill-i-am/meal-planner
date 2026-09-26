@@ -296,6 +296,9 @@ importers:
       effect:
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112
+      effect-query:
+        specifier: 1.0.0
+        version: 1.0.0(@tanstack/react-query@5.102.8(react@19.2.8))(effect@4.0.0-rc.112)(react@19.2.8)
       loading-dev:
         specifier: 0.3.4
         version: 0.3.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -4381,6 +4384,13 @@ packages:
 
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
+
+  effect-query@1.0.0:
+    resolution: {integrity: sha512-oaGyubCSC+RwMzh0gY9z7tEErFRArvUkiEsGqfx4jptDyuXewrh9PQeg7P8uTCR1Gxg8V+gW0g7jXBk/9fGzoA==}
+    peerDependencies:
+      '@tanstack/react-query': ^5.90.5
+      effect: ^4.0.0-beta.23
+      react: '>=18.2.0'
 
   effect@4.0.0-rc.112:
     resolution: {integrity: sha512-wXxwuh1Ywnv4cPRM3Wfa0vDwuOHnZ1TsTgHJkG9XgzND6inhBH9n1vBxhg3iIXOia/OrpmvVmd3lrD4vq6bF3A==}
@@ -10193,6 +10203,12 @@ snapshots:
       gopd: 1.2.0
 
   ee-first@1.1.1: {}
+
+  effect-query@1.0.0(@tanstack/react-query@5.102.8(react@19.2.8))(effect@4.0.0-rc.112)(react@19.2.8):
+    dependencies:
+      '@tanstack/react-query': 5.102.8(react@19.2.8)
+      effect: 4.0.0-rc.112
+      react: 19.2.8
 
   effect@4.0.0-rc.112:
     dependencies:

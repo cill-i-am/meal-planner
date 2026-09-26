@@ -1,8 +1,6 @@
-import type { SetupCheckpoint } from "@meal-planner/household-api";
 import {
-  FamilyName,
+  CreateSetupFamilyRequest,
   HouseholdOrganizationId,
-  BootstrapHouseholdCreatorPayload,
 } from "@meal-planner/household-api";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -19,44 +17,36 @@ import {
 } from "../../components/ui/card.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
-import { completeFamilyCreation } from "./family-creation.js";
+import { familyCreationMutationOptions } from "./family-creation.js";
 import { useSetup } from "./setup-context.js";
 import { SetupError, SetupFrame } from "./setup-ui.js";
 
-type FamilyCreation = Extract<SetupCheckpoint, { stage: "family-create" }>;
-
-const FamilyForm = Schema.Struct({ name: FamilyName });
-const validator = Schema.toStandardSchemaV1(FamilyForm);
-const parse = Schema.decodeUnknownSync(FamilyForm);
+const validator = Schema.toStandardSchemaV1(CreateSetupFamilyRequest);
+const parse = Schema.decodeUnknownSync(CreateSetupFamilyRequest);
+const submitLabel = (created: boolean, resumed: boolean) => {
+  if (created) {
+    return "Continue to review";
+  }
+  return resumed ? "Check and continue" : "Create family";
+};
 
 export const FamilyNamePage = () => {
   const setup = useSetup();
   const navigate = useNavigate();
   const { checkpoint } = setup.progress;
-  const mutation = useMutation({
-    mutationFn: async (command: FamilyCreation) => {
-      await setup.save({ checkpoint: command, status: "active" });
-      const next = await completeFamilyCreation(
-        command,
-        setup.auth,
-        setup.peopleForFamily
-      );
-      await setup.save(
-        { checkpoint: next, status: "active" },
-        command.creator.mutationId
-      );
+  const mutation = useMutation(familyCreationMutationOptions(setup.user.id));
+  const openReview = useMutation({
+    mutationFn: async () => {
+      await setup.refresh();
       await navigate({ to: "/setup/review" });
     },
   });
   const persisted =
     checkpoint.stage === "family-create" ? checkpoint : undefined;
-  const retained = persisted ?? mutation.variables;
-  const needsRecovery =
-    retained !== undefined && (mutation.isIdle || mutation.isError);
   const exit = useMutation({
     mutationFn: async (name: string) => {
       await setup.logout({
-        checkpoint: retained ?? { name, stage: "family-name" },
+        checkpoint: persisted ?? { name, stage: "family-name" },
         status: "paused",
       });
     },
@@ -74,7 +64,10 @@ export const FamilyNamePage = () => {
     },
   });
   const pending =
-    mutation.isPending || exit.isPending || existingFamily.isPending;
+    mutation.isPending ||
+    openReview.isPending ||
+    exit.isPending ||
+    existingFamily.isPending;
   const form = useAppForm({
     defaultValues: {
       name:
@@ -84,23 +77,22 @@ export const FamilyNamePage = () => {
           : "",
     },
     onSubmit: async ({ value }) => {
-      const input = parse(value);
-      const command = retained ?? {
-        creator: Schema.decodeUnknownSync(BootstrapHouseholdCreatorPayload)({
-          displayName: setup.user.name,
-          mutationId: crypto.randomUUID(),
-        }),
-        name: input.name,
-        slug: `family-${crypto.randomUUID()}`,
-        stage: "family-create" as const,
-      };
-      await mutation.mutateAsync(command).catch(() => {
-        // The mutation owns and displays the failure.
-      });
+      if (!mutation.isSuccess) {
+        try {
+          await mutation.mutateAsync(parse(value));
+        } catch {
+          // The typed mutation error is displayed below.
+          return;
+        }
+      }
+      try {
+        await openReview.mutateAsync();
+      } catch {
+        // Creation succeeded; review navigation can be retried without creating again.
+      }
     },
     validators: { onChange: validator, onSubmit: validator },
   });
-  const submitLabel = needsRecovery ? "Check and continue" : "Create family";
   return (
     <SetupFrame
       step="family"
@@ -127,9 +119,7 @@ export const FamilyNamePage = () => {
                   tabIndex={-1}
                   className="text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight focus:outline-none"
                 >
-                  {needsRecovery
-                    ? "Let’s check your family"
-                    : "Name your family"}
+                  {persisted ? "Let’s check your family" : "Name your family"}
                 </h1>
               </CardTitle>
             </CardHeader>
@@ -141,7 +131,7 @@ export const FamilyNamePage = () => {
                       id="family-name"
                       label="Family name"
                       autoComplete="off"
-                      disabled={pending || retained !== undefined}
+                      disabled={pending || persisted !== undefined}
                     />
                   )}
                 </form.AppField>
@@ -157,10 +147,36 @@ export const FamilyNamePage = () => {
                   <span className="text-muted-foreground text-sm">You</span>
                 </div>
               </div>
-              {needsRecovery && (
+              {persisted && !mutation.isPending && !mutation.isSuccess && (
                 <SetupError>
                   We saved your request but still need to confirm the result.
                   Check again to finish the same family setup.
+                </SetupError>
+              )}
+              {mutation.error && (
+                <SetupError>
+                  {mutation.error.match({
+                    OrElse: () =>
+                      "We couldn’t confirm your family request. Try again to resume it.",
+                    SetupFamilyConflict: () =>
+                      "Another family request is saved. Reload to continue it.",
+                    SetupFamilyForbidden: () =>
+                      "This account can’t create or open this family. You can choose a family you’ve already joined.",
+                    SetupFamilyInvalidRequest: () =>
+                      "Enter a valid family name and try again.",
+                    SetupFamilyRateLimited: () =>
+                      "Too many attempts. Wait a moment and try again.",
+                    SetupFamilyUnauthorized: () =>
+                      "Your session ended or your account changed. Log in again to continue.",
+                    SetupFamilyUnavailable: () =>
+                      "We couldn’t confirm your family request. Try again to resume it.",
+                  })}
+                </SetupError>
+              )}
+              {openReview.error && (
+                <SetupError>
+                  Your family was created, but we couldn’t open the review. Try
+                  again to continue.
                 </SetupError>
               )}
               {existingFamily.error && (
@@ -168,7 +184,7 @@ export const FamilyNamePage = () => {
                   We couldn’t open that family. Try again.
                 </SetupError>
               )}
-              {!retained && setup.families.length > 0 && (
+              {!persisted && setup.families.length > 0 && (
                 <div className="flex flex-col gap-2">
                   <p className="text-muted-foreground text-sm">
                     Or continue with a family you’ve already joined:
@@ -193,10 +209,12 @@ export const FamilyNamePage = () => {
               <PendingButton
                 type="submit"
                 disabled={pending}
-                pending={mutation.isPending}
-                pendingLabel="Saving your family…"
+                pending={mutation.isPending || openReview.isPending}
+                pendingLabel={
+                  mutation.isPending ? "Saving your family…" : "Opening review…"
+                }
               >
-                {submitLabel}
+                {submitLabel(mutation.isSuccess, persisted !== undefined)}
               </PendingButton>
             </CardContent>
           </CardBody>

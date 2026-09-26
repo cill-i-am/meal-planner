@@ -36,9 +36,9 @@ import type {
 import { Clock, Effect, Layer, Schema } from "effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 
+import { JsonHttpPlatformServices } from "../../infrastructure/json-http-platform.js";
 import type { AuthenticatedOrganizationResolver } from "../auth/auth.principal.js";
 import { AuthenticatedOrganizationResolver as AuthenticatedOrganizationResolverService } from "../auth/auth.principal.js";
-import { RecipeImportHttpPlatformServices } from "../imports/import-intent-api.http.js";
 import type { HouseholdDomainWorkerMethods } from "./household-domain-worker.js";
 import type {
   HouseholdCreateMealPlanFromRecipeBankInput,
@@ -1412,7 +1412,7 @@ export const makeHouseholdRequestLayer = (options: {
     Layer.succeed(HouseholdDomainGatewayService, options.gateway)
   );
   return HouseholdHttpApiLayer.pipe(
-    Layer.provide(RecipeImportHttpPlatformServices),
+    Layer.provide(JsonHttpPlatformServices),
     Layer.provide(requestServices),
     HttpRouter.provideRequest(requestServices)
   );
@@ -1428,7 +1428,7 @@ export const makeHouseholdMealPlanRequestLayer = (options: {
     Layer.succeed(HouseholdMealPlanGatewayService, options.gateway)
   );
   return HouseholdMealPlanHttpApiLayer.pipe(
-    Layer.provide(RecipeImportHttpPlatformServices),
+    Layer.provide(JsonHttpPlatformServices),
     Layer.provide(requestServices),
     HttpRouter.provideRequest(requestServices)
   );
@@ -1444,7 +1444,7 @@ export const makeHouseholdPeopleRequestLayer = (options: {
     Layer.succeed(HouseholdPeopleGatewayService, options.gateway)
   );
   return HouseholdPeopleHttpApiLayer.pipe(
-    Layer.provide(RecipeImportHttpPlatformServices),
+    Layer.provide(JsonHttpPlatformServices),
     Layer.provide(requestServices),
     HttpRouter.provideRequest(requestServices)
   );

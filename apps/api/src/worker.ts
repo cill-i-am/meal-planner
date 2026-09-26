@@ -13,6 +13,7 @@ import {
   makeAuthenticatedOrganizationResolver,
   makeAuthPrincipalResolver,
 } from "./features/auth/auth.principal.js";
+import { setupFamilyHttpApiLayer } from "./features/auth/setup-family.js";
 import { HealthRoutes } from "./features/health/health.routes.js";
 import { HouseholdDomainWorker } from "./features/households/household-domain-worker.js";
 import {
@@ -256,6 +257,10 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         const routeHandler = yield* HttpRouter.toHttpEffect(
           Layer.mergeAll(
             HttpRouter.addAll(MealPlannerOperationalRoutes),
+            setupFamilyHttpApiLayer({
+              auth: auth.api,
+              domain: householdDomain,
+            }),
             makeRecipeImportHttpApiLayer(),
             householdRequestLayer,
             householdMealPlanRequestLayer,
