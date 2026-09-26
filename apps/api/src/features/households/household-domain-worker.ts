@@ -5,7 +5,6 @@ import type {
   ProfileVersionPage,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureStart,
-  HouseholdPeopleRoster,
   HouseholdPerson,
   HouseholdPeopleFailure,
 } from "@meal-planner/household-api";
@@ -100,6 +99,7 @@ import {
   HouseholdEnsureInput as HouseholdEnsureInputSchema,
 } from "./household.contract.js";
 import type {
+  HouseholdPeoplePrivateRoster,
   HouseholdAssociateAdultInvitationInput,
   HouseholdBootstrapCreatorPersonInput,
   HouseholdCancelMemberDepartureInput,
@@ -107,6 +107,7 @@ import type {
   HouseholdConfirmAdultInvitationRecipientInput,
   HouseholdConfirmMemberAccessRevokedInput,
   HouseholdCreatePersonInput,
+  HouseholdRenamePersonInput,
   HouseholdFinalizeMemberDepartureInput,
   HouseholdGetMemberDepartureByMutationInput,
   HouseholdGetMemberDepartureInput,
@@ -130,6 +131,7 @@ import {
   HouseholdConfirmAdultInvitationRecipientInput as HouseholdConfirmAdultInvitationRecipientInputSchema,
   HouseholdConfirmMemberAccessRevokedInput as HouseholdConfirmMemberAccessRevokedInputSchema,
   HouseholdCreatePersonInput as HouseholdCreatePersonInputSchema,
+  HouseholdRenamePersonInput as HouseholdRenamePersonInputSchema,
   HouseholdFinalizeMemberDepartureInput as HouseholdFinalizeMemberDepartureInputSchema,
   HouseholdGetMemberDepartureByMutationInput as HouseholdGetMemberDepartureByMutationInputSchema,
   HouseholdGetMemberDepartureInput as HouseholdGetMemberDepartureInputSchema,
@@ -254,6 +256,12 @@ export interface HouseholdDomainWorkerMethods {
   readonly approveMealPlan: (
     input: HouseholdDecideMealPlanInput
   ) => Effect.Effect<HouseholdMealPlanWire, HouseholdMealPlanDomainFailure>;
+  readonly renameHouseholdPerson: (
+    input: HouseholdRenamePersonInput
+  ) => Effect.Effect<
+    typeof HouseholdPerson.Encoded,
+    HouseholdPeopleDomainFailure
+  >;
   readonly createHouseholdPerson: (
     input: HouseholdCreatePersonInput
   ) => Effect.Effect<
@@ -386,7 +394,7 @@ export interface HouseholdDomainWorkerMethods {
   readonly listHouseholdPeople: (
     input: HouseholdListPeopleInput
   ) => Effect.Effect<
-    typeof HouseholdPeopleRoster.Encoded,
+    typeof HouseholdPeoplePrivateRoster.Encoded,
     HouseholdPeopleDomainFailure
   >;
   readonly markMemberDepartureRepairRequired: (
@@ -1031,6 +1039,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         input,
         "reject_meal_plan",
         (household, command) => household.rejectMealPlan(command)
+      ),
+    renameHouseholdPerson: (input: HouseholdRenamePersonInput) =>
+      route(
+        HouseholdRenamePersonInputSchema,
+        input,
+        "rename_household_person",
+        (household, command) => household.renameHouseholdPerson(command)
       ),
     repairAdultAccountLink: (input: HouseholdRepairAdultAccountLinkInput) =>
       route(

@@ -4,10 +4,13 @@ import {
   CancelMemberDeparturePayload,
   CompleteAcceptedAdultLinkPayload,
   CreateHouseholdPersonPayload,
+  RenameHouseholdPersonPayload,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureOperationId,
   HouseholdMemberDepartureStart,
   HouseholdPerson,
+  HouseholdPeopleRoster,
+  HouseholdInvitationDigest,
   HouseholdPersonId,
   HouseholdPersonLinkageSubject,
   HouseholdPersonMutationId,
@@ -227,3 +230,21 @@ export const HouseholdMemberDepartureSystemStateWire = Schema.toEncoded(
 export const HouseholdMemberDepartureStartWire = Schema.toEncoded(
   HouseholdMemberDepartureStart
 );
+
+export const HouseholdRenamePersonInput = Schema.Struct({
+  admission: HouseholdPeopleMemberAdmission,
+  payload: RenameHouseholdPersonPayload,
+  personId: HouseholdPersonId,
+}).annotate({ parseOptions: { onExcessProperty: "error" } });
+export type HouseholdRenamePersonInput = typeof HouseholdRenamePersonInput.Type;
+
+/** Private roster carries invitation identities only between the DO and API. */
+export const HouseholdPeoplePrivateRoster = Schema.Struct({
+  pendingInvitations: Schema.Array(
+    Schema.Struct({
+      invitationDigest: HouseholdInvitationDigest,
+      personId: HouseholdPersonId,
+    })
+  ),
+  roster: HouseholdPeopleRoster,
+});

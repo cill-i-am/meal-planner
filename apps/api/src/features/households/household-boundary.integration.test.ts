@@ -2773,6 +2773,72 @@ describe("household public API to private Durable Object boundary", () => {
     expect(await historicalProfile.text()).toBe(provisionalBytes);
   }, 30_000);
 
+  it("projects the associated invitation outcome without leaking its identity or following orphan rows", async () => {
+    const setup = await prepareInvitableAdult("Invitation Status");
+    const response = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/household/people/invitations",
+      {
+        body: JSON.stringify({
+          email: "invitation-status-adult@example.test",
+          mutationId: "status-invite-original",
+          personId: setup.adult.id,
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: setup.ownerCookie,
+        },
+        method: "POST",
+      }
+    );
+    expect(response.status).toBe(201);
+    const invitation = Schema.decodeUnknownSync(HouseholdAdultInvitationResult)(
+      await response.json()
+    );
+    const database = drizzle(
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+    );
+    const [original] = await database
+      .select()
+      .from(authSchema.invitation)
+      .where(eq(authSchema.invitation.id, invitation.invitationId));
+    if (!original) {
+      throw new Error("Expected canonical invitation");
+    }
+    await database.insert(authSchema.invitation).values({
+      ...original,
+      email: "other-status@example.test",
+      id: "orphan-status-invitation",
+      status: "rejected",
+    });
+    const roster = async () => {
+      const res = await getRuntime().dispatchFetch(
+        "https://meal-planner.test/v1/household/people",
+        { headers: { cookie: setup.ownerCookie } }
+      );
+      expect(res.status).toBe(200);
+      const raw = await res.text();
+      expect(raw).not.toContain("invitationDigest");
+      expect(raw).not.toContain("pendingInvitations");
+      return Schema.decodeUnknownSync(
+        Schema.fromJsonString(HouseholdPeopleRoster)
+      )(raw).people.find((person) => person.id === setup.adult.id);
+    };
+    expect(await roster()).toMatchObject({
+      associationState: "invitation_pending",
+    });
+    await database
+      .update(authSchema.invitation)
+      .set({ status: "rejected" })
+      .where(eq(authSchema.invitation.id, invitation.invitationId));
+    await database
+      .update(authSchema.invitation)
+      .set({ status: "pending" })
+      .where(eq(authSchema.invitation.id, "orphan-status-invitation"));
+    expect(await roster()).toMatchObject({
+      associationState: "invitation_declined",
+    });
+  });
+
   it("replays a retained browser invitation through the real boundary after interruption before Better Auth", async () => {
     const setup = await prepareInvitableAdult("Invitation Intent Staging");
     const retainedBrowserPayload = {
@@ -2788,7 +2854,7 @@ describe("household public API to private Durable Object boundary", () => {
         headers: {
           "content-type": "application/json",
           cookie: setup.ownerCookie,
-          "x-test-invitation-failure": "after-association-before-create",
+          "x-test-invitation-failure": "before-invitation-create",
         },
         method: "POST",
       }
@@ -2814,7 +2880,7 @@ describe("household public API to private Durable Object boundary", () => {
     )(await stagedRosterResponse.json());
     expect(
       stagedRoster.people.find((person) => person.id === setup.adult.id)
-    ).toMatchObject({ associationState: "invitation_pending" });
+    ).toMatchObject({ associationState: "unlinked" });
 
     await restartRuntime();
 
@@ -2890,7 +2956,7 @@ describe("household public API to private Durable Object boundary", () => {
   it("replays only the exact committed browser invitation after its creation response is lost", async () => {
     const setup = await prepareInvitableAdult("Invitation Response Lost");
     const retainedBrowserPayload = {
-      email: "invitation-response-lost-adult@example.test",
+      email: "Invitation-Response-Lost-Adult@Example.Test",
       mutationId: "invitation-response-lost",
       personId: setup.adult.id,
     } as const;

@@ -8,6 +8,7 @@ import type {
   CancelHouseholdAdultDeparturePayload,
   CompleteHouseholdAdultLinkPayload,
   CreateHouseholdPersonPayload,
+  RenameHouseholdPersonPayload,
   DepartHouseholdAdultPayload,
   HouseholdAdultInvitationResult,
   HouseholdMemberDepartureOperation,
@@ -44,6 +45,7 @@ import { Context, Data } from "effect";
 import type { HouseholdDomainFailure } from "./household.contract.js";
 import type {
   HouseholdPeopleControlPlaneNotFound,
+  HouseholdInvitationRejected,
   HouseholdPeopleControlPlaneUnavailable,
 } from "./people/household-people.control-plane.js";
 import type { MemberDepartureWorkflowUnavailable } from "./people/member-departure.js";
@@ -118,6 +120,7 @@ export class HouseholdPeopleOrganizerRequired extends Data.TaggedError(
 ) {}
 
 export type HouseholdPeopleGatewayFailure =
+  | HouseholdInvitationRejected
   | HouseholdPeopleControlPlaneNotFound
   | HouseholdPeopleControlPlaneUnavailable
   | HouseholdPeopleFailure
@@ -141,6 +144,11 @@ export interface HouseholdPeopleGateway {
     readonly personId: HouseholdPersonId;
     readonly principal: HouseholdPeoplePrincipal;
   }) => Effect.Effect<PersonProfile, HouseholdProfileRejected>;
+  readonly rename: (input: {
+    readonly payload: RenameHouseholdPersonPayload;
+    readonly personId: HouseholdPersonId;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<HouseholdPerson, HouseholdPeopleFailure>;
   readonly archive: (input: {
     readonly payload: TransitionHouseholdPersonPayload;
     readonly personId: HouseholdPersonId;

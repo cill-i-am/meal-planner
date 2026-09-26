@@ -1,10 +1,12 @@
+import { HouseholdOrganizationId } from "@meal-planner/household-api";
 import { applyD1Migrations, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { drizzle } from "drizzle-orm/d1";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { makeHouseholdPeopleControlPlane } from "../households/people/household-people.control-plane.js";
 import * as authSchema from "./auth.database-schema.js";
 import { makeMealPlannerAuth } from "./auth.js";
 import {
@@ -254,6 +256,24 @@ describe("Better Auth D1 control plane", () => {
         .from(authSchema.invitation)
         .where(eq(authSchema.invitation.id, invitationId))
     ).toEqual([{ id: invitationId }]);
+    const controlPlane = makeHouseholdPeopleControlPlane({ auth, database });
+    const rejected = await Effect.runPromise(
+      Effect.flip(
+        controlPlane.createInvitation({
+          email: "exact-invitation-owner@example.test",
+          headers: new Headers({ cookie }),
+          invitationId: "cannot-invite-existing-member",
+          organizationId: Schema.decodeUnknownSync(HouseholdOrganizationId)(
+            organization.id
+          ),
+          personId: "synthetic-person",
+        })
+      )
+    );
+    expect(rejected).toMatchObject({
+      _tag: "HouseholdInvitationRejected",
+      reason: "already_member",
+    });
   });
 
   it("rejects an active organization id without a matching membership", async () => {

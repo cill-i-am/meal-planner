@@ -48,6 +48,8 @@ export const HouseholdPersonAssociationState = Schema.Literals([
   "linked",
   "departure_pending",
   "detached",
+  "invitation_declined",
+  "invitation_unavailable",
 ]);
 /** Privacy-safe account-association state for one household person. */
 export type HouseholdPersonAssociationState =
@@ -519,3 +521,21 @@ export type HouseholdPeopleFailure =
   | HouseholdPersonMutationCollision
   | HouseholdPersonNotFound
   | HouseholdPersonStaleVersion;
+
+/** Rename an existing person without changing their identity or participation. */
+export const RenameHouseholdPersonPayload = Schema.Struct({
+  displayName: HouseholdPersonDisplayName,
+  expectedVersion: HouseholdPersonVersion,
+  mutationId: HouseholdPersonMutationId,
+}).annotate({ parseOptions: { onExcessProperty: "error" } });
+export type RenameHouseholdPersonPayload =
+  typeof RenameHouseholdPersonPayload.Type;
+
+export const InvitationRejectionReason = Schema.Literals([
+  "already_member",
+  "already_invited",
+  "invalid_email",
+  "limit",
+  "forbidden",
+]);
+export type InvitationRejectionReason = typeof InvitationRejectionReason.Type;

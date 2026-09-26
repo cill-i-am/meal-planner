@@ -1,0 +1,1 @@
+ALTER TABLE `invitation` ADD `household_person_id` text;

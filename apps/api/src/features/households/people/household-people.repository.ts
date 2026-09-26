@@ -7,7 +7,6 @@ import {
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureOperationId,
   HouseholdMemberDepartureStart,
-  HouseholdPeopleRoster,
   HouseholdPeopleUnavailable,
   HouseholdPerson,
   HouseholdPersonAssociationConflict,
@@ -24,6 +23,7 @@ import type {
   CancelMemberDeparturePayload,
   CompleteAcceptedAdultLinkPayload,
   CreateHouseholdPersonPayload,
+  RenameHouseholdPersonPayload,
   HouseholdPeopleAuditActorId,
   HouseholdPeopleFailure,
   HouseholdInvitationDigest,
@@ -53,6 +53,7 @@ import type {
   HouseholdDigestService,
   HouseholdIdentityGeneratorService,
 } from "../shared-kernel/authority-services.js";
+import { HouseholdPeoplePrivateRoster } from "./household-people.contract.js";
 import type { HouseholdMemberDepartureSystemState } from "./household-people.contract.js";
 
 type Person = typeof HouseholdPerson.Type;
@@ -136,6 +137,13 @@ export interface HouseholdPeopleRepository {
     readonly now: number;
     readonly payload: AssociateAdultInvitationPayload;
   }) => Effect.Effect<Person, Failure>;
+  readonly rename: (input: {
+    readonly actorId: HouseholdPeopleAuditActorId;
+    readonly linkageSubject: HouseholdPersonLinkageSubject;
+    readonly now: number;
+    readonly payload: RenameHouseholdPersonPayload;
+    readonly personId: typeof HouseholdPersonId.Type;
+  }) => Effect.Effect<Person, Failure>;
   readonly archive: (input: {
     readonly actorId: HouseholdPeopleAuditActorId;
     readonly linkageSubject: HouseholdPersonLinkageSubject;
@@ -192,7 +200,7 @@ export interface HouseholdPeopleRepository {
     readonly actorId: HouseholdPeopleAuditActorId;
     readonly linkageSubject: HouseholdPersonLinkageSubject;
     readonly includeArchived: boolean;
-  }) => Effect.Effect<typeof HouseholdPeopleRoster.Type, Failure>;
+  }) => Effect.Effect<typeof HouseholdPeoplePrivateRoster.Type, Failure>;
   readonly getMemberDeparture: (input: {
     readonly callerIsOwner: boolean;
     readonly callerLinkageSubject: HouseholdPersonLinkageSubject;
@@ -341,6 +349,8 @@ export const makeHouseholdPeopleRepository = (
       }
       const [invitation] = yield* connection
         .select({
+          invitationDigest:
+            householdPersonInvitationAssociations.invitationDigest,
           state: householdPersonInvitationAssociations.state,
           version: householdPersonInvitationAssociations.version,
         })
@@ -355,6 +365,7 @@ export const makeHouseholdPeopleRepository = (
         .pipe(queryFailure);
       if (invitation !== undefined) {
         return {
+          invitationDigest: invitation.invitationDigest,
           state: "invitation_pending" as const,
           version: yield* Schema.decodeUnknownEffect(
             HouseholdAssociationVersion
@@ -704,6 +715,131 @@ export const makeHouseholdPeopleRepository = (
       );
     }).pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable())));
 
+  const rename = (input: {
+    readonly actorId: HouseholdPeopleAuditActorId;
+
+    readonly linkageSubject: HouseholdPersonLinkageSubject;
+
+    readonly now: number;
+    readonly payload: RenameHouseholdPersonPayload;
+    readonly personId: typeof HouseholdPersonId.Type;
+  }) =>
+    Effect.gen(function* renamePerson() {
+      const digest = yield* intentDigest({
+        actorId: input.actorId,
+        command: "rename",
+        displayName: input.payload.displayName,
+        expectedVersion: input.payload.expectedVersion,
+        personId: input.personId,
+      });
+      return yield* database.transaction((transaction) =>
+        Effect.gen(function* persistRename() {
+          const [receipt] = yield* transaction
+            .select()
+            .from(householdPersonMutationReceipts)
+            .where(
+              eq(
+                householdPersonMutationReceipts.mutationId,
+                input.payload.mutationId
+              )
+            )
+            .limit(1)
+            .pipe(queryFailure);
+          if (receipt !== undefined) {
+            return receipt.intentDigest === digest
+              ? yield* decodePerson(receipt.resultJson)
+              : yield* Effect.fail(HouseholdPersonMutationCollision.make({}));
+          }
+          const [row] = yield* transaction
+            .select()
+            .from(householdPeople)
+            .where(eq(householdPeople.personId, input.personId))
+            .limit(1)
+            .pipe(queryFailure);
+          if (row === undefined) {
+            return yield* Effect.fail(HouseholdPersonNotFound.make({}));
+          }
+          if (row.version !== input.payload.expectedVersion) {
+            return yield* Effect.fail(HouseholdPersonStaleVersion.make({}));
+          }
+          if (row.lifecycle !== "active") {
+            return yield* Effect.fail(
+              HouseholdPersonLifecycleConflict.make({})
+            );
+          }
+          const association = yield* personAssociation(
+            transaction,
+            input.personId
+          );
+          const linkedPersonId = yield* transaction
+            .select({ personId: householdPersonAccountLinks.personId })
+            .from(householdPersonAccountLinks)
+            .where(
+              and(
+                eq(
+                  householdPersonAccountLinks.linkageSubject,
+                  input.linkageSubject
+                ),
+                eq(householdPersonAccountLinks.state, "linked")
+              )
+            )
+            .limit(1)
+            .pipe(queryFailure);
+          const person = yield* projectPerson(
+            {
+              ...row,
+              displayName: input.payload.displayName,
+              updatedAtEpochMs: input.now,
+              version: row.version + 1,
+            },
+            linkedPersonId[0]?.personId ?? null,
+            association
+          );
+          const resultJson = encodePerson(person);
+          const updated = yield* transaction
+            .update(householdPeople)
+            .set({
+              displayName: input.payload.displayName,
+              updatedAtEpochMs: input.now,
+              version: row.version + 1,
+            })
+            .where(
+              and(
+                eq(householdPeople.personId, input.personId),
+                eq(householdPeople.version, input.payload.expectedVersion),
+                eq(householdPeople.lifecycle, "active")
+              )
+            )
+            .returning({ personId: householdPeople.personId })
+            .pipe(queryFailure);
+          if (updated.length !== 1) {
+            return yield* Effect.fail(HouseholdPersonStaleVersion.make({}));
+          }
+          yield* transaction
+            .insert(householdPersonAudits)
+            .values({
+              actorId: input.actorId,
+              atEpochMs: input.now,
+              command: "rename",
+              nextLifecycle: "active",
+              nextVersion: row.version + 1,
+              personId: input.personId,
+              previousLifecycle: "active",
+            })
+            .pipe(queryFailure);
+          yield* transaction
+            .insert(householdPersonMutationReceipts)
+            .values({
+              intentDigest: digest,
+              mutationId: input.payload.mutationId,
+              resultJson,
+            })
+            .pipe(queryFailure);
+          return person;
+        })
+      );
+    }).pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable())));
+
   const transition = (input: {
     readonly actorId: HouseholdPeopleAuditActorId;
     readonly command: "archive" | "restore";
@@ -879,7 +1015,15 @@ export const makeHouseholdPeopleRepository = (
           if (row === undefined) {
             return yield* Effect.fail(HouseholdPersonNotFound.make({}));
           }
-          if (row.kind !== "adult") {
+          const priorAssociation = yield* personAssociation(
+            transaction,
+            row.personId
+          );
+          if (
+            row.kind !== "adult" ||
+            (row.lifecycle !== "active" &&
+              priorAssociation.state !== "detached")
+          ) {
             return yield* Effect.fail(
               HouseholdPersonAssociationConflict.make({})
             );
@@ -2483,23 +2627,42 @@ export const makeHouseholdPeopleRepository = (
                   asc(householdPeople.personId)
                 )
         ).pipe(queryFailure);
-        const people = yield* Effect.all(
+        const entries = yield* Effect.all(
           rows.map((row) =>
-            personAssociation(database, row.personId).pipe(
-              Effect.flatMap((personAssociationState) =>
-                projectPerson(row, linked, personAssociationState)
-              )
-            )
+            Effect.gen(function* projectRosterPerson() {
+              const state = yield* personAssociation(database, row.personId);
+              const person = yield* projectPerson(row, linked, state);
+              return {
+                invitationDigest:
+                  "invitationDigest" in state
+                    ? state.invitationDigest
+                    : undefined,
+                person,
+              };
+            })
           )
         );
-        return yield* Schema.decodeUnknownEffect(HouseholdPeopleRoster)({
-          creatorSlot: association === undefined ? "available" : "occupied",
-          currentPersonId: linked,
-          people,
+        return yield* Schema.decodeUnknownEffect(HouseholdPeoplePrivateRoster)({
+          pendingInvitations: entries.flatMap((entry) =>
+            entry.invitationDigest
+              ? [
+                  {
+                    invitationDigest: entry.invitationDigest,
+                    personId: entry.person.id,
+                  },
+                ]
+              : []
+          ),
+          roster: {
+            creatorSlot: association === undefined ? "available" : "occupied",
+            currentPersonId: linked,
+            people: entries.map((entry) => entry.person),
+          },
         }).pipe(Effect.mapError(unavailable));
       }),
     markMemberDepartureRepairRequired,
     prepareMemberDeparture,
+    rename,
     repairAdultAccountLink,
     restore: (input) =>
       transition({

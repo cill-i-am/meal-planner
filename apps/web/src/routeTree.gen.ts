@@ -15,7 +15,9 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as SetupIndexRouteImport } from './routes/setup.index'
+import { Route as SetupEditPersonRouteImport } from './routes/setup.edit-person'
 import { Route as SetupFamilyRouteImport } from './routes/setup.family'
+import { Route as SetupPeopleRouteImport } from './routes/setup.people'
 import { Route as SetupReadyRouteImport } from './routes/setup.ready'
 import { Route as SetupReviewRouteImport } from './routes/setup.review'
 import { Route as SetupSavedRouteImport } from './routes/setup.saved'
@@ -50,9 +52,19 @@ const SetupIndexRoute = SetupIndexRouteImport.update({
   path: '/',
   getParentRoute: () => SetupRoute,
 } as any)
+const SetupEditPersonRoute = SetupEditPersonRouteImport.update({
+  id: '/edit-person',
+  path: '/edit-person',
+  getParentRoute: () => SetupRoute,
+} as any)
 const SetupFamilyRoute = SetupFamilyRouteImport.update({
   id: '/family',
   path: '/family',
+  getParentRoute: () => SetupRoute,
+} as any)
+const SetupPeopleRoute = SetupPeopleRouteImport.update({
+  id: '/people',
+  path: '/people',
   getParentRoute: () => SetupRoute,
 } as any)
 const SetupReadyRoute = SetupReadyRouteImport.update({
@@ -77,7 +89,9 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRouteWithChildren
   '/signup': typeof SignupRoute
+  '/setup/edit-person': typeof SetupEditPersonRoute
   '/setup/family': typeof SetupFamilyRoute
+  '/setup/people': typeof SetupPeopleRoute
   '/setup/ready': typeof SetupReadyRoute
   '/setup/review': typeof SetupReviewRoute
   '/setup/saved': typeof SetupSavedRoute
@@ -88,7 +102,9 @@ export interface FileRoutesByTo {
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/setup/edit-person': typeof SetupEditPersonRoute
   '/setup/family': typeof SetupFamilyRoute
+  '/setup/people': typeof SetupPeopleRoute
   '/setup/ready': typeof SetupReadyRoute
   '/setup/review': typeof SetupReviewRoute
   '/setup/saved': typeof SetupSavedRoute
@@ -101,7 +117,9 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRouteWithChildren
   '/signup': typeof SignupRoute
+  '/setup/edit-person': typeof SetupEditPersonRoute
   '/setup/family': typeof SetupFamilyRoute
+  '/setup/people': typeof SetupPeopleRoute
   '/setup/ready': typeof SetupReadyRoute
   '/setup/review': typeof SetupReviewRoute
   '/setup/saved': typeof SetupSavedRoute
@@ -115,7 +133,9 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/signup'
+    | '/setup/edit-person'
     | '/setup/family'
+    | '/setup/people'
     | '/setup/ready'
     | '/setup/review'
     | '/setup/saved'
@@ -126,7 +146,9 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/login'
     | '/signup'
+    | '/setup/edit-person'
     | '/setup/family'
+    | '/setup/people'
     | '/setup/ready'
     | '/setup/review'
     | '/setup/saved'
@@ -138,7 +160,9 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/signup'
+    | '/setup/edit-person'
     | '/setup/family'
+    | '/setup/people'
     | '/setup/ready'
     | '/setup/review'
     | '/setup/saved'
@@ -197,11 +221,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SetupIndexRouteImport
       parentRoute: typeof SetupRoute
     }
+    '/setup/edit-person': {
+      id: '/setup/edit-person'
+      path: '/edit-person'
+      fullPath: '/setup/edit-person'
+      preLoaderRoute: typeof SetupEditPersonRouteImport
+      parentRoute: typeof SetupRoute
+    }
     '/setup/family': {
       id: '/setup/family'
       path: '/family'
       fullPath: '/setup/family'
       preLoaderRoute: typeof SetupFamilyRouteImport
+      parentRoute: typeof SetupRoute
+    }
+    '/setup/people': {
+      id: '/setup/people'
+      path: '/people'
+      fullPath: '/setup/people'
+      preLoaderRoute: typeof SetupPeopleRouteImport
       parentRoute: typeof SetupRoute
     }
     '/setup/ready': {
@@ -229,7 +267,9 @@ declare module '@tanstack/react-router' {
 }
 
 interface SetupRouteChildren {
+  SetupEditPersonRoute: typeof SetupEditPersonRoute
   SetupFamilyRoute: typeof SetupFamilyRoute
+  SetupPeopleRoute: typeof SetupPeopleRoute
   SetupReadyRoute: typeof SetupReadyRoute
   SetupReviewRoute: typeof SetupReviewRoute
   SetupSavedRoute: typeof SetupSavedRoute
@@ -237,7 +277,9 @@ interface SetupRouteChildren {
 }
 
 const SetupRouteChildren: SetupRouteChildren = {
+  SetupEditPersonRoute: SetupEditPersonRoute,
   SetupFamilyRoute: SetupFamilyRoute,
+  SetupPeopleRoute: SetupPeopleRoute,
   SetupReadyRoute: SetupReadyRoute,
   SetupReviewRoute: SetupReviewRoute,
   SetupSavedRoute: SetupSavedRoute,
