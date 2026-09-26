@@ -12,9 +12,10 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { Route as RecoveryRoute } from "../../routes/forgot-password.js";
-import { Route as LoginRoute } from "../../routes/login.js";
-import { Route as SignupRoute } from "../../routes/signup.js";
+import { Route as RecoveryRoute } from "@/routes/forgot-password.js";
+import { Route as LoginRoute } from "@/routes/login.js";
+import { Route as SignupRoute } from "@/routes/signup.js";
+
 import { AuthBoundary } from "./auth-boundary.js";
 import {
   AuthClientContext,
@@ -224,9 +225,7 @@ it("redirects anonymous home requests and keeps their destination across auth ro
   expect(router.state.location.search).toEqual({
     redirect: "/?intentId=preserved-intent",
   });
-  await user.click(
-    screen.getByRole("link", { name: /Already have an account/u })
-  );
+  await user.click(screen.getByRole("link", { name: "Log in" }));
   await user.click(screen.getByRole("link", { name: "Forgot password?" }));
   expect(
     await screen.findByRole("heading", { name: "Password reset unavailable" })
@@ -262,6 +261,49 @@ it("validates on blur and submit, focuses the first invalid field, and clears co
   );
 });
 
+it.each([
+  { path: "/login", submit: "Log in" },
+  { path: "/signup", submit: "Create account" },
+])(
+  "shows only the applicable email error on $path",
+  async ({ path, submit }) => {
+    const { user, fixture } = await setup(path);
+    await user.click(screen.getByRole("button", { name: submit }));
+    expect(screen.getAllByText("Enter your email.")).toHaveLength(1);
+    expect(
+      screen.queryByText("Enter a valid email address.")
+    ).not.toBeInTheDocument();
+    if (path === "/signup") {
+      expect(screen.getByText("Create a password.")).toBeInTheDocument();
+      expect(
+        screen.queryByText("Use at least 8 characters.")
+      ).not.toBeInTheDocument();
+      await user.type(screen.getByLabelText("Password"), "short");
+      expect(screen.queryByText("Create a password.")).not.toBeInTheDocument();
+      expect(
+        screen.getByText("Use at least 8 characters.")
+      ).toBeInTheDocument();
+    }
+    const email = screen.getByLabelText("Email");
+    await user.type(email, "   ");
+    expect(screen.getAllByText("Enter your email.")).toHaveLength(1);
+    expect(
+      screen.queryByText("Enter a valid email address.")
+    ).not.toBeInTheDocument();
+    await user.clear(email);
+    await user.type(email, "bad");
+    expect(screen.queryByText("Enter your email.")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Enter a valid email address.")).toHaveLength(1);
+    await user.clear(email);
+    await user.type(email, "cook@example.com");
+    expect(screen.queryByText("Enter your email.")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Enter a valid email address.")
+    ).not.toBeInTheDocument();
+    expect(fixture.submissions).toHaveLength(0);
+  }
+);
+
 it("allows short existing passwords, preserves rejected credentials, and toggles visibility", async () => {
   const fixture = makeTransport();
   fixture.reply = async () =>
@@ -273,6 +315,14 @@ it("allows short existing passwords, preserves rejected credentials, and toggles
   await fillCredentials(user, "short");
   await user.click(screen.getByRole("button", { name: "Show password" }));
   expect(screen.getByLabelText("Password")).toHaveAttribute("type", "text");
+  expect(fixture.submissions).toHaveLength(0);
+  expect(screen.getByRole("button", { name: "Hide password" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await user.keyboard("{Enter}");
+  expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
+  expect(fixture.submissions).toHaveLength(0);
   await user.click(screen.getByRole("button", { name: "Log in" }));
   expect(
     await screen.findByText(/Email or password doesn’t match/u)
@@ -320,9 +370,11 @@ it("disables duplicate submits and sibling navigation while awaiting the server"
     screen.getByRole("button", { name: "Creating account…" })
   ).toBeDisabled();
   expect(screen.getByLabelText("Email")).toBeDisabled();
-  expect(
-    screen.getByText(/Already have an account/u).closest("a")
-  ).toHaveAttribute("aria-disabled", "true");
+  expect(screen.getByRole("button", { name: "Show password" })).toBeDisabled();
+  expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute(
+    "aria-disabled",
+    "true"
+  );
   settle?.(
     Response.json({ code: "FAILED_TO_CREATE_SESSION" }, { status: 400 })
   );

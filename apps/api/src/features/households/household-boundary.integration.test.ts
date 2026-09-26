@@ -349,6 +349,8 @@ const restartRuntime = async (privateAuditLogs?: string[]) => {
   runtime = makeRuntime(privateAuditLogs);
 };
 
+// Seven worker bundles and local bindings need a cold-start budget distinct from
+// the individual behavior-test timeouts, especially under concurrent CI load.
 beforeAll(async () => {
   const temporaryDirectory = await mkdtemp(
     `${tmpdir()}/meal-planner-household-boundary-`
@@ -422,7 +424,7 @@ beforeAll(async () => {
       "provider-accounting-migrations"
     ),
   ]);
-}, 30_000);
+}, 60_000);
 
 afterAll(async () => {
   await runtime?.dispose();

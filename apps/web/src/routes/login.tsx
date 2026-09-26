@@ -1,13 +1,10 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 
 import { decodeAuthSearch } from "../features/auth/auth-navigation.js";
-import { AccountPage } from "../features/auth/auth-screens.js";
+import { LoginPage } from "../features/auth/auth-screens.js";
 
 const LoginRoute = () => (
-  <AccountPage
-    signup={false}
-    redirect={useSearch({ from: "/login" }).redirect}
-  />
+  <LoginPage redirect={useSearch({ from: "/login" }).redirect} />
 );
 export const Route = createFileRoute("/login")({
   component: LoginRoute,

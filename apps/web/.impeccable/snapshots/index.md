@@ -1,6 +1,6 @@
 # Onboarding design snapshots
 
-These exports preserve the Paper baseline reviewed on 20 September 2026. [Live Paper](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0) remains the source of truth. Check the live designs before changing UI. These images document intended screens; they are not screenshots of the running application.
+These exports preserve the historical Paper baseline reviewed on 20 September 2026. The framed shadcn direction inspired by coss UI approved on 21 September supersedes their surfaces, controls and card layout. Use live Paper and DESIGN.md for current styling; these files remain a record of the earlier review. [Live Paper](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0) remains the source of truth. Check the live designs before changing UI. These images document intended screens; they are not screenshots of the running application.
 
 Sky outside desktop windows represents desktop wallpaper. It is not part of the application. The app begins at the white viewport; do not implement the outer framing or phone status bars. Mobile exports contain no sky strip.
 

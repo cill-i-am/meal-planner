@@ -3,6 +3,7 @@ import { createAuthClient } from "better-auth/react";
 import { createContext, useContext } from "react";
 
 import { AuthRequestError, parseRetryAfter } from "./auth-errors.js";
+import type { parseSignIn, parseSignUp } from "./auth-input.js";
 
 export const makeAuthClient = (transport: typeof fetch = fetch) =>
   createAuthClient({
@@ -29,14 +30,13 @@ export const requireAuthSuccess = async <T>(
   return result.data;
 };
 
+export type AuthenticationInput =
+  | { readonly kind: "login"; readonly input: ReturnType<typeof parseSignIn> }
+  | { readonly kind: "signup"; readonly input: ReturnType<typeof parseSignUp> };
+
 export const authenticate = async (
   authClient: ReturnType<typeof makeAuthClient>,
-  kind: "login" | "signup",
-  input: {
-    readonly email: string;
-    readonly password: string;
-    readonly name: string;
-  }
+  command: AuthenticationInput
 ): Promise<void> => {
   let retryAt: number | undefined;
   const options = {
@@ -49,12 +49,9 @@ export const authenticate = async (
   };
   try {
     const request =
-      kind === "signup"
-        ? authClient.signUp.email(input, options)
-        : authClient.signIn.email(
-            { email: input.email, password: input.password },
-            options
-          );
+      command.kind === "signup"
+        ? authClient.signUp.email(command.input, options)
+        : authClient.signIn.email(command.input, options);
     await requireAuthSuccess(request, () => retryAt);
   } catch (error) {
     if (error instanceof AuthRequestError) {

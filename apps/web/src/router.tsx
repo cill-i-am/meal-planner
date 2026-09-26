@@ -2,6 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
 import { setupRouterSsrQueryIntegration } from "@tanstack/react-router-ssr-query";
 
+import { getAuthViewTransition } from "./features/auth/auth-view-transition.js";
 import { routeTree } from "./routeTree.gen.js";
 
 export const getRouter = () => {
@@ -12,6 +13,7 @@ export const getRouter = () => {
   });
   const router = createRouter({
     defaultPreloadStaleTime: 0,
+    defaultViewTransition: getAuthViewTransition(),
     routeTree,
     scrollRestoration: true,
   });
