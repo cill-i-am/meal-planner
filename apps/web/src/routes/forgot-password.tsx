@@ -1,10 +1,10 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 
 import { decodeAuthSearch } from "../features/auth/auth-navigation.js";
-import { RecoveryUnavailablePage } from "../features/auth/auth-screens.js";
+import { RecoveryRequestPage } from "../features/recovery/recovery-screens.js";
 
 const RecoveryRoute = () => (
-  <RecoveryUnavailablePage
+  <RecoveryRequestPage
     redirect={useSearch({ from: "/forgot-password" }).redirect}
   />
 );

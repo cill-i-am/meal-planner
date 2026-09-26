@@ -60,6 +60,97 @@ describe("Better Auth D1 control plane", () => {
     );
   });
 
+  it("uses real single-use reset tokens with generic confirmation and session revocation", async () => {
+    const mails: { email: string; url: string }[] = [];
+    const auth = makeMealPlannerAuth({
+      baseURL,
+      database: drizzle(testEnv.MealPlannerAuthDatabase),
+      outputFence: (_input, canonical) => canonical(),
+      schema: authSchema,
+      secret,
+      sendPasswordResetEmail: (mail) => {
+        mails.push(mail);
+        return Promise.resolve();
+      },
+    });
+    const email = "recovery-fixture@example.test";
+    const signup = await auth.fetch(
+      authRequest("/sign-up/email", {
+        email,
+        name: "Recovery fixture",
+        password: "old-local-password",
+      })
+    );
+    const cookie = cookieHeader(signup);
+    const callback = `${baseURL}/reset-password?redirect=%2Finvitation%2Fsynthetic`;
+    const known = await auth.fetch(
+      authRequest("/request-password-reset", { email, redirectTo: callback })
+    );
+    const unknown = await auth.fetch(
+      authRequest("/request-password-reset", {
+        email: "unknown-recovery@example.test",
+        redirectTo: callback,
+      })
+    );
+    expect(known.status).toBe(200);
+    expect(await known.json()).toEqual(await unknown.json());
+    expect(mails).toHaveLength(1);
+    const [mail] = mails;
+    if (!mail) {
+      throw new Error("Expected captured mock delivery");
+    }
+    const callbackResponse = await auth.fetch(new Request(mail.url));
+    const location = callbackResponse.headers.get("location");
+    if (!location) {
+      throw new Error("Expected reset callback");
+    }
+    const resetURL = new URL(location);
+    expect(resetURL.searchParams.get("redirect")).toBe("/invitation/synthetic");
+    const token = resetURL.searchParams.get("token");
+    const invalid = await auth.fetch(
+      authRequest("/reset-password", {
+        newPassword: "new-local-password",
+        token: "invalid-token",
+      })
+    );
+    expect(invalid.status).toBe(400);
+    const changed = await auth.fetch(
+      authRequest("/reset-password", {
+        newPassword: "new-local-password",
+        token,
+      })
+    );
+    expect(changed.status).toBe(200);
+    const replay = await auth.fetch(
+      authRequest("/reset-password", { newPassword: "another-password", token })
+    );
+    expect(replay.status).toBe(400);
+    const oldSession = await auth.fetch(
+      new Request(`${baseURL}/api/auth/get-session`, { headers: { cookie } })
+    );
+    expect(await oldSession.json()).toBeNull();
+    const oldLogin = await auth.fetch(
+      authRequest("/sign-in/email", { email, password: "old-local-password" })
+    );
+    expect(oldLogin.status).toBe(401);
+    const login = await auth.fetch(
+      authRequest("/sign-in/email", { email, password: "new-local-password" })
+    );
+    expect(login.status).toBe(200);
+    await auth.fetch(
+      authRequest("/request-password-reset", { email, redirectTo: callback })
+    );
+    const [, expiredMail] = mails;
+    if (!expiredMail) {
+      throw new Error("Expected second reset");
+    }
+    await drizzle(testEnv.MealPlannerAuthDatabase)
+      .update(authSchema.verification)
+      .set({ expiresAt: new Date(0) });
+    const expired = await auth.fetch(new Request(expiredMail.url));
+    expect(expired.headers.get("location")).toContain("error=INVALID_TOKEN");
+  });
+
   it.each(["accept", "reject"])(
     "reads recipient-only invitation outcomes after %s",
     async (decision) => {

@@ -14,8 +14,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { Route as RecoveryRoute } from "@/routes/forgot-password.js";
 import { Route as LoginRoute } from "@/routes/login.js";
+import { Route as ResetRoute } from "@/routes/reset-password.js";
 import { Route as SignupRoute } from "@/routes/signup.js";
 
+import { decodeRecoverySearch } from "../recovery/recovery-input.js";
 import { AuthBoundary } from "./auth-boundary.js";
 import {
   AuthClientContext,
@@ -73,6 +75,14 @@ const makeTransport = (initiallyAuthenticated = false) => {
       if (path.endsWith("/get-session")) {
         return Response.json(authenticated ? account : null);
       }
+      if (
+        path.endsWith("/request-password-reset") ||
+        path.endsWith("/reset-password")
+      ) {
+        return fixture.reply
+          ? fixture.reply()
+          : Response.json({ status: true });
+      }
       if (!authenticated) {
         return Response.json({ code: "UNAUTHORIZED" }, { status: 401 });
       }
@@ -123,6 +133,12 @@ const setup = async (
   const client = makeAuthClient(fixture.transport);
   const root = createRootRoute({ component: Outlet });
   const routes = [
+    createRoute({
+      component: ResetRoute.options.component ?? Outlet,
+      getParentRoute: () => root,
+      path: "/reset-password",
+      validateSearch: decodeRecoverySearch,
+    }),
     createRoute({
       component: () => <h1>Name your family</h1>,
       getParentRoute: () => root,
@@ -231,7 +247,7 @@ it("redirects anonymous home requests and keeps their destination across auth ro
   await user.click(screen.getByRole("link", { name: "Log in" }));
   await user.click(screen.getByRole("link", { name: "Forgot password?" }));
   expect(
-    await screen.findByRole("heading", { name: "Password reset unavailable" })
+    await screen.findByRole("heading", { name: "Reset your password" })
   ).toBeInTheDocument();
   await user.click(screen.getByRole("link", { name: "Back to log in" }));
   expect(router.state.location.pathname).toBe("/login");
@@ -416,4 +432,89 @@ it("returns an already signed-in account to its path and query without another l
     intentId: "preserved-intent",
   });
   expect(fixture.submissions).toHaveLength(0);
+});
+
+it("requests recovery with generic confirmation and retains the editable email", async () => {
+  const { user, fixture } = await setup(
+    "/forgot-password?redirect=%2Finvitation%2Fsynthetic"
+  );
+  await user.type(screen.getByLabelText("Email"), "cook@example.com");
+  fixture.reply = async () =>
+    Response.json({ code: "RESET_PASSWORD_DISABLED" }, { status: 400 });
+  await user.click(screen.getByRole("button", { name: "Send reset link" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "You can’t reset your password right now"
+  );
+  expect(screen.queryByText("Check your email")).not.toBeInTheDocument();
+  fixture.reply = null;
+  await user.click(screen.getByRole("button", { name: "Send reset link" }));
+  expect(
+    await screen.findByRole("heading", { name: "Check your email" })
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText("If an account uses this email, we’ll send a reset link.")
+  ).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Use another email" }));
+  expect(screen.getByLabelText("Email")).toHaveValue("cook@example.com");
+});
+
+it("requires confirmation and removes the reset token only after confirmed success", async () => {
+  const { user, fixture, router } = await setup(
+    "/reset-password?token=synthetic&redirect=%2Finvitation%2Fsynthetic"
+  );
+  await user.type(
+    screen.getByLabelText("New password", { exact: true }),
+    "new-test-password"
+  );
+  await user.type(
+    screen.getByLabelText("Confirm new password"),
+    "different-password"
+  );
+  await user.click(screen.getByRole("button", { name: "Save new password" }));
+  expect(await screen.findByText("Passwords must match.")).toBeInTheDocument();
+  expect(fixture.requests).not.toContain("/api/auth/reset-password");
+  await user.clear(screen.getByLabelText("Confirm new password"));
+  await user.type(
+    screen.getByLabelText("Confirm new password"),
+    "new-test-password"
+  );
+  fixture.reply = async () =>
+    Response.json({ code: "SERVICE_UNAVAILABLE" }, { status: 503 });
+  await user.click(screen.getByRole("button", { name: "Save new password" }));
+  expect(await screen.findByRole("alert")).toBeInTheDocument();
+  expect(router.state.location.search.token).toBe("synthetic");
+  fixture.reply = null;
+  await user.click(screen.getByRole("button", { name: "Save new password" }));
+  expect(
+    await screen.findByRole("heading", { name: "Password updated" })
+  ).toBeInTheDocument();
+  await waitFor(() =>
+    expect(router.state.location.search.token).toBeUndefined()
+  );
+  expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute(
+    "href",
+    "/login?redirect=%2Finvitation%2Fsynthetic"
+  );
+});
+
+it("keeps the recovery retry window when the email is edited", async () => {
+  const { user, fixture } = await setup("/forgot-password");
+  fixture.reply = async () =>
+    Response.json(
+      { code: "TOO_MANY_REQUESTS" },
+      { headers: { "X-Retry-After": "60" }, status: 429 }
+    );
+  await user.type(screen.getByLabelText("Email"), "cook@example.com");
+  await user.click(screen.getByRole("button", { name: "Send reset link" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Too many attempts"
+  );
+  expect(
+    screen.getByRole("button", { name: "Send reset link" })
+  ).toBeDisabled();
+  await user.type(screen.getByLabelText("Email"), "x");
+  expect(
+    screen.getByRole("button", { name: "Send reset link" })
+  ).toBeDisabled();
 });

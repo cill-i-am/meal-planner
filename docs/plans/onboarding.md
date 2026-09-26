@@ -215,3 +215,34 @@ invitation entry, wrong-account switching, actual recipient acceptance/linking,
 decline, and mobile wrapping. Unit/UI tests exercise lost responses, restored
 drafts and the deliberate cross-session linking choice. Native boundary tests
 cover exact invitation status projection and returning former members.
+
+## Recovery stack layer — 22 September 2026
+
+`/forgot-password` now implements request and check-email states;
+`/reset-password` implements new-password, invalid-link and confirmed-success
+states. They use the same shadcn card, form fields, password visibility tooltips,
+Tailwind classes and semantic tokens as the other auth screens. The original
+local destination survives every recovery link.
+
+MOCK: the password-reset adapter in `auth-mail.ts` deliberately does not deliver
+email. Better Auth still creates, expires and consumes real single-use tokens.
+Tests capture that callback without logging reset URLs. A configured mail
+provider must replace both mock adapters before real email delivery is expected.
+Passwords stay in the in-memory form; the consumed URL token and form values are
+cleared after confirmed success. Reset revokes existing sessions and does not
+sign the account in automatically. Known and unknown email addresses receive the
+same confirmation. Rate-limit cooldowns survive input edits.
+
+Local verification across the completed code: 172 web tests; eight real D1 auth
+and recovery tests; all 116 household boundary/DO integration tests; API/web TypeScript;
+focused lint and production build. Browser checked desktop/mobile request, validation, generic
+confirmation, retained email and invalid-link recovery. Actual password changes,
+single-use/expired tokens and session revocation were verified in the isolated
+D1 tests. Independent design and correctness reviews used live Paper plus source;
+no automated Impeccable-engine scan is claimed.
+
+The changes form three dependent People, Invitations and Recovery layers above
+Household PR #239, managed through `gh stack`. CI has not been awaited. Local
+visual captures are available; automatic approval review blocked GitHub screenshot
+upload pending explicit approval of the synthetic fixture media. No deployment or
+merge is claimed.

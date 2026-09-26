@@ -1,24 +1,20 @@
 import { useIsMutating, useMutation } from "@tanstack/react-query";
 import { Link, Navigate, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import { useAppForm } from "../../components/forms/form.js";
 import { Alert, AlertDescription } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
 import {
-  Card,
   CardHeader,
-  CardTitle,
   CardContent,
   CardFooter,
   CardBody,
-  CardDescription,
 } from "../../components/ui/card.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import type { AuthenticationInput } from "./auth-client.js";
 import { useAuthClient, authenticate } from "./auth-client.js";
-import { AuthRequestError, authFeedback } from "./auth-errors.js";
+import { authFeedback } from "./auth-errors.js";
 import {
   parseSignIn,
   parseSignUp,
@@ -26,24 +22,7 @@ import {
   signUpValidator,
 } from "./auth-input.js";
 import { AuthLayout } from "./auth-layout.js";
-
-const useAuthRetry = (error: Error | null) => {
-  const retryAt = error instanceof AuthRequestError ? error.retryAt : undefined;
-  const [retryReady, setRetryReady] = useState(false);
-  useEffect(() => {
-    setRetryReady(false);
-    if (retryAt === undefined) {
-      return;
-    }
-    const timeout = window.setTimeout(
-      () => setRetryReady(true),
-      Math.max(0, retryAt - Date.now())
-    );
-    return () => window.clearTimeout(timeout);
-  }, [retryAt]);
-  const waiting = retryAt !== undefined && !retryReady && retryAt > Date.now();
-  return { retryAt, retryReady, waiting };
-};
+import { useAuthRetry } from "./use-auth-retry.js";
 
 const useAuthentication = (redirect: string) => {
   const navigate = useNavigate();
@@ -323,42 +302,4 @@ export const SignupPage = ({ redirect }: { readonly redirect: string }) => (
       <SignupForm redirect={redirect} />
     </AuthLayout>
   </AnonymousOnly>
-);
-
-export const RecoveryUnavailablePage = ({
-  redirect,
-}: {
-  readonly redirect: string;
-}) => (
-  <AuthLayout>
-    <Card className="w-full max-w-[30rem]" aria-labelledby="auth-title">
-      <CardBody>
-        <CardHeader>
-          <CardTitle>
-            <h1
-              id="auth-title"
-              tabIndex={-1}
-              className="text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight focus:outline-none"
-            >
-              Password reset unavailable
-            </h1>
-          </CardTitle>
-          <CardDescription>
-            You can’t reset your password right now. Please try again later.
-          </CardDescription>
-        </CardHeader>
-      </CardBody>
-      <CardFooter>
-        <Button
-          variant="link"
-          className="px-0"
-          render={<Link to="/login" search={{ redirect }} />}
-          nativeButton={false}
-          role="link"
-        >
-          Back to log in
-        </Button>
-      </CardFooter>
-    </Card>
-  </AuthLayout>
 );

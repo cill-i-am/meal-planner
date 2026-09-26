@@ -6,13 +6,14 @@ import { betterAuth } from "better-auth";
 import type { BetterAuthOptions } from "better-auth";
 import { organization } from "better-auth/plugins";
 
-import { mockInvitationMail } from "./auth-mail.js";
-import type { InvitationMail } from "./auth-mail.js";
+import { mockInvitationMail, mockPasswordResetMail } from "./auth-mail.js";
+import type { InvitationMail, PasswordResetMail } from "./auth-mail.js";
 import { fenceAuthAdapter } from "./auth-output-fence.js";
 import type { AuthOutputFence } from "./auth-output-fence.js";
 import { invitationViewPlugin } from "./invitation-view.js";
 
 export interface MealPlannerAuthOptions {
+  readonly sendPasswordResetEmail?: (mail: PasswordResetMail) => Promise<void>;
   readonly sendInvitationEmail?: (mail: InvitationMail) => Promise<void>;
   readonly outputFence: AuthOutputFence;
   readonly baseURL: string;
@@ -35,6 +36,7 @@ export const makeMealPlannerAuth = ({
   secret,
   verifyInvitationRecipient,
   sendInvitationEmail = mockInvitationMail,
+  sendPasswordResetEmail = mockPasswordResetMail,
 }: MealPlannerAuthOptions) => {
   const adapterOptions =
     schema === undefined
@@ -63,7 +65,12 @@ export const makeMealPlannerAuth = ({
         guardedFence
       ),
     disabledPaths: ["/organization/leave", "/organization/remove-member"],
-    emailAndPassword: { enabled: true },
+    emailAndPassword: {
+      enabled: true,
+      revokeSessionsOnPasswordReset: true,
+      sendResetPassword: ({ user, url }) =>
+        sendPasswordResetEmail({ email: user.email, url }),
+    },
     plugins: [
       invitationViewPlugin(),
       organization({
