@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Navigate, useRouter } from "@tanstack/react-router";
 import { Schema } from "effect";
 import type { ReactNode } from "react";
-import { createContext, use, useMemo } from "react";
+import { createContext, use, useMemo, useState } from "react";
 
 import {
   makeAuthClient,
@@ -43,6 +43,12 @@ export const useSetup = () => {
   return context;
 };
 
+const SetupLoginRedirect = () => {
+  const router = useRouter();
+  const [redirect] = useState(() => router.state.location.href);
+  return <Navigate to="/login" search={{ redirect }} replace />;
+};
+
 export const SetupProvider = ({
   children,
 }: {
@@ -68,13 +74,7 @@ export const SetupProvider = ({
     );
   }
   if (session.data === null) {
-    return (
-      <Navigate
-        to="/login"
-        search={{ redirect: router.state.location.href }}
-        replace
-      />
-    );
+    return <SetupLoginRedirect />;
   }
   if (organizations.isPending) {
     return <SetupStatus title="Loading your family…" />;
@@ -115,12 +115,17 @@ export const SetupProvider = ({
         auth: scopedAuth,
         families: organizations.data ?? [],
         logout: async () => {
+          const redirect = router.state.location.pathname.startsWith(
+            "/invitation/"
+          )
+            ? router.state.location.href
+            : "/setup";
           await requireAuthSuccess(scopedAuth.signOut());
           await session.refetch();
           queryClient.clear();
           await router.navigate({
             replace: true,
-            search: { redirect: "/setup" },
+            search: { redirect },
             to: "/login",
           });
         },

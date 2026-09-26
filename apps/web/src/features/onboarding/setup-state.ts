@@ -10,6 +10,7 @@ export const parseSetupProgress = Schema.decodeUnknownSync(SetupProgress);
 export const setupDestination = (
   progress: SetupProgress
 ):
+  | "/setup/join"
   | "/setup/people"
   | "/setup/edit-person"
   | "/setup/saved"
@@ -21,6 +22,10 @@ export const setupDestination = (
     return "/setup/saved";
   }
   switch (progress.checkpoint.stage) {
+    case "invitation-response":
+    case "invitation-link": {
+      return "/setup/join";
+    }
     case "person-draft":
     case "person-create":
     case "person-invite-draft":

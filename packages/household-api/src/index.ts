@@ -651,3 +651,5 @@ export {
   SetupProgress,
   setupProgressField,
 } from "./onboarding.js";
+
+export { InvitationView } from "./invitation-view.js";

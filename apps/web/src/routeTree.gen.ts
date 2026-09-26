@@ -14,9 +14,11 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as InvitationInvitationIdRouteImport } from './routes/invitation.$invitationId'
 import { Route as SetupIndexRouteImport } from './routes/setup.index'
 import { Route as SetupEditPersonRouteImport } from './routes/setup.edit-person'
 import { Route as SetupFamilyRouteImport } from './routes/setup.family'
+import { Route as SetupJoinRouteImport } from './routes/setup.join'
 import { Route as SetupPeopleRouteImport } from './routes/setup.people'
 import { Route as SetupReadyRouteImport } from './routes/setup.ready'
 import { Route as SetupReviewRouteImport } from './routes/setup.review'
@@ -47,6 +49,11 @@ const SignupRoute = SignupRouteImport.update({
   path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InvitationInvitationIdRoute = InvitationInvitationIdRouteImport.update({
+  id: '/invitation/$invitationId',
+  path: '/invitation/$invitationId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SetupIndexRoute = SetupIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -60,6 +67,11 @@ const SetupEditPersonRoute = SetupEditPersonRouteImport.update({
 const SetupFamilyRoute = SetupFamilyRouteImport.update({
   id: '/family',
   path: '/family',
+  getParentRoute: () => SetupRoute,
+} as any)
+const SetupJoinRoute = SetupJoinRouteImport.update({
+  id: '/join',
+  path: '/join',
   getParentRoute: () => SetupRoute,
 } as any)
 const SetupPeopleRoute = SetupPeopleRouteImport.update({
@@ -89,8 +101,10 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRouteWithChildren
   '/signup': typeof SignupRoute
+  '/invitation/$invitationId': typeof InvitationInvitationIdRoute
   '/setup/edit-person': typeof SetupEditPersonRoute
   '/setup/family': typeof SetupFamilyRoute
+  '/setup/join': typeof SetupJoinRoute
   '/setup/people': typeof SetupPeopleRoute
   '/setup/ready': typeof SetupReadyRoute
   '/setup/review': typeof SetupReviewRoute
@@ -102,8 +116,10 @@ export interface FileRoutesByTo {
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/invitation/$invitationId': typeof InvitationInvitationIdRoute
   '/setup/edit-person': typeof SetupEditPersonRoute
   '/setup/family': typeof SetupFamilyRoute
+  '/setup/join': typeof SetupJoinRoute
   '/setup/people': typeof SetupPeopleRoute
   '/setup/ready': typeof SetupReadyRoute
   '/setup/review': typeof SetupReviewRoute
@@ -117,8 +133,10 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRouteWithChildren
   '/signup': typeof SignupRoute
+  '/invitation/$invitationId': typeof InvitationInvitationIdRoute
   '/setup/edit-person': typeof SetupEditPersonRoute
   '/setup/family': typeof SetupFamilyRoute
+  '/setup/join': typeof SetupJoinRoute
   '/setup/people': typeof SetupPeopleRoute
   '/setup/ready': typeof SetupReadyRoute
   '/setup/review': typeof SetupReviewRoute
@@ -133,8 +151,10 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/signup'
+    | '/invitation/$invitationId'
     | '/setup/edit-person'
     | '/setup/family'
+    | '/setup/join'
     | '/setup/people'
     | '/setup/ready'
     | '/setup/review'
@@ -146,8 +166,10 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/login'
     | '/signup'
+    | '/invitation/$invitationId'
     | '/setup/edit-person'
     | '/setup/family'
+    | '/setup/join'
     | '/setup/people'
     | '/setup/ready'
     | '/setup/review'
@@ -160,8 +182,10 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/signup'
+    | '/invitation/$invitationId'
     | '/setup/edit-person'
     | '/setup/family'
+    | '/setup/join'
     | '/setup/people'
     | '/setup/ready'
     | '/setup/review'
@@ -175,6 +199,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   SetupRoute: typeof SetupRouteWithChildren
   SignupRoute: typeof SignupRoute
+  InvitationInvitationIdRoute: typeof InvitationInvitationIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -214,6 +239,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/invitation/$invitationId': {
+      id: '/invitation/$invitationId'
+      path: '/invitation/$invitationId'
+      fullPath: '/invitation/$invitationId'
+      preLoaderRoute: typeof InvitationInvitationIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/setup/': {
       id: '/setup/'
       path: '/'
@@ -233,6 +265,13 @@ declare module '@tanstack/react-router' {
       path: '/family'
       fullPath: '/setup/family'
       preLoaderRoute: typeof SetupFamilyRouteImport
+      parentRoute: typeof SetupRoute
+    }
+    '/setup/join': {
+      id: '/setup/join'
+      path: '/join'
+      fullPath: '/setup/join'
+      preLoaderRoute: typeof SetupJoinRouteImport
       parentRoute: typeof SetupRoute
     }
     '/setup/people': {
@@ -269,6 +308,7 @@ declare module '@tanstack/react-router' {
 interface SetupRouteChildren {
   SetupEditPersonRoute: typeof SetupEditPersonRoute
   SetupFamilyRoute: typeof SetupFamilyRoute
+  SetupJoinRoute: typeof SetupJoinRoute
   SetupPeopleRoute: typeof SetupPeopleRoute
   SetupReadyRoute: typeof SetupReadyRoute
   SetupReviewRoute: typeof SetupReviewRoute
@@ -279,6 +319,7 @@ interface SetupRouteChildren {
 const SetupRouteChildren: SetupRouteChildren = {
   SetupEditPersonRoute: SetupEditPersonRoute,
   SetupFamilyRoute: SetupFamilyRoute,
+  SetupJoinRoute: SetupJoinRoute,
   SetupPeopleRoute: SetupPeopleRoute,
   SetupReadyRoute: SetupReadyRoute,
   SetupReviewRoute: SetupReviewRoute,
@@ -294,6 +335,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   SetupRoute: SetupRouteWithChildren,
   SignupRoute: SignupRoute,
+  InvitationInvitationIdRoute: InvitationInvitationIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
