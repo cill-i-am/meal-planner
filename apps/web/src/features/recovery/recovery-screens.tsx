@@ -13,6 +13,7 @@ import {
   CardFooter,
 } from "../../components/ui/card.js";
 import { FieldGroup } from "../../components/ui/field.js";
+import { PendingButton } from "../../components/ui/pending-button.js";
 import { useAuthClient } from "../auth/auth-client.js";
 import { AuthRequestError, authFeedback } from "../auth/auth-errors.js";
 import { AuthLayout } from "../auth/auth-layout.js";
@@ -138,9 +139,14 @@ export const RecoveryRequestPage = ({
                 )}
               </form.AppField>
               <Feedback error={request.error} />
-              <Button type="submit" disabled={request.isPending || waiting}>
-                {request.isPending ? "Sending…" : "Send reset link"}
-              </Button>
+              <PendingButton
+                type="submit"
+                disabled={waiting}
+                pending={request.isPending}
+                pendingLabel="Sending reset link…"
+              >
+                Send reset link
+              </PendingButton>
             </CardContent>
           </CardBody>
           <CardFooter>
@@ -281,9 +287,14 @@ export const ResetPasswordPage = ({
                 </form.AppField>
               </FieldGroup>
               <Feedback error={reset.error} />
-              <Button type="submit" disabled={reset.isPending || waiting}>
-                {reset.isPending ? "Saving…" : "Save new password"}
-              </Button>
+              <PendingButton
+                type="submit"
+                disabled={waiting}
+                pending={reset.isPending}
+                pendingLabel="Saving new password…"
+              >
+                Save new password
+              </PendingButton>
             </CardContent>
           </CardBody>
           <CardFooter>

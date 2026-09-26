@@ -22,6 +22,7 @@ import { Schema } from "effect";
 import { Alert } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
 import { Label } from "../../components/ui/label.js";
+import { PendingButton } from "../../components/ui/pending-button.js";
 import type { HouseholdPeopleOperations } from "../household-people/operations.js";
 import {
   isAmbiguousProfileError,
@@ -182,14 +183,16 @@ const ProfileHistory = ({
           })}
       </ol>
       {history.hasNextPage && (
-        <Button
+        <PendingButton
           disabled={history.isFetchingNextPage}
+          pending={history.isFetchingNextPage}
+          pendingLabel="Loading older changes…"
           onClick={() => {
             void history.fetchNextPage();
           }}
         >
           Older changes
-        </Button>
+        </PendingButton>
       )}
     </details>
   );
@@ -512,8 +515,10 @@ export const HouseholdProfilesPanel = ({
               </a>
             </p>
           )}
-          <Button
+          <PendingButton
             disabled={mutation.isPending}
+            pending={mutation.isPending}
+            pendingLabel="Checking saved change…"
             onClick={() => {
               if (pending.data !== null) {
                 mutation.mutate(pending.data);
@@ -523,7 +528,7 @@ export const HouseholdProfilesPanel = ({
             {pending.data.authenticationRequired
               ? "I’ve signed in — retry saved change"
               : "Retry saved change"}
-          </Button>
+          </PendingButton>
         </Alert>
       )}
       <selection.Field name="personId">

@@ -23,6 +23,7 @@ import { Alert } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
 import { Input } from "../../components/ui/input.js";
 import { Label } from "../../components/ui/label.js";
+import { PendingButton } from "../../components/ui/pending-button.js";
 import { parseDisplayedIdentity } from "../auth/displayed-identity.js";
 import {
   DepartureRecovery,
@@ -203,9 +204,14 @@ const CreatorBootstrapForm = ({
           </>
         )}
       </form.Field>
-      <Button disabled={isDisabled || retryIntent} type="submit">
-        {isPending ? "Setting up…" : "Set up my person"}
-      </Button>
+      <PendingButton
+        disabled={isDisabled || retryIntent}
+        pending={isPending}
+        pendingLabel="Setting up your person…"
+        type="submit"
+      >
+        Set up my person
+      </PendingButton>
       {retryIntent ? (
         <RetryIntentActions
           disabled={isPending}
@@ -304,9 +310,14 @@ const CreatePersonForm = ({
           </>
         )}
       </form.Field>
-      <Button disabled={isDisabled || retryIntent} type="submit">
-        {isPending ? "Adding…" : "Add person"}
-      </Button>
+      <PendingButton
+        disabled={isDisabled || retryIntent}
+        pending={isPending}
+        pendingLabel="Adding person…"
+        type="submit"
+      >
+        Add person
+      </PendingButton>
       {retryIntent ? (
         <RetryIntentActions
           disabled={isPending}
@@ -1048,16 +1059,18 @@ export const HouseholdPeoplePanel = ({
             <p className="eyebrow">Household</p>
             <h2 id="household-people-heading">People</h2>
           </div>
-          <Button
+          <PendingButton
             variant="secondary"
             disabled={roster.isFetching}
+            pending={roster.isFetching}
+            pendingLabel="Refreshing…"
             onClick={() => {
               void roster.refetch();
             }}
             type="button"
           >
-            {roster.isFetching ? "Refreshing…" : "Refresh"}
-          </Button>
+            Refresh
+          </PendingButton>
         </div>
         {roster.isPending ? (
           <p role="status">Loading the household roster…</p>

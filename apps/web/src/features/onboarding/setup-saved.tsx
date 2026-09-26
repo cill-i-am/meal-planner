@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 
 import { Button } from "../../components/ui/button.js";
+import { PendingButton } from "../../components/ui/pending-button.js";
 import { useSetup } from "./setup-context.js";
 import { setupDestination } from "./setup-state.js";
 import { SetupError, SetupStatus } from "./setup-ui.js";
@@ -56,9 +57,14 @@ export const SetupSavedPage = () => {
       {(resume.error || logout.error) && (
         <SetupError>We couldn’t complete that action. Try again.</SetupError>
       )}
-      <Button disabled={pending} onClick={() => resume.mutate()}>
+      <PendingButton
+        disabled={pending}
+        pending={resume.isPending}
+        pendingLabel="Resuming setup…"
+        onClick={() => resume.mutate()}
+      >
         Resume setup
-      </Button>
+      </PendingButton>
     </SetupStatus>
   );
 };

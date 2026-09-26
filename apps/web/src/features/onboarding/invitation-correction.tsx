@@ -11,6 +11,7 @@ import {
   CardFooter,
 } from "../../components/ui/card.js";
 import { FieldGroup } from "../../components/ui/field.js";
+import { PendingButton } from "../../components/ui/pending-button.js";
 import { InvitationEmailInput } from "./people-input.js";
 import { SetupError, SetupFrame } from "./setup-ui.js";
 
@@ -19,6 +20,7 @@ const validator = Schema.toStandardSchemaV1(input);
 export const InvitationCorrectionForm = ({
   checkpoint,
   busy,
+  saving,
   error,
   submit,
   logout,
@@ -29,6 +31,7 @@ export const InvitationCorrectionForm = ({
     { stage: "person-invite-draft" }
   >;
   readonly busy: boolean;
+  readonly saving: boolean;
   readonly error: boolean;
   readonly submit: (email: string) => Promise<void>;
   readonly logout: (email: string) => void;
@@ -99,12 +102,14 @@ export const InvitationCorrectionForm = ({
               {error && (
                 <SetupError>We couldn’t save your place. Try again.</SetupError>
               )}
-              <Button
+              <PendingButton
                 type="submit"
                 disabled={busy || checkpoint.reason === "forbidden"}
+                pending={saving}
+                pendingLabel="Sending invitation…"
               >
-                {busy ? "Saving…" : "Invite this person"}
-              </Button>
+                Invite this person
+              </PendingButton>
             </CardContent>
           </CardBody>
           <CardFooter>

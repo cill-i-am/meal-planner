@@ -16,6 +16,7 @@ import {
   CardContent,
   CardFooter,
 } from "../../components/ui/card.js";
+import { PendingButton } from "../../components/ui/pending-button.js";
 import { Separator } from "../../components/ui/separator.js";
 import { AuthRequestError } from "../auth/auth-errors.js";
 import { AuthLayout } from "../auth/auth-layout.js";
@@ -226,6 +227,7 @@ const InvitationFinish = ({
   command,
   accepted,
   busy,
+  saving,
   header,
   failure,
   finish,
@@ -233,6 +235,7 @@ const InvitationFinish = ({
   readonly command: InvitationCommand | undefined;
   readonly accepted: boolean;
   readonly busy: boolean;
+  readonly saving: boolean;
   readonly header: ReactNode;
   readonly failure: ReactNode;
   readonly finish: () => void;
@@ -251,9 +254,14 @@ const InvitationFinish = ({
     action={header}
   >
     {failure}
-    <Button disabled={busy} onClick={finish}>
-      {busy ? "Finishing…" : finishLabel(command)}
-    </Button>
+    <PendingButton
+      disabled={busy}
+      pending={saving}
+      pendingLabel="Finishing invitation…"
+      onClick={finish}
+    >
+      {finishLabel(command)}
+    </PendingButton>
   </InvitationCard>
 );
 
@@ -284,9 +292,14 @@ const InvitationContent = ({
         action={header}
       >
         {failure}
-        <Button disabled={busy} onClick={() => respond.mutate(retained)}>
+        <PendingButton
+          disabled={busy}
+          pending={respond.isPending}
+          pendingLabel="Saving response…"
+          onClick={() => respond.mutate(retained)}
+        >
           Continue
-        </Button>
+        </PendingButton>
       </InvitationCard>
     );
   }
@@ -341,8 +354,10 @@ const InvitationContent = ({
         footer={recoveryAction}
       >
         {failure}
-        <Button
+        <PendingButton
           disabled={busy}
+          pending={respond.isPending}
+          pendingLabel="Joining family…"
           onClick={() =>
             respond.mutate({
               invitationId: retained.invitationId,
@@ -354,7 +369,7 @@ const InvitationContent = ({
           }
         >
           Finish joining family
-        </Button>
+        </PendingButton>
       </InvitationCard>
     );
   }
@@ -364,6 +379,7 @@ const InvitationContent = ({
         command={retained}
         accepted={view.status === "accepted"}
         busy={busy}
+        saving={respond.isPending}
         header={header}
         failure={failure}
         finish={() => respond.mutate(command("accept"))}
@@ -401,9 +417,14 @@ const InvitationContent = ({
         The family will see the food preferences you choose to share.
       </p>
       {failure}
-      <Button disabled={busy} onClick={() => respond.mutate(command("accept"))}>
-        {busy ? "Joining…" : "Join family"}
-      </Button>
+      <PendingButton
+        disabled={busy}
+        pending={respond.isPending}
+        pendingLabel="Joining family…"
+        onClick={() => respond.mutate(command("accept"))}
+      >
+        Join family
+      </PendingButton>
     </InvitationCard>
   );
 };
@@ -450,9 +471,14 @@ export const InvitationPage = ({
     </SetupError>
   );
   const recoveryAction = (
-    <Button disabled={busy} onClick={() => recover.mutate()}>
-      {recover.isPending ? "Returning…" : "Back to your account"}
-    </Button>
+    <PendingButton
+      disabled={busy}
+      pending={recover.isPending}
+      pendingLabel="Returning to account…"
+      onClick={() => recover.mutate()}
+    >
+      Back to your account
+    </PendingButton>
   );
   if (
     [

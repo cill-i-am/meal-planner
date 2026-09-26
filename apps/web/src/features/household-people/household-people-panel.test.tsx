@@ -583,7 +583,7 @@ describe("HouseholdPeoplePanel", () => {
       screen.getByRole("button", { name: "Set up my person" })
     );
     expect(
-      await screen.findByRole("button", { name: "Setting up…" })
+      await screen.findByRole("button", { name: "Setting up your person…" })
     ).toBeDisabled();
     expect(
       screen.queryByText("Maeve", { selector: "strong" })
