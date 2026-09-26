@@ -37,6 +37,9 @@ interface SetupContextValue {
   readonly peopleForFamily: (
     id: typeof HouseholdOrganizationId.Type
   ) => HouseholdPeopleOperations;
+  readonly isFamilyOrganizer: (
+    id: typeof HouseholdOrganizationId.Type
+  ) => boolean;
   readonly save: (progress: SetupProgress) => Promise<void>;
   readonly selectFamily: (
     id: typeof HouseholdOrganizationId.Type
@@ -149,6 +152,11 @@ export const SetupProvider = ({
       value={{
         auth: scopedAuth,
         families,
+        isFamilyOrganizer: (organizationId) =>
+          active.data?.id === organizationId &&
+          active.data.members.some(
+            (member) => member.userId === user.id && member.role === "owner"
+          ),
         logout: async () => {
           const redirect = router.state.location.pathname.startsWith(
             "/invitation/"

@@ -1,10 +1,16 @@
 import { BetterAuthApiError } from "@alchemy.run/better-auth";
 import { it } from "@effect/vitest";
+import {
+  EmailAddress,
+  HouseholdOrganizationId,
+  HouseholdPersonId,
+  InvitationId,
+} from "@meal-planner/household-api";
 import { RuntimeContext } from "alchemy";
 import { applyD1Migrations, env } from "cloudflare:test";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { drizzle } from "drizzle-orm/d1";
-import { Effect, Fiber, Redacted } from "effect";
+import { Effect, Fiber, Redacted, Schema } from "effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { beforeAll, beforeEach, describe, expect } from "vitest";
 
@@ -106,6 +112,61 @@ describe("Alchemy Better Auth on D1", () => {
           .pipe(Effect.flip);
         expect(error).toBeInstanceOf(BetterAuthApiError);
         expect(error.statusCode).toBe(401);
+      }).pipe(
+        Effect.scoped,
+        Effect.provideService(RuntimeContext, testRuntimeContext)
+      )
+  );
+
+  it.live(
+    "cancels the retained person invitation through the bound Effect API",
+    () =>
+      Effect.gen(function* cancelPersonInvitation() {
+        const auth = yield* makeAuth();
+        const owner = yield* createAccount(auth);
+        const response = HttpServerResponse.toWeb(
+          yield* auth.fetchHttpEffect(
+            authRequest(
+              "/organization/create",
+              {
+                name: "Alchemy cancellation family",
+                slug: crypto.randomUUID(),
+              },
+              owner.headers
+            )
+          )
+        );
+        expect(response.status).toBe(200);
+        const organization = yield* Schema.decodeUnknownEffect(
+          Schema.Struct({ id: HouseholdOrganizationId })
+        )(yield* Effect.promise(() => response.json()));
+        const invitation = yield* auth.createHouseholdInvitation({
+          body: {
+            email: Schema.decodeUnknownSync(EmailAddress)(
+              "recipient@example.test"
+            ),
+            householdPersonId: Schema.decodeUnknownSync(HouseholdPersonId)(
+              `person_${crypto.randomUUID()}`
+            ),
+            organizationId: organization.id,
+            role: "member",
+          },
+          headers: owner.headers,
+          invitationId: Schema.decodeUnknownSync(InvitationId)(
+            crypto.randomUUID()
+          ),
+        });
+        const canceled = yield* auth.api.cancelInvitation({
+          body: {
+            invitationId: invitation.id,
+            mutationId: crypto.randomUUID(),
+          },
+          headers: owner.headers,
+        });
+        expect(canceled).toMatchObject({
+          id: invitation.id,
+          status: "canceled",
+        });
       }).pipe(
         Effect.scoped,
         Effect.provideService(RuntimeContext, testRuntimeContext)

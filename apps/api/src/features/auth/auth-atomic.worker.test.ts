@@ -131,12 +131,182 @@ const fixture = () => {
   };
 };
 
+const invitationFixture = async () => {
+  const f = fixture();
+  const owner = await f.account();
+  const recipient = await f.account();
+  const organization = await f.auth.api.createOrganization({
+    body: { name: "Cancellation family", slug: crypto.randomUUID() },
+    headers: owner.headers,
+  });
+  if (!organization) {
+    throw new Error("Expected organization.");
+  }
+  const invitation = await f.auth.api.createInvitation({
+    body: {
+      email: recipient.email,
+      organizationId: organization.id,
+      role: "member",
+    },
+    headers: owner.headers,
+  });
+  const mutationId = crypto.randomUUID();
+  const cancel = () =>
+    f.auth.api.cancelInvitation({
+      body: { invitationId: invitation.id, mutationId },
+      headers: owner.headers,
+    });
+  const accept = () =>
+    f.post(
+      "/organization/accept-invitation",
+      {
+        invitationId: invitation.id,
+      },
+      recipient.headers
+    );
+  const state = async () => {
+    const [current] = await f.database
+      .select()
+      .from(schema.invitation)
+      .where(eq(schema.invitation.id, invitation.id));
+    const members = await f.database
+      .select()
+      .from(schema.member)
+      .where(
+        and(
+          eq(schema.member.organizationId, organization.id),
+          eq(schema.member.userId, recipient.userId)
+        )
+      );
+    return { invitation: current, members };
+  };
+  return {
+    ...f,
+    accept,
+    cancel,
+    invitation,
+    organization,
+    owner,
+    recipient,
+    state,
+  };
+};
+
 describe("atomic Better Auth mutations on D1", () => {
   beforeAll(async () => {
     await applyD1Migrations(
       testEnv.MealPlannerAuthDatabase,
       testEnv.AUTH_TEST_MIGRATIONS
     );
+  });
+
+  it("cancels once and safely replays without allowing acceptance", async () => {
+    const f = await invitationFixture();
+    expect(await f.cancel()).toMatchObject({ status: "canceled" });
+    expect(await f.cancel()).toMatchObject({ status: "canceled" });
+    expect(await responseStatus(f.accept())).toBe(400);
+    expect(await f.state()).toMatchObject({
+      invitation: { status: "canceled" },
+      members: [],
+    });
+    expect(
+      await responseStatus(
+        f.post(
+          "/organization/cancel-invitation",
+          { invitationId: f.invitation.id },
+          f.owner.headers
+        )
+      )
+    ).toBe(404);
+  });
+
+  it("cannot cancel an invitation after acceptance commits", async () => {
+    const f = await invitationFixture();
+    expect(await responseStatus(f.accept())).toBe(200);
+    await expect(f.cancel()).rejects.toMatchObject({
+      body: { code: "INVITATION_CANCELLATION_CONFLICT" },
+    });
+    expect(await f.state()).toMatchObject({
+      invitation: { status: "accepted" },
+      members: [{ userId: f.recipient.userId }],
+    });
+  });
+
+  it("settles cancellation after a lost completion acknowledgement", async () => {
+    const f = await invitationFixture();
+    f.fail("after");
+    await expect(f.cancel()).rejects.toBeDefined();
+    expect(await f.state()).toMatchObject({
+      invitation: { status: "canceled" },
+      members: [],
+    });
+    f.fail();
+    expect(await f.cancel()).toMatchObject({ status: "canceled" });
+  });
+
+  it("rolls back cancellation and its receipt together and can retry", async () => {
+    const f = await invitationFixture();
+    await f.database.run(
+      sql`CREATE TRIGGER cancellation_failure BEFORE UPDATE ON invitation WHEN OLD.id = ${f.invitation.id} BEGIN SELECT RAISE(ABORT, 'synthetic cancellation rollback'); END`.inlineParams()
+    );
+    try {
+      await expect(f.cancel()).rejects.toBeDefined();
+      expect(await f.state()).toMatchObject({
+        invitation: { status: "pending" },
+        members: [],
+      });
+    } finally {
+      await f.database.run(sql`DROP TRIGGER cancellation_failure`);
+    }
+    expect(await f.cancel()).toMatchObject({ status: "canceled" });
+  });
+
+  it("allows only acceptance or cancellation to win the D1 transition", async () => {
+    const f = await invitationFixture();
+    const [acceptance, cancellation] = await Promise.allSettled([
+      f.accept(),
+      f.cancel(),
+    ]);
+    const state = await f.state();
+    if (state.invitation?.status === "accepted") {
+      expect(acceptance).toMatchObject({
+        status: "fulfilled",
+        value: { status: 200 },
+      });
+      expect(cancellation.status).toBe("rejected");
+      expect(state.members).toHaveLength(1);
+    } else {
+      expect(state.invitation?.status).toBe("canceled");
+      expect(acceptance).toMatchObject({
+        status: "fulfilled",
+        value: { status: 400 },
+      });
+      expect(cancellation.status).toBe("fulfilled");
+      expect(state.members).toEqual([]);
+    }
+  });
+
+  it("requires cancellation permission and an admitted output fence", async () => {
+    const f = await invitationFixture();
+    await expect(
+      f.auth.api.cancelInvitation({
+        body: {
+          invitationId: f.invitation.id,
+          mutationId: crypto.randomUUID(),
+        },
+        headers: f.recipient.headers,
+      })
+    ).rejects.toMatchObject({
+      body: { code: "YOU_ARE_NOT_ALLOWED_TO_CANCEL_THIS_INVITATION" },
+    });
+    f.fail("before");
+    await expect(f.cancel()).rejects.toBeDefined();
+    expect(await f.state()).toMatchObject({
+      invitation: { status: "pending" },
+      members: [],
+    });
+    f.fail();
+    expect(await f.cancel()).toMatchObject({ status: "canceled" });
   });
 
   it("retains token, password and sessions when reset's fence cannot admit the operation", async () => {

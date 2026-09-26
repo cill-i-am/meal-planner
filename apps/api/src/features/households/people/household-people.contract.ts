@@ -82,6 +82,7 @@ export type HouseholdRepairAdultAccountLinkInput =
 export const HouseholdPrepareMemberDepartureInput = Schema.Struct({
   admission: HouseholdPeopleCallerAdmission,
   payload: PrepareMemberDeparturePayload,
+  removalMutationId: Schema.optionalKey(HouseholdPersonMutationId),
   targetLinkageSubject: HouseholdPersonLinkageSubject,
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type HouseholdPrepareMemberDepartureInput =
@@ -206,7 +207,8 @@ export type HouseholdGetPersonInput = typeof HouseholdGetPersonInput.Type;
 
 /** Closed private lifecycle-transition input. */
 export const HouseholdTransitionPersonInput = Schema.Struct({
-  admission: HouseholdPeopleMemberAdmission,
+  admission: HouseholdPeopleCallerAdmission,
+  cancelledInvitationDigest: Schema.optionalKey(HouseholdInvitationDigest),
   payload: TransitionHouseholdPersonPayload,
   personId: HouseholdPersonId,
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
@@ -248,3 +250,27 @@ export const HouseholdPeoplePrivateRoster = Schema.Struct({
   ),
   roster: HouseholdPeopleRoster,
 });
+
+/** Retained private authority for one owner-requested removal. */
+export const HouseholdPersonRemovalPlan = Schema.Struct({
+  action: Schema.Union([
+    Schema.TaggedStruct("archive", {}),
+    Schema.TaggedStruct("cancel_invitation", {
+      invitationDigest: HouseholdInvitationDigest,
+    }),
+    Schema.TaggedStruct("depart", {
+      linkVersion: HouseholdMemberDepartureOperation.fields.version,
+      linkageSubject: HouseholdPersonLinkageSubject,
+    }),
+  ]),
+  completedPerson: Schema.NullOr(HouseholdPerson),
+  person: HouseholdPerson,
+});
+export type HouseholdPersonRemovalPlan = typeof HouseholdPersonRemovalPlan.Type;
+export const HouseholdPreparePersonRemovalInput = Schema.Struct({
+  admission: HouseholdPeopleCreatorAdmission,
+  payload: TransitionHouseholdPersonPayload,
+  personId: HouseholdPersonId,
+}).annotate({ parseOptions: { onExcessProperty: "error" } });
+export type HouseholdPreparePersonRemovalInput =
+  typeof HouseholdPreparePersonRemovalInput.Type;

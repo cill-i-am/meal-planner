@@ -31,6 +31,7 @@ export const SetupSavedPage = () => {
     "person-edit": "Edit their name",
     "person-invite": "Finish the invitation",
     "person-invite-draft": "Review their invitation email",
+    "person-manage": "Finish updating your family",
     "person-rename": "Finish saving their name",
     ready: "Tell us how you eat",
   }[stage];

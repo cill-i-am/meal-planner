@@ -1,11 +1,13 @@
 import type { BetterAuthApiError } from "@alchemy.run/better-auth";
 import type {
   InvitationRejectionReason,
+  HouseholdPersonMutationId,
   HouseholdOrganizationId,
 } from "@meal-planner/household-api";
 import {
   EmailAddress,
   HouseholdPersonId,
+  HouseholdPersonAssociationConflict,
   InvitationId,
   MemberId,
   UserId,
@@ -77,6 +79,25 @@ const decodeInvitationStates = Schema.decodeUnknownEffect(
 const decodeMemberUserIds = Schema.decodeUnknownEffect(Schema.Array(UserId));
 
 export interface HouseholdPeopleControlPlane {
+  readonly cancelInvitation: (input: {
+    readonly headers: Headers;
+    readonly invitationId: InvitationId;
+    readonly mutationId: HouseholdPersonMutationId;
+    readonly organizationId: HouseholdOrganizationId;
+    readonly personId: HouseholdPersonId;
+  }) => Effect.Effect<
+    void,
+    | HouseholdPeopleControlPlaneUnavailable
+    | HouseholdPeopleControlPlaneNotFound
+    | HouseholdPersonAssociationConflict
+  >;
+  readonly listMembers: (
+    organizationId: HouseholdOrganizationId
+  ) => Effect.Effect<
+    readonly HouseholdControlPlaneMember[],
+    HouseholdPeopleControlPlaneUnavailable
+  >;
+
   readonly listInvitationStates: (
     organizationId: HouseholdOrganizationId
   ) => Effect.Effect<
@@ -199,6 +220,34 @@ export const makeHouseholdPeopleControlPlane = (options: {
     );
 
   return {
+    cancelInvitation: (input) =>
+      Effect.gen(function* cancelInvitation() {
+        const invitation = yield* findInvitation(input);
+        if (
+          invitation.householdPersonId !== input.personId ||
+          invitation.status === "accepted"
+        ) {
+          return yield* Effect.fail(
+            HouseholdPersonAssociationConflict.make({})
+          );
+        }
+        yield* options.auth.api
+          .cancelInvitation({
+            body: {
+              invitationId: input.invitationId,
+              mutationId: input.mutationId,
+            },
+            headers: input.headers,
+          })
+          .pipe(
+            Effect.mapError((error) =>
+              error.body?.code === "INVITATION_CANCELLATION_CONFLICT"
+                ? HouseholdPersonAssociationConflict.make({})
+                : unavailable()
+            ),
+            Effect.catchDefect(() => Effect.fail(unavailable()))
+          );
+      }),
     createInvitation: (input) =>
       options.auth
         .createHouseholdInvitation({
@@ -264,6 +313,25 @@ export const makeHouseholdPeopleControlPlane = (options: {
           decodeMemberUserIds(members.map(({ userId }) => userId)).pipe(
             Effect.mapError(unavailable)
           )
+        )
+      ),
+    listMembers: (organizationId) =>
+      Effect.tryPromise({
+        catch: unavailable,
+        try: () =>
+          options.database
+            .select({
+              id: authSchema.member.id,
+              role: authSchema.member.role,
+              userId: authSchema.member.userId,
+            })
+            .from(authSchema.member)
+            .where(eq(authSchema.member.organizationId, organizationId)),
+      }).pipe(
+        Effect.flatMap((members) =>
+          Schema.decodeUnknownEffect(
+            Schema.Array(HouseholdControlPlaneMemberSchema)
+          )(members).pipe(Effect.mapError(unavailable))
         )
       ),
     removeMember: (input) =>

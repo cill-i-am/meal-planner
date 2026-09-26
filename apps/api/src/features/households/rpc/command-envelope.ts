@@ -144,6 +144,7 @@ export const HouseholdCommandPurpose = Schema.Literals([
   "confirm_adult_invitation_recipient",
   "confirm_member_access_revoked",
   "create_household_person",
+  "prepare_person_removal",
   "rename_household_person",
   "create_meal_plan_from_recipe_bank",
   "ensure_household",
@@ -210,6 +211,7 @@ const householdPeopleOwnerPurposes: ReadonlySet<HouseholdCommandPurpose> =
     "associate_adult_invitation",
     "bootstrap_creator_person",
     "repair_adult_account_link",
+    "prepare_person_removal",
   ]);
 
 export const HouseholdAuthorizationFailure = Schema.TaggedStruct(

@@ -3,11 +3,13 @@ import {
   AuthVerificationId,
   EmailAddress,
   HouseholdOrganizationId,
+  HouseholdPersonId,
+  HouseholdPersonMutationId,
   InvitationId,
   MemberId,
   UserId,
 } from "@meal-planner/household-api";
-import { and, eq, exists, gte, lt, sql } from "drizzle-orm";
+import { and, eq, exists, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { Clock, Effect, Schema } from "effect";
 
@@ -34,6 +36,18 @@ export const AcceptInvitationMutation = Schema.Struct({
   invitationId: InvitationId,
   memberId: MemberId,
   membershipLimit: Schema.Number,
+  organizationId: HouseholdOrganizationId,
+  sessionToken: Schema.NonEmptyString,
+  userId: UserId,
+});
+
+/** Cancellation binds the observed invitation and authorization to its D1 commit. */
+export const CancelInvitationMutation = Schema.Struct({
+  householdPersonId: Schema.NullOr(HouseholdPersonId),
+  invitationId: InvitationId,
+  memberId: MemberId,
+  memberRole: Schema.NonEmptyString,
+  mutationId: HouseholdPersonMutationId,
   organizationId: HouseholdOrganizationId,
   sessionToken: Schema.NonEmptyString,
   userId: UserId,
@@ -243,6 +257,122 @@ export const makeAuthAtomicStore = (
             receipt.requestDigest === requestDigest &&
             receipt.applied
           );
+        }
+      );
+    },
+    cancelInvitation: async (input: typeof CancelInvitationMutation.Type) => {
+      const database = getDatabase();
+      // Every public command retains a terminal receipt that excludes delayed
+      // writes after settlement; a new command gets its own fence.
+      const intentKey = await privateOutputKey(
+        "auth-invitation-cancel",
+        JSON.stringify({
+          invitationId: input.invitationId,
+          mutationId: input.mutationId,
+          userId: input.userId,
+        })
+      );
+      const requestDigest = await privateOutputKey(
+        "auth-invitation-cancel-request",
+        JSON.stringify({
+          householdPersonId: input.householdPersonId,
+          invitationId: input.invitationId,
+          organizationId: input.organizationId,
+          userId: input.userId,
+        })
+      );
+      await retainIntent(intentKey, input.userId);
+      return fence(
+        { accountId: input.userId, intentKey, replayable: true },
+        async () => {
+          const now = new Date(
+            await Effect.runPromise(Clock.currentTimeMillis)
+          );
+          const attemptId = crypto.randomUUID();
+          const canCancel = and(
+            eq(invitation.id, input.invitationId),
+            eq(invitation.organizationId, input.organizationId),
+            input.householdPersonId === null
+              ? isNull(invitation.householdPersonId)
+              : eq(invitation.householdPersonId, input.householdPersonId),
+            inArray(invitation.status, [
+              "pending",
+              "canceled",
+              "rejected",
+              "expired",
+            ]),
+            exists(
+              database
+                .select({ id: member.id })
+                .from(member)
+                .where(
+                  and(
+                    eq(member.id, input.memberId),
+                    eq(member.userId, input.userId),
+                    eq(member.organizationId, input.organizationId),
+                    eq(member.role, input.memberRole)
+                  )
+                )
+            ),
+            exists(
+              database
+                .select({ id: session.id })
+                .from(session)
+                .where(
+                  and(
+                    eq(session.token, input.sessionToken),
+                    eq(session.userId, input.userId),
+                    gte(session.expiresAt, now)
+                  )
+                )
+            )
+          );
+          const ownsReceipt = exists(
+            database
+              .select({ id: authMutationReceipt.id })
+              .from(authMutationReceipt)
+              .where(
+                and(
+                  eq(authMutationReceipt.id, intentKey),
+                  eq(authMutationReceipt.attemptId, attemptId),
+                  eq(authMutationReceipt.applied, true)
+                )
+              )
+          );
+          await database.batch([
+            database
+              .insert(authMutationReceipt)
+              .values({
+                accountId: input.userId,
+                applied: exists(
+                  database
+                    .select({ id: invitation.id })
+                    .from(invitation)
+                    .where(canCancel)
+                ),
+                attemptId,
+                createdAt: now,
+                id: intentKey,
+                requestDigest,
+              })
+              .onConflictDoNothing(),
+            database
+              .update(invitation)
+              .set({ status: "canceled" })
+              .where(
+                and(
+                  eq(invitation.id, input.invitationId),
+                  eq(invitation.status, "pending"),
+                  ownsReceipt
+                )
+              ),
+          ]);
+          const [receipt] = await database
+            .select()
+            .from(authMutationReceipt)
+            .where(eq(authMutationReceipt.id, intentKey));
+          // Replaying the retained command also settles an acknowledgement lost after commit.
+          return receipt?.requestDigest === requestDigest && receipt.applied;
         }
       );
     },

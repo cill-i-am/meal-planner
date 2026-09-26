@@ -7,6 +7,7 @@ import {
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureStart,
   HouseholdPeopleUnavailable,
+  HouseholdPeopleOperationReason,
   HouseholdPerson,
   HouseholdPersonAssociationConflict,
   HouseholdPersonMutationCollision,
@@ -75,13 +76,17 @@ import {
   HouseholdMealPlanHttpApiLayer,
   HouseholdPeopleHttpApiLayer,
 } from "./household.http.js";
-import { HouseholdPeoplePrivateRoster } from "./people/household-people.contract.js";
+import {
+  HouseholdPersonRemovalPlan,
+  HouseholdPeoplePrivateRoster,
+} from "./people/household-people.contract.js";
 import type {
   HouseholdAssociateAdultInvitationInput,
   HouseholdBootstrapCreatorPersonInput,
   HouseholdCancelMemberDepartureInput,
   HouseholdCompleteAcceptedAdultLinkInput,
   HouseholdCreatePersonInput,
+  HouseholdPreparePersonRemovalInput,
   HouseholdRenamePersonInput,
   HouseholdGetMemberDepartureByMutationInput,
   HouseholdGetMemberDepartureInput,
@@ -99,6 +104,7 @@ import type {
   HouseholdControlPlaneInvitation,
 } from "./people/household-people.control-plane.js";
 import {
+  deriveHouseholdRemovalMutationId,
   deriveHouseholdInvitationDigest,
   deriveHouseholdInvitationId,
   deriveHouseholdPeopleAuditActorId,
@@ -166,6 +172,9 @@ interface HouseholdPeopleDomainPort {
   ) => Effect.Effect<object, HouseholdDomainFailure | HouseholdPeopleFailure>;
   readonly completeAcceptedAdultLink: (
     input: HouseholdCompleteAcceptedAdultLinkInput
+  ) => Effect.Effect<object, HouseholdDomainFailure | HouseholdPeopleFailure>;
+  readonly preparePersonRemoval: (
+    input: HouseholdPreparePersonRemovalInput
   ) => Effect.Effect<object, HouseholdDomainFailure | HouseholdPeopleFailure>;
   readonly renameHouseholdPerson: (
     input: HouseholdRenamePersonInput
@@ -442,7 +451,7 @@ export const makeHouseholdPeopleGateway = (options: {
 
   const runDepartureAttempt = (input: {
     readonly headers: Headers;
-    readonly memberId: MemberId;
+    readonly memberId: MemberId | null;
     readonly memberIsPresent: boolean;
     readonly operation: typeof HouseholdMemberDepartureOperation.Type;
     readonly self: boolean;
@@ -462,7 +471,7 @@ export const makeHouseholdPeopleGateway = (options: {
       if (!input.attemptClaimed) {
         return input.operation;
       }
-      if (input.memberIsPresent) {
+      if (input.memberIsPresent && input.memberId !== null) {
         const removal = options.controlPlane
           .removeMember({
             headers: input.headers,
@@ -859,6 +868,222 @@ export const makeHouseholdPeopleGateway = (options: {
           )
         )
       ),
+    remove: ({ headers, payload, personId, principal }) =>
+      Effect.gen(function* removePerson() {
+        const ownerAdmission = yield* creatorAdmission(principal);
+        const plan = yield* call(
+          Effect.succeed(ownerAdmission),
+          (admission) =>
+            options.domain.preparePersonRemoval({
+              admission,
+              payload,
+              personId,
+            }),
+          HouseholdPersonRemovalPlan
+        );
+        if (plan.completedPerson !== null) {
+          return plan.completedPerson;
+        }
+        const mutationId = yield* deriveHouseholdRemovalMutationId(
+          principal.organizationId,
+          payload.mutationId,
+          "apply"
+        ).pipe(Effect.mapError(() => HouseholdPeopleUnavailable.make({})));
+        if (plan.action._tag !== "depart") {
+          const cancelledInvitationDigest =
+            plan.action._tag === "cancel_invitation"
+              ? plan.action.invitationDigest
+              : undefined;
+          if (cancelledInvitationDigest !== undefined) {
+            const invitations =
+              yield* options.controlPlane.listInvitationStates(
+                principal.organizationId
+              );
+            const candidates = yield* Effect.forEach(
+              invitations,
+              (invitation) =>
+                invitationDigest(principal.organizationId, invitation.id).pipe(
+                  Effect.map((digest) => ({ digest, invitation }))
+                ),
+              { concurrency: 8 }
+            );
+            const target = candidates.find(
+              (candidate) => candidate.digest === cancelledInvitationDigest
+            );
+            if (target === undefined) {
+              return yield* Effect.fail(
+                HouseholdPersonAssociationConflict.make({})
+              );
+            }
+            yield* options.controlPlane.cancelInvitation({
+              headers,
+              invitationId: target.invitation.id,
+              mutationId: payload.mutationId,
+              organizationId: principal.organizationId,
+              personId,
+            });
+          }
+          let archiveInput: HouseholdTransitionPersonInput = {
+            admission: ownerAdmission,
+            payload: { expectedVersion: payload.expectedVersion, mutationId },
+            personId,
+          };
+          if (cancelledInvitationDigest !== undefined) {
+            archiveInput = { ...archiveInput, cancelledInvitationDigest };
+          }
+          return yield* call(
+            Effect.succeed(ownerAdmission),
+            () => options.domain.archiveHouseholdPerson(archiveInput),
+            HouseholdPerson
+          );
+        }
+        const targetLinkageSubject = plan.action.linkageSubject;
+        const expectedLinkVersion = plan.action.linkVersion;
+        const prepared = yield* call(
+          Effect.succeed(ownerAdmission),
+          (admission) =>
+            options.domain.prepareMemberDeparture({
+              admission,
+              payload: {
+                expectedLinkVersion,
+                expectedPersonVersion: payload.expectedVersion,
+                mutationId,
+                personId,
+                reason: HouseholdPeopleOperationReason.make(
+                  "Removed from the family roster"
+                ),
+              },
+              removalMutationId: payload.mutationId,
+              targetLinkageSubject,
+            }),
+          HouseholdMemberDepartureOperation
+        );
+        let current = yield* call(
+          Effect.succeed(ownerAdmission),
+          (admission) =>
+            options.domain.getMemberDeparture({
+              admission,
+              operationId: prepared.operationId,
+            }),
+          HouseholdMemberDepartureOperation
+        );
+        if (current.state === "cancelled") {
+          return yield* Effect.fail(
+            HouseholdPersonAssociationConflict.make({})
+          );
+        }
+        if (current.state !== "completed") {
+          const members = yield* options.controlPlane.listMembers(
+            principal.organizationId
+          );
+          const candidates = yield* Effect.forEach(
+            members,
+            (member) =>
+              linkageSubject(principal.organizationId, member.userId).pipe(
+                Effect.map((subject) => ({ member, subject }))
+              ),
+            { concurrency: 8 }
+          );
+          const member = candidates.find(
+            (candidate) => candidate.subject === targetLinkageSubject
+          )?.member;
+          if (current.state === "prepared") {
+            const started = yield* call(
+              Effect.succeed(ownerAdmission),
+              (admission) =>
+                options.domain.startMemberDeparture({
+                  admission,
+                  expectedOperationVersion: current.version,
+                  operationId: current.operationId,
+                }),
+              HouseholdMemberDepartureStart
+            );
+            yield* runDepartureAttempt({
+              attemptClaimed: started.attemptClaimed,
+              headers,
+              memberId: member?.id ?? null,
+              memberIsPresent: member !== undefined,
+              operation: started.operation,
+              organizationId: principal.organizationId,
+              self: false,
+            });
+          } else if (
+            current.state === "revocation_repair_required" ||
+            current.state === "finalization_repair_required"
+          ) {
+            yield* options.departureWorkflow.confirmTerminal({
+              claimedOperationVersion: current.version,
+              executionGeneration: current.executionGeneration,
+              operationId: current.operationId,
+              organizationId: principal.organizationId,
+            });
+            const retryMutationId = yield* deriveHouseholdRemovalMutationId(
+              principal.organizationId,
+              payload.mutationId,
+              `retry-${current.version}`
+            ).pipe(Effect.mapError(() => HouseholdPeopleUnavailable.make({})));
+            const started = yield* call(
+              Effect.succeed(ownerAdmission),
+              (admission) =>
+                options.domain.retryMemberDeparture({
+                  admission,
+                  operationId: current.operationId,
+                  payload: {
+                    expectedOperationVersion: current.version,
+                    mutationId: retryMutationId,
+                    reason: HouseholdPeopleOperationReason.make(
+                      "Retry family roster removal"
+                    ),
+                  },
+                  targetLinkageSubject: member ? targetLinkageSubject : null,
+                }),
+              HouseholdMemberDepartureStart
+            );
+            yield* runDepartureAttempt({
+              attemptClaimed: started.attemptClaimed,
+              headers,
+              memberId: member?.id ?? null,
+              memberIsPresent: member !== undefined,
+              operation: started.operation,
+              organizationId: principal.organizationId,
+              self: false,
+            });
+          } else {
+            yield* options.departureWorkflow.ensureStarted({
+              claimedOperationVersion: current.version,
+              executionGeneration: current.executionGeneration,
+              operationId: current.operationId,
+              organizationId: principal.organizationId,
+            });
+          }
+          current = yield* call(
+            Effect.succeed(ownerAdmission),
+            (admission) =>
+              options.domain.getMemberDeparture({
+                admission,
+                operationId: current.operationId,
+              }),
+            HouseholdMemberDepartureOperation
+          );
+          if (current.state !== "completed") {
+            return yield* Effect.fail(HouseholdPeopleUnavailable.make({}));
+          }
+        }
+        const completed = yield* call(
+          Effect.succeed(ownerAdmission),
+          (admission) =>
+            options.domain.preparePersonRemoval({
+              admission,
+              payload,
+              personId,
+            }),
+          HouseholdPersonRemovalPlan
+        );
+        if (completed.completedPerson === null) {
+          return yield* Effect.fail(HouseholdPeopleUnavailable.make({}));
+        }
+        return completed.completedPerson;
+      }),
     rename: ({ payload, personId, principal }) =>
       call(
         makeHouseholdPeopleAdmission(principal),

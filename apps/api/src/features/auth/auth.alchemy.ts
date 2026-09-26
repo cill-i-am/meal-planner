@@ -26,6 +26,7 @@ type AuthProps = Omit<MealPlannerAuthConfiguration, "database" | "secret"> & {
 };
 type AlchemyAuth = BetterAuthInstance<AuthProps>;
 type AuthOperation =
+  | "cancelInvitation"
   | "getSession"
   | "getActiveMember"
   | "leaveOrganization"
@@ -92,6 +93,8 @@ export const makeAlchemyMealPlannerAuth = (
 
     const service: MealPlannerAuthService = {
       api: {
+        cancelInvitation: (input) =>
+          provideRuntime(auth.api.cancelInvitation(input)),
         getActiveMember: (input) =>
           provideRuntime(auth.api.getActiveMember(input)),
         getSession: (input) => provideRuntime(auth.api.getSession(input)),

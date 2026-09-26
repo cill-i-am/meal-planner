@@ -12,6 +12,7 @@ import { useInteractionSound } from "../../hooks/use-interaction-sound.js";
 import { cn } from "../../lib/utils.js";
 import { Card, CardTitle } from "../ui/card.js";
 import { Checkbox } from "../ui/checkbox.js";
+import { Collapsible, CollapsibleContent } from "../ui/collapsible.js";
 import {
   Field,
   FieldDescription,
@@ -110,6 +111,7 @@ const ParticipationField = ({
   readonly disabled: boolean;
 }) => {
   const field = useFieldContext<string>();
+  const playInteractionSound = useInteractionSound();
   const attempts = useStore(
     field.form.store,
     (state) => state.submissionAttempts
@@ -118,55 +120,94 @@ const ParticipationField = ({
     field.state.meta.isBlurred || attempts > 0 ? field.state.meta.errors : [];
   return (
     <Field data-invalid={errors.length > 0} data-disabled={disabled}>
-      <FieldLabel id={`${id}-label`}>Person type</FieldLabel>
+      <FieldLabel id={`${id}-label`}>Age</FieldLabel>
       <ToggleGroup
         variant="segment"
         aria-labelledby={`${id}-label`}
-        aria-describedby={errors.length ? `${id}-error` : `${id}-help`}
+        aria-describedby={errors.length ? `${id}-error` : undefined}
         aria-invalid={errors.length > 0}
         disabled={disabled}
         value={field.state.value ? [field.state.value] : []}
-        onValueChange={(value) => field.handleChange(value[0] ?? "")}
+        onValueChange={(value) => {
+          const [next] = value;
+          if (next !== undefined && next !== field.state.value) {
+            field.handleChange(next);
+            void playInteractionSound();
+          }
+        }}
         onBlur={() => field.handleBlur()}
       >
         <ToggleGroupItem value="adult">Adult</ToggleGroupItem>
         <ToggleGroupItem value="dependant">Child</ToggleGroupItem>
       </ToggleGroup>
       {errors.length > 0 && <FieldError id={`${id}-error`} errors={errors} />}
-      {field.state.value && (
-        <FieldDescription id={`${id}-help`}>
-          {field.state.value === "adult"
-            ? "You can add them without an account or invite them to join."
-            : "You’ll manage their food preferences. No account needed."}
-        </FieldDescription>
-      )}
     </Field>
   );
 };
 
-const InviteField = ({ disabled }: { readonly disabled: boolean }) => {
+const InviteField = ({
+  disabled,
+  children,
+}: {
+  readonly disabled: boolean;
+  readonly children: ReactNode;
+}) => {
   const field = useFieldContext<boolean>();
+  const playInteractionSound = useInteractionSound();
   return (
-    <Field
-      orientation="horizontal"
-      data-disabled={disabled}
-      className="min-h-11"
-    >
-      <Checkbox
-        id="person-invite"
-        name={field.name}
-        checked={field.state.value}
-        onCheckedChange={field.handleChange}
-        onBlur={field.handleBlur}
-        disabled={disabled}
-      />
-      <FieldLabel
-        htmlFor="person-invite"
-        className="flex min-h-11 items-center"
+    <Collapsible open={field.state.value} variant="invite">
+      <Field
+        orientation="horizontal"
+        data-disabled={disabled}
+        className="relative"
       >
-        Invite them to join
-      </FieldLabel>
-    </Field>
+        <FieldLabel
+          id="person-invite-label"
+          htmlFor="person-invite"
+          variant="inviteCard"
+        >
+          <span>Invite them to join</span>
+          <span
+            id="person-invite-help"
+            aria-hidden="true"
+            className="text-muted-foreground text-sm leading-5 font-normal"
+          >
+            They can have their own account and manage food preferences.
+          </span>
+        </FieldLabel>
+        <Checkbox
+          id="person-invite"
+          name={field.name}
+          aria-describedby="person-invite-help"
+          aria-controls="person-invite-details"
+          aria-expanded={field.state.value}
+          checked={field.state.value}
+          onCheckedChange={(checked) => {
+            if (checked !== field.state.value) {
+              field.handleChange(checked);
+              if (!checked) {
+                field.form.setFieldMeta("email", (meta) => ({
+                  ...meta,
+                  errorMap: {},
+                  errors: [],
+                }));
+              }
+              void playInteractionSound();
+            }
+          }}
+          onBlur={field.handleBlur}
+          disabled={disabled}
+          className="absolute top-1/2 right-4 size-5 -translate-y-1/2"
+        />
+      </Field>
+      <CollapsibleContent
+        id="person-invite-details"
+        aria-labelledby="person-invite-label"
+        inert={!field.state.value}
+      >
+        <div className="border-border bg-control border-t p-4">{children}</div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 };
 
@@ -251,7 +292,7 @@ const Frame = ({
         await form.handleSubmit();
         element.current
           ?.querySelector<HTMLElement>(
-            'input[aria-invalid="true"], [aria-invalid="true"] button'
+            'input[aria-invalid="true"]:not(:disabled), [aria-invalid="true"] button:not(:disabled)'
           )
           ?.focus();
       }}

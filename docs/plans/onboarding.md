@@ -7,6 +7,55 @@ Updated 2026-09-20 during the Paper review. This is the running implementation c
 
 Design: [Login and household setup in Paper](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0). Error and validation specification: [onboarding-error-contract.md](../../apps/web/.impeccable/onboarding-error-contract.md).
 
+## Roster management and responsive overlays · 22 September 2026
+
+Follow-up: roster dialog visibility and unsubmitted drafts now live in local UI
+state. Opening or cancelling a dialog no longer writes a checkpoint or waits for
+a session refresh. The server checkpoint contains only a submitted command;
+unknown results keep their original request identity. Motion for React now
+animates the existing Base UI dialogs, selection indicator, reveals and icon
+changes. Base UI retains focus, dismissal and native drawer behavior. LiveStore remains a
+[future research option](../research/2026-09-22-livestore-local-first-sync.md),
+not an adopted dependency.
+
+Follow-up validation: 221 web tests and 31 household contract tests passed,
+along with web/API typechecks, repository lint and the production web build.
+Browser checks confirmed zero API requests on Invite open/cancel, retained email
+across desktop/mobile changes, animated collapse, reduced motion and no console
+errors. A second review checked pending-request recovery, including a late
+response arriving after another pending command was observed.
+
+The user approved [roster actions and mobile bottom sheets](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-A-0).
+Use current shadcn Base UI Drawer rather than Vaul, with one shared composition
+for desktop dialogs or side drawers and mobile bottom sheets. Keep native
+nesting, snap-point and keyboard capabilities available. The earlier mobile
+floating-dialog exploration remains in Paper for comparison.
+
+Implemented Invite, Edit name and Remove in the add-person roster and family
+review. The flow retains the unfinished form and return location. Removal
+cancels a pending invitation or revokes linked family access before archiving
+the person. The current user can edit their name but cannot remove themselves
+here. Email delivery stays mocked.
+
+The shared `Overlay` switches between desktop dialogs or side drawers and
+mobile bottom sheets. Native drawer options retain nesting and snap points;
+short roster forms use their content height. See the
+[developer examples](../../apps/web/src/components/ui/SHADCN.md#responsive-overlays).
+
+Browser checks covered mobile widths of 320px and 390px, desktop dialogs,
+draft preservation across viewport changes, invalid-email focus, rename,
+mocked invitation, cancellation and removal, focus restoration, exit animation,
+and reduced motion. Native integration tests cover authorization, accepted
+invitation races, overlapping cancellation, and replay after profile restoration.
+The keyboard provider is wired, but an actual mobile on-screen keyboard has
+not been tested on a physical device. Earlier Paper explorations remain intact.
+
+Local validation passed: 212 web tests, a final 20-test overlay/roster rerun,
+31 auth integration tests, four native removal scenarios, web and API typechecks,
+repository lint and formatting, documentation links, the production architecture
+inspection, and the production web build. The web suite ran one file at a time
+after the parallel run exceeded existing timeouts under local load.
+
 ## Auth route delivery — 21 September 2026
 
 The application now has separate `/login`, `/signup`, and `/forgot-password`

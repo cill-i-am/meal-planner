@@ -14,6 +14,7 @@ import {
   HouseholdPersonLinkageSubject,
   HouseholdPersonLifecycleConflict,
   HouseholdPersonMutationCollision,
+  HouseholdPersonMutationId,
   HouseholdPersonNotFound,
   HouseholdPersonStaleVersion,
 } from "@meal-planner/household-api";
@@ -53,7 +54,10 @@ import type {
   HouseholdDigestService,
   HouseholdIdentityGeneratorService,
 } from "../shared-kernel/authority-services.js";
-import { HouseholdPeoplePrivateRoster } from "./household-people.contract.js";
+import {
+  HouseholdPersonRemovalPlan,
+  HouseholdPeoplePrivateRoster,
+} from "./household-people.contract.js";
 import type { HouseholdMemberDepartureSystemState } from "./household-people.contract.js";
 
 type Person = typeof HouseholdPerson.Type;
@@ -66,6 +70,13 @@ const PersistedDeparture = Schema.fromJsonString(
   HouseholdMemberDepartureOperation
 );
 const encodeDeparture = Schema.encodeSync(PersistedDeparture);
+const PersistedDeparturePreparation = Schema.fromJsonString(
+  Schema.Struct({
+    ...HouseholdMemberDepartureOperation.fields,
+    removalMutationId: Schema.optionalKey(HouseholdPersonMutationId),
+  })
+);
+const PersistedRemovalPlan = Schema.fromJsonString(HouseholdPersonRemovalPlan);
 const PersistedDepartureStart = Schema.fromJsonString(
   HouseholdMemberDepartureStart
 );
@@ -131,6 +142,12 @@ const projectDeparture = (
   }).pipe(Effect.mapError(unavailable));
 
 export interface HouseholdPeopleRepository {
+  readonly prepareRemoval: (input: {
+    readonly actorId: HouseholdPeopleAuditActorId;
+    readonly linkageSubject: HouseholdPersonLinkageSubject;
+    readonly payload: TransitionHouseholdPersonPayload;
+    readonly personId: typeof HouseholdPersonId.Type;
+  }) => Effect.Effect<HouseholdPersonRemovalPlan, Failure>;
   readonly associateAdultInvitation: (input: {
     readonly actorId: HouseholdPeopleAuditActorId;
     readonly linkageSubject: HouseholdPersonLinkageSubject;
@@ -145,6 +162,7 @@ export interface HouseholdPeopleRepository {
     readonly personId: typeof HouseholdPersonId.Type;
   }) => Effect.Effect<Person, Failure>;
   readonly archive: (input: {
+    readonly cancelledInvitationDigest?: HouseholdInvitationDigest;
     readonly actorId: HouseholdPeopleAuditActorId;
     readonly linkageSubject: HouseholdPersonLinkageSubject;
     readonly now: number;
@@ -226,6 +244,7 @@ export interface HouseholdPeopleRepository {
     readonly callerLinkageSubject: HouseholdPersonLinkageSubject;
     readonly now: number;
     readonly payload: PrepareMemberDeparturePayload;
+    readonly removalMutationId?: HouseholdPersonMutationId | undefined;
     readonly targetLinkageSubject: HouseholdPersonLinkageSubject;
   }) => Effect.Effect<Departure, Failure>;
   readonly repairAdultAccountLink: (input: {
@@ -841,6 +860,7 @@ export const makeHouseholdPeopleRepository = (
     }).pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable())));
 
   const transition = (input: {
+    readonly cancelledInvitationDigest?: HouseholdInvitationDigest;
     readonly actorId: HouseholdPeopleAuditActorId;
     readonly command: "archive" | "restore";
     readonly linkageSubject: HouseholdPersonLinkageSubject;
@@ -851,12 +871,20 @@ export const makeHouseholdPeopleRepository = (
     readonly previousLifecycle: "active" | "archived";
   }) =>
     Effect.gen(function* transitionPerson() {
-      const digest = yield* intentDigest({
+      const intent = {
         actorId: input.actorId,
         command: input.command,
         expectedVersion: input.payload.expectedVersion,
         personId: input.personId,
-      });
+      };
+      const digest = yield* intentDigest(
+        input.cancelledInvitationDigest === undefined
+          ? intent
+          : {
+              ...intent,
+              cancelledInvitationDigest: input.cancelledInvitationDigest,
+            }
+      );
       return yield* database.transaction((transaction) =>
         Effect.gen(function* persistTransition() {
           const [receipt] = yield* transaction
@@ -892,10 +920,40 @@ export const makeHouseholdPeopleRepository = (
               HouseholdPersonLifecycleConflict.make({})
             );
           }
-          const association = yield* personAssociation(
+          let association = yield* personAssociation(
             transaction,
             input.personId
           );
+          const previousAssociationState = association.state;
+          if (input.cancelledInvitationDigest !== undefined) {
+            if (
+              input.command !== "archive" ||
+              association.state !== "invitation_pending" ||
+              association.invitationDigest !== input.cancelledInvitationDigest
+            ) {
+              return yield* Effect.fail(
+                HouseholdPersonAssociationConflict.make({})
+              );
+            }
+            yield* transaction
+              .update(householdPersonInvitationAssociations)
+              .set({ state: "cancelled", version: association.version + 1 })
+              .where(
+                and(
+                  eq(
+                    householdPersonInvitationAssociations.invitationDigest,
+                    input.cancelledInvitationDigest
+                  ),
+                  eq(
+                    householdPersonInvitationAssociations.personId,
+                    input.personId
+                  ),
+                  eq(householdPersonInvitationAssociations.state, "pending")
+                )
+              )
+              .pipe(queryFailure);
+            association = yield* personAssociation(transaction, input.personId);
+          }
           if (
             input.command === "archive" &&
             association.state !== "unlinked" &&
@@ -955,9 +1013,11 @@ export const makeHouseholdPeopleRepository = (
               actorId: input.actorId,
               atEpochMs: input.now,
               command: input.command,
+              nextAssociationState: association.state,
               nextLifecycle: input.nextLifecycle,
               nextVersion: row.version + 1,
               personId: input.personId,
+              previousAssociationState,
               previousLifecycle: input.previousLifecycle,
             })
             .pipe(queryFailure);
@@ -1522,6 +1582,7 @@ export const makeHouseholdPeopleRepository = (
     readonly callerLinkageSubject: HouseholdPersonLinkageSubject;
     readonly now: number;
     readonly payload: PrepareMemberDeparturePayload;
+    readonly removalMutationId?: HouseholdPersonMutationId | undefined;
     readonly targetLinkageSubject: HouseholdPersonLinkageSubject;
   }) =>
     Effect.gen(function* prepareMemberDepartureCommand() {
@@ -1531,7 +1592,7 @@ export const makeHouseholdPeopleRepository = (
       ) {
         return yield* Effect.fail(HouseholdPersonAssociationConflict.make({}));
       }
-      const digest = yield* intentDigest({
+      const intent = {
         actorId: input.actorId,
         command: "prepare_departure",
         expectedLinkVersion: input.payload.expectedLinkVersion,
@@ -1539,7 +1600,12 @@ export const makeHouseholdPeopleRepository = (
         personId: input.payload.personId,
         reason: input.payload.reason,
         targetLinkageSubject: input.targetLinkageSubject,
-      });
+      };
+      const digest = yield* intentDigest(
+        input.removalMutationId === undefined
+          ? intent
+          : { ...intent, removalMutationId: input.removalMutationId }
+      );
       return yield* database.transaction((transaction) =>
         Effect.gen(function* persistPreparedMemberDeparture() {
           const replay = yield* replayDepartureMutation(
@@ -1587,6 +1653,45 @@ export const makeHouseholdPeopleRepository = (
             return yield* Effect.fail(
               HouseholdMemberDepartureInProgress.make({})
             );
+          }
+          if (input.removalMutationId !== undefined) {
+            const [receipt] = yield* transaction
+              .select()
+              .from(householdPersonMutationReceipts)
+              .where(
+                eq(
+                  householdPersonMutationReceipts.mutationId,
+                  input.removalMutationId
+                )
+              )
+              .limit(1)
+              .pipe(queryFailure);
+            if (receipt === undefined || !input.callerIsOwner) {
+              return yield* Effect.fail(
+                HouseholdPersonAssociationConflict.make({})
+              );
+            }
+            const removal = yield* Schema.decodeUnknownEffect(
+              PersistedRemovalPlan
+            )(receipt.resultJson).pipe(Effect.mapError(unavailable));
+            const removalDigest = yield* intentDigest({
+              actorId: input.actorId,
+              command: "prepare_removal",
+              expectedVersion: input.payload.expectedPersonVersion,
+              personId: input.payload.personId,
+            });
+            if (
+              receipt.intentDigest !== removalDigest ||
+              removal.completedPerson !== null ||
+              removal.person.id !== person.personId ||
+              removal.action._tag !== "depart" ||
+              removal.action.linkageSubject !== input.targetLinkageSubject ||
+              removal.action.linkVersion !== input.payload.expectedLinkVersion
+            ) {
+              return yield* Effect.fail(
+                HouseholdPersonAssociationConflict.make({})
+              );
+            }
           }
           const operationUuid = yield* services.identity
             .generate()
@@ -1659,7 +1764,13 @@ export const makeHouseholdPeopleRepository = (
           yield* storeMutationReceipt(transaction, {
             digest,
             mutationId: input.payload.mutationId,
-            resultJson: encodeDeparture(operation),
+            resultJson:
+              input.removalMutationId === undefined
+                ? encodeDeparture(operation)
+                : Schema.encodeSync(PersistedDeparturePreparation)({
+                    ...operation,
+                    removalMutationId: input.removalMutationId,
+                  }),
           });
           return operation;
         })
@@ -2257,6 +2368,87 @@ export const makeHouseholdPeopleRepository = (
               HouseholdMemberDepartureConflict.make({})
             );
           }
+          const [preparationReceipt] = yield* transaction
+            .select()
+            .from(householdPersonMutationReceipts)
+            .where(
+              eq(
+                householdPersonMutationReceipts.mutationId,
+                row.preparationMutationId
+              )
+            )
+            .limit(1)
+            .pipe(queryFailure);
+          if (preparationReceipt === undefined) {
+            return yield* Effect.fail(unavailable());
+          }
+          const preparation = yield* Schema.decodeUnknownEffect(
+            PersistedDeparturePreparation
+          )(preparationReceipt.resultJson).pipe(Effect.mapError(unavailable));
+          if (preparation.removalMutationId !== undefined) {
+            const [removalReceipt] = yield* transaction
+              .select()
+              .from(householdPersonMutationReceipts)
+              .where(
+                eq(
+                  householdPersonMutationReceipts.mutationId,
+                  preparation.removalMutationId
+                )
+              )
+              .limit(1)
+              .pipe(queryFailure);
+            if (removalReceipt === undefined) {
+              return yield* Effect.fail(unavailable());
+            }
+            const removal = yield* Schema.decodeUnknownEffect(
+              PersistedRemovalPlan
+            )(removalReceipt.resultJson).pipe(Effect.mapError(unavailable));
+            const removalDigest = yield* intentDigest({
+              actorId: row.actorId,
+              command: "prepare_removal",
+              expectedVersion: removal.person.version,
+              personId: row.personId,
+            });
+            if (
+              removalReceipt.intentDigest !== removalDigest ||
+              removal.completedPerson !== null ||
+              removal.person.id !== row.personId ||
+              removal.action._tag !== "depart" ||
+              removal.action.linkageSubject !== link.linkageSubject
+            ) {
+              return yield* Effect.fail(unavailable());
+            }
+            const completedPerson = yield* projectPerson(
+              {
+                ...person,
+                lifecycle: "archived",
+                updatedAtEpochMs: input.now,
+                version: person.version + 1,
+              },
+              null,
+              {
+                state: "detached",
+                version: yield* Schema.decodeUnknownEffect(
+                  HouseholdAssociationVersion
+                )(link.version + 1).pipe(Effect.mapError(unavailable)),
+              }
+            );
+            yield* transaction
+              .update(householdPersonMutationReceipts)
+              .set({
+                resultJson: Schema.encodeSync(PersistedRemovalPlan)({
+                  ...removal,
+                  completedPerson,
+                }),
+              })
+              .where(
+                eq(
+                  householdPersonMutationReceipts.mutationId,
+                  preparation.removalMutationId
+                )
+              )
+              .pipe(queryFailure);
+          }
           const nextRow = {
             ...row,
             state: "completed" as const,
@@ -2492,6 +2684,114 @@ export const makeHouseholdPeopleRepository = (
       );
     }).pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable())));
 
+  const prepareRemoval: HouseholdPeopleRepository["prepareRemoval"] = (input) =>
+    Effect.gen(function* prepareRemovalCommand() {
+      const digest = yield* intentDigest({
+        actorId: input.actorId,
+        command: "prepare_removal",
+        expectedVersion: input.payload.expectedVersion,
+        personId: input.personId,
+      });
+      const persisted = PersistedRemovalPlan;
+      return yield* database.transaction((transaction) =>
+        Effect.gen(function* retainRemoval() {
+          const [receipt] = yield* transaction
+            .select()
+            .from(householdPersonMutationReceipts)
+            .where(
+              eq(
+                householdPersonMutationReceipts.mutationId,
+                input.payload.mutationId
+              )
+            )
+            .limit(1)
+            .pipe(queryFailure);
+          if (receipt !== undefined) {
+            if (receipt.intentDigest !== digest) {
+              return yield* Effect.fail(
+                HouseholdPersonMutationCollision.make({})
+              );
+            }
+            return yield* Schema.decodeUnknownEffect(persisted)(
+              receipt.resultJson
+            ).pipe(Effect.mapError(unavailable));
+          }
+          const [row] = yield* transaction
+            .select()
+            .from(householdPeople)
+            .where(eq(householdPeople.personId, input.personId))
+            .limit(1)
+            .pipe(queryFailure);
+          if (!row) {
+            return yield* Effect.fail(HouseholdPersonNotFound.make({}));
+          }
+          if (row.version !== input.payload.expectedVersion) {
+            return yield* Effect.fail(HouseholdPersonStaleVersion.make({}));
+          }
+          if (row.lifecycle !== "active") {
+            return yield* Effect.fail(
+              HouseholdPersonLifecycleConflict.make({})
+            );
+          }
+          const current = yield* activeLinkForSubject(
+            transaction,
+            input.linkageSubject
+          );
+          if (current?.personId === row.personId) {
+            return yield* Effect.fail(
+              HouseholdPersonAssociationConflict.make({})
+            );
+          }
+          const association = yield* personAssociation(
+            transaction,
+            input.personId
+          );
+          if (association.state === "departure_pending") {
+            return yield* Effect.fail(
+              HouseholdMemberDepartureInProgress.make({})
+            );
+          }
+          const link = yield* activeLinkForPerson(transaction, input.personId);
+          const action = (() => {
+            if (association.state === "linked" && link !== undefined) {
+              return {
+                _tag: "depart",
+                linkVersion: link.version,
+                linkageSubject: link.linkageSubject,
+              };
+            }
+            if (association.state === "invitation_pending") {
+              return {
+                _tag: "cancel_invitation",
+                invitationDigest: association.invitationDigest,
+              };
+            }
+            return { _tag: "archive" };
+          })();
+          const plan = yield* Schema.decodeUnknownEffect(
+            HouseholdPersonRemovalPlan
+          )({
+            action,
+            completedPerson: null,
+            person: yield* projectPerson(
+              row,
+              current?.personId ?? null,
+              association
+            ),
+          }).pipe(Effect.mapError(unavailable));
+          yield* transaction
+            .insert(householdPersonMutationReceipts)
+            .values({
+              intentDigest: digest,
+              mutationId: input.payload.mutationId,
+              resultJson: Schema.encodeSync(persisted)(plan),
+            })
+            .pipe(queryFailure);
+          return plan;
+        })
+      );
+    }).pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable())));
+
   return {
     archive: (input) =>
       transition({
@@ -2662,6 +2962,7 @@ export const makeHouseholdPeopleRepository = (
       }),
     markMemberDepartureRepairRequired,
     prepareMemberDeparture,
+    prepareRemoval,
     rename,
     repairAdultAccountLink,
     restore: (input) =>

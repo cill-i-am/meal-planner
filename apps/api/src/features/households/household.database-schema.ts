@@ -77,7 +77,9 @@ export const householdPersonInvitationAssociations = sqliteTable(
     invitationDigest: text("invitation_digest").primaryKey(),
     personId: text("person_id").notNull(),
     recipientLinkageSubject: text("recipient_linkage_subject"),
-    state: text("state", { enum: ["pending", "consumed"] }).notNull(),
+    state: text("state", {
+      enum: ["pending", "consumed", "cancelled"],
+    }).notNull(),
     version: integer("version").notNull(),
   }
 );

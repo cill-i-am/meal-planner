@@ -1,4 +1,5 @@
 import {
+  HouseholdPersonMutationId,
   HouseholdInvitationDigest,
   HouseholdInvitationRequestDigest,
   HouseholdPeopleAuditActorId,
@@ -8,7 +9,6 @@ import {
 import type {
   EmailAddress,
   HouseholdOrganizationId,
-  HouseholdPersonMutationId,
   UserId,
 } from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
@@ -26,6 +26,7 @@ const peopleIdentityMaterial = (
   purpose:
     | "audit-actor"
     | "invitation"
+    | "removal-operation"
     | "invitation-operation"
     | "invitation-request"
     | "linkage-subject",
@@ -45,6 +46,7 @@ const derive = <A>(
   purpose:
     | "audit-actor"
     | "invitation"
+    | "removal-operation"
     | "invitation-operation"
     | "invitation-request"
     | "linkage-subject",
@@ -117,4 +119,17 @@ export const deriveHouseholdInvitationRequestDigest = (
     "invitation-request",
     organizationId,
     JSON.stringify([input.invitationId, input.email])
+  );
+
+/** Separate internal steps from the caller's retained removal request. */
+export const deriveHouseholdRemovalMutationId = (
+  organizationId: HouseholdOrganizationId,
+  mutationId: HouseholdPersonMutationId,
+  step: string
+) =>
+  derive(
+    HouseholdPersonMutationId,
+    "removal-operation",
+    organizationId,
+    JSON.stringify([mutationId, step])
   );

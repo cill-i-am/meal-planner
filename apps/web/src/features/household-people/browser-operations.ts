@@ -214,6 +214,8 @@ export const makeBrowserHouseholdPeopleOperations = (
           query: { includeArchived: includeArchived ? "true" : "false" },
         })
       ),
+    remove: (personId, payload) =>
+      run((client) => client.people.remove({ params: { personId }, payload })),
     rename: (personId, payload) =>
       run((client) => client.people.rename({ params: { personId }, payload })),
     repairAdultLink: (payload) =>

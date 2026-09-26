@@ -1,19 +1,36 @@
-import { InvitationId, UserId } from "@meal-planner/household-api";
+import {
+  HouseholdPersonMutationId,
+  InvitationId,
+  UserId,
+} from "@meal-planner/household-api";
 import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthEndpoint, resetPassword } from "better-auth/api";
-import { getOrgAdapter, organization } from "better-auth/plugins/organization";
+import type { AuthEndpoint } from "better-auth/api";
+import {
+  getOrgAdapter,
+  hasPermission,
+  organization,
+} from "better-auth/plugins/organization";
 import type {
   DefaultOrganizationPlugin,
+  Invitation,
   OrganizationOptions,
 } from "better-auth/plugins/organization";
 import { Clock, Effect, Schema } from "effect";
 
 import {
   AcceptInvitationMutation,
+  CancelInvitationMutation,
   ResetPasswordMutation,
 } from "./auth-atomic-store.js";
 import type { AuthAtomicStore } from "./auth-atomic-store.js";
 
+const parseCancellation = Schema.decodeUnknownSync(CancelInvitationMutation);
+const parseCancellationPerson = Schema.decodeUnknownSync(
+  Schema.Struct({
+    householdPersonId: Schema.optional(Schema.NullOr(Schema.String)),
+  })
+);
 const parseAcceptance = Schema.decodeUnknownSync(AcceptInvitationMutation);
 const parseReset = Schema.decodeUnknownSync(ResetPasswordMutation);
 const parseInvitationId = Schema.decodeUnknownSync(InvitationId);
@@ -135,15 +152,120 @@ export const atomicPasswordResetPlugin = (
     schema: receiptSchema,
   }) satisfies BetterAuthPlugin;
 
-/** Keeps organization middleware and all other native endpoints; acceptance has one D1 commit. */
+const CancellationBody = Schema.toStandardSchemaV1(
+  Schema.Struct({
+    invitationId: InvitationId,
+    mutationId: HouseholdPersonMutationId,
+  }),
+  { parseOptions: { onExcessProperty: "error" } }
+);
+type NativeCancellationEndpoint =
+  DefaultOrganizationPlugin<OrganizationOptions>["endpoints"]["cancelInvitation"];
+type CancellationEndpoint = AuthEndpoint<
+  NativeCancellationEndpoint["path"],
+  Omit<NativeCancellationEndpoint["options"], "body"> & {
+    body: typeof CancellationBody;
+  },
+  Invitation
+>;
+
+const makeAtomicCancellation = (
+  options: OrganizationOptions,
+  store: AuthAtomicStore
+): CancellationEndpoint => {
+  const native = organization(options).endpoints.cancelInvitation;
+  return createAuthEndpoint(
+    native.path,
+    {
+      ...native.options,
+      body: CancellationBody,
+    },
+    async (ctx) => {
+      const { session } = ctx.context;
+      const adapter = getOrgAdapter(ctx.context, options);
+      const invitation = await adapter.findInvitationById(
+        ctx.body.invitationId
+      );
+      if (!invitation) {
+        throw unavailableInvitation();
+      }
+      const member = await adapter.findMemberByOrgId({
+        organizationId: invitation.organizationId,
+        userId: session.user.id,
+      });
+      if (
+        !member ||
+        !(await hasPermission(
+          {
+            options,
+            organizationId: invitation.organizationId,
+            permissions: { invitation: ["cancel"] },
+            role: member.role,
+          },
+          ctx
+        ))
+      ) {
+        throw new APIError("FORBIDDEN", {
+          code: "YOU_ARE_NOT_ALLOWED_TO_CANCEL_THIS_INVITATION",
+          message: "You are not allowed to cancel this invitation",
+        });
+      }
+      const canceledOrganization = await adapter.findOrganizationById(
+        invitation.organizationId
+      );
+      if (!canceledOrganization) {
+        throw unavailableInvitation();
+      }
+      await options.organizationHooks?.beforeCancelInvitation?.({
+        cancelledBy: session.user,
+        invitation,
+        organization: canceledOrganization,
+      });
+      const committed = await store.cancelInvitation(
+        parseCancellation({
+          householdPersonId:
+            parseCancellationPerson(invitation).householdPersonId ?? null,
+          invitationId: invitation.id,
+          memberId: member.id,
+          memberRole: member.role,
+          mutationId: ctx.body.mutationId,
+          organizationId: invitation.organizationId,
+          sessionToken: session.session.token,
+          userId: session.user.id,
+        })
+      );
+      if (!committed) {
+        throw new APIError("CONFLICT", {
+          code: "INVITATION_CANCELLATION_CONFLICT",
+          message: "Invitation cannot be canceled",
+        });
+      }
+      const canceledInvitation = await adapter.findInvitationById(
+        invitation.id
+      );
+      if (!canceledInvitation) {
+        throw unavailableInvitation();
+      }
+      await options.organizationHooks?.afterCancelInvitation?.({
+        cancelledBy: session.user,
+        invitation: canceledInvitation,
+        organization: canceledOrganization,
+      });
+      return ctx.json(canceledInvitation);
+    }
+  );
+};
+
+/** Keeps organization middleware; acceptance and cancellation each have one D1 commit. */
 type AtomicOrganizationPlugin<Options extends OrganizationOptions> = Omit<
   DefaultOrganizationPlugin<Options>,
   "endpoints"
 > & {
   endpoints: Omit<
     DefaultOrganizationPlugin<Options>["endpoints"],
-    "acceptInvitation"
+    "acceptInvitation" | "cancelInvitation"
   > & {
+    cancelInvitation: ReturnType<typeof makeAtomicCancellation>;
     acceptInvitation: DefaultOrganizationPlugin<OrganizationOptions>["endpoints"]["acceptInvitation"];
   };
 };
@@ -157,7 +279,8 @@ export const atomicOrganization = <Options extends OrganizationOptions>(
   }
   const plugin = organization(options);
   const nativeOptions: OrganizationOptions = options;
-  const native = organization(nativeOptions).endpoints.acceptInvitation;
+  const nativeEndpoints = organization(nativeOptions).endpoints;
+  const native = nativeEndpoints.acceptInvitation;
   Object.assign(plugin.schema.member, {
     indexes: [
       {
@@ -266,6 +389,7 @@ export const atomicOrganization = <Options extends OrganizationOptions>(
           return ctx.json({ invitation: acceptedInvitation, member });
         }
       ),
+      cancelInvitation: makeAtomicCancellation(options, store),
     },
   };
 };

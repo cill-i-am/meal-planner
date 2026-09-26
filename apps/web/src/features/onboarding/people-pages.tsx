@@ -4,12 +4,14 @@ import {
   InviteHouseholdAdultPayload,
 } from "@meal-planner/household-api";
 import type {
+  HouseholdPerson,
   HouseholdPeopleRoster,
   SetupCheckpoint,
 } from "@meal-planner/household-api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Schema } from "effect";
+import type { ReactNode } from "react";
 
 import { useAppForm } from "../../components/forms/form.js";
 import { Button } from "../../components/ui/button.js";
@@ -22,6 +24,10 @@ import {
   CardHeader,
   CardTitle,
 } from "../../components/ui/card.js";
+import {
+  Collapsible,
+  CollapsibleContent,
+} from "../../components/ui/collapsible.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import { PersonRow, useSetupRoster } from "./family-review.js";
 import { InvitationCorrectionForm } from "./invitation-correction.js";
@@ -31,6 +37,12 @@ import {
   InvitationEmailInput,
 } from "./people-input.js";
 import { saveSetupPerson } from "./person-save.js";
+import {
+  RosterActions,
+  RosterManagementOverlay,
+  useRosterManagement,
+} from "./roster-management.js";
+import type { RosterAction } from "./roster-management.js";
 import { useSetup } from "./setup-context.js";
 import { SetupError, SetupFrame, SetupStatus } from "./setup-ui.js";
 
@@ -43,15 +55,45 @@ type Pending = Extract<
   { stage: "person-create" | "person-invite" }
 >;
 
+const draftForAddPage = (checkpoint: SetupCheckpoint): Draft | null => {
+  if (checkpoint.stage === "person-draft") {
+    return checkpoint.draft;
+  }
+  if (
+    checkpoint.stage === "person-manage" &&
+    checkpoint.returnTo.stage === "person-draft"
+  ) {
+    return checkpoint.returnTo.draft;
+  }
+  return null;
+};
+
 const AddedPeople = ({
   roster,
+  organizer,
+  busy,
+  onAction,
 }: {
   readonly roster: HouseholdPeopleRoster;
+  readonly organizer: boolean;
+  readonly busy: boolean;
+  readonly onAction: (kind: RosterAction, person: HouseholdPerson) => void;
 }) => (
   <CardFooter variant="people">
-    <p className="text-muted-foreground text-sm">Already added</p>
+    <p className="text-muted-foreground text-sm">Your family so far</p>
     {roster.people.map((person) => (
-      <PersonRow key={person.id} person={person} />
+      <div key={person.id} className="flex w-full min-w-0 items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <PersonRow person={person} />
+        </div>
+        <RosterActions
+          person={person}
+          roster={roster}
+          organizer={organizer}
+          disabled={busy}
+          onAction={onAction}
+        />
+      </div>
     ))}
   </CardFooter>
 );
@@ -59,28 +101,41 @@ const AddedPeople = ({
 const PersonDraftForm = ({
   draft,
   busy,
+  disabled,
   error,
   submit,
   pause,
   cancel,
   roster,
+  organizer,
   rosterError,
+  onAction,
+  overlay,
 }: {
   readonly draft: Draft;
   readonly busy: boolean;
+  readonly disabled: boolean;
   readonly error: boolean;
   readonly submit: (command: PersonCreation) => Promise<void>;
   readonly pause: (draft: Draft) => void;
   readonly cancel: () => void;
   readonly roster: HouseholdPeopleRoster;
+  readonly organizer: boolean;
   readonly rosterError?: boolean;
+  readonly onAction: (
+    kind: RosterAction,
+    person: HouseholdPerson,
+    draft: Draft
+  ) => void;
+  readonly overlay: ReactNode;
 }) => {
+  const defaultParticipation: string = draft.participation || "adult";
   const form = useAppForm({
     defaultValues: {
       email: draft.email,
       invite: draft.invite ?? false,
       name: draft.name,
-      participation: draft.participation as string,
+      participation: defaultParticipation,
     },
     onSubmit: async ({ value }) => {
       const person = {
@@ -109,7 +164,7 @@ const PersonDraftForm = ({
       action={
         <Button
           variant="link"
-          disabled={busy}
+          disabled={disabled}
           onClick={() =>
             pause(Schema.decodeUnknownSync(PersonDraft)(form.state.values))
           }
@@ -125,6 +180,17 @@ const PersonDraftForm = ({
               <form.Heading errorTitle="Add someone" rejected={error}>
                 Add someone
               </form.Heading>
+              <CardDescription>
+                <form.Subscribe
+                  selector={(state) => state.values.participation}
+                >
+                  {(participation) =>
+                    participation === "dependant"
+                      ? "Add a child you plan meals for. You’ll manage their food preferences."
+                      : "Add an adult you plan meals for. You can invite them to join now or later."
+                  }
+                </form.Subscribe>
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <FieldGroup>
@@ -138,64 +204,87 @@ const PersonDraftForm = ({
                       label="Name"
                       maxLength={80}
                       autoComplete="off"
-                      disabled={busy}
+                      disabled={disabled}
                     />
                   )}
                 </form.AppField>
-                <form.AppField
-                  name="participation"
-                  validators={{ onChange: participationValidator }}
-                  listeners={{
-                    onChange: () => {
-                      form.setFieldValue("invite", false);
-                      form.setFieldValue("email", "");
-                    },
-                  }}
-                >
-                  {(field) => (
-                    <field.ParticipationField
-                      id="person-participation"
-                      disabled={busy}
-                    />
-                  )}
-                </form.AppField>
-                <form.Subscribe
-                  selector={(state) => state.values.participation}
-                >
-                  {(participation) =>
-                    participation === "adult" && (
-                      <form.AppField name="invite">
-                        {(field) => <field.InviteField disabled={busy} />}
-                      </form.AppField>
-                    )
-                  }
-                </form.Subscribe>
-                <form.Subscribe
-                  selector={(state) =>
-                    state.values.participation === "adult" &&
-                    state.values.invite
-                  }
-                >
-                  {(invite) =>
-                    invite && (
-                      <form.AppField
-                        name="email"
-                        validators={{ onChange: emailValidator }}
-                      >
-                        {(field) => (
-                          <field.TextField
-                            id="person-email"
-                            label="Email"
-                            maxLength={254}
-                            autoComplete="off"
-                            type="email"
-                            disabled={busy}
-                          />
-                        )}
-                      </form.AppField>
-                    )
-                  }
-                </form.Subscribe>
+                <div>
+                  <form.AppField
+                    name="participation"
+                    validators={{ onChange: participationValidator }}
+                    listeners={{
+                      onChange: () => {
+                        form.setFieldValue("invite", false);
+                        form.setFieldValue("email", "", { dontValidate: true });
+                        form.setFieldMeta("email", (meta) => ({
+                          ...meta,
+                          errorMap: {},
+                          errors: [],
+                        }));
+                      },
+                    }}
+                  >
+                    {(field) => (
+                      <field.ParticipationField
+                        id="person-participation"
+                        disabled={disabled}
+                      />
+                    )}
+                  </form.AppField>
+                  <form.Subscribe
+                    selector={(state) => ({
+                      invite: state.values.invite,
+                      participation: state.values.participation,
+                    })}
+                  >
+                    {({ invite, participation }) => (
+                      <Collapsible open={participation === "adult"}>
+                        <CollapsibleContent
+                          id="person-invite-choice"
+                          aria-labelledby="person-participation-label"
+                          inert={participation !== "adult"}
+                          variant="adult"
+                        >
+                          <div className="pt-5">
+                            <form.AppField name="invite">
+                              {(field) => (
+                                <field.InviteField
+                                  disabled={
+                                    disabled || participation !== "adult"
+                                  }
+                                >
+                                  <form.AppField
+                                    name="email"
+                                    validators={{
+                                      onChange: invite
+                                        ? emailValidator
+                                        : undefined,
+                                    }}
+                                  >
+                                    {(emailField) => (
+                                      <emailField.TextField
+                                        id="person-email"
+                                        label="Email"
+                                        maxLength={254}
+                                        autoComplete="off"
+                                        type="email"
+                                        disabled={
+                                          disabled ||
+                                          participation !== "adult" ||
+                                          !invite
+                                        }
+                                      />
+                                    )}
+                                  </form.AppField>
+                                </field.InviteField>
+                              )}
+                            </form.AppField>
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )}
+                  </form.Subscribe>
+                </div>
               </FieldGroup>
               {rosterError && (
                 <SetupError>
@@ -219,21 +308,116 @@ const PersonDraftForm = ({
                         ? "Add and invite"
                         : "Add person";
                     return (
-                      <Button type="submit" disabled={busy}>
+                      <Button type="submit" disabled={disabled}>
                         {busy ? "Saving…" : label}
                       </Button>
                     );
                   }}
                 </form.Subscribe>
-                <Button variant="link" disabled={busy} onClick={cancel}>
+                <Button variant="link" disabled={disabled} onClick={cancel}>
                   Cancel
                 </Button>
               </div>
             </CardContent>
           </CardBody>
-          <AddedPeople roster={roster} />
+          <AddedPeople
+            roster={roster}
+            organizer={organizer}
+            busy={disabled}
+            onAction={(kind, person) =>
+              onAction(
+                kind,
+                person,
+                Schema.decodeUnknownSync(PersonDraft)(form.state.values)
+              )
+            }
+          />
         </form.Frame>
       </form.AppForm>
+      {overlay}
+    </SetupFrame>
+  );
+};
+
+const PendingPersonRequest = ({
+  pending,
+  busy,
+  failed,
+  pauseFailed,
+  retry,
+  pause,
+}: {
+  readonly pending: Pending;
+  readonly busy: boolean;
+  readonly failed: boolean;
+  readonly pauseFailed: boolean;
+  readonly retry: () => void;
+  readonly pause: () => void;
+}) => {
+  const name =
+    pending.stage === "person-invite"
+      ? pending.displayName
+      : pending.command.person.displayName;
+  const retryLabel =
+    pending.stage === "person-invite"
+      ? "Finish invitation"
+      : "Check and continue";
+  return (
+    <SetupFrame
+      step="people"
+      action={
+        <Button variant="link" disabled={busy} onClick={pause}>
+          Save & exit
+        </Button>
+      }
+    >
+      <Card className="w-full max-w-140" size="sm">
+        <CardBody>
+          <CardHeader>
+            <CardTitle>
+              <h1
+                id="auth-title"
+                tabIndex={-1}
+                className="text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight focus:outline-none"
+              >
+                {pending.stage === "person-invite"
+                  ? `Finish ${name}’s invitation`
+                  : `Finish adding ${name}`}
+              </h1>
+            </CardTitle>
+            <CardDescription>
+              {pending.stage === "person-invite"
+                ? "Their profile is saved. We still need to confirm the invitation."
+                : "We’ve kept your request. Check the result before adding anyone else."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {pending.stage === "person-invite" && (
+              <div className="flex flex-col gap-1">
+                <span className="text-muted-foreground text-sm">
+                  Invitation for
+                </span>
+                <span>{pending.displayName}</span>
+                <span className="text-muted-foreground text-sm wrap-anywhere">
+                  {pending.command.email}
+                </span>
+              </div>
+            )}
+            {failed && (
+              <SetupError>
+                We couldn’t finish that request. Try again to check and complete
+                the same request.
+              </SetupError>
+            )}
+            {pauseFailed && (
+              <SetupError>We couldn’t save your place. Try again.</SetupError>
+            )}
+            <Button disabled={busy} onClick={retry}>
+              {busy ? "Saving…" : retryLabel}
+            </Button>
+          </CardContent>
+        </CardBody>
+      </Card>
     </SetupFrame>
   );
 };
@@ -244,6 +428,7 @@ export const AddPersonPage = () => {
   const queryClient = useQueryClient();
   const roster = useSetupRoster();
   const { checkpoint } = setup.progress;
+  const manage = useRosterManagement();
   const save = useMutation({
     mutationFn: async (pending: Pending) => {
       await setup.save({ checkpoint: pending, status: "active" });
@@ -284,10 +469,6 @@ export const AddPersonPage = () => {
     checkpoint.stage === "person-create" || checkpoint.stage === "person-invite"
       ? checkpoint
       : save.variables;
-  const retryLabel =
-    checkpoint.stage === "person-invite"
-      ? "Finish invitation"
-      : "Check and continue";
   const busy = [save, pause, cancel].some((operation) => operation.isPending);
   if (checkpoint.stage === "person-invite-draft") {
     return (
@@ -317,71 +498,15 @@ export const AddPersonPage = () => {
     );
   }
   if (pending) {
-    const name =
-      pending.stage === "person-invite"
-        ? pending.displayName
-        : pending.command.person.displayName;
     return (
-      <SetupFrame
-        step="people"
-        action={
-          <Button
-            variant="link"
-            disabled={busy}
-            onClick={() => pause.mutate(pending)}
-          >
-            Save & exit
-          </Button>
-        }
-      >
-        <Card className="w-full max-w-140" size="sm">
-          <CardBody>
-            <CardHeader>
-              <CardTitle>
-                <h1
-                  id="auth-title"
-                  tabIndex={-1}
-                  className="text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight focus:outline-none"
-                >
-                  {pending.stage === "person-invite"
-                    ? `Finish ${name}’s invitation`
-                    : `Finish adding ${name}`}
-                </h1>
-              </CardTitle>
-              <CardDescription>
-                {pending.stage === "person-invite"
-                  ? "Their profile is saved. We still need to confirm the invitation."
-                  : "We’ve kept your request. Check the result before adding anyone else."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {pending.stage === "person-invite" && (
-                <div className="flex flex-col gap-1">
-                  <span className="text-muted-foreground text-sm">
-                    Invitation for
-                  </span>
-                  <span>{pending.displayName}</span>
-                  <span className="text-muted-foreground text-sm wrap-anywhere">
-                    {pending.command.email}
-                  </span>
-                </div>
-              )}
-              {save.error && (
-                <SetupError>
-                  We couldn’t finish that request. Try again to check and
-                  complete the same request.
-                </SetupError>
-              )}
-              {pause.error && (
-                <SetupError>We couldn’t save your place. Try again.</SetupError>
-              )}
-              <Button disabled={busy} onClick={() => save.mutate(pending)}>
-                {busy ? "Saving…" : retryLabel}
-              </Button>
-            </CardContent>
-          </CardBody>
-        </Card>
-      </SetupFrame>
+      <PendingPersonRequest
+        pending={pending}
+        busy={busy}
+        failed={Boolean(save.error)}
+        pauseFailed={Boolean(pause.error)}
+        retry={() => save.mutate(pending)}
+        pause={() => pause.mutate(pending)}
+      />
     );
   }
   if (roster.isPending) {
@@ -417,15 +542,19 @@ export const AddPersonPage = () => {
       </SetupStatus>
     );
   }
-  if (checkpoint.stage !== "person-draft") {
+  const activeDraft = draftForAddPage(checkpoint);
+  if (!activeDraft || !("organizationId" in checkpoint)) {
     return null;
   }
   return (
     <PersonDraftForm
-      draft={checkpoint.draft}
+      draft={activeDraft}
       roster={roster.data}
+      organizer={setup.isFamilyOrganizer(checkpoint.organizationId)}
       rosterError={roster.isError}
       busy={busy}
+      disabled={busy || manage.managing}
+      overlay={<RosterManagementOverlay management={manage} />}
       error={Boolean(pause.error || cancel.error)}
       submit={async (command) => {
         await save
@@ -438,8 +567,19 @@ export const AddPersonPage = () => {
             /* Mutation retains and displays the failure. */
           });
       }}
-      pause={(draft) => pause.mutate({ ...checkpoint, draft })}
+      pause={(draft) => {
+        if (checkpoint.stage === "person-draft") {
+          pause.mutate({ ...checkpoint, draft });
+        }
+      }}
       cancel={() => cancel.mutate()}
+      onAction={(kind, person, draft) => {
+        manage.begin({
+          kind,
+          person,
+          returnTo: { draft, stage: "person-draft" },
+        });
+      }}
     />
   );
 };

@@ -13,6 +13,11 @@ import {
   CardContent,
   CardFooter,
 } from "../../components/ui/card.js";
+import {
+  RosterActions,
+  RosterManagementOverlay,
+  useRosterManagement,
+} from "./roster-management.js";
 import { useSetup } from "./setup-context.js";
 import { SetupError, SetupFrame, SetupStatus } from "./setup-ui.js";
 
@@ -77,43 +82,7 @@ export const FamilyReviewPage = () => {
   const navigate = useNavigate();
   const roster = useSetupRoster();
   const { checkpoint } = setup.progress;
-  const invite = useMutation({
-    mutationFn: async (person: HouseholdPerson) => {
-      if (checkpoint.stage !== "family-review") {
-        return;
-      }
-      await setup.save({
-        checkpoint: {
-          displayName: person.displayName,
-          email: "",
-          organizationId: checkpoint.organizationId,
-          personId: person.id,
-          reason: "not_sent",
-          stage: "person-invite-draft",
-        },
-        status: "active",
-      });
-      await navigate({ to: "/setup/people" });
-    },
-  });
-  const edit = useMutation({
-    mutationFn: async (person: HouseholdPerson) => {
-      if (checkpoint.stage !== "family-review") {
-        return;
-      }
-      await setup.save({
-        checkpoint: {
-          name: person.displayName,
-          organizationId: checkpoint.organizationId,
-          personId: person.id,
-          stage: "person-edit",
-          version: person.version,
-        },
-        status: "active",
-      });
-      await navigate({ to: "/setup/edit-person" });
-    },
-  });
+  const manage = useRosterManagement();
   const action = useMutation({
     mutationFn: async (destination: "ready" | "saved" | "people") => {
       if (checkpoint.stage !== "family-review") {
@@ -125,7 +94,12 @@ export const FamilyReviewPage = () => {
       } else if (destination === "people") {
         await setup.save({
           checkpoint: {
-            draft: { email: "", invite: false, name: "", participation: "" },
+            draft: {
+              email: "",
+              invite: false,
+              name: "",
+              participation: "adult",
+            },
             organizationId: checkpoint.organizationId,
             stage: "person-draft",
           },
@@ -141,9 +115,7 @@ export const FamilyReviewPage = () => {
       }
     },
   });
-  const pendingAction = [action, edit, invite].some(
-    (operation) => operation.isPending
-  );
+  const pendingAction = action.isPending || manage.managing;
   if (roster.isPending) {
     return <SetupStatus title="Loading your family…" />;
   }
@@ -184,25 +156,24 @@ export const FamilyReviewPage = () => {
                 <div className="min-w-0 flex-1">
                   <PersonRow person={person} />
                 </div>
-                {person.kind === "adult" &&
-                  person.associationState === "unlinked" && (
-                    <Button
-                      variant="link"
-                      disabled={pendingAction}
-                      aria-label={`Invite ${person.displayName}`}
-                      onClick={() => invite.mutate(person)}
-                    >
-                      Invite
-                    </Button>
-                  )}
-                <Button
-                  variant="link"
-                  disabled={pendingAction}
-                  aria-label={`Edit ${person.displayName}`}
-                  onClick={() => edit.mutate(person)}
-                >
-                  Edit
-                </Button>
+                {roster.data && (
+                  <RosterActions
+                    person={person}
+                    roster={roster.data}
+                    organizer={
+                      "organizationId" in checkpoint &&
+                      setup.isFamilyOrganizer(checkpoint.organizationId)
+                    }
+                    disabled={pendingAction}
+                    onAction={(kind, target) =>
+                      manage.begin({
+                        kind,
+                        person: target,
+                        returnTo: { stage: "family-review" },
+                      })
+                    }
+                  />
+                )}
               </div>
             ))}
             {roster.data && roster.data.currentPersonId === null && (
@@ -211,7 +182,7 @@ export const FamilyReviewPage = () => {
                 invitation to finish joining.
               </SetupError>
             )}
-            {(action.error || edit.error || invite.error) && (
+            {action.error && (
               <SetupError>We couldn’t save your place. Try again.</SetupError>
             )}
             {roster.isError ? (
@@ -244,6 +215,7 @@ export const FamilyReviewPage = () => {
           </CardFooter>
         )}
       </Card>
+      <RosterManagementOverlay management={manage} />
     </SetupFrame>
   );
 };

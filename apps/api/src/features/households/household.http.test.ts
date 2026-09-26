@@ -161,6 +161,7 @@ const gatewayWithList = (
     list,
     listProfileVersions: () => Effect.die("Unexpected profile history"),
     mutateProfile: () => Effect.die("Unexpected profile mutation"),
+    remove: () => Effect.die("Unexpected remove"),
     rename: () => Effect.die("Unexpected rename"),
     repairAdultLink: () => Effect.die("Unexpected link repair"),
     restore: () => Effect.die("Unexpected restore"),

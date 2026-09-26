@@ -1014,6 +1014,8 @@ export default {
                     householdDomain.mutatePersonProfile(input),
                   prepareMemberDeparture: (input) =>
                     householdDomain.prepareMemberDeparture(input),
+                  preparePersonRemoval: (input) =>
+                    householdDomain.preparePersonRemoval(input),
                   readPersonProfile: (input) =>
                     householdDomain.readPersonProfile(input),
                   renameHouseholdPerson: (input) =>

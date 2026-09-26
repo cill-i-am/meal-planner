@@ -82,6 +82,7 @@ export const householdPeopleFailureCode = (
 export const isAmbiguousHouseholdPeopleFailure = (error: Error | null) => {
   const code = householdPeopleFailureCode(error);
   return (
+    code === "control_plane_unavailable" ||
     code === "internal_error" ||
     code === "people_unavailable" ||
     code === "transport_unavailable"
@@ -96,6 +97,10 @@ export interface HouseholdPeopleOperations {
   ) => Promise<HouseholdPerson>;
   readonly associateInvitation?: (
     payload: AssociateHouseholdAdultInvitationPayload
+  ) => Promise<HouseholdPerson>;
+  readonly remove?: (
+    personId: HouseholdPersonId,
+    payload: TransitionHouseholdPersonPayload
   ) => Promise<HouseholdPerson>;
   readonly archive: (
     personId: HouseholdPersonId,

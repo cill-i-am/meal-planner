@@ -96,6 +96,8 @@ import {
   HouseholdConfirmAdultInvitationRecipientInput,
   HouseholdConfirmMemberAccessRevokedInput,
   HouseholdCreatePersonInput,
+  HouseholdPreparePersonRemovalInput,
+  HouseholdPersonRemovalPlan,
   HouseholdRenamePersonInput,
   HouseholdFinalizeMemberDepartureInput,
   HouseholdGetMemberDepartureByMutationInput,
@@ -269,6 +271,12 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission,
               "archive_household_person"
             );
+            if (command.cancelledInvitationDigest !== undefined) {
+              yield* requireHouseholdCommandAdmission(
+                command.admission,
+                "prepare_person_removal"
+              );
+            }
             const intent = yield* canonicalEncoding
               .encode({ command, method: "archiveHouseholdPerson" })
               .pipe(Effect.mapError(invalidInput));
@@ -294,6 +302,7 @@ export const HouseholdObjectRuntime = Effect.gen(
                   connection,
                   command.admission.organizationId
                 );
+                const { admission, ...transition } = command;
                 const person = yield* makeHouseholdPeopleRepository(
                   connection,
                   {
@@ -302,11 +311,10 @@ export const HouseholdObjectRuntime = Effect.gen(
                     identity: identityGenerator,
                   }
                 ).archive({
-                  actorId: command.admission.actor.actorId,
-                  linkageSubject: command.admission.actor.linkageSubject,
+                  ...transition,
+                  actorId: admission.actor.actorId,
+                  linkageSubject: admission.actor.linkageSubject,
                   now: yield* Clock.currentTimeMillis,
-                  payload: command.payload,
-                  personId: command.personId,
                 });
                 return yield* encodePeopleResult(HouseholdPerson, person);
               })
@@ -575,6 +583,65 @@ export const HouseholdObjectRuntime = Effect.gen(
               request
             );
             return yield* encodeMealPlan(plan);
+          })
+        ),
+      preparePersonRemoval: (
+        untrustedInput: HouseholdPreparePersonRemovalInput
+      ) =>
+        scoped(
+          Effect.gen(function* preparePersonRemoval() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdPreparePersonRemovalInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "prepare_person_removal"
+            );
+            const intent = yield* canonicalEncoding
+              .encode({ command, method: "preparePersonRemoval" })
+              .pipe(Effect.mapError(invalidInput));
+            const intentKey = yield* digest
+              .sha256(intent)
+              .pipe(Effect.mapError(invalidInput));
+            return yield* outputFence.run(
+              {
+                intentKey,
+                organizationId: command.admission.organizationId,
+                wasCommitted: database.pipe(
+                  Effect.flatMap((connection) =>
+                    hasHouseholdPersonMutationReceipt(
+                      connection,
+                      command.payload.mutationId
+                    )
+                  )
+                ),
+              },
+              Effect.gen(function* retainRemovalIntent() {
+                const connection = yield* database;
+                yield* ensureHouseholdProvenance(
+                  connection,
+                  command.admission.organizationId
+                );
+                const person = yield* makeHouseholdPeopleRepository(
+                  connection,
+                  {
+                    canonical: canonicalEncoding,
+                    digest,
+                    identity: identityGenerator,
+                  }
+                ).prepareRemoval({
+                  actorId: command.admission.actor.actorId,
+                  linkageSubject: command.admission.actor.linkageSubject,
+                  payload: command.payload,
+                  personId: command.personId,
+                });
+                return yield* encodePeopleResult(
+                  HouseholdPersonRemovalPlan,
+                  person
+                );
+              })
+            );
           })
         ),
       renameHouseholdPerson: (untrustedInput: HouseholdRenamePersonInput) =>
@@ -1554,6 +1621,7 @@ export const HouseholdObjectRuntime = Effect.gen(
                   callerLinkageSubject: command.admission.actor.linkageSubject,
                   now: yield* Clock.currentTimeMillis,
                   payload: command.payload,
+                  removalMutationId: command.removalMutationId,
                   targetLinkageSubject: command.targetLinkageSubject,
                 });
                 return yield* encodePeopleResult(
