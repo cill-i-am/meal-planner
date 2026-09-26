@@ -58,6 +58,7 @@ export default defineConfig({
                 ),
               },
               compatibilityDate: "2026-07-14",
+              compatibilityFlags: ["nodejs_compat"],
               d1Databases: [
                 "MealPlannerAuthDatabase",
                 "ProviderAccountingDatabase",

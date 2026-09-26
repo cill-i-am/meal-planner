@@ -18,6 +18,7 @@ import {
   resolveAuthenticatedOrganization,
   resolveAuthPrincipal,
 } from "./auth.principal.js";
+import { makeNativeAuthTestService } from "./auth.test-fixture.js";
 
 const testEnv = env as unknown as {
   readonly AUTH_TEST_MIGRATIONS: {
@@ -549,13 +550,16 @@ describe("Better Auth D1 control plane", () => {
       "x-meal-planner-household": "another-family",
     });
     const refused = await Effect.runPromiseExit(
-      resolveAuthenticatedOrganization({ auth, headers: mismatched })
+      resolveAuthenticatedOrganization({
+        auth: makeNativeAuthTestService(auth),
+        headers: mismatched,
+      })
     );
     expect(refused._tag).toBe("Failure");
 
     const principal = await Effect.runPromise(
       resolveAuthPrincipal({
-        auth,
+        auth: makeNativeAuthTestService(auth),
         headers: new Headers({ cookie }),
       })
     );
@@ -563,7 +567,7 @@ describe("Better Auth D1 control plane", () => {
     expect(principal.householdScopeId).toMatch(/^[a-f\d]{64}$/u);
     const authenticatedOrganization = await Effect.runPromise(
       resolveAuthenticatedOrganization({
-        auth,
+        auth: makeNativeAuthTestService(auth),
         headers: new Headers({ cookie }),
       })
     );
@@ -643,7 +647,10 @@ describe("Better Auth D1 control plane", () => {
     expect(await untrustedResponse.json()).not.toMatchObject({
       id: invitationId,
     });
-    const controlPlane = makeHouseholdPeopleControlPlane({ auth, database });
+    const controlPlane = makeHouseholdPeopleControlPlane({
+      auth: makeNativeAuthTestService(auth),
+      database,
+    });
     const invitation = await Effect.runPromise(
       controlPlane.createInvitation({
         email: Schema.decodeUnknownSync(EmailAddress)(
@@ -735,7 +742,7 @@ describe("Better Auth D1 control plane", () => {
     const error = await Effect.runPromise(
       Effect.flip(
         resolveAuthPrincipal({
-          auth,
+          auth: makeNativeAuthTestService(auth),
           headers: new Headers({ cookie: cookieA }),
         })
       )
@@ -745,7 +752,7 @@ describe("Better Auth D1 control plane", () => {
     const householdError = await Effect.runPromise(
       Effect.flip(
         resolveAuthenticatedOrganization({
-          auth,
+          auth: makeNativeAuthTestService(auth),
           headers: new Headers({ cookie: cookieA }),
         })
       )

@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect";
 
-import type { MealPlannerAuth } from "../auth/auth.js";
+import type { MealPlannerAuthService } from "../auth/auth.alchemy.js";
 import { resolveAuthenticatedOrganization } from "../auth/auth.principal.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { HouseholdPeoplePrivateRoster } from "../households/people/household-people.contract.js";
@@ -16,17 +16,25 @@ import {
 
 /** Canonical reads after registration; this result alone is never an egress grant. */
 export const resolvePrivateOutputAuthority = (input: {
-  readonly auth: MealPlannerAuth;
+  readonly auth: MealPlannerAuthService;
   readonly headers: Headers;
   readonly household: Pick<HouseholdDomainWorkerMethods, "listHouseholdPeople">;
 }) =>
   Effect.gen(function* resolvePrivateAuthority() {
     const principal = yield* resolveAuthenticatedOrganization(input);
-    const session = yield* Effect.tryPromise({
-      catch: () =>
-        new PrivateOutputUnavailable({ reason: "authority_unavailable" }),
-      try: () => input.auth.api.getSession({ headers: input.headers }),
-    });
+    const session = yield* input.auth.api
+      .getSession({ headers: input.headers })
+      .pipe(
+        Effect.mapError(
+          () =>
+            new PrivateOutputUnavailable({ reason: "authority_unavailable" })
+        ),
+        Effect.catchDefect(() =>
+          Effect.fail(
+            new PrivateOutputUnavailable({ reason: "authority_unavailable" })
+          )
+        )
+      );
     if (
       session === null ||
       session.user.id !== principal.userId ||

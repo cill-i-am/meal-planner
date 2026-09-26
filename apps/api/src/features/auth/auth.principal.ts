@@ -4,10 +4,9 @@ import {
   RecipeImportHouseholdScopeId,
   RecipeImportPrincipal,
 } from "@meal-planner/recipe-import-api";
-import { isAPIError } from "better-auth/api";
 import { Context, Effect, Schema } from "effect";
 
-import type { MealPlannerAuth } from "./auth.js";
+import type { MealPlannerAuthService } from "./auth.alchemy.js";
 import { AuthPrincipalResolutionError } from "./auth.principal.error.js";
 
 export { AuthPrincipalResolutionError } from "./auth.principal.error.js";
@@ -57,74 +56,81 @@ export type AuthenticatedOrganization = typeof AuthenticatedOrganization.Type;
 
 /** Admit the active organization only after Better Auth proves membership. */
 export const resolveAuthenticatedOrganization = (options: {
-  readonly auth: MealPlannerAuth;
+  readonly auth: MealPlannerAuthService;
   readonly headers: Headers;
 }) =>
-  Effect.tryPromise({
-    catch: (error) =>
+  Effect.gen(function* resolveOrganization() {
+    const authSession = yield* options.auth.api.getSession({
+      headers: options.headers,
+    });
+    if (authSession === null) {
+      return yield* Effect.fail(
+        new AuthPrincipalResolutionError({ reason: "invalid_session" })
+      );
+    }
+    const expectedUser = options.headers.get("x-meal-planner-user");
+    const expectedOrganization = options.headers.get(
+      "x-meal-planner-household"
+    );
+    const organizationId = authSession.session.activeOrganizationId;
+    if (
+      (expectedUser !== null && expectedUser !== authSession.user.id) ||
+      (expectedOrganization !== null && expectedOrganization !== organizationId)
+    ) {
+      return yield* Effect.fail(
+        new AuthPrincipalResolutionError({ reason: "invalid_session" })
+      );
+    }
+    if (organizationId === null || organizationId === undefined) {
+      return yield* Effect.fail(
+        new AuthPrincipalResolutionError({ reason: "missing_active_household" })
+      );
+    }
+    const membership = yield* options.auth.api
+      .getActiveMember({
+        headers: options.headers,
+      })
+      .pipe(
+        Effect.mapError(
+          (error) =>
+            new AuthPrincipalResolutionError({
+              reason:
+                error.body?.code === "MEMBER_NOT_FOUND"
+                  ? "missing_membership"
+                  : "invalid_session",
+            })
+        )
+      );
+    if (
+      membership.organizationId !== organizationId ||
+      membership.userId !== authSession.user.id
+    ) {
+      return yield* Effect.fail(
+        new AuthPrincipalResolutionError({ reason: "missing_membership" })
+      );
+    }
+    return yield* Schema.decodeUnknownEffect(AuthenticatedOrganization)({
+      membershipRole: membership.role,
+      organizationId,
+      userId: authSession.user.id,
+    });
+  }).pipe(
+    Effect.mapError((error) =>
       error instanceof AuthPrincipalResolutionError
         ? error
-        : new AuthPrincipalResolutionError({ reason: "invalid_session" }),
-    try: async () => {
-      const authSession = await options.auth.api.getSession({
-        headers: options.headers,
-      });
-      if (authSession === null) {
-        throw new AuthPrincipalResolutionError({
-          reason: "invalid_session",
-        });
-      }
-      const expectedUser = options.headers.get("x-meal-planner-user");
-      const expectedOrganization = options.headers.get(
-        "x-meal-planner-household"
-      );
-      const organizationId = authSession.session.activeOrganizationId;
-      if (
-        (expectedUser !== null && expectedUser !== authSession.user.id) ||
-        (expectedOrganization !== null &&
-          expectedOrganization !== organizationId)
-      ) {
-        throw new AuthPrincipalResolutionError({ reason: "invalid_session" });
-      }
-      if (organizationId === null || organizationId === undefined) {
-        throw new AuthPrincipalResolutionError({
-          reason: "missing_active_household",
-        });
-      }
-      let membership: Awaited<
-        ReturnType<typeof options.auth.api.getActiveMember>
-      >;
-      try {
-        membership = await options.auth.api.getActiveMember({
-          headers: options.headers,
-        });
-      } catch (error) {
-        if (isAPIError(error) && error.body?.code === "MEMBER_NOT_FOUND") {
-          throw new AuthPrincipalResolutionError({
-            reason: "missing_membership",
-          });
-        }
-        throw new AuthPrincipalResolutionError({ reason: "invalid_session" });
-      }
-      if (
-        membership.organizationId !== organizationId ||
-        membership.userId !== authSession.user.id
-      ) {
-        throw new AuthPrincipalResolutionError({
-          reason: "missing_membership",
-        });
-      }
-      return Schema.decodeUnknownSync(AuthenticatedOrganization)({
-        membershipRole: membership.role,
-        organizationId,
-        userId: authSession.user.id,
-      });
-    },
-  });
+        : new AuthPrincipalResolutionError({ reason: "invalid_session" })
+    ),
+    // Alchemy exposes non-APIError provider failures as defects. Fail closed at admission.
+    Effect.catchDefect(() =>
+      Effect.fail(
+        new AuthPrincipalResolutionError({ reason: "invalid_session" })
+      )
+    )
+  );
 
 /** Resolve the recipe-import principal from the admitted organization. */
 export const resolveAuthPrincipal = (options: {
-  readonly auth: MealPlannerAuth;
+  readonly auth: MealPlannerAuthService;
   readonly headers: Headers;
 }) =>
   resolveAuthenticatedOrganization(options).pipe(
@@ -146,13 +152,13 @@ export const resolveAuthPrincipal = (options: {
   );
 
 export const makeAuthPrincipalResolver = (options: {
-  readonly auth: MealPlannerAuth;
+  readonly auth: MealPlannerAuthService;
 }): AuthPrincipalResolver => ({
   resolve: (headers) => resolveAuthPrincipal({ headers, ...options }),
 });
 
 export const makeAuthenticatedOrganizationResolver = (options: {
-  readonly auth: MealPlannerAuth;
+  readonly auth: MealPlannerAuthService;
 }): AuthenticatedOrganizationResolver => ({
   resolve: (headers) =>
     resolveAuthenticatedOrganization({ headers, ...options }),

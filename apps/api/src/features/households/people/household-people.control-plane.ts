@@ -1,3 +1,4 @@
+import type { BetterAuthApiError } from "@alchemy.run/better-auth";
 import type {
   InvitationRejectionReason,
   HouseholdOrganizationId,
@@ -9,13 +10,12 @@ import {
   MemberId,
   UserId,
 } from "@meal-planner/household-api";
-import { isAPIError } from "better-auth/api";
 import { and, eq } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { Data, Effect, Schema } from "effect";
 
+import type { MealPlannerAuthService } from "../../auth/auth.alchemy.js";
 import * as authSchema from "../../auth/auth.database-schema.js";
-import type { MealPlannerAuth } from "../../auth/auth.js";
 import { HouseholdPeopleControlPlaneNotFound } from "./household-people.control-plane-not-found.js";
 import { HouseholdPeopleControlPlaneUnavailable } from "./household-people.control-plane-unavailable.js";
 
@@ -25,7 +25,8 @@ export { HouseholdPeopleControlPlaneUnavailable } from "./household-people.contr
 export class HouseholdInvitationRejected extends Data.TaggedError(
   "HouseholdInvitationRejected"
 )<{ readonly reason: InvitationRejectionReason }> {}
-const invitationFailure = (code: string | undefined) => {
+const invitationFailure = (error: BetterAuthApiError) => {
+  const code = error.body?.code;
   const reasons: Readonly<Record<string, InvitationRejectionReason>> = {
     INVALID_EMAIL: "invalid_email",
     INVITATION_LIMIT_REACHED: "limit",
@@ -122,7 +123,7 @@ const unavailable = () => new HouseholdPeopleControlPlaneUnavailable();
 
 /** Better Auth control-plane adapter. Raw account and invitation data never leave this API seam. */
 export const makeHouseholdPeopleControlPlane = (options: {
-  readonly auth: MealPlannerAuth;
+  readonly auth: MealPlannerAuthService;
   readonly database: DrizzleD1Database;
 }): HouseholdPeopleControlPlane => {
   const findInvitation = (input: {
@@ -199,40 +200,38 @@ export const makeHouseholdPeopleControlPlane = (options: {
 
   return {
     createInvitation: (input) =>
-      Effect.tryPromise({
-        catch: (error) =>
-          invitationFailure(isAPIError(error) ? error.body?.code : undefined),
-        try: async () => {
-          const invitation = await options.auth.createHouseholdInvitation({
-            body: {
-              email: input.email,
-              householdPersonId: input.personId,
-              organizationId: input.organizationId,
-              role: "member",
-            },
-            headers: input.headers,
-            invitationId: input.invitationId,
-          });
-          return {
+      options.auth
+        .createHouseholdInvitation({
+          body: {
+            email: input.email,
+            householdPersonId: input.personId,
+            organizationId: input.organizationId,
+            role: "member",
+          },
+          headers: input.headers,
+          invitationId: input.invitationId,
+        })
+        .pipe(
+          Effect.mapError(invitationFailure),
+          Effect.catchDefect(() => Effect.fail(unavailable())),
+          Effect.map((invitation) => ({
             email: invitation.email,
             householdPersonId: invitation.householdPersonId ?? null,
             id: invitation.id,
             inviterId: invitation.inviterId,
             status: invitation.status,
-          };
-        },
-      }).pipe(
-        Effect.flatMap((invitation) =>
-          decodeInvitation(invitation).pipe(Effect.mapError(unavailable))
-        ),
-        Effect.catchTag("HouseholdInvitationRejected", (rejection) =>
-          findInvitation(input).pipe(
-            Effect.catchTag("HouseholdPeopleControlPlaneNotFound", () =>
-              Effect.fail(rejection)
+          })),
+          Effect.flatMap((invitation) =>
+            decodeInvitation(invitation).pipe(Effect.mapError(unavailable))
+          ),
+          Effect.catchTag("HouseholdInvitationRejected", (rejection) =>
+            findInvitation(input).pipe(
+              Effect.catchTag("HouseholdPeopleControlPlaneNotFound", () =>
+                Effect.fail(rejection)
+              )
             )
           )
-        )
-      ),
+        ),
     getInvitation: findInvitation,
     getMember: findMember,
     listInvitationStates: (organizationId) =>
@@ -268,24 +267,25 @@ export const makeHouseholdPeopleControlPlane = (options: {
         )
       ),
     removeMember: (input) =>
-      Effect.tryPromise({
-        catch: unavailable,
-        try: async () => {
-          if (input.self) {
-            await options.auth.api.leaveOrganization({
+      (input.self
+        ? options.auth.api
+            .leaveOrganization({
               body: { organizationId: input.organizationId },
               headers: input.headers,
-            });
-            return;
-          }
-          await options.auth.api.removeMember({
-            body: {
-              memberIdOrEmail: input.memberId,
-              organizationId: input.organizationId,
-            },
-            headers: input.headers,
-          });
-        },
-      }),
+            })
+            .pipe(Effect.asVoid)
+        : options.auth.api
+            .removeMember({
+              body: {
+                memberIdOrEmail: input.memberId,
+                organizationId: input.organizationId,
+              },
+              headers: input.headers,
+            })
+            .pipe(Effect.asVoid)
+      ).pipe(
+        Effect.mapError(unavailable),
+        Effect.catchDefect(() => Effect.fail(unavailable()))
+      ),
   };
 };

@@ -182,7 +182,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(stackSource).toContain('main: "src/worker.ts"');
     expect(stackSource).toContain('"../../packages/*/src/**"');
     expect(stackSource).toContain("lockfile: true");
-    expect(apiWorkerSource).toContain("auth.fetch(webRequest)");
+    expect(apiWorkerSource).toContain("auth.fetchHttpEffect(webRequest)");
     expect(apiWorkerSource).toContain('Config.redacted("BETTER_AUTH_SECRET")');
   });
 

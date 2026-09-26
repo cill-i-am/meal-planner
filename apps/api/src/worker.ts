@@ -1,14 +1,14 @@
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { drizzle } from "drizzle-orm/d1";
-import { Config, Layer, Redacted, Schema, Stream } from "effect";
+import { Config, Layer, Schema, Stream } from "effect";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
+import { makeAlchemyMealPlannerAuth } from "./features/auth/auth.alchemy.js";
 import * as authSchema from "./features/auth/auth.database-schema.js";
-import { makeMealPlannerAuth } from "./features/auth/auth.js";
 import {
   makeAuthenticatedOrganizationResolver,
   makeAuthPrincipalResolver,
@@ -182,19 +182,17 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         const outputApi = yield* privateOutputApiPort;
         const outputMutations = yield* privateOutputMutationPort;
         const outputFence = makeAuthOutputFence(outputMutations);
-        const auth = makeMealPlannerAuth({
+        const auth = yield* makeAlchemyMealPlannerAuth({
           baseURL: requestOrigin,
           database: authDatabase,
           outputFence,
           schema: authSchema,
-          secret: Redacted.value(authSecret),
+          secret: authSecret,
           verifyInvitationRecipient:
             makeHouseholdInvitationRecipientVerifier(householdDomain),
         });
         if (new URL(webRequest.url).pathname.startsWith("/api/auth/")) {
-          return HttpServerResponse.fromWeb(
-            yield* Effect.promise(() => auth.fetch(webRequest))
-          );
+          return yield* auth.fetchHttpEffect(webRequest);
         }
         const privateInterview = yield* handlePrivateInterviewRequest({
           auth,

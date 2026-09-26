@@ -5,7 +5,7 @@ import {
 } from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
 
-import type { MealPlannerAuth } from "../auth/auth.js";
+import type { MealPlannerAuthService } from "../auth/auth.alchemy.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { handlePrivateChatRequest } from "./private-chat.http.js";
 import { ReleasedConfirmation } from "./private-confirmation.contract.js";
@@ -36,7 +36,7 @@ const hasEmptyBody = (request: Request) =>
 /** Only this authenticated route can invoke the named session-admission capability. */
 export const handlePrivateInterviewRequest = Effect.fn(
   function* handlePrivateInterviewRequest(input: {
-    readonly auth: MealPlannerAuth;
+    readonly auth: MealPlannerAuthService;
     readonly household: Pick<
       HouseholdDomainWorkerMethods,
       "listHouseholdPeople" | "mutateInterviewProfile" | "readPersonProfile"
