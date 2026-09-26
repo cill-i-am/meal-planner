@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@meal-planner/recipe-domain": "workspace:*",
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.112",
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "typescript": "6.0.3",

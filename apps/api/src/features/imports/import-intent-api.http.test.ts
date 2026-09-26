@@ -1,4 +1,4 @@
-import { HouseholdOrganizationId } from "@meal-planner/household-api";
+import { HouseholdOrganizationId, UserId } from "@meal-planner/household-api";
 import {
   CancelledRecipeImportIntent,
   IdempotencyKey,
@@ -246,7 +246,7 @@ const makeApp = async (options: MakeAppOptions = {}) => {
             organizationId: Schema.decodeUnknownSync(HouseholdOrganizationId)(
               "test-household"
             ),
-            userId: "test-user",
+            userId: Schema.decodeUnknownSync(UserId)("test-user"),
           }),
       })
     ),

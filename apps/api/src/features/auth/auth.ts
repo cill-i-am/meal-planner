@@ -1,16 +1,81 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
-import { setupProgressField } from "@meal-planner/household-api";
+import {
+  EmailAddress,
+  HouseholdOrganizationId,
+  InvitationId,
+  setupProgressField,
+  UserId,
+} from "@meal-planner/household-api";
+import type { HouseholdPersonId } from "@meal-planner/household-api";
 import { betterAuth } from "better-auth";
-import type { BetterAuthOptions } from "better-auth";
-import { organization } from "better-auth/plugins";
+import type { Auth, BetterAuthOptions } from "better-auth";
+import { APIError, createAuthMiddleware } from "better-auth/api";
+import type { OrganizationOptions } from "better-auth/plugins/organization";
+import { DrizzleD1Database } from "drizzle-orm/d1";
+import { Option, Schema } from "effect";
 
+import {
+  atomicOrganization,
+  atomicPasswordResetPlugin,
+} from "./auth-atomic-endpoints.js";
+import { makeAuthAtomicStore } from "./auth-atomic-store.js";
 import { mockInvitationMail, mockPasswordResetMail } from "./auth-mail.js";
 import type { InvitationMail, PasswordResetMail } from "./auth-mail.js";
 import { fenceAuthAdapter } from "./auth-output-fence.js";
 import type { AuthOutputFence } from "./auth-output-fence.js";
 import { invitationViewPlugin } from "./invitation-view.js";
+
+const parseEmailAddress = Schema.decodeUnknownSync(EmailAddress);
+const parseOptionalEmailAddress = Schema.decodeUnknownOption(EmailAddress);
+const parseInvitationId = Schema.decodeUnknownSync(InvitationId);
+const parseOrganizationId = Schema.decodeUnknownSync(HouseholdOrganizationId);
+const parseUserId = Schema.decodeUnknownSync(UserId);
+const nativeEmailPaths = new Set([
+  "/sign-up/email",
+  "/sign-in/email",
+  "/request-password-reset",
+  "/send-verification-email",
+  "/organization/invite-member",
+]);
+
+const invitationSchema = {
+  invitation: {
+    additionalFields: {
+      householdPersonId: { input: true, required: false, type: "string" },
+    },
+  },
+} as const;
+
+type MealPlannerAuthConfiguration = Omit<
+  BetterAuthOptions,
+  "plugins" | "user"
+> & {
+  plugins: [
+    ReturnType<typeof invitationViewPlugin>,
+    ReturnType<typeof atomicPasswordResetPlugin>,
+    ReturnType<typeof atomicOrganization<{ schema: typeof invitationSchema }>>,
+  ];
+  user: { additionalFields: { setupProgress: typeof setupProgressField } };
+};
+type AuthCore = Auth<MealPlannerAuthConfiguration>;
+interface HouseholdInvitationRequest {
+  readonly invitationId: InvitationId;
+  readonly headers: Headers;
+  readonly body: {
+    readonly email: EmailAddress;
+    readonly householdPersonId: HouseholdPersonId;
+    readonly organizationId: HouseholdOrganizationId;
+    readonly role: "member";
+  };
+}
+
+export type MealPlannerAuth = AuthCore & {
+  readonly createHouseholdInvitation: (
+    request: HouseholdInvitationRequest
+  ) => ReturnType<AuthCore["api"]["createInvitation"]>;
+};
 
 export interface MealPlannerAuthOptions {
   readonly sendPasswordResetEmail?: (mail: PasswordResetMail) => Promise<void>;
@@ -21,9 +86,9 @@ export interface MealPlannerAuthOptions {
   readonly schema?: Record<string, unknown>;
   readonly secret: string;
   readonly verifyInvitationRecipient?: (input: {
-    readonly invitationId: string;
-    readonly organizationId: string;
-    readonly userId: string;
+    readonly invitationId: InvitationId;
+    readonly organizationId: HouseholdOrganizationId;
+    readonly userId: UserId;
   }) => Promise<void>;
 }
 
@@ -37,12 +102,33 @@ export const makeMealPlannerAuth = ({
   verifyInvitationRecipient,
   sendInvitationEmail = mockInvitationMail,
   sendPasswordResetEmail = mockPasswordResetMail,
-}: MealPlannerAuthOptions) => {
+}: MealPlannerAuthOptions): MealPlannerAuth => {
   const adapterOptions =
     schema === undefined
       ? { provider: "sqlite" as const }
       : { provider: "sqlite" as const, schema };
   const failures = new AsyncLocalStorage<{ failure: unknown }>();
+  const invitationIdentity = new AsyncLocalStorage<InvitationId>();
+  const organizationHooks: NonNullable<
+    OrganizationOptions["organizationHooks"]
+  > = {
+    beforeCreateInvitation: () => {
+      const id = invitationIdentity.getStore();
+      return Promise.resolve(id === undefined ? undefined : { data: { id } });
+    },
+  };
+  if (verifyInvitationRecipient !== undefined) {
+    organizationHooks.beforeAcceptInvitation = ({
+      invitation,
+      organization,
+      user,
+    }) =>
+      verifyInvitationRecipient({
+        invitationId: parseInvitationId(invitation.id),
+        organizationId: parseOrganizationId(organization.id),
+        userId: parseUserId(user.id),
+      });
+  }
   const guardedFence: AuthOutputFence = async (input, canonical) => {
     try {
       return await outputFence(input, canonical);
@@ -54,7 +140,18 @@ export const makeMealPlannerAuth = ({
       throw error;
     }
   };
-  const auth = betterAuth({
+  const atomicStore = makeAuthAtomicStore(() => {
+    // The CLI inspects this same configuration using SQLite without running endpoints.
+    // Production mutations require D1's atomic batch capability.
+    if (!(database instanceof DrizzleD1Database)) {
+      throw new Error("Authentication mutations require a D1 database.");
+    }
+    return database;
+  }, guardedFence);
+  const auth = betterAuth<MealPlannerAuthConfiguration>({
+    advanced: {
+      ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
+    },
     appName: "Meal Planner",
     baseURL,
     database: (options: BetterAuthOptions) =>
@@ -69,50 +166,52 @@ export const makeMealPlannerAuth = ({
       enabled: true,
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: ({ user, url }) =>
-        sendPasswordResetEmail({ email: user.email, url }),
+        sendPasswordResetEmail({
+          email: parseEmailAddress(user.email),
+          url,
+        }),
+    },
+    hooks: {
+      before: createAuthMiddleware((ctx): Promise<unknown> => {
+        let field: "email" | "newEmail" | undefined;
+        if (ctx.path === "/change-email") {
+          field = "newEmail";
+        } else if (nativeEmailPaths.has(ctx.path)) {
+          field = "email";
+        }
+        if (field === undefined) {
+          return Promise.resolve();
+        }
+        const email = parseOptionalEmailAddress(ctx.body?.[field]);
+        if (Option.isNone(email)) {
+          throw new APIError("BAD_REQUEST", {
+            code: "INVALID_EMAIL",
+            message: "Enter a valid email address.",
+          });
+        }
+        return Promise.resolve({
+          context: { body: { ...ctx.body, [field]: email.value } },
+        });
+      }),
     },
     plugins: [
       invitationViewPlugin(),
-      organization({
-        disableOrganizationDeletion: true,
-        organizationHooks:
-          verifyInvitationRecipient === undefined
-            ? undefined
-            : {
-                beforeAcceptInvitation: ({
-                  invitation,
-                  organization: acceptedOrganization,
-                  user,
-                }) =>
-                  verifyInvitationRecipient({
-                    invitationId: invitation.id,
-                    organizationId: acceptedOrganization.id,
-                    userId: user.id,
-                  }),
-              },
-        schema: {
-          invitation: {
-            additionalFields: {
-              householdPersonId: {
-                input: true,
-                required: false,
-                type: "string",
-              },
-              id: {
-                input: true,
-                required: false,
-                type: "string",
-              },
-            },
-          },
-        },
-        sendInvitationEmail: ({ id, email }) =>
-          sendInvitationEmail({
-            email,
-            url: `${baseURL}/invitation/${encodeURIComponent(id)}`,
-          }),
-      }),
+      atomicPasswordResetPlugin(atomicStore),
+      atomicOrganization(
+        {
+          disableOrganizationDeletion: true,
+          organizationHooks,
+          schema: invitationSchema,
+          sendInvitationEmail: ({ id, email }) =>
+            sendInvitationEmail({
+              email: parseEmailAddress(email),
+              url: `${baseURL}/invitation/${encodeURIComponent(id)}`,
+            }),
+        } satisfies OrganizationOptions,
+        atomicStore
+      ),
     ],
+    rateLimit: { enabled: true, storage: "database" },
     secret,
     trustedOrigins: [baseURL],
     user: { additionalFields: { setupProgress: setupProgressField } },
@@ -162,7 +261,16 @@ export const makeMealPlannerAuth = ({
     fetch,
     handler: fetch,
   };
-  return guarded;
+  return {
+    ...guarded,
+    // Only the server's retained household command may choose an invitation ID.
+    // The native organization hook supplies it without redefining the core schema field.
+    createHouseholdInvitation: ({
+      invitationId,
+      ...request
+    }: HouseholdInvitationRequest) =>
+      invitationIdentity.run(invitationId, () =>
+        auth.api.createInvitation(request)
+      ),
+  };
 };
-
-export type MealPlannerAuth = ReturnType<typeof makeMealPlannerAuth>;

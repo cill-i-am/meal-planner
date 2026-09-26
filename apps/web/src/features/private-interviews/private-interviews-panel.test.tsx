@@ -951,6 +951,7 @@ it("refreshes the sibling shared profile and history on canonical settlement whi
         }}
       />
       <HouseholdProfilesPanel
+        accountId="user-a"
         operations={operations}
         organizationId={context.householdId}
         peopleOperations={{ list: vi.fn().mockResolvedValue(roster) }}

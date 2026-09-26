@@ -37,7 +37,10 @@ const empty = Schema.decodeUnknownSync(PersonProfile)({
   personId,
   version: 0,
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  globalThis.sessionStorage.clear();
+});
 
 it.each([false, true])(
   "retains the exact command through reauthentication (previous ambiguity: %s)",
@@ -58,6 +61,7 @@ it.each([false, true])(
     const view = () => (
       <QueryClientProvider client={client}>
         <HouseholdProfilesPanel
+          accountId="user-a"
           organizationId="auth"
           operations={{
             get: vi.fn().mockResolvedValue(empty),
@@ -118,6 +122,7 @@ it.each(["success", "definitive rejection"])(
     const view = () => (
       <QueryClientProvider client={client}>
         <HouseholdProfilesPanel
+          accountId="user-a"
           organizationId="overlap"
           operations={{
             get: vi.fn().mockResolvedValue(empty),
@@ -183,9 +188,10 @@ it("retains one ambiguous command across edits and remount, retrying its exact p
   const queryClient = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   });
-  const view = () => (
+  const view = (accountId = "user-a") => (
     <QueryClientProvider client={queryClient}>
       <HouseholdProfilesPanel
+        accountId={accountId}
         organizationId="household-a"
         operations={operations}
         peopleOperations={{ list: vi.fn().mockResolvedValue(roster) }}
@@ -204,6 +210,15 @@ it("retains one ambiguous command across edits and remount, retrying its exact p
   const [original] = mutate.mock.calls;
   expect(screen.getByRole("button", { name: "Add fact" })).toBeDisabled();
   first.unmount();
+  queryClient.clear();
+  const other = render(view("user-b"));
+  await screen.findByRole("heading", { name: "Cillian’s food profile" });
+  expect(
+    screen.queryByRole("button", { name: "Retry saved change" })
+  ).not.toBeInTheDocument();
+  expect(await screen.findByLabelText("Food or ingredient")).toBeEnabled();
+  other.unmount();
+  queryClient.clear();
   render(view());
   await screen.findByText(/outcome is not known/u);
   await user.click(screen.getByRole("button", { name: "Retry saved change" }));
@@ -226,6 +241,7 @@ it("requires reload and explicit reapplication after a stale version without aut
   render(
     <QueryClientProvider client={queryClient}>
       <HouseholdProfilesPanel
+        accountId="user-a"
         organizationId="household-stale"
         operations={{
           get,
@@ -307,6 +323,7 @@ it.each([
     render(
       <QueryClientProvider client={new QueryClient()}>
         <HouseholdProfilesPanel
+          accountId="user-a"
           organizationId={`source-${source}`}
           operations={{
             get: vi.fn().mockResolvedValue(profile),

@@ -15,7 +15,6 @@ export const user = sqliteTable("user", {
     .default(false)
     .notNull(),
   image: text("image"),
-  setupProgress: text("setup_progress", { mode: "json" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),
@@ -23,6 +22,7 @@ export const user = sqliteTable("user", {
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
+  setupProgress: text("setup_progress", { mode: "json" }),
 });
 
 export const session = sqliteTable(
@@ -102,6 +102,21 @@ export const verification = sqliteTable(
   (table) => [index("verification_identifier_idx").on(table.identifier)],
 );
 
+export const authMutationIntent = sqliteTable("auth_mutation_intent", {
+  id: text("id").primaryKey(),
+  accountId: text("account_id").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const authMutationReceipt = sqliteTable("auth_mutation_receipt", {
+  id: text("id").primaryKey(),
+  accountId: text("account_id").notNull(),
+  applied: integer("applied", { mode: "boolean" }).notNull(),
+  attemptId: text("attempt_id").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  requestDigest: text("request_digest").notNull(),
+});
+
 export const organization = sqliteTable(
   "organization",
   {
@@ -129,6 +144,10 @@ export const member = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [
+    uniqueIndex("member_organization_user_uidx").on(
+      table.organizationId,
+      table.userId,
+    ),
     index("member_organizationId_idx").on(table.organizationId),
     index("member_userId_idx").on(table.userId),
   ],
@@ -142,7 +161,6 @@ export const invitation = sqliteTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     email: text("email").notNull(),
-    householdPersonId: text("household_person_id"),
     role: text("role"),
     status: text("status").default("pending").notNull(),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
@@ -152,6 +170,7 @@ export const invitation = sqliteTable(
     inviterId: text("inviter_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    householdPersonId: text("household_person_id"),
   },
   (table) => [
     index("invitation_organizationId_idx").on(table.organizationId),
@@ -159,8 +178,26 @@ export const invitation = sqliteTable(
   ],
 );
 
+export const rateLimit = sqliteTable("rate_limit", {
+  id: text("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  count: integer("count").notNull(),
+  lastRequest: integer("last_request").notNull(),
+});
+
 export const authRelations = defineRelationsPart(
-  { user, session, account, verification, organization, member, invitation },
+  {
+    user,
+    session,
+    account,
+    verification,
+    authMutationIntent,
+    authMutationReceipt,
+    organization,
+    member,
+    invitation,
+    rateLimit,
+  },
   (r) => ({
     user: {
       sessions: r.many.session({

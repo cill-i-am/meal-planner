@@ -1,4 +1,9 @@
-import { SetupProgress } from "@meal-planner/household-api";
+import {
+  EmailAddress,
+  HouseholdOrganizationId,
+  SetupProgress,
+  UserId,
+} from "@meal-planner/household-api";
 import { useQueryClient } from "@tanstack/react-query";
 import { Navigate, useRouter } from "@tanstack/react-router";
 import { Schema } from "effect";
@@ -19,19 +24,23 @@ type AuthClient = ReturnType<typeof useAuthClient>;
 interface SetupContextValue {
   readonly auth: AuthClient;
   readonly user: {
-    readonly id: string;
+    readonly id: typeof UserId.Type;
     readonly name: string;
-    readonly email: string;
+    readonly email: typeof EmailAddress.Type;
   };
   readonly progress: SetupProgress;
   readonly families: readonly {
-    readonly id: string;
+    readonly id: typeof HouseholdOrganizationId.Type;
     readonly name: string;
     readonly slug: string;
   }[];
-  readonly peopleForFamily: (id: string) => HouseholdPeopleOperations;
+  readonly peopleForFamily: (
+    id: typeof HouseholdOrganizationId.Type
+  ) => HouseholdPeopleOperations;
   readonly save: (progress: SetupProgress) => Promise<void>;
-  readonly selectFamily: (id: string) => Promise<void>;
+  readonly selectFamily: (
+    id: typeof HouseholdOrganizationId.Type
+  ) => Promise<void>;
   readonly logout: () => Promise<void>;
 }
 const SetupContext = createContext<SetupContextValue | null>(null);
@@ -61,7 +70,25 @@ export const SetupProvider = ({
   const queryClient = useQueryClient();
   const router = useRouter();
   const userId = session.data?.user.id;
-  const scopedAuth = useMemo(() => makeAuthClient(fetch, userId), [userId]);
+  const email = session.data?.user.email;
+  const parsedUserId = useMemo(
+    () =>
+      userId === undefined
+        ? undefined
+        : Schema.decodeUnknownSync(UserId)(userId),
+    [userId]
+  );
+  const parsedEmail = useMemo(
+    () =>
+      email === undefined
+        ? undefined
+        : Schema.decodeUnknownSync(EmailAddress)(email),
+    [email]
+  );
+  const scopedAuth = useMemo(
+    () => makeAuthClient(fetch, parsedUserId),
+    [parsedUserId]
+  );
   if (session.isPending) {
     return <SetupStatus title="Loading your setup…" />;
   }
@@ -102,7 +129,15 @@ export const SetupProvider = ({
       />
     );
   }
-  const { user } = session.data;
+  const { user: sessionUser } = session.data;
+  if (parsedUserId === undefined || parsedEmail === undefined) {
+    throw new Error("Authenticated session has no user identity.");
+  }
+  const user = { ...sessionUser, email: parsedEmail, id: parsedUserId };
+  const families = (organizations.data ?? []).map((family) => ({
+    ...family,
+    id: Schema.decodeUnknownSync(HouseholdOrganizationId)(family.id),
+  }));
   const save = async (next: SetupProgress) => {
     const decoded = Schema.decodeUnknownSync(SetupProgress)(next);
     await requireAuthSuccess(scopedAuth.updateUser({ setupProgress: decoded }));
@@ -113,7 +148,7 @@ export const SetupProvider = ({
       key={user.id}
       value={{
         auth: scopedAuth,
-        families: organizations.data ?? [],
+        families,
         logout: async () => {
           const redirect = router.state.location.pathname.startsWith(
             "/invitation/"

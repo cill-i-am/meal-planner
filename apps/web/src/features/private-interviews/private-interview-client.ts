@@ -23,6 +23,8 @@ import type {
 } from "@meal-planner/private-interview-api";
 import { Schema } from "effect";
 
+import { displayedIdentityHeaders } from "../auth/displayed-identity.js";
+import type { DisplayedIdentity } from "../auth/displayed-identity.js";
 import { ProfileOperationError } from "../household-profiles/operations.js";
 import {
   readCurrentPrivateProfile,
@@ -1168,35 +1170,47 @@ export class PrivateInterviewClient {
   }
 }
 
-export const browserPrivateInterviewDependencies =
-  (): PrivateInterviewDependencies => ({
-    connect: (path) => {
-      const url = new URL(path, globalThis.location.origin);
-      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-      const socket = new WebSocket(url);
-      const transport: PrivateInterviewSocket = {
-        close: () => socket.close(),
-        onDisconnect: null,
-        onFailure: null,
-        onFrame: null,
-        send: (data) => socket.send(data),
-      };
-      socket.addEventListener("message", (event) =>
-        transport.onFrame?.({ data: event.data })
-      );
-      socket.addEventListener("close", (event) =>
-        transport.onDisconnect?.({ code: event.code })
-      );
-      socket.addEventListener("error", () => transport.onFailure?.());
-      return transport;
-    },
-    continueConfirmation: continuePrivateConfirmation,
-    fetchChat: (input, init) => fetch(input, init),
-    makeId: () => crypto.randomUUID(),
-    readCurrentProfile: readCurrentPrivateProfile,
-    storage: {
-      getItem: (key) => globalThis.sessionStorage.getItem(key),
-      removeItem: (key) => globalThis.sessionStorage.removeItem(key),
-      setItem: (key, value) => globalThis.sessionStorage.setItem(key, value),
-    },
-  });
+export const browserPrivateInterviewDependencies = (
+  scope: DisplayedIdentity
+): PrivateInterviewDependencies => ({
+  connect: (path) => {
+    const url = new URL(path, globalThis.location.origin);
+    url.searchParams.set("expectedUserId", scope.userId);
+    url.searchParams.set("expectedOrganizationId", scope.organizationId);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(url);
+    const transport: PrivateInterviewSocket = {
+      close: () => socket.close(),
+      onDisconnect: null,
+      onFailure: null,
+      onFrame: null,
+      send: (data) => socket.send(data),
+    };
+    socket.addEventListener("message", (event) =>
+      transport.onFrame?.({ data: event.data })
+    );
+    socket.addEventListener("close", (event) =>
+      transport.onDisconnect?.({ code: event.code })
+    );
+    socket.addEventListener("error", () => transport.onFailure?.());
+    return transport;
+  },
+  continueConfirmation: (session, mutation, generation, signal) =>
+    continuePrivateConfirmation(session, mutation, generation, signal, scope),
+  fetchChat: (input, init) => {
+    const headers = new Headers(init?.headers);
+    for (const [name, value] of Object.entries(
+      displayedIdentityHeaders(scope)
+    )) {
+      headers.set(name, value);
+    }
+    return fetch(input, { ...init, headers });
+  },
+  makeId: () => crypto.randomUUID(),
+  readCurrentProfile: () => readCurrentPrivateProfile(scope),
+  storage: {
+    getItem: (key) => globalThis.sessionStorage.getItem(key),
+    removeItem: (key) => globalThis.sessionStorage.removeItem(key),
+    setItem: (key, value) => globalThis.sessionStorage.setItem(key, value),
+  },
+});

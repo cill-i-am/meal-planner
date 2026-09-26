@@ -8,6 +8,8 @@ import type {
 } from "@meal-planner/household-api";
 import { Option, Schema } from "effect";
 
+import type { DisplayedIdentity } from "../auth/displayed-identity.js";
+
 const RetainedHouseholdPeopleIntents = Schema.Struct({
   departure: Schema.NullOr(DepartHouseholdAdultPayload),
   invitation: Schema.NullOr(InviteHouseholdAdultPayload),
@@ -31,8 +33,8 @@ const cache = new Map<
 >();
 const listeners = new Map<string, Set<() => void>>();
 
-const keyFor = (organizationId: string) =>
-  `meal-planner.household-people.intents.v1:${organizationId}`;
+const keyFor = (scope: DisplayedIdentity) =>
+  `meal-planner.household-people.intents.v2:${JSON.stringify([scope.userId, scope.organizationId])}`;
 
 const readRaw = (key: string) => {
   try {
@@ -60,9 +62,9 @@ const decode = (raw: string | null): RetainedHouseholdPeopleIntents => {
 };
 
 export const retainedHouseholdPeopleIntents = (
-  organizationId: string
+  scope: DisplayedIdentity
 ): RetainedHouseholdPeopleIntents => {
-  const key = keyFor(organizationId);
+  const key = keyFor(scope);
   const raw = readRaw(key);
   const cached = cache.get(key);
   if (cached?.raw === raw) {
@@ -74,10 +76,10 @@ export const retainedHouseholdPeopleIntents = (
 };
 
 const store = (
-  organizationId: string,
+  scope: DisplayedIdentity,
   value: RetainedHouseholdPeopleIntents
 ) => {
-  const key = keyFor(organizationId);
+  const key = keyFor(scope);
   const raw =
     value.departure === null && value.invitation === null
       ? null
@@ -94,10 +96,10 @@ const store = (
 };
 
 export const subscribeToRetainedHouseholdPeopleIntents = (
-  organizationId: string,
+  scope: DisplayedIdentity,
   listener: () => void
 ) => {
-  const key = keyFor(organizationId);
+  const key = keyFor(scope);
   const current = listeners.get(key) ?? new Set<() => void>();
   current.add(listener);
   listeners.set(key, current);
@@ -110,31 +112,31 @@ export const subscribeToRetainedHouseholdPeopleIntents = (
 };
 
 export const retainInvitationIntent = (
-  organizationId: string,
+  scope: DisplayedIdentity,
   invitation: InviteHouseholdAdultPayloadType
 ) =>
-  store(organizationId, {
-    ...retainedHouseholdPeopleIntents(organizationId),
+  store(scope, {
+    ...retainedHouseholdPeopleIntents(scope),
     invitation,
   });
 
-export const clearInvitationIntent = (organizationId: string) =>
-  store(organizationId, {
-    ...retainedHouseholdPeopleIntents(organizationId),
+export const clearInvitationIntent = (scope: DisplayedIdentity) =>
+  store(scope, {
+    ...retainedHouseholdPeopleIntents(scope),
     invitation: null,
   });
 
 export const retainDepartureIntent = (
-  organizationId: string,
+  scope: DisplayedIdentity,
   departure: DepartHouseholdAdultPayloadType
 ) =>
-  store(organizationId, {
-    ...retainedHouseholdPeopleIntents(organizationId),
+  store(scope, {
+    ...retainedHouseholdPeopleIntents(scope),
     departure,
   });
 
-export const clearDepartureIntent = (organizationId: string) =>
-  store(organizationId, {
-    ...retainedHouseholdPeopleIntents(organizationId),
+export const clearDepartureIntent = (scope: DisplayedIdentity) =>
+  store(scope, {
+    ...retainedHouseholdPeopleIntents(scope),
     departure: null,
   });

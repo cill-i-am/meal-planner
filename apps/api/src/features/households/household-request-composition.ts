@@ -4,7 +4,6 @@ import {
   ProfileVersion,
   ProfileVersionPage,
   HouseholdAdultInvitationResult,
-  HouseholdOrganizationId,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureStart,
   HouseholdPeopleUnavailable,
@@ -18,6 +17,10 @@ import {
   MealPlanRequest,
 } from "@meal-planner/household-api";
 import type {
+  EmailAddress,
+  InvitationId,
+  MemberId,
+  UserId,
   HouseholdPeopleFailure,
   HouseholdPeoplePrincipal,
   InviteHouseholdAdultPayload,
@@ -26,6 +29,7 @@ import type {
   MealPlanSwapRejected,
   MealPlanTransitionRejected,
   MealPlanVersionConflict,
+  HouseholdOrganizationId,
 } from "@meal-planner/household-api";
 import { Clock, Effect, Layer, Schema } from "effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
@@ -237,7 +241,7 @@ const invitationDigest = (
   organizationId: Parameters<
     HouseholdPeopleControlPlane["listMemberUserIds"]
   >[0],
-  invitationId: string
+  invitationId: InvitationId
 ) =>
   deriveHouseholdInvitationDigest(organizationId, invitationId).pipe(
     Effect.mapError(() => HouseholdPeopleUnavailable.make({}))
@@ -246,7 +250,7 @@ const invitationDigest = (
 const invitationIntent = (
   organizationId: HouseholdOrganizationId,
   input: {
-    readonly email: string;
+    readonly email: EmailAddress;
     readonly mutationId: Parameters<typeof deriveHouseholdInvitationId>[1];
   }
 ) =>
@@ -288,7 +292,7 @@ const linkageSubject = (
   organizationId: Parameters<
     HouseholdPeopleControlPlane["listMemberUserIds"]
   >[0],
-  userId: string
+  userId: UserId
 ) =>
   deriveHouseholdPersonLinkageSubject(organizationId, userId).pipe(
     Effect.mapError(() => HouseholdPeopleUnavailable.make({}))
@@ -303,15 +307,13 @@ export const makeHouseholdInvitationRecipientVerifier =
     >
   ) =>
   (input: {
-    readonly invitationId: string;
-    readonly organizationId: string;
-    readonly userId: string;
+    readonly invitationId: InvitationId;
+    readonly organizationId: HouseholdOrganizationId;
+    readonly userId: UserId;
   }): Promise<void> =>
     Effect.runPromise(
       Effect.gen(function* verifyInvitationRecipient() {
-        const organizationId = yield* Schema.decodeUnknownEffect(
-          HouseholdOrganizationId
-        )(input.organizationId);
+        const { organizationId } = input;
         const acceptedInvitationDigest = yield* deriveHouseholdInvitationDigest(
           organizationId,
           input.invitationId
@@ -440,7 +442,7 @@ export const makeHouseholdPeopleGateway = (options: {
 
   const runDepartureAttempt = (input: {
     readonly headers: Headers;
-    readonly memberId: string;
+    readonly memberId: MemberId;
     readonly memberIsPresent: boolean;
     readonly operation: typeof HouseholdMemberDepartureOperation.Type;
     readonly self: boolean;

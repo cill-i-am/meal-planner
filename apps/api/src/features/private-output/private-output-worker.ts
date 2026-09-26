@@ -215,6 +215,13 @@ export class PrivateOutputMutations extends WorkerEntrypoint<OutputWorkerEnviron
       : this.env.HouseholdAgent.getByName(input.key);
   }
 
+  findPendingMutation(untrusted: typeof ScopedIntent.Type) {
+    const input = Schema.decodeUnknownSync(ScopedIntent)(untrusted);
+    return this.#coordinator(input).findPendingMutation({
+      intentKey: input.intentKey,
+    });
+  }
+
   beginMutation(untrusted: typeof ScopedIntent.Type) {
     const input = Schema.decodeUnknownSync(ScopedIntent)(untrusted);
     return this.#coordinator(input).beginMutation({

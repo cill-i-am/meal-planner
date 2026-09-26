@@ -58,6 +58,7 @@ export const PrivateOutputMutationsBinding = PrivateOutputWorker.pipe(
 
 export type PrivateOutputMutationPort = Pick<
   PrivateOutputMutations,
+  | "findPendingMutation"
   | "beginMutation"
   | "completeMutation"
   | "markDispatched"

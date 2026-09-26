@@ -1,6 +1,6 @@
 import {
   HouseholdPerson,
-  HouseholdAuthResourceId,
+  InvitationId,
   SetupCheckpoint,
 } from "@meal-planner/household-api";
 import { Schema } from "effect";
@@ -66,9 +66,8 @@ it.each(["lost", "rejected"])(
         }
         return {
           association: "associated",
-          invitationId: Schema.decodeUnknownSync(HouseholdAuthResourceId)(
-            "invitation-111111"
-          ),
+          invitationId:
+            Schema.decodeUnknownSync(InvitationId)("invitation-111111"),
           person,
         };
       },

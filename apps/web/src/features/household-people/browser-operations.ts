@@ -7,6 +7,8 @@ import type { Cause } from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClientError from "effect/unstable/http/HttpClientError";
 
+import { displayedIdentityHeaders } from "../auth/displayed-identity.js";
+import type { DisplayedIdentity } from "../auth/displayed-identity.js";
 import {
   decodeHouseholdPeopleOperationFailure,
   HouseholdPeopleOperationError,
@@ -168,20 +170,14 @@ const makeClientRunner = (
 };
 
 /** Same-origin generated client; membership authority remains server-side. */
-export const makeBrowserHouseholdPeopleOperations = (scope?: {
-  readonly userId: string;
-  readonly organizationId: string;
-}): HouseholdPeopleOperations => {
+export const makeBrowserHouseholdPeopleOperations = (
+  scope: DisplayedIdentity
+): HouseholdPeopleOperations => {
   let clientRunner: ReturnType<typeof makeClientRunner> | undefined;
   const run: ReturnType<typeof makeClientRunner> = (operation) => {
     clientRunner ??= makeClientRunner(
       globalThis.location.origin,
-      scope
-        ? {
-            "x-meal-planner-household": scope.organizationId,
-            "x-meal-planner-user": scope.userId,
-          }
-        : undefined
+      displayedIdentityHeaders(scope)
     );
     return clientRunner(operation);
   };

@@ -7,6 +7,8 @@ import {
 import { Cause, Effect, Exit, Layer, Option, Schema } from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
+import { displayedIdentityHeaders } from "../auth/displayed-identity.js";
+import type { DisplayedIdentity } from "../auth/displayed-identity.js";
 import { ProfileOperationError } from "./operations.js";
 import type { HouseholdProfileOperations } from "./operations.js";
 
@@ -38,38 +40,40 @@ export const classifyProfileCause = <E>(
   return new ProfileOperationError(problem.value.code);
 };
 
-export const makeBrowserHouseholdProfileOperations =
-  (): HouseholdProfileOperations => {
-    const run = async <A, E>(
-      operation: (client: HouseholdPeopleApiClient) => Effect.Effect<A, E>
-    ): Promise<A> => {
-      const layer = makeHouseholdPeopleApiClientLayer({
-        baseUrl: globalThis.location.origin,
-      }).pipe(Layer.provide(FetchHttpClient.layer));
-      const exit = await Effect.runPromiseExit(
-        HouseholdPeopleApiClient.pipe(
-          Effect.flatMap(operation),
-          Effect.provide(layer)
-        )
-      );
-      if (Exit.isSuccess(exit)) {
-        return exit.value;
-      }
-      throw classifyProfileCause(exit.cause);
-    };
-    return {
-      get: (personId) =>
-        run((client) => client.people.getProfile({ params: { personId } })),
-      mutate: (personId, payload) =>
-        run((client) =>
-          client.people.mutateProfile({ params: { personId }, payload })
-        ),
-      versions: (personId, beforeVersion) =>
-        run((client) =>
-          client.people.listProfileVersions({
-            params: { personId },
-            query: beforeVersion === undefined ? {} : { beforeVersion },
-          })
-        ),
-    };
+export const makeBrowserHouseholdProfileOperations = (
+  scope: DisplayedIdentity
+): HouseholdProfileOperations => {
+  const run = async <A, E>(
+    operation: (client: HouseholdPeopleApiClient) => Effect.Effect<A, E>
+  ): Promise<A> => {
+    const layer = makeHouseholdPeopleApiClientLayer({
+      baseUrl: globalThis.location.origin,
+      headers: displayedIdentityHeaders(scope),
+    }).pipe(Layer.provide(FetchHttpClient.layer));
+    const exit = await Effect.runPromiseExit(
+      HouseholdPeopleApiClient.pipe(
+        Effect.flatMap(operation),
+        Effect.provide(layer)
+      )
+    );
+    if (Exit.isSuccess(exit)) {
+      return exit.value;
+    }
+    throw classifyProfileCause(exit.cause);
   };
+  return {
+    get: (personId) =>
+      run((client) => client.people.getProfile({ params: { personId } })),
+    mutate: (personId, payload) =>
+      run((client) =>
+        client.people.mutateProfile({ params: { personId }, payload })
+      ),
+    versions: (personId, beforeVersion) =>
+      run((client) =>
+        client.people.listProfileVersions({
+          params: { personId },
+          query: beforeVersion === undefined ? {} : { beforeVersion },
+        })
+      ),
+  };
+};

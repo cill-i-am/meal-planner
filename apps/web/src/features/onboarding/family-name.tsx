@@ -1,7 +1,7 @@
 import type { SetupCheckpoint } from "@meal-planner/household-api";
 import {
   FamilyName,
-  HouseholdAuthResourceId,
+  HouseholdOrganizationId,
   BootstrapHouseholdCreatorPayload,
 } from "@meal-planner/household-api";
 import { useMutation } from "@tanstack/react-query";
@@ -63,7 +63,7 @@ export const FamilyNamePage = () => {
   const logout = useMutation({ mutationFn: setup.logout });
   const existingFamily = useMutation({
     mutationFn: async (id: string) => {
-      const organizationId = Schema.decodeUnknownSync(HouseholdAuthResourceId)(
+      const organizationId = Schema.decodeUnknownSync(HouseholdOrganizationId)(
         id
       );
       await setup.selectFamily(organizationId);

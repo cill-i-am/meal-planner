@@ -246,3 +246,70 @@ Household PR #239, managed through `gh stack`. CI has not been awaited. Local
 visual captures are available; automatic approval review blocked GitHub screenshot
 upload pending explicit approval of the synthetic fixture media. No deployment or
 merge is claimed.
+
+## Better Auth review fixes · 22 September 2026
+
+The follow-up security layer addresses the five implementation review findings:
+
+- Better Auth rate limiting is explicitly enabled with its atomic D1-backed
+  counter storage and Cloudflare's authoritative client-IP header.
+- Password reset and invitation acceptance retain Better Auth's endpoint
+  contracts and validation while committing their related changes in a Drizzle
+  D1 batch. An immutable receipt records the original operation and guards every
+  write. The existing private-output fence can reconcile these receipt-backed
+  operations after an uncertain dispatch; ordinary mutations still require one
+  dispatch claim. Membership is unique per organization and user.
+- Main-app HTTP and private WebSocket requests carry the account and family
+  displayed by the originating view. Identity changes dispose old queries and
+  connections; unfinished roster and profile commands remain scoped to their
+  original account and family.
+- Retained invitation IDs are supplied by the server through Better Auth's
+  `beforeCreateInvitation` hook. Core ID fields are no longer redeclared, and
+  schema generation preserves the plugin's membership index and receipt table.
+
+Recovery requires another request. A failed dispatched acceptance keeps private
+output closed until a valid retry or a retry after cancellation/expiry reconciles
+the outcome. There is no automatic background reconciliation. Retained intent
+ownership allows reconciliation even after an expired reset token is cleaned up;
+revisiting a consumed token does not start a new output invalidation.
+
+The new D1 migrations must be applied with the code before deployment. A unique
+membership index intentionally rejects existing duplicate membership rows;
+resolve any such records explicitly rather than silently deleting access data.
+Email delivery remains mocked as requested. This work configures neither a mail
+provider nor mailbox verification and performs no deployment.
+
+Local verification covered 1,152 API tests, 177 web tests, 80 package tests and
+180 infrastructure/architecture tests. The full runs exposed shared-IP fixture
+throttling and missing D1-consumer registrations; the affected suites and final
+architecture acceptance case passed after those fixes. Type checks, production
+builds, formatting, lint, documentation and schema-generation drift checks pass.
+Browser checks covered setup navigation, loaded household data, sign-out, signup
+validation and generic reset confirmation. Private WebSocket behavior was checked
+in native integration tests because the local HTTP preview does not proxy upgrades.
+
+## Auth value contracts · 22 September 2026
+
+Auth boundaries now share an `EmailAddress` schema and separate user, invitation,
+member, credential-account and verification-record ID brands. The existing
+`HouseholdOrganizationId` remains the organization identity. Opaque IDs accept
+Better Auth's generated values and server-retained IDs without requiring UUIDs;
+empty, oversized, whitespace and control-character values are rejected.
+
+Email syntax uses the installed Zod email pattern inside Effect Schema, with a
+254-character limit. Native auth entry points and browser commands use the same
+rule. Draft form text may remain incomplete, but submitted commands and persisted
+auth projections must decode successfully. This validates syntax, not mailbox
+ownership or delivery. The generic auth-resource and invitation-email brands have
+been removed, and their callers use the appropriate domain types.
+
+Malformed invitation URLs use the unavailable screen; invalid stored invitation
+data produces a generic unavailable response. Runtime validation tests and
+compile-time checks cover the shared values and prevent interchanging ID types.
+
+Validation: 1,153 API tests, 184 web tests and 29 household-contract tests pass,
+along with workspace type checks, production builds, lint, formatting, docs and
+the tracked D1 architecture check. Better Auth schema regeneration has no diff.
+Browser checks confirm the unavailable screen for malformed invitation links and
+a single field error for invalid recovery emails. The household invitation form
+also preserves invalid input and blocks dispatch, covered by a regression test.

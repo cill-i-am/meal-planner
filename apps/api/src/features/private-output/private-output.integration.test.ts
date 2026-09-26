@@ -301,6 +301,8 @@ const mutationPort = (sessionReference: string): PrivateOutputMutationPort => ({
     successful({ ...input, action: "mutation-begin", sessionReference }),
   completeMutation: (input) =>
     successful({ ...input, action: "mutation-complete", sessionReference }),
+  findPendingMutation: (input) =>
+    successful({ ...input, action: "mutation-find-pending", sessionReference }),
   markDispatched: (input) =>
     successful({ ...input, action: "mutation-dispatch", sessionReference }),
   prepareMutation: (input) =>

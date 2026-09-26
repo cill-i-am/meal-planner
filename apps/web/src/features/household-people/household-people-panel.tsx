@@ -5,6 +5,7 @@ import {
   HouseholdPeopleOperationReason,
   HouseholdPersonDisplayName,
   HouseholdPersonMutationId,
+  MemberId,
   RetryHouseholdAdultDeparturePayload,
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
@@ -16,12 +17,13 @@ import type {
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Schema } from "effect";
-import { useCallback, useRef, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useRef, useSyncExternalStore } from "react";
 
 import { Alert } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
 import { Input } from "../../components/ui/input.js";
 import { Label } from "../../components/ui/label.js";
+import { parseDisplayedIdentity } from "../auth/displayed-identity.js";
 import {
   DepartureRecovery,
   HouseholdAssociationControls,
@@ -509,24 +511,37 @@ export const HouseholdPeoplePanel = ({
   currentMemberId,
   operations,
   organizationId,
+  accountId,
 }: {
+  readonly accountId: string;
   readonly currentMemberId?: string;
   readonly operations: HouseholdPeopleOperations;
   readonly organizationId: string;
 }) => {
   const queryClient = useQueryClient();
   const personActionLock = useRef(false);
+  const scope = useMemo(
+    () => parseDisplayedIdentity({ organizationId, userId: accountId }),
+    [accountId, organizationId]
+  );
+  const parsedMemberId = useMemo(
+    () =>
+      currentMemberId === undefined
+        ? undefined
+        : Schema.decodeUnknownSync(MemberId)(currentMemberId),
+    [currentMemberId]
+  );
   const queryKey = ["household-people", organizationId] as const;
   const roster = useQuery({ queryFn: () => operations.list(true), queryKey });
   const refresh = () => queryClient.invalidateQueries({ queryKey });
   const subscribeToRetainedIntents = useCallback(
     (listener: () => void) =>
-      subscribeToRetainedHouseholdPeopleIntents(organizationId, listener),
-    [organizationId]
+      subscribeToRetainedHouseholdPeopleIntents(scope, listener),
+    [scope]
   );
   const readRetainedIntents = useCallback(
-    () => retainedHouseholdPeopleIntents(organizationId),
-    [organizationId]
+    () => retainedHouseholdPeopleIntents(scope),
+    [scope]
   );
   const retainedIntents = useSyncExternalStore(
     subscribeToRetainedIntents,
@@ -543,7 +558,7 @@ export const HouseholdPeoplePanel = ({
   ) => {
     departureState.setFieldValue("operation", operation);
     if (operation.state === "completed" || operation.state === "cancelled") {
-      clearDepartureIntent(organizationId);
+      clearDepartureIntent(scope);
     }
   };
   const bootstrap = useMutation({
@@ -588,13 +603,13 @@ export const HouseholdPeoplePanel = ({
       operations.inviteAdult ??
       (() => Promise.reject(new Error("unsupported"))),
     onMutate: (payload) => {
-      retainInvitationIntent(organizationId, payload);
+      retainInvitationIntent(scope, payload);
     },
     onSettled: () => {
       personActionLock.current = false;
     },
     onSuccess: () => {
-      clearInvitationIntent(organizationId);
+      clearInvitationIntent(scope);
       void refresh();
     },
     retry: false,
@@ -614,7 +629,7 @@ export const HouseholdPeoplePanel = ({
       operations.departAdult ??
       (() => Promise.reject(new Error("unsupported"))),
     onMutate: (payload) => {
-      retainDepartureIntent(organizationId, payload);
+      retainDepartureIntent(scope, payload);
     },
     onSettled: () => {
       personActionLock.current = false;
@@ -980,7 +995,9 @@ export const HouseholdPeoplePanel = ({
             retryIntent={hasUnresolvedIntent}
           />
           <HouseholdAssociationControls
-            {...(currentMemberId === undefined ? {} : { currentMemberId })}
+            {...(parsedMemberId === undefined
+              ? {}
+              : { currentMemberId: parsedMemberId })}
             disabled={isPersonMutationPending || hasUnresolvedIntent}
             {...(operations.completeAdultLink === undefined
               ? {}

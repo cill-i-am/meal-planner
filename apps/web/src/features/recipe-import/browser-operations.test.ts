@@ -1,12 +1,12 @@
-// @vitest-environment jsdom
-
 import {
   RecipeImportIntent,
   RecipeImportIntentId,
 } from "@meal-planner/recipe-import-api";
+// @vitest-environment jsdom
 import { Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { parseDisplayedIdentity } from "../auth/displayed-identity.js";
 import { makeBrowserRecipeImportOperations } from "./browser-operations.js";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -44,13 +44,22 @@ describe("browser recipe import operations", () => {
           `${globalThis.location.origin}/v1/recipe-import-intents/${intentId}`
         );
         expect(normalized.headers.has("authorization")).toBe(false);
+        expect(normalized.headers.get("x-meal-planner-user")).toBe("user-a");
+        expect(normalized.headers.get("x-meal-planner-household")).toBe(
+          "organization-a"
+        );
         expect(normalized.credentials).toBe("same-origin");
         return Response.json(processing);
       }
     );
     vi.stubGlobal("fetch", fetch);
 
-    const operations = makeBrowserRecipeImportOperations();
+    const operations = makeBrowserRecipeImportOperations(
+      parseDisplayedIdentity({
+        organizationId: "organization-a",
+        userId: "user-a",
+      })
+    );
     const result = await operations.getIntent({ intentId });
 
     expect(result.id).toBe(intentId);

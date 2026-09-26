@@ -433,7 +433,11 @@ export default {
             : env.AccountOutputLifecycle
         ).getByName(input.key);
         const operation = { operationId: input.operationId ?? "" };
-        if (input.action === "mutation-begin") {
+        if (input.action === "mutation-find-pending") {
+          result = await coordinator.findPendingMutation({
+            intentKey: input.intentKey ?? "",
+          });
+        } else if (input.action === "mutation-begin") {
           result = await coordinator.beginMutation({
             intentKey: input.intentKey ?? "",
           });

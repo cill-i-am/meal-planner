@@ -29,7 +29,15 @@ import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
 import { Miniflare, Response as LocalResponse } from "miniflare";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 import * as authSchema from "../auth/auth.database-schema.js";
@@ -435,6 +443,16 @@ afterAll(async () => {
   );
 });
 
+beforeEach(async () => {
+  // Each boundary case has its own auth request window; limiter behavior has a
+  // dedicated suite, and this D1 database persists across runtime restarts.
+  const database = await getRuntime().getD1Database(
+    "MealPlannerAuthDatabase",
+    "api"
+  );
+  await drizzle(database).delete(authSchema.rateLimit);
+});
+
 const cookieHeader = (response: {
   readonly headers: { readonly get: (name: string) => string | null };
 }): string => {
@@ -445,12 +463,28 @@ const cookieHeader = (response: {
   return setCookie.split(";", 1)[0] ?? "";
 };
 
+const authClientAddresses = new Map<string, string>();
+const authClientAddress = (label: string): string => {
+  const existing = authClientAddresses.get(label);
+  if (existing !== undefined) {
+    return existing;
+  }
+  // Better Auth groups IPv6 clients by /64, so give each fixture account a
+  // distinct reserved IPv4 address for its signup and later sign-in.
+  const index = authClientAddresses.size;
+  const address = `198.18.${Math.floor(index / 250)}.${(index % 250) + 1}`;
+  authClientAddresses.set(label, address);
+  return address;
+};
+
 const authRequest = (
   path: string,
   body: Record<string, unknown>,
-  cookie?: string
+  cookie?: string,
+  clientAddress = "192.0.2.40"
 ) => {
   const headers: Record<string, string> = {
+    "cf-connecting-ip": clientAddress,
     "content-type": "application/json",
     origin: "https://meal-planner.test",
   };
@@ -464,11 +498,16 @@ const authRequest = (
 };
 
 const signUp = async (label: string) => {
-  const response = await authRequest("/sign-up/email", {
-    email: `${label.toLowerCase().replaceAll(" ", "-")}@example.test`,
-    name: label,
-    password: "correct horse battery staple",
-  });
+  const response = await authRequest(
+    "/sign-up/email",
+    {
+      email: `${label.toLowerCase().replaceAll(" ", "-")}@example.test`,
+      name: label,
+      password: "correct horse battery staple",
+    },
+    undefined,
+    authClientAddress(label)
+  );
   expect(response.status).toBe(200);
   return cookieHeader(response);
 };
@@ -483,10 +522,15 @@ const getSession = async (cookie: string) => {
 };
 
 const signIn = async (label: string) => {
-  const response = await authRequest("/sign-in/email", {
-    email: `${label.toLowerCase().replaceAll(" ", "-")}@example.test`,
-    password: "correct horse battery staple",
-  });
+  const response = await authRequest(
+    "/sign-in/email",
+    {
+      email: `${label.toLowerCase().replaceAll(" ", "-")}@example.test`,
+      password: "correct horse battery staple",
+    },
+    undefined,
+    authClientAddress(label)
+  );
   expect(response.status).toBe(200);
   return cookieHeader(response);
 };
@@ -6501,6 +6545,96 @@ const readPrivateChat = async (
     })
   )(await response.json());
 };
+
+describe("displayed account and family binding", () => {
+  it("rejects stale view mutations and private connections after the live session changes", async () => {
+    const setup = await prepareLinkedAdult("Displayed Identity");
+    const originalCookie = setup.memberCookie;
+    const originalOrganization = setup.organization;
+    const originalSession = await getSession(originalCookie);
+    const otherFamily = await prepareLinkedAdult(
+      "Displayed Identity Other Family",
+      {
+        cookie: originalCookie,
+        label: "Displayed Identity Adult",
+      }
+    );
+    // The owner remains a valid participant in the original family, so this also
+    // checks switching accounts without changing the family.
+    const otherCookie = setup.ownerCookie;
+    await Promise.all(
+      [originalCookie, otherCookie].map(async (cookie) => {
+        const rejected = await getRuntime().dispatchFetch(
+          "https://meal-planner.test/v1/household/people",
+          {
+            body: JSON.stringify({
+              displayName: "Unintended Person",
+              kind: "dependant",
+              mutationId: "stale-displayed-identity",
+            }),
+            headers: {
+              "content-type": "application/json",
+              cookie,
+              "x-meal-planner-household": originalOrganization.id,
+              "x-meal-planner-user": originalSession.user.id,
+            },
+            method: "POST",
+          }
+        );
+        expect(rejected.status).toBe(401);
+        const rosterResponse = await getRuntime().dispatchFetch(
+          "https://meal-planner.test/v1/household/people",
+          { headers: { cookie } }
+        );
+        const roster = await Schema.decodeUnknownPromise(HouseholdPeopleRoster)(
+          await rosterResponse.json()
+        );
+        expect(
+          roster.people.some(
+            (person) => person.displayName === "Unintended Person"
+          )
+        ).toBe(false);
+        const query = new URLSearchParams({
+          expectedOrganizationId: originalOrganization.id,
+          expectedUserId: originalSession.user.id,
+        });
+        const connection = await getRuntime().dispatchFetch(
+          `https://meal-planner.test/v1/private-interviews/directory/connect?${query}`,
+          {
+            headers: {
+              Origin: "https://meal-planner.test",
+              Upgrade: "websocket",
+              cookie,
+            },
+          }
+        );
+        expect(connection.status).toBe(403);
+        expect(connection.webSocket).toBeNull();
+        const current = await getSession(cookie);
+        const matching = new URLSearchParams({
+          expectedOrganizationId:
+            cookie === originalCookie
+              ? otherFamily.organization.id
+              : originalOrganization.id,
+          expectedUserId: current.user.id,
+        });
+        const allowed = await getRuntime().dispatchFetch(
+          `https://meal-planner.test/v1/private-interviews/directory/connect?${matching}`,
+          {
+            headers: {
+              Origin: "https://meal-planner.test",
+              Upgrade: "websocket",
+              cookie,
+            },
+          }
+        );
+        expect(allowed.status).toBe(101);
+        allowed.webSocket?.accept();
+        allowed.webSocket?.close();
+      })
+    );
+  });
+});
 
 describe("canonical private interview output boundary", () => {
   it("authenticates TanStack hydration and rejects copied authority on every chat method", async () => {

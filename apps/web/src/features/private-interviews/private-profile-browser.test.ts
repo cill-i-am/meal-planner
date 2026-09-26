@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 
+import { parseDisplayedIdentity } from "../auth/displayed-identity.js";
 import { continuePrivateConfirmation } from "./private-profile-browser.js";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -18,14 +19,22 @@ it.each([
         "session",
         "mutation",
         "generation",
-        signal
+        signal,
+        parseDisplayedIdentity({
+          organizationId: "organization-a",
+          userId: "user-a",
+        })
       )
     ).toBe(outcome);
     expect(fetch).toHaveBeenCalledExactlyOnceWith(
       "/v1/private-interviews/session/confirmations/mutation",
       {
         credentials: "same-origin",
-        headers: { "x-private-output-generation": "generation" },
+        headers: {
+          "x-meal-planner-household": "organization-a",
+          "x-meal-planner-user": "user-a",
+          "x-private-output-generation": "generation",
+        },
         method: "POST",
         signal,
       }

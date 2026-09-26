@@ -1,5 +1,10 @@
 import { InvitationView } from "@meal-planner/household-api";
-import type { SetupCheckpoint } from "@meal-planner/household-api";
+import type {
+  InvitationId,
+  UserId,
+  HouseholdOrganizationId,
+  SetupCheckpoint,
+} from "@meal-planner/household-api";
 import { Schema } from "effect";
 
 import type { makeAuthClient } from "../auth/auth-client.js";
@@ -8,8 +13,8 @@ import { AuthRequestError } from "../auth/auth-errors.js";
 import type { HouseholdPeopleOperations } from "../household-people/operations.js";
 
 export const readInvitation = async (
-  id: string,
-  userId: string
+  id: InvitationId,
+  userId: UserId
 ): Promise<InvitationView> => {
   const response = await fetch(
     `/api/auth/setup/invitation/${encodeURIComponent(id)}`,
@@ -34,7 +39,7 @@ export const completeInvitation = async (
   dependencies: {
     readonly auth: ReturnType<typeof makeAuthClient>;
     readonly read: () => Promise<InvitationView>;
-    readonly activate: (id: string) => Promise<void>;
+    readonly activate: (id: HouseholdOrganizationId) => Promise<void>;
     readonly people: HouseholdPeopleOperations;
     readonly save: (next: SetupCheckpoint) => Promise<void>;
   }
