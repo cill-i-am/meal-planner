@@ -1,13 +1,17 @@
 import {
   EmailAddress,
   HouseholdOrganizationId,
+  makeSetupProgressApiClientLayer,
+  SetupProgressApiClient,
   SetupProgress,
   SetupProgressVersion,
   UserId,
 } from "@meal-planner/household-api";
+import type { HouseholdPersonMutationId } from "@meal-planner/household-api";
 import { useQueryClient } from "@tanstack/react-query";
 import { Navigate, useRouter } from "@tanstack/react-router";
-import { Schema } from "effect";
+import { Data, Effect, Layer, Schema } from "effect";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import type { ReactNode } from "react";
 import {
   createContext,
@@ -24,13 +28,38 @@ import {
   useAuthClient,
   requireAuthSuccess,
 } from "../auth/auth-client.js";
-import { makeBrowserHouseholdPeopleOperations } from "../household-people/browser-operations.js";
-import type { HouseholdPeopleOperations } from "../household-people/operations.js";
+import {
+  makeBrowserHouseholdPeopleEffectOperations,
+  makeBrowserHouseholdPeopleOperations,
+} from "../household-people/browser-operations.js";
+import type {
+  HouseholdPeopleEffectOperations,
+  HouseholdPeopleOperations,
+} from "../household-people/operations.js";
 import { initialSetup, parseSetupProgress } from "./setup-state.js";
 import { SetupStatus } from "./setup-ui.js";
 
 type AuthClient = ReturnType<typeof useAuthClient>;
-interface SetupContextValue {
+type SetupProgressSaveError = Effect.Error<
+  ReturnType<SetupProgressApiClient["setupProgress"]["save"]>
+>;
+class SetupExternalFailure extends Data.TaggedError("SetupExternalFailure")<{
+  readonly operation:
+    | "activateFamily"
+    | "logout"
+    | "navigate"
+    | "refreshSession";
+  readonly cause: unknown;
+}> {}
+const external = <A,>(
+  operation: SetupExternalFailure["operation"],
+  run: () => Promise<A>
+): Effect.Effect<A, SetupExternalFailure> =>
+  Effect.tryPromise({
+    catch: (cause) => new SetupExternalFailure({ cause, operation }),
+    try: run,
+  });
+export interface SetupContextValue {
   readonly auth: AuthClient;
   readonly user: {
     readonly id: typeof UserId.Type;
@@ -43,6 +72,9 @@ interface SetupContextValue {
     readonly name: string;
     readonly slug: string;
   }[];
+  readonly peopleEffectForFamily: (
+    id: typeof HouseholdOrganizationId.Type
+  ) => HouseholdPeopleEffectOperations;
   readonly peopleForFamily: (
     id: typeof HouseholdOrganizationId.Type
   ) => HouseholdPeopleOperations;
@@ -51,13 +83,15 @@ interface SetupContextValue {
   ) => boolean;
   readonly save: (
     progress: SetupProgress,
-    sourceCommandId?: string
-  ) => Promise<void>;
+    sourceCommandId?: typeof HouseholdPersonMutationId.Type
+  ) => Effect.Effect<void, SetupProgressSaveError | SetupExternalFailure>;
   readonly refresh: () => Promise<void>;
   readonly selectFamily: (
     id: typeof HouseholdOrganizationId.Type
-  ) => Promise<void>;
-  readonly logout: (progress?: SetupProgress) => Promise<void>;
+  ) => Effect.Effect<void, SetupExternalFailure>;
+  readonly logout: (
+    progress?: SetupProgress
+  ) => Effect.Effect<void, SetupProgressSaveError | SetupExternalFailure>;
 }
 const SetupContext = createContext<SetupContextValue | null>(null);
 export const useSetup = () => {
@@ -74,12 +108,6 @@ const SetupLoginRedirect = () => {
   return <Navigate to="/login" search={{ redirect }} replace />;
 };
 
-const SavedProgress = Schema.Struct({
-  progress: SetupProgress,
-  version: SetupProgressVersion,
-});
-const parseSavedProgress = Schema.decodeUnknownSync(SavedProgress);
-
 const SetupFamilyActivation = ({
   activeFamilyId,
   children,
@@ -91,7 +119,7 @@ const SetupFamilyActivation = ({
   readonly familyId: typeof HouseholdOrganizationId.Type;
   readonly selectFamily: (
     id: typeof HouseholdOrganizationId.Type
-  ) => Promise<void>;
+  ) => Effect.Effect<void, SetupExternalFailure>;
 }) => {
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -102,7 +130,7 @@ const SetupFamilyActivation = ({
     let current = true;
     const activate = async () => {
       try {
-        await selectFamily(familyId);
+        await Effect.runPromise(selectFamily(familyId));
       } catch {
         if (current) {
           setFailed(true);
@@ -216,15 +244,22 @@ export const SetupProvider = ({
     }
   }, [parsedUserId, sessionVersion]);
   const selectFamily = useCallback(
-    async (id: typeof HouseholdOrganizationId.Type) => {
-      const current = await requireAuthSuccess(scopedAuth.getSession());
-      if (current.session.activeOrganizationId !== id) {
-        await requireAuthSuccess(
-          scopedAuth.organization.setActive({ organizationId: id })
+    (id: typeof HouseholdOrganizationId.Type) =>
+      Effect.gen(function* activateFamily() {
+        const current = yield* external("activateFamily", () =>
+          requireAuthSuccess(scopedAuth.getSession())
         );
-      }
-      await Promise.all([active.refetch(), organizations.refetch()]);
-    },
+        if (current.session.activeOrganizationId !== id) {
+          yield* external("activateFamily", () =>
+            requireAuthSuccess(
+              scopedAuth.organization.setActive({ organizationId: id })
+            )
+          );
+        }
+        yield* external("activateFamily", () =>
+          Promise.all([active.refetch(), organizations.refetch()])
+        );
+      }),
     [scopedAuth, active.refetch, organizations.refetch]
   );
   const resourceStatus = setupResourceStatus(session, organizations, active);
@@ -256,47 +291,50 @@ export const SetupProvider = ({
     ...family,
     id: Schema.decodeUnknownSync(HouseholdOrganizationId)(family.id),
   }));
-  const persistProgress = async (
+  const persistProgress = (
     next: SetupProgress,
-    sourceCommandId?: string
-  ) => {
-    const decoded = Schema.decodeUnknownSync(SetupProgress)(next);
-    const body: {
-      expectedVersion: number;
-      progress: SetupProgress;
-      sourceCommandId?: string;
-    } = { expectedVersion: lastSaved.current.version, progress: decoded };
-    if (sourceCommandId !== undefined) {
-      body.sourceCommandId = sourceCommandId;
-    }
-    const response = await fetch(
-      new URL("/api/auth/setup/progress", window.location.origin),
-      {
-        body: JSON.stringify(body),
-        credentials: "same-origin",
-        headers: {
-          "content-type": "application/json",
-          "x-meal-planner-user": user.id,
-        },
-        method: "POST",
+    sourceCommandId?: typeof HouseholdPersonMutationId.Type
+  ) =>
+    Effect.gen(function* persistSetupProgress() {
+      const decoded = Schema.decodeUnknownSync(SetupProgress)(next);
+      const payload: {
+        expectedVersion: typeof SetupProgressVersion.Type;
+        progress: SetupProgress;
+        sourceCommandId?: typeof HouseholdPersonMutationId.Type;
+      } = {
+        expectedVersion: Schema.decodeUnknownSync(SetupProgressVersion)(
+          lastSaved.current.version
+        ),
+        progress: decoded,
+      };
+      if (sourceCommandId !== undefined) {
+        payload.sourceCommandId = sourceCommandId;
       }
+      const saved = yield* SetupProgressApiClient.use((api) =>
+        api.setupProgress.save({ payload })
+      ).pipe(
+        Effect.provide(
+          makeSetupProgressApiClientLayer({
+            baseUrl: window.location.origin,
+            headers: { "x-meal-planner-user": user.id },
+          }).pipe(Layer.provide(FetchHttpClient.layer))
+        ),
+        Effect.catchTag("SetupProgressConflict", (conflict) =>
+          external("refreshSession", () => session.refetch()).pipe(
+            Effect.flatMap(() => Effect.fail(conflict))
+          )
+        )
+      );
+      lastSaved.current.version = saved.version;
+    });
+  const save = (
+    next: SetupProgress,
+    sourceCommandId?: typeof HouseholdPersonMutationId.Type
+  ) =>
+    persistProgress(next, sourceCommandId).pipe(
+      Effect.flatMap(() => external("refreshSession", () => session.refetch())),
+      Effect.asVoid
     );
-    if (!response.ok) {
-      if (response.status === 409) {
-        await session.refetch();
-        throw new Error(
-          "Another setup request is saved. Reload to continue that request."
-        );
-      }
-      throw new Error("Your setup progress couldn’t be saved. Try again.");
-    }
-    const saved = parseSavedProgress(await response.json());
-    lastSaved.current.version = saved.version;
-  };
-  const save = async (next: SetupProgress, sourceCommandId?: string) => {
-    await persistProgress(next, sourceCommandId);
-    await session.refetch();
-  };
   const familyId =
     progress.status === "paused" ||
     progress.checkpoint.stage === "invitation-response" ||
@@ -315,24 +353,34 @@ export const SetupProvider = ({
           active.data.members.some(
             (member) => member.userId === user.id && member.role === "owner"
           ),
-        logout: async (next) => {
-          if (next !== undefined) {
-            await persistProgress(next);
-          }
-          const redirect = router.state.location.pathname.startsWith(
-            "/invitation/"
-          )
-            ? router.state.location.href
-            : "/setup";
-          await requireAuthSuccess(scopedAuth.signOut());
-          await session.refetch();
-          queryClient.clear();
-          await router.navigate({
-            replace: true,
-            search: { redirect },
-            to: "/login",
-          });
-        },
+        logout: (next) =>
+          Effect.gen(function* logout() {
+            if (next !== undefined) {
+              yield* persistProgress(next);
+            }
+            const redirect = router.state.location.pathname.startsWith(
+              "/invitation/"
+            )
+              ? router.state.location.href
+              : "/setup";
+            yield* external("logout", () =>
+              requireAuthSuccess(scopedAuth.signOut())
+            );
+            yield* external("refreshSession", () => session.refetch());
+            queryClient.clear();
+            yield* external("navigate", () =>
+              router.navigate({
+                replace: true,
+                search: { redirect },
+                to: "/login",
+              })
+            );
+          }),
+        peopleEffectForFamily: (organizationId) =>
+          makeBrowserHouseholdPeopleEffectOperations({
+            organizationId,
+            userId: user.id,
+          }),
         peopleForFamily: (organizationId) =>
           makeBrowserHouseholdPeopleOperations({
             organizationId,

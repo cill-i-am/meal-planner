@@ -2,8 +2,7 @@ import {
   HouseholdPeopleApiClient,
   makeHouseholdPeopleApiClientLayer,
 } from "@meal-planner/household-api";
-import { Effect, Exit, Layer, Option, Predicate, Schema } from "effect";
-import type { Cause } from "effect";
+import { Cause, Effect, Exit, Option, Predicate, Result, Schema } from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClientError from "effect/unstable/http/HttpClientError";
 
@@ -13,7 +12,10 @@ import {
   decodeHouseholdPeopleOperationFailure,
   HouseholdPeopleOperationError,
 } from "./operations.js";
-import type { HouseholdPeopleOperations } from "./operations.js";
+import type {
+  HouseholdPeopleEffectOperations,
+  HouseholdPeopleOperations,
+} from "./operations.js";
 
 const AmbiguousHttpClientFailureReason = Schema.Struct({
   _tag: Schema.Literals(["DecodeError", "EmptyBodyError", "TransportError"]),
@@ -102,32 +104,38 @@ const completeErrors = (cause: Cause.Cause<unknown>) => {
   return { errors, hasDie };
 };
 
+const isAmbiguousClientFailure = (candidate: object) => {
+  if (Schema.isSchemaError(candidate)) {
+    return true;
+  }
+  if (HttpClientError.isHttpClientError(candidate)) {
+    const { reason } = candidate;
+    return (
+      reason._tag === "DecodeError" ||
+      reason._tag === "EmptyBodyError" ||
+      reason._tag === "TransportError" ||
+      (reason._tag === "StatusCodeError" && reason.response.status >= 500)
+    );
+  }
+  if (Option.isSome(decodeAmbiguousHttpClientFailure(candidate))) {
+    return true;
+  }
+  const status = decodeHttpStatusFailure(candidate);
+  return Option.isSome(status)
+    ? status.value.reason.response.status >= 500
+    : Option.isSome(decodeStructuralSchemaFailure(candidate));
+};
+
 export const classifyHouseholdPeopleOperationCause = (
   cause: Cause.Cause<unknown>
 ) => {
   const { errors, hasDie } = completeErrors(cause);
   const [error] = errors;
-  const ambiguous = errors.some((candidate) => {
-    if (Schema.isSchemaError(candidate)) {
-      return true;
-    }
-    if (HttpClientError.isHttpClientError(candidate)) {
-      const { reason } = candidate;
-      return (
-        reason._tag === "DecodeError" ||
-        reason._tag === "EmptyBodyError" ||
-        reason._tag === "TransportError" ||
-        (reason._tag === "StatusCodeError" && reason.response.status >= 500)
-      );
-    }
-    if (Option.isSome(decodeAmbiguousHttpClientFailure(candidate))) {
-      return true;
-    }
-    const status = decodeHttpStatusFailure(candidate);
-    return Option.isSome(status)
-      ? status.value.reason.response.status >= 500
-      : Option.isSome(decodeStructuralSchemaFailure(candidate));
-  });
+  const ambiguous = errors.some(
+    (candidate) =>
+      Predicate.isObjectKeyword(candidate) &&
+      isAmbiguousClientFailure(candidate)
+  );
   if (ambiguous || hasDie) {
     return new HouseholdPeopleOperationError("transport_unavailable", {
       cause: error,
@@ -146,41 +154,67 @@ export const classifyHouseholdPeopleOperationCause = (
   });
 };
 
-const makeClientRunner = (
-  baseUrl: string | URL,
-  headers?: Readonly<Record<string, string>>
-) => {
-  const layer = makeHouseholdPeopleApiClientLayer({ baseUrl, headers }).pipe(
-    Layer.provide(FetchHttpClient.layer)
-  );
-  return async <A, E>(
+const makeClientRunner = (scope: DisplayedIdentity) => {
+  let layer: ReturnType<typeof makeHouseholdPeopleApiClientLayer> | undefined;
+  return <A, E>(
     operation: (client: HouseholdPeopleApiClient) => Effect.Effect<A, E>
-  ): Promise<A> => {
-    const exit = await Effect.runPromiseExit(
-      HouseholdPeopleApiClient.pipe(
+  ) =>
+    Effect.suspend(() => {
+      layer ??= makeHouseholdPeopleApiClientLayer({
+        baseUrl: globalThis.location.origin,
+        headers: displayedIdentityHeaders(scope),
+      });
+      return HouseholdPeopleApiClient.pipe(
         Effect.flatMap(operation),
-        Effect.provide(layer)
-      )
-    );
-    if (Exit.isSuccess(exit)) {
-      return exit.value;
-    }
-    throw classifyHouseholdPeopleOperationCause(exit.cause);
-  };
+        Effect.provide(layer),
+        Effect.provide(FetchHttpClient.layer),
+        Effect.catchCause((cause) => {
+          if (Cause.hasInterrupts(cause)) {
+            const failure = Cause.findError(cause);
+            if (Result.isFailure(failure)) {
+              return Effect.failCause(failure.failure);
+            }
+            return Effect.interrupt;
+          }
+          const { errors, hasDie } = completeErrors(cause);
+          if (
+            hasDie &&
+            !errors.some(
+              (candidate) =>
+                Predicate.isObjectKeyword(candidate) &&
+                isAmbiguousClientFailure(candidate)
+            )
+          ) {
+            const failure = Cause.findError(cause);
+            if (Result.isFailure(failure)) {
+              return Effect.failCause(failure.failure);
+            }
+          }
+          return Effect.fail(classifyHouseholdPeopleOperationCause(cause));
+        })
+      );
+    });
+};
+
+const runEffectOperation = async <A>(
+  effect: Effect.Effect<A, unknown>
+): Promise<A> => {
+  const exit = await Effect.runPromiseExit(effect);
+  if (Exit.isSuccess(exit)) {
+    return exit.value;
+  }
+  const failure = Cause.findErrorOption(exit.cause);
+  if (Option.isSome(failure)) {
+    throw failure.value;
+  }
+  return Effect.runPromise(Effect.failCause(exit.cause));
 };
 
 /** Same-origin generated client; membership authority remains server-side. */
-export const makeBrowserHouseholdPeopleOperations = (
+export const makeBrowserHouseholdPeopleEffectOperations = (
   scope: DisplayedIdentity
-): HouseholdPeopleOperations => {
-  let clientRunner: ReturnType<typeof makeClientRunner> | undefined;
-  const run: ReturnType<typeof makeClientRunner> = (operation) => {
-    clientRunner ??= makeClientRunner(
-      globalThis.location.origin,
-      displayedIdentityHeaders(scope)
-    );
-    return clientRunner(operation);
-  };
+): HouseholdPeopleEffectOperations => {
+  const run = makeClientRunner(scope);
   return {
     archive: (personId, payload) =>
       run((client) => client.people.archive({ params: { personId }, payload })),
@@ -231,5 +265,47 @@ export const makeBrowserHouseholdPeopleOperations = (
       ),
     returnAdult: (payload) =>
       run((client) => client.people.returnAdult({ payload })),
+  };
+};
+
+/** Promise facade for consumers outside Effect query and mutation adapters. */
+export const makeBrowserHouseholdPeopleOperations = (
+  scope: DisplayedIdentity
+): HouseholdPeopleOperations => {
+  const operations = makeBrowserHouseholdPeopleEffectOperations(scope);
+  return {
+    archive: (personId, payload) =>
+      runEffectOperation(operations.archive(personId, payload)),
+    associateInvitation: (payload) =>
+      runEffectOperation(operations.associateInvitation(payload)),
+    bootstrapCreator: (payload) =>
+      runEffectOperation(operations.bootstrapCreator(payload)),
+    cancelDeparture: (operationId, payload) =>
+      runEffectOperation(operations.cancelDeparture(operationId, payload)),
+    completeAdultLink: (payload) =>
+      runEffectOperation(operations.completeAdultLink(payload)),
+    create: (payload) => runEffectOperation(operations.create(payload)),
+    departAdult: (payload) =>
+      runEffectOperation(operations.departAdult(payload)),
+    getDeparture: (operationId) =>
+      runEffectOperation(operations.getDeparture(operationId)),
+    getDepartureByMutation: (mutationId) =>
+      runEffectOperation(operations.getDepartureByMutation(mutationId)),
+    inviteAdult: (payload) =>
+      runEffectOperation(operations.inviteAdult(payload)),
+    list: (includeArchived) =>
+      runEffectOperation(operations.list(includeArchived)),
+    remove: (personId, payload) =>
+      runEffectOperation(operations.remove(personId, payload)),
+    rename: (personId, payload) =>
+      runEffectOperation(operations.rename(personId, payload)),
+    repairAdultLink: (payload) =>
+      runEffectOperation(operations.repairAdultLink(payload)),
+    restore: (personId, payload) =>
+      runEffectOperation(operations.restore(personId, payload)),
+    retryDeparture: (operationId, payload) =>
+      runEffectOperation(operations.retryDeparture(operationId, payload)),
+    returnAdult: (payload) =>
+      runEffectOperation(operations.returnAdult(payload)),
   };
 };

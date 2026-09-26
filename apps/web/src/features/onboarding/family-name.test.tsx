@@ -79,7 +79,8 @@ const makeTransport = (initial: SetupProgress = initialSetup) => {
           },
         });
       }
-      if (path.endsWith("/setup/progress")) {
+      if (path === "/v1/setup/progress") {
+        expect(request.headers.get("x-meal-planner-user")).toBe("adult-1");
         const body = Schema.decodeUnknownSync(
           Schema.Struct({
             expectedVersion: Schema.Number,
@@ -89,13 +90,13 @@ const makeTransport = (initial: SetupProgress = initialSetup) => {
         saves.push(body.progress);
         if (fixture.failSave) {
           return Response.json(
-            { code: "SERVICE_UNAVAILABLE" },
+            { _tag: "SetupProgressUnavailable", message: "Try again." },
             { status: 503 }
           );
         }
         if (body.expectedVersion !== version) {
           return Response.json(
-            { code: "SETUP_PROGRESS_CONFLICT" },
+            { _tag: "SetupProgressConflict", message: "Reload setup." },
             { status: 409 }
           );
         }

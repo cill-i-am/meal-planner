@@ -9,7 +9,7 @@ import {
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
 // @vitest-environment jsdom
-import { Cause, Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 import {
   afterAll,
   afterEach,
@@ -23,6 +23,7 @@ import {
 import { parseDisplayedIdentity } from "../auth/displayed-identity.js";
 import {
   classifyHouseholdPeopleOperationCause,
+  makeBrowserHouseholdPeopleEffectOperations,
   makeBrowserHouseholdPeopleOperations,
 } from "./browser-operations.js";
 
@@ -41,6 +42,94 @@ afterEach(() => fetchMock.mockReset());
 afterAll(() => vi.unstubAllGlobals());
 
 describe("browser household people operations", () => {
+  it("runs a generated-client roster read as an Effect", async () => {
+    fetchMock.mockResolvedValueOnce(
+      Response.json({
+        creatorSlot: "available",
+        currentPersonId: null,
+        people: [],
+      })
+    );
+    const operations = makeBrowserHouseholdPeopleEffectOperations(
+      parseDisplayedIdentity({
+        organizationId: "organization-a",
+        userId: "user-a",
+      })
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    const exit = await Effect.runPromiseExit(operations.list(false));
+    expect(exit).toMatchObject({
+      value: { creatorSlot: "available", currentPersonId: null, people: [] },
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("exposes a tagged domain failure in the Effect error channel", async () => {
+    fetchMock.mockResolvedValueOnce(
+      Response.json(
+        {
+          code: "stale_version",
+          message: "The expected person version is stale.",
+          status: 409,
+        },
+        {
+          headers: { "content-type": "application/problem+json" },
+          status: 409,
+        }
+      )
+    );
+    const operations = makeBrowserHouseholdPeopleEffectOperations(
+      parseDisplayedIdentity({
+        organizationId: "organization-a",
+        userId: "user-a",
+      })
+    );
+    const personId = Schema.decodeUnknownSync(HouseholdPersonId)(
+      "person_00000000-0000-4000-8000-000000000101"
+    );
+    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)({
+      expectedVersion: 1,
+      mutationId: "00000000-0000-4000-8000-000000000102",
+    });
+
+    const exit = await Effect.runPromiseExit(
+      operations.archive(personId, payload)
+    );
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) {
+      expect(Cause.findErrorOption(exit.cause)).toMatchObject({
+        value: { _tag: "HouseholdPeopleOperationError", code: "stale_version" },
+      });
+    }
+  });
+
+  it("preserves interruption during an in-flight roster read", async () => {
+    let requestStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      requestStarted = resolve;
+    });
+    fetchMock.mockImplementation(() => {
+      requestStarted?.();
+      return new Promise<Response>(() => {});
+    });
+    const operations = makeBrowserHouseholdPeopleEffectOperations(
+      parseDisplayedIdentity({
+        organizationId: "organization-a",
+        userId: "user-a",
+      })
+    );
+    const controller = new AbortController();
+    const pending = Effect.runPromiseExit(operations.list(false), {
+      signal: controller.signal,
+    });
+
+    await started;
+    controller.abort();
+    const exit = await pending;
+    expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true);
+  });
+
   it("routes exact invitation replay, read-only reconciliation, and departure recovery", async () => {
     const personId = Schema.decodeUnknownSync(HouseholdPersonId)(
       "person_00000000-0000-4000-8000-000000000101"

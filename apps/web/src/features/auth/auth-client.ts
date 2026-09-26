@@ -8,6 +8,8 @@ import {
   organizationClient,
 } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
+import { Effect, Layer } from "effect";
+import { createEffectQuery } from "effect-query";
 import { createContext, useContext } from "react";
 
 import { AuthRequestError, parseRetryAfter } from "./auth-errors.js";
@@ -65,29 +67,40 @@ export type AuthenticationInput =
   | { readonly kind: "login"; readonly input: ReturnType<typeof parseSignIn> }
   | { readonly kind: "signup"; readonly input: ReturnType<typeof parseSignUp> };
 
-export const authenticate = async (
+const effectQuery = createEffectQuery(Layer.empty);
+
+export const authenticate = (
   authClient: ReturnType<typeof makeAuthClient>,
   command: AuthenticationInput
-): Promise<void> => {
-  let retryAt: number | undefined;
-  const options = {
-    onError: ({ response }: { response: Response }) => {
-      const seconds = parseRetryAfter(response.headers.get("X-Retry-After"));
-      if (response.status === 429 && seconds !== undefined) {
-        retryAt = Date.now() + seconds * 1000;
-      }
-    },
-  };
-  try {
-    const request =
-      command.kind === "signup"
-        ? authClient.signUp.email(command.input, options)
-        : authClient.signIn.email(command.input, options);
-    await requireAuthSuccess(request, () => retryAt);
-  } catch (error) {
-    if (error instanceof AuthRequestError) {
-      throw error;
-    }
-    throw new AuthRequestError(null);
-  }
-};
+): Effect.Effect<void, AuthRequestError> =>
+  Effect.suspend(() => {
+    let retryAt: number | undefined;
+    const options = {
+      onError: ({ response }: { response: Response }) => {
+        const seconds = parseRetryAfter(response.headers.get("X-Retry-After"));
+        if (response.status === 429 && seconds !== undefined) {
+          retryAt = Date.now() + seconds * 1000;
+        }
+      },
+    };
+    return Effect.tryPromise({
+      catch: (cause) =>
+        cause instanceof AuthRequestError ? cause : new AuthRequestError(cause),
+      try: async () => {
+        const request =
+          command.kind === "signup"
+            ? authClient.signUp.email(command.input, options)
+            : authClient.signIn.email(command.input, options);
+        await requireAuthSuccess(request, () => retryAt);
+      },
+    });
+  });
+
+export const authenticationMutationOptions = (
+  authClient: ReturnType<typeof makeAuthClient>
+) =>
+  effectQuery.mutationOptions({
+    mutationFn: (command: AuthenticationInput) =>
+      authenticate(authClient, command),
+    mutationKey: ["authenticate"],
+  });
