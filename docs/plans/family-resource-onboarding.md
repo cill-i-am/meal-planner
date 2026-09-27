@@ -92,7 +92,7 @@ the evidence changes the choice.
 | D20 | Host adapters | `apps/api/features/families` owns D1 persistence and HTTP. Auth exposes deliberate HTTP admission, SDK, and schema boundaries. Household membership adapters own identity derivation and RPC details. The Worker composition root supplies them to package services. Co-location in D1 does not assign family ownership to auth. | Native D1 family tests and invitation acceptance/recovery tests pass. |
 | D21 | Frontend slices | `family` owns reusable family queries and roster management; `onboarding` owns the setup presentation; `invitations` owns recipient interaction. Account loading belongs to auth. Invitations use account identity without loading the onboarding family context. Shared account layout/status/error presentation lives in components. | Full frontend suite and a new real-provider invitation isolation test pass. |
 | D22 | Public boundaries | Other features consume curated public entrypoints or explicit boundary subpaths. Browser code consumes package contracts/clients, never server application capabilities. Submitted-request recovery is a named reusable browser capability. | Focused architecture tests enforce public imports, dependency direction, and package independence. |
-| D23 | Reference status | Cillian explicitly requested these boundaries as the reference architecture for future application work. The reference is maintained in `docs/reference/family-api.md` and linked from the engineering feature-slice standard. Existing unrelated features are migrated when worked on, rather than silently described as conforming. | Approved in this conversation on 27 September 2026; final local integration checks pass; repository delivery awaits signing. |
+| D23 | Reference status | Cillian explicitly requested these boundaries as the reference architecture for future application work. The reference is maintained in `docs/reference/family-api.md` and linked from the engineering feature-slice standard. Existing unrelated features are migrated when worked on, rather than silently described as conforming. | Approved in this conversation on 27 September 2026; final local integration checks pass; repository delivery is proceeding through hosted checks. |
 
 ## Validation and delivery record
 
@@ -124,12 +124,10 @@ The migration intentionally stops if an old submitted person or invitation
 command is unresolved. Finish those requests with the previous application
 before applying it. No deployment has been performed or authorized here.
 
-Commit signing is blocked: the configured 1Password SSH signer returned
-`failed to fill whole buffer`, and the SSH agent has no signing identity. The
-changes remain on `codex/family-resource-onboarding`; no unsigned commit was
-created. Unlock 1Password and retry signing to continue with the PR. Hosted CI,
-PR review record, and merge are pending. The agreed data model is now
-implemented locally. The feature-package and frontend-slice organization is the agreed reference
+The configured 1Password signer succeeded on retry. Implementation commit:
+`7aba70e` (`refactor: establish family and invitation feature architecture`).
+PR, hosted CI, and merge are pending. No deployment has been performed.
+The feature-package and frontend-slice organization is the agreed reference
 architecture. Agent runtime/tooling and a representative post-setup LiveStore
 evaluation remain future work.
 
