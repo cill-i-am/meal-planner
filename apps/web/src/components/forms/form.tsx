@@ -4,6 +4,7 @@ import {
   useStore,
 } from "@tanstack/react-form";
 import type { AnyFieldMeta } from "@tanstack/react-form";
+import { useHydrated } from "@tanstack/react-router";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -279,13 +280,15 @@ const Frame = ({
 }) => {
   const form = useFormContext();
   const element = useRef<HTMLFormElement>(null);
+  const hydrated = useHydrated();
   return (
     <form
       ref={element}
       className={cn("w-full", className)}
       noValidate
+      method="post"
       aria-labelledby="auth-title"
-      aria-busy={pending}
+      aria-busy={pending || !hydrated}
       onSubmit={async (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -297,7 +300,9 @@ const Frame = ({
           ?.focus();
       }}
     >
-      <Card size={size}>{children}</Card>
+      <fieldset disabled={!hydrated} className="contents">
+        <Card size={size}>{children}</Card>
+      </fieldset>
       <form.Subscribe
         selector={(state) =>
           state.submissionAttempts > 0 && state.errors.length > 0

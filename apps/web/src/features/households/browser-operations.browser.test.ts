@@ -1,5 +1,4 @@
 import { HouseholdStatus } from "@meal-planner/household-api";
-// @vitest-environment jsdom
 import { Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 

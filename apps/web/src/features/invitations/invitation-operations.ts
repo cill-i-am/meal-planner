@@ -4,10 +4,14 @@ import {
   makeInvitationReadApiClientLayer,
 } from "@meal-planner/invitations";
 import type { InvitationResponse } from "@meal-planner/invitations";
-import { Effect, Layer, Schedule } from "effect";
+import { Effect, Layer } from "effect";
 import { createEffectQuery } from "effect-query";
 
-import { apiHttpLayer } from "../api-client/index.js";
+import {
+  apiHttpLayer,
+  transientRetry,
+  isTransientHttpFailure,
+} from "../api-client/index.js";
 import type { ApiRuntime } from "../api-client/index.js";
 
 const effectQuery = createEffectQuery(Layer.empty);
@@ -23,6 +27,12 @@ export const invitationReadQueryOptions = (
       InvitationReadApiClient.use((api) =>
         api.invitationRead.read({ params: { id } })
       ).pipe(
+        Effect.retry({
+          ...transientRetry,
+          while: (error) =>
+            isTransientHttpFailure(error) ||
+            error._tag === "InvitationReadUnavailable",
+        }),
         Effect.provide(
           makeInvitationReadApiClientLayer({
             baseUrl: runtime.baseUrl,
@@ -47,9 +57,10 @@ export const respondInvitationMutationOptions = (
         api.invitationRead.respond({ params: { id }, payload })
       ).pipe(
         Effect.retry({
-          schedule: Schedule.exponential("200 millis").pipe(Schedule.jittered),
-          times: 2,
-          while: (error) => error._tag === "InvitationReadUnavailable",
+          ...transientRetry,
+          while: (error) =>
+            isTransientHttpFailure(error) ||
+            error._tag === "InvitationReadUnavailable",
         }),
         Effect.provide(
           makeInvitationReadApiClientLayer({

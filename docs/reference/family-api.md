@@ -102,8 +102,10 @@ Members for incomplete setup, and the application after completion.
 
 TanStack Query owns remote resource state. Family query keys include the account
 and family ID; roster writes invalidate that family's people query. React owns
-form fields and dialogs. Selecting a family also updates and refreshes the Better
-Auth session for application routes that still use its active organization.
+form fields and dialogs. Selecting a family updates Better Auth and refreshes the
+shared account query. Login, setup, recovery, and application entry read that same
+query; organization queries are account-scoped. Native Better Auth commands remain
+the identity write boundary.
 
 The API Worker admits family requests through a supported Better Auth plugin
 endpoint, preserving native session, origin, rate-limit, refreshed-cookie, and

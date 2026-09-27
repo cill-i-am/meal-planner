@@ -1184,4 +1184,3 @@ describe("HouseholdPeoplePanel", () => {
     }
   );
 });
-// @vitest-environment jsdom

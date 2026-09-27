@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { InviteHouseholdAdultPayload } from "@meal-planner/household-api";
 import { Schema } from "effect";
 import { afterEach, expect, it } from "vitest";

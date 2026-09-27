@@ -1,7 +1,7 @@
 import type { AuthBoundaryState, HouseholdSummary } from "./auth-boundary.js";
 
 interface AuthQuery<T> {
-  readonly data: T | null;
+  readonly data: T | null | undefined;
   readonly error: unknown | null;
   readonly isPending: boolean;
 }
@@ -36,7 +36,7 @@ export const deriveAuthBoundaryState = (queries: {
   if (queries.session.isPending) {
     return { kind: "loading" };
   }
-  if (queries.session.data === null) {
+  if (!queries.session.data) {
     return { kind: "anonymous" };
   }
   if (
@@ -53,10 +53,9 @@ export const deriveAuthBoundaryState = (queries: {
     name: queries.session.data.user.name,
   };
   return {
-    activeHousehold:
-      queries.activeOrganization.data === null
-        ? null
-        : toHousehold(queries.activeOrganization.data),
+    activeHousehold: queries.activeOrganization.data
+      ? toHousehold(queries.activeOrganization.data)
+      : null,
     households: (queries.organizations.data ?? []).map(toHousehold),
     kind: "authenticated",
     user,

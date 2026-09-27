@@ -8,7 +8,6 @@ import {
   RetryHouseholdAdultDeparturePayload,
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
-// @vitest-environment jsdom
 import { Cause, Effect, Exit, Schema } from "effect";
 import {
   afterAll,

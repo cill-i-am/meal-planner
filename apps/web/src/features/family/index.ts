@@ -23,12 +23,10 @@ export { useFamilyRoster } from "./roster-query.js";
 export { PersonRow } from "./person-row.js";
 export { PersonCreation, PersonDraft } from "./person-commands.js";
 export { savePerson } from "./person-save.js";
-export {
-  RosterActions,
-  RosterManagementOverlay,
-  useRosterManagement,
-} from "./roster-management.js";
-export type { RosterAction } from "./roster-management.js";
+export { RosterActions } from "./roster-actions.js";
+export { RosterManagementOverlay } from "./roster-overlay.js";
+export { useRosterManagement } from "./use-roster-management.js";
+export type { RosterAction } from "./roster-model.js";
 
 export { useAddFamilyPerson } from "./person-mutation.js";
 

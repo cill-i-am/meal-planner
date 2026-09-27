@@ -20,7 +20,6 @@ import { Schema } from "effect";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "../../components/ui/tooltip.js";
-// @vitest-environment jsdom
 import { ApiRuntimeContext, browserApiRuntime } from "../api-client/index.js";
 import { AuthClientContext, makeAuthClient } from "../auth/auth-client.js";
 import { FamilyReviewPage } from "./family-review.js";
@@ -183,7 +182,7 @@ const makeTransport = (
         TransitionHouseholdPersonPayload
       )(await request.json());
       removals.push(payload);
-      if (rejectFirstRemove && removals.length === 1) {
+      if (rejectFirstRemove && removals.length <= 3) {
         return Response.json(
           {
             code: "people_unavailable",
@@ -647,7 +646,7 @@ it("retries an uncertain removal with the exact request while mounted", async ()
     await screen.findByRole("menuitem", { name: "Remove from family" })
   );
   await user.click(screen.getByRole("button", { name: "Remove Jamie" }));
-  await waitFor(() => expect(fixture.removals).toHaveLength(1));
+  await waitFor(() => expect(fixture.removals).toHaveLength(3));
   expect(
     await screen.findByText(/kept this exact request/u)
   ).toBeInTheDocument();
@@ -666,8 +665,13 @@ it("retries an uncertain removal with the exact request while mounted", async ()
   await user.click(
     await screen.findByRole("button", { name: "Check and continue" })
   );
-  await waitFor(() => expect(fixture.removals).toHaveLength(2));
-  expect(fixture.removals[1]).toEqual(fixture.removals[0]);
+  await waitFor(() => expect(fixture.removals).toHaveLength(4));
+  expect(
+    fixture.removals.every(
+      (request) =>
+        JSON.stringify(request) === JSON.stringify(fixture.removals[0])
+    )
+  ).toBe(true);
 });
 
 it("preserves the editable roster form while switching between desktop dialog and mobile drawer", async () => {

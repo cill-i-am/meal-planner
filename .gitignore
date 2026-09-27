@@ -16,3 +16,10 @@ coverage/
 __pycache__/
 # Local browser proof for the scoped auth/family feature map.
 /artifacts/auth-family/
+
+# Native browser and end-to-end test artifacts
+/apps/web/playwright-report/
+/apps/web/test-results/
+/apps/web/src/**/__screenshots__/
+
+/apps/web/.vitest-attachments/

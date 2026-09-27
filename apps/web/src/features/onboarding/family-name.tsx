@@ -36,6 +36,29 @@ const submitLabel = (created: boolean, resumed: boolean) => {
   return resumed ? "Check and continue" : "Create family";
 };
 
+const creationFailureMessage = (
+  error: NonNullable<ReturnType<typeof useCreateFamily>["error"]>
+) => {
+  if (error._tag === "EffectQueryFailure") {
+    return error.match({
+      FamilyConflict: () =>
+        "Another family request is saved. Reload to continue it.",
+      FamilyForbidden: () =>
+        "This account can’t create or open this family. You can choose a family you’ve already joined.",
+      FamilyInvalidInput: () => "Enter a valid family name and try again.",
+      FamilyRateLimited: () =>
+        "Too many attempts. Wait a moment and try again.",
+      FamilyUnauthorized: () =>
+        "Your session ended or your account changed. Log in again to continue.",
+      FamilyUnavailable: () =>
+        "We couldn’t confirm your family request. Try again to resume it.",
+      OrElse: () =>
+        "We couldn’t confirm your family request. Try again to resume it.",
+    });
+  }
+  return "We couldn’t finish that action. Try again.";
+};
+
 const FamilyNavigationErrors = ({
   reviewFailed,
   selectionFailed,
@@ -193,22 +216,9 @@ export const FamilyNamePage = () => {
               )}
               {mutation.error && (
                 <OperationError>
-                  {mutation.error.match({
-                    FamilyConflict: () =>
-                      "Another family request is saved. Reload to continue it.",
-                    FamilyForbidden: () =>
-                      "This account can’t create or open this family. You can choose a family you’ve already joined.",
-                    FamilyInvalidInput: () =>
-                      "Enter a valid family name and try again.",
-                    FamilyRateLimited: () =>
-                      "Too many attempts. Wait a moment and try again.",
-                    FamilyUnauthorized: () =>
-                      "Your session ended or your account changed. Log in again to continue.",
-                    FamilyUnavailable: () =>
-                      "We couldn’t confirm your family request. Try again to resume it.",
-                    OrElse: () =>
-                      "We couldn’t confirm your family request. Try again to resume it.",
-                  })}
+                  {mutation.data
+                    ? "Your family is saved, but we couldn’t refresh it. Continue to try again."
+                    : creationFailureMessage(mutation.error)}
                 </OperationError>
               )}
               <FamilyNavigationErrors

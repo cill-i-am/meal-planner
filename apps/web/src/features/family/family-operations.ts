@@ -7,11 +7,14 @@ import type {
   HouseholdOrganizationId,
   UserId,
 } from "@meal-planner/household-api";
-import { Effect, Layer, Schedule, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { createEffectQuery } from "effect-query";
-import { HttpClientError } from "effect/unstable/http";
 
-import { apiHttpLayer } from "../api-client/index.js";
+import {
+  apiHttpLayer,
+  transientRetry,
+  isTransientHttpFailure,
+} from "../api-client/index.js";
 import type { ApiRuntime } from "../api-client/index.js";
 
 export const familyEffectQuery = createEffectQuery(Layer.empty);
@@ -30,14 +33,9 @@ export const familyOperation = <A, E>(
 ) =>
   FamilyApiClient.use(run).pipe(
     Effect.retry({
-      schedule: Schedule.exponential("200 millis").pipe(Schedule.jittered),
-      times: 2,
+      ...transientRetry,
       while: (error) =>
-        (HttpClientError.isHttpClientError(error) &&
-          (error.reason._tag === "TransportError" ||
-            (error.reason._tag === "StatusCodeError" &&
-              error.reason.response.status >= 500))) ||
-        Schema.is(FamilyUnavailable)(error),
+        isTransientHttpFailure(error) || Schema.is(FamilyUnavailable)(error),
     }),
     Effect.provide(
       makeFamilyApiClientLayer({

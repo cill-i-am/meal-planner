@@ -2,7 +2,6 @@ import {
   HouseholdPeopleRoster,
   PersonProfile,
 } from "@meal-planner/household-api";
-// @vitest-environment jsdom
 import { ProfileCard } from "@meal-planner/private-interview-api";
 import type {
   AssistantTurn,

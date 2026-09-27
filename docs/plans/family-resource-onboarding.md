@@ -235,3 +235,75 @@ reported no browser errors and no submitted-request storage entries. This proves
 SSR/hydration and browser coordination through the production transport seam;
 it does not claim deployed Worker or native D1 persistence verification. Full
 repository checks and hosted merge gates are tracked with this iteration's PR.
+
+### Frontend consolidation and real-browser verification
+
+Requested 27 September 2026: consolidate account reads, make failure/retry policy
+consistent, establish a reproducible local integrated journey, separate roster
+concerns, and add Playwright page-object E2E tests with Vitest browser mode.
+
+- [x] One account query for auth/setup/recovery screens; native Better Auth commands remain authoritative.
+- [x] Explicit transient retry rules and safe handling of ordinary callback errors.
+- [x] Roster command/model, mutation, feedback, actions, and overlay responsibilities separated.
+- [x] Frontend DOM tests run in Chromium through Vitest browser mode; server/domain tests keep their proper runtime.
+- [x] Playwright page objects exercise the built app, native local Workers, D1, and household SQLite.
+- [x] Auth/family journeys, fault paths, docs, and implementation review.
+- Hosted checks and merge: [PR #257](https://github.com/cill-i-am/meal-planner/pull/257).
+
+Do not persist browser mutations. Capture test mail locally; no external delivery
+or deployment is part of this work. Wait for actual successful hosted check
+results before issuing the merge command; this repository does not enforce that
+ordering for auto-merge.
+
+### D28 — One frontend account read owner
+
+TanStack Query owns account and organization reads, including application entry.
+Better Auth supplies the native commands and session endpoint. Query projection
+continues to exclude secrets from SSR hydration. Account changes clear scoped
+caches; family changes remount local state. Password reset clears cached identity.
+
+### D29 — Retry transport failures, preserve confirmed saves
+
+Effect owns at most two transient retries with exponential backoff and jitter.
+Family, invitation, and people operations share the HTTP policy and retain typed
+unavailable failures. Query does not multiply attempts. Deterministic errors and
+malformed success bodies are not retried automatically. A raw undecodable HTTP
+error does not prove a write was rejected, so the original command remains
+available for explicit reconciliation. Known successful creates retain their
+result if refresh or navigation later fails; continuation does not create again.
+
+### D30 — Separate roster responsibilities
+
+Replace the combined roster module with pure decisions/command construction,
+typed command dispatch, a mutation hook, row actions, overlay presentation, and
+failure copy. Keep these files inside the family feature and expose its small
+public index. No new package or universal controller is needed.
+
+### D31 — Browser components and native end-to-end journeys
+
+Vitest 4.1.11 uses its matching Playwright provider for Chromium DOM tests. Pure
+logic stays in Node; existing native API tests retain workerd. Playwright 1.63.0
+page objects own screen interactions, while journey tests own user outcomes.
+The temporary Miniflare runtime uses production handlers, real D1 migrations,
+household SQLite and private-output bindings, with local mail capture. Cloudflare
+SSR output and the shared Website handler avoid testing Node SSR as if it were a
+Worker. Tests do not deploy or contact external mail/AI providers.
+
+Local integrated verification covers saved edits across reload/completion,
+explicit invitation acceptance, password reset, and a response lost after commit.
+Local checks passed: repository typecheck, lint, formatting, build, documentation,
+242 web tests, and package contract tests. Two API tests timed out in the full
+concurrent run (1,179 passed); both complete files passed separately (45 tests).
+The structural suite passed 177 unaffected tests; its six exception-policy tests
+passed after removing an unnecessary suppression. Hosted results remain the merge
+gate and are recorded on PR #257.
+
+### D32 — Preserve auth success and wait for hydration
+
+Browser verification exposed a race: resetting password fields could also clear
+the successful mutation, leaving a token-free URL on the invalid-link screen.
+Field edits now clear failed mutations only. SSR forms use TanStack's `useHydrated`
+to disable controls until handlers are attached, and declare POST to prevent a
+native fallback from putting form values in the URL. A JavaScript-disabled
+Playwright case verifies that initial HTML cannot submit credentials. The test
+server receives SIGTERM so its cleanup can dispose Workers and temporary storage.

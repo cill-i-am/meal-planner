@@ -35,3 +35,11 @@ Use [the form guide](../how-to/build-a-form.md) and
 Check submissions, converted values, expired consent, uncertain save results,
 keyboard use and error messages for the flow you change. Form validity must not
 replace explicit confirmation. Do not introduce another form framework.
+
+## SSR and successful submission
+
+The shared form frame disables its controls until TanStack Router's `useHydrated`
+reports that client handlers are ready. Keep POST as the native form method so
+credential values cannot fall back to URL query parameters. Field-change listeners
+may clear failed mutation feedback; they must not erase a successful result when
+submitted fields are reset. The auth/family Playwright suite exercises both cases.

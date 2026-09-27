@@ -11,36 +11,54 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Effect, Schema } from "effect";
+import { Schema } from "effect";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-// @vitest-environment jsdom
-import { ApiRuntimeContext, browserApiRuntime } from "../api-client/index.js";
+import { ApiRuntimeContext } from "../api-client/index.js";
+import {
+  AccountProvider,
+  AuthClientContext,
+  makeAuthClient,
+} from "../auth/index.js";
 import { InvitationPage, InvitationPageForRoute } from "./invitation-page.js";
 
-const logout = vi.fn(() => Effect.void);
-const selectFamily = vi.fn(() => Effect.void);
-vi.mock("../auth/index.js", () => ({
-  useAccount: () => ({
-    logout,
-    user: {
-      email: "recipient@example.test",
-      id: "recipient",
-      name: "Recipient",
-    },
-  }),
-}));
-vi.mock("../family/index.js", () => ({
-  useFamilyActions: () => ({ refresh: async () => {}, selectFamily }),
-}));
+let logoutCalls = 0;
+const selectedFamilies: string[] = [];
+let signedOut = false;
 type ReadStatus = InvitationView["status"] | "forbidden" | "unauthorized";
 let readStatus: ReadStatus = "pending";
 let failResponse = false;
 let commitResponse = true;
 const responses: unknown[] = [];
-const fetchInvitation = vi.fn<typeof fetch>(async (input, init) => {
+const requestedPaths: string[] = [];
+const fetchInvitation: typeof fetch = async (input, init) => {
   const request = new Request(input, init);
   const path = new URL(request.url).pathname;
+  requestedPaths.push(path);
+  if (path.endsWith("/get-session")) {
+    return Response.json(
+      signedOut
+        ? null
+        : {
+            session: { activeOrganizationId: selectedFamilies.at(-1) ?? null },
+            user: {
+              email: "recipient@example.test",
+              id: "recipient",
+              name: "Recipient",
+            },
+          }
+    );
+  }
+  if (path.endsWith("/sign-out")) {
+    signedOut = true;
+    logoutCalls += 1;
+    return Response.json({ success: true });
+  }
+  if (path.endsWith("/organization/set-active")) {
+    const body = await request.json();
+    selectedFamilies.push(body.organizationId);
+    return Response.json({ id: body.organizationId });
+  }
   expect(request.headers.get("x-meal-planner-user")).toBe("recipient");
   if (
     path === "/v1/invitations/synthetic-invite/response" &&
@@ -86,7 +104,7 @@ const fetchInvitation = vi.fn<typeof fetch>(async (input, init) => {
     organizationId: "synthetic-family",
     status: readStatus,
   });
-});
+};
 class TestIntersectionObserver {
   observe = vi.fn();
   disconnect = vi.fn();
@@ -97,12 +115,19 @@ const setup = async () => {
     history: createMemoryHistory({ initialEntries: ["/"] }),
     routeTree: root.addChildren([
       createRoute({
+        component: () => <h1>Log in</h1>,
+        getParentRoute: () => root,
+        path: "/login",
+      }),
+      createRoute({
         component: () => (
-          <InvitationPage
-            invitationId={Schema.decodeUnknownSync(InvitationId)(
-              "synthetic-invite"
-            )}
-          />
+          <AccountProvider>
+            <InvitationPage
+              invitationId={Schema.decodeUnknownSync(InvitationId)(
+                "synthetic-invite"
+              )}
+            />
+          </AccountProvider>
         ),
         getParentRoute: () => root,
         path: "/",
@@ -125,9 +150,13 @@ const setup = async () => {
         })
       }
     >
-      <ApiRuntimeContext value={browserApiRuntime()}>
-        <RouterProvider router={router} />
-      </ApiRuntimeContext>
+      <AuthClientContext value={makeAuthClient(fetchInvitation)}>
+        <ApiRuntimeContext
+          value={{ baseUrl: window.location.origin, fetch: fetchInvitation }}
+        >
+          <RouterProvider router={router} />
+        </ApiRuntimeContext>
+      </AuthClientContext>
     </QueryClientProvider>
   );
   await waitFor(() =>
@@ -139,11 +168,14 @@ const setup = async () => {
 };
 beforeEach(() => {
   localStorage.clear();
+  signedOut = false;
+  logoutCalls = 0;
+  selectedFamilies.length = 0;
   responses.length = 0;
+  requestedPaths.length = 0;
   readStatus = "pending";
   failResponse = false;
   commitResponse = true;
-  vi.stubGlobal("fetch", fetchInvitation);
   vi.stubGlobal("scrollTo", vi.fn());
   vi.stubGlobal("IntersectionObserver", TestIntersectionObserver);
 });
@@ -160,7 +192,7 @@ it("rejects an invalid route identity without loading recipient data", () => {
       name: "This invitation is no longer available",
     })
   ).toBeInTheDocument();
-  expect(fetchInvitation).not.toHaveBeenCalled();
+  expect(requestedPaths).toHaveLength(0);
 });
 it("explains a recipient mismatch without revealing the invitation", async () => {
   readStatus = "forbidden";
@@ -168,7 +200,7 @@ it("explains a recipient mismatch without revealing the invitation", async () =>
   await screen.findByRole("heading", { name: "Use the invited email" });
   expect(screen.queryByText("Synthetic family")).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Switch account" }));
-  await waitFor(() => expect(logout).toHaveBeenCalledOnce());
+  await waitFor(() => expect(logoutCalls).toBe(1));
   expect(responses).toHaveLength(0);
 });
 it("joins through one generated server operation after explicit consent", async () => {
@@ -180,7 +212,7 @@ it("joins through one generated server operation after explicit consent", async 
   expect(responses).toEqual([
     { decision: "accept", mutationId: expect.any(String) },
   ]);
-  expect(selectFamily).toHaveBeenCalledWith("synthetic-family");
+  expect(selectedFamilies).toEqual(["synthetic-family"]);
   await waitFor(() => expect(localStorage.length).toBe(0));
 });
 it("retries an uncertain acceptance on the mounted screen with its original key", async () => {
