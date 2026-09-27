@@ -39,6 +39,14 @@ export class AuthPage {
       .click();
   }
 
+  async revisit() {
+    await this.page.bringToFront();
+    // Headless pages stay visible; deliver the event emitted by a real tab switch.
+    await this.page.evaluate(() =>
+      window.dispatchEvent(new Event("visibilitychange"))
+    );
+  }
+
   async requestPasswordReset(email: string) {
     await this.page.goto("/forgot-password");
     await this.page.getByLabel("Email", { exact: true }).fill(email);

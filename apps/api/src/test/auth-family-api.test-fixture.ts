@@ -1,41 +1,25 @@
-import { FamilyServiceLive } from "@meal-planner/families/application";
-import { InvitationResponseServiceLive } from "@meal-planner/invitations/application";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Layer, Redacted } from "effect";
+import { Effect, Redacted } from "effect";
 import {
   HttpRouter,
   HttpServerRequest,
   HttpServerResponse,
 } from "effect/unstable/http";
 
+import { makeAuthFamilyHttpLayer } from "../auth-family.js";
 import { makeAlchemyMealPlannerAuth } from "../features/auth/auth.alchemy.js";
 import * as authSchema from "../features/auth/auth.database-schema.js";
 import { makeAuthenticatedOrganizationResolver } from "../features/auth/auth.principal.js";
-import {
-  FamilyStoreLive,
-  familyHttpApiLayer,
-} from "../features/families/index.js";
 import type { HouseholdDomainWorkerMethods } from "../features/households/household-domain-worker.js";
-import {
-  makeHouseholdInvitationRecipientVerifier,
-  makeHouseholdPeopleGateway,
-  makeHouseholdPeopleRequestLayer,
-} from "../features/households/household-request-composition.js";
-import {
-  HouseholdCreatorLive,
-  InvitationMembershipLive,
-} from "../features/households/membership.js";
-import { makeHouseholdPeopleControlPlane } from "../features/households/people/household-people.control-plane.js";
+import { makeHouseholdInvitationRecipientVerifier } from "../features/households/household-request-composition.js";
 import type { MemberDepartureWorkflowStarter } from "../features/households/people/member-departure.js";
-import {
-  InvitationAuthorityLive,
-  invitationReadHttpApiLayer,
-} from "../features/invitations/index.js";
 import type { PrivateOutputMutationPort } from "../features/private-output/private-output-binding.js";
 import { makeAuthOutputFence } from "../features/private-output/private-output-mutation.js";
+import { raceWithRequestSignal } from "../infrastructure/request-cancellation.js";
 
 interface Env {
   readonly BASE_URL: string;
@@ -109,42 +93,42 @@ export default {
             verifyInvitationRecipient:
               makeHouseholdInvitationRecipientVerifier(domain),
           });
+          if (
+            url.pathname === "/__test/expire-session" &&
+            request.method === "POST"
+          ) {
+            const session = yield* auth.api.getSession({
+              headers: request.headers,
+            });
+            if (!session) {
+              return new Response(null, { status: 401 });
+            }
+            yield* Effect.promise(() =>
+              database
+                .update(authSchema.session)
+                .set({ expiresAt: new Date(0) })
+                .where(eq(authSchema.session.id, session.session.id))
+            );
+            return new Response(null, { status: 204 });
+          }
           if (url.pathname.startsWith("/api/auth/")) {
             return HttpServerResponse.toWeb(
               yield* auth.fetchHttpEffect(request)
             );
           }
           const resolver = makeAuthenticatedOrganizationResolver({ auth });
-          const gateway = makeHouseholdPeopleGateway({
-            controlPlane: makeHouseholdPeopleControlPlane({ auth, database }),
-            departureWorkflow: departures,
-            domain,
-          });
-          const family = FamilyServiceLive.pipe(
-            Layer.provide(HouseholdCreatorLive(domain)),
-            Layer.provide(FamilyStoreLive(database))
-          );
-          const invitations = InvitationResponseServiceLive.pipe(
-            Layer.provide(InvitationAuthorityLive(auth, request.headers)),
-            Layer.provide(
-              InvitationMembershipLive(gateway, resolver, request.headers)
-            )
-          );
           const handler = yield* HttpRouter.toHttpEffect(
-            Layer.mergeAll(
-              familyHttpApiLayer(auth).pipe(
-                Layer.provide(family),
-                HttpRouter.provideRequest(family)
-              ),
-              invitationReadHttpApiLayer(auth).pipe(
-                Layer.provide(invitations),
-                HttpRouter.provideRequest(invitations)
-              ),
-              makeHouseholdPeopleRequestLayer({ gateway, resolver })
-            )
+            makeAuthFamilyHttpLayer({
+              auth,
+              database,
+              departureWorkflow: departures,
+              domain,
+              headers: request.headers,
+              resolver,
+            })
           );
           return HttpServerResponse.toWeb(
-            yield* handler.pipe(
+            yield* raceWithRequestSignal(request.signal, handler).pipe(
               Effect.provideService(
                 HttpServerRequest.HttpServerRequest,
                 HttpServerRequest.fromWeb(request)

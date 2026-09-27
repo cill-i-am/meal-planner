@@ -7,3 +7,5 @@ The D1 adapter writes organization, owner membership, and family creation receip
 [Family application guidance](../../../../../packages/families/AGENTS.md) owns coordination. [HouseholdCreatorLive](../households/family-membership.ts) implements creator linking; use the household [membership boundary](../households/membership.ts) in composition, keeping identity and RPC mechanics private to households. [worker.ts](../../worker.ts) supplies Alchemy clients and Effect Layers. Packages and adapters execute in the API Worker; extracting a package adds no deployment.
 
 Follow the [canonical guarantees](../../../../../docs/reference/family-api.md). Use the native D1/Worker family tests for atomicity, replay, and runtime restart; package-only tests cannot prove these adapter guarantees.
+
+The API host composes family, invitation, and people layers in [auth-family.ts](../../auth-family.ts). Production and native browser tests use that same request-scoped assembly, including private response cache headers. Keep bindings and request cancellation at the host boundary.

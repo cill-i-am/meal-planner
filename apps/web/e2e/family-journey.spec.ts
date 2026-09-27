@@ -1,18 +1,13 @@
-import { expect, test } from "@playwright/test";
 import { Schema } from "effect";
 
+import { expect, test } from "./fixtures.js";
 import { AuthPage } from "./pages/auth-page.js";
 import { FamilyPage } from "./pages/family-page.js";
 import { InvitationPage } from "./pages/invitation-page.js";
 
-test.beforeEach(async ({ context }, testInfo) => {
-  await context.setExtraHTTPHeaders({
-    "x-test-client-ip": `192.0.2.${testInfo.workerIndex + 1}`,
-  });
-});
-
 test("saves a family and corrections across page loads, then completes setup", async ({
   page,
+  browser,
 }) => {
   await new AuthPage(page).signUp(
     "Organizer",
@@ -21,6 +16,35 @@ test("saves a family and corrections across page loads, then completes setup", a
   const family = new FamilyPage(page);
   await family.create("The browser family");
   const reviewURL = page.url();
+  const familyId = new URL(reviewURL).searchParams.get("familyId");
+  expect(familyId).toBeTruthy();
+  const responses = await Promise.all(
+    ["/v1/families", `/v1/families/${familyId}/people`].map((path) =>
+      page.request.get(path)
+    )
+  );
+  for (const response of responses) {
+    expect(response.ok()).toBe(true);
+    expect(response.headers()["cache-control"]).toBe("no-store");
+  }
+  const html = await page.request.get(reviewURL);
+  expect(html.headers()["cache-control"]).toContain("no-store");
+  const serverOnly = await browser.newContext({
+    javaScriptEnabled: false,
+    storageState: await page.context().storageState(),
+  });
+  try {
+    const initial = await serverOnly.newPage();
+    await initial.goto(reviewURL);
+    await expect(
+      initial.getByRole("button", { exact: true, name: "Log out" })
+    ).toBeDisabled();
+    await expect(
+      initial.getByRole("button", { exact: true, name: "Manage Organizer" })
+    ).toBeDisabled();
+  } finally {
+    await serverOnly.close();
+  }
   await family.addAdult("Alex");
   await family.rename("Alex", "Alexandra");
   await page.reload();
@@ -134,9 +158,7 @@ test("resets a password through local mail and returns to the same saved family"
   )(await mail.json());
   await auth.resetPassword(reset.url, "New-family-password-73!");
   await auth.login(email, "New-family-password-73!");
-  await expect(
-    page.getByRole("button", { exact: true, name: "Log in" })
-  ).toBeHidden();
+  await expect(page).not.toHaveURL(/\/login/u);
   await page.goto(reviewURL);
   await family.expectReview();
   await expect(

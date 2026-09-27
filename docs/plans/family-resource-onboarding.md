@@ -307,3 +307,63 @@ to disable controls until handlers are attached, and declare POST to prevent a
 native fallback from putting form values in the URL. A JavaScript-disabled
 Playwright case verifies that initial HTML cannot submit credentials. The test
 server receives SIGTERM so its cleanup can dispose Workers and temporary storage.
+
+### Session, accessibility, and production composition proof
+
+Requested 27 September 2026: add real multi-tab/session and conflicting-edit
+journeys, mobile WebKit plus keyboard/accessibility checks, and verification of
+Alchemy's actual Website build. Review shared production/test composition and
+resolve observed gaps without adding another application framework.
+
+- [x] Session change, expiry during a write, and competing person edits.
+- [x] Mobile drawers, keyboard/focus, and automated accessibility checks.
+- [x] Actual Alchemy Website build in the native harness; shared API assembly.
+- [x] Updated guidance and implementation review.
+
+Local and hosted validation results and merge state are recorded on the delivery
+pull request. No deployment is included.
+
+### D33 — Verify the deployed build path locally
+
+The browser harness invokes Alchemy’s public Website Vite source provider, using
+the same entry and memo inputs as the deployment stack. It runs the resulting
+Worker modules and static assets without evaluating cloud resources. Nitro’s
+standalone plugin must stand down when Alchemy injects its Cloudflare integration;
+running both changed the server entry and mixed their output.
+
+The API host and test host now share auth/family layer assembly. Request-scoped
+auth, D1, household RPC, and departure ports remain explicit inputs. Route-scoped
+middleware marks family, invitation and people responses `no-store`; cancellation
+uses the incoming request signal in both hosts. No domain rule moves into the
+Website or test gateway.
+
+### D34 — Session and overlay behavior under real browser timing
+
+Setup controls wait for hydration, including logout and roster menus rendered by
+SSR. An expired-session person write keeps its exact request in memory and offers
+login in another tab. Returning as the same account permits an explicit retry;
+changing account clears the old private cache and unsent state. The expiry test
+pauses the first write and expires its actual D1 session before releasing it.
+
+Two tabs editing the same person exercise optimistic version checks: stale edits
+require review of the current roster before a fresh correction. Closing an edit
+restores focus to the person's management button. Page objects own interactions.
+Headless tab tests explicitly emit the browser visibility event because the
+driver keeps pages visible; they do not mock sessions or query results.
+
+### D35 — Mobile and accessibility evidence
+
+Run the journey suite in Chromium and iPhone-sized WebKit. Axe checks WCAG A/AA
+names, labels and contrast alongside keyboard validation, trapping, dismissal and
+return focus. Exclude only Base UI's hidden WebKit focus-guard spans from the
+automated scan: upstream marks their VoiceOver role as expected behavior
+([issue 5237](https://github.com/mui/base-ui/issues/5237)). App controls keep every
+rule enabled. This exception and automated keyboard checks do not substitute for
+a VoiceOver audit on physical devices.
+
+
+The API now declares its direct Alchemy dependency at the existing pinned version.
+Previously it relied on a root import while the auth integration resolved another
+peer instance; declaration checking exposed incompatible package identities.
+Pinned versions remain unchanged. Run the standalone build and Worker browser
+suite sequentially: both produce watched client assets in the same checkout.

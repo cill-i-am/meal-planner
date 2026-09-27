@@ -44,6 +44,11 @@ user paths and verification expectations. The
 [decision log](../plans/family-resource-onboarding.md) records why the architecture
 changed. Local nodes contain only the decisions and pitfalls needed in that area.
 
+The API host’s [auth/family composition](../../apps/api/src/auth-family.ts) is
+shared with native browser tests. The [Website source inputs](../../apps/web/website-source.ts)
+are shared with the [local Alchemy build](../../apps/web/scripts/build-worker.ts).
+These are host assembly seams, not new domain layers.
+
 ## Keep it accurate
 
 When changing a contract, dependency, entry point, or user-visible behavior:

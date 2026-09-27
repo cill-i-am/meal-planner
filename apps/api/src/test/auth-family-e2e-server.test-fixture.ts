@@ -3,7 +3,9 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { deserialize } from "node:v8";
 
+import { Schema } from "effect";
 import { Miniflare } from "miniflare";
 
 import {
@@ -17,7 +19,7 @@ const port = Number(process.env["AUTH_FAMILY_E2E_PORT"] ?? "4398");
 const baseURL = `http://127.0.0.1:${port}`;
 const compatibilityDate = "2026-07-14";
 const compatibilityFlags = ["nodejs_compat"];
-const [website, api, domain, output] = await Promise.all([
+const [gateway, api, domain, output] = await Promise.all([
   bundleWorkerFixture(path.join(root, "apps/web/e2e/website.test-fixture.js")),
   bundleWorkerFixture(
     path.join(root, "apps/api/src/test/auth-family-api.test-fixture.ts")
@@ -35,6 +37,23 @@ const [website, api, domain, output] = await Promise.all([
     )
   ),
 ]);
+const website = Schema.decodeUnknownSync(
+  Schema.Struct({
+    bundle: Schema.Struct({
+      files: Schema.NonEmptyArray(
+        Schema.Struct({
+          content: Schema.Union([Schema.String, Schema.Uint8Array]),
+          path: Schema.String,
+        })
+      ),
+    }),
+    clientDirectory: Schema.String,
+  })
+)(
+  deserialize(
+    await readFile(path.join(root, "apps/web/.worker-build/output.v8"))
+  )
+);
 const directory = await mkdtemp(path.join(tmpdir(), "auth-family-e2e-"));
 const runtime = new Miniflare({
   cf: false,
@@ -45,13 +64,39 @@ const runtime = new Miniflare({
     {
       config: {
         assets: {
-          directory: path.join(root, "apps/web/.output/public"),
+          directory: website.clientDirectory,
           hasUserWorker: true,
         },
         compatibilityDate,
         compatibilityFlags,
+        env: {
+          MEAL_PLANNER_API: { type: "worker", worker: "api" },
+          WEBSITE: { type: "worker", worker: "website" },
+        },
+        manifest: gateway,
+        name: "test-gateway",
+        type: "worker",
+      },
+    },
+    {
+      config: {
+        compatibilityDate,
+        compatibilityFlags,
         env: { MEAL_PLANNER_API: { type: "worker", worker: "api" } },
-        manifest: website,
+        manifest: {
+          mainModule: website.bundle.files[0].path,
+          modules: Object.fromEntries(
+            website.bundle.files.map((file) => [
+              file.path,
+              {
+                contents: Schema.is(Schema.String)(file.content)
+                  ? file.content
+                  : new Uint8Array(file.content),
+                type: /\.m?js$/u.test(file.path) ? "esm" : "data",
+              },
+            ])
+          ),
+        },
         name: "website",
         type: "worker",
       },

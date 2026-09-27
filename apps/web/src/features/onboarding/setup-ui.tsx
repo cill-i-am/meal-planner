@@ -1,3 +1,4 @@
+import { useHydrated } from "@tanstack/react-router";
 import { CheckIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -58,11 +59,20 @@ export const SetupFrame = ({
   readonly children: ReactNode;
   readonly action?: ReactNode;
   readonly step?: "family" | "people" | "ready";
-}) => (
-  <AccountLayout
-    headerAction={action}
-    progress={step ? <SetupProgressBar step={step} /> : undefined}
-  >
-    {children}
-  </AccountLayout>
-);
+}) => {
+  const hydrated = useHydrated();
+  return (
+    <AccountLayout
+      headerAction={
+        <fieldset disabled={!hydrated} className="contents">
+          {action}
+        </fieldset>
+      }
+      progress={step ? <SetupProgressBar step={step} /> : undefined}
+    >
+      <fieldset disabled={!hydrated} className="contents">
+        {children}
+      </fieldset>
+    </AccountLayout>
+  );
+};

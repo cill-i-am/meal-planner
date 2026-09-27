@@ -59,3 +59,18 @@ Owners: [browser family](../../../../apps/web/src/features/family/AGENTS.md),
 [people API](../../household-people-api.md), and household persistence.
 Source checks: [people screen tests](../../../../apps/web/src/features/onboarding/people-pages.test.tsx)
 and [person save tests](../../../../apps/web/src/features/family/person-save.test.ts).
+
+
+## Browser regression coverage
+
+[Concurrency tests](../../../../apps/web/e2e/account-concurrency.spec.ts) open
+the same person in two tabs. The second stale edit must show **This person changed**
+and **Review family**, then load the saved name before accepting a fresh correction.
+A rejected expired-session write shows **Log in in a new tab**; after signing in
+as the same account, **Check and continue** retries the original command and key.
+
+[Accessibility tests](../../../../apps/web/e2e/accessibility.spec.ts) check
+validation focus, names and contrast, desktop dialogs, mobile drawers, Escape,
+focus restoration, and persistence after edits. Closing a name edit returns focus
+to **Manage {name}**. See the [runtime guide](../../../how-to/local-development.md#run-the-auth-and-family-reference-journey)
+for the narrowly scoped Base UI focus-guard exception and proof limits.

@@ -77,7 +77,11 @@ journeys. [Local development](../../../how-to/local-development.md#run-the-auth-
 lists prerequisites and a manual server command. The
 [Playwright page objects](../../../../apps/web/e2e/pages/family-page.ts) own screen
 interactions; [journey tests](../../../../apps/web/e2e/family-journey.spec.ts) own
-cross-screen expectations. Mail is captured locally; no delivery is claimed.
+cross-screen expectations. The suite now builds the Website through Alchemy and
+runs in desktop Chromium and mobile WebKit.
+[Session/concurrency journeys](../../../../apps/web/e2e/account-concurrency.spec.ts)
+and [accessibility checks](../../../../apps/web/e2e/accessibility.spec.ts) cover
+account isolation, expiry, competing edits, and keyboard focus. Mail is captured locally; no delivery is claimed.
 Vitest DOM tests use Chromium browser mode, while pure and server tests retain
 their own runtimes.
 

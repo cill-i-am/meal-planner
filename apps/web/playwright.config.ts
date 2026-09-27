@@ -3,7 +3,10 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   forbidOnly: Boolean(process.env["CI"]),
   fullyParallel: true,
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "mobile-webkit", use: { ...devices["iPhone 13"] } },
+  ],
   retries: 0,
   testDir: "./e2e",
   use: { baseURL: "http://127.0.0.1:4398", trace: "retain-on-failure" },

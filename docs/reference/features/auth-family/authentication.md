@@ -65,3 +65,15 @@ signup and password reset through native local Workers. A JavaScript-disabled
 browser also checks that SSR credential fields and submission stay disabled until
 hydration. Resetting submitted fields must preserve the success screen; clearing
 old feedback on edits applies only to failed mutations.
+
+
+[Multi-tab journeys](../../../../apps/web/e2e/account-concurrency.spec.ts) cover
+logout, account switching with an unsent form, expiry while a write is in flight,
+and retry after login. The expiry fixture changes the real D1 session; it does
+not replace the API response. The original tab retains the exact submitted
+command in memory while login opens in another tab. If you close or reload the
+original tab, inspect saved server data before making a new change.
+
+TanStack Query rechecks identity on `visibilitychange`. Headless browsers keep
+pages visible, so the page object delivers this browser event explicitly. Cookies,
+account reads, and cache isolation still use the real runtime.

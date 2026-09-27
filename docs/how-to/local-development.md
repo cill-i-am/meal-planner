@@ -37,29 +37,38 @@ checks document links and record structure without application dependencies.
 
 ## Run the auth and family reference journey
 
-Install Chromium once, then run the page-object suite:
+Install Chromium and WebKit once, then run the page-object suite:
 
 ```sh
-pnpm --filter @meal-planner/web exec playwright install chromium
+pnpm --filter @meal-planner/web exec playwright install chromium webkit
 pnpm --filter @meal-planner/web test:e2e
 ```
 
-Playwright builds Cloudflare-targeted SSR and starts an isolated Miniflare runtime
-on port 4398. It runs the Website handler, scoped production API handlers, D1
+Playwright invokes Alchemy’s actual Website Vite source provider and starts an
+isolated Miniflare runtime on port 4398. It runs the compiled Website entry,
+shared production auth/family API composition, D1
 with real migrations, household SQLite Durable Objects, and the private-output
 Worker. Each run uses temporary storage and deletes it on shutdown. No Cloudflare
 credentials, deployment, external email, or AI provider are needed.
 
+Run the standalone build and this suite sequentially in a checkout; building
+while Miniflare watches client assets can restart the test server.
+
 For a manual walkthrough, run `pnpm --filter @meal-planner/web dev:auth-family`
 and open `http://127.0.0.1:4398/signup`. Stop the process with Ctrl+C when finished.
-Test mail is captured at `/__test/mail?email=ENCODED_TEST_EMAIL`. This endpoint and
-the test-client IP header exist only in the isolated fixture. The normal Alchemy
-Website build keeps its own Cloudflare Vite integration; the test build explicitly
-selects Nitro's `cloudflare-module` preset instead of its standalone Node default.
-Both entries use the production Website handler.
+Test mail is captured at `/__test/mail?email=ENCODED_TEST_EMAIL`. This endpoint, `/__test/expire-session`, and
+the test-client IP header exist only in the isolated fixture. The build script
+calls Alchemy’s public source-provider API without evaluating the deployment
+stack. Production and local builds share `website-source.ts`. Nitro handles the
+standalone Node build and is disabled when Alchemy injects its Cloudflare plugin.
 
 The suite covers signup, saved roster corrections, completion, invitation
-acceptance, password reset, and a creation response lost after commit. It stops at
+acceptance, password reset, a creation response lost after commit, session expiry,
+account changes across tabs, and competing edits. It runs in desktop Chromium and
+mobile WebKit, with keyboard/focus checks and axe WCAG A/AA scans. The scan excludes
+only Base UI’s hidden WebKit VoiceOver focus guards, an
+[upstream expected behavior](https://github.com/mui/base-ui/issues/5237); it keeps
+all rules enabled for app controls. This is not a full screen-reader audit. It stops at
 the post-setup boundary. Linked-account departures, real email delivery, and the
 rest of the product need their separate environments and tests.
 

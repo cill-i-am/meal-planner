@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "start": "node .output/server/index.mjs",
     "test": "vitest --config vitest.config.ts run",
-    "build:e2e": "NITRO_PRESET=cloudflare-module vite build",
+    "build:e2e": "tsx scripts/build-worker.ts",
     "test:e2e": "playwright test",
     "dev:auth-family": "pnpm build:e2e && pnpm exec tsx ../api/src/test/auth-family-e2e-server.test-fixture.ts"
   },
@@ -42,6 +42,7 @@
     "tailwind-merge": "3.7.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@playwright/test": "1.63.0",
     "@tailwindcss/vite": "4.3.3",
     "@testing-library/jest-dom": "7.0.1",

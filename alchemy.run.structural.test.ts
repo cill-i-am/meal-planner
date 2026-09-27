@@ -182,9 +182,14 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       'assets: { runWorkerFirst: ["/api/auth/*", "/v1/*"] }'
     );
     expect(stackSource).toContain("env: { MEAL_PLANNER_API: api }");
-    expect(stackSource).toContain('main: "src/worker.ts"');
-    expect(stackSource).toContain('"../../packages/*/src/**"');
-    expect(stackSource).toContain("lockfile: true");
+    expect(stackSource).toContain("...websiteSource");
+    const websiteSource = readRepoFile("./apps/web/website-source.ts");
+    expect(websiteSource).toContain('main: "src/worker.ts"');
+    expect(websiteSource).toContain('"../../packages/*/src/**"');
+    expect(websiteSource).toContain("lockfile: true");
+    expect(readRepoFile("./apps/web/scripts/build-worker.ts")).toContain(
+      "...websiteSource"
+    );
     expect(apiWorkerSource).toContain("auth.fetchHttpEffect(webRequest)");
     expect(apiWorkerSource).toContain('Config.redacted("BETTER_AUTH_SECRET")');
   });
