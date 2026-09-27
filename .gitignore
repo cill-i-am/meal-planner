@@ -14,3 +14,5 @@ coverage/
 **/skills/impeccable/scripts/bin/
 # Local documentation-check test bytecode.
 __pycache__/
+# Local browser proof for the scoped auth/family feature map.
+/artifacts/auth-family/

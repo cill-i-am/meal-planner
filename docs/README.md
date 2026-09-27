@@ -9,6 +9,8 @@ deployed or passed its quality evaluation.
 | Understand the product | [Vision and scope](explanation/product/vision-and-scope.md), [user experience](explanation/product/experience-blueprint.md) |
 | Find remaining work | [Plans and priorities](plans/README.md) |
 | Implement or review code | [Engineering standards](reference/engineering/README.md): read the index and relevant topics |
+| Change auth or family boundaries | [Intent layer](reference/intent-layer.md), [family API](reference/family-api.md) |
+| Exercise auth and family as a user | [Feature map and verification paths](reference/features/auth-family/README.md) |
 | Try a small, checked change | [First local change](tutorials/first-local-change.md) |
 | Run part of the app locally | [Local development](how-to/local-development.md) |
 | Change a form | [Build a form](how-to/build-a-form.md), [form rules](reference/forms.md) |

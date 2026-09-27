@@ -8,7 +8,7 @@ Prefer reliable, secure open-source libraries to custom code. Use supported exte
 
 Choose the simplest solution that meets the requirements. Avoid speculative abstractions and overengineering.
 
-For app-owned browser/server APIs, define a shared Effect HttpApi contract and use its generated client and Effect handler. Keep remote query/mutation state with the chosen React adapter; do not hand-write fetch and JSON decoding when the contract covers them. Use the [intent layer](apps/api/src/features/imports/import-intent-transition.ts) for durable asynchronous work, not as the default shape for creating an ordinary domain entity. See [protocol contracts](docs/reference/engineering/FEATURE_SLICE_ARCHITECTURE.md#protocol-contracts) and [workflow selection](docs/reference/engineering/ASYNC_AND_WORKFLOWS.md#workflow-selection).
+For app-owned browser/server APIs, define a shared Effect HttpApi contract and use its generated client and Effect handler. Keep remote query/mutation state with the chosen React adapter; do not hand-write fetch and JSON decoding when the contract covers them. Use [runtime import intents](apps/api/src/features/imports/import-intent-transition.ts) for durable asynchronous work, not as the default shape for creating an ordinary domain entity. See [protocol contracts](docs/reference/engineering/FEATURE_SLICE_ARCHITECTURE.md#protocol-contracts) and [workflow selection](docs/reference/engineering/ASYNC_AND_WORKFLOWS.md#workflow-selection).
 
 When using or changing an API or library, always check its current official documentation against the installed version. Do not upgrade just to match an example.
 
@@ -21,6 +21,8 @@ Before implementing or reviewing code, read the [engineering standards index](do
 Keep domain rules in types. Decode inputs at the responsible boundary and use the decoded values. Give state one authoritative owner, handle failures explicitly, and preserve the original request when its result is unknown. Keep pure logic direct and give effectful work a clear lifetime.
 
 Read nested instructions for the files you change. Use [the docs map](docs/README.md) for missing context. Follow [the writing guidelines](docs/reference/documentation.md#writing-style) for docs, plans, PR descriptions and explanations: use plain English without losing technical meaning. Skills provide methods, not extra approval steps.
+
+For auth and family work, use the [intent layer](docs/reference/intent-layer.md) to find local package, server-adapter, and frontend guidance. Use the [auth and family feature map](docs/reference/features/auth-family/README.md) to choose user paths and verification evidence. Update affected nodes and feature entries with behavior or boundary changes. These maps cover this reference architecture, not the rest of the app.
 
 ## Finish the assigned work
 
