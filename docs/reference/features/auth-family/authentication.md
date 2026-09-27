@@ -57,3 +57,11 @@ Owners: [browser auth](../../../../apps/web/src/features/auth/AGENTS.md),
 [server auth](../../../../apps/api/src/features/auth/AGENTS.md).
 Source checks: auth route/navigation/boundary tests, recovery input/operation tests,
 and native [auth tests](../../../../apps/api/src/features/auth/auth.worker.test.ts).
+
+## Browser regression coverage
+
+[Playwright journeys](../../../../apps/web/e2e/family-journey.spec.ts) exercise
+signup and password reset through native local Workers. A JavaScript-disabled
+browser also checks that SSR credential fields and submission stay disabled until
+hydration. Resetting submitted fields must preserve the success screen; clearing
+old feedback on edits applies only to failed mutations.

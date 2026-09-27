@@ -61,7 +61,7 @@ const useAuthentication = (redirect: string) => {
   return {
     blocked,
     clearError: () => {
-      if (!waiting && !feedback?.stop) {
+      if (mutation.isError && !waiting && !feedback?.stop) {
         mutation.reset();
       }
     },

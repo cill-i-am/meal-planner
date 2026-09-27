@@ -236,7 +236,7 @@ SSR/hydration and browser coordination through the production transport seam;
 it does not claim deployed Worker or native D1 persistence verification. Full
 repository checks and hosted merge gates are tracked with this iteration's PR.
 
-### Frontend consolidation and real-browser verification — active
+### Frontend consolidation and real-browser verification
 
 Requested 27 September 2026: consolidate account reads, make failure/retry policy
 consistent, establish a reproducible local integrated journey, separate roster
@@ -247,7 +247,8 @@ concerns, and add Playwright page-object E2E tests with Vitest browser mode.
 - [x] Roster command/model, mutation, feedback, actions, and overlay responsibilities separated.
 - [x] Frontend DOM tests run in Chromium through Vitest browser mode; server/domain tests keep their proper runtime.
 - [x] Playwright page objects exercise the built app, native local Workers, D1, and household SQLite.
-- [ ] Auth/family journeys, fault paths, docs, local checks, review, hosted checks, then merge.
+- [x] Auth/family journeys, fault paths, docs, and implementation review.
+- Hosted checks and merge: [PR #257](https://github.com/cill-i-am/meal-planner/pull/257).
 
 Do not persist browser mutations. Capture test mail locally; no external delivery
 or deployment is part of this work. Wait for actual successful hosted check
@@ -290,4 +291,19 @@ Worker. Tests do not deploy or contact external mail/AI providers.
 
 Local integrated verification covers saved edits across reload/completion,
 explicit invitation acceptance, password reset, and a response lost after commit.
-Hosted checks and merge remain pending until recorded below.
+Local checks passed: repository typecheck, lint, formatting, build, documentation,
+242 web tests, and package contract tests. Two API tests timed out in the full
+concurrent run (1,179 passed); both complete files passed separately (45 tests).
+The structural suite passed 177 unaffected tests; its six exception-policy tests
+passed after removing an unnecessary suppression. Hosted results remain the merge
+gate and are recorded on PR #257.
+
+### D32 — Preserve auth success and wait for hydration
+
+Browser verification exposed a race: resetting password fields could also clear
+the successful mutation, leaving a token-free URL on the invalid-link screen.
+Field edits now clear failed mutations only. SSR forms use TanStack's `useHydrated`
+to disable controls until handlers are attached, and declare POST to prevent a
+native fallback from putting form values in the URL. A JavaScript-disabled
+Playwright case verifies that initial HTML cannot submit credentials. The test
+server receives SIGTERM so its cleanup can dispose Workers and temporary storage.

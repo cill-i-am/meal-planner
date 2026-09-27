@@ -143,3 +143,19 @@ test("resets a password through local mail and returns to the same saved family"
     page.getByText("Reset organizer", { exact: true })
   ).toBeVisible();
 });
+
+test("SSR forms cannot submit before hydration", async ({ browser }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  try {
+    const page = await context.newPage();
+    await page.goto("/signup");
+    await expect(page.getByLabel("Email", { exact: true })).toBeDisabled();
+    await expect(page.getByLabel("Password", { exact: true })).toBeDisabled();
+    await expect(
+      page.getByRole("button", { exact: true, name: "Create account" })
+    ).toBeDisabled();
+    await expect(page.getByRole("form")).toHaveAttribute("method", "post");
+  } finally {
+    await context.close();
+  }
+});

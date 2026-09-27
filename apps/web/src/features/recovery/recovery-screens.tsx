@@ -77,7 +77,7 @@ export const RecoveryRequestPage = ({
     defaultValues: { email: "" },
     listeners: {
       onChange: () => {
-        if (!waiting) {
+        if (!waiting && request.isError) {
           request.reset();
         }
       },
@@ -197,7 +197,7 @@ export const ResetPasswordPage = ({
     defaultValues: { confirmation: "", password: "" },
     listeners: {
       onChange: () => {
-        if (!waiting) {
+        if (!waiting && reset.isError) {
           reset.reset();
         }
       },
