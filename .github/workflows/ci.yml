@@ -115,8 +115,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Chromium
-        run: pnpm --filter @meal-planner/web exec playwright install --with-deps chromium
+      - name: Install Chromium and WebKit
+        run: pnpm --filter @meal-planner/web exec playwright install --with-deps chromium webkit
 
       - name: Test auth and family journeys against local Workers
         run: pnpm --filter @meal-planner/web test:e2e

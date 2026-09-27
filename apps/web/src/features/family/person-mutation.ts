@@ -70,10 +70,14 @@ export const useAddFamilyPerson = () => {
       });
     },
   });
+  const failure = queryFailure(mutation.error);
   return {
     ...mutation,
     data: saved ?? mutation.data,
     isSuccess: saved !== undefined || mutation.isSuccess,
+    needsAuthentication:
+      failure instanceof HouseholdPeopleOperationError &&
+      failure.code === "unauthorized",
     pendingRequest: retained.pending,
     submit: (command: PersonCreation) => {
       if (saved) {

@@ -3,7 +3,7 @@ import type {
   HouseholdPeopleRoster,
 } from "@meal-planner/household-api";
 import { useMutation } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Schema } from "effect";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -342,6 +342,7 @@ const PersonDraftForm = ({
 };
 
 export const AddPersonPage = () => {
+  const returnTo = useRouterState({ select: (state) => state.location.href });
   const setup = useFamily();
   const navigate = useNavigate();
   const account = useAccount();
@@ -378,6 +379,14 @@ export const AddPersonPage = () => {
       /* The retained request and mutation own an uncertain outcome. */
     }
   };
+  let saveError = "We couldn’t confirm the result. Try again.";
+  if (save.data) {
+    saveError =
+      "This person is saved, but we couldn’t refresh the family. Continue to try again.";
+  } else if (save.needsAuthentication) {
+    saveError =
+      "Your session ended. Log in in a new tab, then return here to retry this request.";
+  }
   if (save.pendingRequest || save.isSuccess) {
     const pending = save.pendingRequest;
     return (
@@ -418,13 +427,7 @@ export const AddPersonPage = () => {
                   the family and use Invite to join to correct the address.
                 </OperationError>
               )}
-              {save.error && (
-                <OperationError>
-                  {save.data
-                    ? "This person is saved, but we couldn’t refresh the family. Continue to try again."
-                    : "We couldn’t confirm the result. Try again."}
-                </OperationError>
-              )}
+              {save.error && <OperationError>{saveError}</OperationError>}
               {navigationFailed && (
                 <OperationError>
                   The person is saved. Try opening your family again.
@@ -434,6 +437,16 @@ export const AddPersonPage = () => {
                 <OperationError>
                   We couldn’t log you out. Try again.
                 </OperationError>
+              )}
+              {save.needsAuthentication && (
+                <Link
+                  to="/login"
+                  search={{ redirect: returnTo }}
+                  target="_blank"
+                  rel="noopener"
+                >
+                  Log in in a new tab
+                </Link>
               )}
               {pending ? (
                 <PendingButton

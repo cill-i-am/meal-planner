@@ -1,7 +1,3 @@
-import start from "../.output/server/_ssr/ssr.mjs";
-import { createWebsiteHandler } from "../src/website-handler.js";
-
-const website = createWebsiteHandler(start);
 export default {
   fetch(request, env) {
     if (new URL(request.url).pathname.startsWith("/__test/")) {
@@ -14,6 +10,6 @@ export default {
       headers.set("cf-connecting-ip", clientIP);
     }
     headers.delete("x-test-client-ip");
-    return website.fetch(new Request(request, { headers }), env);
+    return env.WEBSITE.fetch(new Request(request, { headers }));
   },
 };

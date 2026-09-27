@@ -76,14 +76,20 @@ const actionPendingLabel = (action: RosterIntent) => {
   return `Removing ${action.person.displayName}…`;
 };
 
-const restoreRosterFocus = (personId: HouseholdPerson["id"]) => {
+const restoreRosterFocus = (
+  personId: HouseholdPerson["id"],
+  kind: RosterIntent["kind"]
+) => {
   setTimeout(() => {
     const row = [
       ...document.querySelectorAll<HTMLElement>("[data-roster-person-id]"),
     ].find((element) => element.dataset["rosterPersonId"] === personId);
     (
-      row?.querySelector<HTMLElement>("button:not(:disabled)") ??
-      document.querySelector<HTMLElement>("#auth-title")
+      row?.querySelector<HTMLElement>(
+        kind === "invite"
+          ? "button:not(:disabled)"
+          : 'button[aria-haspopup="menu"]:not(:disabled)'
+      ) ?? document.querySelector<HTMLElement>("#auth-title")
     )?.focus();
   }, 0);
 };
@@ -312,7 +318,7 @@ export const RosterManagementOverlay = ({
       open={open}
       onExited={() => {
         management.finishExit();
-        restoreRosterFocus(action.person.id);
+        restoreRosterFocus(action.person.id, action.kind);
       }}
     />
   );

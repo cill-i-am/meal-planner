@@ -39,8 +39,18 @@ export class AuthPage {
       .click();
   }
 
-  async requestPasswordReset(email: string) {
-    await this.page.goto("/forgot-password");
+  async revisit() {
+    await this.page.bringToFront();
+    // Headless pages stay visible; deliver the event emitted by a real tab switch.
+    await this.page.evaluate(() =>
+      window.dispatchEvent(new Event("visibilitychange"))
+    );
+  }
+
+  async requestPasswordReset(email: string, returnTo: string) {
+    await this.page.goto(
+      `/forgot-password?${new URLSearchParams({ redirect: returnTo })}`
+    );
     await this.page.getByLabel("Email", { exact: true }).fill(email);
     await this.page.getByRole("button", { name: "Send reset link" }).click();
     await expect(

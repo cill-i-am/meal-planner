@@ -12,6 +12,7 @@ import { ImportProviderGateway } from "./apps/api/src/infrastructure/import-prov
 import { MealPlannerAuthDatabase } from "./apps/api/src/infrastructure/meal-planner-auth-database.js";
 import { ProviderAccountingDatabase } from "./apps/api/src/infrastructure/provider-accounting-database.js";
 import MealPlannerApi from "./apps/api/src/worker.js";
+import { websiteSource } from "./apps/web/website-source.js";
 
 export default Alchemy.Stack(
   "MealPlanner",
@@ -38,18 +39,7 @@ export default Alchemy.Stack(
     const website = yield* Cloudflare.Website.Vite("MealPlannerWebsite", {
       assets: { runWorkerFirst: ["/api/auth/*", "/v1/*"] },
       env: { MEAL_PLANNER_API: api },
-      main: "src/worker.ts",
-      memo: {
-        include: [
-          "src/**",
-          "package.json",
-          "tsconfig.json",
-          "vite.config.ts",
-          "../../packages/*/package.json",
-          "../../packages/*/src/**",
-        ],
-        lockfile: true,
-      },
+      ...websiteSource,
       observability: {
         enabled: true,
         headSamplingRate: 1,
