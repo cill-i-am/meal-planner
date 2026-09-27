@@ -3,9 +3,10 @@ import {
   makeHouseholdPeopleApiClientLayer,
 } from "@meal-planner/household-api";
 import { Cause, Effect, Exit, Option, Predicate, Result, Schema } from "effect";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClientError from "effect/unstable/http/HttpClientError";
 
+import { apiHttpLayer, browserApiRuntime } from "../api-client/index.js";
+import type { ApiRuntime } from "../api-client/index.js";
 import { displayedIdentityHeaders } from "../auth/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
 import {
@@ -154,20 +155,20 @@ export const classifyHouseholdPeopleOperationCause = (
   });
 };
 
-const makeClientRunner = (scope: DisplayedIdentity) => {
+const makeClientRunner = (scope: DisplayedIdentity, runtime: ApiRuntime) => {
   let layer: ReturnType<typeof makeHouseholdPeopleApiClientLayer> | undefined;
   return <A, E>(
     operation: (client: HouseholdPeopleApiClient) => Effect.Effect<A, E>
   ) =>
     Effect.suspend(() => {
       layer ??= makeHouseholdPeopleApiClientLayer({
-        baseUrl: globalThis.location.origin,
+        baseUrl: runtime.baseUrl,
         headers: displayedIdentityHeaders(scope),
       });
       return HouseholdPeopleApiClient.pipe(
         Effect.flatMap(operation),
         Effect.provide(layer),
-        Effect.provide(FetchHttpClient.layer),
+        Effect.provide(apiHttpLayer(runtime)),
         Effect.catchCause((cause) => {
           if (Cause.hasInterrupts(cause)) {
             const failure = Cause.findError(cause);
@@ -211,10 +212,11 @@ const runEffectOperation = async <A>(
 };
 
 /** Same-origin generated client; membership authority remains server-side. */
-export const makeBrowserHouseholdPeopleEffectOperations = (
-  scope: DisplayedIdentity
+export const makeHouseholdPeopleEffectOperations = (
+  scope: DisplayedIdentity,
+  runtime: ApiRuntime
 ): HouseholdPeopleEffectOperations => {
-  const run = makeClientRunner(scope);
+  const run = makeClientRunner(scope, runtime);
   return {
     archive: (personId, payload) =>
       run((client) =>
@@ -340,7 +342,10 @@ export const makeBrowserHouseholdPeopleEffectOperations = (
 export const makeBrowserHouseholdPeopleOperations = (
   scope: DisplayedIdentity
 ): HouseholdPeopleOperations => {
-  const operations = makeBrowserHouseholdPeopleEffectOperations(scope);
+  const operations = makeHouseholdPeopleEffectOperations(
+    scope,
+    browserApiRuntime()
+  );
   return {
     archive: (personId, payload) =>
       runEffectOperation(operations.archive(personId, payload)),

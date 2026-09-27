@@ -39,8 +39,9 @@ which family it is allowed to access; no real credentials belong in the report.
 
 1. With an owned fault fixture, lose a create/person/response result after the
    server may have committed it. Record which boundary was interrupted.
-2. Reload or log out and log back into the same account. Retry the retained
-   request and verify its original mutation ID and payload are reused.
+2. Retry while the submitting screen stays mounted. Verify its original mutation
+   ID and payload are reused. In a separate run, reload after response loss and
+   verify that reads show saved resources without replaying a browser mutation.
 3. Inspect the saved resource through the real read path; verify one effective
    write. Do not use a success toast as duplicate-write proof.
 4. Switch to an unrelated account. Confirm no previous family data or retained

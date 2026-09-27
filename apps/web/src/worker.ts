@@ -12,6 +12,8 @@ export default {
     if (isApiRequest(request)) {
       return environment.MEAL_PLANNER_API.fetch(request);
     }
-    return start.fetch(request);
+    return start.fetch(request, {
+      context: { api: environment.MEAL_PLANNER_API },
+    });
   },
 };

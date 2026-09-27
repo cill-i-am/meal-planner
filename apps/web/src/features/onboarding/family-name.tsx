@@ -1,4 +1,4 @@
-import { FamilyName, CreateFamily } from "@meal-planner/families";
+import { FamilyName } from "@meal-planner/families";
 import { HouseholdOrganizationId } from "@meal-planner/household-api";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -17,12 +17,13 @@ import {
 } from "../../components/ui/card.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
+import { useAccount } from "../auth/index.js";
 import {
-  familyCreationMutationOptions,
+  useCreateFamily,
+  useFamilyActions,
+  useFamilyList,
   peopleEffectQuery,
-  useFamily,
 } from "../family/index.js";
-import { useRetainedRequest } from "../request-recovery/index.js";
 import { SetupFrame } from "./setup-ui.js";
 
 const FamilyInput = Schema.Struct({ name: FamilyName });
@@ -61,32 +62,18 @@ const FamilyNavigationErrors = ({
 );
 
 export const FamilyNamePage = () => {
-  const setup = useFamily();
+  const account = useAccount();
+  const actions = useFamilyActions();
+  const families = useFamilyList();
   const navigate = useNavigate();
-  const retained = useRetainedRequest(
-    `${setup.user.id}:family-create`,
-    CreateFamily
-  );
-  const mutation = useMutation({
-    ...familyCreationMutationOptions(setup.user.id),
-    onError: (error, command) => {
-      const rejected = error.match({
-        FamilyForbidden: () => true,
-        FamilyInvalidInput: () => true,
-        OrElse: () => false,
-      });
-      if (rejected) {
-        retained.release(command.mutationId);
-      }
-    },
-  });
+  const mutation = useCreateFamily();
   const [openingReview, setOpeningReview] = useState(false);
   const [openReviewFailed, setOpenReviewFailed] = useState(false);
   const openReview = async (familyId: HouseholdOrganizationId) => {
     setOpeningReview(true);
     setOpenReviewFailed(false);
     try {
-      await setup.refresh();
+      await actions.refresh();
       await navigate({ search: { familyId }, to: "/setup/review" });
     } catch (error) {
       setOpenReviewFailed(true);
@@ -95,17 +82,17 @@ export const FamilyNamePage = () => {
       setOpeningReview(false);
     }
   };
-  const persisted = retained.pending;
+  const { pendingRequest } = mutation;
   const exit = useMutation(
     peopleEffectQuery.mutationOptions({
-      mutationFn: () => setup.logout("/setup"),
+      mutationFn: () => account.logout("/setup"),
       mutationKey: ["setup-logout"],
     })
   );
   const existingFamily = useMutation(
     peopleEffectQuery.mutationOptions({
       mutationFn: (id: string) =>
-        setup.selectFamily(
+        actions.selectFamily(
           Schema.decodeUnknownSync(HouseholdOrganizationId)(id)
         ),
       mutationKey: ["setup-select-family"],
@@ -125,25 +112,17 @@ export const FamilyNamePage = () => {
     existingFamily.isPending;
   const form = useAppForm({
     defaultValues: {
-      name: persisted?.name ?? "",
+      name: "",
     },
     onSubmit: async ({ value }) => {
       setOpeningReview(true);
       setOpenReviewFailed(false);
-      const command =
-        persisted ??
-        Schema.decodeUnknownSync(CreateFamily)({
-          ...parse(value),
-          mutationId: crypto.randomUUID(),
-        });
       let created = Boolean(mutation.data);
       try {
-        retained.retain(command.mutationId, command);
-        const family = mutation.data ?? (await mutation.mutateAsync(command));
+        const family = await mutation.submit(parse(value).name);
         created = true;
-        await Effect.runPromise(setup.selectFamily(family.id));
+        await Effect.runPromise(actions.selectFamily(family.id));
         await openReview(family.id);
-        retained.release(command.mutationId);
       } catch {
         if (created) {
           setOpenReviewFailed(true);
@@ -165,7 +144,6 @@ export const FamilyNamePage = () => {
     >
       <form.AppForm>
         <form.Frame
-          key={persisted?.mutationId ?? "new-family"}
           className="max-w-140 [--card-spacing:--spacing(4)] md:[--card-spacing:--spacing(10)]"
           pending={pending}
         >
@@ -177,7 +155,7 @@ export const FamilyNamePage = () => {
                   tabIndex={-1}
                   className="text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight focus:outline-none"
                 >
-                  {persisted && !mutation.isPending
+                  {pendingRequest && !mutation.isPending
                     ? "Let’s check your family"
                     : "Name your family"}
                 </h1>
@@ -191,7 +169,7 @@ export const FamilyNamePage = () => {
                       id="family-name"
                       label="Family name"
                       autoComplete="off"
-                      disabled={pending || persisted !== undefined}
+                      disabled={pending || pendingRequest !== undefined}
                     />
                   )}
                 </form.AppField>
@@ -199,22 +177,19 @@ export const FamilyNamePage = () => {
               <div className="flex items-center gap-3">
                 <Avatar size="lg" aria-hidden="true">
                   <AvatarFallback tone="lilac">
-                    {[...setup.user.name][0]}
+                    {[...account.user.name][0]}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex flex-col">
-                  <span>{setup.user.name}</span>
+                  <span>{account.user.name}</span>
                   <span className="text-muted-foreground text-sm">You</span>
                 </div>
               </div>
-              {persisted && !mutation.isPending && !mutation.isSuccess && (
+              {pendingRequest && !mutation.isPending && !mutation.isSuccess && (
                 <OperationError>
                   We kept your submitted request but still need to confirm the
                   result. Check again to finish the same family setup.
                 </OperationError>
-              )}
-              {retained.error && (
-                <OperationError>{retained.error}</OperationError>
               )}
               {mutation.error && (
                 <OperationError>
@@ -241,12 +216,12 @@ export const FamilyNamePage = () => {
                 selectionFailed={Boolean(existingFamily.error)}
                 logoutFailed={Boolean(exit.error)}
               />
-              {!persisted && setup.families.length > 0 && (
+              {!pendingRequest && (families.data ?? []).length > 0 && (
                 <div className="flex flex-col gap-2">
                   <p className="text-muted-foreground text-sm">
                     Or continue with a family you’ve already joined:
                   </p>
-                  {setup.families.map((family) => (
+                  {(families.data ?? []).map((family) => (
                     <Button
                       key={family.id}
                       variant="outline"
@@ -266,7 +241,7 @@ export const FamilyNamePage = () => {
                   mutation.isPending ? "Saving your family…" : "Opening review…"
                 }
               >
-                {submitLabel(mutation.isSuccess, persisted !== undefined)}
+                {submitLabel(mutation.isSuccess, pendingRequest !== undefined)}
               </PendingButton>
             </CardContent>
           </CardBody>

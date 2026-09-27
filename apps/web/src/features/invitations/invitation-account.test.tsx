@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
@@ -11,6 +10,8 @@ import {
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
+// @vitest-environment jsdom
+import { ApiRuntimeContext, browserApiRuntime } from "../api-client/index.js";
 import { AuthClientContext, makeAuthClient } from "../auth/auth-client.js";
 import { InvitationPageForRoute } from "./invitation-page.js";
 
@@ -80,7 +81,9 @@ it("opens an invitation using account identity without loading a family or onboa
   render(
     <QueryClientProvider client={queryClient}>
       <AuthClientContext value={makeAuthClient(transport)}>
-        <RouterProvider router={router} />
+        <ApiRuntimeContext value={browserApiRuntime()}>
+          <RouterProvider router={router} />
+        </ApiRuntimeContext>
       </AuthClientContext>
     </QueryClientProvider>
   );

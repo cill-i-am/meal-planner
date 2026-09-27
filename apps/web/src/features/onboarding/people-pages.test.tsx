@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import {
   CreateHouseholdPersonPayload,
   HouseholdPerson,
@@ -21,6 +20,8 @@ import { Schema } from "effect";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "../../components/ui/tooltip.js";
+// @vitest-environment jsdom
+import { ApiRuntimeContext, browserApiRuntime } from "../api-client/index.js";
 import { AuthClientContext, makeAuthClient } from "../auth/auth-client.js";
 import { FamilyReviewPage } from "./family-review.js";
 import { AddPersonPage } from "./people-pages.js";
@@ -347,7 +348,9 @@ const setup = async (
     >
       <AuthClientContext value={auth}>
         <TooltipProvider>
-          <RouterProvider router={router} />
+          <ApiRuntimeContext value={browserApiRuntime()}>
+            <RouterProvider router={router} />
+          </ApiRuntimeContext>
         </TooltipProvider>
       </AuthClientContext>
     </QueryClientProvider>
@@ -636,7 +639,7 @@ it("shows members only their own edit action", async () => {
   ).not.toBeInTheDocument();
 });
 
-it("retains an uncertain removal across reload and retries the exact request", async () => {
+it("retries an uncertain removal with the exact request while mounted", async () => {
   const fixture = makeTransport([managedAdult], true);
   const { user } = await setup(fixture, "/setup/review");
   await user.click(screen.getByRole("button", { name: "Manage Jamie" }));
@@ -655,18 +658,12 @@ it("retains an uncertain removal across reload and retries the exact request", a
   expect(
     screen.queryByRole("button", { name: "Log out" })
   ).not.toBeInTheDocument();
-  expect(localStorage.length).toBe(1);
+  expect(localStorage.length).toBe(0);
   await user.keyboard("{Escape}");
   expect(
     screen.getByRole("heading", { name: "Remove Jamie from family?" })
   ).toBeInTheDocument();
-  cleanup();
-  const resumed = await setup(fixture, "/setup/review");
-  expect(
-    await screen.findByRole("heading", { name: "Remove Jamie from family?" })
-  ).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
-  await resumed.user.click(
+  await user.click(
     await screen.findByRole("button", { name: "Check and continue" })
   );
   await waitFor(() => expect(fixture.removals).toHaveLength(2));

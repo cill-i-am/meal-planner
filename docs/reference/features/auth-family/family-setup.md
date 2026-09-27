@@ -33,9 +33,9 @@ Use a disposable signed-in organizer and [the shared setup](README.md).
 | Review → confirm | Select **Continue** | Confirmation opens; no `complete-setup` write occurred |
 | Finish | Select either final action in separate runs | Completion succeeds before leaving; later GET shows `complete` with completion time |
 | Incomplete creator | With an interrupted native create fixture, open review and select **Finish creating family** | Same family gains its creator person once via `resume-creation` |
-| Unknown creation result | Lose a response after submission, then reload | **Let’s check your family** / **Check and continue** resumes the original name and mutation ID |
+| Unknown creation result | Lose a response after submission; retry while the screen stays mounted | **Let’s check your family** / **Check and continue** resumes the original name and mutation ID |
 | Unsent form | Type a name, then log out before submitting | No family write and no persisted form draft |
-| Storage unavailable | Block retained-command storage in an isolated test | Visible error and no create request dispatched |
+| Reload after an unknown result | Reload after the write response is lost | Reads saved families; does not restore or automatically replay the submitted mutation |
 | Permission failure | Open another family's URL with an unrelated account | No protected roster or authorized write; an explicit failure is shown |
 
 For response loss, use an owned network fault fixture that can distinguish a
@@ -48,8 +48,8 @@ Rendering **Your family is ready.** does not itself complete setup. The final
 button does. Members **Continue** is navigation only. Completion does not freeze
 the resource or roster.
 
-The browser retains submitted unknown requests, not screen position. Reloading
-an unsent form need not restore it. A read must not create the missing creator;
+Pending submitted requests and unsent forms live only in memory. Reloading
+reads saved resources and restores neither local state. A read must not create the missing creator;
 recovery is an explicit action. Members who cannot manage an incomplete family
 need the organizer to finish setup.
 

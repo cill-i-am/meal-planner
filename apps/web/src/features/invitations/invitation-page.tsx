@@ -1,6 +1,5 @@
 import { InvitationId } from "@meal-planner/household-api";
-import { InvitationResponse } from "@meal-planner/invitations";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Effect, Option, Schema } from "effect";
 import type { ReactNode } from "react";
@@ -21,13 +20,10 @@ import {
 } from "../../components/ui/card.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
 import { Separator } from "../../components/ui/separator.js";
+import { useApiRuntime } from "../api-client/index.js";
 import { AccountProvider, useAccount } from "../auth/index.js";
-import { useFamilyActions } from "../family/index.js";
-import { useRetainedRequest } from "../request-recovery/index.js";
-import {
-  invitationReadQueryOptions,
-  respondInvitationMutationOptions,
-} from "./invitation-operations.js";
+import { useInvitationResponse } from "./invitation-mutation.js";
+import { invitationReadQueryOptions } from "./invitation-operations.js";
 
 const InvitationCard = ({
   title,
@@ -148,18 +144,12 @@ export const InvitationPage = ({
   readonly invitationId: InvitationId;
 }) => {
   const account = useAccount();
-  const family = useFamilyActions();
+  const runtime = useApiRuntime();
   const navigate = useNavigate();
-  const retained = useRetainedRequest(
-    `${account.user.id}:invitation:${invitationId}`,
-    InvitationResponse
-  );
   const invitation = useQuery(
-    invitationReadQueryOptions(invitationId, account.user.id)
+    invitationReadQueryOptions(runtime, invitationId, account.user.id)
   );
-  const respond = useMutation(
-    respondInvitationMutationOptions(account.user.id, invitationId)
-  );
+  const respond = useInvitationResponse(invitationId);
   const [actionError, setActionError] = useState<string>();
   const [finishing, setFinishing] = useState(false);
   const busy = respond.isPending || finishing;
@@ -176,26 +166,12 @@ export const InvitationPage = ({
   const submit = async (decision: "accept" | "decline") => {
     setActionError(undefined);
     setFinishing(true);
-    const command =
-      retained.pending ??
-      Schema.decodeUnknownSync(InvitationResponse)({
-        decision,
-        mutationId: crypto.randomUUID(),
-      });
     try {
-      retained.retain(command.mutationId, command);
-      const result = await respond.mutateAsync(command);
-      // Keep the same command until family selection and navigation succeed.
-      if (result.status === "joined") {
-        await Effect.runPromise(family.selectFamily(result.familyId));
-      }
-      await invitation.refetch();
-      await family.refresh();
+      const result = await respond.submit(decision);
       await navigate({
         search: result.status === "joined" ? { familyId: result.familyId } : {},
         to: "/setup",
       });
-      retained.release(command.mutationId);
     } catch {
       setActionError(
         "We couldn’t finish that action. Try again to check the same response."
@@ -216,9 +192,7 @@ export const InvitationPage = ({
       Switch account
     </Button>
   );
-  const failure = (retained.error ?? actionError) && (
-    <OperationError>{retained.error ?? actionError}</OperationError>
-  );
+  const failure = actionError && <OperationError>{actionError}</OperationError>;
   const recoveryAction = (
     <Button
       disabled={busy}
@@ -274,7 +248,10 @@ export const InvitationPage = ({
       </InvitationCard>
     );
   }
-  if (retained.pending?.decision === "decline" && view.status === "accepted") {
+  if (
+    respond.pendingRequest?.decision === "decline" &&
+    view.status === "accepted"
+  ) {
     return (
       <InvitationCard
         title="This invitation was accepted"
@@ -282,22 +259,17 @@ export const InvitationPage = ({
         action={header}
       >
         {failure}
-        <Button
-          disabled={busy}
-          onClick={() =>
-            retained.pending && retained.release(retained.pending.mutationId)
-          }
-        >
+        <Button disabled={busy} onClick={respond.continueAcceptedInvitation}>
           Continue with the accepted invitation
         </Button>
       </InvitationCard>
     );
   }
-  if (retained.pending || view.status === "accepted") {
+  if (respond.pendingRequest || view.status === "accepted") {
     return (
       <InvitationCard
         title={
-          retained.pending?.decision === "decline"
+          respond.pendingRequest?.decision === "decline"
             ? "Finish declining your invitation"
             : "Finish joining your family"
         }
@@ -310,7 +282,7 @@ export const InvitationPage = ({
           pending={busy}
           pendingLabel="Finishing invitation…"
           onClick={() => {
-            void submit(retained.pending?.decision ?? "accept");
+            void submit(respond.pendingRequest?.decision ?? "accept");
           }}
         >
           Continue

@@ -1,5 +1,5 @@
 export {
-  makeBrowserHouseholdPeopleEffectOperations,
+  makeHouseholdPeopleEffectOperations,
   makeBrowserHouseholdPeopleOperations,
 } from "./browser-operations.js";
 export {

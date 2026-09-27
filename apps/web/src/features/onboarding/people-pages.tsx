@@ -1,9 +1,8 @@
-import { HouseholdOrganizationId } from "@meal-planner/household-api";
 import type {
   HouseholdPerson,
   HouseholdPeopleRoster,
 } from "@meal-planner/household-api";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Schema } from "effect";
 import { useState } from "react";
@@ -28,14 +27,14 @@ import {
 } from "../../components/ui/collapsible.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
+import { useAccount } from "../auth/index.js";
 import {
-  familyKeys,
   PersonRow,
   useFamilyRoster,
   peopleEffectQuery,
   PersonCreation,
   PersonDraft,
-  savePerson,
+  useAddFamilyPerson,
   RosterActions,
   RosterManagementOverlay,
   useRosterManagement,
@@ -47,17 +46,12 @@ import {
   ParticipationInput,
   InvitationEmailInput,
 } from "../household-people/form-input.js";
-import { useRetainedRequest } from "../request-recovery/index.js";
 import { SetupFrame } from "./setup-ui.js";
 
 const nameValidator = Schema.toStandardSchemaV1(PersonNameInput);
 const participationValidator = Schema.toStandardSchemaV1(ParticipationInput);
 const emailValidator = Schema.toStandardSchemaV1(InvitationEmailInput);
 type Draft = typeof PersonDraft.Type;
-const PersonRequest = Schema.Struct({
-  command: PersonCreation,
-  organizationId: HouseholdOrganizationId,
-});
 const AddedPeople = ({
   roster,
   organizer,
@@ -350,13 +344,10 @@ const PersonDraftForm = ({
 export const AddPersonPage = () => {
   const setup = useFamily();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  const account = useAccount();
   const roster = useFamilyRoster();
   const manage = useRosterManagement();
-  const retained = useRetainedRequest(
-    `${setup.user.id}:${setup.family?.id}:person-create`,
-    PersonRequest
-  );
+  const save = useAddFamilyPerson();
   const [navigationFailed, setNavigationFailed] = useState(false);
   const openReview = async () => {
     try {
@@ -368,40 +359,9 @@ export const AddPersonPage = () => {
       setNavigationFailed(true);
     }
   };
-  const save = useMutation({
-    ...peopleEffectQuery.mutationOptions({
-      mutationFn: (request: typeof PersonRequest.Type) =>
-        savePerson(
-          request.command,
-          setup.peopleEffectForFamily(request.organizationId)
-        ),
-      mutationKey: ["families", setup.user.id, setup.family?.id, "add-person"],
-    }),
-    onError: (error, request) => {
-      // These reject the create itself; unknown outcomes keep the original command.
-      const rejected = error.match({
-        HouseholdPeopleOperationError: (failure) =>
-          [
-            "invalid_request",
-            "organizer_required",
-            "mutation_collision",
-          ].includes(failure.code),
-        OrElse: () => false,
-      });
-      if (rejected) {
-        retained.release(request.command.person.mutationId);
-      }
-    },
-    onSuccess: async (_result, request) => {
-      retained.release(request.command.person.mutationId);
-      await queryClient.invalidateQueries({
-        queryKey: familyKeys.people(setup.user.id, request.organizationId),
-      });
-    },
-  });
   const logout = useMutation(
     peopleEffectQuery.mutationOptions({
-      mutationFn: () => setup.logout("/setup"),
+      mutationFn: () => account.logout("/setup"),
       mutationKey: ["setup-logout"],
     })
   );
@@ -409,13 +369,8 @@ export const AddPersonPage = () => {
     if (!setup.family) {
       return;
     }
-    const request = retained.pending ?? {
-      command,
-      organizationId: setup.family.id,
-    };
     try {
-      retained.retain(request.command.person.mutationId, request);
-      const result = await save.mutateAsync(request);
+      const result = await save.submit(command);
       if (result.invitationIssue === null) {
         await openReview();
       }
@@ -423,8 +378,8 @@ export const AddPersonPage = () => {
       /* The retained request and mutation own an uncertain outcome. */
     }
   };
-  if (retained.pending || save.isSuccess) {
-    const { pending } = retained;
+  if (save.pendingRequest || save.isSuccess) {
+    const pending = save.pendingRequest;
     return (
       <SetupFrame
         step="people"
@@ -462,9 +417,6 @@ export const AddPersonPage = () => {
                   The person is saved, but the invitation was rejected. Review
                   the family and use Invite to join to correct the address.
                 </OperationError>
-              )}
-              {retained.error && (
-                <OperationError>{retained.error}</OperationError>
               )}
               {save.error && (
                 <OperationError>
@@ -529,7 +481,6 @@ export const AddPersonPage = () => {
       disabled={save.isPending || manage.managing}
       overlay={
         <>
-          {retained.error && <OperationError>{retained.error}</OperationError>}
           <RosterManagementOverlay management={manage} />
         </>
       }

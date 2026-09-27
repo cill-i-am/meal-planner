@@ -32,8 +32,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "../../components/ui/tooltip.js";
+import { useApiRuntime } from "../api-client/index.js";
+import { useAccount } from "../auth/index.js";
 import {
   HouseholdPeopleOperationError,
+  makeHouseholdPeopleEffectOperations,
   householdPeopleFailureCode,
 } from "../household-people/client.js";
 import type { HouseholdPeopleEffectOperations } from "../household-people/client.js";
@@ -41,7 +44,7 @@ import {
   InvitationEmailInput,
   PersonNameInput,
 } from "../household-people/form-input.js";
-import { useRetainedRequest } from "../request-recovery/index.js";
+import { usePendingRequest } from "../request-recovery/index.js";
 import { useFamily } from "./family-context.js";
 import { familyKeys } from "./family-operations.js";
 import { peopleEffectQuery } from "./people-queries.js";
@@ -261,13 +264,6 @@ const terminalFailure = (error: Error) =>
   ].includes(householdPeopleFailureCode(error) ?? "");
 
 const failureMessage = (error: Error) => {
-  if (
-    error.message.startsWith("We couldn’t keep") ||
-    error.message.startsWith("Allow browser storage") ||
-    error.message.startsWith("A saved request")
-  ) {
-    return error.message;
-  }
   if (error instanceof HouseholdPeopleOperationError) {
     if (error.invitationRejection === "already_invited") {
       return "An invitation is already waiting for this email. Check the address or review your family.";
@@ -404,11 +400,12 @@ export const RosterActions = ({
 
 export const useRosterManagement = () => {
   const familyContext = useFamily();
+  const account = useAccount();
+  const runtime = useApiRuntime();
   const queryClient = useQueryClient();
   const submitting = useRef(false);
-  const retained = useRetainedRequest(
-    `${familyContext.user.id}:${familyContext.family?.id}:roster`,
-    RosterRequest
+  const retained = usePendingRequest<typeof RosterRequest.Type>(
+    `${account.user.id}:${familyContext.family?.id}:roster`
   );
   const [localPresentation, setPresentation] = useState<Presentation | null>(
     null
@@ -427,11 +424,14 @@ export const useRosterManagement = () => {
       mutationFn: (pending: PendingRosterRequest) =>
         runRosterCommand(
           pending.state.command,
-          familyContext.peopleEffectForFamily(pending.organizationId)
+          makeHouseholdPeopleEffectOperations(
+            { organizationId: pending.organizationId, userId: account.user.id },
+            runtime
+          )
         ),
       mutationKey: [
         "families",
-        familyContext.user.id,
+        account.user.id,
         familyContext.family?.id,
         "roster-command",
       ],
@@ -457,10 +457,7 @@ export const useRosterManagement = () => {
           },
         });
         await queryClient.invalidateQueries({
-          queryKey: familyKeys.people(
-            familyContext.user.id,
-            pending.organizationId
-          ),
+          queryKey: familyKeys.people(account.user.id, pending.organizationId),
         });
       }
     },
@@ -468,10 +465,7 @@ export const useRosterManagement = () => {
       retained.release(pending.state.command.mutationId);
       setPresentation({ open: false, operation: pending });
       await queryClient.invalidateQueries({
-        queryKey: familyKeys.people(
-          familyContext.user.id,
-          pending.organizationId
-        ),
+        queryKey: familyKeys.people(account.user.id, pending.organizationId),
       });
     },
   });
@@ -544,7 +538,7 @@ export const useRosterManagement = () => {
       }
       setPresentation({ ...presentation, open: false });
     },
-    error: retained.error ? new Error(retained.error) : mutationError,
+    error: mutationError,
     finishExit: () =>
       setPresentation((current) => (current?.open ? current : null)),
     managing: presentation !== null,

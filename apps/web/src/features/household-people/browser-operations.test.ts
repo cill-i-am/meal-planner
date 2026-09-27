@@ -20,10 +20,11 @@ import {
   vi,
 } from "vitest";
 
+import { browserApiRuntime } from "../api-client/index.js";
 import { parseDisplayedIdentity } from "../auth/displayed-identity.js";
 import {
   classifyHouseholdPeopleOperationCause,
-  makeBrowserHouseholdPeopleEffectOperations,
+  makeHouseholdPeopleEffectOperations,
   makeBrowserHouseholdPeopleOperations,
 } from "./browser-operations.js";
 
@@ -50,11 +51,12 @@ describe("browser household people operations", () => {
         people: [],
       })
     );
-    const operations = makeBrowserHouseholdPeopleEffectOperations(
+    const operations = makeHouseholdPeopleEffectOperations(
       parseDisplayedIdentity({
         organizationId: "organization-a",
         userId: "user-a",
-      })
+      }),
+      browserApiRuntime()
     );
 
     expect(fetchMock).not.toHaveBeenCalled();
@@ -79,11 +81,12 @@ describe("browser household people operations", () => {
         }
       )
     );
-    const operations = makeBrowserHouseholdPeopleEffectOperations(
+    const operations = makeHouseholdPeopleEffectOperations(
       parseDisplayedIdentity({
         organizationId: "organization-a",
         userId: "user-a",
-      })
+      }),
+      browserApiRuntime()
     );
     const personId = Schema.decodeUnknownSync(HouseholdPersonId)(
       "person_00000000-0000-4000-8000-000000000101"
@@ -113,11 +116,12 @@ describe("browser household people operations", () => {
       requestStarted?.();
       return new Promise<Response>(() => {});
     });
-    const operations = makeBrowserHouseholdPeopleEffectOperations(
+    const operations = makeHouseholdPeopleEffectOperations(
       parseDisplayedIdentity({
         organizationId: "organization-a",
         userId: "user-a",
-      })
+      }),
+      browserApiRuntime()
     );
     const controller = new AbortController();
     const pending = Effect.runPromiseExit(operations.list(false), {
