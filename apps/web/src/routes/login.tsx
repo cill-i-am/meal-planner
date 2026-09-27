@@ -1,7 +1,6 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 
-import { decodeAuthSearch } from "../features/auth/auth-navigation.js";
-import { LoginPage } from "../features/auth/auth-screens.js";
+import { decodeAuthSearch, LoginPage } from "../features/auth/index.js";
 
 const LoginRoute = () => (
   <LoginPage redirect={useSearch({ from: "/login" }).redirect} />

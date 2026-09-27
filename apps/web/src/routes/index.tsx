@@ -1,22 +1,24 @@
 import type { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
-import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, Navigate, useSearch } from "@tanstack/react-router";
 import { useMemo } from "react";
 
-import { AuthBoundary } from "../features/auth/auth-boundary.js";
+import { StatusScreen } from "../components/status-screen.js";
+import {
+  AuthBoundary,
+  useAuthClient,
+  requireAuthSuccess,
+  deriveAuthBoundaryState,
+  parseDisplayedIdentity,
+  IdentityQueryBoundary,
+} from "../features/auth/index.js";
 import type {
   AuthBoundaryActions,
   HouseholdSummary,
-} from "../features/auth/auth-boundary.js";
-import {
-  useAuthClient,
-  requireAuthSuccess,
-} from "../features/auth/auth-client.js";
-import { deriveAuthBoundaryState } from "../features/auth/auth-state.js";
-import { parseDisplayedIdentity } from "../features/auth/displayed-identity.js";
-import type { DisplayedIdentity } from "../features/auth/displayed-identity.js";
-import { IdentityQueryBoundary } from "../features/auth/identity-query-boundary.js";
-import { makeBrowserHouseholdPeopleOperations } from "../features/household-people/browser-operations.js";
+  DisplayedIdentity,
+} from "../features/auth/index.js";
+import { familyQuery } from "../features/family/index.js";
+import { makeBrowserHouseholdPeopleOperations } from "../features/household-people/client.js";
 import { HouseholdPeoplePanel } from "../features/household-people/household-people-panel.js";
 import { makeBrowserHouseholdProfileOperations } from "../features/household-profiles/browser-operations.js";
 import { HouseholdProfilesPanel } from "../features/household-profiles/household-profiles-panel.js";
@@ -42,6 +44,7 @@ const AuthenticatedMealPlanner = ({
 }) => {
   const queryClient = useQueryClient();
   const { userId, organizationId } = scope;
+  const family = useQuery(familyQuery(userId, organizationId));
   const clients = useMemo(() => {
     const identity = { organizationId, userId };
     return {
@@ -51,6 +54,20 @@ const AuthenticatedMealPlanner = ({
       recipes: makeBrowserRecipeImportOperations(identity),
     };
   }, [userId, organizationId]);
+  if (family.isPending) {
+    return <StatusScreen title="Loading your family…" />;
+  }
+  if (family.isError) {
+    return (
+      <StatusScreen
+        title="Your family couldn’t load"
+        retry={() => family.refetch()}
+      />
+    );
+  }
+  if (family.data.setup.status !== "complete") {
+    return <Navigate to="/setup" replace />;
+  }
   return (
     <RecipeImportPage
       {...(intentId === undefined ? {} : { initialIntentId: intentId })}

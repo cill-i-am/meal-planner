@@ -1,7 +1,6 @@
 import { Option, Schema } from "effect";
 
-import { SignInInput, SignUpInput } from "../auth/auth-input.js";
-import { decodeAuthSearch } from "../auth/auth-navigation.js";
+import { SignInInput, SignUpInput, decodeAuthSearch } from "../auth/index.js";
 
 export const RecoveryRequest = Schema.Struct({
   email: SignInInput.fields.email,

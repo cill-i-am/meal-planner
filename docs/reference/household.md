@@ -8,8 +8,9 @@ uses the immutable Better Auth organization ID as the household ID.
 
 The API Worker checks access before routing household or meal-plan requests. It
 reads the same-origin Better Auth session, finds the active organization and checks
-membership through Better Auth's public API. The browser does not supply an
-organization ID. Selecting an active organization does not by itself grant access.
+membership through Better Auth's public API. Family and people resource routes
+instead check membership in the explicit family ID in the URL. Neither a URL
+ID nor selecting an active organization grants access. See [family resources](family-api.md).
 
 ### Auth runtime
 

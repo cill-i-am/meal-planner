@@ -5,8 +5,8 @@ import {
 import { Effect, Layer } from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
-import { displayedIdentityHeaders } from "../auth/displayed-identity.js";
-import type { DisplayedIdentity } from "../auth/displayed-identity.js";
+import { displayedIdentityHeaders } from "../auth/index.js";
+import type { DisplayedIdentity } from "../auth/index.js";
 import type { RecipeImportOperations } from "./operations.js";
 
 const makeClientRunner = (baseUrl: string | URL, scope: DisplayedIdentity) => {

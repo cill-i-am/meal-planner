@@ -7,8 +7,8 @@ import {
 import { Cause, Effect, Exit, Layer, Option, Schema } from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
-import { displayedIdentityHeaders } from "../auth/displayed-identity.js";
-import type { DisplayedIdentity } from "../auth/displayed-identity.js";
+import { displayedIdentityHeaders } from "../auth/index.js";
+import type { DisplayedIdentity } from "../auth/index.js";
 import { ProfileOperationError } from "./operations.js";
 import type { HouseholdProfileOperations } from "./operations.js";
 
@@ -63,15 +63,22 @@ export const makeBrowserHouseholdProfileOperations = (
   };
   return {
     get: (personId) =>
-      run((client) => client.people.getProfile({ params: { personId } })),
+      run((client) =>
+        client.people.getProfile({
+          params: { familyId: scope.organizationId, personId },
+        })
+      ),
     mutate: (personId, payload) =>
       run((client) =>
-        client.people.mutateProfile({ params: { personId }, payload })
+        client.people.mutateProfile({
+          params: { familyId: scope.organizationId, personId },
+          payload,
+        })
       ),
     versions: (personId, beforeVersion) =>
       run((client) =>
         client.people.listProfileVersions({
-          params: { personId },
+          params: { familyId: scope.organizationId, personId },
           query: beforeVersion === undefined ? {} : { beforeVersion },
         })
       ),

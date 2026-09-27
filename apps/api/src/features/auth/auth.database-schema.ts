@@ -22,8 +22,6 @@ export const user = sqliteTable("user", {
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
-  setupProgress: text("setup_progress", { mode: "json" }),
-  setupProgressVersion: integer("setup_progress_version").default(0).notNull(),
 });
 
 export const session = sqliteTable(

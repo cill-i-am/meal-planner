@@ -1,16 +1,14 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 
-import { AddPersonPage } from "../features/onboarding/people-pages.js";
-import { useSetup } from "../features/onboarding/setup-context.js";
-import { setupDestination } from "../features/onboarding/setup-state.js";
+import { useFamily } from "../features/family/index.js";
+import { AddPersonPage } from "../features/onboarding/index.js";
 
 const Screen = () => {
-  const destination = setupDestination(useSetup().progress);
-  return destination === "/setup/people" ? (
-    <AddPersonPage />
-  ) : (
-    <Navigate to={destination} replace />
-  );
+  const setup = useFamily();
+  if (setup.family === undefined) {
+    return <Navigate to="/setup/family" replace />;
+  }
+  return <AddPersonPage />;
 };
 export const Route = createFileRoute("/setup/people")({
   component: Screen,

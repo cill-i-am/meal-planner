@@ -1,20 +1,17 @@
-import {
-  PersonCreation,
-  PersonDraft,
-  InviteHouseholdAdultPayload,
-} from "@meal-planner/household-api";
+import { HouseholdOrganizationId } from "@meal-planner/household-api";
 import type {
   HouseholdPerson,
   HouseholdPeopleRoster,
-  SetupCheckpoint,
 } from "@meal-planner/household-api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Effect, Schema } from "effect";
+import { Schema } from "effect";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
 import { useAppForm } from "../../components/forms/form.js";
+import { OperationError } from "../../components/operation-error.js";
+import { StatusScreen } from "../../components/status-screen.js";
 import { Button } from "../../components/ui/button.js";
 import {
   Card,
@@ -31,46 +28,36 @@ import {
 } from "../../components/ui/collapsible.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
-import { PersonRow, useSetupRoster } from "./family-review.js";
-import { InvitationCorrectionForm } from "./invitation-correction.js";
-import { setupEffectQuery } from "./onboarding-people.js";
+import {
+  familyKeys,
+  PersonRow,
+  useFamilyRoster,
+  peopleEffectQuery,
+  PersonCreation,
+  PersonDraft,
+  savePerson,
+  RosterActions,
+  RosterManagementOverlay,
+  useRosterManagement,
+  useFamily,
+} from "../family/index.js";
+import type { RosterAction } from "../family/index.js";
 import {
   PersonNameInput,
   ParticipationInput,
   InvitationEmailInput,
-} from "./people-input.js";
-import { saveSetupPerson } from "./person-save.js";
-import {
-  RosterActions,
-  RosterManagementOverlay,
-  useRosterManagement,
-} from "./roster-management.js";
-import type { RosterAction } from "./roster-management.js";
-import { useSetup } from "./setup-context.js";
-import { SetupError, SetupFrame, SetupStatus } from "./setup-ui.js";
+} from "../household-people/form-input.js";
+import { useRetainedRequest } from "../request-recovery/index.js";
+import { SetupFrame } from "./setup-ui.js";
 
 const nameValidator = Schema.toStandardSchemaV1(PersonNameInput);
 const participationValidator = Schema.toStandardSchemaV1(ParticipationInput);
 const emailValidator = Schema.toStandardSchemaV1(InvitationEmailInput);
 type Draft = typeof PersonDraft.Type;
-type Pending = Extract<
-  SetupCheckpoint,
-  { stage: "person-create" | "person-invite" }
->;
-
-const draftForAddPage = (checkpoint: SetupCheckpoint): Draft | null => {
-  if (checkpoint.stage === "person-draft") {
-    return checkpoint.draft;
-  }
-  if (
-    checkpoint.stage === "person-manage" &&
-    checkpoint.returnTo.stage === "person-draft"
-  ) {
-    return checkpoint.returnTo.draft;
-  }
-  return null;
-};
-
+const PersonRequest = Schema.Struct({
+  command: PersonCreation,
+  organizationId: HouseholdOrganizationId,
+});
 const AddedPeople = ({
   roster,
   organizer,
@@ -296,18 +283,20 @@ const PersonDraftForm = ({
                 </div>
               </FieldGroup>
               {rosterError && (
-                <SetupError>
+                <OperationError>
                   Your family list couldn’t refresh. Your draft is still here;
                   you can save and return later.
-                </SetupError>
+                </OperationError>
               )}
               {logoutError && (
-                <SetupError>
-                  We couldn’t save your place or log you out. Try again.
-                </SetupError>
+                <OperationError>
+                  We couldn’t log you out. Try again.
+                </OperationError>
               )}
               {error && !logoutError && (
-                <SetupError>We couldn’t save your place. Try again.</SetupError>
+                <OperationError>
+                  We couldn’t save this person. Try again.
+                </OperationError>
               )}
               <div className="flex flex-col gap-2">
                 <form.Subscribe
@@ -358,299 +347,201 @@ const PersonDraftForm = ({
   );
 };
 
-const PendingPersonRequest = ({
-  pending,
-  busy,
-  saving,
-  failed,
-  logoutFailed,
-  retry,
-  logout,
-}: {
-  readonly pending: Pending;
-  readonly busy: boolean;
-  readonly saving: boolean;
-  readonly failed: boolean;
-  readonly logoutFailed: boolean;
-  readonly retry: () => void;
-  readonly logout: () => void;
-}) => {
-  const name =
-    pending.stage === "person-invite"
-      ? pending.displayName
-      : pending.command.person.displayName;
-  const retryLabel =
-    pending.stage === "person-invite"
-      ? "Finish invitation"
-      : "Check and continue";
-  return (
-    <SetupFrame
-      step="people"
-      action={
-        <Button variant="link" disabled={busy} onClick={logout}>
-          Log out
-        </Button>
-      }
-    >
-      <Card className="w-full max-w-140" size="sm">
-        <CardBody>
-          <CardHeader>
-            <CardTitle>
-              <h1
-                id="auth-title"
-                tabIndex={-1}
-                className="text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight focus:outline-none"
-              >
-                {pending.stage === "person-invite"
-                  ? `Finish ${name}’s invitation`
-                  : `Finish adding ${name}`}
-              </h1>
-            </CardTitle>
-            <CardDescription>
-              {pending.stage === "person-invite"
-                ? "Their profile is saved. We still need to confirm the invitation."
-                : "We’ve kept your request. Check the result before adding anyone else."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {pending.stage === "person-invite" && (
-              <div className="flex flex-col gap-1">
-                <span className="text-muted-foreground text-sm">
-                  Invitation for
-                </span>
-                <span>{pending.displayName}</span>
-                <span className="text-muted-foreground text-sm wrap-anywhere">
-                  {pending.command.email}
-                </span>
-              </div>
-            )}
-            {failed && (
-              <SetupError>
-                We couldn’t finish that request. Try again to check and complete
-                the same request.
-              </SetupError>
-            )}
-            {logoutFailed && (
-              <SetupError>
-                We couldn’t save your place or log you out. Try again.
-              </SetupError>
-            )}
-            <PendingButton
-              disabled={busy}
-              onClick={retry}
-              pending={saving}
-              pendingLabel="Checking request…"
-            >
-              {retryLabel}
-            </PendingButton>
-          </CardContent>
-        </CardBody>
-      </Card>
-    </SetupFrame>
-  );
-};
-
 export const AddPersonPage = () => {
-  const setup = useSetup();
+  const setup = useFamily();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const roster = useSetupRoster();
-  const { checkpoint } = setup.progress;
+  const roster = useFamilyRoster();
   const manage = useRosterManagement();
-  const [openingReview, setOpeningReview] = useState(false);
-  const [openReviewFailed, setOpenReviewFailed] = useState(false);
-  const openReview = async (organizationId: Pending["organizationId"]) => {
-    setOpeningReview(true);
-    setOpenReviewFailed(false);
+  const retained = useRetainedRequest(
+    `${setup.user.id}:${setup.family?.id}:person-create`,
+    PersonRequest
+  );
+  const [navigationFailed, setNavigationFailed] = useState(false);
+  const openReview = async () => {
     try {
-      await queryClient.invalidateQueries({
-        queryKey: ["setup-roster", organizationId],
+      await navigate({
+        search: setup.family ? { familyId: setup.family.id } : {},
+        to: "/setup/review",
       });
-      await navigate({ to: "/setup" });
     } catch {
-      setOpenReviewFailed(true);
-    } finally {
-      setOpeningReview(false);
+      setNavigationFailed(true);
     }
   };
-  const save = useMutation(
-    setupEffectQuery.mutationOptions({
-      mutationFn: (pending: Pending) =>
-        Effect.gen(function* savePersonCheckpoint() {
-          yield* setup.save({ checkpoint: pending, status: "active" });
-          yield* saveSetupPerson(
-            pending,
-            setup.peopleEffectForFamily(pending.organizationId),
-            (next, sourceCommandId) =>
-              setup.save(
-                { checkpoint: next, status: "active" },
-                sourceCommandId
-              )
-          );
-        }),
-      mutationKey: ["setup-person-save"],
-      onSuccess: (_result, pending) => openReview(pending.organizationId),
+  const save = useMutation({
+    ...peopleEffectQuery.mutationOptions({
+      mutationFn: (request: typeof PersonRequest.Type) =>
+        savePerson(
+          request.command,
+          setup.peopleEffectForFamily(request.organizationId)
+        ),
+      mutationKey: ["families", setup.user.id, setup.family?.id, "add-person"],
+    }),
+    onError: (error, request) => {
+      // These reject the create itself; unknown outcomes keep the original command.
+      const rejected = error.match({
+        HouseholdPeopleOperationError: (failure) =>
+          [
+            "invalid_request",
+            "organizer_required",
+            "mutation_collision",
+          ].includes(failure.code),
+        OrElse: () => false,
+      });
+      if (rejected) {
+        retained.release(request.command.person.mutationId);
+      }
+    },
+    onSuccess: async (_result, request) => {
+      retained.release(request.command.person.mutationId);
+      await queryClient.invalidateQueries({
+        queryKey: familyKeys.people(setup.user.id, request.organizationId),
+      });
+    },
+  });
+  const logout = useMutation(
+    peopleEffectQuery.mutationOptions({
+      mutationFn: () => setup.logout("/setup"),
+      mutationKey: ["setup-logout"],
     })
   );
-  const exit = useMutation(
-    setupEffectQuery.mutationOptions({
-      mutationFn: (next: SetupCheckpoint) =>
-        setup.logout({ checkpoint: next, status: "paused" }),
-      mutationKey: ["setup-person-logout"],
-    })
-  );
-  const cancel = useMutation(
-    setupEffectQuery.mutationOptions({
-      mutationFn: () => {
-        if (!("organizationId" in checkpoint)) {
-          return Effect.void;
-        }
-        return setup.save({
-          checkpoint: {
-            organizationId: checkpoint.organizationId,
-            stage: "family-review",
-          },
-          status: "active",
-        });
-      },
-      mutationKey: ["setup-person-cancel"],
-      onSuccess: () => navigate({ to: "/setup/review" }),
-    })
-  );
-  const pending =
-    checkpoint.stage === "person-create" || checkpoint.stage === "person-invite"
-      ? checkpoint
-      : save.variables;
-  const busy =
-    openingReview ||
-    [save, exit, cancel].some((operation) => operation.isPending);
-  if (checkpoint.stage === "person-invite-draft") {
+  const submit = async (command: PersonCreation) => {
+    if (!setup.family) {
+      return;
+    }
+    const request = retained.pending ?? {
+      command,
+      organizationId: setup.family.id,
+    };
+    try {
+      retained.retain(request.command.person.mutationId, request);
+      const result = await save.mutateAsync(request);
+      if (result.invitationIssue === null) {
+        await openReview();
+      }
+    } catch {
+      /* The retained request and mutation own an uncertain outcome. */
+    }
+  };
+  if (retained.pending || save.isSuccess) {
+    const { pending } = retained;
     return (
-      <InvitationCorrectionForm
-        checkpoint={checkpoint}
-        busy={busy}
-        saving={save.isPending}
-        error={Boolean(exit.error || cancel.error || openReviewFailed)}
-        submit={async (email) => {
-          await save
-            .mutateAsync({
-              command: Schema.decodeUnknownSync(InviteHouseholdAdultPayload)({
-                email,
-                mutationId: crypto.randomUUID(),
-                personId: checkpoint.personId,
-              }),
-              displayName: checkpoint.displayName,
-              organizationId: checkpoint.organizationId,
-              stage: "person-invite",
-            })
-            .catch(() => {
-              /* Saved command owns uncertain outcomes. */
-            });
-        }}
-        logout={(email) => exit.mutate({ ...checkpoint, email })}
-        cancel={() => cancel.mutate()}
-      />
-    );
-  }
-  if (pending) {
-    return (
-      <PendingPersonRequest
-        pending={pending}
-        busy={busy}
-        saving={save.isPending}
-        failed={Boolean(save.error || openReviewFailed)}
-        logoutFailed={Boolean(exit.error)}
-        retry={async () => {
-          if (save.isSuccess) {
-            await openReview(pending.organizationId);
-          } else {
-            save.mutate(pending);
-          }
-        }}
-        logout={() => exit.mutate(pending)}
-      />
-    );
-  }
-  if (roster.isPending) {
-    return <SetupStatus title="Loading your family…" />;
-  }
-  if (!roster.data) {
-    return (
-      <SetupStatus
-        title="Your family didn’t load"
-        retry={() => roster.refetch()}
+      <SetupFrame
+        step="people"
         action={
           <Button
             variant="link"
-            disabled={busy}
-            onClick={() => exit.mutate(checkpoint)}
+            disabled={logout.isPending}
+            onClick={() => logout.mutate()}
           >
-            {exit.isPending ? "Logging out…" : "Log out"}
-          </Button>
-        }
-        footer={
-          <Button
-            variant="link"
-            disabled={busy}
-            onClick={() => cancel.mutate()}
-          >
-            Cancel
+            Log out
           </Button>
         }
       >
-        {(exit.error || cancel.error || openReviewFailed) && (
-          <SetupError>
-            {exit.error
-              ? "We couldn’t save your place or log you out. Try again."
-              : "We couldn’t save your place. Try again."}
-          </SetupError>
-        )}
-      </SetupStatus>
+        <Card className="w-full max-w-140" size="sm">
+          <CardBody>
+            <CardHeader>
+              <CardTitle>
+                <h1
+                  id="auth-title"
+                  tabIndex={-1}
+                  className="text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight focus:outline-none"
+                >
+                  {save.isSuccess ? "Person added" : "Check your request"}
+                </h1>
+              </CardTitle>
+              <CardDescription>
+                {save.isSuccess
+                  ? "Their profile is saved in your family."
+                  : "We kept the submitted details. Retry the same request to confirm the result."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {save.data?.invitationIssue && (
+                <OperationError>
+                  The person is saved, but the invitation was rejected. Review
+                  the family and use Invite to join to correct the address.
+                </OperationError>
+              )}
+              {retained.error && (
+                <OperationError>{retained.error}</OperationError>
+              )}
+              {save.error && (
+                <OperationError>
+                  We couldn’t confirm the result. Try again.
+                </OperationError>
+              )}
+              {navigationFailed && (
+                <OperationError>
+                  The person is saved. Try opening your family again.
+                </OperationError>
+              )}
+              {logout.error && (
+                <OperationError>
+                  We couldn’t log you out. Try again.
+                </OperationError>
+              )}
+              {pending ? (
+                <PendingButton
+                  pending={save.isPending}
+                  pendingLabel="Checking request…"
+                  disabled={save.isPending}
+                  onClick={() => {
+                    void submit(pending.command);
+                  }}
+                >
+                  Check and continue
+                </PendingButton>
+              ) : (
+                <Button
+                  onClick={() => {
+                    void openReview();
+                  }}
+                >
+                  Review family
+                </Button>
+              )}
+            </CardContent>
+          </CardBody>
+        </Card>
+      </SetupFrame>
     );
   }
-  const activeDraft = draftForAddPage(checkpoint);
-  if (!activeDraft || !("organizationId" in checkpoint)) {
-    return null;
+  if (roster.isPending) {
+    return <StatusScreen title="Loading your family…" />;
+  }
+  if (!roster.data) {
+    return (
+      <StatusScreen
+        title="Your family couldn’t load"
+        retry={() => roster.refetch()}
+      />
+    );
   }
   return (
     <PersonDraftForm
-      draft={activeDraft}
+      draft={{ email: "", invite: false, name: "", participation: "adult" }}
       roster={roster.data}
-      organizer={setup.isFamilyOrganizer(checkpoint.organizationId)}
+      organizer={setup.family?.canManage ?? false}
       rosterError={roster.isError}
-      busy={busy}
+      busy={save.isPending}
       saving={save.isPending}
-      disabled={busy || manage.managing}
-      overlay={<RosterManagementOverlay management={manage} />}
-      error={Boolean(cancel.error)}
-      logoutError={Boolean(exit.error)}
-      loggingOut={exit.isPending}
-      submit={async (command) => {
-        await save
-          .mutateAsync({
-            command,
-            organizationId: checkpoint.organizationId,
-            stage: "person-create",
-          })
-          .catch(() => {
-            /* Mutation retains and displays the failure. */
-          });
+      disabled={save.isPending || manage.managing}
+      overlay={
+        <>
+          {retained.error && <OperationError>{retained.error}</OperationError>}
+          <RosterManagementOverlay management={manage} />
+        </>
+      }
+      error={Boolean(save.error)}
+      logoutError={Boolean(logout.error)}
+      loggingOut={logout.isPending}
+      submit={submit}
+      logout={() => logout.mutate()}
+      cancel={() => {
+        void openReview();
       }}
-      logout={(draft) => {
-        if (checkpoint.stage === "person-draft") {
-          exit.mutate({ ...checkpoint, draft });
-        } else {
-          exit.mutate(checkpoint);
-        }
-      }}
-      cancel={() => cancel.mutate()}
-      onAction={(kind, person, draft) => {
-        manage.begin({
-          kind,
-          person,
-          returnTo: { draft, stage: "person-draft" },
-        });
-      }}
+      onAction={(kind, person) => manage.begin({ kind, person })}
     />
   );
 };

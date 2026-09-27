@@ -1,3 +1,4 @@
+import { FamilyServiceLive } from "@meal-planner/families/application";
 import {
   HouseholdMemberDepartureOperation,
   HouseholdPeopleUnavailable,
@@ -30,6 +31,7 @@ import {
   makeAuthenticatedOrganizationResolver,
   makeAuthPrincipalResolver,
 } from "../auth/auth.principal.js";
+import { FamilyStoreLive, familyHttpApiLayer } from "../families/index.js";
 import {
   RecipeImportHouseholdDomain,
   makeRecipeImportHttpApiLayer,
@@ -73,6 +75,7 @@ import type {
   HouseholdReadImportTerminalCheckpointResult,
   HouseholdReadRecipeRecoveryAttemptResult,
 } from "./evidence/household-evidence.contract.js";
+import { HouseholdCreatorLive } from "./family-membership.js";
 import type { HouseholdDomainWorkerMethods } from "./household-domain-worker.js";
 import type {
   HouseholdCreateMealPlanFromRecipeBankInput,
@@ -710,6 +713,20 @@ export default {
             verifyInvitationRecipient:
               makeHouseholdInvitationRecipientVerifier(householdDomain),
           });
+          // Low-level household tests intentionally start with an organization before creator bootstrap.
+          if (
+            new URL(request.url).pathname === "/api/auth/__test/organization" &&
+            request.method === "POST"
+          ) {
+            const body = yield* Schema.decodeUnknownEffect(
+              Schema.Struct({ name: Schema.String, slug: Schema.String })
+            )(yield* Effect.promise(() => request.json()));
+            const organization = yield* auth.api.createOrganization({
+              body,
+              headers: request.headers,
+            });
+            return Response.json(organization);
+          }
           if (new URL(request.url).pathname.startsWith("/api/auth/")) {
             return HttpServerResponse.toWeb(
               yield* auth.fetchHttpEffect(request)
@@ -1036,8 +1053,18 @@ export default {
               }),
               resolver,
             });
+            const familyServices = FamilyServiceLive.pipe(
+              Layer.provide(HouseholdCreatorLive(householdDomain)),
+              Layer.provide(
+                FamilyStoreLive(drizzle(env.MealPlannerAuthDatabase))
+              )
+            );
             const routeHandler = yield* HttpRouter.toHttpEffect(
               Layer.mergeAll(
+                familyHttpApiLayer(auth).pipe(
+                  Layer.provide(familyServices),
+                  HttpRouter.provideRequest(familyServices)
+                ),
                 householdLayer,
                 mealPlanLayer,
                 peopleLayer,

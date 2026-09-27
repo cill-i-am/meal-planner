@@ -26,14 +26,17 @@ type AuthProps = Omit<MealPlannerAuthConfiguration, "database" | "secret"> & {
 };
 type AlchemyAuth = BetterAuthInstance<AuthProps>;
 type AuthOperation =
+  | "acceptInvitation"
+  | "rejectInvitation"
+  | "getSetupInvitation"
   | "cancelInvitation"
   | "createOrganization"
   | "getSession"
   | "getActiveMember"
+  | "getActiveMemberRole"
   | "leaveOrganization"
   | "listOrganizations"
   | "removeMember"
-  | "saveSetupProgress"
   | "setActiveOrganization";
 type BoundAuthApi = {
   readonly [K in AuthOperation]: AlchemyAuth["api"][K] extends (
@@ -97,20 +100,26 @@ export const makeAlchemyMealPlannerAuth = (
 
     const service: MealPlannerAuthService = {
       api: {
+        acceptInvitation: (input) =>
+          provideRuntime(auth.api.acceptInvitation(input)),
         cancelInvitation: (input) =>
           provideRuntime(auth.api.cancelInvitation(input)),
         createOrganization: (input) =>
           provideRuntime(auth.api.createOrganization(input)),
         getActiveMember: (input) =>
           provideRuntime(auth.api.getActiveMember(input)),
+        getActiveMemberRole: (input) =>
+          provideRuntime(auth.api.getActiveMemberRole(input)),
         getSession: (input) => provideRuntime(auth.api.getSession(input)),
+        getSetupInvitation: (input) =>
+          provideRuntime(auth.api.getSetupInvitation(input)),
         leaveOrganization: (input) =>
           provideRuntime(auth.api.leaveOrganization(input)),
         listOrganizations: (input) =>
           provideRuntime(auth.api.listOrganizations(input)),
+        rejectInvitation: (input) =>
+          provideRuntime(auth.api.rejectInvitation(input)),
         removeMember: (input) => provideRuntime(auth.api.removeMember(input)),
-        saveSetupProgress: (input) =>
-          provideRuntime(auth.api.saveSetupProgress(input)),
         setActiveOrganization: (input) =>
           provideRuntime(auth.api.setActiveOrganization(input)),
       },

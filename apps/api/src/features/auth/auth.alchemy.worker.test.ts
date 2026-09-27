@@ -124,22 +124,21 @@ describe("Alchemy Better Auth on D1", () => {
       Effect.gen(function* cancelPersonInvitation() {
         const auth = yield* makeAuth();
         const owner = yield* createAccount(auth);
-        const response = HttpServerResponse.toWeb(
-          yield* auth.fetchHttpEffect(
-            authRequest(
-              "/organization/create",
-              {
-                name: "Alchemy cancellation family",
-                slug: crypto.randomUUID(),
-              },
-              owner.headers
+        const organization = yield* auth.api
+          .createOrganization({
+            body: {
+              name: "Alchemy cancellation family",
+              slug: crypto.randomUUID(),
+            },
+            headers: owner.headers,
+          })
+          .pipe(
+            Effect.flatMap(
+              Schema.decodeUnknownEffect(
+                Schema.Struct({ id: HouseholdOrganizationId })
+              )
             )
-          )
-        );
-        expect(response.status).toBe(200);
-        const organization = yield* Schema.decodeUnknownEffect(
-          Schema.Struct({ id: HouseholdOrganizationId })
-        )(yield* Effect.promise(() => response.json()));
+          );
         const invitation = yield* auth.createHouseholdInvitation({
           body: {
             email: Schema.decodeUnknownSync(EmailAddress)(

@@ -10,6 +10,10 @@ or deployment. Keep those stages separate when reporting progress.
 
 ## Immediate work
 
+The active [family resource refactor](family-resource-onboarding.md) simplifies
+auth through family setup before establishing the wider app template. Its
+running decision log records implementation choices and validation.
+
 Continue [private discovery](private-discovery/README.md): finish the
 [evaluation and conversation-tone work](private-discovery/03-adaptive-discovery-and-evaluation.md),
 then [repeat reviews and dependant assistance](private-discovery/04-repeat-review-and-dependant-assistance.md).

@@ -22,7 +22,8 @@ export interface AuthPrincipalResolver {
 
 export interface AuthenticatedOrganizationResolver {
   readonly resolve: (
-    headers: Headers
+    headers: Headers,
+    organizationId?: HouseholdOrganizationId
   ) => Effect.Effect<AuthenticatedOrganization, AuthPrincipalResolutionError>;
 }
 
@@ -58,6 +59,7 @@ export type AuthenticatedOrganization = typeof AuthenticatedOrganization.Type;
 export const resolveAuthenticatedOrganization = (options: {
   readonly auth: MealPlannerAuthService;
   readonly headers: Headers;
+  readonly organizationId?: HouseholdOrganizationId | undefined;
 }) =>
   Effect.gen(function* resolveOrganization() {
     const authSession = yield* options.auth.api.getSession({
@@ -72,7 +74,8 @@ export const resolveAuthenticatedOrganization = (options: {
     const expectedOrganization = options.headers.get(
       "x-meal-planner-household"
     );
-    const organizationId = authSession.session.activeOrganizationId;
+    const organizationId =
+      options.organizationId ?? authSession.session.activeOrganizationId;
     if (
       (expectedUser !== null && expectedUser !== authSession.user.id) ||
       (expectedOrganization !== null && expectedOrganization !== organizationId)
@@ -85,6 +88,17 @@ export const resolveAuthenticatedOrganization = (options: {
       return yield* Effect.fail(
         new AuthPrincipalResolutionError({ reason: "missing_active_household" })
       );
+    }
+    if (options.organizationId !== undefined) {
+      const membership = yield* options.auth.api.getActiveMemberRole({
+        headers: options.headers,
+        query: { organizationId: options.organizationId },
+      });
+      return yield* Schema.decodeUnknownEffect(AuthenticatedOrganization)({
+        membershipRole: membership.role,
+        organizationId,
+        userId: authSession.user.id,
+      });
     }
     const membership = yield* options.auth.api
       .getActiveMember({
@@ -160,6 +174,10 @@ export const makeAuthPrincipalResolver = (options: {
 export const makeAuthenticatedOrganizationResolver = (options: {
   readonly auth: MealPlannerAuthService;
 }): AuthenticatedOrganizationResolver => ({
-  resolve: (headers) =>
-    resolveAuthenticatedOrganization({ headers, ...options }),
+  resolve: (headers, organizationId) =>
+    resolveAuthenticatedOrganization({
+      headers,
+      ...options,
+      organizationId,
+    }),
 });

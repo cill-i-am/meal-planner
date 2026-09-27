@@ -24,7 +24,7 @@ import { Button } from "../../components/ui/button.js";
 import { Input } from "../../components/ui/input.js";
 import { Label } from "../../components/ui/label.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
-import { parseDisplayedIdentity } from "../auth/displayed-identity.js";
+import { parseDisplayedIdentity } from "../auth/index.js";
 import {
   DepartureRecovery,
   HouseholdAssociationControls,

@@ -116,7 +116,10 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     );
     expect(schemaSource).toContain("defineRelationsPart(");
     expect(drizzleConfigSource).toContain(
-      'schema: "./src/features/auth/auth.database-schema.ts"'
+      '"./src/features/auth/auth.database-schema.ts"'
+    );
+    expect(drizzleConfigSource).toContain(
+      '"./src/features/families/schema.ts"'
     );
     expect(sqlFiles).not.toHaveLength(0);
 

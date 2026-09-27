@@ -3,7 +3,7 @@ import type { EmailAddress as EmailAddressType } from "@meal-planner/household-a
 import { Schema } from "effect";
 import { expect, it } from "vitest";
 
-import { InvitationEmailInput } from "../onboarding/people-input.js";
+import { InvitationEmailInput } from "../household-people/form-input.js";
 import { parseSignIn, parseSignUp } from "./auth-input.js";
 
 it("normalizes auth and invitation emails into the shared address type", () => {

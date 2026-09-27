@@ -1,10 +1,13 @@
-import type { InvitationView } from "@meal-planner/household-api";
-import { InvitationId, SetupCheckpoint } from "@meal-planner/household-api";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { Option, Schema } from "effect";
+import { InvitationId } from "@meal-planner/household-api";
+import { InvitationResponse } from "@meal-planner/invitations";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+import { Effect, Option, Schema } from "effect";
 import type { ReactNode } from "react";
+import { useState } from "react";
 
+import { AccountLayout } from "../../components/account-layout.js";
+import { OperationError } from "../../components/operation-error.js";
 import { Avatar, AvatarFallback } from "../../components/ui/avatar.js";
 import { Button } from "../../components/ui/button.js";
 import {
@@ -18,17 +21,13 @@ import {
 } from "../../components/ui/card.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
 import { Separator } from "../../components/ui/separator.js";
-import { AuthLayout } from "../auth/auth-layout.js";
-import { SetupProvider, useSetup } from "../onboarding/setup-context.js";
-import { SetupError } from "../onboarding/setup-ui.js";
+import { AccountProvider, useAccount } from "../auth/index.js";
+import { useFamilyActions } from "../family/index.js";
+import { useRetainedRequest } from "../request-recovery/index.js";
 import {
   invitationReadQueryOptions,
-  logoutInvitationMutationOptions,
-  pauseInvitationMutationOptions,
-  recoverInvitationMutationOptions,
   respondInvitationMutationOptions,
 } from "./invitation-operations.js";
-import type { InvitationCommand } from "./invitation-operations.js";
 
 const InvitationCard = ({
   title,
@@ -43,7 +42,7 @@ const InvitationCard = ({
   readonly footer?: ReactNode;
   readonly action?: ReactNode;
 }) => (
-  <AuthLayout headerAction={action}>
+  <AccountLayout headerAction={action}>
     <Card className="w-full max-w-(--container-auth)">
       <CardBody>
         <CardHeader>
@@ -62,7 +61,7 @@ const InvitationCard = ({
       </CardBody>
       {footer && <CardFooter>{footer}</CardFooter>}
     </Card>
-  </AuthLayout>
+  </AccountLayout>
 );
 
 const InvitationReadFailure = ({
@@ -143,377 +142,93 @@ const InvitationReadFailure = ({
   );
 };
 
-const pendingInvitation = (
-  checkpoint: SetupCheckpoint
-): InvitationCommand | undefined => {
-  if (
-    checkpoint.stage === "invitation-response" ||
-    checkpoint.stage === "invitation-link"
-  ) {
-    return checkpoint;
-  }
-  return undefined;
-};
-
-const useInvitationFlow = (invitationId: InvitationId) => {
-  const setup = useSetup();
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const { checkpoint } = setup.progress;
-  const pending = pendingInvitation(checkpoint);
-  const invitationOptions = invitationReadQueryOptions(
-    invitationId,
-    setup.user.id
-  );
-  const invitation = useQuery(invitationOptions);
-  const respond = useMutation({
-    ...respondInvitationMutationOptions({
-      activate: setup.selectFamily,
-      auth: setup.auth,
-      peopleEffectForFamily: setup.peopleEffectForFamily,
-      read: (id) =>
-        queryClient.fetchQuery(invitationReadQueryOptions(id, setup.user.id)),
-      save: setup.save,
-    }),
-    onError: async () => {
-      await invitation.refetch();
-    },
-    onSuccess: async (result) => {
-      await (result === "joined"
-        ? navigate({ to: "/setup/ready" })
-        : invitation.refetch());
-    },
-  });
-  const pause = useMutation({
-    ...pauseInvitationMutationOptions({ save: setup.save }),
-    onSuccess: () => navigate({ to: "/setup/saved" }),
-  });
-  const logout = useMutation(logoutInvitationMutationOptions(setup.logout));
-  const recover = useMutation({
-    ...recoverInvitationMutationOptions({
-      pending,
-      save: setup.save,
-    }),
-    onSuccess: () => navigate({ to: "/setup" }),
-  });
-  const busy = [respond, pause, logout, recover].some(
-    (operation) => operation.isPending
-  );
-  const retained =
-    pending ?? (respond.isSuccess ? undefined : respond.variables);
-  return {
-    busy,
-    checkpoint,
-    invitation,
-    logout,
-    pause,
-    pending,
-    recover,
-    respond,
-    retained,
-    setup,
-  };
-};
-
-const finishLabel = (command: InvitationCommand | undefined) =>
-  command?.stage === "invitation-response" && command.decision === "decline"
-    ? "Confirm decline"
-    : "Finish setup";
-
-const InvitationFinish = ({
-  command,
-  accepted,
-  busy,
-  saving,
-  header,
-  failure,
-  finish,
-}: {
-  readonly command: InvitationCommand | undefined;
-  readonly accepted: boolean;
-  readonly busy: boolean;
-  readonly saving: boolean;
-  readonly header: ReactNode;
-  readonly failure: ReactNode;
-  readonly finish: () => void;
-}) => (
-  <InvitationCard
-    title={
-      command?.stage === "invitation-response" && command.decision === "decline"
-        ? "Finish declining your invitation"
-        : "Finish joining your family"
-    }
-    description={
-      accepted
-        ? "You’ve joined. Finish connecting your family profile."
-        : "We’ve kept your response. Check its result to finish the same request."
-    }
-    action={header}
-  >
-    {failure}
-    <PendingButton
-      disabled={busy}
-      pending={saving}
-      pendingLabel="Finishing invitation…"
-      onClick={finish}
-    >
-      {finishLabel(command)}
-    </PendingButton>
-  </InvitationCard>
-);
-
-const InvitationContent = ({
-  flow,
-  view,
-  header,
-  failure,
-  recoveryAction,
-}: {
-  readonly flow: ReturnType<typeof useInvitationFlow>;
-  readonly view: InvitationView;
-  readonly header: ReactNode;
-  readonly failure: ReactNode;
-  readonly recoveryAction: ReactNode;
-}) => {
-  const { setup, checkpoint, retained, respond, busy } = flow;
-
-  if (
-    view.status === "rejected" &&
-    retained?.stage === "invitation-response" &&
-    retained.decision === "decline"
-  ) {
-    return (
-      <InvitationCard
-        title="Finish saving your response"
-        description="Your invitation was declined. Confirm the result to return to your account."
-        action={header}
-      >
-        {failure}
-        <PendingButton
-          disabled={busy}
-          pending={respond.isPending}
-          pendingLabel="Saving response…"
-          onClick={() => respond.mutate(retained)}
-        >
-          Continue
-        </PendingButton>
-      </InvitationCard>
-    );
-  }
-  if (view.status === "rejected") {
-    return (
-      <InvitationCard
-        title="Invitation declined"
-        description="You haven’t joined this family. You can ask the organiser for a new invitation if you change your mind."
-      >
-        {failure}
-        {recoveryAction}
-      </InvitationCard>
-    );
-  }
-  if (view.status === "expired" || view.status === "canceled") {
-    return (
-      <InvitationCard
-        title="This invitation is no longer available"
-        description="Ask the family organiser for a new invitation."
-      >
-        {failure}
-        {recoveryAction}
-      </InvitationCard>
-    );
-  }
-  const command = (decision: "accept" | "decline"): InvitationCommand => {
-    if (retained) {
-      return retained;
-    }
-    const decoded = Schema.decodeUnknownSync(SetupCheckpoint)({
-      decision,
-      invitationId: view.id,
-      linkMutationId: crypto.randomUUID(),
-      organizationId: view.organizationId,
-      returnCheckpoint: checkpoint,
-      stage: "invitation-response",
-    });
-    if (decoded.stage !== "invitation-response") {
-      throw new Error("Expected invitation response.");
-    }
-    return decoded;
-  };
-  if (
-    view.status === "accepted" &&
-    retained?.stage === "invitation-response" &&
-    retained.decision === "decline"
-  ) {
-    return (
-      <InvitationCard
-        title="This invitation was accepted"
-        description="It was accepted in another session. You can finish connecting your family profile or return to your account."
-        footer={recoveryAction}
-      >
-        {failure}
-        <PendingButton
-          disabled={busy}
-          pending={respond.isPending}
-          pendingLabel="Joining family…"
-          onClick={() =>
-            respond.mutate({
-              invitationId: retained.invitationId,
-              linkMutationId: retained.linkMutationId,
-              organizationId: retained.organizationId,
-              returnCheckpoint: retained.returnCheckpoint,
-              stage: "invitation-link",
-            })
-          }
-        >
-          Finish joining family
-        </PendingButton>
-      </InvitationCard>
-    );
-  }
-  if (retained || view.status === "accepted") {
-    return (
-      <InvitationFinish
-        command={retained}
-        accepted={view.status === "accepted"}
-        busy={busy}
-        saving={respond.isPending}
-        header={header}
-        failure={failure}
-        finish={() => respond.mutate(command("accept"))}
-      />
-    );
-  }
-  return (
-    <InvitationCard
-      title={`Join ${view.familyName}`}
-      description={`${view.inviterName} invited you to join ${view.familyName}.`}
-      action={header}
-      footer={
-        <Button
-          variant="link"
-          disabled={busy}
-          onClick={() => respond.mutate(command("decline"))}
-        >
-          Decline invitation
-        </Button>
-      }
-    >
-      <div className="flex items-center gap-3">
-        <Avatar size="lg" aria-hidden="true">
-          <AvatarFallback tone="blue">{[...setup.user.name][0]}</AvatarFallback>
-        </Avatar>
-        <div className="flex min-w-0 flex-col">
-          <span>{setup.user.name}</span>
-          <span className="text-muted-foreground text-sm wrap-anywhere">
-            Joining as {setup.user.email}
-          </span>
-        </div>
-      </div>
-      <Separator />
-      <p className="text-muted-foreground text-center text-sm">
-        The family will see the food preferences you choose to share.
-      </p>
-      {failure}
-      <PendingButton
-        disabled={busy}
-        pending={respond.isPending}
-        pendingLabel="Joining family…"
-        onClick={() => respond.mutate(command("accept"))}
-      >
-        Join family
-      </PendingButton>
-    </InvitationCard>
-  );
-};
-
 export const InvitationPage = ({
   invitationId,
 }: {
   readonly invitationId: InvitationId;
 }) => {
-  const flow = useInvitationFlow(invitationId);
-  const {
-    setup,
-    checkpoint,
-    pending,
-    invitation,
-    respond,
-    pause,
-    logout,
-    recover,
-    busy,
-    retained,
-  } = flow;
-  const header = retained ? (
+  const account = useAccount();
+  const family = useFamilyActions();
+  const navigate = useNavigate();
+  const retained = useRetainedRequest(
+    `${account.user.id}:invitation:${invitationId}`,
+    InvitationResponse
+  );
+  const invitation = useQuery(
+    invitationReadQueryOptions(invitationId, account.user.id)
+  );
+  const respond = useMutation(
+    respondInvitationMutationOptions(account.user.id, invitationId)
+  );
+  const [actionError, setActionError] = useState<string>();
+  const [finishing, setFinishing] = useState(false);
+  const busy = respond.isPending || finishing;
+  const logout = async () => {
+    setFinishing(true);
+    try {
+      await Effect.runPromise(account.logout(`/invitation/${invitationId}`));
+    } catch {
+      setActionError("We couldn’t sign you out. Try again.");
+    } finally {
+      setFinishing(false);
+    }
+  };
+  const submit = async (decision: "accept" | "decline") => {
+    setActionError(undefined);
+    setFinishing(true);
+    const command =
+      retained.pending ??
+      Schema.decodeUnknownSync(InvitationResponse)({
+        decision,
+        mutationId: crypto.randomUUID(),
+      });
+    try {
+      retained.retain(command.mutationId, command);
+      const result = await respond.mutateAsync(command);
+      // Keep the same command until family selection and navigation succeed.
+      if (result.status === "joined") {
+        await Effect.runPromise(family.selectFamily(result.familyId));
+      }
+      await invitation.refetch();
+      await family.refresh();
+      await navigate({
+        search: result.status === "joined" ? { familyId: result.familyId } : {},
+        to: "/setup",
+      });
+      retained.release(command.mutationId);
+    } catch {
+      setActionError(
+        "We couldn’t finish that action. Try again to check the same response."
+      );
+      await invitation.refetch();
+    } finally {
+      setFinishing(false);
+    }
+  };
+  const header = (
     <Button
       variant="link"
       disabled={busy}
-      onClick={() => pause.mutate(retained)}
+      onClick={() => {
+        void logout();
+      }}
     >
-      Save & exit
-    </Button>
-  ) : (
-    <Button variant="link" disabled={busy} onClick={() => logout.mutate()}>
       Switch account
     </Button>
   );
-  const failure = [
-    respond.error,
-    pause.error,
-    logout.error,
-    recover.error,
-  ].some((error) => error !== null) && (
-    <SetupError>
-      We couldn’t confirm that action. Try again to check its result.
-    </SetupError>
+  const failure = (retained.error ?? actionError) && (
+    <OperationError>{retained.error ?? actionError}</OperationError>
   );
   const recoveryAction = (
-    <PendingButton
+    <Button
       disabled={busy}
-      pending={recover.isPending}
-      pendingLabel="Returning to account…"
-      onClick={() => recover.mutate()}
+      onClick={() => {
+        void navigate({ to: "/setup" });
+      }}
     >
       Back to your account
-    </PendingButton>
+    </Button>
   );
-  if (
-    [
-      "family-create",
-      "person-create",
-      "person-invite",
-      "person-rename",
-    ].includes(checkpoint.stage)
-  ) {
-    return (
-      <InvitationCard
-        title="Finish your saved change first"
-        description="Your previous change is still being confirmed. Finish it before responding to this invitation."
-      >
-        <Button nativeButton={false} role="link" render={<Link to="/setup" />}>
-          Continue saved setup
-        </Button>
-      </InvitationCard>
-    );
-  }
-  if (pending && pending.invitationId !== invitationId) {
-    return (
-      <InvitationCard
-        title="Finish your current invitation"
-        description="Your previous response is saved. Finish it before responding to another invitation."
-        footer={
-          <Button
-            variant="link"
-            nativeButton={false}
-            role="link"
-            render={<Link to="/setup/join" />}
-          >
-            Continue saved invitation
-          </Button>
-        }
-      />
-    );
-  }
   if (invitation.isPending) {
     return <InvitationCard title="Loading your invitation…" />;
   }
@@ -526,24 +241,129 @@ export const InvitationPage = ({
           InvitationReadUnauthorized: () => "unauthorized" as const,
           OrElse: () => "other" as const,
         })}
-        email={setup.user.email}
+        email={account.user.email}
         busy={busy}
         header={header}
         failure={failure}
-        logout={() => logout.mutate()}
+        logout={() => {
+          void logout();
+        }}
         retry={() => invitation.refetch()}
         recover={recoveryAction}
       />
     );
   }
+  const view = invitation.data;
+  if (
+    view.status === "expired" ||
+    view.status === "canceled" ||
+    view.status === "rejected"
+  ) {
+    return (
+      <InvitationCard
+        title={
+          view.status === "rejected"
+            ? "Invitation declined"
+            : "This invitation is no longer available"
+        }
+        description="Ask the family organiser for a new invitation if you want to join."
+        action={header}
+      >
+        {failure}
+        {recoveryAction}
+      </InvitationCard>
+    );
+  }
+  if (retained.pending?.decision === "decline" && view.status === "accepted") {
+    return (
+      <InvitationCard
+        title="This invitation was accepted"
+        description="It was accepted in another session. You can finish joining this family."
+        action={header}
+      >
+        {failure}
+        <Button
+          disabled={busy}
+          onClick={() =>
+            retained.pending && retained.release(retained.pending.mutationId)
+          }
+        >
+          Continue with the accepted invitation
+        </Button>
+      </InvitationCard>
+    );
+  }
+  if (retained.pending || view.status === "accepted") {
+    return (
+      <InvitationCard
+        title={
+          retained.pending?.decision === "decline"
+            ? "Finish declining your invitation"
+            : "Finish joining your family"
+        }
+        description="Check the result of your response to continue."
+        action={header}
+      >
+        {failure}
+        <PendingButton
+          disabled={busy}
+          pending={busy}
+          pendingLabel="Finishing invitation…"
+          onClick={() => {
+            void submit(retained.pending?.decision ?? "accept");
+          }}
+        >
+          Continue
+        </PendingButton>
+      </InvitationCard>
+    );
+  }
   return (
-    <InvitationContent
-      flow={flow}
-      view={invitation.data}
-      header={header}
-      failure={failure}
-      recoveryAction={recoveryAction}
-    />
+    <InvitationCard
+      title={`Join ${view.familyName}`}
+      description={`${view.inviterName} invited you to join ${view.familyName}.`}
+      action={header}
+      footer={
+        <Button
+          variant="link"
+          disabled={busy}
+          onClick={() => {
+            void submit("decline");
+          }}
+        >
+          Decline invitation
+        </Button>
+      }
+    >
+      <div className="flex items-center gap-3">
+        <Avatar size="lg" aria-hidden="true">
+          <AvatarFallback tone="blue">
+            {[...account.user.name][0]}
+          </AvatarFallback>
+        </Avatar>
+        <div className="flex min-w-0 flex-col">
+          <span>{account.user.name}</span>
+          <span className="text-muted-foreground text-sm wrap-anywhere">
+            Joining as {account.user.email}
+          </span>
+        </div>
+      </div>
+      <Separator />
+      <p className="text-muted-foreground text-center text-sm">
+        The family will see the food preferences you choose to share.
+      </p>
+      {failure}
+      <PendingButton
+        disabled={busy}
+        pending={busy}
+        pendingLabel="Joining family…"
+        onClick={() => {
+          void submit("accept");
+        }}
+      >
+        Join family
+      </PendingButton>
+    </InvitationCard>
   );
 };
 
@@ -555,9 +375,9 @@ export const InvitationPageForRoute = ({
 }) => {
   const parsed = Schema.decodeUnknownOption(InvitationId)(invitationId);
   return Option.isSome(parsed) ? (
-    <SetupProvider>
+    <AccountProvider>
       <InvitationPage key={parsed.value} invitationId={parsed.value} />
-    </SetupProvider>
+    </AccountProvider>
   ) : (
     <InvitationCard
       title="This invitation is no longer available"

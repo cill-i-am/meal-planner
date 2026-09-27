@@ -29,6 +29,7 @@ import {
   HouseholdPeopleNotFoundProblem,
   HouseholdPeopleOrganizerRequiredProblem,
   HouseholdPeoplePrincipal,
+  HouseholdOrganizationId,
   HouseholdPeopleSchemaErrors,
   HouseholdPeopleStaleVersionProblem,
   HouseholdPeopleUnavailableProblem,
@@ -496,8 +497,28 @@ const HouseholdSessionAuthLive = Layer.effect(
     return HouseholdSessionAuth.of((httpEffect) =>
       Effect.gen(function* resolveHouseholdSession() {
         const request = yield* HttpServerRequest.HttpServerRequest;
+        const { pathname } = new URL(request.url, "http://request.local");
+        const pathFamily =
+          /^\/v1\/families\/(?<familyId>[^/]+)\/people(?:\/|$)/u.exec(
+            pathname
+          )?.[1];
+        const familyId =
+          pathFamily === undefined
+            ? undefined
+            : yield* Effect.try({
+                catch: () => unauthorizedProblem,
+                try: () => decodeURIComponent(pathFamily),
+              }).pipe(
+                Effect.flatMap(
+                  Schema.decodeUnknownEffect(HouseholdOrganizationId)
+                ),
+                Effect.mapError(() => unauthorizedProblem)
+              );
         const principal = yield* resolver
-          .resolve(new globalThis.Headers(Object.entries(request.headers)))
+          .resolve(
+            new globalThis.Headers(Object.entries(request.headers)),
+            familyId
+          )
           .pipe(Effect.mapError(() => unauthorizedProblem));
         const actorId = yield* digest
           .sha256(principal.userId)

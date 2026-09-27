@@ -21,20 +21,26 @@ export const makeNativeAuthTestService = (
   auth: MealPlannerAuth
 ): MealPlannerAuthService => ({
   api: {
+    acceptInvitation: (input) =>
+      fromNative(() => auth.api.acceptInvitation(input)),
     cancelInvitation: (input) =>
       fromNative(() => auth.api.cancelInvitation(input)),
     createOrganization: (input) =>
       fromNative(() => auth.api.createOrganization(input)),
     getActiveMember: (input) =>
       fromNative(() => auth.api.getActiveMember(input)),
+    getActiveMemberRole: (input) =>
+      fromNative(() => auth.api.getActiveMemberRole(input)),
     getSession: (input) => fromNative(() => auth.api.getSession(input)),
+    getSetupInvitation: (input) =>
+      fromNative(() => auth.api.getSetupInvitation(input)),
     leaveOrganization: (input) =>
       fromNative(() => auth.api.leaveOrganization(input)),
     listOrganizations: (input) =>
       fromNative(() => auth.api.listOrganizations(input)),
+    rejectInvitation: (input) =>
+      fromNative(() => auth.api.rejectInvitation(input)),
     removeMember: (input) => fromNative(() => auth.api.removeMember(input)),
-    saveSetupProgress: (input) =>
-      fromNative(() => auth.api.saveSetupProgress(input)),
     setActiveOrganization: (input) =>
       fromNative(() => auth.api.setActiveOrganization(input)),
   },

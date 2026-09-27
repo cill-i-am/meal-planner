@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { Alert } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
-import { parseDisplayedIdentity } from "../auth/displayed-identity.js";
+import { parseDisplayedIdentity } from "../auth/index.js";
 import { PrivateInterviewChat } from "./private-interview-chat.js";
 import {
   browserPrivateInterviewDependencies,

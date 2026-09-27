@@ -17,13 +17,10 @@ import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as InvitationInvitationIdRouteImport } from './routes/invitation.$invitationId'
 import { Route as SetupIndexRouteImport } from './routes/setup.index'
-import { Route as SetupEditPersonRouteImport } from './routes/setup.edit-person'
 import { Route as SetupFamilyRouteImport } from './routes/setup.family'
-import { Route as SetupJoinRouteImport } from './routes/setup.join'
 import { Route as SetupPeopleRouteImport } from './routes/setup.people'
 import { Route as SetupReadyRouteImport } from './routes/setup.ready'
 import { Route as SetupReviewRouteImport } from './routes/setup.review'
-import { Route as SetupSavedRouteImport } from './routes/setup.saved'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -65,19 +62,9 @@ const SetupIndexRoute = SetupIndexRouteImport.update({
   path: '/',
   getParentRoute: () => SetupRoute,
 } as any)
-const SetupEditPersonRoute = SetupEditPersonRouteImport.update({
-  id: '/edit-person',
-  path: '/edit-person',
-  getParentRoute: () => SetupRoute,
-} as any)
 const SetupFamilyRoute = SetupFamilyRouteImport.update({
   id: '/family',
   path: '/family',
-  getParentRoute: () => SetupRoute,
-} as any)
-const SetupJoinRoute = SetupJoinRouteImport.update({
-  id: '/join',
-  path: '/join',
   getParentRoute: () => SetupRoute,
 } as any)
 const SetupPeopleRoute = SetupPeopleRouteImport.update({
@@ -95,11 +82,6 @@ const SetupReviewRoute = SetupReviewRouteImport.update({
   path: '/review',
   getParentRoute: () => SetupRoute,
 } as any)
-const SetupSavedRoute = SetupSavedRouteImport.update({
-  id: '/saved',
-  path: '/saved',
-  getParentRoute: () => SetupRoute,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -109,13 +91,10 @@ export interface FileRoutesByFullPath {
   '/setup': typeof SetupRouteWithChildren
   '/signup': typeof SignupRoute
   '/invitation/$invitationId': typeof InvitationInvitationIdRoute
-  '/setup/edit-person': typeof SetupEditPersonRoute
   '/setup/family': typeof SetupFamilyRoute
-  '/setup/join': typeof SetupJoinRoute
   '/setup/people': typeof SetupPeopleRoute
   '/setup/ready': typeof SetupReadyRoute
   '/setup/review': typeof SetupReviewRoute
-  '/setup/saved': typeof SetupSavedRoute
   '/setup/': typeof SetupIndexRoute
 }
 export interface FileRoutesByTo {
@@ -125,13 +104,10 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/invitation/$invitationId': typeof InvitationInvitationIdRoute
-  '/setup/edit-person': typeof SetupEditPersonRoute
   '/setup/family': typeof SetupFamilyRoute
-  '/setup/join': typeof SetupJoinRoute
   '/setup/people': typeof SetupPeopleRoute
   '/setup/ready': typeof SetupReadyRoute
   '/setup/review': typeof SetupReviewRoute
-  '/setup/saved': typeof SetupSavedRoute
   '/setup': typeof SetupIndexRoute
 }
 export interface FileRoutesById {
@@ -143,13 +119,10 @@ export interface FileRoutesById {
   '/setup': typeof SetupRouteWithChildren
   '/signup': typeof SignupRoute
   '/invitation/$invitationId': typeof InvitationInvitationIdRoute
-  '/setup/edit-person': typeof SetupEditPersonRoute
   '/setup/family': typeof SetupFamilyRoute
-  '/setup/join': typeof SetupJoinRoute
   '/setup/people': typeof SetupPeopleRoute
   '/setup/ready': typeof SetupReadyRoute
   '/setup/review': typeof SetupReviewRoute
-  '/setup/saved': typeof SetupSavedRoute
   '/setup/': typeof SetupIndexRoute
 }
 export interface FileRouteTypes {
@@ -162,13 +135,10 @@ export interface FileRouteTypes {
     | '/setup'
     | '/signup'
     | '/invitation/$invitationId'
-    | '/setup/edit-person'
     | '/setup/family'
-    | '/setup/join'
     | '/setup/people'
     | '/setup/ready'
     | '/setup/review'
-    | '/setup/saved'
     | '/setup/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -178,13 +148,10 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/invitation/$invitationId'
-    | '/setup/edit-person'
     | '/setup/family'
-    | '/setup/join'
     | '/setup/people'
     | '/setup/ready'
     | '/setup/review'
-    | '/setup/saved'
     | '/setup'
   id:
     | '__root__'
@@ -195,13 +162,10 @@ export interface FileRouteTypes {
     | '/setup'
     | '/signup'
     | '/invitation/$invitationId'
-    | '/setup/edit-person'
     | '/setup/family'
-    | '/setup/join'
     | '/setup/people'
     | '/setup/ready'
     | '/setup/review'
-    | '/setup/saved'
     | '/setup/'
   fileRoutesById: FileRoutesById
 }
@@ -273,25 +237,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SetupIndexRouteImport
       parentRoute: typeof SetupRoute
     }
-    '/setup/edit-person': {
-      id: '/setup/edit-person'
-      path: '/edit-person'
-      fullPath: '/setup/edit-person'
-      preLoaderRoute: typeof SetupEditPersonRouteImport
-      parentRoute: typeof SetupRoute
-    }
     '/setup/family': {
       id: '/setup/family'
       path: '/family'
       fullPath: '/setup/family'
       preLoaderRoute: typeof SetupFamilyRouteImport
-      parentRoute: typeof SetupRoute
-    }
-    '/setup/join': {
-      id: '/setup/join'
-      path: '/join'
-      fullPath: '/setup/join'
-      preLoaderRoute: typeof SetupJoinRouteImport
       parentRoute: typeof SetupRoute
     }
     '/setup/people': {
@@ -315,35 +265,22 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SetupReviewRouteImport
       parentRoute: typeof SetupRoute
     }
-    '/setup/saved': {
-      id: '/setup/saved'
-      path: '/saved'
-      fullPath: '/setup/saved'
-      preLoaderRoute: typeof SetupSavedRouteImport
-      parentRoute: typeof SetupRoute
-    }
   }
 }
 
 interface SetupRouteChildren {
-  SetupEditPersonRoute: typeof SetupEditPersonRoute
   SetupFamilyRoute: typeof SetupFamilyRoute
-  SetupJoinRoute: typeof SetupJoinRoute
   SetupPeopleRoute: typeof SetupPeopleRoute
   SetupReadyRoute: typeof SetupReadyRoute
   SetupReviewRoute: typeof SetupReviewRoute
-  SetupSavedRoute: typeof SetupSavedRoute
   SetupIndexRoute: typeof SetupIndexRoute
 }
 
 const SetupRouteChildren: SetupRouteChildren = {
-  SetupEditPersonRoute: SetupEditPersonRoute,
   SetupFamilyRoute: SetupFamilyRoute,
-  SetupJoinRoute: SetupJoinRoute,
   SetupPeopleRoute: SetupPeopleRoute,
   SetupReadyRoute: SetupReadyRoute,
   SetupReviewRoute: SetupReviewRoute,
-  SetupSavedRoute: SetupSavedRoute,
   SetupIndexRoute: SetupIndexRoute,
 }
 

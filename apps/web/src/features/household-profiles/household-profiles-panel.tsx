@@ -23,7 +23,7 @@ import { Alert } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
 import { Label } from "../../components/ui/label.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
-import type { HouseholdPeopleOperations } from "../household-people/operations.js";
+import type { HouseholdPeopleOperations } from "../household-people/client.js";
 import {
   isAmbiguousProfileError,
   ProfileOperationError,

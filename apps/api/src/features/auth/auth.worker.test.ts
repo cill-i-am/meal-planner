@@ -1,23 +1,16 @@
-import { BetterAuthApiError } from "@alchemy.run/better-auth";
 import {
   EmailAddress,
   HouseholdOrganizationId,
   HouseholdPersonId,
-  HouseholdPerson,
-  HouseholdPeopleUnavailable,
-  SetupProgress,
   InvitationId,
 } from "@meal-planner/household-api";
-import { APIError } from "better-auth/api";
 import { applyD1Migrations, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { drizzle } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
-import { HttpRouter } from "effect/unstable/http";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { makeHouseholdPeopleControlPlane } from "../households/people/household-people.control-plane.js";
 import * as authSchema from "./auth.database-schema.js";
 import { makeMealPlannerAuth } from "./auth.js";
@@ -26,8 +19,6 @@ import {
   resolveAuthPrincipal,
 } from "./auth.principal.js";
 import { makeNativeAuthTestService } from "./auth.test-fixture.js";
-import { createSetupFamily, setupFamilyHttpApiLayer } from "./setup-family.js";
-import { setupProgressHttpApiLayer } from "./setup-progress-http.js";
 
 const testEnv = env as unknown as {
   readonly AUTH_TEST_MIGRATIONS: {
@@ -158,13 +149,11 @@ describe("Better Auth D1 control plane", () => {
     expect(invalidReset.status).toBe(400);
     expect(mails).toEqual([]);
 
-    const organizationResponse = await auth.fetch(
-      authRequest(
-        "/organization/create",
-        { name: "Native email household", slug: "native-email-household" },
-        cookie
-      )
-    );
+    const organizationResponse = await auth.api.createOrganization({
+      asResponse: true,
+      body: { name: "Native email household", slug: "native-email-household" },
+      headers: new Headers({ cookie }),
+    });
     expect(organizationResponse.status).toBe(200);
     const organization = Schema.decodeUnknownSync(
       Schema.Struct({ id: Schema.String })
@@ -322,13 +311,11 @@ describe("Better Auth D1 control plane", () => {
         })
       );
       const ownerCookie = cookieHeader(owner);
-      const createdFamily = await auth.fetch(
-        authRequest(
-          "/organization/create",
-          { name: "Synthetic Family", slug: `view-family-${decision}` },
-          ownerCookie
-        )
-      );
+      const createdFamily = await auth.api.createOrganization({
+        asResponse: true,
+        body: { name: "Synthetic Family", slug: `view-family-${decision}` },
+        headers: new Headers({ cookie: ownerCookie }),
+      });
       const family = Schema.decodeUnknownSync(
         Schema.Struct({ id: Schema.String })
       )(await createdFamily.json());
@@ -456,508 +443,6 @@ describe("Better Auth D1 control plane", () => {
     }
   );
 
-  it("saves setup checkpoints once per version and preserves pending commands", async () => {
-    const auth = makeMealPlannerAuth({
-      baseURL,
-      database: drizzle(testEnv.MealPlannerAuthDatabase),
-      outputFence: (_input, canonical) => canonical(),
-      schema: authSchema,
-      secret,
-    });
-    const signup = await auth.fetch(
-      authRequest("/sign-up/email", {
-        email: "checkpoint@example.test",
-        name: "Checkpoint",
-        password: "correct horse battery staple",
-      })
-    );
-    const cookie = cookieHeader(signup);
-    const progress = Schema.decodeUnknownSync(SetupProgress)({
-      checkpoint: { name: "The Morgan family", stage: "family-name" },
-      status: "paused",
-    });
-    const competing = await Promise.all([
-      auth.fetch(
-        authRequest("/setup/progress", { expectedVersion: 0, progress }, cookie)
-      ),
-      auth.fetch(
-        authRequest(
-          "/setup/progress",
-          {
-            expectedVersion: 0,
-            progress: { ...progress, status: "active" },
-          },
-          cookie
-        )
-      ),
-    ]);
-    expect(competing.map((response) => response.status).toSorted()).toEqual([
-      200, 409,
-    ]);
-    const winner = competing.find((response) => response.status === 200);
-    if (!winner) {
-      throw new Error("Expected one setup write to commit.");
-    }
-    const saved = await winner.json();
-    expect(saved).toMatchObject({ version: 1 });
-    const exactRetry = await auth.fetch(
-      authRequest(
-        "/setup/progress",
-        { expectedVersion: 0, progress: saved.progress },
-        cookie
-      )
-    );
-    expect(exactRetry.status).toBe(200);
-    expect(await exactRetry.json()).toEqual(saved);
-    const wrongAccount = authRequest(
-      "/setup/progress",
-      { expectedVersion: 1, progress },
-      cookie
-    );
-    wrongAccount.headers.set("x-meal-planner-user", "different-account");
-    const rejectedAccount = await auth.fetch(wrongAccount);
-    expect(rejectedAccount.status).toBe(401);
-    const wrongCreation = authRequest(
-      "/organization/create",
-      { name: "Wrong account", slug: "wrong-account" },
-      cookie
-    );
-    wrongCreation.headers.set("x-meal-planner-user", "different-account");
-    const rejectedCreation = await auth.fetch(wrongCreation);
-    expect(rejectedCreation.status).toBe(401);
-    const session = await auth.fetch(
-      new Request(`${baseURL}/api/auth/get-session`, { headers: { cookie } })
-    );
-    expect(await session.json()).toMatchObject({
-      user: { setupProgress: saved.progress, setupProgressVersion: 1 },
-    });
-    const rejected = await auth.fetch(
-      authRequest(
-        "/setup/progress",
-        {
-          expectedVersion: 1,
-          progress: {
-            ...progress,
-            checkpoint: { ...progress.checkpoint, password: "never-persist" },
-          },
-        },
-        cookie
-      )
-    );
-    expect(rejected.status).toBe(400);
-    const anonymous = await auth.fetch(
-      authRequest("/setup/progress", { expectedVersion: 1, progress })
-    );
-    expect(anonymous.status).toBe(401);
-    const nativeUpdate = await auth.fetch(
-      authRequest("/update-user", { setupProgress: progress }, cookie)
-    );
-    expect(nativeUpdate.status).toBe(400);
-    const stored = await drizzle(testEnv.MealPlannerAuthDatabase)
-      .select({
-        progress: authSchema.user.setupProgress,
-        version: authSchema.user.setupProgressVersion,
-      })
-      .from(authSchema.user)
-      .where(eq(authSchema.user.email, "checkpoint@example.test"));
-    expect(stored).toEqual([{ progress: saved.progress, version: 1 }]);
-
-    const app = HttpRouter.toWebHandler(
-      setupProgressHttpApiLayer(makeNativeAuthTestService(auth)),
-      { disableLogger: true }
-    );
-    const request = (
-      body: {
-        readonly expectedVersion: number;
-        readonly progress: SetupProgress | { readonly bad: true };
-      },
-      options: { readonly cookie?: string; readonly userId?: string } = {}
-    ) => {
-      const headers = new Headers({
-        "cf-connecting-ip": "192.0.2.10",
-        "content-type": "application/json",
-        origin: baseURL,
-      });
-      if (options.cookie !== undefined) {
-        headers.set("cookie", options.cookie);
-      }
-      if (options.userId !== undefined) {
-        headers.set("x-meal-planner-user", options.userId);
-      }
-      return new Request(`${baseURL}/v1/setup/progress`, {
-        body: JSON.stringify(body),
-        headers,
-        method: "POST",
-      });
-    };
-    try {
-      const foreignOrigin = request(
-        { expectedVersion: 1, progress },
-        { cookie }
-      );
-      foreignOrigin.headers.set(
-        "origin",
-        "https://untrusted.meal-planner.test"
-      );
-      foreignOrigin.headers.set("sec-fetch-site", "same-site");
-      foreignOrigin.headers.delete("content-type");
-      const forbidden = await app.handler(foreignOrigin);
-      expect(forbidden.status).toBe(403);
-      await expect(forbidden.json()).resolves.toMatchObject({
-        _tag: "SetupProgressForbidden",
-      });
-      const missingOrigin = request(
-        { expectedVersion: 1, progress },
-        { cookie }
-      );
-      missingOrigin.headers.delete("origin");
-      const missingOriginResponse = await app.handler(missingOrigin);
-      expect(missingOriginResponse.status).toBe(403);
-      await expect(missingOriginResponse.json()).resolves.toMatchObject({
-        _tag: "SetupProgressForbidden",
-      });
-      const updated = await app.handler(
-        request(
-          { expectedVersion: 1, progress: { ...progress, status: "active" } },
-          { cookie }
-        )
-      );
-      expect(updated.status).toBe(200);
-      await expect(updated.json()).resolves.toMatchObject({ version: 2 });
-      const replayed = await app.handler(
-        request(
-          { expectedVersion: 1, progress: { ...progress, status: "active" } },
-          { cookie }
-        )
-      );
-      expect(replayed.status).toBe(200);
-      await expect(replayed.json()).resolves.toMatchObject({ version: 2 });
-      const stale = await app.handler(
-        request({ expectedVersion: 1, progress }, { cookie })
-      );
-      expect(stale.status).toBe(409);
-      await expect(stale.json()).resolves.toMatchObject({
-        _tag: "SetupProgressConflict",
-      });
-      const invalid = await app.handler(
-        request({ expectedVersion: 2, progress: { bad: true } }, { cookie })
-      );
-      expect(invalid.status).toBe(400);
-      const anonymousProgress = await app.handler(
-        request({ expectedVersion: 2, progress })
-      );
-      expect(anonymousProgress.status).toBe(401);
-      const changedAccount = await app.handler(
-        request({ expectedVersion: 2, progress }, { cookie, userId: "other" })
-      );
-      expect(changedAccount.status).toBe(401);
-      const context = await auth.$context;
-      await context.adapter.update({
-        model: "rateLimit",
-        update: { count: context.rateLimit.max, lastRequest: Date.now() },
-        where: [{ field: "key", value: "192.0.2.10|/setup/progress" }],
-      });
-      const limited = await app.handler(
-        request({ expectedVersion: 2, progress }, { cookie })
-      );
-      expect(limited.status).toBe(429);
-      expect(Number(limited.headers.get("x-retry-after"))).toBeGreaterThan(0);
-      expect(limited.headers.get("cache-control")).toBe("no-store");
-      await expect(limited.json()).resolves.toMatchObject({
-        _tag: "SetupProgressRateLimited",
-      });
-      const nativeLimited = await auth.fetch(
-        authRequest("/setup/progress", { expectedVersion: 2, progress }, cookie)
-      );
-      expect(nativeLimited.status).toBe(429);
-      const [afterRejectedWrites] = await drizzle(
-        testEnv.MealPlannerAuthDatabase
-      )
-        .select({ version: authSchema.user.setupProgressVersion })
-        .from(authSchema.user)
-        .where(eq(authSchema.user.email, "checkpoint@example.test"));
-      expect(afterRejectedWrites?.version).toBe(2);
-    } finally {
-      await app.dispose();
-    }
-  });
-
-  it("creates a family through one command and resumes the same creator after interruption", async () => {
-    const database = drizzle(testEnv.MealPlannerAuthDatabase);
-    const auth = makeMealPlannerAuth({
-      baseURL,
-      database,
-      outputFence: (_input, canonical) => canonical(),
-      schema: authSchema,
-      secret,
-    });
-    const signup = await auth.fetch(
-      authRequest("/sign-up/email", {
-        email: "family-command@example.test",
-        name: "Family creator",
-        password: "correct horse battery staple",
-      })
-    );
-    expect(signup.status).toBe(200);
-    const headers = new Headers({
-      cookie: cookieHeader(signup),
-      origin: baseURL,
-    });
-    const creator = Schema.encodeSync(HouseholdPerson)(
-      Schema.decodeUnknownSync(HouseholdPerson)({
-        associationState: "linked",
-        associationVersion: 1,
-        createdAtEpochMs: 1,
-        displayName: "Family creator",
-        id: "person_00000000-0000-4000-8000-000000000001",
-        isCurrentAdult: true,
-        kind: "adult",
-        lifecycle: "active",
-        updatedAtEpochMs: 1,
-        version: 1,
-      })
-    );
-    const mutationIds: string[] = [];
-    const domain: Pick<HouseholdDomainWorkerMethods, "bootstrapCreatorPerson"> =
-      {
-        bootstrapCreatorPerson: ({ payload }) => {
-          mutationIds.push(payload.mutationId);
-          return mutationIds.length === 1
-            ? Effect.fail(HouseholdPeopleUnavailable.make({}))
-            : Effect.succeed(creator);
-        },
-      };
-    const input = {
-      auth: makeNativeAuthTestService(auth).api,
-      domain,
-      headers,
-      name: "Morgan family",
-    } as const;
-
-    const interrupted = await Effect.runPromiseExit(createSetupFamily(input));
-    expect(interrupted._tag).toBe("Failure");
-    const [saved] = await database
-      .select({ progress: authSchema.user.setupProgress })
-      .from(authSchema.user)
-      .where(eq(authSchema.user.email, "family-command@example.test"));
-    const { checkpoint } = Schema.decodeUnknownSync(SetupProgress)(
-      saved?.progress
-    );
-    expect(checkpoint.stage).toBe("family-create");
-    if (checkpoint.stage !== "family-create") {
-      throw new Error("Expected saved family command.");
-    }
-    expect(
-      await database
-        .select()
-        .from(authSchema.organization)
-        .where(eq(authSchema.organization.slug, checkpoint.slug))
-    ).toHaveLength(1);
-
-    const result = await Effect.runPromise(createSetupFamily(input));
-    expect(result.name).toBe("Morgan family");
-    expect(mutationIds).toHaveLength(2);
-    expect(mutationIds[1]).toBe(mutationIds[0]);
-    expect(
-      await database
-        .select()
-        .from(authSchema.organization)
-        .where(eq(authSchema.organization.slug, checkpoint.slug))
-    ).toHaveLength(1);
-    const [completed] = await database
-      .select({ progress: authSchema.user.setupProgress })
-      .from(authSchema.user)
-      .where(eq(authSchema.user.email, "family-command@example.test"));
-    expect(
-      Schema.decodeUnknownSync(SetupProgress)(completed?.progress).checkpoint
-        .stage
-    ).toBe("family-review");
-    const app = HttpRouter.toWebHandler(
-      setupFamilyHttpApiLayer({ auth: input.auth, domain }),
-      { disableLogger: true }
-    );
-    try {
-      const response = await app.handler(
-        new Request(`${baseURL}/v1/setup/family`, {
-          body: JSON.stringify({ name: "Morgan family" }),
-          headers: new Headers({
-            ...Object.fromEntries(headers),
-            "content-type": "application/json",
-          }),
-          method: "POST",
-        })
-      );
-      expect(response.status).toBe(201);
-      expect(await response.json()).toEqual(result);
-      const invalid = await app.handler(
-        new Request(`${baseURL}/v1/setup/family`, {
-          body: JSON.stringify({ name: "" }),
-          headers: new Headers({
-            ...Object.fromEntries(headers),
-            "content-type": "application/json",
-          }),
-          method: "POST",
-        })
-      );
-      expect(invalid.status).toBe(400);
-      await expect(invalid.json()).resolves.toMatchObject({
-        _tag: "SetupFamilyInvalidRequest",
-      });
-    } finally {
-      await app.dispose();
-    }
-    expect(mutationIds).toHaveLength(2);
-  });
-
-  it("keeps authorization and rate-limit failures distinct in the family API", async () => {
-    const auth = makeMealPlannerAuth({
-      baseURL,
-      database: drizzle(testEnv.MealPlannerAuthDatabase),
-      outputFence: (_input, canonical) => canonical(),
-      schema: authSchema,
-      secret,
-    });
-    const signup = await auth.fetch(
-      authRequest("/sign-up/email", {
-        email: "family-failures@example.test",
-        name: "Family creator",
-        password: "correct horse battery staple",
-      })
-    );
-    expect(signup.status).toBe(200);
-    let status: "FORBIDDEN" | "TOO_MANY_REQUESTS" = "FORBIDDEN";
-    const api = {
-      ...makeNativeAuthTestService(auth).api,
-      createOrganization: () =>
-        Effect.fail(BetterAuthApiError.fromAPIError(new APIError(status))),
-    };
-    const domain: Pick<HouseholdDomainWorkerMethods, "bootstrapCreatorPerson"> =
-      {
-        bootstrapCreatorPerson: () => Effect.die("Creation must be rejected"),
-      };
-    const app = HttpRouter.toWebHandler(
-      setupFamilyHttpApiLayer({ auth: api, domain }),
-      { disableLogger: true }
-    );
-    try {
-      const expectFailure = async (
-        nextStatus: typeof status,
-        expectedStatus: number,
-        expectedTag: string
-      ) => {
-        status = nextStatus;
-        const response = await app.handler(
-          new Request(`${baseURL}/v1/setup/family`, {
-            body: JSON.stringify({ name: "Morgan family" }),
-            headers: {
-              "content-type": "application/json",
-              cookie: cookieHeader(signup),
-              origin: baseURL,
-            },
-            method: "POST",
-          })
-        );
-        expect(response.status).toBe(expectedStatus);
-        await expect(response.json()).resolves.toMatchObject({
-          _tag: expectedTag,
-        });
-      };
-      await expectFailure("FORBIDDEN", 403, "SetupFamilyForbidden");
-      await expectFailure("TOO_MANY_REQUESTS", 429, "SetupFamilyRateLimited");
-    } finally {
-      await app.dispose();
-    }
-  });
-
-  it("rejects a new pending command even after the other tab refreshes its version", async () => {
-    const auth = makeMealPlannerAuth({
-      baseURL,
-      database: drizzle(testEnv.MealPlannerAuthDatabase),
-      outputFence: (_input, canonical) => canonical(),
-      schema: authSchema,
-      secret,
-    });
-    const signup = await auth.fetch(
-      authRequest("/sign-up/email", {
-        email: "pending-checkpoint@example.test",
-        name: "Pending checkpoint",
-        password: "correct horse battery staple",
-      })
-    );
-    const cookie = cookieHeader(signup);
-    const progress = {
-      checkpoint: {
-        creator: { displayName: "Alex", mutationId: "create-family-1" },
-        name: "The Morgan family",
-        slug: "family-11111111-1111-4111-8111-111111111111",
-        stage: "family-create",
-      },
-      status: "active",
-    };
-    const first = await auth.fetch(
-      authRequest("/setup/progress", { expectedVersion: 0, progress }, cookie)
-    );
-    expect(first.status).toBe(200);
-    const displaced = await auth.fetch(
-      authRequest(
-        "/setup/progress",
-        {
-          expectedVersion: 1,
-          progress: {
-            ...progress,
-            checkpoint: {
-              ...progress.checkpoint,
-              creator: { displayName: "Alex", mutationId: "create-family-2" },
-            },
-          },
-        },
-        cookie
-      )
-    );
-    expect(displaced.status).toBe(409);
-    await expect(displaced.json()).resolves.toMatchObject({
-      code: "SETUP_PROGRESS_CONFLICT",
-    });
-    const [stored] = await drizzle(testEnv.MealPlannerAuthDatabase)
-      .select({
-        progress: authSchema.user.setupProgress,
-        version: authSchema.user.setupProgressVersion,
-      })
-      .from(authSchema.user)
-      .where(eq(authSchema.user.email, "pending-checkpoint@example.test"));
-    expect(stored).toEqual({ progress, version: 1 });
-    const falseCompletion = await auth.fetch(
-      authRequest(
-        "/setup/progress",
-        {
-          expectedVersion: 1,
-          progress: {
-            checkpoint: { organizationId: "family-1", stage: "family-review" },
-            status: "active",
-          },
-          sourceCommandId: "create-family-2",
-        },
-        cookie
-      )
-    );
-    expect(falseCompletion.status).toBe(409);
-    const completed = await auth.fetch(
-      authRequest(
-        "/setup/progress",
-        {
-          expectedVersion: 1,
-          progress: {
-            checkpoint: { organizationId: "family-1", stage: "family-review" },
-            status: "active",
-          },
-          sourceCommandId: "create-family-1",
-        },
-        cookie
-      )
-    );
-    expect(completed.status).toBe(200);
-  });
-
   it("signs up, resolves a session, and creates an active household organization", async () => {
     const database = drizzle(testEnv.MealPlannerAuthDatabase);
     const auth = makeMealPlannerAuth({
@@ -977,13 +462,11 @@ describe("Better Auth D1 control plane", () => {
     expect(signUp.status).toBe(200);
     const cookie = cookieHeader(signUp);
 
-    const createOrganization = await auth.fetch(
-      authRequest(
-        "/organization/create",
-        { name: "Local household", slug: "local-household" },
-        cookie
-      )
-    );
+    const createOrganization = await auth.api.createOrganization({
+      asResponse: true,
+      body: { name: "Local household", slug: "local-household" },
+      headers: new Headers({ cookie }),
+    });
     expect(createOrganization.status).toBe(200);
     const organization = (await createOrganization.json()) as { id: string };
 
@@ -1061,13 +544,11 @@ describe("Better Auth D1 control plane", () => {
       })
     );
     const cookie = cookieHeader(signUp);
-    const createOrganization = await auth.fetch(
-      authRequest(
-        "/organization/create",
-        { name: "Exact invitation", slug: "exact-invitation" },
-        cookie
-      )
-    );
+    const createOrganization = await auth.api.createOrganization({
+      asResponse: true,
+      body: { name: "Exact invitation", slug: "exact-invitation" },
+      headers: new Headers({ cookie }),
+    });
     const organization = (await createOrganization.json()) as { id: string };
     const invitationId = Schema.decodeUnknownSync(InvitationId)(
       "invitation-operation-fixed-0001"
@@ -1165,13 +646,11 @@ describe("Better Auth D1 control plane", () => {
       })
     );
     const cookieB = cookieHeader(signUpB);
-    const createOrganizationB = await auth.fetch(
-      authRequest(
-        "/organization/create",
-        { name: "Foreign household", slug: "foreign-household" },
-        cookieB
-      )
-    );
+    const createOrganizationB = await auth.api.createOrganization({
+      asResponse: true,
+      body: { name: "Foreign household", slug: "foreign-household" },
+      headers: new Headers({ cookie: cookieB }),
+    });
     const organizationB = (await createOrganizationB.json()) as { id: string };
     const sessionA = await auth.api.getSession({
       headers: new Headers({ cookie: cookieA }),
@@ -1224,13 +703,11 @@ describe("Better Auth D1 control plane", () => {
     );
     expect(signUp.status).toBe(200);
     const cookie = cookieHeader(signUp);
-    const createOrganization = await auth.fetch(
-      authRequest(
-        "/organization/create",
-        { name: "Protected household", slug: "protected-household" },
-        cookie
-      )
-    );
+    const createOrganization = await auth.api.createOrganization({
+      asResponse: true,
+      body: { name: "Protected household", slug: "protected-household" },
+      headers: new Headers({ cookie }),
+    });
     expect(createOrganization.status).toBe(200);
     const organization = (await createOrganization.json()) as { id: string };
 

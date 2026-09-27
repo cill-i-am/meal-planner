@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Schema } from "effect";
 
+import { AccountLayout } from "../../components/account-layout.js";
 import { useAppForm } from "../../components/forms/form.js";
 import { Alert, AlertDescription } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
@@ -14,10 +15,12 @@ import {
 } from "../../components/ui/card.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
-import { useAuthClient } from "../auth/auth-client.js";
-import { AuthRequestError, authFeedback } from "../auth/auth-errors.js";
-import { AuthLayout } from "../auth/auth-layout.js";
-import { useAuthRetry } from "../auth/use-auth-retry.js";
+import {
+  useAuthClient,
+  AuthRequestError,
+  authFeedback,
+  useAuthRetry,
+} from "../auth/index.js";
 import { RecoveryCard } from "./recovery-card.js";
 import {
   RecoveryRequest,
@@ -113,7 +116,7 @@ export const RecoveryRequestPage = ({
     );
   }
   return (
-    <AuthLayout>
+    <AccountLayout>
       <form.AppForm>
         <form.Frame pending={request.isPending}>
           <CardBody>
@@ -156,7 +159,7 @@ export const RecoveryRequestPage = ({
           </CardFooter>
         </form.Frame>
       </form.AppForm>
-    </AuthLayout>
+    </AccountLayout>
   );
 };
 
@@ -248,7 +251,7 @@ export const ResetPasswordPage = ({
     );
   }
   return (
-    <AuthLayout>
+    <AccountLayout>
       <form.AppForm>
         <form.Frame pending={reset.isPending}>
           <CardBody>
@@ -300,6 +303,6 @@ export const ResetPasswordPage = ({
           </CardFooter>
         </form.Frame>
       </form.AppForm>
-    </AuthLayout>
+    </AccountLayout>
   );
 };

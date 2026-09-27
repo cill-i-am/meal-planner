@@ -1,6 +1,6 @@
-import { SetupProgress, InvitationId } from "@meal-planner/household-api";
-import type { InvitationView } from "@meal-planner/household-api";
 // @vitest-environment jsdom
+import { InvitationId } from "@meal-planner/household-api";
+import type { InvitationView } from "@meal-planner/household-api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
@@ -15,26 +15,13 @@ import userEvent from "@testing-library/user-event";
 import { Effect, Schema } from "effect";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { makeAuthClient } from "../auth/auth-client.js";
 import { InvitationPage, InvitationPageForRoute } from "./invitation-page.js";
 
-const save = vi.fn((_progress: SetupProgress) => Effect.void);
 const logout = vi.fn(() => Effect.void);
-let progress = Schema.decodeUnknownSync(SetupProgress)({
-  checkpoint: { name: "Draft family", stage: "family-name" },
-  status: "active",
-});
-vi.mock("../onboarding/setup-context.js", () => ({
-  useSetup: () => ({
-    auth: makeAuthClient(),
+const selectFamily = vi.fn(() => Effect.void);
+vi.mock("../auth/index.js", () => ({
+  useAccount: () => ({
     logout,
-    peopleEffectForFamily: () => ({
-      completeAdultLink: vi.fn(() => Effect.void),
-      list: () => Effect.succeed({ currentPersonId: "already-linked" }),
-    }),
-    progress,
-    save,
-    selectFamily: vi.fn(() => Effect.void),
     user: {
       email: "recipient@example.test",
       id: "recipient",
@@ -42,28 +29,49 @@ vi.mock("../onboarding/setup-context.js", () => ({
     },
   }),
 }));
-const original = { name: "Draft family", stage: "family-name" };
-const checkpoint = {
-  decision: "decline",
-  invitationId: "synthetic-invite",
-  linkMutationId: "synthetic-link",
-  organizationId: "synthetic-family",
-  returnCheckpoint: original,
-  stage: "invitation-response",
-};
+vi.mock("../family/index.js", () => ({
+  useFamilyActions: () => ({ refresh: async () => {}, selectFamily }),
+}));
 type ReadStatus = InvitationView["status"] | "forbidden" | "unauthorized";
 let readStatus: ReadStatus = "pending";
-const fetchInvitation = vi.fn<typeof fetch>(async () => {
-  if (readStatus === "forbidden") {
-    return Response.json(
-      { _tag: "InvitationReadForbidden", message: "Another account." },
-      { status: 403 }
-    );
+let failResponse = false;
+const responses: unknown[] = [];
+const fetchInvitation = vi.fn<typeof fetch>(async (input, init) => {
+  const request = new Request(input, init);
+  const path = new URL(request.url).pathname;
+  expect(request.headers.get("x-meal-planner-user")).toBe("recipient");
+  if (
+    path === "/v1/invitations/synthetic-invite/response" &&
+    request.method === "POST"
+  ) {
+    const body = (await request.json()) as {
+      decision: "accept" | "decline";
+      mutationId: string;
+    };
+    responses.push(body);
+    readStatus = body.decision === "accept" ? "accepted" : "rejected";
+    if (failResponse) {
+      return Response.json(
+        { _tag: "InvitationReadUnavailable", message: "Unknown result" },
+        { status: 503 }
+      );
+    }
+    return Response.json({
+      familyId: "synthetic-family",
+      status: body.decision === "accept" ? "joined" : "declined",
+    });
   }
-  if (readStatus === "unauthorized") {
+  expect(path).toBe("/v1/invitations/synthetic-invite");
+  if (readStatus === "forbidden" || readStatus === "unauthorized") {
     return Response.json(
-      { _tag: "InvitationReadUnauthorized", message: "Sign in." },
-      { status: 401 }
+      {
+        _tag:
+          readStatus === "forbidden"
+            ? "InvitationReadForbidden"
+            : "InvitationReadUnauthorized",
+        message: "No access",
+      },
+      { status: readStatus === "forbidden" ? 403 : 401 }
     );
   }
   return Response.json({
@@ -79,35 +87,28 @@ class TestIntersectionObserver {
   observe = vi.fn();
   disconnect = vi.fn();
 }
-const setup = async (status: ReadStatus) => {
-  readStatus = status;
-  vi.stubGlobal("scrollTo", vi.fn());
-  vi.stubGlobal("IntersectionObserver", TestIntersectionObserver);
+const setup = async () => {
   const root = createRootRoute({ component: Outlet });
-  const route = createRoute({
-    component: () => (
-      <InvitationPage
-        invitationId={Schema.decodeUnknownSync(InvitationId)(
-          "synthetic-invite"
-        )}
-      />
-    ),
-    getParentRoute: () => root,
-    path: "/",
-  });
-  const next = createRoute({
-    component: () => <h1>Saved destination</h1>,
-    getParentRoute: () => root,
-    path: "/setup",
-  });
-  const saved = createRoute({
-    component: () => <h1>Saved setup</h1>,
-    getParentRoute: () => root,
-    path: "/setup/saved",
-  });
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: ["/"] }),
-    routeTree: root.addChildren([route, next, saved]),
+    routeTree: root.addChildren([
+      createRoute({
+        component: () => (
+          <InvitationPage
+            invitationId={Schema.decodeUnknownSync(InvitationId)(
+              "synthetic-invite"
+            )}
+          />
+        ),
+        getParentRoute: () => root,
+        path: "/",
+      }),
+      createRoute({
+        component: () => <h1>Your account</h1>,
+        getParentRoute: () => root,
+        path: "/setup",
+      }),
+    ]),
   });
   render(
     <QueryClientProvider
@@ -123,38 +124,29 @@ const setup = async (status: ReadStatus) => {
       <RouterProvider router={router} />
     </QueryClientProvider>
   );
-  let heading = "This invitation is no longer available";
-  if (status === "accepted") {
-    heading = "This invitation was accepted";
-  } else if (status === "pending") {
-    heading = "Finish declining your invitation";
-  } else if (status === "forbidden") {
-    heading = "Use the invited email";
-  } else if (status === "unauthorized") {
-    heading = "Your account changed";
-  }
-  await screen.findByRole("heading", { name: heading });
-  const [input, init] = fetchInvitation.mock.calls.at(-1) ?? [];
-  if (!input) {
-    throw new Error("Expected the invitation request");
-  }
-  const request = new Request(input, init);
-  expect(new URL(request.url).pathname).toBe(
-    "/v1/setup/invitation/synthetic-invite"
+  await waitFor(() =>
+    expect(
+      screen.queryByText("Loading your invitation…")
+    ).not.toBeInTheDocument()
   );
-  expect(request.headers.get("x-meal-planner-user")).toBe("recipient");
   return userEvent.setup();
 };
 beforeEach(() => {
+  localStorage.clear();
+  responses.length = 0;
+  readStatus = "pending";
+  failResponse = false;
   vi.stubGlobal("fetch", fetchInvitation);
+  vi.stubGlobal("scrollTo", vi.fn());
+  vi.stubGlobal("IntersectionObserver", TestIntersectionObserver);
 });
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
-it("shows the unavailable invitation without loading an invalid route ID", () => {
-  vi.stubGlobal("IntersectionObserver", TestIntersectionObserver);
+
+it("rejects an invalid route identity without loading recipient data", () => {
   render(<InvitationPageForRoute invitationId="invalid invitation" />);
   expect(
     screen.getByRole("heading", {
@@ -164,67 +156,60 @@ it("shows the unavailable invitation without loading an invalid route ID", () =>
   expect(fetchInvitation).not.toHaveBeenCalled();
 });
 it("explains a recipient mismatch without revealing the invitation", async () => {
-  progress = Schema.decodeUnknownSync(SetupProgress)({
-    checkpoint: { name: "Draft family", stage: "family-name" },
-    status: "active",
-  });
-  const user = await setup("forbidden");
-  expect(
-    screen.getByText("Switch to the account that received the invitation.")
-  ).toBeInTheDocument();
+  readStatus = "forbidden";
+  const user = await setup();
+  await screen.findByRole("heading", { name: "Use the invited email" });
   expect(screen.queryByText("Synthetic family")).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Switch account" }));
-  expect(logout).toHaveBeenCalled();
+  await waitFor(() => expect(logout).toHaveBeenCalledOnce());
+  expect(responses).toHaveLength(0);
 });
-it("saves the same invitation response when exiting setup", async () => {
-  progress = Schema.decodeUnknownSync(SetupProgress)({
-    checkpoint,
-    status: "active",
-  });
-  const user = await setup("pending");
-  await user.click(screen.getByRole("button", { name: "Save & exit" }));
-  expect(save).toHaveBeenCalledWith({ checkpoint, status: "paused" });
-  expect(
-    await screen.findByRole("heading", { name: "Saved setup" })
-  ).toBeInTheDocument();
+it("joins through one generated server operation after explicit consent", async () => {
+  const user = await setup();
+  await screen.findByRole("heading", { name: "Join Synthetic family" });
+  expect(responses).toHaveLength(0);
+  await user.click(screen.getByRole("button", { name: "Join family" }));
+  await screen.findByRole("heading", { name: "Your account" });
+  expect(responses).toEqual([
+    { decision: "accept", mutationId: expect.any(String) },
+  ]);
+  expect(selectFamily).toHaveBeenCalledWith("synthetic-family");
+  await waitFor(() => expect(localStorage.length).toBe(0));
 });
-it("restores the full previous draft when a saved invitation expires", async () => {
-  progress = Schema.decodeUnknownSync(SetupProgress)({
-    checkpoint,
-    status: "active",
-  });
-  const user = await setup("expired");
+it("retries an uncertain acceptance after reload with its original key", async () => {
+  failResponse = true;
+  const user = await setup();
+  await user.click(await screen.findByRole("button", { name: "Join family" }));
+  await waitFor(() => expect(responses).toHaveLength(3), { timeout: 3000 });
+  await screen.findByRole("button", { name: "Continue" });
+  const [first] = responses;
+  cleanup();
+  failResponse = false;
+  const resumed = await setup();
+  await resumed.click(await screen.findByRole("button", { name: "Continue" }));
+  await screen.findByRole("heading", { name: "Your account" });
+  expect(responses.at(-1)).toEqual(first);
+});
+it("does not turn a saved decline into acceptance when another tab accepted", async () => {
+  readStatus = "accepted";
+  localStorage.setItem(
+    "meal-planner:request:recipient:invitation:synthetic-invite:saved-decline",
+    JSON.stringify({ decision: "decline", mutationId: "saved-decline" })
+  );
+  const user = await setup();
+  await screen.findByRole("heading", { name: "This invitation was accepted" });
+  expect(responses).toHaveLength(0);
   await user.click(
-    screen.getByRole("button", { name: "Back to your account" })
-  );
-  expect(
-    await screen.findByRole("heading", { name: "Saved destination" })
-  ).toBeInTheDocument();
-  expect(save).toHaveBeenCalledWith(
-    { checkpoint: original, status: "active" },
-    checkpoint.linkMutationId
-  );
-});
-it("offers an explicit linking decision when another tab accepted a saved decline", async () => {
-  progress = Schema.decodeUnknownSync(SetupProgress)({
-    checkpoint,
-    status: "active",
-  });
-  const user = await setup("accepted");
-  expect(save).not.toHaveBeenCalled();
-  await user.click(
-    screen.getByRole("button", { name: "Finish joining family" })
-  );
-  await waitFor(() =>
-    expect(save).toHaveBeenCalledWith({
-      checkpoint: {
-        invitationId: checkpoint.invitationId,
-        linkMutationId: checkpoint.linkMutationId,
-        organizationId: checkpoint.organizationId,
-        returnCheckpoint: original,
-        stage: "invitation-link",
-      },
-      status: "active",
+    screen.getByRole("button", {
+      name: "Continue with the accepted invitation",
     })
   );
+  await user.click(await screen.findByRole("button", { name: "Continue" }));
+  await screen.findByRole("heading", { name: "Your account" });
+  expect(responses).toEqual([
+    {
+      decision: "accept",
+      mutationId: expect.not.stringMatching(/^saved-decline$/u),
+    },
+  ]);
 });

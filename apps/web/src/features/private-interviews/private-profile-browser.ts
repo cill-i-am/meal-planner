@@ -1,6 +1,6 @@
-import { displayedIdentityHeaders } from "../auth/displayed-identity.js";
-import type { DisplayedIdentity } from "../auth/displayed-identity.js";
-import { makeBrowserHouseholdPeopleOperations } from "../household-people/browser-operations.js";
+import { displayedIdentityHeaders } from "../auth/index.js";
+import type { DisplayedIdentity } from "../auth/index.js";
+import { makeBrowserHouseholdPeopleOperations } from "../household-people/client.js";
 import { makeBrowserHouseholdProfileOperations } from "../household-profiles/browser-operations.js";
 import { ProfileOperationError } from "../household-profiles/operations.js";
 

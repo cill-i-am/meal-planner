@@ -1,13 +1,12 @@
-import {
-  CreateSetupFamilyRequest,
-  HouseholdOrganizationId,
-} from "@meal-planner/household-api";
+import { FamilyName, CreateFamily } from "@meal-planner/families";
+import { HouseholdOrganizationId } from "@meal-planner/household-api";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { useState } from "react";
 
 import { useAppForm } from "../../components/forms/form.js";
+import { OperationError } from "../../components/operation-error.js";
 import { Avatar, AvatarFallback } from "../../components/ui/avatar.js";
 import { Button } from "../../components/ui/button.js";
 import {
@@ -18,13 +17,17 @@ import {
 } from "../../components/ui/card.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
-import { familyCreationMutationOptions } from "./family-creation.js";
-import { setupEffectQuery } from "./onboarding-people.js";
-import { useSetup } from "./setup-context.js";
-import { SetupError, SetupFrame } from "./setup-ui.js";
+import {
+  familyCreationMutationOptions,
+  peopleEffectQuery,
+  useFamily,
+} from "../family/index.js";
+import { useRetainedRequest } from "../request-recovery/index.js";
+import { SetupFrame } from "./setup-ui.js";
 
-const validator = Schema.toStandardSchemaV1(CreateSetupFamilyRequest);
-const parse = Schema.decodeUnknownSync(CreateSetupFamilyRequest);
+const FamilyInput = Schema.Struct({ name: FamilyName });
+const validator = Schema.toStandardSchemaV1(FamilyInput);
+const parse = Schema.decodeUnknownSync(FamilyInput);
 const submitLabel = (created: boolean, resumed: boolean) => {
   if (created) {
     return "Continue to review";
@@ -32,19 +35,59 @@ const submitLabel = (created: boolean, resumed: boolean) => {
   return resumed ? "Check and continue" : "Create family";
 };
 
+const FamilyNavigationErrors = ({
+  reviewFailed,
+  selectionFailed,
+  logoutFailed,
+}: {
+  readonly reviewFailed: boolean;
+  readonly selectionFailed: boolean;
+  readonly logoutFailed: boolean;
+}) => (
+  <>
+    {reviewFailed && (
+      <OperationError>
+        Your family was created, but we couldn’t open the review. Try again to
+        continue.
+      </OperationError>
+    )}
+    {selectionFailed && (
+      <OperationError>We couldn’t open that family. Try again.</OperationError>
+    )}
+    {logoutFailed && (
+      <OperationError>We couldn’t log you out. Try again.</OperationError>
+    )}
+  </>
+);
+
 export const FamilyNamePage = () => {
-  const setup = useSetup();
+  const setup = useFamily();
   const navigate = useNavigate();
-  const { checkpoint } = setup.progress;
-  const mutation = useMutation(familyCreationMutationOptions(setup.user.id));
+  const retained = useRetainedRequest(
+    `${setup.user.id}:family-create`,
+    CreateFamily
+  );
+  const mutation = useMutation({
+    ...familyCreationMutationOptions(setup.user.id),
+    onError: (error, command) => {
+      const rejected = error.match({
+        FamilyForbidden: () => true,
+        FamilyInvalidInput: () => true,
+        OrElse: () => false,
+      });
+      if (rejected) {
+        retained.release(command.mutationId);
+      }
+    },
+  });
   const [openingReview, setOpeningReview] = useState(false);
   const [openReviewFailed, setOpenReviewFailed] = useState(false);
-  const openReview = async () => {
+  const openReview = async (familyId: HouseholdOrganizationId) => {
     setOpeningReview(true);
     setOpenReviewFailed(false);
     try {
       await setup.refresh();
-      await navigate({ to: "/setup/review" });
+      await navigate({ search: { familyId }, to: "/setup/review" });
     } catch (error) {
       setOpenReviewFailed(true);
       throw error;
@@ -52,31 +95,27 @@ export const FamilyNamePage = () => {
       setOpeningReview(false);
     }
   };
-  const persisted =
-    checkpoint.stage === "family-create" ? checkpoint : undefined;
+  const persisted = retained.pending;
   const exit = useMutation(
-    setupEffectQuery.mutationOptions({
-      mutationFn: (name: string) =>
-        setup.logout({
-          checkpoint: persisted ?? { name, stage: "family-name" },
-          status: "paused",
-        }),
-      mutationKey: ["setup-family-logout"],
+    peopleEffectQuery.mutationOptions({
+      mutationFn: () => setup.logout("/setup"),
+      mutationKey: ["setup-logout"],
     })
   );
   const existingFamily = useMutation(
-    setupEffectQuery.mutationOptions({
-      mutationFn: (id: string) => {
-        const organizationId = Schema.decodeUnknownSync(
-          HouseholdOrganizationId
-        )(id);
-        return setup.save({
-          checkpoint: { organizationId, stage: "family-review" },
-          status: "active",
-        });
-      },
-      mutationKey: ["setup-existing-family"],
-      onSuccess: () => navigate({ to: "/setup/review" }),
+    peopleEffectQuery.mutationOptions({
+      mutationFn: (id: string) =>
+        setup.selectFamily(
+          Schema.decodeUnknownSync(HouseholdOrganizationId)(id)
+        ),
+      mutationKey: ["setup-select-family"],
+      onSuccess: (_result, id) =>
+        navigate({
+          search: {
+            familyId: Schema.decodeUnknownSync(HouseholdOrganizationId)(id),
+          },
+          to: "/setup/review",
+        }),
     })
   );
   const pending =
@@ -86,25 +125,31 @@ export const FamilyNamePage = () => {
     existingFamily.isPending;
   const form = useAppForm({
     defaultValues: {
-      name:
-        checkpoint.stage === "family-name" ||
-        checkpoint.stage === "family-create"
-          ? checkpoint.name
-          : "",
+      name: persisted?.name ?? "",
     },
     onSubmit: async ({ value }) => {
-      if (!mutation.isSuccess) {
-        try {
-          await mutation.mutateAsync(parse(value));
-        } catch {
-          // The typed mutation error is displayed below.
-          return;
-        }
-      }
+      setOpeningReview(true);
+      setOpenReviewFailed(false);
+      const command =
+        persisted ??
+        Schema.decodeUnknownSync(CreateFamily)({
+          ...parse(value),
+          mutationId: crypto.randomUUID(),
+        });
+      let created = Boolean(mutation.data);
       try {
-        await openReview();
+        retained.retain(command.mutationId, command);
+        const family = mutation.data ?? (await mutation.mutateAsync(command));
+        created = true;
+        await Effect.runPromise(setup.selectFamily(family.id));
+        await openReview(family.id);
+        retained.release(command.mutationId);
       } catch {
-        // Creation succeeded; review navigation can be retried without creating again.
+        if (created) {
+          setOpenReviewFailed(true);
+        }
+      } finally {
+        setOpeningReview(false);
       }
     },
     validators: { onChange: validator, onSubmit: validator },
@@ -113,17 +158,14 @@ export const FamilyNamePage = () => {
     <SetupFrame
       step="family"
       action={
-        <Button
-          variant="link"
-          disabled={pending}
-          onClick={() => exit.mutate(form.state.values.name)}
-        >
+        <Button variant="link" disabled={pending} onClick={() => exit.mutate()}>
           {exit.isPending ? "Logging out…" : "Log out"}
         </Button>
       }
     >
       <form.AppForm>
         <form.Frame
+          key={persisted?.mutationId ?? "new-family"}
           className="max-w-140 [--card-spacing:--spacing(4)] md:[--card-spacing:--spacing(10)]"
           pending={pending}
         >
@@ -135,7 +177,9 @@ export const FamilyNamePage = () => {
                   tabIndex={-1}
                   className="text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight focus:outline-none"
                 >
-                  {persisted ? "Let’s check your family" : "Name your family"}
+                  {persisted && !mutation.isPending
+                    ? "Let’s check your family"
+                    : "Name your family"}
                 </h1>
               </CardTitle>
             </CardHeader>
@@ -164,42 +208,39 @@ export const FamilyNamePage = () => {
                 </div>
               </div>
               {persisted && !mutation.isPending && !mutation.isSuccess && (
-                <SetupError>
-                  We saved your request but still need to confirm the result.
-                  Check again to finish the same family setup.
-                </SetupError>
+                <OperationError>
+                  We kept your submitted request but still need to confirm the
+                  result. Check again to finish the same family setup.
+                </OperationError>
+              )}
+              {retained.error && (
+                <OperationError>{retained.error}</OperationError>
               )}
               {mutation.error && (
-                <SetupError>
+                <OperationError>
                   {mutation.error.match({
+                    FamilyConflict: () =>
+                      "Another family request is saved. Reload to continue it.",
+                    FamilyForbidden: () =>
+                      "This account can’t create or open this family. You can choose a family you’ve already joined.",
+                    FamilyInvalidInput: () =>
+                      "Enter a valid family name and try again.",
+                    FamilyRateLimited: () =>
+                      "Too many attempts. Wait a moment and try again.",
+                    FamilyUnauthorized: () =>
+                      "Your session ended or your account changed. Log in again to continue.",
+                    FamilyUnavailable: () =>
+                      "We couldn’t confirm your family request. Try again to resume it.",
                     OrElse: () =>
                       "We couldn’t confirm your family request. Try again to resume it.",
-                    SetupFamilyConflict: () =>
-                      "Another family request is saved. Reload to continue it.",
-                    SetupFamilyForbidden: () =>
-                      "This account can’t create or open this family. You can choose a family you’ve already joined.",
-                    SetupFamilyInvalidRequest: () =>
-                      "Enter a valid family name and try again.",
-                    SetupFamilyRateLimited: () =>
-                      "Too many attempts. Wait a moment and try again.",
-                    SetupFamilyUnauthorized: () =>
-                      "Your session ended or your account changed. Log in again to continue.",
-                    SetupFamilyUnavailable: () =>
-                      "We couldn’t confirm your family request. Try again to resume it.",
                   })}
-                </SetupError>
+                </OperationError>
               )}
-              {openReviewFailed && (
-                <SetupError>
-                  Your family was created, but we couldn’t open the review. Try
-                  again to continue.
-                </SetupError>
-              )}
-              {existingFamily.error && (
-                <SetupError>
-                  We couldn’t open that family. Try again.
-                </SetupError>
-              )}
+              <FamilyNavigationErrors
+                reviewFailed={openReviewFailed}
+                selectionFailed={Boolean(existingFamily.error)}
+                logoutFailed={Boolean(exit.error)}
+              />
               {!persisted && setup.families.length > 0 && (
                 <div className="flex flex-col gap-2">
                   <p className="text-muted-foreground text-sm">
@@ -216,11 +257,6 @@ export const FamilyNamePage = () => {
                     </Button>
                   ))}
                 </div>
-              )}
-              {exit.error && (
-                <SetupError>
-                  We couldn’t save your place or log you out. Try again.
-                </SetupError>
               )}
               <PendingButton
                 type="submit"

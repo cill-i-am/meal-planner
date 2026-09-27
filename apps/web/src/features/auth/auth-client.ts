@@ -1,12 +1,5 @@
-import {
-  setupProgressField,
-  setupProgressVersionField,
-} from "@meal-planner/household-api";
 import type { UserId } from "@meal-planner/household-api";
-import {
-  inferAdditionalFields,
-  organizationClient,
-} from "better-auth/client/plugins";
+import { organizationClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import { Effect, Layer } from "effect";
 import { createEffectQuery } from "effect-query";
@@ -35,12 +28,6 @@ export const makeAuthClient = (
         id: "recovery-session-refresh",
       },
       organizationClient(),
-      inferAdditionalFields({
-        user: {
-          setupProgress: setupProgressField,
-          setupProgressVersion: setupProgressVersionField,
-        },
-      }),
     ],
   });
 export const AuthClientContext = createContext(makeAuthClient());
