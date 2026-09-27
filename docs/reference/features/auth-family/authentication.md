@@ -43,10 +43,11 @@ Use the [cross-feature journey](journeys.md) for the whole isolation check.
 
 ## Gotchas
 
-The reset form is implemented. Default server mail callbacks are mocks, so a
-success screen cannot demonstrate email delivery. Test valid-token behavior only
-with an authorized test-mail capture or known test fixture; do not print tokens.
-Missing mailbox access is a missing prerequisite, not a passing delivery check.
+The reset form is implemented. Production auth supplies React Email content to
+the Cloudflare send binding after the delivery gate is enabled. The generic
+success screen still cannot demonstrate inbox delivery. Test valid-token behavior only with an authorized test-mail
+capture or known test fixture; do not print tokens. Missing mailbox access is a
+missing prerequisite, not a passing delivery check.
 
 Controls disable during pending operations and rate-limit waits. Verify recovery
 from those states when the change affects retries. Do not replace authentication

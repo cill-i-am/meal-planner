@@ -3,7 +3,8 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
+    "jsx": "react-jsx",
     "types": ["node", "vitest/globals", "@cloudflare/vitest-plugin/types"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

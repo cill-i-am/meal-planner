@@ -63,6 +63,8 @@ const expectedD1ConsumerPaths = [
   "apps/api/src/features/auth/auth.ts",
   "apps/api/src/features/families/family-store.d1.ts",
   "apps/api/src/features/households/people/household-people.control-plane.ts",
+  // Reads family and inviter names only after the invitation is associated.
+  "apps/api/src/features/households/people/invitation-mail.adapter.ts",
   "apps/api/src/features/households/people/member-departure.workflow.ts",
   "apps/api/src/features/imports/import-recipe-recovery.workflow.ts",
   "apps/api/src/features/imports/import-runtime-composition.ts",

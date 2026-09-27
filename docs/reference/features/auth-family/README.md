@@ -93,9 +93,12 @@ behavior against that fixture. A native API test proves the exercised server
 path. A real browser/API journey followed by reload proves the integrated path.
 Do not substitute one kind of evidence for another.
 
-Mail callbacks default to mocks in [auth configuration](../../../../apps/api/src/features/auth/auth.ts).
-A reset or invitation record does not prove delivery. Record real mailbox receipt
-separately when testing an authorized mail integration.
+The Worker composes Cloudflare Email Sending for reset mail; the household people
+command submits invitation mail after association when the delivery gate is
+enabled. A reset or invitation record,
+or a provider send response, does not prove inbox delivery. Record real mailbox
+receipt separately after an authorized production activation. See the
+[email delivery plan](../../../plans/auth-email-delivery.md).
 
 If the runtime, account, recipient link, or failure-injection facility is missing,
 mark that path **not exercised**, state the missing prerequisite, and run the

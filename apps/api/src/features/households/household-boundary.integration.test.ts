@@ -3616,6 +3616,65 @@ describe("household public API to private Durable Object boundary", () => {
     ).toHaveLength(1);
   }, 30_000);
 
+  it("retries mail failure after association with the same invitation", async () => {
+    const setup = await prepareInvitableAdult("Invitation Mail Retry");
+    const payload = {
+      email: "invitation-mail-retry-adult@example.test",
+      mutationId: "invitation-mail-retry",
+      personId: setup.adult.id,
+    } as const;
+    const url = `https://meal-planner.test/v1/families/${setup.organization.id}/people/invitations`;
+    const failed = await getRuntime().dispatchFetch(url, {
+      body: JSON.stringify(payload),
+      headers: {
+        "content-type": "application/json",
+        cookie: setup.ownerCookie,
+        "x-test-invitation-mail-failure": "1",
+      },
+      method: "POST",
+    });
+    expect(failed.status).toBe(503);
+    const database = drizzle(
+      await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
+    );
+    const [saved] = await database
+      .select({ id: authSchema.invitation.id })
+      .from(authSchema.invitation)
+      .where(eq(authSchema.invitation.organizationId, setup.organization.id));
+    if (saved === undefined) {
+      throw new Error("Expected saved invitation after mail failure");
+    }
+    const observations = await getRuntime().getKVNamespace(
+      "HOUSEHOLD_TEST_OBSERVATIONS",
+      "api"
+    );
+    expect(await observations.get(`invitation-mail:${saved.id}`)).toBeNull();
+
+    const retried = await getRuntime().dispatchFetch(url, {
+      body: JSON.stringify(payload),
+      headers: {
+        "content-type": "application/json",
+        cookie: setup.ownerCookie,
+      },
+      method: "POST",
+    });
+    expect(retried.status, await retried.clone().text()).toBe(201);
+    await expect(retried.json()).resolves.toMatchObject({
+      association: "associated",
+      invitationId: saved.id,
+      person: { associationState: "invitation_pending", id: setup.adult.id },
+    });
+    expect(await observations.get(`invitation-mail:${saved.id}`)).toBe(
+      payload.email
+    );
+    await expect(
+      database
+        .select({ id: authSchema.invitation.id })
+        .from(authSchema.invitation)
+        .where(eq(authSchema.invitation.organizationId, setup.organization.id))
+    ).resolves.toEqual([{ id: saved.id }]);
+  });
+
   it("replays only the exact committed browser invitation after its creation response is lost", async () => {
     const setup = await prepareInvitableAdult("Invitation Response Lost");
     const retainedBrowserPayload = {
@@ -3674,6 +3733,13 @@ describe("household public API to private Durable Object boundary", () => {
     if (unrelatedInvitation === undefined) {
       throw new Error("Expected the unrelated Better Auth invitation");
     }
+    const observations = await getRuntime().getKVNamespace(
+      "HOUSEHOLD_TEST_OBSERVATIONS",
+      "api"
+    );
+    expect(
+      await observations.get(`invitation-mail:${originalInvitation.id}`)
+    ).toBeNull();
 
     await restartRuntime();
 
@@ -3697,6 +3763,15 @@ describe("household public API to private Durable Object boundary", () => {
         id: setup.adult.id,
       },
     });
+    const persistedObservations = await getRuntime().getKVNamespace(
+      "HOUSEHOLD_TEST_OBSERVATIONS",
+      "api"
+    );
+    expect(
+      await persistedObservations.get(
+        `invitation-mail:${originalInvitation.id}`
+      )
+    ).toBe("invitation-response-lost-adult@example.test");
     const conflictingIntent = await getRuntime().dispatchFetch(
       `https://meal-planner.test/v1/families/${setup.organization.id}/people/invitations`,
       {

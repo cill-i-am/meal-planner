@@ -710,6 +710,7 @@ export default {
             outputFence: makeAuthOutputFence(env.PrivateOutputMutations),
             schema: authSchema,
             secret: Redacted.make(env.BETTER_AUTH_SECRET),
+            sendPasswordResetEmail: () => Promise.resolve(),
             verifyInvitationRecipient:
               makeHouseholdInvitationRecipientVerifier(householdDomain),
           });
@@ -1050,6 +1051,15 @@ export default {
                       ? Effect.die("Injected crash after departure preparation")
                       : householdDomain.startMemberDeparture(input),
                 },
+                sendInvitationEmail: (input) =>
+                  request.headers.get("x-test-invitation-mail-failure") === "1"
+                    ? Effect.fail(HouseholdPeopleUnavailable.make({}))
+                    : Effect.promise(() =>
+                        env.HOUSEHOLD_TEST_OBSERVATIONS.put(
+                          `invitation-mail:${input.invitationId}`,
+                          input.email
+                        )
+                      ).pipe(Effect.asVoid),
               }),
               resolver,
             });

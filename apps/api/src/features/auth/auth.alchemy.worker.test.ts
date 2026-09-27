@@ -48,6 +48,7 @@ const makeAuth = (
     outputFence: (_input, canonical) => canonical(),
     schema: authSchema,
     secret: Redacted.make("local-alchemy-test-secret-at-least-32-characters"),
+    sendPasswordResetEmail: () => Promise.resolve(),
     ...overrides,
   });
 

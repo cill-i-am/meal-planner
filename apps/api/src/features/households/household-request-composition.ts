@@ -421,6 +421,12 @@ export const makeHouseholdPeopleGateway = (options: {
   readonly controlPlane: HouseholdPeopleControlPlane;
   readonly departureWorkflow: MemberDepartureWorkflowStarter;
   readonly domain: HouseholdPeopleDomainPort;
+  readonly sendInvitationEmail: (input: {
+    readonly email: EmailAddress;
+    readonly invitationId: InvitationId;
+    readonly inviterId: UserId;
+    readonly organizationId: HouseholdOrganizationId;
+  }) => Effect.Effect<void, HouseholdPeopleUnavailable>;
 }): HouseholdPeopleGateway => {
   const call = <A, R>(
     admission: Effect.Effect<R, unknown>,
@@ -835,6 +841,16 @@ export const makeHouseholdPeopleGateway = (options: {
           })
           .pipe(Effect.mapError(mapPeopleFailure));
         const person = yield* decodePerson(wire);
+        // Only a linked person can receive a usable invitation. A repeated
+        // command may resend the same invitation after an uncertain response.
+        if (invitation.status === "pending") {
+          yield* options.sendInvitationEmail({
+            email: invitation.email,
+            invitationId: invitation.id,
+            inviterId: invitation.inviterId,
+            organizationId: principal.organizationId,
+          });
+        }
         return yield* Schema.decodeUnknownEffect(
           HouseholdAdultInvitationResult
         )({
