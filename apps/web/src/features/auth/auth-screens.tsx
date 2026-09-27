@@ -2,6 +2,7 @@ import {
   useIsMutating,
   useMutation,
   useQueryClient,
+  useQuery,
 } from "@tanstack/react-query";
 import { Link, Navigate, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
@@ -18,7 +19,7 @@ import {
 } from "../../components/ui/card.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
-import { accountKey } from "./account-query.js";
+import { accountKey, accountQuery } from "./account-query.js";
 import type { AuthenticationInput } from "./auth-client.js";
 import { authenticationMutationOptions, useAuthClient } from "./auth-client.js";
 import { authFeedback } from "./auth-errors.js";
@@ -34,17 +35,9 @@ const useAuthentication = (redirect: string) => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const authClient = useAuthClient();
-  const session = authClient.useSession();
-  const organizations = authClient.useListOrganizations();
-  const activeOrganization = authClient.useActiveOrganization();
   const mutation = useMutation({
     ...authenticationMutationOptions(authClient),
     onSuccess: async () => {
-      await Promise.all([
-        session.refetch(),
-        organizations.refetch(),
-        activeOrganization.refetch(),
-      ]);
       await queryClient.invalidateQueries({ queryKey: accountKey });
       await navigate({ href: redirect, replace: true });
     },
@@ -308,9 +301,9 @@ const AnonymousOnly = ({
   readonly redirect: string;
 }) => {
   const authClient = useAuthClient();
-  const session = authClient.useSession();
+  const session = useQuery(accountQuery(authClient));
   const pending = useIsMutating({ mutationKey: ["authenticate"] });
-  return session.data !== null && pending === 0 ? (
+  return session.data && pending === 0 ? (
     <Navigate to={redirect} replace />
   ) : (
     children

@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import {
   act,
   cleanup,
@@ -83,7 +82,9 @@ it("keeps a dialog mounted open on first render and lets Escape dismiss it", asy
 
   expect(screen.getByRole("dialog", { name: "People" })).toBeInTheDocument();
   await user.keyboard("{Escape}");
-  expect(screen.queryByRole("dialog", { name: "People" })).toBeNull();
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "People" })).toBeNull()
+  );
 });
 
 it("opens an accessible desktop dialog and closes through its action", async () => {
@@ -94,14 +95,18 @@ it("opens an accessible desktop dialog and closes through its action", async () 
     "aria-describedby"
   );
   await user.click(screen.getByRole("button", { name: "Close" }));
-  expect(
-    screen.queryByRole("dialog", { name: "People" })
-  ).not.toBeInTheDocument();
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "People" })
+    ).not.toBeInTheDocument()
+  );
   await user.click(screen.getByRole("button", { name: "Open people" }));
   await user.click(screen.getByRole("button", { name: "Done" }));
-  expect(
-    screen.queryByRole("dialog", { name: "People" })
-  ).not.toBeInTheDocument();
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "People" })
+    ).not.toBeInTheDocument()
+  );
 });
 
 it("keeps an uncontrolled overlay open when its close event is canceled", async () => {

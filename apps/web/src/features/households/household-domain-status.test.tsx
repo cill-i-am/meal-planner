@@ -1,5 +1,3 @@
-// @vitest-environment jsdom
-
 import { HouseholdStatus } from "@meal-planner/household-api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";

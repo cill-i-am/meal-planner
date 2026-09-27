@@ -5,7 +5,12 @@ import {
 import { Cause, Effect, Exit, Option, Predicate, Result, Schema } from "effect";
 import * as HttpClientError from "effect/unstable/http/HttpClientError";
 
-import { apiHttpLayer, browserApiRuntime } from "../api-client/index.js";
+import {
+  apiHttpLayer,
+  browserApiRuntime,
+  transientRetry,
+  isTransientHttpFailure,
+} from "../api-client/index.js";
 import type { ApiRuntime } from "../api-client/index.js";
 import { displayedIdentityHeaders } from "../auth/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
@@ -115,16 +120,17 @@ const isAmbiguousClientFailure = (candidate: object) => {
       reason._tag === "DecodeError" ||
       reason._tag === "EmptyBodyError" ||
       reason._tag === "TransportError" ||
-      (reason._tag === "StatusCodeError" && reason.response.status >= 500)
+      reason._tag === "StatusCodeError"
     );
   }
   if (Option.isSome(decodeAmbiguousHttpClientFailure(candidate))) {
     return true;
   }
   const status = decodeHttpStatusFailure(candidate);
-  return Option.isSome(status)
-    ? status.value.reason.response.status >= 500
-    : Option.isSome(decodeStructuralSchemaFailure(candidate));
+  return (
+    Option.isSome(status) ||
+    Option.isSome(decodeStructuralSchemaFailure(candidate))
+  );
 };
 
 export const classifyHouseholdPeopleOperationCause = (
@@ -169,6 +175,16 @@ const makeClientRunner = (scope: DisplayedIdentity, runtime: ApiRuntime) => {
         Effect.flatMap(operation),
         Effect.provide(layer),
         Effect.provide(apiHttpLayer(runtime)),
+        Effect.retry({
+          ...transientRetry,
+          while: (error) =>
+            isTransientHttpFailure(error) ||
+            ["people_unavailable", "control_plane_unavailable"].includes(
+              Option.getOrUndefined(
+                decodeHouseholdPeopleOperationFailure(error)
+              )?.code ?? ""
+            ),
+        }),
         Effect.catchCause((cause) => {
           if (Cause.hasInterrupts(cause)) {
             const failure = Cause.findError(cause);

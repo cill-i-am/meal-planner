@@ -420,7 +420,9 @@ export const AddPersonPage = () => {
               )}
               {save.error && (
                 <OperationError>
-                  We couldn’t confirm the result. Try again.
+                  {save.data
+                    ? "This person is saved, but we couldn’t refresh the family. Continue to try again."
+                    : "We couldn’t confirm the result. Try again."}
                 </OperationError>
               )}
               {navigationFailed && (

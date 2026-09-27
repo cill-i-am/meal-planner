@@ -84,6 +84,11 @@ export const FamilyProvider = ({
     );
   }
   return (
-    <FamilyContext value={{ family: family.data }}>{children}</FamilyContext>
+    <FamilyContext
+      key={selected ?? "unselected"}
+      value={{ family: family.data }}
+    >
+      {children}
+    </FamilyContext>
   );
 };

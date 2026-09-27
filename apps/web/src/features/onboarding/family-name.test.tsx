@@ -13,7 +13,6 @@ import userEvent from "@testing-library/user-event";
 import { Schema } from "effect";
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
 
-// @vitest-environment jsdom
 import { ApiRuntimeContext, browserApiRuntime } from "../api-client/index.js";
 import { AuthClientContext, makeAuthClient } from "../auth/auth-client.js";
 import { FamilyNamePage } from "./family-name.js";
@@ -112,7 +111,12 @@ const makeTransport = () => {
   return fixture;
 };
 
-const setup = async (fixture = makeTransport()) => {
+const setup = async (
+  fixture = makeTransport(),
+  queryClient = new QueryClient({
+    defaultOptions: { mutations: { retry: false } },
+  })
+) => {
   // Both Better Auth clients and the generated people client use the runtime transport.
   currentTransport = fixture.transport;
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
@@ -144,11 +148,7 @@ const setup = async (fixture = makeTransport()) => {
     ]),
   });
   render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { mutations: { retry: false } } })
-      }
-    >
+    <QueryClientProvider client={queryClient}>
       <AuthClientContext value={makeAuthClient(fixture.transport)}>
         <ApiRuntimeContext value={browserApiRuntime()}>
           <RouterProvider router={router} />
@@ -162,18 +162,6 @@ const setup = async (fixture = makeTransport()) => {
 
 beforeEach(() => {
   localStorage.clear();
-  vi.stubGlobal(
-    "IntersectionObserver",
-    class {
-      observed = new Set<Element>();
-      observe(element: Element) {
-        this.observed.add(element);
-      }
-      disconnect() {
-        this.observed.clear();
-      }
-    }
-  );
   vi.stubGlobal("scrollTo", () => {});
 });
 afterEach(() => {
@@ -279,4 +267,27 @@ it("does not restore or replay an uncertain creation after a reload", async () =
     screen.queryByRole("button", { name: "Check and continue" })
   ).not.toBeInTheDocument();
   expect(fixture.createCalls).toHaveLength(3);
+});
+
+it("continues a known saved family when cache refresh throws, without creating it again", async () => {
+  class UnavailableRefreshClient extends QueryClient {
+    override invalidateQueries(
+      ...args: Parameters<QueryClient["invalidateQueries"]>
+    ) {
+      if (args[0]?.queryKey?.includes("list")) {
+        return Promise.reject(new Error("Cache refresh failed"));
+      }
+      return super.invalidateQueries(...args);
+    }
+  }
+  const fixture = makeTransport();
+  fixture.createReply.resolve(null);
+  const { user } = await setup(fixture, new UnavailableRefreshClient());
+  await user.type(screen.getByLabelText("Family name"), "Saved family");
+  await user.click(screen.getByRole("button", { name: "Create family" }));
+  await screen.findByText(/Your family is saved, but we couldn’t refresh it/u);
+  expect(fixture.createCalls).toHaveLength(1);
+  await user.click(screen.getByRole("button", { name: "Continue to review" }));
+  await screen.findByRole("heading", { name: "Review your family" });
+  expect(fixture.createCalls).toHaveLength(1);
 });

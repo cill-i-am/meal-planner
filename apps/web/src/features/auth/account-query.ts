@@ -43,3 +43,67 @@ export const accountQuery = (auth: ReturnType<typeof makeAuthClient>) =>
     retry: false,
     staleTime: 30_000,
   });
+
+const OrganizationView = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  slug: Schema.String,
+});
+const ActiveOrganizationView = Schema.Struct({
+  ...OrganizationView.fields,
+  members: Schema.Array(
+    Schema.Struct({ id: Schema.String, userId: Schema.String })
+  ),
+});
+
+export const organizationsQuery = (
+  auth: ReturnType<typeof makeAuthClient>,
+  userId: string | undefined
+) =>
+  queryOptions({
+    enabled: userId !== undefined,
+    queryFn: async ({ signal }) => {
+      const response = await auth.organization.list({
+        fetchOptions: { signal },
+      });
+      if (response.error) {
+        throw new AuthRequestError(response.error);
+      }
+      return Schema.decodeUnknownSync(Schema.Array(OrganizationView))(
+        response.data
+      );
+    },
+    queryKey: ["auth", userId, "organizations"],
+    retry: false,
+    staleTime: 30_000,
+  });
+export const activeOrganizationQuery = (
+  auth: ReturnType<typeof makeAuthClient>,
+  account: Account | null | undefined
+) =>
+  queryOptions({
+    enabled: account !== null && account !== undefined,
+    queryFn: async ({ signal }) => {
+      if (!account?.session.activeOrganizationId) {
+        return null;
+      }
+      const response = await auth.organization.getFullOrganization({
+        fetchOptions: { signal },
+        query: { organizationId: account.session.activeOrganizationId },
+      });
+      if (response.error) {
+        throw new AuthRequestError(response.error);
+      }
+      return response.data === null
+        ? null
+        : Schema.decodeUnknownSync(ActiveOrganizationView)(response.data);
+    },
+    queryKey: [
+      "auth",
+      account?.user.id,
+      "organization",
+      account?.session.activeOrganizationId ?? null,
+    ],
+    retry: false,
+    staleTime: 30_000,
+  });

@@ -1,19 +1,5 @@
 import start from "@tanstack/react-start/server-entry";
 
-import { isApiRequest } from "./api-proxy.js";
-import type { MealPlannerApiService } from "./api-proxy.js";
+import { createWebsiteHandler } from "./website-handler.js";
 
-interface WebsiteEnvironment {
-  readonly MEAL_PLANNER_API: MealPlannerApiService;
-}
-
-export default {
-  fetch(request: Request, environment: WebsiteEnvironment) {
-    if (isApiRequest(request)) {
-      return environment.MEAL_PLANNER_API.fetch(request);
-    }
-    return start.fetch(request, {
-      context: { api: environment.MEAL_PLANNER_API },
-    });
-  },
-};
+export default createWebsiteHandler(start);

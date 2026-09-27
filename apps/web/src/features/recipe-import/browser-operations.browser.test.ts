@@ -2,7 +2,6 @@ import {
   RecipeImportIntent,
   RecipeImportIntentId,
 } from "@meal-planner/recipe-import-api";
-// @vitest-environment jsdom
 import { Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 

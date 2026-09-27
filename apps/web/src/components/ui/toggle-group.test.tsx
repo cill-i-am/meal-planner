@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { cleanup, render as baseRender, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";

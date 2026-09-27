@@ -5,3 +5,5 @@ This host wiring supplies an origin and fetch implementation to generated Effect
 In the browser, Effect FetchHttpClient delegates to native fetch. During SSR, use the current request's private API Worker binding and cookies. Forward refreshed cookies to the HTML response. Keep requests isolated, reject destinations outside the owned API routes before forwarding credentials, and propagate cancellation. Never dehydrate bindings, clients, session tokens, or cookies into browser data.
 
 Alchemy provides the Worker binding. The web Worker passes it through TanStack Start request context. Neither app-owned contracts nor backend authority move into web routes. See [the family reference](../../../../../docs/reference/family-api.md#screens-cache-and-auth).
+
+[request-policy.ts](request-policy.ts) owns the shared transient HTTP retry policy: two retries with exponential backoff and jitter. Family, invitation, and people operations add their typed unavailable failures. Query retries stay disabled for these operations. Do not automatically retry deterministic rejections or parsing failures. Retried writes keep the exact original command and idempotency key.

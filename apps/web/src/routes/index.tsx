@@ -7,6 +7,9 @@ import { StatusScreen } from "../components/status-screen.js";
 import { useApiRuntime } from "../features/api-client/index.js";
 import {
   AuthBoundary,
+  accountQuery,
+  organizationsQuery,
+  activeOrganizationQuery,
   useAuthClient,
   requireAuthSuccess,
   deriveAuthBoundaryState,
@@ -122,9 +125,13 @@ const MealPlannerRoute = () => {
   const { intentId } = useSearch({ from: "/" });
   const queryClient = useQueryClient();
   const authClient = useAuthClient();
-  const session = authClient.useSession();
-  const organizations = authClient.useListOrganizations();
-  const activeOrganization = authClient.useActiveOrganization();
+  const session = useQuery(accountQuery(authClient));
+  const organizations = useQuery(
+    organizationsQuery(authClient, session.data?.user.id)
+  );
+  const activeOrganization = useQuery(
+    activeOrganizationQuery(authClient, session.data)
+  );
 
   const signOut = async () => {
     await requireAuthSuccess(authClient.signOut());
@@ -151,7 +158,7 @@ const MealPlannerRoute = () => {
   return (
     <AuthBoundary actions={actions} state={state}>
       {(household, logout) => {
-        if (session.data === null) {
+        if (!session.data) {
           return null;
         }
         const scope = parseDisplayedIdentity({

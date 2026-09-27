@@ -1,5 +1,8 @@
-// @vitest-environment jsdom
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+} from "@tanstack/react-query";
 import {
   createMemoryHistory,
   createRootRoute,
@@ -18,6 +21,11 @@ import { Route as ResetRoute } from "@/routes/reset-password.js";
 import { Route as SignupRoute } from "@/routes/signup.js";
 
 import { decodeRecoverySearch } from "../recovery/recovery-input.js";
+import {
+  accountQuery,
+  activeOrganizationQuery,
+  organizationsQuery,
+} from "./account-query.js";
 import { AuthBoundary } from "./auth-boundary.js";
 import {
   AuthClientContext,
@@ -40,6 +48,7 @@ const makeTransport = (initiallyAuthenticated = false) => {
   };
   const account = {
     session: {
+      activeOrganizationId: "household-1",
       expiresAt: "2099-01-01T00:00:00Z",
       id: "session-1",
       userId: "adult-1",
@@ -106,10 +115,11 @@ const unused = async () => {
 
 const TestWorkspace = () => {
   const client = useAuthClient();
+  const session = useQuery(accountQuery(client));
   const state = deriveAuthBoundaryState({
-    activeOrganization: client.useActiveOrganization(),
-    organizations: client.useListOrganizations(),
-    session: client.useSession(),
+    activeOrganization: useQuery(activeOrganizationQuery(client, session.data)),
+    organizations: useQuery(organizationsQuery(client, session.data?.user.id)),
+    session,
   });
 
   return (

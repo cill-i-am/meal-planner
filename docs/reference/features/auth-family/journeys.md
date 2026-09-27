@@ -61,3 +61,12 @@ visible control is reachable. Report those checks separately.
 Do not create an entire post-setup test suite from the exit links. Discovery,
 recipe import, planning, and shopping remain outside this map. Missing full-app
 runtime or mail/fault fixtures must be listed as unexercised prerequisites.
+
+## Automated evidence
+
+[The Playwright suite](../../../../apps/web/e2e/family-journey.spec.ts) exercises
+saved roster corrections after reload and completion, wrong-account invitation
+access followed by explicit acceptance, a lost creation response after commit,
+and password reset followed by login to the same family. It uses native local
+Workers and real storage. Page objects isolate locators and screen actions from
+journey assertions. Automatic test retries are disabled.

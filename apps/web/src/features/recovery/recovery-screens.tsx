@@ -1,4 +1,4 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Schema } from "effect";
 
@@ -17,6 +17,7 @@ import { FieldGroup } from "../../components/ui/field.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
 import {
   useAuthClient,
+  accountKey,
   AuthRequestError,
   authFeedback,
   useAuthRetry,
@@ -65,10 +66,12 @@ export const RecoveryRequestPage = ({
     requestPasswordResetMutationOptions(auth, redirect)
   );
   const requestError =
-    request.error?.match<Error>({
-      OrElse: () => request.error,
-      RecoveryFailure: (failure) => failure.authError,
-    }) ?? null;
+    request.error?._tag === "EffectQueryFailure"
+      ? request.error.match<Error | null>({
+          OrElse: () => request.error,
+          RecoveryFailure: (failure) => failure.authError,
+        })
+      : request.error;
   const { waiting } = useAuthRetry(requestError);
   const form = useAppForm({
     defaultValues: { email: "" },
@@ -174,12 +177,21 @@ export const ResetPasswordPage = ({
 }) => {
   const auth = useAuthClient();
   const navigate = useNavigate();
-  const reset = useMutation(resetPasswordMutationOptions(auth, token));
+  const queryClient = useQueryClient();
+  const reset = useMutation({
+    ...resetPasswordMutationOptions(auth, token),
+    onSuccess: () => {
+      queryClient.clear();
+      queryClient.setQueryData(accountKey, null);
+    },
+  });
   const resetError =
-    reset.error?.match<Error>({
-      OrElse: () => reset.error,
-      RecoveryFailure: (failure) => failure.authError,
-    }) ?? null;
+    reset.error?._tag === "EffectQueryFailure"
+      ? reset.error.match<Error | null>({
+          OrElse: () => reset.error,
+          RecoveryFailure: (failure) => failure.authError,
+        })
+      : reset.error;
   const { waiting } = useAuthRetry(resetError);
   const form = useAppForm({
     defaultValues: { confirmation: "", password: "" },
