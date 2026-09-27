@@ -13,7 +13,7 @@ Send actionable invitation and password-reset messages from `noreply@mail.ceird.
 
 - Better Auth creates and consumes reset tokens and invitation records. Its reset callback renders and submits mail. The household people command submits invitation mail only after the person is associated with the invitation. An interrupted command reuses the invitation ID.
 - `features/email` owns the shared message layout, rendering and Cloudflare adapter. Server auth owns reset content. Household people owns invitation content and the read of family/inviter display names. The Worker composes the dependencies; no browser mail endpoint is added.
-- Both formats include the action URL. The templates state the configured 1-hour reset and 48-hour invitation expiry. The Paper page **Transactional email** has standard and narrow variants for both.
+- Both formats include the action URL. The templates state the configured 1-hour reset and 48-hour invitation expiry. The Paper page **Transactional email** has standard and narrow variants for both. Its actions follow the primary button on Paper's **Overview** page: 48px high, pill shaped, 15px semibold text, dark gradient, and subtle depth. Email HTML retains a solid color fallback where clients omit the gradient or shadow.
 - React Email's components gallery informed the layouts. The application uses the installed `react-email` package's components, `render`, and `toPlainText`; Workerd tests check this combination.
 - The binding permits arbitrary recipients and restricts the sender to `noreply@mail.ceird.app`. Only the `prod` Alchemy stage owns `mail.ceird.app`, because a sending domain is shared at the Cloudflare account level.
 - Runtime delivery is gated off by default. First provision and verify the sending domain, disable Cloudflare's default Email preview, then enable delivery in a separate reviewed production deploy.
@@ -26,8 +26,8 @@ Send actionable invitation and password-reset messages from `noreply@mail.ceird.
 - [x] Native household recovery test observes no send before association and a send after retry with the same invitation ID.
 - [x] A provider failure after association can be retried with the same invitation record.
 - [x] PR #257's five local browser journeys pass after its mail fixture moved to the household send boundary.
-- [ ] Full repository checks and review pass at the delivery commit.
-- [ ] The repository change is merged.
+- [x] Full repository checks and review passed at the delivery commit in PR #258.
+- [x] The repository change was merged in PR #258.
 - [ ] An approved production operation verifies the target account, Workers Paid eligibility, `ceird.app` zone, sender DNS, and disabled Email preview before enabling delivery.
 - [ ] Disposable recipient mailboxes receive both messages; links complete the real invitation and single-use reset journeys. Record submission and inbox receipt separately without storing token URLs.
 

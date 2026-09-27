@@ -103,16 +103,20 @@ export const Action = ({
         className="email-action"
         href={url}
         style={{
-          backgroundColor: palette.foreground,
-          borderRadius: 24,
+          // Keep a solid fallback for clients that ignore gradients or shadows.
+          backgroundColor: "#111114",
+          backgroundImage: "linear-gradient(180deg, #242427 0%, #111114 100%)",
+          borderRadius: 999,
+          boxShadow:
+            "inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 3px 4px rgba(17, 17, 20, 0.12)",
           boxSizing: "border-box",
           color: palette.white,
           display: "block",
-          fontSize: 14,
+          fontSize: 15,
           fontWeight: 600,
-          lineHeight: "20px",
-          maxWidth: 240,
-          padding: "14px 20px",
+          lineHeight: "18px",
+          maxWidth: 232,
+          padding: "15px 20px",
           textAlign: "center",
           textDecoration: "none",
           width: "100%",
