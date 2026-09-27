@@ -1,11 +1,9 @@
 // @vitest-environment jsdom
 import {
-  canReplaceSetupProgress,
   CreateHouseholdPersonPayload,
   HouseholdPerson,
   InviteHouseholdAdultPayload,
   RenameHouseholdPersonPayload,
-  SetupProgress,
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -17,14 +15,7 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Schema } from "effect";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -33,8 +24,7 @@ import { TooltipProvider } from "../../components/ui/tooltip.js";
 import { AuthClientContext, makeAuthClient } from "../auth/auth-client.js";
 import { FamilyReviewPage } from "./family-review.js";
 import { AddPersonPage } from "./people-pages.js";
-import { SetupProvider } from "./setup-context.js";
-import { SetupSavedPage } from "./setup-saved.js";
+import { SetupProvider } from "./setup-provider.js";
 
 const familyId = "family-1";
 let currentTransport: typeof fetch;
@@ -75,39 +65,22 @@ const joinedAdult = Schema.decodeUnknownSync(HouseholdPerson)({
   displayName: "Morgan",
   id: "person_33333333-3333-4333-8333-333333333333",
 });
-const initial = Schema.decodeUnknownSync(SetupProgress)({
-  checkpoint: {
-    draft: { email: "", invite: false, name: "", participation: "" },
-    organizationId: familyId,
-    stage: "person-draft",
-  },
-  status: "active",
-});
-
 const makeTransport = (
-  start: SetupProgress = initial,
   added: HouseholdPerson[] = [],
   rejectFirstRemove = false,
   role: "owner" | "member" = "owner",
   rejectInvite = false,
   failures: {
-    readonly completion?: boolean;
-    readonly pending?: boolean;
-    readonly logoutSave?: boolean;
     readonly invitationReply?: Promise<null>;
+    readonly creatorPending?: boolean;
   } = {}
 ) => {
-  let progress = start;
-  let version = 0;
-  let completionRejected = false;
-  let pendingRejected = false;
   let signedOut = false;
+  let creatorReady = !failures.creatorPending;
+  const creatorResumes: string[] = [];
   let signOutCalls = 0;
-  const saveAttempts: SetupProgress[] = [];
-  const saveSourceIds: (string | undefined)[] = [];
   const removedPeople = new Map<string, HouseholdPerson>();
   let people = [creator, ...added];
-  const saves: SetupProgress[] = [];
   const creates: unknown[] = [];
   const invitations: unknown[] = [];
   const renames: unknown[] = [];
@@ -159,14 +132,14 @@ const makeTransport = (
     request: Request,
     path: string
   ): Promise<Response> => {
-    if (path === "/v1/household/people" && request.method === "GET") {
+    if (path === "/v1/families/family-1/people" && request.method === "GET") {
       return Response.json({
-        creatorSlot: "occupied",
-        currentPersonId: creator.id,
-        people,
+        creatorSlot: creatorReady ? "occupied" : "available",
+        currentPersonId: creatorReady ? creator.id : null,
+        people: creatorReady ? people : [],
       });
     }
-    if (path === "/v1/household/people" && request.method === "POST") {
+    if (path === "/v1/families/family-1/people" && request.method === "POST") {
       const payload = Schema.decodeUnknownSync(CreateHouseholdPersonPayload)(
         await request.json()
       );
@@ -184,10 +157,10 @@ const makeTransport = (
         { status: 201 }
       );
     }
-    if (path === "/v1/household/people/invitations") {
+    if (path === "/v1/families/family-1/people/invitations") {
       return createInvitation(request);
     }
-    if (path.endsWith("/rename") && request.method === "POST") {
+    if (request.method === "PATCH") {
       const payload = Schema.decodeUnknownSync(RenameHouseholdPersonPayload)(
         await request.json()
       );
@@ -204,7 +177,7 @@ const makeTransport = (
       people = people.map((item) => (item.id === person.id ? updated : item));
       return Response.json(updated);
     }
-    if (path.endsWith("/remove") && request.method === "POST") {
+    if (request.method === "DELETE") {
       const payload = Schema.decodeUnknownSync(
         TransitionHouseholdPersonPayload
       )(await request.json());
@@ -258,76 +231,32 @@ const makeTransport = (
           email: "alex@example.test",
           id: "adult-1",
           name: "Alex",
-          setupProgress: progress,
-          setupProgressVersion: version,
         },
       });
     }
-    if (path === "/v1/setup/progress") {
-      expect(request.headers.get("x-meal-planner-user")).toBe("adult-1");
-      const body = Schema.decodeUnknownSync(
-        Schema.Struct({
-          expectedVersion: Schema.Number,
-          progress: SetupProgress,
-          sourceCommandId: Schema.optional(Schema.String),
-        })
-      )(await request.json());
-      saveAttempts.push(body.progress);
-      saveSourceIds.push(body.sourceCommandId);
-      if (failures.logoutSave && body.progress.status === "paused") {
-        return Response.json(
-          {
-            _tag: "SetupProgressUnavailable",
-            message: "Could not save before logging out.",
-          },
-          { status: 503 }
-        );
-      }
-      if (
-        failures.pending &&
-        !pendingRejected &&
-        body.progress.checkpoint.stage === "person-manage"
-      ) {
-        pendingRejected = true;
-        return Response.json(
-          {
-            _tag: "SetupProgressUnavailable",
-            message: "Could not save request.",
-          },
-          { status: 503 }
-        );
-      }
-      if (
-        failures.completion &&
-        !completionRejected &&
-        progress.checkpoint.stage === "person-manage" &&
-        (body.progress.checkpoint.stage === "person-draft" ||
-          body.progress.checkpoint.stage === "family-review")
-      ) {
-        completionRejected = true;
-        return Response.json(
-          {
-            _tag: "SetupProgressUnavailable",
-            message: "Could not save setup.",
-          },
-          { status: 503 }
-        );
-      }
-      if (body.expectedVersion !== version) {
-        return Response.json(
-          { _tag: "SetupProgressConflict", message: "Reload setup." },
-          { status: 409 }
-        );
-      }
-      ({ progress } = body);
-      version += 1;
-      saves.push(progress);
-      return Response.json({ progress, version });
+    const family = {
+      canManage: role === "owner",
+      createdAtEpochMs: 1,
+      id: familyId,
+      name: "Morgan family",
+      setup: { status: "in_progress" },
+      slug: "morgan",
+      updatedAtEpochMs: 1,
+      version: 1,
+    };
+    if (
+      path === `/v1/families/${familyId}/resume-creation` &&
+      request.method === "POST"
+    ) {
+      creatorReady = true;
+      creatorResumes.push(familyId);
+      return Response.json(family);
     }
-    if (path.endsWith("/organization/list")) {
-      return Response.json([
-        { id: familyId, name: "Morgan family", slug: "morgan" },
-      ]);
+    if (path === "/v1/families" && request.method === "GET") {
+      return Response.json([family]);
+    }
+    if (path === `/v1/families/${familyId}` && request.method === "GET") {
+      return Response.json(family);
     }
     if (path.endsWith("/sign-out")) {
       signOutCalls += 1;
@@ -351,27 +280,17 @@ const makeTransport = (
         slug: "morgan",
       });
     }
-    if (path.startsWith("/v1/household/people")) {
+    if (path.startsWith("/v1/families/family-1/people")) {
       return handlePeopleRequest(request, path);
     }
     throw new Error(`Unexpected setup fixture path: ${request.method} ${path}`);
   };
   return {
     creates,
+    creatorResumes,
     invitations,
     removals,
     renames,
-    saveAttempts,
-    saveFromOtherTab(next: SetupProgress, sourceCommandId?: string) {
-      if (!canReplaceSetupProgress(progress, next, sourceCommandId)) {
-        return false;
-      }
-      progress = next;
-      version += 1;
-      return true;
-    },
-    saveSourceIds,
-    saves,
     get signOutCalls() {
       return signOutCalls;
     },
@@ -398,15 +317,6 @@ const setup = async (
         ),
         getParentRoute: () => root,
         path: "/setup/people",
-      }),
-      createRoute({
-        component: () => (
-          <SetupProvider>
-            <SetupSavedPage />
-          </SetupProvider>
-        ),
-        getParentRoute: () => root,
-        path: "/setup/saved",
       }),
       createRoute({
         component: () => (
@@ -452,6 +362,7 @@ const setup = async (
 };
 
 beforeEach(() => {
+  localStorage.clear();
   mobileViewport = false;
   viewportListeners.clear();
   vi.stubGlobal("matchMedia", (query: string) => ({
@@ -506,7 +417,7 @@ it("adds an adult without an account unless invitation is chosen", async () => {
   await waitFor(() => expect(screen.getByLabelText("Email")).not.toBeVisible());
   await user.click(screen.getByRole("button", { name: "Add person" }));
   await waitFor(() => expect(fixture.creates).toHaveLength(1));
-  await screen.findByRole("heading", { name: "Setup home" });
+  await screen.findByRole("heading", { name: "Your family" });
   expect(fixture.creates[0]).toMatchObject({
     displayName: "Jamie",
     kind: "adult",
@@ -515,7 +426,7 @@ it("adds an adult without an account unless invitation is chosen", async () => {
 });
 
 it("invites an existing adult without creating a second person and restores the Add draft", async () => {
-  const fixture = makeTransport(initial, [managedAdult]);
+  const fixture = makeTransport([managedAdult]);
   const { user } = await setup(fixture);
   await user.type(screen.getByLabelText("Name"), "Taylor");
   await user.click(screen.getByRole("button", { name: "Invite to join" }));
@@ -524,23 +435,14 @@ it("invites an existing adult without creating a second person and restores the 
   ).toBeInTheDocument();
   expect(screen.getByText("Add person").closest("button")).toBeDisabled();
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
-  expect(fixture.saveAttempts).toHaveLength(0);
+  expect(localStorage.length).toBe(0);
   await user.type(
     screen.getByRole("textbox", { name: "Email" }),
     "jamie@example.test"
   );
   await user.click(screen.getByRole("button", { name: "Invite Jamie" }));
   await waitFor(() => expect(fixture.invitations).toHaveLength(1));
-  expect(fixture.saves[0]).toMatchObject({
-    checkpoint: {
-      returnTo: {
-        draft: { name: "Taylor", participation: "adult" },
-        stage: "person-draft",
-      },
-      stage: "person-manage",
-      state: { phase: "pending" },
-    },
-  });
+  expect(localStorage.length).toBe(0);
   expect(fixture.invitations[0]).toMatchObject({
     email: "jamie@example.test",
     personId: managedAdult.id,
@@ -552,9 +454,7 @@ it("invites an existing adult without creating a second person and restores the 
     ).not.toBeInTheDocument()
   );
   expect(screen.getByLabelText("Name")).toHaveValue("Taylor");
-  expect(fixture.saves.at(-1)).toMatchObject({
-    checkpoint: { draft: { participation: "adult" }, stage: "person-draft" },
-  });
+  expect(localStorage.length).toBe(0);
 });
 
 it.each([
@@ -568,7 +468,7 @@ it.each([
       associationState,
       associationVersion: 1,
     });
-    const fixture = makeTransport(initial, [adult]);
+    const fixture = makeTransport([adult]);
     const { user } = await setup(fixture);
     expect(screen.getByText(status)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Invite again" }));
@@ -586,7 +486,7 @@ it.each([
 );
 
 it("explains a rejected invitation without claiming success or creating another person", async () => {
-  const fixture = makeTransport(initial, [managedAdult], false, "owner", true);
+  const fixture = makeTransport([managedAdult], false, "owner", true);
   const { user } = await setup(fixture);
   await user.click(screen.getByRole("button", { name: "Invite to join" }));
   await user.type(
@@ -602,13 +502,11 @@ it("explains a rejected invitation without claiming success or creating another 
   ).toBeInTheDocument();
   expect(fixture.creates).toHaveLength(0);
   expect(fixture.invitations).toHaveLength(1);
-  expect(fixture.saves.at(-1)).toMatchObject({
-    checkpoint: { stage: "person-draft" },
-  });
+  expect(localStorage.length).toBe(0);
 });
 
 it("edits a person and returns to the same Add draft after closing", async () => {
-  const fixture = makeTransport(initial, [managedAdult]);
+  const fixture = makeTransport([managedAdult]);
   const { user } = await setup(fixture);
   await user.type(screen.getByLabelText("Name"), "Taylor");
   await user.click(screen.getByRole("button", { name: "Manage Jamie" }));
@@ -638,7 +536,7 @@ it("edits a person and returns to the same Add draft after closing", async () =>
 });
 
 it("closes an unsubmitted edit without changing the person or losing the Add draft", async () => {
-  const fixture = makeTransport(initial, [managedAdult]);
+  const fixture = makeTransport([managedAdult]);
   const { user } = await setup(fixture);
   await user.type(screen.getByLabelText("Name"), "Taylor");
   await user.click(
@@ -666,18 +564,11 @@ it("closes an unsubmitted edit without changing the person or losing the Add dra
     screen.getByRole("checkbox", { name: "Invite them to join" })
   ).toBeChecked();
   expect(fixture.renames).toHaveLength(0);
-  expect(fixture.saveAttempts).toHaveLength(0);
+  expect(localStorage.length).toBe(0);
 });
 
-it("opens and closes locally with Escape even when checkpoint writes would fail", async () => {
-  const fixture = makeTransport(
-    initial,
-    [managedAdult],
-    false,
-    "owner",
-    false,
-    { pending: true }
-  );
+it("opens and closes locally with Escape without persisting an unsubmitted edit", async () => {
+  const fixture = makeTransport([managedAdult], false, "owner", false);
   const { user } = await setup(fixture);
   await user.type(screen.getByLabelText("Name"), "Taylor");
   await user.click(screen.getByRole("button", { name: "Manage Jamie" }));
@@ -685,7 +576,7 @@ it("opens and closes locally with Escape even when checkpoint writes would fail"
   expect(
     await screen.findByRole("heading", { name: "Edit Jamie’s name" })
   ).toBeInTheDocument();
-  expect(fixture.saveAttempts).toHaveLength(0);
+  expect(localStorage.length).toBe(0);
   await user.keyboard("{Escape}");
   await waitFor(() =>
     expect(
@@ -693,82 +584,12 @@ it("opens and closes locally with Escape even when checkpoint writes would fail"
     ).not.toBeInTheDocument()
   );
   expect(screen.getByLabelText("Name")).toHaveValue("Taylor");
-  expect(fixture.saveAttempts).toHaveLength(0);
+  expect(localStorage.length).toBe(0);
   expect(fixture.renames).toHaveLength(0);
 });
 
-it("retains the submitted command when its checkpoint write fails and dispatches only after retry saves it", async () => {
-  const fixture = makeTransport(
-    initial,
-    [managedAdult],
-    false,
-    "owner",
-    false,
-    { pending: true }
-  );
-  const { user } = await setup(fixture);
-  await user.click(screen.getByRole("button", { name: "Invite to join" }));
-  await user.type(
-    screen.getByRole("textbox", { name: "Email" }),
-    "jamie@example.test"
-  );
-  await user.click(screen.getByRole("button", { name: "Invite Jamie" }));
-  expect(
-    await screen.findByText(/kept this exact request/u)
-  ).toBeInTheDocument();
-  expect(fixture.invitations).toHaveLength(0);
-  expect(fixture.saveAttempts).toHaveLength(1);
-  expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
-  await user.keyboard("{Escape}");
-  expect(
-    screen.getByRole("heading", { name: "Invite Jamie" })
-  ).toBeInTheDocument();
-  expect(screen.getByRole("textbox", { name: "Email" })).toBeDisabled();
-  await user.click(screen.getByRole("button", { name: "Check and continue" }));
-  await waitFor(() => expect(fixture.invitations).toHaveLength(1));
-  expect(fixture.saveAttempts[1]).toEqual(fixture.saveAttempts[0]);
-});
-
-it("retries the original successful removal if saving its completion fails", async () => {
-  const fixture = makeTransport(
-    initial,
-    [managedAdult],
-    false,
-    "owner",
-    false,
-    { completion: true }
-  );
-  const { user } = await setup(fixture);
-  await user.click(screen.getByRole("button", { name: "Manage Jamie" }));
-  await user.click(
-    await screen.findByRole("menuitem", { name: "Remove from family" })
-  );
-  await user.click(screen.getByRole("button", { name: "Remove Jamie" }));
-  expect(
-    await screen.findByText(/kept this exact request/u)
-  ).toBeInTheDocument();
-  expect(fixture.removals).toHaveLength(1);
-  expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
-  await user.click(screen.getByRole("button", { name: "Check and continue" }));
-  await waitFor(() => expect(fixture.removals).toHaveLength(2));
-  expect(fixture.removals[1]).toEqual(fixture.removals[0]);
-  await waitFor(() =>
-    expect(
-      screen.queryByRole("heading", { name: "Remove Jamie from family?" })
-    ).not.toBeInTheDocument()
-  );
-  const removal = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)(
-    fixture.removals[0]
-  );
-  expect(fixture.saveSourceIds.at(-1)).toBe(removal.mutationId);
-});
-
 it("removes a joined adult after explicit confirmation, keeping the exact version and mutation ID", async () => {
-  const review = Schema.decodeUnknownSync(SetupProgress)({
-    checkpoint: { organizationId: familyId, stage: "family-review" },
-    status: "active",
-  });
-  const fixture = makeTransport(review, [joinedAdult]);
+  const fixture = makeTransport([joinedAdult]);
   const { user } = await setup(fixture, "/setup/review");
   await user.click(screen.getByRole("button", { name: "Manage Morgan" }));
   await user.click(
@@ -780,7 +601,7 @@ it("removes a joined adult after explicit confirmation, keeping the exact versio
     )
   ).toBeInTheDocument();
   expect(fixture.removals).toHaveLength(0);
-  expect(fixture.saveAttempts).toHaveLength(0);
+  expect(localStorage.length).toBe(0);
   await user.click(screen.getByRole("button", { name: "Remove Morgan" }));
   await waitFor(() => expect(fixture.removals).toHaveLength(1));
   expect(fixture.removals[0]).toMatchObject({
@@ -793,12 +614,8 @@ it("removes a joined adult after explicit confirmation, keeping the exact versio
 });
 
 it("shows members only their own edit action", async () => {
-  const review = Schema.decodeUnknownSync(SetupProgress)({
-    checkpoint: { organizationId: familyId, stage: "family-review" },
-    status: "active",
-  });
   const { user } = await setup(
-    makeTransport(review, [managedAdult, joinedAdult], false, "member"),
+    makeTransport([managedAdult, joinedAdult], false, "member"),
     "/setup/review"
   );
   expect(
@@ -820,11 +637,7 @@ it("shows members only their own edit action", async () => {
 });
 
 it("retains an uncertain removal across reload and retries the exact request", async () => {
-  const review = Schema.decodeUnknownSync(SetupProgress)({
-    checkpoint: { organizationId: familyId, stage: "family-review" },
-    status: "active",
-  });
-  const fixture = makeTransport(review, [managedAdult], true);
+  const fixture = makeTransport([managedAdult], true);
   const { user } = await setup(fixture, "/setup/review");
   await user.click(screen.getByRole("button", { name: "Manage Jamie" }));
   await user.click(
@@ -842,13 +655,7 @@ it("retains an uncertain removal across reload and retries the exact request", a
   expect(
     screen.queryByRole("button", { name: "Log out" })
   ).not.toBeInTheDocument();
-  expect(fixture.saves.at(-1)).toMatchObject({
-    checkpoint: {
-      stage: "person-manage",
-      state: { command: { mutationId: expect.any(String) }, phase: "pending" },
-    },
-    status: "active",
-  });
+  expect(localStorage.length).toBe(1);
   await user.keyboard("{Escape}");
   expect(
     screen.getByRole("heading", { name: "Remove Jamie from family?" })
@@ -866,60 +673,8 @@ it("retains an uncertain removal across reload and retries the exact request", a
   expect(fixture.removals[1]).toEqual(fixture.removals[0]);
 });
 
-it("replaces an unsubmitted local draft with a pending request received on session refresh", async () => {
-  const review = Schema.decodeUnknownSync(SetupProgress)({
-    checkpoint: { organizationId: familyId, stage: "family-review" },
-    status: "active",
-  });
-  const fixture = makeTransport(review, [managedAdult]);
-  const { auth, user } = await setup(fixture, "/setup/review");
-  await user.click(screen.getByRole("button", { name: "Invite to join" }));
-  await user.type(
-    screen.getByRole("textbox", { name: "Email" }),
-    "local-draft@example.test"
-  );
-  const pending = Schema.decodeUnknownSync(SetupProgress)({
-    checkpoint: {
-      organizationId: familyId,
-      returnTo: { stage: "family-review" },
-      stage: "person-manage",
-      state: {
-        command: {
-          email: "saved-request@example.test",
-          kind: "invite",
-          mutationId: "other-tab-invitation",
-          person: managedAdult,
-        },
-        phase: "pending",
-      },
-    },
-    status: "active",
-  });
-  await act(async () => {
-    expect(fixture.saveFromOtherTab(pending)).toBe(true);
-    auth.$store.notify("$sessionSignal");
-  });
-  expect(
-    await screen.findByRole("heading", { name: "Invite Jamie" })
-  ).toBeInTheDocument();
-  await waitFor(() =>
-    expect(screen.getByRole("textbox", { name: "Email" })).toHaveValue(
-      "saved-request@example.test"
-    )
-  );
-  expect(screen.getByRole("textbox", { name: "Email" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
-  await user.click(screen.getByRole("button", { name: "Check and continue" }));
-  await waitFor(() => expect(fixture.invitations).toHaveLength(1));
-  expect(fixture.invitations[0]).toMatchObject({
-    email: "saved-request@example.test",
-    mutationId: "other-tab-invitation",
-  });
-  expect(fixture.removals).toHaveLength(0);
-});
-
 it("preserves the editable roster form while switching between desktop dialog and mobile drawer", async () => {
-  const fixture = makeTransport(initial, [managedAdult]);
+  const fixture = makeTransport([managedAdult]);
   const { user } = await setup(fixture);
   await user.click(screen.getByRole("button", { name: "Invite to join" }));
   await user.type(screen.getByRole("textbox", { name: "Email" }), "jamie@");
@@ -937,11 +692,11 @@ it("preserves the editable roster form while switching between desktop dialog an
   expect(screen.getByRole("textbox", { name: "Email" })).toHaveValue(
     "jamie@example.test"
   );
-  expect(fixture.saveAttempts).toHaveLength(0);
+  expect(localStorage.length).toBe(0);
 });
 
 it("finishes closing a desktop roster dialog when the viewport changes", async () => {
-  const { user } = await setup(makeTransport(initial, [managedAdult]));
+  const { user } = await setup(makeTransport([managedAdult]));
   await user.click(screen.getByRole("button", { name: "Invite to join" }));
   expect(
     await screen.findByRole("heading", { name: "Invite Jamie" })
@@ -957,103 +712,6 @@ it("finishes closing a desktop roster dialog when the viewport changes", async (
   expect(
     await screen.findByRole("heading", { name: "Invite Jamie" })
   ).toBeInTheDocument();
-});
-
-it("shows the saved command while retaining an earlier unsaved request", async () => {
-  const review = Schema.decodeUnknownSync(SetupProgress)({
-    checkpoint: { organizationId: familyId, stage: "family-review" },
-    status: "active",
-  });
-  const fixture = makeTransport(review, [managedAdult], false, "owner", false, {
-    pending: true,
-  });
-  const { auth, user } = await setup(fixture, "/setup/review");
-  await user.click(screen.getByRole("button", { name: "Invite to join" }));
-  await user.type(
-    screen.getByRole("textbox", { name: "Email" }),
-    "jamie@example.test"
-  );
-  await user.click(screen.getByRole("button", { name: "Invite Jamie" }));
-  expect(
-    await screen.findByText(/kept this exact request/u)
-  ).toBeInTheDocument();
-  const [original] = fixture.saveAttempts;
-  const otherPending = Schema.decodeUnknownSync(SetupProgress)({
-    checkpoint: {
-      organizationId: familyId,
-      returnTo: { stage: "family-review" },
-      stage: "person-manage",
-      state: {
-        command: {
-          kind: "remove",
-          mutationId: "other-tab-removal",
-          person: managedAdult,
-        },
-        phase: "pending",
-      },
-    },
-    status: "active",
-  });
-  await act(async () => {
-    expect(fixture.saveFromOtherTab(otherPending)).toBe(true);
-    auth.$store.notify("$sessionSignal");
-  });
-  expect(
-    await screen.findByRole("heading", { name: "Remove Jamie from family?" })
-  ).toBeInTheDocument();
-  expect(fixture.invitations).toHaveLength(0);
-  await act(async () => {
-    expect(fixture.saveFromOtherTab(review, "other-tab-removal")).toBe(true);
-    auth.$store.notify("$sessionSignal");
-  });
-  await waitFor(() =>
-    expect(
-      screen.getByRole("button", { name: "Check and continue" })
-    ).toBeEnabled()
-  );
-  await user.click(screen.getByRole("button", { name: "Check and continue" }));
-  await waitFor(() => expect(fixture.invitations).toHaveLength(1));
-  expect(fixture.saveAttempts[1]).toEqual(original);
-  expect(fixture.removals).toHaveLength(0);
-});
-
-it("does not replace a saved invitation while its request is in flight", async () => {
-  const review = Schema.decodeUnknownSync(SetupProgress)({
-    checkpoint: { organizationId: familyId, stage: "family-review" },
-    status: "active",
-  });
-  const invitationReply = Promise.withResolvers<null>();
-  const fixture = makeTransport(review, [managedAdult], false, "owner", false, {
-    invitationReply: invitationReply.promise,
-  });
-  const { user } = await setup(fixture, "/setup/review");
-  await user.click(screen.getByRole("button", { name: "Invite to join" }));
-  await user.type(
-    screen.getByRole("textbox", { name: "Email" }),
-    "jamie@example.test"
-  );
-  await user.click(screen.getByRole("button", { name: "Invite Jamie" }));
-  await waitFor(() => expect(fixture.invitations).toHaveLength(1));
-  const competing = Schema.decodeUnknownSync(SetupProgress)({
-    checkpoint: {
-      organizationId: familyId,
-      returnTo: { stage: "family-review" },
-      stage: "person-manage",
-      state: {
-        command: {
-          kind: "remove",
-          mutationId: "other-removal",
-          person: managedAdult,
-        },
-        phase: "pending",
-      },
-    },
-    status: "active",
-  });
-  expect(fixture.saveFromOtherTab(competing)).toBe(false);
-  await act(async () => invitationReply.resolve(null));
-  await waitFor(() => expect(fixture.saves.at(-1)).toEqual(review));
-  expect(fixture.invitations).toHaveLength(1);
 });
 
 it("adds a child as a managed profile without an invitation choice", async () => {
@@ -1072,7 +730,7 @@ it("adds a child as a managed profile without an invitation choice", async () =>
   await waitFor(() => expect(screen.getByLabelText("Email")).not.toBeVisible());
   await user.click(screen.getByRole("button", { name: "Add person" }));
   await waitFor(() => expect(fixture.creates).toHaveLength(1));
-  await screen.findByRole("heading", { name: "Setup home" });
+  await screen.findByRole("heading", { name: "Your family" });
   expect(fixture.creates[0]).toMatchObject({
     displayName: "Sam",
     kind: "dependant",
@@ -1108,7 +766,7 @@ it("requires a valid email when inviting and sends the invitation for an adult",
   );
   await user.click(screen.getByRole("button", { name: "Add and invite" }));
   await waitFor(() => expect(fixture.invitations).toHaveLength(1));
-  await screen.findByRole("heading", { name: "Setup home" });
+  await screen.findByRole("heading", { name: "Your family" });
   expect(fixture.invitations[0]).toMatchObject({ email: "jamie@example.test" });
 });
 
@@ -1164,7 +822,7 @@ it("clears invite consent and invalid email across Adult, Child, Adult changes",
   ).not.toBeChecked();
   await user.click(screen.getByRole("button", { name: "Add person" }));
   await waitFor(() => expect(fixture.creates).toHaveLength(1));
-  await screen.findByRole("heading", { name: "Setup home" });
+  await screen.findByRole("heading", { name: "Your family" });
   expect(fixture.creates[0]).toMatchObject({
     displayName: "Riley",
     kind: "adult",
@@ -1172,67 +830,37 @@ it("clears invite consent and invalid email across Adult, Child, Adult changes",
   expect(fixture.invitations).toHaveLength(0);
 });
 
-it("saves an opted-in invitation email before logging out", async () => {
+it("logs out without saving an unsubmitted person or invitation", async () => {
   const { fixture, user } = await setup();
   await user.type(screen.getByLabelText("Name"), "Jamie");
   await user.click(
     screen.getByRole("checkbox", { name: "Invite them to join" })
   );
-  fireEvent.change(screen.getByRole("textbox", { name: "Email" }), {
-    target: { value: "jamie@example.test" },
-  });
+  await user.type(
+    screen.getByRole("textbox", { name: "Email" }),
+    "jamie@example.test"
+  );
   await user.click(screen.getByRole("button", { name: "Log out" }));
   await screen.findByRole("heading", { name: "Log in" });
-  expect(fixture.saves.at(-1)).toMatchObject({
-    checkpoint: {
-      draft: {
-        email: "jamie@example.test",
-        invite: true,
-        name: "Jamie",
-        participation: "adult",
-      },
-    },
-    status: "paused",
-  });
-  expect(fixture.signOutCalls).toBe(1);
+  expect(fixture.creates).toHaveLength(0);
+  expect(fixture.invitations).toHaveLength(0);
+  expect(localStorage.length).toBe(0);
 });
 
-it("keeps the draft and session when saving before logout fails", async () => {
-  const fixture = makeTransport(initial, [], false, "owner", false, {
-    logoutSave: true,
+it("reads an incomplete family and finishes its creator link without another family creation", async () => {
+  const fixture = makeTransport([], false, "owner", false, {
+    creatorPending: true,
   });
-  const { user } = await setup(fixture);
-  await user.type(screen.getByLabelText("Name"), "Jamie");
-  await user.click(screen.getByRole("button", { name: "Log out" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "couldn’t save your place or log you out"
+  const { user } = await setup(fixture, "/setup/review");
+  expect(fixture.creatorResumes).toHaveLength(0);
+  expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+  await user.click(
+    screen.getByRole("button", { name: "Finish creating family" })
   );
-  expect(screen.getByLabelText("Name")).toHaveValue("Jamie");
-  expect(fixture.signOutCalls).toBe(0);
-  expect(fixture.saves).toHaveLength(0);
-});
-
-it("restores an opted-in invitation email after loading a saved setup afresh", async () => {
-  const paused = Schema.decodeUnknownSync(SetupProgress)({
-    checkpoint: {
-      draft: {
-        email: "taylor-review@example.test",
-        invite: true,
-        name: "Taylor",
-        participation: "adult",
-      },
-      organizationId: familyId,
-      stage: "person-draft",
-    },
-    status: "paused",
-  });
-  const { user } = await setup(makeTransport(paused), "/setup/saved");
-  await user.click(screen.getByRole("button", { name: "Resume setup" }));
-  expect(
-    await screen.findByRole("checkbox", { name: "Invite them to join" })
-  ).toBeChecked();
-  expect(screen.getByLabelText("Name")).toHaveValue("Taylor");
-  expect(screen.getByRole("textbox", { name: "Email" })).toHaveValue(
-    "taylor-review@example.test"
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled()
   );
+  expect(fixture.creatorResumes).toEqual([familyId]);
+  expect(fixture.creates).toHaveLength(0);
+  expect(localStorage.length).toBe(0);
 });

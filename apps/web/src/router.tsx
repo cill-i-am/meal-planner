@@ -2,7 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
 import { setupRouterSsrQueryIntegration } from "@tanstack/react-router-ssr-query";
 
-import { getAuthViewTransition } from "./features/auth/auth-view-transition.js";
+import { getAuthViewTransition } from "./features/auth/index.js";
 import { routeTree } from "./routeTree.gen.js";
 
 export const getRouter = () => {

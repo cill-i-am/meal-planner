@@ -1,6 +1,6 @@
 import { createFileRoute, useParams } from "@tanstack/react-router";
 
-import { InvitationPageForRoute } from "../features/invitations/invitation-page.js";
+import { InvitationPageForRoute } from "../features/invitations/index.js";
 
 const Screen = () => {
   const { invitationId } = useParams({ from: "/invitation/$invitationId" });

@@ -1,20 +1,9 @@
 import { CheckIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { Alert, AlertDescription } from "../../components/ui/alert.js";
+import { AccountLayout } from "../../components/account-layout.js";
 import { Badge } from "../../components/ui/badge.js";
-import { Button } from "../../components/ui/button.js";
-import {
-  Card,
-  CardBody,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardFooter,
-} from "../../components/ui/card.js";
 import { Separator } from "../../components/ui/separator.js";
-import { AuthLayout } from "../auth/auth-layout.js";
 
 export const SetupProgressBar = ({
   step,
@@ -70,66 +59,10 @@ export const SetupFrame = ({
   readonly action?: ReactNode;
   readonly step?: "family" | "people" | "ready";
 }) => (
-  <AuthLayout
+  <AccountLayout
     headerAction={action}
     progress={step ? <SetupProgressBar step={step} /> : undefined}
   >
     {children}
-  </AuthLayout>
-);
-
-export const SetupError = ({ children }: { readonly children: ReactNode }) => (
-  <Alert variant="destructive">
-    <AlertDescription>{children}</AlertDescription>
-  </Alert>
-);
-
-export const SetupStatus = ({
-  title,
-  description,
-  retry,
-  children,
-  footer,
-  action,
-}: {
-  readonly title: string;
-  readonly description?: string;
-  readonly retry?: () => Promise<unknown>;
-  readonly children?: ReactNode;
-  readonly footer?: ReactNode;
-  readonly action?: ReactNode;
-}) => (
-  <AuthLayout headerAction={action}>
-    <Card className="w-full max-w-140">
-      <CardBody>
-        <CardHeader>
-          <CardTitle>
-            <h1
-              id="auth-title"
-              tabIndex={-1}
-              className="text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight focus:outline-none"
-            >
-              {title}
-            </h1>
-          </CardTitle>
-          {description && <CardDescription>{description}</CardDescription>}
-        </CardHeader>
-        {(children || retry) && (
-          <CardContent>
-            {children}
-            {retry && (
-              <Button
-                onClick={() => {
-                  void retry();
-                }}
-              >
-                Try again
-              </Button>
-            )}
-          </CardContent>
-        )}
-      </CardBody>
-      {footer && <CardFooter>{footer}</CardFooter>}
-    </Card>
-  </AuthLayout>
+  </AccountLayout>
 );

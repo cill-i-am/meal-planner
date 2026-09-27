@@ -238,17 +238,26 @@ Structural tests reject both household product tables and tenant-filtered global
 persistence in production composition.
 
 `MealPlannerAuthDatabase` is a separate D1 database for Better Auth identity,
-cookie sessions, organizations, invitations, and membership. The runtime uses
+cookie sessions, organizations, invitations, membership, and the small family
+control-plane record (setup completion and request receipts). Household people,
+profiles, and product data remain in household SQLite. The runtime uses
 Better Auth `1.7.2` through the public Drizzle relations-v2 adapter. The
 actual auth configuration generates `auth.database-schema.ts`; Drizzle Kit owns
-the checked-in SQLite migration under `apps/api/auth-migrations`. Alchemy only
+the checked-in SQLite migrations under `apps/api/auth-migrations`. App-owned
+family tables are declared separately in `features/families/schema.ts`; both schema
+files feed the same Drizzle migration configuration. Alchemy only
 provisions and binds the database and applies that migration. It does not run
 Better Auth or Alchemy automatic auth migrations.
+
+Before applying the family-resource migration, finish any submitted person or
+invitation requests retained by old setup checkpoints. The migration checks this
+and refuses to discard unresolved requests. See the [implementation decisions](../plans/family-resource-onboarding.md).
 
 Household routes authenticate with the same-origin Better Auth cookie. Effect
 middleware resolves the session, requires an active organization, and verifies
 membership through Better Auth's public API before constructing the typed
-household principal. The active organization value alone is not authorization.
+household principal. People resource routes use the URL family ID and check its
+live membership independently of the session's active organization. The active organization value alone is not authorization.
 `MEAL_PLANNER_IMPORT_API_TOKEN`, `MEAL_PLANNER_IMPORT_ACTOR_ID`, and
 `MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID` remain the distinct designated system
 principal for the private provider accounting reconciliation route and

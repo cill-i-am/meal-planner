@@ -2,6 +2,11 @@
 
 Group code by feature in backend apps, frontend apps, shared packages, integrations, platform code and generated clients. Add layers inside a feature when they help. Do not split every feature across global layer folders by default.
 
+Use the [family and invitation reference architecture](../family-api.md#reference-architecture)
+as the working example for new slices. It demonstrates reusable capability
+packages, host-owned adapters, frontend public interfaces, and focused boundary
+checks. Iterate on the reference when concrete implementation evidence warrants it.
+
 ## Contents
 
 - Apply this file

@@ -6,8 +6,8 @@ import { Cause, Effect, Exit, Option, Predicate, Result, Schema } from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClientError from "effect/unstable/http/HttpClientError";
 
-import { displayedIdentityHeaders } from "../auth/displayed-identity.js";
-import type { DisplayedIdentity } from "../auth/displayed-identity.js";
+import { displayedIdentityHeaders } from "../auth/index.js";
+import type { DisplayedIdentity } from "../auth/index.js";
 import {
   decodeHouseholdPeopleOperationFailure,
   HouseholdPeopleOperationError,
@@ -217,54 +217,122 @@ export const makeBrowserHouseholdPeopleEffectOperations = (
   const run = makeClientRunner(scope);
   return {
     archive: (personId, payload) =>
-      run((client) => client.people.archive({ params: { personId }, payload })),
+      run((client) =>
+        client.people.archive({
+          params: { familyId: scope.organizationId, personId },
+          payload,
+        })
+      ),
     associateInvitation: (payload) =>
-      run((client) => client.people.associateInvitation({ payload })),
+      run((client) =>
+        client.people.associateInvitation({
+          params: { familyId: scope.organizationId },
+          payload,
+        })
+      ),
     bootstrapCreator: (payload) =>
-      run((client) => client.people.bootstrapCreator({ payload })),
+      run((client) =>
+        client.people.bootstrapCreator({
+          params: { familyId: scope.organizationId },
+          payload,
+        })
+      ),
     cancelDeparture: (operationId, payload) =>
       run((client) =>
         client.people.cancelDeparture({
-          params: { operationId },
+          params: { familyId: scope.organizationId, operationId },
           payload,
         })
       ),
     completeAdultLink: (payload) =>
-      run((client) => client.people.completeAdultLink({ payload })),
-    create: (payload) => run((client) => client.people.create({ payload })),
+      run((client) =>
+        client.people.completeAdultLink({
+          params: { familyId: scope.organizationId },
+          payload,
+        })
+      ),
+    create: (payload) =>
+      run((client) =>
+        client.people.create({
+          params: { familyId: scope.organizationId },
+          payload,
+        })
+      ),
     departAdult: (payload) =>
-      run((client) => client.people.departAdult({ payload })),
+      run((client) =>
+        client.people.departAdult({
+          params: { familyId: scope.organizationId },
+          payload,
+        })
+      ),
     getDeparture: (operationId) =>
-      run((client) => client.people.getDeparture({ params: { operationId } })),
+      run((client) =>
+        client.people.getDeparture({
+          params: { familyId: scope.organizationId, operationId },
+        })
+      ),
     getDepartureByMutation: (mutationId) =>
       run((client) =>
-        client.people.getDepartureByMutation({ params: { mutationId } })
+        client.people.getDepartureByMutation({
+          params: { familyId: scope.organizationId, mutationId },
+        })
       ),
     inviteAdult: (payload) =>
-      run((client) => client.people.inviteAdult({ payload })),
+      run((client) =>
+        client.people.inviteAdult({
+          params: { familyId: scope.organizationId },
+          payload,
+        })
+      ),
     list: (includeArchived) =>
       run((client) =>
         client.people.list({
+          params: { familyId: scope.organizationId },
           query: { includeArchived: includeArchived ? "true" : "false" },
         })
       ),
     remove: (personId, payload) =>
-      run((client) => client.people.remove({ params: { personId }, payload })),
+      run((client) =>
+        client.people.remove({
+          params: { familyId: scope.organizationId, personId },
+          payload,
+        })
+      ),
     rename: (personId, payload) =>
-      run((client) => client.people.rename({ params: { personId }, payload })),
+      run((client) =>
+        client.people.rename({
+          params: { familyId: scope.organizationId, personId },
+          payload,
+        })
+      ),
     repairAdultLink: (payload) =>
-      run((client) => client.people.repairAdultLink({ payload })),
+      run((client) =>
+        client.people.repairAdultLink({
+          params: { familyId: scope.organizationId },
+          payload,
+        })
+      ),
     restore: (personId, payload) =>
-      run((client) => client.people.restore({ params: { personId }, payload })),
+      run((client) =>
+        client.people.restore({
+          params: { familyId: scope.organizationId, personId },
+          payload,
+        })
+      ),
     retryDeparture: (operationId, payload) =>
       run((client) =>
         client.people.retryDeparture({
-          params: { operationId },
+          params: { familyId: scope.organizationId, operationId },
           payload,
         })
       ),
     returnAdult: (payload) =>
-      run((client) => client.people.returnAdult({ payload })),
+      run((client) =>
+        client.people.returnAdult({
+          params: { familyId: scope.organizationId },
+          payload,
+        })
+      ),
   };
 };
 

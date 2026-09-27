@@ -2,6 +2,7 @@ import { useIsMutating, useMutation } from "@tanstack/react-query";
 import { Link, Navigate, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
+import { AccountLayout } from "../../components/account-layout.js";
 import { useAppForm } from "../../components/forms/form.js";
 import { Alert, AlertDescription } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
@@ -22,7 +23,6 @@ import {
   signInValidator,
   signUpValidator,
 } from "./auth-input.js";
-import { AuthLayout } from "./auth-layout.js";
 import { useAuthRetry } from "./use-auth-retry.js";
 
 const useAuthentication = (redirect: string) => {
@@ -312,16 +312,16 @@ const AnonymousOnly = ({
 
 export const LoginPage = ({ redirect }: { readonly redirect: string }) => (
   <AnonymousOnly redirect={redirect}>
-    <AuthLayout>
+    <AccountLayout>
       <LoginForm redirect={redirect} />
-    </AuthLayout>
+    </AccountLayout>
   </AnonymousOnly>
 );
 
 export const SignupPage = ({ redirect }: { readonly redirect: string }) => (
   <AnonymousOnly redirect={redirect}>
-    <AuthLayout>
+    <AccountLayout>
       <SignupForm redirect={redirect} />
-    </AuthLayout>
+    </AccountLayout>
   </AnonymousOnly>
 );

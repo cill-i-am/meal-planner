@@ -5,8 +5,6 @@ import {
   EmailAddress,
   HouseholdOrganizationId,
   InvitationId,
-  setupProgressField,
-  setupProgressVersionField,
   UserId,
 } from "@meal-planner/household-api";
 import type { HouseholdPersonId } from "@meal-planner/household-api";
@@ -17,6 +15,7 @@ import type { OrganizationOptions } from "better-auth/plugins/organization";
 import { DrizzleD1Database } from "drizzle-orm/d1";
 import { Option, Schema } from "effect";
 
+import { applicationAccessPlugin } from "./application-access.js";
 import {
   atomicOrganization,
   atomicPasswordResetPlugin,
@@ -27,7 +26,6 @@ import type { InvitationMail, PasswordResetMail } from "./auth-mail.js";
 import { fenceAuthAdapter } from "./auth-output-fence.js";
 import type { AuthOutputFence } from "./auth-output-fence.js";
 import { invitationViewPlugin } from "./invitation-view.js";
-import { setupProgressPlugin } from "./setup-progress.js";
 
 const parseEmailAddress = Schema.decodeUnknownSync(EmailAddress);
 const parseOptionalEmailAddress = Schema.decodeUnknownOption(EmailAddress);
@@ -56,16 +54,10 @@ export type MealPlannerAuthConfiguration = Omit<
 > & {
   plugins: [
     ReturnType<typeof invitationViewPlugin>,
-    ReturnType<typeof setupProgressPlugin>,
+    ReturnType<typeof applicationAccessPlugin>,
     ReturnType<typeof atomicPasswordResetPlugin>,
     ReturnType<typeof atomicOrganization<{ schema: typeof invitationSchema }>>,
   ];
-  user: {
-    additionalFields: {
-      setupProgress: typeof setupProgressField;
-      setupProgressVersion: typeof setupProgressVersionField;
-    };
-  };
 };
 type AuthCore = Auth<MealPlannerAuthConfiguration>;
 export interface HouseholdInvitationRequest {
@@ -170,6 +162,8 @@ export const makeMealPlannerAuthConfiguration = ({
         guardedFence
       ),
     disabledPaths: [
+      "/organization/create",
+      "/organization/update",
       "/organization/leave",
       "/organization/remove-member",
       "/organization/cancel-invitation",
@@ -208,12 +202,7 @@ export const makeMealPlannerAuthConfiguration = ({
     },
     plugins: [
       invitationViewPlugin(),
-      setupProgressPlugin(() => {
-        if (!(database instanceof DrizzleD1Database)) {
-          throw new Error("Setup progress writes require a D1 database.");
-        }
-        return database;
-      }),
+      applicationAccessPlugin(),
       atomicPasswordResetPlugin(atomicStore),
       atomicOrganization(
         {
@@ -232,12 +221,6 @@ export const makeMealPlannerAuthConfiguration = ({
     rateLimit: { enabled: true, storage: "database" },
     secret,
     trustedOrigins: [baseURL],
-    user: {
-      additionalFields: {
-        setupProgress: setupProgressField,
-        setupProgressVersion: setupProgressVersionField,
-      },
-    },
   };
   return {
     configuration,

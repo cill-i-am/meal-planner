@@ -1,3 +1,5 @@
+import { FamilyServiceLive } from "@meal-planner/families/application";
+import { InvitationResponseServiceLive } from "@meal-planner/invitations/application";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { drizzle } from "drizzle-orm/d1";
@@ -13,9 +15,10 @@ import {
   makeAuthenticatedOrganizationResolver,
   makeAuthPrincipalResolver,
 } from "./features/auth/auth.principal.js";
-import { invitationReadHttpApiLayer } from "./features/auth/invitation-read.js";
-import { setupFamilyHttpApiLayer } from "./features/auth/setup-family.js";
-import { setupProgressHttpApiLayer } from "./features/auth/setup-progress-http.js";
+import {
+  FamilyStoreLive,
+  familyHttpApiLayer,
+} from "./features/families/index.js";
 import { HealthRoutes } from "./features/health/health.routes.js";
 import { HouseholdDomainWorker } from "./features/households/household-domain-worker.js";
 import {
@@ -27,6 +30,10 @@ import {
   makeHouseholdPeopleRequestLayer,
   makeHouseholdRequestLayer,
 } from "./features/households/household-request-composition.js";
+import {
+  InvitationMembershipLive,
+  HouseholdCreatorLive,
+} from "./features/households/membership.js";
 import { makeHouseholdPeopleControlPlane } from "./features/households/people/household-people.control-plane.js";
 import { makeMemberDepartureWorkflowStarter } from "./features/households/people/member-departure.js";
 import MemberDepartureWorkflow from "./features/households/people/member-departure.workflow.js";
@@ -54,6 +61,10 @@ import { ImportSystemAuthorizationConfig } from "./features/imports/import.auth.
 import ImportAcquisitionWorkflow, {
   makeImportWorkflowStarter,
 } from "./features/imports/import.workflow.js";
+import {
+  InvitationAuthorityLive,
+  invitationReadHttpApiLayer,
+} from "./features/invitations/index.js";
 import {
   PrivateOutputApiBinding,
   PrivateOutputMutationsBinding,
@@ -243,28 +254,45 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
             resolver: authenticatedOrganizationResolver,
           }
         );
-        const householdPeopleRequestLayer = makeHouseholdPeopleRequestLayer({
-          gateway: makeHouseholdPeopleGateway({
-            controlPlane: makeHouseholdPeopleControlPlane({
-              auth,
-              database: authDatabase,
-            }),
-            departureWorkflow: makeMemberDepartureWorkflowStarter(
-              memberDepartureWorkflow
-            ),
-            domain: householdDomain,
+        const peopleGateway = makeHouseholdPeopleGateway({
+          controlPlane: makeHouseholdPeopleControlPlane({
+            auth,
+            database: authDatabase,
           }),
+          departureWorkflow: makeMemberDepartureWorkflowStarter(
+            memberDepartureWorkflow
+          ),
+          domain: householdDomain,
+        });
+        const householdPeopleRequestLayer = makeHouseholdPeopleRequestLayer({
+          gateway: peopleGateway,
           resolver: authenticatedOrganizationResolver,
         });
+        const invitationServices = InvitationResponseServiceLive.pipe(
+          Layer.provide(InvitationAuthorityLive(auth, webRequest.headers)),
+          Layer.provide(
+            InvitationMembershipLive(
+              peopleGateway,
+              authenticatedOrganizationResolver,
+              webRequest.headers
+            )
+          )
+        );
+        const familyServices = FamilyServiceLive.pipe(
+          Layer.provide(HouseholdCreatorLive(householdDomain)),
+          Layer.provide(FamilyStoreLive(authDatabase))
+        );
         const routeHandler = yield* HttpRouter.toHttpEffect(
           Layer.mergeAll(
             HttpRouter.addAll(MealPlannerOperationalRoutes),
-            setupFamilyHttpApiLayer({
-              auth: auth.api,
-              domain: householdDomain,
-            }),
-            invitationReadHttpApiLayer(auth),
-            setupProgressHttpApiLayer(auth),
+            familyHttpApiLayer(auth).pipe(
+              Layer.provide(familyServices),
+              HttpRouter.provideRequest(familyServices)
+            ),
+            invitationReadHttpApiLayer(auth).pipe(
+              Layer.provide(invitationServices),
+              HttpRouter.provideRequest(invitationServices)
+            ),
             makeRecipeImportHttpApiLayer(),
             householdRequestLayer,
             householdMealPlanRequestLayer,
@@ -277,8 +305,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         );
         const response = yield* withCurrentRequestCancellation(routeHandler);
         const path = new URL(webRequest.url).pathname;
-        return path === "/v1/setup/progress" ||
-          path.startsWith("/v1/setup/invitation/")
+        return path.startsWith("/v1/families") ||
+          path.startsWith("/v1/invitations/")
           ? HttpServerResponse.setHeader(response, "cache-control", "no-store")
           : response;
       }),

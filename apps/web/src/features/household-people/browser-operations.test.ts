@@ -234,15 +234,21 @@ describe("browser household people operations", () => {
         return [method, new URL(url, globalThis.location.origin).pathname];
       })
     ).toEqual([
-      ["POST", "/v1/household/people/invitations"],
-      ["POST", "/v1/household/people/invitations/associate"],
+      ["POST", "/v1/families/organization-a/people/invitations"],
+      ["POST", "/v1/families/organization-a/people/invitations/associate"],
       [
         "GET",
-        `/v1/household/people/departures/by-mutation/${departureMutationId}`,
+        `/v1/families/organization-a/people/departures/by-mutation/${departureMutationId}`,
       ],
-      ["GET", `/v1/household/people/departures/${operationId}`],
-      ["POST", `/v1/household/people/departures/${operationId}/cancel`],
-      ["POST", `/v1/household/people/departures/${operationId}/retry`],
+      ["GET", `/v1/families/organization-a/people/departures/${operationId}`],
+      [
+        "POST",
+        `/v1/families/organization-a/people/departures/${operationId}/cancel`,
+      ],
+      [
+        "POST",
+        `/v1/families/organization-a/people/departures/${operationId}/retry`,
+      ],
     ]);
     const [invitationCall] = fetchMock.mock.calls;
     if (invitationCall === undefined) {

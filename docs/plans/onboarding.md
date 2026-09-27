@@ -1,5 +1,12 @@
 # Onboarding implementation gaps
 
+The [family resource refactor](family-resource-onboarding.md) replaces the account
+checkpoint, saved-draft, and saved-screen design described in this earlier plan.
+Use its decision log and [family API reference](../reference/family-api.md) for
+the current implementation. The Paper inventory and remaining product gaps here
+still apply; historical checkpoint test counts do not validate the replacement.
+
+
 Status: active
 Owner: onboarding implementation in the current stacked branches
 Delivery: auth, household, people, invitations and recovery screens are being validated together; email delivery remains mocked

@@ -8,7 +8,7 @@ import type {
 } from "@meal-planner/household-api";
 import { Option, Schema } from "effect";
 
-import type { DisplayedIdentity } from "../auth/displayed-identity.js";
+import type { DisplayedIdentity } from "../auth/index.js";
 
 const RetainedHouseholdPeopleIntents = Schema.Struct({
   departure: Schema.NullOr(DepartHouseholdAdultPayload),

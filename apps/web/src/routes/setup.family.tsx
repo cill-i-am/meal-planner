@@ -1,17 +1,8 @@
-import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 
-import { FamilyNamePage } from "../features/onboarding/family-name.js";
-import { useSetup } from "../features/onboarding/setup-context.js";
-import { setupDestination } from "../features/onboarding/setup-state.js";
+import { FamilyNamePage } from "../features/onboarding/index.js";
 
-const Screen = () => {
-  const destination = setupDestination(useSetup().progress);
-  return destination === "/setup/family" ? (
-    <FamilyNamePage />
-  ) : (
-    <Navigate to={destination} replace />
-  );
-};
+const Screen = () => <FamilyNamePage />;
 export const Route = createFileRoute("/setup/family")({
   component: Screen,
   head: () => ({ meta: [{ title: "Family setup · Meal Planner" }] }),

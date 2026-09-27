@@ -1,4 +1,3 @@
-import type { SetupProgress } from "@meal-planner/household-api";
 import { Navigate, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
@@ -27,7 +26,6 @@ export type AuthBoundaryState =
       readonly user: {
         readonly email: string;
         readonly name: string;
-        readonly setupProgress?: SetupProgress;
       };
     };
 
@@ -80,11 +78,7 @@ export const AuthBoundary = ({
   if (state.kind === "anonymous") {
     return <LoginRedirect />;
   }
-  if (
-    state.activeHousehold === null ||
-    (state.user.setupProgress &&
-      state.user.setupProgress.checkpoint.stage !== "complete")
-  ) {
+  if (state.activeHousehold === null) {
     return <Navigate to="/setup" replace />;
   }
   return children(state.activeHousehold, actions.signOut);

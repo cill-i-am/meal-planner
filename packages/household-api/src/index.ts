@@ -26,16 +26,6 @@ import {
   MealPlanDraftId,
   SwapMealPlanPayload,
 } from "./meal-plan.js";
-import {
-  CreatedSetupFamily,
-  CreateSetupFamilyRequest,
-  SetupFamilyUnauthorized,
-  SetupFamilyForbidden,
-  SetupFamilyInvalidRequest,
-  SetupFamilyConflict,
-  SetupFamilyRateLimited,
-  SetupFamilyUnavailable,
-} from "./onboarding.js";
 import type { HouseholdPeopleCurrentPrincipal } from "./people-http.js";
 import {
   HouseholdPeopleBootstrapConflictProblem,
@@ -85,7 +75,6 @@ import {
   ProfileAuditPage,
   ProfileVersionPage,
 } from "./profiles.js";
-import { SetupFamilySchemaErrors } from "./setup-family-schema-errors.js";
 
 export {
   FoodPreference,
@@ -338,10 +327,11 @@ const PeopleGroup = HttpApiGroup.make("people")
   .add(
     HttpApiEndpoint.get(
       "getProfileVersion",
-      "/v1/household/people/:personId/profile/versions/:version",
+      "/v1/families/:familyId/people/:personId/profile/versions/:version",
       {
         error: HouseholdProfileErrors,
         params: {
+          familyId: HouseholdOrganizationId,
           personId: HouseholdPersonId,
           version: Schema.NumberFromString.pipe(
             Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
@@ -352,46 +342,58 @@ const PeopleGroup = HttpApiGroup.make("people")
     ),
     HttpApiEndpoint.get(
       "listProfileAudit",
-      "/v1/household/people/:personId/profile/audit",
+      "/v1/families/:familyId/people/:personId/profile/audit",
       {
         error: HouseholdProfileErrors,
-        params: { personId: HouseholdPersonId },
+        params: {
+          familyId: HouseholdOrganizationId,
+          personId: HouseholdPersonId,
+        },
         query: ListProfileVersionsQuery,
         success: ProfileAuditPage,
       }
     ),
     HttpApiEndpoint.get(
       "getProfile",
-      "/v1/household/people/:personId/profile",
+      "/v1/families/:familyId/people/:personId/profile",
       {
         error: HouseholdProfileErrors,
-        params: { personId: HouseholdPersonId },
+        params: {
+          familyId: HouseholdOrganizationId,
+          personId: HouseholdPersonId,
+        },
         success: PersonProfile,
       }
     ),
     HttpApiEndpoint.get(
       "listProfileVersions",
-      "/v1/household/people/:personId/profile/versions",
+      "/v1/families/:familyId/people/:personId/profile/versions",
       {
         error: HouseholdProfileErrors,
-        params: { personId: HouseholdPersonId },
+        params: {
+          familyId: HouseholdOrganizationId,
+          personId: HouseholdPersonId,
+        },
         query: ListProfileVersionsQuery,
         success: ProfileVersionPage,
       }
     ),
     HttpApiEndpoint.post(
       "mutateProfile",
-      "/v1/household/people/:personId/profile",
+      "/v1/families/:familyId/people/:personId/profile",
       {
         error: HouseholdProfileErrors,
-        params: { personId: HouseholdPersonId },
+        params: {
+          familyId: HouseholdOrganizationId,
+          personId: HouseholdPersonId,
+        },
         payload: MutatePersonProfilePayload,
         success: PersonProfile,
       }
     ),
     HttpApiEndpoint.post(
       "bootstrapCreator",
-      "/v1/household/people/bootstrap-creator",
+      "/v1/families/:familyId/people/bootstrap-creator",
       {
         error: [
           HouseholdPeopleBootstrapConflictProblem,
@@ -399,32 +401,38 @@ const PeopleGroup = HttpApiGroup.make("people")
           HouseholdPeopleMutationCollisionProblem,
           HouseholdPeopleUnavailableProblem,
         ],
+        params: { familyId: HouseholdOrganizationId },
         payload: BootstrapHouseholdCreatorPayload,
         success: HouseholdPerson,
       }
     ),
-    HttpApiEndpoint.get("list", "/v1/household/people", {
+    HttpApiEndpoint.get("list", "/v1/families/:familyId/people", {
       error: HouseholdPeopleUnavailableProblem,
+      params: { familyId: HouseholdOrganizationId },
       query: ListHouseholdPeopleUrlParams,
       success: HouseholdPeopleRoster,
     }),
-    HttpApiEndpoint.get("get", "/v1/household/people/:personId", {
+    HttpApiEndpoint.get("get", "/v1/families/:familyId/people/:personId", {
       error: [
         HouseholdPeopleNotFoundProblem,
         HouseholdPeopleUnavailableProblem,
       ],
-      params: { personId: HouseholdPersonId },
+      params: {
+        familyId: HouseholdOrganizationId,
+        personId: HouseholdPersonId,
+      },
       success: HouseholdPerson,
     }),
-    HttpApiEndpoint.post("create", "/v1/household/people", {
+    HttpApiEndpoint.post("create", "/v1/families/:familyId/people", {
       error: [
         HouseholdPeopleMutationCollisionProblem,
         HouseholdPeopleUnavailableProblem,
       ],
+      params: { familyId: HouseholdOrganizationId },
       payload: CreateHouseholdPersonPayload,
       success: HouseholdPerson.pipe(HttpApiSchema.status(201)),
     }),
-    HttpApiEndpoint.post("rename", "/v1/household/people/:personId/rename", {
+    HttpApiEndpoint.patch("rename", "/v1/families/:familyId/people/:personId", {
       error: [
         HouseholdPeopleNotFoundProblem,
         HouseholdPeopleLifecycleConflictProblem,
@@ -432,68 +440,97 @@ const PeopleGroup = HttpApiGroup.make("people")
         HouseholdPeopleStaleVersionProblem,
         HouseholdPeopleUnavailableProblem,
       ],
-      params: { personId: HouseholdPersonId },
+      params: {
+        familyId: HouseholdOrganizationId,
+        personId: HouseholdPersonId,
+      },
       payload: RenameHouseholdPersonPayload,
       success: HouseholdPerson,
     }),
-    HttpApiEndpoint.post("remove", "/v1/household/people/:personId/remove", {
-      error: [
-        HouseholdPeopleNotFoundProblem,
-        HouseholdPeopleLifecycleConflictProblem,
-        HouseholdPeopleMutationCollisionProblem,
-        HouseholdPeopleStaleVersionProblem,
-        HouseholdPeopleUnavailableProblem,
-        HouseholdPeopleOrganizerRequiredProblem,
-        HouseholdPeopleAssociationConflictProblem,
-        HouseholdPeopleAssociationStaleProblem,
-        HouseholdPeopleControlPlaneNotFoundProblem,
-        HouseholdPeopleControlPlaneUnavailableProblem,
-        HouseholdPeopleDepartureConflictProblem,
-      ],
-      params: { personId: HouseholdPersonId },
-      payload: TransitionHouseholdPersonPayload,
-      success: HouseholdPerson,
-    }),
-    HttpApiEndpoint.post("archive", "/v1/household/people/:personId/archive", {
-      error: [
-        HouseholdPeopleNotFoundProblem,
-        HouseholdPeopleLifecycleConflictProblem,
-        HouseholdPeopleMutationCollisionProblem,
-        HouseholdPeopleStaleVersionProblem,
-        HouseholdPeopleUnavailableProblem,
-      ],
-      params: { personId: HouseholdPersonId },
-      payload: TransitionHouseholdPersonPayload,
-      success: HouseholdPerson,
-    }),
-    HttpApiEndpoint.post("restore", "/v1/household/people/:personId/restore", {
-      error: [
-        HouseholdPeopleNotFoundProblem,
-        HouseholdPeopleLifecycleConflictProblem,
-        HouseholdPeopleMutationCollisionProblem,
-        HouseholdPeopleStaleVersionProblem,
-        HouseholdPeopleUnavailableProblem,
-      ],
-      params: { personId: HouseholdPersonId },
-      payload: TransitionHouseholdPersonPayload,
-      success: HouseholdPerson,
-    }),
-    HttpApiEndpoint.post("inviteAdult", "/v1/household/people/invitations", {
-      error: [
-        HouseholdPeopleAssociationConflictProblem,
-        HouseholdPeopleControlPlaneUnavailableProblem,
-        HouseholdInvitationRejectedProblem,
-        HouseholdPeopleMutationCollisionProblem,
-        HouseholdPeopleNotFoundProblem,
-        HouseholdPeopleOrganizerRequiredProblem,
-        HouseholdPeopleUnavailableProblem,
-      ],
-      payload: InviteHouseholdAdultPayload,
-      success: HouseholdAdultInvitationResult.pipe(HttpApiSchema.status(201)),
-    }),
+    HttpApiEndpoint.delete(
+      "remove",
+      "/v1/families/:familyId/people/:personId",
+      {
+        error: [
+          HouseholdPeopleNotFoundProblem,
+          HouseholdPeopleLifecycleConflictProblem,
+          HouseholdPeopleMutationCollisionProblem,
+          HouseholdPeopleStaleVersionProblem,
+          HouseholdPeopleUnavailableProblem,
+          HouseholdPeopleOrganizerRequiredProblem,
+          HouseholdPeopleAssociationConflictProblem,
+          HouseholdPeopleAssociationStaleProblem,
+          HouseholdPeopleControlPlaneNotFoundProblem,
+          HouseholdPeopleControlPlaneUnavailableProblem,
+          HouseholdPeopleDepartureConflictProblem,
+        ],
+        params: {
+          familyId: HouseholdOrganizationId,
+          personId: HouseholdPersonId,
+        },
+        payload: TransitionHouseholdPersonPayload,
+        success: HouseholdPerson,
+      }
+    ),
+    HttpApiEndpoint.post(
+      "archive",
+      "/v1/families/:familyId/people/:personId/archive",
+      {
+        error: [
+          HouseholdPeopleNotFoundProblem,
+          HouseholdPeopleLifecycleConflictProblem,
+          HouseholdPeopleMutationCollisionProblem,
+          HouseholdPeopleStaleVersionProblem,
+          HouseholdPeopleUnavailableProblem,
+        ],
+        params: {
+          familyId: HouseholdOrganizationId,
+          personId: HouseholdPersonId,
+        },
+        payload: TransitionHouseholdPersonPayload,
+        success: HouseholdPerson,
+      }
+    ),
+    HttpApiEndpoint.post(
+      "restore",
+      "/v1/families/:familyId/people/:personId/restore",
+      {
+        error: [
+          HouseholdPeopleNotFoundProblem,
+          HouseholdPeopleLifecycleConflictProblem,
+          HouseholdPeopleMutationCollisionProblem,
+          HouseholdPeopleStaleVersionProblem,
+          HouseholdPeopleUnavailableProblem,
+        ],
+        params: {
+          familyId: HouseholdOrganizationId,
+          personId: HouseholdPersonId,
+        },
+        payload: TransitionHouseholdPersonPayload,
+        success: HouseholdPerson,
+      }
+    ),
+    HttpApiEndpoint.post(
+      "inviteAdult",
+      "/v1/families/:familyId/people/invitations",
+      {
+        error: [
+          HouseholdPeopleAssociationConflictProblem,
+          HouseholdPeopleControlPlaneUnavailableProblem,
+          HouseholdInvitationRejectedProblem,
+          HouseholdPeopleMutationCollisionProblem,
+          HouseholdPeopleNotFoundProblem,
+          HouseholdPeopleOrganizerRequiredProblem,
+          HouseholdPeopleUnavailableProblem,
+        ],
+        params: { familyId: HouseholdOrganizationId },
+        payload: InviteHouseholdAdultPayload,
+        success: HouseholdAdultInvitationResult.pipe(HttpApiSchema.status(201)),
+      }
+    ),
     HttpApiEndpoint.post(
       "associateInvitation",
-      "/v1/household/people/invitations/associate",
+      "/v1/families/:familyId/people/invitations/associate",
       {
         error: [
           HouseholdPeopleAssociationConflictProblem,
@@ -503,13 +540,14 @@ const PeopleGroup = HttpApiGroup.make("people")
           HouseholdPeopleOrganizerRequiredProblem,
           HouseholdPeopleUnavailableProblem,
         ],
+        params: { familyId: HouseholdOrganizationId },
         payload: AssociateHouseholdAdultInvitationPayload,
         success: HouseholdPerson,
       }
     ),
     HttpApiEndpoint.post(
       "completeAdultLink",
-      "/v1/household/people/links/complete",
+      "/v1/families/:familyId/people/links/complete",
       {
         error: [
           HouseholdPeopleAssociationConflictProblem,
@@ -517,13 +555,14 @@ const PeopleGroup = HttpApiGroup.make("people")
           HouseholdPeopleMutationCollisionProblem,
           HouseholdPeopleUnavailableProblem,
         ],
+        params: { familyId: HouseholdOrganizationId },
         payload: CompleteHouseholdAdultLinkPayload,
         success: HouseholdPerson,
       }
     ),
     HttpApiEndpoint.post(
       "repairAdultLink",
-      "/v1/household/people/links/repair",
+      "/v1/families/:familyId/people/links/repair",
       {
         error: [
           HouseholdPeopleAssociationConflictProblem,
@@ -534,55 +573,67 @@ const PeopleGroup = HttpApiGroup.make("people")
           HouseholdPeopleStaleVersionProblem,
           HouseholdPeopleUnavailableProblem,
         ],
+        params: { familyId: HouseholdOrganizationId },
         payload: RepairHouseholdAdultLinkPayload,
         success: HouseholdPerson,
       }
     ),
-    HttpApiEndpoint.post("departAdult", "/v1/household/people/departures", {
-      error: [
-        HouseholdPeopleAssociationStaleProblem,
-        HouseholdPeopleControlPlaneNotFoundProblem,
-        HouseholdPeopleControlPlaneUnavailableProblem,
-        HouseholdInvitationRejectedProblem,
-        HouseholdPeopleDepartureConflictProblem,
-        HouseholdPeopleMutationCollisionProblem,
-        HouseholdPeopleNotFoundProblem,
-        HouseholdPeopleOrganizerRequiredProblem,
-        HouseholdPeopleStaleVersionProblem,
-        HouseholdPeopleUnavailableProblem,
-      ],
-      payload: DepartHouseholdAdultPayload,
-      success: HouseholdMemberDepartureOperation.pipe(
-        HttpApiSchema.status(202)
-      ),
-    }),
+    HttpApiEndpoint.post(
+      "departAdult",
+      "/v1/families/:familyId/people/departures",
+      {
+        error: [
+          HouseholdPeopleAssociationStaleProblem,
+          HouseholdPeopleControlPlaneNotFoundProblem,
+          HouseholdPeopleControlPlaneUnavailableProblem,
+          HouseholdInvitationRejectedProblem,
+          HouseholdPeopleDepartureConflictProblem,
+          HouseholdPeopleMutationCollisionProblem,
+          HouseholdPeopleNotFoundProblem,
+          HouseholdPeopleOrganizerRequiredProblem,
+          HouseholdPeopleStaleVersionProblem,
+          HouseholdPeopleUnavailableProblem,
+        ],
+        params: { familyId: HouseholdOrganizationId },
+        payload: DepartHouseholdAdultPayload,
+        success: HouseholdMemberDepartureOperation.pipe(
+          HttpApiSchema.status(202)
+        ),
+      }
+    ),
     HttpApiEndpoint.get(
       "getDepartureByMutation",
-      "/v1/household/people/departures/by-mutation/:mutationId",
+      "/v1/families/:familyId/people/departures/by-mutation/:mutationId",
       {
         error: [
           HouseholdPeopleNotFoundProblem,
           HouseholdPeopleUnavailableProblem,
         ],
-        params: { mutationId: HouseholdPersonMutationId },
+        params: {
+          familyId: HouseholdOrganizationId,
+          mutationId: HouseholdPersonMutationId,
+        },
         success: HouseholdMemberDepartureOperation,
       }
     ),
     HttpApiEndpoint.get(
       "getDeparture",
-      "/v1/household/people/departures/:operationId",
+      "/v1/families/:familyId/people/departures/:operationId",
       {
         error: [
           HouseholdPeopleNotFoundProblem,
           HouseholdPeopleUnavailableProblem,
         ],
-        params: { operationId: HouseholdMemberDepartureOperationId },
+        params: {
+          familyId: HouseholdOrganizationId,
+          operationId: HouseholdMemberDepartureOperationId,
+        },
         success: HouseholdMemberDepartureOperation,
       }
     ),
     HttpApiEndpoint.post(
       "cancelDeparture",
-      "/v1/household/people/departures/:operationId/cancel",
+      "/v1/families/:familyId/people/departures/:operationId/cancel",
       {
         error: [
           HouseholdPeopleDepartureConflictProblem,
@@ -590,14 +641,17 @@ const PeopleGroup = HttpApiGroup.make("people")
           HouseholdPeopleNotFoundProblem,
           HouseholdPeopleUnavailableProblem,
         ],
-        params: { operationId: HouseholdMemberDepartureOperationId },
+        params: {
+          familyId: HouseholdOrganizationId,
+          operationId: HouseholdMemberDepartureOperationId,
+        },
         payload: CancelHouseholdAdultDeparturePayload,
         success: HouseholdMemberDepartureOperation,
       }
     ),
     HttpApiEndpoint.post(
       "retryDeparture",
-      "/v1/household/people/departures/:operationId/retry",
+      "/v1/families/:familyId/people/departures/:operationId/retry",
       {
         error: [
           HouseholdPeopleAssociationStaleProblem,
@@ -610,25 +664,33 @@ const PeopleGroup = HttpApiGroup.make("people")
           HouseholdPeopleOrganizerRequiredProblem,
           HouseholdPeopleUnavailableProblem,
         ],
-        params: { operationId: HouseholdMemberDepartureOperationId },
+        params: {
+          familyId: HouseholdOrganizationId,
+          operationId: HouseholdMemberDepartureOperationId,
+        },
         payload: RetryHouseholdAdultDeparturePayload,
         success: HouseholdMemberDepartureOperation.pipe(
           HttpApiSchema.status(202)
         ),
       }
     ),
-    HttpApiEndpoint.post("returnAdult", "/v1/household/people/return", {
-      error: [
-        HouseholdPeopleAssociationConflictProblem,
-        HouseholdPeopleControlPlaneNotFoundProblem,
-        HouseholdPeopleMutationCollisionProblem,
-        HouseholdPeopleNotFoundProblem,
-        HouseholdPeopleStaleVersionProblem,
-        HouseholdPeopleUnavailableProblem,
-      ],
-      payload: ReturnHouseholdAdultPayload,
-      success: HouseholdPerson,
-    })
+    HttpApiEndpoint.post(
+      "returnAdult",
+      "/v1/families/:familyId/people/return",
+      {
+        error: [
+          HouseholdPeopleAssociationConflictProblem,
+          HouseholdPeopleControlPlaneNotFoundProblem,
+          HouseholdPeopleMutationCollisionProblem,
+          HouseholdPeopleNotFoundProblem,
+          HouseholdPeopleStaleVersionProblem,
+          HouseholdPeopleUnavailableProblem,
+        ],
+        params: { familyId: HouseholdOrganizationId },
+        payload: ReturnHouseholdAdultPayload,
+        success: HouseholdPerson,
+      }
+    )
   )
   .middleware(HouseholdSessionAuth);
 
@@ -686,95 +748,5 @@ export const makeHouseholdPeopleApiClientLayer = (options: {
         ),
     })
   );
-export {
-  CreatedSetupFamily,
-  SetupFamilyUnauthorized,
-  SetupFamilyForbidden,
-  SetupFamilyInvalidRequest,
-  SetupFamilyConflict,
-  SetupFamilyRateLimited,
-  SetupFamilyUnavailable,
-  CreateSetupFamilyRequest,
-  FamilyName,
-  initialSetupProgress,
-  PersonCreation,
-  PersonDraft,
-  SetupCheckpoint,
-  SetupProgress,
-  canReplaceSetupProgress,
-  sameSetupProgress,
-  SetupProgressVersion,
-  SetupRosterCommand,
-  SetupRosterReturn,
-  setupProgressField,
-  setupPendingCommandId,
-  setupProgressVersionField,
-} from "./onboarding.js";
-
-const SetupFamilyGroup = HttpApiGroup.make("setupFamily").add(
-  HttpApiEndpoint.post("create", "/v1/setup/family", {
-    error: [
-      SetupFamilyUnauthorized,
-      SetupFamilyForbidden,
-      SetupFamilyInvalidRequest,
-      SetupFamilyConflict,
-      SetupFamilyRateLimited,
-      SetupFamilyUnavailable,
-    ],
-    payload: CreateSetupFamilyRequest,
-    success: CreatedSetupFamily.pipe(HttpApiSchema.status(201)),
-  })
-);
-export const SetupFamilyApi = HttpApi.make("setupFamilyApi")
-  .add(SetupFamilyGroup)
-  .middleware(SetupFamilySchemaErrors);
-export { SetupFamilySchemaErrors } from "./setup-family-schema-errors.js";
-export type SetupFamilyApiClient = HttpApiClient.ForApi<typeof SetupFamilyApi>;
-export const SetupFamilyApiClient = Context.Service<SetupFamilyApiClient>(
-  "meal-planner/SetupFamilyApiClient"
-);
-export const makeSetupFamilyApiClientLayer = (options: {
-  readonly baseUrl: string | URL;
-  readonly headers: Readonly<Record<string, string>>;
-}) =>
-  Layer.effect(
-    SetupFamilyApiClient,
-    HttpApiClient.make(SetupFamilyApi, {
-      baseUrl: options.baseUrl,
-      transformClient: (client) =>
-        HttpClient.mapRequest(
-          client,
-          HttpClientRequest.setHeaders(options.headers)
-        ),
-    })
-  );
 
 export { InvitationView } from "./invitation-view.js";
-export {
-  InvitationReadApi,
-  InvitationReadApiClient,
-  InvitationReadForbidden,
-  InvitationReadInvalidRequest,
-  InvitationReadNotFound,
-  InvitationReadRateLimited,
-  InvitationReadSchemaErrors,
-  InvitationReadUnauthorized,
-  InvitationReadUnavailable,
-  makeInvitationReadApiClientLayer,
-} from "./invitation-read-api.js";
-export type { InvitationReadApiClient as InvitationReadApiClientType } from "./invitation-read-api.js";
-export {
-  makeSetupProgressApiClientLayer,
-  SaveSetupProgressRequest,
-  SavedSetupProgress,
-  SetupProgressApi,
-  SetupProgressApiClient,
-  SetupProgressConflict,
-  SetupProgressForbidden,
-  SetupProgressInvalidRequest,
-  SetupProgressRateLimited,
-  SetupProgressSchemaErrors,
-  SetupProgressUnauthorized,
-  SetupProgressUnavailable,
-} from "./setup-progress-api.js";
-export type { SetupProgressApiClient as SetupProgressApiClientType } from "./setup-progress-api.js";

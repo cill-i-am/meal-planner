@@ -1,9 +1,12 @@
 import { Data, Effect, Layer } from "effect";
 import { createEffectQuery } from "effect-query";
 
-import type { makeAuthClient } from "../auth/auth-client.js";
-import { requireAuthSuccess } from "../auth/auth-client.js";
-import { AuthRequestError, parseRetryAfter } from "../auth/auth-errors.js";
+import type { makeAuthClient } from "../auth/index.js";
+import {
+  requireAuthSuccess,
+  AuthRequestError,
+  parseRetryAfter,
+} from "../auth/index.js";
 
 const effectQuery = createEffectQuery(Layer.empty);
 

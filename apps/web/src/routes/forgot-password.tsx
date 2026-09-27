@@ -1,6 +1,6 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 
-import { decodeAuthSearch } from "../features/auth/auth-navigation.js";
+import { decodeAuthSearch } from "../features/auth/index.js";
 import { RecoveryRequestPage } from "../features/recovery/recovery-screens.js";
 
 const RecoveryRoute = () => (

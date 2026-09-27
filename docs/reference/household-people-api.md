@@ -1,34 +1,40 @@
 # Household people public API
 
 The people API uses a same-origin session to identify the caller. It resolves
-Better Auth's session, active organization, and membership before routing to
-household storage. It does not trust request fields to establish the caller's
-organization, actor, role, email, membership, or bearer credentials. Some commands
+Better Auth's session and live membership in the URL's `familyId` before routing
+to household storage. The URL identifies the target; it does not grant access.
+Selecting a different active organization in another tab does not retarget a
+request. Actor, role, membership, and credentials come from authentication. Some commands
 include target identities or an invitation email, as listed below.
 
 Creating the first linked adult additionally requires the exact Better Auth
 `owner` role. Other members receive `creator_required` before the private Worker
 or household object is called.
 
+See [family resources](family-api.md) for creation, setup completion, and the
+server-owned invitation response.
+
 ## Operations
 
 | Method and path | Request | Success |
 | --- | --- | --- |
-| `POST /v1/household/people/bootstrap-creator` | `displayName`, client-stable `mutationId` | Linked adult person |
-| `GET /v1/household/people?includeArchived=true\|false` | Optional query flag | Roster, creator-slot state, and current linked person ID |
-| `GET /v1/household/people/:personId` | Opaque household-local person ID | One person projection |
-| `POST /v1/household/people` | `displayName`, `adult\|dependant`, client-stable `mutationId` | New unlinked person, status 201 |
-| `POST /v1/household/people/:personId/archive` | `expectedVersion`, client-stable `mutationId` | Same archived person at next version |
-| `POST /v1/household/people/:personId/restore` | `expectedVersion`, client-stable `mutationId` | Same active person at next version |
-| `POST /v1/household/people/invitations` | Selected existing `personId`, invitation email, client-stable `mutationId` | Better Auth invitation plus privacy-safe association result |
-| `POST /v1/household/people/invitations/associate` | Existing invitation identity, selected `personId`, client-stable `mutationId` | Associated adult projection |
-| `POST /v1/household/people/links/complete` | Accepted invitation identity, client-stable `mutationId` | Existing adult linked to the admitted member |
-| `POST /v1/household/people/links/repair` | Selected adult, exact version, member identity, reason, client-stable `mutationId` | Explicitly repaired adult link |
-| `POST /v1/household/people/departures` | Exact person/link versions, member identity, reason, client-stable `mutationId` | Durable departure operation, status 202 |
-| `GET /v1/household/people/departures/:operationId` | Opaque operation ID | Privacy-safe durable operation state |
-| `POST /v1/household/people/departures/:operationId/cancel` | Exact operation version, client-stable `mutationId` | Cancelled prepared operation |
-| `POST /v1/household/people/departures/:operationId/retry` | Exact operation version, member identity, reason, client-stable `mutationId` | Reconciled departure operation, status 202 |
-| `POST /v1/household/people/return` | Accepted invitation identity, archived person and exact version, client-stable `mutationId` | Same restored and linked adult |
+| `POST /v1/families/:familyId/people/bootstrap-creator` | `displayName`, client-stable `mutationId` | Linked adult person |
+| `GET /v1/families/:familyId/people?includeArchived=true\|false` | Optional query flag | Roster, creator-slot state, and current linked person ID |
+| `GET /v1/families/:familyId/people/:personId` | Opaque household-local person ID | One person projection |
+| `POST /v1/families/:familyId/people` | `displayName`, `adult\|dependant`, client-stable `mutationId` | New unlinked person, status 201 |
+| `PATCH /v1/families/:familyId/people/:personId` | `displayName`, `expectedVersion`, client-stable `mutationId` | Renamed person |
+| `DELETE /v1/families/:familyId/people/:personId` | `expectedVersion`, client-stable `mutationId` | Person removal with existing invitation/departure protections |
+| `POST /v1/families/:familyId/people/:personId/archive` | `expectedVersion`, client-stable `mutationId` | Same archived person at next version |
+| `POST /v1/families/:familyId/people/:personId/restore` | `expectedVersion`, client-stable `mutationId` | Same active person at next version |
+| `POST /v1/families/:familyId/people/invitations` | Selected existing `personId`, invitation email, client-stable `mutationId` | Better Auth invitation plus privacy-safe association result |
+| `POST /v1/families/:familyId/people/invitations/associate` | Existing invitation identity, selected `personId`, client-stable `mutationId` | Associated adult projection |
+| `POST /v1/families/:familyId/people/links/complete` | Accepted invitation identity, client-stable `mutationId` | Existing adult linked to the admitted member |
+| `POST /v1/families/:familyId/people/links/repair` | Selected adult, exact version, member identity, reason, client-stable `mutationId` | Explicitly repaired adult link |
+| `POST /v1/families/:familyId/people/departures` | Exact person/link versions, member identity, reason, client-stable `mutationId` | Durable departure operation, status 202 |
+| `GET /v1/families/:familyId/people/departures/:operationId` | Opaque operation ID | Privacy-safe durable operation state |
+| `POST /v1/families/:familyId/people/departures/:operationId/cancel` | Exact operation version, client-stable `mutationId` | Cancelled prepared operation |
+| `POST /v1/families/:familyId/people/departures/:operationId/retry` | Exact operation version, member identity, reason, client-stable `mutationId` | Reconciled departure operation, status 202 |
+| `POST /v1/families/:familyId/people/return` | Accepted invitation identity, archived person and exact version, client-stable `mutationId` | Same restored and linked adult |
 
 Person projections contain only opaque ID, bounded display name, kind,
 lifecycle, version, timestamps, and whether the person is the current linked

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { AccountLayout } from "../../components/account-layout.js";
 import {
   Card,
   CardBody,
@@ -9,7 +10,6 @@ import {
   CardContent,
   CardFooter,
 } from "../../components/ui/card.js";
-import { AuthLayout } from "../auth/auth-layout.js";
 
 export const RecoveryCard = ({
   title,
@@ -22,7 +22,7 @@ export const RecoveryCard = ({
   readonly children: ReactNode;
   readonly footer?: ReactNode;
 }) => (
-  <AuthLayout>
+  <AccountLayout>
     <Card
       className="w-full max-w-(--container-auth)"
       aria-labelledby="auth-title"
@@ -44,5 +44,5 @@ export const RecoveryCard = ({
       </CardBody>
       {footer && <CardFooter>{footer}</CardFooter>}
     </Card>
-  </AuthLayout>
+  </AccountLayout>
 );

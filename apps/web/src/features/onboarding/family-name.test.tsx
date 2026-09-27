@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { SetupProgress } from "@meal-planner/household-api";
+import { CreateFamily } from "@meal-planner/families";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
@@ -16,43 +16,31 @@ import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { AuthClientContext, makeAuthClient } from "../auth/auth-client.js";
 import { FamilyNamePage } from "./family-name.js";
-import { SetupProvider } from "./setup-context.js";
-import { initialSetup } from "./setup-state.js";
+import { SetupProvider } from "./setup-provider.js";
 
-const restored = Schema.decodeUnknownSync(SetupProgress)({
-  checkpoint: {
-    creator: { displayName: "Alex", mutationId: "bootstrap-11111111" },
-    name: "Morgan family",
-    slug: "family-11111111-1111-4111-8111-111111111111",
-    stage: "family-create",
-  },
-  status: "active",
+const restored = Schema.decodeUnknownSync(CreateFamily)({
+  mutationId: "bootstrap-11111111",
+  name: "Morgan family",
 });
 let currentTransport: typeof fetch;
-const makeTransport = (initial: SetupProgress = initialSetup) => {
-  let progress = initial;
-  let version = 0;
-  let family: { id: string; name: string; slug: string } | null = null;
+const makeTransport = () => {
+  let family: object | null = null;
   let signedOut = false;
   let signOutCalls = 0;
-  const saves: SetupProgress[] = [];
-  const createCalls: string[] = [];
+  const createCalls: CreateFamily[] = [];
   const fixture = {
     createCalls,
     createError: null as null | {
       readonly _tag:
-        | "SetupFamilyUnauthorized"
-        | "SetupFamilyForbidden"
-        | "SetupFamilyInvalidRequest"
-        | "SetupFamilyConflict"
-        | "SetupFamilyRateLimited"
-        | "SetupFamilyUnavailable";
+        | "FamilyUnauthorized"
+        | "FamilyForbidden"
+        | "FamilyInvalidInput"
+        | "FamilyConflict"
+        | "FamilyRateLimited"
+        | "FamilyUnavailable";
       readonly status: number;
     },
     createReply: Promise.withResolvers<null>(),
-    failCreate: false,
-    failSave: false,
-    saves,
     get signOutCalls() {
       return signOutCalls;
     },
@@ -60,91 +48,68 @@ const makeTransport = (initial: SetupProgress = initialSetup) => {
       const request = new Request(input, init);
       const path = new URL(request.url).pathname;
       if (path.endsWith("/get-session")) {
-        if (signedOut) {
-          return Response.json(null);
-        }
-        return Response.json({
-          session: {
-            activeOrganizationId: family?.id,
-            expiresAt: "2099-01-01T00:00:00Z",
-            id: "session-1",
-            userId: "adult-1",
-          },
-          user: {
-            email: "alex@example.test",
-            id: "adult-1",
-            name: "Alex",
-            setupProgress: progress,
-            setupProgressVersion: version,
-          },
-        });
-      }
-      if (path === "/v1/setup/progress") {
-        expect(request.headers.get("x-meal-planner-user")).toBe("adult-1");
-        const body = Schema.decodeUnknownSync(
-          Schema.Struct({
-            expectedVersion: Schema.Number,
-            progress: SetupProgress,
-          })
-        )(await request.json());
-        saves.push(body.progress);
-        if (fixture.failSave) {
-          return Response.json(
-            { _tag: "SetupProgressUnavailable", message: "Try again." },
-            { status: 503 }
-          );
-        }
-        if (body.expectedVersion !== version) {
-          return Response.json(
-            { _tag: "SetupProgressConflict", message: "Reload setup." },
-            { status: 409 }
-          );
-        }
-        ({ progress } = body);
-        version += 1;
-        return Response.json({ progress, version });
-      }
-      if (path.endsWith("/organization/list")) {
-        return Response.json(family ? [family] : []);
+        return Response.json(
+          signedOut
+            ? null
+            : {
+                session: {
+                  activeOrganizationId: family ? "family-1" : null,
+                  expiresAt: "2099-01-01T00:00:00Z",
+                  id: "session-1",
+                  userId: "adult-1",
+                },
+                user: {
+                  email: "alex@example.test",
+                  id: "adult-1",
+                  name: "Alex",
+                },
+              }
+        );
       }
       if (path.endsWith("/sign-out")) {
         signOutCalls += 1;
         signedOut = true;
         return Response.json({ success: true });
       }
-      if (path.endsWith("/organization/get-full-organization")) {
+      if (path.endsWith("/organization/set-active")) {
         return Response.json(family);
       }
-      if (path === "/v1/setup/family") {
-        const { name } = Schema.decodeUnknownSync(
-          Schema.Struct({ name: Schema.String })
-        )(await request.json());
-        createCalls.push(name);
+      if (path === "/v1/families" && request.method === "GET") {
+        return Response.json(family ? [family] : []);
+      }
+      if (path === "/v1/families/family-1") {
+        return Response.json(family);
+      }
+      if (path === "/v1/families" && request.method === "POST") {
+        expect(request.headers.get("x-meal-planner-user")).toBe("adult-1");
+        const command = Schema.decodeUnknownSync(CreateFamily)(
+          await request.json()
+        );
+        createCalls.push(command);
         if (fixture.createError) {
           return Response.json(
             {
               _tag: fixture.createError._tag,
               message: "Family request failed.",
+              reason: "mutation_collision",
             },
             { status: fixture.createError.status }
           );
         }
-        if (fixture.failCreate) {
-          return Response.json({ code: "UNAVAILABLE" }, { status: 503 });
-        }
         await fixture.createReply.promise;
-        family = { id: "family-1", name, slug: "family-1" };
-        progress = {
-          checkpoint: { organizationId: family.id, stage: "family-review" },
-          status: "active",
-        } as SetupProgress;
-        version += 2;
-        return Response.json(
-          { name, organizationId: family.id },
-          { status: 201 }
-        );
+        family = {
+          canManage: true,
+          createdAtEpochMs: 1,
+          id: "family-1",
+          name: command.name,
+          setup: { status: "in_progress" },
+          slug: "morgan-family",
+          updatedAtEpochMs: 1,
+          version: 1,
+        };
+        return Response.json(family);
       }
-      throw new Error(`Unexpected setup fixture path: ${path}`);
+      throw new Error(`Unexpected fixture path: ${request.method} ${path}`);
     }) satisfies typeof fetch,
   };
   return fixture;
@@ -197,6 +162,7 @@ const setup = async (fixture = makeTransport()) => {
 };
 
 beforeEach(() => {
+  localStorage.clear();
   vi.stubGlobal(
     "IntersectionObserver",
     class {
@@ -222,119 +188,107 @@ afterAll(async () => {
   });
 });
 
-it("submits family creation once and shows a pending button without a recovery alert", async () => {
+it("creates one family through the generated client and opens review", async () => {
   const { fixture, user } = await setup();
   await user.type(screen.getByLabelText("Family name"), "Morgan family");
   await user.click(screen.getByRole("button", { name: "Create family" }));
-  await waitFor(() => expect(fixture.createCalls).toEqual(["Morgan family"]));
-  expect(fixture.saves).toEqual([]);
+  await waitFor(() => expect(fixture.createCalls).toHaveLength(1));
+  expect(fixture.createCalls[0]?.name).toBe("Morgan family");
   expect(
     screen.getByRole("button", { name: "Saving your family…" })
   ).toBeDisabled();
-  expect(
-    screen.getByRole("heading", { name: "Name your family" })
-  ).toBeInTheDocument();
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Family name")).toBeDisabled();
   fixture.createReply.resolve(null);
-  expect(
-    await screen.findByRole("heading", { name: "Review your family" })
-  ).toBeInTheDocument();
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  await screen.findByRole("heading", { name: "Review your family" });
+  await waitFor(() => expect(localStorage.length).toBe(0));
 });
 
-it("retries a failed submit without creating a browser-side checkpoint", async () => {
+it("retains the exact submitted request across failure and reload", async () => {
   const fixture = makeTransport();
-  fixture.failCreate = true;
+  fixture.createError = { _tag: "FamilyUnavailable", status: 503 };
   const { user } = await setup(fixture);
   await user.type(screen.getByLabelText("Family name"), "Morgan family");
   await user.click(screen.getByRole("button", { name: "Create family" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "couldn’t confirm your family request"
+  await waitFor(() => expect(fixture.createCalls).toHaveLength(3), {
+    timeout: 3000,
+  });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Check and continue" })
+    ).toBeEnabled()
   );
-  expect(screen.getByLabelText("Family name")).toBeEnabled();
-  fixture.failCreate = false;
-  await user.click(screen.getByRole("button", { name: "Create family" }));
-  await waitFor(() => expect(fixture.createCalls).toHaveLength(2));
-  expect(fixture.createCalls).toEqual(["Morgan family", "Morgan family"]);
-  expect(fixture.saves).toEqual([]);
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  const [first] = fixture.createCalls;
+  expect(
+    fixture.createCalls.every(
+      (call) => JSON.stringify(call) === JSON.stringify(first)
+    )
+  ).toBe(true);
+  cleanup();
+  fixture.createError = null;
   fixture.createReply.resolve(null);
-  expect(
-    await screen.findByRole("heading", { name: "Review your family" })
-  ).toBeInTheDocument();
-});
-
-it("shows the typed conflict from the family command", async () => {
-  const fixture = makeTransport();
-  fixture.createError = { _tag: "SetupFamilyConflict", status: 409 };
-  const { user } = await setup(fixture);
-  await user.type(screen.getByLabelText("Family name"), "Morgan family");
-  await user.click(screen.getByRole("button", { name: "Create family" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Another family request is saved"
+  const reloaded = await setup(fixture);
+  await reloaded.user.click(
+    screen.getByRole("button", { name: "Check and continue" })
   );
-  expect(fixture.saves).toEqual([]);
+  await screen.findByRole("heading", { name: "Review your family" });
+  expect(fixture.createCalls.at(-1)).toEqual(first);
 });
 
 it.each([
-  ["SetupFamilyUnauthorized", 401, "Your session ended"],
-  ["SetupFamilyForbidden", 403, "This account can’t create"],
-  ["SetupFamilyInvalidRequest", 400, "Enter a valid family name"],
-  ["SetupFamilyRateLimited", 429, "Too many attempts"],
-  ["SetupFamilyUnavailable", 503, "couldn’t confirm your family request"],
+  ["FamilyUnauthorized", 401, "Your session ended"],
+  ["FamilyForbidden", 403, "This account can’t create"],
+  ["FamilyInvalidInput", 400, "Enter a valid family name"],
+  ["FamilyRateLimited", 429, "Too many attempts"],
 ] as const)(
-  "shows %s as a typed family error",
+  "shows %s without automatically retrying a rejected request",
   async (_tag, status, message) => {
     const fixture = makeTransport();
     fixture.createError = { _tag, status };
     const { user } = await setup(fixture);
     await user.type(screen.getByLabelText("Family name"), "Morgan family");
     await user.click(screen.getByRole("button", { name: "Create family" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(message);
-    expect(fixture.createCalls).toEqual(["Morgan family"]);
+    await screen.findByText(message, { exact: false });
+    expect(fixture.createCalls).toHaveLength(1);
   }
 );
 
-it("offers recovery for a restored unfinished creation and reuses its command", async () => {
-  const fixture = makeTransport(restored);
-  const { user } = await setup(fixture);
-  expect(
-    screen.getByRole("heading", { name: "Let’s check your family" })
-  ).toBeInTheDocument();
-  expect(screen.getByRole("alert")).toHaveTextContent(
-    "still need to confirm the result"
-  );
-  expect(screen.getByLabelText("Family name")).toBeDisabled();
-  await user.click(screen.getByRole("button", { name: "Check and continue" }));
-  await waitFor(() => expect(fixture.createCalls).toEqual(["Morgan family"]));
-  expect(fixture.saves).toEqual([]);
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  fixture.createReply.resolve(null);
-  expect(
-    await screen.findByRole("heading", { name: "Review your family" })
-  ).toBeInTheDocument();
-});
-
-it("saves a family-name draft before logging out", async () => {
+it("logs out without persisting an unsubmitted form", async () => {
   const { fixture, user } = await setup();
-  await user.type(screen.getByLabelText("Family name"), "Morgan family");
+  await user.type(screen.getByLabelText("Family name"), "Unsubmitted family");
   await user.click(screen.getByRole("button", { name: "Log out" }));
   await screen.findByRole("heading", { name: "Log in" });
-  expect(fixture.saves.at(-1)).toMatchObject({
-    checkpoint: { name: "Morgan family", stage: "family-name" },
-    status: "paused",
-  });
+  expect(fixture.createCalls).toHaveLength(0);
+  expect(localStorage.length).toBe(0);
   expect(fixture.signOutCalls).toBe(1);
 });
 
-it("retains the exact unfinished creation when logging out", async () => {
-  const { fixture, user } = await setup(makeTransport(restored));
+it("keeps an uncertain submitted command when logging out", async () => {
+  localStorage.setItem(
+    `meal-planner:request:adult-1:family-create:${restored.mutationId}`,
+    JSON.stringify(restored)
+  );
+  const { user } = await setup();
   await user.click(screen.getByRole("button", { name: "Log out" }));
   await screen.findByRole("heading", { name: "Log in" });
-  expect(fixture.saves.at(-1)).toEqual({
-    checkpoint: restored.checkpoint,
-    status: "paused",
-  });
-  expect(fixture.signOutCalls).toBe(1);
+  expect(
+    JSON.parse(
+      localStorage.getItem(
+        `meal-planner:request:adult-1:family-create:${restored.mutationId}`
+      ) ?? "null"
+    )
+  ).toEqual(restored);
+});
+
+it("does not send a mutation when browser storage cannot retain its key", async () => {
+  const { fixture, user } = await setup();
+  const storage = vi
+    .spyOn(Storage.prototype, "setItem")
+    .mockImplementation(() => {
+      throw new DOMException("Full", "QuotaExceededError");
+    });
+  await user.type(screen.getByLabelText("Family name"), "Morgan family");
+  await user.click(screen.getByRole("button", { name: "Create family" }));
+  await screen.findByText(/couldn’t keep this request safely/u);
+  expect(fixture.createCalls).toHaveLength(0);
+  storage.mockRestore();
 });

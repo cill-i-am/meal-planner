@@ -23,8 +23,8 @@ import type {
 } from "@meal-planner/private-interview-api";
 import { Schema } from "effect";
 
-import { displayedIdentityHeaders } from "../auth/displayed-identity.js";
-import type { DisplayedIdentity } from "../auth/displayed-identity.js";
+import { displayedIdentityHeaders } from "../auth/index.js";
+import type { DisplayedIdentity } from "../auth/index.js";
 import { ProfileOperationError } from "../household-profiles/operations.js";
 import {
   readCurrentPrivateProfile,

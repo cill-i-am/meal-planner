@@ -20,7 +20,7 @@ import { Button } from "../../components/ui/button.js";
 import { FieldError } from "../../components/ui/field.js";
 import { Input } from "../../components/ui/input.js";
 import { Label } from "../../components/ui/label.js";
-import { InvitationEmailInput } from "../onboarding/people-input.js";
+import { InvitationEmailInput } from "./form-input.js";
 
 const newMutationId = () =>
   Schema.decodeUnknownSync(HouseholdPersonMutationId)(crypto.randomUUID());

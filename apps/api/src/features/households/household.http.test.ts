@@ -342,11 +342,14 @@ describe("household people identity and owner boundary", () => {
           membershipRole,
           userId,
         }).handler(
-          new Request("https://meal-planner.test/v1/household/people", {
-            headers: {
-              cookie: `better-auth.session_token=session-${String(index)}`,
-            },
-          })
+          new Request(
+            "https://meal-planner.test/v1/families/organization-a/people",
+            {
+              headers: {
+                cookie: `better-auth.session_token=session-${String(index)}`,
+              },
+            }
+          )
         )
       )
     );
@@ -382,7 +385,7 @@ describe("household people identity and owner boundary", () => {
     const app = makePeopleApp({ gateway, membershipRole: "member" });
     const response = await app.handler(
       new Request(
-        "https://meal-planner.test/v1/household/people/bootstrap-creator",
+        "https://meal-planner.test/v1/families/organization-a/people/bootstrap-creator",
         {
           body: JSON.stringify(
             Schema.encodeSync(BootstrapHouseholdCreatorPayload)(
@@ -417,7 +420,7 @@ describe("household people identity and owner boundary", () => {
     const app = makePeopleApp({ gateway, membershipRole: "owner" });
     const response = await app.handler(
       new Request(
-        "https://meal-planner.test/v1/household/people/bootstrap-creator",
+        "https://meal-planner.test/v1/families/organization-a/people/bootstrap-creator",
         {
           body: JSON.stringify(
             Schema.encodeSync(BootstrapHouseholdCreatorPayload)(

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
+import { Family } from "@meal-planner/families";
 import {
   CreateMealPlanPayload,
   HouseholdAdultInvitationResult,
@@ -536,10 +537,20 @@ const signIn = async (label: string) => {
 };
 
 const createOrganization = async (label: string, cookie: string) => {
-  const response = await authRequest(
-    "/organization/create",
-    { name: label, slug: label.toLowerCase().replaceAll(" ", "-") },
-    cookie
+  const response = await getRuntime().dispatchFetch(
+    "https://meal-planner.test/api/auth/__test/organization",
+    {
+      body: JSON.stringify({
+        name: label,
+        slug: label.toLowerCase().replaceAll(" ", "-"),
+      }),
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        origin: "https://meal-planner.test",
+      },
+      method: "POST",
+    }
   );
   expect(response.status).toBe(200);
   return Schema.decodeUnknownPromise(OrganizationResponse)(
@@ -555,7 +566,7 @@ const prepareInvitableAdult = async (label: string) => {
     ownerCookie
   );
   const bootstrap = await getRuntime().dispatchFetch(
-    "https://meal-planner.test/v1/household/people/bootstrap-creator",
+    `https://meal-planner.test/v1/families/${organization.id}/people/bootstrap-creator`,
     {
       body: JSON.stringify({
         displayName: `${label} Owner`,
@@ -567,7 +578,7 @@ const prepareInvitableAdult = async (label: string) => {
   );
   expect(bootstrap.status, await bootstrap.clone().text()).toBe(200);
   const adultResponse = await getRuntime().dispatchFetch(
-    "https://meal-planner.test/v1/household/people",
+    `https://meal-planner.test/v1/families/${organization.id}/people`,
     {
       body: JSON.stringify({
         displayName: `${label} Adult`,
@@ -611,7 +622,7 @@ const prepareLinkedAdult = async (
       ? initialOwnerCookie
       : cookieHeader(activeOwner);
   const bootstrap = await getRuntime().dispatchFetch(
-    "https://meal-planner.test/v1/household/people/bootstrap-creator",
+    `https://meal-planner.test/v1/families/${organization.id}/people/bootstrap-creator`,
     {
       body: JSON.stringify({
         displayName: ownerLabel,
@@ -623,7 +634,7 @@ const prepareLinkedAdult = async (
   );
   expect(bootstrap.status, await bootstrap.clone().text()).toBe(200);
   const adultResponse = await getRuntime().dispatchFetch(
-    "https://meal-planner.test/v1/household/people",
+    `https://meal-planner.test/v1/families/${organization.id}/people`,
     {
       body: JSON.stringify({
         displayName: invitedLabel,
@@ -640,7 +651,7 @@ const prepareLinkedAdult = async (
   );
   const invitedCookie = existingInvitee?.cookie ?? (await signUp(invitedLabel));
   const invitationResponse = await getRuntime().dispatchFetch(
-    "https://meal-planner.test/v1/household/people/invitations",
+    `https://meal-planner.test/v1/families/${organization.id}/people/invitations`,
     {
       body: JSON.stringify({
         email: `${invitedLabel.toLowerCase().replaceAll(" ", "-")}@example.test`,
@@ -675,7 +686,7 @@ const prepareLinkedAdult = async (
       ? invitedCookie
       : cookieHeader(active);
   const link = await getRuntime().dispatchFetch(
-    "https://meal-planner.test/v1/household/people/links/complete",
+    `https://meal-planner.test/v1/families/${organization.id}/people/links/complete`,
     {
       body: JSON.stringify({
         invitationId: invitation.invitationId,
@@ -741,6 +752,7 @@ const readDepartureWorkflowInput = async (
 };
 
 const readDepartureEventually = async (
+  organizationId: string,
   cookie: string,
   operationId: string,
   expectedState: (typeof HouseholdMemberDepartureOperation.Type)["state"],
@@ -748,7 +760,7 @@ const readDepartureEventually = async (
 ): Promise<typeof HouseholdMemberDepartureOperation.Type> => {
   let observedState = "unreadable";
   const response = await getRuntime().dispatchFetch(
-    `https://meal-planner.test/v1/household/people/departures/${operationId}`,
+    `https://meal-planner.test/v1/families/${organizationId}/people/departures/${operationId}`,
     { headers: { cookie } }
   );
   if (response.status !== 200) {
@@ -772,6 +784,7 @@ const readDepartureEventually = async (
   }
   await delay(100);
   return readDepartureEventually(
+    organizationId,
     cookie,
     operationId,
     expectedState,
@@ -780,13 +793,14 @@ const readDepartureEventually = async (
 };
 
 const readDepartureByMutationEventually = async (
+  organizationId: string,
   cookie: string,
   mutationId: string,
   expectedState: (typeof HouseholdMemberDepartureOperation.Type)["state"],
   remaining = 60
 ): Promise<typeof HouseholdMemberDepartureOperation.Type> => {
   const response = await getRuntime().dispatchFetch(
-    `https://meal-planner.test/v1/household/people/departures/by-mutation/${mutationId}`,
+    `https://meal-planner.test/v1/families/${organizationId}/people/departures/by-mutation/${mutationId}`,
     { headers: { cookie } }
   );
   if (response.status !== 200) {
@@ -807,6 +821,7 @@ const readDepartureByMutationEventually = async (
   }
   await delay(100);
   return readDepartureByMutationEventually(
+    organizationId,
     cookie,
     mutationId,
     expectedState,
@@ -1254,6 +1269,94 @@ const review = {
 } as const;
 
 describe("household public API to private Durable Object boundary", () => {
+  it("creates and completes a family through D1 and the private household worker without an active-family dependency", async () => {
+    const cookie = await signUp("Resource Owner");
+    const session = await getSession(cookie);
+    const headers = {
+      "content-type": "application/json",
+      cookie,
+      origin: "https://meal-planner.test",
+      "x-meal-planner-user": session.user.id,
+    };
+    const command = {
+      mutationId: "resource-create-1111",
+      name: "Resource family",
+    };
+    const create = () =>
+      getRuntime().dispatchFetch("https://meal-planner.test/v1/families", {
+        body: JSON.stringify(command),
+        headers,
+        method: "POST",
+      });
+    const response = await create();
+    expect(response.status, await response.clone().text()).toBe(200);
+    const family = Schema.decodeUnknownSync(Family)(await response.json());
+    const replay = await create();
+    expect(await replay.json()).toEqual(family);
+    const peopleURL = `https://meal-planner.test/v1/families/${family.id}/people`;
+    const rosterResponse = await getRuntime().dispatchFetch(peopleURL, {
+      headers,
+    });
+    expect(rosterResponse.status, await rosterResponse.clone().text()).toBe(
+      200
+    );
+    const roster = Schema.decodeUnknownSync(HouseholdPeopleRoster)(
+      await rosterResponse.json()
+    );
+    expect(roster.people).toHaveLength(1);
+    expect(roster.people[0]).toMatchObject({
+      displayName: "Resource Owner",
+      isCurrentAdult: true,
+    });
+    const child = await getRuntime().dispatchFetch(peopleURL, {
+      body: JSON.stringify({
+        displayName: "Child",
+        kind: "dependant",
+        mutationId: "resource-child-1111",
+      }),
+      headers,
+      method: "POST",
+    });
+    expect(child.status, await child.clone().text()).toBe(201);
+    const completed = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/families/${family.id}/complete-setup`,
+      { headers, method: "POST" }
+    );
+    expect(completed.status, await completed.clone().text()).toBe(200);
+    const saved = Schema.decodeUnknownSync(Family)(await completed.json());
+    expect(saved.setup.status).toBe("complete");
+    const renamed = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/families/${family.id}`,
+      {
+        body: JSON.stringify({
+          expectedVersion: saved.version,
+          mutationId: "resource-rename-1111",
+          name: "Renamed after setup",
+        }),
+        headers,
+        method: "PATCH",
+      }
+    );
+    expect(renamed.status, await renamed.clone().text()).toBe(200);
+    await restartRuntime();
+    const restored = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/families/${family.id}`,
+      { headers }
+    );
+    expect(await restored.json()).toMatchObject({
+      name: "Renamed after setup",
+      setup: saved.setup,
+    });
+    const persistedRoster = await getRuntime().dispatchFetch(peopleURL, {
+      headers,
+    });
+    expect(
+      Schema.decodeUnknownSync(HouseholdPeopleRoster)(
+        await persistedRoster.json()
+      ).people
+    ).toHaveLength(2);
+  });
+
   it("removes planning profiles once, retains history, and rejects changed intent and own removal", async () => {
     const setup = await prepareInvitableAdult("Roster profile removal");
     const remove = (
@@ -1262,14 +1365,14 @@ describe("household public API to private Durable Object boundary", () => {
       mutationId: string
     ) =>
       getRuntime().dispatchFetch(
-        `https://meal-planner.test/v1/household/people/${personId}/remove`,
+        `https://meal-planner.test/v1/families/${setup.organization.id}/people/${personId}`,
         {
           body: JSON.stringify({ expectedVersion, mutationId }),
           headers: {
             "content-type": "application/json",
             cookie: setup.ownerCookie,
           },
-          method: "POST",
+          method: "DELETE",
         }
       );
     const first = await remove(
@@ -1299,7 +1402,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(changed.status).toBe(409);
     expect(await changed.json()).toMatchObject({ code: "mutation_collision" });
     const create = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people`,
       {
         body: JSON.stringify({
           displayName: "Child",
@@ -1330,7 +1433,7 @@ describe("household public API to private Durable Object boundary", () => {
     );
     expect(childRemoved.status, await childRemoved.clone().text()).toBe(200);
     const rosterResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people?includeArchived=true`,
       {
         headers: { cookie: setup.ownerCookie },
       }
@@ -1359,7 +1462,7 @@ describe("household public API to private Durable Object boundary", () => {
   it("cancels a pending roster invitation before archiving and replays the same removal", async () => {
     const setup = await prepareInvitableAdult("Roster pending removal");
     const invited = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/invitations",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/invitations`,
       {
         body: JSON.stringify({
           email: "roster-pending-adult@example.test",
@@ -1386,9 +1489,9 @@ describe("household public API to private Durable Object boundary", () => {
         "content-type": "application/json",
         cookie: setup.ownerCookie,
       },
-      method: "POST",
+      method: "DELETE",
     };
-    const url = `https://meal-planner.test/v1/household/people/${setup.adult.id}/remove`;
+    const url = `https://meal-planner.test/v1/families/${setup.organization.id}/people/${setup.adult.id}`;
     const first = await getRuntime().dispatchFetch(url, request);
     expect(first.status, await first.clone().text()).toBe(200);
     const removed = await first.json();
@@ -1422,7 +1525,7 @@ describe("household public API to private Durable Object boundary", () => {
     const setup = await prepareInvitableAdult("Roster acceptance race");
     const inviteeCookie = await signUp("Roster Race Recipient");
     const invited = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/invitations",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/invitations`,
       {
         body: JSON.stringify({
           email: "roster-race-recipient@example.test",
@@ -1455,9 +1558,9 @@ describe("household public API to private Durable Object boundary", () => {
         "content-type": "application/json",
         cookie: setup.ownerCookie,
       },
-      method: "POST",
+      method: "DELETE",
     };
-    const url = `https://meal-planner.test/v1/household/people/${setup.adult.id}/remove`;
+    const url = `https://meal-planner.test/v1/families/${setup.organization.id}/people/${setup.adult.id}`;
     const removal = await getRuntime().dispatchFetch(url, request);
     expect(removal.status, await removal.clone().text()).toBe(409);
     expect(await removal.json()).toMatchObject({
@@ -1467,7 +1570,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(replay.status).toBe(409);
     expect(await replay.json()).toMatchObject({ code: "association_conflict" });
     const person = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/household/people/${setup.adult.id}`,
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/${setup.adult.id}`,
       {
         headers: { cookie: setup.ownerCookie },
       }
@@ -1494,7 +1597,7 @@ describe("household public API to private Durable Object boundary", () => {
       ...request,
       headers: { "content-type": "application/json", cookie: stranger },
     });
-    expect(otherFamily.status).toBe(404);
+    expect(otherFamily.status).toBe(401);
   });
 
   it("removes a joined adult through the departure workflow while retaining their account", async () => {
@@ -1508,9 +1611,9 @@ describe("household public API to private Durable Object boundary", () => {
         "content-type": "application/json",
         cookie: setup.ownerCookie,
       },
-      method: "POST",
+      method: "DELETE",
     };
-    const url = `https://meal-planner.test/v1/household/people/${setup.adult.id}/remove`;
+    const url = `https://meal-planner.test/v1/families/${setup.organization.id}/people/${setup.adult.id}`;
     const forbidden = await getRuntime().dispatchFetch(url, {
       ...request,
       headers: {
@@ -1546,7 +1649,7 @@ describe("household public API to private Durable Object boundary", () => {
       lifecycle: "archived",
     });
     const restoredResponse = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/household/people/${setup.adult.id}/restore`,
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/${setup.adult.id}/restore`,
       {
         body: JSON.stringify({
           expectedVersion: archived.version,
@@ -1566,7 +1669,7 @@ describe("household public API to private Durable Object boundary", () => {
       await restoredResponse.json()
     );
     const renamedResponse = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/household/people/${setup.adult.id}/rename`,
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/${setup.adult.id}`,
       {
         body: JSON.stringify({
           displayName: "Restored planning person",
@@ -1577,7 +1680,7 @@ describe("household public API to private Durable Object boundary", () => {
           "content-type": "application/json",
           cookie: setup.ownerCookie,
         },
-        method: "POST",
+        method: "PATCH",
       }
     );
     expect(renamedResponse.status, await renamedResponse.clone().text()).toBe(
@@ -1587,7 +1690,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(replay.status, await replay.clone().text()).toBe(200);
     expect(await replay.json()).toEqual(archived);
     const live = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/household/people/${setup.adult.id}`,
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/${setup.adult.id}`,
       {
         headers: { cookie: setup.ownerCookie },
       }
@@ -1611,10 +1714,11 @@ describe("household public API to private Durable Object boundary", () => {
   });
 
   it("records and confirms a dependant profile without inventing a dependant account", async () => {
-    const { ownerCookie } = await prepareInvitableAdult("Dependant Profile");
+    const { ownerCookie, organization } =
+      await prepareInvitableAdult("Dependant Profile");
     const headers = { "content-type": "application/json", cookie: ownerCookie };
     const created = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people",
+      `https://meal-planner.test/v1/families/${organization.id}/people`,
       {
         body: JSON.stringify({
           displayName: "Child",
@@ -1629,7 +1733,7 @@ describe("household public API to private Durable Object boundary", () => {
     const person = await Schema.decodeUnknownPromise(HouseholdPerson)(
       await created.json()
     );
-    const url = `https://meal-planner.test/v1/household/people/${person.id}/profile`;
+    const url = `https://meal-planner.test/v1/families/${organization.id}/people/${person.id}/profile`;
     const provisional = await getRuntime().dispatchFetch(url, {
       body: JSON.stringify({
         command: {
@@ -1686,10 +1790,10 @@ describe("household public API to private Durable Object boundary", () => {
   });
 
   it("serializes person archival with a profile mutation without losing history", async () => {
-    const { adult, ownerCookie } = await prepareInvitableAdult(
+    const { adult, ownerCookie, organization } = await prepareInvitableAdult(
       "Profile Archive Race"
     );
-    const base = `https://meal-planner.test/v1/household/people/${adult.id}`;
+    const base = `https://meal-planner.test/v1/families/${organization.id}/people/${adult.id}`;
     const headers = { "content-type": "application/json", cookie: ownerCookie };
     const [archive, mutation] = await Promise.all([
       getRuntime().dispatchFetch(`${base}/archive`, {
@@ -1746,7 +1850,7 @@ describe("household public API to private Durable Object boundary", () => {
 
   it("fences profile safety, concurrent adult edits, and durable history by household", async () => {
     const setup = await prepareLinkedAdult("Profile Safety Runtime");
-    const url = `https://meal-planner.test/v1/household/people/${setup.adult.id}/profile`;
+    const url = `https://meal-planner.test/v1/families/${setup.organization.id}/people/${setup.adult.id}/profile`;
     const post = (cookie: string, payload: object) =>
       getRuntime().dispatchFetch(url, {
         body: JSON.stringify(payload),
@@ -1838,17 +1942,17 @@ describe("household public API to private Durable Object boundary", () => {
           const denied = await getRuntime().dispatchFetch(path, {
             headers: { cookie: outsider.ownerCookie },
           });
-          expect(denied.status).toBe(409);
+          expect(denied.status).toBe(401);
           expect(await denied.json()).toMatchObject({
-            code: "person_not_found",
+            code: "unauthorized",
           });
         }
       )
     );
     const deniedMutation = await post(outsider.ownerCookie, reduction);
-    expect(deniedMutation.status).toBe(409);
+    expect(deniedMutation.status).toBe(401);
     expect(await deniedMutation.json()).toMatchObject({
-      code: "person_not_found",
+      code: "unauthorized",
     });
     await restartRuntime();
     const restoredCurrent = await getRuntime().dispatchFetch(url, {
@@ -1868,9 +1972,9 @@ describe("household public API to private Durable Object boundary", () => {
   });
 
   it("persists and exactly replays a provisional person profile version", async () => {
-    const { adult, ownerCookie } =
+    const { adult, ownerCookie, organization } =
       await prepareInvitableAdult("Profile Tracer");
-    const url = `https://meal-planner.test/v1/household/people/${adult.id}/profile`;
+    const url = `https://meal-planner.test/v1/families/${organization.id}/people/${adult.id}/profile`;
     const payload = {
       command: {
         _tag: "AddProvisionalProfileFact",
@@ -1946,7 +2050,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(stale.status).toBe(409);
     expect(await stale.json()).toMatchObject({ code: "stale_version" });
     const archive = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/household/people/${adult.id}/archive`,
+      `https://meal-planner.test/v1/families/${organization.id}/people/${adult.id}/archive`,
       {
         body: JSON.stringify({
           expectedVersion: adult.version,
@@ -1977,7 +2081,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(archivedReplay.status).toBe(200);
     expect(await archivedReplay.text()).toBe(firstBody);
     const restore = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/household/people/${adult.id}/restore`,
+      `https://meal-planner.test/v1/families/${organization.id}/people/${adult.id}/restore`,
       {
         body: JSON.stringify({
           expectedVersion: archived.version,
@@ -2320,8 +2424,7 @@ describe("household public API to private Durable Object boundary", () => {
       .set({ activeOrganizationId: organization.id })
       .where(eq(authSchema.session.id, memberSession.session.id));
 
-    const bootstrapURL =
-      "https://meal-planner.test/v1/household/people/bootstrap-creator";
+    const bootstrapURL = `https://meal-planner.test/v1/families/${organization.id}/people/bootstrap-creator`;
     const observations = await getRuntime().getKVNamespace(
       "HOUSEHOLD_TEST_OBSERVATIONS",
       "api"
@@ -2435,7 +2538,7 @@ describe("household public API to private Durable Object boundary", () => {
 
     const loserCookie = loserIndex === 0 ? ownerCookie : memberCookie;
     const loserRoster = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      `https://meal-planner.test/v1/families/${organization.id}/people?includeArchived=true`,
       { headers: { cookie: loserCookie } }
     );
     expect(loserRoster.status).toBe(200);
@@ -2462,7 +2565,7 @@ describe("household public API to private Durable Object boundary", () => {
     await restartRuntime();
 
     const rosterResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      `https://meal-planner.test/v1/families/${organization.id}/people?includeArchived=true`,
       { headers: { cookie: replacementOwnerCookie } }
     );
     expect(rosterResponse.status).toBe(200);
@@ -2487,13 +2590,16 @@ describe("household public API to private Durable Object boundary", () => {
       setActiveResponse.headers.get("set-cookie") === null
         ? replacementOwnerCookie
         : cookieHeader(setActiveResponse);
-    const otherBootstrap = await getRuntime().dispatchFetch(bootstrapURL, {
-      ...ownerBootstrap,
-      headers: {
-        ...ownerBootstrap.headers,
-        cookie: otherOrganizationCookie,
-      },
-    });
+    const otherBootstrap = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/families/${otherOrganization.id}/people/bootstrap-creator`,
+      {
+        ...ownerBootstrap,
+        headers: {
+          ...ownerBootstrap.headers,
+          cookie: otherOrganizationCookie,
+        },
+      }
+    );
     expect(otherBootstrap.status).toBe(200);
     const otherPerson = await Schema.decodeUnknownPromise(HouseholdPerson)(
       await otherBootstrap.json()
@@ -2524,8 +2630,7 @@ describe("household public API to private Durable Object boundary", () => {
       .set({ activeOrganizationId: organization.id })
       .where(eq(authSchema.session.id, memberSession.session.id));
 
-    const url =
-      "https://meal-planner.test/v1/household/people/bootstrap-creator";
+    const url = `https://meal-planner.test/v1/families/${organization.id}/people/bootstrap-creator`;
     const ownerMutationId = "concurrent-owner-bootstrap";
     const memberMutationId = "concurrent-member-bootstrap";
     const [ownerResponse, memberResponse] = await Promise.all([
@@ -2562,7 +2667,7 @@ describe("household public API to private Durable Object boundary", () => {
       )
     ).toBeNull();
     const memberRoster = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      `https://meal-planner.test/v1/families/${organization.id}/people?includeArchived=true`,
       { headers: { cookie: memberCookie } }
     );
     expect(memberRoster.status).toBe(200);
@@ -2579,7 +2684,7 @@ describe("household public API to private Durable Object boundary", () => {
       "People Projection Household",
       cookie
     );
-    const peopleURL = "https://meal-planner.test/v1/household/people";
+    const peopleURL = `https://meal-planner.test/v1/families/${organization.id}/people`;
     const createResponse = await getRuntime().dispatchFetch(peopleURL, {
       body: JSON.stringify({
         displayName: "Projection dependant",
@@ -2596,9 +2701,12 @@ describe("household public API to private Durable Object boundary", () => {
       await createResponse.json()
     );
 
-    const listRoster = async (activeCookie: string) => {
+    const listRoster = async (
+      activeCookie: string,
+      targetFamily = organization.id
+    ) => {
       const response = await getRuntime().dispatchFetch(
-        `${peopleURL}?includeArchived=true`,
+        `https://meal-planner.test/v1/families/${targetFamily}/people?includeArchived=true`,
         { headers: { cookie: activeCookie } }
       );
       expect(response.status, await response.clone().text()).toBe(200);
@@ -2662,7 +2770,9 @@ describe("household public API to private Durable Object boundary", () => {
       setActiveResponse.headers.get("set-cookie") === null
         ? cookie
         : cookieHeader(setActiveResponse);
-    await expect(listRoster(otherOrganizationCookie)).resolves.toEqual({
+    await expect(
+      listRoster(otherOrganizationCookie, otherOrganization.id)
+    ).resolves.toEqual({
       creatorSlot: "available",
       currentPersonId: null,
       people: [],
@@ -2676,7 +2786,7 @@ describe("household public API to private Durable Object boundary", () => {
       ownerCookie,
     } = await prepareInvitableAdult("Parallel Auth Invitation");
     const secondResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people",
+      `https://meal-planner.test/v1/families/${organization.id}/people`,
       {
         body: JSON.stringify({
           displayName: "Parallel Auth Second Adult",
@@ -2700,7 +2810,7 @@ describe("household public API to private Durable Object boundary", () => {
     const responses = await Promise.all(
       recipients.map((recipient, index) =>
         getRuntime().dispatchFetch(
-          "https://meal-planner.test/v1/household/people/invitations",
+          `https://meal-planner.test/v1/families/${organization.id}/people/invitations`,
           {
             body: JSON.stringify({
               ...recipient,
@@ -2747,14 +2857,17 @@ describe("household public API to private Durable Object boundary", () => {
 
   it("runs the public people lifecycle through Better Auth, private Worker, and household SQLite", async () => {
     const cookie = await signUp("People Boundary Member");
-    await createOrganization("People Boundary Household", cookie);
+    const organization = await createOrganization(
+      "People Boundary Household",
+      cookie
+    );
     const unauthenticated = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people"
+      `https://meal-planner.test/v1/families/${organization.id}/people`
     );
     expect(unauthenticated.status).toBe(401);
 
     const excessQuery = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people?includeArchived=true&unexpected=x",
+      `https://meal-planner.test/v1/families/${organization.id}/people?includeArchived=true&unexpected=x`,
       { headers: { cookie } }
     );
     expect(excessQuery.status).toBe(400);
@@ -2763,7 +2876,7 @@ describe("household public API to private Durable Object boundary", () => {
     });
 
     const malformed = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/bootstrap-creator",
+      `https://meal-planner.test/v1/families/${organization.id}/people/bootstrap-creator`,
       {
         body: JSON.stringify({
           displayName: "",
@@ -2785,7 +2898,7 @@ describe("household public API to private Durable Object boundary", () => {
       mutationId: string
     ) => {
       const response = await getRuntime().dispatchFetch(
-        "https://meal-planner.test/v1/household/people",
+        `https://meal-planner.test/v1/families/${organization.id}/people`,
         {
           body: JSON.stringify({ displayName, kind, mutationId }),
           headers: { "content-type": "application/json", cookie },
@@ -2822,7 +2935,7 @@ describe("household public API to private Durable Object boundary", () => {
       method: "POST",
     } as const;
     const bootstrapResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/bootstrap-creator",
+      `https://meal-planner.test/v1/families/${organization.id}/people/bootstrap-creator`,
       bootstrapRequest
     );
     expect(
@@ -2833,7 +2946,7 @@ describe("household public API to private Durable Object boundary", () => {
       await bootstrapResponse.json()
     );
     const bootstrapReplay = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/bootstrap-creator",
+      `https://meal-planner.test/v1/families/${organization.id}/people/bootstrap-creator`,
       bootstrapRequest
     );
     expect(bootstrapReplay.status).toBe(200);
@@ -2842,7 +2955,7 @@ describe("household public API to private Durable Object boundary", () => {
     );
 
     const collision = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/bootstrap-creator",
+      `https://meal-planner.test/v1/families/${organization.id}/people/bootstrap-creator`,
       {
         ...bootstrapRequest,
         body: JSON.stringify({
@@ -2866,7 +2979,7 @@ describe("household public API to private Durable Object boundary", () => {
       method: "POST",
     } as const;
     const createResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people",
+      `https://meal-planner.test/v1/families/${organization.id}/people`,
       createRequest
     );
     expect(createResponse.status, await createResponse.clone().text()).toBe(
@@ -2876,7 +2989,7 @@ describe("household public API to private Durable Object boundary", () => {
       await createResponse.json()
     );
     const createReplay = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people",
+      `https://meal-planner.test/v1/families/${organization.id}/people`,
       createRequest
     );
     expect(createReplay.status).toBe(201);
@@ -2885,7 +2998,7 @@ describe("household public API to private Durable Object boundary", () => {
     );
 
     const archiveResponse = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/household/people/${dependant.id}/archive`,
+      `https://meal-planner.test/v1/families/${organization.id}/people/${dependant.id}/archive`,
       {
         body: JSON.stringify({
           expectedVersion: dependant.version,
@@ -2903,7 +3016,7 @@ describe("household public API to private Durable Object boundary", () => {
 
     await restartRuntime();
     const restoreResponse = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/household/people/${dependant.id}/restore`,
+      `https://meal-planner.test/v1/families/${organization.id}/people/${dependant.id}/restore`,
       {
         body: JSON.stringify({
           expectedVersion: 2,
@@ -2921,7 +3034,7 @@ describe("household public API to private Durable Object boundary", () => {
     });
 
     const rosterResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      `https://meal-planner.test/v1/families/${organization.id}/people?includeArchived=true`,
       { headers: { cookie } }
     );
     expect(rosterResponse.status).toBe(200);
@@ -2950,15 +3063,15 @@ describe("household public API to private Durable Object boundary", () => {
     const otherCookie = await signUp("People Boundary Other");
     await createOrganization("People Boundary Other Household", otherCookie);
     const isolated = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/household/people/${dependant.id}`,
+      `https://meal-planner.test/v1/families/${organization.id}/people/${dependant.id}`,
       { headers: { cookie: otherCookie } }
     );
-    expect(isolated.status).toBe(404);
+    expect(isolated.status).toBe(401);
     await expect(isolated.json()).resolves.toMatchObject({
-      code: "person_not_found",
+      code: "unauthorized",
     });
     const deniedMutation = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/household/people/${dependant.id}/archive`,
+      `https://meal-planner.test/v1/families/${organization.id}/people/${dependant.id}/archive`,
       {
         body: JSON.stringify({
           expectedVersion: 3,
@@ -2968,9 +3081,9 @@ describe("household public API to private Durable Object boundary", () => {
         method: "POST",
       }
     );
-    expect(deniedMutation.status).toBe(404);
+    expect(deniedMutation.status).toBe(401);
     const unchanged = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/household/people/${dependant.id}`,
+      `https://meal-planner.test/v1/families/${organization.id}/people/${dependant.id}`,
       { headers: { cookie } }
     );
     expect(unchanged.status).toBe(200);
@@ -2988,7 +3101,7 @@ describe("household public API to private Durable Object boundary", () => {
       ownerCookie
     );
     const bootstrapResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/bootstrap-creator",
+      `https://meal-planner.test/v1/families/${organization.id}/people/bootstrap-creator`,
       {
         body: JSON.stringify({
           displayName: "People Invitation Owner",
@@ -3004,7 +3117,7 @@ describe("household public API to private Durable Object boundary", () => {
     ).toBe(200);
 
     const adultResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people",
+      `https://meal-planner.test/v1/families/${organization.id}/people`,
       {
         body: JSON.stringify({
           displayName: "Invited household adult",
@@ -3020,7 +3133,7 @@ describe("household public API to private Durable Object boundary", () => {
       await adultResponse.json()
     );
 
-    const profileUrl = `https://meal-planner.test/v1/household/people/${adult.id}/profile`;
+    const profileUrl = `https://meal-planner.test/v1/families/${organization.id}/people/${adult.id}/profile`;
     const provisionalResponse = await getRuntime().dispatchFetch(profileUrl, {
       body: JSON.stringify({
         command: {
@@ -3060,7 +3173,7 @@ describe("household public API to private Durable Object boundary", () => {
     const inviteeLabel = "People Invited Adult";
     const inviteeCookie = await signUp(inviteeLabel);
     const invitationResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/invitations",
+      `https://meal-planner.test/v1/families/${organization.id}/people/invitations`,
       {
         body: JSON.stringify({
           email: "people-invited-adult@example.test",
@@ -3096,7 +3209,7 @@ describe("household public API to private Durable Object boundary", () => {
     );
     expect(acceptance.status, await acceptance.clone().text()).toBe(200);
     const wrongMemberLink = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/links/complete",
+      `https://meal-planner.test/v1/families/${organization.id}/people/links/complete`,
       {
         body: JSON.stringify({
           invitationId: invitation.invitationId,
@@ -3153,7 +3266,7 @@ describe("household public API to private Durable Object boundary", () => {
     const linkResponses = await Promise.all(
       linkRequests.map((request) =>
         getRuntime().dispatchFetch(
-          "https://meal-planner.test/v1/household/people/links/complete",
+          `https://meal-planner.test/v1/families/${organization.id}/people/links/complete`,
           request
         )
       )
@@ -3179,7 +3292,7 @@ describe("household public API to private Durable Object boundary", () => {
     });
 
     const linkReplay = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/links/complete",
+      `https://meal-planner.test/v1/families/${organization.id}/people/links/complete`,
       linkRequest
     );
     expect(linkReplay.status).toBe(200);
@@ -3189,7 +3302,7 @@ describe("household public API to private Durable Object boundary", () => {
 
     await restartRuntime();
     const rosterResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      `https://meal-planner.test/v1/families/${organization.id}/people?includeArchived=true`,
       { headers: { cookie: admittedInviteeCookie } }
     );
     expect(rosterResponse.status, await rosterResponse.clone().text()).toBe(
@@ -3252,7 +3365,7 @@ describe("household public API to private Durable Object boundary", () => {
   it("projects the associated invitation outcome without leaking its identity or following orphan rows", async () => {
     const setup = await prepareInvitableAdult("Invitation Status");
     const response = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/invitations",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/invitations`,
       {
         body: JSON.stringify({
           email: "invitation-status-adult@example.test",
@@ -3288,7 +3401,7 @@ describe("household public API to private Durable Object boundary", () => {
     });
     const roster = async () => {
       const res = await getRuntime().dispatchFetch(
-        "https://meal-planner.test/v1/household/people",
+        `https://meal-planner.test/v1/families/${setup.organization.id}/people`,
         { headers: { cookie: setup.ownerCookie } }
       );
       expect(res.status).toBe(200);
@@ -3319,8 +3432,7 @@ describe("household public API to private Durable Object boundary", () => {
     "invites the same adult again after an invitation is %s",
     async (outcome) => {
       const setup = await prepareInvitableAdult(`Resend ${outcome}`);
-      const invitationUrl =
-        "https://meal-planner.test/v1/household/people/invitations";
+      const invitationUrl = `https://meal-planner.test/v1/families/${setup.organization.id}/people/invitations`;
       const invite = (mutationId: string) =>
         getRuntime().dispatchFetch(invitationUrl, {
           body: JSON.stringify({
@@ -3377,7 +3489,7 @@ describe("household public API to private Durable Object boundary", () => {
         Schema.encodeSync(HouseholdAdultInvitationResult)(resent)
       );
       const rosterResponse = await getRuntime().dispatchFetch(
-        "https://meal-planner.test/v1/household/people",
+        `https://meal-planner.test/v1/families/${setup.organization.id}/people`,
         { headers: { cookie: setup.ownerCookie } }
       );
       expect(rosterResponse.status).toBe(200);
@@ -3399,7 +3511,7 @@ describe("household public API to private Durable Object boundary", () => {
     } as const;
     const retainedBrowserBody = JSON.stringify(retainedBrowserPayload);
     const invitationResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/invitations",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/invitations`,
       {
         body: retainedBrowserBody,
         headers: {
@@ -3422,7 +3534,7 @@ describe("household public API to private Durable Object boundary", () => {
         .where(eq(authSchema.invitation.organizationId, setup.organization.id))
     ).resolves.toHaveLength(0);
     const stagedRosterResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people?includeArchived=true`,
       { headers: { cookie: setup.ownerCookie } }
     );
     expect(stagedRosterResponse.status).toBe(200);
@@ -3436,7 +3548,7 @@ describe("household public API to private Durable Object boundary", () => {
     await restartRuntime();
 
     const readOnlyAssociation = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/invitations/associate",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/invitations/associate`,
       {
         body: retainedBrowserBody,
         headers: {
@@ -3470,7 +3582,7 @@ describe("household public API to private Durable Object boundary", () => {
       method: "POST",
     } as const;
     const replay = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/invitations",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/invitations`,
       replayRequest
     );
     expect(replay.status, await replay.clone().text()).toBe(201);
@@ -3492,7 +3604,7 @@ describe("household public API to private Durable Object boundary", () => {
         .where(eq(authSchema.invitation.organizationId, setup.organization.id))
     ).resolves.toEqual([{ id: invitation.invitationId }]);
     const rosterResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people?includeArchived=true`,
       { headers: { cookie: setup.ownerCookie } }
     );
     expect(rosterResponse.status).toBe(200);
@@ -3526,7 +3638,7 @@ describe("household public API to private Durable Object boundary", () => {
       await unrelatedResponse.clone().text()
     ).toBe(200);
     const invitationResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/invitations",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/invitations`,
       {
         body: retainedBrowserBody,
         headers: {
@@ -3566,7 +3678,7 @@ describe("household public API to private Durable Object boundary", () => {
     await restartRuntime();
 
     const replay = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/invitations",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/invitations`,
       {
         body: retainedBrowserBody,
         headers: {
@@ -3586,7 +3698,7 @@ describe("household public API to private Durable Object boundary", () => {
       },
     });
     const conflictingIntent = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/invitations",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/invitations`,
       {
         body: JSON.stringify({
           email: "unrelated-pending-adult@example.test",
@@ -3606,7 +3718,7 @@ describe("household public API to private Durable Object boundary", () => {
     });
 
     const readOnlyAssociation = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/invitations/associate",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/invitations/associate`,
       {
         body: retainedBrowserBody,
         headers: {
@@ -3649,7 +3761,7 @@ describe("household public API to private Durable Object boundary", () => {
   it("repairs an accepted member link only to the explicitly selected adult", async () => {
     const setup = await prepareLinkedAdult("Explicit Link Repair");
     const replacementResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people`,
       {
         body: JSON.stringify({
           displayName: "Explicit replacement adult",
@@ -3686,7 +3798,7 @@ describe("household public API to private Durable Object boundary", () => {
       method: "POST",
     } as const;
     const repair = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/links/repair",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/links/repair`,
       repairRequest
     );
     expect(repair.status, await repair.clone().text()).toBe(200);
@@ -3700,7 +3812,7 @@ describe("household public API to private Durable Object boundary", () => {
     });
 
     const replay = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/links/repair",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/links/repair`,
       repairRequest
     );
     expect(replay.status).toBe(200);
@@ -3709,7 +3821,7 @@ describe("household public API to private Durable Object boundary", () => {
     );
 
     const rosterResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people?includeArchived=true`,
       { headers: { cookie: setup.memberCookie } }
     );
     expect(rosterResponse.status).toBe(200);
@@ -3745,7 +3857,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(firstActive.status, await firstActive.clone().text()).toBe(200);
     const firstCookie = cookieHeader(firstActive);
     const firstRosterResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people",
+      `https://meal-planner.test/v1/families/${first.organization.id}/people`,
       { headers: { cookie: firstCookie } }
     );
     expect(firstRosterResponse.status).toBe(200);
@@ -3761,7 +3873,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(secondActive.status, await secondActive.clone().text()).toBe(200);
     const secondCookie = cookieHeader(secondActive);
     const secondRosterResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people",
+      `https://meal-planner.test/v1/families/${second.organization.id}/people`,
       { headers: { cookie: secondCookie } }
     );
     expect(secondRosterResponse.status).toBe(200);
@@ -3778,7 +3890,7 @@ describe("household public API to private Durable Object boundary", () => {
     const setup = await prepareLinkedAdult("Departure Before Removal");
     const mutationId = "departure-before-removal";
     const response = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/departures",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/departures`,
       {
         body: JSON.stringify({
           expectedLinkVersion: 1,
@@ -3798,6 +3910,7 @@ describe("household public API to private Durable Object boundary", () => {
     );
     expect(response.status).toBeGreaterThanOrEqual(500);
     const operation = await readDepartureByMutationEventually(
+      setup.organization.id,
       setup.ownerCookie,
       mutationId,
       "revocation_repair_required"
@@ -3819,7 +3932,7 @@ describe("household public API to private Durable Object boundary", () => {
     ).resolves.toHaveLength(1);
 
     const repair = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/household/people/departures/${operation.operationId}/retry`,
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/departures/${operation.operationId}/retry`,
       {
         body: JSON.stringify({
           expectedOperationVersion: operation.version,
@@ -3839,6 +3952,7 @@ describe("household public API to private Durable Object boundary", () => {
       operationId: operation.operationId,
     });
     const completed = await readDepartureByMutationEventually(
+      setup.organization.id,
       setup.ownerCookie,
       mutationId,
       "completed"
@@ -3861,7 +3975,7 @@ describe("household public API to private Durable Object boundary", () => {
     const setup = await prepareLinkedAdult("Departure Prepared Recovery");
     const mutationId = "departure-prepared-response-lost";
     const response = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/departures",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/departures`,
       {
         body: JSON.stringify({
           expectedLinkVersion: 1,
@@ -3882,11 +3996,13 @@ describe("household public API to private Durable Object boundary", () => {
     expect(response.status).toBeGreaterThanOrEqual(500);
 
     const prepared = await readDepartureByMutationEventually(
+      setup.organization.id,
       setup.ownerCookie,
       mutationId,
       "prepared"
     );
     const recoveredAgain = await readDepartureByMutationEventually(
+      setup.organization.id,
       setup.ownerCookie,
       mutationId,
       "prepared"
@@ -3894,7 +4010,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(recoveredAgain.operationId).toBe(prepared.operationId);
 
     const cancelledResponse = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/household/people/departures/${prepared.operationId}/cancel`,
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/departures/${prepared.operationId}/cancel`,
       {
         body: JSON.stringify({
           expectedOperationVersion: prepared.version,
@@ -3916,6 +4032,7 @@ describe("household public API to private Durable Object boundary", () => {
       state: "cancelled",
     });
     const cancelled = await readDepartureByMutationEventually(
+      setup.organization.id,
       setup.ownerCookie,
       mutationId,
       "cancelled"
@@ -3932,7 +4049,7 @@ describe("household public API to private Durable Object boundary", () => {
         .where(eq(authSchema.member.id, setup.memberId))
     ).resolves.toHaveLength(1);
     const rosterResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people`,
       { headers: { cookie: setup.ownerCookie } }
     );
     expect(rosterResponse.status).toBe(200);
@@ -3947,7 +4064,7 @@ describe("household public API to private Durable Object boundary", () => {
   it("preserves a replacement membership until an explicit departure repair targets it", async () => {
     const setup = await prepareLinkedAdult("Departure Replacement Member");
     const initial = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/departures",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/departures`,
       {
         body: JSON.stringify({
           expectedLinkVersion: 1,
@@ -3968,6 +4085,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(initial.status).toBeGreaterThanOrEqual(500);
     const workflow = await readDepartureWorkflowInput(setup.organization.id);
     const firstRepair = await readDepartureEventually(
+      setup.organization.id,
       setup.ownerCookie,
       workflow.operationId,
       "revocation_repair_required"
@@ -3982,7 +4100,7 @@ describe("household public API to private Durable Object boundary", () => {
       .where(eq(authSchema.member.id, setup.memberId));
 
     const staleMemberRepair = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/household/people/departures/${workflow.operationId}/retry`,
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/departures/${workflow.operationId}/retry`,
       {
         body: JSON.stringify({
           expectedOperationVersion: firstRepair.version,
@@ -3999,6 +4117,7 @@ describe("household public API to private Durable Object boundary", () => {
     );
     expect(staleMemberRepair.status).toBe(202);
     const replacementProtected = await readDepartureEventually(
+      setup.organization.id,
       setup.ownerCookie,
       workflow.operationId,
       "revocation_repair_required"
@@ -4011,7 +4130,7 @@ describe("household public API to private Durable Object boundary", () => {
     ).resolves.toHaveLength(1);
 
     const exactMemberRepair = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/household/people/departures/${workflow.operationId}/retry`,
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/departures/${workflow.operationId}/retry`,
       {
         body: JSON.stringify({
           expectedOperationVersion: replacementProtected.version,
@@ -4031,6 +4150,7 @@ describe("household public API to private Durable Object boundary", () => {
       await exactMemberRepair.clone().text()
     ).toBe(202);
     await readDepartureEventually(
+      setup.organization.id,
       setup.ownerCookie,
       workflow.operationId,
       "completed"
@@ -4047,7 +4167,7 @@ describe("household public API to private Durable Object boundary", () => {
     const setup = await prepareLinkedAdult("Departure After Removal");
     const mutationId = "departure-after-removal";
     const response = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/departures",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/departures`,
       {
         body: JSON.stringify({
           expectedLinkVersion: 1,
@@ -4068,6 +4188,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(response.status).toBeGreaterThanOrEqual(500);
 
     const operation = await readDepartureByMutationEventually(
+      setup.organization.id,
       setup.ownerCookie,
       mutationId,
       "completed"
@@ -4077,6 +4198,7 @@ describe("household public API to private Durable Object boundary", () => {
       state: "completed",
     });
     const recoveredAgain = await readDepartureByMutationEventually(
+      setup.organization.id,
       setup.ownerCookie,
       mutationId,
       "completed"
@@ -4094,7 +4216,7 @@ describe("household public API to private Durable Object boundary", () => {
         .where(eq(authSchema.member.id, setup.memberId))
     ).resolves.toHaveLength(0);
     const rosterResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people?includeArchived=true`,
       { headers: { cookie: setup.ownerCookie } }
     );
     expect(rosterResponse.status).toBe(200);
@@ -4109,7 +4231,7 @@ describe("household public API to private Durable Object boundary", () => {
   it("retries finalization repair on the original departure operation", async () => {
     const setup = await prepareLinkedAdult("Departure Finalization Repair");
     const response = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/departures",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/departures`,
       {
         body: JSON.stringify({
           expectedLinkVersion: 1,
@@ -4132,6 +4254,7 @@ describe("household public API to private Durable Object boundary", () => {
       HouseholdMemberDepartureOperation
     )(await response.json());
     const repairRequired = await readDepartureEventually(
+      setup.organization.id,
       setup.ownerCookie,
       started.operationId,
       "finalization_repair_required"
@@ -4156,7 +4279,7 @@ describe("household public API to private Durable Object boundary", () => {
       method: "POST",
     } as const;
     const retry = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/household/people/departures/${started.operationId}/retry`,
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/departures/${started.operationId}/retry`,
       retryRequest
     );
     expect(retry.status, await retry.clone().text()).toBe(202);
@@ -4164,6 +4287,7 @@ describe("household public API to private Durable Object boundary", () => {
       operationId: started.operationId,
     });
     const completed = await readDepartureEventually(
+      setup.organization.id,
       setup.ownerCookie,
       started.operationId,
       "completed"
@@ -4177,7 +4301,7 @@ describe("household public API to private Durable Object boundary", () => {
 
   it("returns an invited former member to the same historical person", async () => {
     const setup = await prepareLinkedAdult("Returning Historical Adult");
-    const profileUrl = `https://meal-planner.test/v1/household/people/${setup.adult.id}/profile`;
+    const profileUrl = `https://meal-planner.test/v1/families/${setup.organization.id}/people/${setup.adult.id}/profile`;
     const initialProfileResponse = await getRuntime().dispatchFetch(
       profileUrl,
       {
@@ -4220,7 +4344,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(auditResponse.status).toBe(200);
     const auditBytes = await auditResponse.text();
     const departure = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/departures",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/departures`,
       {
         body: JSON.stringify({
           expectedLinkVersion: 1,
@@ -4240,13 +4364,14 @@ describe("household public API to private Durable Object boundary", () => {
     expect(departure.status, await departure.clone().text()).toBe(202);
     const workflow = await readDepartureWorkflowInput(setup.organization.id);
     await readDepartureEventually(
+      setup.organization.id,
       setup.ownerCookie,
       workflow.operationId,
       "completed"
     );
 
     const archivedRosterResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people?includeArchived=true`,
       { headers: { cookie: setup.ownerCookie } }
     );
     expect(archivedRosterResponse.status).toBe(200);
@@ -4287,7 +4412,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(departedRead.status).toBe(401);
 
     const invitationResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/invitations",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/invitations`,
       {
         body: JSON.stringify({
           email: "returning-historical-adult-adult@example.test",
@@ -4321,7 +4446,7 @@ describe("household public API to private Durable Object boundary", () => {
     );
     expect(acceptance.status, await acceptance.clone().text()).toBe(200);
     const wrongMemberRestore = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/return",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/return`,
       {
         body: JSON.stringify({
           expectedPersonVersion: invitation.person?.version,
@@ -4361,7 +4486,7 @@ describe("household public API to private Durable Object boundary", () => {
       method: "POST",
     } as const;
     const restoredResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/return",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/return`,
       returnRequest
     );
     expect(restoredResponse.status, await restoredResponse.clone().text()).toBe(
@@ -4378,7 +4503,7 @@ describe("household public API to private Durable Object boundary", () => {
     });
 
     const replay = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/return",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/return`,
       returnRequest
     );
     expect(replay.status).toBe(200);
@@ -4427,7 +4552,7 @@ describe("household public API to private Durable Object boundary", () => {
       ownerCookie
     );
     const bootstrap = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/bootstrap-creator",
+      `https://meal-planner.test/v1/families/${organization.id}/people/bootstrap-creator`,
       {
         body: JSON.stringify({
           displayName: ownerLabel,
@@ -4460,7 +4585,7 @@ describe("household public API to private Durable Object boundary", () => {
     }
 
     const response = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/departures",
+      `https://meal-planner.test/v1/families/${organization.id}/people/departures`,
       {
         body: JSON.stringify({
           expectedLinkVersion: 1,
@@ -4477,6 +4602,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(response.status).toBe(503);
     const workflow = await readDepartureWorkflowInput(organization.id);
     const operation = await readDepartureEventually(
+      organization.id,
       ownerCookie,
       workflow.operationId,
       "revocation_repair_required"
@@ -4489,7 +4615,7 @@ describe("household public API to private Durable Object boundary", () => {
         .where(eq(authSchema.member.id, membership.id))
     ).resolves.toHaveLength(1);
     const rosterResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      `https://meal-planner.test/v1/families/${organization.id}/people?includeArchived=true`,
       { headers: { cookie: ownerCookie } }
     );
     expect(rosterResponse.status).toBe(200);
@@ -7054,7 +7180,7 @@ const readPrivateChat = async (
 };
 
 describe("displayed account and family binding", () => {
-  it("rejects stale view mutations and private connections after the live session changes", async () => {
+  it("binds people writes to explicit families and rejects changed accounts while private connections remain session-bound", async () => {
     const setup = await prepareLinkedAdult("Displayed Identity");
     const originalCookie = setup.memberCookie;
     const originalOrganization = setup.organization;
@@ -7072,10 +7198,10 @@ describe("displayed account and family binding", () => {
     await Promise.all(
       [originalCookie, otherCookie].map(async (cookie) => {
         const rejected = await getRuntime().dispatchFetch(
-          "https://meal-planner.test/v1/household/people",
+          `https://meal-planner.test/v1/families/${setup.organization.id}/people`,
           {
             body: JSON.stringify({
-              displayName: "Unintended Person",
+              displayName: "Explicit family person",
               kind: "dependant",
               mutationId: "stale-displayed-identity",
             }),
@@ -7088,19 +7214,7 @@ describe("displayed account and family binding", () => {
             method: "POST",
           }
         );
-        expect(rejected.status).toBe(401);
-        const rosterResponse = await getRuntime().dispatchFetch(
-          "https://meal-planner.test/v1/household/people",
-          { headers: { cookie } }
-        );
-        const roster = await Schema.decodeUnknownPromise(HouseholdPeopleRoster)(
-          await rosterResponse.json()
-        );
-        expect(
-          roster.people.some(
-            (person) => person.displayName === "Unintended Person"
-          )
-        ).toBe(false);
+        expect(rejected.status).toBe(cookie === originalCookie ? 201 : 401);
         const query = new URLSearchParams({
           expectedOrganizationId: originalOrganization.id,
           expectedUserId: originalSession.user.id,
@@ -7140,6 +7254,30 @@ describe("displayed account and family binding", () => {
         allowed.webSocket?.close();
       })
     );
+    const originalRoster = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people`,
+      { headers: { cookie: originalCookie } }
+    );
+    expect(await originalRoster.json()).toMatchObject({
+      people: expect.arrayContaining([
+        expect.objectContaining({ displayName: "Explicit family person" }),
+      ]),
+    });
+    const otherRoster = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/families/${otherFamily.organization.id}/people`,
+      { headers: { cookie: originalCookie } }
+    );
+    expect(await otherRoster.text()).not.toContain("Explicit family person");
+    const mismatch = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people`,
+      {
+        headers: {
+          cookie: originalCookie,
+          "x-meal-planner-household": otherFamily.organization.id,
+        },
+      }
+    );
+    expect(mismatch.status).toBe(401);
   });
 });
 
@@ -7366,7 +7504,7 @@ describe("canonical private interview output boundary", () => {
         )
       );
       const setup = await prepareLinkedAdult("Private Transcript Isolation");
-      const profileUrl = `https://meal-planner.test/v1/household/people/${setup.adult.id}/profile`;
+      const profileUrl = `https://meal-planner.test/v1/families/${setup.organization.id}/people/${setup.adult.id}/profile`;
       const seededProfile = await getRuntime().dispatchFetch(profileUrl, {
         body: JSON.stringify({
           command: {
@@ -7392,7 +7530,7 @@ describe("canonical private interview output boundary", () => {
       const directory = await openPrivateDirectory(setup.memberCookie);
       const sharedViews = [
         "https://meal-planner.test/v1/household",
-        "https://meal-planner.test/v1/household/people",
+        `https://meal-planner.test/v1/families/${setup.organization.id}/people`,
         profileUrl,
         `${profileUrl}/versions`,
         `${profileUrl}/audit`,
@@ -7826,7 +7964,7 @@ describe("canonical private interview output boundary", () => {
     const connection = await openPrivateConnection(setup.memberCookie);
     const directory = await openPrivateDirectory(setup.memberCookie);
     const response = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/departures",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/departures`,
       {
         body: JSON.stringify({
           expectedLinkVersion: 1,
@@ -7846,6 +7984,7 @@ describe("canonical private interview output boundary", () => {
     );
     expect(response.status).toBeGreaterThanOrEqual(500);
     const prepared = await readDepartureByMutationEventually(
+      setup.organization.id,
       setup.ownerCookie,
       "private-output-departure",
       "prepared"
@@ -7876,7 +8015,7 @@ describe("canonical private interview output boundary", () => {
     const directory = await openPrivateDirectory(setup.memberCookie);
     const mutationId = "private-output-completed-departure";
     const response = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/departures",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/departures`,
       {
         body: JSON.stringify({
           expectedLinkVersion: 1,
@@ -7895,6 +8034,7 @@ describe("canonical private interview output boundary", () => {
     );
     expect(response.status, await response.clone().text()).toBe(202);
     await readDepartureByMutationEventually(
+      setup.organization.id,
       setup.ownerCookie,
       mutationId,
       "completed"
@@ -7909,7 +8049,7 @@ describe("canonical private interview output boundary", () => {
         .where(eq(authSchema.member.id, setup.memberId))
     ).toEqual([]);
     const rosterResponse = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people?includeArchived=true",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people?includeArchived=true`,
       { headers: { cookie: setup.ownerCookie } }
     );
     const roster = await Schema.decodeUnknownPromise(HouseholdPeopleRoster)(
@@ -7932,7 +8072,7 @@ describe("canonical private interview output boundary", () => {
     const connection = await openPrivateConnection(setup.memberCookie);
     const directory = await openPrivateDirectory(setup.memberCookie);
     const created = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people`,
       {
         body: JSON.stringify({
           displayName: "Synthetic replacement adult",
@@ -7950,7 +8090,7 @@ describe("canonical private interview output boundary", () => {
       await created.json()
     );
     const repaired = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people/links/repair",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people/links/repair`,
       {
         body: JSON.stringify({
           expectedPersonVersion: replacement.version,
@@ -8131,13 +8271,13 @@ const postPrivateConfirmation = (
     request
   );
 };
-const profileAddress = (personId: string) =>
-  `https://meal-planner.test/v1/household/people/${personId}/profile`;
+const profileAddress = (organizationId: string, personId: string) =>
+  `https://meal-planner.test/v1/families/${organizationId}/people/${personId}/profile`;
 const readCardProfile = async (
   setup: Awaited<ReturnType<typeof prepareLinkedAdult>>
 ) => {
   const response = await getRuntime().dispatchFetch(
-    profileAddress(setup.adult.id),
+    profileAddress(setup.organization.id, setup.adult.id),
     {
       headers: { cookie: setup.ownerCookie },
     }
@@ -8149,11 +8289,17 @@ const manualCardProfile = (
   setup: Awaited<ReturnType<typeof prepareLinkedAdult>>,
   payload: object
 ) =>
-  getRuntime().dispatchFetch(profileAddress(setup.adult.id), {
-    body: JSON.stringify(payload),
-    headers: { "content-type": "application/json", cookie: setup.memberCookie },
-    method: "POST",
-  });
+  getRuntime().dispatchFetch(
+    profileAddress(setup.organization.id, setup.adult.id),
+    {
+      body: JSON.stringify(payload),
+      headers: {
+        "content-type": "application/json",
+        cookie: setup.memberCookie,
+      },
+      method: "POST",
+    }
+  );
 const awaitCardBarrier = async (
   id: string,
   phase: "before" | "after" | "before-release"
@@ -8202,14 +8348,14 @@ const repairCardParticipant = async (
   personId: string
 ) => {
   const personResponse = await getRuntime().dispatchFetch(
-    `https://meal-planner.test/v1/household/people/${personId}`,
+    `https://meal-planner.test/v1/families/${setup.organization.id}/people/${personId}`,
     { headers: { cookie: setup.ownerCookie } }
   );
   const person = Schema.decodeUnknownSync(HouseholdPerson)(
     await personResponse.json()
   );
   const response = await getRuntime().dispatchFetch(
-    "https://meal-planner.test/v1/household/people/links/repair",
+    `https://meal-planner.test/v1/families/${setup.organization.id}/people/links/repair`,
     {
       body: JSON.stringify({
         expectedPersonVersion: person.version,
@@ -8981,7 +9127,7 @@ describe("canonical private profile cards", () => {
       state: { status: "open", version: 0 },
     });
     const currentResponse = await getRuntime().dispatchFetch(
-      profileAddress(setup.adult.id),
+      profileAddress(setup.organization.id, setup.adult.id),
       { headers: { cookie: setup.memberCookie } }
     );
     expect(currentResponse.status).toBe(200);
@@ -9227,7 +9373,7 @@ describe("canonical private profile cards", () => {
       version: 2,
     });
     const historical = await getRuntime().dispatchFetch(
-      `${profileAddress(setup.adult.id)}/versions/1`,
+      `${profileAddress(setup.organization.id, setup.adult.id)}/versions/1`,
       { headers: { cookie: setup.memberCookie } }
     );
     expect(await historical.json()).toEqual(
@@ -9585,7 +9731,7 @@ describe("canonical private profile cards", () => {
     );
     const releaseRetry = await awaitCardBarrier(retryBefore, "before");
     const created = await getRuntime().dispatchFetch(
-      "https://meal-planner.test/v1/household/people",
+      `https://meal-planner.test/v1/families/${setup.organization.id}/people`,
       {
         body: JSON.stringify({
           displayName: "Synthetic temporary linked adult",
