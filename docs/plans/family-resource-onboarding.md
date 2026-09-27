@@ -1,6 +1,7 @@
 # Refactor family setup around saved resources
 
-Status: implemented; delivery tracked in [PR #254](https://github.com/cill-i-am/meal-planner/pull/254)
+Status: active
+Delivery record: [PR #254](https://github.com/cill-i-am/meal-planner/pull/254)
 Owner: Codex, with Cillian for product decisions
 Baseline: `630e2d18e9ca3c060e82aaf84a578b33ac902a66` (fetched origin/main)
 Delivery: implementation, checks, review, and merge; no deployment
