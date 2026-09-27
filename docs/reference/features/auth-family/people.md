@@ -37,7 +37,7 @@ necessary, `data-roster-person-id` from the rendered DOM.
 | Cancel removal | Open removal and cancel | Person and membership remain |
 | Permission view | Repeat as a regular member | Only permitted actions appear; own-name editing does not grant organizer actions |
 | Mobile | Repeat edit at a narrow viewport and resize while open | Drawer/dialog keeps the intended person and unsaved values; cancel still leaves data unchanged |
-| Unknown write | Interrupt a submitted mutation, reload, retry | Original key/version/payload reused; one effective change |
+| Unknown write | Interrupt a submitted mutation; retry while the screen stays mounted | Original key/version/payload reused; one effective change |
 
 If a person saves but its invitation is rejected, expect a partial-success
 message. Review that person and correct the invitation; do not add another person.
@@ -52,8 +52,8 @@ Pending invitation removal can display **Cancel invitation & remove**.
 Capture the exact person and action in removal evidence.
 
 Cancel preserves a local Add form while the screen stays mounted; logout/reload
-does not promise to restore unsent fields. Unknown submitted requests follow a
-different recovery path. Completion leaves later corrections possible.
+discards unsent fields and pending browser requests. A new page load reads the
+saved roster without replaying mutations. Completion leaves later corrections possible.
 
 Owners: [browser family](../../../../apps/web/src/features/family/AGENTS.md),
 [people API](../../household-people-api.md), and household persistence.

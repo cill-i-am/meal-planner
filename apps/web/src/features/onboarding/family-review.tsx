@@ -1,9 +1,6 @@
 import type { Family } from "@meal-planner/families";
-import type {
-  HouseholdPeopleRoster,
-  UserId,
-} from "@meal-planner/household-api";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { HouseholdPeopleRoster } from "@meal-planner/household-api";
+import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Effect } from "effect";
 import { useState } from "react";
@@ -22,10 +19,11 @@ import {
   CardFooter,
 } from "../../components/ui/card.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
+import { useAccount } from "../auth/index.js";
 import {
-  familyEffectQuery,
-  familyKeys,
-  familyOperation,
+  useCompleteFamilySetup,
+  useResumeFamilyCreation,
+  useFamilyActions,
   PersonRow,
   useFamilyRoster,
   peopleEffectQuery,
@@ -37,33 +35,16 @@ import {
 import { SetupFrame } from "./setup-ui.js";
 
 const useLogout = () => {
-  const setup = useFamily();
+  const account = useAccount();
   return useMutation(
     peopleEffectQuery.mutationOptions({
-      mutationFn: () => setup.logout("/setup"),
+      mutationFn: () => account.logout("/setup"),
       mutationKey: ["setup-logout"],
     })
   );
 };
-const CreatorRecovery = ({
-  family,
-  userId,
-}: {
-  readonly family: Family;
-  readonly userId: UserId;
-}) => {
-  const queryClient = useQueryClient();
-  const resume = useMutation(
-    familyEffectQuery.mutationOptions({
-      mutationFn: () =>
-        familyOperation(userId, (api) =>
-          api.families.resumeCreation({ params: { familyId: family.id } })
-        ),
-      mutationKey: ["families", userId, family.id, "resume-creation"],
-      onSuccess: () =>
-        queryClient.invalidateQueries({ queryKey: familyKeys.all(userId) }),
-    })
-  );
+const CreatorRecovery = ({ family }: { readonly family: Family }) => {
+  const resume = useResumeFamilyCreation(family.id);
   return (
     <div className="flex flex-col gap-3">
       <p>Your family is saved. Finish linking its creator to continue.</p>
@@ -88,11 +69,9 @@ const CreatorRecovery = ({
 const CreatorNotice = ({
   family,
   roster,
-  userId,
 }: {
   readonly family: Family;
   readonly roster: HouseholdPeopleRoster;
-  readonly userId: UserId;
 }) => {
   if (roster.currentPersonId !== null) {
     if (!family.canManage && family.setup.status === "in_progress") {
@@ -105,7 +84,7 @@ const CreatorNotice = ({
     return null;
   }
   if (roster.creatorSlot === "available" && family.canManage) {
-    return <CreatorRecovery family={family} userId={userId} />;
+    return <CreatorRecovery family={family} />;
   }
   return (
     <OperationError>
@@ -193,11 +172,7 @@ export const FamilyReviewPage = () => {
               </OperationError>
             )}
             {roster.data && setup.family && (
-              <CreatorNotice
-                family={setup.family}
-                roster={roster.data}
-                userId={setup.user.id}
-              />
+              <CreatorNotice family={setup.family} roster={roster.data} />
             )}
             {logout.error && (
               <OperationError>
@@ -244,38 +219,29 @@ export const FamilyReviewPage = () => {
 
 export const FamilyReadyPage = () => {
   const setup = useFamily();
+  const actions = useFamilyActions();
   const { family } = setup;
   const roster = useFamilyRoster();
   const navigate = useNavigate();
   const logout = useLogout();
   const [navigationFailed, setNavigationFailed] = useState(false);
-  const finish = useMutation(
-    familyEffectQuery.mutationOptions({
-      mutationFn: () => {
-        if (!family) {
-          return Effect.die(new Error("A family is required."));
-        }
-        const familyId = family.id;
-        return familyOperation(setup.user.id, (api) =>
-          api.families.complete({ params: { familyId } })
-        );
-      },
-      mutationKey: ["families", setup.user.id, family?.id, "complete"],
-    })
-  );
+  const finish = useCompleteFamilySetup();
   const complete = async (destination: "discovery" | "later") => {
-    if (!finish.isSuccess && family?.setup.status !== "complete") {
+    if (!family) {
+      return;
+    }
+    if (!finish.isSuccess && family.setup.status !== "complete") {
       try {
-        await finish.mutateAsync();
+        await finish.mutateAsync(family.id);
       } catch {
         return;
       }
     }
     try {
       if (family) {
-        await Effect.runPromise(setup.selectFamily(family.id));
+        await Effect.runPromise(actions.selectFamily(family.id));
       }
-      await setup.refresh();
+      await actions.refresh();
       await navigate({
         href: destination === "discovery" ? "/#private-interviews" : "/",
       });
@@ -346,11 +312,7 @@ export const FamilyReadyPage = () => {
               family.
             </p>
             {roster.data && (
-              <CreatorNotice
-                family={family}
-                roster={roster.data}
-                userId={setup.user.id}
-              />
+              <CreatorNotice family={family} roster={roster.data} />
             )}
             {roster.isError && (
               <OperationError>

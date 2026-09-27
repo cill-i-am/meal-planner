@@ -23,3 +23,7 @@ export { IdentityQueryBoundary } from "./identity-query-boundary.js";
 export { useAuthRetry } from "./use-auth-retry.js";
 export type { AuthBoundaryActions, HouseholdSummary } from "./auth-boundary.js";
 export type { DisplayedIdentity } from "./displayed-identity.js";
+
+export { accountKey, accountQuery } from "./account-query.js";
+export { AuthClientContext } from "./auth-client.js";
+export type { Account } from "./account-query.js";

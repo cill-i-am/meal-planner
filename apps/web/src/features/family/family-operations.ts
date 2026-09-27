@@ -7,12 +7,14 @@ import type {
   HouseholdOrganizationId,
   UserId,
 } from "@meal-planner/household-api";
-import { Effect, Schedule, Schema } from "effect";
+import { Effect, Layer, Schedule, Schema } from "effect";
 import { createEffectQuery } from "effect-query";
 import { HttpClientError } from "effect/unstable/http";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
-export const familyEffectQuery = createEffectQuery(FetchHttpClient.layer);
+import { apiHttpLayer } from "../api-client/index.js";
+import type { ApiRuntime } from "../api-client/index.js";
+
+export const familyEffectQuery = createEffectQuery(Layer.empty);
 export const familyKeys = {
   all: (userId: UserId) => ["families", userId] as const,
   detail: (userId: UserId, familyId: HouseholdOrganizationId | undefined) =>
@@ -22,6 +24,7 @@ export const familyKeys = {
     ["families", userId, familyId, "people"] as const,
 };
 export const familyOperation = <A, E>(
+  runtime: ApiRuntime,
   userId: UserId,
   run: (api: FamilyApiClient) => Effect.Effect<A, E>
 ) =>
@@ -38,18 +41,22 @@ export const familyOperation = <A, E>(
     }),
     Effect.provide(
       makeFamilyApiClientLayer({
-        baseUrl: window.location.origin,
+        baseUrl: runtime.baseUrl,
         headers: { "x-meal-planner-user": userId },
       })
-    )
+    ),
+    Effect.provide(apiHttpLayer(runtime))
   );
-export const familyListQuery = (userId: UserId) =>
+export const familyListQuery = (runtime: ApiRuntime, userId: UserId) =>
   familyEffectQuery.queryOptions({
-    queryFn: () => familyOperation(userId, (api) => api.families.list()),
+    queryFn: () =>
+      familyOperation(runtime, userId, (api) => api.families.list()),
     queryKey: familyKeys.list(userId),
     retry: false,
+    staleTime: 30_000,
   });
 export const familyQuery = (
+  runtime: ApiRuntime,
   userId: UserId,
   familyId: HouseholdOrganizationId | undefined
 ) =>
@@ -59,10 +66,11 @@ export const familyQuery = (
       if (familyId === undefined) {
         throw new Error("A family is required.");
       }
-      return familyOperation(userId, (api) =>
+      return familyOperation(runtime, userId, (api) =>
         api.families.get({ params: { familyId } })
       );
     },
     queryKey: familyKeys.detail(userId, familyId),
     retry: false,
+    staleTime: 30_000,
   });

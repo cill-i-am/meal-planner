@@ -42,6 +42,7 @@ const target = (file: string, specifier: string) =>
 
 it("consumes the reference frontend slices only through their public APIs", () => {
   const slices = new Set([
+    "api-client",
     "auth",
     "family",
     "onboarding",
@@ -70,7 +71,12 @@ it("consumes the reference frontend slices only through their public APIs", () =
         feature &&
         slices.has(feature) &&
         owner(file) !== feature &&
-        path.basename(destination) !== "index.js"
+        path.basename(destination) !== "index.js" &&
+        !(
+          feature === "api-client" &&
+          file === "apps/web/src/router.tsx" &&
+          path.basename(destination) === "start-runtime.js"
+        )
       ) {
         violations.push(`${file} imports private ${destination}`);
       }

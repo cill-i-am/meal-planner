@@ -2,6 +2,7 @@ export {
   FamilyProvider,
   useFamily,
   useFamilyActions,
+  useFamilyList,
 } from "./family-context.js";
 export {
   familyEffectQuery,
@@ -10,7 +11,10 @@ export {
   familyListQuery,
   familyQuery,
 } from "./family-operations.js";
-export { familyCreationMutationOptions } from "./family-creation.js";
+export {
+  familyCreationMutationOptions,
+  useCreateFamily,
+} from "./family-creation.js";
 export {
   peopleEffectQuery,
   familyRosterQueryOptions,
@@ -25,3 +29,10 @@ export {
   useRosterManagement,
 } from "./roster-management.js";
 export type { RosterAction } from "./roster-management.js";
+
+export { useAddFamilyPerson } from "./person-mutation.js";
+
+export {
+  useCompleteFamilySetup,
+  useResumeFamilyCreation,
+} from "./setup-mutations.js";

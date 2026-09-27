@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { InvitationId } from "@meal-planner/household-api";
 import type { InvitationView } from "@meal-planner/household-api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -15,6 +14,8 @@ import userEvent from "@testing-library/user-event";
 import { Effect, Schema } from "effect";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+// @vitest-environment jsdom
+import { ApiRuntimeContext, browserApiRuntime } from "../api-client/index.js";
 import { InvitationPage, InvitationPageForRoute } from "./invitation-page.js";
 
 const logout = vi.fn(() => Effect.void);
@@ -35,6 +36,7 @@ vi.mock("../family/index.js", () => ({
 type ReadStatus = InvitationView["status"] | "forbidden" | "unauthorized";
 let readStatus: ReadStatus = "pending";
 let failResponse = false;
+let commitResponse = true;
 const responses: unknown[] = [];
 const fetchInvitation = vi.fn<typeof fetch>(async (input, init) => {
   const request = new Request(input, init);
@@ -49,7 +51,9 @@ const fetchInvitation = vi.fn<typeof fetch>(async (input, init) => {
       mutationId: string;
     };
     responses.push(body);
-    readStatus = body.decision === "accept" ? "accepted" : "rejected";
+    if (!failResponse || commitResponse) {
+      readStatus = body.decision === "accept" ? "accepted" : "rejected";
+    }
     if (failResponse) {
       return Response.json(
         { _tag: "InvitationReadUnavailable", message: "Unknown result" },
@@ -121,7 +125,9 @@ const setup = async () => {
         })
       }
     >
-      <RouterProvider router={router} />
+      <ApiRuntimeContext value={browserApiRuntime()}>
+        <RouterProvider router={router} />
+      </ApiRuntimeContext>
     </QueryClientProvider>
   );
   await waitFor(() =>
@@ -136,6 +142,7 @@ beforeEach(() => {
   responses.length = 0;
   readStatus = "pending";
   failResponse = false;
+  commitResponse = true;
   vi.stubGlobal("fetch", fetchInvitation);
   vi.stubGlobal("scrollTo", vi.fn());
   vi.stubGlobal("IntersectionObserver", TestIntersectionObserver);
@@ -176,40 +183,43 @@ it("joins through one generated server operation after explicit consent", async 
   expect(selectFamily).toHaveBeenCalledWith("synthetic-family");
   await waitFor(() => expect(localStorage.length).toBe(0));
 });
-it("retries an uncertain acceptance after reload with its original key", async () => {
+it("retries an uncertain acceptance on the mounted screen with its original key", async () => {
   failResponse = true;
   const user = await setup();
   await user.click(await screen.findByRole("button", { name: "Join family" }));
   await waitFor(() => expect(responses).toHaveLength(3), { timeout: 3000 });
   await screen.findByRole("button", { name: "Continue" });
   const [first] = responses;
-  cleanup();
   failResponse = false;
-  const resumed = await setup();
-  await resumed.click(await screen.findByRole("button", { name: "Continue" }));
+  await user.click(await screen.findByRole("button", { name: "Continue" }));
   await screen.findByRole("heading", { name: "Your account" });
   expect(responses.at(-1)).toEqual(first);
 });
-it("does not turn a saved decline into acceptance when another tab accepted", async () => {
-  readStatus = "accepted";
-  localStorage.setItem(
-    "meal-planner:request:recipient:invitation:synthetic-invite:saved-decline",
-    JSON.stringify({ decision: "decline", mutationId: "saved-decline" })
-  );
+it("reads the accepted state after reload without replaying a browser mutation", async () => {
+  failResponse = true;
   const user = await setup();
-  await screen.findByRole("heading", { name: "This invitation was accepted" });
-  expect(responses).toHaveLength(0);
+  await user.click(await screen.findByRole("button", { name: "Join family" }));
+  await waitFor(() => expect(responses).toHaveLength(3), { timeout: 3000 });
+  await screen.findByRole("button", { name: "Continue" });
+  expect(localStorage.length).toBe(0);
+  cleanup();
+  failResponse = false;
+  await setup();
+  await screen.findByRole("button", { name: "Continue" });
+  expect(responses).toHaveLength(3);
+});
+it("keeps an uncertain decline as a decline when retrying", async () => {
+  failResponse = true;
+  commitResponse = false;
+  const user = await setup();
   await user.click(
-    screen.getByRole("button", {
-      name: "Continue with the accepted invitation",
-    })
+    await screen.findByRole("button", { name: "Decline invitation" })
   );
+  await waitFor(() => expect(responses).toHaveLength(3), { timeout: 3000 });
+  const [first] = responses;
+  failResponse = false;
   await user.click(await screen.findByRole("button", { name: "Continue" }));
-  await screen.findByRole("heading", { name: "Your account" });
-  expect(responses).toEqual([
-    {
-      decision: "accept",
-      mutationId: expect.not.stringMatching(/^saved-decline$/u),
-    },
-  ]);
+  await waitFor(() => expect(responses).toHaveLength(4));
+  expect(responses.at(-1)).toEqual(first);
+  expect(first).toMatchObject({ decision: "decline" });
 });

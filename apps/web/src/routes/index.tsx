@@ -4,6 +4,7 @@ import { createFileRoute, Navigate, useSearch } from "@tanstack/react-router";
 import { useMemo } from "react";
 
 import { StatusScreen } from "../components/status-screen.js";
+import { useApiRuntime } from "../features/api-client/index.js";
 import {
   AuthBoundary,
   useAuthClient,
@@ -44,7 +45,7 @@ const AuthenticatedMealPlanner = ({
 }) => {
   const queryClient = useQueryClient();
   const { userId, organizationId } = scope;
-  const family = useQuery(familyQuery(userId, organizationId));
+  const family = useQuery(familyQuery(useApiRuntime(), userId, organizationId));
   const clients = useMemo(() => {
     const identity = { organizationId, userId };
     return {

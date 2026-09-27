@@ -75,7 +75,7 @@ the evidence changes the choice.
 | D05 | Creation identity | Scope a client-generated mutation ID to the authenticated actor; derive a stable organization ID server-side. Retain the original creation name and creator display name only as a private retry receipt, not an editable family draft. Slug uniqueness is enforced in D1. | Same-key/different-input and partial-link checks pass. |
 
 | D06 | Browser ownership | Query keys are `families / userId / familyId / resource`; lists use the user scope. Successful people writes invalidate that family's roster. React and the URL own unsubmitted forms and navigation. | Generated-client and UI tests pass. |
-| D07 | Request storage | Retain only submitted commands in account/family-scoped localStorage, with a separate entry for each mutation ID. Keep the payload unchanged while its outcome is unknown. Release confirmed results and known rejected commands. | Reload and storage-failure browser tests pass; each submitted key has its own storage entry. |
+| D07 (superseded by D26) | Request storage | Retain only submitted commands in account/family-scoped localStorage, with a separate entry for each mutation ID. Keep the payload unchanged while its outcome is unknown. Release confirmed results and known rejected commands. | Reload and storage-failure browser tests pass; each submitted key has its own storage entry. |
 | D08 | API resource scope | People operations use `/v1/families/:familyId/people`, with PATCH/DELETE on individual people. Resolve live membership for the URL family rather than relying on whichever family another tab selected. | Native integration tests confirm URL-family authorization and changed-account rejection. |
 | D09 | Invitation response | One server operation accepts/declines the invitation and completes the household link. A retry reads the invitation's saved state before repeating effects. Adding a person still requires separate explicit invite consent. | Real D1 recipient and interrupted-link replay tests pass. |
 | D10 | Migration | Backfill family metadata from existing organizations, memberships, and completed checkpoints before dropping account progress fields. Keep existing household records intact. Carry interrupted creator-link identity forward. | Consolidated generated schema migration plus data backfill; real D1 migration tests pass. |
@@ -169,3 +169,69 @@ Local screenshots are retained in ignored `artifacts/auth-family/`. This checks
 frontend entry points only. Authenticated family journeys, native persistence,
 fault injection, and actual mail delivery were not rerun for this documentation
 change; the feature map specifies their prerequisites and evidence requirements.
+
+### Frontend architecture iteration — active
+
+Cillian approved the frontend proposals and requested full use of TanStack Start
+on 27 September 2026. Move mutation lifecycle into feature hooks, narrow family
+context, and coordinate account/family/roster reads through routes and one Query
+cache. Supply request-scoped API transport during SSR and same-origin transport
+in the browser; preserve native Better Auth authority and generated Effect clients.
+
+Acceptance for this iteration:
+
+- [x] Direct-load SSR and browser navigation load the same scoped query data.
+- [x] Server cookies and bindings never cross users or enter dehydrated data.
+- [x] Screens delegate retained-request handling, result classification, and cache invalidation.
+- [x] Family context no longer exposes account operations or a people-client factory.
+- [x] Unknown writes retain exact input and keys while mounted; partial invitation success remains visible.
+- [ ] Relevant behavior tests, browser/SSR verification, docs, review, and hosted checks pass.
+
+The browser adapter supplies protocol transport, not domain authority. Exact
+request retention protects retries while a screen is mounted; it does not
+turn unsubmitted forms into persisted drafts.
+
+### D26 — No persisted browser mutations (27 September 2026)
+
+The user chose to remove persisted mutations. Keep the original payload, version,
+and request key only in memory while the submitting screen is mounted. Retry
+there with the same identity. Reload reads the authoritative server resources;
+it does not restore or replay a submitted browser command. Server receipts,
+version checks, and explicit recovery operations remain unchanged. This replaces
+D07, including its storage-failure gate and cross-reload retry guarantee.
+
+The browser transport uses Effect's FetchHttpClient and the generated contract
+client. It delegates network I/O to native fetch. Better Auth identity operations
+use Better Auth's own client. Browser/server transport configuration is ordinary
+host wiring, not an additional domain abstraction required by Effect.
+
+### D27 — Frontend ownership and SSR transport (27 September 2026)
+
+Keep product slices local to web while they have one consumer. The family context
+contains selected data only. Family creation, person creation, setup completion,
+and invitation response hooks own remote mutations and invalidation. Screens own
+local form state and navigation. Query keys remain account/family scoped; API
+versions and server request-key receipts are unchanged.
+
+Route loaders populate the same Query cache that components read. The router
+creates request-scoped clients. The browser transport uses native fetch through
+Effect; the SSR transport uses the private Worker binding, forwards only the
+current request's credentials, and returns refreshed cookies. Protected HTML is
+private and not cacheable. The account query strips session secrets before
+hydration. This is a small environment configuration seam, not a new client
+framework. Better Auth identity operations remain on its native client.
+
+### Frontend verification — 27 September 2026
+
+The 237 web behavior tests cover mounted retries, non-replay after reload,
+account changes, credential forwarding, cookie refresh, and cancellation. The
+production SSR entry rendered two concurrent synthetic accounts with separate
+cookies and public hydration data; session IDs and tokens were absent from HTML.
+Protected responses carried `private, no-store`.
+
+An isolated browser against the built app and a synthetic API binding completed
+Name → Members → Confirmation, then reloaded Confirmation successfully. It
+reported no browser errors and no submitted-request storage entries. This proves
+SSR/hydration and browser coordination through the production transport seam;
+it does not claim deployed Worker or native D1 persistence verification. Full
+repository checks and hosted merge gates are tracked with this iteration's PR.

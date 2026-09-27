@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { CreateFamily } from "@meal-planner/families";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -14,14 +13,12 @@ import userEvent from "@testing-library/user-event";
 import { Schema } from "effect";
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
 
+// @vitest-environment jsdom
+import { ApiRuntimeContext, browserApiRuntime } from "../api-client/index.js";
 import { AuthClientContext, makeAuthClient } from "../auth/auth-client.js";
 import { FamilyNamePage } from "./family-name.js";
 import { SetupProvider } from "./setup-provider.js";
 
-const restored = Schema.decodeUnknownSync(CreateFamily)({
-  mutationId: "bootstrap-11111111",
-  name: "Morgan family",
-});
 let currentTransport: typeof fetch;
 const makeTransport = () => {
   let family: object | null = null;
@@ -153,7 +150,9 @@ const setup = async (fixture = makeTransport()) => {
       }
     >
       <AuthClientContext value={makeAuthClient(fixture.transport)}>
-        <RouterProvider router={router} />
+        <ApiRuntimeContext value={browserApiRuntime()}>
+          <RouterProvider router={router} />
+        </ApiRuntimeContext>
       </AuthClientContext>
     </QueryClientProvider>
   );
@@ -203,7 +202,7 @@ it("creates one family through the generated client and opens review", async () 
   await waitFor(() => expect(localStorage.length).toBe(0));
 });
 
-it("retains the exact submitted request across failure and reload", async () => {
+it("retries an uncertain creation on the mounted screen with the exact request", async () => {
   const fixture = makeTransport();
   fixture.createError = { _tag: "FamilyUnavailable", status: 503 };
   const { user } = await setup(fixture);
@@ -223,13 +222,9 @@ it("retains the exact submitted request across failure and reload", async () => 
       (call) => JSON.stringify(call) === JSON.stringify(first)
     )
   ).toBe(true);
-  cleanup();
   fixture.createError = null;
   fixture.createReply.resolve(null);
-  const reloaded = await setup(fixture);
-  await reloaded.user.click(
-    screen.getByRole("button", { name: "Check and continue" })
-  );
+  await user.click(screen.getByRole("button", { name: "Check and continue" }));
   await screen.findByRole("heading", { name: "Review your family" });
   expect(fixture.createCalls.at(-1)).toEqual(first);
 });
@@ -262,33 +257,26 @@ it("logs out without persisting an unsubmitted form", async () => {
   expect(fixture.signOutCalls).toBe(1);
 });
 
-it("keeps an uncertain submitted command when logging out", async () => {
-  localStorage.setItem(
-    `meal-planner:request:adult-1:family-create:${restored.mutationId}`,
-    JSON.stringify(restored)
-  );
-  const { user } = await setup();
-  await user.click(screen.getByRole("button", { name: "Log out" }));
-  await screen.findByRole("heading", { name: "Log in" });
-  expect(
-    JSON.parse(
-      localStorage.getItem(
-        `meal-planner:request:adult-1:family-create:${restored.mutationId}`
-      ) ?? "null"
-    )
-  ).toEqual(restored);
-});
-
-it("does not send a mutation when browser storage cannot retain its key", async () => {
-  const { fixture, user } = await setup();
-  const storage = vi
-    .spyOn(Storage.prototype, "setItem")
-    .mockImplementation(() => {
-      throw new DOMException("Full", "QuotaExceededError");
-    });
+it("does not restore or replay an uncertain creation after a reload", async () => {
+  const fixture = makeTransport();
+  fixture.createError = { _tag: "FamilyUnavailable", status: 503 };
+  const { user } = await setup(fixture);
   await user.type(screen.getByLabelText("Family name"), "Morgan family");
   await user.click(screen.getByRole("button", { name: "Create family" }));
-  await screen.findByText(/couldn’t keep this request safely/u);
-  expect(fixture.createCalls).toHaveLength(0);
-  storage.mockRestore();
+  await waitFor(() => expect(fixture.createCalls).toHaveLength(3), {
+    timeout: 3000,
+  });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Check and continue" })
+    ).toBeEnabled()
+  );
+  expect(localStorage.length).toBe(0);
+  cleanup();
+  await setup(fixture);
+  expect(await screen.findByLabelText("Family name")).toHaveValue("");
+  expect(
+    screen.queryByRole("button", { name: "Check and continue" })
+  ).not.toBeInTheDocument();
+  expect(fixture.createCalls).toHaveLength(3);
 });

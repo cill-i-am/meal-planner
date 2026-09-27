@@ -1,12 +1,14 @@
-import { EmailAddress, UserId } from "@meal-planner/household-api";
 import type { HouseholdOrganizationId } from "@meal-planner/household-api";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate, useRouter } from "@tanstack/react-router";
-import { Data, Effect, Schema } from "effect";
+import { Data, Effect } from "effect";
 import { createContext, use, useMemo } from "react";
 import type { ReactNode } from "react";
 
 import { StatusScreen } from "../../components/status-screen.js";
+import { useApiRuntime } from "../api-client/index.js";
+import { accountQuery, accountKey } from "./account-query.js";
+import type { Account } from "./account-query.js";
 import {
   makeAuthClient,
   requireAuthSuccess,
@@ -21,13 +23,8 @@ const external = <A,>(run: () => Promise<A>) =>
     catch: (cause) => new AccountOperationFailure({ cause }),
     try: run,
   });
-const AccountUser = Schema.Struct({
-  email: EmailAddress,
-  id: UserId,
-  name: Schema.String,
-});
 interface AccountContextValue {
-  readonly user: typeof AccountUser.Type;
+  readonly user: Account["user"];
   readonly activeFamilyId: string | null | undefined;
   readonly selectFamily: (
     id: HouseholdOrganizationId
@@ -50,12 +47,16 @@ const AuthenticatedAccount = ({
   refreshSession,
   children,
 }: {
-  readonly user: typeof AccountUser.Type;
+  readonly user: Account["user"];
   readonly activeFamilyId: string | null | undefined;
   readonly refreshSession: () => Promise<unknown>;
   readonly children: ReactNode;
 }) => {
-  const auth = useMemo(() => makeAuthClient(fetch, user.id), [user.id]);
+  const runtime = useApiRuntime();
+  const auth = useMemo(
+    () => makeAuthClient(runtime.fetch, user.id, `${runtime.baseUrl}/api/auth`),
+    [runtime, user.id]
+  );
   const queryClient = useQueryClient();
   const router = useRouter();
   return (
@@ -92,7 +93,8 @@ export const AccountProvider = ({
   readonly children: ReactNode;
 }) => {
   const auth = useAuthClient();
-  const session = auth.useSession();
+  const queryClient = useQueryClient();
+  const session = useQuery(accountQuery(auth));
   const router = useRouter();
   if (session.isPending) {
     return <StatusScreen title="Loading your account…" />;
@@ -114,13 +116,15 @@ export const AccountProvider = ({
       />
     );
   }
-  const user = Schema.decodeUnknownSync(AccountUser)(session.data.user);
+  const { user } = session.data;
   return (
     <AuthenticatedAccount
       key={user.id}
       user={user}
       activeFamilyId={session.data.session.activeOrganizationId}
-      refreshSession={session.refetch}
+      refreshSession={() =>
+        queryClient.invalidateQueries({ queryKey: accountKey })
+      }
     >
       {children}
     </AuthenticatedAccount>

@@ -4,14 +4,20 @@ import {
   makeInvitationReadApiClientLayer,
 } from "@meal-planner/invitations";
 import type { InvitationResponse } from "@meal-planner/invitations";
-import { Effect, Schedule } from "effect";
+import { Effect, Layer, Schedule } from "effect";
 import { createEffectQuery } from "effect-query";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
-const effectQuery = createEffectQuery(FetchHttpClient.layer);
+import { apiHttpLayer } from "../api-client/index.js";
+import type { ApiRuntime } from "../api-client/index.js";
+
+const effectQuery = createEffectQuery(Layer.empty);
 
 /** The query cache owns this recipient-scoped server view. */
-export const invitationReadQueryOptions = (id: InvitationId, userId: UserId) =>
+export const invitationReadQueryOptions = (
+  runtime: ApiRuntime,
+  id: InvitationId,
+  userId: UserId
+) =>
   effectQuery.queryOptions({
     queryFn: () =>
       InvitationReadApiClient.use((api) =>
@@ -19,10 +25,11 @@ export const invitationReadQueryOptions = (id: InvitationId, userId: UserId) =>
       ).pipe(
         Effect.provide(
           makeInvitationReadApiClientLayer({
-            baseUrl: window.location.origin,
+            baseUrl: runtime.baseUrl,
             headers: { "x-meal-planner-user": userId },
           })
-        )
+        ),
+        Effect.provide(apiHttpLayer(runtime))
       ),
     queryKey: ["setup-invitation", userId, id],
     retry: false,
@@ -30,6 +37,7 @@ export const invitationReadQueryOptions = (id: InvitationId, userId: UserId) =>
   });
 
 export const respondInvitationMutationOptions = (
+  runtime: ApiRuntime,
   userId: UserId,
   id: InvitationId
 ) =>
@@ -45,10 +53,11 @@ export const respondInvitationMutationOptions = (
         }),
         Effect.provide(
           makeInvitationReadApiClientLayer({
-            baseUrl: window.location.origin,
+            baseUrl: runtime.baseUrl,
             headers: { "x-meal-planner-user": userId },
           })
-        )
+        ),
+        Effect.provide(apiHttpLayer(runtime))
       ),
     mutationKey: ["invitation-response", userId, id],
   });

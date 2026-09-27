@@ -2,6 +2,8 @@
 
 Own account identity, native Better Auth client access, login/signup, safe return paths, and account changes. Export cross-feature access through [index.ts](index.ts). [AccountProvider](account-context.tsx) supplies an account without loading a family.
 
+The router creates an auth client for each SSR request. The account query caches only a public identity projection; session tokens stay out of dehydrated data. Native login, family selection, and logout refresh or clear that query; window focus rechecks it.
+
 Keep native identity operations on Better Auth's client. Account changes must clear or invalidate account-scoped remote data before another account can see it. Preserve same-origin redirect validation and the identity/query boundary. Do not introduce family or onboarding dependencies into this slice.
 
 Use [the auth map](../../../../../docs/reference/features/auth-family/authentication.md) for visible paths and proof. [Recovery](../recovery/AGENTS.md) uses this account boundary; [family](../family/AGENTS.md) and [invitations](../invitations/AGENTS.md) compose it. Shared visual components must not import these product features.

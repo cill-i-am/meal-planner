@@ -60,15 +60,40 @@ returns the current family, without undoing later edits. Reusing the key for
 different input returns `mutation_collision`. Completion is naturally
 idempotent and increments the version only once.
 
-The browser retains submitted commands in account/family-scoped localStorage
-until their result is known. Each mutation ID has its own entry. It does not
-retain unsubmitted drafts or screen positions. Unknown outcomes reuse the same
-payload and ID; definite rejections allow correction. Storage failure prevents
-a new request from being dispatched. Bounded Effect retries use exponential
-backoff and jitter for transient failures. Retry timing does not replace server
+The browser keeps the exact submitted payload and request ID in memory while the
+screen is mounted. An explicit retry of an unknown result reuses both; definite
+rejections allow correction. Mutation requests are not persisted in localStorage,
+sessionStorage, or a persisted Query cache. Leaving the screen or reloading loses
+that local retry state. A new page load reads saved server resources and does not
+automatically replay mutations. This does not promise to identify an uncertain
+create after a reload: inspect saved resources before starting another creation.
+Server receipts and explicit resume operations remain in place.
+
+Bounded Effect retries use exponential backoff and jitter for the transient
+failures selected by each operation. Retry timing does not replace server
 receipts or access checks.
 
 ## Screens, cache, and auth
+
+TanStack Start route loaders preload the account and family queries on both direct
+SSR loads and browser navigation. The components consume the same Query cache.
+An explicit family URL avoids the family-list lookup; detail and roster reads can
+run concurrently after identity is known. The family context contains only the
+selected family. Feature mutation hooks own API calls and cache updates; screens
+own forms and navigation.
+
+The router creates a QueryClient, native Better Auth client, and API transport per
+SSR request. Only public account fields are cached and dehydrated, not session
+tokens. Protected setup and invitation responses use `Cache-Control: private,
+no-store`. Account changes discard the previous account's remote cache.
+
+The small transport configuration supplies `{ baseUrl, fetch }`. Browser requests
+use Effect FetchHttpClient over native fetch. SSR uses the private API Worker
+binding supplied by Alchemy, forwards the current request's cookies, and returns
+refreshed cookies to the browser. Cancellation reaches the binding request. Both
+paths use the same generated app-owned contracts; Better Auth identity operations
+keep its native client. This adapter is application wiring, not an Effect-specific
+architecture requirement.
 
 Name creates the family. Members reads and edits its saved people. Continue
 navigates to confirmation without a write. Confirmation completes setup. Setup

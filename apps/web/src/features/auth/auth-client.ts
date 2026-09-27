@@ -10,9 +10,11 @@ import type { parseSignIn, parseSignUp } from "./auth-input.js";
 
 export const makeAuthClient = (
   transport: typeof fetch = fetch,
-  expectedUserId?: UserId
+  expectedUserId?: UserId,
+  baseURL?: string
 ) =>
   createAuthClient({
+    baseURL,
     fetchOptions: {
       customFetchImpl: transport,
       headers: expectedUserId ? { "x-meal-planner-user": expectedUserId } : {},
@@ -30,8 +32,16 @@ export const makeAuthClient = (
       organizationClient(),
     ],
   });
-export const AuthClientContext = createContext(makeAuthClient());
-export const useAuthClient = () => useContext(AuthClientContext);
+export const AuthClientContext = createContext<ReturnType<
+  typeof makeAuthClient
+> | null>(null);
+export const useAuthClient = () => {
+  const client = useContext(AuthClientContext);
+  if (!client) {
+    throw new Error("An auth client provider is required.");
+  }
+  return client;
+};
 
 export const requireAuthSuccess = async <T>(
   request: Promise<{

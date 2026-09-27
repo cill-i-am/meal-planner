@@ -35,7 +35,7 @@ keep full links out of shared screenshots and logs.
 | Wrong account | Open using the unrelated account; choose **Switch account** | Invitation details protected; after correct login the original invitation is available |
 | Invalid/unavailable | Open malformed, missing, expired, or cancelled links | Unavailable feedback, no response mutation or unauthorized details |
 | Accepted, link incomplete | Open accepted invitation from an interrupted native fixture; continue | Household link finishes without another acceptance or duplicate person |
-| Unknown response | Lose the Join/Decline response and reload | Retained decision and mutation ID are reused |
+| Unknown response | Lose the Join/Decline response; retry while mounted | Original decision and mutation ID are reused; reload reads invitation state without replaying the browser request |
 | Concurrent decision | Retain a decline, then accept in another authorized tab/fixture | First tab does not silently convert its decline into acceptance |
 | Account changed | Switch authenticated identity while the screen remains open | Reload/account-change feedback before responding with stale identity |
 

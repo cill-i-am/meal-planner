@@ -2,7 +2,13 @@ import { QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
 import { setupRouterSsrQueryIntegration } from "@tanstack/react-router-ssr-query";
 
-import { getAuthViewTransition } from "./features/auth/index.js";
+import { ApiRuntimeContext } from "./features/api-client/index.js";
+import { startApiRuntime } from "./features/api-client/start-runtime.js";
+import {
+  AuthClientContext,
+  makeAuthClient,
+  getAuthViewTransition,
+} from "./features/auth/index.js";
 import { routeTree } from "./routeTree.gen.js";
 
 export const getRouter = () => {
@@ -11,7 +17,15 @@ export const getRouter = () => {
       queries: { refetchOnWindowFocus: false, retry: false, staleTime: 0 },
     },
   });
+  const api = startApiRuntime();
+  const auth = makeAuthClient(api.fetch, undefined, `${api.baseUrl}/api/auth`);
   const router = createRouter({
+    Wrap: ({ children }) => (
+      <ApiRuntimeContext value={api}>
+        <AuthClientContext value={auth}>{children}</AuthClientContext>
+      </ApiRuntimeContext>
+    ),
+    context: { api, auth, queryClient },
     defaultPreloadStaleTime: 0,
     defaultViewTransition: getAuthViewTransition(),
     routeTree,

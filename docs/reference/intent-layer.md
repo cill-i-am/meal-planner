@@ -23,7 +23,8 @@ the nearest ancestor's instructions; do not assume a tool loaded sibling nodes.
 | Family queries, roster actions, or cache ownership | [Browser family](../../apps/web/src/features/family/AGENTS.md) | [Setup screens](../../apps/web/src/features/onboarding/AGENTS.md) |
 | Recipient-facing invitation behavior | [Browser invitations](../../apps/web/src/features/invitations/AGENTS.md) | Invitation package and server adapters above |
 | Password recovery | [Browser recovery](../../apps/web/src/features/recovery/AGENTS.md) | Server auth above |
-| Retaining a submitted request | [Browser request recovery](../../apps/web/src/features/request-recovery/AGENTS.md) | The feature that submits it |
+| Browser/SSR API transport | [Web API runtime](../../apps/web/src/features/api-client/AGENTS.md) | Router composition and the web Worker entry |
+| Retrying a submitted request in memory | [Browser request recovery](../../apps/web/src/features/request-recovery/AGENTS.md) | The feature that submits it |
 
 ```mermaid
 flowchart TD

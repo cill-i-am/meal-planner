@@ -1,4 +1,8 @@
-import { useIsMutating, useMutation } from "@tanstack/react-query";
+import {
+  useIsMutating,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { Link, Navigate, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
@@ -14,6 +18,7 @@ import {
 } from "../../components/ui/card.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
+import { accountKey } from "./account-query.js";
 import type { AuthenticationInput } from "./auth-client.js";
 import { authenticationMutationOptions, useAuthClient } from "./auth-client.js";
 import { authFeedback } from "./auth-errors.js";
@@ -26,6 +31,7 @@ import {
 import { useAuthRetry } from "./use-auth-retry.js";
 
 const useAuthentication = (redirect: string) => {
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const authClient = useAuthClient();
   const session = authClient.useSession();
@@ -39,6 +45,7 @@ const useAuthentication = (redirect: string) => {
         organizations.refetch(),
         activeOrganization.refetch(),
       ]);
+      await queryClient.invalidateQueries({ queryKey: accountKey });
       await navigate({ href: redirect, replace: true });
     },
   });

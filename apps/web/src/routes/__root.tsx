@@ -1,13 +1,17 @@
+import type { QueryClient } from "@tanstack/react-query";
 import {
   HeadContent,
   Outlet,
   Scripts,
-  createRootRoute,
+  createRootRouteWithContext,
 } from "@tanstack/react-router";
 
-import "../styles.css";
 import { MotionProvider } from "../components/ui/motion-provider.js";
 import { TooltipProvider } from "../components/ui/tooltip.js";
+
+import "../styles.css";
+import type { ApiRuntime } from "../features/api-client/index.js";
+import type { makeAuthClient } from "../features/auth/index.js";
 
 const RootDocument = () => (
   <html lang="en">
@@ -25,7 +29,11 @@ const RootDocument = () => (
   </html>
 );
 
-export const Route = createRootRoute({
+export const Route = createRootRouteWithContext<{
+  api: ApiRuntime;
+  auth: ReturnType<typeof makeAuthClient>;
+  queryClient: QueryClient;
+}>()({
   component: RootDocument,
   head: () => ({
     meta: [
