@@ -35,6 +35,33 @@ credentials. Its name does not establish the environment or active account.
 Never infer authority for one stage, profile, account, or command from approval
 for another.
 
+## Transactional email
+
+The API Worker has an Alchemy `send_email` binding for invitation and password-reset
+messages. Production owns the `mail.ceird.app` Email Sending subdomain through
+`MealPlannerMail`; other stages do not manage that account-wide resource. The
+binding sends as `noreply@mail.ceird.app` and permits arbitrary recipients only
+when the account has Workers Paid and Email Sending is enabled. The production
+stack reads `CEIRD_ZONE_ID` for the verified `ceird.app` zone. Confirm that the
+zone belongs to the explicitly selected Cloudflare account before using it.
+
+`MEAL_PLANNER_EMAIL_DELIVERY_ENABLED` defaults to `false`. Keep it false for the
+first deployment that creates the sending subdomain. Cloudflare turns on Email
+preview for a new sending domain by default; previews include full reset links.
+After the domain and SPF/DKIM/DMARC records are verified, disable Email preview
+for `mail.ceird.app` in Email Service settings. Only then set the flag to `true`
+in the reviewed production configuration and deploy that change. The flag is a
+delivery gate, not a local mock adapter. Use the local Alchemy email simulator
+for development; do not enable remote sending from a local stage by default.
+
+Use disposable recipients for the first live invitation and reset checks. Verify
+the Cloudflare submission result, recipient inbox receipt, and completed link
+journeys separately. Do not include action URLs or reset tokens in logs,
+screenshots, PR text, or test evidence. A provider submission can still bounce or
+be suppressed. See the [delivery plan](../plans/auth-email-delivery.md) for the
+remaining acceptance checks and the [Cloudflare Email Service guide](https://developers.cloudflare.com/email-service/)
+for current eligibility and DNS requirements.
+
 ## One-time Cloudflare state bootstrap
 
 `Cloudflare.state()` uses Alchemy's account-wide Cloudflare state Worker and

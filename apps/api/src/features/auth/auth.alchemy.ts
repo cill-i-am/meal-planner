@@ -62,8 +62,11 @@ export interface MealPlannerAuthService {
 
 export type AlchemyMealPlannerAuthOptions = Omit<
   MealPlannerAuthOptions,
-  "secret"
-> & { readonly secret: Redacted.Redacted<string> };
+  "secret" | "sendPasswordResetEmail"
+> &
+  Required<Pick<MealPlannerAuthOptions, "sendPasswordResetEmail">> & {
+    readonly secret: Redacted.Redacted<string>;
+  };
 
 /** Construct Alchemy's auth instance with the canonical Better Auth configuration. */
 export const makeAlchemyMealPlannerAuth = (
