@@ -21,8 +21,7 @@ import {
   atomicPasswordResetPlugin,
 } from "./auth-atomic-endpoints.js";
 import { makeAuthAtomicStore } from "./auth-atomic-store.js";
-import { mockInvitationMail, mockPasswordResetMail } from "./auth-mail.js";
-import type { InvitationMail, PasswordResetMail } from "./auth-mail.js";
+import type { PasswordResetMail } from "./auth-mail.js";
 import { fenceAuthAdapter } from "./auth-output-fence.js";
 import type { AuthOutputFence } from "./auth-output-fence.js";
 import { invitationViewPlugin } from "./invitation-view.js";
@@ -79,7 +78,6 @@ export type MealPlannerAuth = AuthCore & {
 
 export interface MealPlannerAuthOptions {
   readonly sendPasswordResetEmail?: (mail: PasswordResetMail) => Promise<void>;
-  readonly sendInvitationEmail?: (mail: InvitationMail) => Promise<void>;
   readonly outputFence: AuthOutputFence;
   readonly baseURL: string;
   readonly database: Parameters<typeof drizzleAdapter>[0];
@@ -100,8 +98,7 @@ export const makeMealPlannerAuthConfiguration = ({
   schema,
   secret,
   verifyInvitationRecipient,
-  sendInvitationEmail = mockInvitationMail,
-  sendPasswordResetEmail = mockPasswordResetMail,
+  sendPasswordResetEmail,
 }: MealPlannerAuthOptions) => {
   const adapterOptions =
     schema === undefined
@@ -148,6 +145,18 @@ export const makeMealPlannerAuthConfiguration = ({
     }
     return database;
   }, guardedFence);
+  const emailAndPassword: NonNullable<BetterAuthOptions["emailAndPassword"]> = {
+    enabled: true,
+    resetPasswordTokenExpiresIn: 3600,
+    revokeSessionsOnPasswordReset: true,
+  };
+  if (sendPasswordResetEmail !== undefined) {
+    emailAndPassword.sendResetPassword = ({ user, url }) =>
+      sendPasswordResetEmail({
+        email: parseEmailAddress(user.email),
+        url,
+      });
+  }
   const configuration: MealPlannerAuthConfiguration = {
     advanced: {
       ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
@@ -168,15 +177,7 @@ export const makeMealPlannerAuthConfiguration = ({
       "/organization/remove-member",
       "/organization/cancel-invitation",
     ],
-    emailAndPassword: {
-      enabled: true,
-      revokeSessionsOnPasswordReset: true,
-      sendResetPassword: ({ user, url }) =>
-        sendPasswordResetEmail({
-          email: parseEmailAddress(user.email),
-          url,
-        }),
-    },
+    emailAndPassword,
     hooks: {
       before: createAuthMiddleware((ctx): Promise<unknown> => {
         let field: "email" | "newEmail" | undefined;
@@ -207,13 +208,9 @@ export const makeMealPlannerAuthConfiguration = ({
       atomicOrganization(
         {
           disableOrganizationDeletion: true,
+          invitationExpiresIn: 48 * 3600,
           organizationHooks,
           schema: invitationSchema,
-          sendInvitationEmail: ({ id, email }) =>
-            sendInvitationEmail({
-              email: parseEmailAddress(email),
-              url: `${baseURL}/invitation/${encodeURIComponent(id)}`,
-            }),
         } satisfies OrganizationOptions,
         atomicStore
       ),

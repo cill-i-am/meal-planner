@@ -8,12 +8,14 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { makeAuthFamilyHttpLayer } from "./auth-family.js";
+import { renderPasswordResetMail } from "./features/auth/auth-mail.js";
 import { makeAlchemyMealPlannerAuth } from "./features/auth/auth.alchemy.js";
 import * as authSchema from "./features/auth/auth.database-schema.js";
 import {
   makeAuthenticatedOrganizationResolver,
   makeAuthPrincipalResolver,
 } from "./features/auth/auth.principal.js";
+import { makeCloudflareEmailSender } from "./features/email/index.js";
 import { HealthRoutes } from "./features/health/health.routes.js";
 import { HouseholdDomainWorker } from "./features/households/household-domain-worker.js";
 import {
@@ -23,6 +25,7 @@ import {
   makeHouseholdInvitationRecipientVerifier,
   makeHouseholdRequestLayer,
 } from "./features/households/household-request-composition.js";
+import { makeHouseholdInvitationMailer } from "./features/households/people/invitation-mail.adapter.js";
 import { makeMemberDepartureWorkflowStarter } from "./features/households/people/member-departure.js";
 import MemberDepartureWorkflow from "./features/households/people/member-departure.workflow.js";
 import HouseholdImportBatchItemWorkflow from "./features/imports/household-import-batch-item.workflow.js";
@@ -119,6 +122,14 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     const householdDomain = yield* Cloudflare.Workers.bindWorker(
       HouseholdDomainWorker
     );
+    const emailBinding = yield* Cloudflare.Email.SendEmail(
+      "MealPlannerTransactionalEmail",
+      { allowedSenderAddresses: ["noreply@mail.ceird.app"] }
+    );
+    const emailClient = yield* Cloudflare.Email.Send(emailBinding);
+    const emailDeliveryEnabled = yield* Config.boolean(
+      "MEAL_PLANNER_EMAIL_DELIVERY_ENABLED"
+    ).pipe(Config.withDefault(false));
     const householdBatchWorkflowLauncher = makeHouseholdBatchWorkflowLauncher(
       householdBatchItemWorkflow
     );
@@ -180,12 +191,19 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         const outputApi = yield* privateOutputApiPort;
         const outputMutations = yield* privateOutputMutationPort;
         const outputFence = makeAuthOutputFence(outputMutations);
+        const sendEmail = makeCloudflareEmailSender(
+          emailClient,
+          runtimeContext,
+          emailDeliveryEnabled
+        );
         const auth = yield* makeAlchemyMealPlannerAuth({
           baseURL: requestOrigin,
           database: authDatabase,
           outputFence,
           schema: authSchema,
           secret: authSecret,
+          sendPasswordResetEmail: async (mail) =>
+            sendEmail(await renderPasswordResetMail(mail)),
           verifyInvitationRecipient:
             makeHouseholdInvitationRecipientVerifier(householdDomain),
         });
@@ -247,6 +265,11 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           domain: householdDomain,
           headers: webRequest.headers,
           resolver: authenticatedOrganizationResolver,
+          sendInvitationEmail: makeHouseholdInvitationMailer({
+            baseURL: requestOrigin,
+            database: authDatabase,
+            send: sendEmail,
+          }),
         });
         const routeHandler = yield* HttpRouter.toHttpEffect(
           Layer.mergeAll(
@@ -268,6 +291,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     Effect.provide(
       Layer.mergeAll(
         Cloudflare.D1.QueryDatabaseBinding,
+        Cloudflare.Email.SendBinding,
         Cloudflare.R2.ReadWriteBucketBinding,
         Cloudflare.Queues.EventSourceLive,
         Cloudflare.Queues.WriteQueueBinding

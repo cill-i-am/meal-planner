@@ -148,7 +148,11 @@ test("resets a password through local mail and returns to the same saved family"
   await family.create("Still here");
   const reviewURL = page.url();
   await auth.logout();
-  await auth.requestPasswordReset(email);
+  const returnTo = new URL(reviewURL);
+  await auth.requestPasswordReset(
+    email,
+    `${returnTo.pathname}${returnTo.search}`
+  );
   const mail = await page.request.get(
     `/__test/mail?email=${encodeURIComponent(email)}`
   );
@@ -158,8 +162,8 @@ test("resets a password through local mail and returns to the same saved family"
   )(await mail.json());
   await auth.resetPassword(reset.url, "New-family-password-73!");
   await auth.login(email, "New-family-password-73!");
-  await expect(page).not.toHaveURL(/\/login/u);
-  await page.goto(reviewURL);
+  await family.expectReview();
+  await page.reload();
   await family.expectReview();
   await expect(
     page.getByText("Reset organizer", { exact: true })

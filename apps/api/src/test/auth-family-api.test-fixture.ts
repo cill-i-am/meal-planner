@@ -80,11 +80,6 @@ export default {
             outputFence: makeAuthOutputFence(env.PrivateOutputMutations),
             schema: authSchema,
             secret: Redacted.make(env.BETTER_AUTH_SECRET),
-            sendInvitationEmail: (mail) =>
-              env.TEST_MAIL.put(
-                mail.email,
-                JSON.stringify({ ...mail, kind: "invitation" })
-              ),
             sendPasswordResetEmail: (mail) =>
               env.TEST_MAIL.put(
                 mail.email,
@@ -125,6 +120,16 @@ export default {
               domain,
               headers: request.headers,
               resolver,
+              sendInvitationEmail: (mail) =>
+                Effect.promise(() =>
+                  env.TEST_MAIL.put(
+                    mail.email,
+                    JSON.stringify({
+                      kind: "invitation",
+                      url: `${env.BASE_URL}/invitation/${encodeURIComponent(mail.invitationId)}`,
+                    })
+                  )
+                ).pipe(Effect.asVoid),
             })
           );
           return HttpServerResponse.toWeb(

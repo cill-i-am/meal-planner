@@ -47,8 +47,10 @@ export class AuthPage {
     );
   }
 
-  async requestPasswordReset(email: string) {
-    await this.page.goto("/forgot-password");
+  async requestPasswordReset(email: string, returnTo: string) {
+    await this.page.goto(
+      `/forgot-password?${new URLSearchParams({ redirect: returnTo })}`
+    );
     await this.page.getByLabel("Email", { exact: true }).fill(email);
     await this.page.getByRole("button", { name: "Send reset link" }).click();
     await expect(

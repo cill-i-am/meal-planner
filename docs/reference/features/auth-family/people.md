@@ -51,6 +51,13 @@ The creator cannot be treated as an ordinary removable unlinked profile.
 Pending invitation removal can display **Cancel invitation & remove**.
 Capture the exact person and action in removal evidence.
 
+The server sends invitation mail after the saved person and invitation are
+associated. A provider failure leaves that association in place; retry the same
+submitted request to send the same invitation again. A successful send call
+means Cloudflare accepted the message, not that it reached the inbox. The
+production delivery gate remains off until the sending domain is verified and
+Email preview is disabled.
+
 Cancel preserves a local Add form while the screen stays mounted; logout/reload
 discards unsent fields and pending browser requests. A new page load reads the
 saved roster without replaying mutations. Completion leaves later corrections possible.
@@ -59,6 +66,8 @@ Owners: [browser family](../../../../apps/web/src/features/family/AGENTS.md),
 [people API](../../household-people-api.md), and household persistence.
 Source checks: [people screen tests](../../../../apps/web/src/features/onboarding/people-pages.test.tsx)
 and [person save tests](../../../../apps/web/src/features/family/person-save.test.ts).
+The [native household boundary tests](../../../../apps/api/src/features/households/household-boundary.integration.test.ts)
+cover association before mail and retry after a failed send.
 
 
 ## Browser regression coverage

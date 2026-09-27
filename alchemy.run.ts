@@ -1,5 +1,6 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -20,10 +21,20 @@ export default Alchemy.Stack(
     state: Cloudflare.state(),
   },
   Effect.gen(function* MealPlannerStack() {
+    const stage = yield* Alchemy.Stage;
     const providerAccountingDatabase = yield* ProviderAccountingDatabase;
     const authDatabase = yield* MealPlannerAuthDatabase;
     const evidenceBucket = yield* ImportEvidenceBucket;
     const importProviderGateway = yield* ImportProviderGateway;
+    // The sending domain is account-wide. Only production owns its lifecycle;
+    // preview and developer stages must not create or delete the same domain.
+    const emailSending =
+      stage === "prod"
+        ? yield* Cloudflare.Email.SendingSubdomain("MealPlannerMail", {
+            name: "mail.ceird.app",
+            zoneId: yield* Config.string("CEIRD_ZONE_ID"),
+          })
+        : undefined;
     const api = yield* MealPlannerApi;
     const website = yield* Cloudflare.Website.Vite("MealPlannerWebsite", {
       assets: { runWorkerFirst: ["/api/auth/*", "/v1/*"] },
@@ -47,6 +58,8 @@ export default Alchemy.Stack(
       apiUrl: api.url,
       apiWorkerName: api.workerName,
       authDatabaseName: authDatabase.databaseName,
+      emailSendingEnabled: emailSending?.enabled ?? null,
+      emailSendingSubdomain: emailSending?.name ?? null,
       evidenceBucketName: evidenceBucket.bucketName,
       evidenceRetentionSeconds: EvidenceRetentionSeconds,
       importProviderGatewayId: importProviderGateway.gatewayId,

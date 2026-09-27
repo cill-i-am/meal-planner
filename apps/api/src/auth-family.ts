@@ -36,6 +36,7 @@ export const makeAuthFamilyHttpLayer = ({
   departureWorkflow,
   headers,
   resolver,
+  sendInvitationEmail,
 }: {
   readonly auth: MealPlannerAuthService;
   readonly database: DrizzleD1Database;
@@ -43,11 +44,15 @@ export const makeAuthFamilyHttpLayer = ({
   readonly departureWorkflow: MemberDepartureWorkflowStarter;
   readonly headers: Headers;
   readonly resolver: AuthenticatedOrganizationResolver;
+  readonly sendInvitationEmail: Parameters<
+    typeof makeHouseholdPeopleGateway
+  >[0]["sendInvitationEmail"];
 }) => {
   const people = makeHouseholdPeopleGateway({
     controlPlane: makeHouseholdPeopleControlPlane({ auth, database }),
     departureWorkflow,
     domain,
+    sendInvitationEmail,
   });
   const families = FamilyServiceLive.pipe(
     Layer.provide(HouseholdCreatorLive(domain)),

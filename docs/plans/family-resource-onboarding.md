@@ -374,3 +374,13 @@ worker's IP. Each test now gets a distinct benchmark-range IP; production signup
 limits remain enabled. The five-scan accessibility journey and three-edit
 concurrency journey have a 60-second overall budget on slower mobile runners.
 Individual assertion deadlines and zero automatic test retries remain unchanged.
+
+
+### Integration with the email-delivery change
+
+Main gained the Cloudflare email adapter while this work was in CI. Shared
+auth/family composition now takes the people gateway's invitation-mail port as
+an explicit input. Production supplies the D1-backed mail renderer and Cloudflare
+sender; the browser fixture supplies local mail capture. Invitation association
+still precedes sending, as required by the email change. Password-reset delivery
+stays on the native auth callback. No mail is sent by the browser test suite.

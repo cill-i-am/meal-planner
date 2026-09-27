@@ -34,7 +34,10 @@
     "effect": "4.0.0-rc.112",
     "graphql": "17.0.2",
     "jpeg-js": "0.4.4",
-    "parse5": "8.0.1"
+    "parse5": "8.0.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-email": "6.11.0"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "1.1.4",
@@ -42,6 +45,8 @@
     "@distilled.cloud/cloudflare-rolldown-plugin": "0.17.1",
     "@effect/vitest": "4.0.0-rc.112",
     "@types/node": "24.13.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
     "auth": "1.7.2",
     "drizzle-kit": "1.0.0-rc.5-ab785fc",
     "miniflare": "5.20260903.0-alpha",

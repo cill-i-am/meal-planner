@@ -72,7 +72,7 @@ describe("Better Auth D1 control plane", () => {
     await drizzle(testEnv.MealPlannerAuthDatabase).delete(authSchema.rateLimit);
   });
 
-  it("enforces the shared email contract on native HTTP and server calls before writes or mail", async () => {
+  it("enforces the shared email contract before writes or recovery mail", async () => {
     const database = drizzle(testEnv.MealPlannerAuthDatabase);
     const mails: string[] = [];
     const auth = makeMealPlannerAuth({
@@ -81,10 +81,6 @@ describe("Better Auth D1 control plane", () => {
       outputFence: (_input, canonical) => canonical(),
       schema: authSchema,
       secret,
-      sendInvitationEmail: ({ email }) => {
-        mails.push(email);
-        return Promise.resolve();
-      },
       sendPasswordResetEmail: ({ email }) => {
         mails.push(email);
         return Promise.resolve();
@@ -198,7 +194,9 @@ describe("Better Auth D1 control plane", () => {
       )
     );
     expect(validInvitation.status).toBe(200);
-    expect(mails).toEqual(["valid-invitee@example.test"]);
+    // Native invitation creation is not a mail boundary. The household
+    // command sends only after its person association succeeds.
+    expect(mails).toEqual([]);
   });
 
   it("uses real single-use reset tokens with generic confirmation and session revocation", async () => {

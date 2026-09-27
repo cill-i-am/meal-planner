@@ -10,6 +10,9 @@ or deployment. Keep those stages separate when reporting progress.
 
 ## Immediate work
 
+The [transactional email plan](auth-email-delivery.md) tracks the invitation and
+reset delivery code, Paper designs, and separate production activation checks.
+
 The active [family resource refactor](family-resource-onboarding.md) simplifies
 auth through family setup before establishing the wider app template. Its
 running decision log records implementation choices and validation.
