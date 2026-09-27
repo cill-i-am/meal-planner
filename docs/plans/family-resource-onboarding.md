@@ -1,6 +1,6 @@
 # Refactor family setup around saved resources
 
-Status: active
+Status: implemented; delivery tracked in [PR #254](https://github.com/cill-i-am/meal-planner/pull/254)
 Owner: Codex, with Cillian for product decisions
 Baseline: `630e2d18e9ca3c060e82aaf84a578b33ac902a66` (fetched origin/main)
 Delivery: implementation, checks, review, and merge; no deployment
@@ -55,8 +55,9 @@ features. Continue iterating on the reference against working code.
   uncertain writes retain their useful distinctions.
 - [x] Existing persisted family/person data survives the schema change; obsolete
   screen/draft persistence is removed rather than kept as a parallel path.
-- [ ] Hosted checks and merge complete. Local tests, type checks, repository
-  checks, and browser verification have passed; see the validation record.
+- Local tests, type checks, repository checks, and browser verification have
+  passed. [PR #254](https://github.com/cill-i-am/meal-planner/pull/254) is the live
+  record for hosted checks, review, and merge. See the local validation record below.
 
 ## Running implementation decisions
 
@@ -92,7 +93,7 @@ the evidence changes the choice.
 | D20 | Host adapters | `apps/api/features/families` owns D1 persistence and HTTP. Auth exposes deliberate HTTP admission, SDK, and schema boundaries. Household membership adapters own identity derivation and RPC details. The Worker composition root supplies them to package services. Co-location in D1 does not assign family ownership to auth. | Native D1 family tests and invitation acceptance/recovery tests pass. |
 | D21 | Frontend slices | `family` owns reusable family queries and roster management; `onboarding` owns the setup presentation; `invitations` owns recipient interaction. Account loading belongs to auth. Invitations use account identity without loading the onboarding family context. Shared account layout/status/error presentation lives in components. | Full frontend suite and a new real-provider invitation isolation test pass. |
 | D22 | Public boundaries | Other features consume curated public entrypoints or explicit boundary subpaths. Browser code consumes package contracts/clients, never server application capabilities. Submitted-request recovery is a named reusable browser capability. | Focused architecture tests enforce public imports, dependency direction, and package independence. |
-| D23 | Reference status | Cillian explicitly requested these boundaries as the reference architecture for future application work. The reference is maintained in `docs/reference/family-api.md` and linked from the engineering feature-slice standard. Existing unrelated features are migrated when worked on, rather than silently described as conforming. | Approved in this conversation on 27 September 2026; final local integration checks pass; repository delivery is proceeding through hosted checks. |
+| D23 | Reference status | Cillian explicitly requested these boundaries as the reference architecture for future application work. The reference is maintained in `docs/reference/family-api.md` and linked from the engineering feature-slice standard. Existing unrelated features are migrated when worked on, rather than silently described as conforming. | Approved in this conversation on 27 September 2026; final local integration checks pass; repository delivery is tracked in PR #254. |
 
 ## Validation and delivery record
 
@@ -126,7 +127,8 @@ before applying it. No deployment has been performed or authorized here.
 
 The configured 1Password signer succeeded on retry. Implementation commit:
 `7aba70e` (`refactor: establish family and invitation feature architecture`).
-PR, hosted CI, and merge are pending. No deployment has been performed.
+[PR #254](https://github.com/cill-i-am/meal-planner/pull/254) tracks hosted checks,
+review, and merge against the signed source. No deployment is included.
 The feature-package and frontend-slice organization is the agreed reference
 architecture. Agent runtime/tooling and a representative post-setup LiveStore
 evaluation remain future work.
