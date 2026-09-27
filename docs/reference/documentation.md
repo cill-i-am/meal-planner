@@ -88,7 +88,11 @@ A feature's reference page explains its intent: what it is responsible for, what
 it must not do, its important guarantees, and where to find the code and tests.
 Keep one home for that knowledge even when the feature spans apps and packages.
 Explanation teaches the design; decisions record why it was chosen. Do not add a
-separate hierarchy of INTENT.md files.
+separate hierarchy of INTENT.md files. The [auth and family intent layer](intent-layer.md)
+uses small local AGENTS.md nodes for working guidance and links to that canonical
+reference. Its [feature map](features/auth-family/README.md) records user entry
+points, actions, and observable proof. It does not duplicate the architecture
+specification or claim that every listed path has been exercised.
 
 AGENTS.md requires the engineering standards for code work. Moving a standard into
 docs does not make it optional. Read the relevant pages, not every page. Keep

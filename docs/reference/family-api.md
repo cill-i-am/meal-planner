@@ -94,6 +94,9 @@ changed. LiveStore and agent runtime/tooling remain separate decisions.
 
 ## Reference architecture
 
+Use the [intent layer](intent-layer.md) to find local implementation guidance and
+the [feature map](features/auth-family/README.md) to exercise user-visible behavior.
+
 Organize by capability across runtimes. A package owns reusable application
 behavior when more than one host needs its contracts or operations. Apps own
 framework and provider adapters. Keep small features flat; add subfolders when

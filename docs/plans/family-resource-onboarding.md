@@ -95,6 +95,8 @@ the evidence changes the choice.
 | D21 | Frontend slices | `family` owns reusable family queries and roster management; `onboarding` owns the setup presentation; `invitations` owns recipient interaction. Account loading belongs to auth. Invitations use account identity without loading the onboarding family context. Shared account layout/status/error presentation lives in components. | Full frontend suite and a new real-provider invitation isolation test pass. |
 | D22 | Public boundaries | Other features consume curated public entrypoints or explicit boundary subpaths. Browser code consumes package contracts/clients, never server application capabilities. Submitted-request recovery is a named reusable browser capability. | Focused architecture tests enforce public imports, dependency direction, and package independence. |
 | D23 | Reference status | Cillian explicitly requested these boundaries as the reference architecture for future application work. The reference is maintained in `docs/reference/family-api.md` and linked from the engineering feature-slice standard. Existing unrelated features are migrated when worked on, rather than silently described as conforming. | Approved in this conversation on 27 September 2026; final local integration checks pass; repository delivery is tracked in PR #254. |
+| D24 | Agent intent layer | Small local AGENTS.md nodes cover the family/invitation packages, their server adapters, and the related browser slices. The intent index links these nodes to canonical references; it is distinct from runtime import intents. | Requested on 27 September 2026 using the Intent Systems article; scope excludes unrelated application architecture. |
+| D25 | User feature map | Auth/recovery, setup, people, invitations, and cross-feature journeys have user entry points, driver instructions, observable outcomes, and known proof limits. Source review, fixture UI checks, native tests, and real integrated journeys remain distinct evidence. | Requested using the pstack feature-map article; no cloud-agent installation or recurring automation. |
 
 ## Validation and delivery record
 
@@ -150,3 +152,20 @@ to the app against the local synthetic API. The real frontend completed the
 journey and the fixture retained the completed family and both people. The
 confirmation accessibility scan reported zero WCAG 2 A/AA violations. Native
 persistence and auth behavior are verified separately by the API suite.
+
+### Intent layer and feature map
+
+On 27 September 2026, the scoped agent guidance and behavior map were added from
+the merged reference architecture. Both requested articles were read; the X
+article required a public rendering. No application runtime behavior changed.
+The stale web README description of unavailable password recovery was corrected:
+forms and token handling exist, while delivery callbacks remain mocks.
+
+Validation: documentation links pass across 300 Markdown files; all 24
+documentation-tool tests pass; repository formatting and whitespace checks pass.
+The documented frontend command started Vite on an owned port. Browser navigation
+verified invalid reset → reset request → login → signup using the listed controls.
+Local screenshots are retained in ignored `artifacts/auth-family/`. This checks
+frontend entry points only. Authenticated family journeys, native persistence,
+fault injection, and actual mail delivery were not rerun for this documentation
+change; the feature map specifies their prerequisites and evidence requirements.

@@ -1,5 +1,7 @@
 # Web interface work
 
+For auth and family behavior, follow the [scoped intent nodes](../../docs/reference/intent-layer.md) and [user feature map](../../docs/reference/features/auth-family/README.md). Read only the relevant feature entries, and update them when visible behavior changes.
+
 For UI changes, inspect the relevant live [Paper design](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0) and [DESIGN.md](DESIGN.md). Paper is the design source; Markdown and screenshots record a dated version. Keep shadcn as the component foundation, including its APIs, behavior and semantic tokens. Other libraries may inspire the visual theme; do not replace the foundation when applying that styling.
 
 Use Tailwind utilities for layout, typography, spacing, responsive rules and interaction states. Keep semantic theme variables in the Tailwind theme. Custom CSS is only for blur or motion effects that Tailwind cannot express; do not add page-specific CSS selectors for ordinary UI styling.

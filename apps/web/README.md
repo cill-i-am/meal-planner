@@ -6,7 +6,7 @@ This TanStack Start website provides same-origin authentication, household peopl
 
 `/login` and `/signup` implement the Paper Auth screens with shadcn components. The `redirect` search parameter preserves a same-origin destination through account navigation. The protected workspace sends anonymous visitors to `/login`. Successful authentication refreshes account/family queries before navigation.
 
-`/forgot-password` shows the agreed unavailable state because reset-email delivery is not configured. It does not request or claim to send an email. The wider family onboarding and recovery implementation remains in the [onboarding plan](../../docs/plans/onboarding.md).
+`/forgot-password` requests a reset link; `/reset-password` validates the link and accepts a new password. Mail callbacks default to mocks, so request success does not prove email delivery. Use the [auth and family feature map](../../docs/reference/features/auth-family/README.md) for user paths and evidence, and the [family reference](../../docs/reference/family-api.md) for saved-resource setup behavior.
 
 ## Runtime boundary
 
