@@ -8,6 +8,8 @@ test("auth, family review and roster overlays have accessible names, contrast an
   page,
   isMobile,
 }) => {
+  // This journey performs five full axe scans in addition to the user interactions.
+  test.setTimeout(60_000);
   await page.goto("/signup");
   const audit = async () => {
     const builder = new AxeBuilder({ page });
@@ -48,6 +50,8 @@ test("auth, family review and roster overlays have accessible names, contrast an
     "data-slot",
     isMobile ? "drawer-popup" : "dialog-content"
   );
+  // Audit the readable, fully opened surface rather than an intermediate fade frame.
+  await expect(dialog).toHaveCSS("opacity", "1");
   await audit();
   await dialog.getByLabel("Name", { exact: true }).fill("Unsaved edit");
   await page.keyboard.press("Escape");

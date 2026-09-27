@@ -28,6 +28,8 @@ test("a competing rename shows the latest person without silently overwriting it
   page,
   context,
 }) => {
+  // Three edits across two tabs include server reconciliation and drawer transitions.
+  test.setTimeout(60_000);
   await new AuthPage(page).signUp(
     "Editing organizer",
     `edits-${crypto.randomUUID()}@example.test`

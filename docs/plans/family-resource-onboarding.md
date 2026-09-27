@@ -367,3 +367,10 @@ Previously it relied on a root import while the auth integration resolved anothe
 peer instance; declaration checking exposed incompatible package identities.
 Pinned versions remain unchanged. Run the standalone build and Worker browser
 suite sequentially: both produce watched client assets in the same checkout.
+
+
+Hosted verification exposed shared rate-limit state between tests that reused a
+worker's IP. Each test now gets a distinct benchmark-range IP; production signup
+limits remain enabled. The five-scan accessibility journey and three-edit
+concurrency journey have a 60-second overall budget on slower mobile runners.
+Individual assertion deadlines and zero automatic test retries remain unchanged.
