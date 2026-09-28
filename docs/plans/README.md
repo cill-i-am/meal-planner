@@ -17,6 +17,9 @@ The active [family resource refactor](family-resource-onboarding.md) simplifies
 auth through family setup before establishing the wider app template. Its
 running decision log records implementation choices and validation.
 
+The [food profile reference slice](food-profile-reference-slice.md) applies the
+family ownership pattern to the first saved household feature after setup.
+
 Continue [private discovery](private-discovery/README.md): finish the
 [evaluation and conversation-tone work](private-discovery/03-adaptive-discovery-and-evaluation.md),
 then [repeat reviews and dependant assistance](private-discovery/04-repeat-review-and-dependant-assistance.md).

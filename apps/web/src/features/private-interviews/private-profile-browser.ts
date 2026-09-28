@@ -1,8 +1,10 @@
 import { displayedIdentityHeaders } from "../auth/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
-import { makeBrowserHouseholdPeopleOperations } from "../household-people/client.js";
-import { makeBrowserHouseholdProfileOperations } from "../household-profiles/browser-operations.js";
-import { ProfileOperationError } from "../household-profiles/operations.js";
+import { makeBrowserHouseholdPeopleOperations } from "../household-people/index.js";
+import {
+  makeBrowserHouseholdProfileOperations,
+  ProfileOperationError,
+} from "../household-profiles/index.js";
 
 /** The roster supplies the currently linked participant; there is no target selector. */
 export const readCurrentPrivateProfile = async (scope: DisplayedIdentity) => {

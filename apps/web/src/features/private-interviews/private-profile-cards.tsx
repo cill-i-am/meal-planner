@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Alert } from "../../components/ui/alert.js";
 import { Badge } from "../../components/ui/badge.js";
 import { Button } from "../../components/ui/button.js";
-import { describeProfileFact } from "../household-profiles/profile-fact-form.js";
+import { describeProfileFact } from "../household-profiles/index.js";
 import { PrivateCardCorrection } from "./private-card-correction.js";
 import { isAssistantTurnActive } from "./private-interview-client.js";
 import type {

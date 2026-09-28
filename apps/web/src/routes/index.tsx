@@ -22,10 +22,14 @@ import type {
   DisplayedIdentity,
 } from "../features/auth/index.js";
 import { familyQuery } from "../features/family/index.js";
-import { makeBrowserHouseholdPeopleOperations } from "../features/household-people/client.js";
-import { HouseholdPeoplePanel } from "../features/household-people/household-people-panel.js";
-import { makeBrowserHouseholdProfileOperations } from "../features/household-profiles/browser-operations.js";
-import { HouseholdProfilesPanel } from "../features/household-profiles/household-profiles-panel.js";
+import {
+  HouseholdPeoplePanel,
+  makeBrowserHouseholdPeopleOperations,
+} from "../features/household-people/index.js";
+import {
+  HouseholdProfilesPanel,
+  makeBrowserHouseholdProfileOperations,
+} from "../features/household-profiles/index.js";
 import { makeBrowserHouseholdOperations } from "../features/households/browser-operations.js";
 import { HouseholdDomainStatus } from "../features/households/household-domain-status.js";
 import { PrivateInterviewsPanel } from "../features/private-interviews/private-interviews-panel.js";

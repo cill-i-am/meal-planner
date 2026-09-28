@@ -4,6 +4,8 @@ Use this map to drive authentication and family creation as a user and decide
 what evidence a change needs. Stop at entry to the application after setup.
 Recipe import, discovery interviews, planning, shopping, and other product areas
 are outside this map.
+At the application boundary, the next saved household journey is
+[food profile review and correction](../food-profiles/README.md).
 
 This inventory was checked against source on 2026-09-27, based on merged commit
 `bc6eda2`. It is a maintained verification guide, not a claim that every path has

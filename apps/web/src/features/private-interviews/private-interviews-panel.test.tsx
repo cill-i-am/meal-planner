@@ -24,8 +24,10 @@ import userEvent from "@testing-library/user-event";
 import { Schema } from "effect";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { HouseholdProfilesPanel } from "../household-profiles/household-profiles-panel.js";
-import { ProfileOperationError } from "../household-profiles/operations.js";
+import {
+  HouseholdProfilesPanel,
+  ProfileOperationError,
+} from "../household-profiles/index.js";
 import { PrivateInterviewClient } from "./private-interview-client.js";
 import type { PrivateInterviewSocket } from "./private-interview-client.js";
 import { PrivateInterviewsPanel } from "./private-interviews-panel.js";

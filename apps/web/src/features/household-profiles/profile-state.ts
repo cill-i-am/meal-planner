@@ -1,0 +1,188 @@
+import {
+  HouseholdPersonId,
+  HouseholdPersonMutationId,
+  MutatePersonProfilePayload,
+} from "@meal-planner/household-api";
+import type {
+  PersonProfile,
+  ProfileCommand,
+  ProfileVersionPage,
+} from "@meal-planner/household-api";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { Schema } from "effect";
+
+import type { HouseholdPeopleOperations } from "../household-people/index.js";
+import {
+  isAmbiguousProfileError,
+  ProfileOperationError,
+} from "./operations.js";
+import type { HouseholdProfileOperations } from "./operations.js";
+
+const PendingProfileChange = Schema.Struct({
+  authenticationRequired: Schema.optional(Schema.Boolean),
+  payload: MutatePersonProfilePayload,
+  personId: HouseholdPersonId,
+});
+type PendingProfileChange = typeof PendingProfileChange.Type;
+
+const ownsPendingChange = (
+  current: PendingProfileChange | null | undefined,
+  submitted: PendingProfileChange
+) =>
+  current?.personId === submitted.personId &&
+  current.payload.mutationId === submitted.payload.mutationId;
+
+export const profileKey = (organizationId: string, personId: string) => [
+  "household-profile",
+  organizationId,
+  personId,
+];
+
+export const usePersonProfile = (
+  operations: HouseholdProfileOperations,
+  organizationId: string,
+  personId: HouseholdPersonId
+) =>
+  useQuery({
+    queryFn: () => operations.get(personId),
+    queryKey: profileKey(organizationId, personId),
+  });
+
+export const useProfileHistory = (
+  operations: HouseholdProfileOperations,
+  organizationId: string,
+  personId: HouseholdPersonId
+) =>
+  useInfiniteQuery({
+    getNextPageParam: (page: ProfileVersionPage) =>
+      page.nextBeforeVersion ?? undefined,
+    initialPageParam: null as number | null,
+    queryFn: ({ pageParam }) =>
+      operations.versions(personId, pageParam ?? undefined),
+    queryKey: [...profileKey(organizationId, personId), "history"],
+  });
+
+/** One submitted command owns its identity until the result is known. */
+export const useHouseholdProfileState = ({
+  accountId,
+  operations,
+  organizationId,
+  peopleOperations,
+}: {
+  readonly accountId: string;
+  readonly operations: HouseholdProfileOperations;
+  readonly organizationId: string;
+  readonly peopleOperations: Pick<HouseholdPeopleOperations, "list">;
+}) => {
+  const client = useQueryClient();
+  const pendingKey = [
+    "household-profile-unresolved",
+    accountId,
+    organizationId,
+  ];
+  const storageKey = `meal-planner.household-profile.unresolved.v1:${JSON.stringify([accountId, organizationId])}`;
+  const readPending = (): PendingProfileChange | null => {
+    const raw = globalThis.sessionStorage.getItem(storageKey);
+    return raw === null
+      ? null
+      : Schema.decodeUnknownSync(PendingProfileChange)(JSON.parse(raw));
+  };
+  const updatePending = (
+    update: (
+      current: PendingProfileChange | null
+    ) => PendingProfileChange | null
+  ) => {
+    const next = update(readPending());
+    if (next === null) {
+      globalThis.sessionStorage.removeItem(storageKey);
+    } else {
+      globalThis.sessionStorage.setItem(storageKey, JSON.stringify(next));
+    }
+    client.setQueryData(pendingKey, next);
+  };
+  const pending = useQuery<PendingProfileChange | null>({
+    enabled: false,
+    gcTime: Infinity,
+    initialData: readPending,
+    queryFn: readPending,
+    queryKey: pendingKey,
+  });
+  const roster = useQuery({
+    queryFn: () => peopleOperations.list(true),
+    queryKey: ["household-people", organizationId],
+  });
+  const mutation = useMutation({
+    mutationFn: (change: PendingProfileChange) =>
+      operations.mutate(change.personId, change.payload),
+    onError: (error, submitted) => {
+      updatePending((current) => {
+        if (!ownsPendingChange(current, submitted)) {
+          return current;
+        }
+        if (
+          error instanceof ProfileOperationError &&
+          error.code === "authentication_required"
+        ) {
+          return { ...submitted, authenticationRequired: true };
+        }
+        return isAmbiguousProfileError(error) ? current : null;
+      });
+    },
+    onSuccess: async (result, submitted) => {
+      client.setQueryData<PersonProfile>(
+        profileKey(organizationId, result.personId),
+        (existing) =>
+          existing !== undefined && existing.version > result.version
+            ? existing
+            : result
+      );
+      updatePending((current) =>
+        ownsPendingChange(current, submitted) ? null : current
+      );
+      await client.invalidateQueries({
+        queryKey: profileKey(organizationId, result.personId),
+      });
+    },
+    retry: false,
+  });
+  const send = (
+    personId: HouseholdPersonId,
+    profile: PersonProfile,
+    command: ProfileCommand
+  ) => {
+    if (readPending() !== null || mutation.isPending) {
+      return;
+    }
+    const change: PendingProfileChange = {
+      payload: Schema.decodeUnknownSync(MutatePersonProfilePayload)({
+        command,
+        expectedProfileVersion: profile.version,
+        mutationId: Schema.decodeUnknownSync(HouseholdPersonMutationId)(
+          crypto.randomUUID()
+        ),
+      }),
+      personId,
+    };
+    updatePending(() => change);
+    mutation.mutate(change);
+  };
+  const retryPending = () => {
+    if (pending.data !== null) {
+      mutation.mutate(pending.data);
+    }
+  };
+  return {
+    clearError: mutation.reset,
+    error: mutation.error,
+    isSaving: mutation.isPending,
+    pending: pending.data,
+    retryPending,
+    roster,
+    send,
+  };
+};

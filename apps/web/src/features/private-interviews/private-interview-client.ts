@@ -25,7 +25,7 @@ import { Schema } from "effect";
 
 import { displayedIdentityHeaders } from "../auth/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
-import { ProfileOperationError } from "../household-profiles/operations.js";
+import { ProfileOperationError } from "../household-profiles/index.js";
 import {
   readCurrentPrivateProfile,
   continuePrivateConfirmation,

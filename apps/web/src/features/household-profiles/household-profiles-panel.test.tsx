@@ -340,3 +340,60 @@ it.each([
     expect(await screen.findAllByText(new RegExp(label, "u"))).toHaveLength(2);
   }
 );
+
+it("keeps the selected person's profile scoped to the family cache key", async () => {
+  const profileFor = (label: string) =>
+    Schema.decodeUnknownSync(PersonProfile)({
+      ...empty,
+      facts: [
+        {
+          createdAtEpochMs: 1,
+          createdBy: "a".repeat(64),
+          createdInVersion: 1,
+          id: "fact_00000000-0000-4000-8000-000000000111",
+          source: "manual_ui",
+          standing: { _tag: "confirmed", basis: "self" },
+          updatedAtEpochMs: 1,
+          updatedBy: "a".repeat(64),
+          updatedInVersion: 1,
+          value: {
+            _tag: "FoodPreference",
+            label,
+            sentiment: "like",
+            targetKind: "ingredient",
+          },
+        },
+      ],
+      version: 1,
+    });
+  const first = profileFor("Peas");
+  const second = profileFor("Carrots");
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const getFirst = vi.fn().mockResolvedValue(first);
+  const getSecond = vi.fn().mockResolvedValue(second);
+  const view = (organizationId: string, get: typeof getFirst) => (
+    <QueryClientProvider client={client}>
+      <HouseholdProfilesPanel
+        accountId="same-account"
+        organizationId={organizationId}
+        operations={{
+          get,
+          mutate: vi.fn(),
+          versions: vi
+            .fn()
+            .mockResolvedValue({ nextBeforeVersion: null, versions: [] }),
+        }}
+        peopleOperations={{ list: vi.fn().mockResolvedValue(roster) }}
+      />
+    </QueryClientProvider>
+  );
+  const screenView = render(view("family-a", getFirst));
+  expect(await screen.findByText("Peas: like (ingredient)")).toBeVisible();
+  screenView.rerender(view("family-b", getSecond));
+  expect(await screen.findByText("Carrots: like (ingredient)")).toBeVisible();
+  expect(screen.queryByText("Peas: like (ingredient)")).not.toBeInTheDocument();
+  expect(getFirst).toHaveBeenCalledTimes(1);
+  expect(getSecond).toHaveBeenCalledTimes(1);
+});
