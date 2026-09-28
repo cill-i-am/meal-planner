@@ -153,8 +153,8 @@ attempts. Supported gateway options allow one gateway attempt per binding call,
 with no payload logging or response caching. Normal library diagnostics stay on.
 
 Tool arguments may be at most 64 KiB. The removed custom parser's framing and wire
-counters no longer apply. Streamed usage stays unknown and cannot reduce a budget
-reservation. Strict schemas do not prove provider success or truthful meaning.
+counters no longer apply. Streamed usage stays unknown when the provider does not
+report it. Strict schemas do not prove provider success or truthful meaning.
 Invalid output stays failed, with the previous snapshot unchanged.
 
 The adapter passes `gateway.requestTimeoutMs = config.timeoutMs` through the

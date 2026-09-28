@@ -9,8 +9,8 @@ These synthetic product-quality assets implement the adult-discovery portion of 
 | `judge.md` | Instructions for a separately fixed soft-quality judge after hard checks pass. |
 | `evidence.template.json` | Empty result format with provenance, disclosure/transition receipts and unavailable telemetry. |
 | `calibration.template.json` | Eight unscored product-owner rows and the separate second-human pre-beta obligation. |
-| `provider-accounting-policy.json` | Supported SDK/gateway retry multiplier and conservative per-turn reservation. |
-| `validate.ts` | Offline asset and accounting-policy validation. |
+| `provider-usage-policy.json` | Supported SDK/gateway retry behavior and treatment of unavailable usage. |
+| `validate.ts` | Offline asset and usage-policy validation. |
 | [Published SDK live opening](kimi-published-sdk-opening-results.md) | Current implementation's successful native opening, explicit confirmation, reload proof and cost checkpoint. |
 
 The [Stage 2 plan](../../docs/plans/private-discovery/README.md) retains shorter dependant assistance and the full repeat-review flow in Work Item 04. This pack exercises adult discovery across all eight families. Discussing a dependant or fallback does not prove a dependant-targeted confirmation flow. Routine, capacity, equipment and fallback needs remain private context, not food-preference facts. Later-stage obligations stay `not_exercised` and are excluded from pass counts and quality aggregates.
@@ -28,9 +28,7 @@ The removed experiment reports and receipts remain available in the [pre-cleanup
 
 The unmodified OpenAI client retries transient errors twice, so one admitted application turn can make three provider attempts. Supported gateway options allow one gateway attempt per SDK request. The application adds no automatic turn retry. The retired single-forward evaluation proxy is not used by this path; new runs use the native binding and record logical turns separately from actual provider attempts when observable.
 
-The [accounting policy](provider-accounting-policy.json) reserves **1,533,546 microUSD ($1.533546) per application turn**, covering three full 511,182-microUSD attempts. Reserve before admission. Unknown or untrusted final usage retains the entire reservation; cancellation can still incur upstream cost. Historical single-attempt receipts are not the current admission bound.
-
-At the latest retained live checkpoint on 2026-09-19, historical post-anchor exposure was **7,319,299 microUSD**. The new turn retained **1,533,546 microUSD**, for **8,852,845 microUSD** total conservative exposure against the authorized additional **20,000,000-microUSD** allowance. The remaining **11,147,155 microUSD** is an evidence checkpoint, not reconciled billing or a guarantee that no later spend exists. Refresh the ledger and applicable authorization before another paid run. Deleting old reports does not release or reset any reservation.
+The [usage policy](provider-usage-policy.json) records the SDK and gateway retry behavior. Record observed attempts, tokens and cost with the price basis used for the run. If provider usage is unavailable, leave those measurements unavailable rather than reporting zero. Cancellation may still incur upstream cost.
 
 ## Assisted disclosure policy: private-discovery-driver-v1
 
@@ -50,7 +48,7 @@ The v25 model submits semantic AddFact, ConfirmFact, RemoveFact or ReplaceFact p
 
 `AddConfirmedProfileFact` names the requested eventual change; its initial card is still **proposed**, private and uncommitted. The common observed trajectory is `proposed → corrected proposed/rejected → proposed → pending → confirmed`, with an actual committed Household outcome and profile version for the accepted card. Do not require every corrected interaction to emit a separate rejected card: revision and rejection are the existing alternative participant operations. A rejected card stays rejected; any replacement is separately visible. If a real stale-version conflict occurs, record `conflict` and refreshed review; never call it confirmation. Current safety constraints stay active, and an actual reduction needs the separate admitted safety confirmation. A transcript claim, tool request, pending card or agent bookkeeping is not commitment proof.
 
-The simple-household `repeatSpike` is the required narrow harness seam: real discovery, visible proposal, correction, admitted confirmation, completion of A, then fresh B using the current committed profile and new dialogue only. B must not receive A's transcript or rejected/private material. Its removal proposal uses the real current fact ID and requires a new admitted confirmation. Record the actual two-session receipts; do not count a fabricated profile or session as an end-to-end pass. This does not claim the full WI04 focused-review product flow.
+The simple-household `repeatSpike` is the required narrow harness seam: real discovery, visible proposal, correction, admitted confirmation, completion of A, then fresh B using the current committed profile and new dialogue only. B must not receive A's transcript or rejected/private material. Its removal proposal uses the real current fact ID and requires a new admitted confirmation. Record the actual two-session receipts; do not count a fabricated profile or session as an end-to-end pass. This does not claim the full WI04 focused-review product flow. The current [provider-free native A-to-B test](../../apps/api/src/features/households/household-boundary.integration.test.ts) verifies those isolation and confirmation mechanics through a synthetic model response. It is not a scored `repeatSpike` run or live-model evidence.
 
 ## Review and evidence
 

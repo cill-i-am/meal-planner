@@ -44,6 +44,7 @@ import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 import * as authSchema from "../auth/auth.database-schema.js";
 import {
   emptyPrivateDiscoveryContinuity,
+  emptyPrivateDiscoveryContinuityUpdates,
   PrivateDiscoveryContinuityJson,
 } from "../private-output/private-discovery-continuity.js";
 import {
@@ -8559,7 +8560,7 @@ describe("canonical private profile cards", () => {
             parts: [
               {
                 content:
-                  "Private conversation context for late evenings: an alternative meal is needed.\n\nFor late evenings, why is an alternative meal needed?",
+                  "I've noted this alternative meal need privately for late evenings: an alternative meal is needed.\n\nFor late evenings, what makes an alternative meal necessary?",
                 type: "text",
               },
             ],
@@ -9280,6 +9281,226 @@ describe("canonical private profile cards", () => {
     first.socket.close();
     second.socket.close();
   });
+
+  it("reviews a model proposal in a fresh session using only the saved profile and new private message", async () => {
+    const logs: string[] = [];
+    let first: CardConnection | undefined;
+    let second: CardConnection | undefined;
+    const contexts: (typeof PrivateDiscoveryContext.Type)[] = [];
+    privateModelResponse = (context) => {
+      contexts.push(context);
+      const latest = context.messages.at(-1);
+      if (latest?.role !== "participant") {
+        throw new Error("Expected a participant message");
+      }
+      const [previous] = context.profile.facts;
+      const change =
+        previous === undefined
+          ? {
+              _tag: "AddFact",
+              fact: {
+                _tag: "FoodPreference",
+                label: "Tomatoes",
+                sentiment: "like",
+                targetKind: "ingredient",
+              },
+            }
+          : {
+              _tag: "ReplaceFact",
+              fact: {
+                _tag: "FoodPreference",
+                label: "Peas",
+                sentiment: "like",
+                targetKind: "ingredient",
+              },
+              factId: previous.id,
+            };
+      return new LocalResponse(
+        encodeKimiCompletion({
+          choices: [
+            {
+              finish_reason: "tool_calls",
+              message: {
+                content: null,
+                role: "assistant",
+                tool_calls: [
+                  {
+                    function: {
+                      arguments: JSON.stringify({
+                        intent: {
+                          _tag: "Continue",
+                          proposals: [{ _tag: "ProposeProfileCard", change }],
+                          updates: emptyPrivateDiscoveryContinuityUpdates(),
+                        },
+                      }),
+                      name: "submitDiscoveryTurn",
+                    },
+                    id: "synthetic-repeat-review",
+                    type: "function",
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { completion_tokens: 20, prompt_tokens: 100 },
+        }),
+        { headers: { "content-type": "text/event-stream" } }
+      );
+    };
+    try {
+      await restartRuntime(logs);
+      const setup = await prepareLinkedAdult("Fresh Private Profile Review");
+      first = await openPrivateConnection(setup.memberCookie);
+      const firstResponse = await privateChatRequest(
+        setup.memberCookie,
+        first,
+        {
+          body: privateChatInput(first.sessionReference, "I like tomatoes."),
+          method: "POST",
+        }
+      );
+      expect(firstResponse.status).toBe(200);
+      expect(await firstResponse.text()).toContain("RUN_FINISHED");
+      const firstCards = await readPrivateCards(first);
+      const [original] = firstCards.cards;
+      if (original === undefined) {
+        throw new Error("Expected the model's first proposal");
+      }
+      expect(original).toMatchObject({
+        change: preferenceChange("Tomatoes"),
+        expectedProfileVersion: 0,
+        status: "proposed",
+      });
+      const corrected = await cardExchange(first, {
+        cardId: original.id,
+        cardRevision: original.revision,
+        change: preferenceChange("Carrots"),
+        expectedProfileVersion: 0,
+        expectedVersion: firstCards.state.version,
+        mutationId: crypto.randomUUID(),
+        reviewedFact: null,
+        type: "ReviseProfileCard",
+      });
+      if (corrected.type !== "CardUpdated") {
+        throw new Error("Expected the participant's corrected proposal");
+      }
+      expect(await readCardProfile(setup)).toMatchObject({ version: 0 });
+      const firstConfirmationId = crypto.randomUUID();
+      expect(
+        await freezePrivateCard(
+          first,
+          corrected.card,
+          corrected.state.version,
+          firstConfirmationId
+        )
+      ).toMatchObject({ type: "ConfirmationPending" });
+      const firstConfirmation = await postPrivateConfirmation(
+        setup.memberCookie,
+        first,
+        firstConfirmationId
+      );
+      expect(firstConfirmation.status).toBe(204);
+      const saved = await readCardProfile(setup);
+      expect(saved).toMatchObject({
+        facts: [{ value: preferenceChange("Carrots").fact }],
+        version: 1,
+      });
+      const settledFirst = await readPrivateCards(first);
+      expect(
+        await cardExchange(first, {
+          expectedVersion: settledFirst.state.version,
+          mutationId: crypto.randomUUID(),
+          type: "CompleteSession",
+        })
+      ).toMatchObject({
+        state: { status: "completed" },
+        type: "SessionCompleted",
+      });
+
+      second = await openPrivateConnection(setup.memberCookie);
+      expect(second.sessionReference).not.toBe(first.sessionReference);
+      const secondText = "I prefer peas now.";
+      const secondResponse = await privateChatRequest(
+        setup.memberCookie,
+        second,
+        {
+          body: privateChatInput(second.sessionReference, secondText),
+          method: "POST",
+        }
+      );
+      expect(secondResponse.status).toBe(200);
+      expect(await secondResponse.text()).toContain("RUN_FINISHED");
+      expect(contexts).toHaveLength(2);
+      expect(contexts[1]).toMatchObject({
+        cards: [],
+        continuity: emptyPrivateDiscoveryContinuity(),
+        messages: [{ role: "participant", text: secondText }],
+        profile: { version: 1 },
+        scope: "ProfileEdit",
+      });
+      const secondContext = contexts.at(1);
+      expect(secondContext?.profile.facts).toEqual(
+        saved.facts.map(({ id, standing, value }) => ({ id, standing, value }))
+      );
+      expect(JSON.stringify(secondContext)).not.toContain("I like tomatoes.");
+      const secondCards = await readPrivateCards(second);
+      const [replacement] = secondCards.cards;
+      const [previousFact] = saved.facts;
+      if (replacement === undefined || previousFact === undefined) {
+        throw new Error("Expected the proposal and saved fact");
+      }
+      expect(replacement).toMatchObject({
+        change: {
+          _tag: "ReplaceOrdinaryProfileFact",
+          fact: preferenceChange("Peas").fact,
+          factId: previousFact.id,
+        },
+        expectedProfileVersion: 1,
+        reviewedFact: previousFact.value,
+        status: "proposed",
+      });
+      expect(await readCardProfile(setup)).toEqual(saved);
+      const secondConfirmationId = crypto.randomUUID();
+      expect(
+        await freezePrivateCard(
+          second,
+          replacement,
+          secondCards.state.version,
+          secondConfirmationId
+        )
+      ).toMatchObject({ type: "ConfirmationPending" });
+      const secondConfirmation = await postPrivateConfirmation(
+        setup.memberCookie,
+        second,
+        secondConfirmationId
+      );
+      expect(secondConfirmation.status).toBe(204);
+      expect(await readCardProfile(setup)).toMatchObject({
+        audit: { nextVersion: 2, previousVersion: 1, source: "interview" },
+        facts: [{ id: previousFact.id, value: preferenceChange("Peas").fact }],
+        version: 2,
+      });
+      expect(await readPrivateCards(first)).toMatchObject({
+        cards: [{ id: original.id, status: "confirmed" }],
+        state: { status: "completed" },
+      });
+      const closedFirst = await readPrivateCards(first);
+      expect(
+        await cardExchange(first, {
+          cardId: original.id,
+          cardRevision: corrected.card.revision,
+          expectedVersion: closedFirst.state.version,
+          mutationId: crypto.randomUUID(),
+          type: "RejectProfileCard",
+        })
+      ).toMatchObject({ reason: "session_completed", type: "Rejected" });
+    } finally {
+      first?.socket.close();
+      second?.socket.close();
+      privateModelResponse = undefined;
+      await restartRuntime(logs);
+    }
+  }, 120_000);
 
   it("pages maximum-label proposals within the private frame budget and retains completed cards as read-only history", async () => {
     const setup = await prepareLinkedAdult("Private Card Bounded Pages");

@@ -160,10 +160,10 @@ export const applyPrivateDiscoveryCoverageUpdates = (
 export const privateDiscoveryTopicQuestion = (topic: PrivateDiscoveryTopic) => {
   switch (topic) {
     case "foodRestrictions": {
-      return "Do you have any food allergies, intolerances or dietary restrictions?";
+      return "Are there any food allergies, intolerances, or dietary restrictions your meals need to account for?";
     }
     case "usualMeals": {
-      return "What do you usually eat on a typical day?";
+      return "What meals do you usually have on an ordinary day?";
     }
     default: {
       return topic satisfies never;

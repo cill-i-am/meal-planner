@@ -122,7 +122,7 @@ describe("typed private meal fallback needs", () => {
     ]);
     expect(first.decision).toEqual({
       _tag: "Ask",
-      question: "For Jordan, why is an alternative meal needed?",
+      question: "For Jordan, what makes an alternative meal necessary?",
       source: {
         _tag: "MealFallbackNeed",
         fields: ["reason"],
@@ -166,7 +166,7 @@ describe("typed private meal fallback needs", () => {
       source: { fields: ["acceptableOption", "extraPreparation"] },
     });
     expect(result.message).toBe(
-      "Private conversation context for Jordan: reason: The shared meal is too spicy.\n\nFor Jordan, what alternative meal is acceptable, and how much extra preparation is manageable?"
+      "I've noted this alternative meal need privately for Jordan: reason: The shared meal is too spicy.\n\nFor Jordan, what alternative meal would work, and how much extra preparation is manageable?"
     );
   });
 
@@ -202,7 +202,7 @@ describe("typed private meal fallback needs", () => {
     ]);
     expect(result.decision).toEqual({ _tag: "Review" });
     expect(result.message).toContain(
-      "Private conversation context for Jordan:"
+      "I've noted this alternative meal need privately for Jordan:"
     );
     expect(result.message).toContain(
       "generic option: a plain sandwich; quantity: one serving"
@@ -281,7 +281,7 @@ describe("typed private meal fallback needs", () => {
     });
     expect(updated.decision).toEqual({ _tag: "Review" });
     expect(updated.message).toContain(
-      "Private conversation context for Jordan:"
+      "I've noted this alternative meal need privately for Jordan:"
     );
     expect(updated.message).toContain(
       "exact option: Harbor plain soup cup; quantity: one cup; substitution scope: No generic alternative."
@@ -791,7 +791,7 @@ describe("typed private meal fallback needs", () => {
       source: { fields: ["reason"] },
     });
     expect(result.message).toBe(
-      "Private conversation context for Jordan: an alternative meal is needed.\n\nFor Jordan, why is an alternative meal needed?"
+      "I've noted this alternative meal need privately for Jordan: an alternative meal is needed.\n\nFor Jordan, what makes an alternative meal necessary?"
     );
   });
 

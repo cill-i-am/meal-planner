@@ -59,11 +59,12 @@ const expectStatus = async (
   const response = await pending;
   expect(response.status).toBe(status);
 };
-const finishMessage = "You can finish this conversation when you're ready.";
+const finishMessage =
+  "If that's enough for now, you can finish this conversation.";
 const proposalReviewInvitation =
-  "Review the profile proposals in the interface. They remain unconfirmed.";
+  "Review each proposal and correct anything I missed. It reaches your household profile only if you confirm it.";
 const newTomatoProposalMessage = [
-  "New profile proposal: add your preference for the ingredient “tomatoes”.",
+  "I've drafted a private proposal to add your preference for the ingredient “tomatoes”.",
   proposalReviewInvitation,
   finishMessage,
 ].join("\n\n");
@@ -470,7 +471,7 @@ describe("native adaptive assistant attempts through the production model adapte
           parts: [
             {
               content:
-                "Do you have any food allergies, intolerances or dietary restrictions?",
+                "Are there any food allergies, intolerances, or dietary restrictions your meals need to account for?",
               type: "text",
             },
           ],
@@ -672,10 +673,10 @@ describe("native adaptive assistant attempts through the production model adapte
           parts: [
             {
               content: [
-                "New profile proposal: add your preference for the ingredient “carrots”.",
+                "I've drafted a private proposal to add your preference for the ingredient “carrots”.",
                 proposalReviewInvitation,
-                "Private conversation context for Jordan: an alternative meal is needed.",
-                "For Jordan, why is an alternative meal needed?",
+                "I've noted this alternative meal need privately for Jordan: an alternative meal is needed.",
+                "For Jordan, what makes an alternative meal necessary?",
               ].join("\n\n"),
               type: "text",
             },
@@ -721,7 +722,7 @@ describe("native adaptive assistant attempts through the production model adapte
         {
           parts: [
             {
-              content: "For Jordan, why is an alternative meal needed?",
+              content: "For Jordan, what makes an alternative meal necessary?",
               type: "text",
             },
           ],
@@ -816,7 +817,7 @@ describe("native adaptive assistant attempts through the production model adapte
           parts: [
             {
               content: [
-                "Private conversation context for Jordan: reason: The shared dish is too spicy.; generic option: a plain sandwich; manageable extra preparation: Assembly without additional cooking is manageable.",
+                "I've noted this alternative meal need privately for Jordan: reason: The shared dish is too spicy.; generic option: a plain sandwich; manageable extra preparation: Assembly without additional cooking is manageable.",
                 finishMessage,
               ].join("\n\n"),
               type: "text",
@@ -1037,9 +1038,9 @@ describe("native adaptive assistant attempts through the production model adapte
               parts: [
                 {
                   content: [
-                    "New profile proposal: add your preference for the ingredient “tomatoes”.",
+                    "I've drafted a private proposal to add your preference for the ingredient “tomatoes”.",
                     proposalReviewInvitation,
-                    "Private conversation context for Jordan: reason: The shared dish is too spicy.; acceptable option: no information supplied; manageable extra preparation: No extra cooking is manageable.",
+                    "I've noted this alternative meal need privately for Jordan: reason: The shared dish is too spicy.; acceptable option: no information supplied; manageable extra preparation: No extra cooking is manageable.",
                     finishMessage,
                   ].join("\n\n"),
                   type: "text",
@@ -2056,7 +2057,7 @@ describe("native adaptive assistant attempts through the production model adapte
               parts: [
                 {
                   content: [
-                    "Revised profile proposal: add your strong dislike for the ingredient “tomatoes”.",
+                    "I've updated the private proposal to add your strong dislike for the ingredient “tomatoes”.",
                     proposalReviewInvitation,
                     finishMessage,
                   ].join("\n\n"),

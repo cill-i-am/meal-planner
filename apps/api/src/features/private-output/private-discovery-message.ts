@@ -51,9 +51,11 @@ const proposalDescription = ({
 }: PrivateDiscoveryReviewedProposal): string => {
   const { change, reviewedFact } = proposal;
   const prefix =
-    card === null ? "New profile proposal" : "Revised profile proposal";
+    card === null
+      ? "I've drafted a private proposal to"
+      : "I've updated the private proposal to";
   if (change._tag === "AddConfirmedProfileFact") {
-    return `${prefix}: add ${factDescription(change.fact)}.`;
+    return `${prefix} add ${factDescription(change.fact)}.`;
   }
   if (reviewedFact === null) {
     throw new Error("Reviewed profile proposal requires its current fact");
@@ -61,18 +63,18 @@ const proposalDescription = ({
   const before = factDescription(reviewedFact);
   switch (change._tag) {
     case "ConfirmProfileFact": {
-      return `${prefix}: confirm ${before}.`;
+      return `${prefix} confirm ${before}.`;
     }
     case "ReplaceOrdinaryProfileFact": {
-      return `${prefix}: replace ${before} with ${factDescription(change.fact)}.`;
+      return `${prefix} replace ${before} with ${factDescription(change.fact)}.`;
     }
     case "RemoveOrdinaryProfileFact": {
-      return `${prefix}: remove ${before}.`;
+      return `${prefix} remove ${before}.`;
     }
     case "ConfirmHardConstraintReduction": {
       return change.replacement === null
-        ? `${prefix}: remove ${before}; separate safety confirmation is required.`
-        : `${prefix}: replace ${before} with ${factDescription(change.replacement)}; separate safety confirmation is required.`;
+        ? `${prefix} remove ${before}; separate safety confirmation is required.`
+        : `${prefix} replace ${before} with ${factDescription(change.replacement)}; separate safety confirmation is required.`;
     }
     default: {
       return change satisfies never;
@@ -117,7 +119,7 @@ const optionDescription = (
   ];
 };
 const needDescription = (need: MealFallbackNeed): string => {
-  const prefix = `Private conversation context for ${need.subject}`;
+  const prefix = `I've noted this alternative meal need privately for ${need.subject}`;
   if (need.disposition._tag === "Declined") {
     return `${prefix}: discussion of this alternative-meal need was declined.`;
   }
@@ -150,7 +152,7 @@ export const renderPrivateDiscoveryMessage = (
   const sections = proposals.map(proposalDescription);
   if (proposals.length > 0) {
     sections.push(
-      "Review the profile proposals in the interface. They remain unconfirmed."
+      "Review each proposal and correct anything I missed. It reaches your household profile only if you confirm it."
     );
   }
   for (const need of after.mealFallbackNeeds) {
@@ -161,7 +163,7 @@ export const renderPrivateDiscoveryMessage = (
   sections.push(
     decision._tag === "Ask"
       ? decision.question
-      : "You can finish this conversation when you're ready."
+      : "If that's enough for now, you can finish this conversation."
   );
   return sections.join("\n\n");
 };

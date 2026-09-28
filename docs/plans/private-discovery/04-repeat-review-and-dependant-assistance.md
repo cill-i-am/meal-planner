@@ -1,6 +1,6 @@
 # Repeat profile review and dependant assistance
 
-Status: proposed
+Status: active — adult repeat-review seam is provider-free verified; dependant assistance remains
 Owner: unassigned
 Depends on: [discovery and evaluation](03-adaptive-discovery-and-evaluation.md)
 
@@ -21,10 +21,26 @@ privacy, target attribution, provisional/confirmed meaning, current versions,
 safety-reduction consent and exact-command recovery. Do not implement dependant
 accounts, cross-session transcript memory or implicit household writes.
 
+## Current evidence and limit
+
+The `ProfileEdit` browser opening now shows current shared facts and asks what
+changed. A local Worker Playwright journey checks signup, family setup, a saved
+fact, completed session A, fresh session B and reload in desktop Chromium and
+mobile WebKit. A browser component test checks the focused guide and read-only
+history. A native A-to-B test sends synthetic model output through the real
+adapter, corrects A's proposal, confirms it, completes A, then confirms B's
+replacement with the current fact ID and a new profile version/audit. B's model
+context contains the current saved profile and only B's new message.
+
+This provider-free evidence does not establish live model quality, the complete
+browser journey from generated proposal to confirmation, or dependant assistance.
+Work Item 03 and PDR-0006 still own the required live and human evaluations.
+
 ## Acceptance
 
-- [ ] An adult starts a new focused review, changes an ordinary preference and
-  confirms the correct target/version; earlier history remains read-only.
+- [x] An adult starts a new focused review with current shared facts; a native
+  A-to-B journey confirms an ordinary change at the correct target/version, and
+  the browser keeps earlier history read-only.
 - [ ] A shorter assisted dependant flow attributes proposals and confirmed updates
   to the intended dependant with the existing permission/audit boundary.
 - [ ] Actual browser and native runtime evidence covers privacy, stale review,
@@ -34,5 +50,6 @@ accounts, cross-session transcript memory or implicit household writes.
 
 ## Next action
 
-Refine this outcome against current source when assigned; use relevant discovery
-quality evidence and do not reopen settled runtime decisions as a prerequisite.
+Complete the discovery quality and tone evaluation in Work Item 03. Then verify
+the complete adult browser confirmation with a live candidate and build the
+shorter dependant flow, preserving the same authority boundary.

@@ -115,6 +115,20 @@ body {
 .private-history {
   margin-top: 36px;
 }
+.private-review-intro {
+  border-left: 3px solid var(--primary);
+  margin: 24px 0;
+  max-width: 68ch;
+  padding-left: 20px;
+}
+.private-review-intro p,
+.private-review-intro li {
+  line-height: 1.6;
+}
+.private-review-intro ul {
+  margin: 8px 0 0;
+  padding-left: 22px;
+}
 .private-messages li {
   border-bottom: 1px solid var(--border);
   padding: 20px 0;

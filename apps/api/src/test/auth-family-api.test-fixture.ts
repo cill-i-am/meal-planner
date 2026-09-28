@@ -17,8 +17,12 @@ import { makeAuthenticatedOrganizationResolver } from "../features/auth/auth.pri
 import type { HouseholdDomainWorkerMethods } from "../features/households/household-domain-worker.js";
 import { makeHouseholdInvitationRecipientVerifier } from "../features/households/household-request-composition.js";
 import type { MemberDepartureWorkflowStarter } from "../features/households/people/member-departure.js";
-import type { PrivateOutputMutationPort } from "../features/private-output/private-output-binding.js";
+import type {
+  PrivateOutputApiPort,
+  PrivateOutputMutationPort,
+} from "../features/private-output/private-output-binding.js";
 import { makeAuthOutputFence } from "../features/private-output/private-output-mutation.js";
+import { handlePrivateInterviewRequest } from "../features/private-output/private-output.http.js";
 import { raceWithRequestSignal } from "../infrastructure/request-cancellation.js";
 
 interface Env {
@@ -26,6 +30,7 @@ interface Env {
   readonly BETTER_AUTH_SECRET: string;
   readonly MealPlannerAuthDatabase: AnyD1Database;
   readonly HouseholdDomainWorker: object;
+  readonly PrivateOutputApi: PrivateOutputApiPort;
   readonly PrivateOutputMutations: PrivateOutputMutationPort;
   readonly TEST_MAIL: {
     get: (key: string) => Promise<string | null>;
@@ -110,6 +115,15 @@ export default {
             return HttpServerResponse.toWeb(
               yield* auth.fetchHttpEffect(request)
             );
+          }
+          const privateInterview = yield* handlePrivateInterviewRequest({
+            auth,
+            household: domain,
+            output: env.PrivateOutputApi,
+            request,
+          });
+          if (privateInterview !== null) {
+            return privateInterview;
           }
           const resolver = makeAuthenticatedOrganizationResolver({ auth });
           const handler = yield* HttpRouter.toHttpEffect(

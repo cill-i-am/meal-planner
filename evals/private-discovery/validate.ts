@@ -11,29 +11,16 @@ import {
 import { ProfileCardChange } from "../../packages/private-interview-api/src/index.js";
 import calibration from "./calibration.template.json" with { type: "json" };
 import evidence from "./evidence.template.json" with { type: "json" };
-import accounting from "./provider-accounting-policy.json" with { type: "json" };
+import usage from "./provider-usage-policy.json" with { type: "json" };
 import rubric from "./rubric.json" with { type: "json" };
 import suite from "./scenarios.json" with { type: "json" };
 
+equal(usage.version, 2);
 equal(
-  accounting.maximumProviderAttemptsPerTurn,
-  (1 + accounting.sdkMaximumRetries) *
-    accounting.gatewayMaximumAttemptsPerSdkRequest
+  usage.maximumProviderAttemptsPerTurn,
+  (1 + usage.sdkMaximumRetries) * usage.gatewayMaximumAttemptsPerSdkRequest
 );
-equal(
-  accounting.kimi.reservationPerProviderAttemptMicroUsd,
-  Math.ceil(
-    accounting.kimi.maximumInputTokens *
-      accounting.kimi.inputUsdPerMillionTokens +
-      accounting.kimi.maximumOutputTokens *
-        accounting.kimi.outputUsdPerMillionTokens
-  )
-);
-equal(
-  accounting.kimi.reservationPerApplicationTurnMicroUsd,
-  accounting.kimi.reservationPerProviderAttemptMicroUsd *
-    accounting.maximumProviderAttemptsPerTurn
-);
+equal(usage.unknownUsage, "report_unavailable");
 
 const families = [
   "simple_household_baseline",

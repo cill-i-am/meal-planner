@@ -60,8 +60,10 @@ test("auth, family review and roster overlays have accessible names, contrast an
     page.getByRole("button", { exact: true, name: "Manage Robin" })
   ).toBeFocused();
   await family.openRename("Robin");
-  await expect(dialog.getByLabel("Name", { exact: true })).toHaveValue("Robin");
-  await page.keyboard.press("Tab");
+  const nameInput = dialog.getByLabel("Name", { exact: true });
+  await expect(nameInput).toHaveValue("Robin");
+  await expect(dialog).toHaveCSS("opacity", "1");
+  await dialog.getByRole("button", { name: "Close" }).press("Tab");
   await expect(dialog.locator(":focus")).toHaveCount(1);
   await family.saveRename("Robin saved");
   await expect(dialog).toBeHidden();

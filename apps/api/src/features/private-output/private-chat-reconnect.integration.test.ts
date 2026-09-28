@@ -13,7 +13,7 @@ import type { PrivateSessionBinding } from "./private-output.contract.js";
 
 const harness = makePrivateOutputHarness();
 const proposalText =
-  "New profile proposal: add your preference for the ingredient “tomatoes”.";
+  "I've drafted a private proposal to add your preference for the ingredient “tomatoes”.";
 const completedResponse = () =>
   new LocalResponse(
     encodeKimiCompletion({

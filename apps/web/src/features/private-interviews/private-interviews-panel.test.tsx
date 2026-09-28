@@ -141,11 +141,15 @@ const fixture = () => {
     return socket;
   };
   const sessionReady = (
-    sessionState = state,
+    sessionState: {
+      readonly status: "open" | "completed";
+      readonly version: number;
+    } = state,
     cards: readonly ProfileCardType[] = [],
     pendingConfirmation: string | null = null,
     generation = "00000000-0000-4000-8000-000000000301",
-    assistantTurn: AssistantTurn | null = null
+    assistantTurn: AssistantTurn | null = null,
+    sessionReference = reference
   ) => {
     const socket = latest();
     socket.receive({
@@ -153,7 +157,7 @@ const fixture = () => {
       bindingKey: "binding-a",
       generation,
       pendingConfirmation,
-      sessionReference: reference,
+      sessionReference,
       state: sessionState,
       type: "SessionReady",
     });
@@ -178,7 +182,101 @@ const fixture = () => {
   };
 };
 
+const factId = "fact_00000000-0000-4000-8000-000000000501";
+const sharedProfile = (
+  value: (typeof PersonProfile.Type)["facts"][number]["value"],
+  version = 1
+) =>
+  Schema.decodeUnknownSync(PersonProfile)({
+    audit: null,
+    facts: [
+      {
+        createdAtEpochMs: 1,
+        createdBy: "a".repeat(64),
+        createdInVersion: 1,
+        id: factId,
+        source: "manual_ui",
+        standing: { _tag: "provisional" },
+        updatedAtEpochMs: 1,
+        updatedBy: "a".repeat(64),
+        updatedInVersion: version,
+        value,
+      },
+    ],
+    personId: "person_00000000-0000-4000-8000-000000000001",
+    version,
+  });
+
 afterEach(cleanup);
+
+it("opens a fresh profile review while keeping the completed session history only", async () => {
+  const user = userEvent.setup();
+  const f = fixture();
+  f.dependencies.readCurrentProfile.mockResolvedValue(
+    sharedProfile({
+      _tag: "FoodPreference",
+      label: "Carrots",
+      sentiment: "like",
+      targetKind: "ingredient",
+    })
+  );
+  render(<PrivateInterviewsPanel {...context} dependencies={f.dependencies} />);
+  const directory = f.directoryReady();
+  act(() => f.list(directory));
+  const sessions = screen.getByRole("navigation", {
+    name: "Your private sessions",
+  });
+  await user.click(
+    within(sessions).getByRole("button", { name: /Session 1/u })
+  );
+  const first = f.sessionReady({ status: "completed", version: 3 });
+  expect(
+    await screen.findByText("Completed · history only")
+  ).toBeInTheDocument();
+  expect(screen.queryByLabelText("Your message")).not.toBeInTheDocument();
+
+  await user.click(
+    screen.getByRole("button", { name: "Update my food profile" })
+  );
+  const start = directory.last("StartSession");
+  expect(start.scope).toBe("ProfileEdit");
+  const freshReference = "00000000-0000-4000-8000-000000000102";
+  act(() => {
+    directory.receive({
+      mutationId: start.mutationId,
+      reservation: {
+        ...reservation,
+        ordinal: 2,
+        sessionReference: freshReference,
+      },
+      type: "SessionStarted",
+    });
+    f.sessionReady(
+      state,
+      [],
+      null,
+      "00000000-0000-4000-8000-000000000302",
+      null,
+      freshReference
+    );
+  });
+  expect(first.closed).toBe(true);
+  await waitFor(() =>
+    expect(screen.getByLabelText("Your message")).toBeEnabled()
+  );
+  expect(screen.getByText("What has changed?")).toBeInTheDocument();
+  expect(
+    await screen.findByRole("list", { name: "Current shared food facts" })
+  ).toHaveTextContent("Carrots: like (ingredient)");
+
+  await user.click(
+    within(sessions).getByRole("button", { name: /Session 1/u })
+  );
+  act(() => f.sessionReady({ status: "completed", version: 3 }));
+  expect(screen.getByText("Completed · history only")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Your message")).not.toBeInTheDocument();
+  expect(screen.queryByText("What has changed?")).not.toBeInTheDocument();
+});
 
 it("offers explicit reconnect when a fresh automatic admission fails and retains the same request", async () => {
   const user = userEvent.setup();
@@ -360,30 +458,6 @@ const proposal = (patch: Record<string, unknown> = {}) =>
     revision: 1,
     status: "proposed",
     ...patch,
-  });
-const factId = "fact_00000000-0000-4000-8000-000000000501";
-const sharedProfile = (
-  value: (typeof PersonProfile.Type)["facts"][number]["value"],
-  version = 1
-) =>
-  Schema.decodeUnknownSync(PersonProfile)({
-    audit: null,
-    facts: [
-      {
-        createdAtEpochMs: 1,
-        createdBy: "a".repeat(64),
-        createdInVersion: 1,
-        id: factId,
-        source: "manual_ui",
-        standing: { _tag: "provisional" },
-        updatedAtEpochMs: 1,
-        updatedBy: "a".repeat(64),
-        updatedInVersion: version,
-        value,
-      },
-    ],
-    personId: "person_00000000-0000-4000-8000-000000000001",
-    version,
   });
 const openProposals = async (
   f: ReturnType<typeof fixture>,
