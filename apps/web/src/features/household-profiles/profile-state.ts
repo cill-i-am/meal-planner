@@ -14,6 +14,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { Schema } from "effect";
 
 import type { HouseholdPeopleOperations } from "../household-people/index.js";
@@ -37,11 +38,20 @@ const ownsPendingChange = (
   current?.personId === submitted.personId &&
   current.payload.mutationId === submitted.payload.mutationId;
 
-export const profileKey = (organizationId: string, personId: string) => [
+const householdProfileKey = (organizationId: string) => [
   "household-profile",
   organizationId,
+];
+export const profileKey = (organizationId: string, personId: string) => [
+  ...householdProfileKey(organizationId),
   personId,
 ];
+
+export const invalidateHouseholdProfiles = (
+  client: QueryClient,
+  organizationId: string
+) =>
+  client.invalidateQueries({ queryKey: householdProfileKey(organizationId) });
 
 export const usePersonProfile = (
   operations: HouseholdProfileOperations,

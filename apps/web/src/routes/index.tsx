@@ -28,6 +28,7 @@ import {
 } from "../features/household-people/index.js";
 import {
   HouseholdProfilesPanel,
+  invalidateHouseholdProfiles,
   makeBrowserHouseholdProfileOperations,
 } from "../features/household-profiles/index.js";
 import { makeBrowserHouseholdOperations } from "../features/households/browser-operations.js";
@@ -93,9 +94,7 @@ const AuthenticatedMealPlanner = ({
             accountId={userId}
             householdId={household.id}
             onConfirmationSettled={() => {
-              void queryClient.invalidateQueries({
-                queryKey: ["household-profile", household.id],
-              });
+              void invalidateHouseholdProfiles(queryClient, household.id);
             }}
           />
           <HouseholdPeoplePanel
