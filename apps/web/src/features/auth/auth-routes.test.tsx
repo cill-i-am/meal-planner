@@ -258,6 +258,13 @@ it.each(["login", "signup"] as const)(
 
 it("cancels an anonymous session read before signup creates a session", async () => {
   const { fixture, queryClient, user } = await setup("/signup");
+  // The form can render before its initial account read settles. Start the
+  // controlled stale read only after that first request is out of the way.
+  await waitFor(
+    () =>
+      expect(queryClient.getQueryState(accountKey)?.fetchStatus).toBe("idle"),
+    { timeout: 5000 }
+  );
   const stale = Promise.withResolvers<Response>();
   let staleSignal: AbortSignal | undefined;
   let staleReadCanceledAtWrite = false;
@@ -268,18 +275,11 @@ it("cancels an anonymous session read before signup creates a session", async ()
   fixture.onAuthWrite = () => {
     staleReadCanceledAtWrite = staleSignal?.aborted === true;
   };
-  const readsBefore = fixture.requests.filter((path) =>
-    path.endsWith("/get-session")
-  ).length;
   const staleRead = queryClient.refetchQueries({
     exact: true,
     queryKey: accountKey,
   });
-  await waitFor(() =>
-    expect(
-      fixture.requests.filter((path) => path.endsWith("/get-session")).length
-    ).toBeGreaterThan(readsBefore)
-  );
+  await waitFor(() => expect(staleSignal).toBeDefined(), { timeout: 5000 });
   await user.type(screen.getByLabelText("Your name"), "Cook");
   await fillCredentials(user);
   await user.click(screen.getByRole("button", { name: "Create account" }));
