@@ -23,18 +23,19 @@ accounts, cross-session transcript memory or implicit household writes.
 
 ## Current evidence and limit
 
-The `ProfileEdit` browser opening now shows current shared facts and asks what
-changed. A local Worker Playwright journey checks signup, family setup, a saved
-fact, completed session A, fresh session B and reload in desktop Chromium and
-mobile WebKit. A browser component test checks the focused guide and read-only
-history. A native A-to-B test sends synthetic model output through the real
-adapter, corrects A's proposal, confirms it, completes A, then confirms B's
-replacement with the current fact ID and a new profile version/audit. B's model
-context contains the current saved profile and only B's new message.
+The `ProfileEdit` browser opening shows current shared facts and asks what
+changed. A local Worker Playwright journey now covers signup and family setup,
+then a synthetic model proposal, browser correction, explicit confirmation,
+completion of session A, and a fresh session B replacement and confirmation.
+It checks the saved profile version, fact identity, audit and reload in desktop
+Chromium and mobile WebKit. The synthetic model accepts B only when its context
+contains the current saved fact and B's message alone. A browser component test
+checks the focused guide and read-only history. A separate native A-to-B test
+checks the same confirmation and isolation boundaries below the browser.
 
-This provider-free evidence does not establish live model quality, the complete
-browser journey from generated proposal to confirmation, or dependant assistance.
-Work Item 03 and PDR-0006 still own the required live and human evaluations.
+This provider-free evidence does not establish live model quality or dependant
+assistance. Work Item 03 and PDR-0006 still own the required live and human
+evaluations.
 
 ## Acceptance
 
@@ -50,6 +51,7 @@ Work Item 03 and PDR-0006 still own the required live and human evaluations.
 
 ## Next action
 
-Complete the discovery quality and tone evaluation in Work Item 03. Then verify
-the complete adult browser confirmation with a live candidate and build the
-shorter dependant flow, preserving the same authority boundary.
+Complete the discovery quality and tone evaluation in Work Item 03 when a
+provider run resumes. Then build the shorter dependant flow, preserving the
+same authority boundary. A live candidate must still prove the adult review's
+conversation quality; this provider-free browser journey is mechanics evidence.

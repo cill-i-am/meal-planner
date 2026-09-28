@@ -12,16 +12,55 @@ export class PrivateReviewPage {
     return this.page.getByRole("region", { name: "Your private sessions" });
   }
 
+  get proposal() {
+    return this.region
+      .getByRole("list", { name: "Private profile proposals" })
+      .getByRole("listitem")
+      .first();
+  }
+
   async start() {
     await this.region
       .getByRole("button", { name: "Update my food profile" })
       .click();
     await this.expectOpen();
+    await expect(this.region.getByText("What has changed?")).toBeVisible();
   }
 
   async complete() {
     await this.region.getByRole("button", { name: "Complete session" }).click();
     await this.expectCompleted();
+  }
+
+  async sendMessage(text: string) {
+    await this.region.getByLabel("Your message").fill(text);
+    await this.region.getByRole("button", { name: "Send message" }).click();
+    await expect(this.proposal).toBeVisible();
+  }
+
+  async expectProposal(label: string) {
+    await expect(this.proposal.getByText("Private proposal")).toBeVisible();
+    await expect(
+      this.proposal.getByText(`${label}: like (ingredient)`)
+    ).toBeVisible();
+  }
+
+  async correctProposal(label: string) {
+    await this.proposal.getByText("Review or correct proposal").click();
+    await this.proposal.getByLabel("Food or ingredient").fill(label);
+    await this.proposal
+      .getByRole("button", { name: "Save revised proposal" })
+      .click();
+    await this.expectProposal(label);
+  }
+
+  async confirmProposal() {
+    await this.proposal
+      .getByRole("button", { name: "Confirm for household" })
+      .click();
+    await expect(
+      this.proposal.getByText("Confirmed for household")
+    ).toBeVisible();
   }
 
   async select(ordinal: number) {
@@ -33,7 +72,6 @@ export class PrivateReviewPage {
 
   async expectOpen() {
     await expect(this.region.getByLabel("Your message")).toBeEnabled();
-    await expect(this.region.getByText("What has changed?")).toBeVisible();
   }
 
   async expectCurrentFact(label: string) {
@@ -49,5 +87,8 @@ export class PrivateReviewPage {
       this.region.getByText("Completed · history only")
     ).toBeVisible();
     await expect(this.region.getByLabel("Your message")).toHaveCount(0);
+    await expect(
+      this.region.getByRole("button", { name: "Confirm for household" })
+    ).toHaveCount(0);
   }
 }
