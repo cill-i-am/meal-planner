@@ -261,7 +261,9 @@ it("opens a fresh profile review while keeping the completed session history onl
     );
   });
   expect(first.closed).toBe(true);
-  expect(await screen.findByLabelText("Your message")).toBeEnabled();
+  await waitFor(() =>
+    expect(screen.getByLabelText("Your message")).toBeEnabled()
+  );
   expect(screen.getByText("What has changed?")).toBeInTheDocument();
   expect(
     await screen.findByRole("list", { name: "Current shared food facts" })
