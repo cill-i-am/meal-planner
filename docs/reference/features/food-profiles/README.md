@@ -39,9 +39,11 @@ to this local Worker journey. Mail delivery and a live model are outside it.
 
 The [private review page object](../../../../apps/web/e2e/pages/private-review-page.ts)
 and [desktop/mobile journey](../../../../apps/web/e2e/private-review-journey.spec.ts)
-cover fresh admission, current shared facts, completed history and reload in
-local Workers. The [browser component test](../../../../apps/web/src/features/private-interviews/private-interviews-panel.test.tsx)
+covers fresh admission, two browser confirmations, profile versions and audit,
+completed history and reload in local Workers using a synthetic model response.
+The [browser component test](../../../../apps/web/src/features/private-interviews/private-interviews-panel.test.tsx)
 covers the focused opening, and the [native A-to-B test](../../../../apps/api/src/features/households/household-boundary.integration.test.ts)
 covers a synthetic model proposal, correction, two explicit confirmations,
-profile versions/audit, and prior transcript exclusion. Those tests do not
-exercise a live model or a full browser confirmation from model output.
+profile versions/audit, and prior transcript exclusion. The browser journey
+also rejects a B model context containing earlier dialogue or missing the saved
+fact. These tests do not exercise a live model or establish conversation quality.

@@ -13,6 +13,10 @@ import {
   privateOutputTestBindings,
 } from "../features/private-output/private-output-runtime.test-fixture.js";
 import { bundleWorkerFixture } from "./native-worker.test-fixture.js";
+import {
+  privateReviewModelConfiguration,
+  privateReviewModelResponse,
+} from "./private-review-model.test-fixture.js";
 
 const root = fileURLToPath(new URL("../../../../", import.meta.url));
 const port = Number(process.env["AUTH_FAMILY_E2E_PORT"] ?? "4398");
@@ -33,7 +37,7 @@ const [gateway, api, domain, output] = await Promise.all([
   bundleWorkerFixture(
     path.join(
       root,
-      "apps/api/src/features/private-output/private-output-worker.ts"
+      "apps/api/src/features/private-output/private-output-control.test-fixture.ts"
     )
   ),
 ]);
@@ -55,6 +59,7 @@ const website = Schema.decodeUnknownSync(
   )
 );
 const directory = await mkdtemp(path.join(tmpdir(), "auth-family-e2e-"));
+const privateOutput = privateOutputRuntimeWorker(output);
 const runtime = new Miniflare({
   cf: false,
   host: "127.0.0.1",
@@ -141,7 +146,24 @@ const runtime = new Miniflare({
         type: "worker",
       },
     },
-    privateOutputRuntimeWorker(output),
+    {
+      config: {
+        ...privateOutput.config,
+        env: {
+          ...privateOutput.config.env,
+          PRIVATE_DISCOVERY_CONFIG: {
+            type: "text",
+            value: privateReviewModelConfiguration,
+          },
+        },
+      },
+      dev: {
+        outboundService: {
+          handler: privateReviewModelResponse,
+          type: "fetcher",
+        },
+      },
+    },
   ],
 });
 const stopped = Promise.withResolvers<null>();
