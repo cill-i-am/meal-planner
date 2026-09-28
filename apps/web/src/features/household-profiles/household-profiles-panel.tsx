@@ -1,48 +1,29 @@
-import {
-  HouseholdPersonId,
-  HouseholdPersonMutationId,
-  MutatePersonProfilePayload,
-} from "@meal-planner/household-api";
 import type {
   HouseholdPerson,
+  HouseholdPersonId,
   PersonProfile,
   ProfileCommand,
   ProfileFact,
-  ProfileVersionPage,
 } from "@meal-planner/household-api";
 import { useForm } from "@tanstack/react-form";
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { Schema } from "effect";
 
 import { Alert } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
 import { Label } from "../../components/ui/label.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
-import type { HouseholdPeopleOperations } from "../household-people/client.js";
+import type { HouseholdPeopleOperations } from "../household-people/index.js";
 import {
   isAmbiguousProfileError,
   ProfileOperationError,
 } from "./operations.js";
 import type { HouseholdProfileOperations } from "./operations.js";
 import { describeProfileFact, ProfileFactForm } from "./profile-fact-form.js";
+import {
+  useHouseholdProfileState,
+  usePersonProfile,
+  useProfileHistory,
+} from "./profile-state.js";
 
-const PendingProfileChange = Schema.Struct({
-  authenticationRequired: Schema.optional(Schema.Boolean),
-  payload: MutatePersonProfilePayload,
-  personId: HouseholdPersonId,
-});
-type PendingProfileChange = typeof PendingProfileChange.Type;
-const ownsPendingChange = (
-  current: PendingProfileChange | null | undefined,
-  submitted: PendingProfileChange
-) =>
-  current?.personId === submitted.personId &&
-  current.payload.mutationId === submitted.payload.mutationId;
 const pendingMessage = (saving: boolean, authenticationRequired: boolean) => {
   if (saving) {
     return "Saving your change…";
@@ -52,11 +33,6 @@ const pendingMessage = (saving: boolean, authenticationRequired: boolean) => {
   }
   return "The last change’s outcome is not known. Resolve it before making another profile change.";
 };
-const profileKey = (organizationId: string, personId: string) => [
-  "household-profile",
-  organizationId,
-  personId,
-];
 const basisFor = (person: HouseholdPerson) => {
   if (person.isCurrentAdult) {
     return "self";
@@ -71,7 +47,6 @@ const standingLabel = (fact: ProfileFact) => {
     ? "Self-confirmed"
     : "Confirmed by a household adult";
 };
-const firstHistoryPage = (): number | null => null;
 const profileErrorMessage = (error: Error | null) => {
   if (!(error instanceof ProfileOperationError)) {
     return "This profile could not be loaded. Retry when the service is available.";
@@ -114,14 +89,7 @@ const ProfileHistory = ({
   readonly personId: HouseholdPersonId;
   readonly people: readonly HouseholdPerson[];
 }) => {
-  const history = useInfiniteQuery({
-    getNextPageParam: (page: ProfileVersionPage) =>
-      page.nextBeforeVersion ?? undefined,
-    initialPageParam: firstHistoryPage(),
-    queryFn: ({ pageParam }) =>
-      operations.versions(personId, pageParam ?? undefined),
-    queryKey: [...profileKey(organizationId, personId), "history"],
-  });
+  const history = useProfileHistory(operations, organizationId, personId);
   return (
     <details className="border-t pt-3">
       <summary className="min-h-11 cursor-pointer font-semibold">
@@ -285,10 +253,7 @@ const SelectedProfile = ({
   readonly clearError: () => void;
   readonly send: (profile: PersonProfile, command: ProfileCommand) => void;
 }) => {
-  const profile = useQuery({
-    queryFn: () => operations.get(person.id),
-    queryKey: profileKey(organizationId, person.id),
-  });
+  const profile = usePersonProfile(operations, organizationId, person.id);
   const definitiveError =
     error !== null &&
     !isAmbiguousProfileError(error) &&
@@ -367,7 +332,6 @@ const SelectedProfile = ({
   );
 };
 
-/** Unresolved profile commands stay with their original account and family across remounts. */
 export const HouseholdProfilesPanel = ({
   accountId,
   operations,
@@ -379,99 +343,14 @@ export const HouseholdProfilesPanel = ({
   readonly organizationId: string;
   readonly peopleOperations: Pick<HouseholdPeopleOperations, "list">;
 }) => {
-  const client = useQueryClient();
-  const pendingKey = [
-    "household-profile-unresolved",
-    accountId,
-    organizationId,
-  ];
-  const storageKey = `meal-planner.household-profile.unresolved.v1:${JSON.stringify([accountId, organizationId])}`;
-  const readPending = (): PendingProfileChange | null => {
-    const raw = globalThis.sessionStorage.getItem(storageKey);
-    return raw === null
-      ? null
-      : Schema.decodeUnknownSync(PendingProfileChange)(JSON.parse(raw));
-  };
-  const updatePending = (
-    update: (
-      current: PendingProfileChange | null
-    ) => PendingProfileChange | null
-  ) => {
-    const next = update(readPending());
-    if (next === null) {
-      globalThis.sessionStorage.removeItem(storageKey);
-    } else {
-      globalThis.sessionStorage.setItem(storageKey, JSON.stringify(next));
-    }
-    client.setQueryData(pendingKey, next);
-  };
-  const pending = useQuery<PendingProfileChange | null>({
-    enabled: false,
-    gcTime: Infinity,
-    initialData: readPending,
-    queryFn: readPending,
-    queryKey: pendingKey,
-  });
-  const roster = useQuery({
-    queryFn: () => peopleOperations.list(true),
-    queryKey: ["household-people", organizationId],
-  });
+  const { clearError, error, isSaving, pending, retryPending, roster, send } =
+    useHouseholdProfileState({
+      accountId,
+      operations,
+      organizationId,
+      peopleOperations,
+    });
   const selection = useForm({ defaultValues: { personId: "" } });
-  const mutation = useMutation({
-    mutationFn: (change: PendingProfileChange) =>
-      operations.mutate(change.personId, change.payload),
-    onError: (error, submitted) => {
-      updatePending((current) => {
-        if (!ownsPendingChange(current, submitted)) {
-          return current;
-        }
-        if (
-          error instanceof ProfileOperationError &&
-          error.code === "authentication_required"
-        ) {
-          return { ...submitted, authenticationRequired: true };
-        }
-        return isAmbiguousProfileError(error) ? current : null;
-      });
-    },
-    onSuccess: async (result, submitted) => {
-      client.setQueryData<PersonProfile>(
-        profileKey(organizationId, result.personId),
-        (existing) =>
-          existing !== undefined && existing.version > result.version
-            ? existing
-            : result
-      );
-      updatePending((current) =>
-        ownsPendingChange(current, submitted) ? null : current
-      );
-      await client.invalidateQueries({
-        queryKey: profileKey(organizationId, result.personId),
-      });
-    },
-    retry: false,
-  });
-  const send = (
-    personId: HouseholdPersonId,
-    profile: PersonProfile,
-    command: ProfileCommand
-  ) => {
-    if (readPending() !== null || mutation.isPending) {
-      return;
-    }
-    const change: PendingProfileChange = {
-      payload: Schema.decodeUnknownSync(MutatePersonProfilePayload)({
-        command,
-        expectedProfileVersion: profile.version,
-        mutationId: Schema.decodeUnknownSync(HouseholdPersonMutationId)(
-          crypto.randomUUID()
-        ),
-      }),
-      personId,
-    };
-    updatePending(() => change);
-    mutation.mutate(change);
-  };
   return (
     <section
       id="household-profiles"
@@ -500,15 +379,12 @@ export const HouseholdProfilesPanel = ({
           Link your adult person in the roster before editing food profiles.
         </p>
       )}
-      {pending.data !== null && (
+      {pending !== null && (
         <Alert>
           <p>
-            {pendingMessage(
-              mutation.isPending,
-              pending.data.authenticationRequired === true
-            )}
+            {pendingMessage(isSaving, pending.authenticationRequired === true)}
           </p>
-          {pending.data.authenticationRequired && (
+          {pending.authenticationRequired && (
             <p>
               <a href="/" target="_blank" rel="noreferrer">
                 Open sign-in in another tab
@@ -516,16 +392,12 @@ export const HouseholdProfilesPanel = ({
             </p>
           )}
           <PendingButton
-            disabled={mutation.isPending}
-            pending={mutation.isPending}
+            disabled={isSaving}
+            pending={isSaving}
             pendingLabel="Checking saved change…"
-            onClick={() => {
-              if (pending.data !== null) {
-                mutation.mutate(pending.data);
-              }
-            }}
+            onClick={retryPending}
           >
-            {pending.data.authenticationRequired
+            {pending.authenticationRequired
               ? "I’ve signed in — retry saved change"
               : "Retry saved change"}
           </PendingButton>
@@ -538,9 +410,9 @@ export const HouseholdProfilesPanel = ({
             <select
               id="profile-person"
               className="input"
-              disabled={pending.data !== null}
+              disabled={pending !== null}
               value={
-                pending.data?.personId ??
+                pending?.personId ??
                 (field.state.value ||
                   roster.data?.currentPersonId ||
                   roster.data?.people[0]?.id ||
@@ -561,7 +433,7 @@ export const HouseholdProfilesPanel = ({
       <selection.Subscribe selector={(state) => state.values.personId}>
         {(selected) => {
           const personId =
-            pending.data?.personId ??
+            pending?.personId ??
             (selected ||
               roster.data?.currentPersonId ||
               roster.data?.people[0]?.id);
@@ -575,12 +447,12 @@ export const HouseholdProfilesPanel = ({
               person={person}
               people={roster.data?.people ?? []}
               blocked={
-                pending.data !== null ||
-                mutation.isPending ||
+                pending !== null ||
+                isSaving ||
                 roster.data?.currentPersonId === null
               }
-              error={mutation.error}
-              clearError={mutation.reset}
+              error={error}
+              clearError={clearError}
               send={(profile, command) => send(person.id, profile, command)}
             />
           );

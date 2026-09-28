@@ -52,6 +52,11 @@ missing prerequisite, not a passing delivery check.
 Controls disable during pending operations and rate-limit waits. Verify recovery
 from those states when the change affects retries. Do not replace authentication
 with a mocked account and claim session/cookie behavior was tested.
+Login and signup cancel an in-flight anonymous account read before the credential
+write, then refresh the account query after success. If a stale read finishes
+later, it must not send the new account back to login. The browser-mode auth
+route test holds that read open to exercise this order; the native journey checks
+the cookie and redirect path.
 
 Owners: [browser auth](../../../../apps/web/src/features/auth/AGENTS.md),
 [recovery](../../../../apps/web/src/features/recovery/AGENTS.md), and

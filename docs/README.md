@@ -11,6 +11,7 @@ deployed or passed its quality evaluation.
 | Implement or review code | [Engineering standards](reference/engineering/README.md): read the index and relevant topics |
 | Change auth or family boundaries | [Intent layer](reference/intent-layer.md), [family API](reference/family-api.md) |
 | Exercise auth and family as a user | [Feature map and verification paths](reference/features/auth-family/README.md) |
+| Change or exercise household food profiles | [Food profile intent map](reference/food-profile-intent-layer.md), [feature journey](reference/features/food-profiles/README.md) |
 | Try a small, checked change | [First local change](tutorials/first-local-change.md) |
 | Run part of the app locally | [Local development](how-to/local-development.md) |
 | Change a form | [Build a form](how-to/build-a-form.md), [form rules](reference/forms.md) |

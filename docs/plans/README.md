@@ -54,6 +54,7 @@ trying a small end-to-end flow in the next.
 ## Completed evidence
 
 [Household foundation](household-people/README.md),
+[food profile reference slice](food-profile-reference-slice.md),
 [dependency upgrade](dependency-upgrade-2026-09-05.md),
 [ordered risk fixes](prioritized-risk-fixes.md),
 [private-output safety](private-output-safety.md) and

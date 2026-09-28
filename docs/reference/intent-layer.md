@@ -3,6 +3,8 @@
 Start here when changing authentication, family setup, people management, or
 invitation acceptance. This map covers the reference architecture introduced in
 PR #254. It makes no architectural claim about other application features.
+For the first household feature after setup, use the
+[food profile intent map](food-profile-intent-layer.md).
 
 The intent layer is repository guidance for agents. Runtime import intents are
 separate application code. A normal family remains a saved domain resource;

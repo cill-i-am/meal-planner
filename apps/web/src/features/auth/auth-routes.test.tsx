@@ -22,6 +22,7 @@ import { Route as SignupRoute } from "@/routes/signup.js";
 
 import { decodeRecoverySearch } from "../recovery/recovery-input.js";
 import {
+  accountKey,
   accountQuery,
   activeOrganizationQuery,
   organizationsQuery,
@@ -56,19 +57,24 @@ const makeTransport = (initiallyAuthenticated = false) => {
     user: { email: "cook@example.com", id: "adult-1", name: "Cook" },
   };
   const fixture: {
+    onAuthWrite: (() => void) | null;
     reply: (() => Promise<Response>) | null;
     requests: string[];
+    sessionReply: ((signal: AbortSignal) => Promise<Response>) | null;
     submissions: typeof submissions;
     transport: typeof fetch;
   } = {
+    onAuthWrite: null,
     reply: null,
     requests,
+    sessionReply: null,
     submissions,
     transport: async (input, init) => {
       const request = new Request(input, init);
       const path = new URL(request.url).pathname;
       requests.push(path);
       if (path.endsWith("/sign-in/email") || path.endsWith("/sign-up/email")) {
+        fixture.onAuthWrite?.();
         const body: unknown = await request.json();
         submissions.push(
           path.endsWith("/sign-up/email")
@@ -82,6 +88,11 @@ const makeTransport = (initiallyAuthenticated = false) => {
         return Response.json(account);
       }
       if (path.endsWith("/get-session")) {
+        if (fixture.sessionReply !== null) {
+          const reply = fixture.sessionReply;
+          fixture.sessionReply = null;
+          return reply(request.signal);
+        }
         return Response.json(authenticated ? account : null);
       }
       if (
@@ -182,12 +193,11 @@ const setup = async (
     history: createMemoryHistory({ initialEntries: [entry] }),
     routeTree: root.addChildren(routes),
   });
+  const queryClient = new QueryClient({
+    defaultOptions: { mutations: { retry: false } },
+  });
   render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { mutations: { retry: false } } })
-      }
-    >
+    <QueryClientProvider client={queryClient}>
       <AuthClientContext value={client}>
         <RouterProvider router={router} />
       </AuthClientContext>
@@ -196,7 +206,7 @@ const setup = async (
   await (authenticated
     ? screen.findByText("Authenticated workspace")
     : screen.findByRole("heading"));
-  return { fixture, router, user: userEvent.setup() };
+  return { fixture, queryClient, router, user: userEvent.setup() };
 };
 const fillCredentials = async (
   user: ReturnType<typeof userEvent.setup>,
@@ -245,6 +255,42 @@ it.each(["login", "signup"] as const)(
     }
   }
 );
+
+it("cancels an anonymous session read before signup creates a session", async () => {
+  const { fixture, queryClient, user } = await setup("/signup");
+  // The form can render before its initial account read settles. Start the
+  // controlled stale read only after that first request is out of the way.
+  await waitFor(
+    () =>
+      expect(queryClient.getQueryState(accountKey)?.fetchStatus).toBe("idle"),
+    { timeout: 5000 }
+  );
+  const stale = Promise.withResolvers<Response>();
+  let staleSignal: AbortSignal | undefined;
+  let staleReadCanceledAtWrite = false;
+  fixture.sessionReply = (signal) => {
+    staleSignal = signal;
+    return stale.promise;
+  };
+  fixture.onAuthWrite = () => {
+    staleReadCanceledAtWrite = staleSignal?.aborted === true;
+  };
+  const staleRead = queryClient.refetchQueries({
+    exact: true,
+    queryKey: accountKey,
+  });
+  await waitFor(() => expect(staleSignal).toBeDefined(), { timeout: 5000 });
+  await user.type(screen.getByLabelText("Your name"), "Cook");
+  await fillCredentials(user);
+  await user.click(screen.getByRole("button", { name: "Create account" }));
+  expect(
+    await screen.findByText("Authenticated workspace")
+  ).toBeInTheDocument();
+  expect(staleReadCanceledAtWrite).toBe(true);
+  stale.resolve(Response.json(null));
+  await staleRead;
+  expect(screen.getByText("Authenticated workspace")).toBeInTheDocument();
+});
 
 it("redirects anonymous home requests and keeps their destination across auth routes", async () => {
   const { router, user } = await setup("/?intentId=preserved-intent");

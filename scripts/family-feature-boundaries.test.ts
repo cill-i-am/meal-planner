@@ -45,6 +45,7 @@ it("consumes the reference frontend slices only through their public APIs", () =
     "api-client",
     "auth",
     "family",
+    "household-profiles",
     "onboarding",
     "invitations",
     "request-recovery",
