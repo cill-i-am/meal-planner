@@ -1,7 +1,7 @@
 # Food profile reference slice
 
-Status: active
-Owner: current implementation branch
+Status: done
+Owner: PR #261
 Base: `origin/main` at `03c701b`
 
 ## Outcome
@@ -27,7 +27,7 @@ feature's public interface when they need a current profile.
 - [x] A Playwright page-object journey covers setup, save, correction, reload,
   and authoritative profile read in the local Worker runtime.
 - [x] Type, lint, formatting, documentation, and affected behavior checks pass.
-- [ ] Review and hosted checks pass before merge. No deployment is implied.
+- [x] Hosted checks pass and the PR is mergeable before merge. No deployment is implied.
 
 ## Local verification
 
@@ -41,8 +41,11 @@ model or prove live email delivery.
 Hosted WebKit later exposed an older auth race during signup: a session read that
 started before the credential write returned `null` after signup. The auth
 feature now cancels that read before login/signup, and a browser-mode test holds
-the old read open to verify the ordering. Recheck this fix in hosted CI before
-closing the slice.
+the old read open to verify the ordering. The full local web suite passed 244
+tests across 38 files after the test setup was made deterministic. Hosted
+[CI run #976](https://github.com/cill-i-am/meal-planner/actions/runs/36388309571)
+passed Quality, Auth and family browser journeys, and Synthetic media container
+on code head `8b11660`.
 
 ## Limits
 
