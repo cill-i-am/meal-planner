@@ -24,7 +24,8 @@ Follow the child record for its actual state, evidence and limitations:
 1. [Private session foundation](01-private-session-foundation.md).
 2. [Progressive cards and confirmation](02-progressive-cards-and-confirmation.md).
 3. [Adaptive discovery, remaining evaluation and tone](03-adaptive-discovery-and-evaluation.md).
-4. [Repeat review and dependant assistance](04-repeat-review-and-dependant-assistance.md).
+4. [Repeat review and dependant assistance](04-repeat-review-and-dependant-assistance.md)
+   (provider-free adult path verified; live and dependant paths remain).
 5. Cumulative acceptance below, after the child outcomes.
 
 The [current private-discovery reference](../../reference/private-discovery.md)

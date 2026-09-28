@@ -11,6 +11,7 @@ import { Alert } from "../../components/ui/alert.js";
 import { Badge } from "../../components/ui/badge.js";
 import { Button } from "../../components/ui/button.js";
 import { Label } from "../../components/ui/label.js";
+import { describeProfileFact } from "../household-profiles/index.js";
 import { isAssistantTurnActive } from "./private-interview-client.js";
 import type {
   PrivateInterviewClient,
@@ -18,6 +19,57 @@ import type {
 } from "./private-interview-client.js";
 import { PrivateProfileCards } from "./private-profile-cards.js";
 import { PrivateResponseStatus } from "./private-response-status.js";
+
+const EmptyHistory = ({
+  sessionReference,
+  view,
+}: {
+  readonly sessionReference: string;
+  readonly view: PrivateInterviewView;
+}) => {
+  if (view.sessionState?.status !== "open") {
+    return null;
+  }
+  const profileEdit = view.reservations.some(
+    (reservation) =>
+      reservation.sessionReference === sessionReference &&
+      reservation.scope === "ProfileEdit"
+  );
+  if (!profileEdit) {
+    return (
+      <p>
+        Tell me about foods you enjoy, foods you avoid, or what makes meals easy
+        or difficult for you. Start wherever you like.
+      </p>
+    );
+  }
+  return (
+    <div className="private-review-intro">
+      <h4>What has changed?</h4>
+      <p>
+        Tell me which food preference or restriction has changed. I’ll draft a
+        proposal for you to review before anything is shared with your
+        household.
+      </p>
+      {view.profileLoading && (
+        <p role="status">Loading your current shared profile…</p>
+      )}
+      {view.profileUnavailable && (
+        <p>Your current shared profile could not be loaded.</p>
+      )}
+      {view.profile !== null && view.profile.facts.length > 0 && (
+        <div>
+          <h5>Current shared facts</h5>
+          <ul aria-label="Current shared food facts">
+            {view.profile.facts.map((fact) => (
+              <li key={fact.id}>{describeProfileFact(fact.value)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+};
 
 /** The mounted generation owns the hook; losing private authority removes it. */
 export const PrivateInterviewChat = ({
@@ -156,10 +208,7 @@ export const PrivateInterviewChat = ({
       </div>
       {hydration === "loading" && <p role="status">Loading private history…</p>}
       {hydration === "ready" && chat.messages.length === 0 && (
-        <p>
-          Tell me about foods you enjoy, foods you avoid, or what makes meals
-          easy or difficult for you. Start wherever you like.
-        </p>
+        <EmptyHistory sessionReference={sessionReference} view={view} />
       )}
       <ol aria-label="Private messages" className="private-messages">
         {chat.messages

@@ -707,6 +707,16 @@ export class PrivateInterviewClient {
       pendingConfirmation: frame.pendingConfirmation,
     });
     this.loadCards();
+    if (
+      frame.state.status === "open" &&
+      this.#view.reservations.some(
+        (reservation) =>
+          reservation.sessionReference === frame.sessionReference &&
+          reservation.scope === "ProfileEdit"
+      )
+    ) {
+      void this.refreshProfile();
+    }
     this.#replayRecoveredIntent();
   }
 

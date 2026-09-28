@@ -43,6 +43,16 @@ already dispatched to household storage.
 Using base Agent does not add private HTTP responses, RPC methods that return
 transcripts, SDK state synchronization or parent access to transcripts.
 
+## Fresh profile review
+
+`ProfileEdit` opens a new private session with the adult's current household
+profile. Its model context contains that profile and only the new session's
+messages and proposals. The browser shows the current shared facts at the start
+of the review and asks what changed. An earlier completed session remains
+history only; its transcript is not carried into the new one. A proposal stays
+private until the adult reviews and confirms it through the existing household
+command. A stale profile version requires a fresh review.
+
 ## Source and verification
 
 - [Session](../../apps/api/src/features/private-output/private-interview-session.ts),
@@ -53,7 +63,11 @@ transcripts, SDK state synchronization or parent access to transcripts.
   [socket lifecycle tests](../../apps/api/src/features/private-output/private-output-socket.test.ts).
 - [Interview coverage rules](discovery-coverage.md), [household data](household.md),
   [discovery integration tests](../../apps/api/src/features/private-output/private-discovery.integration.test.ts).
+- [Fresh review browser journey](../../apps/web/e2e/private-review-journey.spec.ts),
+  [browser component tests](../../apps/web/src/features/private-interviews/private-interviews-panel.test.tsx),
+  [native A-to-B confirmation test](../../apps/api/src/features/households/household-boundary.integration.test.ts).
 
 [The discovery plan](../plans/private-discovery/03-adaptive-discovery-and-evaluation.md)
-tracks unfinished evaluation and conversation-tone work. Historical runtime tests
-and one live opening do not prove sustained quality, production rollout or beta readiness.
+tracks unfinished evaluation and conversation-tone review. Historical runtime
+tests, provider-free repeat-review tests and one live opening do not prove
+sustained quality, production rollout or beta readiness.

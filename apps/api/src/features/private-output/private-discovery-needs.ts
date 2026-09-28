@@ -466,7 +466,7 @@ export const selectMealFallbackQuestion = (needs: MealFallbackNeeds) => {
       return {
         fields: ["reason" as const],
         needId: need.id,
-        question: `For ${need.subject}, why is an alternative meal needed?`,
+        question: `For ${need.subject}, what makes an alternative meal necessary?`,
       };
     }
     const option = need.acceptableOption._tag === "Unanswered";
@@ -475,14 +475,14 @@ export const selectMealFallbackQuestion = (needs: MealFallbackNeeds) => {
       return {
         fields: ["acceptableOption" as const, "extraPreparation" as const],
         needId: need.id,
-        question: `For ${need.subject}, what alternative meal is acceptable, and how much extra preparation is manageable?`,
+        question: `For ${need.subject}, what alternative meal would work, and how much extra preparation is manageable?`,
       };
     }
     if (option) {
       return {
         fields: ["acceptableOption" as const],
         needId: need.id,
-        question: `For ${need.subject}, what alternative meal is acceptable?`,
+        question: `For ${need.subject}, what alternative meal would work?`,
       };
     }
     if (preparation) {

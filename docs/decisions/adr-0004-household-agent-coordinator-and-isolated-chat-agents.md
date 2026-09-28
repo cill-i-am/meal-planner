@@ -405,8 +405,7 @@ A complete, schema- and state-valid `submitDiscoveryTurn` proposal may be accept
 when the provider's final stream markers are unavailable. Application acceptance
 does not assert that the provider completed normally. Incomplete or invalid data,
 reported errors and cancellation still prevent acceptance. Missing final usage
-remains unknown and retains the conservative budget reservation; interim counters
-must not reduce that reservation. Restoring raw SSE terminal markers does not
+remains unknown; interim counters do not establish final usage. Restoring raw SSE terminal markers does not
 justify a replacement parser or chat engine.
 
 Reconnect replays the existing run without new inference. Network disconnect
@@ -450,9 +449,9 @@ cancellation signal and final synchronous acceptance guard prevent late results
 from committing. An empty SDK stream fails the application contract before
 persistence can report success.
 
-Reserve the full cost of three possible provider attempts before admitting live
-evaluation. Unknown streamed usage retains that reservation. The
-[evaluation accounting policy](../../evals/private-discovery/provider-accounting-policy.json)
-records the retry multiplier and current conservative Kimi bound. Earlier receipts
-and single-attempt harness evidence remain historical; they cannot establish
-live compatibility or bound a new run using the published defaults.
+The SDK may make three provider attempts for one logical turn. The
+[evaluation usage policy](../../evals/private-discovery/provider-usage-policy.json)
+records that retry behavior and marks unavailable usage honestly. Earlier
+receipts and single-attempt harness evidence remain historical; they cannot
+establish live compatibility using the published defaults. Model usage is
+recorded when the provider supplies it.

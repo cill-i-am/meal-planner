@@ -100,9 +100,9 @@ describe("application-owned private discovery messages", () => {
   it("describes an actual new proposal as unconfirmed and invites review only of the profile card", () => {
     expect(execute([add()]).message).toBe(
       [
-        "New profile proposal: add your preference for the ingredient “carrots”.",
-        "Review the profile proposals in the interface. They remain unconfirmed.",
-        "You can finish this conversation when you're ready.",
+        "I've drafted a private proposal to add your preference for the ingredient “carrots”.",
+        "Review each proposal and correct anything I missed. It reaches your household profile only if you confirm it.",
+        "If that's enough for now, you can finish this conversation.",
       ].join("\n\n")
     );
   });
@@ -121,9 +121,9 @@ describe("application-owned private discovery messages", () => {
     );
     expect(result.message).toBe(
       [
-        "Revised profile proposal: add your preference for the ingredient “tomatoes”.",
-        "Review the profile proposals in the interface. They remain unconfirmed.",
-        "You can finish this conversation when you're ready.",
+        "I've updated the private proposal to add your preference for the ingredient “tomatoes”.",
+        "Review each proposal and correct anything I missed. It reaches your household profile only if you confirm it.",
+        "If that's enough for now, you can finish this conversation.",
       ].join("\n\n")
     );
     expect(result.message).not.toContain("replace");
@@ -182,7 +182,7 @@ describe("application-owned private discovery messages", () => {
 
   it("makes no new or revised profile claim when no operation was admitted", () => {
     expect(execute([], { storedCards: [storedCard()] }).message).toBe(
-      "You can finish this conversation when you're ready."
+      "If that's enough for now, you can finish this conversation."
     );
   });
 
@@ -240,9 +240,9 @@ describe("application-owned private discovery messages", () => {
       );
       expect(result.message).toBe(
         [
-          `New profile proposal: ${description}.`,
-          "Review the profile proposals in the interface. They remain unconfirmed.",
-          "You can finish this conversation when you're ready.",
+          `I've drafted a private proposal to ${description}.`,
+          "Review each proposal and correct anything I missed. It reaches your household profile only if you confirm it.",
+          "If that's enough for now, you can finish this conversation.",
         ].join("\n\n")
       );
     }
@@ -272,7 +272,7 @@ describe("application-owned private discovery messages", () => {
     ({ fact, description }) => {
       expect(
         execute([add(Schema.decodeUnknownSync(ProfileFactValue)(fact))]).message
-      ).toContain(`New profile proposal: add ${description}.`);
+      ).toContain(`I've drafted a private proposal to add ${description}.`);
     }
   );
 

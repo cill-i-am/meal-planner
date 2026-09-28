@@ -47,13 +47,18 @@ that deadlines settle the application and release resources while a provider is
 still pending; a valid late response cannot commit.
 
 The SDK may make three provider attempts per logical turn. The
-[accounting policy](../../../evals/private-discovery/provider-accounting-policy.json)
-reserves all three and retains the full reservation when usage is unknown. The
-live report retains the conservative exposure checkpoint. Neither stopping a
-turn nor closing the local runtime proves that upstream work stopped.
+[usage policy](../../../evals/private-discovery/provider-usage-policy.json)
+records that retry behavior and marks unavailable usage honestly. The live report
+retains its historical accounting evidence. Neither stopping a turn nor closing
+the local runtime proves that upstream work stopped.
 
 Provider configuration remains disabled by default. This delivery did not deploy
 the application or accept a production model configuration.
+
+The 2026-09-28 follow-up revises application-owned proposal, question and review
+copy and adds provider-free native and browser evidence for a fresh profile
+review. The product owner chose provider-free work for this run. These checks do
+not add live model turns, all-eight scenario results or human quality ratings.
 
 ## Remaining work
 
@@ -65,7 +70,8 @@ the application or accept a production model configuration.
   unscored; model scores cannot replace human ratings. Stage completion and the
   external-beta gate remain governed by
   [PDR-0006](../../decisions/pdr-0006-ai-evaluation-and-release-evidence.md).
-- Improve conversation tone as described below.
+- Review representative conversations with the product owner after the copy
+  changes below; synthetic assertions only establish the exact rendered words.
 - For a future failed live run, retain bounded sanitized provider error-code and
   origin metadata where supported, so the cause can be investigated without
   retaining private prompts or raw provider payloads.
@@ -77,8 +83,10 @@ the application or accept a production model configuration.
 
 The product owner liked the earlier dependant-and-fallback example but found its
 wording robotic and asked for more empathy. This was feedback, not a numerical
-human rating. Improve acknowledgements, follow-up questions, and review
-invitations so they respond to the person's circumstances and practical effort.
+human rating. The application-owned proposal text, required-topic and fallback
+questions, and review invitation now use plainer, warmer wording. Continue to
+improve acknowledgements and follow-up questions after observing representative
+live conversations, so they respond to the person's circumstances and practical effort.
 Use warm, plain language without stock sympathy, invented feelings, excessive
 reassurance, repeated administrative wording, or unnecessary questions. Some
 wording comes from the application, so prompt changes alone cannot fix it.
@@ -92,5 +100,5 @@ with the product owner after the changes.
 The [evaluation records](https://github.com/cill-i-am/meal-planner/tree/04e97e8389e531bd2bc4af46945f2ed349674d12/evals/private-discovery)
 and [work-item diary](https://github.com/cill-i-am/meal-planner/blob/04e97e8389e531bd2bc4af46945f2ed349674d12/docs/delivery/stages/02-private-discovery/03-adaptive-discovery-and-evaluation.md)
 remain available at merge `04e97e8`. The evaluation README keeps their findings
-and limits. Removing duplicate reports does not turn a failed run into a pass,
-resolve unknown provider usage, or release reserved budget.
+and limits. Removing duplicate reports does not turn a failed run into a pass or
+resolve unknown provider usage.
