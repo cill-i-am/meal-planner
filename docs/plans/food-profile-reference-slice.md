@@ -38,6 +38,12 @@ suite passed 22 journeys in desktop Chromium and mobile WebKit against the
 Website/API Workers and their storage. These checks do not select a production
 model or prove live email delivery.
 
+Hosted WebKit later exposed an older auth race during signup: a session read that
+started before the credential write returned `null` after signup. The auth
+feature now cancels that read before login/signup, and a browser-mode test holds
+the old read open to verify the ordering. Recheck this fix in hosted CI before
+closing the slice.
+
 ## Limits
 
 This slice does not select an AI model, complete the private-discovery quality

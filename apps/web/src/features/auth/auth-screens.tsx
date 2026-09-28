@@ -37,6 +37,10 @@ const useAuthentication = (redirect: string) => {
   const authClient = useAuthClient();
   const mutation = useMutation({
     ...authenticationMutationOptions(authClient),
+    // An anonymous read started before the credential write must not publish
+    // its old result after Better Auth has created the new session.
+    onMutate: () =>
+      queryClient.cancelQueries({ exact: true, queryKey: accountKey }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: accountKey });
       await navigate({ href: redirect, replace: true });
