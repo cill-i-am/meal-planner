@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@fontsource-variable/inter";
+@import "@fontsource/instrument-serif/400.css";
 
 :root {
   --background: oklch(0.958772 0.012696 86.831039);
@@ -116,10 +117,8 @@ body {
   margin-top: 36px;
 }
 .private-review-intro {
-  border-left: 3px solid var(--primary);
   margin: 24px 0;
   max-width: 68ch;
-  padding-left: 20px;
 }
 .private-review-intro p,
 .private-review-intro li {
@@ -742,7 +741,9 @@ body {
     animation: none;
   }
 }
-[data-theme="auth"] {
+[data-theme="auth"],
+[data-theme="journey"] {
+  font-family: "Inter Variable", Inter, system-ui, sans-serif;
   --primary-hover: oklch(0.311145 0.008858 285.874229);
   --secondary-foreground: oklch(0.179001 0.006108 285.766684);
   --control: color-mix(in oklch, var(--background), var(--muted) 30%);
@@ -768,6 +769,19 @@ body {
 }
 
 @theme inline {
+  --spacing-safe-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  --text-entry-desktop: 57px;
+  --text-entry-desktop--line-height: 59px;
+  --text-entry-mobile: 50px;
+  --text-entry-mobile--line-height: 52px;
+  --text-signup-promise-desktop: 78px;
+  --text-signup-promise-desktop--line-height: 78px;
+  --text-signup-promise-mobile: 43px;
+  --text-signup-promise-mobile--line-height: 44px;
+  --text-entry-annotation: 29px;
+  --text-entry-annotation--line-height: 30px;
+  --tracking-entry: -0.025em;
+  --tracking-promise: -0.03em;
   --text-task-mobile: 1.5rem;
   --text-welcome-mobile: 2rem;
   --text-welcome-desktop: 3rem;
@@ -775,6 +789,7 @@ body {
   --color-person-blue: var(--glow-blue);
   --color-person-rose: var(--glow-rose);
   --color-person-peach: var(--glow-peach);
+  --font-display: "Instrument Serif", Georgia, serif;
   --font-auth: "Inter Variable", Inter, system-ui, sans-serif;
   --container-auth: 30rem;
   --text-task-desktop: 1.75rem;

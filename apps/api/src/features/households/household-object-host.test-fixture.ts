@@ -12,16 +12,22 @@ import {
   HouseholdPersonId,
   HouseholdPersonMutationId,
   HouseholdPersonVersion,
-  MealPlanRecipeSnapshot,
   MealPlan,
-  MealPlanDraftId,
-  MealPlanPolicy,
+  MealPlanId,
+  ChangeMealPlanPayload,
+  DecideMealPlanPayload,
+  MutatePlanningContentPayload,
+  PlanningContentSnapshot,
+  SavedRecipePage,
+  SavedRecipePageQuery,
   MealPlanRequest,
+  MutatePersonProfilePayload,
   PrepareMemberDeparturePayload,
   RepairAdultAccountLinkPayload,
   RestoreReturningAdultLinkPayload,
   RetryMemberDeparturePayload,
 } from "@meal-planner/household-api";
+import { PublishedRecipeSnapshot } from "@meal-planner/recipe-domain";
 import { Recipe } from "@meal-planner/recipe-import-api";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle/Cloudflare";
@@ -30,19 +36,18 @@ import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Option, Schema } from "effect";
 
 import migrations from "../../../household-migrations/migrations.js";
-import { ApprovedRecipe } from "../imports/import-recipe-review.js";
-import type { MealPlanServiceError } from "../meal-planning/meal-plan.js";
 import { HouseholdOutputFenceLive } from "../private-output/household-output-fence.js";
 import { HouseholdImportBatchQueueWriter } from "./batches/household-import-batch-queue.port.js";
 import { HouseholdDispatchId } from "./foundation/import-workflow-admission.contract.js";
 import { makeImportWorkflowAdmissionRepository } from "./foundation/import-workflow-admission.repository.js";
 import type {
-  HouseholdCreateMealPlanFromRecipeBankInput,
-  HouseholdSwapMealPlanFromRecipeBankInput,
-} from "./household-meal-plan.contract.js";
-import {
-  HouseholdManualMealSwapCommand,
-  HouseholdMealPlanDecisionCommand,
+  HouseholdChangeMealPlanInput,
+  HouseholdCreateMealPlanInput,
+  HouseholdDecideMealPlanInput,
+  HouseholdMutatePlanningContentInput,
+  HouseholdReadPlanningContentInput,
+  HouseholdReadMealPlanInput,
+  HouseholdListSavedRecipesInput,
 } from "./household-meal-plan.contract.js";
 import { HouseholdObjectRuntime } from "./household-object-runtime.js";
 import type {
@@ -54,7 +59,6 @@ import { HouseholdOrganizationId } from "./household.contract.js";
 import {
   householdCreatorAssociationSingletonKey,
   householdMeta,
-  householdMealPlans,
   householdOutbox,
   householdPeople,
   householdPersonAudits,
@@ -84,6 +88,7 @@ import type {
   HouseholdStartMemberDepartureInput,
   HouseholdTransitionPersonInput,
 } from "./people/household-people.contract.js";
+import type { HouseholdMutatePersonProfileInput } from "./profiles/household-profile.contract.js";
 import {
   HouseholdAdmitRecipeImportInput,
   HouseholdAnswerRecipeImportActionInput,
@@ -111,16 +116,16 @@ import {
 } from "./shared-kernel/authority-services.js";
 import { HouseholdAuthorityServicesLive } from "./shared-kernel/authority-services.live.js";
 
-const ApprovedRecipeWire = Schema.toEncoded(ApprovedRecipe);
 const MealPlanWire = Schema.toEncoded(MealPlan);
-const MealPlanPolicyWire = Schema.toEncoded(MealPlanPolicy);
 const MealPlanRequestWire = Schema.toEncoded(MealPlanRequest);
-const ManualMealSwapRequestWire = Schema.toEncoded(
-  HouseholdManualMealSwapCommand
+const ChangeMealPlanPayloadWire = Schema.toEncoded(ChangeMealPlanPayload);
+const DecideMealPlanPayloadWire = Schema.toEncoded(DecideMealPlanPayload);
+const MutatePlanningContentPayloadWire = Schema.toEncoded(
+  MutatePlanningContentPayload
 );
-const MealPlanDecisionRequestWire = Schema.toEncoded(
-  HouseholdMealPlanDecisionCommand
-);
+const SavedRecipePageQueryWire = Schema.toEncoded(SavedRecipePageQuery);
+const PlanningContentWire = Schema.toEncoded(PlanningContentSnapshot);
+const SavedRecipePageWire = Schema.toEncoded(SavedRecipePage);
 
 const alchemyRuntimeContractKey = "shape";
 const HouseholdObjectTestRuntime = Effect.gen(
@@ -264,83 +269,6 @@ const HouseholdObjectTestRuntime = Effect.gen(
         ),
       invokeMalformedEnsure: (payload: Schema.Json) =>
         household.ensureHousehold(payload as HouseholdEnsureInput),
-      inspectMealPlanStorage: (draftId: MealPlanDraftId) =>
-        scoped(
-          Effect.gen(function* inspectMealPlanStorage() {
-            const connection = yield* database;
-            const [row] = yield* connection
-              .select({
-                planJson: householdMealPlans.planJson,
-                requestFingerprintDigest:
-                  householdMealPlans.requestFingerprintDigest,
-              })
-              .from(householdMealPlans)
-              .where(eq(householdMealPlans.draftId, draftId))
-              .limit(1);
-            if (row === undefined) {
-              return null;
-            }
-            const encoder = new TextEncoder();
-            return {
-              planJsonBytes: encoder.encode(row.planJson).byteLength,
-              replayKeyBytes: encoder.encode(row.requestFingerprintDigest)
-                .byteLength,
-            };
-          })
-        ),
-      seedPlanningRecipes: (
-        recipes: readonly (typeof ApprovedRecipeWire.Type)[]
-      ) =>
-        scoped(
-          Effect.gen(function* seedPlanningRecipes() {
-            const connection = yield* database;
-            for (const recipe of recipes) {
-              const planningRecipe = yield* Schema.decodeUnknownEffect(
-                MealPlanRecipeSnapshot
-              )(recipe);
-              const publicRecipe = Schema.decodeUnknownSync(Recipe)({
-                id: recipe.importId,
-                object: "recipe",
-                recipe: {
-                  author: null,
-                  category: null,
-                  cookTimeMinutes: null,
-                  cuisine: null,
-                  description: null,
-                  ingredientQuantities: null,
-                  ingredientUnits: null,
-                  nutrition: null,
-                  prepTimeMinutes: null,
-                  temperatureCelsius: null,
-                  tools: null,
-                  totalTimeMinutes: null,
-                  yield: null,
-                  ...recipe.recipe,
-                },
-                tags: recipe.tags,
-              });
-              const stored = {
-                importId: recipe.importId,
-                planningRecipeJson: Schema.encodeSync(
-                  Schema.fromJsonString(MealPlanRecipeSnapshot)
-                )(planningRecipe),
-                publicRecipeJson: Schema.encodeSync(
-                  Schema.fromJsonString(Recipe)
-                )(publicRecipe),
-                publishedAt: recipe.approvedAt,
-                recipeId: recipe.importId,
-                version: recipe.version,
-              };
-              yield* connection
-                .insert(householdRecipes)
-                .values(stored)
-                .onConflictDoUpdate({
-                  set: stored,
-                  target: householdRecipes.importId,
-                });
-            }
-          })
-        ),
       seedApprovedRecipes: (count: number) =>
         scoped(
           Effect.gen(function* seedApprovedRecipes() {
@@ -352,7 +280,7 @@ const HouseholdObjectTestRuntime = Effect.gen(
                 const importId = `00000000-0000-4000-8000-${suffix}`;
                 const recipeId = `10000000-0000-4000-8000-${suffix}`;
                 const planningRecipe = Schema.decodeUnknownSync(
-                  MealPlanRecipeSnapshot
+                  PublishedRecipeSnapshot
                 )({
                   approvedAt: "2026-08-22T00:00:00.000Z",
                   extractionFingerprint: index.toString(16).padStart(64, "0"),
@@ -404,7 +332,7 @@ const HouseholdObjectTestRuntime = Effect.gen(
                 return connection.insert(householdRecipes).values({
                   importId,
                   planningRecipeJson: Schema.encodeSync(
-                    Schema.fromJsonString(MealPlanRecipeSnapshot)
+                    Schema.fromJsonString(PublishedRecipeSnapshot)
                   )(planningRecipe),
                   publicRecipeJson: Schema.encodeSync(
                     Schema.fromJsonString(Recipe)
@@ -500,19 +428,36 @@ interface HouseholdObjectClient {
   readonly cancelMemberDeparture: (
     input: HouseholdCancelMemberDepartureInput
   ) => Effect.Effect<unknown, unknown>;
-  readonly approveMealPlan: (input: {
-    readonly admission: HouseholdMemberAdmission;
-    readonly request: typeof MealPlanDecisionRequestWire.Type;
-  }) => Effect.Effect<
-    typeof MealPlanWire.Type,
-    HouseholdDomainFailure | MealPlanServiceError
-  >;
-  readonly seedPlanningRecipes: (
-    recipes: readonly (typeof ApprovedRecipeWire.Type)[]
-  ) => Effect.Effect<void, unknown>;
-  readonly createMealPlanFromRecipeBank: (
-    input: typeof HouseholdCreateMealPlanFromRecipeBankInput.Type
+  readonly createMealPlan: (
+    input: HouseholdCreateMealPlanInput
   ) => Effect.Effect<typeof MealPlanWire.Type, unknown>;
+  readonly changeMealPlan: (
+    input: HouseholdChangeMealPlanInput
+  ) => Effect.Effect<typeof MealPlanWire.Type, unknown>;
+  readonly approveMealPlan: (
+    input: HouseholdDecideMealPlanInput
+  ) => Effect.Effect<typeof MealPlanWire.Type, unknown>;
+  readonly acceptMealPlanRevision: (
+    input: HouseholdDecideMealPlanInput
+  ) => Effect.Effect<typeof MealPlanWire.Type, unknown>;
+  readonly proposeMealPlanRevision: (
+    input: HouseholdDecideMealPlanInput
+  ) => Effect.Effect<typeof MealPlanWire.Type, unknown>;
+  readonly rejectMealPlanRevision: (
+    input: HouseholdDecideMealPlanInput
+  ) => Effect.Effect<typeof MealPlanWire.Type, unknown>;
+  readonly readPlanningContent: (
+    input: HouseholdReadPlanningContentInput
+  ) => Effect.Effect<typeof PlanningContentWire.Type, unknown>;
+  readonly mutatePlanningContent: (
+    input: HouseholdMutatePlanningContentInput
+  ) => Effect.Effect<typeof PlanningContentWire.Type, unknown>;
+  readonly mutatePersonProfile: (
+    input: HouseholdMutatePersonProfileInput
+  ) => Effect.Effect<unknown, unknown>;
+  readonly listSavedRecipes: (
+    input: HouseholdListSavedRecipesInput
+  ) => Effect.Effect<typeof SavedRecipePageWire.Type, unknown>;
   readonly preparePersonRemoval: (
     input: HouseholdPreparePersonRemovalInput
   ) => Effect.Effect<unknown, unknown>;
@@ -579,33 +524,18 @@ interface HouseholdObjectClient {
   ) => Effect.Effect<unknown>;
   readonly inspectHouseholdPeopleState: () => Effect.Effect<unknown>;
   readonly proveCreatorAssociationSingletonConstraint: () => Effect.Effect<unknown>;
-  readonly inspectMealPlanStorage: (draftId: MealPlanDraftId) => Effect.Effect<{
-    readonly planJsonBytes: number;
-    readonly replayKeyBytes: number;
-  } | null>;
   readonly invokeMalformedEnsure: (
     payload: Schema.Json
   ) => Effect.Effect<unknown, HouseholdDomainFailure>;
-  readonly readMealPlan: (input: {
-    readonly admission: HouseholdMemberAdmission;
-    readonly draftId: MealPlanDraftId;
-  }) => Effect.Effect<
-    typeof MealPlanWire.Type | null,
-    HouseholdDomainFailure | MealPlanServiceError
-  >;
+  readonly readMealPlan: (
+    input: HouseholdReadMealPlanInput
+  ) => Effect.Effect<typeof MealPlanWire.Type | null, unknown>;
   readonly readRecipeImport: (
     input: typeof HouseholdReadRecipeImportInput.Type
   ) => Effect.Effect<unknown, unknown>;
   readonly recordRecipeImportDispatch: (
     input: typeof HouseholdRecordRecipeImportDispatchInput.Type
   ) => Effect.Effect<unknown, unknown>;
-  readonly rejectMealPlan: (input: {
-    readonly admission: HouseholdMemberAdmission;
-    readonly request: typeof MealPlanDecisionRequestWire.Type;
-  }) => Effect.Effect<
-    typeof MealPlanWire.Type,
-    HouseholdDomainFailure | MealPlanServiceError
-  >;
   readonly restoreHouseholdPerson: (
     input: HouseholdTransitionPersonInput
   ) => Effect.Effect<unknown, unknown>;
@@ -628,9 +558,6 @@ interface HouseholdObjectClient {
     input: typeof HouseholdRecipePageInput.Type
   ) => Effect.Effect<unknown, unknown>;
   readonly seedApprovedRecipes: (count: number) => Effect.Effect<void, unknown>;
-  readonly swapMealPlanFromRecipeBank: (
-    input: HouseholdSwapMealPlanFromRecipeBankInput
-  ) => Effect.Effect<typeof MealPlanWire.Type, unknown>;
 }
 
 const HouseholdTestCommand = Schema.Union([
@@ -903,12 +830,7 @@ const HouseholdTestCommand = Schema.Union([
     objectName: Schema.String,
     operation: Schema.Literal("probeMigrationFailure"),
   }),
-  Schema.Struct({
-    objectName: Schema.String,
-    operation: Schema.Literal("approveMealPlan"),
-    organizationId: HouseholdOrganizationId,
-    request: MealPlanDecisionRequestWire,
-  }),
+
   Schema.Struct({
     objectName: Schema.String,
     operation: Schema.Literal("ensure"),
@@ -940,21 +862,7 @@ const HouseholdTestCommand = Schema.Union([
     operation: Schema.Literal("confirmRecipeImportAction"),
     organizationId: HouseholdOrganizationId,
   }),
-  Schema.Struct({
-    approvedRecipes: Schema.Array(ApprovedRecipeWire),
-    objectName: Schema.String,
-    operation: Schema.Literal("seedAndCreateMealPlan"),
-    organizationId: HouseholdOrganizationId,
-    policy: MealPlanPolicyWire,
-    request: MealPlanRequestWire,
-  }),
-  Schema.Struct({
-    objectName: Schema.String,
-    operation: Schema.Literal("createMealPlanFromRecipeBank"),
-    organizationId: HouseholdOrganizationId,
-    policy: MealPlanPolicyWire,
-    request: MealPlanRequestWire,
-  }),
+
   Schema.Struct({
     objectName: Schema.String,
     operation: Schema.Literal("invokeMalformedEnsure"),
@@ -965,11 +873,7 @@ const HouseholdTestCommand = Schema.Union([
     objectName: Schema.String,
     operation: Schema.Literal("inspectImportWorkflowDispatch"),
   }),
-  Schema.Struct({
-    draftId: MealPlanDraftId,
-    objectName: Schema.String,
-    operation: Schema.Literal("inspectMealPlanStorage"),
-  }),
+
   Schema.Struct({
     dispatchId: HouseholdRecordRecipeImportDispatchInput.fields.dispatchId,
     objectName: Schema.String,
@@ -986,18 +890,7 @@ const HouseholdTestCommand = Schema.Union([
     objectName: Schema.String,
     operation: Schema.Literal("seedApprovedRecipes"),
   }),
-  Schema.Struct({
-    draftId: MealPlanDraftId,
-    objectName: Schema.String,
-    operation: Schema.Literal("readMealPlan"),
-    organizationId: HouseholdOrganizationId,
-  }),
-  Schema.Struct({
-    objectName: Schema.String,
-    operation: Schema.Literal("rejectMealPlan"),
-    organizationId: HouseholdOrganizationId,
-    request: MealPlanDecisionRequestWire,
-  }),
+
   Schema.Struct({
     canonicalSourceId:
       HouseholdResolveRecipeImportSourceInput.fields.canonicalSourceId,
@@ -1021,11 +914,79 @@ const HouseholdTestCommand = Schema.Union([
     transition: HouseholdTransitionRecipeImportLifecycleInput.fields.transition,
   }),
   Schema.Struct({
-    approvedRecipes: Schema.Array(ApprovedRecipeWire),
+    actorId: HouseholdPeopleAuditActorId,
+    linkageSubject: HouseholdPersonLinkageSubject,
     objectName: Schema.String,
-    operation: Schema.Literal("seedAndSwapMealPlan"),
+    operation: Schema.Literal("createMealPlan"),
     organizationId: HouseholdOrganizationId,
-    request: ManualMealSwapRequestWire,
+    request: MealPlanRequestWire,
+  }),
+  Schema.Struct({
+    actorId: HouseholdPeopleAuditActorId,
+    linkageSubject: HouseholdPersonLinkageSubject,
+    objectName: Schema.String,
+    operation: Schema.Literal("readMealPlan"),
+    organizationId: HouseholdOrganizationId,
+    planId: MealPlanId,
+  }),
+  Schema.Struct({
+    actorId: HouseholdPeopleAuditActorId,
+    linkageSubject: HouseholdPersonLinkageSubject,
+    objectName: Schema.String,
+    operation: Schema.Literal("changeMealPlan"),
+    organizationId: HouseholdOrganizationId,
+    payload: ChangeMealPlanPayloadWire,
+    planId: MealPlanId,
+  }),
+  ...(
+    [
+      "approveMealPlan",
+      "proposeMealPlanRevision",
+      "acceptMealPlanRevision",
+      "rejectMealPlanRevision",
+    ] as const
+  ).map((operation) =>
+    Schema.Struct({
+      actorId: HouseholdPeopleAuditActorId,
+      linkageSubject: HouseholdPersonLinkageSubject,
+      objectName: Schema.String,
+      operation: Schema.Literal(operation),
+      organizationId: HouseholdOrganizationId,
+      payload: DecideMealPlanPayloadWire,
+      planId: MealPlanId,
+    })
+  ),
+  Schema.Struct({
+    actorId: HouseholdPeopleAuditActorId,
+    linkageSubject: HouseholdPersonLinkageSubject,
+    objectName: Schema.String,
+    operation: Schema.Literal("readPlanningContent"),
+    organizationId: HouseholdOrganizationId,
+  }),
+  Schema.Struct({
+    actorId: HouseholdPeopleAuditActorId,
+    linkageSubject: HouseholdPersonLinkageSubject,
+    objectName: Schema.String,
+    operation: Schema.Literal("mutatePlanningContent"),
+    organizationId: HouseholdOrganizationId,
+    payload: MutatePlanningContentPayloadWire,
+  }),
+  Schema.Struct({
+    actorId: HouseholdPeopleAuditActorId,
+    linkageSubject: HouseholdPersonLinkageSubject,
+    objectName: Schema.String,
+    operation: Schema.Literal("mutatePersonProfile"),
+    organizationId: HouseholdOrganizationId,
+    payload: MutatePersonProfilePayload,
+    personId: HouseholdPersonId,
+  }),
+  Schema.Struct({
+    actorId: HouseholdPeopleAuditActorId,
+    linkageSubject: HouseholdPersonLinkageSubject,
+    objectName: Schema.String,
+    operation: Schema.Literal("listSavedRecipes"),
+    organizationId: HouseholdOrganizationId,
+    query: SavedRecipePageQueryWire,
   }),
 ]);
 
@@ -1625,65 +1586,106 @@ const routeMealPlanTestCommand = (
   household: HouseholdObjectClient,
   command: typeof HouseholdTestCommand.Type
 ) => {
-  if (command.operation === "approveMealPlan") {
+  if (command.operation === "createMealPlan") {
     return respond(
-      household.approveMealPlan({
-        admission: memberAdmission(command.organizationId),
+      household.createMealPlan({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
         request: command.request,
       })
     );
-  }
-  if (command.operation === "seedAndCreateMealPlan") {
-    return respond(
-      household.seedPlanningRecipes(command.approvedRecipes).pipe(
-        Effect.andThen(
-          household.createMealPlanFromRecipeBank({
-            admission: memberAdmission(command.organizationId),
-            policy: command.policy,
-            request: command.request,
-          })
-        )
-      )
-    );
-  }
-  if (command.operation === "createMealPlanFromRecipeBank") {
-    return respond(
-      household.createMealPlanFromRecipeBank({
-        admission: memberAdmission(command.organizationId),
-        policy: command.policy,
-        request: command.request,
-      })
-    );
-  }
-  if (command.operation === "inspectMealPlanStorage") {
-    return respond(household.inspectMealPlanStorage(command.draftId));
   }
   if (command.operation === "readMealPlan") {
     return respond(
       household.readMealPlan({
-        admission: memberAdmission(command.organizationId),
-        draftId: command.draftId,
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        planId: command.planId,
       })
     );
   }
-  if (command.operation === "rejectMealPlan") {
+  if (command.operation === "changeMealPlan") {
     return respond(
-      household.rejectMealPlan({
-        admission: memberAdmission(command.organizationId),
-        request: command.request,
+      household.changeMealPlan({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        payload: command.payload,
+        planId: command.planId,
       })
     );
   }
-  if (command.operation === "seedAndSwapMealPlan") {
+  if (
+    command.operation === "approveMealPlan" ||
+    command.operation === "acceptMealPlanRevision" ||
+    command.operation === "proposeMealPlanRevision" ||
+    command.operation === "rejectMealPlanRevision"
+  ) {
+    const input = {
+      admission: peopleMemberAdmission(
+        command.organizationId,
+        command.actorId,
+        command.linkageSubject
+      ),
+      payload: command.payload,
+      planId: command.planId,
+    };
+    return respond(household[command.operation](input));
+  }
+  if (command.operation === "readPlanningContent") {
     return respond(
-      household.seedPlanningRecipes(command.approvedRecipes).pipe(
-        Effect.andThen(
-          household.swapMealPlanFromRecipeBank({
-            admission: memberAdmission(command.organizationId),
-            request: command.request,
-          })
-        )
-      )
+      household.readPlanningContent({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+      })
+    );
+  }
+  if (command.operation === "mutatePlanningContent") {
+    return respond(
+      household.mutatePlanningContent({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        payload: command.payload,
+      })
+    );
+  }
+  if (command.operation === "mutatePersonProfile") {
+    return respond(
+      household.mutatePersonProfile({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        payload: command.payload,
+        personId: command.personId,
+      })
+    );
+  }
+  if (command.operation === "listSavedRecipes") {
+    return respond(
+      household.listSavedRecipes({
+        admission: peopleMemberAdmission(
+          command.organizationId,
+          command.actorId,
+          command.linkageSubject
+        ),
+        query: command.query,
+      })
     );
   }
   return null;

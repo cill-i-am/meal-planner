@@ -78,17 +78,17 @@ import type {
 import { HouseholdCreatorLive } from "./family-membership.js";
 import type { HouseholdDomainWorkerMethods } from "./household-domain-worker.js";
 import type {
-  HouseholdCreateMealPlanFromRecipeBankInput,
-  HouseholdDecideMealPlanInput,
   HouseholdMealPlanWire,
-  HouseholdReadMealPlanInput,
-  HouseholdSwapMealPlanFromRecipeBankInput,
+  HouseholdPlanningContentWire,
+  HouseholdSavedRecipePageWire,
 } from "./household-meal-plan.contract.js";
 import {
   makeHouseholdDomainGateway,
   makeHouseholdInvitationRecipientVerifier,
   makeHouseholdMealPlanGateway,
   makeHouseholdMealPlanRequestLayer,
+  makeHouseholdPlanningContentGateway,
+  makeHouseholdPlanningContentRequestLayer,
   makeHouseholdPeopleGateway,
   makeHouseholdPeopleRequestLayer,
   makeHouseholdRequestLayer,
@@ -194,10 +194,39 @@ interface HouseholdApiFixtureEnv {
       input: HouseholdAnswerRecipeImportActionInput
     ) => Promise<typeof RecipeImportIntent.Encoded>;
     readonly approveMealPlan: (
-      input: HouseholdDecideMealPlanInput
+      input: Parameters<HouseholdDomainWorkerMethods["approveMealPlan"]>[0]
     ) => Promise<HouseholdMealPlanWire>;
-    readonly createMealPlanFromRecipeBank: (
-      input: HouseholdCreateMealPlanFromRecipeBankInput
+    readonly createMealPlan: (
+      input: Parameters<HouseholdDomainWorkerMethods["createMealPlan"]>[0]
+    ) => Promise<HouseholdMealPlanWire>;
+    readonly changeMealPlan: (
+      input: Parameters<HouseholdDomainWorkerMethods["changeMealPlan"]>[0]
+    ) => Promise<HouseholdMealPlanWire>;
+    readonly readPlanningContent: (
+      input: Parameters<HouseholdDomainWorkerMethods["readPlanningContent"]>[0]
+    ) => Promise<HouseholdPlanningContentWire>;
+    readonly mutatePlanningContent: (
+      input: Parameters<
+        HouseholdDomainWorkerMethods["mutatePlanningContent"]
+      >[0]
+    ) => Promise<HouseholdPlanningContentWire>;
+    readonly listSavedRecipes: (
+      input: Parameters<HouseholdDomainWorkerMethods["listSavedRecipes"]>[0]
+    ) => Promise<HouseholdSavedRecipePageWire>;
+    readonly proposeMealPlanRevision: (
+      input: Parameters<
+        HouseholdDomainWorkerMethods["proposeMealPlanRevision"]
+      >[0]
+    ) => Promise<HouseholdMealPlanWire>;
+    readonly acceptMealPlanRevision: (
+      input: Parameters<
+        HouseholdDomainWorkerMethods["acceptMealPlanRevision"]
+      >[0]
+    ) => Promise<HouseholdMealPlanWire>;
+    readonly rejectMealPlanRevision: (
+      input: Parameters<
+        HouseholdDomainWorkerMethods["rejectMealPlanRevision"]
+      >[0]
     ) => Promise<HouseholdMealPlanWire>;
     readonly cancelRecipeImport: (
       input: HouseholdCancelRecipeImportInput
@@ -261,7 +290,7 @@ interface HouseholdApiFixtureEnv {
       input: HouseholdFailImportBatchItemInput
     ) => Promise<Schema.Json>;
     readonly readMealPlan: (
-      input: HouseholdReadMealPlanInput
+      input: Parameters<HouseholdDomainWorkerMethods["readMealPlan"]>[0]
     ) => Promise<HouseholdMealPlanWire | null>;
     readonly getMemberDeparture: (
       input: Parameters<HouseholdDomainWorkerMethods["getMemberDeparture"]>[0]
@@ -300,12 +329,6 @@ interface HouseholdApiFixtureEnv {
     readonly listRecipeBank: (
       input: HouseholdRecipePageInput
     ) => Promise<typeof HouseholdRecipePage.Encoded>;
-    readonly rejectMealPlan: (
-      input: HouseholdDecideMealPlanInput
-    ) => Promise<HouseholdMealPlanWire>;
-    readonly swapMealPlanFromRecipeBank: (
-      input: HouseholdSwapMealPlanFromRecipeBankInput
-    ) => Promise<HouseholdMealPlanWire>;
     readonly resolveRecipeImportSource: (
       input: HouseholdResolveRecipeImportSourceInput
     ) => Promise<typeof RecipeImportIntent.Encoded>;
@@ -924,6 +947,13 @@ export default {
               }),
               resolver,
             });
+            const planningContentLayer =
+              makeHouseholdPlanningContentRequestLayer({
+                gateway: makeHouseholdPlanningContentGateway({
+                  domain: householdDomain,
+                }),
+                resolver,
+              });
             const nativeDepartureWorkflow =
               makeNativeMemberDepartureStarter(env);
             const departureCrash = request.headers.get(
@@ -1077,6 +1107,7 @@ export default {
                 ),
                 householdLayer,
                 mealPlanLayer,
+                planningContentLayer,
                 peopleLayer,
                 makeRecipeImportHttpApiLayer().pipe(
                   Layer.provide(importServices),

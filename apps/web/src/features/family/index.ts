@@ -29,6 +29,7 @@ export { useRosterManagement } from "./use-roster-management.js";
 export type { RosterAction } from "./roster-model.js";
 
 export { useAddFamilyPerson } from "./person-mutation.js";
+export { useManualFamilyCreation } from "./manual-family-creation.js";
 
 export {
   useCompleteFamilySetup,

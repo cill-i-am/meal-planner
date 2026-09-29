@@ -51,3 +51,29 @@ export const PlanningTags = Schema.Struct({
   totalTimeBand: PlanningTotalTimeBand,
 });
 export type PlanningTags = typeof PlanningTags.Type;
+
+const PublishedRecipeText = TrimmedNonEmptyString.pipe(
+  Schema.check(Schema.isMaxLength(4096))
+);
+const PublishedRecipeVersion = Schema.Int.pipe(
+  Schema.check(Schema.isGreaterThanOrEqualTo(1))
+);
+
+/** Canonical, reviewed recipe content saved by the household import pipeline. */
+export const PublishedRecipeSnapshot = Schema.Struct({
+  approvedAt: Schema.DateTimeUtcFromString,
+  extractionFingerprint: TrimmedNonEmptyString,
+  importId: Schema.String.pipe(Schema.check(Schema.isUUID())),
+  recipe: Schema.Struct({
+    ingredientLines: Schema.NonEmptyArray(PublishedRecipeText),
+    instructions: Schema.NonEmptyArray(PublishedRecipeText),
+    name: PublishedRecipeText,
+  }),
+  source: Schema.Struct({
+    evidenceFingerprint: TrimmedNonEmptyString,
+    sourceUrl: Schema.NullOr(PublishedRecipeText),
+  }),
+  tags: PlanningTags,
+  version: PublishedRecipeVersion,
+});
+export type PublishedRecipeSnapshot = typeof PublishedRecipeSnapshot.Type;

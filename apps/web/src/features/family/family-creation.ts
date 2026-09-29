@@ -54,9 +54,13 @@ export const useCreateFamily = () => {
       setReceipt({ result: family, scope });
       retained.release(command.mutationId);
       queryClient.setQueryData(familyKeys.detail(user.id, family.id), family);
-      await queryClient.invalidateQueries({
-        queryKey: familyKeys.list(user.id),
-      });
+      try {
+        await queryClient.invalidateQueries({
+          queryKey: familyKeys.list(user.id),
+        });
+      } catch {
+        // The returned family is confirmed even when the list refresh fails.
+      }
     },
   });
   return {

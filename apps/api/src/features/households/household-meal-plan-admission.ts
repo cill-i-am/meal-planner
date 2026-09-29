@@ -1,48 +1,39 @@
-import {
-  ManualMealSwapRequest,
-  MealPlanDecisionRequest,
+import { MealPlanActorId, MealPlanInstant } from "@meal-planner/household-api";
+import type {
+  ChangeMealPlanPayload,
+  DecideMealPlanPayload,
+  MealPlanId,
 } from "@meal-planner/household-api";
 import { Clock, Effect, Schema } from "effect";
 
-import type {
-  HouseholdManualMealSwapCommand,
-  HouseholdMealPlanDecisionCommand,
-} from "./household-meal-plan.contract.js";
-import type { HouseholdMemberAdmission } from "./rpc/command-envelope.js";
+import type { HouseholdPeopleMemberAdmission } from "./rpc/command-envelope.js";
 
-const mutationInstant = Clock.currentTimeMillis.pipe(
-  Effect.map((millis) => new Date(millis).toISOString())
-);
+const admittedFields = (admission: HouseholdPeopleMemberAdmission) =>
+  Effect.gen(function* admittedMealPlanFields() {
+    const actorId = yield* Schema.decodeUnknownEffect(MealPlanActorId)(
+      admission.actor.actorId
+    );
+    const at = yield* Schema.decodeUnknownEffect(MealPlanInstant)(
+      new Date(yield* Clock.currentTimeMillis).toISOString()
+    );
+    return { actorId, at };
+  });
 
-/**
- * Complete an admitted decision inside the HouseholdObject. Audit identity is
- * bound to the admitted member and time comes from Effect's Clock service.
- */
-export const admitMealPlanDecision = (
-  admission: HouseholdMemberAdmission,
-  command: HouseholdMealPlanDecisionCommand
+/** Complete audit identity and time from admitted household authority. */
+export const admitMealPlanChange = (
+  admission: HouseholdPeopleMemberAdmission,
+  planId: MealPlanId,
+  payload: ChangeMealPlanPayload
 ) =>
-  mutationInstant.pipe(
-    Effect.flatMap((decidedAt) =>
-      Schema.decodeUnknownEffect(MealPlanDecisionRequest)({
-        ...command,
-        actorId: admission.actor.actorId,
-        decidedAt,
-      })
-    )
+  admittedFields(admission).pipe(
+    Effect.map((fields) => ({ ...payload, ...fields, planId }))
   );
 
-/** Complete an admitted manual swap under the same object-owned audit rules. */
-export const admitManualMealSwap = (
-  admission: HouseholdMemberAdmission,
-  command: HouseholdManualMealSwapCommand
+export const admitMealPlanDecision = (
+  admission: HouseholdPeopleMemberAdmission,
+  planId: MealPlanId,
+  payload: DecideMealPlanPayload
 ) =>
-  mutationInstant.pipe(
-    Effect.flatMap((swappedAt) =>
-      Schema.decodeUnknownEffect(ManualMealSwapRequest)({
-        ...command,
-        actorId: admission.actor.actorId,
-        swappedAt,
-      })
-    )
+  admittedFields(admission).pipe(
+    Effect.map((fields) => ({ ...payload, ...fields, planId }))
   );

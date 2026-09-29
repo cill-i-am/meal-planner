@@ -59,6 +59,8 @@ const expectedD1Resources: readonly D1ResourceDeclaration[] = [
 
 const expectedD1ConsumerPaths = [
   "alchemy.run.ts",
+  // Composes the existing auth/family store for reviewed conversation actions.
+  "apps/api/src/agent-conversations.ts",
   "apps/api/src/auth-family.ts",
   "apps/api/src/features/auth/auth-atomic-store.ts",
   "apps/api/src/features/auth/auth.ts",
@@ -72,6 +74,8 @@ const expectedD1ConsumerPaths = [
   "apps/api/src/features/imports/import-worker-request-layer.ts",
   "apps/api/src/features/imports/import.workflow.ts",
   "apps/api/src/features/provider-accounting/provider-accounting.database.ts",
+  // Composes the same auth store for the isolated, persistent local preview.
+  "apps/api/src/local/preview-api.ts",
   "apps/api/src/worker.ts",
 ] as const;
 
@@ -85,6 +89,11 @@ const expectedD1ConsumerCalls: readonly D1ConsumerCall[] = [
     arguments: ["binding"],
     binding: "drizzle",
     path: "apps/api/src/features/provider-accounting/provider-accounting.database.ts",
+  },
+  {
+    arguments: ["env.MealPlannerAuthDatabase"],
+    binding: "drizzle",
+    path: "apps/api/src/local/preview-api.ts",
   },
   {
     arguments: ["yield* authQueryDatabase.raw"],
@@ -117,6 +126,8 @@ const expectedD1QueryBindings: readonly D1QueryBinding[] = [
 ];
 
 const expectedMigrationRoots = [
+  // Conversation state is local to the SQLite-backed Agent Durable Object.
+  "apps/api/agent-conversation-migrations",
   "apps/api/auth-migrations",
   "apps/api/household-migrations",
   "apps/api/private-output-migrations",

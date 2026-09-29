@@ -12,6 +12,16 @@ The AI proposes facts. The participant must confirm a reviewed command before it
 can change household data. An unfinished proposal or raw conversation history is
 not a confirmed command.
 
+## Shared family conversation
+
+The [shared family conversation](agent-conversations.md) is a separate scope
+from an adult's private interview. Its context includes current confirmed
+household facts and admitted planning records. It never receives private
+interview transcripts or unfinished private proposals. A shared suggestion
+changes a profile, routine, meal setup or plan only after an authorized adult
+reviews and accepts the typed action. The browser displays private interview
+history separately from confirmed facts in Our tastes.
+
 ## Current runtime
 
 `PrivateInterviewSession` extends Cloudflare's **base Agent**.

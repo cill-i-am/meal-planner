@@ -4,19 +4,30 @@ import {
   MealPlanNotFound,
   MealPlanPersistenceFailure,
   MealPlanRequestConflict,
-  MealPlanTransitionRejected,
+  MealPlanRuleViolation,
   MealPlanVersionConflict,
+  PlanningContentVersion,
 } from "@meal-planner/household-api";
-import type { MealPlanDraftId } from "@meal-planner/household-api";
-import { and, eq } from "drizzle-orm";
+import type { MealPlanId } from "@meal-planner/household-api";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Effect, Option, Schema } from "effect";
 
-import type { MealPlanDraftRepository } from "../meal-planning/meal-plan.js";
 import {
+  consumptionWeekStart,
+  requirementIdentity,
+} from "../meal-planning/index.js";
+import type { MealPlanRepository } from "../meal-planning/index.js";
+import {
+  householdPeople,
   householdMealPlanMutationReceipts,
   householdMealPlans,
+  householdProfileVersions,
 } from "./household.database-schema.js";
+import {
+  preparedReservationIntent,
+  syncPreparedReservationsForPlan,
+} from "./meal-content/household-meal-content.repository.js";
 import type { HouseholdDigestService } from "./shared-kernel/authority-services.js";
 
 const EncodedMealPlan = Schema.fromJsonString(MealPlan);
@@ -28,7 +39,7 @@ const MaximumPersistedMealPlanBytes = 1_900_000;
 // The remaining 6,656 bytes cover keys, quotes, lifecycle-tag growth, the
 // decision timestamp, and UTF-8 overhead.
 const TerminalDecisionHeadroomBytes = 32_768;
-const MaximumPersistedDraftBytes =
+const MaximumPersistedMutablePlanBytes =
   MaximumPersistedMealPlanBytes - TerminalDecisionHeadroomBytes;
 const utf8Encoder = new TextEncoder();
 
@@ -41,10 +52,7 @@ const encodePersistablePlan = (
   operation: "create" | "save"
 ): Effect.Effect<string, MealPlanPersistenceFailure> => {
   const encoded = encodePlan(plan);
-  const maximumBytes =
-    plan._tag === "Draft"
-      ? MaximumPersistedDraftBytes
-      : MaximumPersistedMealPlanBytes;
+  const maximumBytes = MaximumPersistedMutablePlanBytes;
   return utf8Encoder.encode(encoded).byteLength <= maximumBytes
     ? Effect.succeed(encoded)
     : Effect.fail(persistenceFailure(operation));
@@ -60,10 +68,57 @@ const queryFailure =
   <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(Effect.mapError(() => persistenceFailure(operation)));
 
+const ruleViolation = (reason: (typeof MealPlanRuleViolation.Type)["reason"]) =>
+  MealPlanRuleViolation.make({ reason });
+
+const verifyPersonPins = (
+  transaction: Parameters<
+    Parameters<EffectSQLiteDoDatabase["transaction"]>[0]
+  >[0],
+  plan: typeof MealPlan.Type
+) =>
+  Effect.gen(function* verifyPlanningPeople() {
+    const version = plan._tag === "Approved" ? plan.active : plan.proposed;
+    const active = yield* transaction
+      .select({ personId: householdPeople.personId })
+      .from(householdPeople)
+      .where(eq(householdPeople.lifecycle, "active"))
+      .pipe(queryFailure("save"));
+    const activeIds = new Set(active.map(({ personId }) => personId));
+    const pinnedIds = new Set<string>(
+      version.pins.people.map(({ personId }) => personId)
+    );
+    if (
+      activeIds.size !== pinnedIds.size ||
+      [...activeIds].some((id) => !pinnedIds.has(id))
+    ) {
+      return yield* Effect.fail(ruleViolation("profile_version_changed"));
+    }
+    const rows = yield* transaction
+      .select({
+        personId: householdProfileVersions.personId,
+        version: householdProfileVersions.version,
+      })
+      .from(householdProfileVersions)
+      .orderBy(desc(householdProfileVersions.version))
+      .pipe(queryFailure("save"));
+    const latest = new Map<string, number>();
+    for (const row of rows) {
+      if (!latest.has(row.personId)) {
+        latest.set(row.personId, row.version);
+      }
+    }
+    for (const pin of version.pins.people) {
+      if ((latest.get(pin.personId) ?? 0) !== pin.profileVersion) {
+        return yield* Effect.fail(ruleViolation("profile_version_changed"));
+      }
+    }
+  });
+
 export const makeHouseholdMealPlanRepository = (
   database: EffectSQLiteDoDatabase,
   digest: HouseholdDigestService
-): MealPlanDraftRepository => ({
+): MealPlanRepository => ({
   create: ({ draft, requestFingerprint }) =>
     Effect.gen(function* createMealPlanWithReplayDigest() {
       const requestFingerprintDigest = yield* digest
@@ -74,7 +129,7 @@ export const makeHouseholdMealPlanRepository = (
           const [existing] = yield* transaction
             .select()
             .from(householdMealPlans)
-            .where(eq(householdMealPlans.draftId, draft.draftId))
+            .where(eq(householdMealPlans.draftId, draft.planId))
             .limit(1)
             .pipe(queryFailure("create"));
           if (existing !== undefined) {
@@ -82,14 +137,14 @@ export const makeHouseholdMealPlanRepository = (
               requestFingerprintDigest
               ? yield* decodePlan(existing.planJson, "read")
               : yield* Effect.fail(
-                  MealPlanRequestConflict.make({ draftId: draft.draftId })
+                  MealPlanRequestConflict.make({ planId: draft.planId })
                 );
           }
           const planJson = yield* encodePersistablePlan(draft, "create");
           yield* transaction
             .insert(householdMealPlans)
             .values({
-              draftId: draft.draftId,
+              draftId: draft.planId,
               planJson,
               requestFingerprintDigest,
               revision: draft.revision,
@@ -103,11 +158,11 @@ export const makeHouseholdMealPlanRepository = (
         Effect.fail(persistenceFailure("create"))
       )
     ),
-  find: (draftId: MealPlanDraftId) =>
+  find: (planId: MealPlanId) =>
     database
       .select()
       .from(householdMealPlans)
-      .where(eq(householdMealPlans.draftId, draftId))
+      .where(eq(householdMealPlans.draftId, planId))
       .limit(1)
       .pipe(
         queryFailure("read"),
@@ -117,13 +172,13 @@ export const makeHouseholdMealPlanRepository = (
             : decodePlan(row.planJson, "read").pipe(Effect.map(Option.some))
         )
       ),
-  findMutation: ({ draftId, mutationFingerprint, mutationId }) =>
+  findMutation: ({ planId, mutationFingerprint, mutationId }) =>
     database
       .select()
       .from(householdMealPlanMutationReceipts)
       .where(
         and(
-          eq(householdMealPlanMutationReceipts.draftId, draftId),
+          eq(householdMealPlanMutationReceipts.draftId, planId),
           eq(householdMealPlanMutationReceipts.mutationId, mutationId)
         )
       )
@@ -144,9 +199,57 @@ export const makeHouseholdMealPlanRepository = (
           })
         )
       ),
-  save: (input) =>
+  listRecent: () =>
     database
-      .transaction((transaction) =>
+      .select({ planJson: householdMealPlans.planJson })
+      .from(householdMealPlans)
+      .orderBy(desc(sql<number>`rowid`))
+      .limit(12)
+      .pipe(
+        queryFailure("read"),
+        Effect.flatMap((rows) =>
+          Effect.all(rows.map(({ planJson }) => decodePlan(planJson, "read")))
+        )
+      ),
+  save: (input) =>
+    Effect.gen(function* saveWithPreparedIntent() {
+      const decision = input.next.audit.at(-1);
+      const reservationInput =
+        input.next._tag === "Approved" && decision !== undefined
+          ? {
+              actorId: decision.actorId,
+              allocations: input.next.active.coverage.flatMap(
+                ({ requirement, resolution }) =>
+                  resolution._tag === "Prepared"
+                    ? [
+                        {
+                          amount: resolution.quantity.amount,
+                          coverageKey: requirementIdentity(requirement),
+                          date: requirement.date,
+                          outputId: resolution.outputId,
+                          unit: resolution.quantity.unit,
+                          weekStart: consumptionWeekStart(
+                            input.next.request,
+                            requirement.date
+                          ),
+                        },
+                      ]
+                    : []
+              ),
+              expectedConfigVersion: PlanningContentVersion.make(
+                input.next.active.pins.configVersion
+              ),
+              mutationId: input.mutationId,
+              planId: input.next.planId,
+            }
+          : null;
+      const intentDigest =
+        reservationInput === null
+          ? null
+          : yield* digest
+              .sha256(preparedReservationIntent(reservationInput))
+              .pipe(Effect.mapError(() => persistenceFailure("save")));
+      return yield* database.transaction((transaction) =>
         Effect.gen(function* saveHouseholdMealPlan() {
           const [receipt] = yield* transaction
             .select()
@@ -155,7 +258,7 @@ export const makeHouseholdMealPlanRepository = (
               and(
                 eq(
                   householdMealPlanMutationReceipts.draftId,
-                  input.next.draftId
+                  input.next.planId
                 ),
                 eq(
                   householdMealPlanMutationReceipts.mutationId,
@@ -178,20 +281,15 @@ export const makeHouseholdMealPlanRepository = (
           const [currentRow] = yield* transaction
             .select()
             .from(householdMealPlans)
-            .where(eq(householdMealPlans.draftId, input.next.draftId))
+            .where(eq(householdMealPlans.draftId, input.next.planId))
             .limit(1)
             .pipe(queryFailure("save"));
           if (currentRow === undefined) {
             return yield* Effect.fail(
-              MealPlanNotFound.make({ draftId: input.next.draftId })
+              MealPlanNotFound.make({ planId: input.next.planId })
             );
           }
           const current = yield* decodePlan(currentRow.planJson, "save");
-          if (current._tag !== "Draft") {
-            return yield* Effect.fail(
-              MealPlanTransitionRejected.make({ lifecycle: current._tag })
-            );
-          }
           if (current.revision !== input.expectedRevision) {
             return yield* Effect.fail(
               MealPlanVersionConflict.make({
@@ -204,6 +302,39 @@ export const makeHouseholdMealPlanRepository = (
             return yield* Effect.fail(persistenceFailure("save"));
           }
 
+          const activatesVersion =
+            input.next._tag === "Approved" &&
+            (current._tag === "Draft" ||
+              (current._tag === "ProposedRevision" &&
+                input.next.active.number !== current.active.number));
+          if (activatesVersion && input.next._tag === "Approved") {
+            yield* verifyPersonPins(transaction, input.next);
+            if (reservationInput === null || intentDigest === null) {
+              return yield* Effect.fail(persistenceFailure("save"));
+            }
+            yield* syncPreparedReservationsForPlan(transaction, {
+              ...reservationInput,
+              intentDigest,
+            }).pipe(
+              Effect.mapError((error) => {
+                switch (error.reason) {
+                  case "stale_version": {
+                    return ruleViolation("config_version_changed");
+                  }
+                  case "quantity_exceeded": {
+                    return ruleViolation("prepared_overallocated");
+                  }
+                  case "invalid_transition": {
+                    return ruleViolation("prepared_output_missing");
+                  }
+                  default: {
+                    return persistenceFailure("save");
+                  }
+                }
+              })
+            );
+          }
+
           const resultJson = yield* encodePersistablePlan(input.next, "save");
           yield* transaction
             .update(householdMealPlans)
@@ -213,7 +344,7 @@ export const makeHouseholdMealPlanRepository = (
             })
             .where(
               and(
-                eq(householdMealPlans.draftId, input.next.draftId),
+                eq(householdMealPlans.draftId, input.next.planId),
                 eq(householdMealPlans.revision, input.expectedRevision)
               )
             )
@@ -221,7 +352,7 @@ export const makeHouseholdMealPlanRepository = (
           yield* transaction
             .insert(householdMealPlanMutationReceipts)
             .values({
-              draftId: input.next.draftId,
+              draftId: input.next.planId,
               mutationFingerprint: input.mutationFingerprint,
               mutationId: input.mutationId,
               resultJson,
@@ -229,10 +360,8 @@ export const makeHouseholdMealPlanRepository = (
             .pipe(queryFailure("save"));
           return input.next;
         })
-      )
-      .pipe(
-        Effect.catchTag("SqlError", () =>
-          Effect.fail(persistenceFailure("save"))
-        )
-      ),
+      );
+    }).pipe(
+      Effect.catchTag("SqlError", () => Effect.fail(persistenceFailure("save")))
+    ),
 });

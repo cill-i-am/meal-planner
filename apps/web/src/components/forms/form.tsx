@@ -272,11 +272,13 @@ const Frame = ({
   pending,
   className = "max-w-auth",
   size = "default",
+  variant = "card",
 }: {
   readonly className?: string;
   readonly children: ReactNode;
   readonly pending: boolean;
   readonly size?: "default" | "sm";
+  readonly variant?: "card" | "plain";
 }) => {
   const form = useFormContext();
   const element = useRef<HTMLFormElement>(null);
@@ -301,7 +303,7 @@ const Frame = ({
       }}
     >
       <fieldset disabled={!hydrated} className="contents">
-        <Card size={size}>{children}</Card>
+        {variant === "plain" ? children : <Card size={size}>{children}</Card>}
       </fieldset>
       <form.Subscribe
         selector={(state) =>
@@ -324,10 +326,14 @@ const Heading = ({
   children,
   errorTitle,
   rejected,
+  variant = "card",
+  className,
 }: {
   readonly children: ReactNode;
   readonly errorTitle: string;
   readonly rejected: boolean;
+  readonly variant?: "card" | "plain";
+  readonly className?: string;
 }) => {
   const form = useFormContext();
   return (
@@ -341,17 +347,24 @@ const Heading = ({
         )
       }
     >
-      {(invalid) => (
-        <CardTitle>
+      {(invalid) => {
+        const title = invalid || rejected ? errorTitle : children;
+        const heading = (
           <h1
             tabIndex={-1}
             id="auth-title"
-            className="text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight focus:outline-none"
+            className={cn(
+              variant === "card" &&
+                "text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight",
+              "focus:outline-none",
+              className
+            )}
           >
-            {invalid || rejected ? errorTitle : children}
+            {title}
           </h1>
-        </CardTitle>
-      )}
+        );
+        return variant === "plain" ? heading : <CardTitle>{heading}</CardTitle>;
+      }}
     </form.Subscribe>
   );
 };

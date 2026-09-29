@@ -6,12 +6,17 @@ import { fileURLToPath } from "node:url";
 import { Family } from "@meal-planner/families";
 import {
   CreateMealPlanPayload,
+  ChangeMealPlanPayload,
+  DecideMealPlanPayload,
   HouseholdAdultInvitationResult,
   HouseholdMemberDepartureOperation,
   HouseholdMealPlanResponse,
   HouseholdPeopleRoster,
   HouseholdPerson,
   PersonProfile,
+  MutatePlanningContentPayload,
+  PlanningContentSnapshot,
+  SavedRecipePage,
 } from "@meal-planner/household-api";
 import {
   DirectoryFrame,
@@ -118,25 +123,9 @@ const SessionResponse = Schema.Struct({
 });
 const OrganizationResponse = Schema.Struct({ id: Schema.String });
 const createPayload = Schema.decodeUnknownSync(CreateMealPlanPayload)({
-  policy: {
-    allowedDietaryFit: ["household_match"],
-    allowedDifficulties: ["easy"],
-    allowedTotalTimeBands: ["under_30_minutes"],
-    maxRecipeUses: 1,
-    preferredCuisines: ["Irish"],
-    version: "boundary-policy-v1",
-  },
-  request: {
-    requestKey: "boundary-week",
-    slots: [
-      {
-        date: "2026-08-24",
-        mealType: "dinner",
-        servings: 2,
-        slotId: "boundary-dinner",
-      },
-    ],
-  },
+  requestKey: "boundary-week",
+  startDate: "2026-08-24",
+  weeks: 1,
 });
 
 type MiniflareD1Database = Awaited<ReturnType<Miniflare["getD1Database"]>>;
@@ -4707,11 +4696,29 @@ describe("household public API to private Durable Object boundary", () => {
     });
   }, 30_000);
 
-  it("runs public admission through system draft commit, confirmation, Recipe Bank, and planning", async () => {
+  it("runs public import admission through Recipe Bank and an adult-approved plan", async () => {
     const cookie = await signUp("Import Boundary Member");
     const organization = await createOrganization(
       "Import Boundary Household",
       cookie
+    );
+    const bootstrapResponse = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/families/${organization.id}/people/bootstrap-creator`,
+      {
+        body: JSON.stringify({
+          displayName: "Import Boundary Member",
+          mutationId: "boundary-import-creator",
+        }),
+        headers: { "content-type": "application/json", cookie },
+        method: "POST",
+      }
+    );
+    expect(
+      bootstrapResponse.status,
+      await bootstrapResponse.clone().text()
+    ).toBe(200);
+    const creator = await Schema.decodeUnknownPromise(HouseholdPerson)(
+      await bootstrapResponse.json()
     );
     const createResponse = await getRuntime().dispatchFetch(
       "https://meal-planner.test/v1/recipe-import-intents",
@@ -4831,6 +4838,56 @@ describe("household public API to private Durable Object boundary", () => {
       "intent_succeeded",
     ]);
 
+    const contentResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/planning-content",
+      {
+        body: JSON.stringify(
+          Schema.encodeSync(MutatePlanningContentPayload)(
+            Schema.decodeUnknownSync(MutatePlanningContentPayload)({
+              command: {
+                _tag: "SetManagedOccasions",
+                entries: [
+                  {
+                    label: "Dinner",
+                    occasionId: "boundary-dinner",
+                    personId: creator.id,
+                    state: "managed",
+                    weekdays: [1],
+                  },
+                ],
+              },
+              expectedVersion: 0,
+              mutationId: "boundary-managed-occasions",
+            })
+          )
+        ),
+        headers: { "content-type": "application/json", cookie },
+        method: "POST",
+      }
+    );
+    expect(contentResponse.status, await contentResponse.clone().text()).toBe(
+      200
+    );
+    expect(
+      await Schema.decodeUnknownPromise(PlanningContentSnapshot)(
+        await contentResponse.json()
+      )
+    ).toMatchObject({ configVersion: 1 });
+
+    const savedRecipesResponse = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/planning-content/saved-recipes",
+      { headers: { cookie } }
+    );
+    expect(
+      savedRecipesResponse.status,
+      await savedRecipesResponse.clone().text()
+    ).toBe(200);
+    expect(
+      await Schema.decodeUnknownPromise(SavedRecipePage)(
+        await savedRecipesResponse.json()
+      )
+    ).toMatchObject({ items: [{ importId: admitted.id }] });
+
     const mealPlanResponse = await getRuntime().dispatchFetch(
       "https://meal-planner.test/v1/meal-plans",
       {
@@ -4846,14 +4903,76 @@ describe("household public API to private Durable Object boundary", () => {
       HouseholdMealPlanResponse
     )(await mealPlanResponse.json());
     expect(mealPlan).toMatchObject({
-      gaps: [],
-      meals: [
-        {
-          slotId: "boundary-dinner",
-          sourceRecipe: { importId: admitted.id },
-        },
-      ],
+      _tag: "Draft",
+      proposed: {
+        coverage: [
+          {
+            requirement: { occasion: "boundary-dinner", personId: creator.id },
+            resolution: { _tag: "Gap", reason: "not_planned" },
+          },
+        ],
+      },
     });
+    const changeResponse = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/meal-plans/${mealPlan.planId}/changes`,
+      {
+        body: JSON.stringify(
+          Schema.encodeSync(ChangeMealPlanPayload)(
+            Schema.decodeUnknownSync(ChangeMealPlanPayload)({
+              change: {
+                _tag: "SetCoverage",
+                requirement: {
+                  date: "2026-08-24",
+                  occasion: "boundary-dinner",
+                  personId: creator.id,
+                },
+                resolution: {
+                  _tag: "External",
+                  description: "Dinner elsewhere",
+                  rationale: "Confirmed by the adult.",
+                },
+              },
+              expectedRevision: 0,
+              mutationId: "boundary-plan-change",
+              reason: "Adult chose dinner elsewhere.",
+            })
+          )
+        ),
+        headers: { "content-type": "application/json", cookie },
+        method: "POST",
+      }
+    );
+    expect(changeResponse.status, await changeResponse.clone().text()).toBe(
+      200
+    );
+    const changed = await Schema.decodeUnknownPromise(
+      HouseholdMealPlanResponse
+    )(await changeResponse.json());
+    expect(changed).toMatchObject({ _tag: "Draft", revision: 1 });
+    const approveResponse = await getRuntime().dispatchFetch(
+      `https://meal-planner.test/v1/meal-plans/${mealPlan.planId}/approve`,
+      {
+        body: JSON.stringify(
+          Schema.encodeSync(DecideMealPlanPayload)(
+            Schema.decodeUnknownSync(DecideMealPlanPayload)({
+              expectedRevision: 1,
+              mutationId: "boundary-plan-approve",
+              reason: "Adult reviewed the complete plan.",
+            })
+          )
+        ),
+        headers: { "content-type": "application/json", cookie },
+        method: "POST",
+      }
+    );
+    expect(approveResponse.status, await approveResponse.clone().text()).toBe(
+      200
+    );
+    expect(
+      await Schema.decodeUnknownPromise(HouseholdMealPlanResponse)(
+        await approveResponse.json()
+      )
+    ).toMatchObject({ _tag: "Approved", revision: 2 });
   }, 30_000);
 
   it("commits verified R2 acquisition evidence through the private household authority", async () => {

@@ -243,7 +243,7 @@ export const FamilyReadyPage = () => {
       }
       await actions.refresh();
       await navigate({
-        href: destination === "discovery" ? "/#private-interviews" : "/",
+        href: destination === "discovery" ? "/?area=tastes" : "/",
       });
     } catch {
       setNavigationFailed(true);

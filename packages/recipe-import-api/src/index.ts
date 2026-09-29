@@ -935,6 +935,12 @@ export const RecipeImportApi = HttpApi.make("recipeImportApi")
     })
   );
 
+/** The canonical recipe detail route without import admission or workflow writes. */
+export const RecipeReadApi = HttpApi.make("recipeReadApi")
+  .add(RecipesGroup)
+  .middleware(RecipeImportSchemaErrors)
+  .middleware(RecipeImportDefectBoundary);
+
 export type RecipeImportApiClient = HttpApiClient.ForApi<
   typeof RecipeImportApi
 >;

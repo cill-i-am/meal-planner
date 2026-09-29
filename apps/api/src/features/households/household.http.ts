@@ -1,9 +1,11 @@
 import type {
   HouseholdPeopleFailure,
   MealPlan,
+  HouseholdMealPlanConflictReason,
 } from "@meal-planner/household-api";
 import {
   HouseholdApi,
+  AuthenticatedHouseholdPlanningContentApi,
   HouseholdCurrentPrincipal,
   HouseholdMealPlanApi,
   HouseholdMealPlanConflictProblem,
@@ -13,6 +15,8 @@ import {
   HouseholdMealPlanNotFoundProblem,
   HouseholdMealPlanPrincipal,
   HouseholdMealPlanSchemaErrors,
+  HouseholdPlanningContentConflictProblem,
+  HouseholdPlanningContentUnavailableProblem,
   HouseholdPeopleCurrentPrincipal,
   HouseholdPeopleApi,
   HouseholdPeopleAssociationConflictProblem,
@@ -45,14 +49,12 @@ import type { HttpApiSchemaError } from "effect/unstable/httpapi/HttpApiError";
 import { AuthenticatedOrganizationResolver } from "../auth/auth.principal.js";
 import type {
   HouseholdPeopleGatewayFailure,
-  MealPlanCreateFailure,
-  MealPlanDecisionFailure,
-  MealPlanReadFailure,
-  MealPlanSwapFailure,
+  HouseholdMealPlanFailure,
 } from "./household.gateway.js";
 import {
   HouseholdDomainGateway,
   HouseholdMealPlanGateway,
+  HouseholdPlanningContentGateway,
   HouseholdPeopleGateway,
 } from "./household.gateway.js";
 import {
@@ -98,13 +100,15 @@ const mealPlanNotFoundProblem = Schema.decodeUnknownSync(
   status: 404,
 });
 
-const mealPlanConflictProblem = Schema.decodeUnknownSync(
-  HouseholdMealPlanConflictProblem
-)({
-  code: "meal_plan_conflict",
-  message: "The meal plan changed or conflicts with an earlier request.",
-  status: 409,
-});
+const mealPlanConflictProblem = (
+  reason: typeof HouseholdMealPlanConflictReason.Type
+) =>
+  Schema.decodeUnknownSync(HouseholdMealPlanConflictProblem)({
+    code: "meal_plan_conflict",
+    message: "The meal plan needs review before this change can be saved.",
+    reason,
+    status: 409,
+  });
 
 const mealPlanInternalProblem = Schema.decodeUnknownSync(
   HouseholdMealPlanInternalProblem
@@ -112,6 +116,21 @@ const mealPlanInternalProblem = Schema.decodeUnknownSync(
   code: "internal_error",
   message: "Household storage is temporarily unavailable.",
   status: 500,
+});
+
+const planningContentConflictProblem = Schema.decodeUnknownSync(
+  HouseholdPlanningContentConflictProblem
+)({
+  code: "planning_content_conflict",
+  message: "Planning content changed or conflicts with an earlier request.",
+  status: 409,
+});
+const planningContentUnavailableProblem = Schema.decodeUnknownSync(
+  HouseholdPlanningContentUnavailableProblem
+)({
+  code: "planning_content_unavailable",
+  message: "Planning content is temporarily unavailable.",
+  status: 503,
 });
 
 const peopleNotFoundProblem = Schema.decodeUnknownSync(
@@ -447,30 +466,39 @@ const mapReturnAdultError = (error: HouseholdPeopleGatewayFailure) => {
   }
 };
 
-const mapCreateMealPlanError = (error: MealPlanCreateFailure) =>
-  error._tag === "MealPlanRequestConflict"
-    ? mealPlanConflictProblem
-    : mealPlanInternalProblem;
-
-const mapReadMealPlanError = (error: MealPlanReadFailure) =>
-  error._tag === "MealPlanNotFound"
-    ? mealPlanNotFoundProblem
-    : mealPlanInternalProblem;
-
-const mapDecisionMealPlanError = (error: MealPlanDecisionFailure) => {
-  if (error._tag === "MealPlanNotFound") {
-    return mealPlanNotFoundProblem;
+const mapMealPlanError = (error: HouseholdMealPlanFailure) => {
+  switch (error._tag) {
+    case "MealPlanNotFound": {
+      return mealPlanNotFoundProblem;
+    }
+    case "MealPlanPersistenceFailure": {
+      return mealPlanInternalProblem;
+    }
+    case "MealPlanRuleViolation": {
+      return mealPlanConflictProblem(error.reason);
+    }
+    case "MealPlanMutationConflict": {
+      return mealPlanConflictProblem("mutation_conflict");
+    }
+    case "MealPlanRequestConflict": {
+      return mealPlanConflictProblem("request_conflict");
+    }
+    case "MealPlanTransitionRejected": {
+      return mealPlanConflictProblem("invalid_transition");
+    }
+    case "MealPlanVersionConflict": {
+      return mealPlanConflictProblem("version_conflict");
+    }
+    default: {
+      return error satisfies never;
+    }
   }
-  if (error._tag === "MealPlanPersistenceFailure") {
-    return mealPlanInternalProblem;
-  }
-  return mealPlanConflictProblem;
 };
 
-const mapSwapMealPlanError = (error: MealPlanSwapFailure) =>
-  error._tag === "MealPlanSwapRejected"
-    ? invalidMealPlanRequestProblem
-    : mapDecisionMealPlanError(error);
+const mapPlanningContentError = (error: { readonly reason: string }) =>
+  error.reason === "unavailable" || error.reason === "missing_person"
+    ? planningContentUnavailableProblem
+    : planningContentConflictProblem;
 
 const observeMealPlanFailure = <E extends { readonly _tag: string }>(
   error: E
@@ -571,64 +599,130 @@ const HouseholdMealPlanHandlers = HttpApiBuilder.group(
     handlers
       .handle("create", ({ payload }) =>
         Effect.gen(function* createMealPlan() {
-          const principal = yield* HouseholdMealPlanCurrentPrincipal;
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
           const gateway = yield* HouseholdMealPlanGateway;
           return yield* exposeMealPlanResult(
             gateway.create({ payload, principal }),
-            mapCreateMealPlanError
+            mapMealPlanError
           );
+        })
+      )
+      .handle("list", () =>
+        Effect.gen(function* listMealPlans() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdMealPlanGateway;
+          return yield* gateway
+            .list({ principal })
+            .pipe(Effect.mapError(() => mealPlanInternalProblem));
         })
       )
       .handle("read", ({ params }) =>
         Effect.gen(function* readMealPlan() {
-          const principal = yield* HouseholdMealPlanCurrentPrincipal;
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
           const gateway = yield* HouseholdMealPlanGateway;
           return yield* exposeMealPlanResult(
-            gateway.read({ draftId: params.draftId, principal }),
-            mapReadMealPlanError
+            gateway.read({ planId: params.planId, principal }),
+            (error) =>
+              error._tag === "MealPlanNotFound"
+                ? mealPlanNotFoundProblem
+                : mealPlanInternalProblem
           );
         })
       )
-      .handle("swap", ({ params, payload }) =>
-        Effect.gen(function* swapMealPlan() {
-          const principal = yield* HouseholdMealPlanCurrentPrincipal;
+      .handle("change", ({ params, payload }) =>
+        Effect.gen(function* changeMealPlan() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
           const gateway = yield* HouseholdMealPlanGateway;
           return yield* exposeMealPlanResult(
-            gateway.swap({
-              draftId: params.draftId,
-              payload,
-              principal,
-            }),
-            mapSwapMealPlanError
+            gateway.change({ payload, planId: params.planId, principal }),
+            mapMealPlanError
           );
         })
       )
       .handle("approve", ({ params, payload }) =>
         Effect.gen(function* approveMealPlan() {
-          const principal = yield* HouseholdMealPlanCurrentPrincipal;
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
           const gateway = yield* HouseholdMealPlanGateway;
           return yield* exposeMealPlanResult(
-            gateway.approve({
-              draftId: params.draftId,
-              payload,
-              principal,
-            }),
-            mapDecisionMealPlanError
+            gateway.approve({ payload, planId: params.planId, principal }),
+            mapMealPlanError
           );
         })
       )
-      .handle("reject", ({ params, payload }) =>
-        Effect.gen(function* rejectMealPlan() {
-          const principal = yield* HouseholdMealPlanCurrentPrincipal;
+      .handle("proposeRevision", ({ params, payload }) =>
+        Effect.gen(function* proposeRevision() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
           const gateway = yield* HouseholdMealPlanGateway;
           return yield* exposeMealPlanResult(
-            gateway.reject({
-              draftId: params.draftId,
+            gateway.proposeRevision({
               payload,
+              planId: params.planId,
               principal,
             }),
-            mapDecisionMealPlanError
+            mapMealPlanError
           );
+        })
+      )
+      .handle("acceptRevision", ({ params, payload }) =>
+        Effect.gen(function* acceptRevision() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdMealPlanGateway;
+          return yield* exposeMealPlanResult(
+            gateway.acceptRevision({
+              payload,
+              planId: params.planId,
+              principal,
+            }),
+            mapMealPlanError
+          );
+        })
+      )
+      .handle("rejectRevision", ({ params, payload }) =>
+        Effect.gen(function* rejectRevision() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdMealPlanGateway;
+          return yield* exposeMealPlanResult(
+            gateway.rejectRevision({
+              payload,
+              planId: params.planId,
+              principal,
+            }),
+            mapMealPlanError
+          );
+        })
+      )
+);
+
+const HouseholdPlanningContentHandlers = HttpApiBuilder.group(
+  AuthenticatedHouseholdPlanningContentApi,
+  "planningContent",
+  (handlers) =>
+    handlers
+      .handle("read", () =>
+        Effect.gen(function* readPlanningContent() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPlanningContentGateway;
+          return yield* gateway
+            .read(principal)
+            .pipe(Effect.mapError(() => planningContentUnavailableProblem));
+        })
+      )
+      .handle("mutate", ({ payload }) =>
+        Effect.gen(function* mutatePlanningContent() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPlanningContentGateway;
+          return yield* gateway
+            .mutate({ payload, principal })
+            .pipe(Effect.mapError(mapPlanningContentError));
+        })
+      )
+      .handle("listSavedRecipes", ({ query }) =>
+        Effect.gen(function* listSavedRecipes() {
+          const principal = yield* HouseholdPeopleCurrentPrincipal;
+          const gateway = yield* HouseholdPlanningContentGateway;
+          return yield* gateway
+            .listSavedRecipes({ principal, query })
+            .pipe(Effect.mapError(() => planningContentUnavailableProblem));
         })
       )
 );
@@ -1004,6 +1098,15 @@ export const HouseholdMealPlanHttpApiLayer = HttpApiBuilder.layer(
   Layer.provide(HouseholdMealPlanHandlers),
   Layer.provide(HouseholdSessionAuthLive),
   Layer.provide(HouseholdMealPlanSchemaErrorsLive),
+  Layer.provide(HouseholdAuthorityServicesLive)
+);
+
+/** Mount the authenticated household planning content API. */
+export const HouseholdPlanningContentHttpApiLayer = HttpApiBuilder.layer(
+  AuthenticatedHouseholdPlanningContentApi
+).pipe(
+  Layer.provide(HouseholdPlanningContentHandlers),
+  Layer.provide(HouseholdSessionAuthLive),
   Layer.provide(HouseholdAuthorityServicesLive)
 );
 

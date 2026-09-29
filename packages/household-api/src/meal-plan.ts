@@ -1,336 +1,356 @@
-import {
-  PlanningDietaryFit,
-  PlanningDifficulty,
-  PlanningMealType,
-  PlanningTotalTimeBand,
-  PlanningTags,
-} from "@meal-planner/recipe-domain";
 import { Schema } from "effect";
 
-const TrimmedNonEmptyString = Schema.String.pipe(
-  Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
-);
-const ShortIdentifier = TrimmedNonEmptyString.pipe(
-  Schema.check(Schema.isMaxLength(128))
-);
-const ShortText = TrimmedNonEmptyString.pipe(
-  Schema.check(Schema.isMaxLength(4096))
-);
-const PositiveInteger = Schema.Number.pipe(
-  Schema.check(
-    Schema.isInt(),
-    Schema.isGreaterThanOrEqualTo(1),
-    Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
-  )
-);
-const NonNegativeInteger = Schema.Number.pipe(
-  Schema.check(
-    Schema.isInt(),
-    Schema.isGreaterThanOrEqualTo(0),
-    Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
-  )
-);
-const CalendarDate = Schema.String.pipe(
-  Schema.check(
-    Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u),
-    Schema.makeFilter((date) => {
-      const instant = new Date(`${date}T00:00:00.000Z`);
-      return !Number.isNaN(instant.getTime()) &&
-        instant.toISOString().slice(0, 10) === date
-        ? undefined
-        : "Expected a real calendar date";
-    })
-  )
-);
+import {
+  MealOccasionId,
+  MealOption,
+  PlanningDate,
+  PlanningOptionRef,
+  QuantityUnit,
+} from "./meal-content.js";
+import { HouseholdPersonId } from "./people.js";
+import { ProfileVersion } from "./profiles.js";
 
-export const MealPlanRecipeSnapshotId = Schema.String.pipe(
-  Schema.check(Schema.isUUID()),
-  Schema.brand("MealPlanRecipeSnapshotId")
+const Identifier = Schema.String.pipe(
+  Schema.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(128))
 );
-export type MealPlanRecipeSnapshotId = typeof MealPlanRecipeSnapshotId.Type;
-
+const Explanation = Schema.String.pipe(
+  Schema.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(600))
+);
+const Version = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)));
+const PositiveAmount = Schema.Number.pipe(
+  Schema.check(Schema.isFinite(), Schema.isGreaterThan(0))
+);
+export const MealPlanDate = PlanningDate;
+export type MealPlanDate = typeof MealPlanDate.Type;
+export const MealPlanOccasion = MealOccasionId;
+export type MealPlanOccasion = typeof MealPlanOccasion.Type;
+export const MealPlanWeeks = Schema.Int.pipe(
+  Schema.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(12))
+);
+export type MealPlanWeeks = typeof MealPlanWeeks.Type;
+export const MealPlanRequestKey = Identifier.pipe(
+  Schema.brand("MealPlanRequestKey")
+);
+export type MealPlanRequestKey = typeof MealPlanRequestKey.Type;
+export const MealPlanId = Identifier.pipe(Schema.brand("MealPlanId"));
+export type MealPlanId = typeof MealPlanId.Type;
+export const MealPlanMutationId = Identifier.pipe(
+  Schema.brand("MealPlanMutationId")
+);
+export type MealPlanMutationId = typeof MealPlanMutationId.Type;
+export const MealPlanActorId = Identifier.pipe(Schema.brand("MealPlanActorId"));
+export type MealPlanActorId = typeof MealPlanActorId.Type;
 export const MealPlanInstant = Schema.DateTimeUtcFromString.pipe(
   Schema.brand("MealPlanInstant")
 );
 export type MealPlanInstant = typeof MealPlanInstant.Type;
 
-export const MealPlanRequestKey = ShortIdentifier.pipe(
-  Schema.brand("MealPlanRequestKey")
-);
-export type MealPlanRequestKey = typeof MealPlanRequestKey.Type;
-
-export const MealPlanDraftId = TrimmedNonEmptyString.pipe(
-  Schema.check(Schema.isMaxLength(134)),
-  Schema.brand("MealPlanDraftId")
-);
-export type MealPlanDraftId = typeof MealPlanDraftId.Type;
-
-export const MealPlanPolicyVersion = ShortIdentifier.pipe(
-  Schema.brand("MealPlanPolicyVersion")
-);
-export type MealPlanPolicyVersion = typeof MealPlanPolicyVersion.Type;
-
-export const MealPlanSlotId = ShortIdentifier.pipe(
-  Schema.brand("MealPlanSlotId")
-);
-export type MealPlanSlotId = typeof MealPlanSlotId.Type;
-
-export const MealPlanActorId = ShortIdentifier.pipe(
-  Schema.brand("MealPlanActorId")
-);
-export type MealPlanActorId = typeof MealPlanActorId.Type;
-
-export const MealPlanMutationId = ShortIdentifier.pipe(
-  Schema.brand("MealPlanMutationId")
-);
-export type MealPlanMutationId = typeof MealPlanMutationId.Type;
-
-export const MealPlanSlot = Schema.Struct({
-  date: CalendarDate,
-  mealType: PlanningMealType,
-  servings: PositiveInteger,
-  slotId: MealPlanSlotId,
-});
-export type MealPlanSlot = typeof MealPlanSlot.Type;
-
-export const MaximumMealPlanSlots = 31;
-export const MaximumPreferredCuisines = 8;
-
 export const MealPlanRequest = Schema.Struct({
   requestKey: MealPlanRequestKey,
-  slots: Schema.NonEmptyArray(MealPlanSlot).pipe(
-    Schema.check(Schema.isMaxLength(MaximumMealPlanSlots))
-  ),
-}).check(
-  Schema.makeFilter((request) =>
-    new Set(request.slots.map(({ slotId }) => slotId)).size ===
-    request.slots.length
-      ? undefined
-      : { issue: "Meal-plan slot IDs must be unique", path: ["slots"] }
-  )
-);
+  startDate: MealPlanDate,
+  weeks: MealPlanWeeks,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type MealPlanRequest = typeof MealPlanRequest.Type;
+export const CreateMealPlanPayload = MealPlanRequest;
+export type CreateMealPlanPayload = MealPlanRequest;
 
-export const MealPlanPolicy = Schema.Struct({
-  allowedDietaryFit: Schema.NonEmptyArray(PlanningDietaryFit).pipe(
-    Schema.check(Schema.isMaxLength(3))
-  ),
-  allowedDifficulties: Schema.NonEmptyArray(PlanningDifficulty).pipe(
-    Schema.check(Schema.isMaxLength(3))
-  ),
-  allowedTotalTimeBands: Schema.NonEmptyArray(PlanningTotalTimeBand).pipe(
-    Schema.check(Schema.isMaxLength(4))
-  ),
-  maxRecipeUses: PositiveInteger,
-  preferredCuisines: Schema.Array(TrimmedNonEmptyString).pipe(
-    Schema.check(Schema.isMaxLength(MaximumPreferredCuisines))
-  ),
-  version: MealPlanPolicyVersion,
+export const MealPlanRequirementKey = Schema.Struct({
+  date: MealPlanDate,
+  occasion: MealPlanOccasion,
+  personId: HouseholdPersonId,
 });
-export type MealPlanPolicy = typeof MealPlanPolicy.Type;
-
-/** Safe immutable recipe snapshot embedded in a household-owned plan. */
-export const MealPlanRecipeSnapshot = Schema.Struct({
-  approvedAt: MealPlanInstant,
-  extractionFingerprint: TrimmedNonEmptyString,
-  importId: MealPlanRecipeSnapshotId,
-  recipe: Schema.Struct({
-    ingredientLines: Schema.NonEmptyArray(ShortText),
-    instructions: Schema.NonEmptyArray(ShortText),
-    name: ShortText,
-  }),
-  source: Schema.Struct({
-    evidenceFingerprint: TrimmedNonEmptyString,
-    sourceUrl: Schema.NullOr(ShortText),
-  }),
-  tags: PlanningTags,
-  version: PositiveInteger,
+export type MealPlanRequirementKey = typeof MealPlanRequirementKey.Type;
+export const MealPlanOptionRef = PlanningOptionRef;
+export type MealPlanOptionRef = typeof MealPlanOptionRef.Type;
+export const MealPlanQuantity = Schema.Struct({
+  amount: PositiveAmount,
+  unit: QuantityUnit,
 });
-export type MealPlanRecipeSnapshot = typeof MealPlanRecipeSnapshot.Type;
+export type MealPlanQuantity = typeof MealPlanQuantity.Type;
 
-export const MealPlanReason = Schema.Literals([
-  "approved_recipe",
-  "meal_type_match",
-  "hard_constraints_satisfied",
-  "preferred_cuisine",
+export const MealPlanResolution = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("MealOption"),
+    eventId: Identifier,
+    option: MealPlanOptionRef,
+    quantity: Schema.NullOr(MealPlanQuantity),
+    rationale: Explanation,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Prepared"),
+    outputId: Identifier,
+    quantity: MealPlanQuantity,
+    rationale: Explanation,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("External"),
+    description: Explanation,
+    rationale: Explanation,
+  }),
+  Schema.Struct({ _tag: Schema.Literal("Skip"), rationale: Explanation }),
+  Schema.Struct({ _tag: Schema.Literal("Flexible"), rationale: Explanation }),
+  Schema.Struct({
+    _tag: Schema.Literal("Gap"),
+    rationale: Explanation,
+    reason: Schema.Literals([
+      "no_compatible_option",
+      "routine_conflict",
+      "unconfirmed_suitability",
+      "preparation_context_unresolved",
+      "unavailable_prepared_food",
+      "dependent_output_removed",
+      "not_planned",
+    ]),
+  }),
 ]);
-export type MealPlanReason = typeof MealPlanReason.Type;
-
-export const PlannedMeal = Schema.Struct({
-  date: MealPlanSlot.fields.date,
-  mealType: PlanningMealType,
-  reasons: Schema.NonEmptyArray(MealPlanReason),
-  relevantTags: PlanningTags,
-  servings: PositiveInteger,
-  slotId: MealPlanSlotId,
-  sourceRecipe: MealPlanRecipeSnapshot,
+export type MealPlanResolution = typeof MealPlanResolution.Type;
+export const MealPlanCoverage = Schema.Struct({
+  requirement: MealPlanRequirementKey,
+  resolution: MealPlanResolution,
 });
-export type PlannedMeal = typeof PlannedMeal.Type;
-
-export const MealPlanGap = Schema.Struct({
-  reason: Schema.Literal("no_eligible_approved_recipe"),
-  slotId: MealPlanSlotId,
+export type MealPlanCoverage = typeof MealPlanCoverage.Type;
+export const MealPlanCookOutput = Schema.Struct({
+  outputId: Identifier,
+  quantity: MealPlanQuantity,
+  source: Schema.Literal("adult_confirmed"),
 });
-export type MealPlanGap = typeof MealPlanGap.Type;
+export type MealPlanCookOutput = typeof MealPlanCookOutput.Type;
+export const MealPlanCookEvent = Schema.Struct({
+  batchCount: Schema.Int.pipe(
+    Schema.check(
+      Schema.isGreaterThanOrEqualTo(1),
+      Schema.isLessThanOrEqualTo(16)
+    )
+  ),
+  date: MealPlanDate,
+  eventId: Identifier,
+  option: MealPlanOptionRef,
+  outputs: Schema.Array(MealPlanCookOutput),
+});
+export type MealPlanCookEvent = typeof MealPlanCookEvent.Type;
 
-export const ManualSwapAudit = Schema.Struct({
+export const MealPlanPersonPin = Schema.Struct({
+  personId: HouseholdPersonId,
+  profileVersion: ProfileVersion,
+  safetyState: Schema.Literals([
+    "confirmed_none",
+    "has_constraints",
+    "unknown",
+  ]),
+});
+export type MealPlanPersonPin = typeof MealPlanPersonPin.Type;
+export const MealPlanRoutinePin = Schema.Struct({
+  routineId: Identifier,
+  routineVersion: Version,
+});
+export type MealPlanRoutinePin = typeof MealPlanRoutinePin.Type;
+export const MealPlanPins = Schema.Struct({
+  configVersion: Version,
+  content: Schema.Array(MealPlanOptionRef),
+  contentSnapshots: Schema.Array(MealOption),
+  people: Schema.Array(MealPlanPersonPin),
+  preparedSources: Schema.Array(
+    Schema.Struct({
+      optionRef: Schema.NullOr(MealPlanOptionRef),
+      outputId: Identifier,
+    })
+  ),
+  routines: Schema.Array(MealPlanRoutinePin),
+});
+export type MealPlanPins = typeof MealPlanPins.Type;
+export const MealPlanVersion = Schema.Struct({
+  cookEvents: Schema.Array(MealPlanCookEvent),
+  coverage: Schema.Array(MealPlanCoverage).pipe(
+    Schema.check(Schema.isMaxLength(16_384))
+  ),
+  number: Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(1))),
+  pins: MealPlanPins,
+});
+export type MealPlanVersion = typeof MealPlanVersion.Type;
+export const MealPlanAudit = Schema.Struct({
+  action: Schema.Literals([
+    "change_coverage",
+    "refresh_inputs",
+    "set_cook_event",
+    "remove_cook_event",
+    "approve",
+    "propose_revision",
+    "accept_revision",
+    "reject_revision",
+  ]),
   actorId: MealPlanActorId,
-  fromRecipe: MealPlanRecipeSnapshot,
+  at: MealPlanInstant,
+  changedRequirements: Schema.Array(MealPlanRequirementKey),
   mutationId: MealPlanMutationId,
-  reason: ShortText,
-  slotId: MealPlanSlotId,
-  swappedAt: MealPlanInstant,
-  toRecipe: MealPlanRecipeSnapshot,
+  reason: Explanation,
 });
-export type ManualSwapAudit = typeof ManualSwapAudit.Type;
+export type MealPlanAudit = typeof MealPlanAudit.Type;
 
-const MealPlanRecordFields = {
-  audit: Schema.Array(ManualSwapAudit),
-  draftId: MealPlanDraftId,
-  gaps: Schema.Array(MealPlanGap),
-  meals: Schema.Array(PlannedMeal),
-  policy: MealPlanPolicy,
+const SharedFields = {
+  audit: Schema.Array(MealPlanAudit),
+  planId: MealPlanId,
   request: MealPlanRequest,
-  revision: NonNegativeInteger,
+  revision: Version,
 } as const;
-
 export const MealPlanDraft = Schema.Struct({
-  ...MealPlanRecordFields,
+  ...SharedFields,
   _tag: Schema.Literal("Draft"),
+  proposed: MealPlanVersion,
 });
 export type MealPlanDraft = typeof MealPlanDraft.Type;
-
-const MealPlanDecisionFields = {
-  actorId: MealPlanActorId,
-  decidedAt: MealPlanInstant,
-  mutationId: MealPlanMutationId,
-  reason: ShortText,
-} as const;
-
 export const MealPlanApproved = Schema.Struct({
-  ...MealPlanRecordFields,
+  ...SharedFields,
   _tag: Schema.Literal("Approved"),
-  decision: Schema.Struct({
-    ...MealPlanDecisionFields,
-    outcome: Schema.Literal("approved"),
-  }),
+  active: MealPlanVersion,
 });
 export type MealPlanApproved = typeof MealPlanApproved.Type;
-
-export const MealPlanRejected = Schema.Struct({
-  ...MealPlanRecordFields,
-  _tag: Schema.Literal("Rejected"),
-  decision: Schema.Struct({
-    ...MealPlanDecisionFields,
-    outcome: Schema.Literal("rejected"),
-  }),
+export const MealPlanProposedRevision = Schema.Struct({
+  ...SharedFields,
+  _tag: Schema.Literal("ProposedRevision"),
+  active: MealPlanVersion,
+  proposed: MealPlanVersion,
 });
-export type MealPlanRejected = typeof MealPlanRejected.Type;
-
+export type MealPlanProposedRevision = typeof MealPlanProposedRevision.Type;
 export const MealPlan = Schema.Union([
   MealPlanDraft,
   MealPlanApproved,
-  MealPlanRejected,
+  MealPlanProposedRevision,
 ]);
 export type MealPlan = typeof MealPlan.Type;
-
-export const MealPlanProposal = Schema.Struct({
-  gaps: Schema.Array(MealPlanGap),
-  meals: Schema.Array(PlannedMeal),
+export const MealPlanSummary = Schema.Struct({
+  activeVersion: Schema.NullOr(MealPlanVersion.fields.number),
+  planId: MealPlanId,
+  proposedGapCount: Schema.Int.pipe(
+    Schema.check(Schema.isGreaterThanOrEqualTo(0))
+  ),
+  revision: Version,
+  startDate: MealPlanDate,
+  state: Schema.Literals(["Draft", "Approved", "ProposedRevision"]),
+  weeks: MealPlanWeeks,
 });
-export type MealPlanProposal = typeof MealPlanProposal.Type;
+export type MealPlanSummary = typeof MealPlanSummary.Type;
 
-export const ManualMealSwapRequest = Schema.Struct({
-  actorId: MealPlanActorId,
-  draftId: MealPlanDraftId,
-  expectedRevision: NonNegativeInteger,
+export const toMealPlanSummary = (plan: MealPlan): MealPlanSummary => ({
+  activeVersion: plan._tag === "Draft" ? null : plan.active.number,
+  planId: plan.planId,
+  proposedGapCount:
+    plan._tag === "Approved"
+      ? 0
+      : plan.proposed.coverage.filter(
+          ({ resolution }) => resolution._tag === "Gap"
+        ).length,
+  revision: plan.revision,
+  startDate: plan.request.startDate,
+  state: plan._tag,
+  weeks: plan.request.weeks,
+});
+
+export const MealPlanChange = Schema.Union([
+  Schema.Struct({ _tag: Schema.Literal("RefreshInputs") }),
+  Schema.Struct({
+    _tag: Schema.Literal("ReplaceDraftPlan"),
+    cookEvents: MealPlanVersion.fields.cookEvents,
+    coverage: MealPlanVersion.fields.coverage,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("SetCoverage"),
+    requirement: MealPlanRequirementKey,
+    resolution: MealPlanResolution,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("ReplaceMealEvent"),
+    eventId: Identifier,
+    option: MealPlanOptionRef,
+    rationale: Explanation,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("SetCookEvent"),
+    event: MealPlanCookEvent,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("RemoveCookEvent"),
+    eventId: Identifier,
+  }),
+]);
+export type MealPlanChange = typeof MealPlanChange.Type;
+export const ChangeMealPlanPayload = Schema.Struct({
+  change: MealPlanChange,
+  expectedRevision: Version,
   mutationId: MealPlanMutationId,
-  reason: ShortText,
-  replacementImportId: MealPlanRecipeSnapshotId,
-  slotId: MealPlanSlotId,
-  swappedAt: MealPlanInstant,
-});
-export type ManualMealSwapRequest = typeof ManualMealSwapRequest.Type;
-
-export const MealPlanDecisionRequest = Schema.Struct({
-  actorId: MealPlanActorId,
-  decidedAt: MealPlanInstant,
-  draftId: MealPlanDraftId,
-  expectedRevision: NonNegativeInteger,
+  reason: Explanation,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type ChangeMealPlanPayload = typeof ChangeMealPlanPayload.Type;
+export const DecideMealPlanPayload = Schema.Struct({
+  expectedRevision: Version,
   mutationId: MealPlanMutationId,
-  reason: ShortText,
-});
-export type MealPlanDecisionRequest = typeof MealPlanDecisionRequest.Type;
+  reason: Explanation,
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type DecideMealPlanPayload = typeof DecideMealPlanPayload.Type;
 
 export const MealPlanRequestConflict = Schema.TaggedStruct(
   "MealPlanRequestConflict",
-  { draftId: MealPlanDraftId }
+  { planId: MealPlanId }
 );
 export type MealPlanRequestConflict = typeof MealPlanRequestConflict.Type;
-
 export const MealPlanNotFound = Schema.TaggedStruct("MealPlanNotFound", {
-  draftId: MealPlanDraftId,
+  planId: MealPlanId,
 });
 export type MealPlanNotFound = typeof MealPlanNotFound.Type;
-
 export const MealPlanVersionConflict = Schema.TaggedStruct(
   "MealPlanVersionConflict",
   {
-    actualRevision: NonNegativeInteger,
-    expectedRevision: NonNegativeInteger,
+    actualRevision: Version,
+    expectedRevision: Version,
   }
 );
 export type MealPlanVersionConflict = typeof MealPlanVersionConflict.Type;
-
 export const MealPlanTransitionRejected = Schema.TaggedStruct(
   "MealPlanTransitionRejected",
-  { lifecycle: Schema.Literals(["Draft", "Approved", "Rejected"]) }
+  {
+    lifecycle: Schema.Literals(["Draft", "Approved", "ProposedRevision"]),
+  }
 );
 export type MealPlanTransitionRejected = typeof MealPlanTransitionRejected.Type;
-
-export const MealPlanSwapRejected = Schema.TaggedStruct(
-  "MealPlanSwapRejected",
+export const MealPlanMutationConflict = Schema.TaggedStruct(
+  "MealPlanMutationConflict",
+  {
+    mutationId: MealPlanMutationId,
+  }
+);
+export type MealPlanMutationConflict = typeof MealPlanMutationConflict.Type;
+export const MealPlanRuleViolation = Schema.TaggedStruct(
+  "MealPlanRuleViolation",
   {
     reason: Schema.Literals([
-      "slot_not_found",
-      "recipe_not_approved",
-      "hard_constraint_violation",
-      "same_recipe",
+      "invalid_requirement_matrix",
+      "requirement_not_found",
+      "unresolved_gap",
+      "unreviewed_suitability",
+      "incompatible_option",
+      "content_version_changed",
+      "profile_version_changed",
+      "config_version_changed",
+      "prepared_overallocated",
+      "prepared_output_missing",
+      "quantity_unit_mismatch",
+      "cook_event_conflict",
+      "invalid_cook_output",
+      "unresolved_shopping",
+      "unresolved_allocation",
+      "config_missing",
+      "availability_unknown",
+      "preparation_unknown",
+      "missing_equipment",
+      "preparation_window_conflict",
+      "cooking_capacity_exceeded",
     ]),
   }
 );
-export type MealPlanSwapRejected = typeof MealPlanSwapRejected.Type;
-
-export const MealPlanMutationConflict = Schema.TaggedStruct(
-  "MealPlanMutationConflict",
-  { mutationId: MealPlanMutationId }
-);
-export type MealPlanMutationConflict = typeof MealPlanMutationConflict.Type;
-
+export type MealPlanRuleViolation = typeof MealPlanRuleViolation.Type;
 export const MealPlanPersistenceFailure = Schema.TaggedStruct(
   "MealPlanPersistenceFailure",
-  { operation: Schema.Literals(["create", "read", "save"]) }
+  {
+    operation: Schema.Literals(["create", "read", "save"]),
+  }
 );
 export type MealPlanPersistenceFailure = typeof MealPlanPersistenceFailure.Type;
-
-export const CreateMealPlanPayload = Schema.Struct({
-  policy: MealPlanPolicy,
-  request: MealPlanRequest,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
-export type CreateMealPlanPayload = typeof CreateMealPlanPayload.Type;
-
-export const SwapMealPlanPayload = Schema.Struct({
-  expectedRevision: NonNegativeInteger,
-  mutationId: MealPlanMutationId,
-  reason: ShortText,
-  replacementImportId: MealPlanRecipeSnapshotId,
-  slotId: MealPlanSlotId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
-export type SwapMealPlanPayload = typeof SwapMealPlanPayload.Type;
-
-export const DecideMealPlanPayload = Schema.Struct({
-  expectedRevision: NonNegativeInteger,
-  mutationId: MealPlanMutationId,
-  reason: ShortText,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
-export type DecideMealPlanPayload = typeof DecideMealPlanPayload.Type;

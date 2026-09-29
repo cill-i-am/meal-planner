@@ -7,6 +7,7 @@ import type {
   HouseholdMemberDepartureStart,
   HouseholdPerson,
   HouseholdPeopleFailure,
+  PlanningContentRejected,
 } from "@meal-planner/household-api";
 import type {
   CancelledRecipeImportIntent,
@@ -75,17 +76,26 @@ import {
 import { routeAdmittedHouseholdCommand } from "./household-command-router.js";
 import { HouseholdDomainWorker } from "./household-domain-binding.js";
 import type {
-  HouseholdCreateMealPlanFromRecipeBankInput,
+  HouseholdChangeMealPlanInput,
+  HouseholdCreateMealPlanInput,
   HouseholdDecideMealPlanInput,
+  HouseholdListSavedRecipesInput,
   HouseholdMealPlanWire,
+  HouseholdMealPlanSummaryListWire,
+  HouseholdMutatePlanningContentInput,
+  HouseholdPlanningContentWire,
+  HouseholdReadPlanningContentInput,
   HouseholdReadMealPlanInput,
-  HouseholdSwapMealPlanFromRecipeBankInput,
+  HouseholdSavedRecipePageWire,
 } from "./household-meal-plan.contract.js";
 import {
-  HouseholdCreateMealPlanFromRecipeBankInput as HouseholdCreateMealPlanFromRecipeBankInputSchema,
+  HouseholdChangeMealPlanInput as HouseholdChangeMealPlanInputSchema,
+  HouseholdCreateMealPlanInput as HouseholdCreateMealPlanInputSchema,
   HouseholdDecideMealPlanInput as HouseholdDecideMealPlanInputSchema,
+  HouseholdListSavedRecipesInput as HouseholdListSavedRecipesInputSchema,
+  HouseholdMutatePlanningContentInput as HouseholdMutatePlanningContentInputSchema,
+  HouseholdReadPlanningContentInput as HouseholdReadPlanningContentInputSchema,
   HouseholdReadMealPlanInput as HouseholdReadMealPlanInputSchema,
-  HouseholdSwapMealPlanFromRecipeBankInput as HouseholdSwapMealPlanFromRecipeBankInputSchema,
 } from "./household-meal-plan.contract.js";
 import { HouseholdObjectLocator } from "./household-object-locator.js";
 import HouseholdObject from "./household-object.js";
@@ -259,6 +269,12 @@ export interface HouseholdDomainWorkerMethods {
   readonly approveMealPlan: (
     input: HouseholdDecideMealPlanInput
   ) => Effect.Effect<HouseholdMealPlanWire, HouseholdMealPlanDomainFailure>;
+  readonly acceptMealPlanRevision: (
+    input: HouseholdDecideMealPlanInput
+  ) => Effect.Effect<HouseholdMealPlanWire, HouseholdMealPlanDomainFailure>;
+  readonly changeMealPlan: (
+    input: HouseholdChangeMealPlanInput
+  ) => Effect.Effect<HouseholdMealPlanWire, HouseholdMealPlanDomainFailure>;
   readonly preparePersonRemoval: (
     input: HouseholdPreparePersonRemovalInput
   ) => Effect.Effect<
@@ -298,12 +314,36 @@ export interface HouseholdDomainWorkerMethods {
     typeof HouseholdMemberDepartureOperation.Encoded,
     HouseholdPeopleDomainFailure
   >;
-  readonly createMealPlanFromRecipeBank: (
-    input: HouseholdCreateMealPlanFromRecipeBankInput
+  readonly createMealPlan: (
+    input: HouseholdCreateMealPlanInput
+  ) => Effect.Effect<HouseholdMealPlanWire, HouseholdMealPlanDomainFailure>;
+  readonly listMealPlans: (
+    input: HouseholdReadPlanningContentInput
   ) => Effect.Effect<
-    HouseholdMealPlanWire,
-    HouseholdMealPlanDomainFailure | HouseholdRecipeImportFailure
+    HouseholdMealPlanSummaryListWire,
+    HouseholdMealPlanDomainFailure
   >;
+  readonly readPlanningContent: (
+    input: HouseholdReadPlanningContentInput
+  ) => Effect.Effect<
+    HouseholdPlanningContentWire,
+    HouseholdMealPlanDomainFailure
+  >;
+  readonly mutatePlanningContent: (
+    input: HouseholdMutatePlanningContentInput
+  ) => Effect.Effect<
+    HouseholdPlanningContentWire,
+    HouseholdMealPlanDomainFailure
+  >;
+  readonly listSavedRecipes: (
+    input: HouseholdListSavedRecipesInput
+  ) => Effect.Effect<
+    HouseholdSavedRecipePageWire,
+    HouseholdMealPlanDomainFailure
+  >;
+  readonly proposeMealPlanRevision: (
+    input: HouseholdDecideMealPlanInput
+  ) => Effect.Effect<HouseholdMealPlanWire, HouseholdMealPlanDomainFailure>;
   readonly cancelRecipeImport: (
     input: HouseholdCancelRecipeImportInput
   ) => Effect.Effect<
@@ -508,7 +548,7 @@ export interface HouseholdDomainWorkerMethods {
     typeof HouseholdRecipePage.Encoded,
     HouseholdRecipeImportDomainFailure
   >;
-  readonly rejectMealPlan: (
+  readonly rejectMealPlanRevision: (
     input: HouseholdDecideMealPlanInput
   ) => Effect.Effect<HouseholdMealPlanWire, HouseholdMealPlanDomainFailure>;
   readonly restoreHouseholdPerson: (
@@ -535,12 +575,6 @@ export interface HouseholdDomainWorkerMethods {
     typeof HouseholdMemberDepartureStart.Encoded,
     HouseholdPeopleDomainFailure
   >;
-  readonly swapMealPlanFromRecipeBank: (
-    input: HouseholdSwapMealPlanFromRecipeBankInput
-  ) => Effect.Effect<
-    HouseholdMealPlanWire,
-    HouseholdMealPlanDomainFailure | HouseholdRecipeImportFailure
-  >;
   readonly resolveRecipeImportSource: (
     input: HouseholdResolveRecipeImportSourceInput
   ) => Effect.Effect<
@@ -557,7 +591,8 @@ export interface HouseholdDomainWorkerMethods {
 
 export type HouseholdMealPlanDomainFailure =
   | HouseholdDomainFailure
-  | MealPlanServiceError;
+  | MealPlanServiceError
+  | PlanningContentRejected;
 export type HouseholdPeopleDomainFailure =
   | HouseholdDomainFailure
   | HouseholdPeopleFailure;
@@ -608,6 +643,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
       )
     );
   return {
+    acceptMealPlanRevision: (input: HouseholdDecideMealPlanInput) =>
+      route(
+        HouseholdDecideMealPlanInputSchema,
+        input,
+        "accept_meal_plan_revision",
+        (household, command) => household.acceptMealPlanRevision(command)
+      ),
     admitImportBatch: (input: HouseholdAdmitImportBatchInput) =>
       route(
         HouseholdAdmitImportBatchInputSchema,
@@ -670,6 +712,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         input,
         "cancel_recipe_import",
         (household, command) => household.cancelRecipeImport(command)
+      ),
+    changeMealPlan: (input: HouseholdChangeMealPlanInput) =>
+      route(
+        HouseholdChangeMealPlanInputSchema,
+        input,
+        "change_meal_plan",
+        (household, command) => household.changeMealPlan(command)
       ),
     claimAcquisitionAttempt: (input: HouseholdClaimAcquisitionAttemptInput) =>
       route(
@@ -760,14 +809,12 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         "create_household_person",
         (household, command) => household.createHouseholdPerson(command)
       ),
-    createMealPlanFromRecipeBank: (
-      input: HouseholdCreateMealPlanFromRecipeBankInput
-    ) =>
+    createMealPlan: (input: HouseholdCreateMealPlanInput) =>
       route(
-        HouseholdCreateMealPlanFromRecipeBankInputSchema,
+        HouseholdCreateMealPlanInputSchema,
         input,
-        "create_meal_plan_from_recipe_bank",
-        (household, command) => household.createMealPlanFromRecipeBank(command)
+        "create_meal_plan",
+        (household, command) => household.createMealPlan(command)
       ),
     ensureHousehold: (input: HouseholdEnsureInput) =>
       route(
@@ -827,6 +874,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         "list_household_people",
         (household, command) => household.listHouseholdPeople(command)
       ),
+    listMealPlans: (input: HouseholdReadPlanningContentInput) =>
+      route(
+        HouseholdReadPlanningContentInputSchema,
+        input,
+        "read_meal_plan",
+        (household, command) => household.listMealPlans(command)
+      ),
     listProfileVersions: (input: HouseholdListProfileVersionsInput) =>
       route(
         HouseholdListProfileVersionsInput,
@@ -840,6 +894,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         input,
         "list_recipe_bank",
         (household, command) => household.listRecipeBank(command)
+      ),
+    listSavedRecipes: (input: HouseholdListSavedRecipesInput) =>
+      route(
+        HouseholdListSavedRecipesInputSchema,
+        input,
+        "list_saved_recipes",
+        (household, command) => household.listSavedRecipes(command)
       ),
     markMemberDepartureRepairRequired: (
       input: HouseholdMarkMemberDepartureRepairRequiredInput
@@ -879,6 +940,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         input,
         "mutate_person_profile",
         (household, command) => household.mutatePersonProfile(command)
+      ),
+    mutatePlanningContent: (input: HouseholdMutatePlanningContentInput) =>
+      route(
+        HouseholdMutatePlanningContentInputSchema,
+        input,
+        "mutate_planning_content",
+        (household, command) => household.mutatePlanningContent(command)
       ),
     observeEvidenceReference: (
       input: typeof HouseholdObserveEvidenceReferenceInputSchema.Encoded
@@ -927,6 +995,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
               household.prepareRecipeRecovery(encoded)
             )
           )
+      ),
+    proposeMealPlanRevision: (input: HouseholdDecideMealPlanInput) =>
+      route(
+        HouseholdDecideMealPlanInputSchema,
+        input,
+        "propose_meal_plan_revision",
+        (household, command) => household.proposeMealPlanRevision(command)
       ),
     readAcquisitionAttempts: (input: HouseholdReadAcquisitionAttemptsInput) =>
       route(
@@ -978,6 +1053,13 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         input,
         "read_person_profile",
         (household, command) => household.readPersonProfile(command)
+      ),
+    readPlanningContent: (input: HouseholdReadPlanningContentInput) =>
+      route(
+        HouseholdReadPlanningContentInputSchema,
+        input,
+        "read_planning_content",
+        (household, command) => household.readPlanningContent(command)
       ),
     readRecipe: (input: typeof HouseholdReadRecipeInputSchema.Type) =>
       route(
@@ -1049,12 +1131,12 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         "record_recipe_import_dispatch",
         (household, command) => household.recordRecipeImportDispatch(command)
       ),
-    rejectMealPlan: (input: HouseholdDecideMealPlanInput) =>
+    rejectMealPlanRevision: (input: HouseholdDecideMealPlanInput) =>
       route(
         HouseholdDecideMealPlanInputSchema,
         input,
-        "reject_meal_plan",
-        (household, command) => household.rejectMealPlan(command)
+        "reject_meal_plan_revision",
+        (household, command) => household.rejectMealPlanRevision(command)
       ),
     renameHouseholdPerson: (input: HouseholdRenamePersonInput) =>
       route(
@@ -1108,15 +1190,6 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         input,
         "start_member_departure",
         (household, command) => household.startMemberDeparture(command)
-      ),
-    swapMealPlanFromRecipeBank: (
-      input: HouseholdSwapMealPlanFromRecipeBankInput
-    ) =>
-      route(
-        HouseholdSwapMealPlanFromRecipeBankInputSchema,
-        input,
-        "swap_meal_plan_from_recipe_bank",
-        (household, command) => household.swapMealPlanFromRecipeBank(command)
       ),
     transitionRecipeImportLifecycle: (
       input: HouseholdTransitionRecipeImportLifecycleInput

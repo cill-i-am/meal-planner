@@ -1,6 +1,6 @@
 ---
 name: Meal Planner
-description: Calm family setup with a soft pastel glow and focused forms.
+description: Food-led account entry and calm family setup with focused forms.
 ---
 
 # Meal Planner design
@@ -9,7 +9,9 @@ description: Calm family setup with a soft pastel glow and focused forms.
 
 [Paper is the source of truth for the visual design](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0). Its Overview contains the current foundations, component states and responsive patterns; [Explorations](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-D-0) preserves earlier alternatives on one page. This document records the onboarding design reviewed on 21–22 September 2026. Check the relevant live screens, states, and tokens before adding or changing UI. The working rules are in [AGENTS.md](AGENTS.md).
 
-The application uses a white surface with a diffuse lilac, blue, rose, and peach gradient behind the upper content. Opaque white task cards, white fields, primary-colored underlined links, pastel avatars, and black pill buttons complete the theme. The framed card footer separates secondary navigation or supporting lists from the main task. Keep the task easy to scan. Brand details support the form without adding extra steps or explanatory copy.
+The [connected account entry](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-J-0) uses a white surface, ink type, Instrument Serif display headings and a food image on signup. Login and recovery keep the form centered and plain. Their [additional states](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-K-0) show validation, pending, rejected and recovery outcomes.
+
+The earlier family setup surfaces use a diffuse lilac, blue, rose, and peach gradient behind opaque white task cards. White fields, underlined links, pastel avatars, and black pill buttons complete that theme. A framed card footer separates secondary navigation or supporting lists from the main task. Keep each task easy to scan.
 
 shadcn remains the component foundation, using Base UI primitives and semantic tokens. Other libraries provide visual inspiration, not replacement component APIs. The current framed cards and subtle control depth draw from [coss UI references](.impeccable/reference/coss-ui/REFERENCES.md). The Meal Planner theme applies that direction to our shadcn components with Tailwind.
 
@@ -34,13 +36,13 @@ The [reference theme](.impeccable/reference/shadcn-theme.css) records the agreed
 | Separators | `border` | `oklch(0.935168 0.005355 286.294472)` |
 | Field and selected-segment boundary | `input` | `oklch(0.655904 0.011736 286.073499)` |
 
-Auth navigation uses Button’s link variant and inherits `primary`. Account-switch links live in the muted card footer, with an explicit gap after the prompt. Underline links and retain a 44px target. Signup has no duplicate header login action.
+Auth navigation uses Button’s link variant and inherits `primary`. Signup has one **Log in** link in its header; login has one **Create an account** link there. Recovery keeps **Back to log in** below the form. Account-switch links in setup live in the muted card footer, with an explicit gap after the prompt. Underline links and retain a 44px target.
 
 Use `foreground` on secondary and accent surfaces. Keep a visible input boundary; the light field fill alone does not identify the control clearly. Use error text as well as color. Avatar pastels identify people without implying status.
 
 ## Typography
 
-Use Inter with a system sans-serif fallback. Use regular text for content, medium text for action labels, and semibold text for headings. Headings use tight tracking (`-0.025em`).
+Use Inter with a system sans-serif fallback for controls and body text. Account entry uses Instrument Serif at regular weight for display headings; the other task headings remain semibold Inter. Display headings use tight tracking (`-0.025em`, or `-0.03em` for the large signup promise).
 
 The following sizes are the reviewed baseline. Sizes are font size / line height.
 
@@ -48,6 +50,8 @@ The following sizes are the reviewed baseline. Sizes are font size / line height
 | --- | --- | --- |
 | Routine task heading | 28px / 36px | 24px / 32px |
 | Welcome or completion emphasis, where shown in Paper | 48px / 52px | 32px / 36px |
+| Account entry heading | 57px / 59–60px | 50–53px / 52–54px |
+| Signup promise | 78px / 78px | 43px / 44px |
 | Body | 16px / 24px | 16px / 24px |
 | Input text | 14px / 20px | 16px / 24px |
 | Labels, actions, helpers, and errors | 14px / 20px | 14px / 20px |
@@ -56,9 +60,11 @@ Keep headings short and task-specific. Use **family** in product copy. Remove in
 
 ## Layout
 
-Signup is a standalone account-creation screen. Do not show an Account / Family / People progress stepper on signup, including validation states. This was agreed and applied to the desktop and mobile Paper screens on 21 September 2026.
+Signup is a standalone account-creation screen. Do not show an Account / Family / People progress stepper on signup, including validation states. Desktop places the food promise and circular image beside a 400px form, separated by a fine line. At 390px the promise and a small image sit above the fields. The lilac annotation belongs to the desktop composition.
 
-Onboarding uses a centered task card with left-aligned content and one primary action. Auth, invitations and recovery use a 480px desktop card; dense family and people screens use 560px. Desktop padding is 40px. At 390px, the card has 16px outside gutters; auth uses 24px inner padding and dense setup uses 16px. Reduce auth padding to 16px below 360px. Width stays fluid and long content scrolls in the document.
+Login and recovery use a centered 400px form without a card. Their mobile layout has 24px outside gutters. Entry controls are 48px high, and the document grows for field errors, text enlargement and small screens.
+
+Family setup and invitations use centered task cards with left-aligned content and one primary action. Invitation cards are 480px on desktop; dense family and people screens use 560px. Desktop card padding is 40px. At 390px, cards have 16px outside gutters; dense setup uses 16px inner padding.
 
 The white application surface fills the browser viewport on desktop and mobile. Sky wallpaper, outer window framing, and phone status bars belong to the mockup presentation. The reference breakpoint is 768px. The main spacing steps are 8px, 10px, 12px, 16px, 20px, and 24px. Group each label, control, and helper; use larger gaps between tasks and sections.
 
@@ -66,7 +72,7 @@ Keep form actions before supporting lists on long mobile screens. Let the layout
 
 ## Elevation and motion
 
-Use the diffuse pastel gradient and fine separators to establish depth within the white application surface. The gradient fades to white around its edges and below the upper content. Place the task on an opaque white card so the gradient stays outside the controls. Compose shadcn Card with a rounded primary-content surface and CardFooter when secondary navigation or supporting people lists exist. A single-action state needs no empty footer. Use the three-layer neutral `shadow-surface` token for the card edge and elevation, following the [better-ui polish review](.impeccable/better-ui-review-2026-09-21.md). Retain the structural footer divider and avoid nested elevated person rows. Selected segments keep their visible boundary. Focus and validation halos communicate interaction state rather than decoration.
+The account entry screens stay white and flat, so the serif heading, food image and form carry the hierarchy. Setup uses the diffuse pastel gradient and fine separators for depth. The gradient fades to white around its edges and below the upper content. Place setup tasks on opaque white cards so the gradient stays outside controls. Compose shadcn Card with a rounded primary-content surface and CardFooter when secondary navigation or supporting people lists exist. A single-action state needs no empty footer. Use the three-layer neutral `shadow-surface` token for the card edge and elevation, following the [better-ui polish review](.impeccable/better-ui-review-2026-09-21.md). Retain the structural footer divider and avoid nested elevated person rows. Selected segments keep their visible boundary. Focus and validation halos communicate interaction state rather than decoration.
 
 Primary and destructive buttons use a 1px white inset highlight and a small lower shadow. Secondary buttons use a lighter highlight; outline variants use a subtle lower edge. Pressed and disabled buttons lose external elevation. Ghost buttons, inline links and repeated row actions stay flat. Inputs use a barely tinted `control` surface (30% muted mixed into the background), a visible `input` edge and a shallow inset shadow (0px 2px 4px, foreground at 8%). This makes editable fields feel recessed into the card. Focus, invalid and disabled states remove decorative inset depth; input groups own the shadow around the whole control. Keep focus and invalid borders stronger than decorative depth. Implement all styling with Tailwind utilities and semantic tokens.
 
@@ -74,7 +80,7 @@ Shared buttons press to scale 0.96 over 150ms with ease-out. Links default to st
 
 Pending actions keep the shadcn Button and use [loading.dev’s Ring](https://loading.dev/spinners/ring) beside a specific progress label. Ring inherits the button’s foreground colour, so primary, outline and destructive actions stay consistent. Reserve space for the pending content before submission to prevent width changes; disable repeat activation, announce the progress label and keep the indicator decorative. Ring becomes static with reduced motion. Use the pending treatment only for the action actually running; other disabled actions retain their normal disabled appearance.
 
-Navigation between login, signup and reset-unavailable uses a shared card view transition. Keep the card surface opaque and interpolate its bounds over 300ms with ease-out. Heading, fields and footer fade out over 100ms, then fade in over 200ms; keep text at its natural size. Header and gradient do not join the route animation. Direct loads, validation and navigation outside these auth routes do not animate. Reduced motion and browsers without typed view transitions use ordinary navigation. See the [motion review](.impeccable/auth-view-transitions.md) for the design rationale and verification boundary.
+Navigation between login, signup and reset-unavailable uses a shared form view transition. Interpolate the form bounds over 300ms with ease-out. The heading fades with the form; keep text at its natural size. The header does not join the route animation. Direct loads, validation and navigation outside these auth routes do not animate. Reduced motion and browsers without typed view transitions use ordinary navigation. See the [motion review](.impeccable/auth-view-transitions.md) for the design rationale and verification boundary.
 
 Paper shows the static gradient. The [motion study](.impeccable/reference/onboarding-motion.html) demonstrates a 42-second alternating drift with at most 1.5% translation and 2.5% scale. Animate only the decorative layer; keep content and controls still. Pause while a field is focused, when the page is hidden, or when the surface is offscreen. Reduced motion keeps the full static gradient. The [motion reference](.impeccable/reference/onboarding-motion.md) records the Ceird source and implementation boundary.
 
@@ -82,7 +88,7 @@ The live Paper Overview component reference shows default, focus, invalid, disab
 
 ## Shapes
 
-Task cards use a 16px outer radius. The body shares that radius where it meets the outer surface without an inset. Primary actions use a pill radius. Fields and the segmented track use a 12px radius; segments use 9.6px. The reference theme also defines a 7.2px small radius. Main inputs, buttons, and segments are 44px high. The segmented track is 52px high, including padding.
+Task cards use a 16px outer radius. The body shares that radius where it meets the outer surface without an inset. Primary actions use a pill radius. Fields and the segmented track use a 12px radius; segments use 9.6px. The reference theme also defines a 7.2px small radius. Account entry inputs and primary buttons are 48px high; the other main controls are 44px high. The segmented track is 52px high, including padding.
 
 Give secondary actions such as the password eye toggle, **Edit**, and **Log out** a minimum 44px target without increasing their visible text. Single-selection choices use a segmented control.
 
@@ -114,7 +120,7 @@ Password visibility also plays a quiet, 20ms activation click, inspired by the [
 
 ## Components
 
-Use shadcn Button, Input, InputGroup, Textarea, Card, Field, FieldLabel, FieldDescription, FieldError, Alert, Avatar, Separator and ToggleGroup as applicable. Card composition uses CardHeader, CardTitle, CardContent and CardFooter. The local CardBody groups the white primary surface above the secondary footer. Keep TanStack Form and Effect Schema as the form state and validation owners. The [earlier shadcn registry references](.impeccable/reference/shadcn-base-nova/SOURCES.md) remain historical source material.
+Use shadcn Button, Input, InputGroup, Textarea, Card, Field, FieldLabel, FieldDescription, FieldError, Alert, Avatar, Separator and ToggleGroup as applicable. Account entry composes the existing fields and buttons in `form.Frame`’s plain presentation. Setup Card composition uses CardHeader, CardTitle, CardContent and CardFooter; the local CardBody groups the white primary surface above the secondary footer. Keep TanStack Form and Effect Schema as the form state and validation owners. The [earlier shadcn registry references](.impeccable/reference/shadcn-base-nova/SOURCES.md) remain historical source material.
 
 Keep labels visible, place helper and error text beside the relevant field, and use one clear primary action. Controls support keyboard use with visible focus. Selected, focused, invalid, and disabled states remain visually distinct.
 

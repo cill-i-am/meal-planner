@@ -28,11 +28,9 @@ import {
 import { Link } from "@tanstack/react-router";
 import { Schema } from "effect";
 import { useEffect, useMemo } from "react";
-import type { ReactNode } from "react";
 
 import { Alert } from "../../components/ui/alert.js";
 import { Badge } from "../../components/ui/badge.js";
-import { Button } from "../../components/ui/button.js";
 import { Input } from "../../components/ui/input.js";
 import { Label } from "../../components/ui/label.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
@@ -644,24 +642,16 @@ const SavedRecipeStatus = ({
 };
 
 // eslint-disable-next-line complexity -- Keep query state and its rendering together instead of a forwarding component.
-export const RecipeImportPage = ({
-  householdDomainStatus,
+export const RecipeImportWorkspace = ({
   householdId,
-  householdName,
-  householdPeople,
   initialIntentId,
   makeRequestId = () => crypto.randomUUID(),
-  onSignOut,
   operations,
   pollIntervalMs = 650,
 }: {
-  readonly householdDomainStatus?: ReactNode;
   readonly householdId: string;
-  readonly householdName: string;
-  readonly householdPeople?: ReactNode;
   readonly initialIntentId?: RecipeImportIntentId;
   readonly makeRequestId?: () => string;
-  readonly onSignOut: () => Promise<void>;
   readonly operations: RecipeImportOperations;
   readonly pollIntervalMs?: number;
 }) => {
@@ -787,89 +777,70 @@ export const RecipeImportPage = ({
   const recipe = recipeQuery.data;
 
   return (
-    <main className="app-shell">
-      <header className="topbar">
-        <span className="wordmark">Meal Planner</span>
-        <div className="session-control">
-          {householdDomainStatus}
-          <span className="active-household">{householdName}</span>
-          <Button
-            onClick={() => {
-              void onSignOut();
-            }}
-            type="button"
-          >
-            Log out
-          </Button>
-        </div>
-      </header>
-
-      <div className="workspace">
-        <section className="reading-area" aria-labelledby="page-title">
-          <div className="intro">
-            <p className="eyebrow">Recipe import</p>
-            <h1 id="page-title">Import a recipe</h1>
-            <p className="lede">
-              Paste one public TikTok recipe or video link. We’ll prepare it for
-              your confirmation before it is saved.
-            </p>
-          </div>
-
-          <ImportRecipeForm
-            isPending={createMutation.isPending}
-            submit={(sourceUrl) =>
-              createMutation.mutate({
-                idempotencyKey: idempotencyKey(makeRequestId),
-                request: { source: { kind: "tiktok", url: sourceUrl } },
-              })
-            }
-          />
-
-          <Separator />
-
-          <div aria-live="polite" className="flow-region">
-            <ProcessingStatus
-              cancel={cancelMutation.mutate}
-              intent={intent}
-              isCancelling={cancelMutation.isPending}
-              isCreating={createMutation.isPending}
-              makeRequestId={makeRequestId}
-            />
-            {hasRequestFailure ? (
-              <Alert>
-                <h2>This import couldn’t be completed</h2>
-                <p>Please try again later.</p>
-              </Alert>
-            ) : null}
-            <IntentOutcome intent={intent} />
-            {intent?.status === "requires_action" &&
-            action === undefined &&
-            !actionQuery.isError ? (
-              <section aria-label="Loading recipe review">
-                <Skeleton variant="title" />
-                <Skeleton variant="line" />
-              </section>
-            ) : null}
-            {intent?.status === "requires_action" &&
-            action?.status === "active" ? (
-              <RecipeReview
-                action={action}
-                answer={answerMutation.mutate}
-                confirm={confirmMutation.mutate}
-                isAnswering={answerMutation.isPending}
-                isConfirming={confirmMutation.isPending}
-                makeRequestId={makeRequestId}
-              />
-            ) : null}
-            <SavedRecipeStatus
-              hasRecipeError={recipeQuery.isError}
-              intent={intent}
-              recipe={recipe}
-            />
-          </div>
-        </section>
-        {householdPeople}
+    <section
+      className="mx-auto w-full max-w-3xl px-5 py-8 md:px-10 md:py-12"
+      aria-labelledby="page-title"
+    >
+      <div className="intro">
+        <p className="eyebrow">Recipe import</p>
+        <h1 id="page-title">Import a recipe</h1>
+        <p className="lede">
+          Paste one public TikTok recipe or video link. We’ll prepare it for
+          your confirmation before it is saved.
+        </p>
       </div>
-    </main>
+
+      <ImportRecipeForm
+        isPending={createMutation.isPending}
+        submit={(sourceUrl) =>
+          createMutation.mutate({
+            idempotencyKey: idempotencyKey(makeRequestId),
+            request: { source: { kind: "tiktok", url: sourceUrl } },
+          })
+        }
+      />
+
+      <Separator />
+
+      <div aria-live="polite" className="flow-region">
+        <ProcessingStatus
+          cancel={cancelMutation.mutate}
+          intent={intent}
+          isCancelling={cancelMutation.isPending}
+          isCreating={createMutation.isPending}
+          makeRequestId={makeRequestId}
+        />
+        {hasRequestFailure ? (
+          <Alert>
+            <h2>This import couldn’t be completed</h2>
+            <p>Please try again later.</p>
+          </Alert>
+        ) : null}
+        <IntentOutcome intent={intent} />
+        {intent?.status === "requires_action" &&
+        action === undefined &&
+        !actionQuery.isError ? (
+          <section aria-label="Loading recipe review">
+            <Skeleton variant="title" />
+            <Skeleton variant="line" />
+          </section>
+        ) : null}
+        {intent?.status === "requires_action" && action?.status === "active" ? (
+          <RecipeReview
+            action={action}
+            answer={answerMutation.mutate}
+            confirm={confirmMutation.mutate}
+            isAnswering={answerMutation.isPending}
+            isConfirming={confirmMutation.isPending}
+            makeRequestId={makeRequestId}
+          />
+        ) : null}
+        <SavedRecipeStatus
+          hasRecipeError={recipeQuery.isError}
+          intent={intent}
+          recipe={recipe}
+        />
+      </div>
+    </section>
   );
 };

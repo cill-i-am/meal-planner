@@ -1,75 +1,67 @@
 import {
-  ManualMealSwapRequest,
-  MealPlanDecisionRequest,
-  MealPlanDraftId,
+  ChangeMealPlanPayload,
+  DecideMealPlanPayload,
+  MealPlanId,
+  MealPlanInstant,
   MealPlanMutationId,
-  MealPlanRecipeSnapshot,
-  MealPlanSlotId,
 } from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
 import {
-  admitManualMealSwap,
+  admitMealPlanChange,
   admitMealPlanDecision,
 } from "./household-meal-plan-admission.js";
-import {
-  HouseholdManualMealSwapCommand,
-  HouseholdMealPlanDecisionCommand,
-} from "./household-meal-plan.contract.js";
-import { HouseholdMemberAdmission } from "./rpc/command-envelope.js";
+import { HouseholdPeopleMemberAdmission } from "./rpc/command-envelope.js";
 
 const actorId = "a".repeat(64);
-const admission = Schema.decodeUnknownSync(HouseholdMemberAdmission)({
-  actor: { _tag: "Member", actorId },
+const admission = Schema.decodeUnknownSync(HouseholdPeopleMemberAdmission)({
+  actor: { _tag: "PeopleMember", actorId, linkageSubject: "b".repeat(64) },
   organizationId: "organization-a",
 });
-const draftId = Schema.decodeUnknownSync(MealPlanDraftId)("draft-a");
+const planId = Schema.decodeUnknownSync(MealPlanId)("plan-a");
 const mutationId = Schema.decodeUnknownSync(MealPlanMutationId)("mutation-a");
 
 describe("household meal-plan admission", () => {
-  it("binds decision audit identity and time to object-provided authority", async () => {
-    const command = Schema.decodeUnknownSync(HouseholdMealPlanDecisionCommand)({
-      draftId,
+  it("binds plan audit identity and time to the admitted adult", async () => {
+    const payload = Schema.decodeUnknownSync(DecideMealPlanPayload)({
       expectedRevision: 1,
       mutationId,
-      reason: "Approved by the admitted household member.",
+      reason: "Approve the reviewed plan.",
     });
     const result = await Effect.runPromise(
       Effect.gen(function* admitAtDeterministicTime() {
         yield* TestClock.setTime(Date.parse("2026-08-22T09:30:00.000Z"));
-        return yield* admitMealPlanDecision(admission, command);
+        return yield* admitMealPlanDecision(admission, planId, payload);
       }).pipe(Effect.provide(TestClock.layer()))
     );
-
-    expect(Schema.encodeSync(MealPlanDecisionRequest)(result)).toMatchObject({
+    expect(result).toMatchObject({
       actorId,
-      decidedAt: "2026-08-22T09:30:00.000Z",
+      planId,
     });
+    expect(Schema.encodeSync(MealPlanInstant)(result.at)).toBe(
+      "2026-08-22T09:30:00.000Z"
+    );
   });
 
-  it("binds swap audit identity and time to object-provided authority", async () => {
-    const command = Schema.decodeUnknownSync(HouseholdManualMealSwapCommand)({
-      draftId,
+  it("binds a proposed change to the admitted adult", async () => {
+    const payload = Schema.decodeUnknownSync(ChangeMealPlanPayload)({
+      change: { _tag: "RefreshInputs" },
       expectedRevision: 1,
       mutationId,
-      reason: "Use the approved household alternative.",
-      replacementImportId: Schema.decodeUnknownSync(
-        MealPlanRecipeSnapshot.fields.importId
-      )("52d88ef9-2a18-4cfc-9020-7f872020ed39"),
-      slotId: Schema.decodeUnknownSync(MealPlanSlotId)("dinner-a"),
+      reason: "Refresh saved family inputs.",
     });
     const result = await Effect.runPromise(
       Effect.gen(function* admitAtDeterministicTime() {
         yield* TestClock.setTime(Date.parse("2026-08-22T09:31:00.000Z"));
-        return yield* admitManualMealSwap(admission, command);
+        return yield* admitMealPlanChange(admission, planId, payload);
       }).pipe(Effect.provide(TestClock.layer()))
     );
-
-    expect(Schema.encodeSync(ManualMealSwapRequest)(result)).toMatchObject({
+    expect(result).toMatchObject({
       actorId,
-      swappedAt: "2026-08-22T09:31:00.000Z",
+      change: { _tag: "RefreshInputs" },
+      planId,
     });
   });
 });

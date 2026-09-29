@@ -7,6 +7,8 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
+export { householdPlanningContentVersions } from "./meal-content/household-meal-content.database-schema.js";
+
 export const householdMeta = sqliteTable("household_meta", {
   createdAtEpochMs: integer("created_at_epoch_ms").notNull(),
   organizationId: text("organization_id").notNull().unique(),

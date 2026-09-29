@@ -29,6 +29,7 @@ import { ProviderAccountingService } from "../provider-accounting/provider-accou
 import {
   RecipeImportHouseholdDomain,
   makeRecipeImportHttpApiLayer,
+  makeRecipeReadHttpApiLayer,
   makeRecipeImportWorkerHttpLayer,
 } from "./import-intent-api.http.js";
 import { ProviderRecoveryService } from "./import-provider-recovery.js";
@@ -197,6 +198,7 @@ interface MakeAppOptions {
     Record<keyof HouseholdDomainWorkerMethods, unknown>
   >;
   readonly operationalRoutes?: readonly AnyHttpRoute[];
+  readonly readOnly?: boolean;
   readonly workflowDispatcher?: RecipeImportWorkflowDispatcherService;
 }
 
@@ -273,12 +275,17 @@ const makeApp = async (options: MakeAppOptions = {}) => {
       ProviderRecoveryService.of({ recover: unused })
     )
   );
-  const apiLayer =
-    options.operationalRoutes === undefined
-      ? makeRecipeImportHttpApiLayer()
-      : makeRecipeImportWorkerHttpLayer({
-          operationalRoutes: options.operationalRoutes,
-        });
+  const apiLayer = (() => {
+    if (options.readOnly) {
+      return makeRecipeReadHttpApiLayer();
+    }
+    if (options.operationalRoutes !== undefined) {
+      return makeRecipeImportWorkerHttpLayer({
+        operationalRoutes: options.operationalRoutes,
+      });
+    }
+    return makeRecipeImportHttpApiLayer();
+  })();
   return HttpRouter.toWebHandler(
     apiLayer.pipe(Layer.provide(services), HttpRouter.provideRequest(services)),
     { disableLogger: true }
@@ -301,6 +308,52 @@ describe("recipe import HttpApi boundary", () => {
 
   afterAll(async () => {
     await Promise.all(apps.map(({ dispose }) => dispose()));
+  });
+
+  it("serves canonical recipe detail without mounting import writes", async () => {
+    let admitted = false;
+    const app = await makeApp({
+      household: {
+        admitRecipeImport: () => {
+          admitted = true;
+          return Effect.succeed({
+            dispatchId: "unexpected",
+            intent: processingIntentWire,
+            workflowIdentity: `import-acquisition:v1:${"a".repeat(64)}`,
+          });
+        },
+        readRecipe: () => Effect.succeed(recipeWire),
+      },
+      readOnly: true,
+    });
+    apps.push(app);
+
+    const read = await app.handler(
+      new Request(`https://meal-planner.test/v1/recipes/${recipeId}`, {
+        headers: { cookie: "better-auth.session_token=test-session" },
+      })
+    );
+    expect(read.status).toBe(200);
+    expect(Schema.decodeUnknownSync(Recipe)(await read.json())).toEqual(recipe);
+
+    const write = await app.handler(
+      new Request("https://meal-planner.test/v1/recipe-import-intents", {
+        body: JSON.stringify({
+          source: {
+            kind: "tiktok",
+            url: "https://www.tiktok.com/@test/video/123",
+          },
+        }),
+        headers: {
+          "content-type": "application/json",
+          cookie: "better-auth.session_token=test-session",
+          "idempotency-key": "no-local-import",
+        },
+        method: "POST",
+      })
+    );
+    expect(write.status).toBe(404);
+    expect(admitted).toBe(false);
   });
 
   it("authenticates before decoding a malformed payload", async () => {

@@ -1,6 +1,6 @@
 # Stage 4 — Add recipes and other meal options
 
-Status: proposed
+Status: active
 Owner: unassigned
 Depends on: [preceding capability](routines-and-fallbacks.md)
 
@@ -44,6 +44,23 @@ pins exact versions in a planning fixture.
   unresolved cases; and
 - [ ] food accepted for planning has enough information to calculate what needs buying.
 
+## Implementation status
+
+The current branch stores planning references to canonical saved recipes and
+distinct assembled, packaged, and external options. Yield and material
+quantities can remain explicitly unresolved. A reviewed shopping projection
+requires known yield and quantities before plan approval. Suitability reviews
+are pinned to the person profile and exact option version. Prepared portions
+record known units, remaining amount, reservations, and week-specific
+confirmation. Plan reservations are server-owned. A later week can use recorded
+stock only after an adult confirms the remaining amount and the earlier
+reserved occasions have passed. Approval checks each prepared portion's exact
+source option against the recipient's current food profile. An adult can record
+stock with an unknown source, but must link it to a saved option before it can
+cover a plan; a person with hard constraints also needs a compatible review for
+that option. Plan versions pin the source, exact option display, and reviewed
+shopping data used at approval. Recipe editing, forks, scaling rules,
+and the full shopping list remain open in the acceptance list above.
 
 ## Remaining acquisition decisions
 

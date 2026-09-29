@@ -15,6 +15,15 @@ Open `/login`, or follow an authenticated route while signed out. Select
 `/reset-password?token=…`. Opening `/reset-password` without a token shows
 **This reset link is no longer valid** and **Request a new link**.
 
+Signup introduces the family journey with a food image and the account form. On
+desktop the story sits beside the form; on mobile it becomes a short header above
+the fields. Login and recovery use centered, plain forms. The [connected entry
+design](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-J-0)
+shows the default screens; the [implementation states](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-K-0)
+show validation, rejected and pending login, reset confirmation, invalid links,
+and new-password entry. The Paper boards are design references, not evidence of
+runtime behavior.
+
 Setup exposes **Log out**. An invitation exposes **Switch account**, preserving
 that invitation as the return destination. A valid `redirect` search value carries
 a local destination; external origins and auth-page loops are rejected.
@@ -45,7 +54,7 @@ Use the [cross-feature journey](journeys.md) for the whole isolation check.
 
 The reset form is implemented. Production auth supplies React Email content to
 the Cloudflare send binding after the delivery gate is enabled. The generic
-success screen still cannot demonstrate inbox delivery. Test valid-token behavior only with an authorized test-mail
+**Check your email** screen still cannot demonstrate inbox delivery. Test valid-token behavior only with an authorized test-mail
 capture or known test fixture; do not print tokens. Missing mailbox access is a
 missing prerequisite, not a passing delivery check.
 

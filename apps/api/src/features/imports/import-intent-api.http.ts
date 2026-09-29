@@ -9,6 +9,7 @@ import {
   Recipe,
   RecipeImportBatch,
   RecipeImportApi,
+  RecipeReadApi,
   RecipeImportAction,
   RecipeImportCurrentPrincipal,
   RecipeImportDefectBoundary,
@@ -24,6 +25,7 @@ import {
   UnauthorizedProblemDetails,
   VersionConflictProblemDetails,
 } from "@meal-planner/recipe-import-api";
+import type { RecipeId } from "@meal-planner/recipe-import-api";
 import { absurd, Cause, Context, Effect, Layer, Schema } from "effect";
 import {
   HttpRouter,
@@ -507,22 +509,32 @@ const RecipeImportBatchHandlers = HttpApiBuilder.group(
       )
 );
 
+const getRecipe = ({
+  params,
+}: {
+  readonly params: { readonly recipeId: RecipeId };
+}) =>
+  Effect.gen(function* getCanonicalRecipe() {
+    const admission = yield* currentHouseholdAdmission;
+    const household = yield* RecipeImportHouseholdDomain;
+    return yield* household
+      .readRecipe({ admission, recipeId: params.recipeId })
+      .pipe(
+        Effect.mapError(mapRecipeReadFailure),
+        decodeHouseholdResult(Recipe)
+      );
+  });
+
 const RecipeHandlers = HttpApiBuilder.group(
   RecipeImportApi,
   "recipes",
-  (handlers) =>
-    handlers.handle("get", ({ params }) =>
-      Effect.gen(function* getRecipe() {
-        const admission = yield* currentHouseholdAdmission;
-        const household = yield* RecipeImportHouseholdDomain;
-        return yield* household
-          .readRecipe({ admission, recipeId: params.recipeId })
-          .pipe(
-            Effect.mapError(mapRecipeReadFailure),
-            decodeHouseholdResult(Recipe)
-          );
-      })
-    )
+  (handlers) => handlers.handle("get", getRecipe)
+);
+
+const RecipeReadHandlers = HttpApiBuilder.group(
+  RecipeReadApi,
+  "recipes",
+  (handlers) => handlers.handle("get", getRecipe)
 );
 
 const RecipeImportSessionAuthLive = Layer.effect(
@@ -599,6 +611,14 @@ export const makeRecipeImportHttpApiLayer = () =>
         RecipeHandlers
       )
     ),
+    Layer.provide(RecipeImportHttpMiddlewareLive),
+    Layer.provide(JsonHttpPlatformServices)
+  );
+
+/** Read the same saved recipe through its public contract without import writes. */
+export const makeRecipeReadHttpApiLayer = () =>
+  HttpApiBuilder.layer(RecipeReadApi).pipe(
+    Layer.provide(RecipeReadHandlers),
     Layer.provide(RecipeImportHttpMiddlewareLive),
     Layer.provide(JsonHttpPlatformServices)
   );

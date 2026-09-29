@@ -2,17 +2,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Schema } from "effect";
 
-import { AccountLayout } from "../../components/account-layout.js";
 import { useAppForm } from "../../components/forms/form.js";
 import { Alert, AlertDescription } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
-import {
-  CardBody,
-  CardHeader,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from "../../components/ui/card.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
 import {
@@ -21,6 +13,8 @@ import {
   AuthRequestError,
   authFeedback,
   useAuthRetry,
+  EntryFormSurface,
+  EntryLayout,
 } from "../auth/index.js";
 import { RecoveryCard } from "./recovery-card.js";
 import {
@@ -37,6 +31,7 @@ import {
 const LoginLink = ({ redirect }: { readonly redirect: string }) => (
   <Button
     variant="link"
+    className="h-11 px-0 text-sm"
     nativeButton={false}
     role="link"
     render={<Link to="/login" search={{ redirect }} />}
@@ -46,7 +41,7 @@ const LoginLink = ({ redirect }: { readonly redirect: string }) => (
 );
 const Feedback = ({ error }: { readonly error: Error | null }) =>
   error && (
-    <Alert variant="destructive">
+    <Alert variant="destructive" className="mt-4">
       <AlertDescription>
         {error instanceof AuthRequestError &&
         error.code === "RESET_PASSWORD_DISABLED"
@@ -109,6 +104,7 @@ export const RecoveryRequestPage = ({
         }
       >
         <Button
+          className="w-full"
           nativeButton={false}
           role="link"
           render={<Link to="/login" search={{ redirect }} />}
@@ -119,50 +115,61 @@ export const RecoveryRequestPage = ({
     );
   }
   return (
-    <AccountLayout>
-      <form.AppForm>
-        <form.Frame pending={request.isPending}>
-          <CardBody>
-            <CardHeader>
-              <form.Heading
-                errorTitle="Reset your password"
-                rejected={request.isError}
-              >
-                Reset your password
-              </form.Heading>
-              <CardDescription>
-                We’ll email you a link to reset your password.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form.AppField name="email">
-                {(field) => (
-                  <field.TextField
-                    id="recovery-email"
-                    label="Email"
-                    type="email"
-                    autoComplete="email"
-                    disabled={request.isPending}
-                  />
-                )}
-              </form.AppField>
-              <Feedback error={requestError} />
-              <PendingButton
-                type="submit"
-                disabled={waiting}
-                pending={request.isPending}
-                pendingLabel="Sending reset link…"
-              >
-                Send reset link
-              </PendingButton>
-            </CardContent>
-          </CardBody>
-          <CardFooter>
-            <LoginLink redirect={redirect} />
-          </CardFooter>
-        </form.Frame>
-      </form.AppForm>
-    </AccountLayout>
+    <EntryLayout>
+      <EntryFormSurface className="mx-auto pt-26 md:pt-31">
+        <form.AppForm>
+          <form.Frame
+            pending={request.isPending}
+            className="max-w-none"
+            variant="plain"
+          >
+            <div className="flex flex-col">
+              <div className="flex flex-col gap-6 pb-10">
+                <form.Heading
+                  errorTitle="Reset your password"
+                  rejected={request.isError}
+                  variant="plain"
+                  className="font-display text-entry-mobile tracking-entry md:text-entry-desktop font-normal motion-safe:[view-transition-name:auth-heading]"
+                >
+                  Let’s get you <br />
+                  back in.
+                </form.Heading>
+                <p className="text-muted-foreground text-sm leading-5.75">
+                  Enter your email and we’ll send a link
+                  <br className="hidden sm:block" /> to reset your password.
+                </p>
+              </div>
+              <div className="flex flex-col">
+                <form.AppField name="email">
+                  {(field) => (
+                    <field.TextField
+                      id="recovery-email"
+                      label="Email"
+                      type="email"
+                      autoComplete="email"
+                      disabled={request.isPending}
+                    />
+                  )}
+                </form.AppField>
+                <Feedback error={requestError} />
+                <PendingButton
+                  className="mt-12 w-full md:mt-8"
+                  type="submit"
+                  disabled={waiting}
+                  pending={request.isPending}
+                  pendingLabel="Sending reset link…"
+                >
+                  Send reset link
+                </PendingButton>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-center">
+              <LoginLink redirect={redirect} />
+            </div>
+          </form.Frame>
+        </form.AppForm>
+      </EntryFormSurface>
+    </EntryLayout>
   );
 };
 
@@ -230,6 +237,7 @@ export const ResetPasswordPage = ({
         description="You can now log in with your new password."
       >
         <Button
+          className="w-full"
           nativeButton={false}
           role="link"
           render={<Link to="/login" search={{ redirect }} />}
@@ -253,6 +261,7 @@ export const ResetPasswordPage = ({
         footer={<LoginLink redirect={redirect} />}
       >
         <Button
+          className="w-full"
           nativeButton={false}
           role="link"
           render={<Link to="/forgot-password" search={{ redirect }} />}
@@ -263,58 +272,67 @@ export const ResetPasswordPage = ({
     );
   }
   return (
-    <AccountLayout>
-      <form.AppForm>
-        <form.Frame pending={reset.isPending}>
-          <CardBody>
-            <CardHeader>
-              <form.Heading
-                errorTitle="Choose a new password"
-                rejected={reset.isError}
-              >
-                Choose a new password
-              </form.Heading>
-            </CardHeader>
-            <CardContent>
-              <FieldGroup>
-                <form.AppField name="password">
-                  {(field) => (
-                    <field.PasswordField
-                      id="reset-password"
-                      label="New password"
-                      autoComplete="new-password"
-                      description="At least 8 characters."
-                      disabled={reset.isPending}
-                    />
-                  )}
-                </form.AppField>
-                <form.AppField name="confirmation">
-                  {(field) => (
-                    <field.PasswordField
-                      id="reset-confirmation"
-                      label="Confirm new password"
-                      autoComplete="new-password"
-                      disabled={reset.isPending}
-                    />
-                  )}
-                </form.AppField>
-              </FieldGroup>
-              <Feedback error={resetError} />
-              <PendingButton
-                type="submit"
-                disabled={waiting}
-                pending={reset.isPending}
-                pendingLabel="Saving new password…"
-              >
-                Save new password
-              </PendingButton>
-            </CardContent>
-          </CardBody>
-          <CardFooter>
-            <LoginLink redirect={redirect} />
-          </CardFooter>
-        </form.Frame>
-      </form.AppForm>
-    </AccountLayout>
+    <EntryLayout>
+      <EntryFormSurface className="mx-auto pt-26 md:pt-31">
+        <form.AppForm>
+          <form.Frame
+            pending={reset.isPending}
+            className="max-w-none"
+            variant="plain"
+          >
+            <div className="flex flex-col">
+              <div className="pb-10">
+                <form.Heading
+                  errorTitle="Choose a new password"
+                  rejected={reset.isError}
+                  variant="plain"
+                  className="font-display text-entry-mobile tracking-entry md:text-entry-desktop font-normal motion-safe:[view-transition-name:auth-heading]"
+                >
+                  Choose a new password
+                </form.Heading>
+              </div>
+              <div className="flex flex-col">
+                <FieldGroup>
+                  <form.AppField name="password">
+                    {(field) => (
+                      <field.PasswordField
+                        id="reset-password"
+                        label="New password"
+                        autoComplete="new-password"
+                        description="At least 8 characters."
+                        disabled={reset.isPending}
+                      />
+                    )}
+                  </form.AppField>
+                  <form.AppField name="confirmation">
+                    {(field) => (
+                      <field.PasswordField
+                        id="reset-confirmation"
+                        label="Confirm new password"
+                        autoComplete="new-password"
+                        disabled={reset.isPending}
+                      />
+                    )}
+                  </form.AppField>
+                </FieldGroup>
+                <Feedback error={resetError} />
+                <PendingButton
+                  className="mt-8 w-full"
+                  type="submit"
+                  disabled={waiting}
+                  pending={reset.isPending}
+                  pendingLabel="Saving new password…"
+                >
+                  Save new password
+                </PendingButton>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-center">
+              <LoginLink redirect={redirect} />
+            </div>
+          </form.Frame>
+        </form.AppForm>
+      </EntryFormSurface>
+    </EntryLayout>
   );
 };

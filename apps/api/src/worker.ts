@@ -7,7 +7,12 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
+import {
+  handleAgentConversationChatRequest,
+  makeAgentConversationHttpLayer,
+} from "./agent-conversations.js";
 import { makeAuthFamilyHttpLayer } from "./auth-family.js";
+import { agentConversationBindings } from "./features/agent-conversations/conversation-binding.js";
 import { renderPasswordResetMail } from "./features/auth/auth-mail.js";
 import { makeAlchemyMealPlannerAuth } from "./features/auth/auth.alchemy.js";
 import * as authSchema from "./features/auth/auth.database-schema.js";
@@ -22,6 +27,8 @@ import {
   makeHouseholdDomainGateway,
   makeHouseholdMealPlanGateway,
   makeHouseholdMealPlanRequestLayer,
+  makeHouseholdPlanningContentGateway,
+  makeHouseholdPlanningContentRequestLayer,
   makeHouseholdInvitationRecipientVerifier,
   makeHouseholdRequestLayer,
 } from "./features/households/household-request-composition.js";
@@ -69,6 +76,8 @@ import { MealPlannerAuthDatabase } from "./infrastructure/meal-planner-auth-data
 import { ProviderAccountingDatabase } from "./infrastructure/provider-accounting-database.js";
 import { withCurrentRequestCancellation } from "./infrastructure/request-cancellation.js";
 
+export { AgentConversation } from "./features/agent-conversations/index.js";
+
 const MealPlannerOperationalRoutes = [
   ...HealthRoutes,
   ...ProviderAccountingRouteDefinitions,
@@ -82,6 +91,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
   "MealPlannerApi",
   {
     env: {
+      ...agentConversationBindings,
       PrivateOutputApi: PrivateOutputApiBinding,
       PrivateOutputMutations: PrivateOutputMutationsBinding,
     },
@@ -122,6 +132,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     const householdDomain = yield* Cloudflare.Workers.bindWorker(
       HouseholdDomainWorker
     );
+    const workerEnvironment = yield* Cloudflare.Workers.WorkerEnvironment;
+    const conversations = workerEnvironment["AgentConversation"];
     const emailBinding = yield* Cloudflare.Email.SendEmail(
       "MealPlannerTransactionalEmail",
       { allowedSenderAddresses: ["noreply@mail.ceird.app"] }
@@ -210,6 +222,35 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         if (new URL(webRequest.url).pathname.startsWith("/api/auth/")) {
           return yield* auth.fetchHttpEffect(webRequest);
         }
+        const authenticatedOrganizationResolver =
+          makeAuthenticatedOrganizationResolver({ auth });
+        const sendInvitationEmail = makeHouseholdInvitationMailer({
+          baseURL: requestOrigin,
+          database: authDatabase,
+          send: sendEmail,
+        });
+        const departureWorkflow = makeMemberDepartureWorkflowStarter(
+          memberDepartureWorkflow
+        );
+        const agentConversationOptions = {
+          auth,
+          conversations,
+          database: authDatabase,
+          departureWorkflow,
+          domain: householdDomain,
+          headers: webRequest.headers,
+          resolver: authenticatedOrganizationResolver,
+          sendInvitationEmail,
+        };
+        const agentChat = yield* handleAgentConversationChatRequest({
+          ...agentConversationOptions,
+          request: webRequest,
+        });
+        if (agentChat !== null) {
+          return HttpServerResponse.raw(agentChat, {
+            status: agentChat.status,
+          });
+        }
         const privateInterview = yield* handlePrivateInterviewRequest({
           auth,
           household: householdDomain,
@@ -223,8 +264,6 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           });
         }
         const trace = makeImportTraceContext();
-        const authenticatedOrganizationResolver =
-          makeAuthenticatedOrganizationResolver({ auth });
         const requestServices = makeImportWorkerRequestLayer({
           householdDomain,
           importWorkflowStarter: makeImportWorkflowStarter(
@@ -256,20 +295,21 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
             resolver: authenticatedOrganizationResolver,
           }
         );
+        const householdPlanningContentRequestLayer =
+          makeHouseholdPlanningContentRequestLayer({
+            gateway: makeHouseholdPlanningContentGateway({
+              domain: householdDomain,
+            }),
+            resolver: authenticatedOrganizationResolver,
+          });
         const authFamilyRoutes = makeAuthFamilyHttpLayer({
           auth,
           database: authDatabase,
-          departureWorkflow: makeMemberDepartureWorkflowStarter(
-            memberDepartureWorkflow
-          ),
+          departureWorkflow,
           domain: householdDomain,
           headers: webRequest.headers,
           resolver: authenticatedOrganizationResolver,
-          sendInvitationEmail: makeHouseholdInvitationMailer({
-            baseURL: requestOrigin,
-            database: authDatabase,
-            send: sendEmail,
-          }),
+          sendInvitationEmail,
         });
         const routeHandler = yield* HttpRouter.toHttpEffect(
           Layer.mergeAll(
@@ -278,6 +318,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
             makeRecipeImportHttpApiLayer(),
             householdRequestLayer,
             householdMealPlanRequestLayer,
+            householdPlanningContentRequestLayer,
+            makeAgentConversationHttpLayer(agentConversationOptions),
             makeRecipeImportNotFoundHttpLayer()
           ).pipe(
             Layer.provide(requestServices),

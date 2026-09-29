@@ -164,6 +164,7 @@ describe("household foundation structural boundaries", () => {
         "batches/household-import-batch.repository.ts",
         "evidence/household-evidence.repository.ts",
         "foundation/import-workflow-admission.repository.ts",
+        "meal-content/household-meal-content.repository.ts",
         "household-meal-plan.repository.ts",
         "people/household-people.repository.ts",
         "profiles/household-profile.repository.ts",

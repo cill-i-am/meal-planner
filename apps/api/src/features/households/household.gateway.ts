@@ -23,20 +23,26 @@ import type {
   RepairHouseholdAdultLinkPayload,
   RetryHouseholdAdultDeparturePayload,
   ReturnHouseholdAdultPayload,
-  CreateMealPlanPayload,
+  ChangeMealPlanPayload,
   DecideMealPlanPayload,
   HouseholdMealPlanPrincipal,
   HouseholdStatus,
   MealPlan,
-  MealPlanDraftId,
+  MealPlanId,
+  MealPlanSummary,
   MealPlanMutationConflict,
   MealPlanNotFound,
   MealPlanPersistenceFailure,
   MealPlanRequestConflict,
-  MealPlanSwapRejected,
+  MealPlanRuleViolation,
   MealPlanTransitionRejected,
   MealPlanVersionConflict,
-  SwapMealPlanPayload,
+  MealPlanRequest,
+  MutatePlanningContentPayload,
+  PlanningContentRejected,
+  PlanningContentSnapshot,
+  SavedRecipePage,
+  SavedRecipePageQuery,
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
 import type { Effect } from "effect";
@@ -60,58 +66,75 @@ export const HouseholdDomainGateway = Context.Service<HouseholdDomainGateway>(
   "meal-planner/HouseholdDomainGateway"
 );
 
-export type MealPlanCreateFailure =
-  | MealPlanPersistenceFailure
-  | MealPlanRequestConflict;
-
-export type MealPlanReadFailure = MealPlanNotFound | MealPlanPersistenceFailure;
-
-export type MealPlanDecisionFailure =
+export type HouseholdMealPlanFailure =
   | MealPlanMutationConflict
   | MealPlanNotFound
   | MealPlanPersistenceFailure
+  | MealPlanRequestConflict
+  | MealPlanRuleViolation
   | MealPlanTransitionRejected
   | MealPlanVersionConflict;
 
-export type MealPlanSwapFailure =
-  | MealPlanDecisionFailure
-  | MealPlanSwapRejected;
-
-export type HouseholdMealPlanFailure =
-  | MealPlanCreateFailure
-  | MealPlanDecisionFailure
-  | MealPlanReadFailure
-  | MealPlanSwapFailure;
-
 export interface HouseholdMealPlanGateway {
-  readonly approve: (input: {
-    readonly payload: DecideMealPlanPayload;
-    readonly principal: HouseholdMealPlanPrincipal;
-    readonly draftId: MealPlanDraftId;
-  }) => Effect.Effect<MealPlan, MealPlanDecisionFailure>;
   readonly create: (input: {
-    readonly payload: CreateMealPlanPayload;
-    readonly principal: HouseholdMealPlanPrincipal;
-  }) => Effect.Effect<MealPlan, MealPlanCreateFailure>;
+    readonly payload: MealPlanRequest;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<MealPlan, HouseholdMealPlanFailure>;
   readonly read: (input: {
-    readonly draftId: MealPlanDraftId;
-    readonly principal: HouseholdMealPlanPrincipal;
-  }) => Effect.Effect<MealPlan, MealPlanReadFailure>;
-  readonly reject: (input: {
+    readonly planId: MealPlanId;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<MealPlan, HouseholdMealPlanFailure>;
+  readonly list: (input: {
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<readonly MealPlanSummary[], HouseholdMealPlanFailure>;
+  readonly change: (input: {
+    readonly planId: MealPlanId;
+    readonly payload: ChangeMealPlanPayload;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<MealPlan, HouseholdMealPlanFailure>;
+  readonly approve: (input: {
+    readonly planId: MealPlanId;
     readonly payload: DecideMealPlanPayload;
-    readonly principal: HouseholdMealPlanPrincipal;
-    readonly draftId: MealPlanDraftId;
-  }) => Effect.Effect<MealPlan, MealPlanDecisionFailure>;
-  readonly swap: (input: {
-    readonly payload: SwapMealPlanPayload;
-    readonly principal: HouseholdMealPlanPrincipal;
-    readonly draftId: MealPlanDraftId;
-  }) => Effect.Effect<MealPlan, MealPlanSwapFailure>;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<MealPlan, HouseholdMealPlanFailure>;
+  readonly proposeRevision: (input: {
+    readonly planId: MealPlanId;
+    readonly payload: DecideMealPlanPayload;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<MealPlan, HouseholdMealPlanFailure>;
+  readonly acceptRevision: (input: {
+    readonly planId: MealPlanId;
+    readonly payload: DecideMealPlanPayload;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<MealPlan, HouseholdMealPlanFailure>;
+  readonly rejectRevision: (input: {
+    readonly planId: MealPlanId;
+    readonly payload: DecideMealPlanPayload;
+    readonly principal: HouseholdPeoplePrincipal;
+  }) => Effect.Effect<MealPlan, HouseholdMealPlanFailure>;
 }
 
 export const HouseholdMealPlanGateway =
   Context.Service<HouseholdMealPlanGateway>(
     "meal-planner/HouseholdMealPlanGateway"
+  );
+
+export interface HouseholdPlanningContentGateway {
+  readonly read: (
+    principal: HouseholdPeoplePrincipal
+  ) => Effect.Effect<PlanningContentSnapshot, PlanningContentRejected>;
+  readonly mutate: (input: {
+    readonly principal: HouseholdPeoplePrincipal;
+    readonly payload: MutatePlanningContentPayload;
+  }) => Effect.Effect<PlanningContentSnapshot, PlanningContentRejected>;
+  readonly listSavedRecipes: (input: {
+    readonly principal: HouseholdPeoplePrincipal;
+    readonly query: SavedRecipePageQuery;
+  }) => Effect.Effect<SavedRecipePage, PlanningContentRejected>;
+}
+export const HouseholdPlanningContentGateway =
+  Context.Service<HouseholdPlanningContentGateway>(
+    "meal-planner/HouseholdPlanningContentGateway"
   );
 
 /** The admitted member is not authorized to coordinate another adult. */

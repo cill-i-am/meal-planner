@@ -14,7 +14,7 @@ import { Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { RecipeImportOperations } from "./operations.js";
-import { RecipeImportPage } from "./recipe-import-page.js";
+import { RecipeImportWorkspace } from "./recipe-import-page.js";
 
 afterEach(cleanup);
 
@@ -129,7 +129,7 @@ const makeOperations = (
   ...overrides,
 });
 
-const renderPage = (operations: RecipeImportOperations, onSignOut = vi.fn()) =>
+const renderPage = (operations: RecipeImportOperations) =>
   render(
     <QueryClientProvider
       client={
@@ -138,28 +138,16 @@ const renderPage = (operations: RecipeImportOperations, onSignOut = vi.fn()) =>
         })
       }
     >
-      <RecipeImportPage
+      <RecipeImportWorkspace
         householdId="household-1"
-        householdName="Barron household"
         makeRequestId={() => "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
-        onSignOut={onSignOut}
         operations={operations}
         pollIntervalMs={60_000}
       />
     </QueryClientProvider>
   );
 
-describe("RecipeImportPage", () => {
-  it("shows the authenticated household and logs out", async () => {
-    const onSignOut = vi.fn(async () => {});
-    renderPage(makeOperations(), onSignOut);
-
-    expect(screen.getByText("Barron household")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Log out" }));
-
-    expect(onSignOut).toHaveBeenCalledOnce();
-  });
-
+describe("RecipeImportWorkspace", () => {
   it("submits a recipe import in the active household session", async () => {
     const create = vi.fn(
       async (_input: Parameters<RecipeImportOperations["create"]>[0]) =>

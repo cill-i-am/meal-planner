@@ -15,6 +15,7 @@ export { decodeAuthSearch } from "./auth-navigation.js";
 export { LoginPage, SignupPage } from "./auth-screens.js";
 export { deriveAuthBoundaryState } from "./auth-state.js";
 export { getAuthViewTransition } from "./auth-view-transition.js";
+export { EntryFormSurface, EntryLayout } from "./entry-layout.js";
 export {
   displayedIdentityHeaders,
   parseDisplayedIdentity,

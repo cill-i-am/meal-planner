@@ -1,0 +1,15 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "files": ["apps/web/src/styles.css"],
+        "createdAt": "2026-09-28T22:51:14.730Z",
+        "reason": "Agent: apps/web/DESIGN.md specifies Inter for body text and controls; approved connected-entry and family-edit Paper designs pair it with Instrument Serif display headings."
+      }
+    ]
+  }
+}

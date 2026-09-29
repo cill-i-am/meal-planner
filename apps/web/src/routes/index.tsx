@@ -1,9 +1,10 @@
-import type { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Navigate, useSearch } from "@tanstack/react-router";
 import { useMemo } from "react";
 
 import { StatusScreen } from "../components/status-screen.js";
+import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert.js";
+import { OurTastesPage } from "../features/agent-conversations/index.js";
 import { useApiRuntime } from "../features/api-client/index.js";
 import {
   AuthBoundary,
@@ -22,47 +23,102 @@ import type {
   DisplayedIdentity,
 } from "../features/auth/index.js";
 import { familyQuery } from "../features/family/index.js";
+import { FoodBookPage } from "../features/food-book/index.js";
+import { MealPlanningPage } from "../features/meal-planning/index.js";
 import {
-  HouseholdPeoplePanel,
-  makeBrowserHouseholdPeopleOperations,
-} from "../features/household-people/index.js";
+  WorkspaceShell,
+  FamilyDetails,
+  decodeWorkspaceSearch,
+  workspaceArea,
+} from "../features/meal-workspace/index.js";
+import type { WorkspaceSearch } from "../features/meal-workspace/index.js";
 import {
-  HouseholdProfilesPanel,
-  invalidateHouseholdProfiles,
-  makeBrowserHouseholdProfileOperations,
-} from "../features/household-profiles/index.js";
-import { makeBrowserHouseholdOperations } from "../features/households/browser-operations.js";
-import { HouseholdDomainStatus } from "../features/households/household-domain-status.js";
-import { PrivateInterviewsPanel } from "../features/private-interviews/private-interviews-panel.js";
-import { makeBrowserRecipeImportOperations } from "../features/recipe-import/browser-operations.js";
-import { decodeRecipeImportSearch } from "../features/recipe-import/navigation.js";
-import { RecipeImportPage } from "../features/recipe-import/recipe-import-page.js";
+  RecipeImportWorkspace,
+  makeBrowserRecipeImportOperations,
+} from "../features/recipe-import/index.js";
+
+const WorkspaceContent = ({
+  scope,
+  search,
+  currentMemberId,
+}: {
+  readonly scope: DisplayedIdentity;
+  readonly search: WorkspaceSearch;
+  readonly currentMemberId?: string;
+}) => {
+  const { organizationId, userId } = scope;
+  const recipes = useMemo(
+    () => makeBrowserRecipeImportOperations({ organizationId, userId }),
+    [organizationId, userId]
+  );
+  if (search.import === true || search.intentId !== undefined) {
+    return (
+      <RecipeImportWorkspace
+        householdId={organizationId}
+        operations={recipes}
+        {...(search.intentId === undefined
+          ? {}
+          : { initialIntentId: search.intentId })}
+      />
+    );
+  }
+  const area = workspaceArea(search);
+  switch (area) {
+    case "tastes": {
+      return <OurTastesPage scope={scope} />;
+    }
+    case "weeks": {
+      return <MealPlanningPage scope={scope} />;
+    }
+    case "food": {
+      return (
+        <FoodBookPage
+          scope={scope}
+          {...(search.recipeId === undefined
+            ? {}
+            : { initialRecipeId: search.recipeId })}
+        />
+      );
+    }
+    case "family": {
+      return (
+        <FamilyDetails
+          scope={scope}
+          {...(currentMemberId === undefined ? {} : { currentMemberId })}
+        />
+      );
+    }
+    default: {
+      const unreachable: never = area;
+      return unreachable;
+    }
+  }
+};
 
 const AuthenticatedMealPlanner = ({
   household,
+  households,
   scope,
-  intentId,
+  search,
   currentMemberId,
+  accountPending,
+  accountError,
+  onSelectFamily,
   onSignOut,
 }: {
   readonly household: HouseholdSummary;
+  readonly households: readonly HouseholdSummary[];
   readonly scope: DisplayedIdentity;
-  readonly intentId?: RecipeImportIntentId;
+  readonly search: WorkspaceSearch;
   readonly currentMemberId?: string;
-  readonly onSignOut: () => Promise<void>;
+  readonly accountPending: boolean;
+  readonly accountError: boolean;
+  readonly onSelectFamily: (id: string) => void;
+  readonly onSignOut: () => void;
 }) => {
-  const queryClient = useQueryClient();
-  const { userId, organizationId } = scope;
-  const family = useQuery(familyQuery(useApiRuntime(), userId, organizationId));
-  const clients = useMemo(() => {
-    const identity = { organizationId, userId };
-    return {
-      household: makeBrowserHouseholdOperations(identity),
-      people: makeBrowserHouseholdPeopleOperations(identity),
-      profiles: makeBrowserHouseholdProfileOperations(identity),
-      recipes: makeBrowserRecipeImportOperations(identity),
-    };
-  }, [userId, organizationId]);
+  const family = useQuery(
+    familyQuery(useApiRuntime(), scope.userId, scope.organizationId)
+  );
   if (family.isPending) {
     return <StatusScreen title="Loading your family…" />;
   }
@@ -78,54 +134,33 @@ const AuthenticatedMealPlanner = ({
     return <Navigate to="/setup" replace />;
   }
   return (
-    <RecipeImportPage
-      {...(intentId === undefined ? {} : { initialIntentId: intentId })}
-      householdId={household.id}
-      householdName={household.name}
-      householdDomainStatus={
-        <HouseholdDomainStatus
-          operations={clients.household}
-          organizationId={household.id}
-        />
-      }
-      householdPeople={
-        <>
-          <PrivateInterviewsPanel
-            accountId={userId}
-            householdId={household.id}
-            onConfirmationSettled={() => {
-              void invalidateHouseholdProfiles(queryClient, household.id);
-            }}
-          />
-          <HouseholdPeoplePanel
-            {...(currentMemberId === undefined ? {} : { currentMemberId })}
-            accountId={userId}
-            operations={clients.people}
-            organizationId={household.id}
-          />
-          <a
-            className="inline-flex min-h-11 items-center underline"
-            href="#household-profiles"
-          >
-            View and edit food profiles
-          </a>
-          <HouseholdProfilesPanel
-            accountId={userId}
-            operations={clients.profiles}
-            organizationId={household.id}
-            peopleOperations={clients.people}
-          />
-        </>
-      }
-      key={`${household.id}:${intentId ?? "new"}`}
+    <WorkspaceShell
+      area={workspaceArea(search)}
+      household={household}
+      households={households}
+      pending={accountPending}
+      onSelectFamily={onSelectFamily}
       onSignOut={onSignOut}
-      operations={clients.recipes}
-    />
+    >
+      {accountError ? (
+        <Alert>
+          <AlertTitle>Your account change couldn’t be confirmed</AlertTitle>
+          <AlertDescription>
+            Check your connection and try the account action again.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      <WorkspaceContent
+        scope={scope}
+        search={search}
+        {...(currentMemberId === undefined ? {} : { currentMemberId })}
+      />
+    </WorkspaceShell>
   );
 };
 
 const MealPlannerRoute = () => {
-  const { intentId } = useSearch({ from: "/" });
+  const search = useSearch({ from: "/" });
   const queryClient = useQueryClient();
   const authClient = useAuthClient();
   const session = useQuery(accountQuery(authClient));
@@ -135,6 +170,16 @@ const MealPlannerRoute = () => {
   const activeOrganization = useQuery(
     activeOrganizationQuery(authClient, session.data)
   );
+
+  const selectFamily = useMutation({
+    mutationFn: async (organizationId: string) => {
+      await requireAuthSuccess(
+        authClient.organization.setActive({ organizationId })
+      );
+      await queryClient.invalidateQueries();
+    },
+    retry: false,
+  });
 
   const signOut = async () => {
     await requireAuthSuccess(authClient.signOut());
@@ -147,6 +192,7 @@ const MealPlannerRoute = () => {
       activeOrganization.refetch(),
     ]);
   };
+  const logout = useMutation({ mutationFn: signOut, retry: false });
   const actions: AuthBoundaryActions = {
     retry: refreshAccount,
     signOut,
@@ -160,7 +206,7 @@ const MealPlannerRoute = () => {
 
   return (
     <AuthBoundary actions={actions} state={state}>
-      {(household, logout) => {
+      {(household) => {
         if (!session.data) {
           return null;
         }
@@ -176,9 +222,15 @@ const MealPlannerRoute = () => {
             <AuthenticatedMealPlanner
               household={household}
               scope={scope}
-              {...(intentId === undefined ? {} : { intentId })}
+              search={search}
+              households={
+                state.kind === "authenticated" ? state.households : []
+              }
+              accountPending={selectFamily.isPending || logout.isPending}
+              accountError={selectFamily.isError || logout.isError}
+              onSelectFamily={selectFamily.mutate}
               {...(currentMemberId === undefined ? {} : { currentMemberId })}
-              onSignOut={logout}
+              onSignOut={() => logout.mutate()}
             />
           </IdentityQueryBoundary>
         );
@@ -189,5 +241,5 @@ const MealPlannerRoute = () => {
 
 export const Route = createFileRoute("/")({
   component: MealPlannerRoute,
-  validateSearch: decodeRecipeImportSearch,
+  validateSearch: decodeWorkspaceSearch,
 });

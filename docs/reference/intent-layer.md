@@ -27,6 +27,7 @@ the nearest ancestor's instructions; do not assume a tool loaded sibling nodes.
 | Password recovery | [Browser recovery](../../apps/web/src/features/recovery/AGENTS.md) | Server auth above |
 | Browser/SSR API transport | [Web API runtime](../../apps/web/src/features/api-client/AGENTS.md) | Router composition and the web Worker entry |
 | Retrying a submitted request in memory | [Browser request recovery](../../apps/web/src/features/request-recovery/AGENTS.md) | The feature that submits it |
+| Agent proposals during setup or shared family planning | [Agent conversation boundary](agent-conversations.md) | Family and profile operations remain canonical; the [journey plan](../plans/ai-native-family-journey.md) tracks connected screens |
 
 ```mermaid
 flowchart TD

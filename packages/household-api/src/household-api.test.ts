@@ -18,7 +18,6 @@ describe("Household API protocol", () => {
   it("keeps organization selection out of the browser request", () => {
     const document = OpenApi.fromApi(HouseholdApi);
     const operation = document.paths["/v1/household"]?.get;
-
     expect(operation).toMatchObject({
       responses: {
         "200": expect.any(Object),
@@ -44,108 +43,71 @@ describe("Household API protocol", () => {
 });
 
 describe("Household meal-plan HTTP protocol", () => {
-  it("keeps internal actor attribution out of the public schema and generated client", () => {
+  it("generates typed list, creation, change, and decision methods", () => {
     type Client = HttpApiClient.ForApi<typeof HouseholdMealPlanApi>;
     type MealPlanClient = Client["mealPlans"];
     type CreateResponse = Effect.Success<ReturnType<MealPlanClient["create"]>>;
     type ReadResponse = Effect.Success<ReturnType<MealPlanClient["read"]>>;
-    type SwapResponse = Effect.Success<ReturnType<MealPlanClient["swap"]>>;
+    type ChangeResponse = Effect.Success<ReturnType<MealPlanClient["change"]>>;
     type ApproveResponse = Effect.Success<
       ReturnType<MealPlanClient["approve"]>
     >;
-    type RejectResponse = Effect.Success<ReturnType<MealPlanClient["reject"]>>;
-    type ApprovedResponse = Extract<
-      ReadResponse,
-      { readonly _tag: "Approved" }
+    type AcceptResponse = Effect.Success<
+      ReturnType<MealPlanClient["acceptRevision"]>
     >;
-
-    expectTypeOf<ReadResponse["audit"][number]>().not.toHaveProperty("actorId");
-    expectTypeOf<ApprovedResponse["decision"]>().not.toHaveProperty("actorId");
     expectTypeOf<CreateResponse>().toEqualTypeOf<HouseholdMealPlanResponse>();
     expectTypeOf<ReadResponse>().toEqualTypeOf<HouseholdMealPlanResponse>();
-    expectTypeOf<SwapResponse>().toEqualTypeOf<HouseholdMealPlanResponse>();
+    expectTypeOf<ChangeResponse>().toEqualTypeOf<HouseholdMealPlanResponse>();
     expectTypeOf<ApproveResponse>().toEqualTypeOf<HouseholdMealPlanResponse>();
-    expectTypeOf<RejectResponse>().toEqualTypeOf<HouseholdMealPlanResponse>();
+    expectTypeOf<AcceptResponse>().toEqualTypeOf<HouseholdMealPlanResponse>();
+    expectTypeOf<ReadResponse["audit"][number]>().not.toHaveProperty("actorId");
 
     const document = OpenApi.fromApi(HouseholdMealPlanApi);
+    expect(document.paths["/v1/meal-plans"]?.get).toBeDefined();
+    expect(
+      document.paths["/v1/meal-plans/{planId}/changes"]?.post
+    ).toBeDefined();
     expect(JSON.stringify(document)).not.toContain("actorId");
   });
 
-  it("projects internal swap and decision actors out of serialized responses", () => {
-    const recipe = {
-      approvedAt: "2026-08-19T12:00:00.000Z",
-      extractionFingerprint: "extraction-fingerprint",
-      importId: "a9f513cb-d1cc-4ae8-99fb-20113da1b83a",
-      recipe: {
-        ingredientLines: ["1 ingredient"],
-        instructions: ["Cook it."],
-        name: "Private Actor Test Recipe",
-      },
-      source: {
-        evidenceFingerprint: "evidence-fingerprint",
-        sourceUrl: null,
-      },
-      tags: {
-        cuisines: ["Mediterranean"],
-        dietaryFit: "household_match",
-        difficulty: "easy",
-        leftovers: "none",
-        mealTypes: ["dinner"],
-        totalTimeBand: "under_30_minutes",
-      },
-      version: 1,
-    } as const;
+  it("removes the internal actor digest from serialized plan responses", () => {
     const internal = Schema.decodeUnknownSync(MealPlan)({
-      _tag: "Approved",
+      _tag: "Draft",
       audit: [
         {
-          actorId: "better-auth-user-secret",
-          fromRecipe: recipe,
-          mutationId: "swap-1",
-          reason: "Use the household alternative.",
-          slotId: "monday-dinner",
-          swappedAt: "2026-08-19T12:30:00.000Z",
-          toRecipe: recipe,
+          action: "change_coverage",
+          actorId: "private_actor_digest",
+          at: "2026-09-28T10:00:00.000Z",
+          changedRequirements: [],
+          mutationId: "change_1",
+          reason: "Adult edit.",
         },
       ],
-      decision: {
-        actorId: "better-auth-user-secret",
-        decidedAt: "2026-08-19T12:45:00.000Z",
-        mutationId: "approve-1",
-        outcome: "approved",
-        reason: "The household approved this plan.",
-      },
-      draftId: "draft-week-1",
-      gaps: [],
-      meals: [],
-      policy: {
-        allowedDietaryFit: ["household_match"],
-        allowedDifficulties: ["easy"],
-        allowedTotalTimeBands: ["under_30_minutes"],
-        maxRecipeUses: 1,
-        preferredCuisines: ["Mediterranean"],
-        version: "policy-v1",
+      planId: "week_family_1",
+      proposed: {
+        cookEvents: [],
+        coverage: [],
+        number: 1,
+        pins: {
+          configVersion: 1,
+          content: [],
+          contentSnapshots: [],
+          people: [],
+          preparedSources: [],
+          routines: [],
+        },
       },
       request: {
-        requestKey: "week-1",
-        slots: [
-          {
-            date: "2026-08-24",
-            mealType: "dinner",
-            servings: 2,
-            slotId: "monday-dinner",
-          },
-        ],
+        requestKey: "week_family_1",
+        startDate: "2026-09-28",
+        weeks: 1,
       },
-      revision: 2,
+      revision: 1,
     });
-
     const encoded = Schema.encodeSync(HouseholdMealPlanResponse)(
       toHouseholdMealPlanResponse(internal)
     );
-
-    expect(encoded).not.toHaveProperty("audit.0.actorId");
-    expect(encoded).not.toHaveProperty("decision.actorId");
-    expect(JSON.stringify(encoded)).not.toContain("better-auth-user-secret");
+    expect(JSON.stringify(encoded)).not.toContain("private_actor_digest");
+    expect(encoded.audit[0]).not.toHaveProperty("actorId");
   });
 });

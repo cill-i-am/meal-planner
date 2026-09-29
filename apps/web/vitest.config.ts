@@ -5,8 +5,19 @@ import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  optimizeDeps: {
+    include: [
+      "@json-render/core",
+      "@json-render/react",
+      "@json-render/react/schema",
+      "@shadcn/react/message-scroller",
+    ],
+  },
   plugins: [react()],
-  resolve: { alias: { "@": fileURLToPath(new URL("src", import.meta.url)) } },
+  resolve: {
+    alias: { "@": fileURLToPath(new URL("src", import.meta.url)) },
+    dedupe: ["react", "react-dom"],
+  },
   test: {
     projects: [
       {

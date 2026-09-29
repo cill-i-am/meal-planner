@@ -12,6 +12,10 @@ import {
   privateOutputRuntimeWorker,
   privateOutputTestBindings,
 } from "../features/private-output/private-output-runtime.test-fixture.js";
+import {
+  agentConversationModelConfiguration,
+  agentConversationModelResponse,
+} from "./agent-conversation-model.test-fixture.js";
 import { bundleWorkerFixture } from "./native-worker.test-fixture.js";
 import {
   privateReviewModelConfiguration,
@@ -112,6 +116,15 @@ const runtime = new Miniflare({
         compatibilityFlags,
         env: {
           ...privateOutputTestBindings,
+          AGENT_CONVERSATION_CONFIG: {
+            type: "text",
+            value: agentConversationModelConfiguration,
+          },
+          AgentConversation: {
+            exportName: "AgentConversation",
+            type: "durable-object",
+            worker: "api",
+          },
           BASE_URL: { type: "text", value: baseURL },
           BETTER_AUTH_SECRET: {
             type: "text",
@@ -121,9 +134,18 @@ const runtime = new Miniflare({
           MealPlannerAuthDatabase: { id: "auth-family-e2e", type: "d1" },
           TEST_MAIL: { id: "auth-family-e2e-mail", type: "kv" },
         },
+        exports: {
+          AgentConversation: { storage: "sqlite", type: "durable-object" },
+        },
         manifest: api,
         name: "api",
         type: "worker",
+      },
+      dev: {
+        outboundService: {
+          handler: agentConversationModelResponse,
+          type: "fetcher",
+        },
       },
     },
     {

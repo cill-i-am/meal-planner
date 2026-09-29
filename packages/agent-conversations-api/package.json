@@ -1,0 +1,23 @@
+{
+  "name": "@meal-planner/agent-conversations-api",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@meal-planner/families": "workspace:*",
+    "@meal-planner/household-api": "workspace:*",
+    "@meal-planner/recipe-import-api": "workspace:*",
+    "effect": "4.0.0-rc.112"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "vitest": "4.1.11"
+  }
+}
