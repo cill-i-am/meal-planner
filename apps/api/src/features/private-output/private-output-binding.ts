@@ -41,9 +41,7 @@ export class PrivateOutputWorker extends Cloudflare.Worker<PrivateOutputWorker>(
             "PrivateInterviewSession"
           ),
       },
-      main: Effect.sync(
-        () => new URL("private-output-worker.ts", import.meta.url).href
-      ),
+      main: new URL("private-output-worker.ts", import.meta.url).href,
       observability: { enabled: false },
       workersDev: false,
     };

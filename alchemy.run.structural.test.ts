@@ -43,10 +43,16 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
   it("keeps the Worker identity stable, private, and preserves its optional URL output", () => {
     const stackSource = readRepoFile("./alchemy.run.ts");
     const workerSource = readRepoFile("./apps/api/src/worker.ts");
+    const privateOutputBindingSource = readRepoFile(
+      "./apps/api/src/features/private-output/private-output-binding.ts"
+    );
 
     expect(workerSource).toContain('"MealPlannerApi"');
     expect(workerSource).toContain(
       'main: new URL("worker-entry.ts", import.meta.url).href'
+    );
+    expect(privateOutputBindingSource).toContain(
+      'main: new URL("private-output-worker.ts", import.meta.url).href'
     );
     const workerEntrySource = readRepoFile("./apps/api/src/worker-entry.ts");
     expect(workerEntrySource).toContain(

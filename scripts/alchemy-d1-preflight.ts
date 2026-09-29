@@ -99,6 +99,7 @@ export interface D1Reader {
   readonly accountId: string;
   readonly read: (path: string, sql?: LedgerQuery) => Promise<unknown>;
   readonly readState: (stage: string) => Promise<readonly unknown[]>;
+  readonly readResumeState: (stage: string) => Promise<unknown>;
   readonly readFreshState: (stage: string) => Promise<unknown>;
 }
 
@@ -572,41 +573,33 @@ const executorStateSchema = z.object({
   status: z.enum(["created", "updated", "updating"]),
 });
 
-export const inspectD1Target = async (
+const resumedDatabaseStateSchema = executorStateSchema.extend({
+  instanceId: z.string().regex(/^[a-f0-9]{32}$/u),
+  old: z.never().optional(),
+  status: z.literal("created"),
+});
+const resumedWorkerStateSchema = z.object({
+  attr: z.object({
+    accountId: account,
+    tags: z.array(z.string()),
+    workerId: z.string().regex(/^[a-f0-9]{32}$/u),
+    workerName: identifier,
+  }),
+  fqn: z.literal("MealPlannerApi"),
+  instanceId: z.string().regex(/^[a-f0-9]{32}$/u),
+  logicalId: z.literal("MealPlannerApi"),
+  old: z.never().optional(),
+  providerMode: z.literal("live").optional(),
+  resourceType: z.literal("Cloudflare.Worker"),
+  status: z.literal("creating"),
+});
+
+/** Resume only this interrupted first deploy, with no replacement or adoption. */
+const inspectLedgers = async (
   reader: D1Reader,
   target: D1Target,
   local: Readonly<Record<Resource, readonly LocalMigration[]>>
 ) => {
-  if (reader.accountId !== target.accountId) {
-    throw new Error("Resolved Cloudflare account differs from D1 target");
-  }
-  const live = await readWorkerTarget(reader, target.profile, target.worker);
-  if (JSON.stringify(live) !== JSON.stringify(target)) {
-    throw new Error(
-      "Live Worker stage or D1 binding identities differ from the frozen target"
-    );
-  }
-  const saved = decode(
-    z.tuple([executorStateSchema, executorStateSchema]),
-    await reader.readState(target.stage),
-    "existing Alchemy D1 state"
-  );
-  const executorTargets = saved.map((state, index) => {
-    const resource = resources[index];
-    if (
-      resource === undefined ||
-      state.fqn !== resource ||
-      state.logicalId !== resource ||
-      state.attr.accountId !== target.accountId ||
-      state.attr.databaseId !== target.databases[resource].uuid ||
-      state.attr.databaseName !== target.databases[resource].name
-    ) {
-      throw new Error(
-        "Alchemy executor D1 identity differs from the frozen target"
-      );
-    }
-    return state;
-  });
   const databases = await Promise.all(
     resources.map(async (resource) => {
       const path = `/d1/database/${target.databases[resource].uuid}`;
@@ -660,6 +653,181 @@ export const inspectD1Target = async (
       };
     })
   );
+  return databases;
+};
+
+export const inspectResumedD1Target = async (
+  reader: D1Reader,
+  target: D1Target,
+  local: Readonly<Record<Resource, readonly LocalMigration[]>>
+) => {
+  if (target.stage !== "e2e") {
+    throw new Error(
+      "Interrupted first-deploy resume is limited to the e2e stage"
+    );
+  }
+  if (reader.accountId !== target.accountId) {
+    throw new Error("Resolved Cloudflare account differs from D1 target");
+  }
+  const saved = decode(
+    z.object({
+      databases: z.tuple([
+        resumedDatabaseStateSchema,
+        resumedDatabaseStateSchema,
+      ]),
+      hasOutput: z.literal(false),
+      replaced: z.tuple([]),
+      worker: resumedWorkerStateSchema,
+    }),
+    await reader.readResumeState(target.stage),
+    "interrupted first-deploy state"
+  );
+  const requiredTags = [
+    "alchemy:stack:MealPlanner",
+    `alchemy:stage:${target.stage}`,
+    "alchemy:id:MealPlannerApi",
+  ];
+  if (
+    saved.worker.attr.accountId !== target.accountId ||
+    saved.worker.attr.workerName !== target.worker ||
+    !target.worker
+      .toLowerCase()
+      .startsWith(physicalPrefix("MealPlannerApi", target.stage, 54)) ||
+    requiredTags.some((tag) => !saved.worker.attr.tags.includes(tag)) ||
+    saved.worker.attr.tags.some((tag) =>
+      tag.startsWith("alchemy:stack:") ||
+      tag.startsWith("alchemy:stage:") ||
+      tag.startsWith("alchemy:id:")
+        ? !requiredTags.includes(tag)
+        : false
+    )
+  ) {
+    throw new Error(
+      "Interrupted API Worker state differs from the frozen target"
+    );
+  }
+  const executorTargets = saved.databases.map((state, index) => {
+    const resource = resources[index];
+    if (
+      resource === undefined ||
+      state.fqn !== resource ||
+      state.logicalId !== resource ||
+      state.attr.accountId !== target.accountId ||
+      state.attr.databaseId !== target.databases[resource].uuid ||
+      state.attr.databaseName !== target.databases[resource].name ||
+      !state.attr.databaseName
+        .toLowerCase()
+        .startsWith(physicalPrefix(resource, target.stage, 64))
+    ) {
+      throw new Error(
+        "Interrupted D1 executor identity differs from the frozen target"
+      );
+    }
+    return state;
+  });
+  const workers = decode(
+    z.array(z.object({ id: identifier, tag: z.string().optional() })),
+    await reader.read("/workers/scripts"),
+    "Worker inventory"
+  );
+  const matches = workers.filter(({ id }) => id === target.worker);
+  if (matches.length !== 1 || matches[0]?.tag !== saved.worker.attr.workerId) {
+    throw new Error(
+      "Live API Worker immutable identity differs from Alchemy state"
+    );
+  }
+  const settings = decode(
+    settingsSchema,
+    await reader.read(
+      `/workers/scripts/${encodeURIComponent(target.worker)}/settings`
+    ),
+    "precreated Worker settings"
+  );
+  if (
+    requiredTags.some((tag) => !settings.tags.includes(tag)) ||
+    settings.tags.some((tag) =>
+      tag.startsWith("alchemy:stack:") ||
+      tag.startsWith("alchemy:stage:") ||
+      tag.startsWith("alchemy:id:")
+        ? !requiredTags.includes(tag)
+        : false
+    ) ||
+    settings.bindings.some(({ type }) => type === "d1")
+  ) {
+    throw new Error(
+      "Live API Worker is not the expected unbound precreate stub"
+    );
+  }
+  await Promise.all(
+    resources.map(async (resource) => {
+      const expected = target.databases[resource];
+      const observed = decode(
+        z.object(database.shape),
+        await reader.read(`/d1/database/${expected.uuid}`),
+        `${resource} metadata`
+      );
+      if (observed.uuid !== expected.uuid || observed.name !== expected.name) {
+        throw new Error(
+          `${resource} live metadata differs from the frozen target`
+        );
+      }
+    })
+  );
+  const databases = await inspectLedgers(reader, target, local);
+  if (
+    databases.some(
+      ({ layout, pending }) => layout !== "alchemy" || pending.length > 0
+    )
+  ) {
+    throw new Error(
+      "Interrupted D1 history is not fully applied with native hashes"
+    );
+  }
+  return {
+    checkedAt: new Date().toISOString(),
+    databases,
+    executorTargets,
+    target,
+    workerState: saved.worker,
+  } as const;
+};
+
+export const inspectD1Target = async (
+  reader: D1Reader,
+  target: D1Target,
+  local: Readonly<Record<Resource, readonly LocalMigration[]>>
+) => {
+  if (reader.accountId !== target.accountId) {
+    throw new Error("Resolved Cloudflare account differs from D1 target");
+  }
+  const live = await readWorkerTarget(reader, target.profile, target.worker);
+  if (JSON.stringify(live) !== JSON.stringify(target)) {
+    throw new Error(
+      "Live Worker stage or D1 binding identities differ from the frozen target"
+    );
+  }
+  const saved = decode(
+    z.tuple([executorStateSchema, executorStateSchema]),
+    await reader.readState(target.stage),
+    "existing Alchemy D1 state"
+  );
+  const executorTargets = saved.map((state, index) => {
+    const resource = resources[index];
+    if (
+      resource === undefined ||
+      state.fqn !== resource ||
+      state.logicalId !== resource ||
+      state.attr.accountId !== target.accountId ||
+      state.attr.databaseId !== target.databases[resource].uuid ||
+      state.attr.databaseName !== target.databases[resource].name
+    ) {
+      throw new Error(
+        "Alchemy executor D1 identity differs from the frozen target"
+      );
+    }
+    return state;
+  });
+  const databases = await inspectLedgers(reader, target, local);
   return {
     checkedAt: new Date().toISOString(),
     databases,
@@ -682,6 +850,24 @@ export const evidenceDigest = (
         executorTargets: report.executorTargets,
         release,
         target: report.target,
+      })
+    )
+    .digest("hex");
+
+export const resumeEvidenceDigest = (
+  report: Awaited<ReturnType<typeof inspectResumedD1Target>>,
+  release: Release
+): string =>
+  createHash("sha256")
+    .update(
+      JSON.stringify({
+        databases: report.databases.map(
+          ({ recoveryBookmark: _bookmark, ...observed }) => observed
+        ),
+        executorTargets: report.executorTargets,
+        release,
+        target: report.target,
+        workerState: report.workerState,
       })
     )
     .digest("hex");
@@ -894,6 +1080,59 @@ const makeReader = async (
           "Could not read existing Alchemy state; verify the same-account state-store version and complete its sign-in separately"
         );
       }),
+    readResumeState: async (stage) =>
+      await Effect.runPromise(
+        Effect.gen(function* readInterruptedReleaseState() {
+          const store = yield* CredentialsStore;
+          const cached = decode(
+            z.object({
+              accountId: account,
+              authToken: z.string().min(1),
+              url: z.url().startsWith("https://"),
+            }),
+            yield* store.read(profile, "cloudflare-state-store"),
+            "existing state-store credentials"
+          );
+          if (cached.accountId !== accountId) {
+            return yield* Effect.fail(
+              new Error("State-store account differs from D1 target")
+            );
+          }
+          const state = yield* makeHttpStateStore({
+            ...cached,
+            id: "cloudflare-http",
+          });
+          if ((yield* state.getVersion()) !== 7) {
+            return yield* Effect.fail(
+              new Error("Unsupported existing state-store version")
+            );
+          }
+          const [worker, databases, replaced, output] = yield* Effect.all([
+            state.get({ fqn: "MealPlannerApi", stack: "MealPlanner", stage }),
+            Effect.all(
+              resources.map((fqn) =>
+                state.get({ fqn, stack: "MealPlanner", stage })
+              )
+            ),
+            state.getReplacedResources({ stack: "MealPlanner", stage }),
+            state.getOutput({ stack: "MealPlanner", stage }),
+          ]);
+          return {
+            databases,
+            hasOutput: output !== undefined,
+            replaced,
+            worker,
+          };
+        }).pipe(
+          Effect.provide(base),
+          Effect.scoped,
+          Effect.timeout("30 seconds")
+        )
+      ).catch(() => {
+        throw new Error(
+          "Could not read interrupted Alchemy state; verify same-account state-store access"
+        );
+      }),
     readState: async (stage) =>
       await Effect.runPromise(
         Effect.gen(function* readExistingD1State() {
@@ -1045,6 +1284,62 @@ const runFreshInspection = async (
   return 0;
 };
 
+const runResumeInspection = async (
+  command: "resume-inspect" | "resume-verify",
+  parsed: ReadonlyMap<string, string>
+): Promise<number> => {
+  if (parsed.has("--account")) {
+    throw new Error(
+      "Resume inspection requires a frozen D1 target, not an account override"
+    );
+  }
+  const targetPath = parsed.get("--target");
+  if (targetPath === undefined) {
+    throw new Error("Resume inspection requires a frozen --target file");
+  }
+  const target = parseD1Target(JSON.parse(await readFile(targetPath, "utf-8")));
+  for (const name of ["profile", "stage"] as const) {
+    if (parsed.has(`--${name}`) && parsed.get(`--${name}`) !== target[name]) {
+      throw new Error(`Deployment ${name} differs from frozen D1 target`);
+    }
+  }
+  const reviewed = parsed.get("--evidence");
+  if (command === "resume-inspect" && reviewed !== undefined) {
+    throw new Error(
+      "Resume inspection generates evidence; it does not accept --evidence"
+    );
+  }
+  if (command === "resume-verify") {
+    decode(
+      z.string().regex(/^[a-f0-9]{64}$/u),
+      reviewed,
+      "reviewed --evidence digest"
+    );
+  }
+  const local = {
+    MealPlannerAuthDatabase: await readLocalMigrations(
+      `${repository}/${migrationDirectories.MealPlannerAuthDatabase}`
+    ),
+    ProviderAccountingDatabase: await readLocalMigrations(
+      `${repository}/${migrationDirectories.ProviderAccountingDatabase}`
+    ),
+  };
+  const release = readRelease(local);
+  const reader = await makeReader(target.profile, target.accountId);
+  const report = await inspectResumedD1Target(reader, target, local);
+  if (JSON.stringify(readRelease(local)) !== JSON.stringify(release)) {
+    throw new Error("Repository changed during resumed D1 inspection");
+  }
+  const digest = resumeEvidenceDigest(report, release);
+  process.stdout.write(
+    `${JSON.stringify({ ...report, digest, release }, null, 2)}\n`
+  );
+  if (command === "resume-verify" && reviewed !== undefined) {
+    verifyEvidence(digest, reviewed);
+  }
+  return 0;
+};
+
 const runDiscovery = async (
   parsed: ReadonlyMap<string, string>
 ): Promise<number> => {
@@ -1073,6 +1368,9 @@ const main = async (args: readonly string[]): Promise<number> => {
   }
   if (command === "fresh-inspect" || command === "fresh-verify") {
     return runFreshInspection(command, parsed);
+  }
+  if (command === "resume-inspect" || command === "resume-verify") {
+    return runResumeInspection(command, parsed);
   }
   if (
     (command !== "inspect" && command !== "verify") ||

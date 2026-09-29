@@ -14,7 +14,8 @@ accounts and family records remain local.
 - App: `https://e2e.ceird.app`, with same-origin auth and app APIs.
 - Mail: `noreply@mail.e2e.ceird.app`. The E2E stage owns this sending subdomain.
 - Agent: GPT-6 Luna through a stage-owned Cloudflare AI Gateway and an
-  account-owned token restricted to Workers AI inference.
+  account-owned token restricted to Workers AI inference. The gateway enables
+  authentication, which Cloudflare Unified Billing requires.
 - Private interviews use the same model provider, with their existing private
   storage, confirmation and budget boundaries.
 - API, household and private-output Workers remain private service bindings.
@@ -84,3 +85,26 @@ The final fresh inventory suite passes 52 checks, including full-page R2 refusal
 
 Deployment and live browser, agent and email results will be recorded after the
 checks complete. A provider submission alone is not inbox delivery proof.
+
+## First apply and recovery
+
+The first apply created the Website, D1 databases, mail domain, gateways, scoped
+inference token, queues and R2 bucket. API Workers remained at Alchemy's
+precreated stubs. The private Worker's nested Effect entry-file setting was
+absent from saved props; it now uses a direct entry URL. The corresponding
+structural check covers that declaration.
+
+An inference A/B check confirmed the same scoped token and Luna request return
+HTTP 200 through an authenticated gateway and HTTP 403 through the new gateway
+without authentication. The agent gateway now sets `authentication: true`.
+
+The mail domain is enabled and its full-message previews are verified off.
+Delivery remains gated until the working API is deployed.
+
+A partial first apply uses `resume-inspect --target <frozen-target>` followed by
+`alchemy:deploy --resume-target <frozen-target> --resume-evidence <digest>`, with
+explicit stage and profile. This path requires the API's owned `creating` stub,
+matching immutable Worker ID, no final D1 bindings, no replacement state or
+completed stage output, and the existing D1 identity, ledger, schema and recovery
+checks. It preserves the current resource IDs. Completed environments use the
+normal existing-target deployment path.

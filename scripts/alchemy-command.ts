@@ -78,6 +78,31 @@ const runFreshPreflight: FreshPreflight = (
   return result.status;
 };
 
+const runResumePreflight: D1Preflight = (target, stage, profile, evidence) => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      fileURLToPath(new URL("alchemy-d1-preflight.ts", import.meta.url)),
+      "resume-verify",
+      "--target",
+      target,
+      "--stage",
+      stage,
+      "--profile",
+      profile,
+      "--evidence",
+      evidence,
+    ],
+    { cwd: fileURLToPath(new URL("../", import.meta.url)), stdio: "inherit" }
+  );
+  if (result.error !== undefined || result.status === null) {
+    throw new Error("Resumed D1 release preflight did not complete");
+  }
+  return result.status;
+};
+
 const readOption = (
   args: readonly string[],
   option: string
@@ -115,7 +140,9 @@ const freshDeployTarget = (args: readonly string[]) => {
   }
   if (
     countOption(args, "--d1-target") > 0 ||
-    countOption(args, "--d1-evidence") > 0
+    countOption(args, "--d1-evidence") > 0 ||
+    countOption(args, "--resume-target") > 0 ||
+    countOption(args, "--resume-evidence") > 0
   ) {
     throw new Error(
       "Fresh and existing D1 deployment modes are mutually exclusive"
@@ -144,6 +171,42 @@ const freshDeployTarget = (args: readonly string[]) => {
   } as const;
 };
 
+const resumeDeployTarget = (args: readonly string[]) => {
+  const target = readOption(args, "--resume-target");
+  const evidence = readOption(args, "--resume-evidence");
+  if (
+    target === undefined &&
+    evidence === undefined &&
+    countOption(args, "--resume-target") === 0 &&
+    countOption(args, "--resume-evidence") === 0
+  ) {
+    return null;
+  }
+  if (
+    countOption(args, "--d1-target") > 0 ||
+    countOption(args, "--d1-evidence") > 0 ||
+    countOption(args, "--fresh-account") > 0 ||
+    countOption(args, "--fresh-evidence") > 0
+  ) {
+    throw new Error(
+      "Resume and other D1 deployment modes are mutually exclusive"
+    );
+  }
+  if (target === undefined || countOption(args, "--resume-target") !== 1) {
+    throw new Error("resume deploy requires exactly one --resume-target file");
+  }
+  if (
+    evidence === undefined ||
+    !/^[a-f0-9]{64}$/u.test(evidence) ||
+    countOption(args, "--resume-evidence") !== 1
+  ) {
+    throw new Error(
+      "resume deploy requires exactly one --resume-evidence digest"
+    );
+  }
+  return { evidence, mode: "resume", target } as const;
+};
+
 const deployTarget = (args: readonly string[]) => {
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -157,10 +220,12 @@ const deployTarget = (args: readonly string[]) => {
         "--d1-evidence",
         "--fresh-account",
         "--fresh-evidence",
+        "--resume-target",
+        "--resume-evidence",
       ].includes(name)
     ) {
       throw new Error(
-        "deploy accepts only --stage, --profile, D1 target/evidence or fresh account/evidence; alternate stack files and overrides are not allowed"
+        "deploy accepts only --stage, --profile and one guarded D1 evidence mode; alternate stack files and overrides are not allowed"
       );
     }
     if (!argument?.includes("=")) {
@@ -170,6 +235,10 @@ const deployTarget = (args: readonly string[]) => {
   const fresh = freshDeployTarget(args);
   if (fresh !== null) {
     return fresh;
+  }
+  const resumed = resumeDeployTarget(args);
+  if (resumed !== null) {
+    return resumed;
   }
   const target = readOption(args, "--d1-target");
   if (target === undefined || countOption(args, "--d1-target") !== 1) {
@@ -230,7 +299,8 @@ export const runAlchemyCommand = (
   args: readonly string[],
   runner: AlchemyRunner,
   preflight: D1Preflight = runD1Preflight,
-  freshPreflight: FreshPreflight = runFreshPreflight
+  freshPreflight: FreshPreflight = runFreshPreflight,
+  resumePreflight: D1Preflight = runResumePreflight
 ): number => {
   const [firstArgument] = args;
   const normalizedArgs = firstArgument === "--" ? args.slice(1) : args;
@@ -242,10 +312,14 @@ export const runAlchemyCommand = (
     if (stage === undefined || profile === undefined) {
       throw new Error("deploy target is incomplete");
     }
-    const status =
-      target.mode === "fresh"
-        ? freshPreflight(target.account, stage, profile, target.evidence)
-        : preflight(target.target, stage, profile, target.evidence);
+    let status: number;
+    if (target.mode === "fresh") {
+      status = freshPreflight(target.account, stage, profile, target.evidence);
+    } else if (target.mode === "resume") {
+      status = resumePreflight(target.target, stage, profile, target.evidence);
+    } else {
+      status = preflight(target.target, stage, profile, target.evidence);
+    }
     if (status !== 0) {
       return status;
     }

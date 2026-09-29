@@ -13,9 +13,11 @@ import {
   freshEvidenceDigest,
   inspectD1Target,
   inspectFreshTarget,
+  inspectResumedD1Target,
   parseD1Target,
   parseFreshTarget,
   readLocalMigrations,
+  resumeEvidenceDigest,
   verifyEvidence,
 } from "./alchemy-d1-preflight.js";
 import type { D1Reader } from "./alchemy-d1-preflight.js";
@@ -98,6 +100,39 @@ const fixture = () => {
       resources: [] as string[],
       stages: [] as string[],
     },
+    resumeState: {
+      databases: Object.entries(target.databases).map(([resource, db]) => ({
+        attr: {
+          accountId: target.accountId,
+          databaseId: db.uuid,
+          databaseName: db.name,
+        },
+        fqn: resource,
+        instanceId: "b".repeat(32),
+        logicalId: resource,
+        resourceType: "Cloudflare.D1Database",
+        status: "created",
+      })),
+      hasOutput: false,
+      replaced: [] as unknown[],
+      worker: {
+        attr: {
+          accountId: target.accountId,
+          tags: [
+            "alchemy:stack:MealPlanner",
+            `alchemy:stage:${target.stage}`,
+            "alchemy:id:MealPlannerApi",
+          ],
+          workerId: "a".repeat(32),
+          workerName: target.worker,
+        },
+        fqn: "MealPlannerApi",
+        instanceId: "c".repeat(32),
+        logicalId: "MealPlannerApi",
+        resourceType: "Cloudflare.Worker",
+        status: "creating",
+      },
+    },
     rows: alchemyRows,
     schema: [
       {
@@ -134,7 +169,11 @@ const fixture = () => {
           calls.push({ path, sql });
           if (path === "/workers/scripts") {
             return [
-              { id: target.worker, tags: state.worker.tags },
+              {
+                id: state.resumeState.worker.attr.workerName,
+                tag: "a".repeat(32),
+                tags: state.worker.tags,
+              },
               { id: "unrelated", tags: [] },
             ];
           }
@@ -165,10 +204,12 @@ const fixture = () => {
           if (sql !== undefined) {
             return state.rows;
           }
+          const metadata = state.resumeState.databases.find((db) =>
+            path.endsWith(db.attr.databaseId)
+          )?.attr;
           return {
-            ...Object.values(target.databases).find((db) =>
-              path.endsWith(db.uuid)
-            ),
+            name: metadata?.databaseName,
+            uuid: metadata?.databaseId,
             version: "production",
           };
         })()
@@ -177,6 +218,10 @@ const fixture = () => {
       calls.push({ path: `/fresh-state/${stage}`, sql: undefined });
       return Promise.resolve(state.freshState);
     },
+    readResumeState: (stage) => {
+      calls.push({ path: `/resume-state/${stage}`, sql: undefined });
+      return Promise.resolve(state.resumeState);
+    },
     readState: (stage) => {
       calls.push({ path: `/state/${stage}`, sql: undefined });
       return Promise.resolve(state.executor);
@@ -184,6 +229,124 @@ const fixture = () => {
   };
   return { calls, reader, state };
 };
+
+const resumedFixture = () => {
+  const observed = fixture();
+  const frozen = parseD1Target({
+    ...target,
+    databases: {
+      MealPlannerAuthDatabase: {
+        ...target.databases.MealPlannerAuthDatabase,
+        name: "MealPlanner-MealPlannerAuthDatabase-e2e-aaaaaaaaaaaaaaaa",
+      },
+      ProviderAccountingDatabase: {
+        ...target.databases.ProviderAccountingDatabase,
+        name: "MealPlanner-ProviderAccountingDatabase-e2e-aaaaaaaaaaaaaaaa",
+      },
+    },
+    stage: "e2e",
+    worker: "mealplanner-mealplannerapi-e2e-aaaaaaaaaaaaaaaa",
+  });
+  observed.state.resumeState.worker.attr.workerName = frozen.worker;
+  observed.state.resumeState.worker.attr.tags[1] = "alchemy:stage:e2e";
+  observed.state.worker.tags[1] = "alchemy:stage:e2e";
+  observed.state.worker.bindings = [];
+  for (const [index, resource] of (
+    ["MealPlannerAuthDatabase", "ProviderAccountingDatabase"] as const
+  ).entries()) {
+    const saved = observed.state.resumeState.databases[index];
+    if (saved !== undefined) {
+      saved.attr.databaseName = frozen.databases[resource].name;
+    }
+  }
+  observed.state.rows = [
+    ...alchemyRows,
+    {
+      applied_at: "2026-09-06 12:00:00",
+      created_at: 1_788_680_000_000,
+      hash: second.hash,
+      id: 2,
+      name: second.name,
+    },
+  ];
+  return { ...observed, frozen };
+};
+
+describe("interrupted first-deploy D1 inspection", () => {
+  it("limits resume mode to the authorized e2e stage", async () => {
+    const { reader, calls, frozen } = resumedFixture();
+    await expect(
+      inspectResumedD1Target(reader, { ...frozen, stage: "prod" }, local)
+    ).rejects.toThrow("e2e stage");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("accepts only the owned API precreate stub with complete native D1 ledgers", async () => {
+    const { reader, frozen } = resumedFixture();
+    await expect(inspectD1Target(reader, frozen, local)).rejects.toThrow(
+      "Worker must bind exactly one D1"
+    );
+    const report = await inspectResumedD1Target(reader, frozen, local);
+    expect(report.workerState.status).toBe("creating");
+    expect(report.databases.every(({ pending }) => pending.length === 0)).toBe(
+      true
+    );
+    const release = {
+      head: "a".repeat(40),
+      local,
+      toolchain: { alchemy: "2.0.0-beta.76", node: "v24" },
+    };
+    const digest = resumeEvidenceDigest(report, release);
+    verifyEvidence(digest, digest);
+    expect(
+      resumeEvidenceDigest(report, { ...release, head: "b".repeat(40) })
+    ).not.toBe(digest);
+  });
+
+  it.each([
+    "worker-id",
+    "worker-status",
+    "worker-name",
+    "foreign-binding",
+    "d1-uuid",
+    "old",
+    "replacement",
+    "output",
+    "pending",
+  ])("rejects interrupted release drift: %s", async (change) => {
+    const { reader, state, frozen } = resumedFixture();
+    if (change === "worker-id") {
+      state.resumeState.worker.attr.workerId = "f".repeat(32);
+    } else if (change === "worker-status") {
+      state.resumeState.worker.status = "created";
+    } else if (change === "worker-name") {
+      state.resumeState.worker.attr.workerName = "other";
+    } else if (change === "foreign-binding") {
+      state.worker.bindings.push({
+        id: frozen.databases.MealPlannerAuthDatabase.uuid,
+        name: "Unexpected",
+        type: "d1",
+      });
+    } else if (change === "d1-uuid") {
+      const [saved] = state.resumeState.databases;
+      if (saved !== undefined) {
+        saved.attr.databaseId =
+          frozen.databases.ProviderAccountingDatabase.uuid;
+      }
+    } else if (change === "old") {
+      Object.assign(state.resumeState.worker, { old: {} });
+    } else if (change === "replacement") {
+      state.resumeState.replaced.push({});
+    } else if (change === "output") {
+      state.resumeState.hasOutput = true;
+    } else {
+      state.rows.pop();
+    }
+    await expect(
+      inspectResumedD1Target(reader, frozen, local)
+    ).rejects.toThrow();
+  });
+});
 
 describe("fresh D1 release inspection", () => {
   const freshTarget = parseFreshTarget({

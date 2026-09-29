@@ -6,6 +6,7 @@ import * as Effect from "effect/Effect";
 export const AgentProvider = Effect.gen(function* AgentProvider() {
   const { accountId } = yield* yield* Cloudflare.CloudflareEnvironment;
   const gateway = yield* Cloudflare.AI.Gateway("AgentProviderGateway", {
+    authentication: true,
     cacheTtl: null,
     collectLogs: false,
     spendLimits: {

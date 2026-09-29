@@ -26,6 +26,81 @@ describe("Alchemy command guard", () => {
     "--fresh-evidence",
     "b".repeat(64),
   ];
+  const resumeArgs = [
+    "--stage",
+    "e2e",
+    "--profile",
+    "fixture",
+    "--resume-target",
+    "/tmp/d1-target.json",
+    "--resume-evidence",
+    "c".repeat(64),
+  ];
+
+  it("verifies interrupted first-deploy evidence before canonical deployment", () => {
+    const calls: unknown[] = [];
+    expect(
+      runAlchemyCommand(
+        "deploy",
+        resumeArgs,
+        (command, args) => {
+          calls.push({ args, command });
+          return 0;
+        },
+        () => {
+          throw new Error("existing preflight called");
+        },
+        () => {
+          throw new Error("fresh preflight called");
+        },
+        (...args) => {
+          calls.push(args);
+          return 0;
+        }
+      )
+    ).toBe(0);
+    expect(calls).toEqual([
+      ["/tmp/d1-target.json", "e2e", "fixture", "c".repeat(64)],
+      {
+        args: [
+          fileURLToPath(new URL("../alchemy.run.ts", import.meta.url)),
+          "--stage",
+          "e2e",
+          "--profile",
+          "fixture",
+        ],
+        command: "deploy",
+      },
+    ]);
+  });
+
+  it("rejects mixed resume modes and never runs Alchemy after failed resume proof", () => {
+    let invoked = false;
+    expect(() =>
+      runAlchemyCommand(
+        "deploy",
+        [...resumeArgs, "--d1-target", "other.json"],
+        () => {
+          invoked = true;
+          return 0;
+        }
+      )
+    ).toThrow("mutually exclusive");
+    expect(
+      runAlchemyCommand(
+        "deploy",
+        resumeArgs,
+        () => {
+          invoked = true;
+          return 0;
+        },
+        () => 0,
+        () => 0,
+        () => 1
+      )
+    ).toBe(1);
+    expect(invoked).toBe(false);
+  });
 
   it("verifies fresh-stage evidence before canonical deployment", () => {
     const calls: unknown[] = [];
