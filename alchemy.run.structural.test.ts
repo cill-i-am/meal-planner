@@ -48,11 +48,15 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     );
 
     expect(workerSource).toContain('"MealPlannerApi"');
+    expect(workerSource).toContain("main: globalThis.__ALCHEMY_RUNTIME__");
     expect(workerSource).toContain(
-      'main: new URL("worker-entry.ts", import.meta.url).href'
+      ': new URL("worker-entry.ts", import.meta.url).href'
     );
     expect(privateOutputBindingSource).toContain(
-      'main: new URL("private-output-worker.ts", import.meta.url).href'
+      "main: globalThis.__ALCHEMY_RUNTIME__"
+    );
+    expect(privateOutputBindingSource).toContain(
+      ': new URL("private-output-worker.ts", import.meta.url).href'
     );
     const workerEntrySource = readRepoFile("./apps/api/src/worker-entry.ts");
     expect(workerEntrySource).toContain(

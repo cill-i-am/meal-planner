@@ -114,8 +114,14 @@ API upload because its generated bundle omitted the native `AgentConversation`
 export. The pinned Alchemy patch now supports explicit native exports alongside
 its generated Effect exports. The API opts in for `AgentConversation`; a bundle
 regression checks that it and `ImportMediaAcquisitionObject` both appear in the
-final entry. The API remains a placeholder until this release deploys; queue
-consumers cannot attach before its real queue handler is uploaded.
+final entry. Commit `dd083c0` deployed all 20 resources successfully, including
+the API, both consumers, workflows and container.
+
+The first live account request then exposed a cold-start error in API props:
+source-file URL resolution was running inside Cloudflare. These entry URLs now
+use Alchemy's compile-time runtime flag so only deployment resolves local files.
+The signup layout also now fits 1280px desktop and 390px mobile viewports without
+horizontal overflow, verified on the deployed Website.
 
 A partial first apply uses `resume-inspect --target <frozen-target>` followed by
 `alchemy:deploy --resume-target <frozen-target> --resume-evidence <digest>`, with

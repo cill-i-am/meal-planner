@@ -97,7 +97,9 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         PrivateOutputApi: PrivateOutputApiBinding,
         PrivateOutputMutations: PrivateOutputMutationsBinding,
       },
-      main: new URL("worker-entry.ts", import.meta.url).href,
+      main: globalThis.__ALCHEMY_RUNTIME__
+        ? "worker-entry.ts"
+        : new URL("worker-entry.ts", import.meta.url).href,
       observability: {
         enabled: true,
         headSamplingRate: 1,

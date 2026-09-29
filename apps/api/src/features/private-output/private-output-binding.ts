@@ -41,7 +41,9 @@ export class PrivateOutputWorker extends Cloudflare.Worker<PrivateOutputWorker>(
             "PrivateInterviewSession"
           ),
       },
-      main: new URL("private-output-worker.ts", import.meta.url).href,
+      main: globalThis.__ALCHEMY_RUNTIME__
+        ? "private-output-worker.ts"
+        : new URL("private-output-worker.ts", import.meta.url).href,
       observability: { enabled: false },
       workersDev: false,
     };
