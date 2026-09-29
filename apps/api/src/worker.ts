@@ -91,6 +91,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
   Effect.gen(function* MealPlannerApiProps() {
     const conversationBindings = yield* agentConversationBindings;
     return {
+      build: { nativeExports: ["AgentConversation"] },
       env: {
         ...conversationBindings,
         PrivateOutputApi: PrivateOutputApiBinding,

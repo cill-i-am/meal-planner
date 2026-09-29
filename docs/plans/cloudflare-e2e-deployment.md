@@ -86,6 +86,11 @@ The final fresh inventory suite passes 52 checks, including full-page R2 refusal
 Deployment and live browser, agent and email results will be recorded after the
 checks complete. A provider submission alone is not inbox delivery proof.
 
+The E2E gateway now has authentication enabled and payload logging disabled.
+A live request through its own scoped token returned HTTP 200 from
+`openai/gpt-6-luna`, with a completed response. This verifies provider access;
+the application conversation still needs browser verification.
+
 ## First apply and recovery
 
 The first apply created the Website, D1 databases, mail domain, gateways, scoped
@@ -100,6 +105,17 @@ without authentication. The agent gateway now sets `authentication: true`.
 
 The mail domain is enabled and its full-message previews are verified off.
 Delivery remains gated until the working API is deployed.
+
+The first container upload failed with a local `spawn EBADF` error after its
+build completed. A new deploy process reused the cached amd64 image, uploaded
+it successfully and created the container application. The resumed apply also
+created the household and private-output Workers. Cloudflare then rejected the
+API upload because its generated bundle omitted the native `AgentConversation`
+export. The pinned Alchemy patch now supports explicit native exports alongside
+its generated Effect exports. The API opts in for `AgentConversation`; a bundle
+regression checks that it and `ImportMediaAcquisitionObject` both appear in the
+final entry. The API remains a placeholder until this release deploys; queue
+consumers cannot attach before its real queue handler is uploaded.
 
 A partial first apply uses `resume-inspect --target <frozen-target>` followed by
 `alchemy:deploy --resume-target <frozen-target> --resume-evidence <digest>`, with

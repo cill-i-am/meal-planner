@@ -1120,3 +1120,81 @@ index d0d549a71f51cc43bb8939d5a3f398c74ad4bfcc..47237504a914d165eeccf071540a86e0
            if ((output?.accountId ?? accountId) !== accountId) {
              return { action: "replace" };
            }
+diff --git a/lib/Cloudflare/Workers/Sources/Rolldown.d.ts b/lib/Cloudflare/Workers/Sources/Rolldown.d.ts
+index e43fec3..2f5cf9a 100644
+--- a/lib/Cloudflare/Workers/Sources/Rolldown.d.ts
++++ b/lib/Cloudflare/Workers/Sources/Rolldown.d.ts
+@@ -14,2 +14,4 @@ import type { SourceProvider } from "../Source.ts";
+ export interface WorkerBuildOptions extends Bundle.BundleExtraOptions {
++    /** Native classes to retain beside the generated Effect Worker exports. */
++    nativeExports?: readonly string[];
+     /**
+@@ -53,3 +55,3 @@ export declare const makeEffectVirtualEntry: (exports: Record<string, DurableObj
+     stage: string;
+-}) => (importPath: string) => string;
++}, nativeExports?: readonly string[]) => (importPath: string) => string;
+ /**
+diff --git a/lib/Cloudflare/Workers/Sources/Rolldown.js b/lib/Cloudflare/Workers/Sources/Rolldown.js
+index 24d72d1..667a012 100644
+--- a/lib/Cloudflare/Workers/Sources/Rolldown.js
++++ b/lib/Cloudflare/Workers/Sources/Rolldown.js
+@@ -70,3 +70,3 @@ export const WorkerBundle = Effect.gen(function* () {
+                     ? [
+-                        virtualEntryPlugin(makeEffectVirtualEntry(options.entry.exports, options.stack)),
++                        virtualEntryPlugin(makeEffectVirtualEntry(options.entry.exports, options.stack, options.extraOptions?.nativeExports)),
+                     ]
+@@ -109,3 +109,3 @@ export const WorkerBundle = Effect.gen(function* () {
+ });
+-export const makeEffectVirtualEntry = (exports, stack) => {
++export const makeEffectVirtualEntry = (exports, stack, nativeExports = []) => {
+     const doClasses = [];
+@@ -122,2 +122,7 @@ export const makeEffectVirtualEntry = (exports, stack) => {
+     const hasWfClasses = wfClasses.length > 0;
++    for (const name of nativeExports) {
++        if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) || name in exports) {
++            throw new Error(`Invalid or duplicate native Worker export: ${name}`);
++        }
++    }
+     return (importPath) => `
+@@ -141,2 +146,4 @@ export default makeWorkerBridge(WorkerEntrypoint, meta);
+-
++
++${nativeExports.length > 0 ? `export { ${nativeExports.join(", ")} } from ${JSON.stringify(importPath)};` : ""}
++
+ // export class proxy stubs for Durable Objects and Workflows
+diff --git a/src/Cloudflare/Workers/Sources/Rolldown.ts b/src/Cloudflare/Workers/Sources/Rolldown.ts
+index eea64cf..f35034f 100644
+--- a/src/Cloudflare/Workers/Sources/Rolldown.ts
++++ b/src/Cloudflare/Workers/Sources/Rolldown.ts
+@@ -26,2 +26,4 @@ import { bundleSource } from "./shared.ts";
+ export interface WorkerBuildOptions extends Bundle.BundleExtraOptions {
++  /** Native classes to retain beside the generated Effect Worker exports. */
++  nativeExports?: readonly string[];
+   /**
+@@ -141,3 +143,7 @@ export const WorkerBundle = Effect.gen(function* () {
+               virtualEntryPlugin(
+-                makeEffectVirtualEntry(options.entry.exports, options.stack),
++                makeEffectVirtualEntry(
++                  options.entry.exports,
++                  options.stack,
++                  options.extraOptions?.nativeExports,
++                ),
+               ),
+@@ -213,2 +219,3 @@ export const makeEffectVirtualEntry = (
+   stack: { name: string; stage: string },
++  nativeExports: readonly string[] = [],
+ ) => {
+@@ -225,2 +232,7 @@ export const makeEffectVirtualEntry = (
+   const hasWfClasses = wfClasses.length > 0;
++  for (const name of nativeExports) {
++    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) || name in exports) {
++      throw new Error(`Invalid or duplicate native Worker export: ${name}`);
++    }
++  }
+   return (importPath: string) => `
+@@ -244,2 +256,4 @@ export default makeWorkerBridge(WorkerEntrypoint, meta);
+-
++
++${nativeExports.length > 0 ? `export { ${nativeExports.join(", ")} } from ${JSON.stringify(importPath)};` : ""}
++
+ // export class proxy stubs for Durable Objects and Workflows

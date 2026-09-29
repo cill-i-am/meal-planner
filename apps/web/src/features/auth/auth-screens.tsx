@@ -288,7 +288,7 @@ const SignupForm = ({ redirect }: { readonly redirect: string }) => {
         </div>
       }
     >
-      <div className="flex flex-col gap-6 pt-16 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)] lg:gap-12 xl:grid-cols-[710px_1px_400px] xl:gap-19">
+      <div className="flex flex-col gap-6 pt-16 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)] lg:gap-12 xl:mx-auto xl:max-w-[1263px] xl:grid-cols-[minmax(0,1fr)_1px_400px] xl:gap-19">
         <SignupStory />
         <div
           aria-hidden="true"

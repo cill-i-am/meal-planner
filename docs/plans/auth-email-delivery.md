@@ -28,7 +28,7 @@ Send actionable invitation and password-reset messages from `noreply@mail.e2e.ce
 - [x] PR #257's five local browser journeys pass after its mail fixture moved to the household send boundary.
 - [x] Full repository checks and review passed at the delivery commit in PR #258.
 - [x] The repository change was merged in PR #258.
-- [ ] The E2E operation verifies the target account, Workers Paid eligibility, `ceird.app` zone, `mail.e2e.ceird.app` sender DNS, and disabled Email preview before enabling delivery.
+- [x] The E2E operation verified the target account, Workers Paid eligibility, active `ceird.app` zone and enabled `mail.e2e.ceird.app` sender. The sending-domain API confirms `preview_enabled: false` before the delivery flag was enabled for the API release.
 - [ ] Disposable recipient mailboxes receive both messages; links complete the real invitation and single-use reset journeys. Record submission and inbox receipt separately without storing token URLs.
 
 ## Activation
