@@ -1,17 +1,23 @@
 import * as Cloudflare from "alchemy/Cloudflare";
-import { Config, Effect } from "effect";
+import { Effect } from "effect";
 
+import { AgentProvider } from "../../infrastructure/agent-provider.js";
 import type { AgentConversation } from "./conversation-session.js";
 
 /** Native Agent, explicit provider config, and the existing Workers AI capability. */
-export const agentConversationBindings = {
-  AGENT_CONVERSATION_CONFIG: Config.string(
-    "MEAL_PLANNER_AGENT_CONVERSATION_CONFIG"
-  ).pipe(Config.withDefault("")),
-  AgentConversation:
-    Cloudflare.DurableObject<AgentConversation>("AgentConversation"),
-  ConversationAI: Cloudflare.Workers.AI(),
-};
+export const agentConversationBindings = Effect.gen(
+  function* agentConversationBindings() {
+    const provider = yield* AgentProvider;
+    return {
+      AGENT_CONVERSATION_CONFIG: provider.conversationConfig,
+      AgentConversation:
+        Cloudflare.DurableObject<AgentConversation>("AgentConversation"),
+      CLOUDFLARE_ACCOUNT_ID: provider.accountId,
+      CLOUDFLARE_API_TOKEN: provider.apiToken,
+      ConversationAI: Cloudflare.Workers.AI(),
+    };
+  }
+);
 
 export type AgentConversationPort = Pick<
   AgentConversation,

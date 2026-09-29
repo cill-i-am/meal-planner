@@ -79,18 +79,15 @@ This smoke runs on port 4498 with disposable local data. It checks signup,
 family creation, creator linking, person creation and exact request replay,
 then stops its runtime and removes its temporary data.
 
-### Future Alchemy ownership
+### Deployed model bindings
 
-The installed Alchemy version exposes `Cloudflare.AI.Gateway`, including logging,
-cache and spending-limit settings. The existing
-[recipe import gateway](../../apps/api/src/infrastructure/import-provider-gateway.ts)
-demonstrates this resource. A future deployment can declare a dedicated family
-agent gateway and pass its ID with the model configuration through the
-[conversation bindings](../../apps/api/src/features/agent-conversations/conversation-binding.ts).
-Provider credentials remain in the credential store or runtime bindings.
-Credit purchases remain an account billing operation. This local preview does
-not apply that infrastructure; a fresh deployment still needs its own reviewed
-Alchemy target, stage and profile.
+The [deployed AI provider](../../apps/api/src/infrastructure/agent-provider.ts)
+creates a gateway and a scoped account token for each Alchemy stage. The API
+Worker and private interview Worker receive the gateway ID, model settings and
+token through their bindings. Both use GPT-6 Luna through Cloudflare Responses.
+The local preview above continues to use its own explicit loopback configuration
+and does not create these deployed resources. Credit purchases remain an account
+billing operation; deployment needs the intended Alchemy stage and profile.
 
 ## Verification
 

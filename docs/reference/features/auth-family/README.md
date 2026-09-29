@@ -102,8 +102,8 @@ Do not substitute one kind of evidence for another.
 The Worker composes Cloudflare Email Sending for reset mail; the household people
 command submits invitation mail after association when the delivery gate is
 enabled. A reset or invitation record,
-or a provider send response, does not prove inbox delivery. Record real mailbox
-receipt separately after an authorized production activation. See the
+or a provider send response, does not prove inbox delivery. Record provider
+delivery and real mailbox receipt separately during E2E activation. See the
 [email delivery plan](../../../plans/auth-email-delivery.md).
 
 If the runtime, account, recipient link, or failure-injection facility is missing,

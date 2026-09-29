@@ -16,6 +16,12 @@ type D1Preflight = (
   profile: string,
   evidence: string
 ) => number;
+type FreshPreflight = (
+  account: string,
+  stage: string,
+  profile: string,
+  evidence: string
+) => number;
 
 const runD1Preflight: D1Preflight = (target, stage, profile, evidence) => {
   const result = spawnSync(
@@ -38,6 +44,36 @@ const runD1Preflight: D1Preflight = (target, stage, profile, evidence) => {
   );
   if (result.error !== undefined || result.status === null) {
     throw new Error("D1 release preflight did not complete");
+  }
+  return result.status;
+};
+
+const runFreshPreflight: FreshPreflight = (
+  account,
+  stage,
+  profile,
+  evidence
+) => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      fileURLToPath(new URL("alchemy-d1-preflight.ts", import.meta.url)),
+      "fresh-verify",
+      "--account",
+      account,
+      "--stage",
+      stage,
+      "--profile",
+      profile,
+      "--evidence",
+      evidence,
+    ],
+    { cwd: fileURLToPath(new URL("../", import.meta.url)), stdio: "inherit" }
+  );
+  if (result.error !== undefined || result.status === null) {
+    throw new Error("Fresh D1 release preflight did not complete");
   }
   return result.status;
 };
@@ -66,21 +102,74 @@ const countOption = (args: readonly string[], option: string): number =>
     (argument) => argument === option || argument.startsWith(`${option}=`)
   ).length;
 
+const freshDeployTarget = (args: readonly string[]) => {
+  const freshAccount = readOption(args, "--fresh-account");
+  const freshEvidence = readOption(args, "--fresh-evidence");
+  if (
+    freshAccount === undefined &&
+    freshEvidence === undefined &&
+    countOption(args, "--fresh-account") === 0 &&
+    countOption(args, "--fresh-evidence") === 0
+  ) {
+    return null;
+  }
+  if (
+    countOption(args, "--d1-target") > 0 ||
+    countOption(args, "--d1-evidence") > 0
+  ) {
+    throw new Error(
+      "Fresh and existing D1 deployment modes are mutually exclusive"
+    );
+  }
+  if (
+    freshAccount === undefined ||
+    !/^[a-f0-9]{32}$/u.test(freshAccount) ||
+    countOption(args, "--fresh-account") !== 1
+  ) {
+    throw new Error("fresh deploy requires exactly one --fresh-account ID");
+  }
+  if (
+    freshEvidence === undefined ||
+    !/^[a-f0-9]{64}$/u.test(freshEvidence) ||
+    countOption(args, "--fresh-evidence") !== 1
+  ) {
+    throw new Error(
+      "fresh deploy requires exactly one --fresh-evidence digest"
+    );
+  }
+  return {
+    account: freshAccount,
+    evidence: freshEvidence,
+    mode: "fresh",
+  } as const;
+};
+
 const deployTarget = (args: readonly string[]) => {
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     const name = argument?.split("=")[0];
     if (
       name === undefined ||
-      !["--stage", "--profile", "--d1-target", "--d1-evidence"].includes(name)
+      ![
+        "--stage",
+        "--profile",
+        "--d1-target",
+        "--d1-evidence",
+        "--fresh-account",
+        "--fresh-evidence",
+      ].includes(name)
     ) {
       throw new Error(
-        "deploy accepts only --stage, --profile, --d1-target and --d1-evidence; alternate stack files and overrides are not allowed"
+        "deploy accepts only --stage, --profile, D1 target/evidence or fresh account/evidence; alternate stack files and overrides are not allowed"
       );
     }
     if (!argument?.includes("=")) {
       index += 1;
     }
+  }
+  const fresh = freshDeployTarget(args);
+  if (fresh !== null) {
+    return fresh;
   }
   const target = readOption(args, "--d1-target");
   if (target === undefined || countOption(args, "--d1-target") !== 1) {
@@ -94,7 +183,41 @@ const deployTarget = (args: readonly string[]) => {
   ) {
     throw new Error("deploy requires exactly one --d1-evidence digest");
   }
-  return { evidence, target };
+  return { evidence, mode: "existing", target } as const;
+};
+
+const validateSharedOptions = (
+  command: AlchemyCommand,
+  args: readonly string[]
+): string | undefined => {
+  const requiresExplicitTarget = command === "deploy" || command === "destroy";
+  const stage = readOption(args, "--stage");
+  if (args.includes("--")) {
+    throw new Error("unexpected argument separator");
+  }
+  if (
+    args.some(
+      (argument) => argument === "--yes" || argument.startsWith("--yes=")
+    )
+  ) {
+    throw new Error("--yes is not allowed by Meal Planner operator scripts");
+  }
+  if (requiresExplicitTarget && stage === undefined) {
+    throw new Error(`${command} requires an explicit --stage`);
+  }
+  if (requiresExplicitTarget && countOption(args, "--stage") !== 1) {
+    throw new Error(`${command} accepts exactly one --stage`);
+  }
+  if (requiresExplicitTarget && readOption(args, "--profile") === undefined) {
+    throw new Error(`${command} requires an explicit --profile`);
+  }
+  if (requiresExplicitTarget && countOption(args, "--profile") !== 1) {
+    throw new Error(`${command} accepts exactly one --profile`);
+  }
+  if (command === "destroy" && stage === "prod") {
+    throw new Error("refusing to destroy the prod stage");
+  }
+  return stage;
 };
 
 /**
@@ -106,58 +229,23 @@ export const runAlchemyCommand = (
   command: AlchemyCommand,
   args: readonly string[],
   runner: AlchemyRunner,
-  preflight: D1Preflight = runD1Preflight
+  preflight: D1Preflight = runD1Preflight,
+  freshPreflight: FreshPreflight = runFreshPreflight
 ): number => {
   const [firstArgument] = args;
   const normalizedArgs = firstArgument === "--" ? args.slice(1) : args;
-  const requiresExplicitTarget = command === "deploy" || command === "destroy";
-  const stage = readOption(normalizedArgs, "--stage");
-
-  if (normalizedArgs.includes("--")) {
-    throw new Error("unexpected argument separator");
-  }
-
-  if (
-    normalizedArgs.some(
-      (argument) => argument === "--yes" || argument.startsWith("--yes=")
-    )
-  ) {
-    throw new Error("--yes is not allowed by Meal Planner operator scripts");
-  }
-
-  if (requiresExplicitTarget && stage === undefined) {
-    throw new Error(`${command} requires an explicit --stage`);
-  }
-
-  if (requiresExplicitTarget && countOption(normalizedArgs, "--stage") !== 1) {
-    throw new Error(`${command} accepts exactly one --stage`);
-  }
-
-  if (
-    requiresExplicitTarget &&
-    readOption(normalizedArgs, "--profile") === undefined
-  ) {
-    throw new Error(`${command} requires an explicit --profile`);
-  }
-
-  if (
-    requiresExplicitTarget &&
-    countOption(normalizedArgs, "--profile") !== 1
-  ) {
-    throw new Error(`${command} accepts exactly one --profile`);
-  }
-
-  if (command === "destroy" && stage === "prod") {
-    throw new Error("refusing to destroy the prod stage");
-  }
+  const stage = validateSharedOptions(command, normalizedArgs);
 
   if (command === "deploy") {
-    const { target, evidence } = deployTarget(normalizedArgs);
+    const target = deployTarget(normalizedArgs);
     const profile = readOption(normalizedArgs, "--profile");
     if (stage === undefined || profile === undefined) {
       throw new Error("deploy target is incomplete");
     }
-    const status = preflight(target, stage, profile, evidence);
+    const status =
+      target.mode === "fresh"
+        ? freshPreflight(target.account, stage, profile, target.evidence)
+        : preflight(target.target, stage, profile, target.evidence);
     if (status !== 0) {
       return status;
     }

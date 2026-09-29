@@ -45,6 +45,7 @@ import {
   conversationMessages,
   conversationTurns,
 } from "./conversation.database-schema.js";
+import { conversationScopeKey } from "./conversation.identity.js";
 
 /** Leave headroom under Cloudflare SQLite's 2 MB string/row limit. */
 const MAX_BLOCK_JSON_BYTES = 1_800_000;
@@ -114,18 +115,13 @@ const parseCommandIdsJson = Schema.decodeUnknownSync(
   { onExcessProperty: "error" }
 );
 
-const scopeKey = (access: typeof ConversationAccess.Type) =>
-  access.scope._tag === "AccountPrivateSetup"
-    ? access.accountKey
-    : access.scope.familyId;
-
 const assertAccess = (
   access: typeof ConversationAccess.Type,
   binding: typeof conversationBinding.$inferSelect
 ): void => {
   if (
     binding.scopeTag !== access.scope._tag ||
-    binding.scopeKey !== scopeKey(access) ||
+    binding.scopeKey !== conversationScopeKey(access) ||
     binding.familyId !==
       (access.scope._tag === "FamilyShared" ? access.scope.familyId : null)
   ) {
@@ -133,28 +129,7 @@ const assertAccess = (
   }
 };
 
-/** Native object name is derived from one immutable authority scope. */
-export const conversationObjectName = async (
-  untrusted: typeof ConversationAccess.Type
-) => {
-  const access = Schema.decodeUnknownSync(ConversationAccess, {
-    onExcessProperty: "error",
-  })(untrusted);
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(
-      JSON.stringify([
-        "agent-conversation",
-        1,
-        access.scope._tag,
-        scopeKey(access),
-      ])
-    )
-  );
-  return Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
-};
+export { conversationObjectName } from "./conversation.identity.js";
 
 const safeStream = (
   runId: string,
@@ -239,7 +214,7 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
           familyId:
             access.scope._tag === "FamilyShared" ? access.scope.familyId : null,
           id: "current",
-          scopeKey: scopeKey(access),
+          scopeKey: conversationScopeKey(access),
           scopeTag: access.scope._tag,
           version: 0,
         })

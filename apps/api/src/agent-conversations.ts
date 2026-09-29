@@ -53,12 +53,12 @@ import type {
   ActionExecution,
   AdvanceConversationAction,
 } from "./features/agent-conversations/conversation-session.js";
-import { conversationObjectName } from "./features/agent-conversations/conversation-session.js";
 import {
   ConversationAccess,
   ConversationCanonicalContext,
   ConversationChatInput,
 } from "./features/agent-conversations/conversation.contract.js";
+import { conversationObjectName } from "./features/agent-conversations/conversation.identity.js";
 import type { AuthenticatedOrganizationResolver } from "./features/auth/auth.principal.js";
 import { authorizeApplicationRequest } from "./features/auth/http.js";
 import type { MealPlannerAuthService } from "./features/auth/index.js";

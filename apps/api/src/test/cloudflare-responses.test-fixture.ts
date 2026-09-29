@@ -2,12 +2,16 @@ const event = (type: string, payload: Record<string, unknown>) =>
   `event: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`;
 
 /** A provider-free Responses stream carrying one completed function call. */
-export const responsesToolSse = (argumentsJson: string): string => {
+export const responsesToolSse = (
+  argumentsJson: string,
+  name = "submitConversationTurn",
+  usage: Record<string, unknown> | null = null
+): string => {
   const item = {
     arguments: argumentsJson,
     call_id: "call_local_review",
     id: "fc_local_review",
-    name: "submitConversationTurn",
+    name,
     status: "completed",
     type: "function_call",
   };
@@ -38,7 +42,7 @@ export const responsesToolSse = (argumentsJson: string): string => {
         output: [item],
         parallel_tool_calls: false,
         status: "completed",
-        usage: null,
+        usage,
       },
     }),
     "data: [DONE]\n\n",

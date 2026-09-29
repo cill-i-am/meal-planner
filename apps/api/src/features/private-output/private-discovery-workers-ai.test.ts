@@ -1,8 +1,9 @@
 import type { ChatMiddleware, ModelMessage, StreamChunk } from "@tanstack/ai";
 import type { CloudflareBindingConfig } from "@tanstack/ai-cloudflare";
-import { Cause, Effect, Exit, Schema } from "effect";
+import { Cause, Effect, Exit, Option, Schema } from "effect";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
+import { responsesToolSse } from "../../test/cloudflare-responses.test-fixture.js";
 import { PrivateChatReply } from "./private-chat-reply.js";
 import {
   emptyPrivateDiscoveryContinuity,
@@ -249,6 +250,103 @@ afterEach(() => {
 afterAll(() => providerLogs.mockRestore());
 
 describe("private discovery native TanStack provider", () => {
+  it("uses Luna Responses for private discovery with no provider retention", async () => {
+    const accountId = "a".repeat(32);
+    const requestBodies: unknown[] = [];
+    const fakeFetch: typeof fetch = async (input, init) => {
+      const request = new Request(input, init);
+      expect(request.url).toBe(
+        `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1/responses`
+      );
+      expect(request.headers.get("cf-aig-gateway-id")).toBe("private-test");
+      expect(request.headers.get("cf-aig-collect-log")).toBe("false");
+      expect(request.headers.get("cf-aig-skip-cache")).toBe("true");
+      requestBodies.push(JSON.parse(await request.text()));
+      return new Response(
+        responsesToolSse(JSON.stringify(output), "submitDiscoveryTurn", {
+          input_tokens: 100,
+          output_tokens: 50,
+          total_tokens: 150,
+        }),
+        { headers: { "content-type": "text/event-stream" } }
+      );
+    };
+    const model = makePrivateDiscoveryModel({
+      CLOUDFLARE_ACCOUNT_ID: accountId,
+      CLOUDFLARE_API_TOKEN: "test-ai-token",
+      PRIVATE_DISCOVERY_CONFIG: JSON.stringify({
+        gatewayId: "private-test",
+        inputUsdPerMillionTokens: 0.1,
+        maxOutputTokens: 8192,
+        model: "openai/gpt-6-luna",
+        outputUsdPerMillionTokens: 0.5,
+        provider: "cloudflare-responses",
+        timeoutMs: 120_000,
+      }),
+      responsesFetch: fakeFetch,
+    });
+    const beforeDispatch = vi.fn();
+    const result = await Effect.runPromise(
+      model.generate({
+        beforeDispatch,
+        context: context(),
+        signal: new AbortController().signal,
+      })
+    );
+    expect(beforeDispatch).toHaveBeenCalledOnce();
+    expect(requestBodies).toHaveLength(1);
+    expect(requestBodies[0]).toMatchObject({
+      max_output_tokens: 8192,
+      model: "openai/gpt-6-luna",
+      parallel_tool_calls: false,
+      reasoning: { effort: "medium" },
+      store: false,
+      tool_choice: { name: "submitDiscoveryTurn", type: "function" },
+      tools: [{ name: "submitDiscoveryTurn", strict: false }],
+    });
+    const requestText = JSON.stringify(requestBodies[0]);
+    expect(requestText).toContain("ProposeProfileCard");
+    expect(requestText).toContain("Continue");
+    expect(requestText).toContain("I like tomatoes.");
+    expect(JSON.stringify(requestBodies[0])).not.toContain("Private reasoning");
+    expect(result.output).toEqual(output);
+    expect(result.provenance.provider).toBe("cloudflare-responses");
+    expect(result.usage).toEqual(unknownUsage);
+  });
+
+  it("does not dispatch a Luna interview without a complete AI token binding", async () => {
+    const provider = vi.fn();
+    const model = makePrivateDiscoveryModel({
+      CLOUDFLARE_ACCOUNT_ID: "a".repeat(32),
+      PRIVATE_DISCOVERY_CONFIG: JSON.stringify({
+        gatewayId: "private-test",
+        inputUsdPerMillionTokens: 0.1,
+        maxOutputTokens: 8192,
+        model: "openai/gpt-6-luna",
+        outputUsdPerMillionTokens: 0.5,
+        provider: "cloudflare-responses",
+        timeoutMs: 120_000,
+      }),
+      responsesFetch: provider,
+    });
+    const exit = await Effect.runPromiseExit(
+      model.generate({
+        beforeDispatch: vi.fn(),
+        context: context(),
+        signal: new AbortController().signal,
+      })
+    );
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) {
+      expect(
+        Option.getOrThrow(Cause.findErrorOption(exit.cause))
+      ).toMatchObject({
+        reason: "not_configured",
+      });
+    }
+    expect(provider).not.toHaveBeenCalled();
+  });
+
   it("sends the exact forced Effect tool contract and preserves Kimi and gateway controls", async () => {
     const test = fixture();
     const result = await Effect.runPromise(

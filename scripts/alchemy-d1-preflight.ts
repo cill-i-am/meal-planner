@@ -45,24 +45,39 @@ const sqlQueries = {
     "SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name",
 } as const;
 
-/** Only these fixed ledger reads may be sent to the D1 query endpoint. */
-type LedgerQuery = (typeof sqlQueries)[keyof typeof sqlQueries];
-export interface D1Reader {
-  readonly accountId: string;
-  readonly read: (path: string, sql?: LedgerQuery) => Promise<unknown>;
-  readonly readState: (stage: string) => Promise<readonly unknown[]>;
-}
+const inventoryPageInfoSchema = z.object({
+  count: z.number().int().nonnegative().optional(),
+  cursor: z.string().optional(),
+  page: z.number().int().positive().optional(),
+  per_page: z.number().int().positive().optional(),
+  total_count: z.number().int().nonnegative().optional(),
+  total_pages: z.number().int().nonnegative().optional(),
+});
 
-export interface LocalMigration {
-  readonly name: string;
-  readonly hash: string;
-}
-
-interface Release {
-  readonly head: string;
-  readonly local: Readonly<Record<Resource, readonly LocalMigration[]>>;
-  readonly toolchain: { readonly alchemy: string; readonly node: string };
-}
+const assertCompleteInventory = (
+  path: string,
+  // eslint-disable-next-line anti-slop/no-unknown-parameters -- Endpoint callers decode the Cloudflare result after this pagination check.
+  result: unknown,
+  info: z.infer<typeof inventoryPageInfoSchema> | undefined
+): void => {
+  const countedInventory =
+    path === "/d1/database" || path.startsWith("/ai-gateway/gateways?");
+  if (
+    (info?.total_pages ?? 1) > 1 ||
+    (info?.cursor !== undefined && info.cursor.length > 0) ||
+    (info?.page !== undefined && info.page !== 1) ||
+    (countedInventory &&
+      (info?.count === undefined ||
+        info.total_count === undefined ||
+        info.total_count !== info.count ||
+        !Array.isArray(result) ||
+        result.length !== info.count))
+  ) {
+    throw new Error(
+      "Incomplete Cloudflare inventory; paginated results require explicit discovery support"
+    );
+  }
+};
 
 const decode = <T>(
   schema: z.ZodType<T>,
@@ -77,6 +92,178 @@ const decode = <T>(
   }
   return parsed.data;
 };
+
+/** Only these fixed ledger reads may be sent to the D1 query endpoint. */
+type LedgerQuery = (typeof sqlQueries)[keyof typeof sqlQueries];
+export interface D1Reader {
+  readonly accountId: string;
+  readonly read: (path: string, sql?: LedgerQuery) => Promise<unknown>;
+  readonly readState: (stage: string) => Promise<readonly unknown[]>;
+  readonly readFreshState: (stage: string) => Promise<unknown>;
+}
+
+const freshTargetSchema = z.strictObject({
+  accountId: account,
+  profile: identifier,
+  stage: identifier,
+});
+export type FreshTarget = z.infer<typeof freshTargetSchema>;
+
+// eslint-disable-next-line anti-slop/no-unknown-parameters -- Fresh target input is decoded at this boundary.
+export const parseFreshTarget = (value: unknown): FreshTarget => {
+  const target = decode(freshTargetSchema, value, "fresh target");
+  if (target.stage === "prod") {
+    throw new Error("Fresh deployment cannot target the prod stage");
+  }
+  return target;
+};
+
+const freshStateSchema = z.strictObject({
+  hasOutput: z.boolean(),
+  replaced: z.array(z.unknown()),
+  resources: z.array(z.string()),
+  stages: z.array(z.string()),
+});
+
+const physicalPrefix = (id: string, stage: string, maxLength: number) => {
+  // Alchemy beta.76 appends a 16-character instance suffix. When that exceeds
+  // the provider limit, it retains 8 hash characters and truncates the prefix.
+  const prefix = `MealPlanner-${id}-${stage}-`.replaceAll(
+    /[^a-zA-Z0-9-]/gu,
+    "-"
+  );
+  return prefix
+    .slice(0, prefix.length + 16 > maxLength ? maxLength - 24 : undefined)
+    .toLowerCase();
+};
+
+/** Refuse any existing stage state or physical name this stack could adopt. */
+export const inspectFreshTarget = async (
+  reader: D1Reader,
+  input: FreshTarget
+) => {
+  const target = parseFreshTarget(input);
+  if (reader.accountId !== target.accountId) {
+    throw new Error("Resolved Cloudflare account differs from fresh target");
+  }
+  const [workers, databases, buckets, gateways, containers, state] =
+    await Promise.all([
+      reader.read("/workers/scripts"),
+      reader.read("/d1/database"),
+      reader.read("/r2/buckets?per_page=1000"),
+      reader.read("/ai-gateway/gateways?per_page=100"),
+      reader.read("/containers/applications"),
+      reader.readFreshState(target.stage),
+    ]);
+  const workerInventory = decode(
+    z.array(z.object({ id: identifier, tags: z.array(z.string()).optional() })),
+    workers,
+    "Worker inventory"
+  );
+  const databaseInventory = decode(
+    z.array(z.object({ name: identifier, uuid: z.uuid() })),
+    databases,
+    "D1 inventory"
+  );
+  const bucketInventory = decode(
+    z.object({ buckets: z.array(z.object({ name: identifier })) }),
+    buckets,
+    "R2 bucket inventory"
+  ).buckets;
+  if (bucketInventory.length >= 1000) {
+    throw new Error("Incomplete R2 bucket inventory; the first page is full");
+  }
+  const gatewayInventory = decode(
+    z.array(z.object({ id: identifier })),
+    gateways,
+    "AI Gateway inventory"
+  );
+  const containerInventory = decode(
+    z.array(z.object({ name: identifier })),
+    containers,
+    "Container application inventory"
+  );
+  const saved = decode(freshStateSchema, state, "fresh Alchemy state");
+  if (
+    saved.stages.includes(target.stage) ||
+    saved.resources.length > 0 ||
+    saved.replaced.length > 0 ||
+    saved.hasOutput
+  ) {
+    throw new Error("Alchemy state already exists for the fresh stage");
+  }
+  const workerIds = [
+    "HouseholdDomainWorker",
+    "MealPlannerApi",
+    "MealPlannerWebsite",
+    "PrivateOutputWorker",
+    "TikTokMediaContainer",
+  ];
+  const databaseIds = resources;
+  const matchedWorkers = workerInventory.filter(
+    (worker) =>
+      workerIds.some((id) =>
+        worker.id.toLowerCase().startsWith(physicalPrefix(id, target.stage, 54))
+      ) ||
+      (worker.tags?.includes("alchemy:stack:MealPlanner") &&
+        worker.tags.includes(`alchemy:stage:${target.stage}`))
+  );
+  const matchedDatabases = databaseInventory.filter((db) =>
+    databaseIds.some((id) =>
+      db.name.toLowerCase().startsWith(physicalPrefix(id, target.stage, 64))
+    )
+  );
+  const matchedBuckets = bucketInventory.filter((bucket) =>
+    bucket.name
+      .toLowerCase()
+      .startsWith(physicalPrefix("ImportEvidenceBucket", target.stage, 63))
+  );
+  const matchedGateways = gatewayInventory.filter((gateway) =>
+    ["AgentProviderGateway", "ImportProviderGateway"].some((id) =>
+      gateway.id.toLowerCase().startsWith(physicalPrefix(id, target.stage, 64))
+    )
+  );
+  const matchedContainers = containerInventory.filter((container) =>
+    container.name
+      .toLowerCase()
+      .startsWith(physicalPrefix("TikTokMediaContainer", target.stage, 64))
+  );
+  if (
+    matchedWorkers.length > 0 ||
+    matchedDatabases.length > 0 ||
+    matchedBuckets.length > 0 ||
+    matchedGateways.length > 0 ||
+    matchedContainers.length > 0
+  ) {
+    throw new Error("Cloudflare already contains a fresh-stage target name");
+  }
+  return {
+    checkedAt: new Date().toISOString(),
+    state: { stageAbsent: true },
+    target,
+  } as const;
+};
+
+export const freshEvidenceDigest = (
+  report: Awaited<ReturnType<typeof inspectFreshTarget>>,
+  release: Release
+): string =>
+  createHash("sha256")
+    .update(
+      JSON.stringify({ release, state: report.state, target: report.target })
+    )
+    .digest("hex");
+
+export interface LocalMigration {
+  readonly name: string;
+  readonly hash: string;
+}
+
+interface Release {
+  readonly head: string;
+  readonly local: Readonly<Record<Resource, readonly LocalMigration[]>>;
+  readonly toolchain: { readonly alchemy: string; readonly node: string };
+}
 
 // eslint-disable-next-line anti-slop/no-unknown-parameters -- Target files are untrusted JSON and are decoded immediately.
 export const parseD1Target = (value: unknown): D1Target => {
@@ -637,19 +824,13 @@ const makeReader = async (
       const envelope = decode(
         z.object({
           result: z.unknown(),
-          result_info: z
-            .object({ total_pages: z.number().optional() })
-            .optional(),
+          result_info: inventoryPageInfoSchema.optional(),
           success: z.literal(true),
         }),
         await response.json(),
         "Cloudflare preflight response"
       );
-      if ((envelope.result_info?.total_pages ?? 1) > 1) {
-        throw new Error(
-          "Incomplete Cloudflare inventory; paginated results require explicit discovery support"
-        );
-      }
+      assertCompleteInventory(path, envelope.result, envelope.result_info);
       if (sql === undefined) {
         return envelope.result;
       }
@@ -662,6 +843,57 @@ const makeReader = async (
       );
       return results[0].results;
     },
+    readFreshState: async (stage) =>
+      await Effect.runPromise(
+        Effect.gen(function* readFreshAlchemyState() {
+          const store = yield* CredentialsStore;
+          const cached = decode(
+            z.object({
+              accountId: account,
+              authToken: z.string().min(1),
+              url: z.url().startsWith("https://"),
+            }),
+            yield* store.read(profile, "cloudflare-state-store"),
+            "existing state-store credentials"
+          );
+          if (cached.accountId !== accountId) {
+            return yield* Effect.fail(
+              new Error("State-store account differs from fresh target")
+            );
+          }
+          const state = yield* makeHttpStateStore({
+            ...cached,
+            id: "cloudflare-http",
+          });
+          if ((yield* state.getVersion()) !== 7) {
+            return yield* Effect.fail(
+              new Error("Unsupported existing state-store version")
+            );
+          }
+          const [stages, storedResources, replaced, output] = yield* Effect.all(
+            [
+              state.listStages("MealPlanner"),
+              state.list({ stack: "MealPlanner", stage }),
+              state.getReplacedResources({ stack: "MealPlanner", stage }),
+              state.getOutput({ stack: "MealPlanner", stage }),
+            ]
+          );
+          return {
+            hasOutput: output !== undefined,
+            replaced,
+            resources: storedResources,
+            stages,
+          };
+        }).pipe(
+          Effect.provide(base),
+          Effect.scoped,
+          Effect.timeout("30 seconds")
+        )
+      ).catch(() => {
+        throw new Error(
+          "Could not read existing Alchemy state; verify the same-account state-store version and complete its sign-in separately"
+        );
+      }),
     readState: async (stage) =>
       await Effect.runPromise(
         Effect.gen(function* readExistingD1State() {
@@ -764,25 +996,83 @@ const readRelease = (
   };
 };
 
+const runFreshInspection = async (
+  command: "fresh-inspect" | "fresh-verify",
+  parsed: ReadonlyMap<string, string>
+): Promise<number> => {
+  if (parsed.has("--target")) {
+    throw new Error("Fresh inspection does not accept an existing D1 target");
+  }
+  const target = parseFreshTarget({
+    accountId: parsed.get("--account"),
+    profile: parsed.get("--profile"),
+    stage: parsed.get("--stage"),
+  });
+  const reviewed = parsed.get("--evidence");
+  if (command === "fresh-inspect" && reviewed !== undefined) {
+    throw new Error(
+      "Fresh inspection generates evidence; it does not accept --evidence"
+    );
+  }
+  if (command === "fresh-verify") {
+    decode(
+      z.string().regex(/^[a-f0-9]{64}$/u),
+      reviewed,
+      "reviewed --evidence digest"
+    );
+  }
+  const local = {
+    MealPlannerAuthDatabase: await readLocalMigrations(
+      `${repository}/${migrationDirectories.MealPlannerAuthDatabase}`
+    ),
+    ProviderAccountingDatabase: await readLocalMigrations(
+      `${repository}/${migrationDirectories.ProviderAccountingDatabase}`
+    ),
+  };
+  const release = readRelease(local);
+  const reader = await makeReader(target.profile, target.accountId);
+  const report = await inspectFreshTarget(reader, target);
+  if (JSON.stringify(readRelease(local)) !== JSON.stringify(release)) {
+    throw new Error("Repository changed during fresh D1 inspection");
+  }
+  const digest = freshEvidenceDigest(report, release);
+  process.stdout.write(
+    `${JSON.stringify({ ...report, digest, release }, null, 2)}\n`
+  );
+  if (command === "fresh-verify" && reviewed !== undefined) {
+    verifyEvidence(digest, reviewed);
+  }
+  return 0;
+};
+
+const runDiscovery = async (
+  parsed: ReadonlyMap<string, string>
+): Promise<number> => {
+  if (
+    parsed.has("--target") ||
+    parsed.has("--stage") ||
+    parsed.has("--evidence")
+  ) {
+    throw new Error("Discovery accepts only --profile and --account");
+  }
+  const profile = decode(identifier, parsed.get("--profile"), "profile");
+  const accountId = decode(account, parsed.get("--account"), "account");
+  const reader = await makeReader(profile, accountId);
+  process.stdout.write(
+    `${JSON.stringify(await discoverD1Targets(reader, profile), null, 2)}\n`
+  );
+  return 0;
+};
+
 const main = async (args: readonly string[]): Promise<number> => {
   process.chdir(repository);
   const [command, ...rest] = args;
   const parsed = options(rest[0] === "--" ? rest.slice(1) : rest);
   if (command === "discover") {
-    if (
-      parsed.has("--target") ||
-      parsed.has("--stage") ||
-      parsed.has("--evidence")
-    ) {
-      throw new Error("Discovery accepts only --profile and --account");
-    }
-    const profile = decode(identifier, parsed.get("--profile"), "profile");
-    const accountId = decode(account, parsed.get("--account"), "account");
-    const reader = await makeReader(profile, accountId);
-    process.stdout.write(
-      `${JSON.stringify(await discoverD1Targets(reader, profile), null, 2)}\n`
-    );
-    return 0;
+    return runDiscovery(parsed);
+  }
+  if (command === "fresh-inspect" || command === "fresh-verify") {
+    return runFreshInspection(command, parsed);
   }
   if (
     (command !== "inspect" && command !== "verify") ||

@@ -10,8 +10,11 @@ import {
   checkLedger,
   discoverD1Targets,
   evidenceDigest,
+  freshEvidenceDigest,
   inspectD1Target,
+  inspectFreshTarget,
   parseD1Target,
+  parseFreshTarget,
   readLocalMigrations,
   verifyEvidence,
 } from "./alchemy-d1-preflight.js";
@@ -89,6 +92,12 @@ const fixture = () => {
       resourceType: "Cloudflare.D1Database",
       status: "updated",
     })),
+    freshState: {
+      hasOutput: false,
+      replaced: [] as unknown[],
+      resources: [] as string[],
+      stages: [] as string[],
+    },
     rows: alchemyRows,
     schema: [
       {
@@ -129,6 +138,18 @@ const fixture = () => {
               { id: "unrelated", tags: [] },
             ];
           }
+          if (path === "/d1/database") {
+            return [];
+          }
+          if (path === "/r2/buckets?per_page=1000") {
+            return { buckets: [] };
+          }
+          if (path === "/ai-gateway/gateways?per_page=100") {
+            return [{ id: "default" }];
+          }
+          if (path === "/containers/applications") {
+            return [];
+          }
           if (path.endsWith("/settings")) {
             return state.worker;
           }
@@ -152,6 +173,10 @@ const fixture = () => {
           };
         })()
       ),
+    readFreshState: (stage) => {
+      calls.push({ path: `/fresh-state/${stage}`, sql: undefined });
+      return Promise.resolve(state.freshState);
+    },
     readState: (stage) => {
       calls.push({ path: `/state/${stage}`, sql: undefined });
       return Promise.resolve(state.executor);
@@ -159,6 +184,187 @@ const fixture = () => {
   };
   return { calls, reader, state };
 };
+
+describe("fresh D1 release inspection", () => {
+  const freshTarget = parseFreshTarget({
+    accountId: target.accountId,
+    profile: target.profile,
+    stage: "e2e",
+  });
+
+  it("proves account, stage, Worker names, D1 names and Alchemy state absent", async () => {
+    const { reader, state } = fixture();
+    state.worker.tags = ["unrelated"];
+    const report = await inspectFreshTarget(reader, freshTarget);
+    expect(report.target).toEqual(freshTarget);
+    expect(report.state.stageAbsent).toBe(true);
+    const release = {
+      head: "a".repeat(40),
+      local,
+      toolchain: { alchemy: "2.0.0-beta.76", node: "v24" },
+    };
+    const digest = freshEvidenceDigest(report, release);
+    verifyEvidence(digest, digest);
+    expect(
+      freshEvidenceDigest(report, { ...release, head: "b".repeat(40) })
+    ).not.toBe(digest);
+  });
+
+  it.each(["stage", "resource", "replacement", "output"])(
+    "rejects existing %s state",
+    async (change) => {
+      const { reader, state } = fixture();
+      if (change === "stage") {
+        state.freshState.stages.push("e2e");
+      }
+      if (change === "resource") {
+        state.freshState.resources.push("MealPlannerApi");
+      }
+      if (change === "replacement") {
+        state.freshState.replaced.push({});
+      }
+      if (change === "output") {
+        state.freshState.hasOutput = true;
+      }
+      await expect(inspectFreshTarget(reader, freshTarget)).rejects.toThrow(
+        "state already exists"
+      );
+    }
+  );
+
+  it("rejects matching Worker ownership tags and an unowned generated Worker name", async () => {
+    const { reader } = fixture();
+    const owned: D1Reader = {
+      ...reader,
+      read: (path, sql) =>
+        path === "/workers/scripts"
+          ? Promise.resolve([
+              {
+                id: "unrelated",
+                tags: ["alchemy:stack:MealPlanner", "alchemy:stage:e2e"],
+              },
+            ])
+          : reader.read(path, sql),
+    };
+    await expect(inspectFreshTarget(owned, freshTarget)).rejects.toThrow(
+      "target name"
+    );
+    const unowned: D1Reader = {
+      ...reader,
+      read: (path, sql) =>
+        path === "/workers/scripts"
+          ? Promise.resolve([
+              { id: "mealplanner-mealplannerapi-e2e-existing", tags: [] },
+            ])
+          : reader.read(path, sql),
+    };
+    await expect(inspectFreshTarget(unowned, freshTarget)).rejects.toThrow(
+      "target name"
+    );
+  });
+
+  it("rejects generated D1 name and account mismatch", async () => {
+    const { reader, calls } = fixture();
+    const existing: D1Reader = {
+      ...reader,
+      read: (path, sql) =>
+        path === "/d1/database"
+          ? Promise.resolve([
+              {
+                name: "MealPlanner-MealPlannerAuthDatabase-e2e-existing",
+                uuid: target.databases.MealPlannerAuthDatabase.uuid,
+              },
+            ])
+          : reader.read(path, sql),
+    };
+    await expect(inspectFreshTarget(existing, freshTarget)).rejects.toThrow(
+      "target name"
+    );
+    calls.length = 0;
+    await expect(
+      inspectFreshTarget({ ...reader, accountId: "b".repeat(32) }, freshTarget)
+    ).rejects.toThrow("account");
+    expect(calls).toHaveLength(0);
+  });
+
+  it.each([
+    [
+      "/workers/scripts",
+      [{ id: "mealplanner-privateoutputworker-e2e-existing", tags: [] }],
+    ],
+    [
+      "/workers/scripts",
+      [{ id: "mealplanner-householddomainworker-e2e-existing", tags: [] }],
+    ],
+    [
+      "/r2/buckets?per_page=1000",
+      { buckets: [{ name: "mealplanner-importevidencebucket-e2e-existing" }] },
+    ],
+    [
+      "/ai-gateway/gateways?per_page=100",
+      [{ id: "mealplanner-importprovidergateway-e2e-existing" }],
+    ],
+    [
+      "/containers/applications",
+      [{ name: "mealplanner-tiktokmediacontainer-e2e-existing" }],
+    ],
+  ])(
+    "rejects an unowned fresh-stage resource at %s",
+    async (path, inventory) => {
+      const { reader } = fixture();
+      const withCollision: D1Reader = {
+        ...reader,
+        read: (requested, sql) =>
+          requested === path
+            ? Promise.resolve(inventory)
+            : reader.read(requested, sql),
+      };
+      await expect(
+        inspectFreshTarget(withCollision, freshTarget)
+      ).rejects.toThrow("target name");
+    }
+  );
+
+  it("fails closed on incomplete or failed inventory and forbids fresh prod", async () => {
+    const { reader } = fixture();
+    await expect(
+      inspectFreshTarget(
+        {
+          ...reader,
+          readFreshState: () => Promise.reject(new Error("state failed")),
+        },
+        freshTarget
+      )
+    ).rejects.toThrow("state failed");
+    await expect(
+      inspectFreshTarget(
+        { ...reader, read: () => Promise.resolve({}) },
+        freshTarget
+      )
+    ).rejects.toThrow();
+    expect(() => parseFreshTarget({ ...freshTarget, stage: "prod" })).toThrow(
+      "prod"
+    );
+  });
+
+  it("rejects a full R2 first page when Cloudflare omits a cursor", async () => {
+    const { reader } = fixture();
+    const fullPage: D1Reader = {
+      ...reader,
+      read: (path, sql) =>
+        path === "/r2/buckets?per_page=1000"
+          ? Promise.resolve({
+              buckets: Array.from({ length: 1000 }, () => ({
+                name: "unrelated",
+              })),
+            })
+          : reader.read(path, sql),
+    };
+    await expect(inspectFreshTarget(fullPage, freshTarget)).rejects.toThrow(
+      "first page is full"
+    );
+  });
+});
 
 describe("existing D1 release inspection", () => {
   it("discovers by ownership tags and exact binding UUIDs without ledger reads", async () => {

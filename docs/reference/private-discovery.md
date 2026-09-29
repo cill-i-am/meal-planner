@@ -53,6 +53,14 @@ already dispatched to household storage.
 Using base Agent does not add private HTTP responses, RPC methods that return
 transcripts, SDK state synchronization or parent access to transcripts.
 
+The deployed [private Worker binding](../../apps/api/src/features/private-output/private-output-binding.ts)
+uses the same stage-owned AI Gateway and scoped token as the family conversation.
+Its model is GPT-6 Luna through Cloudflare Responses. The model receives only the
+bound participant's private session context. It must return one closed
+`submitDiscoveryTurn` tool call; application code validates the result before
+recording a private proposal. Gateway logging, caching and provider response
+storage are disabled. A missing binding fails the turn as `not_configured`.
+
 ## Fresh profile review
 
 `ProfileEdit` opens a new private session with the adult's current household

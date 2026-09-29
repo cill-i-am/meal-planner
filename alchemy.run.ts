@@ -26,18 +26,29 @@ export default Alchemy.Stack(
     const authDatabase = yield* MealPlannerAuthDatabase;
     const evidenceBucket = yield* ImportEvidenceBucket;
     const importProviderGateway = yield* ImportProviderGateway;
-    // The sending domain is account-wide. Only production owns its lifecycle;
-    // preview and developer stages must not create or delete the same domain.
+    // Each long-lived stage owns a distinct sending domain. Ephemeral previews
+    // do not create or delete production or E2E mail configuration.
     const emailSending =
-      stage === "prod"
+      stage === "prod" || stage === "e2e"
         ? yield* Cloudflare.Email.SendingSubdomain("MealPlannerMail", {
-            name: "mail.ceird.app",
+            name: stage === "e2e" ? "mail.e2e.ceird.app" : "mail.ceird.app",
             zoneId: yield* Config.string("CEIRD_ZONE_ID"),
           })
         : undefined;
     const api = yield* MealPlannerApi;
+    const websiteAddress =
+      stage === "e2e"
+        ? {
+            domain: {
+              name: "e2e.ceird.app",
+              zoneId: yield* Config.string("CEIRD_ZONE_ID"),
+            },
+            workersDev: { enabled: false, previewsEnabled: false },
+          }
+        : { workersDev: true };
     const website = yield* Cloudflare.Website.Vite("MealPlannerWebsite", {
       assets: { runWorkerFirst: ["/api/auth/*", "/v1/*"] },
+      ...websiteAddress,
       env: { MEAL_PLANNER_API: api },
       ...websiteSource,
       observability: {
@@ -60,6 +71,7 @@ export default Alchemy.Stack(
       authDatabaseName: authDatabase.databaseName,
       emailSendingEnabled: emailSending?.enabled ?? null,
       emailSendingSubdomain: emailSending?.name ?? null,
+      emailSendingSubdomainId: emailSending?.subdomainId ?? null,
       evidenceBucketName: evidenceBucket.bucketName,
       evidenceRetentionSeconds: EvidenceRetentionSeconds,
       importProviderGatewayId: importProviderGateway.gatewayId,

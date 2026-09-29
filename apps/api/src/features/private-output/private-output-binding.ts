@@ -1,8 +1,9 @@
 // eslint-disable-next-line @typescript-eslint/triple-slash-reference -- This ambient native module has no JavaScript import; include it in every production compiler program.
 /// <reference path="./private-output-runtime.d.ts" />
 import * as Cloudflare from "alchemy/Cloudflare";
-import { Config, Effect } from "effect";
+import { Effect } from "effect";
 
+import { AgentProvider } from "../../infrastructure/agent-provider.js";
 import type {
   AccountOutputLifecycle,
   HouseholdAgent,
@@ -16,33 +17,37 @@ import type {
 
 export class PrivateOutputWorker extends Cloudflare.Worker<PrivateOutputWorker>()(
   "PrivateOutputWorker",
-  {
-    compatibility: { date: "2026-07-14", flags: ["nodejs_compat"] },
-    env: {
-      AccountOutputLifecycle: Cloudflare.DurableObject<AccountOutputLifecycle>(
-        "AccountOutputLifecycle"
+  Effect.gen(function* PrivateOutputWorkerProps() {
+    const provider = yield* AgentProvider;
+    return {
+      compatibility: { date: "2026-07-14", flags: ["nodejs_compat"] },
+      env: {
+        AccountOutputLifecycle:
+          Cloudflare.DurableObject<AccountOutputLifecycle>(
+            "AccountOutputLifecycle"
+          ),
+        CLOUDFLARE_ACCOUNT_ID: provider.accountId,
+        CLOUDFLARE_API_TOKEN: provider.apiToken,
+        HouseholdAgent:
+          Cloudflare.DurableObject<HouseholdAgent>("HouseholdAgent"),
+        PRIVATE_DISCOVERY_CONFIG: provider.privateDiscoveryConfig,
+        PrivateDiscoveryAI: Cloudflare.Workers.AI(),
+        PrivateInterviewDirectory:
+          Cloudflare.DurableObject<PrivateInterviewDirectory>(
+            "PrivateInterviewDirectory"
+          ),
+        PrivateInterviewSession:
+          Cloudflare.DurableObject<PrivateInterviewSession>(
+            "PrivateInterviewSession"
+          ),
+      },
+      main: Effect.sync(
+        () => new URL("private-output-worker.ts", import.meta.url).href
       ),
-      HouseholdAgent:
-        Cloudflare.DurableObject<HouseholdAgent>("HouseholdAgent"),
-      PRIVATE_DISCOVERY_CONFIG: Config.string(
-        "MEAL_PLANNER_PRIVATE_DISCOVERY_CONFIG"
-      ).pipe(Config.withDefault("")),
-      PrivateDiscoveryAI: Cloudflare.Workers.AI(),
-      PrivateInterviewDirectory:
-        Cloudflare.DurableObject<PrivateInterviewDirectory>(
-          "PrivateInterviewDirectory"
-        ),
-      PrivateInterviewSession:
-        Cloudflare.DurableObject<PrivateInterviewSession>(
-          "PrivateInterviewSession"
-        ),
-    },
-    main: Effect.sync(
-      () => new URL("private-output-worker.ts", import.meta.url).href
-    ),
-    observability: { enabled: false },
-    workersDev: false,
-  }
+      observability: { enabled: false },
+      workersDev: false,
+    };
+  })
 ) {}
 
 export const PrivateOutputApiBinding = PrivateOutputWorker.pipe(

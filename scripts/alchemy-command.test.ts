@@ -16,6 +16,77 @@ describe("Alchemy command guard", () => {
     "--d1-evidence",
     "a".repeat(64),
   ];
+  const freshArgs = [
+    "--stage",
+    "e2e",
+    "--profile",
+    "fixture",
+    "--fresh-account",
+    "a".repeat(32),
+    "--fresh-evidence",
+    "b".repeat(64),
+  ];
+
+  it("verifies fresh-stage evidence before canonical deployment", () => {
+    const calls: unknown[] = [];
+    expect(
+      runAlchemyCommand(
+        "deploy",
+        freshArgs,
+        (command, args) => {
+          calls.push({ args, command });
+          return 0;
+        },
+        () => {
+          throw new Error("existing preflight called");
+        },
+        (...args) => {
+          calls.push(args);
+          return 0;
+        }
+      )
+    ).toBe(0);
+    expect(calls).toEqual([
+      ["a".repeat(32), "e2e", "fixture", "b".repeat(64)],
+      {
+        args: [
+          fileURLToPath(new URL("../alchemy.run.ts", import.meta.url)),
+          "--stage",
+          "e2e",
+          "--profile",
+          "fixture",
+        ],
+        command: "deploy",
+      },
+    ]);
+  });
+
+  it("rejects mixed modes and failed fresh evidence before Alchemy", () => {
+    let invoked = false;
+    expect(() =>
+      runAlchemyCommand(
+        "deploy",
+        [...freshArgs, "--d1-target", "other.json"],
+        () => {
+          invoked = true;
+          return 0;
+        }
+      )
+    ).toThrow("mutually exclusive");
+    expect(
+      runAlchemyCommand(
+        "deploy",
+        freshArgs,
+        () => {
+          invoked = true;
+          return 0;
+        },
+        () => 0,
+        () => 1
+      )
+    ).toBe(1);
+    expect(invoked).toBe(false);
+  });
 
   it("runs fresh D1 verification before the canonical deployment and strips evidence arguments", () => {
     const calls: unknown[] = [];

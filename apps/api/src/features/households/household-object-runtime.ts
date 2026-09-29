@@ -30,7 +30,6 @@ import * as Drizzle from "alchemy/Drizzle/Cloudflare";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Clock, Effect, Option, Schema } from "effect";
 
-import migrations from "../../../household-migrations/migrations.js";
 import { makeMealPlanService } from "../meal-planning/meal-plan.js";
 import { HouseholdOutputFence } from "../private-output/household-output-fence.js";
 import { HouseholdImportBatchQueueWriter } from "./batches/household-import-batch-queue.port.js";
@@ -197,7 +196,12 @@ export const HouseholdObjectRuntime = Effect.gen(
         ),
         Effect.scoped
       );
-    const database = Drizzle.DurableObject({ migrations });
+    const database = Effect.gen(function* householdDatabase() {
+      const { default: migrations } = yield* Effect.promise(
+        () => import("../../../household-migrations/migrations.js")
+      );
+      return yield* Drizzle.DurableObject({ migrations });
+    });
     const planningAuthority = (
       connection: EffectSQLiteDoDatabase,
       admission: HouseholdPeopleMemberAdmission

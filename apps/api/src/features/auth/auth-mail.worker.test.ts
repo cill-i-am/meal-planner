@@ -39,6 +39,9 @@ beforeAll(async () => {
 const recipient = Schema.decodeUnknownSync(EmailAddress)(
   "recipient@example.test"
 );
+const senderAddress = Schema.decodeUnknownSync(EmailAddress)(
+  "noreply@mail.e2e.ceird.app"
+);
 const runtimeContext: BaseRuntimeContext = {
   Type: "test",
   env: {},
@@ -134,7 +137,8 @@ it("submits HTML and text through the Cloudflare binding without leaking provide
       },
     },
     runtimeContext,
-    true
+    true,
+    senderAddress
   );
   const mail = await renderPasswordResetMail({
     email: recipient,
@@ -144,7 +148,7 @@ it("submits HTML and text through the Cloudflare binding without leaking provide
   await sender(mail);
   expect(submitted).toEqual([
     {
-      from: { email: "noreply@mail.ceird.app", name: "Meal Planner" },
+      from: { email: senderAddress, name: "Meal Planner" },
       html: mail.html,
       subject: mail.subject,
       text: mail.text,
@@ -161,7 +165,8 @@ it("submits HTML and text through the Cloudflare binding without leaking provide
         } as Cloudflare.Email.SendEmailError),
     },
     runtimeContext,
-    true
+    true,
+    senderAddress
   );
   await expect(failing(mail)).rejects.toMatchObject({
     _tag: EmailDeliveryUnavailable.name,
@@ -175,7 +180,8 @@ it("submits HTML and text through the Cloudflare binding without leaking provide
       send: () => Effect.die("Disabled delivery invoked the provider"),
     },
     runtimeContext,
-    false
+    false,
+    senderAddress
   );
   await expect(disabled(mail)).rejects.toMatchObject({
     _tag: EmailDeliveryUnavailable.name,

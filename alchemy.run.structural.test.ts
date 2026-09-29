@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -8,6 +9,19 @@ const readRepoFile = (path: string): string =>
   readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf-8");
 
 describe("Alchemy source structure (no provider lifecycle or runtime proof)", () => {
+  it("loads the deployment graph in Node without evaluating Worker-only modules", () => {
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", "-e", "import('./alchemy.run.ts')"],
+      {
+        cwd: import.meta.dirname,
+        encoding: "utf-8",
+        timeout: 15_000,
+      }
+    );
+    expect(result.status, result.stderr).toBe(0);
+  });
+
   it("disables provider request logging and retention", () => {
     const source = readRepoFile(
       "./apps/api/src/infrastructure/import-provider-gateway.ts"
@@ -31,7 +45,16 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     const workerSource = readRepoFile("./apps/api/src/worker.ts");
 
     expect(workerSource).toContain('"MealPlannerApi"');
-    expect(workerSource).toContain("main: import.meta.url");
+    expect(workerSource).toContain(
+      'main: new URL("worker-entry.ts", import.meta.url).href'
+    );
+    const workerEntrySource = readRepoFile("./apps/api/src/worker-entry.ts");
+    expect(workerEntrySource).toContain(
+      'export { default } from "./worker.js"'
+    );
+    expect(workerEntrySource).toContain(
+      'export { AgentConversation } from "./features/agent-conversations/conversation-session.js"'
+    );
     expect(workerSource).toContain("observability: {");
     expect(workerSource).toContain("invocationLogs: false");
     expect(workerSource).toMatch(/traces:\s*\{[^}]*enabled:\s*false,\s*\}/u);

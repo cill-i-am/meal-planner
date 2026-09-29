@@ -1,3 +1,4 @@
+import { EmailAddress } from "@meal-planner/household-api";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { drizzle } from "drizzle-orm/d1";
@@ -76,8 +77,6 @@ import { MealPlannerAuthDatabase } from "./infrastructure/meal-planner-auth-data
 import { ProviderAccountingDatabase } from "./infrastructure/provider-accounting-database.js";
 import { withCurrentRequestCancellation } from "./infrastructure/request-cancellation.js";
 
-export { AgentConversation } from "./features/agent-conversations/index.js";
-
 const MealPlannerOperationalRoutes = [
   ...HealthRoutes,
   ...ProviderAccountingRouteDefinitions,
@@ -89,32 +88,35 @@ const currentIsoTimestamp = () => new Date().toISOString();
 /** Effect-native Cloudflare host for health and authenticated import routes. */
 export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
   "MealPlannerApi",
-  {
-    env: {
-      ...agentConversationBindings,
-      PrivateOutputApi: PrivateOutputApiBinding,
-      PrivateOutputMutations: PrivateOutputMutationsBinding,
-    },
-    main: import.meta.url,
-    observability: {
-      enabled: true,
-      headSamplingRate: 1,
-      logs: {
+  Effect.gen(function* MealPlannerApiProps() {
+    const conversationBindings = yield* agentConversationBindings;
+    return {
+      env: {
+        ...conversationBindings,
+        PrivateOutputApi: PrivateOutputApiBinding,
+        PrivateOutputMutations: PrivateOutputMutationsBinding,
+      },
+      main: new URL("worker-entry.ts", import.meta.url).href,
+      observability: {
         enabled: true,
         headSamplingRate: 1,
-        // Invocation logs include request/response metadata and fetch URLs.
-        // Emit only the application's closed, allowlisted event contract.
-        invocationLogs: false,
-        persist: true,
+        logs: {
+          enabled: true,
+          headSamplingRate: 1,
+          // Invocation logs include request/response metadata and fetch URLs.
+          // Emit only the application's closed, allowlisted event contract.
+          invocationLogs: false,
+          persist: true,
+        },
+        traces: {
+          // Automatic Worker tracing records url.full/url.path/url.query.
+          // Closed Effect events remain in application logs.
+          enabled: false,
+        },
       },
-      traces: {
-        // Automatic Worker tracing records url.full/url.path/url.query.
-        // Closed Effect events remain in application logs.
-        enabled: false,
-      },
-    },
-    workersDev: false,
-  },
+      workersDev: false,
+    };
+  }),
   Effect.gen(function* MealPlannerApiWorker() {
     const providerAccountingQueryDatabase = yield* Cloudflare.D1.QueryDatabase(
       ProviderAccountingDatabase
@@ -134,9 +136,14 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     );
     const workerEnvironment = yield* Cloudflare.Workers.WorkerEnvironment;
     const conversations = workerEnvironment["AgentConversation"];
+    const emailSenderAddress = Schema.decodeUnknownSync(EmailAddress)(
+      yield* Config.string("MEAL_PLANNER_EMAIL_SENDER_ADDRESS").pipe(
+        Config.withDefault("noreply@mail.ceird.app")
+      )
+    );
     const emailBinding = yield* Cloudflare.Email.SendEmail(
       "MealPlannerTransactionalEmail",
-      { allowedSenderAddresses: ["noreply@mail.ceird.app"] }
+      { allowedSenderAddresses: [emailSenderAddress] }
     );
     const emailClient = yield* Cloudflare.Email.Send(emailBinding);
     const emailDeliveryEnabled = yield* Config.boolean(
@@ -206,7 +213,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         const sendEmail = makeCloudflareEmailSender(
           emailClient,
           runtimeContext,
-          emailDeliveryEnabled
+          emailDeliveryEnabled,
+          emailSenderAddress
         );
         const auth = yield* makeAlchemyMealPlannerAuth({
           baseURL: requestOrigin,

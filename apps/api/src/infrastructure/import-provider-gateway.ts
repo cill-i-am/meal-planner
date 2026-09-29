@@ -13,7 +13,6 @@ export const ImportProviderGateway = Cloudflare.AI.Gateway(
   {
     cacheTtl: null,
     collectLogs: false,
-    id: "meal-planner-recipe-import",
     spendLimits: {
       enabled: true,
       rules: [
