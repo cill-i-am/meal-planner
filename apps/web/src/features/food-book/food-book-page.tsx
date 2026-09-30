@@ -25,7 +25,7 @@ import {
   ChefHatIcon,
   PlusIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import {
   Alert,
@@ -627,6 +627,7 @@ const FoodOptionsGrid = ({
   importHref,
   onAdd,
   onSelect,
+  pending,
 }: {
   readonly snapshot: PlanningContentSnapshot;
   readonly options: readonly MealOption[];
@@ -634,6 +635,7 @@ const FoodOptionsGrid = ({
   readonly importHref: string;
   readonly onAdd: () => void;
   readonly onSelect: (id: string) => void;
+  readonly pending: boolean;
 }) => {
   if (snapshot.options.length === 0) {
     return (
@@ -646,7 +648,7 @@ const FoodOptionsGrid = ({
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Button render={<a href={importHref} />}>Import a recipe</Button>
-          <Button variant="outline" onClick={onAdd}>
+          <Button variant="outline" disabled={pending} onClick={onAdd}>
             Add a familiar meal
           </Button>
         </div>
@@ -705,6 +707,7 @@ const FoodBrowse = ({
   importHref,
   onAdd,
   onSelect,
+  pending,
 }: {
   readonly snapshot: PlanningContentSnapshot;
   readonly options: readonly MealOption[];
@@ -713,6 +716,7 @@ const FoodBrowse = ({
   readonly importHref: string;
   readonly onAdd: () => void;
   readonly onSelect: (id: string) => void;
+  readonly pending: boolean;
 }) => (
   <>
     <ToggleGroup
@@ -739,6 +743,7 @@ const FoodBrowse = ({
       importHref={importHref}
       onAdd={onAdd}
       onSelect={onSelect}
+      pending={pending}
     />
     {snapshot.routines.length > 0 && (
       <section className="border-border border-t pt-8">
@@ -1099,6 +1104,7 @@ export const FoodBookPage = ({
     null
   );
   const [saveError, setSaveError] = useState<string | null>(null);
+  const addingMutationId = useRef<PlanningContentMutationId | null>(null);
   const mutation = useMutation({
     ...foodBookMutationOptions(runtime, scope),
     onError: async (error) => {
@@ -1119,12 +1125,16 @@ export const FoodBookPage = ({
         }
       }
     },
-    onSuccess: (snapshot) => {
+    onSuccess: (snapshot, request) => {
       client.setQueryData(foodBookKey(scope), snapshot);
       setRetained(null);
-      setAdding(false);
+      if (request.mutationId === addingMutationId.current) {
+        addingMutationId.current = null;
+        setAdding(false);
+      }
     },
   });
+  const changePending = mutation.isPending || retained !== null;
   const snapshot = query.data;
   const options = useMemo(
     () =>
@@ -1151,7 +1161,10 @@ export const FoodBookPage = ({
       ),
     [snapshot]
   );
-  const mutateCommand = (command: PlanningContentCommand) => {
+  const mutateCommand = (
+    command: PlanningContentCommand,
+    source?: "new-meal-form"
+  ) => {
     if (!snapshot || retained) {
       return;
     }
@@ -1163,12 +1176,15 @@ export const FoodBookPage = ({
       expectedVersion: snapshot.configVersion,
       mutationId: payload,
     };
+    if (source === "new-meal-form") {
+      addingMutationId.current = request.mutationId;
+    }
     setSaveError(null);
     setRetained(request);
     mutation.mutate(request);
   };
   const save = (option: MealOption) =>
-    mutateCommand({ _tag: "PutOption", value: option });
+    mutateCommand({ _tag: "PutOption", value: option }, "new-meal-form");
   const attachRecipe = (recipe: SavedRecipeSummary) => {
     if (recipe.name === null) {
       return;
@@ -1234,7 +1250,7 @@ export const FoodBookPage = ({
             <BookOpenIcon data-icon="inline-start" />
             Import recipe
           </Button>
-          <Button onClick={() => setAdding(true)}>
+          <Button disabled={changePending} onClick={() => setAdding(true)}>
             <PlusIcon data-icon="inline-start" />
             Add a meal
           </Button>
@@ -1274,6 +1290,7 @@ export const FoodBookPage = ({
             importHref={importHref}
             onAdd={() => setAdding(true)}
             onSelect={setSelectedId}
+            pending={changePending}
           />
           <section className="bg-accent/50 rounded-3xl p-5 md:p-8">
             <p className="text-muted-foreground text-xs tracking-widest uppercase">
@@ -1300,7 +1317,7 @@ export const FoodBookPage = ({
             linkedRecipeIds={linkedRecipeIds}
             onOpen={(recipeId) => setSelectedRecipeId(recipeId)}
             onAttach={attachRecipe}
-            pending={mutation.isPending || retained !== null}
+            pending={changePending}
           />
           {roster.data && (
             <PlanningFoundations
@@ -1308,7 +1325,7 @@ export const FoodBookPage = ({
               people={roster.data.people.filter(
                 (person) => person.lifecycle === "active"
               )}
-              pending={mutation.isPending || retained !== null}
+              pending={changePending}
               onCommand={mutateCommand}
             />
           )}
@@ -1319,13 +1336,13 @@ export const FoodBookPage = ({
               people={roster.data.people.filter(
                 (person) => person.lifecycle === "active"
               )}
-              pending={mutation.isPending || retained !== null}
+              pending={changePending}
               onCommand={mutateCommand}
             />
           )}
           <PreparedFoodPanel
             snapshot={snapshot}
-            pending={mutation.isPending || retained !== null}
+            pending={changePending}
             onCommand={mutateCommand}
           />
           {roster.isError && (
@@ -1366,8 +1383,11 @@ export const FoodBookPage = ({
         selectedSuitabilityOption={selectedSuitabilityOption}
         selectedRecipeId={selectedRecipeId}
         setSelectedRecipeId={setSelectedRecipeId}
-        pending={mutation.isPending || retained !== null}
-        saving={mutation.isPending}
+        pending={changePending}
+        saving={
+          mutation.isPending &&
+          mutation.variables?.mutationId === addingMutationId.current
+        }
         onSave={save}
         onCommand={mutateCommand}
       />

@@ -49,117 +49,75 @@ Set `ALCHEMY_PROFILE=ceird-admin-global` as well as the explicit profile flag.
 The pinned bootstrap CLI builds its credential layer before applying the flag's
 config override, so the environment selection is needed there.
 
-After the release is committed and all checks pass, inspect the fresh stage:
+This E2E stage is deployed. Use its existing D1 target for later releases:
 
 ```sh
-ALCHEMY_PROFILE=ceird-admin-global pnpm d1:preflight fresh-inspect \
-  --profile ceird-admin-global --stage e2e \
-  --account 862c7693f07f3e0cdca26eae399bf5e4
+ALCHEMY_PROFILE=ceird-admin-global pnpm d1:preflight inspect \
+  --target .alchemy/e2e/target.json --stage e2e --profile ceird-admin-global
 ```
 
-Review its digest and use the same target with `pnpm alchemy:deploy`, passing
-`--stage e2e --profile ceird-admin-global --fresh-account <account-id>
---fresh-evidence <digest>`. The wrapper rechecks the absence of existing
-resources before opening Alchemy's approval prompt. Use `ALCHEMY_TUI=1` in a
-terminal to see that prompt; `--yes` remains rejected by the wrapper.
+Review the returned digest, then pass the same target to `pnpm alchemy:deploy`
+with `--stage e2e --profile ceird-admin-global --d1-target
+.alchemy/e2e/target.json --d1-evidence <digest>`. Set `ALCHEMY_TUI=1` in a terminal
+to inspect and approve the plan. The wrapper rejects `--yes` and rechecks the
+release, database identities, migration ledger and schema before deployment.
 
-For later releases, discover the stage's D1 target with `pnpm d1:preflight
-discover`, save that target in the ignored `.alchemy/e2e/` directory, and use the
-existing `inspect` then `--d1-target`/`--d1-evidence` deploy flow. Never reuse the
-fresh path after resources have been created.
+If the ignored target file is unavailable, use `pnpm d1:preflight discover` to
+rebuild it from the deployed API bindings. Fresh-deployment evidence is only for
+an empty stage. Do not reuse it for this environment.
 
-## Verification record
+## Live verification — 30 September 2026
 
-The account and active `ceird.app` zone were checked live. Before bootstrap,
-Cloudflare listed no Workers or D1 databases, no sending subdomains and only
-the apex DMARC DNS record. Workers Paid and R2 access were present; no
-subscription changes were made. Alchemy's remote state store was bootstrapped.
+| Flow | Observed result |
+| --- | --- |
+| Infrastructure | All 20 stack resources deployed; HTTPS works at `e2e.ceird.app`. Existing resources and D1 identities survived each repair release. |
+| Provider | The E2E gateway requires authentication, disables payload logs, and returned a completed GPT-6 Luna response using its scoped token. |
+| Account | Signup, login, session reload and anonymous account lookup work against the deployed API. |
+| Family agent | Luna used the account name and proposed two adults and a child. Explicit confirmation created the family and its saved roster. |
+| Shared food conversation | Streaming replies and illustrated question cards work. Answer buttons continue the conversation. |
+| Private discovery | Luna returned profile proposals. Confirming one preference published it to the household profile; other proposals stayed private and required review against the new profile version. |
+| Weekly planning | A seven-day draft covers four managed occasions for three people. The agent produced a reviewable proposal with daily breakfasts for the reviewed person and Friday takeaway for all three. Applying it updated the calendar and survived reload. The deliberately unresolved meals remain visible and block approval. |
+| Reset email | Received in the inbox with SPF, DKIM and DMARC passing. Its link changed the password, revoked the old session, and allowed login with the new password. Reusing the link showed the invalid-link state. |
+| Invitation email | Received in the intended mailbox. Signup returned to the invitation; acceptance linked the recipient to the existing adult and direct entry opened the correct family. The final return-URL fix awaits its frontend deployment check. |
+| Responsive signup | No horizontal overflow at 1280px desktop or 390px mobile width. |
 
-The plan resolves 20 new resources with no replacements or deletions. Native
-family creation and replay checks pass. Focused deployment guard, model and
-email checks pass; the Worker bundles and the actual Node stack import compile.
-The root infrastructure run passed 191 checks and found two expected integration
-issues: its old entry-file assertion and the new source files not yet staged.
-The updated 13-check structural suite and the staged architecture check pass.
-The final fresh inventory suite passes 52 checks, including full-page R2 refusal.
+These checks used a synthetic family and mailbox aliases controlled by the user.
+The planning test proves proposal review and persistence; it is not a completed
+real household meal plan. Recipe-import, every swap/leftover combination, and
+full plan approval were not exercised in this deployment smoke test. No
+credentials, reset tokens or invitation action URLs are recorded here.
 
-Deployment and live browser, agent and email results will be recorded after the
-checks complete. A provider submission alone is not inbox delivery proof.
+Focused tests cover the deployment guards, generated Worker exports, immutable
+SSE conversion, invitation callback context, native acceptance/linking, and
+strict workspace redirects. Relevant API, infrastructure and web type checks,
+lint, formatting and documentation checks passed. This work remains on the
+feature branch; it was not merged or pushed.
 
-The E2E gateway now has authentication enabled and payload logging disabled.
-A live request through its own scoped token returned HTTP 200 from
-`openai/gpt-6-luna`, with a completed response. This verifies provider access;
-the application conversation still needs browser verification.
+## Deployment repairs and recovery
 
-## First apply and recovery
+The initial apply created the Website, databases, gateways, mail domain, queues
+and R2 bucket before failing to upload the API. The repairs retain the same
+resource identities:
 
-The first apply created the Website, D1 databases, mail domain, gateways, scoped
-inference token, queues and R2 bucket. API Workers remained at Alchemy's
-precreated stubs. The private Worker's nested Effect entry-file setting was
-absent from saved props; it now uses a direct entry URL. The corresponding
-structural check covers that declaration.
+- Worker entry-file URLs resolve only during planning through Alchemy's
+  compile-time runtime flag. The pinned Alchemy patch explicitly retains the
+  native `AgentConversation` export beside generated Effect exports, with a
+  regression against the final bundle entry.
+- The API captures Alchemy's binding context during construction and provides
+  it to its request handler. The invitation verifier captures the request's
+  Effect context before Better Auth enters its Promise callback.
+- Ordinary native responses use Effect's streaming `fromWeb` conversion so
+  immutable Cloudflare headers are copied. WebSocket upgrades preserve their
+  original response.
+- The first container upload failed locally with `spawn EBADF`. A new deploy
+  process reused the cached amd64 image and completed its upload and creation.
+- The sending domain is enabled, its SPF/DKIM/DMARC records are present, Email
+  preview is disabled, and the API delivery gate is enabled. No subscription
+  changes were made.
 
-An inference A/B check confirmed the same scoped token and Luna request return
-HTTP 200 through an authenticated gateway and HTTP 403 through the new gateway
-without authentication. The agent gateway now sets `authentication: true`.
-
-The mail domain is enabled and its full-message previews are verified off.
-Delivery remains gated until the working API is deployed.
-
-The first container upload failed with a local `spawn EBADF` error after its
-build completed. A new deploy process reused the cached amd64 image, uploaded
-it successfully and created the container application. The resumed apply also
-created the household and private-output Workers. Cloudflare then rejected the
-API upload because its generated bundle omitted the native `AgentConversation`
-export. The pinned Alchemy patch now supports explicit native exports alongside
-its generated Effect exports. The API opts in for `AgentConversation`; a bundle
-regression checks that it and `ImportMediaAcquisitionObject` both appear in the
-final entry. Commit `dd083c0` deployed all 20 resources successfully, including
-the API, both consumers, workflows and container.
-
-The first live account request then exposed a cold-start error in API props:
-source-file URL resolution was running inside Cloudflare. These entry URLs now
-use Alchemy's compile-time runtime flag so only deployment resolves local files.
-The signup layout also now fits 1280px desktop and 390px mobile viewports without
-horizontal overflow, verified on the deployed Website.
-
-The API also captures Alchemy's binding context during construction and provides
-it to its request handler. The runtime bridge supplies request scope and execution
-context per event; it does not supply that binding context to the handler.
-
-Live verification after `819b23c`: anonymous account lookup returned HTTP 200,
-signup succeeded, and Luna saved a three-person family proposal using the account
-name. The browser stream exposed immutable response headers; ordinary native
-responses now use Effect's streaming `fromWeb` conversion, while WebSocket
-upgrades preserve the original response.
-
-The password-reset email arrived in the test recipient's inbox on 30 September
-2026 with SPF, DKIM and DMARC passing. Its link completed a password reset, revoked
-the previous browser session, and the new password successfully logged in. No
-reset token or action URL is retained in this record.
-
-The invitation email also arrived. Signup preserved its return destination, but
-the final join exposed a missing Worker environment in Better Auth's Promise
-callback. The verifier now captures the request's Effect context before entering
-that callback; it retains the original invitation and response identity for retry.
-The shared agent stream and illustrated food-question buttons work after the
-native response conversion fix.
-
-After the callback fix, the recipient linked successfully and could open the
-correct family workspace. The return navigation then exposed an obsolete
-`familyId` search parameter on `/`. Joined invitations and completed setup now
-use the workspace's strict search contract; in-progress setup keeps its family
-parameter. Seven focused browser tests cover this redirect and invitation flow.
-
-Private discovery returned profile proposals through Luna. Confirming one
-preference saved it to the household profile; other proposals remained private
-and required review against the new profile version. A one-week draft was also
-created with all four managed occasions for three people.
-
-A partial first apply uses `resume-inspect --target <frozen-target>` followed by
-`alchemy:deploy --resume-target <frozen-target> --resume-evidence <digest>`, with
-explicit stage and profile. This path requires the API's owned `creating` stub,
-matching immutable Worker ID, no final D1 bindings, no replacement state or
-completed stage output, and the existing D1 identity, ledger, schema and recovery
-checks. It preserves the current resource IDs. Completed environments use the
-normal existing-target deployment path.
+A partial first apply can use `resume-inspect --target <frozen-target>` followed
+by `alchemy:deploy --resume-target <frozen-target> --resume-evidence <digest>`.
+That path requires the owned API `creating` stub, matching immutable Worker ID,
+no final D1 bindings, no replacement state or completed stage output, and the
+normal D1 identity, ledger, schema and recovery checks. This completed environment
+uses the normal existing-target path instead.
