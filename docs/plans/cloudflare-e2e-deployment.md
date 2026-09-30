@@ -145,6 +145,17 @@ that callback; it retains the original invitation and response identity for retr
 The shared agent stream and illustrated food-question buttons work after the
 native response conversion fix.
 
+After the callback fix, the recipient linked successfully and could open the
+correct family workspace. The return navigation then exposed an obsolete
+`familyId` search parameter on `/`. Joined invitations and completed setup now
+use the workspace's strict search contract; in-progress setup keeps its family
+parameter. Seven focused browser tests cover this redirect and invitation flow.
+
+Private discovery returned profile proposals through Luna. Confirming one
+preference saved it to the household profile; other proposals remained private
+and required review against the new profile version. A one-week draft was also
+created with all four managed occasions for three people.
+
 A partial first apply uses `resume-inspect --target <frozen-target>` followed by
 `alchemy:deploy --resume-target <frozen-target> --resume-evidence <digest>`, with
 explicit stage and profile. This path requires the API's owned `creating` stub,
