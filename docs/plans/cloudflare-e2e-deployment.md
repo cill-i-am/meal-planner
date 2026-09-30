@@ -1,6 +1,6 @@
 # Cloudflare E2E deployment
 
-Status: active
+Status: done
 Owner: Meal Planner
 
 ## Target
@@ -68,6 +68,9 @@ an empty stage. Do not reuse it for this environment.
 
 ## Live verification — 30 September 2026
 
+The final application release is `adb51c59c27323e13e93e53b52d76c62d5e37da2`.
+Its guarded apply updated only the Website Worker and completed successfully.
+
 | Flow | Observed result |
 | --- | --- |
 | Infrastructure | All 20 stack resources deployed; HTTPS works at `e2e.ceird.app`. Existing resources and D1 identities survived each repair release. |
@@ -77,8 +80,9 @@ an empty stage. Do not reuse it for this environment.
 | Shared food conversation | Streaming replies and illustrated question cards work. Answer buttons continue the conversation. |
 | Private discovery | Luna returned profile proposals. Confirming one preference published it to the household profile; other proposals stayed private and required review against the new profile version. |
 | Weekly planning | A seven-day draft covers four managed occasions for three people. The agent produced a reviewable proposal with daily breakfasts for the reviewed person and Friday takeaway for all three. Applying it updated the calendar and survived reload. The deliberately unresolved meals remain visible and block approval. |
+| Food book | An assembled test meal and a takeaway option saved successfully. On the final release, the Add meal form stayed open until its own save succeeded, then closed and displayed the saved option. |
 | Reset email | Received in the inbox with SPF, DKIM and DMARC passing. Its link changed the password, revoked the old session, and allowed login with the new password. Reusing the link showed the invalid-link state. |
-| Invitation email | Received in the intended mailbox. Signup returned to the invitation; acceptance linked the recipient to the existing adult and direct entry opened the correct family. The final return-URL fix awaits its frontend deployment check. |
+| Invitation email | Received in the intended mailbox. Signup returned to the invitation; acceptance linked the recipient to the existing adult. After the final release, Continue opened the correct family workspace at `/` without a search-validation error. |
 | Responsive signup | No horizontal overflow at 1280px desktop or 390px mobile width. |
 
 These checks used a synthetic family and mailbox aliases controlled by the user.
@@ -89,7 +93,9 @@ credentials, reset tokens or invitation action URLs are recorded here.
 
 Focused tests cover the deployment guards, generated Worker exports, immutable
 SSE conversion, invitation callback context, native acceptance/linking, and
-strict workspace redirects. Relevant API, infrastructure and web type checks,
+strict workspace redirects. A delayed-save browser regression verifies that a
+managed-meals save cannot close or discard a new meal form. Relevant API,
+infrastructure and web type checks,
 lint, formatting and documentation checks passed. This work remains on the
 feature branch; it was not merged or pushed.
 

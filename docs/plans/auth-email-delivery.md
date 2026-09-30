@@ -1,6 +1,6 @@
 # Deliver invitation and password-reset email
 
-Status: active
+Status: done
 Owner: authentication and household people
 Scope: application code, Paper designs, local verification, repository delivery, and E2E activation on `e2e.ceird.app`. Production activation remains a separate operation.
 Design: [Transactional email in Paper](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-F-0).
@@ -29,7 +29,7 @@ Send actionable invitation and password-reset messages from `noreply@mail.e2e.ce
 - [x] Full repository checks and review passed at the delivery commit in PR #258.
 - [x] The repository change was merged in PR #258.
 - [x] The E2E operation verified the target account, Workers Paid eligibility, active `ceird.app` zone and enabled `mail.e2e.ceird.app` sender. The sending-domain API confirms `preview_enabled: false` before the delivery flag was enabled for the API release.
-- [ ] Disposable recipient mailboxes receive both messages; links complete the real invitation and single-use reset journeys. Record submission and inbox receipt separately without storing token URLs.
+- [x] On 30 September 2026, user-controlled mailbox aliases received both messages in the inbox. The reset message passed SPF, DKIM and DMARC; its link changed the password, revoked the old session and rejected reuse. Invitation signup returned to the saved invitation, acceptance linked the existing adult, and Continue opened the correct family workspace. Provider submission and inbox receipt were verified separately; no token URLs are recorded here.
 
 ## Activation
 
