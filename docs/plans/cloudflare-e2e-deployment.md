@@ -138,6 +138,13 @@ The password-reset email arrived in the test recipient's inbox on 30 September
 the previous browser session, and the new password successfully logged in. No
 reset token or action URL is retained in this record.
 
+The invitation email also arrived. Signup preserved its return destination, but
+the final join exposed a missing Worker environment in Better Auth's Promise
+callback. The verifier now captures the request's Effect context before entering
+that callback; it retains the original invitation and response identity for retry.
+The shared agent stream and illustrated food-question buttons work after the
+native response conversion fix.
+
 A partial first apply uses `resume-inspect --target <frozen-target>` followed by
 `alchemy:deploy --resume-target <frozen-target> --resume-evidence <digest>`, with
 explicit stage and profile. This path requires the API's owned `creating` stub,

@@ -228,7 +228,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           sendPasswordResetEmail: async (mail) =>
             sendEmail(await renderPasswordResetMail(mail)),
           verifyInvitationRecipient:
-            makeHouseholdInvitationRecipientVerifier(householdDomain),
+            yield* makeHouseholdInvitationRecipientVerifier(householdDomain),
         });
         if (new URL(webRequest.url).pathname.startsWith("/api/auth/")) {
           return yield* auth.fetchHttpEffect(webRequest);

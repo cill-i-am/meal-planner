@@ -325,43 +325,43 @@ const linkageSubject = (
   );
 
 /** Capture the authenticated Better Auth invitation recipient at acceptance time. */
-export const makeHouseholdInvitationRecipientVerifier =
-  (
-    domain: Pick<
-      HouseholdDomainWorkerMethods,
-      "confirmAdultInvitationRecipient"
-    >
-  ) =>
-  (input: {
-    readonly invitationId: InvitationId;
-    readonly organizationId: HouseholdOrganizationId;
-    readonly userId: UserId;
-  }): Promise<void> =>
-    Effect.runPromise(
-      Effect.gen(function* verifyInvitationRecipient() {
-        const { organizationId } = input;
-        const acceptedInvitationDigest = yield* deriveHouseholdInvitationDigest(
-          organizationId,
-          input.invitationId
-        );
-        const recipientLinkageSubject =
-          yield* deriveHouseholdPersonLinkageSubject(
-            organizationId,
-            input.userId
-          );
-        yield* domain.confirmAdultInvitationRecipient({
-          admission: {
-            actor: {
-              _tag: "System",
-              purpose: "person_invitation_acceptance",
+export const makeHouseholdInvitationRecipientVerifier = (
+  domain: Pick<HouseholdDomainWorkerMethods, "confirmAdultInvitationRecipient">
+) =>
+  Effect.gen(function* makeInvitationRecipientVerifier() {
+    const requestContext = yield* Effect.context<never>();
+    return (input: {
+      readonly invitationId: InvitationId;
+      readonly organizationId: HouseholdOrganizationId;
+      readonly userId: UserId;
+    }): Promise<void> =>
+      Effect.runPromise(
+        Effect.gen(function* verifyInvitationRecipient() {
+          const { organizationId } = input;
+          const acceptedInvitationDigest =
+            yield* deriveHouseholdInvitationDigest(
+              organizationId,
+              input.invitationId
+            );
+          const recipientLinkageSubject =
+            yield* deriveHouseholdPersonLinkageSubject(
+              organizationId,
+              input.userId
+            );
+          yield* domain.confirmAdultInvitationRecipient({
+            admission: {
+              actor: {
+                _tag: "System",
+                purpose: "person_invitation_acceptance",
+              },
+              organizationId,
             },
-            organizationId,
-          },
-          invitationDigest: acceptedInvitationDigest,
-          linkageSubject: recipientLinkageSubject,
-        });
-      })
-    );
+            invitationDigest: acceptedInvitationDigest,
+            linkageSubject: recipientLinkageSubject,
+          });
+        }).pipe(Effect.provideContext(requestContext))
+      );
+  });
 
 const persistenceFailure = (operation: "create" | "read" | "save") =>
   MealPlanPersistenceFailure.make({ operation });

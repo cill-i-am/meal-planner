@@ -735,7 +735,7 @@ export default {
             secret: Redacted.make(env.BETTER_AUTH_SECRET),
             sendPasswordResetEmail: () => Promise.resolve(),
             verifyInvitationRecipient:
-              makeHouseholdInvitationRecipientVerifier(householdDomain),
+              yield* makeHouseholdInvitationRecipientVerifier(householdDomain),
           });
           // Low-level household tests intentionally start with an organization before creator bootstrap.
           if (

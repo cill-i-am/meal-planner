@@ -111,7 +111,7 @@ export default {
                 JSON.stringify({ ...mail, kind: "reset" })
               ),
             verifyInvitationRecipient:
-              makeHouseholdInvitationRecipientVerifier(domain),
+              yield* makeHouseholdInvitationRecipientVerifier(domain),
           });
           if (url.pathname.startsWith("/api/auth/")) {
             return HttpServerResponse.toWeb(

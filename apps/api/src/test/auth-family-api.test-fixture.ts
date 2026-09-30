@@ -118,7 +118,7 @@ export default {
                 JSON.stringify({ ...mail, kind: "reset" })
               ),
             verifyInvitationRecipient:
-              makeHouseholdInvitationRecipientVerifier(domain),
+              yield* makeHouseholdInvitationRecipientVerifier(domain),
           });
           if (
             url.pathname === "/__test/expire-session" &&
