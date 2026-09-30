@@ -121,6 +121,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     };
   }),
   Effect.gen(function* MealPlannerApiWorker() {
+    const runtimeContext = yield* Cloudflare.Worker;
     const providerAccountingQueryDatabase = yield* Cloudflare.D1.QueryDatabase(
       ProviderAccountingDatabase
     );
@@ -200,7 +201,6 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     );
     return {
       fetch: Effect.gen(function* handleMealPlannerRequest() {
-        const runtimeContext = yield* RuntimeContext;
         const request = yield* HttpServerRequest.HttpServerRequest;
         const webRequest = request.source;
         if (!(webRequest instanceof Request)) {
@@ -338,7 +338,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           )
         );
         return yield* withCurrentRequestCancellation(routeHandler);
-      }),
+      }).pipe(Effect.provideService(RuntimeContext, runtimeContext)),
     };
   }).pipe(
     Effect.provide(

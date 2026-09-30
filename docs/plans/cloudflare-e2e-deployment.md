@@ -123,6 +123,10 @@ use Alchemy's compile-time runtime flag so only deployment resolves local files.
 The signup layout also now fits 1280px desktop and 390px mobile viewports without
 horizontal overflow, verified on the deployed Website.
 
+The API also captures Alchemy's binding context during construction and provides
+it to its request handler. The runtime bridge supplies request scope and execution
+context per event; it does not supply that binding context to the handler.
+
 A partial first apply uses `resume-inspect --target <frozen-target>` followed by
 `alchemy:deploy --resume-target <frozen-target> --resume-evidence <digest>`, with
 explicit stage and profile. This path requires the API's owned `creating` stub,
