@@ -127,6 +127,17 @@ The API also captures Alchemy's binding context during construction and provides
 it to its request handler. The runtime bridge supplies request scope and execution
 context per event; it does not supply that binding context to the handler.
 
+Live verification after `819b23c`: anonymous account lookup returned HTTP 200,
+signup succeeded, and Luna saved a three-person family proposal using the account
+name. The browser stream exposed immutable response headers; ordinary native
+responses now use Effect's streaming `fromWeb` conversion, while WebSocket
+upgrades preserve the original response.
+
+The password-reset email arrived in the test recipient's inbox on 30 September
+2026 with SPF, DKIM and DMARC passing. Its link completed a password reset, revoked
+the previous browser session, and the new password successfully logged in. No
+reset token or action URL is retained in this record.
+
 A partial first apply uses `resume-inspect --target <frozen-target>` followed by
 `alchemy:deploy --resume-target <frozen-target> --resume-evidence <digest>`, with
 explicit stage and profile. This path requires the API's owned `creating` stub,

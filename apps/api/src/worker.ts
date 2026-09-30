@@ -6,7 +6,6 @@ import { Config, Layer, Schema, Stream } from "effect";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import {
   handleAgentConversationChatRequest,
@@ -74,6 +73,7 @@ import {
   HouseholdImportBatchQueue,
 } from "./infrastructure/household-import-batch-queue.js";
 import { MealPlannerAuthDatabase } from "./infrastructure/meal-planner-auth-database.js";
+import { fromNativeWebResponse } from "./infrastructure/native-http-response.js";
 import { ProviderAccountingDatabase } from "./infrastructure/provider-accounting-database.js";
 import { withCurrentRequestCancellation } from "./infrastructure/request-cancellation.js";
 
@@ -258,9 +258,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           request: webRequest,
         });
         if (agentChat !== null) {
-          return HttpServerResponse.raw(agentChat, {
-            status: agentChat.status,
-          });
+          return fromNativeWebResponse(agentChat);
         }
         const privateInterview = yield* handlePrivateInterviewRequest({
           auth,
@@ -269,10 +267,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           request: webRequest,
         });
         if (privateInterview !== null) {
-          // Public raw-response interop preserves the native 101 WebSocket without rebuilding it.
-          return HttpServerResponse.raw(privateInterview, {
-            status: privateInterview.status,
-          });
+          return fromNativeWebResponse(privateInterview);
         }
         const trace = makeImportTraceContext();
         const requestServices = makeImportWorkerRequestLayer({
