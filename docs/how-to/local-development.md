@@ -28,6 +28,35 @@ Workers AI. Other provider workflows still need their own runtime.
 
 ## Live family and planning agent
 
+### Full Alchemy development stack
+
+For a walkthrough with frontend hot reload and the full Worker service graph,
+run Alchemy's development command with a dedicated stage and an ignored local
+environment file:
+
+```sh
+ALCHEMY_PROFILE=ceird-admin-global node --import tsx node_modules/alchemy/bin/alchemy.js dev \
+  --stage dev_cillian_a56d --profile ceird-admin-global --env-file .alchemy/local-dev.env
+```
+
+The Website requests `http://localhost:4399`; use the URL Alchemy prints if that
+port is occupied. Accounts and application storage belong to this local stage.
+Workers, D1, Durable Objects, queues, workflows, R2 and the media container run
+locally. Agent and import gateways plus the scoped inference token are real
+Cloudflare resources owned by the development stage. GPT-6 Luna calls use
+Cloudflare credits. Email goes to Alchemy's local simulator.
+
+The local environment file needs separate `BETTER_AUTH_SECRET` and
+`MEAL_PLANNER_IMPORT_API_TOKEN` values, the system import actor and household
+scope IDs, and the email sender/delivery settings described in the
+[API README](../../apps/api/README.md). Keep it ignored and private. Alchemy's
+runtime Workerd dependency is pinned to the same version as the native tests;
+the older bundled binary cannot run the private Worker's compatibility date
+or the family-resource migration. Do not rewrite applied migrations to work
+around an older local runtime.
+
+### Persistent limited preview
+
 Build the web Worker, then start the persistent local preview:
 
 ```sh

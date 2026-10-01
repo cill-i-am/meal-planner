@@ -7,5 +7,7 @@ allowBuilds:
   msgpackr-extract: true
   sharp: false
   workerd: true
+overrides:
+  "@alchemy.run/cloudflare-runtime>workerd": "1.20260903.1"
 patchedDependencies:
   alchemy@2.0.0-beta.76: patches/alchemy@2.0.0-beta.76.patch
