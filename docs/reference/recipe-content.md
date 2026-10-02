@@ -5,6 +5,13 @@ and the recipe snapshot pinned by a meal plan. The shared Effect schemas live in
 `packages/recipe-domain/src/content.ts`. An approved recipe retains the complete
 confirmed content; planning no longer drops timings, yield, notes or other facts.
 
+The domain package also owns review field and answer schemas. HTTP contracts
+consume and expose those commands; domain and extraction rules do not depend on
+the HTTP package. Pure content, formatting and scaling have no infrastructure
+imports or runtime dependency cycles. The browser slice exposes one public
+entrypoint and separates page orchestration, display and correction forms.
+Focused architecture checks enforce these dependency directions.
+
 The design draws on the [Tinyplates recipe object](https://www.tinyplates.dev/docs/recipe-object).
 We adopt structured ingredients, source-preserving text, grouped cooking steps,
 explicit yield and durations, nutrition basis, source claims and media roles.

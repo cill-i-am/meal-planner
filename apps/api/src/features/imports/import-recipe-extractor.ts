@@ -1,5 +1,7 @@
-import { RecipeDraftContent } from "@meal-planner/recipe-domain";
-import { RecipeEditableField } from "@meal-planner/recipe-import-api";
+import {
+  RecipeDraftContent,
+  RecipeEditableField,
+} from "@meal-planner/recipe-domain";
 import { Schema } from "effect";
 import type { Effect } from "effect";
 

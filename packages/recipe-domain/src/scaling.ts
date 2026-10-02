@@ -1,17 +1,5 @@
 import type { RecipeContent, RecipeIngredient } from "./content.js";
 
-export const formatRecipeIngredient = (
-  ingredient: RecipeIngredient
-): string => {
-  const { quantity } = ingredient;
-  const amount =
-    quantity === null
-      ? ""
-      : `${quantity.value}${quantity.max === null ? "" : `–${quantity.max}`}${quantity.unit === null ? "" : ` ${quantity.unit}`} `;
-  const name = ingredient.localName ?? ingredient.name;
-  return `${amount}${ingredient.size === null ? "" : `${ingredient.size} `}${name}${ingredient.preparation === null ? "" : `, ${ingredient.preparation}`}${ingredient.note === null ? "" : ` (${ingredient.note})`}${ingredient.optional === true ? " (optional)" : ""}`;
-};
-
 export type RecipeScalingResult =
   | {
       readonly _tag: "CannotScale";

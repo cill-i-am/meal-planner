@@ -1,7 +1,5 @@
 import { Schema } from "effect";
 
-import { formatRecipeIngredient } from "./scaling.js";
-
 export const RecipeText = Schema.String.pipe(
   Schema.check(
     Schema.isTrimmed(),
@@ -325,6 +323,18 @@ export const recipeGroups = (
     )
   ),
 ];
+export const formatRecipeIngredient = (
+  ingredient: RecipeIngredient
+): string => {
+  const { quantity } = ingredient;
+  const amount =
+    quantity === null
+      ? ""
+      : `${quantity.value}${quantity.max === null ? "" : `–${quantity.max}`}${quantity.unit === null ? "" : ` ${quantity.unit}`} `;
+  const name = ingredient.localName ?? ingredient.name;
+  return `${amount}${ingredient.size === null ? "" : `${ingredient.size} `}${name}${ingredient.preparation === null ? "" : `, ${ingredient.preparation}`}${ingredient.note === null ? "" : ` (${ingredient.note})`}${ingredient.optional === true ? " (optional)" : ""}`;
+};
+
 /** Flat display is derived; there is no second editable recipe authority. */
 export const recipeDisplayText = (
   recipe: Pick<RecipeContent, "ingredients" | "instructions">

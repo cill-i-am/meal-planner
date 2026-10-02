@@ -3,12 +3,10 @@ import {
   RecipeContent,
   RecipeDraftContent,
   recipeContentBlockers,
-} from "@meal-planner/recipe-domain";
-import {
   RecipeReviewAnswer,
   RecipeEditableField,
-} from "@meal-planner/recipe-import-api";
-import type { CorrectedRecipe as CorrectedRecipeType } from "@meal-planner/recipe-import-api";
+} from "@meal-planner/recipe-domain";
+import type { RecipeDraftContent as CorrectedRecipeType } from "@meal-planner/recipe-domain";
 import { Option, Schema } from "effect";
 
 import { RecipeDraft } from "./import-recipe-draft.repository.js";

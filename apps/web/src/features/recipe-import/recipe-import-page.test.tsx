@@ -19,7 +19,8 @@ import { Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { RecipeImportOperations } from "./operations.js";
-import { RecipeDetails, RecipeImportPage } from "./recipe-import-page.js";
+import { RecipeDetails } from "./recipe-details.js";
+import { RecipeImportPage } from "./recipe-import-page.js";
 
 afterEach(cleanup);
 
