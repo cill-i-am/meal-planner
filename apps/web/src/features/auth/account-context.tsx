@@ -127,7 +127,7 @@ export const AccountProvider = ({
                   setSigningOut(false);
                 }
               }}
-              variant="link"
+              variant="outline"
             >
               {signingOut ? "Logging out…" : "Log out and sign in again"}
             </Button>

@@ -37,6 +37,11 @@ Both **Tell us how you eat** and **I’ll do this later** complete setup before
 leaving. Stop verification at the destination boundary (`/?area=tastes`
 or `/`); the destination features are outside this map.
 
+If the setup route cannot load its family data, **Your family couldn’t be
+loaded** offers both **Try again** and **Log out and sign in again**. The latter
+clears account-scoped cached data and returns to login with the setup URL as its
+redirect, so a successful sign-in can resume the same route.
+
 ## Driving it with agent-browser
 
 Use a disposable signed-in organizer and [the shared setup](README.md).

@@ -5,10 +5,11 @@ Own account identity, native Better Auth client access, login/signup, safe retur
 The router creates an auth client for each SSR request. The account query caches only a public identity projection; session tokens stay out of dehydrated data. Native login, family selection, and logout refresh or clear that query; window focus rechecks it.
 
 If the account query fails, offer retry and sign-out from the account status
-screen. A failed read prevents setup's header logout from rendering. Sign-out
-must clear account-scoped queries and return to login with the original
-same-origin route, so successful login can resume setup. Keep sign-out failures
-visible on the status screen.
+screen. The setup route also offers sign-out from its route-level error screen,
+because loader failures can happen after account loading succeeds. A failed read
+prevents setup's header logout from rendering. Sign-out must clear account-scoped
+queries and return to login with the original same-origin route, so successful
+login can resume setup. Keep sign-out failures visible on the status screen.
 
 Keep native identity operations on Better Auth's client. Account changes must clear or invalidate account-scoped remote data before another account can see it. Preserve same-origin redirect validation and the identity/query boundary. Do not introduce family or onboarding dependencies into this slice.
 
