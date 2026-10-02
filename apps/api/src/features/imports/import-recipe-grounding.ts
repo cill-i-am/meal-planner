@@ -1,3 +1,6 @@
+import { RecipeDraftContent } from "@meal-planner/recipe-domain";
+import { Schema } from "effect";
+
 import type {
   GroundedRecipeFacts,
   RecipeCandidate,
@@ -216,205 +219,460 @@ export const projectRecipeEvidenceSpan = (
     : evidence.slice(best.start, best.end).trim();
 };
 
-const MissingRecipeSemanticReason =
-  "not resolved from available evidence" as const;
-const MissingRecipeFact = {
-  citations: [],
-  origin: "unresolved",
-  reason: MissingRecipeSemanticReason,
-  state: "unresolved",
-} as const;
-const MissingRecipeFactList = {
-  items: [],
-  reason: MissingRecipeSemanticReason,
-  state: "unresolved",
-} as const;
-
 const trustedRecipeCitation = (item: RecipeEvidenceItem) => ({
   confidence: 1,
   evidenceId: item.evidenceId,
   origin: item.origin,
 });
 
-const trustedSupportedRecipeFact = <A>(value: A, item: RecipeEvidenceItem) => ({
-  citations: [trustedRecipeCitation(item)] as const,
-  origin: item.origin,
-  state: "supported" as const,
-  value,
-});
-
-const groundedStringEvidence = (
-  value: string,
-  items: readonly RecipeEvidenceItem[]
-) => {
-  const exact = items.find((item) => recipeEvidenceContains(item.value, value));
-  if (exact !== undefined) {
-    return { item: exact, value } as const;
+const unitAliases: Readonly<Record<string, string>> = {
+  cups: "cup",
+  gram: "g",
+  grams: "g",
+  kilogram: "kg",
+  kilograms: "kg",
+  liters: "l",
+  litres: "l",
+  milliliters: "ml",
+  millilitres: "ml",
+  ounce: "oz",
+  ounces: "oz",
+  portion: "serving",
+  portions: "serving",
+  pound: "lb",
+  pounds: "lb",
+  servings: "serving",
+  tablespoon: "tbsp",
+  tablespoons: "tbsp",
+  teaspoon: "tsp",
+  teaspoons: "tsp",
+};
+const normalizedUnit = (unit: string | null) =>
+  unit === null
+    ? null
+    : (unitAliases[unit.toLowerCase()] ?? unit.toLowerCase());
+const fractionValues: Readonly<Record<string, string>> = {
+  "¼": "1/4",
+  "½": "1/2",
+  "¾": "3/4",
+  "⅓": "1/3",
+  "⅔": "2/3",
+  "⅛": "1/8",
+  "⅜": "3/8",
+  "⅝": "5/8",
+  "⅞": "7/8",
+};
+const numberValue = (text: string): number => {
+  const value = text
+    .replaceAll(/[½¼¾⅓⅔⅛⅜⅝⅞]/gu, (fraction) => ` ${fractionValues[fraction]}`)
+    .trim();
+  let total = 0;
+  for (const part of value.split(/\s+/u)) {
+    const [numerator, denominator] = part.split("/").map(Number);
+    total +=
+      denominator === undefined
+        ? (numerator ?? Number.NaN)
+        : (numerator ?? Number.NaN) / denominator;
   }
-  for (const item of items) {
-    if (
-      item.kind !== "caption" &&
-      item.kind !== "transcript" &&
-      item.kind !== "visual_observation"
-    ) {
-      continue;
+  return total;
+};
+const knownUnits = new Set([
+  "g",
+  "kg",
+  "mg",
+  "ml",
+  "l",
+  "tbsp",
+  "tsp",
+  "cup",
+  "oz",
+  "lb",
+  "serving",
+]);
+const escapePattern = (value: string) =>
+  value.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+const quantitySupported = (
+  original: string,
+  quantity: {
+    readonly value: number;
+    readonly max: number | null;
+    readonly unit: string | null;
+  }
+) => {
+  const numbers =
+    "(?:\\d+\\s+\\d+/\\d+|\\d+/\\d+|\\d*\\s*[½¼¾⅓⅔⅛⅜⅝⅞]|\\d+(?:\\.\\d+)?)";
+  const match = new RegExp(
+    `^\\s*(${numbers})(?:\\s*[-–]\\s*(${numbers}))?\\s*([a-z]+)?`,
+    "iu"
+  ).exec(original);
+  if (
+    match === null ||
+    numberValue(match[1] ?? "") !== quantity.value ||
+    (match[2] === undefined ? null : numberValue(match[2])) !== quantity.max
+  ) {
+    return false;
+  }
+  return quantity.unit === null
+    ? !knownUnits.has(normalizedUnit(match[3] ?? null) ?? "")
+    : normalizedUnit(match[3] ?? null) === normalizedUnit(quantity.unit);
+};
+const durationSupported = (text: string, seconds: number) =>
+  [
+    ...text.matchAll(
+      /(?<amount>\d+(?:\.\d+)?)\s*(?<unit>seconds?|secs?|minutes?|mins?|hours?|hrs?)/giu
+    ),
+  ].some((match) => {
+    const unit = match.groups?.["unit"] ?? "";
+    let multiplier = 1;
+    if (/^h/iu.test(unit)) {
+      multiplier = 3600;
+    } else if (/^m/iu.test(unit)) {
+      multiplier = 60;
     }
-    const projected = projectRecipeEvidenceSpan(item.value, value);
-    if (projected !== null) {
-      return { item, value: projected } as const;
-    }
-  }
-  return null;
-};
-
-const groundRecipeStringFact = (
-  value: string | null,
-  items: readonly RecipeEvidenceItem[]
-) => {
-  if (value === null) {
-    return MissingRecipeFact;
-  }
-  const grounded = groundedStringEvidence(value, items);
-  return grounded === null
-    ? MissingRecipeFact
-    : trustedSupportedRecipeFact(grounded.value, grounded.item);
-};
-
-const exactTimeEvidence = (
-  items: readonly RecipeEvidenceItem[],
-  value: number
-) =>
-  items.find((item) =>
-    new RegExp(`\\b${value}\\s*(?:minutes?|mins?)\\b`, "iu").test(item.value)
-  );
-
-const exactTemperatureEvidence = (
-  items: readonly RecipeEvidenceItem[],
-  value: number
-) =>
-  items.find((item) =>
-    new RegExp(`\\b${value}\\s*(?:°\\s*)?c\\b`, "iu").test(item.value)
-  );
-
-const groundRecipeNumberFact = (
-  value: number | null,
-  items: readonly RecipeEvidenceItem[],
-  findEvidence: (
-    evidence: readonly RecipeEvidenceItem[],
-    candidate: number
-  ) => RecipeEvidenceItem | undefined
-) => {
-  if (value === null) {
-    return MissingRecipeFact;
-  }
-  const evidence = findEvidence(items, value);
-  return evidence === undefined
-    ? MissingRecipeFact
-    : trustedSupportedRecipeFact(value, evidence);
-};
-
-const groundRecipeFactList = (
-  values: readonly string[],
-  items: readonly RecipeEvidenceItem[]
-) => {
-  const grounded = values.flatMap((value) => {
-    const groundedFact = groundedStringEvidence(value, items);
-    return groundedFact === null
-      ? []
-      : [trustedSupportedRecipeFact(groundedFact.value, groundedFact.item)];
+    return Number(match.groups?.["amount"]) * multiplier === seconds;
   });
-  const unique = grounded.filter(
-    (fact, index) =>
-      grounded.findIndex((candidate) => candidate.value === fact.value) ===
-      index
-  );
-  const [first, ...rest] = unique;
-  return first === undefined
-    ? MissingRecipeFactList
-    : { items: [first, ...rest] as const, state: "supported" as const };
-};
 
-const trustedEvidenceFact = (
-  items: readonly RecipeEvidenceItem[],
-  kind: "creator" | "source_url"
+const groundServingAndNutrition = (
+  candidate: RecipeCandidate,
+  contentItems: readonly RecipeEvidenceItem[],
+  cite: (path: string, item: RecipeEvidenceItem) => void
 ) => {
-  const evidence = items.find((item) => item.kind === kind);
-  return evidence === undefined
-    ? MissingRecipeFact
-    : trustedSupportedRecipeFact(evidence.value, evidence);
+  const { servings: selectedServings } = candidate;
+  let servings: RecipeCandidate["servings"] = null;
+  if (selectedServings !== null) {
+    const { original } = selectedServings;
+    const item = contentItems.find((source) => source.value.includes(original));
+    if (
+      item !== undefined &&
+      quantitySupported(
+        original.replace(/^(?:serves|makes|yield:?|servings:?)\s*/iu, ""),
+        {
+          max: selectedServings.max,
+          unit:
+            /^(?:serves|servings:?)\s/iu.test(original) &&
+            normalizedUnit(selectedServings.unit) === "serving"
+              ? null
+              : selectedServings.unit,
+          value: selectedServings.quantity,
+        }
+      )
+    ) {
+      servings = selectedServings;
+      cite("servings", item);
+    }
+  }
+  // Nutrition needs an explicit source basis; a number near a nutrient is not sufficient.
+  const { nutrition } = candidate;
+  let groundedNutrition: RecipeCandidate["nutrition"] = null;
+  if (nutrition !== null) {
+    const item = contentItems.find((source) =>
+      source.value.includes(nutrition.original)
+    );
+    const basis = {
+      "100g": /per\s*100\s*g/iu,
+      recipe: /(?:per|whole|entire)\s+recipe/iu,
+      serving: /per\s+(?:serving|portion)/iu,
+    }[nutrition.basis.type];
+    if (
+      item !== undefined &&
+      basis.test(nutrition.original) &&
+      (nutrition.basis.servings === null ||
+        new RegExp(
+          `\\b(?:serves|servings:?|makes)\\s+${nutrition.basis.servings}\\b`,
+          "iu"
+        ).test(nutrition.original)) &&
+      (nutrition.basis.description === null ||
+        nutrition.original.includes(nutrition.basis.description)) &&
+      nutrition.nutrients.every((nutrient) => {
+        const name = escapePattern(nutrient.name);
+        const amount = `${escapePattern(String(nutrient.amount.value))}\\s*${escapePattern(nutrient.amount.unit)}`;
+        return new RegExp(
+          `(?:\\b${name}\\s*:?\\s*${amount}\\b|\\b${amount}\\s+${name}\\b)`,
+          "iu"
+        ).test(nutrition.original);
+      })
+    ) {
+      groundedNutrition = nutrition;
+      cite("nutrition", item);
+    }
+  }
+  return { groundedNutrition, servings };
 };
 
-const UnresolvedFieldByGroundedKey = [
-  ["author", "author"],
-  ["category", "category"],
-  ["cookTimeMinutes", "cook_time_minutes"],
-  ["cuisine", "cuisine"],
-  ["description", "description"],
-  ["ingredientLines", "ingredient_lines"],
-  ["instructions", "instructions"],
-  ["name", "name"],
-  ["nutrition", "nutrition"],
-  ["prepTimeMinutes", "prep_time_minutes"],
-  ["temperatureCelsius", "temperature_celsius"],
-  ["tools", "tools"],
-  ["totalTimeMinutes", "total_time_minutes"],
-  ["yield", "yield"],
-] as const satisfies readonly (readonly [
-  keyof Omit<GroundedRecipeFacts, "unresolvedFields">,
-  RecipeUnresolvedField,
-])[];
-
-/**
- * The sole authority boundary from decoded provider selections to landed,
- * evidence-cited recipe facts. Unresolved bookkeeping is derived here once.
- */
+/** Trusted source spans supply content and citations; provider metadata never has authority. */
 export const groundRecipeCandidate = (
   candidate: RecipeCandidate,
   items: readonly RecipeEvidenceItem[]
 ): GroundedRecipeFacts => {
-  const grounded = {
-    author: trustedEvidenceFact(items, "creator"),
-    category: groundRecipeStringFact(candidate.category, items),
-    cookTimeMinutes: groundRecipeNumberFact(
-      candidate.cookTimeMinutes,
-      items,
-      exactTimeEvidence
-    ),
-    cuisine: groundRecipeStringFact(candidate.cuisine, items),
-    description: groundRecipeStringFact(candidate.description, items),
-    ingredientLines: groundRecipeFactList(candidate.ingredientLines, items),
-    instructions: groundRecipeFactList(candidate.instructions, items),
-    name: groundRecipeStringFact(candidate.name, items),
-    nutrition: groundRecipeStringFact(candidate.nutrition, items),
-    prepTimeMinutes: groundRecipeNumberFact(
-      candidate.prepTimeMinutes,
-      items,
-      exactTimeEvidence
-    ),
-    sourceUrl: trustedEvidenceFact(items, "source_url"),
-    supportedClaims: groundRecipeFactList(candidate.supportedClaims, items),
-    temperatureCelsius: groundRecipeNumberFact(
-      candidate.temperatureCelsius,
-      items,
-      exactTemperatureEvidence
-    ),
-    tools: groundRecipeFactList(candidate.tools, items),
-    totalTimeMinutes: groundRecipeNumberFact(
-      candidate.totalTimeMinutes,
-      items,
-      exactTimeEvidence
-    ),
-    yield: groundRecipeStringFact(candidate.yield, items),
-  };
-  const unresolvedFields = UnresolvedFieldByGroundedKey.flatMap(
-    ([key, field]) => (grounded[key].state === "unresolved" ? [field] : [])
+  const evidence: GroundedRecipeFacts["evidence"][number][] = [];
+  const contentItems = items.filter(
+    (item) => item.kind !== "creator" && item.kind !== "source_url"
   );
+  const cite = (path: string, item: RecipeEvidenceItem) => {
+    evidence.push({ citations: [trustedRecipeCitation(item)], path });
+  };
+  const text = (
+    value: string | null,
+    path: string,
+    sources = contentItems
+  ): string | null => {
+    if (value === null) {
+      return null;
+    }
+    for (const item of sources) {
+      const index = item.value
+        .toLocaleLowerCase("en")
+        .indexOf(value.toLocaleLowerCase("en"));
+      let span: string | null = item.value.slice(index, index + value.length);
+      if (index === -1) {
+        span = projectRecipeEvidenceSpan(item.value, value);
+      }
+      if (span !== null) {
+        cite(path, item);
+        return span;
+      }
+    }
+    return null;
+  };
+  const list = (
+    values: readonly string[],
+    path: string,
+    sources = contentItems
+  ) =>
+    values.flatMap((value) => {
+      const grounded = text(
+        value,
+        `${path}.${evidence.filter((entry) => entry.path.startsWith(`${path}.`)).length}`,
+        sources
+      );
+      return grounded === null ? [] : [grounded];
+    });
+  const creator = items.find((item) => item.kind === "creator");
+  if (creator !== undefined) {
+    cite("author.name", creator);
+  }
+  const ingredients =
+    candidate.ingredients?.flatMap((ingredient) => {
+      const index = evidence.filter((entry) =>
+        /^ingredients\.\d+\.original$/u.test(entry.path)
+      ).length;
+      const prefix = `ingredients.${index}`;
+      const original = text(ingredient.original, `${prefix}.original`);
+      if (original === null) {
+        return [];
+      }
+      const item = contentItems.find((source) =>
+        source.value.includes(original)
+      );
+      if (item === undefined) {
+        return [];
+      }
+      const local = [{ ...item, value: original }];
+      const groundedName = text(ingredient.name, `${prefix}.name`, local);
+      const name = groundedName ?? original;
+      if (groundedName === null) {
+        cite(`${prefix}.name`, item);
+      }
+      const quantity =
+        ingredient.quantity !== null &&
+        quantitySupported(original, ingredient.quantity)
+          ? ingredient.quantity
+          : null;
+      if (quantity !== null) {
+        cite(`${prefix}.quantity`, item);
+      }
+      const optional =
+        ingredient.optional === true && /\boptional\b/iu.test(original)
+          ? true
+          : null;
+      if (optional !== null) {
+        cite(`${prefix}.optional`, item);
+      }
+      return [
+        {
+          group: text(ingredient.group, `${prefix}.group`),
+          ingredientId: null,
+          localName: text(ingredient.localName, `${prefix}.localName`, local),
+          name,
+          note: text(ingredient.note, `${prefix}.note`, local),
+          optional,
+          original,
+          preparation: text(
+            ingredient.preparation,
+            `${prefix}.preparation`,
+            local
+          ),
+          quantity,
+          size: text(ingredient.size, `${prefix}.size`, local),
+        },
+      ];
+    }) ?? [];
+  const instructions =
+    candidate.instructions?.flatMap((instruction) => {
+      const index = evidence.filter((entry) =>
+        /^instructions\.\d+\.text$/u.test(entry.path)
+      ).length;
+      const prefix = `instructions.${index}`;
+      const grounded = text(instruction.text, `${prefix}.text`);
+      if (grounded === null) {
+        return [];
+      }
+      const item = contentItems.find((source) =>
+        source.value.includes(grounded)
+      );
+      if (item === undefined) {
+        return [];
+      }
+      const local = [{ ...item, value: grounded }];
+      const duration =
+        instruction.duration !== null &&
+        durationSupported(grounded, instruction.duration.seconds)
+          ? instruction.duration
+          : null;
+      if (duration !== null) {
+        cite(`${prefix}.duration`, item);
+      }
+      const temperature =
+        instruction.temperature !== null &&
+        new RegExp(
+          `\\b${instruction.temperature.value}\\s*(?:°\\s*)?${instruction.temperature.unit}\\b`,
+          "iu"
+        ).test(grounded)
+          ? instruction.temperature
+          : null;
+      if (temperature !== null) {
+        cite(`${prefix}.temperature`, item);
+      }
+      return [
+        {
+          duration,
+          equipment: list(instruction.equipment, `${prefix}.equipment`, local),
+          group: text(instruction.group, `${prefix}.group`),
+          ingredients: [],
+          step: index + 1,
+          techniques: list(
+            instruction.techniques,
+            `${prefix}.techniques`,
+            local
+          ),
+          temperature,
+          text: grounded,
+        },
+      ];
+    }) ?? [];
+  const groundTime = (kind: keyof RecipeCandidate["times"]) => {
+    const duration = candidate.times[kind];
+    const label = {
+      cook: "cook",
+      inactive: "(?:inactive|rest|chill|marinate|wait)",
+      prep: "prep",
+      total: "(?:total|ready)",
+    }[kind];
+    const pattern = new RegExp(
+      `\\b${label}(?:\\s+time)?\\s*(?::|for|in)?\\s*((?:\\d+(?:\\.\\d+)?)\\s*(?:seconds?|secs?|minutes?|mins?|hours?|hrs?))\\b`,
+      "giu"
+    );
+    const item =
+      duration === null
+        ? undefined
+        : contentItems.find((source) =>
+            [...source.value.matchAll(pattern)].some((match) =>
+              durationSupported(match[1] ?? "", duration.seconds)
+            )
+          );
+    if (item !== undefined) {
+      cite(`times.${kind}`, item);
+    }
+    return item === undefined ? null : duration;
+  };
+  const times = {
+    cook: groundTime("cook"),
+    inactive: groundTime("inactive"),
+    prep: groundTime("prep"),
+    total: groundTime("total"),
+  };
+  const { servings, groundedNutrition } = groundServingAndNutrition(
+    candidate,
+    contentItems,
+    cite
+  );
+  const dietary = candidate.dietary.flatMap((claim) => {
+    const item = contentItems.find((source) =>
+      source.value.split(/[.!;\n]/u).some((statement) => {
+        const declaration = normalizeRecipeGroundingText(statement);
+        const phrase = normalizeRecipeGroundingText(claim.original);
+        return (
+          new RegExp(`(?:^|\\s)${escapePattern(phrase)}(?:$|\\s)`, "u").test(
+            declaration
+          ) &&
+          !/\b(?:not|no|never|without|cannot|may|might|possibly|potentially|isn t|aren t|wasn t|weren t|don t|doesn t)\b/u.test(
+            declaration
+          )
+        );
+      })
+    );
+    const normalized = normalizeRecipeGroundingText(claim.original);
+    const name = normalizeRecipeGroundingText(claim.name);
+    let supported = false;
+    if (claim.kind === "diet") {
+      supported = claim.value && normalized === name;
+    } else if (claim.value) {
+      supported = normalized === `contains ${name}`;
+    } else {
+      supported =
+        normalized === `${name} free` || normalized === `free from ${name}`;
+    }
+    if (item === undefined || !supported) {
+      return [];
+    }
+    cite(
+      `dietary.${evidence.filter((entry) => entry.path.startsWith("dietary.")).length}`,
+      item
+    );
+    return [claim];
+  });
+  const recipe = Schema.decodeUnknownSync(RecipeDraftContent)({
+    author: creator === undefined ? null : { name: creator.value, url: null },
+    categories: list(candidate.categories, "categories"),
+    cuisines: list(candidate.cuisines, "cuisines"),
+    description: text(candidate.description, "description"),
+    dietary,
+    equipment: list(candidate.equipment, "equipment"),
+    ingredients: ingredients.length === 0 ? null : ingredients,
+    instructions: instructions.length === 0 ? null : instructions,
+    language: null,
+    media: [],
+    name: text(candidate.name, "name"),
+    notes: list(candidate.notes, "notes"),
+    nutrition: groundedNutrition,
+    servings,
+    sourceTags: list(candidate.sourceTags, "sourceTags"),
+    times,
+  });
+  const source = items.find((item) => item.kind === "source_url");
   return {
-    ...grounded,
-    unresolvedFields: [
-      ...unresolvedFields,
-      "ingredient_quantities",
-      "ingredient_units",
-    ],
+    evidence,
+    recipe,
+    sourceUrl:
+      source === undefined
+        ? {
+            citations: [],
+            origin: "unresolved",
+            reason: "not resolved from available evidence",
+            state: "unresolved",
+          }
+        : {
+            citations: [trustedRecipeCitation(source)],
+            origin: source.origin,
+            state: "supported",
+            value: source.value,
+          },
+    unresolvedFields: (Object.keys(recipe) as RecipeUnresolvedField[]).filter(
+      (field) =>
+        recipe[field] === null ||
+        (Array.isArray(recipe[field]) && recipe[field].length === 0) ||
+        (field === "times" &&
+          Object.values(recipe.times).some((value) => value === null))
+    ),
   };
 };

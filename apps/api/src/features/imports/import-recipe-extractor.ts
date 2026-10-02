@@ -1,3 +1,5 @@
+import { RecipeDraftContent } from "@meal-planner/recipe-domain";
+import { RecipeEditableField } from "@meal-planner/recipe-import-api";
 import { Schema } from "effect";
 import type { Effect } from "effect";
 
@@ -71,86 +73,25 @@ export const RecipeFactList = Schema.Union([
 ]);
 export type RecipeFactList = typeof RecipeFactList.Type;
 
-export const RecipeUnresolvedField = Schema.Literals([
-  "author",
-  "category",
-  "cook_time_minutes",
-  "cuisine",
-  "description",
-  "ingredient_lines",
-  "ingredient_quantities",
-  "ingredient_units",
-  "instructions",
-  "name",
-  "nutrition",
-  "prep_time_minutes",
-  "temperature_celsius",
-  "tools",
-  "total_time_minutes",
-  "yield",
-]);
+export const RecipeUnresolvedField = RecipeEditableField;
 export type RecipeUnresolvedField = typeof RecipeUnresolvedField.Type;
-
-/** Evidence-grounded recipe facts. Provider candidates can never inhabit it. */
+/** Selections contain no evidence authority. The trusted adapter grounds each field. */
+export const RecipeCandidate = RecipeDraftContent;
+export type RecipeCandidate = typeof RecipeCandidate.Type;
 export const GroundedRecipeFacts = Schema.Struct({
-  author: RecipeStringFact,
-  category: RecipeStringFact,
-  cookTimeMinutes: RecipeNumberFact,
-  cuisine: RecipeStringFact,
-  description: RecipeStringFact,
-  ingredientLines: RecipeFactList,
-  instructions: RecipeFactList,
-  name: RecipeStringFact,
-  nutrition: RecipeStringFact,
-  prepTimeMinutes: RecipeNumberFact,
+  evidence: Schema.Array(
+    Schema.Struct({
+      citations: Schema.NonEmptyArray(RecipeEvidenceCitation),
+      path: TrimmedNonEmptyString,
+    })
+  ).pipe(Schema.check(Schema.isMaxLength(4096))),
+  recipe: RecipeDraftContent,
   sourceUrl: RecipeStringFact,
-  supportedClaims: RecipeFactList,
-  temperatureCelsius: RecipeNumberFact,
-  tools: RecipeFactList,
-  totalTimeMinutes: RecipeNumberFact,
   unresolvedFields: Schema.Array(RecipeUnresolvedField).pipe(
     Schema.check(Schema.isMaxLength(16))
   ),
-  yield: RecipeStringFact,
 });
 export type GroundedRecipeFacts = typeof GroundedRecipeFacts.Type;
-
-const RecipeProviderString = TrimmedNonEmptyString.pipe(
-  Schema.check(Schema.isMaxLength(4096))
-);
-
-/**
- * Closed provider-facing selection contract.
- *
- * The model may select candidate values only. Source identity, citations,
- * origins, unresolved bookkeeping, and evidence authority are derived by the
- * trusted adapter after this shape decodes.
- */
-export const RecipeCandidate = Schema.Struct({
-  category: Schema.NullOr(RecipeProviderString),
-  cookTimeMinutes: Schema.NullOr(SafeInteger),
-  cuisine: Schema.NullOr(RecipeProviderString),
-  description: Schema.NullOr(RecipeProviderString),
-  ingredientLines: Schema.Array(RecipeProviderString).pipe(
-    Schema.check(Schema.isMaxLength(256))
-  ),
-  instructions: Schema.Array(RecipeProviderString).pipe(
-    Schema.check(Schema.isMaxLength(256))
-  ),
-  name: Schema.NullOr(RecipeProviderString),
-  nutrition: Schema.NullOr(RecipeProviderString),
-  prepTimeMinutes: Schema.NullOr(SafeInteger),
-  supportedClaims: Schema.Array(RecipeProviderString).pipe(
-    Schema.check(Schema.isMaxLength(256))
-  ),
-  temperatureCelsius: Schema.NullOr(SafeInteger),
-  tools: Schema.Array(RecipeProviderString).pipe(
-    Schema.check(Schema.isMaxLength(256))
-  ),
-  totalTimeMinutes: Schema.NullOr(SafeInteger),
-  yield: Schema.NullOr(RecipeProviderString),
-});
-export type RecipeCandidate = typeof RecipeCandidate.Type;
 
 /** Strict provider-neutral recipe result. Raw adapter output is decoded here. */
 export const RecipeExtraction = Schema.Struct({

@@ -1,4 +1,13 @@
-import { PlanningTags as PlanningTagsSchema } from "@meal-planner/recipe-domain";
+import {
+  PlanningTags as PlanningTagsSchema,
+  RecipeContent,
+  RecipeDraftContent,
+  recipeContentBlockers,
+} from "@meal-planner/recipe-domain";
+import {
+  RecipeReviewAnswer,
+  RecipeEditableField,
+} from "@meal-planner/recipe-import-api";
 import type { CorrectedRecipe as CorrectedRecipeType } from "@meal-planner/recipe-import-api";
 import { Option, Schema } from "effect";
 
@@ -33,68 +42,22 @@ export const RecipeReviewerActorId = TrimmedNonEmptyString.pipe(
 );
 export type RecipeReviewerActorId = typeof RecipeReviewerActorId.Type;
 
-const TextRecipeCorrectionField = Schema.Literals([
-  "author",
-  "category",
-  "cuisine",
-  "description",
-  "name",
-  "nutrition",
-  "yield",
-]);
-const IntegerRecipeCorrectionField = Schema.Literals([
-  "cook_time_minutes",
-  "prep_time_minutes",
-  "temperature_celsius",
-  "total_time_minutes",
-]);
-const ListRecipeCorrectionField = Schema.Literals([
-  "ingredient_lines",
-  "ingredient_quantities",
-  "ingredient_units",
-  "instructions",
-  "tools",
-]);
-
 const RecipeCorrectionDetails = {
   actorId: RecipeReviewerActorId,
   correctedAt: ImportTimestamp,
   reason: ShortText,
   version: RecipeReviewVersion,
 } as const;
-
-export const RecipeCorrection = Schema.Union([
-  Schema.Struct({
-    ...RecipeCorrectionDetails,
-    after: ShortText,
-    before: Schema.NullOr(ShortText),
-    field: TextRecipeCorrectionField,
-  }),
-  Schema.Struct({
-    ...RecipeCorrectionDetails,
-    after: SafeInteger,
-    before: Schema.NullOr(SafeInteger),
-    field: IntegerRecipeCorrectionField,
-  }),
-  Schema.Struct({
-    ...RecipeCorrectionDetails,
-    after: Schema.NonEmptyArray(ShortText).pipe(
-      Schema.check(Schema.isMaxLength(256))
-    ),
-    before: Schema.NullOr(
-      Schema.NonEmptyArray(ShortText).pipe(
-        Schema.check(Schema.isMaxLength(256))
-      )
-    ),
-    field: ListRecipeCorrectionField,
-  }),
-  Schema.Struct({
-    ...RecipeCorrectionDetails,
-    after: PlanningTagsSchema,
-    before: Schema.NullOr(PlanningTagsSchema),
-    field: Schema.Literal("tags"),
-  }),
-]);
+export const RecipeCorrection = Schema.Union(
+  RecipeReviewAnswer.members.map((answer) =>
+    Schema.Struct({
+      ...RecipeCorrectionDetails,
+      after: answer.fields.value,
+      before: Schema.NullOr(answer.fields.value),
+      field: answer.fields.field,
+    })
+  )
+);
 export type RecipeCorrection = typeof RecipeCorrection.Type;
 
 const RecipeReviewTransitionDetails = {
@@ -158,11 +121,7 @@ export const ApprovedRecipe = Schema.Struct({
   approvedAt: ImportTimestamp,
   extractionFingerprint: Schema.String,
   importId: ImportId,
-  recipe: Schema.Struct({
-    ingredientLines: Schema.NonEmptyArray(ShortText),
-    instructions: Schema.NonEmptyArray(ShortText),
-    name: ShortText,
-  }),
+  recipe: RecipeContent,
   source: Schema.Struct({
     evidenceFingerprint: Schema.String,
     sourceUrl: Schema.NullOr(ShortText),
@@ -179,7 +138,7 @@ export const Review = Schema.TaggedUnion({
     approvedAt: ImportTimestamp,
     evidence: Schema.Array(EvidenceReference),
     lifecycle: Schema.Literal("approved"),
-    recipe: ApprovedRecipe.fields.recipe,
+    recipe: RecipeContent,
     tags: PlanningTagsSchema,
   },
   NeedsReview: {
@@ -194,149 +153,22 @@ export const Review = Schema.TaggedUnion({
 export type Review = typeof Review.Type;
 export type ApprovedReview = Extract<Review, { readonly _tag: "Approved" }>;
 
-const requiredFields = [
-  "name",
-  "ingredient_lines",
-  "instructions",
-] as const satisfies readonly RecipeUnresolvedField[];
-
-export const recipeReviewNullablePolicy = [
-  "author",
-  "category",
-  "cook_time_minutes",
-  "cuisine",
-  "description",
-  "ingredient_quantities",
-  "ingredient_units",
-  "nutrition",
-  "prep_time_minutes",
-  "temperature_celsius",
-  "tools",
-  "total_time_minutes",
-  "yield",
-] as const satisfies readonly RecipeUnresolvedField[];
-
-const factValue = <A>(
-  fact:
-    | { readonly state: "supported"; readonly value: A }
-    | { readonly state: "unresolved" }
-): A | null => (fact.state === "supported" ? fact.value : null);
-
-const listValue = (
-  fact: RecipeDraft["extraction"]["ingredientLines"]
-): readonly [string, ...string[]] | null => {
-  if (fact.state !== "supported") {
-    return null;
-  }
-  const [first, ...rest] = fact.items.flatMap((item) =>
-    item.state === "supported" ? [item.value] : []
-  );
-  return first === undefined ? null : [first, ...rest];
-};
-
-type MutableCorrectedRecipe = {
-  -readonly [K in keyof CorrectedRecipeType]: CorrectedRecipeType[K];
-};
+export const recipeReviewNullablePolicy = RecipeEditableField.literals.filter(
+  (field) =>
+    field !== "name" && field !== "ingredients" && field !== "instructions"
+);
 
 export const applyCorrectionOverlay = (
   draft: RecipeDraft,
   corrections: readonly RecipeCorrection[]
 ): CorrectedRecipeType => {
-  const { extraction } = draft;
-  const recipe: MutableCorrectedRecipe = {
-    author: factValue(extraction.author),
-    category: factValue(extraction.category),
-    cookTimeMinutes: factValue(extraction.cookTimeMinutes),
-    cuisine: factValue(extraction.cuisine),
-    description: factValue(extraction.description),
-    ingredientLines: listValue(extraction.ingredientLines),
-    ingredientQuantities: null,
-    ingredientUnits: null,
-    instructions: listValue(extraction.instructions),
-    name: factValue(extraction.name),
-    nutrition: factValue(extraction.nutrition),
-    prepTimeMinutes: factValue(extraction.prepTimeMinutes),
-    temperatureCelsius: factValue(extraction.temperatureCelsius),
-    tools: listValue(extraction.tools),
-    totalTimeMinutes: factValue(extraction.totalTimeMinutes),
-    yield: factValue(extraction.yield),
-  };
-
+  const recipe = { ...draft.extraction.recipe };
   for (const correction of corrections) {
-    switch (correction.field) {
-      case "author": {
-        recipe.author = correction.after;
-        break;
-      }
-      case "category": {
-        recipe.category = correction.after;
-        break;
-      }
-      case "cook_time_minutes": {
-        recipe.cookTimeMinutes = correction.after;
-        break;
-      }
-      case "cuisine": {
-        recipe.cuisine = correction.after;
-        break;
-      }
-      case "description": {
-        recipe.description = correction.after;
-        break;
-      }
-      case "ingredient_lines": {
-        recipe.ingredientLines = correction.after;
-        break;
-      }
-      case "ingredient_quantities": {
-        recipe.ingredientQuantities = correction.after;
-        break;
-      }
-      case "ingredient_units": {
-        recipe.ingredientUnits = correction.after;
-        break;
-      }
-      case "instructions": {
-        recipe.instructions = correction.after;
-        break;
-      }
-      case "name": {
-        recipe.name = correction.after;
-        break;
-      }
-      case "nutrition": {
-        recipe.nutrition = correction.after;
-        break;
-      }
-      case "prep_time_minutes": {
-        recipe.prepTimeMinutes = correction.after;
-        break;
-      }
-      case "temperature_celsius": {
-        recipe.temperatureCelsius = correction.after;
-        break;
-      }
-      case "tools": {
-        recipe.tools = correction.after;
-        break;
-      }
-      case "total_time_minutes": {
-        recipe.totalTimeMinutes = correction.after;
-        break;
-      }
-      case "yield": {
-        recipe.yield = correction.after;
-        break;
-      }
-      case "tags": {
-        break;
-      }
-      default: {
-        correction satisfies never;
-      }
+    if (correction.field !== "tags") {
+      Object.assign(recipe, { [correction.field]: correction.after });
     }
   }
-  return recipe;
+  return Schema.decodeUnknownSync(RecipeDraftContent)(recipe);
 };
 
 export const refineRecipeReview = (
@@ -371,8 +203,9 @@ export const refineRecipeReview = (
         approval.version !== review.version ||
         tags === null ||
         recipe.name === null ||
-        recipe.ingredientLines === null ||
-        recipe.instructions === null
+        recipe.ingredients === null ||
+        recipe.instructions === null ||
+        recipeContentBlockers(recipe).invalidFields.length > 0
       ) {
         return Option.none();
       }
@@ -383,11 +216,7 @@ export const refineRecipeReview = (
           actorId: approval.actorId,
           approvedAt: approval.transitionedAt,
           lifecycle: "approved",
-          recipe: {
-            ingredientLines: recipe.ingredientLines,
-            instructions: recipe.instructions,
-            name: recipe.name,
-          },
+          recipe: Schema.decodeUnknownSync(RecipeContent)(recipe),
           tags,
         })
       );
@@ -403,22 +232,7 @@ export const approvalBlockers = (
   corrections: readonly RecipeCorrection[]
 ): ApprovalBlockers => {
   const recipe = applyCorrectionOverlay(draft, corrections);
-  const correctedFields = new Set(corrections.map(({ field }) => field));
-  const unresolvedRequiredFields = requiredFields.filter(
-    (field) =>
-      draft.extraction.unresolvedFields.includes(field) &&
-      !correctedFields.has(field)
-  );
-  const invalidFields: RecipeUnresolvedField[] = [];
-  if (
-    recipe.prepTimeMinutes !== null &&
-    recipe.cookTimeMinutes !== null &&
-    recipe.totalTimeMinutes !== null &&
-    recipe.totalTimeMinutes < recipe.prepTimeMinutes + recipe.cookTimeMinutes
-  ) {
-    invalidFields.push("total_time_minutes");
-  }
-  return { invalidFields, unresolvedRequiredFields };
+  return recipeContentBlockers(recipe);
 };
 
 export const projectApprovedReview = (
@@ -430,7 +244,10 @@ export const projectApprovedReview = (
   recipe: review.recipe,
   source: {
     evidenceFingerprint: review.draft.evidenceFingerprint,
-    sourceUrl: factValue(review.draft.extraction.sourceUrl),
+    sourceUrl:
+      review.draft.extraction.sourceUrl.state === "supported"
+        ? review.draft.extraction.sourceUrl.value
+        : null,
   },
   tags: review.tags,
   version: review.version,

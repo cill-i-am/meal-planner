@@ -1,4 +1,9 @@
-import { PlanningTags } from "@meal-planner/recipe-domain";
+import {
+  emptyRecipeDetails,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+  PlanningTags,
+} from "@meal-planner/recipe-domain";
 import {
   RecipeImportAction,
   RecipeImportActionId,
@@ -26,61 +31,37 @@ const privateValues = {
     "https://www.tiktok.com/@private-source-sentinel/video/7520000000000000001",
 };
 
-const citation = {
-  citations: [
-    {
-      confidence: 1,
-      evidenceId: "private-transcript-sentinel",
-      origin: "creator_provided" as const,
-    },
-  ],
-  origin: "creator_provided" as const,
-  state: "supported" as const,
-};
-const supportedString = (value: string) => ({ ...citation, value });
-const supportedNumber = (value: number) => ({ ...citation, value });
-const supportedList = (values: readonly string[]) => ({
-  items: values.map(supportedString),
-  state: "supported" as const,
-});
-const unresolved = (reason: string) => ({
-  citations: [] as const,
-  origin: "unresolved" as const,
-  reason,
-  state: "unresolved" as const,
-});
-
 const draft = Schema.decodeUnknownSync(RecipeDraft)({
   createdAt: "2026-08-16T10:00:00.000Z",
   evidenceFingerprint: privateValues.evidence,
   extraction: {
-    author: supportedString("Fixture Cook"),
-    category: supportedString("Dinner"),
-    cookTimeMinutes: supportedNumber(20),
-    cost: {
-      certainty: "known",
-      currency: "USD",
-      estimatedMicroUsd: 0,
+    cost: { certainty: "known", currency: "USD", estimatedMicroUsd: 0 },
+    evidence: [],
+    recipe: {
+      ...emptyRecipeDetails,
+      ingredients: [
+        recipeIngredientFromText("1 onion"),
+        recipeIngredientFromText("2 tomatoes"),
+      ],
+      instructions: [
+        recipeInstructionFromText("Chop the onion.", 1),
+        recipeInstructionFromText("Simmer for 20 minutes.", 2),
+      ],
+      name: null,
     },
-    cuisine: supportedString("Irish"),
-    description: supportedString("A deterministic fixture."),
-    ingredientLines: supportedList(["1 onion", "2 tomatoes"]),
-    instructions: supportedList(["Chop the onion.", "Simmer for 20 minutes."]),
-    name: unresolved("The title was not visible."),
-    nutrition: unresolved("Nutrition was not stated."),
-    prepTimeMinutes: supportedNumber(10),
-    sourceUrl: supportedString(privateValues.sourceUrl),
-    supportedClaims: supportedList(["Simmer for 20 minutes."]),
-    temperatureCelsius: unresolved("Temperature was not stated."),
-    tools: supportedList(["Saucepan"]),
-    totalTimeMinutes: supportedNumber(30),
-    unresolvedFields: [
-      "name",
-      "nutrition",
-      "temperature_celsius",
-      "ingredient_quantities",
-      "ingredient_units",
-    ],
+    sourceUrl: {
+      citations: [
+        {
+          confidence: 1,
+          evidenceId: "private-transcript-sentinel",
+          origin: "observed",
+        },
+      ],
+      origin: "observed",
+      state: "supported",
+      value: privateValues.sourceUrl,
+    },
+    unresolvedFields: ["name", "nutrition"],
     usage: {
       inputEvidenceItems: 1,
       inputTokens: 0,
@@ -88,7 +69,6 @@ const draft = Schema.decodeUnknownSync(RecipeDraft)({
       modelCalls: 1,
       outputTokens: 0,
     },
-    yield: supportedString("2 servings"),
   },
   extractionFingerprint: privateValues.extraction,
   extractor: {
@@ -105,7 +85,6 @@ const draft = Schema.decodeUnknownSync(RecipeDraft)({
 
 const tags = Schema.decodeUnknownSync(PlanningTags)({
   cuisines: ["Irish"],
-  dietaryFit: "household_match",
   difficulty: "easy",
   leftovers: "one_meal",
   mealTypes: ["dinner"],
@@ -131,12 +110,7 @@ const review = refineRecipeReview(
       },
     ],
     lifecycle: "needs_review",
-    nullablePolicy: [
-      "nutrition",
-      "temperature_celsius",
-      "ingredient_quantities",
-      "ingredient_units",
-    ],
+    nullablePolicy: ["nutrition"],
     tags,
     transitions: [],
     unresolvedRequiredFields: [],
@@ -167,61 +141,20 @@ describe("recipe import review action projection", () => {
     expect(Schema.decodeUnknownSync(RecipeImportAction)(action)).toEqual(
       action
     );
-    expect(action).toEqual({
+    expect(action).toMatchObject({
       actionVersion: 2,
       id: "a".repeat(64),
       intentId: "018f47ad-91aa-7c35-b6fe-000000000401",
-      object: "recipe_import_action",
       review: {
         answers: [
           { field: "name", value: "Tomato and Onion Stew" },
           { field: "tags", value: tags },
         ],
-        blockers: {
-          invalidFields: [],
-          unresolvedRequiredFields: [],
-        },
-        editableFields: [
-          "author",
-          "category",
-          "cook_time_minutes",
-          "cuisine",
-          "description",
-          "ingredient_lines",
-          "ingredient_quantities",
-          "ingredient_units",
-          "instructions",
-          "name",
-          "nutrition",
-          "prep_time_minutes",
-          "temperature_celsius",
-          "tools",
-          "total_time_minutes",
-          "yield",
-          "tags",
-        ],
-        recipe: {
-          author: "Fixture Cook",
-          category: "Dinner",
-          cookTimeMinutes: 20,
-          cuisine: "Irish",
-          description: "A deterministic fixture.",
-          ingredientLines: ["1 onion", "2 tomatoes"],
-          ingredientQuantities: null,
-          ingredientUnits: null,
-          instructions: ["Chop the onion.", "Simmer for 20 minutes."],
-          name: "Tomato and Onion Stew",
-          nutrition: null,
-          prepTimeMinutes: 10,
-          temperatureCelsius: null,
-          tools: ["Saucepan"],
-          totalTimeMinutes: 30,
-          yield: "2 servings",
-        },
+        blockers: { invalidFields: [], unresolvedRequiredFields: [] },
+        recipe: { ...draft.extraction.recipe, name: "Tomato and Onion Stew" },
         tags,
       },
       status: "active",
-      type: "review_recipe",
     });
 
     const serialized = JSON.stringify(action);

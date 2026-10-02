@@ -6,7 +6,12 @@ import {
   MealPlanRequest,
   ManualMealSwapRequest,
 } from "@meal-planner/household-api";
-import { PlanningTags } from "@meal-planner/recipe-domain";
+import {
+  makeRecipeContent,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+  PlanningTags,
+} from "@meal-planner/recipe-domain";
 import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -48,7 +53,6 @@ const candidateTags = (input: {
 }) =>
   decodeCandidateTags({
     cuisines: [input.cuisine],
-    dietaryFit: "household_match",
     difficulty: "easy",
     leftovers: "none",
     mealTypes: input.mealTypes,
@@ -73,11 +77,13 @@ const candidateSnapshot = (candidate: {
     approvedAt: "2026-08-19T20:00:00.000Z",
     extractionFingerprint: candidate.authorityToken.extractionFingerprint,
     importId: candidate.importId,
-    recipe: {
-      ingredientLines: ["1 bounded ingredient"],
-      instructions: ["Prepare the bounded candidate."],
+    recipe: makeRecipeContent({
+      ingredients: [recipeIngredientFromText("1 bounded ingredient")],
+      instructions: [
+        recipeInstructionFromText("Prepare the bounded candidate.", 1),
+      ],
       name: `Candidate ${candidate.importId}`,
-    },
+    }),
     source: {
       evidenceFingerprint: `evidence:${candidate.importId}`,
       sourceUrl: null,
@@ -100,7 +106,6 @@ const referenceCandidateSelection = (input: {
       .filter(
         ({ importId, tags }) =>
           tags.mealTypes.includes(slot.mealType) &&
-          input.policy.allowedDietaryFit.includes(tags.dietaryFit) &&
           input.policy.allowedDifficulties.includes(tags.difficulty) &&
           input.policy.allowedTotalTimeBands.includes(tags.totalTimeBand) &&
           (uses.get(importId) ?? 0) < input.policy.maxRecipeUses
@@ -164,7 +169,6 @@ describe("bounded meal-plan candidate selection", () => {
       ],
     });
     const policy = decodeCandidatePolicy({
-      allowedDietaryFit: ["household_match"],
       allowedDifficulties: ["easy"],
       allowedTotalTimeBands: ["under_30_minutes"],
       maxRecipeUses: 1,
@@ -288,7 +292,6 @@ describe("bounded meal-plan candidate selection", () => {
       })),
     });
     const policy = decodeCandidatePolicy({
-      allowedDietaryFit: ["household_match"],
       allowedDifficulties: ["easy"],
       allowedTotalTimeBands: ["under_30_minutes"],
       maxRecipeUses: 1,
@@ -347,7 +350,6 @@ describe("bounded meal-plan candidate selection", () => {
       })),
     });
     const policy = decodeCandidatePolicy({
-      allowedDietaryFit: ["household_match"],
       allowedDifficulties: ["easy"],
       allowedTotalTimeBands: ["under_30_minutes"],
       maxRecipeUses: 2,
@@ -417,7 +419,6 @@ describe("bounded meal-plan candidate selection", () => {
       ],
     });
     const policy = decodeCandidatePolicy({
-      allowedDietaryFit: ["household_match"],
       allowedDifficulties: ["easy"],
       allowedTotalTimeBands: ["under_30_minutes"],
       maxRecipeUses: 1,
@@ -494,7 +495,6 @@ describe("provider-free meal-plan tracer", () => {
       ],
       relevantTags: {
         cuisines: ["Synthetic Mediterranean"],
-        dietaryFit: "household_match",
         difficulty: "easy",
         leftovers: "one_meal",
         mealTypes: ["dinner"],

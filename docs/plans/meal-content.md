@@ -58,3 +58,13 @@ The remaining implementation decisions for the generic web-page adapter are:
 
 Multi-page, slideshow, highly interactive, and browser-dependent recipe
 experiences remain unsupported in the MVP. Consider Cloudflare Browser Run later only if actual failed imports show enough need to justify its cost and complexity.
+
+## Structured recipe foundation — 2026-10-02
+
+The authorized Tinyplates-inspired content redesign replaces text-only ingredients
+and reduced planning snapshots with the shared
+[structured recipe content](../reference/recipe-content.md) model. It connects
+extraction, evidence grounding, review corrections, atomic publication, complete
+planning snapshots and cooking display. No compatibility path or external
+provider effect is part of this change. This foundation does not mark the broader
+meal content, household suitability, cook-event or shopping stages complete.

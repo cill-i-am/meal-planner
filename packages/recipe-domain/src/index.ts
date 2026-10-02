@@ -4,13 +4,6 @@ const TrimmedNonEmptyString = Schema.String.pipe(
   Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
 );
 
-export const PlanningDietaryFit = Schema.Literals([
-  "household_match",
-  "needs_adaptation",
-  "not_suitable",
-]);
-export type PlanningDietaryFit = typeof PlanningDietaryFit.Type;
-
 export const PlanningDifficulty = Schema.Literals(["easy", "medium", "hard"]);
 export type PlanningDifficulty = typeof PlanningDifficulty.Type;
 
@@ -42,7 +35,6 @@ export const PlanningTags = Schema.Struct({
   cuisines: Schema.NonEmptyArray(TrimmedNonEmptyString).pipe(
     Schema.check(Schema.isMaxLength(8))
   ),
-  dietaryFit: PlanningDietaryFit,
   difficulty: PlanningDifficulty,
   leftovers: PlanningLeftovers,
   mealTypes: Schema.NonEmptyArray(PlanningMealType).pipe(
@@ -51,3 +43,33 @@ export const PlanningTags = Schema.Struct({
   totalTimeBand: PlanningTotalTimeBand,
 });
 export type PlanningTags = typeof PlanningTags.Type;
+
+export {
+  RecipeText,
+  RecipeDuration,
+  RecipeQuantity,
+  RecipeIngredient,
+  RecipeIngredients,
+  RecipeTemperature,
+  RecipeInstruction,
+  RecipeInstructions,
+  RecipeAuthor,
+  RecipeServings,
+  RecipeTimes,
+  RecipeNutrient,
+  RecipeNutrition,
+  RecipeDietaryClaim,
+  RecipeMedia,
+  RecipeContentFields,
+  RecipeContent,
+  RecipeDraftContent,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+  emptyRecipeDetails,
+  makeRecipeContent,
+  recipeGroups,
+  recipeDisplayText,
+  recipeContentBlockers,
+} from "./content.js";
+export { formatRecipeIngredient, scaleRecipeIngredients } from "./scaling.js";
+export type { RecipeScalingResult } from "./scaling.js";

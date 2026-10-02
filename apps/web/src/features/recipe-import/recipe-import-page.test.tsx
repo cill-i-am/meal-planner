@@ -1,4 +1,9 @@
 import {
+  emptyRecipeDetails,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+} from "@meal-planner/recipe-domain";
+import {
   RecipeImportAction,
   RecipeImportActionId,
   ProcessingRecipeImportIntent,
@@ -14,7 +19,7 @@ import { Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { RecipeImportOperations } from "./operations.js";
-import { RecipeImportPage } from "./recipe-import-page.js";
+import { RecipeDetails, RecipeImportPage } from "./recipe-import-page.js";
 
 afterEach(cleanup);
 
@@ -72,22 +77,11 @@ const activeAction = Schema.decodeUnknownSync(RecipeImportAction)({
     blockers: { invalidFields: [], unresolvedRequiredFields: [] },
     editableFields: ["name"],
     recipe: {
-      author: null,
-      category: null,
-      cookTimeMinutes: null,
-      cuisine: "Irish",
-      description: null,
-      ingredientLines: ["400 g beef"],
-      ingredientQuantities: null,
-      ingredientUnits: null,
-      instructions: ["Simmer until tender."],
+      ...emptyRecipeDetails,
+      cuisines: ["Irish"],
+      ingredients: [recipeIngredientFromText("400 g beef")],
+      instructions: [recipeInstructionFromText("Simmer until tender.", 1)],
       name: "Irish stew",
-      nutrition: null,
-      prepTimeMinutes: null,
-      temperatureCelsius: null,
-      tools: null,
-      totalTimeMinutes: null,
-      yield: null,
     },
     tags: null,
   },
@@ -108,7 +102,6 @@ const savedRecipe = Schema.decodeUnknownSync(Recipe)({
   recipe: activeAction.review.recipe,
   tags: {
     cuisines: ["Irish"],
-    dietaryFit: "household_match",
     difficulty: "easy",
     leftovers: "one_meal",
     mealTypes: ["dinner"],
@@ -237,7 +230,7 @@ describe("RecipeImportPage", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Irish stew")).toBeInTheDocument();
     expect(screen.getByText("400 g beef")).toBeInTheDocument();
-    expect(screen.getByText("Simmer until tender.")).toBeInTheDocument();
+    expect(screen.getByText("1. Simmer until tender.")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Confirm recipe" }));
 
@@ -318,7 +311,6 @@ describe("RecipeImportPage", () => {
           field: "tags",
           value: {
             cuisines: ["Irish"],
-            dietaryFit: "household_match",
             difficulty: "medium",
             leftovers: "one_meal",
             mealTypes: ["lunch"],
@@ -329,4 +321,150 @@ describe("RecipeImportPage", () => {
       expectedActionVersion: 3,
     });
   });
+});
+
+describe("structured recipe details", () => {
+  it("preserves source wording, sections and unknown amounts alongside inactive time", () => {
+    render(
+      <RecipeDetails
+        recipe={{
+          ...emptyRecipeDetails,
+          ingredients: [
+            {
+              ...recipeIngredientFromText("A handful of herbs"),
+              group: "To finish",
+            },
+          ],
+          instructions: [
+            {
+              ...recipeInstructionFromText("Leave to rest.", 1),
+              group: "Resting",
+              temperature: { unit: "C", value: 180 },
+            },
+          ],
+          name: "Soup",
+          notes: ["Refrigerate leftovers."],
+          times: {
+            ...emptyRecipeDetails.times,
+            inactive: { seconds: 1200 },
+            prep: { seconds: 0 },
+          },
+        }}
+      />
+    );
+    expect(screen.getByText("A handful of herbs")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "To finish" })
+    ).toBeInTheDocument();
+    expect(screen.getByText("Quantity not provided")).toBeInTheDocument();
+    expect(screen.getByText("Servings not provided")).toBeInTheDocument();
+    expect(screen.getByText("20 minutes")).toBeInTheDocument();
+    expect(screen.getByText("0 minutes")).toBeInTheDocument();
+    expect(screen.getByText("180°C")).toBeInTheDocument();
+    expect(screen.getByText("Refrigerate leftovers.")).toBeInTheDocument();
+  });
+});
+
+it("saves structured ingredient corrections while retaining the source wording", async () => {
+  const action = Schema.decodeUnknownSync(RecipeImportAction)({
+    ...activeAction,
+    review: { ...activeAction.review, editableFields: ["ingredients"] },
+  });
+  const answerAction = vi.fn<RecipeImportOperations["answerAction"]>(
+    async () => requiresAction
+  );
+  renderPage(
+    makeOperations({
+      answerAction,
+      getAction: vi.fn(async () => action),
+      getIntent: vi.fn(async () => requiresAction),
+    })
+  );
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Recipe link" }),
+    "https://www.tiktok.com/@cook/video/7390123456789012345"
+  );
+  await user.click(screen.getByRole("button", { name: "Import recipe" }));
+  await user.click(await screen.findByText("Edit recipe details"));
+  await user.click(screen.getByText("Ingredients", { selector: "summary" }));
+  await user.click(screen.getByRole("button", { name: "Add amount" }));
+  const amount = screen.getByRole("spinbutton", { name: "Amount" });
+  await user.clear(amount);
+  await user.type(amount, "600");
+  await user.click(screen.getByRole("button", { name: "Save recipe details" }));
+  await waitFor(() => expect(answerAction).toHaveBeenCalledOnce());
+  expect(answerAction.mock.calls[0]?.[0].request.answers).toEqual([
+    {
+      field: "ingredients",
+      value: [
+        {
+          ...recipeIngredientFromText("400 g beef"),
+          quantity: { max: null, unit: null, value: 600 },
+        },
+      ],
+    },
+  ]);
+  await user.click(screen.getByRole("button", { name: "Clear amount" }));
+  await user.click(screen.getByRole("button", { name: "Save recipe details" }));
+  await waitFor(() => expect(answerAction).toHaveBeenCalledTimes(2));
+  expect(answerAction.mock.calls[1]?.[0].request.answers).toEqual([
+    { field: "ingredients", value: [recipeIngredientFromText("400 g beef")] },
+  ]);
+});
+
+it("lets a reviewer supply missing yield and waiting time with their own wording", async () => {
+  const action = Schema.decodeUnknownSync(RecipeImportAction)({
+    ...activeAction,
+    review: { ...activeAction.review, editableFields: ["servings", "times"] },
+  });
+  const answerAction = vi.fn<RecipeImportOperations["answerAction"]>(
+    async () => requiresAction
+  );
+  renderPage(
+    makeOperations({
+      answerAction,
+      getAction: vi.fn(async () => action),
+      getIntent: vi.fn(async () => requiresAction),
+    })
+  );
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Recipe link" }),
+    "https://www.tiktok.com/@cook/video/7390123456789012345"
+  );
+  await user.click(screen.getByRole("button", { name: "Import recipe" }));
+  await user.click(await screen.findByText("Edit recipe details"));
+  await user.click(
+    screen.getByText("Servings or yield", { selector: "summary" })
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Add servings or yield" })
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Original source wording" }),
+    "Serves four"
+  );
+  const amount = screen.getByRole("spinbutton", { name: "Amount" });
+  await user.clear(amount);
+  await user.type(amount, "4");
+  await user.click(screen.getByText("Cooking times", { selector: "summary" }));
+  await user.click(
+    screen.getByRole("button", { name: "Add waiting or resting" })
+  );
+  const minutes = screen.getByRole("spinbutton", { name: "Minutes" });
+  await user.clear(minutes);
+  await user.type(minutes, "30");
+  await user.click(screen.getByRole("button", { name: "Save recipe details" }));
+  await waitFor(() => expect(answerAction).toHaveBeenCalledOnce());
+  expect(answerAction.mock.calls[0]?.[0].request.answers).toEqual([
+    {
+      field: "servings",
+      value: { max: null, original: "Serves four", quantity: 4, unit: null },
+    },
+    {
+      field: "times",
+      value: { ...emptyRecipeDetails.times, inactive: { seconds: 1800 } },
+    },
+  ]);
 });

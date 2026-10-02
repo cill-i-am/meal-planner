@@ -9,6 +9,11 @@ import {
   MealPlanRequest,
   MealPlanRecipeSnapshot,
 } from "@meal-planner/household-api";
+import {
+  emptyRecipeDetails,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+} from "@meal-planner/recipe-domain";
 import { Effect, Schema } from "effect";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -50,28 +55,21 @@ const recipeImportReview = (
 ) => ({
   answers: [],
   blockers: { invalidFields: [], unresolvedRequiredFields: [] },
-  editableFields: ["name", "ingredient_lines", "instructions", "tags"],
+  editableFields: ["name", "ingredients", "instructions", "tags"],
   recipe: {
-    author: null,
-    category: null,
-    cookTimeMinutes: 15,
-    cuisine: "Irish",
+    ...emptyRecipeDetails,
+
     description: null,
-    ingredientLines,
-    ingredientQuantities: null,
-    ingredientUnits: null,
-    instructions: ["Cook locally."],
+    ingredients: ingredientLines.map(recipeIngredientFromText),
+
+    instructions: ["Cook locally."].map((text, index) =>
+      recipeInstructionFromText(text, index + 1)
+    ),
     name,
     nutrition: null,
-    prepTimeMinutes: 10,
-    temperatureCelsius: null,
-    tools: ["Pot"],
-    totalTimeMinutes: 25,
-    yield: "2 servings",
   },
   tags: {
     cuisines: ["Irish"],
-    dietaryFit: "household_match",
     difficulty: "easy",
     leftovers: "one_meal",
     mealTypes: ["dinner"],
@@ -931,9 +929,10 @@ const makeLargeApprovedRecipe = (input: {
     importId: input.importId,
     recipe: {
       ...base.recipe,
-      ingredientLines: Array.from({ length: input.ingredientLineCount }, () =>
-        input.character.repeat(4096)
-      ),
+      ingredients: Array.from({ length: input.ingredientLineCount }, () => ({
+        ...recipeIngredientFromText(input.character.repeat(4096)),
+        name: "ingredient",
+      })),
       name:
         input.recipeNameLength === undefined
           ? base.recipe.name
@@ -1164,28 +1163,21 @@ describe("household Durable Object", () => {
       review: {
         answers: [],
         blockers: { invalidFields: [], unresolvedRequiredFields: [] },
-        editableFields: ["name", "ingredient_lines", "instructions", "tags"],
+        editableFields: ["name", "ingredients", "instructions", "tags"],
         recipe: {
-          author: null,
-          category: null,
-          cookTimeMinutes: 15,
-          cuisine: "Irish",
+          ...emptyRecipeDetails,
+
           description: "Provider-free household tracer.",
-          ingredientLines: ["1 local ingredient"],
-          ingredientQuantities: null,
-          ingredientUnits: null,
-          instructions: ["Cook locally."],
+          ingredients: ["1 local ingredient"].map(recipeIngredientFromText),
+
+          instructions: ["Cook locally."].map((text, index) =>
+            recipeInstructionFromText(text, index + 1)
+          ),
           name: "Household tracer stew",
           nutrition: null,
-          prepTimeMinutes: 10,
-          temperatureCelsius: null,
-          tools: ["Pot"],
-          totalTimeMinutes: 25,
-          yield: "2 servings",
         },
         tags: {
           cuisines: ["Irish"],
-          dietaryFit: "household_match",
           difficulty: "easy",
           leftovers: "one_meal",
           mealTypes: ["dinner"],
@@ -1205,9 +1197,45 @@ describe("household Durable Object", () => {
       readonly intent: { readonly intentVersion: number };
     };
 
+    const correctName = (
+      value: string | null,
+      expectedActionVersion: number,
+      idempotencyKey: string
+    ) =>
+      dispatchHouseholdCommand({
+        actionId: active.action.id,
+        answers: [{ field: "name", value }],
+        expectedActionVersion,
+        idempotencyKey,
+        intentId: admission.intent.id,
+        objectName,
+        operation: "answerRecipeImportAction",
+        organizationId,
+      });
+    expect(
+      await correctName("Household tracer stew", 1, "tracer-name-confirmed")
+    ).toMatchObject({ ok: true });
+    expect(await correctName(null, 2, "tracer-name-cleared")).toMatchObject({
+      ok: true,
+    });
+    expect(
+      await dispatchHouseholdCommand({
+        actionId: active.action.id,
+        expectedActionVersion: 3,
+        idempotencyKey: "tracer-empty-name-blocked",
+        intentId: admission.intent.id,
+        objectName,
+        operation: "confirmRecipeImportAction",
+        organizationId,
+      })
+    ).toMatchObject({ ok: false });
+    expect(
+      await correctName("Household tracer stew", 3, "tracer-name-restored")
+    ).toMatchObject({ ok: true });
+
     const confirmed = await dispatchHouseholdCommand({
       actionId: active.action.id,
-      expectedActionVersion: 1,
+      expectedActionVersion: 4,
       idempotencyKey: "tracer-confirmation",
       intentId: admission.intent.id,
       objectName,
@@ -1239,7 +1267,7 @@ describe("household Durable Object", () => {
     expect(
       await dispatchHouseholdCommand({
         actionId: active.action.id,
-        expectedActionVersion: 1,
+        expectedActionVersion: 4,
         idempotencyKey: "tracer-confirmation",
         intentId: admission.intent.id,
         objectName,
@@ -1611,8 +1639,11 @@ describe("household Durable Object", () => {
       actionId: oversized.actionId,
       answers: [
         {
-          field: "ingredient_lines",
-          value: Array.from({ length: 132 }, () => "x".repeat(4000)),
+          field: "ingredients",
+          value: Array.from({ length: 132 }, () => ({
+            ...recipeIngredientFromText("x".repeat(4000)),
+            name: "ingredient",
+          })),
         },
       ],
       expectedActionVersion: 1,
@@ -1639,13 +1670,21 @@ describe("household Durable Object", () => {
     ).toMatchObject({ error: { reason: "invalid_input" }, ok: false });
 
     const bounded = await prepareReview("ab", "7000000000000000402");
-    const boundedIngredientLines = Array.from({ length: 124 }, () =>
+    const boundedIngredientLines = Array.from({ length: 116 }, () =>
       "y".repeat(4000)
     );
     expect(
       await dispatchHouseholdCommand({
         actionId: bounded.actionId,
-        answers: [{ field: "ingredient_lines", value: boundedIngredientLines }],
+        answers: [
+          {
+            field: "ingredients",
+            value: boundedIngredientLines.map((original) => ({
+              ...recipeIngredientFromText(original),
+              name: "ingredient",
+            })),
+          },
+        ],
         expectedActionVersion: 1,
         idempotencyKey: "bounded-correction",
         intentId: bounded.intentId,
@@ -1690,7 +1729,7 @@ describe("household Durable Object", () => {
     } while (cursor !== null);
     expect(listed).toHaveLength(1);
     expect(listed[0]).toMatchObject({
-      recipe: { ingredientLines: { length: boundedIngredientLines.length } },
+      recipe: { ingredients: { length: boundedIngredientLines.length } },
     });
     expect(
       await dispatchHouseholdCommand({
@@ -1790,28 +1829,23 @@ describe("household Durable Object", () => {
         review: {
           answers: [],
           blockers: { invalidFields: [], unresolvedRequiredFields: [] },
-          editableFields: ["name", "ingredient_lines", "instructions", "tags"],
+          editableFields: ["name", "ingredients", "instructions", "tags"],
           recipe: {
-            author: null,
-            category: null,
-            cookTimeMinutes: 15,
-            cuisine: "Irish",
+            ...emptyRecipeDetails,
+
             description: null,
-            ingredientLines: ["1 race-safe ingredient"],
-            ingredientQuantities: null,
-            ingredientUnits: null,
-            instructions: ["Cook safely."],
+            ingredients: ["1 race-safe ingredient"].map(
+              recipeIngredientFromText
+            ),
+
+            instructions: ["Cook safely."].map((text, index) =>
+              recipeInstructionFromText(text, index + 1)
+            ),
             name: "Race-safe stew",
             nutrition: null,
-            prepTimeMinutes: 10,
-            temperatureCelsius: null,
-            tools: ["Pot"],
-            totalTimeMinutes: 25,
-            yield: "2 servings",
           },
           tags: {
             cuisines: ["Irish"],
-            dietaryFit: "household_match",
             difficulty: "easy",
             leftovers: "one_meal",
             mealTypes: ["dinner"],
@@ -1842,28 +1876,21 @@ describe("household Durable Object", () => {
       review: {
         answers: [],
         blockers: { invalidFields: [], unresolvedRequiredFields: [] },
-        editableFields: ["name", "ingredient_lines", "instructions", "tags"],
+        editableFields: ["name", "ingredients", "instructions", "tags"],
         recipe: {
-          author: null,
-          category: null,
-          cookTimeMinutes: 15,
-          cuisine: "Irish",
+          ...emptyRecipeDetails,
+
           description: null,
-          ingredientLines: ["1 rollback ingredient"],
-          ingredientQuantities: null,
-          ingredientUnits: null,
-          instructions: ["Commit atomically."],
+          ingredients: ["1 rollback ingredient"].map(recipeIngredientFromText),
+
+          instructions: ["Commit atomically."].map((text, index) =>
+            recipeInstructionFromText(text, index + 1)
+          ),
           name: "Rollback stew",
           nutrition: null,
-          prepTimeMinutes: 10,
-          temperatureCelsius: null,
-          tools: ["Pot"],
-          totalTimeMinutes: 25,
-          yield: "2 servings",
         },
         tags: {
           cuisines: ["Irish"],
-          dietaryFit: "household_match",
           difficulty: "easy",
           leftovers: "one_meal",
           mealTypes: ["dinner"],
@@ -1937,28 +1964,21 @@ describe("household Durable Object", () => {
       review: {
         answers: [],
         blockers: { invalidFields: [], unresolvedRequiredFields: [] },
-        editableFields: ["name", "ingredient_lines", "instructions", "tags"],
+        editableFields: ["name", "ingredients", "instructions", "tags"],
         recipe: {
-          author: null,
-          category: null,
-          cookTimeMinutes: 15,
-          cuisine: "Irish",
+          ...emptyRecipeDetails,
+
           description: null,
-          ingredientLines: ["1 local ingredient"],
-          ingredientQuantities: null,
-          ingredientUnits: null,
-          instructions: ["Cook locally."],
+          ingredients: ["1 local ingredient"].map(recipeIngredientFromText),
+
+          instructions: ["Cook locally."].map((text, index) =>
+            recipeInstructionFromText(text, index + 1)
+          ),
           name: "Terminal race stew",
           nutrition: null,
-          prepTimeMinutes: 10,
-          temperatureCelsius: null,
-          tools: ["Pot"],
-          totalTimeMinutes: 25,
-          yield: "2 servings",
         },
         tags: {
           cuisines: ["Irish"],
-          dietaryFit: "household_match",
           difficulty: "easy",
           leftovers: "one_meal",
           mealTypes: ["dinner"],
@@ -2317,8 +2337,8 @@ describe("household Durable Object", () => {
         makeLargeApprovedRecipe({
           character: "h",
           importId: "018f47ad-91aa-7c35-b6fe-000000000505",
-          ingredientLineCount: 14,
-          recipeNameLength: 2500,
+          ingredientLineCount: 13,
+          recipeNameLength: 4000,
         }),
       ],
       policy: makeRepeatedRecipePolicy(),
@@ -2351,7 +2371,7 @@ describe("household Durable Object", () => {
         makeLargeApprovedRecipe({
           character: "n",
           importId: "018f47ad-91aa-7c35-b6fe-000000000502",
-          ingredientLineCount: 14,
+          ingredientLineCount: 13,
         }),
       ],
       policy: makeRepeatedRecipePolicy(),
@@ -2387,7 +2407,7 @@ describe("household Durable Object", () => {
     const nearLimitRecipe = makeLargeApprovedRecipe({
       character: "t",
       importId: "018f47ad-91aa-7c35-b6fe-000000000506",
-      ingredientLineCount: 14,
+      ingredientLineCount: 13,
       recipeNameLength: 1700,
     });
     const [approvalCreated, rejectionCreated] = await Promise.all([
@@ -2405,11 +2425,11 @@ describe("household Durable Object", () => {
     if (!approvalCreated.ok || !rejectionCreated.ok) {
       throw new Error("Expected both near-limit drafts to persist.");
     }
-    expect(jsonByteLength(approvalCreated.value)).toBeGreaterThan(1_860_000);
+    expect(jsonByteLength(approvalCreated.value)).toBeGreaterThan(1_700_000);
     expect(jsonByteLength(approvalCreated.value)).toBeLessThanOrEqual(
       1_867_232
     );
-    expect(jsonByteLength(rejectionCreated.value)).toBeGreaterThan(1_860_000);
+    expect(jsonByteLength(rejectionCreated.value)).toBeGreaterThan(1_700_000);
     expect(jsonByteLength(rejectionCreated.value)).toBeLessThanOrEqual(
       1_867_232
     );

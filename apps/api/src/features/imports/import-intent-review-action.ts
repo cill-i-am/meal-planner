@@ -4,11 +4,11 @@ import type {
   RecipeImportActionVersion,
   RecipeImportIntentId,
   RecipeReviewAnswer,
-  RecipeReviewEditableField,
 } from "@meal-planner/recipe-import-api";
 import {
   Instant,
   RecipeReviewAnswer as RecipeReviewAnswerSchema,
+  RecipeReviewEditableField as RecipeReviewEditableFieldSchema,
 } from "@meal-planner/recipe-import-api";
 import { DateTime, Schema } from "effect";
 
@@ -21,25 +21,7 @@ import {
   Review,
 } from "./import-recipe-review.js";
 
-const editableFields = [
-  "author",
-  "category",
-  "cook_time_minutes",
-  "cuisine",
-  "description",
-  "ingredient_lines",
-  "ingredient_quantities",
-  "ingredient_units",
-  "instructions",
-  "name",
-  "nutrition",
-  "prep_time_minutes",
-  "temperature_celsius",
-  "tools",
-  "total_time_minutes",
-  "yield",
-  "tags",
-] as const satisfies readonly RecipeReviewEditableField[];
+const editableFields = RecipeReviewEditableFieldSchema.literals;
 
 type NeedsReview = Extract<Review, { readonly _tag: "NeedsReview" }>;
 type PubliclyProjectableReview = ApprovedReview | NeedsReview;
