@@ -84,6 +84,24 @@ describe("structured recipe content", () => {
       )
     ).toEqual({ _tag: "CannotScale", reason: "non_serving_yield" });
   });
+  it("does not treat an unknown item yield as reference servings", () => {
+    const result = scaleRecipeIngredients(
+      {
+        ...recipe,
+        servings: {
+          max: null,
+          original: "Makes 24 cookies",
+          quantity: 24,
+          unit: null,
+        },
+      },
+      4
+    );
+    expect(result).toEqual({
+      _tag: "CannotScale",
+      reason: "non_serving_yield",
+    });
+  });
   it("surfaces fractional whole items and packages instead of inventing precision", () => {
     const result = scaleRecipeIngredients(
       makeRecipeContent({

@@ -1069,6 +1069,21 @@ const durationText = (seconds: number) => {
   }
   return `${seconds} seconds`;
 };
+const servingsText = (
+  servings: NonNullable<RecipeDraftContent["servings"]>
+) => {
+  const amount =
+    servings.max === null
+      ? String(servings.quantity)
+      : `${servings.quantity}–${servings.max}`;
+  return `${amount} ${servings.unit ?? "(unit not provided)"}`;
+};
+const dietaryClaimText = (claim: RecipeDraftContent["dietary"][number]) => {
+  if (claim.kind === "allergen") {
+    return `Allergen: ${claim.name} — stated ${claim.value ? "present" : "absent"}`;
+  }
+  return `Diet: ${claim.name} — stated ${claim.value ? "yes" : "no"}`;
+};
 export const RecipeDetails = ({
   recipe,
 }: {
@@ -1077,7 +1092,18 @@ export const RecipeDetails = ({
   <div className="flex flex-col gap-5">
     {recipe.description ? <p>{recipe.description}</p> : null}
     {recipe.author ? <p>By {recipe.author.name}</p> : null}
-    <p>{recipe.servings?.original ?? "Servings not provided"}</p>
+    {recipe.servings === null ? (
+      <p>Servings not provided</p>
+    ) : (
+      <div>
+        <p>Yield: {servingsText(recipe.servings)}</p>
+        {servingsText(recipe.servings) === recipe.servings.original ? null : (
+          <p className="text-muted-foreground text-sm">
+            Source: {recipe.servings.original}
+          </p>
+        )}
+      </div>
+    )}
     <dl className="flex flex-wrap gap-4">
       {Object.entries(recipe.times).map(([key, duration]) => (
         <div key={key}>
@@ -1192,7 +1218,12 @@ export const RecipeDetails = ({
       <section>
         <h3>Source dietary claims</h3>
         {recipe.dietary.map((claim) => (
-          <p key={`${claim.kind}:${claim.name}`}>{claim.original}</p>
+          <div key={`${claim.kind}:${claim.name}`}>
+            <p>{dietaryClaimText(claim)}</p>
+            <p className="text-muted-foreground text-sm">
+              Source: {claim.original}
+            </p>
+          </div>
         ))}
       </section>
     ) : null}

@@ -75,7 +75,7 @@ Recipe Bank pagination remain enforced.
 reference yield. It preserves source wording and leaves unresolved quantities
 unknown. Fractional whole-item counts and unsupported package measures are surfaced
 as unresolved rather than multiplied into false precision. Unknown, ranged or non-serving yields cannot establish a scaling
-baseline. It never changes a recipe version, cooking times, nutrition, household
+baseline. An unknown yield unit cannot establish reference servings either. It never changes a recipe version, cooking times, nutrition, household
 profile, shopping list or basket.
 
 This helper provides arithmetic for a preview, not a completed cook-event or

@@ -12,7 +12,10 @@ import type {
   RecipeEvidenceItem,
   RecipeCandidate,
 } from "./import-recipe-extractor.js";
-import { groundRecipeCandidate } from "./import-recipe-grounding.js";
+import {
+  groundRecipeCandidate,
+  projectRecipeEvidenceSpan,
+} from "./import-recipe-grounding.js";
 
 const items = (value: string): readonly RecipeEvidenceItem[] => [
   {
@@ -334,6 +337,64 @@ describe("structured recipe grounding", () => {
       items("This recipe is vegan. It is milk free.")
     );
     expect(result.recipe.dietary).toHaveLength(2);
+  });
+  it.each([
+    ["Do not use milk.", "use milk"],
+    ["Never add sugar.", "add sugar"],
+    [
+      "Avoid adding chopped tomatoes to the pan.",
+      "add chopped tomatoes to the pan",
+    ],
+    ["Add milk only if needed.", "Add milk"],
+    ["Unless tolerated, omit the onions.", "omit the onions"],
+  ])(
+    "rejects instruction fragments stripping source qualifiers from %s",
+    (source, selected) => {
+      const result = groundRecipeCandidate(
+        candidate({ instructions: [recipeInstructionFromText(selected, 1)] }),
+        items(source)
+      );
+      expect(result.recipe.instructions).toBeNull();
+      expect(projectRecipeEvidenceSpan(source, selected)).toBeNull();
+    }
+  );
+  it("retains a whole negative source instruction", () => {
+    const original = "Do not use milk.";
+    const result = groundRecipeCandidate(
+      candidate({ instructions: [recipeInstructionFromText(original, 1)] }),
+      items(original)
+    );
+    expect(result.recipe.instructions?.[0]?.text).toBe(original);
+  });
+  it.each(["Serves 4", "Servings: 4", "Portions: 4"])(
+    "derives explicit serving unit from %s",
+    (original) => {
+      const result = groundRecipeCandidate(
+        candidate({
+          servings: { max: null, original, quantity: 4, unit: null },
+        }),
+        items(original)
+      );
+      expect(result.recipe.servings?.unit).toBe("serving");
+      expect(groundRecipeCandidate(result.recipe, items(original))).toEqual(
+        result
+      );
+    }
+  );
+  it("preserves a noun yield with unknown unit rather than declaring servings", () => {
+    const original = "Makes 24 cookies";
+    const result = groundRecipeCandidate(
+      candidate({
+        servings: { max: null, original, quantity: 24, unit: null },
+      }),
+      items(original)
+    );
+    expect(result.recipe.servings).toEqual({
+      max: null,
+      original,
+      quantity: 24,
+      unit: null,
+    });
   });
   it("does not infer diet or allergen freedom from ingredient names", () => {
     const result = groundRecipeCandidate(

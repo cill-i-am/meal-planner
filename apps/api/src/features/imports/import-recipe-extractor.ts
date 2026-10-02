@@ -34,44 +34,20 @@ export const RecipeEvidenceCitation = Schema.Struct({
 });
 export type RecipeEvidenceCitation = typeof RecipeEvidenceCitation.Type;
 
-const fact = <A extends Schema.Top>(value: A) =>
-  Schema.Union([
-    Schema.Struct({
-      citations: Schema.NonEmptyArray(RecipeEvidenceCitation),
-      origin: Schema.Literals(["creator_provided", "inferred", "observed"]),
-      state: Schema.Literal("supported"),
-      value,
-    }),
-    Schema.Struct({
-      citations: Schema.Tuple([]),
-      origin: Schema.Literal("unresolved"),
-      reason: TrimmedNonEmptyString,
-      state: Schema.Literal("unresolved"),
-    }),
-  ]);
-
-export const RecipeStringFact = fact(
-  TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(4096)))
-);
-export type RecipeStringFact = typeof RecipeStringFact.Type;
-
-export const RecipeNumberFact = fact(SafeInteger);
-export type RecipeNumberFact = typeof RecipeNumberFact.Type;
-
-export const RecipeFactList = Schema.Union([
+const RecipeSourceUrlFact = Schema.Union([
   Schema.Struct({
-    items: Schema.NonEmptyArray(RecipeStringFact).pipe(
-      Schema.check(Schema.isMaxLength(256))
-    ),
+    citations: Schema.NonEmptyArray(RecipeEvidenceCitation),
+    origin: EvidenceOrigin,
     state: Schema.Literal("supported"),
+    value: TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(4096))),
   }),
   Schema.Struct({
-    items: Schema.Tuple([]),
+    citations: Schema.Tuple([]),
+    origin: Schema.Literal("unresolved"),
     reason: TrimmedNonEmptyString,
     state: Schema.Literal("unresolved"),
   }),
 ]);
-export type RecipeFactList = typeof RecipeFactList.Type;
 
 export const RecipeUnresolvedField = RecipeEditableField;
 export type RecipeUnresolvedField = typeof RecipeUnresolvedField.Type;
@@ -86,7 +62,7 @@ export const GroundedRecipeFacts = Schema.Struct({
     })
   ).pipe(Schema.check(Schema.isMaxLength(4096))),
   recipe: RecipeDraftContent,
-  sourceUrl: RecipeStringFact,
+  sourceUrl: RecipeSourceUrlFact,
   unresolvedFields: Schema.Array(RecipeUnresolvedField).pipe(
     Schema.check(Schema.isMaxLength(16))
   ),

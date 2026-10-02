@@ -468,3 +468,46 @@ it("lets a reviewer supply missing yield and waiting time with their own wording
     },
   ]);
 });
+
+it("displays corrected yield and dietary meaning separately from original source wording", () => {
+  render(
+    <RecipeDetails
+      recipe={{
+        ...emptyRecipeDetails,
+        dietary: [
+          {
+            kind: "diet",
+            name: "vegan",
+            original: "Vegetarian",
+            source: "provided",
+            value: false,
+          },
+          {
+            kind: "allergen",
+            name: "milk",
+            original: "Contains dairy",
+            source: "provided",
+            value: false,
+          },
+        ],
+        ingredients: [recipeIngredientFromText("Salt")],
+        instructions: [recipeInstructionFromText("Season.", 1)],
+        name: "Soup",
+        servings: {
+          max: 8,
+          original: "Serves 4",
+          quantity: 6,
+          unit: "servings",
+        },
+      }}
+    />
+  );
+  expect(screen.getByText("Yield: 6–8 servings")).toBeInTheDocument();
+  expect(screen.getByText("Source: Serves 4")).toBeInTheDocument();
+  expect(screen.getByText("Diet: vegan — stated no")).toBeInTheDocument();
+  expect(screen.getByText("Source: Vegetarian")).toBeInTheDocument();
+  expect(
+    screen.getByText("Allergen: milk — stated absent")
+  ).toBeInTheDocument();
+  expect(screen.getByText("Source: Contains dairy")).toBeInTheDocument();
+});

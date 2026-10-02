@@ -44,11 +44,7 @@ export const scaleRecipeIngredients = (
   if (source.max !== null && source.max !== source.quantity) {
     return { _tag: "CannotScale", reason: "ambiguous_servings" };
   }
-  if (
-    source.unit !== null &&
-    source.unit !== "serving" &&
-    source.unit !== "servings"
-  ) {
+  if (source.unit !== "serving" && source.unit !== "servings") {
     return { _tag: "CannotScale", reason: "non_serving_yield" };
   }
   const factor = targetServings / source.quantity;

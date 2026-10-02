@@ -28,6 +28,34 @@ export const recipeEvidenceContains = (evidence: string, value: string) => {
   );
 };
 
+/** A selected fragment cannot remove source polarity or conditions. */
+const preservesRecipeClauseQualifiers = (evidence: string, span: string) => {
+  const start = evidence.indexOf(span);
+  if (start === -1) {
+    return false;
+  }
+  const before = evidence.slice(0, start);
+  const after = evidence.slice(start + span.length);
+  const prefix = before.slice(
+    Math.max(
+      before.lastIndexOf("."),
+      before.lastIndexOf("!"),
+      before.lastIndexOf(";"),
+      before.lastIndexOf("\n")
+    ) + 1
+  );
+  const suffix = after.split(/[.!;\n]/u)[0] ?? "";
+  const clause = normalizeRecipeGroundingText(`${prefix}${span}${suffix}`);
+  const selected = normalizeRecipeGroundingText(span);
+  const qualifiers =
+    clause.match(
+      /\b(?:not|no|never|without|avoid|omit|unless|only if|only when|except|optional|optionally|don t|doesn t|do not|must not|if|when|until)\b/gu
+    ) ?? [];
+  return qualifiers.every((qualifier) =>
+    new RegExp(`(?:^|\\s)${qualifier}(?:$|\\s)`, "u").test(selected)
+  );
+};
+
 const ProjectionStopWords = new Set([
   "a",
   "about",
@@ -214,9 +242,11 @@ export const projectRecipeEvidenceSpan = (
       left.tokenCount - right.tokenCount ||
       left.end - left.start - (right.end - right.start)
   );
-  return best === undefined
-    ? null
-    : evidence.slice(best.start, best.end).trim();
+  if (best === undefined) {
+    return null;
+  }
+  const span = evidence.slice(best.start, best.end).trim();
+  return preservesRecipeClauseQualifiers(evidence, span) ? span : null;
 };
 
 const trustedRecipeCitation = (item: RecipeEvidenceItem) => ({
@@ -345,11 +375,14 @@ const groundServingAndNutrition = (
     if (
       item !== undefined &&
       quantitySupported(
-        original.replace(/^(?:serves|makes|yield:?|servings:?)\s*/iu, ""),
+        original.replace(
+          /^(?:serves|makes|yield:?|servings:?|portions:?)\s*/iu,
+          ""
+        ),
         {
           max: selectedServings.max,
           unit:
-            /^(?:serves|servings:?)\s/iu.test(original) &&
+            /^(?:serves|servings:?|portions:?)\s/iu.test(original) &&
             normalizedUnit(selectedServings.unit) === "serving"
               ? null
               : selectedServings.unit,
@@ -357,7 +390,14 @@ const groundServingAndNutrition = (
         }
       )
     ) {
-      servings = selectedServings;
+      servings = {
+        ...selectedServings,
+        unit:
+          /^(?:serves|servings:?|portions:?)\s/iu.test(original) &&
+          selectedServings.unit === null
+            ? "serving"
+            : selectedServings.unit,
+      };
       cite("servings", item);
     }
   }
@@ -427,7 +467,7 @@ export const groundRecipeCandidate = (
       if (index === -1) {
         span = projectRecipeEvidenceSpan(item.value, value);
       }
-      if (span !== null) {
+      if (span !== null && preservesRecipeClauseQualifiers(item.value, span)) {
         cite(path, item);
         return span;
       }
