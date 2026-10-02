@@ -60,7 +60,6 @@ const admittedActorId = Schema.decodeUnknownSync(MealPlanActorId)(
 const draftId = Schema.decodeUnknownSync(MealPlanDraftId)("draft-week-1");
 const createMealPlanPayload = Schema.decodeUnknownSync(CreateMealPlanPayload)({
   policy: {
-    allowedDietaryFit: ["household_match"],
     allowedDifficulties: ["easy"],
     allowedTotalTimeBands: ["under_30_minutes"],
     maxRecipeUses: 1,

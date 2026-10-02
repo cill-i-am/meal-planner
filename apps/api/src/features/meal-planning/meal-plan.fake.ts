@@ -9,7 +9,12 @@ import {
   MealPlanPolicy,
   MealPlanRequest,
 } from "@meal-planner/household-api";
-import { PlanningTags } from "@meal-planner/recipe-domain";
+import {
+  makeRecipeContent,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+  PlanningTags,
+} from "@meal-planner/recipe-domain";
 import { Effect, Option, Schema } from "effect";
 
 import {
@@ -30,7 +35,6 @@ const decodeRecipeId = Schema.decodeUnknownSync(MealPlanRecipeSnapshotId);
 const decodeTags = Schema.decodeUnknownSync(PlanningTags);
 const mediterraneanDinnerTags = decodeTags({
   cuisines: ["Synthetic Mediterranean"],
-  dietaryFit: "household_match",
   difficulty: "easy",
   leftovers: "one_meal",
   mealTypes: ["dinner"],
@@ -39,7 +43,6 @@ const mediterraneanDinnerTags = decodeTags({
 
 const replacementDinnerTags = decodeTags({
   cuisines: ["Synthetic Weeknight"],
-  dietaryFit: "household_match",
   difficulty: "easy",
   leftovers: "two_plus_meals",
   mealTypes: ["dinner"],
@@ -48,7 +51,6 @@ const replacementDinnerTags = decodeTags({
 
 const hardDinnerTags = decodeTags({
   cuisines: ["Synthetic Weekend"],
-  dietaryFit: "household_match",
   difficulty: "hard",
   leftovers: "none",
   mealTypes: ["dinner"],
@@ -89,11 +91,13 @@ export const syntheticApprovedRecipes = [
     approvedAt: "2026-07-22T10:01:00.000Z",
     extractionFingerprint: fingerprint.repeat(64),
     importId,
-    recipe: {
-      ingredientLines: ["1 synthetic ingredient"],
-      instructions: ["Assemble the synthetic recipe."],
+    recipe: makeRecipeContent({
+      ingredients: [recipeIngredientFromText("1 synthetic ingredient")],
+      instructions: [
+        recipeInstructionFromText("Assemble the synthetic recipe.", 1),
+      ],
       name,
-    },
+    }),
     source: {
       evidenceFingerprint: "a".repeat(64),
       sourceUrl: `https://example.test/recipes/${importId}`,
@@ -105,7 +109,6 @@ export const syntheticApprovedRecipes = [
 
 export const syntheticPlanningPolicy = Schema.decodeUnknownSync(MealPlanPolicy)(
   {
-    allowedDietaryFit: ["household_match"],
     allowedDifficulties: ["easy"],
     allowedTotalTimeBands: ["under_30_minutes"],
     maxRecipeUses: 1,

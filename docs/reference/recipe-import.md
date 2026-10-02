@@ -1,5 +1,8 @@
 # Recipe import architecture
 
+The [structured recipe content reference](recipe-content.md) owns the shared
+content model, evidence grounding, review edits and planning projection.
+
 ## Canonical authority
 
 Each organization has one SQLite-backed `HouseholdObject`. It is the only writer

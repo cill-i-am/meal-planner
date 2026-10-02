@@ -1,4 +1,9 @@
 import {
+  makeRecipeContent,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+} from "@meal-planner/recipe-domain";
+import {
   RecipeImportActionId,
   RecipeImportIntentId,
 } from "@meal-planner/recipe-import-api";
@@ -17,6 +22,7 @@ import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
 import { RecipeDraft } from "./import-recipe-draft.repository.js";
+import { groundRecipeCandidate } from "./import-recipe-grounding.js";
 import { makeHouseholdRecipeDraftLifecycle } from "./import-recipe-lifecycle.household.js";
 import { makeRecipeRecoveryWorkflowStarter } from "./import-recipe-recovery.js";
 import type {
@@ -199,49 +205,28 @@ describe("bounded recipe recovery workflow", () => {
         ),
       organizationId,
     });
-    const citation = {
-      citations: [
+    const grounded = groundRecipeCandidate(
+      makeRecipeContent({
+        ingredients: [recipeIngredientFromText("1 onion")],
+        instructions: [recipeInstructionFromText("Cook the onion.", 1)],
+        name: "Recovered Onion",
+      }),
+      [
         {
-          confidence: 1,
+          artifactReference: "recovery-fixture",
           evidenceId: "recovered-review-fixture",
-          origin: "creator_provided" as const,
+          kind: "transcript",
+          origin: "creator_provided",
+          value: "Recovered Onion. 1 onion. Cook the onion.",
         },
-      ],
-      origin: "creator_provided" as const,
-      state: "supported" as const,
-    };
-    const supportedString = (value: string) => ({ ...citation, value });
-    const supportedList = (items: readonly string[]) => ({
-      items: items.map(supportedString),
-      state: "supported" as const,
-    });
+      ]
+    );
     const draft = Schema.decodeUnknownSync(RecipeDraft)({
       createdAt: "2026-08-16T00:00:00.000Z",
       evidenceFingerprint: "a".repeat(64),
       extraction: {
-        author: supportedString("Fixture Cook"),
-        category: supportedString("Dinner"),
-        cookTimeMinutes: { ...citation, value: 20 },
-        cost: {
-          certainty: "known",
-          currency: "USD",
-          estimatedMicroUsd: 0,
-        },
-        cuisine: supportedString("Irish"),
-        description: supportedString("Recovered recipe"),
-        ingredientLines: supportedList(["1 onion"]),
-        instructions: supportedList(["Cook the onion."]),
-        name: supportedString("Recovered Onion"),
-        nutrition: supportedString("Not stated"),
-        prepTimeMinutes: { ...citation, value: 10 },
-        sourceUrl: supportedString(
-          "https://www.tiktok.com/@fixture/video/7520000000000000001"
-        ),
-        supportedClaims: supportedList(["Cook the onion."]),
-        temperatureCelsius: { ...citation, value: 180 },
-        tools: supportedList(["Saucepan"]),
-        totalTimeMinutes: { ...citation, value: 30 },
-        unresolvedFields: [],
+        ...grounded,
+        cost: { certainty: "known", currency: "USD", estimatedMicroUsd: 0 },
         usage: {
           inputEvidenceItems: 1,
           inputTokens: 0,
@@ -249,7 +234,6 @@ describe("bounded recipe recovery workflow", () => {
           modelCalls: 1,
           outputTokens: 0,
         },
-        yield: supportedString("2 servings"),
       },
       extractionFingerprint: "b".repeat(64),
       extractor: {

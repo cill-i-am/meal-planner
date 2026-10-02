@@ -1,5 +1,12 @@
 /* eslint-disable max-classes-per-file -- This shared protocol module owns its related Schema-backed middleware and client service tags. */
-import { PlanningTags } from "@meal-planner/recipe-domain";
+import {
+  PlanningTags,
+  RecipeEditableField,
+  RecipeReviewAnswer,
+  RecipeReviewEditableField,
+  RecipeDraftContent,
+  RecipeContent,
+} from "@meal-planner/recipe-domain";
 import { Context, Layer, Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 import {
@@ -347,87 +354,13 @@ export const RecipeImportIntent = Schema.Union([
 ]);
 export type RecipeImportIntent = typeof RecipeImportIntent.Type;
 
-export const RecipeEditableField = Schema.Literals([
-  "author",
-  "category",
-  "cook_time_minutes",
-  "cuisine",
-  "description",
-  "ingredient_lines",
-  "ingredient_quantities",
-  "ingredient_units",
-  "instructions",
-  "name",
-  "nutrition",
-  "prep_time_minutes",
-  "temperature_celsius",
-  "tools",
-  "total_time_minutes",
-  "yield",
-]);
-export type RecipeEditableField = typeof RecipeEditableField.Type;
-
-export const RecipeReviewEditableField = Schema.Literals([
-  ...RecipeEditableField.literals,
-  "tags",
-]);
-export type RecipeReviewEditableField = typeof RecipeReviewEditableField.Type;
-
-export const CorrectedRecipe = Schema.Struct({
-  author: Schema.NullOr(ShortText),
-  category: Schema.NullOr(ShortText),
-  cookTimeMinutes: Schema.NullOr(SafeInteger),
-  cuisine: Schema.NullOr(ShortText),
-  description: Schema.NullOr(ShortText),
-  ingredientLines: Schema.NullOr(Schema.NonEmptyArray(ShortText)),
-  ingredientQuantities: Schema.NullOr(Schema.NonEmptyArray(ShortText)),
-  ingredientUnits: Schema.NullOr(Schema.NonEmptyArray(ShortText)),
-  instructions: Schema.NullOr(Schema.NonEmptyArray(ShortText)),
-  name: Schema.NullOr(ShortText),
-  nutrition: Schema.NullOr(ShortText),
-  prepTimeMinutes: Schema.NullOr(SafeInteger),
-  temperatureCelsius: Schema.NullOr(SafeInteger),
-  tools: Schema.NullOr(Schema.NonEmptyArray(ShortText)),
-  totalTimeMinutes: Schema.NullOr(SafeInteger),
-  yield: Schema.NullOr(ShortText),
-});
+export {
+  RecipeEditableField,
+  RecipeReviewEditableField,
+  RecipeReviewAnswer,
+} from "@meal-planner/recipe-domain";
+export const CorrectedRecipe = RecipeDraftContent;
 export type CorrectedRecipe = typeof CorrectedRecipe.Type;
-
-const TextRecipeAnswerField = Schema.Literals([
-  "author",
-  "category",
-  "cuisine",
-  "description",
-  "name",
-  "nutrition",
-  "yield",
-]);
-const IntegerRecipeAnswerField = Schema.Literals([
-  "cook_time_minutes",
-  "prep_time_minutes",
-  "temperature_celsius",
-  "total_time_minutes",
-]);
-const ListRecipeAnswerField = Schema.Literals([
-  "ingredient_lines",
-  "ingredient_quantities",
-  "ingredient_units",
-  "instructions",
-  "tools",
-]);
-
-export const RecipeReviewAnswer = Schema.Union([
-  Schema.Struct({ field: TextRecipeAnswerField, value: ShortText }),
-  Schema.Struct({ field: IntegerRecipeAnswerField, value: SafeInteger }),
-  Schema.Struct({
-    field: ListRecipeAnswerField,
-    value: Schema.NonEmptyArray(ShortText).pipe(
-      Schema.check(Schema.isMaxLength(256))
-    ),
-  }),
-  Schema.Struct({ field: Schema.Literal("tags"), value: PlanningTags }),
-]);
-export type RecipeReviewAnswer = typeof RecipeReviewAnswer.Type;
 
 const UniqueRecipeReviewAnswers = Schema.NonEmptyArray(RecipeReviewAnswer).pipe(
   Schema.check(
@@ -561,7 +494,7 @@ export type RecipeImportTimeline = typeof RecipeImportTimeline.Type;
 export const Recipe = Schema.Struct({
   id: RecipeId,
   object: Schema.Literal("recipe"),
-  recipe: CorrectedRecipe,
+  recipe: RecipeContent,
   tags: PlanningTags,
 });
 export type Recipe = typeof Recipe.Type;

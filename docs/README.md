@@ -17,7 +17,7 @@ deployed or passed its quality evaluation.
 | Change a form | [Build a form](how-to/build-a-form.md), [form rules](reference/forms.md) |
 | Change household data or people APIs | [Household data](reference/household.md), [people API](reference/household-people-api.md) |
 | Change the private interview or its connection | [Private discovery](reference/private-discovery.md), [interview coverage](reference/discovery-coverage.md) |
-| Change recipe import | [Import rules](reference/recipe-import.md), [recipe strategy](explanation/product/recipe-strategy.md) |
+| Change recipe import | [Import rules](reference/recipe-import.md), [structured content](reference/recipe-content.md), [recipe strategy](explanation/product/recipe-strategy.md) |
 | Change infrastructure or media processing | [Operations](how-to/operate-infrastructure.md), [media lifetime](reference/media-container-lifetime.md) |
 | Change the interface's appearance | [Web instructions](../apps/web/AGENTS.md), [Paper design reference](../apps/web/DESIGN.md) |
 | Investigate rendering performance | [Performance examples](reference/react-performance/README.md) |

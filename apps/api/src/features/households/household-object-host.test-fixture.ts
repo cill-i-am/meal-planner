@@ -22,6 +22,11 @@ import {
   RestoreReturningAdultLinkPayload,
   RetryMemberDeparturePayload,
 } from "@meal-planner/household-api";
+import {
+  emptyRecipeDetails,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+} from "@meal-planner/recipe-domain";
 import { Recipe } from "@meal-planner/recipe-import-api";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle/Cloudflare";
@@ -302,19 +307,8 @@ const HouseholdObjectTestRuntime = Effect.gen(
                 id: recipe.importId,
                 object: "recipe",
                 recipe: {
-                  author: null,
-                  category: null,
-                  cookTimeMinutes: null,
-                  cuisine: null,
-                  description: null,
-                  ingredientQuantities: null,
-                  ingredientUnits: null,
-                  nutrition: null,
-                  prepTimeMinutes: null,
-                  temperatureCelsius: null,
-                  tools: null,
-                  totalTimeMinutes: null,
-                  yield: null,
+                  ...emptyRecipeDetails,
+
                   ...recipe.recipe,
                 },
                 tags: recipe.tags,
@@ -358,8 +352,14 @@ const HouseholdObjectTestRuntime = Effect.gen(
                   extractionFingerprint: index.toString(16).padStart(64, "0"),
                   importId,
                   recipe: {
-                    ingredientLines: [`Ingredient ${index}`],
-                    instructions: [`Cook recipe ${index}.`],
+                    ...emptyRecipeDetails,
+                    ingredients: [`Ingredient ${index}`].map(
+                      recipeIngredientFromText
+                    ),
+                    instructions: [`Cook recipe ${index}.`].map(
+                      (text, stepIndex) =>
+                        recipeInstructionFromText(text, stepIndex + 1)
+                    ),
                     name: `Approved recipe ${index}`,
                   },
                   source: {
@@ -370,7 +370,6 @@ const HouseholdObjectTestRuntime = Effect.gen(
                   },
                   tags: {
                     cuisines: ["Irish"],
-                    dietaryFit: "household_match",
                     difficulty: "easy",
                     leftovers: "one_meal",
                     mealTypes: ["dinner"],
@@ -382,22 +381,17 @@ const HouseholdObjectTestRuntime = Effect.gen(
                   id: recipeId,
                   object: "recipe",
                   recipe: {
-                    author: null,
-                    category: null,
-                    cookTimeMinutes: 10,
-                    cuisine: "Irish",
-                    description: null,
-                    ingredientLines: [`Ingredient ${index}`],
-                    ingredientQuantities: null,
-                    ingredientUnits: null,
-                    instructions: [`Cook recipe ${index}.`],
+                    ...emptyRecipeDetails,
+
+                    ingredients: [`Ingredient ${index}`].map(
+                      recipeIngredientFromText
+                    ),
+
+                    instructions: [`Cook recipe ${index}.`].map(
+                      (text, stepIndex) =>
+                        recipeInstructionFromText(text, stepIndex + 1)
+                    ),
                     name: `Approved recipe ${index}`,
-                    nutrition: null,
-                    prepTimeMinutes: 5,
-                    temperatureCelsius: null,
-                    tools: ["Pot"],
-                    totalTimeMinutes: 15,
-                    yield: "2 servings",
                   },
                   tags: planningRecipe.tags,
                 });

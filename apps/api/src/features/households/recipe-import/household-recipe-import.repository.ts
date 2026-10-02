@@ -1,5 +1,9 @@
 import { MealPlanRecipeSnapshot } from "@meal-planner/household-api";
 import {
+  RecipeContent,
+  recipeContentBlockers,
+} from "@meal-planner/recipe-domain";
+import {
   ActiveRecipeImportAction,
   CancelledRecipeImportIntent,
   CompletedRecipeImportAction,
@@ -127,25 +131,6 @@ const stageOrdinal = (stage: string) =>
     "finalizing_recipe",
   ].indexOf(stage);
 
-const answerProperty = {
-  author: "author",
-  category: "category",
-  cook_time_minutes: "cookTimeMinutes",
-  cuisine: "cuisine",
-  description: "description",
-  ingredient_lines: "ingredientLines",
-  ingredient_quantities: "ingredientQuantities",
-  ingredient_units: "ingredientUnits",
-  instructions: "instructions",
-  name: "name",
-  nutrition: "nutrition",
-  prep_time_minutes: "prepTimeMinutes",
-  temperature_celsius: "temperatureCelsius",
-  tools: "tools",
-  total_time_minutes: "totalTimeMinutes",
-  yield: "yield",
-} as const;
-
 const applyAnswers = (
   current: typeof RecipeReviewActionView.Type,
   answers: HouseholdAnswerRecipeImportActionInput["request"]["answers"]
@@ -160,46 +145,31 @@ const applyAnswers = (
     if (answer.field === "tags") {
       tags = answer.value;
     } else {
-      const property = answerProperty[answer.field];
+      const property = answer.field;
       Object.assign(recipe, { [property]: answer.value });
     }
   }
-  const answeredFields = new Set(answers.map(({ field }) => field));
   return Schema.decodeUnknownSync(RecipeReviewActionView)({
     ...current,
     answers: [...answerMap.values()],
-    blockers: {
-      invalidFields: current.blockers.invalidFields.filter(
-        (field) => !answeredFields.has(field)
-      ),
-      unresolvedRequiredFields:
-        current.blockers.unresolvedRequiredFields.filter(
-          (field) => !answeredFields.has(field)
-        ),
-    },
+    blockers: recipeContentBlockers(recipe),
     recipe,
     tags,
   });
 };
 
 const requirePublishable = (review: typeof RecipeReviewActionView.Type) => {
-  const { ingredientLines, instructions, name } = review.recipe;
+  const blockers = recipeContentBlockers(review.recipe);
+  const content = Schema.decodeUnknownResult(RecipeContent)(review.recipe);
   if (
-    review.blockers.invalidFields.length > 0 ||
-    review.blockers.unresolvedRequiredFields.length > 0 ||
-    ingredientLines === null ||
-    instructions === null ||
-    name === null ||
+    blockers.invalidFields.length > 0 ||
+    blockers.unresolvedRequiredFields.length > 0 ||
+    content._tag === "Failure" ||
     review.tags === null
   ) {
     return Effect.fail(failure("illegal_transition"));
   }
-  return Effect.succeed({
-    ingredientLines,
-    instructions,
-    name,
-    tags: review.tags,
-  });
+  return Effect.succeed({ recipe: content.success, tags: review.tags });
 };
 
 export const makeHouseholdRecipeImportRepository = (
@@ -1256,18 +1226,14 @@ export const makeHouseholdRecipeImportRepository = (
             const publicRecipe = yield* decode(Recipe, {
               id: recipeId,
               object: "recipe",
-              recipe: action.review.recipe,
+              recipe: publishable.recipe,
               tags: publishable.tags,
             });
             const planningRecipe = yield* decode(MealPlanRecipeSnapshot, {
               approvedAt: confirmedAt,
               extractionFingerprint: storedReview.extractionFingerprint,
               importId: input.intentId,
-              recipe: {
-                ingredientLines: publishable.ingredientLines,
-                instructions: publishable.instructions,
-                name: publishable.name,
-              },
+              recipe: publishable.recipe,
               source: {
                 evidenceFingerprint: storedReview.evidenceFingerprint,
                 sourceUrl:

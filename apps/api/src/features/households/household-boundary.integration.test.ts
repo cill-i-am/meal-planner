@@ -20,6 +20,11 @@ import {
   SessionFrame,
 } from "@meal-planner/private-interview-api";
 import {
+  emptyRecipeDetails,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+} from "@meal-planner/recipe-domain";
+import {
   Recipe,
   RecipeImportAction,
   RecipeImportBatch,
@@ -119,7 +124,6 @@ const SessionResponse = Schema.Struct({
 const OrganizationResponse = Schema.Struct({ id: Schema.String });
 const createPayload = Schema.decodeUnknownSync(CreateMealPlanPayload)({
   policy: {
-    allowedDietaryFit: ["household_match"],
     allowedDifficulties: ["easy"],
     allowedTotalTimeBands: ["under_30_minutes"],
     maxRecipeUses: 1,
@@ -1240,28 +1244,52 @@ const prepareUnknownSpeechTerminal = async (input: {
 const review = {
   answers: [],
   blockers: { invalidFields: [], unresolvedRequiredFields: [] },
-  editableFields: ["name", "ingredient_lines", "instructions", "tags"],
+  editableFields: ["name", "ingredients", "instructions", "tags"],
   recipe: {
-    author: null,
-    category: null,
-    cookTimeMinutes: 15,
-    cuisine: "Irish",
+    ...emptyRecipeDetails,
+
+    categories: ["Dinner"],
+    cuisines: ["Irish"],
     description: "Provider-free public boundary tracer.",
-    ingredientLines: ["1 local ingredient"],
-    ingredientQuantities: null,
-    ingredientUnits: null,
-    instructions: ["Cook locally."],
+    equipment: ["Pot"],
+    ingredients: [
+      {
+        ...recipeIngredientFromText("1 local ingredient"),
+        group: "Stew",
+        ingredientId: "local-ingredient",
+        name: "local ingredient",
+        optional: false,
+        quantity: { max: null, unit: null, value: 1 },
+      },
+    ],
+    instructions: [
+      {
+        ...recipeInstructionFromText("Cook locally.", 1),
+        duration: { seconds: 900 },
+        equipment: ["Pot"],
+        group: "Stew",
+        ingredients: ["local-ingredient"],
+        temperature: { unit: "C", value: 180 },
+      },
+    ],
     name: "Public household tracer stew",
+    notes: ["Keep leftovers chilled."],
     nutrition: null,
-    prepTimeMinutes: 10,
-    temperatureCelsius: null,
-    tools: ["Pot"],
-    totalTimeMinutes: 25,
-    yield: "2 servings",
+    servings: {
+      max: null,
+      original: "2 servings",
+      quantity: 2,
+      unit: "servings",
+    },
+    times: {
+      cook: { seconds: 900 },
+      inactive: null,
+      prep: { seconds: 600 },
+      total: { seconds: 1500 },
+    },
   },
   tags: {
     cuisines: ["Irish"],
-    dietaryFit: "household_match",
     difficulty: "easy",
     leftovers: "one_meal",
     mealTypes: ["dinner"],
@@ -4813,7 +4841,7 @@ describe("household public API to private Durable Object boundary", () => {
     const published = await Schema.decodeUnknownPromise(Recipe)(
       await recipeResponse.json()
     );
-    expect(published.recipe.name).toBe("Public household tracer stew");
+    expect(published.recipe).toEqual(review.recipe);
 
     const timelineResponse = await getRuntime().dispatchFetch(
       `https://meal-planner.test/v1/recipe-import-intents/${admitted.id}/timeline`,

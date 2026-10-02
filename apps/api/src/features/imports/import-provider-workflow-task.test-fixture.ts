@@ -1,3 +1,8 @@
+import {
+  emptyRecipeDetails,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+} from "@meal-planner/recipe-domain";
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
 import {
@@ -284,28 +289,17 @@ const nativeRecipeRecoveryAttempt = (
 };
 
 const emptyRecipeProviderSelection = {
-  category: null,
-  cookTimeMinutes: null,
-  cuisine: null,
-  description: null,
-  ingredientLines: [],
-  instructions: [],
+  ...emptyRecipeDetails,
+  ingredients: null,
+  instructions: null,
   name: null,
-  nutrition: null,
-  prepTimeMinutes: null,
-  supportedClaims: [],
-  temperatureCelsius: null,
-  tools: [],
-  totalTimeMinutes: null,
-  yield: null,
 } as const;
 
 const recoveredRecipeProviderSelection = {
   ...emptyRecipeProviderSelection,
-  ingredientLines: ["1 onion"],
-  instructions: ["Cook the onion"],
+  ingredients: [recipeIngredientFromText("1 onion")],
+  instructions: [recipeInstructionFromText("Cook the onion", 1)],
   name: "Recovered onion",
-  supportedClaims: ["Recovered onion", "1 onion", "Cook the onion"],
 } as const;
 
 const installedRecipeConservativeDispatch = (

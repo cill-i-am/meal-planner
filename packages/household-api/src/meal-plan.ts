@@ -1,5 +1,5 @@
 import {
-  PlanningDietaryFit,
+  RecipeContent,
   PlanningDifficulty,
   PlanningMealType,
   PlanningTotalTimeBand,
@@ -112,9 +112,6 @@ export const MealPlanRequest = Schema.Struct({
 export type MealPlanRequest = typeof MealPlanRequest.Type;
 
 export const MealPlanPolicy = Schema.Struct({
-  allowedDietaryFit: Schema.NonEmptyArray(PlanningDietaryFit).pipe(
-    Schema.check(Schema.isMaxLength(3))
-  ),
   allowedDifficulties: Schema.NonEmptyArray(PlanningDifficulty).pipe(
     Schema.check(Schema.isMaxLength(3))
   ),
@@ -134,11 +131,7 @@ export const MealPlanRecipeSnapshot = Schema.Struct({
   approvedAt: MealPlanInstant,
   extractionFingerprint: TrimmedNonEmptyString,
   importId: MealPlanRecipeSnapshotId,
-  recipe: Schema.Struct({
-    ingredientLines: Schema.NonEmptyArray(ShortText),
-    instructions: Schema.NonEmptyArray(ShortText),
-    name: ShortText,
-  }),
+  recipe: RecipeContent,
   source: Schema.Struct({
     evidenceFingerprint: TrimmedNonEmptyString,
     sourceUrl: Schema.NullOr(ShortText),

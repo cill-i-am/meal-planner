@@ -186,7 +186,6 @@ export const isRecipeEligibleForSlot = (
   policy: MealPlanPolicy
 ): boolean =>
   recipe.tags.mealTypes.includes(slot.mealType) &&
-  policy.allowedDietaryFit.includes(recipe.tags.dietaryFit) &&
   policy.allowedDifficulties.includes(recipe.tags.difficulty) &&
   policy.allowedTotalTimeBands.includes(recipe.tags.totalTimeBand);
 

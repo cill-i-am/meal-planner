@@ -1,5 +1,5 @@
 import {
-  PlanningDietaryFit,
+  RecipeText,
   PlanningDifficulty,
   PlanningLeftovers,
   PlanningMealType,
@@ -8,7 +8,6 @@ import {
 import {
   AnswerReviewRecipeActionRequest,
   IdempotencyKey,
-  RecipeReviewAnswer,
   SourceUrl,
 } from "@meal-planner/recipe-import-api";
 import type {
@@ -40,6 +39,8 @@ import { Separator } from "../../components/ui/separator.js";
 import { Skeleton } from "../../components/ui/skeleton.js";
 import { recipeImportQueryKeys } from "./household-query-isolation.js";
 import type { RecipeImportOperations } from "./operations.js";
+import { RecipeDetailsForm } from "./recipe-details-form.js";
+import { RecipeDetails } from "./recipe-details.js";
 
 type ActiveReviewAction = Extract<
   RecipeImportAction,
@@ -57,9 +58,7 @@ const stageLabels = {
 } as const;
 
 const sourceUrlValidator = Schema.toStandardSchemaV1(SourceUrl);
-const nameValidator = Schema.toStandardSchemaV1(
-  RecipeReviewAnswer.members[0].fields.value
-);
+const nameValidator = Schema.toStandardSchemaV1(RecipeText);
 const decodeSourceUrl = Schema.decodeUnknownSync(SourceUrl);
 const decodeAnswer = Schema.decodeUnknownSync(AnswerReviewRecipeActionRequest);
 const decodeIdempotencyKey = Schema.decodeUnknownSync(IdempotencyKey);
@@ -218,8 +217,8 @@ const TagsAnswerForm = ({
   const { tags } = action.review;
   const form = useForm({
     defaultValues: {
-      cuisine: tags?.cuisines.join(", ") ?? action.review.recipe.cuisine ?? "",
-      dietaryFit: tags?.dietaryFit ?? ("household_match" as const),
+      cuisine:
+        tags?.cuisines.join(", ") ?? action.review.recipe.cuisines.join(", "),
       difficulty: tags?.difficulty ?? ("easy" as const),
       leftovers: tags?.leftovers ?? ("one_meal" as const),
       mealType: tags?.mealTypes[0] ?? ("dinner" as const),
@@ -232,7 +231,6 @@ const TagsAnswerForm = ({
             field: "tags",
             value: {
               cuisines: [value.cuisine.trim()],
-              dietaryFit: value.dietaryFit,
               difficulty: value.difficulty,
               leftovers: value.leftovers,
               mealTypes: [value.mealType],
@@ -285,19 +283,6 @@ const TagsAnswerForm = ({
               onBlur={field.handleBlur}
               onChange={field.handleChange}
               schema={PlanningMealType}
-              value={field.state.value}
-            />
-          )}
-        </form.Field>
-        <form.Field name="dietaryFit">
-          {(field) => (
-            <PlanningTagSelect
-              id={`dietaryFit-${action.id}`}
-              label="Dietary fit"
-              name={field.name}
-              onBlur={field.handleBlur}
-              onChange={field.handleChange}
-              schema={PlanningDietaryFit}
               value={field.state.value}
             />
           )}
@@ -551,26 +536,14 @@ const RecipeReview = ({
     <h3 className="recipe-name">
       {action.review.recipe.name ?? "Recipe ready to confirm"}
     </h3>
-    {action.review.recipe.ingredientLines === null ? null : (
-      <section aria-labelledby="ingredients-title">
-        <h3 id="ingredients-title">Ingredients</h3>
-        <ul>
-          {action.review.recipe.ingredientLines.map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
-      </section>
-    )}
-    {action.review.recipe.instructions === null ? null : (
-      <section aria-labelledby="method-title">
-        <h3 id="method-title">Method</h3>
-        <ol>
-          {action.review.recipe.instructions.map((step) => (
-            <li key={step}>{step}</li>
-          ))}
-        </ol>
-      </section>
-    )}
+    <RecipeDetails recipe={action.review.recipe} />
+    <RecipeDetailsForm
+      key={`${action.id}:${action.actionVersion}:details`}
+      action={action}
+      isPending={isAnswering}
+      makeRequestId={makeRequestId}
+      submit={answer}
+    />
     {action.review.editableFields.includes("name") ? (
       <NameAnswerForm
         action={action}
@@ -592,7 +565,7 @@ const RecipeReview = ({
     <div className="approve-bar">
       <p>Confirm this recipe to save it.</p>
       <PendingButton
-        disabled={isConfirming}
+        disabled={isConfirming || isAnswering}
         pending={isConfirming}
         pendingLabel="Saving recipe…"
         onClick={() =>
@@ -635,6 +608,7 @@ const SavedRecipeStatus = ({
       <p className="eyebrow success">Complete</p>
       <h2 id="success-title">Recipe saved</h2>
       <p>Added to your recipe collection.</p>
+      <RecipeDetails recipe={recipe.recipe} />
       <div className="saved-entry">
         <span>{recipe.recipe.name ?? "Recipe"}</span>
         <Badge>Saved</Badge>

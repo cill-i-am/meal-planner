@@ -1,4 +1,9 @@
-import { PlanningTags } from "@meal-planner/recipe-domain";
+import {
+  makeRecipeContent,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+  PlanningTags,
+} from "@meal-planner/recipe-domain";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -11,13 +16,13 @@ import {
   MealPlanPolicy,
   MealPlanPersistenceFailure,
   MealPlanRecipeSnapshotId,
+  MealPlanRecipeSnapshot,
   MealPlanRequest,
   SwapMealPlanPayload,
 } from "./meal-plan.js";
 
 const validCreatePayload = {
   policy: {
-    allowedDietaryFit: ["household_match"],
     allowedDifficulties: ["easy"],
     allowedTotalTimeBands: ["under_30_minutes"],
     maxRecipeUses: 1,
@@ -38,6 +43,61 @@ const validCreatePayload = {
 } as const;
 
 describe("meal-plan contract", () => {
+  it("preserves structured cooking facts in the approved planning snapshot", () => {
+    const recipe = makeRecipeContent({
+      ingredients: [
+        {
+          ...recipeIngredientFromText("400 g beans, drained"),
+          group: "Stew",
+          ingredientId: "beans",
+          name: "beans",
+          preparation: "drained",
+          quantity: { max: null, unit: "g", value: 400 },
+        },
+      ],
+      instructions: [
+        {
+          ...recipeInstructionFromText("Simmer the beans.", 1),
+          duration: { seconds: 600 },
+          group: "Stew",
+          ingredients: ["beans"],
+        },
+      ],
+      name: "Bean stew",
+      notes: ["Refrigerate leftovers."],
+      servings: {
+        max: null,
+        original: "Serves 4",
+        quantity: 4,
+        unit: "servings",
+      },
+      times: {
+        cook: { seconds: 600 },
+        inactive: null,
+        prep: { seconds: 300 },
+        total: { seconds: 900 },
+      },
+    });
+    const snapshot = Schema.decodeUnknownSync(MealPlanRecipeSnapshot)({
+      approvedAt: "2026-07-22T10:01:00.000Z",
+      extractionFingerprint: "extraction",
+      importId: "018f47ad-91aa-7c35-b6fe-000000000401",
+      recipe,
+      source: { evidenceFingerprint: "evidence", sourceUrl: null },
+      tags: {
+        cuisines: ["Mediterranean"],
+        difficulty: "easy",
+        leftovers: "one_meal",
+        mealTypes: ["dinner"],
+        totalTimeBand: "under_30_minutes",
+      },
+      version: 1,
+    });
+    expect(Schema.encodeSync(MealPlanRecipeSnapshot)(snapshot).recipe).toEqual(
+      recipe
+    );
+  });
+
   it("owns its recipe snapshot primitives without a transport contract", () => {
     expect(
       Schema.decodeUnknownSync(MealPlanRecipeSnapshotId)(
@@ -52,14 +112,12 @@ describe("meal-plan contract", () => {
     expect(
       Schema.decodeUnknownSync(PlanningTags)({
         cuisines: ["Mediterranean"],
-        dietaryFit: "household_match",
         difficulty: "easy",
         leftovers: "one_meal",
         mealTypes: ["dinner"],
         totalTimeBand: "under_30_minutes",
       })
     ).toMatchObject({
-      dietaryFit: "household_match",
       leftovers: "one_meal",
       mealTypes: ["dinner"],
     });
@@ -100,7 +158,6 @@ describe("meal-plan contract", () => {
     ).toThrow();
     expect(() =>
       Schema.decodeUnknownSync(MealPlanPolicy)({
-        allowedDietaryFit: ["household_match"],
         allowedDifficulties: ["easy"],
         allowedTotalTimeBands: ["under_30_minutes"],
         maxRecipeUses: 1,

@@ -1,3 +1,8 @@
+import {
+  makeRecipeContent,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+} from "@meal-planner/recipe-domain";
 import type { Effect } from "effect";
 import { Schema } from "effect";
 import type { HttpApiClient } from "effect/unstable/httpapi";
@@ -76,18 +81,17 @@ describe("Household meal-plan HTTP protocol", () => {
       approvedAt: "2026-08-19T12:00:00.000Z",
       extractionFingerprint: "extraction-fingerprint",
       importId: "a9f513cb-d1cc-4ae8-99fb-20113da1b83a",
-      recipe: {
-        ingredientLines: ["1 ingredient"],
-        instructions: ["Cook it."],
+      recipe: makeRecipeContent({
+        ingredients: [recipeIngredientFromText("1 ingredient")],
+        instructions: [recipeInstructionFromText("Cook it.", 1)],
         name: "Private Actor Test Recipe",
-      },
+      }),
       source: {
         evidenceFingerprint: "evidence-fingerprint",
         sourceUrl: null,
       },
       tags: {
         cuisines: ["Mediterranean"],
-        dietaryFit: "household_match",
         difficulty: "easy",
         leftovers: "none",
         mealTypes: ["dinner"],
@@ -119,7 +123,6 @@ describe("Household meal-plan HTTP protocol", () => {
       gaps: [],
       meals: [],
       policy: {
-        allowedDietaryFit: ["household_match"],
         allowedDifficulties: ["easy"],
         allowedTotalTimeBands: ["under_30_minutes"],
         maxRecipeUses: 1,

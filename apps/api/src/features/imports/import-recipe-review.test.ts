@@ -1,3 +1,8 @@
+import {
+  emptyRecipeDetails,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+} from "@meal-planner/recipe-domain";
 import { DateTime, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -12,53 +17,43 @@ import {
 } from "./import-recipe-review.js";
 
 const correctionPairs = [
-  { field: "author", value: "Corrected author" },
-  { field: "category", value: "Corrected category" },
-  { field: "cook_time_minutes", value: 21 },
-  { field: "cuisine", value: "Corrected cuisine" },
+  { field: "author", value: { name: "Corrected author", url: null } },
+  { field: "categories", value: ["Soup"] },
+  { field: "cuisines", value: ["Irish"] },
   { field: "description", value: "Corrected description" },
-  { field: "ingredient_lines", value: ["1 corrected ingredient"] },
-  { field: "ingredient_quantities", value: ["1"] },
-  { field: "ingredient_units", value: ["cup"] },
-  { field: "instructions", value: ["Follow the corrected instruction."] },
+  { field: "ingredients", value: [recipeIngredientFromText("1 onion")] },
+  {
+    field: "instructions",
+    value: [recipeInstructionFromText("Cook the onion.", 1)],
+  },
   { field: "name", value: "Corrected name" },
-  { field: "nutrition", value: "Corrected nutrition" },
-  { field: "prep_time_minutes", value: 11 },
-  { field: "temperature_celsius", value: 180 },
-  { field: "tools", value: ["Corrected tool"] },
-  { field: "total_time_minutes", value: 31 },
-  { field: "yield", value: "3 servings" },
+  { field: "nutrition", value: null },
+  {
+    field: "times",
+    value: { cook: null, inactive: null, prep: { seconds: 660 }, total: null },
+  },
+  { field: "equipment", value: ["Saucepan"] },
+  {
+    field: "servings",
+    value: { max: null, original: "Serves 3", quantity: 3, unit: "serving" },
+  },
 ];
-
 const mismatchedCorrectionPairs = [
   { field: "author", value: 1 },
-  { field: "cook_time_minutes", value: "twenty minutes" },
-  { field: "ingredient_lines", value: "1 corrected ingredient" },
+  { field: "times", value: "twenty minutes" },
+  { field: "ingredients", value: "1 onion" },
 ];
-
-const citation = {
+const supportedString = (value: string) => ({
   citations: [
     {
       confidence: 1,
       evidenceId: "caption:fixture",
-      origin: "creator_provided" as const,
+      origin: "creator_provided",
     },
   ],
-  origin: "creator_provided" as const,
-  state: "supported" as const,
-};
-
-const supportedString = (value: string) => ({ ...citation, value });
-const supportedNumber = (value: number) => ({ ...citation, value });
-const supportedList = (values: readonly string[]) => ({
-  items: values.map(supportedString),
-  state: "supported" as const,
-});
-const unresolved = (reason: string) => ({
-  citations: [] as const,
-  origin: "unresolved" as const,
-  reason,
-  state: "unresolved" as const,
+  origin: "creator_provided",
+  state: "supported",
+  value,
 });
 
 const draft = Schema.decodeUnknownSync(RecipeDraft)({
@@ -66,35 +61,41 @@ const draft = Schema.decodeUnknownSync(RecipeDraft)({
   evidenceFingerprint:
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   extraction: {
-    author: supportedString("Fixture Cook"),
-    category: supportedString("Dinner"),
-    cookTimeMinutes: supportedNumber(20),
     cost: {
       certainty: "known",
       currency: "USD",
       estimatedMicroUsd: 0,
     },
-    cuisine: supportedString("Irish"),
-    description: supportedString("A deterministic fixture."),
-    ingredientLines: supportedList(["1 onion", "2 tomatoes"]),
-    instructions: supportedList(["Chop the onion.", "Simmer for 20 minutes."]),
-    name: unresolved("The title was not visible."),
-    nutrition: unresolved("Nutrition was not stated."),
-    prepTimeMinutes: supportedNumber(10),
+    evidence: [],
+    recipe: {
+      ...emptyRecipeDetails,
+      ingredients: [
+        recipeIngredientFromText("1 onion"),
+        recipeIngredientFromText("2 tomatoes"),
+      ],
+      instructions: [
+        recipeInstructionFromText("Chop the onion.", 1),
+        recipeInstructionFromText("Simmer for 20 minutes.", 2),
+      ],
+      name: null,
+      notes: ["Refrigerate leftovers."],
+      servings: {
+        max: null,
+        original: "2 servings",
+        quantity: 2,
+        unit: "serving",
+      },
+      times: {
+        cook: { seconds: 1200 },
+        inactive: null,
+        prep: { seconds: 600 },
+        total: { seconds: 1800 },
+      },
+    },
     sourceUrl: supportedString(
       "https://www.tiktok.com/@fixture/video/7520000000000000001"
     ),
-    supportedClaims: supportedList(["Simmer for 20 minutes."]),
-    temperatureCelsius: unresolved("Temperature was not stated."),
-    tools: supportedList(["Saucepan"]),
-    totalTimeMinutes: supportedNumber(30),
-    unresolvedFields: [
-      "name",
-      "nutrition",
-      "temperature_celsius",
-      "ingredient_quantities",
-      "ingredient_units",
-    ],
+    unresolvedFields: ["name", "nutrition"],
     usage: {
       inputEvidenceItems: 1,
       inputTokens: 0,
@@ -102,7 +103,6 @@ const draft = Schema.decodeUnknownSync(RecipeDraft)({
       modelCalls: 1,
       outputTokens: 0,
     },
-    yield: supportedString("2 servings"),
   },
   extractionFingerprint:
     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -203,7 +203,7 @@ describe("recipe review approval policy", () => {
       invalidFields: [],
       unresolvedRequiredFields: [],
     });
-    expect(draft.extraction.name.state).toBe("unresolved");
+    expect(draft.extraction.recipe.name).toBeNull();
   });
 
   it("refines approved rows into a total approved recipe projection", () => {
@@ -224,7 +224,6 @@ describe("recipe review approval policy", () => {
       nullablePolicy: [],
       tags: {
         cuisines: ["Irish"],
-        dietaryFit: "household_match",
         difficulty: "easy",
         leftovers: "one_meal",
         mealTypes: ["dinner"],
@@ -266,7 +265,12 @@ describe("recipe review approval policy", () => {
     const projected = projectApprovedReview(approved);
 
     expect(projected).toMatchObject({
-      recipe: { name: "Tomato and Onion Stew" },
+      recipe: {
+        name: "Tomato and Onion Stew",
+        notes: ["Refrigerate leftovers."],
+        servings: draft.extraction.recipe.servings,
+        times: draft.extraction.recipe.times,
+      },
     });
     expect(DateTime.formatIso(projected.approvedAt)).toBe(
       "2026-07-22T10:02:00.000Z"
@@ -282,7 +286,6 @@ describe("recipe review approval policy", () => {
       nullablePolicy: [],
       tags: {
         cuisines: ["Irish"],
-        dietaryFit: "household_match",
         difficulty: "easy",
         leftovers: "one_meal",
         mealTypes: ["dinner"],

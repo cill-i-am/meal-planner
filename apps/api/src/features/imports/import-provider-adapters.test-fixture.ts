@@ -1,3 +1,4 @@
+import { emptyRecipeDetails } from "@meal-planner/recipe-domain";
 import { RuntimeContext } from "alchemy";
 import { Effect, Option, Schema, Stream } from "effect";
 import { AiError, LanguageModel } from "effect/unstable/ai";
@@ -20,6 +21,7 @@ import {
   normalizeWorkersAiResponse,
 } from "./import-provider-kernel.js";
 import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
+import { groundRecipeCandidate } from "./import-recipe-grounding.js";
 
 const ProviderToolCall = Schema.Union([
   Schema.Struct({
@@ -543,42 +545,10 @@ export const unresolvedList = {
   state: "unresolved",
 } as const;
 
-export const validRecipeSemantics = {
-  author: unresolvedString,
-  category: unresolvedString,
-  cookTimeMinutes: unresolvedNumber,
-  cuisine: unresolvedString,
-  description: unresolvedString,
-  ingredientLines: unresolvedList,
-  instructions: unresolvedList,
-  name: unresolvedString,
-  nutrition: unresolvedString,
-  prepTimeMinutes: unresolvedNumber,
-  sourceUrl: unresolvedString,
-  supportedClaims: unresolvedList,
-  temperatureCelsius: unresolvedNumber,
-  tools: unresolvedList,
-  totalTimeMinutes: unresolvedNumber,
-  unresolvedFields: [
-    "author",
-    "category",
-    "cook_time_minutes",
-    "cuisine",
-    "description",
-    "ingredient_lines",
-    "instructions",
-    "name",
-    "nutrition",
-    "prep_time_minutes",
-    "temperature_celsius",
-    "tools",
-    "total_time_minutes",
-    "yield",
-    "ingredient_quantities",
-    "ingredient_units",
-  ],
-  yield: unresolvedString,
-} as const;
+export const validRecipeSemantics = groundRecipeCandidate(
+  { ...emptyRecipeDetails, ingredients: null, instructions: null, name: null },
+  []
+);
 
 export const validRecipe = {
   ...validRecipeSemantics,
@@ -597,20 +567,10 @@ export const validRecipe = {
 };
 
 export const emptyRecipeProviderSelection = {
-  category: null,
-  cookTimeMinutes: null,
-  cuisine: null,
-  description: null,
-  ingredientLines: [],
-  instructions: [],
+  ...emptyRecipeDetails,
+  ingredients: null,
+  instructions: null,
   name: null,
-  nutrition: null,
-  prepTimeMinutes: null,
-  supportedClaims: [],
-  temperatureCelsius: null,
-  tools: [],
-  totalTimeMinutes: null,
-  yield: null,
 } as const;
 
 export const validVisual = {
