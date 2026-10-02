@@ -2,10 +2,11 @@ import type { HouseholdOrganizationId } from "@meal-planner/household-api";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate, useRouter } from "@tanstack/react-router";
 import { Data, Effect } from "effect";
-import { createContext, use, useMemo } from "react";
+import { createContext, use, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import { StatusScreen } from "../../components/status-screen.js";
+import { Button } from "../../components/ui/button.js";
 import { useApiRuntime } from "../api-client/index.js";
 import { accountQuery, accountKey } from "./account-query.js";
 import type { Account } from "./account-query.js";
@@ -96,6 +97,8 @@ export const AccountProvider = ({
   const queryClient = useQueryClient();
   const session = useQuery(accountQuery(auth));
   const router = useRouter();
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState(false);
   if (session.isPending) {
     return <StatusScreen title="Loading your account…" />;
   }
@@ -103,6 +106,38 @@ export const AccountProvider = ({
     return (
       <StatusScreen
         title="Your account couldn’t be loaded"
+        footer={
+          <div className="flex flex-col items-start gap-3">
+            <Button
+              disabled={signingOut}
+              onClick={async () => {
+                setSigningOut(true);
+                setSignOutError(false);
+                try {
+                  await requireAuthSuccess(auth.signOut());
+                  queryClient.clear();
+                  await router.navigate({
+                    replace: true,
+                    search: { redirect: router.state.location.href },
+                    to: "/login",
+                  });
+                } catch {
+                  setSignOutError(true);
+                } finally {
+                  setSigningOut(false);
+                }
+              }}
+              variant="link"
+            >
+              {signingOut ? "Logging out…" : "Log out and sign in again"}
+            </Button>
+            {signOutError && (
+              <p className="text-destructive text-sm" role="alert">
+                We couldn’t log you out. Try again.
+              </p>
+            )}
+          </div>
+        }
         retry={() => session.refetch()}
       />
     );

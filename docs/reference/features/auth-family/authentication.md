@@ -24,9 +24,12 @@ show validation, rejected and pending login, reset confirmation, invalid links,
 and new-password entry. The Paper boards are design references, not evidence of
 runtime behavior.
 
-Setup exposes **Log out**. An invitation exposes **Switch account**, preserving
-that invitation as the return destination. A valid `redirect` search value carries
-a local destination; external origins and auth-page loops are rejected.
+Setup exposes **Log out**. If the account itself cannot load, its status screen
+offers **Log out and sign in again** as a recovery action. It returns to login
+with the protected route preserved, so successful login can resume setup. An
+invitation exposes **Switch account** and preserves the invitation as the return
+destination. A valid `redirect` search value carries a local destination;
+external origins and auth-page loops are rejected.
 
 ## Driving it with agent-browser
 
@@ -42,6 +45,7 @@ Take a snapshot after every navigation and act on its named controls.
 | Return destination | Open `/login?redirect=%2Fsetup`, visit signup/recovery, then log in | Links retain the destination and success returns to setup |
 | Unsafe return | Open login with an external or protocol-relative redirect | Navigation remains in the app |
 | Logout | Select **Log out** from setup; reopen its protected URL | Login is required and the previous account's family is not shown |
+| Account read failure | Keep a session, fail the account read, then choose **Log out and sign in again** | The account cache clears, login retains the safe setup destination, and successful authentication resumes setup |
 | Request reset | Fill **Email**, select **Send reset link** | **Check your email** appears for accepted requests; record delivery separately |
 | Reset password | Use a valid test reset link; fill **New password** and **Confirm new password**, then **Save new password** | **Password updated**, token removed from URL, new password works at login; old sessions are revoked |
 | Invalid reset | Open without a token, with an expired token, or reuse a consumed token | Invalid-link state; **Request a new link** leads to recovery |

@@ -108,7 +108,13 @@ Short Invite and Edit forms use content-sized mobile sheets with 24px top corner
 
 Both the people list and family review label an uninvited adult simply **Adult** and offer **Invite to join** as a separate action. An accessible, labelled menu holds Edit name and Remove. The current person's menu only offers editing. Opening an action preserves the add-person draft and return location. A removal confirmation explains whether it also cancels an invitation or removes a joined adult's family access. Keep unresolved requests and their exact mutation identity until the result is confirmed; do not make a person disappear before access changes finish. Email delivery remains mocked.
 
-Roster dialogs and mobile sheets contain their primary action and Cancel. Keep **Log out** in the setup page header only. It saves the current draft and exact pending command before signing out; a save failure keeps the person signed in on the current screen with the draft intact. Submitted commands are already checkpointed, so the header action need not save periodically.
+Roster dialogs and mobile sheets contain their primary action and Cancel. Keep
+**Log out** in the setup page header. It saves the current draft and exact
+pending command before signing out; a save failure keeps the person signed in on
+the current screen with the draft intact. Submitted commands are already
+checkpointed, so the header action need not save periodically. If the account
+cannot load and prevents the setup header from appearing, expose **Log out and
+sign in again** in the account error card footer.
 
 Opening and cancelling a roster action are immediate local UI changes. They do not save setup progress or refetch the session. Only submitted commands are checkpointed before dispatch, retaining their target, version and mutation ID across unknown outcomes. A newly observed pending command takes precedence over an unsubmitted local draft; a different unresolved local command must not be overwritten.
 
