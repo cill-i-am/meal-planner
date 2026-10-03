@@ -6,7 +6,7 @@ import {
 } from "@meal-planner/household-api";
 import { Cause, Effect, Exit, Layer, Option, Schema } from "effect";
 
-import { apiHttpLayer, browserApiRuntime } from "../api-client/runtime.js";
+import { apiHttpLayer, browserApiRuntime } from "../api-client/index.js";
 import { displayedIdentityHeaders } from "../auth/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
 import { ProfileOperationError } from "./operations.js";

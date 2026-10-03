@@ -4,7 +4,7 @@ import {
 } from "@meal-planner/household-api";
 import { Effect, Layer } from "effect";
 
-import { apiHttpLayer, browserApiRuntime } from "../api-client/runtime.js";
+import { apiHttpLayer, browserApiRuntime } from "../api-client/index.js";
 import { displayedIdentityHeaders } from "../auth/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
 import type { HouseholdOperations } from "./operations.js";
