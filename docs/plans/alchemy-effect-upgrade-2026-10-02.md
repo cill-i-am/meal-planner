@@ -1,6 +1,6 @@
 # Alchemy and Effect stable upgrade
 
-Status: blocked
+Status: active
 Owner: current repository upgrade
 Delivery: merge after repository checks and CI pass; deployment is separate
 
@@ -114,12 +114,10 @@ in place. The custom Node SQL import hook is removed. Final follow-up checks pas
 tests and 24 browser journeys. The production build, both media container tests,
 frozen installation, type checks, lint, formatting and documentation checks pass.
 
-The remaining delivery step is a signed commit, PR and hosted CI. The configured
-1Password signer failed with `failed to fill whole buffer`; signing must succeed
-before the branch can be pushed for hosted checks and merge. A fresh attempt on
-3 October failed with the same error after all final checks passed. The complete
-reviewed diff is staged and the PR description is prepared; no commit, push, PR
-or merge was reported as complete.
+The signed implementation commit was approved through 1Password on 3 October.
+Earlier signing attempts failed with `failed to fill whole buffer`; that blocker
+is resolved. Delivery now awaits the pull request, required hosted checks and
+merge. Deployment remains separate.
 
 Local browser and container results verify synthetic environments. They do not
 verify a deployment, real provider calls or live migration histories. Apply the
@@ -150,5 +148,5 @@ A synthetic failed login emitted a 401 browser event with the identical API
 request ID. The production build, cross-workspace types, 252 frontend tests and
 three native stack tests pass, including the native 61st-request rate-limit
 rejection. Focused API and architecture checks, lint, formatting and documentation
-checks pass. The disposable local stage was destroyed. Signed delivery remains
-blocked by the configured 1Password signer.
+checks pass. The disposable local stage was destroyed. The implementation is now signed after the owner approved 1Password; hosted CI
+and merge remain.
