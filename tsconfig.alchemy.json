@@ -9,6 +9,7 @@
     "alchemy.run.ts",
     "alchemy.run.structural.test.ts",
     "scripts/**/*.ts",
+    "stacks/**/*.ts",
     "apps/api/src/test/alchemy.stack.test.ts",
     "vitest.stack.config.ts",
     "vitest.alchemy.config.ts"

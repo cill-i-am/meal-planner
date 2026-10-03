@@ -157,6 +157,25 @@ delivery remains disabled. Restrict the production environment to main.
 Use a scoped Cloudflare token and Alchemy's documented credentials-as-code
 setup; never copy a global API key into CI.
 
+The native [credentials stack](../../stacks/github.ts) creates those
+environments, account-owned tokens and encrypted secrets. It retains the
+existing production application secrets from the operator's ignored `.env`;
+Alchemy generates separate stable preview secrets. Deploy it with the existing
+administrative profile, which can mint account tokens:
+
+```sh
+pnpm exec alchemy deploy --config stacks/github.ts --stage ci --profile ceird-admin-global --yes
+ALCHEMY_DEPLOYMENTS_ENABLED=true pnpm exec alchemy deploy --config stacks/github.ts --stage ci --profile ceird-admin-global --yes
+```
+
+The first command provisions credentials with deployment disabled; the second
+enables the reviewed workflow. Use the second form when reconciling credentials
+after activation. Tokens expire on 3 October 2027; rotate them through the native
+stack before then. They have no billing or token-management permissions. Account
+settings and the existing email sending domain are read-only; changing RUM or
+email resources requires updating the token policy. Production routes are scoped
+to the configured ceird.app zone. Preview credentials have no zone permissions.
+
 CI uses native environment credential resolution and hosted Cloudflare state,
 with explicit `--stage`, `--profile ci` and `--yes`. No local credential archive
 or restore script is needed. Alchemy's native `provider check-env` checks its
