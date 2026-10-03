@@ -128,7 +128,8 @@ Follow the [native deployment guide](https://alchemy.run/cli/deploy/) and
 
 The [CI workflow](../../.github/workflows/ci.yml) runs quality/build checks,
 infrastructure tests, API/package tests, frontend tests, native Worker tests,
-both media-container suites and the native stack independently. Auth/family
+both media-container suites independently. The native stack runs after the real
+media-image suite on the same runner to reuse its Docker build layers. Auth/family
 browser journeys retain their separate job. Only browser jobs install Chromium.
 The lifecycle suite still checks the real default idle timeout.
 
