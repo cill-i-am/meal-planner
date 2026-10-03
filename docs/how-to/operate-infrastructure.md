@@ -37,11 +37,10 @@ credentials. Its name does not establish the environment or active account.
   variable falls back to the profile named `default`. The native CLI preserves these defaults when its flags are omitted.
 - Preview automation uses `pr-<number>` and must pass both `--stage` and
   `--profile` explicitly.
-- Production uses explicit `prod`, an explicit production profile, and a fresh
-  operator approval.
-- CI and every future approved cloud operation must pass an explicit stage and
-  profile, then independently verify the Cloudflare account resolved by that
-  profile before proceeding.
+- Production uses explicit `prod` and an explicit profile. Approved automation
+  uses the CI environment credentials described below.
+- CI passes an explicit stage and profile. Verify the Cloudflare account when
+  configuring its credentials; native provider resolution uses that account.
 
 Never infer authority for one stage, profile, account, or command from approval
 for another.
