@@ -11,6 +11,7 @@ import {
   discoverD1Targets,
   evidenceDigest,
   inspectD1Target,
+  inspectNewStage,
   parseD1Target,
   readLocalMigrations,
   verifyEvidence,
@@ -497,5 +498,103 @@ describe("release SQL inventory", () => {
     } finally {
       await rm(directory, { force: true, recursive: true });
     }
+  });
+});
+
+describe("new-stage deployment inspection", () => {
+  const fresh = {
+    accountId: target.accountId,
+    mode: "new-stage",
+    profile: "fixture",
+    stage: "prod",
+  } as const;
+  const reader = (
+    workers: unknown[],
+    databases: unknown[],
+    state: unknown[]
+  ): D1Reader => ({
+    accountId: fresh.accountId,
+    read: (path) => {
+      if (path === "/workers/scripts") {
+        return Promise.resolve(workers);
+      }
+      if (path === "/d1/database") {
+        return Promise.resolve(databases);
+      }
+      throw new Error("New-stage inspection must never query existing SQL");
+    },
+    readState: () => Promise.resolve(state),
+  });
+  it("accepts a genuinely empty stage alongside other environments", async () => {
+    await expect(
+      inspectNewStage(
+        reader(
+          [
+            {
+              id: "e2e",
+              tags: ["alchemy:stack:MealPlanner", "alchemy:stage:e2e"],
+            },
+          ],
+          [],
+          [undefined, undefined]
+        ),
+        fresh
+      )
+    ).resolves.toMatchObject({ target: fresh });
+  });
+  it("refuses existing Workers, D1 state or orphaned stage databases", async () => {
+    await expect(
+      inspectNewStage(
+        reader(
+          [
+            {
+              id: "prod",
+              tags: ["alchemy:stack:MealPlanner", "alchemy:stage:prod"],
+            },
+          ],
+          [],
+          [undefined, undefined]
+        ),
+        fresh
+      )
+    ).rejects.toThrow("already has Workers");
+    await expect(
+      inspectNewStage(reader([], [], [{ status: "created" }, undefined]), fresh)
+    ).rejects.toThrow("already has D1 state");
+    await expect(
+      inspectNewStage(
+        reader(
+          [],
+          [
+            {
+              name: "MealPlanner-MealPlannerAuthDatabase-prod-orphan",
+              uuid: target.databases.MealPlannerAuthDatabase.uuid,
+            },
+          ],
+          [undefined, undefined]
+        ),
+        fresh
+      )
+    ).rejects.toThrow("already has D1 databases");
+  });
+  it("refuses another account and propagates unavailable state", async () => {
+    await expect(
+      inspectNewStage(
+        {
+          ...reader([], [], [undefined, undefined]),
+          accountId: "b".repeat(32),
+        },
+        fresh
+      )
+    ).rejects.toThrow("account differs");
+    await expect(
+      inspectNewStage(
+        {
+          ...reader([], [], []),
+          readState: () => Promise.reject(new Error("state unavailable")),
+        },
+        fresh
+      )
+    ).rejects.toThrow("state unavailable");
   });
 });
