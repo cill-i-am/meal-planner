@@ -127,7 +127,7 @@ Follow the [native deployment guide](https://alchemy.run/cli/deploy/) and
 ## GitHub Actions
 
 The [CI workflow](../../.github/workflows/ci.yml) runs quality/build checks,
-infrastructure tests, API tests across four native Vitest shards, package tests,
+infrastructure tests, API tests across seven native Vitest shards, package tests,
 frontend tests, native Worker tests, and both media-container suites independently. The native stack runs after the real
 media-image suite on the same runner to reuse its Docker build layers. Auth/family
 browser journeys run on four runners: two native Playwright shards per browser

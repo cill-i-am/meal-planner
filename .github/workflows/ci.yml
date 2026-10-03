@@ -119,17 +119,26 @@ jobs:
           - name: packages
             command: pnpm --recursive --filter './packages/**' test
             browser: false
-          - name: api-1-of-4
-            command: pnpm --filter @meal-planner/api test --shard=1/4
+          - name: api-1-of-7
+            command: pnpm --filter @meal-planner/api test --shard=1/7
             browser: false
-          - name: api-2-of-4
-            command: pnpm --filter @meal-planner/api test --shard=2/4
+          - name: api-2-of-7
+            command: pnpm --filter @meal-planner/api test --shard=2/7
             browser: false
-          - name: api-3-of-4
-            command: pnpm --filter @meal-planner/api test --shard=3/4
+          - name: api-3-of-7
+            command: pnpm --filter @meal-planner/api test --shard=3/7
             browser: false
-          - name: api-4-of-4
-            command: pnpm --filter @meal-planner/api test --shard=4/4
+          - name: api-4-of-7
+            command: pnpm --filter @meal-planner/api test --shard=4/7
+            browser: false
+          - name: api-5-of-7
+            command: pnpm --filter @meal-planner/api test --shard=5/7
+            browser: false
+          - name: api-6-of-7
+            command: pnpm --filter @meal-planner/api test --shard=6/7
+            browser: false
+          - name: api-7-of-7
+            command: pnpm --filter @meal-planner/api test --shard=7/7
             browser: false
           - name: frontend
             command: pnpm --filter @meal-planner/web test
