@@ -339,7 +339,7 @@ describe("existing D1 release inspection", () => {
     const release = {
       head: "c".repeat(40),
       local,
-      toolchain: { alchemy: "2.0.0-beta.76", node: "v24.20.0" },
+      toolchain: { alchemy: "2.0.0-beta.80", node: "v24.20.0" },
     };
     const digest = evidenceDigest(report, release);
     state.bookmark = "advanced-by-normal-runtime-writes";

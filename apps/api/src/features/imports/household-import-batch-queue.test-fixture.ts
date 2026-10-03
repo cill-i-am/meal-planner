@@ -30,7 +30,9 @@ interface TestKvNamespace {
 
 interface NativeWorkflowInstance {
   readonly restart: () => Promise<void>;
-  readonly status: () => Promise<{ readonly status: string }>;
+  readonly status: () => Promise<{
+    readonly status: string;
+  }>;
 }
 
 interface NativeWorkflowBinding {
@@ -42,7 +44,9 @@ interface NativeWorkflowBinding {
 }
 
 interface TestMessageBatch {
-  readonly messages: readonly { readonly body: unknown }[];
+  readonly messages: readonly {
+    readonly body: unknown;
+  }[];
 }
 
 interface Environment {
@@ -257,7 +261,9 @@ export default {
       return Response.json(
         await Effect.runPromise(
           household.readImportBatch(
-            Schema.decodeUnknownSync(HouseholdReadImportBatchInput)({
+            Schema.decodeUnknownSync(HouseholdReadImportBatchInput, {
+              onExcessProperty: "error",
+            })({
               admission,
               batchId,
             })
@@ -295,7 +301,9 @@ export default {
     const admitted = await Effect.runPromise(
       household
         .admitImportBatch(
-          Schema.decodeUnknownSync(HouseholdAdmitImportBatchInput)({
+          Schema.decodeUnknownSync(HouseholdAdmitImportBatchInput, {
+            onExcessProperty: "error",
+          })({
             admission,
             idempotencyKey: `batch-${command.commandId}`,
             request: {

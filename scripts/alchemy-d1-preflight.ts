@@ -9,7 +9,7 @@ import { z } from "zod";
 import type {
   CloudflareAuthConfig,
   CloudflareResolvedCredentials,
-} from "../node_modules/alchemy/lib/Cloudflare/Auth/AuthProvider.js";
+} from "../node_modules/alchemy/lib/Cloudflare/Auth/AuthConfig.js";
 
 const repository = fileURLToPath(new URL("../", import.meta.url));
 const identifier = z.string().regex(/^[\w-]+$/u);
@@ -515,15 +515,17 @@ const makeReader = async (
   // Read an existing profile through that provider; never configure or bootstrap.
   const [
     {
-      AlchemyProfile,
+      ProviderProfileFileSchema,
+      profileProviderFilePath,
       AuthProviders,
       CredentialsStore,
       CredentialsStoreLive,
-      ProfileLive,
       getAuthProvider,
     },
     { CloudflareAuth },
+    { CloudflareAuthConfigSchema },
     { makeHttpStateStore },
+    { StoredStateStoreCredentials },
     { PlatformServices },
     { loadConfigProvider },
     Effect,
@@ -532,25 +534,28 @@ const makeReader = async (
     FetchHttpClient,
     ConfigProvider,
     Option,
+    Schema,
   ] = await Promise.all([
     import("alchemy/Auth"),
     import("../node_modules/alchemy/lib/Cloudflare/Auth/AuthProvider.js"),
+    import("../node_modules/alchemy/lib/Cloudflare/Auth/AuthConfig.js"),
     import("alchemy/State"),
+    import("../node_modules/alchemy/lib/Cloudflare/StateStore/CredentialsFile.js"),
     import("alchemy/Util/PlatformServices"),
     import("alchemy/Util/ConfigProvider"),
     import("effect/Effect"),
     import("effect/Layer"),
     import("effect/Redacted"),
-    import("effect/unstable/http/FetchHttpClient"),
+    import("effect/http/FetchHttpClient"),
     import("effect/ConfigProvider"),
     import("effect/Option"),
+    import("effect/Schema"),
   ]);
   const configProvider = await Effect.runPromise(
     loadConfigProvider(Option.none()).pipe(Effect.provide(PlatformServices))
   );
   const base = Layer.mergeAll(
     PlatformServices,
-    Layer.provide(ProfileLive, PlatformServices),
     Layer.provide(CredentialsStoreLive, PlatformServices),
     FetchHttpClient.layer,
     Layer.succeed(AuthProviders, {}),
@@ -558,34 +563,30 @@ const makeReader = async (
   );
   const credentials = await Effect.runPromise(
     Effect.gen(function* credentials() {
-      const profiles = yield* AlchemyProfile;
-      const configured = yield* profiles.getProfile(profile);
-      const config = configured?.["Cloudflare"];
-      if (config === undefined) {
+      // ProfileStoreLive can migrate or back up profile files on reads.
+      // Inspect only the existing provider document; sign-in/migration is separate.
+      const document = yield* Effect.tryPromise(() =>
+        readFile(profileProviderFilePath(profile, "Cloudflare"), "utf-8")
+      ).pipe(
+        Effect.flatMap(
+          Schema.decodeUnknownEffect(
+            Schema.fromJsonString(ProviderProfileFileSchema)
+          )
+        )
+      );
+      if (document.provider !== "Cloudflare") {
         return yield* Effect.fail(
           new Error("Existing Cloudflare profile required")
         );
       }
+      const config = document.values;
       const provider = yield* getAuthProvider<
         CloudflareAuthConfig,
         CloudflareResolvedCredentials
       >("Cloudflare");
-      const parsed = decode(
-        z.discriminatedUnion("method", [
-          z.object({ method: z.literal("env") }),
-          z.object({
-            credentialType: z.enum(["apiToken", "apiKey"]),
-            method: z.literal("stored"),
-          }),
-          z.object({
-            accountId: account,
-            method: z.literal("oauth"),
-            scopes: z.array(z.string()),
-          }),
-        ]),
-        config,
-        "Cloudflare profile configuration"
-      );
+      const parsed = yield* Schema.decodeUnknownEffect(
+        CloudflareAuthConfigSchema
+      )(config);
       return yield* provider.read(profile, parsed);
     }).pipe(
       Effect.provide(Layer.provideMerge(CloudflareAuth, base)),
@@ -672,7 +673,11 @@ const makeReader = async (
               authToken: z.string().min(1),
               url: z.url().startsWith("https://"),
             }),
-            yield* store.read(profile, "cloudflare-state-store"),
+            yield* store.read(
+              profile,
+              "cloudflare-state-store",
+              StoredStateStoreCredentials
+            ),
             "existing state-store credentials"
           );
           if (cached.accountId !== accountId) {
@@ -751,7 +756,7 @@ const readRelease = (
     );
   }
   const installed = decode(
-    z.object({ version: z.literal("2.0.0-beta.76") }),
+    z.object({ version: z.literal("2.0.0-beta.80") }),
     JSON.parse(
       readFileSync(`${repository}/node_modules/alchemy/package.json`, "utf-8")
     ),

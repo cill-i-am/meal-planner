@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { Cause, Effect, Exit, Fiber, Option, Schema, Stream } from "effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HouseholdReadEvidenceReferencesResult } from "../households/evidence/household-evidence.contract.js";
@@ -769,6 +769,7 @@ describe("native R2 generation commit", () => {
       sha256: expectedSha256,
       ytDlpVersion: "2026.08.19",
     });
+
     expect(
       JSON.stringify({
         keys: [mediaKey, manifestKey],
@@ -1071,6 +1072,7 @@ describe("native R2 generation commit", () => {
       expect(settled).toBe(false);
       await vi.advanceTimersByTimeAsync(1);
       const exit = await result;
+
       expect(Exit.isFailure(exit)).toBe(true);
       if (Exit.isFailure(exit)) {
         expect(

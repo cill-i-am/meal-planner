@@ -5,6 +5,7 @@ import {
   makeBrowserHouseholdProfileOperations,
   ProfileOperationError,
 } from "../household-profiles/index.js";
+import { browserObservedFetch } from "../observability/browser-observability.js";
 
 /** The roster supplies the currently linked participant; there is no target selector. */
 export const readCurrentPrivateProfile = async (scope: DisplayedIdentity) => {
@@ -24,7 +25,7 @@ export const continuePrivateConfirmation = async (
   signal: AbortSignal,
   scope: DisplayedIdentity
 ): Promise<"accepted" | "authentication_required" | "unavailable"> => {
-  const response = await fetch(
+  const response = await browserObservedFetch(
     `/v1/private-interviews/${encodeURIComponent(sessionReference)}/confirmations/${encodeURIComponent(mutationId)}`,
     {
       credentials: "same-origin",

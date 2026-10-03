@@ -6,7 +6,9 @@ import { expect, it } from "vitest";
 import { familyOperation } from "./family-operations.js";
 
 const userId = Schema.decodeUnknownSync(UserId)("retry-owner");
-const payload = Schema.decodeUnknownSync(CreateFamily)({
+const payload = Schema.decodeUnknownSync(CreateFamily, {
+  onExcessProperty: "error",
+})({
   mutationId: "00000000-0000-4000-8000-000000000123",
   name: "Retry family",
 });

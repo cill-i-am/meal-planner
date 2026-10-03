@@ -124,7 +124,9 @@ const binding = async (): Promise<PrivateSessionBinding> => ({
   sessionReference: crypto.randomUUID(),
 });
 const command = (
-  input: Record<string, unknown> & { readonly sessionReference: string }
+  input: Record<string, unknown> & {
+    readonly sessionReference: string;
+  }
 ) => {
   const headers: Record<string, string> = {
     "x-test-command": JSON.stringify(input),
@@ -140,7 +142,9 @@ const command = (
   });
 };
 const expectStatus = async (
-  pending: Promise<{ readonly status: number }>,
+  pending: Promise<{
+    readonly status: number;
+  }>,
   status: number
 ) => {
   const response = await pending;
@@ -151,7 +155,11 @@ const successful = async <A>(
 ): Promise<A> => {
   const response = await command(input);
   expect(response.status, await response.clone().text()).toBe(200);
-  return ((await response.json()) as { readonly result: A }).result;
+  return (
+    (await response.json()) as {
+      readonly result: A;
+    }
+  ).result;
 };
 const begin = async (
   input: PrivateSessionBinding,

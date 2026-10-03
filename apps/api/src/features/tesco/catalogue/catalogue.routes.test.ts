@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect";
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { AppRoutes } from "../../../app/routes.js";

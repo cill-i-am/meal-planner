@@ -1,5 +1,7 @@
 import * as Cloudflare from "alchemy/Cloudflare";
 
+export const ImportProviderGatewayId = "meal-planner-recipe-import";
+
 /**
  * Dedicated private recipe-import provider gateway.
  *
@@ -13,7 +15,7 @@ export const ImportProviderGateway = Cloudflare.AI.Gateway(
   {
     cacheTtl: null,
     collectLogs: false,
-    id: "meal-planner-recipe-import",
+    id: ImportProviderGatewayId,
     spendLimits: {
       enabled: true,
       rules: [

@@ -69,7 +69,9 @@ const execute = (
     profile: { facts: options.facts ?? [], version: 0 },
     scope: "ProfileEdit",
   });
-  const output = Schema.decodeUnknownSync(SubmitDiscoveryTurn)({
+  const output = Schema.decodeUnknownSync(SubmitDiscoveryTurn, {
+    onExcessProperty: "error",
+  })({
     intent: options.reply ?? {
       _tag: "Continue",
       proposals,
@@ -145,7 +147,9 @@ describe("application-owned private discovery messages", () => {
         profile: { facts: [], version: 0 },
         scope: "ProfileEdit",
       });
-      const output = Schema.decodeUnknownSync(SubmitDiscoveryTurn)({
+      const output = Schema.decodeUnknownSync(SubmitDiscoveryTurn, {
+        onExcessProperty: "error",
+      })({
         intent: {
           _tag: "Continue",
           proposals: [
@@ -345,7 +349,9 @@ describe("application-owned private discovery messages", () => {
     };
     expect(execute([], { reply }).message).toBe("We can stop here.");
     expect(() =>
-      Schema.decodeUnknownSync(SubmitDiscoveryTurn)({
+      Schema.decodeUnknownSync(SubmitDiscoveryTurn, {
+        onExcessProperty: "error",
+      })({
         intent: { ...reply, proposals: [add()] },
       })
     ).toThrow();

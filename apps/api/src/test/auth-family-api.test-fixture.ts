@@ -4,11 +4,7 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Redacted } from "effect";
-import {
-  HttpRouter,
-  HttpServerRequest,
-  HttpServerResponse,
-} from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 
 import { makeAuthFamilyHttpLayer } from "../auth-family.js";
 import { makeAlchemyMealPlannerAuth } from "../features/auth/auth.alchemy.js";

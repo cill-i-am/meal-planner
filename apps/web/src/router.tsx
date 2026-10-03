@@ -9,6 +9,7 @@ import {
   makeAuthClient,
   getAuthViewTransition,
 } from "./features/auth/index.js";
+import { getBrowserReporter } from "./features/observability/browser-observability.js";
 import { routeTree } from "./routeTree.gen.js";
 
 export const getRouter = () => {
@@ -31,6 +32,23 @@ export const getRouter = () => {
     routeTree,
     scrollRestoration: true,
   });
+
+  if (!router.isServer) {
+    const reporter = getBrowserReporter();
+    let navigationStart: number | undefined = performance.now();
+    router.subscribe("onBeforeNavigate", (event) => {
+      if (event.pathChanged) {
+        navigationStart = performance.now();
+      }
+    });
+    router.subscribe("onResolved", () => {
+      if (navigationStart === undefined) {
+        return;
+      }
+      reporter.navigation(navigationStart);
+      navigationStart = undefined;
+    });
+  }
 
   setupRouterSsrQueryIntegration({ queryClient, router });
   return router;

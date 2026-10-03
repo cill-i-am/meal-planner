@@ -4,6 +4,9 @@ export const websiteSource = {
   memo: {
     include: [
       "src/**",
+      "public/**",
+      "website-source.ts",
+      "../../tsconfig.base.json",
       "package.json",
       "tsconfig.json",
       "vite.config.ts",

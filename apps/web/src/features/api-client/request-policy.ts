@@ -1,5 +1,5 @@
 import { Option, Schedule, Schema } from "effect";
-import { HttpClientError } from "effect/unstable/http";
+import { HttpClientError } from "effect/http";
 
 /** One retry owner: Effect. React Query must not multiply these attempts. */
 export const transientRetry = {

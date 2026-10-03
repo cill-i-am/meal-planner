@@ -8,7 +8,7 @@ import {
   RecipeContent,
 } from "@meal-planner/recipe-domain";
 import { Context, Layer, Schema } from "effect";
-import { HttpClient, HttpClientRequest } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest } from "effect/http";
 import {
   HttpApi,
   HttpApiClient,
@@ -17,7 +17,7 @@ import {
   HttpApiMiddleware,
   HttpApiSchema,
   OpenApi,
-} from "effect/unstable/httpapi";
+} from "effect/http-api";
 
 const TrimmedNonEmptyString = Schema.String.pipe(
   Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
@@ -177,7 +177,7 @@ export type PublicSourceSummary = typeof PublicSourceSummary.Type;
 
 export const CreateRecipeImportIntentRequest = Schema.Struct({
   source: Schema.Struct({ kind: Schema.Literal("tiktok"), url: SourceUrl }),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type CreateRecipeImportIntentRequest =
   typeof CreateRecipeImportIntentRequest.Type;
 
@@ -414,19 +414,19 @@ export type RecipeImportAction = typeof RecipeImportAction.Type;
 export const AnswerReviewRecipeActionRequest = Schema.Struct({
   answers: UniqueRecipeReviewAnswers,
   expectedActionVersion: RecipeImportActionVersion,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type AnswerReviewRecipeActionRequest =
   typeof AnswerReviewRecipeActionRequest.Type;
 
 export const ConfirmRecipeImportActionRequest = Schema.Struct({
   expectedActionVersion: RecipeImportActionVersion,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type ConfirmRecipeImportActionRequest =
   typeof ConfirmRecipeImportActionRequest.Type;
 
 export const CancelRecipeImportIntentRequest = Schema.Struct({
   expectedIntentVersion: RecipeImportIntentVersion,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type CancelRecipeImportIntentRequest =
   typeof CancelRecipeImportIntentRequest.Type;
 
@@ -535,7 +535,7 @@ export const CreateRecipeImportBatchItemRequest = Schema.Struct({
     kind: Schema.Literal("tiktok"),
     url: SourceUrl,
   }),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type CreateRecipeImportBatchItemRequest =
   typeof CreateRecipeImportBatchItemRequest.Type;
 
@@ -553,7 +553,7 @@ export const CreateRecipeImportBatchRequest = Schema.Struct({
       )
     )
   ),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type CreateRecipeImportBatchRequest =
   typeof CreateRecipeImportBatchRequest.Type;
 
@@ -717,7 +717,9 @@ const InternalProblem = asProblemJson(InternalErrorProblemDetails).pipe(
 
 export class RecipeImportSessionAuth extends HttpApiMiddleware.Service<
   RecipeImportSessionAuth,
-  { provides: RecipeImportCurrentPrincipal }
+  {
+    provides: RecipeImportCurrentPrincipal;
+  }
 >()("RecipeImportSessionAuth", {
   error: UnauthorizedProblem,
 }) {}
@@ -856,6 +858,8 @@ const RecipesGroup = HttpApiGroup.make("recipes")
   .annotate(OpenApi.Title, "Recipes");
 
 export const RecipeImportApi = HttpApi.make("recipeImportApi")
+  .annotate(HttpApi.PayloadParseOptions, { onExcessProperty: "error" })
+  .annotate(HttpApi.QueryParseOptions, { onExcessProperty: "error" })
   .add(RecipeImportBatchesGroup, RecipeImportIntentsGroup, RecipesGroup)
   .middleware(RecipeImportSchemaErrors)
   .middleware(RecipeImportDefectBoundary)

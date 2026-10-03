@@ -37,7 +37,10 @@ export const useCreateFamily = () => {
   const queryClient = useQueryClient();
   const retained = usePendingRequest<CreateFamily>(`${user.id}:family-create`);
   const scope = user.id;
-  const [receipt, setReceipt] = useState<{ scope: string; result: Family }>();
+  const [receipt, setReceipt] = useState<{
+    scope: string;
+    result: Family;
+  }>();
   const saved = receipt?.scope === scope ? receipt.result : undefined;
   const mutation = useMutation({
     ...familyCreationMutationOptions(runtime, user.id),
@@ -70,7 +73,7 @@ export const useCreateFamily = () => {
       }
       const command =
         retained.pending ??
-        Schema.decodeUnknownSync(CreateFamily)({
+        Schema.decodeUnknownSync(CreateFamily, { onExcessProperty: "error" })({
           mutationId: crypto.randomUUID(),
           name,
         });

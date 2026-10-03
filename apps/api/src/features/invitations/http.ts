@@ -11,12 +11,8 @@ import {
 } from "@meal-planner/invitations";
 import { InvitationResponseService } from "@meal-planner/invitations/application";
 import { Effect, Layer, Schema } from "effect";
-import {
-  HttpEffect,
-  HttpServerRequest,
-  HttpServerResponse,
-} from "effect/unstable/http";
-import { HttpApiBuilder, HttpApiMiddleware } from "effect/unstable/httpapi";
+import { HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http";
+import { HttpApiBuilder, HttpApiMiddleware } from "effect/http-api";
 
 import { JsonHttpPlatformServices } from "../../infrastructure/json-http-platform.js";
 import { authorizeApplicationRequest } from "../auth/http.js";

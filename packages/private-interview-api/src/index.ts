@@ -80,7 +80,7 @@ export const ProfileCardChange = Schema.Union([
     factId: ProfileFactId,
     replacement: Schema.NullOr(ProfileFactValue),
   }),
-]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+]);
 export type ProfileCardChange = typeof ProfileCardChange.Type;
 export { InterviewProfileOutcome as ConfirmationOutcome } from "@meal-planner/household-api";
 export const ProfileCard = Schema.Struct({

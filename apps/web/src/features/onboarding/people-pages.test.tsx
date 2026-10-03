@@ -86,9 +86,9 @@ const makeTransport = (
   const renames: unknown[] = [];
   const removals: unknown[] = [];
   const createInvitation = async (request: Request): Promise<Response> => {
-    const payload = Schema.decodeUnknownSync(InviteHouseholdAdultPayload)(
-      await request.json()
-    );
+    const payload = Schema.decodeUnknownSync(InviteHouseholdAdultPayload, {
+      onExcessProperty: "error",
+    })(await request.json());
     invitations.push(payload);
     if (failures.invitationReply) {
       await failures.invitationReply;
@@ -140,9 +140,9 @@ const makeTransport = (
       });
     }
     if (path === "/v1/families/family-1/people" && request.method === "POST") {
-      const payload = Schema.decodeUnknownSync(CreateHouseholdPersonPayload)(
-        await request.json()
-      );
+      const payload = Schema.decodeUnknownSync(CreateHouseholdPersonPayload, {
+        onExcessProperty: "error",
+      })(await request.json());
       creates.push(payload);
       return Response.json(
         {
@@ -161,9 +161,9 @@ const makeTransport = (
       return createInvitation(request);
     }
     if (request.method === "PATCH") {
-      const payload = Schema.decodeUnknownSync(RenameHouseholdPersonPayload)(
-        await request.json()
-      );
+      const payload = Schema.decodeUnknownSync(RenameHouseholdPersonPayload, {
+        onExcessProperty: "error",
+      })(await request.json());
       renames.push(payload);
       const person = people.find((item) => path.includes(item.id));
       if (!person) {
@@ -179,7 +179,8 @@ const makeTransport = (
     }
     if (request.method === "DELETE") {
       const payload = Schema.decodeUnknownSync(
-        TransitionHouseholdPersonPayload
+        TransitionHouseholdPersonPayload,
+        { onExcessProperty: "error" }
       )(await request.json());
       removals.push(payload);
       if (rejectFirstRemove && removals.length <= 3) {

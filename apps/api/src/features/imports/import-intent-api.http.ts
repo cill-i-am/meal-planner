@@ -25,16 +25,12 @@ import {
   VersionConflictProblemDetails,
 } from "@meal-planner/recipe-import-api";
 import { absurd, Cause, Context, Effect, Layer, Schema } from "effect";
-import {
-  HttpRouter,
-  HttpServerRequest,
-  HttpServerResponse,
-} from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import {
   HttpApiBuilder,
   HttpApiMiddleware,
   HttpApiSchema,
-} from "effect/unstable/httpapi";
+} from "effect/http-api";
 
 import { JsonHttpPlatformServices } from "../../infrastructure/json-http-platform.js";
 import {

@@ -32,11 +32,11 @@ export type Family = typeof Family.Type;
 export const CreateFamily = Schema.Struct({
   mutationId: HouseholdPersonMutationId,
   name: FamilyName,
-}).annotate({ parseOptions: { onExcessProperty: "error" } });
+});
 export type CreateFamily = typeof CreateFamily.Type;
 export const UpdateFamily = Schema.Struct({
   expectedVersion: FamilyVersion,
   mutationId: HouseholdPersonMutationId,
   name: FamilyName,
-}).annotate({ parseOptions: { onExcessProperty: "error" } });
+});
 export type UpdateFamily = typeof UpdateFamily.Type;

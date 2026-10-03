@@ -22,7 +22,9 @@ describe("household people public contract", () => {
     );
 
     expect(
-      Schema.decodeUnknownSync(CreateHouseholdPersonPayload)({
+      Schema.decodeUnknownSync(CreateHouseholdPersonPayload, {
+        onExcessProperty: "error",
+      })({
         displayName: "Aoife",
         kind: "adult",
         mutationId,
@@ -73,20 +75,26 @@ describe("household people public contract", () => {
       Schema.decodeUnknownSync(HouseholdPersonId)("person-readable-name")
     ).toThrow();
     expect(() =>
-      Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)({
+      Schema.decodeUnknownSync(TransitionHouseholdPersonPayload, {
+        onExcessProperty: "error",
+      })({
         expectedVersion: 0,
         mutationId,
       })
     ).toThrow();
     expect(() =>
-      Schema.decodeUnknownSync(CreateHouseholdPersonPayload)({
+      Schema.decodeUnknownSync(CreateHouseholdPersonPayload, {
+        onExcessProperty: "error",
+      })({
         displayName: "Aoife",
         kind: "visitor",
         mutationId,
       })
     ).toThrow();
     expect(() =>
-      Schema.decodeUnknownSync(BootstrapHouseholdCreatorPayload)({
+      Schema.decodeUnknownSync(BootstrapHouseholdCreatorPayload, {
+        onExcessProperty: "error",
+      })({
         displayName: "x".repeat(129),
         mutationId,
       })
@@ -107,7 +115,9 @@ describe("household people public contract", () => {
 
   it("rejects excess public roster query keys with the schema default decoder", () => {
     expect(() =>
-      Schema.decodeUnknownSync(ListHouseholdPeopleUrlParams)({
+      Schema.decodeUnknownSync(ListHouseholdPeopleUrlParams, {
+        onExcessProperty: "error",
+      })({
         includeArchived: "true",
         unexpected: "x",
       })
@@ -141,7 +151,9 @@ describe("household people public contract", () => {
 
   it("recovers an invitation only from the retained original intent", () => {
     expect(
-      Schema.decodeUnknownSync(AssociateHouseholdAdultInvitationPayload)({
+      Schema.decodeUnknownSync(AssociateHouseholdAdultInvitationPayload, {
+        onExcessProperty: "error",
+      })({
         email: "adult@example.test",
         mutationId: "invitation-original-intent",
         personId: "person_00000000-0000-4000-8000-000000000101",
@@ -152,7 +164,9 @@ describe("household people public contract", () => {
       personId: "person_00000000-0000-4000-8000-000000000101",
     });
     expect(() =>
-      Schema.decodeUnknownSync(AssociateHouseholdAdultInvitationPayload)({
+      Schema.decodeUnknownSync(AssociateHouseholdAdultInvitationPayload, {
+        onExcessProperty: "error",
+      })({
         email: "adult@example.test",
         invitationId: "invitation-chosen-by-the-browser",
         mutationId: "invitation-original-intent",

@@ -5,9 +5,10 @@ import { CreateFamily, Family, UpdateFamily } from "./family.js";
 
 it("accepts family display names independently of slugs and rejects caller-supplied authority", () => {
   const input = { mutationId: "create-family-1111", name: "  Murphy family  " };
-  expect(Schema.decodeUnknownSync(CreateFamily)(input).name).toBe(
-    "Murphy family"
-  );
+  expect(
+    Schema.decodeUnknownSync(CreateFamily, { onExcessProperty: "error" })(input)
+      .name
+  ).toBe("Murphy family");
   for (const extra of [
     { userId: "other" },
     { slug: "chosen" },
@@ -15,11 +16,14 @@ it("accepts family display names independently of slugs and rejects caller-suppl
     { setup: { status: "complete" } },
   ]) {
     expect(() =>
-      Schema.decodeUnknownSync(CreateFamily)({ ...input, ...extra })
+      Schema.decodeUnknownSync(CreateFamily, { onExcessProperty: "error" })({
+        ...input,
+        ...extra,
+      })
     ).toThrow();
   }
   expect(() =>
-    Schema.decodeUnknownSync(UpdateFamily)({
+    Schema.decodeUnknownSync(UpdateFamily, { onExcessProperty: "error" })({
       mutationId: "rename-family-1111",
       name: "Changed",
     })

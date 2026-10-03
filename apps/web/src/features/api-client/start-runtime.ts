@@ -10,6 +10,7 @@ import {
 import { Predicate, Schema } from "effect";
 
 import type { MealPlannerApiService } from "../../api-proxy.js";
+import { getBrowserReporter } from "../observability/browser-observability.js";
 import { browserApiRuntime } from "./runtime.js";
 import type { ApiRuntime } from "./runtime.js";
 import { serverApiRuntime } from "./server-transport.js";
@@ -30,7 +31,7 @@ const BindingContext = Schema.Struct({
 });
 
 export const startApiRuntime = createIsomorphicFn()
-  .client(() => browserApiRuntime())
+  .client(() => ({ ...browserApiRuntime(), fetch: getBrowserReporter().fetch }))
   .server((): ApiRuntime => {
     const incoming = getRequest();
     return {

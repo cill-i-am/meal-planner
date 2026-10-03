@@ -65,13 +65,17 @@ describe("closed application-owned profile clarification", () => {
   });
   it("rejects arbitrary questions, ordinary-meal reasons, unknown fact IDs and silent pending replacement", () => {
     expect(() =>
-      Schema.decodeUnknownSync(PrivateDiscoveryClarificationUpdate)({
+      Schema.decodeUnknownSync(PrivateDiscoveryClarificationUpdate, {
+        onExcessProperty: "error",
+      })({
         ...request,
         question: "What do you usually eat?",
       })
     ).toThrow();
     expect(() =>
-      Schema.decodeUnknownSync(PrivateDiscoveryClarificationUpdate)({
+      Schema.decodeUnknownSync(PrivateDiscoveryClarificationUpdate, {
+        onExcessProperty: "error",
+      })({
         ...request,
         request: { _tag: "UsualMeals" },
       })

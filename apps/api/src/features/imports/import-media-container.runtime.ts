@@ -6,8 +6,8 @@ import path from "node:path";
 import { Readable } from "node:stream";
 
 import { Effect, Option, Schema, Stream } from "effect";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import { makeContainerMediaAcquirer } from "./import-media-acquirer.container.js";
 import type { MediaAcquirer } from "./import-media-acquirer.js";
@@ -430,6 +430,8 @@ export default TikTokMediaContainer.make(
     instanceType: "standard-1",
     main: import.meta.url,
     maxInstances: 2,
+    observability: { logs: { enabled: true } },
+    publish: { repository: "meal-planner-media" },
     runtime: "node",
   },
   ProductionTikTokMediaContainerRuntime

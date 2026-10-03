@@ -5,8 +5,8 @@ import {
   makeHouseholdPeopleApiClientLayer,
 } from "@meal-planner/household-api";
 import { Cause, Effect, Exit, Layer, Option, Schema } from "effect";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
+import { apiHttpLayer, browserApiRuntime } from "../api-client/runtime.js";
 import { displayedIdentityHeaders } from "../auth/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
 import { ProfileOperationError } from "./operations.js";
@@ -49,7 +49,7 @@ export const makeBrowserHouseholdProfileOperations = (
     const layer = makeHouseholdPeopleApiClientLayer({
       baseUrl: globalThis.location.origin,
       headers: displayedIdentityHeaders(scope),
-    }).pipe(Layer.provide(FetchHttpClient.layer));
+    }).pipe(Layer.provide(apiHttpLayer(browserApiRuntime())));
     const exit = await Effect.runPromiseExit(
       HouseholdPeopleApiClient.pipe(
         Effect.flatMap(operation),

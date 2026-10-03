@@ -1,6 +1,6 @@
 import type { Schema } from "effect";
 import { Effect } from "effect";
-import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import { HttpServerRequest, HttpServerResponse } from "effect/http";
 
 import { InvalidRequest, toHttpFailureResponse } from "./http-failure.js";
 import type { HttpFailure } from "./http-failure.js";

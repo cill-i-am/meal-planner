@@ -73,7 +73,12 @@ class Socket implements PrivateInterviewSocket {
     if (command?.type !== type) {
       throw new Error(`Expected ${type}`);
     }
-    return command as Extract<DirectoryCommand | SessionCommand, { type: T }>;
+    return command as Extract<
+      DirectoryCommand | SessionCommand,
+      {
+        type: T;
+      }
+    >;
   }
 }
 
@@ -86,7 +91,10 @@ const list = (socket: Socket, reservations = [reservation]) =>
   });
 
 const fixture = () => {
-  const sockets: { readonly path: string; readonly socket: Socket }[] = [];
+  const sockets: {
+    readonly path: string;
+    readonly socket: Socket;
+  }[] = [];
   const storage = new Map<string, string>();
   let ordinal = 1;
   const dependencies = {
@@ -1265,8 +1273,11 @@ it("reconciles recovered confirmation once without automatic household continuat
   expect(client.getSnapshot().confirmationStatus).toBe("idle");
   expect(client.getSnapshot().pendingConfirmation).toBe(exact.mutationId);
 });
-
-const chatHistory = (activeRun: { runId: string } | null = null) =>
+const chatHistory = (
+  activeRun: {
+    runId: string;
+  } | null = null
+) =>
   Response.json({
     activeRun,
     messages: [

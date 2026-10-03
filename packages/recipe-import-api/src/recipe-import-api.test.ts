@@ -2,9 +2,9 @@ import {
   emptyRecipeDetails,
   recipeIngredientFromText,
 } from "@meal-planner/recipe-domain";
-import { Option, Schema } from "effect";
+import { Context, Option, Schema } from "effect";
 import type { JsonSchema } from "effect";
-import { OpenApi } from "effect/unstable/httpapi";
+import { HttpApi, OpenApi } from "effect/http-api";
 import { describe, expect, it } from "vitest";
 
 import * as Protocol from "./index.js";
@@ -278,8 +278,7 @@ describe("RecipeImportIntent protocol", () => {
     );
     expect(() => Schema.decodeUnknownSync(IdempotencyKey)(" ")).toThrow();
   });
-
-  it("rejects excess properties at every public mutation boundary by default", () => {
+  it("rejects excess properties with the public mutation payload policy", () => {
     for (const [schema, value] of [
       [
         CreateRecipeImportIntentRequest,
@@ -307,7 +306,15 @@ describe("RecipeImportIntent protocol", () => {
         { expectedIntentVersion: 1, workflowId: "hidden" },
       ],
     ] as const) {
-      expect(() => Schema.decodeUnknownSync(schema)(value)).toThrow();
+      expect(() =>
+        Schema.decodeUnknownSync(
+          schema,
+          Context.getUnsafe(
+            RecipeImportApi.annotations,
+            HttpApi.PayloadParseOptions
+          )
+        )(value)
+      ).toThrow();
     }
   });
 
@@ -388,7 +395,9 @@ describe("RecipeImportIntent protocol", () => {
 
   it("rejects duplicate answer fields before invoking an action mutation", () => {
     expect(() =>
-      Schema.decodeUnknownSync(Protocol.AnswerReviewRecipeActionRequest)({
+      Schema.decodeUnknownSync(Protocol.AnswerReviewRecipeActionRequest, {
+        onExcessProperty: "error",
+      })({
         answers: [
           { field: "name", value: "First name" },
           { field: "name", value: "Second name" },

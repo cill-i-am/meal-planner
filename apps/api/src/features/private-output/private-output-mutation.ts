@@ -19,9 +19,14 @@ export const runOutputFencedMutation = async <A>(
   },
   canonical: () => Promise<A>
 ): Promise<A> => {
+  const intent = {
+    intentKey: input.intentKey,
+    key: input.key,
+    scope: input.scope,
+  };
   const retained = input.reconcileOnly
-    ? await output.findPendingMutation(input)
-    : await output.beginMutation(input);
+    ? await output.findPendingMutation(intent)
+    : await output.beginMutation(intent);
   if (retained === null) {
     return canonical();
   }

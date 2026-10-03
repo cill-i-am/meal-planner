@@ -165,7 +165,9 @@ const CreatorBootstrapForm = ({
         return;
       }
       onMutate(
-        Schema.decodeUnknownSync(BootstrapHouseholdCreatorPayload)({
+        Schema.decodeUnknownSync(BootstrapHouseholdCreatorPayload, {
+          onExcessProperty: "error",
+        })({
           ...value,
           mutationId: mutationId(),
         })
@@ -252,7 +254,9 @@ const CreatePersonForm = ({
         return;
       }
       onMutate(
-        Schema.decodeUnknownSync(CreateHouseholdPersonPayload)({
+        Schema.decodeUnknownSync(CreateHouseholdPersonPayload, {
+          onExcessProperty: "error",
+        })({
           ...value,
           mutationId: mutationId(),
         })
@@ -380,7 +384,8 @@ const PeopleList = ({
                 onTransition({
                   action,
                   payload: Schema.decodeUnknownSync(
-                    TransitionHouseholdPersonPayload
+                    TransitionHouseholdPersonPayload,
+                    { onExcessProperty: "error" }
                   )({
                     expectedVersion: person.version,
                     mutationId: mutationId(),
@@ -487,9 +492,7 @@ const TransitionRetryIntentActions = ({
     <RetryIntentActions
       disabled={disabled}
       onRetry={() => onRetry(variables)}
-      retryLabel={`Retry ${
-        variables.action === "archive" ? "archiving" : "restoring"
-      } ${personName ?? "this person"}`}
+      retryLabel={`Retry ${variables.action === "archive" ? "archiving" : "restoring"} ${personName ?? "this person"}`}
     />
   );
 
@@ -897,7 +900,8 @@ export const HouseholdPeoplePanel = ({
                     cancelDeparture.mutate({
                       operationId: operation.operationId,
                       payload: Schema.decodeUnknownSync(
-                        CancelHouseholdAdultDeparturePayload
+                        CancelHouseholdAdultDeparturePayload,
+                        { onExcessProperty: "error" }
                       )({
                         expectedOperationVersion: operation.version,
                         mutationId: mutationId(),
@@ -933,7 +937,8 @@ export const HouseholdPeoplePanel = ({
                     retryDeparture.mutate({
                       operationId: operation.operationId,
                       payload: Schema.decodeUnknownSync(
-                        RetryHouseholdAdultDeparturePayload
+                        RetryHouseholdAdultDeparturePayload,
+                        { onExcessProperty: "error" }
                       )({
                         expectedOperationVersion: operation.version,
                         memberId,
@@ -1125,6 +1130,7 @@ export const HouseholdPeoplePanel = ({
       </section>
     );
   };
+
   return (
     <departureState.Subscribe selector={(state) => state.values.operation}>
       {(departureOperation) => renderHouseholdPeople(departureOperation)}

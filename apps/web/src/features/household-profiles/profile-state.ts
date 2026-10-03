@@ -169,7 +169,9 @@ export const useHouseholdProfileState = ({
       return;
     }
     const change: PendingProfileChange = {
-      payload: Schema.decodeUnknownSync(MutatePersonProfilePayload)({
+      payload: Schema.decodeUnknownSync(MutatePersonProfilePayload, {
+        onExcessProperty: "error",
+      })({
         command,
         expectedProfileVersion: profile.version,
         mutationId: Schema.decodeUnknownSync(HouseholdPersonMutationId)(

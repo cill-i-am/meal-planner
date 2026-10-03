@@ -74,6 +74,9 @@ a family owned by that run. Never use another person's household as test data.
 
 ## Repeatable integrated browser suite
 
+Run `pnpm test:stack` for the actual local Alchemy graph, including auth D1 and
+household creation through native service bindings.
+
 Run `pnpm --filter @meal-planner/web test:e2e` for the scoped native Worker
 journeys. [Local development](../../../how-to/local-development.md#run-the-auth-and-family-reference-journey)
 lists prerequisites and a manual server command. The

@@ -34,7 +34,9 @@ const providerTaskFailureReasonCode = (
 ): ProviderTaskFailureCheckpoint["reasonCode"] =>
   "reasonCode" in error ? error.reasonCode : undefined;
 
-export const isRetryableProviderTaskFailure = (code: string) =>
+export const isRetryableProviderTaskFailure = (
+  code: string
+): code is "provider_unavailable" | "throttled" | "timeout" =>
   code === "provider_unavailable" || code === "throttled" || code === "timeout";
 
 const retryExhaustedCheckpoint = (
@@ -149,9 +151,11 @@ export const runProviderTaskAttempt = <
                 providerStage: stage,
               });
             }
-            return yield* Effect.die(
-              new Error(`Retryable provider task failure: ${code}`)
-            );
+            return yield* Effect.fail({
+              _tag: "RetryableProviderTaskFailure" as const,
+              code,
+              stage,
+            });
           });
         },
         onSuccess: (value) =>

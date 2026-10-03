@@ -1,7 +1,15 @@
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-import cloudflareRolldown from "@distilled.cloud/cloudflare-rolldown-plugin";
-import * as Bundle from "alchemy/Bundle";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import {
+  Artifacts,
+  createArtifactStore,
+  makeScopedArtifacts,
+} from "alchemy/Artifacts";
+import type * as Bundle from "alchemy/Bundle";
+import { makeSourceContext, resolveSource } from "alchemy/Cloudflare/Workers";
+import { readMigrationRecords } from "alchemy/SQL/Migrations/index";
 import { Effect, Schema } from "effect";
 import type { MiniflareWorkerConfig } from "miniflare";
 
@@ -19,22 +27,65 @@ export const bundleWorkerFixture = async (
   if (outputDirectory !== undefined) {
     outputOptions.dir = outputDirectory;
   }
-  const output = await Effect.runPromise(
-    Bundle.build(
-      {
-        checks: { ineffectiveDynamicImport: false, unresolvedImport: false },
-        external: ["cloudflare:workers"],
-        input: inputPath,
-        plugins: [
-          cloudflareRolldown({
-            compatibilityDate: "2026-07-14",
-            compatibilityFlags: ["nodejs_compat"],
-          }),
-        ],
-      },
-      outputOptions
+  const { bundle: output } = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* buildNativeWorkerFixture() {
+        const dir = "./apps/api/household-migrations";
+        const table = "__drizzle_migrations";
+        const records = yield* readMigrationRecords(
+          fileURLToPath(new URL("../../household-migrations", import.meta.url))
+        );
+        const sqlMigrations = {
+          [`alchemy:sql-migrations:${JSON.stringify([dir, table])}`]: {
+            _tag: "Cloudflare.SqlMigrations",
+            records,
+            table,
+          },
+        };
+        const props = {
+          build: {
+            input: {
+              checks: {
+                ineffectiveDynamicImport: false,
+                unresolvedImport: false,
+              },
+              external: ["cloudflare:workers"],
+              transform: {
+                define: {
+                  __MEAL_PLANNER_TEST_SQL_MIGRATIONS__:
+                    JSON.stringify(sqlMigrations),
+                },
+              },
+            },
+            output: outputOptions,
+          },
+          isExternal: true,
+          main: inputPath,
+        };
+        const source = yield* resolveSource(props);
+        const id = path.basename(inputPath);
+        return yield* source.build(
+          makeSourceContext({
+            compatibility: { date: "2026-07-14", flags: ["nodejs_compat"] },
+            fqn: id,
+            id,
+            props,
+            stack: { name: "MealPlanner", stage: "native-test" },
+            workerName: id,
+          })
+        );
+      })
+    ).pipe(
+      Effect.provideService(
+        Artifacts,
+        makeScopedArtifacts(createArtifactStore(), "native-test")
+      ),
+      Effect.provide(NodeServices.layer)
     )
   );
+  if (output === undefined) {
+    throw new Error("Native Worker fixture must contain a server bundle");
+  }
   const [entry, ...assets] = output.files;
   const modulesRoot = path.resolve(path.dirname(entry.path));
   return {

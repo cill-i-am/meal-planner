@@ -1,5 +1,5 @@
 import { Effect, FileSystem, Layer, Path } from "effect";
-import { Etag, HttpPlatform } from "effect/unstable/http";
+import { Etag, HttpPlatform } from "effect/http";
 
 /** JSON-only Worker APIs do not expose file responses. */
 const WorkerHttpPlatform = Layer.succeed(HttpPlatform.HttpPlatform, {

@@ -16,7 +16,7 @@ import {
 } from "effect";
 
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
-import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
+import { ImportProviderGatewayId } from "../../infrastructure/import-provider-gateway.js";
 import { ProviderAccountingDatabase } from "../../infrastructure/provider-accounting-database.js";
 import {
   HouseholdClaimAcquisitionAttemptResult,
@@ -668,9 +668,11 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
     const providerAccountingQueryDatabase = yield* Cloudflare.D1.QueryDatabase(
       ProviderAccountingDatabase
     );
-    const providerGateway = yield* Cloudflare.AI.QueryGateway(
-      ImportProviderGateway
-    );
+    const workersAi = yield* Cloudflare.Workers.AI();
+    const providerGateway = {
+      id: Effect.succeed(ImportProviderGatewayId),
+      raw: workersAi.raw,
+    };
     const evidenceBucket =
       yield* Cloudflare.R2.ReadWriteBucket(ImportEvidenceBucket);
     const mediaObjects = yield* ImportMediaAcquisitionObject;
@@ -1406,7 +1408,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
     Effect.provide(
       Layer.mergeAll(
         Cloudflare.D1.QueryDatabaseBinding,
-        Cloudflare.AI.QueryGatewayBinding,
+        Cloudflare.Workers.AIBinding,
         Cloudflare.R2.ReadWriteBucketBinding
       )
     )

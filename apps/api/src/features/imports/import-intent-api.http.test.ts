@@ -20,8 +20,8 @@ import {
   makeRecipeImportApiClientLayer,
 } from "@meal-planner/recipe-import-api";
 import { Effect, Layer, Schema } from "effect";
-import { FetchHttpClient, HttpRouter } from "effect/unstable/http";
-import { OpenApi } from "effect/unstable/httpapi";
+import { FetchHttpClient, HttpRouter } from "effect/http";
+import { OpenApi } from "effect/http-api";
 import { afterAll, describe, expect, it } from "vitest";
 
 import {

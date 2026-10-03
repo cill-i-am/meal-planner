@@ -65,7 +65,9 @@ export const handlePrivateChatRequest = Effect.fn(
               })
               .pipe(Effect.flatMap(Schema.decodeUnknownEffect(PersonProfile)))
           : null;
-      const context = yield* Schema.decodeUnknownEffect(PrivateChatContext)({
+      const context = yield* Schema.decodeUnknownEffect(PrivateChatContext, {
+        onExcessProperty: "error",
+      })({
         binding: {
           accountKey: current.accountKey,
           householdKey: current.householdKey,

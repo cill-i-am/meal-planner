@@ -5,15 +5,28 @@ The repo defines one Alchemy v2 stack, `MealPlanner`. It includes the
 and `ProviderAccountingDatabase` for provider operations. These logical IDs
 identify resources. Renaming one is not a cosmetic change.
 
-The pinned infrastructure toolchain is Alchemy `2.0.0-beta.76`, Effect and
-`@effect/platform-node` `4.0.0-rc.112`, Node `>=24.20.0`, and pnpm `12.3.4`.
+The pinned infrastructure toolchain is Alchemy `2.0.0-beta.80`, Effect and
+`@effect/platform-node` `4.0.0`, Node `>=24.20.0`, and pnpm `12.3.4`.
 CI runs Node `24.20.0`.
 
 The API review used the installed package and official
-[`v2.0.0-beta.76` source tag](https://github.com/alchemy-run/alchemy/tree/v2.0.0-beta.76).
-That review noted `2.0.0-beta.79` on the Alchemy site, but did not adopt it.
+[`v2.0.0-beta.80` source tag](https://github.com/alchemy-run/alchemy/tree/v2.0.0-beta.80).
 Check official guidance against the installed version when changing this code;
 a newer example is not a reason to upgrade.
+
+The checked-in patch retains atomic D1 migration imports, queue consumer
+readback and reconciliation, and canonical Worker metadata hashing. The local
+provider regression tests still require these fixes on beta.80.
+
+Effect core, platform-node, SQL adapters, and the Effect test adapter use
+stable `4.0.0`. Ordinary tests run on Vitest `5.0.3`. Native Worker tests
+run in `tools/worker-tests` on Vitest `4.1.11`, the version supported by the
+Cloudflare plugin. This keeps both runtimes within their supported peer ranges.
+
+The Alchemy auth adapter requires Better Auth and its Drizzle adapter `1.7.5`.
+The checked-in auth migration replaces issuer-based account identity with a
+unique provider/account pair and keeps credentials and sessions. Review it
+through the existing D1 preflight before any separately authorized deployment.
 
 ## Stages, profiles, and accounts
 
@@ -70,16 +83,17 @@ that infrastructure and can refresh local state-store credentials. That is a
 Cloudflare/account/authentication mutation, even when the intended command is
 only a plan.
 
-The pinned Alchemy `dev` command internally enables automatic approval for
-state-store updates. Meal Planner therefore exposes no `alchemy:dev` wrapper;
-do not invoke it directly. It remains a separately prohibited mutating command.
+Native `pnpm dev` uses local state and a guarded developer stage. It does not
+bootstrap hosted state or provision the AI Gateway. Deployment and plan still use
+the hosted state described above. See the [local development guide](local-development.md)
+for the native runtime and test harness; remote AI bindings need a valid profile.
 
 Before the first real command, an operator must:
 
 1. name the Cloudflare account and profile;
 2. independently verify the account selected by the profile;
 3. obtain explicit approval for the state bootstrap or upgrade;
-4. follow the command printed by the pinned Alchemy CLI (v2.0.0-beta.76 uses
+4. follow the command printed by the pinned Alchemy CLI (v2.0.0-beta.80 uses
    `pnpm alchemy cloudflare bootstrap --profile <profile>`); and
 5. record the created shared state infrastructure and its owner.
 
@@ -352,7 +366,8 @@ the same Workflow identity and record their delivery result through a closed
 system command.
 
 Batch admission separately commits canonical batch, item, replay, and outbox
-facts in the same household object. Its alarm sends identifier-only messages to
+facts and a durable dispatch callback in one native storage transaction. Alchemy's
+callback scheduler sends identifier-only messages to
 `HouseholdImportBatchQueue`. `MealPlannerApi` consumes that Queue and starts one
 deterministic `HouseholdImportBatchItemWorkflow` per item generation. The
 Workflow coordinates ordinary import admission, acquisition dispatch, and
@@ -363,8 +378,8 @@ deterministic Workflow identity. It records the closed `dispatch_exhausted`
 failure through the private household boundary only when the start adapter can
 prove that no Workflow started. An unavailable probe remains retryable and
 cannot contradict a committed Workflow or orphan its household outbox. A Queue
-send remains recorded while that outbox stays alarm-eligible until household
-item settlement, so alarms keep reconciling the stable identity; errored or
+send remains recorded while that outbox stays callback-eligible until household
+item settlement, so callbacks keep reconciling the stable identity; errored or
 terminated instances restart by that identity, while active or unknown
 instances are never terminally settled.
 Neither Queue is canonical, and neither carries submitted source, idempotency,
@@ -388,7 +403,96 @@ structural checks retain static configuration, privacy, policy, and deployment
 identity guards that cannot be supplied by a local runtime; semantic tests
 exercise import contracts such as immutable generation-scoped evidence keys and
 the bounded retry behavior through their public helpers and local runtime.
-Neither layer proves Cloudflare provider lifecycle, Worker bundling, remote
-state access, account selection, or a deployed URL. Real Alchemy stack and
-provider tests create cloud resources and require separate, action-time
+`pnpm test:stack` additionally proves the real local Alchemy graph, Worker
+bundling, D1 migrations and native service bindings using `Test.make({ dev: true })`.
+Local tests do not prove remote state access, account selection or a deployed URL.
+Live provider tests create cloud resources and require separate, action-time
 approval plus an isolated stage and cleanup plan.
+
+## Native observability and shared media builds
+
+All four application Workers use `worker-observability.ts`: invocation logs and
+traces are enabled, persisted, and sampled at 100%, with compatibility date
+`2026-09-25`. The API and household Effect hosts provide `Cloudflare.Telemetry()`.
+Alchemy registers a fresh tracer for fetch, RPC, Queue, Workflow and Durable Object
+events; named `Effect.fn` and `Effect.withSpan` operations join native binding
+spans. The Website and native Agents Worker have platform tracing and logs.
+Node container internals need a separately configured exporter for Effect spans;
+this configuration does not add one or promise a continuous distributed trace
+across durable restarts. Existing job correlation IDs remain authoritative.
+
+On 3 October 2026 the owner requested full platform telemetry for the prelaunch
+application, accepting automatic URL metadata. Application-authored telemetry
+still uses safe fields and redacted credentials. Revisit sampling and platform
+metadata before onboarding real users. A code change does not activate telemetry
+in a deployed Worker; the separately authorized deployment does that.
+
+Until 1 December 2026, Workers logs and trace spans share the Paid allowance of
+20 million events per month, then $0.60 per additional million, with seven-day
+retention. From 1 December the shared Paid allowance becomes 50 GB ingested and
+12 GB-month stored per billing cycle; additional usage costs $0.25/GB ingested
+and $0.10/GB-month stored. These are account-level allowances, not one allowance
+per Worker. For example, 30 million combined events currently cost $6 beyond the
+included allowance. The new pricing measures pre-compression bytes, so span count
+alone cannot predict that bill. See [Workers log pricing](https://developers.cloudflare.com/workers/observability/logs/workers-logs/)
+and [Cloudflare Observability pricing](https://developers.cloudflare.com/observability/pricing/).
+
+The media container streams its logs to Cloudflare and publishes to `meal-planner-media` in the selected Cloudflare
+account. Alchemy reuses identical content-hash images and shared `:buildcache`
+layers across stages, while deployments remain pinned to manifest digests.
+Applications and instances stay isolated by stage. Base images and downloaded
+media tools remain pinned. This registry configuration takes effect on deployment;
+local media tests now reuse Docker's normal build-layer cache. Test images,
+containers and workspaces remain disposable, while compiled layers survive
+repeated local checks.
+
+## Query spans and request completion events
+
+Ordinary Drizzle instances in auth D1, provider-accounting D1 and private-output
+Agents use `cloudflare-drizzle-tracing`. Query, transaction, savepoint and batch
+spans join the current native trace. Parameter capture stays off. Household
+Drizzle uses the Effect SQL adapter, which already emits `sql.execute` spans;
+it is not wrapped by the Promise-based tracing package.
+
+The API emits one structured `http.request.completed` event per handler outcome,
+including method, path, status, duration, request ID, trace/span IDs and safe error
+categories. Query strings and auth reset-token path segments are omitted from
+this application event. Ordinary responses expose `x-request-id`; import jobs
+reuse that ID as their persisted correlation ID. Raw responses and WebSocket
+upgrades pass through unchanged. Duration measures handler response handoff,
+not an entire stream or WebSocket session. Native spans retain dependency detail;
+these events provide a searchable outcome without reconstructing scattered lines.
+
+The household host captures `Cloudflare.SqlMigrations` during construction and
+uses Alchemy to apply pending SQL at activation. It retains the existing
+`__drizzle_migrations` table and adopts its modern ledger in place without replay.
+Drizzle remains the schema generator. Auth D1 migration ownership and deployment
+preflight remain unchanged. Native adoption and rollback tests protect that seam.
+
+Website memo inputs include public assets, shared compiler configuration and
+workspace sources, so unchanged builds reuse Alchemy's cache while those changes
+correctly invalidate it. No cloud plan or deployment is needed to verify local
+startup and the test graph.
+
+## Browser performance and diagnostics
+
+Before a production deployment, set `WEB_ANALYTICS_HOST` to the hostname users
+visit, without a scheme or path. Alchemy creates `MealPlannerWebAnalytics` and
+binds its public beacon token to the Website. Do not create another site or
+manually inject a second beacon in Cloudflare's dashboard. The stack returns
+`webAnalyticsSiteId`. Local and preview stages omit RUM; production activation
+requires a deployment. No provider credentials are exposed in HTML.
+
+Use Cloudflare Web Analytics for browser page performance and Core Web Vitals.
+Use Worker Logs with `event = browser.event` for app API timings, navigation and
+uncaught error categories. Match `browser.requestId` with `requestId` on
+`http.request.completed` to find the corresponding server trace. Reports do not
+include submitted content, error messages or raw browser paths. They are client
+claims and may be missing; they do not establish application success.
+
+The browser sends at most 30 events per minute. The API additionally applies a
+native 60/minute/IP rate limit before decoding at most 4 KiB. These approximate
+limits prevent ordinary error loops from producing unlimited logs, but are not
+global billing caps. RUM is free. Diagnostic requests and generated logs/spans
+use the normal Worker and Observability allowances described above. See the
+[browser implementation and limits](../reference/engineering/OBSERVABILITY.md#browser-diagnostics).

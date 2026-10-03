@@ -17,6 +17,56 @@ describe("Alchemy command guard", () => {
     "a".repeat(64),
   ];
 
+  it("starts native dev on the canonical stack without requiring a cloud profile", () => {
+    const calls: { command: string; args: readonly string[] }[] = [];
+    expect(
+      runAlchemyCommand("dev", [], (command, args) => {
+        calls.push({ args, command });
+        return 0;
+      })
+    ).toBe(0);
+    expect(calls[0]?.command).toBe("dev");
+    expect(calls[0]?.args[0]).toBe(
+      fileURLToPath(new URL("../alchemy.run.ts", import.meta.url))
+    );
+    expect(calls[0]?.args[1]).toBe("--stage");
+    expect(calls[0]?.args[2]).toMatch(/^dev_[a-z0-9_-]+$/u);
+  });
+
+  it.each(["prod", "live_cillian", "pr-42"])(
+    "refuses native dev in the %s deployment stage",
+    (stage) => {
+      expect(() =>
+        runAlchemyCommand("dev", ["--stage", stage], () => {
+          throw new Error("must not run");
+        })
+      ).toThrow("isolated dev_<name>");
+    }
+  );
+
+  it("keeps native dev targeting and selection options explicit", () => {
+    const args = [
+      "--stage",
+      "dev_fixture",
+      "--env-file",
+      "/tmp/local.vars",
+      "--include",
+      "MealPlannerApi",
+    ];
+    expect(
+      runAlchemyCommand("dev", args, (_, forwarded) => {
+        expect(forwarded).toEqual([
+          fileURLToPath(new URL("../alchemy.run.ts", import.meta.url)),
+          ...args,
+        ]);
+        return 0;
+      })
+    ).toBe(0);
+    expect(() =>
+      runAlchemyCommand("dev", ["--config", "foreign.ts"], () => 0)
+    ).toThrow("dev accepts only");
+  });
+
   it("runs fresh D1 verification before the canonical deployment and strips evidence arguments", () => {
     const calls: unknown[] = [];
     expect(
@@ -66,6 +116,7 @@ describe("Alchemy command guard", () => {
 
   it("does not fall back to deployment when the preflight cannot start", () => {
     let invoked = false;
+
     expect(() =>
       runAlchemyCommand(
         "deploy",
@@ -93,6 +144,7 @@ describe("Alchemy command guard", () => {
     "--d1-evidence=bad",
   ])("rejects deploy override %s before preflight or Alchemy", (extra) => {
     let invoked = false;
+
     expect(() =>
       runAlchemyCommand(
         "deploy",
@@ -147,7 +199,7 @@ describe("Alchemy command guard", () => {
     );
 
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain("Plan: no changes");
+    expect(result.stdout).toContain("Plan: no resources");
   }, 15_000);
 
   it("rejects deploy without an explicit stage before invoking Alchemy", () => {

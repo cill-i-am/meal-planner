@@ -102,9 +102,9 @@ const withTrackedSources = <Result>(
   );
 };
 
-describe.sequential(
+describe(
   "global D1 architecture allowlist",
-  { timeout: 60_000 },
+  { concurrent: false, timeout: 60_000 },
   () => {
     beforeAll(() => {
       trackedRepositoryRoot = copyTrackedRepository();

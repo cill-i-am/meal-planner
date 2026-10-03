@@ -6,8 +6,8 @@ import path from "node:path";
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { Effect, Layer, Stream } from "effect";
-import * as HttpServer from "effect/unstable/http/HttpServer";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServer from "effect/http/HttpServer";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import { makeTikTokMediaContainerRuntime } from "../../features/imports/import-media-container.runtime.js";
 import { makeTemporaryArtifactStore } from "../../features/imports/import-media-process.js";

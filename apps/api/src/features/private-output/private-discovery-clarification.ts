@@ -9,7 +9,6 @@ import {
 } from "./private-discovery-needs.js";
 import type { PrivateDiscoveryEvidenceMessage } from "./private-discovery-needs.js";
 
-const strict = { parseOptions: { onExcessProperty: "error" as const } };
 const OptionalEvidence = Schema.NullOr(PrivateDiscoveryEvidence);
 const Request = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("ProfileTarget") }),
@@ -19,7 +18,6 @@ const Request = Schema.Union([
   }),
 ]).pipe(
   Schema.annotate({
-    ...strict,
     identifier: "PrivateDiscoveryClarificationRequest",
   })
 );
@@ -41,7 +39,7 @@ export const PrivateDiscoveryClarification = Schema.Union([
     ]),
     ...retained,
   }),
-]).pipe(Schema.annotate(strict));
+]);
 export type PrivateDiscoveryClarification =
   typeof PrivateDiscoveryClarification.Type;
 export const PrivateDiscoveryClarificationUpdate = Schema.NullOr(
@@ -62,7 +60,7 @@ export const PrivateDiscoveryClarificationUpdate = Schema.NullOr(
       _tag: Schema.Literal("RecordDecline"),
       evidence: PrivateDiscoveryEvidence,
     }),
-  ]).pipe(Schema.annotate(strict))
+  ])
 );
 export class PrivateDiscoveryClarificationFailure extends Data.TaggedError(
   "PrivateDiscoveryClarificationFailure"

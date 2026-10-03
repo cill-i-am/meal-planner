@@ -34,7 +34,7 @@ import type {
   HouseholdOrganizationId,
 } from "@meal-planner/household-api";
 import { Clock, Effect, Layer, Schema } from "effect";
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpRouter from "effect/http/HttpRouter";
 
 import { JsonHttpPlatformServices } from "../../infrastructure/json-http-platform.js";
 import type { AuthenticatedOrganizationResolver } from "../auth/auth.principal.js";
