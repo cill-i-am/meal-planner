@@ -244,7 +244,7 @@ jobs:
         run: pnpm --filter @meal-planner/web exec playwright install --with-deps ${{ matrix.browser }}
 
       - name: Test auth and family journeys against local Workers
-        run: pnpm --filter @meal-planner/web test:e2e --project=${{ matrix.project }} --shard=${{ matrix.shard }}/2
+        run: pnpm --filter @meal-planner/web test:e2e --project=${{ matrix.project }} --shard=${{ matrix.shard }}/2 --workers=1
 
       - name: Retain browser failure traces
         if: failure()

@@ -132,7 +132,9 @@ frontend tests, native Worker tests, and both media-container suites independent
 media-image suite on the same runner to reuse its Docker build layers. Auth/family
 browser journeys run on four runners: two native Playwright shards per browser
 project. Each E2E runner starts its own local Worker stack and installs only its
-project’s browser. Failure traces have unique artifact names per project/shard.
+project’s browser. Each shard uses one Playwright worker, following its CI
+guidance to avoid competition between browser journeys on a small runner. Failure
+traces have unique artifact names per project/shard.
 Deployment waits for every shard; a failed shard blocks it. Frontend component
 tests still install Chromium. The lifecycle suite checks the real default idle
 timeout. The pinned media-tool download uses bounded native curl retries for
