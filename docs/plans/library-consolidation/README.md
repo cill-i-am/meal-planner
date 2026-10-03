@@ -1,6 +1,6 @@
 # Reduce custom library plumbing
 
-These four plans cover code we may be able to replace with supported libraries.
+The three active plans cover code we may be able to replace with supported libraries.
 Each plan has one scope and acceptance checklist. Read the current code before
 implementing it; a merged planning PR does not mean the work has been done.
 
@@ -10,8 +10,7 @@ implementing it; a merged planning PR does not mean the work has been done.
 3. [Simplify forms and compare JSON data](03-forms-and-json.md). These two tasks can
    proceed independently where they do not change the same files. A replacement
    JSON helper must behave the same as the current one.
-4. [Assess dependency-checking tools](04-architecture-guard.md). This is optional.
-   Keep the current checks if a replacement would not reduce maintenance.
+4. [Dependency-checking assessment](04-architecture-guard.md). Cancelled; the bespoke scanner was removed.
 
 Coordinate edits to profile schemas, submit code, package manifests and the
 lockfile. These plans do not include LiveStore rollout, a different product model,

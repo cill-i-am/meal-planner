@@ -16,6 +16,49 @@ concurrency:
   cancel-in-progress: ${{ vars.ALCHEMY_DEPLOYMENTS_ENABLED != 'true' }}
 
 jobs:
+  changes:
+    name: Classify container changes
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      containers: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.containers }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Identify changes requiring container and native stack checks
+        if: github.event_name != 'workflow_dispatch'
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          base: ${{ github.event_name == 'push' && github.event.before || github.ref }}
+          filters: |
+            containers:
+              - '.github/workflows/**'
+              - 'alchemy.run.ts'
+              - 'apps/api/**'
+              - 'apps/web/package.json'
+              - 'apps/web/tsconfig*.json'
+              - 'apps/web/vite.config.ts'
+              - 'apps/web/website-*.ts'
+              - 'apps/web/scripts/**'
+              - 'apps/web/src/worker.ts'
+              - 'apps/web/src/features/api-client/**'
+              - 'packages/**'
+              - 'patches/**'
+              - 'scripts/**'
+              - 'stacks/**'
+              - 'tools/worker-tests/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - '.npmrc'
+              - 'tsconfig*.json'
+              - 'vitest*.ts'
+
   quality:
     name: Quality
     if: github.event.action != 'closed'
@@ -112,7 +155,8 @@ jobs:
 
   media-container:
     name: Media container (${{ matrix.suite }})
-    if: github.event.action != 'closed'
+    needs: changes
+    if: github.event.action != 'closed' && needs.changes.outputs.containers == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -190,9 +234,9 @@ jobs:
 
   deploy:
     name: Deploy Alchemy
-    needs: [quality, tests, media-container, auth-family-e2e]
+    needs: [changes, quality, tests, media-container, auth-family-e2e]
     if: >-
-      vars.ALCHEMY_DEPLOYMENTS_ENABLED == 'true' && github.event.action != 'closed' && (((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
+      !cancelled() && !failure() && vars.ALCHEMY_DEPLOYMENTS_ENABLED == 'true' && github.event.action != 'closed' && (((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ${{ github.event_name == 'pull_request' && 'preview' || 'production' }}

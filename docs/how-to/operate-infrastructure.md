@@ -133,6 +133,15 @@ media-image suite on the same runner to reuse its Docker build layers. Auth/fami
 browser journeys retain their separate job. Only browser jobs install Chromium.
 The lifecycle suite still checks the real default idle timeout.
 
+The pinned `dorny/paths-filter` action selects the expensive media and native
+stack jobs. Backend, shared-package, dependency, provider-patch, infrastructure,
+Worker entrypoint and workflow changes run those jobs. Ordinary frontend and
+documentation changes skip them; quality, infrastructure, workspace tests and
+auth/family browser journeys still run. PR filtering considers the whole PR;
+main filtering compares the push's previous commit. Manual runs always include
+the full container checks. Classification failures block deployment, and an
+intentionally skipped container job does not block an otherwise successful run.
+
 Before this split, run `37147935518` took 13m59s for Quality and 12m55s for
 the combined media/stack job. Its two container files ran serially for 705.59s.
 Parallel runners remove that serial dependency; compare completed runs before
