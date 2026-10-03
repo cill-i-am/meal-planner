@@ -27,10 +27,9 @@ this upgrade preserves.
 Local tests exercise conversion and replay; actual deployed histories have
 not been inspected.
 
-The custom 84-line NodeNext source loader is deleted. The command wrapper
-uses the already-pinned `tsx` through Node's `--import tsx`. A real Alchemy
-CLI plan of an in-memory fixture resolves the repository's `.js`-to-`.ts`
-imports without the loader. The stage/profile and approval guards remain.
+The custom 84-line NodeNext source loader is deleted. Alchemy's native CLI resolves the repository's `.js`-to-`.ts` imports without
+that loader. The later command wrapper and D1 preflight tool were removed on
+3 October at the owner's request; use Alchemy directly.
 
 The runtime suite also exposed an Effect `.109` → `.112` failure-handling
 change. Provider accounting now grants zero-cost retry authority only to a

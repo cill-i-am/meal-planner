@@ -42,7 +42,7 @@ Typed RPC still needs decoding and reconstruction at runtime boundaries.
 Stages select isolated infrastructure; profiles select credentials. Current
 upstream defaults are `live_$USER` for deploy/plan/destroy and `dev_$USER` for
 `alchemy dev`; `Test.make` uses `test_$USER`. Pass `--stage` and `--profile`
-explicitly for CI, production, previews, and any repository wrapper. Local
+explicitly for CI, production, and previews. Local
 profiles are managed with `alchemy profile edit/show`; do not tell operators to
 export Cloudflare credentials for local login. CI may use provider environment
 credentials under its own resolver, after `provider check-env` and event/stage
@@ -52,9 +52,10 @@ guards.
 creation, state/profile clearing, and real-cloud tests can change their target.
 A plan normally does not apply changes, but first use of remote state can create
 infrastructure. Check the actual target and effects, and use the task's existing
-authorization without asking again for the same operation. Keep repository
-wrapper checks, including rejection of `--yes`. A command's name does not prove
-that it is read-only.
+authorization without asking again for the same operation. Use Alchemy's native
+commands and flags; do not add custom launchers, argument filters, database
+preflight tools or approval wrappers. Alchemy and Drizzle own migration execution.
+A command's name does not prove that it is read-only.
 
 Use the relevant provider guide and generated API page immediately before
 writing unfamiliar props. A routine edit does not need a full workspace audit
