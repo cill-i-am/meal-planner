@@ -2,7 +2,7 @@
 
 Status: done
 Owner: current repository upgrade
-Delivery: merge after repository checks and CI pass; deployment is separate
+Delivery: merged and separately authorized production deployment verified on 3 October 2026
 
 ## Outcome and context
 
@@ -116,8 +116,8 @@ frozen installation, type checks, lint, formatting and documentation checks pass
 
 The signed implementation commit was approved through 1Password on 3 October.
 Earlier signing attempts failed with `failed to fill whole buffer`; that blocker
-is resolved. PR #265 merged after all hosted checks passed on 3 October. Deployment remains
-separate.
+is resolved. PR #265 merged after all hosted checks passed on 3 October. The owner
+separately authorized production deployment later that day.
 
 Local browser and container results verify synthetic environments. They do not
 verify a deployment, real provider calls or live migration histories. Apply the
@@ -152,4 +152,28 @@ checks pass. The disposable local stage was destroyed. The implementation is now
 
 The production-host follow-up declares `ceird.app` once for the Website custom
 domain and RUM. Alchemy owns its DNS/TLS using the existing `CEIRD_ZONE_ID`.
-This removes the separate analytics-host input. No deployment has been performed.
+This removes the separate analytics-host input. Production deployment is recorded below.
+
+
+## Production deployment on 3 October 2026
+
+The owner selected a first production launch at `https://ceird.app`, using new
+production databases and leaving E2E data separate. PR #267 added an explicit
+new-stage D1 target that verifies empty hosted state, Worker ownership and database
+inventory before the normal guarded deployment. The production plan contained
+19 creates, no deletes or replacements. All three hosted checks passed on
+`55a58ea` before the plan was applied with Alchemy `2.0.0-beta.80`.
+
+Alchemy completed the deployment successfully. Post-deployment inspection verified
+all nine auth migrations and both provider-accounting migrations, with no pending
+migrations. The HTTPS page rendered the login form without browser errors. The
+Cloudflare beacon loaded successfully and submitted RUM events with status 204;
+the session endpoint returned 200 and browser diagnostics returned 204.
+
+Cloudflare MCP read live production traces across the Website and API. A session
+lookup had eight spans; a browser diagnostic request had five. Both reported no
+errors. Live Worker settings confirmed persisted logs and traces at 100% sampling.
+This verifies the deployed observability path, not every application or provider
+journey. Outbound email remains disabled until sending-domain verification and
+preview configuration are complete. Private-discovery AI remains unconfigured.
+Production secrets are stored only in the ignored local deployment configuration.
