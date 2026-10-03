@@ -144,11 +144,11 @@ and accounting evidence. This is lower priority than container lifetime.
   lane. Run it against unpatched candidates first, then retain only proven
   patch sections. A real stack plan can bootstrap account-wide Alchemy state,
   so it is not a harmless dependency check.
-- Consider path-sensitive execution of the expensive synthetic container CI
-  job, while retaining an always-reporting required check. Trigger it for the
-  container runtime, acquisition/artifact paths, fixtures, CI definition, and
-  dependency changes; document-only changes need no image build. Keep ordinary
-  quality checks universal.
+- Container and native-stack CI now runs for relevant backend, shared-package,
+  infrastructure and dependency changes. Ordinary quality and behavior checks
+  remain universal; manual runs include all container checks. The D1 architecture
+  mutation suite reuses unchanged compiler source files without caching results.
+  See [GitHub Actions](../how-to/operate-infrastructure.md#github-actions).
 
 Recommended order: container lifecycle, batch delivery recovery intervals,
 container sizing benchmark, then usage-driven Workflow/log tuning. These are

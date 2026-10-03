@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import path = require("node:path");
 import { fileURLToPath } from "node:url";
 
+import type { Program } from "typescript";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -22,6 +23,16 @@ import {
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 let trackedRepositoryRoot = "";
+let trackedProgram: Program | undefined;
+
+const readTrackedFixture = () => {
+  const tracked = readTrackedGlobalD1Architecture(
+    trackedRepositoryRoot,
+    trackedProgram
+  );
+  trackedProgram = tracked.program;
+  return tracked;
+};
 
 const trackedPaths = (root: string): readonly string[] =>
   execFileSync(
@@ -111,6 +122,7 @@ describe(
     });
 
     afterAll(() => {
+      trackedProgram = undefined;
       rmSync(trackedRepositoryRoot, { recursive: true });
     });
 
@@ -120,6 +132,26 @@ describe(
           readTrackedGlobalD1Architecture(repositoryRoot)
         )
       ).toEqual([]);
+    });
+
+    it("detects a changed migration declaration and accepts its restored source with compiler reuse", () => {
+      const resourcePath =
+        "apps/api/src/infrastructure/provider-accounting-database.ts";
+      const source = readFileSync(
+        path.join(trackedRepositoryRoot, resourcePath),
+        "utf-8"
+      );
+      expect(inspectGlobalD1Architecture(readTrackedFixture())).toEqual([]);
+      withTrackedSource(
+        resourcePath,
+        source.replace('"d1_migrations"', '"unexpected_migrations"'),
+        () => {
+          expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+            []
+          );
+        }
+      );
+      expect(inspectGlobalD1Architecture(readTrackedFixture())).toEqual([]);
     });
 
     it.each(["test.ts", "test-fixture.ts"])(
@@ -148,9 +180,7 @@ export const TenantLedgerDatabase = Cloudflare.D1.Database(
             },
           ],
           () => {
-            const tracked = readTrackedGlobalD1Architecture(
-              trackedRepositoryRoot
-            );
+            const tracked = readTrackedFixture();
             expect(
               tracked.sources.some(
                 ({ path: sourcePath }) => sourcePath === fixturePath
@@ -173,9 +203,9 @@ export const TenantLedgerDatabase = Cloudflare.D1.Database(
         workerPath,
         `${worker}\nimport "./features/households/missing-tenant-ledger.js";\n`,
         () => {
-          expect(() =>
-            readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-          ).toThrow(/unresolved local production import/u);
+          expect(() => readTrackedFixture()).toThrow(
+            /unresolved local production import/u
+          );
         }
       );
     });
@@ -192,11 +222,9 @@ export const TenantLedgerDatabase = TenantD1.Database(
   }
 );`,
         () => {
-          expect(
-            inspectGlobalD1Architecture(
-              readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-            )
-          ).not.toEqual([]);
+          expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+            []
+          );
         }
       );
     });
@@ -212,11 +240,9 @@ export const TenantLedgerDatabase = Cloudflare["D1"]["Database"](
   }
 );`,
         () => {
-          expect(
-            inspectGlobalD1Architecture(
-              readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-            )
-          ).not.toEqual([]);
+          expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+            []
+          );
         }
       );
     });
@@ -232,11 +258,9 @@ export const TenantLedgerDatabase = Cloudflare["D1"]["Database"](
         workerPath,
         `${worker}\nconst tenantQuery = Cloudflare["D1"]["QueryDatabase"](MealPlannerAuthDatabase);\n`,
         () => {
-          expect(
-            inspectGlobalD1Architecture(
-              readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-            )
-          ).not.toEqual([]);
+          expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+            []
+          );
         }
       );
     });
@@ -252,11 +276,9 @@ export const TenantLedgerDatabase = Cloudflare["D1"]["Database"](
         workerPath,
         `${worker}\nconst tenantQueryBinding = Cloudflare["D1"]["QueryDatabaseBinding"];\n`,
         () => {
-          expect(
-            inspectGlobalD1Architecture(
-              readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-            )
-          ).not.toEqual([]);
+          expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+            []
+          );
         }
       );
     });
@@ -273,11 +295,9 @@ export const TenantLedgerDatabase = Cloudflare["D1"]["Database"](
         schemaPath,
         `${schema}\nimport * as sqliteCore from "drizzle-orm/sqlite-core";\nexport const providerAccountingTenantMeals = sqliteCore["sqliteTable"]("provider_accounting_tenant_meals", { id: sqliteCore.text("id").primaryKey() });\n`,
         () => {
-          expect(
-            inspectGlobalD1Architecture(
-              readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-            )
-          ).not.toEqual([]);
+          expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+            []
+          );
         }
       );
     });
@@ -290,11 +310,9 @@ export const TenantLedgerDatabase = Cloudflare["D1"]["Database"](
   return runtime.drizzle(database);
 };`,
         () => {
-          expect(
-            inspectGlobalD1Architecture(
-              readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-            )
-          ).not.toEqual([]);
+          expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+            []
+          );
         }
       );
     });
@@ -381,11 +399,9 @@ export const TenantLedgerQuery = Cloudflare.D1.QueryDatabase(ProviderAccountingD
       },
     ])("rejects a $label", ({ entryPath, source }) => {
       withTrackedSource(entryPath, source(), () => {
-        expect(
-          inspectGlobalD1Architecture(
-            readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-          )
-        ).not.toEqual([]);
+        expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+          []
+        );
       });
     });
 
@@ -405,7 +421,7 @@ export const readTenantMeals = (database: AnyD1Database, organizationId: string)
   database.prepare("SELECT * FROM tenant_meals WHERE organization_id = ?").bind(organizationId);`;
 
       withTrackedSource(fixturePath, fixture, () => {
-        const tracked = readTrackedGlobalD1Architecture(trackedRepositoryRoot);
+        const tracked = readTrackedFixture();
         expect(
           tracked.sources.some(
             ({ path: sourcePath }) => sourcePath === fixturePath
@@ -421,11 +437,9 @@ export const readTenantMeals = (database: AnyD1Database, organizationId: string)
         `import * as Cloudflare from "alchemy/Cloudflare";
 export const makeD1 = Cloudflare.D1.Database;`,
         () => {
-          expect(
-            inspectGlobalD1Architecture(
-              readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-            )
-          ).not.toEqual([]);
+          expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+            []
+          );
         }
       );
     });
@@ -437,11 +451,9 @@ export const makeD1 = Cloudflare.D1.Database;`,
 const tenantD1 = Cloudflare.D1;
 export const makeD1 = tenantD1.Database;`,
         () => {
-          expect(
-            inspectGlobalD1Architecture(
-              readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-            )
-          ).not.toEqual([]);
+          expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+            []
+          );
         }
       );
     });
@@ -452,11 +464,9 @@ export const makeD1 = tenantD1.Database;`,
         `import { D1 as TenantD1 } from "alchemy/Cloudflare";
 export const makeD1 = TenantD1.Database;`,
         () => {
-          expect(
-            inspectGlobalD1Architecture(
-              readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-            )
-          ).not.toEqual([]);
+          expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+            []
+          );
         }
       );
     });
@@ -473,11 +483,9 @@ export const makeD1 = TenantD1.Database;`,
         schemaPath,
         `${schema}\nconst defineTable = sqliteTable;\nexport const providerAccountingTenantMeals = defineTable("provider_accounting_tenant_meals", { id: text("id").primaryKey() });\n`,
         () => {
-          expect(
-            inspectGlobalD1Architecture(
-              readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-            )
-          ).not.toEqual([]);
+          expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+            []
+          );
         }
       );
     });
@@ -493,11 +501,9 @@ export const makeD1 = TenantD1.Database;`,
         workerPath,
         `${worker}\nconst makeQueryDatabase = Cloudflare.D1.QueryDatabase;\n`,
         () => {
-          expect(
-            inspectGlobalD1Architecture(
-              readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-            )
-          ).not.toEqual([]);
+          expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+            []
+          );
         }
       );
     });
@@ -513,11 +519,9 @@ export const makeD1 = TenantD1.Database;`,
         workerPath,
         `${worker}\nconst queryDatabaseBinding = Cloudflare.D1.QueryDatabaseBinding;\n`,
         () => {
-          expect(
-            inspectGlobalD1Architecture(
-              readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-            )
-          ).not.toEqual([]);
+          expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+            []
+          );
         }
       );
     });
@@ -533,11 +537,9 @@ export const makeD1 = TenantD1.Database;`,
         workerPath,
         `${worker}\nconst makeD1Consumer = drizzle;\n`,
         () => {
-          expect(
-            inspectGlobalD1Architecture(
-              readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-            )
-          ).not.toEqual([]);
+          expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+            []
+          );
         }
       );
     });
@@ -553,11 +555,9 @@ export const makeD1 = TenantD1.Database;`,
         workerPath,
         `${worker}\nconst makeD1Consumer = (database: never) => drizzle(database);\n`,
         () => {
-          expect(
-            inspectGlobalD1Architecture(
-              readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-            )
-          ).not.toEqual([]);
+          expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+            []
+          );
         }
       );
     });
@@ -573,11 +573,9 @@ export const makeD1 = TenantD1.Database;`,
         workerPath,
         `${worker}\nconst loadD1Consumer = () => import("drizzle-orm/d1");\n`,
         () => {
-          expect(
-            inspectGlobalD1Architecture(
-              readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-            )
-          ).not.toEqual([]);
+          expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+            []
+          );
         }
       );
     });
@@ -596,11 +594,9 @@ export const makeD1 = TenantD1.Database;`,
         );
 
       withTrackedSource(servicePath, service, () => {
-        expect(
-          inspectGlobalD1Architecture(
-            readTrackedGlobalD1Architecture(trackedRepositoryRoot)
-          )
-        ).not.toEqual([]);
+        expect(inspectGlobalD1Architecture(readTrackedFixture())).not.toEqual(
+          []
+        );
       });
     });
   }

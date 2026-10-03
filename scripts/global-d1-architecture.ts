@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path = require("node:path");
 
+import { Schema } from "effect";
 import ts from "typescript";
 
 export interface TrackedArchitectureSource {
@@ -146,7 +147,10 @@ const expectedProviderAccountingTables: readonly ProviderAccountingTable[] = [
   },
 ];
 
-const apiProductionProgram = (repositoryRoot: string): ts.Program => {
+const apiProductionProgram = (
+  repositoryRoot: string,
+  oldProgram?: ts.Program
+): ts.Program => {
   const apiRoot = path.join(repositoryRoot, "apps/api");
   const configPath = path.join(apiRoot, "tsconfig.build.json");
   const config = ts.readConfigFile(configPath, ts.sys.readFile);
@@ -175,17 +179,43 @@ const apiProductionProgram = (repositoryRoot: string): ts.Program => {
       })
     );
   }
-  if (parsed.projectReferences === undefined) {
-    return ts.createProgram({
-      options: parsed.options,
-      rootNames: parsed.fileNames,
-    });
+  const host = ts.createCompilerHost(parsed.options);
+  if (oldProgram !== undefined) {
+    const previousSources = new Map(
+      oldProgram.getSourceFiles().map((file) => [file.fileName, file])
+    );
+    const { getSourceFile } = host;
+    host.getSourceFile = (fileName, languageVersion, onError, createNew) => {
+      const previous = previousSources.get(fileName);
+      const sourceOptions: ts.CreateSourceFileOptions = Schema.is(
+        Schema.Number
+      )(languageVersion)
+        ? { languageVersion }
+        : languageVersion;
+      if (
+        !createNew &&
+        previous !== undefined &&
+        previous.languageVersion === sourceOptions.languageVersion &&
+        previous.impliedNodeFormat === sourceOptions.impliedNodeFormat &&
+        previous.text === host.readFile(fileName)
+      ) {
+        return previous;
+      }
+      return getSourceFile(fileName, languageVersion, onError, createNew);
+    };
   }
-  return ts.createProgram({
+  const programOptions: ts.CreateProgramOptions = {
+    host,
     options: parsed.options,
-    projectReferences: parsed.projectReferences,
     rootNames: parsed.fileNames,
-  });
+  };
+  if (oldProgram !== undefined) {
+    programOptions.oldProgram = oldProgram;
+  }
+  if (parsed.projectReferences !== undefined) {
+    programOptions.projectReferences = parsed.projectReferences;
+  }
+  return ts.createProgram(programOptions);
 };
 
 const repositoryPath = (repositoryRoot: string, absolutePath: string): string =>
@@ -219,7 +249,8 @@ const localModuleSpecifiers = (
 
 /** Read the complete tracked production footprint inspected by the D1 guard. */
 export const readTrackedGlobalD1Architecture = (
-  repositoryRoot: string
+  repositoryRoot: string,
+  oldProgram?: ts.Program
 ): TrackedGlobalD1Architecture => {
   const trackedPaths = execFileSync("git", ["ls-files", "-z"], {
     cwd: repositoryRoot,
@@ -228,7 +259,7 @@ export const readTrackedGlobalD1Architecture = (
     .split("\0")
     .filter((entryPath) => entryPath.length > 0);
   const trackedPathSet = new Set(trackedPaths);
-  const program = apiProductionProgram(repositoryRoot);
+  const program = apiProductionProgram(repositoryRoot, oldProgram);
   const programSources = program.getSourceFiles().flatMap((sourceFile) => {
     if (sourceFile.isDeclarationFile) {
       return [];
