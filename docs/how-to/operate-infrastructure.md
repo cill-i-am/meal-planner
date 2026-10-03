@@ -35,13 +35,12 @@ credentials. Its name does not establish the environment or active account.
 - Upstream defaults are Alchemy's `live_$USER` stage for plan/deploy/destroy
   and `dev_$USER` for `alchemy dev`; the `$ALCHEMY_PROFILE` environment
   variable falls back to the profile named `default`. The native CLI preserves these defaults when its flags are omitted.
-- Future preview automation uses `pr-<number>` and must pass both `--stage` and
+- Preview automation uses `pr-<number>` and must pass both `--stage` and
   `--profile` explicitly.
-- Production uses explicit `prod`, an explicit production profile, and a fresh
-  operator approval.
-- CI and every future approved cloud operation must pass an explicit stage and
-  profile, then independently verify the Cloudflare account resolved by that
-  profile before proceeding.
+- Production uses explicit `prod` and an explicit profile. Approved automation
+  uses the CI environment credentials described below.
+- CI passes an explicit stage and profile. Verify the Cloudflare account when
+  configuring its credentials; native provider resolution uses that account.
 
 Never infer authority for one stage, profile, account, or command from approval
 for another.
@@ -124,6 +123,72 @@ there is no custom database inspection, frozen target or evidence-digest gate.
 
 Follow the [native deployment guide](https://alchemy.run/cli/deploy/) and
 [CI guidance](https://alchemy.run/environments/ci/) for automated deployment.
+
+## GitHub Actions
+
+The [CI workflow](../../.github/workflows/ci.yml) runs quality/build checks,
+infrastructure tests, API/package tests, frontend tests, native Worker tests,
+both media-container suites independently. The native stack runs after the real
+media-image suite on the same runner to reuse its Docker build layers. Auth/family
+browser journeys retain their separate job. Only browser jobs install Chromium.
+The lifecycle suite still checks the real default idle timeout.
+
+Before this split, run `37147935518` took 13m59s for Quality and 12m55s for
+the combined media/stack job. Its two container files ran serially for 705.59s.
+Parallel runners remove that serial dependency; compare completed runs before
+claiming a specific speed improvement. Parallel execution may use more Actions
+minutes because each runner installs dependencies separately.
+
+Deployment jobs remain disabled until repository variable
+`ALCHEMY_DEPLOYMENTS_ENABLED` is `true`. Once enabled, a successful main run
+deploys `prod`; successful same-repository PR runs deploy `pr-<number>` and
+Alchemy updates a preview comment. Closing or merging that PR destroys its
+stage using the current default-branch stack definition. Fork PRs run checks
+without deployment credentials. A manual run deploys only when targeting main.
+
+Configure GitHub environments `production` and `preview` before activation.
+Each needs `CLOUDFLARE_ACCOUNT_ID` as a variable and `CLOUDFLARE_API_TOKEN`
+as an encrypted secret. Production also needs variable `CEIRD_ZONE_ID`.
+Both need secrets `BETTER_AUTH_SECRET`, `MEAL_PLANNER_IMPORT_API_TOKEN`,
+`MEAL_PLANNER_IMPORT_ACTOR_ID` and `MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID`;
+use separate application secrets for previews. Optional
+`MEAL_PLANNER_PRIVATE_DISCOVERY_CONFIG` stays empty until configured. Email
+delivery remains disabled. Restrict the production environment to main.
+Use a scoped Cloudflare token and Alchemy's documented credentials-as-code
+setup; never copy a global API key into CI.
+
+The native [credentials stack](../../stacks/github.ts) creates those
+environments, account-owned tokens and encrypted secrets. It retains the
+existing production application secrets from the operator's ignored `.env`;
+Alchemy generates separate stable preview secrets. Deploy it with the existing
+administrative profile, which can mint account tokens:
+
+```sh
+pnpm exec alchemy deploy --config stacks/github.ts --stage ci --profile ceird-admin-global --yes
+ALCHEMY_DEPLOYMENTS_ENABLED=true pnpm exec alchemy deploy --config stacks/github.ts --stage ci --profile ceird-admin-global --yes
+```
+
+The first command provisions credentials with deployment disabled; the second
+enables the reviewed workflow. Use the second form when reconciling credentials
+after activation. Tokens expire on 3 October 2027; rotate them through the native
+stack before then. They have no billing or token-management permissions. Account
+settings and the existing email sending domain are read-only; changing RUM or
+email resources requires updating the token policy. Production routes are scoped
+to the configured ceird.app zone. Preview credentials have no zone permissions.
+
+CI uses native environment credential resolution and hosted Cloudflare state,
+with explicit `--stage`, `--profile ci` and `--yes`. No local credential archive
+or restore script is needed. Alchemy's native `provider check-env` checks its
+provider contract; Alchemy applies declared migrations. The scoped token must
+cover the stack resources and native state access, including Secrets Store,
+as described in the CI guide.
+
+Once deployment is enabled, workflow runs for the same main branch or PR are
+serialized without cancelling an active deployment. The same PR group is used
+for deployment and close cleanup. The fixed account-wide AI Gateway uses
+Alchemy's retention policy so preview destruction preserves it. Production
+alone owns the email sending domain, Website custom domain and RUM site.
+Do not reuse a preview's application secrets for production.
 
 ## Outputs and health verification
 

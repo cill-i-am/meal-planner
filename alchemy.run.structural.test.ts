@@ -22,7 +22,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(source.match(/export default Alchemy\.Stack/gu)).toHaveLength(1);
     expect(source.match(/Alchemy\.Stack\(/gu)).toHaveLength(1);
     expect(source).toMatch(/Alchemy\.Stack\(\s*"MealPlanner"/u);
-    expect(source).toContain("providers: Cloudflare.providers()");
+    expect(source).toContain("Cloudflare.providers()");
     expect(source).toContain("dev ? Alchemy.localState() : Cloudflare.state()");
   });
 

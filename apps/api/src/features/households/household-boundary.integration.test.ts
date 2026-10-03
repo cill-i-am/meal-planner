@@ -7526,8 +7526,9 @@ describe("canonical private interview output boundary", () => {
     );
     expect(copiedCreation).not.toBe(reservation);
     await emitPrivateOutput(connection, "synthetic-private-authorized");
-    await delay(10);
-    expect(connection.messages).toEqual(["synthetic-private-authorized"]);
+    await vi.waitFor(() =>
+      expect(connection.messages).toEqual(["synthetic-private-authorized"])
+    );
     const ownDirectory = await openPrivateDirectory(setup.memberCookie);
     ownDirectory.socket.send(
       JSON.stringify({
@@ -7605,11 +7606,12 @@ describe("canonical private interview output boundary", () => {
       connection,
       "synthetic-owner-after-copied-reference"
     );
-    await delay(10);
-    expect(connection.messages).toEqual([
-      "synthetic-private-authorized",
-      "synthetic-owner-after-copied-reference",
-    ]);
+    await vi.waitFor(() =>
+      expect(connection.messages).toEqual([
+        "synthetic-private-authorized",
+        "synthetic-owner-after-copied-reference",
+      ])
+    );
     connection.socket.close();
   }, 30_000);
 
