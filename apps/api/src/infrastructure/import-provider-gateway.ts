@@ -1,4 +1,5 @@
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as RemovalPolicy from "alchemy/RemovalPolicy";
 
 export const ImportProviderGatewayId = "meal-planner-recipe-import";
 
@@ -9,6 +10,7 @@ export const ImportProviderGatewayId = "meal-planner-recipe-import";
  * provider-side fence. Gateway logging defaults off so an unwrapped request
  * fails closed; the installed adapters opt in per request with metadata-only
  * headers and never retain request or response payloads.
+ * The physical gateway is account-wide; destroying a preview retains it.
  */
 export const ImportProviderGateway = Cloudflare.AI.Gateway(
   "ImportProviderGateway",
@@ -30,4 +32,4 @@ export const ImportProviderGateway = Cloudflare.AI.Gateway(
     },
     zdr: true,
   }
-);
+).pipe(RemovalPolicy.retain());

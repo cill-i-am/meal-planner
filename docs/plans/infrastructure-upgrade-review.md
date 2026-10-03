@@ -136,11 +136,10 @@ and accounting evidence. This is lower priority than container lifetime.
   bindings are valuable; a generic infrastructure abstraction would add another
   interface to maintain. Do not replace the working Website/Vite setup merely
   because `.76` adds more framework integrations.
-- Resolve AI Gateway stage ownership before preview automation. Its explicit
-  physical ID is `meal-planner-recipe-import`, unlike stage-derived resource
-  names. Either stage-scope that physical ID or deliberately manage it as one
-  shared account resource. Verify existing ownership first; renaming it can
-  change provider configuration and budget behavior.
+- The AI Gateway remains the shared account resource
+  `meal-planner-recipe-import`. Native Alchemy retention preserves it during
+  preview destruction; stage-local databases and Workers remain isolated.
+  See [GitHub Actions](../how-to/operate-infrastructure.md#github-actions).
 - Keep cloud-free loader and provider regression tests as the fast upgrade
   lane. Run it against unpatched candidates first, then retain only proven
   patch sections. A real stack plan can bootstrap account-wide Alchemy state,

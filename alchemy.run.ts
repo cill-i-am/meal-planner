@@ -1,5 +1,7 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as GitHub from "alchemy/GitHub";
+import * as Output from "alchemy/Output";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -22,7 +24,7 @@ import { websiteSource } from "./apps/web/website-source.js";
 export default Alchemy.Stack(
   "MealPlanner",
   {
-    providers: Cloudflare.providers(),
+    providers: Layer.mergeAll(Cloudflare.providers(), GitHub.providers()),
     state: Layer.unwrap(
       Alchemy.AlchemyContext.pipe(
         Effect.map(({ dev }) =>
@@ -76,6 +78,21 @@ export default Alchemy.Stack(
       ...workerObservability,
       rootDir: "./apps/web",
     });
+
+    if (!dev) {
+      const github = yield* GitHub.GitHubEnv;
+      if (github?.pr) {
+        yield* GitHub.Comment("PreviewComment", {
+          allowDelete: true,
+          body: Output.interpolate`Preview: ${website.url}
+
+Commit: ${github.sha}`,
+          issueNumber: github.pr,
+          owner: github.owner,
+          repository: github.repository,
+        });
+      }
+    }
 
     return {
       apiUrl: api.url,
