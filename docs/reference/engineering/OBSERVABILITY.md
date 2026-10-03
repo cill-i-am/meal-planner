@@ -200,8 +200,9 @@ Check the relevant items below when reviewing a change. The sections above expla
 
 ## Browser diagnostics
 
-The production stack owns a hostname-specific Cloudflare RUM site. Set
-`WEB_ANALYTICS_HOST` to the Website's actual hostname before deployment. The
+The production stack owns `ceird.app` as the Website custom domain and its
+hostname-specific Cloudflare RUM site. Both use `productionWebsiteHostname`
+from `apps/web/website-domain.ts`; no analytics-host configuration is needed. The
 Website embeds its public beacon token through Start loader data and preserves it
 on client navigation. Local and preview stages omit the beacon and cloud resource.
 Cloudflare measures page performance and SPA navigation independently of app logs.

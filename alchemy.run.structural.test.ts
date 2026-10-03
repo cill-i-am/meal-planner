@@ -183,6 +183,9 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(stackSource).toContain(
       'BROWSER_ANALYTICS_TOKEN: browserAnalytics?.siteToken ?? ""'
     );
+    expect(stackSource).toContain("host: productionWebsiteHostname");
+    expect(stackSource).toContain("name: productionWebsiteHostname");
+    expect(stackSource).not.toContain("WEB_ANALYTICS_HOST");
     expect(stackSource).toContain("...websiteSource");
     const websiteSource = readRepoFile("./apps/web/website-source.ts");
     expect(websiteSource).toContain('main: "src/worker.ts"');

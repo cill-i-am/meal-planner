@@ -1,6 +1,6 @@
 # Alchemy and Effect stable upgrade
 
-Status: active
+Status: done
 Owner: current repository upgrade
 Delivery: merge after repository checks and CI pass; deployment is separate
 
@@ -97,9 +97,9 @@ snapshots through Alchemy's supported `withSqlMigrations` bridge.
 - [x] All 24 local auth and family browser journeys pass.
 - [x] Synthetic media container tests pass locally.
 - [x] Documentation and formatting checks pass locally.
-- [ ] Required hosted CI passes on the final signed commit.
+- [x] Required hosted CI passes on the final signed commit.
 - [x] Review the extended diff and retain crash, replay and application-authored redaction regressions.
-- [ ] Create a signed commit, push a PR and merge after hosted checks pass.
+- [x] Create a signed commit, push a PR and merge after hosted checks pass.
 
 ## Delivery and limits
 
@@ -116,8 +116,8 @@ frozen installation, type checks, lint, formatting and documentation checks pass
 
 The signed implementation commit was approved through 1Password on 3 October.
 Earlier signing attempts failed with `failed to fill whole buffer`; that blocker
-is resolved. Delivery now awaits the pull request, required hosted checks and
-merge. Deployment remains separate.
+is resolved. PR #265 merged after all hosted checks passed on 3 October. Deployment remains
+separate.
 
 Local browser and container results verify synthetic environments. They do not
 verify a deployment, real provider calls or live migration histories. Apply the
@@ -140,13 +140,16 @@ context and loader, plus generated-client browser diagnostics for API outcomes,
 navigation and uncaught errors. Browser request IDs correlate to API logs; no
 continuous frontend trace is claimed. Preserve response and cancellation behavior.
 Bound client volume, use the native receiver rate limit and strict 4 KiB schemas,
-and keep private values out of emitted events. Production requires
-`WEB_ANALYTICS_HOST`; local and preview do not create the RUM resource.
+and keep private values out of emitted events. Production now uses the shared `ceird.app` Website/RUM hostname; local and
+preview do not create the domain or RUM resource.
 
 A real native local browser probe emitted navigation and a safe TypeError category.
 A synthetic failed login emitted a 401 browser event with the identical API
 request ID. The production build, cross-workspace types, 252 frontend tests and
 three native stack tests pass, including the native 61st-request rate-limit
 rejection. Focused API and architecture checks, lint, formatting and documentation
-checks pass. The disposable local stage was destroyed. The implementation is now signed after the owner approved 1Password; hosted CI
-and merge remain.
+checks pass. The disposable local stage was destroyed. The implementation is now signed after the owner approved 1Password; PR #265 is merged with hosted CI passing.
+
+The production-host follow-up declares `ceird.app` once for the Website custom
+domain and RUM. Alchemy owns its DNS/TLS using the existing `CEIRD_ZONE_ID`.
+This removes the separate analytics-host input. No deployment has been performed.
