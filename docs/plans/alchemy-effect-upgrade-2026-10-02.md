@@ -68,7 +68,7 @@ Earlier opportunities include beta.73 Workflow step limits, beta.68 local email
 simulation and SQL-aware source building, and beta.66 OTLP logs/metrics/traces
 across runtimes. Drizzle's Durable Object helper and the native source builder are
 already adopted. Household SQL snapshot application is now adopted with its
-existing ledger; auth D1 retains its guarded migration process. Hibernating Effect RPC is
+existing ledger; auth D1 uses Alchemy's native migrations. Hibernating Effect RPC is
 useful for future typed browser commands; it does not persist or replay unfinished
 requests/streams and is not a drop-in replacement for the existing Agents chat.
 
@@ -120,9 +120,7 @@ is resolved. PR #265 merged after all hosted checks passed on 3 October. The own
 separately authorized production deployment later that day.
 
 Local browser and container results verify synthetic environments. They do not
-verify a deployment, real provider calls or live migration histories. Apply the
-auth migration only through the existing guarded D1 deployment process when
-deployment is separately requested.
+verify a deployment, real provider calls or live migration histories. Alchemy applies declared auth migrations during deployment.
 
 One optional upstream peer constraint remains: TanStack persistence requests
 Vitest 4 for its own tests. Production persistence regressions pass; its test
@@ -177,3 +175,15 @@ This verifies the deployed observability path, not every application or provider
 journey. Outbound email remains disabled until sending-domain verification and
 preview configuration are complete. Private-discovery AI remains unconfigured.
 Production secrets are stored only in the ignored local deployment configuration.
+
+
+## Native command cleanup on 3 October 2026
+
+At the owner's request, removed the custom Alchemy command launcher and the entire
+D1 release-preflight tool, including their tests and deployment gates. Package
+scripts now invoke Alchemy directly. Native D1 and Durable Object migrations,
+provider reconciliation tests and application data constraints remain in place.
+Local dev loads the existing ignored `.dev.vars` through Alchemy's `--env-file`.
+The earlier production-deployment record describes the tooling used at that time;
+its custom inspection path has now been removed. The repository rule is to avoid
+unnecessary wrappers and abstractions and use supported native commands and APIs.

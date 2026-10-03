@@ -145,9 +145,7 @@ so inspect the stack and command before treating dev as read-only.
 - Set stage and profile explicitly.
 - Use remote state accessible to every runner that participates in the workflow.
 - Run plan/typecheck/tests before deploy.
-- Upstream CI uses `--yes` only after event/stage guards pass. A repository
-  wrapper may intentionally reject `--yes` and require a separate approval
-  flow.
+- CI uses the native `--yes` flag after selecting the intended event and stage.
 - Give previews unique stages and destroy them on close.
 - Make cleanup idempotent and impossible to aim at production.
 - Keep admin credentials in a separate bootstrap/credentials stack when credentials-as-code is needed.

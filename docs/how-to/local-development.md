@@ -13,17 +13,21 @@ Website with Vite hot reload, API, D1 migrations, SQLite Durable Objects, queues
 Workflows, R2 and the local media container. Docker must be running for the media
 container. Open the Website URL printed by Alchemy.
 
-The wrapper uses Alchemy's official CLI launcher. Alchemy captures household SQL
-migrations during construction and embeds them in the Worker, so the CLI needs
-no custom SQL import hook. The existing household migration ledger is adopted
-in place; Drizzle still generates the SQL.
+`pnpm dev` calls `alchemy dev --env-file .dev.vars` directly. Keep local application
+configuration in the ignored `.dev.vars` file, separate from production `.env`.
+For a fresh checkout, use `.env.example` as a reference and provide the app's
+required auth secret, import token and opaque system identities. Existing local
+configuration remains usable; no cloud credentials are needed for local storage.
 
-The wrapper selects a stable `dev_<username>` stage and creates an ignored
-`.dev.vars` once with random application secrets. Local state and resource data
-are held under `.alchemy/`; they survive restarts. Use `pnpm dev -- --stage
-dev_example` for a separate local environment, or `--env-file PATH` for an existing
-application configuration. Stop with Ctrl+C. The wrapper rejects production and
-preview stages for local development.
+Alchemy captures household SQL migrations during construction and embeds them
+in the Worker, so the CLI needs no custom SQL import hook. The existing household
+migration ledger is adopted in place; Drizzle still generates the SQL.
+
+Alchemy selects its default `dev_<username>` stage. Local state and resource data
+are held under `.alchemy/` and survive restarts. Use
+`pnpm dev --stage dev_example` for a separate local environment, or
+`pnpm exec alchemy dev --env-file PATH` for another application configuration.
+Stop with Ctrl+C. These are Alchemy's native options, without a custom launcher.
 
 The stack selects `Alchemy.localState()` during native dev and hosted Cloudflare
 state for deployment. It skips live AI Gateway provisioning locally. Email uses

@@ -6,7 +6,7 @@ This is a greenfield application. Replace obsolete code rather than adding backw
 
 Prefer reliable, secure open-source libraries to custom code. Use supported extensions when a library needs adapting. Build from scratch only when existing options cannot meet the requirements efficiently.
 
-Choose the simplest solution that meets the requirements. Avoid speculative abstractions and overengineering.
+Choose the simplest solution that meets the requirements. Avoid speculative abstractions and overengineering. Do not add unnecessary wrappers or abstractions around supported tools. Use their native commands and APIs; do not invent deployment or database preflight layers.
 
 For app-owned browser/server APIs, define a shared Effect HttpApi contract and use its generated client and Effect handler. Keep remote query/mutation state with the chosen React adapter; do not hand-write fetch and JSON decoding when the contract covers them. Use [runtime import intents](apps/api/src/features/imports/import-intent-transition.ts) for durable asynchronous work, not as the default shape for creating an ordinary domain entity. See [protocol contracts](docs/reference/engineering/FEATURE_SLICE_ARCHITECTURE.md#protocol-contracts) and [workflow selection](docs/reference/engineering/ASYNC_AND_WORKFLOWS.md#workflow-selection).
 
