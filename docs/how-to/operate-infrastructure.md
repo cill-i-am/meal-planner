@@ -142,12 +142,6 @@ main filtering compares the push's previous commit. Manual runs always include
 the full container checks. Classification failures block deployment, and an
 intentionally skipped container job does not block an otherwise successful run.
 
-The D1 architecture mutation tests reuse TypeScript's prior program and
-unchanged source files through its compiler host. Every read still checks current
-file contents, tracked inventory and local imports. Changed and removed files
-are re-evaluated; the mutation/restoration regression protects against stale
-results. Reuse belongs to the test fixture and is released at teardown.
-
 Before this split, run `37147935518` took 13m59s for Quality and 12m55s for
 the combined media/stack job. Its two container files ran serially for 705.59s.
 Parallel runners remove that serial dependency; compare completed runs before

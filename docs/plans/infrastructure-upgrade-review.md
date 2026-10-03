@@ -146,8 +146,8 @@ and accounting evidence. This is lower priority than container lifetime.
   so it is not a harmless dependency check.
 - Container and native-stack CI now runs for relevant backend, shared-package,
   infrastructure and dependency changes. Ordinary quality and behavior checks
-  remain universal; manual runs include all container checks. The D1 architecture
-  mutation suite reuses unchanged compiler source files without caching results.
+  remain universal; manual runs include all container checks. The bespoke D1
+  source scanner and its mutation suite have been removed.
   See [GitHub Actions](../how-to/operate-infrastructure.md#github-actions).
 
 Recommended order: container lifecycle, batch delivery recovery intervals,
