@@ -65,7 +65,10 @@ test(
     const page = yield* Test.getWhenReady(`${output.websiteUrl}/signup`);
     expect(page.status).toBe(200);
     expect(yield* page.text).toContain("<!DOCTYPE html>");
-  })
+  }),
+  // A fresh CI runner builds the real media image before the API can serve.
+  // The independent container suites no longer warm this runner's Docker cache.
+  { timeout: 600_000 }
 );
 
 test(
