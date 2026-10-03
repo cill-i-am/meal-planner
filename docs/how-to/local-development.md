@@ -6,25 +6,47 @@ and the [web scripts](../../apps/web/package.json) for the required versions and
 commands. Install application tools with `pnpm install --frozen-lockfile` when
 needed. Documentation checks need only Python 3.
 
-## Local Tesco catalogue host
+## Native Alchemy development
 
-`pnpm dev` starts the API's Node host, not the full household web and Worker app.
-The [API README](../../apps/api/README.md) lists the required shell settings.
-The host uses Effect Config to read process environment variables; it does not
-load `.env` files. Use authorized provider credentials and keep them out of records.
+Run `pnpm dev` from the repository root. This starts the actual Alchemy stack:
+Website with Vite hot reload, API, D1 migrations, SQLite Durable Objects, queues,
+Workflows, R2 and the local media container. Docker must be running for the media
+container. Open the Website URL printed by Alchemy.
 
-## Web and Cloudflare behavior
+The wrapper uses Alchemy's official CLI launcher. Alchemy captures household SQL
+migrations during construction and embeds them in the Worker, so the CLI needs
+no custom SQL import hook. The existing household migration ledger is adopted
+in place; Drizzle still generates the SQL.
 
-See the [web README](../../apps/web/README.md) for web entrypoints and the
-[infrastructure guide](operate-infrastructure.md) for bindings, stages and local
-runtime checks. Running the frontend alone does not test Worker routing, D1,
-Durable Objects or private output. Use the existing native test configurations
-when changing those parts.
+The wrapper selects a stable `dev_<username>` stage and creates an ignored
+`.dev.vars` once with random application secrets. Local state and resource data
+are held under `.alchemy/`; they survive restarts. Use `pnpm dev -- --stage
+dev_example` for a separate local environment, or `--env-file PATH` for an existing
+application configuration. Stop with Ctrl+C. The wrapper rejects production and
+preview stages for local development.
 
-Do not assume `alchemy dev` or `plan` is read-only or local. Setting up remote
-state can change infrastructure. Inspect the wrapper and target before running it.
-This guide does not claim that the repository has a single command to start the
-complete product.
+The stack selects `Alchemy.localState()` during native dev and hosted Cloudflare
+state for deployment. It skips live AI Gateway provisioning locally. Email uses
+Alchemy's local simulator; inspect its emitted mail files. AI has no local
+emulator: Alchemy prepares remote AI bindings, which require a valid Cloudflare
+profile, and actual model calls incur provider charges. A missing AI profile does
+not make the local auth and household features require a cloud deployment.
+
+Follow [Alchemy local development](https://alchemy.run/cloudflare/local-development/)
+for platform behavior and supported bindings. `pnpm dev:tesco` retains the separate
+Node catalogue host; its configuration is documented in the
+[API README](../../apps/api/README.md).
+
+## Native stack integration tests
+
+`pnpm test:stack` uses [Alchemy's test harness](https://alchemy.run/testing/)
+with `dev: true`, the real stack and its default RPC sidecar topology. Each run
+uses a unique local stage, disposable application secrets, real D1 migrations and
+native service bindings. It checks Website/API readiness and household creation,
+request replay and reads through the generated auth and Effect clients. The
+harness destroys its stage after the suite. Keep Docker running for this test.
+The Vitest configuration explicitly runs lifecycle hooks in registration order,
+as required by Alchemy's sidecar cleanup.
 
 ## Verification
 
@@ -54,8 +76,8 @@ credentials, deployment, external email, or AI provider are needed.
 Run the standalone build and this suite sequentially in a checkout; building
 while Miniflare watches client assets can restart the test server.
 
-For a manual walkthrough, run `pnpm --filter @meal-planner/web dev:auth-family`
-and open `http://127.0.0.1:4398/signup`. Stop the process with Ctrl+C when finished.
+For a manual walkthrough of the full application, use `pnpm dev` above.
+The focused fixture is started only by its test commands.
 Test mail is captured at `/__test/mail?email=ENCODED_TEST_EMAIL`. This endpoint, `/__test/expire-session`, and
 the test-client IP header exist only in the isolated fixture. The build script
 calls Alchemy’s public source-provider API without evaluating the deployment

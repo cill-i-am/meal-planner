@@ -48,8 +48,10 @@ It cannot establish the required local finite-lifetime proof by itself.
 
 The application adapter uses Alchemy's public native R2 binding. It forwards the
 length, checksum, metadata, and create-only condition to `raw.put` for bytes and
-streams. Alchemy beta.76's streamed `WriteBucketBinding` path drops options when
-calling `raw.put`, so that path cannot preserve this existing storage contract.
+streams. Alchemy beta.80 now forwards these options on streamed puts. The native
+adapter remains because it also cancels and joins the fixed-length producer on
+conditional rejection, failure, and interruption; upstream still uses an unowned
+`pipeThrough` for that producer.
 
 A streamed upload owns its fixed-length producer through completion or
 cancellation. Early conditional rejection, put failure, and interruption signal

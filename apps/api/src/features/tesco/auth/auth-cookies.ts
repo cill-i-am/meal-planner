@@ -1,5 +1,5 @@
 import { Effect, Redacted, Schema } from "effect";
-import { Cookies } from "effect/unstable/http";
+import { Cookies } from "effect/http";
 
 import { TescoAuthCookieInvalid } from "./auth.errors.js";
 import {

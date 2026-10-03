@@ -109,7 +109,9 @@ it("resumes a saved acceptance after a failed household link and rejects another
       ),
   };
   const resolver = makeAuthenticatedOrganizationResolver({ auth: service });
-  const payload = Schema.decodeUnknownSync(InvitationResponse)({
+  const payload = Schema.decodeUnknownSync(InvitationResponse, {
+    onExcessProperty: "error",
+  })({
     decision: "accept",
     mutationId: "join-request-1111",
   });

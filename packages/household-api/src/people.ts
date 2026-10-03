@@ -168,7 +168,7 @@ export const InviteHouseholdAdultPayload = Schema.Struct({
   email: EmailAddress,
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type InviteHouseholdAdultPayload =
   typeof InviteHouseholdAdultPayload.Type;
 
@@ -177,7 +177,7 @@ export const AssociateHouseholdAdultInvitationPayload = Schema.Struct({
   email: EmailAddress,
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type AssociateHouseholdAdultInvitationPayload =
   typeof AssociateHouseholdAdultInvitationPayload.Type;
 
@@ -185,7 +185,7 @@ export type AssociateHouseholdAdultInvitationPayload =
 export const CompleteHouseholdAdultLinkPayload = Schema.Struct({
   invitationId: InvitationId,
   mutationId: HouseholdPersonMutationId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type CompleteHouseholdAdultLinkPayload =
   typeof CompleteHouseholdAdultLinkPayload.Type;
 
@@ -196,7 +196,7 @@ export const RepairHouseholdAdultLinkPayload = Schema.Struct({
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
   reason: HouseholdPeopleOperationReason,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type RepairHouseholdAdultLinkPayload =
   typeof RepairHouseholdAdultLinkPayload.Type;
 
@@ -208,7 +208,7 @@ export const DepartHouseholdAdultPayload = Schema.Struct({
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
   reason: HouseholdPeopleOperationReason,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type DepartHouseholdAdultPayload =
   typeof DepartHouseholdAdultPayload.Type;
 
@@ -216,7 +216,7 @@ export type DepartHouseholdAdultPayload =
 export const CancelHouseholdAdultDeparturePayload = Schema.Struct({
   expectedOperationVersion: HouseholdAssociationVersion,
   mutationId: HouseholdPersonMutationId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type CancelHouseholdAdultDeparturePayload =
   typeof CancelHouseholdAdultDeparturePayload.Type;
 
@@ -226,7 +226,7 @@ export const RetryHouseholdAdultDeparturePayload = Schema.Struct({
   memberId: MemberId,
   mutationId: HouseholdPersonMutationId,
   reason: HouseholdPeopleOperationReason,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type RetryHouseholdAdultDeparturePayload =
   typeof RetryHouseholdAdultDeparturePayload.Type;
 
@@ -236,7 +236,7 @@ export const ReturnHouseholdAdultPayload = Schema.Struct({
   invitationId: InvitationId,
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type ReturnHouseholdAdultPayload =
   typeof ReturnHouseholdAdultPayload.Type;
 
@@ -267,7 +267,7 @@ export type HouseholdPeopleRoster = typeof HouseholdPeopleRoster.Type;
 export const BootstrapHouseholdCreatorPayload = Schema.Struct({
   displayName: HouseholdPersonDisplayName,
   mutationId: HouseholdPersonMutationId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 /** Explicit creator-person bootstrap command. */
 export type BootstrapHouseholdCreatorPayload =
   typeof BootstrapHouseholdCreatorPayload.Type;
@@ -277,7 +277,7 @@ export const CreateHouseholdPersonPayload = Schema.Struct({
   displayName: HouseholdPersonDisplayName,
   kind: HouseholdPersonKind,
   mutationId: HouseholdPersonMutationId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 /** Command to create an unlinked adult or dependant. */
 export type CreateHouseholdPersonPayload =
   typeof CreateHouseholdPersonPayload.Type;
@@ -286,7 +286,7 @@ export type CreateHouseholdPersonPayload =
 export const TransitionHouseholdPersonPayload = Schema.Struct({
   expectedVersion: HouseholdPersonVersion,
   mutationId: HouseholdPersonMutationId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 /** Optimistic archive or restore command. */
 export type TransitionHouseholdPersonPayload =
   typeof TransitionHouseholdPersonPayload.Type;
@@ -298,7 +298,7 @@ export const AssociateAdultInvitationPayload = Schema.Struct({
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
   replacedInvitationDigest: Schema.optionalKey(HouseholdInvitationDigest),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 /** Owner command associating an adult with a new invitation. */
 export type AssociateAdultInvitationPayload =
   typeof AssociateAdultInvitationPayload.Type;
@@ -307,7 +307,7 @@ export type AssociateAdultInvitationPayload =
 export const CompleteAcceptedAdultLinkPayload = Schema.Struct({
   invitationDigest: HouseholdInvitationDigest,
   mutationId: HouseholdPersonMutationId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 /** Accepted member command linking to the explicitly associated adult. */
 export type CompleteAcceptedAdultLinkPayload =
   typeof CompleteAcceptedAdultLinkPayload.Type;
@@ -318,7 +318,7 @@ export const RepairAdultAccountLinkPayload = Schema.Struct({
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
   reason: HouseholdPeopleOperationReason,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 /** Explicit organizer-authorized repair of an account-to-person link. */
 export type RepairAdultAccountLinkPayload =
   typeof RepairAdultAccountLinkPayload.Type;
@@ -330,7 +330,7 @@ export const PrepareMemberDeparturePayload = Schema.Struct({
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
   reason: HouseholdPeopleOperationReason,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 /** Prepare one durable member-departure operation before access mutation. */
 export type PrepareMemberDeparturePayload =
   typeof PrepareMemberDeparturePayload.Type;
@@ -339,7 +339,7 @@ export type PrepareMemberDeparturePayload =
 export const CancelMemberDeparturePayload = Schema.Struct({
   expectedOperationVersion: HouseholdAssociationVersion,
   mutationId: HouseholdPersonMutationId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 /** Cancel one departure while it is still prepared. */
 export type CancelMemberDeparturePayload =
   typeof CancelMemberDeparturePayload.Type;
@@ -349,7 +349,7 @@ export const RetryMemberDeparturePayload = Schema.Struct({
   expectedOperationVersion: HouseholdAssociationVersion,
   mutationId: HouseholdPersonMutationId,
   reason: HouseholdPeopleOperationReason,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 /** Resume a visible repair-required departure phase. */
 export type RetryMemberDeparturePayload =
   typeof RetryMemberDeparturePayload.Type;
@@ -360,7 +360,7 @@ export const RestoreReturningAdultLinkPayload = Schema.Struct({
   invitationDigest: HouseholdInvitationDigest,
   mutationId: HouseholdPersonMutationId,
   personId: HouseholdPersonId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 /** Restore and link the same historical adult after a later invitation. */
 export type RestoreReturningAdultLinkPayload =
   typeof RestoreReturningAdultLinkPayload.Type;
@@ -395,7 +395,7 @@ export type HouseholdMemberDepartureStart =
 /** Query option controlling whether archived people are returned. */
 export const ListHouseholdPeopleUrlParams = Schema.Struct({
   includeArchived: Schema.optionalKey(Schema.Literals(["true", "false"])),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 /** Query option controlling whether archived people are returned. */
 export type ListHouseholdPeopleUrlParams =
   typeof ListHouseholdPeopleUrlParams.Type;
@@ -506,7 +506,7 @@ export const RenameHouseholdPersonPayload = Schema.Struct({
   displayName: HouseholdPersonDisplayName,
   expectedVersion: HouseholdPersonVersion,
   mutationId: HouseholdPersonMutationId,
-}).annotate({ parseOptions: { onExcessProperty: "error" } });
+});
 export type RenameHouseholdPersonPayload =
   typeof RenameHouseholdPersonPayload.Type;
 

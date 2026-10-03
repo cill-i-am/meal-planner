@@ -1,8 +1,8 @@
 import { emptyRecipeDetails } from "@meal-planner/recipe-domain";
 import { RuntimeContext } from "alchemy";
 import { Effect, Option, Schema, Stream } from "effect";
-import { AiError, LanguageModel } from "effect/unstable/ai";
-import type { Response as AiResponse } from "effect/unstable/ai";
+import { AiError, LanguageModel } from "effect/ai";
+import type { Response as AiResponse } from "effect/ai";
 
 import type { ImportObservabilityEvent } from "./import-observability.js";
 import {
@@ -282,9 +282,9 @@ const makeVisualLanguageModel = (
         Effect.flatMap((outcome) =>
           outcome._tag === "Failure"
             ? Effect.fail(fixtureAiError(outcome.description))
-            : Schema.decodeUnknownEffect(VisualProviderResponse, {
-                onExcessProperty: "preserve",
-              })(outcome.value).pipe(Effect.mapError(() => fixtureAiError()))
+            : Schema.decodeUnknownEffect(VisualProviderResponse)(
+                outcome.value
+              ).pipe(Effect.mapError(() => fixtureAiError()))
         ),
         Effect.map(providerResponseParts)
       ),

@@ -16,14 +16,14 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(source).toContain("zdr: true");
   });
 
-  it("declares exactly one default-exported MealPlanner stack with Cloudflare state", () => {
+  it("declares one MealPlanner stack with local dev state and hosted deployment state", () => {
     const source = readRepoFile("./alchemy.run.ts");
 
     expect(source.match(/export default Alchemy\.Stack/gu)).toHaveLength(1);
     expect(source.match(/Alchemy\.Stack\(/gu)).toHaveLength(1);
     expect(source).toMatch(/Alchemy\.Stack\(\s*"MealPlanner"/u);
     expect(source).toContain("providers: Cloudflare.providers()");
-    expect(source).toContain("state: Cloudflare.state()");
+    expect(source).toContain("dev ? Alchemy.localState() : Cloudflare.state()");
   });
 
   it("keeps the Worker identity stable, private, and preserves its optional URL output", () => {
@@ -32,11 +32,8 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
 
     expect(workerSource).toContain('"MealPlannerApi"');
     expect(workerSource).toContain("main: import.meta.url");
-    expect(workerSource).toContain("observability: {");
-    expect(workerSource).toContain("invocationLogs: false");
-    expect(workerSource).toMatch(/traces:\s*\{[^}]*enabled:\s*false,\s*\}/u);
-    expect(workerSource).not.toContain("invocationLogs: true");
-    expect(workerSource).not.toMatch(/traces:\s*\{[^}]*enabled:\s*true/u);
+    expect(workerSource).toContain("...workerObservability");
+    expect(workerSource).toContain("Cloudflare.Telemetry()");
     expect(workerSource).toContain("workersDev: false");
     expect(stackSource).toContain("apiUrl: api.url");
     expect(stackSource).toContain("apiWorkerName: api.workerName");
@@ -57,6 +54,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       .toSorted();
 
     expect(sqlFiles).not.toHaveLength(0);
+
     const migration = sqlFiles
       .map((file) => readFileSync(`${migrationsDirectory}/${file}`, "utf-8"))
       .join("\n");
@@ -181,7 +179,10 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(stackSource).toContain(
       'assets: { runWorkerFirst: ["/api/auth/*", "/v1/*"] }'
     );
-    expect(stackSource).toContain("env: { MEAL_PLANNER_API: api }");
+    expect(stackSource).toContain("MEAL_PLANNER_API: api,");
+    expect(stackSource).toContain(
+      'BROWSER_ANALYTICS_TOKEN: browserAnalytics?.siteToken ?? ""'
+    );
     expect(stackSource).toContain("...websiteSource");
     const websiteSource = readRepoFile("./apps/web/website-source.ts");
     expect(websiteSource).toContain('main: "src/worker.ts"');
@@ -191,7 +192,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "...websiteSource"
     );
     expect(apiWorkerSource).toContain("auth.fetchHttpEffect(webRequest)");
-    expect(apiWorkerSource).toContain('Config.redacted("BETTER_AUTH_SECRET")');
+    expect(apiWorkerSource).toContain('Config.Redacted("BETTER_AUTH_SECRET")');
   });
 
   it("binds the least-privilege acquisition resources without Images or Sharp", () => {
@@ -233,13 +234,13 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "export const EvidenceRetentionSeconds = 604_800"
     );
     expect(authorizationConfigSource).toMatch(
-      /Config\.redacted\(\s*"MEAL_PLANNER_IMPORT_API_TOKEN"\s*\)/u
+      /Config\.Redacted\(\s*"MEAL_PLANNER_IMPORT_API_TOKEN"\s*\)/u
     );
     expect(workerSource).toContain(
-      'Config.string("MEAL_PLANNER_IMPORT_ACTOR_ID")'
+      'Config.String("MEAL_PLANNER_IMPORT_ACTOR_ID")'
     );
     expect(workerSource).toContain(
-      'Config.string("MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID")'
+      'Config.String("MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID")'
     );
     expect(allSource).not.toMatch(/Cloudflare\.Images|Images\.|sharp/iu);
   });

@@ -5,6 +5,7 @@ import { CloudflareTextAdapter } from "@tanstack/ai-cloudflare";
 import type { CloudflareBindingConfig } from "@tanstack/ai-cloudflare";
 import { Effect, Option, Schema } from "effect";
 
+import { toStrictJsonSchema } from "../../infrastructure/strict-json-schema.js";
 import { PrivateChatReply } from "./private-chat-reply.js";
 import {
   makePrivateDiscoveryProviderOutput,
@@ -55,8 +56,7 @@ export const PrivateDiscoveryConfiguration = Schema.Struct({
         (config.maxOutputTokens <= 4096 && config.timeoutMs <= 120_000),
       { expected: "token and deadline limits supported by the selected model" }
     )
-  ),
-  Schema.annotate({ parseOptions: { onExcessProperty: "error" } })
+  )
 );
 export type PrivateDiscoveryConfiguration =
   typeof PrivateDiscoveryConfiguration.Type;
@@ -72,7 +72,8 @@ const failure = (
   stage: PrivateDiscoveryInvalidOutputStage | null = null
 ) => new PrivateDiscoveryFailure({ provenance, reason, stage, usage });
 const configuration = Schema.decodeUnknownOption(
-  Schema.fromJsonString(PrivateDiscoveryConfiguration)
+  Schema.fromJsonString(PrivateDiscoveryConfiguration),
+  { onExcessProperty: "error" }
 );
 
 const unknownUsage: PrivateDiscoveryUsage = {
@@ -83,8 +84,9 @@ const unknownUsage: PrivateDiscoveryUsage = {
 
 const kimiThinking: NonNullable<
   NativeCloudflare.AiModels["@cf/moonshotai/kimi-k2.6"]["inputs"]["chat_template_kwargs"]
-> & { readonly thinking: true } = { thinking: true };
-
+> & {
+  readonly thinking: true;
+} = { thinking: true };
 const submissionDescription =
   "Submit one private discovery intent for application validation. This never confirms a household fact.";
 
@@ -198,13 +200,16 @@ const streamDiscovery = (
   } catch {
     return reject(failed("context_limit"));
   }
+  const outputSchema = makePrivateDiscoveryProviderOutput(context.cards);
   const standard = Schema.toStandardJSONSchemaV1(
-    Schema.toStandardSchemaV1(makePrivateDiscoveryProviderOutput(context.cards))
+    Schema.toStandardSchemaV1(outputSchema, {
+      parseOptions: { onExcessProperty: "error" },
+    })
   );
   const request = providerRequest(
     config,
     context,
-    standard["~standard"].jsonSchema.input({ target: "draft-2020-12" })
+    toStrictJsonSchema(outputSchema)
   );
   const encoder = new TextEncoder();
   if (

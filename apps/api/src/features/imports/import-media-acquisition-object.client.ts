@@ -1,8 +1,8 @@
 import type { RpcCallError, RpcDecodeError } from "alchemy/Rpc";
 import { Effect, Option, Schema, Scope, Stream } from "effect";
-import type { HttpServerError } from "effect/unstable/http/HttpServerError";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import type * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import type { HttpServerError } from "effect/http/HttpServerError";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
+import type * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import type {
   AcquisitionMediaObjectLike,

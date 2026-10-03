@@ -309,7 +309,7 @@ export type MealPlanPersistenceFailure = typeof MealPlanPersistenceFailure.Type;
 export const CreateMealPlanPayload = Schema.Struct({
   policy: MealPlanPolicy,
   request: MealPlanRequest,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type CreateMealPlanPayload = typeof CreateMealPlanPayload.Type;
 
 export const SwapMealPlanPayload = Schema.Struct({
@@ -318,12 +318,12 @@ export const SwapMealPlanPayload = Schema.Struct({
   reason: ShortText,
   replacementImportId: MealPlanRecipeSnapshotId,
   slotId: MealPlanSlotId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type SwapMealPlanPayload = typeof SwapMealPlanPayload.Type;
 
 export const DecideMealPlanPayload = Schema.Struct({
   expectedRevision: NonNegativeInteger,
   mutationId: MealPlanMutationId,
   reason: ShortText,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type DecideMealPlanPayload = typeof DecideMealPlanPayload.Type;

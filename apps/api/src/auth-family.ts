@@ -2,7 +2,7 @@ import { FamilyServiceLive } from "@meal-planner/families/application";
 import { InvitationResponseServiceLive } from "@meal-planner/invitations/application";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { Effect, Layer } from "effect";
-import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
+import { HttpRouter, HttpServerResponse } from "effect/http";
 
 import type {
   MealPlannerAuthService,

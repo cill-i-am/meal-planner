@@ -123,18 +123,18 @@ const RawTescoConfigDefinition = Config.all({
     TescoAuthCookieHeaderValue,
     "TESCO_AUTH_COOKIE_HEADER"
   ),
-  authRefreshFromUrl: Config.url("TESCO_AUTH_REFRESH_FROM_URL"),
+  authRefreshFromUrl: Config.URL("TESCO_AUTH_REFRESH_FROM_URL"),
   authorization: redactedSchemaConfig(
     TescoAuthorizationValue,
     "TESCO_AUTHORIZATION"
   ),
   locale: Config.schema(TescoLocale, "TESCO_LOCALE"),
   mangoApiKey: redactedSchemaConfig(TescoApiKeyValue, "TESCO_MANGO_API_KEY"),
-  mangoUrl: Config.url("TESCO_MANGO_URL"),
+  mangoUrl: Config.URL("TESCO_MANGO_URL"),
   region: Config.schema(TescoRegion, "TESCO_REGION"),
   releaseBranch: optionalSchemaConfig(TescoHeaderValue, "TESCO_RELEASE_BRANCH"),
-  softRefreshSignInUrl: Config.url("TESCO_SOFT_REFRESH_SIGN_IN_URL"),
-  suggestionUrl: Config.url("TESCO_SUGGESTION_URL"),
+  softRefreshSignInUrl: Config.URL("TESCO_SOFT_REFRESH_SIGN_IN_URL"),
+  suggestionUrl: Config.URL("TESCO_SUGGESTION_URL"),
   transactionPurpose: optionalSchemaConfig(
     TescoHeaderValue,
     "TESCO_TRANSACTION_PURPOSE"

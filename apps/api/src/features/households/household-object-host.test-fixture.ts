@@ -32,13 +32,14 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle/Cloudflare";
 import { DurableObject } from "cloudflare:workers";
 import { asc, eq } from "drizzle-orm";
-import { Context, Effect, Option, Schema } from "effect";
+import { Context, Effect, Exit, Option, Schema } from "effect";
 
 import migrations from "../../../household-migrations/migrations.js";
 import { ApprovedRecipe } from "../imports/import-recipe-review.js";
 import type { MealPlanServiceError } from "../meal-planning/meal-plan.js";
 import { HouseholdOutputFenceLive } from "../private-output/household-output-fence.js";
 import { HouseholdImportBatchQueueWriter } from "./batches/household-import-batch-queue.port.js";
+import { HouseholdAdmitImportBatchInput } from "./batches/household-import-batch.contract.js";
 import { HouseholdDispatchId } from "./foundation/import-workflow-admission.contract.js";
 import { makeImportWorkflowAdmissionRepository } from "./foundation/import-workflow-admission.repository.js";
 import type {
@@ -49,7 +50,7 @@ import {
   HouseholdManualMealSwapCommand,
   HouseholdMealPlanDecisionCommand,
 } from "./household-meal-plan.contract.js";
-import { HouseholdObjectRuntime } from "./household-object-runtime.js";
+import { makeHouseholdObjectRuntime } from "./household-object-runtime.js";
 import type {
   HouseholdDomainFailure,
   HouseholdEnsureInput,
@@ -130,7 +131,9 @@ const MealPlanDecisionRequestWire = Schema.toEncoded(
 const alchemyRuntimeContractKey = "shape";
 const HouseholdObjectTestRuntime = Effect.gen(
   function* initializeHouseholdObjectTestRuntime() {
-    const household = yield* yield* HouseholdObjectRuntime.pipe(
+    const initializeHousehold = yield* makeHouseholdObjectRuntime(
+      migrations
+    ).pipe(
       Effect.provide(HouseholdAuthorityServicesLive),
       Effect.provide(HouseholdOutputFenceLive),
       Effect.provideService(HouseholdImportBatchQueueWriter, {
@@ -149,9 +152,68 @@ const HouseholdObjectTestRuntime = Effect.gen(
         ),
         Effect.scoped
       );
-    // eslint-disable-next-line sort-keys -- Fixture RPC follows the production runtime surface, then corruption-only probes.
-    return Effect.succeed({
+    type Household = Effect.Success<typeof initializeHousehold>;
+    // eslint-disable-next-line sort-keys -- Fixture RPC follows production capabilities, then corruption-only probes.
+    const makeMethods = (household: Household) => ({
       ...household,
+      proveBatchSchedulingRollback: (
+        untrustedInput: HouseholdAdmitImportBatchInput
+      ) =>
+        scoped(
+          Effect.gen(function* proveBatchSchedulingRollback() {
+            const input = yield* Schema.decodeUnknownEffect(
+              HouseholdAdmitImportBatchInput
+            )(untrustedInput);
+            yield* household.ensureHousehold({ admission: input.admission });
+            yield* household.admitImportBatch({
+              ...input,
+              idempotencyKey: Schema.decodeUnknownSync(
+                HouseholdAdmitImportBatchInput.fields.idempotencyKey
+              )("seed-batch-callback-rollback"),
+            });
+            const counts = () => ({
+              batches: durableObjectState.raw.storage.sql
+                .exec<{ count: number }>(
+                  "SELECT COUNT(*) AS count FROM household_import_batches"
+                )
+                .one().count,
+              callbacks: durableObjectState.raw.storage.sql
+                .exec<{ count: number }>(
+                  "SELECT COUNT(*) AS count FROM alchemy_alarm_callbacks"
+                )
+                .one().count,
+              items: durableObjectState.raw.storage.sql
+                .exec<{ count: number }>(
+                  "SELECT COUNT(*) AS count FROM household_import_batch_items"
+                )
+                .one().count,
+              outbox: durableObjectState.raw.storage.sql
+                .exec<{ count: number }>(
+                  "SELECT COUNT(*) AS count FROM household_import_batch_outbox"
+                )
+                .one().count,
+            });
+            const before = counts();
+            durableObjectState.raw.storage.sql.exec(
+              "CREATE TRIGGER refuse_batch_callback BEFORE INSERT ON alchemy_alarm_callbacks BEGIN SELECT RAISE(ABORT, 'callback storage refused'); END"
+            );
+            const rejected = yield* Effect.exit(
+              household.admitImportBatch(input)
+            );
+            durableObjectState.raw.storage.sql.exec(
+              "DROP TRIGGER refuse_batch_callback"
+            );
+            const afterRejected = counts();
+            const replay = yield* household.admitImportBatch(input);
+            return {
+              afterRejected,
+              afterReplay: counts(),
+              before,
+              rejected: Exit.isFailure(rejected),
+              replayMessageCount: replay.messages.length,
+            };
+          })
+        ),
       corruptImportWorkflowDispatchState: (
         dispatchId: HouseholdDispatchId,
         state: string
@@ -413,6 +475,7 @@ const HouseholdObjectTestRuntime = Effect.gen(
           })
         ),
     });
+    return initializeHousehold.pipe(Effect.map(makeMethods));
   }
 );
 const BrokenMigrationObjectTestRuntime = Effect.gen(

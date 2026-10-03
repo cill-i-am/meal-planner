@@ -1,6 +1,7 @@
 import { access, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const householdRoot = import.meta.dirname;
@@ -165,12 +166,44 @@ describe("household foundation structural boundaries", () => {
         "evidence/household-evidence.repository.ts",
         "foundation/import-workflow-admission.repository.ts",
         "household-meal-plan.repository.ts",
+        "household-object-runtime.ts",
         "people/household-people.repository.ts",
         "profiles/household-profile.repository.ts",
         "recipe-import/household-recipe-import.repository.ts",
       ].toSorted()
     );
     for (const { path: sourcePath, source } of transactionOwners) {
+      if (sourcePath === "household-object-runtime.ts") {
+        const file = ts.createSourceFile(
+          sourcePath,
+          source,
+          ts.ScriptTarget.Latest,
+          true
+        );
+        let storageTransactions = 0;
+        const visit = (node: ts.Node) => {
+          if (
+            ts.isCallExpression(node) &&
+            ts.isPropertyAccessExpression(node.expression) &&
+            node.expression.name.text === "transaction"
+          ) {
+            expect(node.expression.expression.getText(file)).toBe(
+              "durableObjectState.storage"
+            );
+            storageTransactions += 1;
+            for (const argument of node.arguments) {
+              expect(
+                argument.getText(file),
+                "external I/O inside storage transaction"
+              ).not.toMatch(/\bfetch\s*\(|\.getByName\(|\.send\s*\(/u);
+            }
+          }
+          ts.forEachChild(node, visit);
+        };
+        visit(file);
+        expect(storageTransactions).toBeGreaterThan(0);
+        continue;
+      }
       expect(source, `${sourcePath} performs external I/O`).not.toMatch(
         /\bfetch\s*\(|\.getByName\(|\.send\s*\(|\.put\s*\(|cloudflare:workers|alchemy\/Cloudflare/u
       );

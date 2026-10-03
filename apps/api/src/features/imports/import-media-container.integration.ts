@@ -75,7 +75,6 @@ const expectRejectedProbe = async (
 describe.skipIf(!enabled)("pinned media container", () => {
   it("builds as non-root and validates deterministic real MP4/audio/video", async () => {
     const suffix = `${process.pid}-${Date.now()}`;
-    const builder = `meal-planner-gaia-109-${suffix}`;
     const container = `meal-planner-gaia-109-media-${suffix}`;
     const workspaceContainer = `meal-planner-gaia-169-workspace-${suffix}`;
     const image = `meal-planner-gaia-109-media:${suffix}`;
@@ -86,22 +85,10 @@ describe.skipIf(!enabled)("pinned media container", () => {
     try {
       await writeFile(dockerfile, TikTokMediaContainerDockerfile);
       await Effect.runPromise(
-        docker([
-          "buildx",
-          "create",
-          "--driver",
-          "docker-container",
-          "--name",
-          builder,
-        ])
-      );
-      await Effect.runPromise(
         docker(
           [
             "buildx",
             "build",
-            "--builder",
-            builder,
             "--file",
             dockerfile,
             "--load",
@@ -320,12 +307,6 @@ ffprobe -v error -show_format -show_streams -of json /tmp/video-only.mp4 > /tmp/
       );
       await Effect.runPromise(
         docker(["image", "rm", "--force", image], { allowFailure: true })
-      );
-      await Effect.runPromise(
-        docker(["buildx", "rm", "--force", builder], {
-          allowFailure: true,
-          timeout: 120_000,
-        })
       );
       await rm(root, { force: true, recursive: true });
     }

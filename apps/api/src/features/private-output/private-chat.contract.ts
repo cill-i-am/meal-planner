@@ -8,7 +8,7 @@ export const PrivateChatContext = Schema.Struct({
   binding: PrivateSessionBinding,
   generation: Schema.String.pipe(Schema.check(Schema.isUUID())),
   profile: Schema.NullOr(PersonProfile),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type PrivateChatContext = typeof PrivateChatContext.Type;
 
 export const PrivateChatMetadata = Schema.Struct({

@@ -26,6 +26,7 @@ import { Schema } from "effect";
 import { displayedIdentityHeaders } from "../auth/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
 import { ProfileOperationError } from "../household-profiles/index.js";
+import { browserObservedFetch } from "../observability/browser-observability.js";
 import {
   readCurrentPrivateProfile,
   continuePrivateConfirmation,
@@ -132,8 +133,11 @@ const initialView = (): PrivateInterviewView => ({
   sessionState: null,
   sessionsLoaded: false,
 });
-
-const mergeById = <T extends { readonly ordinal: number }>(
+const mergeById = <
+  T extends {
+    readonly ordinal: number;
+  },
+>(
   current: readonly T[],
   incoming: readonly T[],
   key: (value: T) => string
@@ -188,7 +192,10 @@ export class PrivateInterviewClient {
   } | null = null;
 
   constructor(
-    context: { readonly accountId: string; readonly householdId: string },
+    context: {
+      readonly accountId: string;
+      readonly householdId: string;
+    },
     dependencies: PrivateInterviewDependencies,
     onConfirmationSettled?: () => void
   ) {
@@ -474,7 +481,12 @@ export class PrivateInterviewClient {
   }
 
   #activateDirectory(
-    frame: Extract<DirectoryFrame, { type: "DirectoryReady" }>
+    frame: Extract<
+      DirectoryFrame,
+      {
+        type: "DirectoryReady";
+      }
+    >
   ) {
     if (this.#directoryReady) {
       throw new Error("Duplicate directory activation");
@@ -684,8 +696,14 @@ export class PrivateInterviewClient {
       this.#update({ sessionState: state });
     }
   }
-
-  #activateSession(frame: Extract<SessionFrame, { type: "SessionReady" }>) {
+  #activateSession(
+    frame: Extract<
+      SessionFrame,
+      {
+        type: "SessionReady";
+      }
+    >
+  ) {
     if (
       this.#sessionReady ||
       frame.bindingKey !== this.#bindingKey ||
@@ -768,8 +786,14 @@ export class PrivateInterviewClient {
       }
     }
   }
-
-  #sessionRejected(frame: Extract<SessionFrame, { type: "Rejected" }>) {
+  #sessionRejected(
+    frame: Extract<
+      SessionFrame,
+      {
+        type: "Rejected";
+      }
+    >
+  ) {
     if (
       this.#view.pending?.sessionReference !== this.#view.sessionReference ||
       this.#acknowledge(frame.commandId) === null
@@ -801,8 +825,14 @@ export class PrivateInterviewClient {
       cards: [...previous.values()].toSorted((a, b) => a.ordinal - b.ordinal),
     });
   }
-
-  #readCards(frame: Extract<SessionFrame, { type: "CardsRead" }>) {
+  #readCards(
+    frame: Extract<
+      SessionFrame,
+      {
+        type: "CardsRead";
+      }
+    >
+  ) {
     if (frame.requestId !== this.#cardsRequest) {
       return;
     }
@@ -827,8 +857,14 @@ export class PrivateInterviewClient {
       void this.refreshProfile();
     }
   }
-
-  #cardUpdated(frame: Extract<SessionFrame, { type: "CardUpdated" }>) {
+  #cardUpdated(
+    frame: Extract<
+      SessionFrame,
+      {
+        type: "CardUpdated";
+      }
+    >
+  ) {
     if (this.#acknowledge(frame.mutationId) === null) {
       return;
     }
@@ -840,7 +876,12 @@ export class PrivateInterviewClient {
   }
 
   #confirmationPending(
-    frame: Extract<SessionFrame, { type: "ConfirmationPending" }>
+    frame: Extract<
+      SessionFrame,
+      {
+        type: "ConfirmationPending";
+      }
+    >
   ) {
     if (frame.state.version < (this.#view.sessionState?.version ?? 0)) {
       return;
@@ -859,7 +900,12 @@ export class PrivateInterviewClient {
   }
 
   #confirmationSettled(
-    frame: Extract<SessionFrame, { type: "ConfirmationSettled" }>
+    frame: Extract<
+      SessionFrame,
+      {
+        type: "ConfirmationSettled";
+      }
+    >
   ) {
     const currentVersion =
       frame.state.version >= (this.#view.sessionState?.version ?? 0);
@@ -1214,7 +1260,7 @@ export const browserPrivateInterviewDependencies = (
     )) {
       headers.set(name, value);
     }
-    return fetch(input, { ...init, headers });
+    return browserObservedFetch(input, { ...init, headers });
   },
   makeId: () => crypto.randomUUID(),
   readCurrentProfile: () => readCurrentPrivateProfile(scope),

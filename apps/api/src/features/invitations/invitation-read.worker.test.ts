@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { drizzle } from "drizzle-orm/d1";
 import { Effect, Layer } from "effect";
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 import { beforeAll, expect, it } from "vitest";
 
 import * as authSchema from "../auth/auth.database-schema.js";

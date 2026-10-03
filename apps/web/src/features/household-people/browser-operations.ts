@@ -3,7 +3,7 @@ import {
   makeHouseholdPeopleApiClientLayer,
 } from "@meal-planner/household-api";
 import { Cause, Effect, Exit, Option, Predicate, Result, Schema } from "effect";
-import * as HttpClientError from "effect/unstable/http/HttpClientError";
+import * as HttpClientError from "effect/http/HttpClientError";
 
 import {
   apiHttpLayer,

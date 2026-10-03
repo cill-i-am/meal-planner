@@ -203,7 +203,9 @@ const DepartureControl = ({
   const form = useForm({ defaultValues: { confirmed: false } });
   const depart = () =>
     onDepart(
-      Schema.decodeUnknownSync(DepartHouseholdAdultPayload)({
+      Schema.decodeUnknownSync(DepartHouseholdAdultPayload, {
+        onExcessProperty: "error",
+      })({
         expectedLinkVersion: person.associationVersion,
         expectedPersonVersion: person.version,
         memberId: currentMemberId,
@@ -259,7 +261,9 @@ const CompleteLinkForm = ({
     defaultValues: { invitationId: "" },
     onSubmit: ({ value }) =>
       onSubmit(
-        Schema.decodeUnknownSync(CompleteHouseholdAdultLinkPayload)({
+        Schema.decodeUnknownSync(CompleteHouseholdAdultLinkPayload, {
+          onExcessProperty: "error",
+        })({
           invitationId: value.invitationId,
           mutationId: newMutationId(),
         })
@@ -315,7 +319,9 @@ const InviteAdultForm = ({
     onSubmit: ({ formApi, value }) => {
       const input = Schema.decodeUnknownSync(InviteAdultFormInput)(value);
       onSubmit(
-        Schema.decodeUnknownSync(InviteHouseholdAdultPayload)({
+        Schema.decodeUnknownSync(InviteHouseholdAdultPayload, {
+          onExcessProperty: "error",
+        })({
           email: input.email,
           mutationId: newMutationId(),
           personId: input.personId,
@@ -433,7 +439,9 @@ const RepairLinkForm = ({
         return;
       }
       onSubmit(
-        Schema.decodeUnknownSync(RepairHouseholdAdultLinkPayload)({
+        Schema.decodeUnknownSync(RepairHouseholdAdultLinkPayload, {
+          onExcessProperty: "error",
+        })({
           expectedPersonVersion: person.version,
           memberId: currentMemberId,
           mutationId: newMutationId(),
@@ -502,7 +510,9 @@ const ReturnAdultForm = ({
         return;
       }
       onSubmit(
-        Schema.decodeUnknownSync(ReturnHouseholdAdultPayload)({
+        Schema.decodeUnknownSync(ReturnHouseholdAdultPayload, {
+          onExcessProperty: "error",
+        })({
           expectedPersonVersion: person.version,
           invitationId: value.invitationId,
           mutationId: newMutationId(),
@@ -583,6 +593,7 @@ export const HouseholdAssociationControls = ({
   const currentPerson = roster.people.find(
     (person) => person.id === roster.currentPersonId
   );
+
   return (
     <div>
       {onInvite === undefined ? null : (

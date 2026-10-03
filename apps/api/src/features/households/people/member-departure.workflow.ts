@@ -195,7 +195,9 @@ export const makeMemberDepartureWorkflowPorts = (options: {
 }): MemberDepartureWorkflowPorts => {
   const admission = makeSystemAdmission(options.input.organizationId);
   const readState = () =>
-    Schema.decodeUnknownEffect(HouseholdReadMemberDepartureSystemInput)({
+    Schema.decodeUnknownEffect(HouseholdReadMemberDepartureSystemInput, {
+      onExcessProperty: "error",
+    })({
       admission,
       operationId: options.input.operationId,
     }).pipe(
@@ -206,7 +208,9 @@ export const makeMemberDepartureWorkflowPorts = (options: {
     );
   return {
     confirmAccessRevoked: (state) =>
-      Schema.decodeUnknownEffect(HouseholdConfirmMemberAccessRevokedInput)({
+      Schema.decodeUnknownEffect(HouseholdConfirmMemberAccessRevokedInput, {
+        onExcessProperty: "error",
+      })({
         admission,
         expectedOperationVersion: state.operation.version,
         operationId: options.input.operationId,
@@ -218,7 +222,9 @@ export const makeMemberDepartureWorkflowPorts = (options: {
         Effect.orDie
       ),
     finalize: (operation) =>
-      Schema.decodeUnknownEffect(HouseholdFinalizeMemberDepartureInput)({
+      Schema.decodeUnknownEffect(HouseholdFinalizeMemberDepartureInput, {
+        onExcessProperty: "error",
+      })({
         admission,
         expectedOperationVersion: operation.version,
         operationId: options.input.operationId,
@@ -231,7 +237,8 @@ export const makeMemberDepartureWorkflowPorts = (options: {
       ),
     markRepairRequired: (state, phase) =>
       Schema.decodeUnknownEffect(
-        HouseholdMarkMemberDepartureRepairRequiredInput
+        HouseholdMarkMemberDepartureRepairRequiredInput,
+        { onExcessProperty: "error" }
       )({
         admission,
         expectedOperationVersion: state.operation.version,

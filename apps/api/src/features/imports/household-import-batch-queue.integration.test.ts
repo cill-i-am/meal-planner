@@ -108,7 +108,6 @@ describe("household batch Queue transport", () => {
                 type: "queue",
               },
             ],
-            type: "worker",
           },
         },
         {
@@ -135,7 +134,6 @@ describe("household batch Queue transport", () => {
                 type: "queue",
               },
             ],
-            type: "worker",
           },
         },
         {
@@ -158,7 +156,6 @@ describe("household batch Queue transport", () => {
             },
             manifest: domainManifest,
             name: "household-domain",
-            type: "worker",
           },
         },
         {
@@ -173,7 +170,6 @@ describe("household batch Queue transport", () => {
             },
             manifest: queueLossManifest,
             name: "queue-loss-wrapper",
-            type: "worker",
           },
         },
       ],

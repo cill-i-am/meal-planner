@@ -36,6 +36,7 @@ const ScenarioResult = Schema.Struct({
     workflowIdentity: Schema.String,
   }),
   status: Schema.Struct({ status: Schema.String }),
+  terminalDefects: Schema.Array(Schema.String),
   workflowId: Schema.String,
 });
 
@@ -112,7 +113,6 @@ describe("household batch native production Workflow composition", () => {
             },
             manifest: hostManifest,
             name: "workflow-host",
-            type: "worker",
           },
         },
         {
@@ -135,7 +135,6 @@ describe("household batch native production Workflow composition", () => {
             },
             manifest: domainManifest,
             name: "household-domain",
-            type: "worker",
           },
         },
       ],
@@ -154,6 +153,7 @@ describe("household batch native production Workflow composition", () => {
       "admission-lost-response"
     );
 
+    expect(first.terminalDefects).toEqual(["WorkflowFatalError"]);
     expect(first).toMatchObject({
       acquisitionRuns: 1,
       batch: {
@@ -161,7 +161,7 @@ describe("household batch native production Workflow composition", () => {
         status: "completed",
       },
       counts: { admit: 2, claim: 1, complete: 1, fail: 0 },
-      error: false,
+      error: true,
       outbox: { state: "dispatched" },
       status: { status: "complete" },
     });
@@ -179,7 +179,7 @@ describe("household batch native production Workflow composition", () => {
       acquisitionRuns: 1,
       batch: first.batch,
       counts: first.counts,
-      error: false,
+      error: true,
       outbox: { state: "dispatched" },
       replay: first.replay,
       status: { status: "complete" },
@@ -194,6 +194,7 @@ describe("household batch native production Workflow composition", () => {
       "dispatch-lost-response"
     );
 
+    expect(result.terminalDefects).toEqual(["WorkflowFatalError"]);
     expect(result).toMatchObject({
       acquisitionRuns: 1,
       batch: {
@@ -208,7 +209,7 @@ describe("household batch native production Workflow composition", () => {
         reconcile: 1,
         started: 1,
       },
-      error: false,
+      error: true,
       outbox: { state: "dispatched" },
       status: { status: "complete" },
     });
@@ -278,6 +279,9 @@ describe("household batch native production Workflow composition", () => {
       "dispatch-committed-reconcile-unavailable"
     );
 
+    expect(result.terminalDefects).toEqual(
+      Array.from({ length: 6 }, () => "WorkflowFatalError")
+    );
     expect(result).toMatchObject({
       acquisitionRuns: 1,
       batch: {

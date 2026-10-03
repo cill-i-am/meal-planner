@@ -4,9 +4,11 @@ import {
   recipeInstructionFromText,
   PlanningTags,
 } from "@meal-planner/recipe-domain";
-import { Schema } from "effect";
+import { Context, Schema } from "effect";
+import { HttpApi } from "effect/http-api";
 import { describe, expect, it } from "vitest";
 
+import { HouseholdMealPlanApi } from "./index.js";
 import {
   CreateMealPlanPayload,
   DecideMealPlanPayload,
@@ -199,16 +201,24 @@ describe("meal-plan contract", () => {
       },
     ],
   ] as const)("rejects excess fields in the %s command", (_, schema, input) => {
-    expect(() => Schema.decodeUnknownSync(schema)(input)).toThrow(
-      /Expected no excess property/u
-    );
+    expect(() =>
+      Schema.decodeUnknownSync(
+        schema,
+        Context.getUnsafe(
+          HouseholdMealPlanApi.annotations,
+          HttpApi.PayloadParseOptions
+        )
+      )(input)
+    ).toThrow(/Expected no excess property/u);
   });
 
   it.each(["2026-99-99", "2026-02-29"])(
     "rejects the impossible calendar date %s",
     (date) => {
       expect(() =>
-        Schema.decodeUnknownSync(CreateMealPlanPayload)({
+        Schema.decodeUnknownSync(CreateMealPlanPayload, {
+          onExcessProperty: "error",
+        })({
           ...validCreatePayload,
           request: {
             ...validCreatePayload.request,
@@ -226,7 +236,9 @@ describe("meal-plan contract", () => {
 
   it("accepts a real leap-day calendar date", () => {
     expect(() =>
-      Schema.decodeUnknownSync(CreateMealPlanPayload)({
+      Schema.decodeUnknownSync(CreateMealPlanPayload, {
+        onExcessProperty: "error",
+      })({
         ...validCreatePayload,
         request: {
           ...validCreatePayload.request,

@@ -42,7 +42,7 @@ export const HouseholdClaimAcquisitionAttemptInput = Schema.Struct({
   canonicalSourceId: SourceCanonicalId,
   expectedGeneration: PositiveSafeInteger,
   intentId: RecipeImportIntentId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdClaimAcquisitionAttemptInput =
   typeof HouseholdClaimAcquisitionAttemptInput.Type;
 
@@ -69,7 +69,7 @@ export const HouseholdReadAcquisitionAttemptsInput = Schema.Struct({
   admission: HouseholdSystemAdmission,
   expectedGeneration: PositiveSafeInteger,
   intentId: RecipeImportIntentId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdReadAcquisitionAttemptsInput =
   typeof HouseholdReadAcquisitionAttemptsInput.Type;
 
@@ -114,7 +114,7 @@ export const HouseholdCommitAcquisitionEvidenceInput = Schema.Struct({
     source: Schema.optionalKey(VerifiedSourceMetadata),
     videoStreams: Schema.NonEmptyArray(MediaStreamSummary),
   }),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdCommitAcquisitionEvidenceInput =
   typeof HouseholdCommitAcquisitionEvidenceInput.Type;
 
@@ -169,7 +169,7 @@ export const HouseholdObserveEvidenceReferenceInput = Schema.Struct({
     kind: HouseholdEvidenceReferenceKind,
     sha256: HouseholdEvidenceSha256,
   }),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdObserveEvidenceReferenceInput =
   typeof HouseholdObserveEvidenceReferenceInput.Type;
 
@@ -191,7 +191,7 @@ export const HouseholdReadEvidenceReferencesInput = Schema.Struct({
   admission: HouseholdSystemAdmission,
   expectedGeneration: PositiveSafeInteger,
   intentId: RecipeImportIntentId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdReadEvidenceReferencesInput =
   typeof HouseholdReadEvidenceReferencesInput.Type;
 
@@ -445,7 +445,7 @@ export const HouseholdMutateEvidenceStageInput = Schema.Struct({
       stage: Schema.Literals(["speech", "visual"]),
     }),
   ]),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdMutateEvidenceStageInput =
   typeof HouseholdMutateEvidenceStageInput.Type;
 
@@ -472,7 +472,7 @@ export const HouseholdReadEvidenceStageInput = Schema.Struct({
   expectedGeneration: PositiveSafeInteger,
   intentId: RecipeImportIntentId,
   stage: HouseholdEvidenceStage,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdReadEvidenceStageInput =
   typeof HouseholdReadEvidenceStageInput.Type;
 
@@ -512,7 +512,7 @@ export const HouseholdReadImportTerminalCheckpointInput = Schema.Struct({
   intentId: RecipeImportIntentId,
   ownershipId: DispatchId,
   stage: HouseholdTerminalCheckpointStage,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdReadImportTerminalCheckpointInput =
   typeof HouseholdReadImportTerminalCheckpointInput.Type;
 
@@ -565,7 +565,7 @@ export const HouseholdPrepareRecipeRecoveryInput = Schema.Struct({
   intentId: RecipeImportIntentId,
   mutationId: HouseholdImportMutationId,
   predecessorDispatchId: DispatchId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdPrepareRecipeRecoveryInput =
   typeof HouseholdPrepareRecipeRecoveryInput.Type;
 
@@ -592,7 +592,7 @@ export const HouseholdReadRecipeRecoveryAttemptInput = Schema.Struct({
       rootDispatchId: DispatchId,
     }),
   ]),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdReadRecipeRecoveryAttemptInput =
   typeof HouseholdReadRecipeRecoveryAttemptInput.Type;
 

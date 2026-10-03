@@ -3,8 +3,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { readD1Migrations } from "@cloudflare/vitest-plugin";
 import { NodeServices } from "@effect/platform-node";
+import { readD1Migrations } from "@meal-planner/worker-tests";
 import { applyMigrations } from "alchemy/SQL/Migrations/index";
 import type { SqlExecutor } from "alchemy/SQL/Migrations/index";
 import { listSqlFiles } from "alchemy/SQL/SqlFile";
@@ -116,7 +116,6 @@ const withAppliedBaseline = async (
             },
           },
           name: "worker",
-          type: "worker",
         },
       },
     ],

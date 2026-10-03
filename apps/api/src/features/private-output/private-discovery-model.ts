@@ -85,7 +85,6 @@ export const DiscoveryProfileCardChange = Schema.Union([
 ]).pipe(
   Schema.annotate({
     identifier: "PrivateDiscoveryProfileCardChange",
-    parseOptions: { onExcessProperty: "error" },
   })
 );
 export type DiscoveryProfileCardChange = typeof DiscoveryProfileCardChange.Type;
@@ -101,8 +100,7 @@ const ReviseProposedProfileCard = Schema.Struct({
 const PrivateDiscoveryProposal = Schema.Union([
   ProposeProfileCard,
   ReviseProposedProfileCard,
-]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
-
+]);
 const outputSchema = <S extends Schema.Constraint>(proposal: S) =>
   Schema.Union([
     Schema.Struct({
@@ -116,8 +114,7 @@ const outputSchema = <S extends Schema.Constraint>(proposal: S) =>
       ),
       updates: PrivateDiscoveryContinuityUpdates,
     }),
-  ]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
-
+  ]);
 /** Model extractions and unfinished proposals have no canonical authority. */
 export const PrivateDiscoveryTurnIntent = outputSchema(
   PrivateDiscoveryProposal
@@ -125,7 +122,7 @@ export const PrivateDiscoveryTurnIntent = outputSchema(
 export type PrivateDiscoveryTurnIntent = typeof PrivateDiscoveryTurnIntent.Type;
 export const SubmitDiscoveryTurn = Schema.Struct({
   intent: PrivateDiscoveryTurnIntent,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type SubmitDiscoveryTurn = typeof SubmitDiscoveryTurn.Type;
 
 /** Narrows provider choices; canonical decoding and native revision checks still apply. */
@@ -145,9 +142,7 @@ export const makePrivateDiscoveryProviderOutput = (
             cardId: Schema.Literals(eligibleIds),
           }),
         ]);
-  return Schema.Struct({ intent: outputSchema(proposal) }).pipe(
-    Schema.annotate({ parseOptions: { onExcessProperty: "error" } })
-  );
+  return Schema.Struct({ intent: outputSchema(proposal) });
 };
 
 const TokenCount = Schema.Int.pipe(

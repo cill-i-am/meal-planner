@@ -16,12 +16,12 @@ import type * as Plan from "alchemy/Plan";
 import * as State from "alchemy/State";
 import type * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import type * as HttpBody from "effect/http/HttpBody";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import type * as Schema from "effect/Schema";
-import type * as HttpBody from "effect/unstable/http/HttpBody";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import { describe, expect, it } from "vitest";
 
 interface CloudflareCredentials {

@@ -1,8 +1,11 @@
 import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { existsSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** Alchemy commands exposed by the repository's guarded operator scripts. */
-type AlchemyCommand = "deploy" | "destroy" | "plan";
+type AlchemyCommand = "deploy" | "destroy" | "plan" | "dev";
 
 /** Process boundary used by the command guard after validation succeeds. */
 type AlchemyRunner = (
@@ -97,6 +100,49 @@ const deployTarget = (args: readonly string[]) => {
   return { evidence, target };
 };
 
+const nativeDevArguments = (args: readonly string[]): readonly string[] => {
+  const stage = readOption(args, "--stage");
+  const defaultStage = `dev_${userInfo()
+    .username.toLowerCase()
+    .replaceAll(/[^a-z0-9_-]/gu, "_")}`;
+  if (
+    stage !== undefined &&
+    (!/^dev_[a-z0-9_-]+$/u.test(stage) || countOption(args, "--stage") !== 1)
+  ) {
+    throw new Error("dev requires an isolated dev_<name> stage");
+  }
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    const name = argument?.split("=")[0];
+    if (
+      name === undefined ||
+      ![
+        "--stage",
+        "--profile",
+        "--env-file",
+        "--include",
+        "--exclude",
+        "--force",
+      ].includes(name)
+    ) {
+      throw new Error(
+        "dev accepts only --stage, --profile, --env-file, --include, --exclude and --force"
+      );
+    }
+    if (name !== "--force" && !argument?.includes("=")) {
+      if (args[index + 1] === undefined || args[index + 1]?.startsWith("--")) {
+        throw new Error(`${name} requires a value`);
+      }
+      index += 1;
+    }
+  }
+  return [
+    fileURLToPath(new URL("../alchemy.run.ts", import.meta.url)),
+    ...args,
+    ...(stage === undefined ? ["--stage", defaultStage] : []),
+  ];
+};
+
 /**
  * Validate an operator command before handing it to the Alchemy process.
  *
@@ -110,7 +156,7 @@ export const runAlchemyCommand = (
 ): number => {
   const [firstArgument] = args;
   const normalizedArgs = firstArgument === "--" ? args.slice(1) : args;
-  const requiresExplicitTarget = command === "deploy" || command === "destroy";
+  const requiresExplicitTarget = ["deploy", "destroy"].includes(command);
   const stage = readOption(normalizedArgs, "--stage");
 
   if (normalizedArgs.includes("--")) {
@@ -151,6 +197,10 @@ export const runAlchemyCommand = (
     throw new Error("refusing to destroy the prod stage");
   }
 
+  if (command === "dev") {
+    return runner(command, nativeDevArguments(normalizedArgs));
+  }
+
   if (command === "deploy") {
     const { target, evidence } = deployTarget(normalizedArgs);
     const profile = readOption(normalizedArgs, "--profile");
@@ -173,16 +223,41 @@ export const runAlchemyCommand = (
   return runner(command, normalizedArgs);
 };
 
+/** Stable, ignored application secrets for native local development; no cloud credentials. */
+const localEnvironmentFile = () => {
+  const path = fileURLToPath(new URL("../.dev.vars", import.meta.url));
+  if (!existsSync(path)) {
+    writeFileSync(
+      path,
+      [
+        `BETTER_AUTH_SECRET=${randomBytes(48).toString("base64url")}`,
+        `MEAL_PLANNER_IMPORT_API_TOKEN=${randomBytes(48).toString("base64url")}`,
+        `MEAL_PLANNER_IMPORT_ACTOR_ID=${randomBytes(32).toString("hex")}`,
+        `MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID=${randomBytes(32).toString("hex")}`,
+        "MEAL_PLANNER_EMAIL_DELIVERY_ENABLED=true",
+        "MEAL_PLANNER_PRIVATE_DISCOVERY_CONFIG=",
+        "",
+      ].join("\n"),
+      { flag: "wx", mode: 0o600 }
+    );
+  }
+  return path;
+};
+
 const runAlchemyProcess: AlchemyRunner = (command, args) => {
   const alchemyCli = fileURLToPath(
-    import.meta.resolve("alchemy/bin/alchemy.js")
+    new URL("cli.js", import.meta.resolve("alchemy/bin/alchemy.js"))
   );
+  const commandArgs =
+    command === "dev" && readOption(args, "--env-file") === undefined
+      ? [...args, "--env-file", localEnvironmentFile()]
+      : args;
   const result = spawnSync(
     process.execPath,
-    ["--import", "tsx", alchemyCli, command, ...args],
+    [alchemyCli, command, ...commandArgs],
     {
       cwd:
-        command === "deploy"
+        command === "deploy" || command === "dev"
           ? fileURLToPath(new URL("../", import.meta.url))
           : process.cwd(),
       stdio: "inherit",
@@ -201,7 +276,10 @@ const runAlchemyProcess: AlchemyRunner = (command, args) => {
 };
 
 const isAlchemyCommand = (value: string | undefined): value is AlchemyCommand =>
-  value === "deploy" || value === "destroy" || value === "plan";
+  value === "deploy" ||
+  value === "destroy" ||
+  value === "plan" ||
+  value === "dev";
 
 const [, entrypoint, command] = process.argv;
 if (
@@ -210,7 +288,7 @@ if (
 ) {
   try {
     if (!isAlchemyCommand(command)) {
-      throw new Error("expected one of: plan, deploy, destroy");
+      throw new Error("expected one of: dev, plan, deploy, destroy");
     }
 
     process.exitCode = runAlchemyCommand(

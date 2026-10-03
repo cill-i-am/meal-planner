@@ -58,7 +58,6 @@ beforeAll(async () => {
           },
           manifest: fixtureManifest,
           name: "acquisition-restart",
-          type: "worker",
         },
       },
       {
@@ -77,7 +76,6 @@ beforeAll(async () => {
           },
           manifest: householdManifest,
           name: "household-domain",
-          type: "worker",
         },
       },
     ],

@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect";
-import { HttpClient } from "effect/unstable/http";
+import { HttpClient } from "effect/http";
 
 import type { TescoCatalogueConfig } from "../tesco.config.js";
 import { TescoAuthenticatedGraphQlTransport } from "./authenticated-graphql-transport.port.js";

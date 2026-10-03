@@ -87,10 +87,13 @@ describe("browser household people operations", () => {
       }),
       browserApiRuntime()
     );
+
     const personId = Schema.decodeUnknownSync(HouseholdPersonId)(
       "person_00000000-0000-4000-8000-000000000101"
     );
-    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)({
+    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload, {
+      onExcessProperty: "error",
+    })({
       expectedVersion: 1,
       mutationId: "00000000-0000-4000-8000-000000000102",
     });
@@ -193,17 +196,19 @@ describe("browser household people operations", () => {
         userId: "user-a",
       })
     );
-    const invitePayload = Schema.decodeUnknownSync(InviteHouseholdAdultPayload)(
-      {
-        email: "adult@example.test",
-        mutationId: departureMutationId,
-        personId,
-      }
-    );
-
+    const invitePayload = Schema.decodeUnknownSync(
+      InviteHouseholdAdultPayload,
+      { onExcessProperty: "error" }
+    )({
+      email: "adult@example.test",
+      mutationId: departureMutationId,
+      personId,
+    });
     await operations.inviteAdult?.(invitePayload);
     await operations.associateInvitation?.(
-      Schema.decodeUnknownSync(AssociateHouseholdAdultInvitationPayload)({
+      Schema.decodeUnknownSync(AssociateHouseholdAdultInvitationPayload, {
+        onExcessProperty: "error",
+      })({
         email: "adult@example.test",
         mutationId: departureMutationId,
         personId,
@@ -213,14 +218,18 @@ describe("browser household people operations", () => {
     await operations.getDeparture?.(operationId);
     await operations.cancelDeparture?.(
       operationId,
-      Schema.decodeUnknownSync(CancelHouseholdAdultDeparturePayload)({
+      Schema.decodeUnknownSync(CancelHouseholdAdultDeparturePayload, {
+        onExcessProperty: "error",
+      })({
         expectedOperationVersion: 2,
         mutationId: "00000000-0000-4000-8000-000000000103",
       })
     );
     await operations.retryDeparture?.(
       operationId,
-      Schema.decodeUnknownSync(RetryHouseholdAdultDeparturePayload)({
+      Schema.decodeUnknownSync(RetryHouseholdAdultDeparturePayload, {
+        onExcessProperty: "error",
+      })({
         expectedOperationVersion: 2,
         memberId: "member-a",
         mutationId: "00000000-0000-4000-8000-000000000104",
@@ -468,7 +477,9 @@ describe("browser household people operations", () => {
     const mutationId = Schema.decodeUnknownSync(HouseholdPersonMutationId)(
       "00000000-0000-4000-8000-000000000102"
     );
-    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)({
+    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload, {
+      onExcessProperty: "error",
+    })({
       expectedVersion: 1,
       mutationId,
     });
@@ -527,7 +538,9 @@ describe("browser household people operations", () => {
     const mutationId = Schema.decodeUnknownSync(HouseholdPersonMutationId)(
       "00000000-0000-4000-8000-000000000104"
     );
-    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)({
+    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload, {
+      onExcessProperty: "error",
+    })({
       expectedVersion: 1,
       mutationId,
     });
@@ -549,13 +562,17 @@ describe("browser household people operations", () => {
         { headers: { "content-type": "application/problem+json" }, status: 409 }
       )
     );
+
     const personId = Schema.decodeUnknownSync(HouseholdPersonId)(
       "person_00000000-0000-4000-8000-000000000105"
     );
-    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)({
+    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload, {
+      onExcessProperty: "error",
+    })({
       expectedVersion: 1,
       mutationId: "00000000-0000-4000-8000-000000000106",
     });
+
     await expect(
       makeBrowserHouseholdPeopleOperations(
         parseDisplayedIdentity({

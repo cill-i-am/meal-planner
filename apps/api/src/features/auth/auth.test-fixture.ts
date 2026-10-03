@@ -1,6 +1,6 @@
 import { BetterAuthApiError, isAPIErrorLike } from "@alchemy.run/better-auth";
 import { Effect } from "effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import type { MealPlannerAuthService } from "./auth.alchemy.js";
 import type { MealPlannerAuth } from "./auth.js";

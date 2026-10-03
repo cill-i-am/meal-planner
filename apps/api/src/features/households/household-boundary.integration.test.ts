@@ -122,7 +122,9 @@ const SessionResponse = Schema.Struct({
   user: Schema.Struct({ id: Schema.String }),
 });
 const OrganizationResponse = Schema.Struct({ id: Schema.String });
-const createPayload = Schema.decodeUnknownSync(CreateMealPlanPayload)({
+const createPayload = Schema.decodeUnknownSync(CreateMealPlanPayload, {
+  onExcessProperty: "error",
+})({
   policy: {
     allowedDifficulties: ["easy"],
     allowedTotalTimeBands: ["under_30_minutes"],
@@ -200,7 +202,6 @@ const makeRuntime = (privateAuditLogs?: string[]) =>
           env: { MEAL_PLANNER_API: { type: "worker", worker: "api" } },
           manifest: websiteManifest,
           name: "website",
-          type: "worker",
         },
       },
       {
@@ -232,7 +233,6 @@ const makeRuntime = (privateAuditLogs?: string[]) =>
           },
           manifest: apiManifest,
           name: "api",
-          type: "worker",
         },
       },
       {
@@ -245,7 +245,6 @@ const makeRuntime = (privateAuditLogs?: string[]) =>
           manifest: batchQueueManifest,
           name: "batch-consumer",
           triggers: [{ name: "household-import-batches", type: "queue" }],
-          type: "worker",
         },
       },
       {
@@ -269,7 +268,6 @@ const makeRuntime = (privateAuditLogs?: string[]) =>
           },
           manifest: domainManifest,
           name: "household-domain",
-          type: "worker",
         },
       },
       {
@@ -293,7 +291,6 @@ const makeRuntime = (privateAuditLogs?: string[]) =>
           },
           manifest: providerRecoveryManifest,
           name: "provider-recovery",
-          type: "worker",
         },
       },
       {
@@ -460,7 +457,9 @@ beforeEach(async () => {
 });
 
 const cookieHeader = (response: {
-  readonly headers: { readonly get: (name: string) => string | null };
+  readonly headers: {
+    readonly get: (name: string) => string | null;
+  };
 }): string => {
   const setCookie = response.headers.get("set-cookie");
   if (setCookie === null) {
@@ -606,7 +605,10 @@ const prepareInvitableAdult = async (label: string) => {
 
 const prepareLinkedAdult = async (
   label: string,
-  existingInvitee?: { readonly cookie: string; readonly label: string }
+  existingInvitee?: {
+    readonly cookie: string;
+    readonly label: string;
+  }
 ) => {
   const key = label.toLowerCase().replaceAll(" ", "-");
   const ownerLabel = `${label} Owner`;
@@ -745,9 +747,9 @@ const readDepartureWorkflowInput = async (
     `member-departure-workflow:${organizationId}`
   );
   if (value !== null) {
-    return Schema.decodeUnknownPromise(MemberDepartureWorkflowInput)(
-      JSON.parse(value)
-    );
+    return Schema.decodeUnknownPromise(MemberDepartureWorkflowInput, {
+      onExcessProperty: "error",
+    })(JSON.parse(value));
   }
   if (remaining === 0) {
     throw new Error("Expected the member departure Workflow to start");
@@ -1983,6 +1985,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(await deniedMutation.json()).toMatchObject({
       code: "unauthorized",
     });
+
     await restartRuntime();
     const restoredCurrent = await getRuntime().dispatchFetch(url, {
       headers: { cookie: setup.memberCookie },
@@ -2105,6 +2108,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(await archivedWrite.json()).toMatchObject({
       code: "person_archived",
     });
+
     await restartRuntime();
     const archivedReplay = await getRuntime().dispatchFetch(url, request);
     expect(archivedReplay.status).toBe(200);
@@ -3330,6 +3334,7 @@ describe("household public API to private Durable Object boundary", () => {
     );
 
     await restartRuntime();
+
     const rosterResponse = await getRuntime().dispatchFetch(
       `https://meal-planner.test/v1/families/${organization.id}/people?includeArchived=true`,
       { headers: { cookie: admittedInviteeCookie } }
@@ -3517,6 +3522,7 @@ describe("household public API to private Durable Object boundary", () => {
       await expect(replay.json()).resolves.toEqual(
         Schema.encodeSync(HouseholdAdultInvitationResult)(resent)
       );
+
       const rosterResponse = await getRuntime().dispatchFetch(
         `https://meal-planner.test/v1/families/${setup.organization.id}/people`,
         { headers: { cookie: setup.ownerCookie } }
@@ -3840,6 +3846,7 @@ describe("household public API to private Durable Object boundary", () => {
       associationState: "invitation_pending",
       id: setup.adult.id,
     });
+
     const persistedDatabase = drizzle(
       await getRuntime().getD1Database("MealPlannerAuthDatabase", "api")
     );
@@ -4013,6 +4020,7 @@ describe("household public API to private Durable Object boundary", () => {
       }
     );
     expect(response.status).toBeGreaterThanOrEqual(500);
+
     const operation = await readDepartureByMutationEventually(
       setup.organization.id,
       setup.ownerCookie,
@@ -4067,6 +4075,7 @@ describe("household public API to private Durable Object boundary", () => {
       personId: setup.adult.id,
       state: "completed",
     });
+
     await expect(
       database
         .select({ id: authSchema.member.id })
@@ -4791,7 +4800,9 @@ describe("household public API to private Durable Object boundary", () => {
     });
     expect(draftResponse.status).toBe(200);
     const draft = (await draftResponse.json()) as {
-      readonly action: { readonly id: string };
+      readonly action: {
+        readonly id: string;
+      };
       readonly intent: unknown;
     };
     expect(draft).toMatchObject({
@@ -5803,6 +5814,7 @@ describe("household public API to private Durable Object boundary", () => {
       reason: "illegal_transition",
       rejected: true,
     });
+
     await expect(
       readEvidenceReferences(carousel.admission, carousel.admitted.id)
     ).resolves.toBeNull();
@@ -5864,6 +5876,7 @@ describe("household public API to private Durable Object boundary", () => {
       reason: "illegal_transition",
       rejected: true,
     });
+
     await expect(
       readEvidenceReferences(video.admission, video.admitted.id)
     ).resolves.toBeNull();
@@ -5932,6 +5945,7 @@ describe("household public API to private Durable Object boundary", () => {
         method: "POST",
       }
     );
+
     expect(response.status).toBe(401);
     expect(JSON.stringify(await response.json())).not.toContain(
       organizationB.id
@@ -6081,14 +6095,12 @@ describe("household public API to private Durable Object boundary", () => {
       "provider-recovery"
     );
     const providerAccountingTables = await database
-      .prepare(
-        `SELECT name
+      .prepare(`SELECT name
            FROM sqlite_master
           WHERE type = 'table'
             AND name NOT LIKE '_cf_%'
             AND name NOT LIKE 'sqlite_%'
-          ORDER BY name`
-      )
+          ORDER BY name`)
       .all();
     expect(providerAccountingTables.results).toEqual([
       { name: "provider_accounting_budgets" },
@@ -6993,8 +7005,7 @@ describe("household public API to private Durable Object boundary", () => {
       rootDispatchId: dispatchId,
     });
     const removedSharedAuthority = await database
-      .prepare(
-        `SELECT name FROM sqlite_master
+      .prepare(`SELECT name FROM sqlite_master
           WHERE name IN (
               'import_recipe_executor_terminal_checkpoints',
               'import_recipe_executor_terminal_checkpoints_immutable_delete',
@@ -7002,15 +7013,16 @@ describe("household public API to private Durable Object boundary", () => {
               'pilot_provider_terminal_checkpoints',
               'import_provider_terminal_checkpoints',
               'pilot_provider_recipe_recovery_attempts'
-            )`
-      )
+            )`)
       .all();
     expect(removedSharedAuthority.results).toEqual([]);
   });
 });
 
 const expectPrivateStatus = async (
-  pending: Promise<{ readonly status: number }>,
+  pending: Promise<{
+    readonly status: number;
+  }>,
   status: number
 ) => {
   const response = await pending;
@@ -7258,7 +7270,10 @@ const privateChatInput = (
 
 const readPrivateChat = async (
   cookie: string,
-  connection: { readonly generation: string; readonly sessionReference: string }
+  connection: {
+    readonly generation: string;
+    readonly sessionReference: string;
+  }
 ) => {
   const response = await privateChatRequest(cookie, connection, {
     query: `?threadId=${connection.sessionReference}`,
@@ -7468,6 +7483,7 @@ describe("canonical private interview output boundary", () => {
       connection.socket.close();
     }
   });
+
   it.each([
     "/",
     "/agents/household/owner",
@@ -7743,7 +7759,9 @@ describe("canonical private interview output boundary", () => {
       ]);
       await Promise.all(
         coordinators.map(async (storage) => {
-          const registrations = await storage.exec<{ target_kind: string }>(
+          const registrations = await storage.exec<{
+            target_kind: string;
+          }>(
             "SELECT DISTINCT target_kind FROM output_registrations ORDER BY target_kind"
           );
           expect(registrations).toEqual([
@@ -7752,9 +7770,12 @@ describe("canonical private interview output boundary", () => {
           ]);
         })
       );
+
       await Promise.all(
         [householdStorage, ...coordinators].map(async (storage) => {
-          const tables = await storage.exec<{ name: string }>(
+          const tables = await storage.exec<{
+            name: string;
+          }>(
             "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
           );
           expect(tables.length).toBeGreaterThan(0);
@@ -8087,6 +8108,7 @@ describe("canonical private interview output boundary", () => {
       }
     );
     expect(response.status).toBeGreaterThanOrEqual(500);
+
     const prepared = await readDepartureByMutationEventually(
       setup.organization.id,
       setup.ownerCookie,
@@ -8256,7 +8278,9 @@ describe("canonical private interview output boundary", () => {
 type CardConnection = Awaited<ReturnType<typeof openPrivateConnection>>;
 const cardExchange = (
   connection: CardConnection,
-  command: Record<string, unknown> & { readonly type: string }
+  command: Record<string, unknown> & {
+    readonly type: string;
+  }
 ) => {
   const start = connection.frames.length;
   const id = command["mutationId"] ?? command["requestId"];
@@ -8313,7 +8337,9 @@ const seedPrivateCard = async (
     "PrivateInterviewSession",
     { name: await privateOutputKey("session", connection.sessionReference) }
   );
-  const [next] = await storage.exec<{ ordinal: number }>(
+  const [next] = await storage.exec<{
+    ordinal: number;
+  }>(
     "SELECT COALESCE(MAX(ordinal), 0) + 1 AS ordinal FROM private_profile_cards"
   );
   const card = Schema.decodeUnknownSync(ProfileCard)({
@@ -8433,9 +8459,9 @@ const cardHouseholdStorage = async (organizationId: string) => {
         "HouseholdObject",
         { id }
       );
-      const rows = await storage.exec<{ organization_id: string }>(
-        "SELECT organization_id FROM household_meta"
-      );
+      const rows = await storage.exec<{
+        organization_id: string;
+      }>("SELECT organization_id FROM household_meta");
       return rows.some((row) => row.organization_id === organizationId)
         ? storage
         : null;
@@ -9048,9 +9074,9 @@ describe("canonical private profile cards", () => {
     ];
     await Promise.all(
       [sharedStorage, ...coordinators].map(async (storage) => {
-        const tables = await storage.exec<{ name: string }>(
-          "SELECT name FROM sqlite_master WHERE type = 'table'"
-        );
+        const tables = await storage.exec<{
+          name: string;
+        }>("SELECT name FROM sqlite_master WHERE type = 'table'");
         await Promise.all(
           tables.map(async ({ name }) => {
             const rows = await storage.exec(
@@ -9552,6 +9578,7 @@ describe("canonical private profile cards", () => {
         status: "proposed",
       })
     );
+
     await Promise.all(
       cards.map((card) =>
         storage.exec(
@@ -10077,7 +10104,9 @@ describe("canonical private profile cards", () => {
     await releaseRetry();
     const releaseRejectedResult = await awaitCardBarrier(retryAfter, "after");
     const storage = await cardHouseholdStorage(setup.organization.id);
-    const receipt = await storage.exec<{ outcome_json: string }>(
+    const receipt = await storage.exec<{
+      outcome_json: string;
+    }>(
       "SELECT outcome_json FROM household_interview_profile_receipts WHERE mutation_id = ?",
       mutationId
     );

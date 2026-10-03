@@ -14,6 +14,7 @@ import {
   recipeIngredientFromText,
   recipeInstructionFromText,
 } from "@meal-planner/recipe-domain";
+import * as Cloudflare from "alchemy/Cloudflare";
 import { Effect, Schema } from "effect";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -30,6 +31,7 @@ import {
   privateOutputRuntimeWorker,
   privateOutputTestBindings,
 } from "../private-output/private-output-runtime.test-fixture.js";
+import { HouseholdAdmitImportBatchInput } from "./batches/household-import-batch.contract.js";
 import { HouseholdImportWorkflowDispatchView } from "./foundation/import-workflow-admission.contract.js";
 import {
   HouseholdManualMealSwapCommand,
@@ -741,7 +743,6 @@ const makeRuntime = () =>
           },
           manifest: fixtureManifest,
           name: "worker",
-          type: "worker",
         },
       },
       privateOutputRuntimeWorker(privateOutputManifest),
@@ -2058,6 +2059,47 @@ describe("household Durable Object", () => {
     expect(collision).toMatchObject({
       error: { reason: "idempotency_conflict" },
       ok: false,
+    });
+  });
+
+  it("rolls back batch facts and preserves the previous callback when scheduling fails", async () => {
+    const namespace = await runtime.getDurableObjectNamespace(
+      "HouseholdObject",
+      "worker"
+    );
+    const stub = Cloudflare.makeRpcStub<{
+      proveBatchSchedulingRollback: (
+        input: HouseholdAdmitImportBatchInput
+      ) => Effect.Effect<unknown>;
+    }>(namespace.get(namespace.idFromName("batch-callback-rollback")));
+    const result = await Effect.runPromise(
+      stub.proveBatchSchedulingRollback(
+        Schema.decodeUnknownSync(HouseholdAdmitImportBatchInput)({
+          admission: {
+            actor: { _tag: "Member", actorId: "a".repeat(64) },
+            organizationId: "batch-callback-rollback",
+          },
+          idempotencyKey: "callback-rollback",
+          request: {
+            items: [
+              {
+                idempotencyKey: "callback-item",
+                source: {
+                  kind: "tiktok",
+                  url: "https://www.tiktok.com/@mealplanner/video/7510000000000000991",
+                },
+              },
+            ],
+          },
+        })
+      )
+    );
+    expect(result).toEqual({
+      afterRejected: { batches: 1, callbacks: 1, items: 1, outbox: 1 },
+      afterReplay: { batches: 2, callbacks: 1, items: 2, outbox: 2 },
+      before: { batches: 1, callbacks: 1, items: 1, outbox: 1 },
+      rejected: true,
+      replayMessageCount: 1,
     });
   });
 

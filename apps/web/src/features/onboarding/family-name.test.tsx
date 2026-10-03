@@ -78,9 +78,9 @@ const makeTransport = () => {
       }
       if (path === "/v1/families" && request.method === "POST") {
         expect(request.headers.get("x-meal-planner-user")).toBe("adult-1");
-        const command = Schema.decodeUnknownSync(CreateFamily)(
-          await request.json()
-        );
+        const command = Schema.decodeUnknownSync(CreateFamily, {
+          onExcessProperty: "error",
+        })(await request.json());
         createCalls.push(command);
         if (fixture.createError) {
           return Response.json(

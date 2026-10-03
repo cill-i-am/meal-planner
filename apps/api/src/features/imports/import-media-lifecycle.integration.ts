@@ -98,7 +98,6 @@ describe.skipIf(!enabled)("native generation container lifetime", () => {
             },
             manifest,
             name: workerName,
-            type: "worker",
           },
         },
       ],

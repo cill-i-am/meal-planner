@@ -18,12 +18,13 @@ import {
   RecipeImportTimeline,
   SucceededRecipeImportIntent,
 } from "@meal-planner/recipe-import-api";
+import { makeCallback } from "alchemy";
+import type { Callback } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle/Cloudflare";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Clock, Effect, Option, Schema } from "effect";
 
-import migrations from "../../../household-migrations/migrations.js";
 import {
   addMealPlanCandidatePage,
   makeMealPlanProposal,
@@ -179,8 +180,10 @@ const makeService = (
     drafts: makeHouseholdMealPlanRepository(database, digest),
   });
 
-export const HouseholdObjectRuntime = Effect.gen(
-  function* initializeHouseholdObject() {
+export const makeHouseholdObjectRuntime = (
+  migrations: NonNullable<Drizzle.DurableObjectConfig["migrations"]>
+) =>
+  Effect.gen(function* initializeHouseholdObject() {
     const durableObjectState = yield* Cloudflare.DurableObjectState;
     const canonicalEncoding = yield* HouseholdCanonicalEncoding;
     const digest = yield* HouseholdDigest;
@@ -201,7 +204,7 @@ export const HouseholdObjectRuntime = Effect.gen(
     const database = Drizzle.DurableObject({ migrations });
 
     // eslint-disable-next-line sort-keys -- RPC methods follow the household capability lifecycle.
-    return Effect.succeed({
+    const makeHouseholdMethods = (dispatchOutbox: Callback<null>) => ({
       associateAdultInvitation: (
         untrustedInput: HouseholdAssociateAdultInvitationInput
       ) =>
@@ -333,15 +336,22 @@ export const HouseholdObjectRuntime = Effect.gen(
               "admit_import_batch"
             );
             const connection = yield* database;
-            const committed =
-              yield* makeHouseholdImportBatchRepository(connection).admit(
-                command
-              );
-            if (committed.messages.length > 0) {
-              yield* durableObjectState.storage.setAlarm(
-                yield* Clock.currentTimeMillis
-              );
-            }
+            const committed = yield* durableObjectState.storage
+              .transaction(
+                Effect.gen(function* admitAndScheduleBatch() {
+                  const admitted =
+                    yield* makeHouseholdImportBatchRepository(connection).admit(
+                      command
+                    );
+                  if (admitted.messages.length > 0) {
+                    yield* dispatchOutbox
+                      .schedule("dispatch", { after: 0, payload: null })
+                      .pipe(Effect.catchTag("CallbackError", Effect.die));
+                  }
+                  return admitted;
+                })
+              )
+              .pipe(Effect.catchTag("DurableObjectStorageError", Effect.die));
             return yield* encodeRecipeImportResult(
               HouseholdAdmitImportBatchResult,
               committed
@@ -448,42 +458,6 @@ export const HouseholdObjectRuntime = Effect.gen(
               RecipeImportIntent,
               answered
             );
-          })
-        ),
-      alarm: () =>
-        scoped(
-          Effect.gen(function* dispatchHouseholdBatchOutbox() {
-            const connection = yield* database;
-            const repository = makeHouseholdImportBatchRepository(connection);
-            const due = yield* repository.dueDispatches(
-              yield* Clock.currentTimeMillis
-            );
-            for (const { message } of due) {
-              const admission = {
-                actor: {
-                  _tag: "System" as const,
-                  purpose: "batch_item_dispatch" as const,
-                },
-                organizationId: message.organizationId,
-              };
-              const outcome = yield* batchQueueWriter.send(message).pipe(
-                Effect.match({
-                  onFailure: () => "retry" as const,
-                  onSuccess: () => "delivered" as const,
-                })
-              );
-              yield* repository.recordDispatch({
-                admission,
-                batchId: message.batchId,
-                expectedGeneration: message.generation,
-                itemId: message.itemId,
-                outcome,
-              });
-            }
-            const next = yield* repository.nextDispatchAt;
-            yield* next === null
-              ? durableObjectState.storage.deleteAlarm()
-              : durableObjectState.storage.setAlarm(next);
           })
         ),
       claimImportBatchItem: (
@@ -1531,7 +1505,10 @@ export const HouseholdObjectRuntime = Effect.gen(
               "mark_member_departure_repair_required"
             );
             const intent = yield* canonicalEncoding
-              .encode({ command, method: "markMemberDepartureRepairRequired" })
+              .encode({
+                command,
+                method: "markMemberDepartureRepairRequired",
+              })
               .pipe(Effect.mapError(invalidInput));
             const intentKey = yield* digest
               .sha256(intent)
@@ -2188,14 +2165,19 @@ export const HouseholdObjectRuntime = Effect.gen(
             );
             const connection = yield* database;
             const repository = makeHouseholdImportBatchRepository(connection);
-            const result = yield* repository.recordDispatch(command);
-            if (command.outcome === "retry") {
-              const next = yield* repository.nextDispatchAt;
-              if (next !== null) {
-                yield* durableObjectState.storage.setAlarm(next);
-              }
-            }
-            return result;
+            return yield* durableObjectState.storage
+              .transaction(
+                Effect.gen(function* recordAndScheduleBatchDispatch() {
+                  yield* repository.recordDispatch(command);
+                  const next = yield* repository.nextDispatchAt;
+                  if (next !== null) {
+                    yield* dispatchOutbox
+                      .schedule("dispatch", { at: next, payload: null })
+                      .pipe(Effect.catchTag("CallbackError", Effect.die));
+                  }
+                })
+              )
+              .pipe(Effect.catchTag("DurableObjectStorageError", Effect.die));
           })
         ),
       listRecipeBank: (untrustedInput: typeof HouseholdRecipePageInput.Type) =>
@@ -2388,5 +2370,45 @@ export const HouseholdObjectRuntime = Effect.gen(
           })
         ),
     });
-  }
-);
+
+    return Effect.gen(function* householdInstance() {
+      const dispatchOutbox: Callback<null> = yield* makeCallback(
+        "household-batch-outbox",
+        () =>
+          scoped(
+            Effect.gen(function* dispatchHouseholdBatchOutbox() {
+              const connection = yield* database;
+              const repository = makeHouseholdImportBatchRepository(connection);
+              const due = yield* repository.dueDispatches(
+                yield* Clock.currentTimeMillis
+              );
+              for (const { message } of due) {
+                const outcome = yield* batchQueueWriter.send(message).pipe(
+                  Effect.match({
+                    onFailure: () => "retry" as const,
+                    onSuccess: () => "delivered" as const,
+                  })
+                );
+                yield* repository.recordDispatch({
+                  admission: {
+                    actor: { _tag: "System", purpose: "batch_item_dispatch" },
+                    organizationId: message.organizationId,
+                  },
+                  batchId: message.batchId,
+                  expectedGeneration: message.generation,
+                  itemId: message.itemId,
+                  outcome,
+                });
+              }
+              const next = yield* repository.nextDispatchAt;
+              if (next !== null) {
+                yield* dispatchOutbox
+                  .schedule("dispatch", { at: next, payload: null })
+                  .pipe(Effect.catchTag("CallbackError", Effect.die));
+              }
+            })
+          )
+      );
+      return makeHouseholdMethods(dispatchOutbox);
+    });
+  });

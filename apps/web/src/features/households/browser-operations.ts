@@ -3,8 +3,8 @@ import {
   makeHouseholdApiClientLayer,
 } from "@meal-planner/household-api";
 import { Effect, Layer } from "effect";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
+import { apiHttpLayer, browserApiRuntime } from "../api-client/index.js";
 import { displayedIdentityHeaders } from "../auth/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
 import type { HouseholdOperations } from "./operations.js";
@@ -13,7 +13,7 @@ const makeClientRunner = (baseUrl: string | URL, scope: DisplayedIdentity) => {
   const layer = makeHouseholdApiClientLayer({
     baseUrl,
     headers: displayedIdentityHeaders(scope),
-  }).pipe(Layer.provide(FetchHttpClient.layer));
+  }).pipe(Layer.provide(apiHttpLayer(browserApiRuntime())));
   return <A, E>(
     operation: (client: HouseholdApiClient) => Effect.Effect<A, E>
   ): Promise<A> =>

@@ -131,8 +131,6 @@ export const atomicPasswordResetPlugin = (
             parseReset({
               accountId,
               identifier,
-              // Better Auth 1.7.2's local credential issuer, also used by its canonical schema.
-              issuer: "local:credential",
               passwordHash,
               requestPassword: newPassword,
               userId: user.id,

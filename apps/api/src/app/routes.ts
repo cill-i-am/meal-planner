@@ -1,4 +1,4 @@
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 
 import { HealthRoutes } from "../features/health/health.routes.js";
 import { TescoCatalogueRoutes } from "../features/tesco/catalogue/catalogue.routes.js";

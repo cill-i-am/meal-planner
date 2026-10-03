@@ -16,7 +16,9 @@ it("retains the exact uncertain invitation for its original actor and family onl
     organizationId: "family-a",
     userId: "alice",
   });
-  const invitation = Schema.decodeUnknownSync(InviteHouseholdAdultPayload)({
+  const invitation = Schema.decodeUnknownSync(InviteHouseholdAdultPayload, {
+    onExcessProperty: "error",
+  })({
     email: "recipient@example.test",
     mutationId: "00000000-0000-4000-8000-000000000101",
     personId: "person_00000000-0000-4000-8000-000000000102",

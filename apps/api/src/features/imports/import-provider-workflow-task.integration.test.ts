@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { readD1Migrations } from "@cloudflare/vitest-plugin";
+import { readD1Migrations } from "@meal-planner/worker-tests";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -141,7 +141,6 @@ beforeAll(async () => {
           },
           manifest: fixtureManifest,
           name: "provider-workflow",
-          type: "worker",
         },
       },
       {
@@ -160,7 +159,6 @@ beforeAll(async () => {
           },
           manifest: householdDomainManifest,
           name: "household-domain",
-          type: "worker",
         },
       },
     ],
@@ -192,6 +190,11 @@ const commandWorkflow = async (
   command:
     | { readonly action: "run-visual-recipe-budget"; readonly id: string }
     | { readonly action: "restart"; readonly id: string }
+    | {
+        readonly action: "restart-crashed";
+        readonly id: string;
+        readonly step: string;
+      }
     | {
         readonly action: "activate-recovery";
         readonly id: string;
@@ -290,6 +293,7 @@ describe("provider workflow task retry exhaustion", () => {
           estimatedMicroUsd: 100_000,
         },
       });
+
       await expect(
         database
           .prepare(
@@ -381,6 +385,7 @@ describe("provider workflow task retry exhaustion", () => {
         },
       ],
     });
+
     await expect(
       database
         .prepare(
@@ -700,6 +705,18 @@ describe("provider workflow task retry exhaustion", () => {
         scenario: "recipe_recovery_accounted_crash_replay",
       })
     ).resolves.toMatchObject({
+      error: { name: "WorkflowFatalError" },
+      output: null,
+      status: "errored",
+    });
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    await expect(
+      commandWorkflow({
+        action: "restart-crashed",
+        id: instanceId,
+        step: "extract-recipe-recovery-v1",
+      })
+    ).resolves.toMatchObject({
       output: { _tag: "Succeeded", stage: "recipe" },
       status: "complete",
     });
@@ -723,6 +740,7 @@ describe("provider workflow task retry exhaustion", () => {
       run_id: `recipe-import:recipe-recovery:${importId}`,
       state: "settled_conservative",
     });
+
     await expect(
       database
         .prepare(
@@ -749,6 +767,18 @@ describe("provider workflow task retry exhaustion", () => {
         scenario: "recipe_recovery_subsequent_success",
       })
     ).resolves.toMatchObject({
+      error: { name: "WorkflowFatalError" },
+      output: null,
+      status: "errored",
+    });
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    await expect(
+      commandWorkflow({
+        action: "restart-crashed",
+        id: instanceId,
+        step: "extract-recipe-recovery-v1",
+      })
+    ).resolves.toMatchObject({
       output: { _tag: "Failed", code: "provider_error", stage: "recipe" },
       status: "complete",
     });
@@ -759,7 +789,7 @@ describe("provider workflow task retry exhaustion", () => {
       output: { _tag: "Succeeded", stage: "recipe" },
       status: "complete",
     });
-    expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(3);
     expect(await readNumber(instanceId, "extract-recipe-recovery-v1")).toBe(3);
     expect(await readNumber(instanceId, "extract-recipe-recovery-v2")).toBe(1);
     expect(await readNumber(instanceId, "task-attempts")).toBe(4);
@@ -789,6 +819,7 @@ describe("provider workflow task retry exhaustion", () => {
       run_id: `recipe-import:recipe-recovery:${importId}`,
       state: "settled_conservative",
     });
+
     await expect(
       database
         .prepare(
@@ -811,7 +842,7 @@ describe("provider workflow task retry exhaustion", () => {
       output: { _tag: "Succeeded", stage: "recipe" },
       status: "complete",
     });
-    expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(3);
     expect(await readNumber(instanceId, "provider-calls")).toBe(2);
     expect(await readNumber(instanceId, "provider-calls-recovery-1")).toBe(1);
     expect(await readNumber(instanceId, "provider-calls-recovery-2")).toBe(1);
@@ -900,6 +931,7 @@ describe("provider workflow task retry exhaustion", () => {
       run_id: `recipe-import:${importId}`,
       state: "settled_conservative",
     });
+
     await expect(
       database
         .prepare(
@@ -913,6 +945,7 @@ describe("provider workflow task retry exhaustion", () => {
       authority: "schema_valid_provider_response",
       conservative_charge_micro_usd: 100_000,
     });
+
     await expect(
       database
         .prepare(
@@ -993,6 +1026,18 @@ describe("provider workflow task retry exhaustion", () => {
         scenario: "recipe_conservative_crash_replay",
       })
     ).resolves.toMatchObject({
+      error: { name: "WorkflowFatalError" },
+      output: null,
+      status: "errored",
+    });
+    expect(await readNumber(instanceId, "provider-calls")).toBe(1);
+    await expect(
+      commandWorkflow({
+        action: "restart-crashed",
+        id: instanceId,
+        step: "extract-recipe-conservative-v1",
+      })
+    ).resolves.toMatchObject({
       output: {
         _tag: "Succeeded",
         evidence: "recipe-conservative-evidence",
@@ -1000,7 +1045,7 @@ describe("provider workflow task retry exhaustion", () => {
       },
       status: "complete",
     });
-    expect(await readNumber(instanceId, "workflow-runs")).toBe(1);
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
     expect(await readNumber(instanceId, "task-attempts")).toBe(2);
     expect(await readNumber(instanceId, "provider-calls")).toBe(1);
     expect(await readNumber(instanceId, "recipe-adapter-completions")).toBe(2);
@@ -1053,7 +1098,7 @@ describe("provider workflow task retry exhaustion", () => {
       },
       status: "complete",
     });
-    expect(await readNumber(instanceId, "workflow-runs")).toBe(2);
+    expect(await readNumber(instanceId, "workflow-runs")).toBe(3);
     expect(await readNumber(instanceId, "task-attempts")).toBe(2);
     expect(await readNumber(instanceId, "provider-calls")).toBe(1);
     expect(await readNumber(instanceId, "recipe-adapter-completions")).toBe(2);

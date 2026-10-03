@@ -1,7 +1,7 @@
 import * as Cloudflare from "alchemy/Cloudflare";
 import { RuntimeContext } from "alchemy/RuntimeContext";
 import { Deferred, Effect, Exit, Fiber, Scope, Stream } from "effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { describe, expect, it } from "vitest";
 
 import { makeAcquisitionLifetime } from "./import-media-acquisition-lifetime.js";
@@ -374,6 +374,7 @@ describe("generation process lifetime", () => {
       const cleanup = Effect.runFork(lifetime.cleanup);
       await Effect.runPromise(Effect.yieldNow);
       expect(test.events).toEqual([]);
+
       await Effect.runPromise(Deferred.succeed(finishFinalizer, true));
       await Effect.runPromise(Fiber.join(closing));
       await Effect.runPromise(Fiber.join(cleanup));

@@ -5,7 +5,7 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Option, Schema } from "effect";
 
 import { ImportEvidenceBucket } from "../../infrastructure/import-evidence-bucket.js";
-import { ImportProviderGateway } from "../../infrastructure/import-provider-gateway.js";
+import { ImportProviderGatewayId } from "../../infrastructure/import-provider-gateway.js";
 import { ProviderAccountingDatabase } from "../../infrastructure/provider-accounting-database.js";
 import { HouseholdDomainWorker } from "../households/household-domain-binding.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
@@ -219,9 +219,11 @@ export const makeImportRecipeRecoveryWorkflowHandler = (
       yield* Cloudflare.R2.ReadWriteBucket(ImportEvidenceBucket);
     const householdDomain: HouseholdDomainWorkerMethods =
       yield* Cloudflare.Workers.bindWorker(HouseholdDomainWorker);
-    const providerGateway = yield* Cloudflare.AI.QueryGateway(
-      ImportProviderGateway
-    );
+    const workersAi = yield* Cloudflare.Workers.AI();
+    const providerGateway = {
+      id: Effect.succeed(ImportProviderGatewayId),
+      raw: workersAi.raw,
+    };
 
     return (rawInput: RecipeRecoveryWorkflowInputEncoded) =>
       Effect.gen(function* runImportRecipeRecoveryWorkflow() {

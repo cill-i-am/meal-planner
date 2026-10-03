@@ -1,5 +1,5 @@
 import { Context, Schema } from "effect";
-import { HttpApiSchema } from "effect/unstable/httpapi";
+import { HttpApiSchema } from "effect/http-api";
 
 import { HouseholdOrganizationId } from "./household-principal.js";
 import { InvitationRejectionReason } from "./people.js";

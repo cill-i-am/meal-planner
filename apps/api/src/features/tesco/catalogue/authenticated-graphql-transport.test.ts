@@ -1,10 +1,6 @@
 import { Cause, Effect, Exit, Layer, Option, Redacted, Schema } from "effect";
-import {
-  HttpClient,
-  HttpClientError,
-  HttpClientResponse,
-} from "effect/unstable/http";
-import type { HttpClientRequest } from "effect/unstable/http";
+import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
+import type { HttpClientRequest } from "effect/http";
 import { describe, expect, it } from "vitest";
 
 import { TescoAuthSession } from "../auth/auth-session.port.js";

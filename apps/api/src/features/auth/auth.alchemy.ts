@@ -7,7 +7,7 @@ import {
 import type { BetterAuthInstance } from "@alchemy.run/better-auth";
 import type { RuntimeContext } from "alchemy";
 import { Effect, Redacted, Scope } from "effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import {
   fetchGuardedMealPlannerAuth,

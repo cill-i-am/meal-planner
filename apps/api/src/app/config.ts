@@ -23,7 +23,7 @@ export const AppConfig = Context.Service<AppConfig>("meal-planner/AppConfig");
 export const AppConfigDefinition = Config.all({
   server: Config.all({
     host: Config.schema(ServerHost, "HOST"),
-    port: Config.port("PORT"),
+    port: Config.Port("PORT"),
   }),
 });
 

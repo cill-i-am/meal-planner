@@ -5,7 +5,6 @@ import {
 } from "@meal-planner/recipe-domain";
 import { Effect, Fiber, Schema } from "effect";
 import { TestClock } from "effect/testing";
-import { Tool } from "effect/unstable/ai";
 import { describe, expect, it } from "vitest";
 
 import type { ProviderAccountingConservativeReplayValue } from "../provider-accounting/provider-accounting.js";
@@ -262,6 +261,7 @@ describe("installed recipe provider adapter", () => {
         transport: gateway.recipe,
       })
     );
+
     const exit = await Effect.runPromiseExit(
       adapter.extract({
         evidenceFingerprint: "fingerprint",
@@ -278,6 +278,7 @@ describe("installed recipe provider adapter", () => {
         ],
       })
     );
+
     expect(exit._tag).toBe("Failure");
     expect(JSON.stringify(exit)).not.toContain(
       "an accessible non-food travel video"
@@ -295,6 +296,7 @@ describe("installed recipe provider adapter", () => {
         transport: gateway.recipe,
       })
     );
+
     const output = await Effect.runPromise(
       adapter.extract({
         evidenceFingerprint: "fingerprint",
@@ -331,7 +333,9 @@ describe("installed recipe provider adapter", () => {
     expect(request).not.toHaveProperty("tool_choice");
     expect(request).not.toHaveProperty("tools");
     expect(request?.response_format).toEqual({
-      json_schema: Tool.getJsonSchemaFromSchema(RecipeCandidate),
+      json_schema: Schema.toJsonSchemaDocument(RecipeCandidate, {
+        onExcessProperty: "error",
+      }).schema,
       type: "json_schema",
     });
     expect(request?.response_format).toMatchObject({
@@ -561,6 +565,7 @@ describe("installed recipe provider adapter", () => {
         transport: gateway.recipe,
       })
     );
+
     const exit = await Effect.runPromiseExit(
       adapter.extract({
         evidenceFingerprint: "fingerprint",
@@ -611,6 +616,7 @@ describe("installed recipe provider adapter", () => {
         transport: gateway.recipe,
       })
     );
+
     const output = await Effect.runPromise(
       adapter.extract({
         evidenceFingerprint: "fingerprint",

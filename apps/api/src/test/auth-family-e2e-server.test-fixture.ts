@@ -12,6 +12,7 @@ import {
   privateOutputRuntimeWorker,
   privateOutputTestBindings,
 } from "../features/private-output/private-output-runtime.test-fixture.js";
+import { workerObservability } from "../infrastructure/worker-observability.js";
 import { bundleWorkerFixture } from "./native-worker.test-fixture.js";
 import {
   privateReviewModelConfiguration,
@@ -21,8 +22,8 @@ import {
 const root = fileURLToPath(new URL("../../../../", import.meta.url));
 const port = Number(process.env["AUTH_FAMILY_E2E_PORT"] ?? "4398");
 const baseURL = `http://127.0.0.1:${port}`;
-const compatibilityDate = "2026-07-14";
-const compatibilityFlags = ["nodejs_compat"];
+const { date: compatibilityDate, flags: compatibilityFlags } =
+  workerObservability.compatibility;
 const [gateway, api, domain, output] = await Promise.all([
   bundleWorkerFixture(path.join(root, "apps/web/e2e/website.test-fixture.js")),
   bundleWorkerFixture(
@@ -80,7 +81,6 @@ const runtime = new Miniflare({
         },
         manifest: gateway,
         name: "test-gateway",
-        type: "worker",
       },
     },
     {
@@ -103,7 +103,6 @@ const runtime = new Miniflare({
           ),
         },
         name: "website",
-        type: "worker",
       },
     },
     {
@@ -123,7 +122,6 @@ const runtime = new Miniflare({
         },
         manifest: api,
         name: "api",
-        type: "worker",
       },
     },
     {
@@ -143,7 +141,6 @@ const runtime = new Miniflare({
         },
         manifest: domain,
         name: "household-domain",
-        type: "worker",
       },
     },
     {

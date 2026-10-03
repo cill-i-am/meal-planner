@@ -6,9 +6,9 @@ import { pathToFileURL } from "node:url";
 
 import type * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import type * as HttpBody from "effect/unstable/http/HttpBody";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
+import type * as HttpBody from "effect/http/HttpBody";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { describe, expect, it } from "vitest";
 
 interface CloudflareCredentials {

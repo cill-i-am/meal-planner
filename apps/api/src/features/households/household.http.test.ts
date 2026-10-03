@@ -22,7 +22,7 @@ import {
   UserId,
 } from "@meal-planner/household-api";
 import { Effect, Layer, Schema } from "effect";
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { JsonHttpPlatformServices } from "../../infrastructure/json-http-platform.js";
@@ -58,7 +58,9 @@ const admittedActorId = Schema.decodeUnknownSync(MealPlanActorId)(
   "b6613fdfccc63dff6de05dfe53238e12f9469481e51f4da22b72beb7d17bfb4e"
 );
 const draftId = Schema.decodeUnknownSync(MealPlanDraftId)("draft-week-1");
-const createMealPlanPayload = Schema.decodeUnknownSync(CreateMealPlanPayload)({
+const createMealPlanPayload = Schema.decodeUnknownSync(CreateMealPlanPayload, {
+  onExcessProperty: "error",
+})({
   policy: {
     allowedDifficulties: ["easy"],
     allowedTotalTimeBands: ["under_30_minutes"],
@@ -117,7 +119,9 @@ const rejectedMealPlan = Schema.decodeUnknownSync(MealPlan)({
   },
   revision: 1,
 });
-const swapMealPlanPayload = Schema.decodeUnknownSync(SwapMealPlanPayload)({
+const swapMealPlanPayload = Schema.decodeUnknownSync(SwapMealPlanPayload, {
+  onExcessProperty: "error",
+})({
   expectedRevision: 0,
   mutationId: Schema.decodeUnknownSync(MealPlanMutationId)("swap-1"),
   reason: "Use the quicker approved recipe tonight.",
@@ -126,7 +130,9 @@ const swapMealPlanPayload = Schema.decodeUnknownSync(SwapMealPlanPayload)({
   ),
   slotId: "monday-dinner",
 });
-const decideMealPlanPayload = Schema.decodeUnknownSync(DecideMealPlanPayload)({
+const decideMealPlanPayload = Schema.decodeUnknownSync(DecideMealPlanPayload, {
+  onExcessProperty: "error",
+})({
   expectedRevision: 0,
   mutationId: Schema.decodeUnknownSync(MealPlanMutationId)("decision-1"),
   reason: "The household reviewed this plan.",
@@ -242,7 +248,9 @@ describe("household HttpApi boundary", () => {
 });
 
 describe("household people identity and owner boundary", () => {
-  const apps: { readonly dispose: () => Promise<void> }[] = [];
+  const apps: {
+    readonly dispose: () => Promise<void>;
+  }[] = [];
   const creator = Schema.decodeUnknownSync(HouseholdPerson)({
     associationState: "linked",
     associationVersion: 1,
@@ -261,7 +269,8 @@ describe("household people identity and owner boundary", () => {
     people: [creator],
   });
   const bootstrapPayload = Schema.decodeUnknownSync(
-    BootstrapHouseholdCreatorPayload
+    BootstrapHouseholdCreatorPayload,
+    { onExcessProperty: "error" }
   )({ displayName: "Owner", mutationId: "bootstrap-owner" });
 
   afterAll(async () => {
@@ -352,6 +361,7 @@ describe("household people identity and owner boundary", () => {
         )
       )
     );
+
     expect(responses.map(({ status }) => status)).toEqual([200, 200, 200, 200]);
 
     const principals = admitted as readonly {
@@ -446,7 +456,9 @@ describe("household people identity and owner boundary", () => {
 });
 
 describe("household meal-plan HttpApi boundary", () => {
-  const apps: { readonly dispose: () => Promise<void> }[] = [];
+  const apps: {
+    readonly dispose: () => Promise<void>;
+  }[] = [];
   const admittedResolver = AuthenticatedOrganizationResolver.of({
     resolve: () =>
       Effect.succeed({

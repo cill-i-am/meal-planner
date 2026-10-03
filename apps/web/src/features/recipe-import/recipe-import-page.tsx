@@ -44,7 +44,9 @@ import { RecipeDetails } from "./recipe-details.js";
 
 type ActiveReviewAction = Extract<
   RecipeImportAction,
-  { readonly status: "active" }
+  {
+    readonly status: "active";
+  }
 >;
 
 const stageLabels = {
@@ -60,7 +62,9 @@ const stageLabels = {
 const sourceUrlValidator = Schema.toStandardSchemaV1(SourceUrl);
 const nameValidator = Schema.toStandardSchemaV1(RecipeText);
 const decodeSourceUrl = Schema.decodeUnknownSync(SourceUrl);
-const decodeAnswer = Schema.decodeUnknownSync(AnswerReviewRecipeActionRequest);
+const decodeAnswer = Schema.decodeUnknownSync(AnswerReviewRecipeActionRequest, {
+  onExcessProperty: "error",
+});
 const decodeIdempotencyKey = Schema.decodeUnknownSync(IdempotencyKey);
 
 const idempotencyKey = (makeRequestId: () => string) =>
@@ -603,6 +607,7 @@ const SavedRecipeStatus = ({
   if (recipe === undefined) {
     return null;
   }
+
   return (
     <section className="success-document" aria-labelledby="success-title">
       <p className="eyebrow success">Complete</p>

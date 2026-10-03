@@ -1,4 +1,4 @@
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 
 import { json } from "../../app/http/responses.js";
 import { healthResponse } from "./health.model.js";

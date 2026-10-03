@@ -37,10 +37,10 @@ import {
   toHouseholdMealPlanResponse,
 } from "@meal-planner/household-api";
 import { Effect, Layer, Schema } from "effect";
-import { HttpServerResponse } from "effect/unstable/http";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import { HttpApiBuilder, HttpApiMiddleware } from "effect/unstable/httpapi";
-import type { HttpApiSchemaError } from "effect/unstable/httpapi/HttpApiError";
+import { HttpServerResponse } from "effect/http";
+import { HttpApiBuilder, HttpApiMiddleware } from "effect/http-api";
+import type { HttpApiSchemaError } from "effect/http-api/HttpApiError";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
 
 import { AuthenticatedOrganizationResolver } from "../auth/auth.principal.js";
 import type {

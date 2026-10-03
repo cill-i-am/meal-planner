@@ -3,11 +3,14 @@ import type { MealPlannerApiService } from "./api-proxy.js";
 
 interface WebsiteEnvironment {
   readonly MEAL_PLANNER_API: MealPlannerApiService;
+  readonly BROWSER_ANALYTICS_TOKEN?: string;
 }
 interface StartHandler {
   readonly fetch: (
     request: Request,
-    options: { context: { api: MealPlannerApiService } }
+    options: {
+      context: { api: MealPlannerApiService; browserAnalyticsToken: string };
+    }
   ) => Response | Promise<Response>;
 }
 
@@ -18,7 +21,10 @@ export const createWebsiteHandler = (start: StartHandler) => ({
       return environment.MEAL_PLANNER_API.fetch(request);
     }
     return start.fetch(request, {
-      context: { api: environment.MEAL_PLANNER_API },
+      context: {
+        api: environment.MEAL_PLANNER_API,
+        browserAnalyticsToken: environment.BROWSER_ANALYTICS_TOKEN ?? "",
+      },
     });
   },
 });

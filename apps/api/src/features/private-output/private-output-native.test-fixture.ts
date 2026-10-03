@@ -223,11 +223,18 @@ export const makePrivateOutputHarness = () => {
   const successful = async <A>(input: ControlInput): Promise<A> => {
     const response = await command(input);
     expect(response.status, await response.clone().text()).toBe(200);
-    return ((await response.json()) as { result: A }).result;
+    return (
+      (await response.json()) as {
+        result: A;
+      }
+    ).result;
   };
   const metadata = (binding: PrivateSessionBinding) =>
     successful<
-      PrivateSessionBinding & { status: "open" | "completed"; version: number }
+      PrivateSessionBinding & {
+        status: "open" | "completed";
+        version: number;
+      }
     >({ action: "metadata", sessionReference: binding.sessionReference });
   const turns = (binding: PrivateSessionBinding) =>
     successful<(typeof privateAssistantTurns.$inferSelect)[]>({
@@ -236,7 +243,10 @@ export const makePrivateOutputHarness = () => {
     });
   const open = async (
     selected: PrivateSessionBinding,
-    options: { scope?: PrivateDiscoveryScope | null; expiresAt?: number } = {}
+    options: {
+      scope?: PrivateDiscoveryScope | null;
+      expiresAt?: number;
+    } = {}
   ): Promise<PrivateNativeConnection> => {
     await successful({
       action: "initialize",

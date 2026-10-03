@@ -1,5 +1,5 @@
 import { Effect, Layer, Option, Redacted, Schema } from "effect";
-import { HttpBody, HttpClient, HttpClientRequest } from "effect/unstable/http";
+import { HttpBody, HttpClient, HttpClientRequest } from "effect/http";
 
 import { TescoAuthSession } from "../auth/auth-session.port.js";
 import { TescoCredentialsRejected } from "../auth/auth.errors.js";

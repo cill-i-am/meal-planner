@@ -539,7 +539,8 @@ const runDispatchTraceDurabilityProof = (
       .admitRecipeImport({
         admission: command.admission,
         idempotencyKey: Schema.decodeUnknownSync(
-          HouseholdAdmitRecipeImportInput.fields.idempotencyKey
+          HouseholdAdmitRecipeImportInput.fields.idempotencyKey,
+          { onExcessProperty: "error" }
         )(`dispatch-trace-${command.mode}`),
         source: { kind: "tiktok", url: command.sourceUrl },
       })
@@ -585,7 +586,8 @@ const runDispatchTraceDurabilityProof = (
             active = true;
             providerCalls += 1;
             const canonicalUrl = yield* Schema.decodeUnknownEffect(
-              HouseholdResolveRecipeImportSourceInput.fields.canonicalUrl
+              HouseholdResolveRecipeImportSourceInput.fields.canonicalUrl,
+              { onExcessProperty: "error" }
             )(command.sourceUrl);
             yield* household.resolveRecipeImportSource({
               admission: {

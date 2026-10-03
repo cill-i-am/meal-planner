@@ -13,8 +13,7 @@ import type { DisplayedIdentity } from "../auth/index.js";
 const RetainedHouseholdPeopleIntents = Schema.Struct({
   departure: Schema.NullOr(DepartHouseholdAdultPayload),
   invitation: Schema.NullOr(InviteHouseholdAdultPayload),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
-
+});
 export interface RetainedHouseholdPeopleIntents {
   readonly departure: DepartHouseholdAdultPayloadType | null;
   readonly invitation: InviteHouseholdAdultPayloadType | null;
@@ -51,9 +50,9 @@ const decode = (raw: string | null): RetainedHouseholdPeopleIntents => {
   try {
     return (
       Option.getOrUndefined(
-        Schema.decodeUnknownOption(RetainedHouseholdPeopleIntents)(
-          JSON.parse(raw)
-        )
+        Schema.decodeUnknownOption(RetainedHouseholdPeopleIntents, {
+          onExcessProperty: "error",
+        })(JSON.parse(raw))
       ) ?? emptyIntents
     );
   } catch {

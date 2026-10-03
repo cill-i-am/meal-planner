@@ -96,7 +96,7 @@ describe("anti-slop vendor contract exceptions", () => {
     expect(config).toContain(`"${ruleName}": "error"`);
   });
 
-  it("keeps exactly the nine reviewed Alchemy beta.72 exceptions", () => {
+  it("keeps exactly the nine reviewed Alchemy beta.80 exceptions", () => {
     expect(vendorContractExceptions).toHaveLength(9);
     expect(suppressionLocations).toHaveLength(vendorContractExceptions.length);
 
@@ -105,7 +105,7 @@ describe("anti-slop vendor contract exceptions", () => {
         new URL(exception.file, repositoryRootUrl),
         "utf-8"
       );
-      const marker = `TODO(${exception.id} alchemy@2.0.0-beta.76)`;
+      const marker = `TODO(${exception.id} alchemy@2.0.0-beta.80)`;
       const comments = source
         .split("\n")
         .filter((line) => line.includes(marker));

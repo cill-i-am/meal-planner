@@ -3,6 +3,7 @@
 import * as Cloudflare from "alchemy/Cloudflare";
 import { Config, Effect } from "effect";
 
+import { workerObservability } from "../../infrastructure/worker-observability.js";
 import type {
   AccountOutputLifecycle,
   HouseholdAgent,
@@ -16,15 +17,15 @@ import type {
 
 export class PrivateOutputWorker extends Cloudflare.Worker<PrivateOutputWorker>()(
   "PrivateOutputWorker",
-  {
-    compatibility: { date: "2026-07-14", flags: ["nodejs_compat"] },
+  Effect.sync(() => ({
+    ...workerObservability,
     env: {
       AccountOutputLifecycle: Cloudflare.DurableObject<AccountOutputLifecycle>(
         "AccountOutputLifecycle"
       ),
       HouseholdAgent:
         Cloudflare.DurableObject<HouseholdAgent>("HouseholdAgent"),
-      PRIVATE_DISCOVERY_CONFIG: Config.string(
+      PRIVATE_DISCOVERY_CONFIG: Config.String(
         "MEAL_PLANNER_PRIVATE_DISCOVERY_CONFIG"
       ).pipe(Config.withDefault("")),
       PrivateDiscoveryAI: Cloudflare.Workers.AI(),
@@ -37,12 +38,9 @@ export class PrivateOutputWorker extends Cloudflare.Worker<PrivateOutputWorker>(
           "PrivateInterviewSession"
         ),
     },
-    main: Effect.sync(
-      () => new URL("private-output-worker.ts", import.meta.url).href
-    ),
-    observability: { enabled: false },
+    main: new URL("private-output-worker.ts", import.meta.url).href,
     workersDev: false,
-  }
+  }))
 ) {}
 
 export const PrivateOutputApiBinding = PrivateOutputWorker.pipe(

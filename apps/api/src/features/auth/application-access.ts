@@ -5,11 +5,7 @@ import {
 import type { BetterAuthPlugin } from "better-auth";
 import { createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { Data, Effect, Schema } from "effect";
-import {
-  HttpEffect,
-  HttpServerRequest,
-  HttpServerResponse,
-} from "effect/unstable/http";
+import { HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http";
 
 import type { MealPlannerAuthService } from "./auth.alchemy.js";
 

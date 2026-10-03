@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { HttpRouter, HttpServerRequest } from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest } from "effect/http";
 
 import {
   ProviderRecoveryRequest,

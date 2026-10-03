@@ -12,7 +12,7 @@ Load this file when changed behavior is already organized around Effect or uses 
 - Do not introduce parallel constructor-injection, schema, or testing architecture inside an Effect responsibility without a concrete interoperability need or explicit architectural rationale.
 - Dependency-bearing modules in Effect architecture use Effect Services/Tags/Layers rather than ad hoc dependency bags.
 - Expected failures in Effect-based modules use Effect's typed error channel.
-- Effect custom errors use the repository's established Effect tagged-error mechanism, such as `Schema.TaggedErrorClass`.
+- Effect custom errors use the repository's established Effect tagged-error mechanism, such as `Schema.TaggedError`.
 - When Effect is the established schema model, use Effect Schema for refined values and schema-derived domain construction.
 - Sensitive values use Effect's Redacted value type in Effect codebases.
 - Layers that construct cleanup-requiring resources own acquisition and cleanup.
@@ -56,7 +56,7 @@ Expected failures belong in Effect's typed error channel. Do not convert ordinar
 Use the local established tagged-error mechanism:
 
 ```ts
-class UserNotFound extends Schema.TaggedErrorClass<UserNotFound>()(
+class UserNotFound extends Schema.TaggedError<UserNotFound>()(
   "UserNotFound",
   {
     userId: UserIdSchema,
@@ -101,14 +101,22 @@ This work-in-progress standard does not require adopting Effect RPC where anothe
 
 ## Testing
 
-Effect 4 guidance was audited against:
+The runtime uses `effect@4.0.0`. Effect's stable exports include `effect/http`,
+`effect/http-api`, and `effect/ai`; Config constructors are capitalized.
 
-- `effect@4.0.0-beta.85`
-- `@effect/vitest@4.0.0-beta.85`
+Use stable `@effect/vitest@4.0.0` with Vitest `5.0.3` for Effect-aware
+tests. Native Cloudflare Worker tests run in `tools/worker-tests`, which owns
+the Cloudflare plugin and its supported Vitest `4.1.11`. The canonical
+recursive test command runs both workspaces.
 
-For Effect 4 codebases using `@effect/vitest`, keep `effect` and `@effect/vitest` on the same version. Re-audit testing, schema-generation, and property-test assumptions when either package is upgraded.
+Effect 4 stable owns property generation through `effect/Arbitrary`. It no
+longer re-exports Fast-Check from `effect/testing`.
 
-Use `@effect/vitest` rather than `@fast-check/vitest` in Effect 4 codebases. Effect depends on Fast-Check, re-exports it from `effect/testing`, and `@effect/vitest` owns the integration.
+Alchemy beta.80 treats Workflow callback defects and interruptions as terminal.
+Keep recoverable remote failures in the typed error channel at native task
+boundaries. Do not use `Effect.orDie` to request a retry. Native recovery tests
+must assert terminal defects before explicitly restarting the failed step and
+checking that durable replay does not duplicate work.
 
 Use the repository's canonical test command. In Vite+ projects, still run tests through `vp test`. If the package manager requires an explicit `vitest` peer for `@effect/vitest`, pin it to the exact Vitest version bundled by the installed Vite+ version.
 
@@ -117,36 +125,22 @@ Prefer Effect-aware tests and test services:
 - `it.effect` for effects under Effect test services;
 - `it.live` only when the test intentionally verifies live runtime behavior;
 - `layer(...)` / nested `it.layer(...)` for service tests with managed teardown;
-- `it.prop` for synchronous properties over Fast-Check arbitraries;
-- `it.effect.prop` for properties whose predicate returns an Effect, especially with Effect Schema or test services.
+- `Arbitrary.checkEffect` with schema-derived values for properties, asserting its returned result.
 
-Property callbacks must assert or return a failing Effect when false. Merely succeeding with boolean `false` does not fail the test.
+Property callbacks must assert or return a failing Effect when false. The
+retained test adapter treats a successful Effect containing `false` as success.
 
 ## Schema-derived generation
 
 Effect Schema is the default source of valid generated domain values.
+Use `Arbitrary.schema(schema)` rather than maintaining a duplicate generator.
+`Arbitrary.checkEffect` checks a property with bounded runs and a reproducible
+seed. Assert that its result is `Passed`; merely running it does not fail a test.
+`Arbitrary.formatCheckFailure` supplies shrinking and replay diagnostics.
 
-Prefer passing schemas directly to `it.effect.prop` or deriving with:
-
-```ts
-const arbitrary = Schema.toArbitrary(schema);
-```
-
-Built-in schema constraints should guide generation before rejection filtering. Use `Schema.toArbitrary(schema, { report: true })` while developing custom schemas to detect opaque-filter warnings.
-
-Do not manually duplicate a schema's arbitrary in a separate factory unless the schema cannot derive an efficient or meaningful generator. Export custom arbitraries only when they add deliberate generation semantics or are reused independently.
-
-For the audited Effect 4 beta versions:
-
-- use tuple form when passing schemas to `it.effect.prop`;
-- record form is safe for Fast-Check arbitraries;
-- plain `it.prop` accepts Fast-Check arbitraries only;
-- schema generation laws can use `TestSchema.Asserts`:
-  - `.arbitrary().verifyGeneration()`;
-  - `verifyLosslessTransformation({ params })`;
-  - `decoding()` and `encoding()` focused assertions.
-
-Re-check these compatibility notes after upgrading Effect or `@effect/vitest`.
+`TestSchema.Asserts` from `effect/testing` also checks schema generation and
+round trips. Check installed declarations before using version-sensitive
+property helpers in `@effect/vitest`.
 
 ## Cloudflare + Effect
 
@@ -161,7 +155,7 @@ Cloudflare platform placement itself lives in `CLOUDFLARE_ARCHITECTURE.md`.
 - **"Effect is present somewhere, so all new code must use Effect."** Only use this file for responsibilities that depend on Effect-specific semantics or established Effect architecture.
 - **"Effect lets failures die."** Expected failures stay in the typed error channel.
 - **"Any Layer shape is fine."** Follow local conventions and keep resource ownership explicit.
-- **"Fast-Check integration is the same in Effect."** Use `@effect/vitest` and Effect's testing exports in Effect 4 projects.
+- **"Property APIs are unchanged across releases."** Use the installed Effect Arbitrary and test adapter contracts.
 - **"Version-specific examples are universal."** Check installed versions before applying beta-version guidance.
 
 ## Known gaps for future grilling

@@ -166,7 +166,6 @@ const resetFixture = async () => {
     accountId: f.userId,
     createdAt: f.now,
     id: f.userId,
-    issuer: "local:credential",
     password: "synthetic-old-hash",
     providerId: "credential",
     updatedAt: f.now,
@@ -183,7 +182,6 @@ const resetFixture = async () => {
   const input = Schema.decodeUnknownSync(ResetPasswordMutation)({
     accountId: f.userId,
     identifier,
-    issuer: "local:credential",
     passwordHash: "synthetic-new-hash",
     requestPassword: "synthetic-new-password",
     userId: f.userId,

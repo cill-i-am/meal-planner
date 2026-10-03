@@ -1,6 +1,6 @@
 import { Effect, Option, Schema } from "effect";
-import { Tool } from "effect/unstable/ai";
 
+import { toStrictJsonSchema } from "../../infrastructure/strict-json-schema.js";
 import {
   isProviderKnownZeroCostFailure,
   providerKnownZeroCostFailure,
@@ -200,7 +200,7 @@ const decodeRecipeCandidate = Schema.decodeUnknownResult(RecipeCandidate, {
   onExcessProperty: "error",
 });
 const recipeCandidateJsonSchema = Schema.decodeUnknownSync(Schema.Json)(
-  Tool.getJsonSchemaFromSchema(RecipeCandidate)
+  toStrictJsonSchema(RecipeCandidate)
 );
 const recipeJsonModeRequest = (
   request: RecipeEvidenceAssembly

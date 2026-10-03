@@ -1,0 +1,12 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 9c840146d34b06a0931e1db6415a7b5dc2ce3de8..fec570314f26ad9955b6433badee0622bdbf4c2f 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -1,5 +1,5 @@
+-import { AttributeValue, TracerLike } from './tracer';
+-export type { AttributeValue, SpanLike, TracerLike } from './tracer';
++import { AttributeValue, TracerLike } from './tracer.js';
++export type { AttributeValue, SpanLike, TracerLike } from './tracer.js';
+ export interface DrizzleTracingOptions {
+     /** Defaults to `tracing` from `cloudflare:workers`. Pass `ctx.tracing` or a test double to override. */
+     tracer?: TracerLike;

@@ -65,7 +65,7 @@ jobs:
         run: pnpm exec ultracite doctor
 
   media-container:
-    name: Synthetic media container
+    name: Native Alchemy stack and media container
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -90,6 +90,9 @@ jobs:
 
       - name: Build and verify synthetic media container
         run: pnpm test:container
+
+      - name: Verify native Alchemy stack locally
+        run: pnpm test:stack
 
   auth-family-e2e:
     name: Auth and family browser journeys

@@ -49,7 +49,9 @@ interface TestKvNamespace {
 
 interface NativeWorkflowInstance {
   readonly restart: (options?: WorkflowInstanceRestartOptions) => Promise<void>;
-  readonly status: () => Promise<{ readonly status: string }>;
+  readonly status: () => Promise<{
+    readonly status: string;
+  }>;
 }
 
 interface NativeWorkflowBinding {
@@ -359,7 +361,9 @@ const waitForResolutions = async (
 const waitForTerminal = async (
   instance: NativeWorkflowInstance,
   remaining = 2000
-): Promise<{ readonly status: string }> => {
+): Promise<{
+  readonly status: string;
+}> => {
   const status = await instance.status();
   if (status.status === "complete" || status.status === "errored") {
     return status;
@@ -377,7 +381,9 @@ export default {
   fetch: async (request: Request, environment: TestEnvironment) => {
     const command = await Effect.runPromise(
       Effect.promise(() => request.json()).pipe(
-        Effect.flatMap(Schema.decodeUnknownEffect(Command))
+        Effect.flatMap(
+          Schema.decodeUnknownEffect(Command, { onExcessProperty: "error" })
+        )
       )
     );
     const household = Cloudflare.makeRpcStub<HouseholdDomainWorkerMethods>(
@@ -393,7 +399,9 @@ export default {
     const admitted = await Effect.runPromise(
       household
         .admitRecipeImport(
-          Schema.decodeUnknownSync(HouseholdAdmitRecipeImportInput)({
+          Schema.decodeUnknownSync(HouseholdAdmitRecipeImportInput, {
+            onExcessProperty: "error",
+          })({
             admission: memberAdmission,
             idempotencyKey: `restart-${command.commandId}`,
             source: {
@@ -420,7 +428,9 @@ export default {
     );
     await Effect.runPromise(
       household.resolveRecipeImportSource(
-        Schema.decodeUnknownSync(HouseholdResolveRecipeImportSourceInput)({
+        Schema.decodeUnknownSync(HouseholdResolveRecipeImportSourceInput, {
+          onExcessProperty: "error",
+        })({
           admission: systemAdmission,
           canonicalSourceId: canonicalId,
           canonicalUrl: `https://www.tiktok.com/@mealplanner/video/${command.videoId}`,

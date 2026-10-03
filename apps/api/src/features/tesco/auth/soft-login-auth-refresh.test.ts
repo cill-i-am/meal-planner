@@ -12,7 +12,7 @@ import {
   Redacted,
   Schema,
 } from "effect";
-import { Cookies, HttpClient } from "effect/unstable/http";
+import { Cookies, HttpClient } from "effect/http";
 import { describe, expect, it } from "vitest";
 
 import { TescoLocale } from "../tesco.config.js";

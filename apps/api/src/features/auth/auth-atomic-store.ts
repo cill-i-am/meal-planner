@@ -66,7 +66,6 @@ export const RejectInvitationMutation = Schema.Struct({
 export const ResetPasswordMutation = Schema.Struct({
   accountId: AuthAccountId,
   identifier: Schema.NonEmptyString,
-  issuer: Schema.NonEmptyString,
   passwordHash: Schema.NonEmptyString,
   requestPassword: Schema.String,
   userId: UserId,
@@ -499,7 +498,6 @@ export const makeAuthAtomicStore = (
                     createdAt: sql<number>`${now.getTime()}`.as("created_at"),
                     id: sql<string>`${input.accountId}`.as("id"),
                     idToken: sql<null>`NULL`.as("id_token"),
-                    issuer: sql<string>`${input.issuer}`.as("issuer"),
                     password: sql<string>`${input.passwordHash}`.as("password"),
                     providerId: sql<string>`'credential'`.as("provider_id"),
                     refreshToken: sql<null>`NULL`.as("refresh_token"),
@@ -515,7 +513,7 @@ export const makeAuthAtomicStore = (
               )
               .onConflictDoUpdate({
                 set: { password: input.passwordHash, updatedAt: now },
-                target: [account.issuer, account.accountId],
+                target: [account.providerId, account.accountId],
               }),
             database
               .delete(session)

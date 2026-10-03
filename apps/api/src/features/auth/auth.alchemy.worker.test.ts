@@ -1,5 +1,4 @@
 import { BetterAuthApiError } from "@alchemy.run/better-auth";
-import { it } from "@effect/vitest";
 import {
   EmailAddress,
   HouseholdOrganizationId,
@@ -11,8 +10,8 @@ import { applyD1Migrations, env } from "cloudflare:test";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { drizzle } from "drizzle-orm/d1";
 import { Effect, Fiber, Redacted, Schema } from "effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import { beforeAll, beforeEach, describe, expect } from "vitest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { PrivateOutputUnavailable } from "../private-output/private-output.contract.js";
 import { makeAlchemyMealPlannerAuth } from "./auth.alchemy.js";
@@ -103,165 +102,160 @@ describe("Alchemy Better Auth on D1", () => {
     await drizzle(testEnv.MealPlannerAuthDatabase).delete(authSchema.rateLimit);
   });
 
-  it.live(
-    "reports an unauthenticated API failure in the Effect error channel",
-    () =>
-      Effect.gen(function* typedApiFailure() {
-        const auth = yield* makeAuth();
-        const error = yield* auth.api
-          .getActiveMember({ headers: new Headers() })
-          .pipe(Effect.flip);
-        expect(error).toBeInstanceOf(BetterAuthApiError);
-        expect(error.statusCode).toBe(401);
-      }).pipe(
-        Effect.scoped,
-        Effect.provideService(RuntimeContext, testRuntimeContext)
-      )
-  );
+  it("reports an unauthenticated API failure in the Effect error channel", () =>
+    Effect.gen(function* typedApiFailure() {
+      const auth = yield* makeAuth();
+      const error = yield* auth.api
+        .getActiveMember({ headers: new Headers() })
+        .pipe(Effect.flip);
+      expect(error).toBeInstanceOf(BetterAuthApiError);
+      expect(error.statusCode).toBe(401);
+    }).pipe(
+      Effect.scoped,
+      Effect.provideService(RuntimeContext, testRuntimeContext),
+      Effect.runPromise
+    ));
 
-  it.live(
-    "cancels the retained person invitation through the bound Effect API",
-    () =>
-      Effect.gen(function* cancelPersonInvitation() {
-        const auth = yield* makeAuth();
-        const owner = yield* createAccount(auth);
-        const organization = yield* auth.api
-          .createOrganization({
-            body: {
-              name: "Alchemy cancellation family",
-              slug: crypto.randomUUID(),
-            },
-            headers: owner.headers,
-          })
-          .pipe(
-            Effect.flatMap(
-              Schema.decodeUnknownEffect(
-                Schema.Struct({ id: HouseholdOrganizationId })
-              )
+  it("cancels the retained person invitation through the bound Effect API", () =>
+    Effect.gen(function* cancelPersonInvitation() {
+      const auth = yield* makeAuth();
+      const owner = yield* createAccount(auth);
+      const organization = yield* auth.api
+        .createOrganization({
+          body: {
+            name: "Alchemy cancellation family",
+            slug: crypto.randomUUID(),
+          },
+          headers: owner.headers,
+        })
+        .pipe(
+          Effect.flatMap(
+            Schema.decodeUnknownEffect(
+              Schema.Struct({ id: HouseholdOrganizationId })
             )
-          );
-        const invitation = yield* auth.createHouseholdInvitation({
-          body: {
-            email: Schema.decodeUnknownSync(EmailAddress)(
-              "recipient@example.test"
-            ),
-            householdPersonId: Schema.decodeUnknownSync(HouseholdPersonId)(
-              `person_${crypto.randomUUID()}`
-            ),
-            organizationId: organization.id,
-            role: "member",
-          },
-          headers: owner.headers,
-          invitationId: Schema.decodeUnknownSync(InvitationId)(
-            crypto.randomUUID()
+          )
+        );
+      const invitation = yield* auth.createHouseholdInvitation({
+        body: {
+          email: Schema.decodeUnknownSync(EmailAddress)(
+            "recipient@example.test"
           ),
-        });
-        const canceled = yield* auth.api.cancelInvitation({
-          body: {
-            invitationId: invitation.id,
-            mutationId: crypto.randomUUID(),
-          },
-          headers: owner.headers,
-        });
-        expect(canceled).toMatchObject({
-          id: invitation.id,
-          status: "canceled",
-        });
-      }).pipe(
-        Effect.scoped,
-        Effect.provideService(RuntimeContext, testRuntimeContext)
-      )
-  );
+          householdPersonId: Schema.decodeUnknownSync(HouseholdPersonId)(
+            `person_${crypto.randomUUID()}`
+          ),
+          organizationId: organization.id,
+          role: "member",
+        },
+        headers: owner.headers,
+        invitationId: Schema.decodeUnknownSync(InvitationId)(
+          crypto.randomUUID()
+        ),
+      });
+      const canceled = yield* auth.api.cancelInvitation({
+        body: {
+          invitationId: invitation.id,
+          mutationId: crypto.randomUUID(),
+        },
+        headers: owner.headers,
+      });
+      expect(canceled).toMatchObject({
+        id: invitation.id,
+        status: "canceled",
+      });
+    }).pipe(
+      Effect.scoped,
+      Effect.provideService(RuntimeContext, testRuntimeContext),
+      Effect.runPromise
+    ));
 
-  it.live(
-    "keeps the session when the HTTP account guard or revocation fence rejects",
-    () =>
-      Effect.gen(function* rejectAccountAndFence() {
-        let rejectMutations = false;
-        let fenceAttempts = 0;
+  it("keeps the session when the HTTP account guard or revocation fence rejects", () =>
+    Effect.gen(function* rejectAccountAndFence() {
+      let rejectMutations = false;
+      let fenceAttempts = 0;
+      const auth = yield* makeAuth({
+        outputFence: (_input, canonical) => {
+          fenceAttempts += 1;
+          return rejectMutations
+            ? Promise.reject(
+                new PrivateOutputUnavailable({
+                  reason: "authority_unavailable",
+                })
+              )
+            : canonical();
+        },
+      });
+      const account = yield* createAccount(auth);
+      const initialFenceAttempts = fenceAttempts;
+      const wrongAccountHeaders = new Headers(account.headers);
+      wrongAccountHeaders.set("x-meal-planner-user", crypto.randomUUID());
+      const mismatch = HttpServerResponse.toWeb(
+        yield* auth.fetchHttpEffect(
+          authRequest("/sign-out", {}, wrongAccountHeaders)
+        )
+      );
+      expect(mismatch.status).toBe(401);
+      expect(yield* Effect.promise(() => mismatch.json())).toMatchObject({
+        code: "ACCOUNT_CHANGED",
+      });
+      expect(fenceAttempts).toBe(initialFenceAttempts);
+
+      rejectMutations = true;
+      const rejected = yield* auth.fetchHttpEffect(
+        authRequest("/sign-out", {}, account.headers)
+      );
+      expect(rejected.status).toBe(503);
+      expect(fenceAttempts).toBe(initialFenceAttempts + 1);
+      const session = yield* auth.api.getSession({
+        headers: account.headers,
+        query: { disableRefresh: true },
+      });
+      expect(session?.user.email).toBe(account.email);
+    }).pipe(
+      Effect.scoped,
+      Effect.provideService(RuntimeContext, testRuntimeContext),
+      Effect.runPromise
+    ));
+
+  it("drains password-reset background mail before the execution scope closes", () =>
+    Effect.gen(function* drainBackgroundMail() {
+      const releaseMail = Promise.withResolvers<null>();
+      const responseReady = Promise.withResolvers<null>();
+      let mailStarted = false;
+      let executionSettled = false;
+      const execution = yield* Effect.gen(function* requestPasswordReset() {
         const auth = yield* makeAuth({
-          outputFence: (_input, canonical) => {
-            fenceAttempts += 1;
-            return rejectMutations
-              ? Promise.reject(
-                  new PrivateOutputUnavailable({
-                    reason: "authority_unavailable",
-                  })
-                )
-              : canonical();
+          sendPasswordResetEmail: async () => {
+            mailStarted = true;
+            await releaseMail.promise;
           },
         });
         const account = yield* createAccount(auth);
-        const initialFenceAttempts = fenceAttempts;
-        const wrongAccountHeaders = new Headers(account.headers);
-        wrongAccountHeaders.set("x-meal-planner-user", crypto.randomUUID());
-        const mismatch = HttpServerResponse.toWeb(
-          yield* auth.fetchHttpEffect(
-            authRequest("/sign-out", {}, wrongAccountHeaders)
-          )
+        const response = yield* auth.fetchHttpEffect(
+          authRequest("/request-password-reset", { email: account.email })
         );
-        expect(mismatch.status).toBe(401);
-        expect(yield* Effect.promise(() => mismatch.json())).toMatchObject({
-          code: "ACCOUNT_CHANGED",
-        });
-        expect(fenceAttempts).toBe(initialFenceAttempts);
-
-        rejectMutations = true;
-        const rejected = yield* auth.fetchHttpEffect(
-          authRequest("/sign-out", {}, account.headers)
-        );
-        expect(rejected.status).toBe(503);
-        expect(fenceAttempts).toBe(initialFenceAttempts + 1);
-        const session = yield* auth.api.getSession({
-          headers: account.headers,
-          query: { disableRefresh: true },
-        });
-        expect(session?.user.email).toBe(account.email);
+        expect(response.status).toBe(200);
+        responseReady.resolve(null);
       }).pipe(
         Effect.scoped,
-        Effect.provideService(RuntimeContext, testRuntimeContext)
-      )
-  );
-
-  it.live(
-    "drains password-reset background mail before the execution scope closes",
-    () =>
-      Effect.gen(function* drainBackgroundMail() {
-        const releaseMail = Promise.withResolvers<null>();
-        const responseReady = Promise.withResolvers<null>();
-        let mailStarted = false;
-        let executionSettled = false;
-        const execution = yield* Effect.gen(function* requestPasswordReset() {
-          const auth = yield* makeAuth({
-            sendPasswordResetEmail: async () => {
-              mailStarted = true;
-              await releaseMail.promise;
-            },
-          });
-          const account = yield* createAccount(auth);
-          const response = yield* auth.fetchHttpEffect(
-            authRequest("/request-password-reset", { email: account.email })
-          );
-          expect(response.status).toBe(200);
-          responseReady.resolve(null);
-        }).pipe(
-          Effect.scoped,
-          Effect.tap(() => {
-            executionSettled = true;
-            return Effect.void;
-          }),
-          Effect.forkChild
+        Effect.tap(() => {
+          executionSettled = true;
+          return Effect.void;
+        }),
+        Effect.forkChild
+      );
+      yield* Effect.gen(function* checkPendingExecution() {
+        yield* Effect.raceFirst(
+          Fiber.join(execution),
+          Effect.promise(() => responseReady.promise)
         );
-        yield* Effect.gen(function* checkPendingExecution() {
-          yield* Effect.raceFirst(
-            Fiber.join(execution),
-            Effect.promise(() => responseReady.promise)
-          );
-          expect(mailStarted).toBe(true);
-          expect(executionSettled).toBe(false);
-        }).pipe(Effect.ensuring(Effect.sync(() => releaseMail.resolve(null))));
-        yield* Fiber.join(execution);
-        expect(executionSettled).toBe(true);
-      }).pipe(Effect.provideService(RuntimeContext, testRuntimeContext))
-  );
+        expect(mailStarted).toBe(true);
+        expect(executionSettled).toBe(false);
+      }).pipe(Effect.ensuring(Effect.sync(() => releaseMail.resolve(null))));
+      yield* Fiber.join(execution);
+      expect(executionSettled).toBe(true);
+    }).pipe(
+      Effect.provideService(RuntimeContext, testRuntimeContext),
+      Effect.scoped,
+      Effect.runPromise
+    ));
 });

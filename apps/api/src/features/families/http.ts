@@ -14,7 +14,7 @@ import {
   FamilyService,
 } from "@meal-planner/families/application";
 import { Effect, Layer } from "effect";
-import { HttpApiBuilder, HttpApiMiddleware } from "effect/unstable/httpapi";
+import { HttpApiBuilder, HttpApiMiddleware } from "effect/http-api";
 
 import { JsonHttpPlatformServices } from "../../infrastructure/json-http-platform.js";
 import { authorizeApplicationRequest } from "../auth/http.js";
