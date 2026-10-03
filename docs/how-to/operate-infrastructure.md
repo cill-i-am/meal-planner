@@ -476,10 +476,13 @@ startup and the test graph.
 
 ## Browser performance and diagnostics
 
-Before a production deployment, set `WEB_ANALYTICS_HOST` to the hostname users
-visit, without a scheme or path. Alchemy creates `MealPlannerWebAnalytics` and
-binds its public beacon token to the Website. Do not create another site or
-manually inject a second beacon in Cloudflare's dashboard. The stack returns
+The production Website and RUM share `ceird.app`, declared once in
+[`website-domain.ts`](../../apps/web/website-domain.ts). Alchemy attaches the
+Website custom domain in the existing `CEIRD_ZONE_ID` zone, manages DNS/TLS,
+creates `MealPlannerWebAnalytics` for the same hostname, and binds its public
+beacon token to the Website. There is no separate analytics-host environment
+setting. Do not create another site or manually inject a second beacon in
+Cloudflare's dashboard. The stack returns
 `webAnalyticsSiteId`. Local and preview stages omit RUM; production activation
 requires a deployment. No provider credentials are exposed in HTML.
 

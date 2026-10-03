@@ -16,6 +16,7 @@ import { MealPlannerAuthDatabase } from "./apps/api/src/infrastructure/meal-plan
 import { ProviderAccountingDatabase } from "./apps/api/src/infrastructure/provider-accounting-database.js";
 import { workerObservability } from "./apps/api/src/infrastructure/worker-observability.js";
 import MealPlannerApi from "./apps/api/src/worker.js";
+import { productionWebsiteHostname } from "./apps/web/website-domain.js";
 import { websiteSource } from "./apps/web/website-source.js";
 
 export default Alchemy.Stack(
@@ -51,16 +52,26 @@ export default Alchemy.Stack(
     const browserAnalytics =
       stage === "prod" && !dev
         ? yield* Cloudflare.Rum.Site("MealPlannerWebAnalytics", {
-            host: yield* Config.String("WEB_ANALYTICS_HOST"),
+            host: productionWebsiteHostname,
           })
         : undefined;
     const api = yield* MealPlannerApi;
+    const websiteDomainProps =
+      stage === "prod" && !dev
+        ? {
+            domain: {
+              name: productionWebsiteHostname,
+              zoneId: yield* Config.String("CEIRD_ZONE_ID"),
+            },
+          }
+        : undefined;
     const website = yield* Cloudflare.Website.Vite("MealPlannerWebsite", {
       assets: { runWorkerFirst: ["/api/auth/*", "/v1/*"] },
       env: {
         BROWSER_ANALYTICS_TOKEN: browserAnalytics?.siteToken ?? "",
         MEAL_PLANNER_API: api,
       },
+      ...websiteDomainProps,
       ...websiteSource,
       ...workerObservability,
       rootDir: "./apps/web",
