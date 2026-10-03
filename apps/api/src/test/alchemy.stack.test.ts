@@ -67,7 +67,7 @@ test(
     expect(yield* page.text).toContain("<!DOCTYPE html>");
   }),
   // A fresh CI runner builds the real media image before the API can serve.
-  // The independent container suites no longer warm this runner's Docker cache.
+  // Local runs may start without the image layers that CI prepares first.
   { timeout: 600_000 }
 );
 
