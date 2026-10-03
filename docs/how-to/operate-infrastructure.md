@@ -127,11 +127,18 @@ Follow the [native deployment guide](https://alchemy.run/cli/deploy/) and
 ## GitHub Actions
 
 The [CI workflow](../../.github/workflows/ci.yml) runs quality/build checks,
-infrastructure tests, API/package tests, frontend tests, native Worker tests,
-both media-container suites independently. The native stack runs after the real
+infrastructure tests, API tests across seven native Vitest shards, package tests,
+frontend tests, native Worker tests, and both media-container suites independently. The native stack runs after the real
 media-image suite on the same runner to reuse its Docker build layers. Auth/family
-browser journeys retain their separate job. Only browser jobs install Chromium.
-The lifecycle suite still checks the real default idle timeout.
+browser journeys run on four runners: two native Playwright shards per browser
+project. Each E2E runner starts its own local Worker stack and installs only its
+project’s browser. Each shard uses one Playwright worker, following its CI
+guidance to avoid competition between browser journeys on a small runner. Failure
+traces have unique artifact names per project/shard.
+Deployment waits for every shard; a failed shard blocks it. Frontend component
+tests still install Chromium. The lifecycle suite checks the real default idle
+timeout. The pinned media-tool download uses bounded native curl retries for
+transient HTTP errors and still verifies its checksum before installation.
 
 The pinned `dorny/paths-filter` action selects the expensive media and native
 stack jobs. Backend, shared-package, dependency, provider-patch, infrastructure,
@@ -141,6 +148,13 @@ auth/family browser journeys still run. PR filtering considers the whole PR;
 main filtering compares the push's previous commit. Manual runs always include
 the full container checks. Classification failures block deployment, and an
 intentionally skipped container job does not block an otherwise successful run.
+
+The D1 scanner removal reduced the infrastructure job, not the whole CI run.
+Main run `37157123016` took 7m21s overall; its infrastructure job took 39s,
+API/package job 3m54s and browser journey job 4m05s. A media-image check failed,
+so deployment was skipped. Compare successful end-to-end runs before claiming an
+overall speed improvement. Sharding repeats runner setup and can increase billed
+Actions minutes even when it reduces elapsed time.
 
 Before this split, run `37147935518` took 13m59s for Quality and 12m55s for
 the combined media/stack job. Its two container files ran serially for 705.59s.
