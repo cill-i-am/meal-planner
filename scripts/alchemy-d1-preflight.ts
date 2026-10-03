@@ -27,6 +27,14 @@ const targetSchema = z.strictObject({
 });
 
 export type D1Target = z.infer<typeof targetSchema>;
+const newStageSchema = z.strictObject({
+  accountId: account,
+  mode: z.literal("new-stage"),
+  profile: identifier,
+  stage: identifier,
+});
+export type NewStageTarget = z.infer<typeof newStageSchema>;
+
 type Resource = keyof D1Target["databases"];
 const migrationDirectories = {
   MealPlannerAuthDatabase: "apps/api/auth-migrations",
@@ -78,6 +86,56 @@ const decode = <T>(
   return parsed.data;
 };
 
+/** First deployments must prove that neither cloud nor hosted state owns this stage. */
+export const inspectNewStage = async (
+  reader: D1Reader,
+  target: NewStageTarget
+) => {
+  if (reader.accountId !== target.accountId) {
+    throw new Error(
+      "Resolved Cloudflare account differs from new-stage target"
+    );
+  }
+  const workers = decode(
+    z.array(z.object({ id: identifier, tags: z.array(z.string()).optional() })),
+    await reader.read("/workers/scripts"),
+    "Worker inventory"
+  );
+  if (
+    workers.some(
+      ({ tags }) =>
+        tags?.includes("alchemy:stack:MealPlanner") &&
+        tags.includes(`alchemy:stage:${target.stage}`)
+    )
+  ) {
+    throw new Error("Stage already has Workers; use existing-D1 inspection");
+  }
+  const saved = await reader.readState(target.stage);
+  if (
+    saved.length !== 2 ||
+    saved.some((state) => state !== undefined && state !== null)
+  ) {
+    throw new Error("Stage already has D1 state; use existing-D1 inspection");
+  }
+  const databases = decode(
+    z.array(z.object(database.shape)),
+    await reader.read("/d1/database"),
+    "D1 inventory"
+  );
+  if (
+    databases.some(({ name }) =>
+      resources.some((resource) =>
+        name.startsWith(`MealPlanner-${resource}-${target.stage}-`)
+      )
+    )
+  ) {
+    throw new Error(
+      "Stage already has D1 databases; inspect ownership before deployment"
+    );
+  }
+  return { databases: [], executorTargets: [], target } as const;
+};
+
 // eslint-disable-next-line anti-slop/no-unknown-parameters -- Target files are untrusted JSON and are decoded immediately.
 export const parseD1Target = (value: unknown): D1Target => {
   const target = decode(targetSchema, value, "D1 target");
@@ -89,6 +147,10 @@ export const parseD1Target = (value: unknown): D1Target => {
   }
   return target;
 };
+
+const deploymentTargetSchema = z
+  .union([targetSchema, newStageSchema])
+  .transform((target) => ("mode" in target ? target : parseD1Target(target)));
 
 const settingsSchema = z.object({
   bindings: z.array(
@@ -483,7 +545,9 @@ export const inspectD1Target = async (
 
 /** A drift reference for observed state, never an authorization or origin proof. */
 export const evidenceDigest = (
-  report: Awaited<ReturnType<typeof inspectD1Target>>,
+  report:
+    | Awaited<ReturnType<typeof inspectD1Target>>
+    | Awaited<ReturnType<typeof inspectNewStage>>,
   release: Release
 ): string =>
   createHash("sha256")
@@ -801,7 +865,12 @@ const main = async (args: readonly string[]): Promise<number> => {
   if (targetPath === undefined) {
     throw new Error("inspect requires a frozen --target file");
   }
-  const target = parseD1Target(JSON.parse(await readFile(targetPath, "utf-8")));
+  const target = decode(
+    deploymentTargetSchema,
+    JSON.parse(await readFile(targetPath, "utf-8")),
+    "deployment target"
+  );
+
   for (const name of ["profile", "stage"] as const) {
     if (parsed.has(`--${name}`) && parsed.get(`--${name}`) !== target[name]) {
       throw new Error(`Deployment ${name} differs from frozen D1 target`);
@@ -830,7 +899,10 @@ const main = async (args: readonly string[]): Promise<number> => {
     );
   }
   const reader = await makeReader(target.profile, target.accountId);
-  const report = await inspectD1Target(reader, target, local);
+  const report =
+    "mode" in target
+      ? await inspectNewStage(reader, target)
+      : await inspectD1Target(reader, target, local);
   if (JSON.stringify(readRelease(local)) !== JSON.stringify(release)) {
     throw new Error("Repository changed during D1 inspection");
   }

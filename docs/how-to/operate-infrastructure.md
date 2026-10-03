@@ -124,7 +124,7 @@ pnpm run alchemy:destroy -- --stage dev_cillian --profile sandbox
 Deploy and destroy reject missing stage/profile flags. Every wrapper rejects
 `--yes`. Destroy also refuses the exact `prod` stage.
 
-Deploy additionally requires the existing-D1 inspection below. It fixes the
+Deploy requires the D1 inspection below, including the empty-stage check for a first deployment. It fixes the
 repository's `alchemy.run.ts` entrypoint and rejects alternate files, env-file
 overrides, adoption, force and other deployment flags. Plan and destroy retain
 their existing behavior. Calling Alchemy directly bypasses this repository
@@ -133,6 +133,19 @@ guard and is not the supported release path.
 Immediately before an approved operation, print and confirm the stack
 (`MealPlanner`), stage, profile, independently verified account, intended
 mutation, and cleanup boundary.
+
+## First deployment of a new stage
+
+For an authorized first deployment, save a private target file with
+`{"mode":"new-stage","accountId":"<verified-account>","profile":"<profile>","stage":"prod"}`.
+Run `d1:preflight inspect --target <file>` from a clean, committed checkout.
+Inspection checks the same-account hosted state, Worker ownership tags and D1
+inventory. It refuses an existing stage, orphaned stage databases, unavailable
+state or incomplete inventory. Existing databases still require their full ledger,
+schema and recovery inspection; the new-stage mode cannot skip those checks.
+Use the returned digest with the normal guarded deployment command. It rechecks
+absence and binds the evidence to the release and migration hashes before Alchemy
+runs. Review the Alchemy plan for creates and unexpected adoption or deletion.
 
 ## Existing D1 release inspection
 
