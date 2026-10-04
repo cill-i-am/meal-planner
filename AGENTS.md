@@ -26,7 +26,7 @@ Use the [feature map](docs/reference/features/README.md) to find domain owners, 
 
 ## Agent workflow
 
-Use the installed pstack `poteto-mode` as the execution workflow for engineering work here. Read its `SKILL.md`, `CODEX.md` and the applicable playbook. Its source is `ScriptedAlchemy/pstack-codex`; report an unavailable installation and continue supported work rather than claiming it loaded. This repository's agreed scope and rules govern how imported skills apply.
+Use the installed pstack `poteto-mode` as the execution workflow for engineering work here. Read its `SKILL.md`, `CODEX.md` and the applicable playbook. If it is absent from the current skill catalog, use `codex plugin list --marketplace pstack-codex --json` to locate the enabled plugin's `source.path`, then read `skills/poteto-mode/SKILL.md` and `CODEX.md` there, matching the listed version. Its source is `ScriptedAlchemy/pstack-codex`; report an unavailable installation and continue supported work rather than claiming it loaded. This repository's agreed scope and rules govern how imported skills apply.
 
 Agree product direction, domain responsibilities and success criteria with Cillian. Then own implementation, TDD where behavior changes, independent review, runtime verification, CI monitoring, conflict resolution and merge. Delegate independent implementation and review to subagents in isolated worktrees. Fix in-scope findings and continue; return for a material change to the agreed direction or a genuine unresolved blocker. Run pstack Babysit and then Shipping automatically for implementation requests. A merge-ready report is not the delivery endpoint.
 

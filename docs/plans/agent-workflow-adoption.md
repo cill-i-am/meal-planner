@@ -1,10 +1,10 @@
 # Autonomous delivery and codebase gardening
 
 Status: active
-Progress: operating model agreed; source audit complete; installation pending
+Progress: workflows installed; confident cleanup implemented; delivery verification in progress
 Owner: Codex, with Cillian owning product direction
 Decision date: 2026-10-04
-Delivery: persist the agreement, audit obstacles, then present the adoption changes
+Delivery: implement confident adoption changes through merge; return unresolved policy decisions
 
 ## Agreed operating model
 
@@ -39,7 +39,7 @@ either upstream system unchanged.
 | Build, verify, review, and merge | Pstack's implementation, review, verification, babysit, and shipping workflows |
 | Review standards and intended behavior separately | Matt's `code-review`, coordinated within automated review |
 | Improve the agent environment | Matt's `retro` and `writing-for-agents`, with pstack's structural correction methods |
-| Learn a topic over time | Matt's `teach` |
+| Learn a topic over time | Matt's `matt-teach` |
 | Understand a particular change or subsystem | Pstack's `teach`, `how`, and `why` |
 | Present a PR | Matt's `pr` and relevant observed evidence |
 | Re-explain an unclear answer | Matt's `wait-what` |
@@ -71,30 +71,60 @@ and important state transitions first. These explanations are distinct from
 runtime verification evidence. No visual artifact is required for every PR.
 
 The proposed maintenance cadence is cleanup during normal delivery plus a weekly
-focused gardener sweep. No recurring automation has been configured by this plan.
+focused gardener sweep. Scheduling is recorded separately from installation.
 
 ## Adoption and current audit
 
 Commit to this workflow for a month once setup works, then keep what works and
-discard what does not. The current assignment is to read the repository's docs,
-agent rules, existing skills, code and relevant Meal Planner chat history, identify
-concrete impediments, and recommend simplifications before changing the workflow.
+discard what does not. The audit is complete. The implementation assignment covers
+the confident corrections and end-to-end delivery; uncertain product policy returns
+to Cillian after the independent work is finished.
 
 Audit evidence and coverage are recorded in
 [the workflow audit](../research/2026-10-04-agent-workflow-audit.md).
 
 Acceptance for subsequent setup:
 
-- [ ] Selected skills and their dependencies load in the actual Codex host.
-- [ ] One workflow owns execution; duplicated skill names route deliberately.
-- [ ] Repository guidance agrees on plan approval and autonomous delivery.
-- [ ] Verification uses the real supported development and test commands.
+- [x] Pstack installed through the native Codex plugin manager; nineteen selected
+  Matt skills and dependencies are project-owned copies. All twenty-five local
+  skill entrypoints pass Codex structural validation. New-turn automatic discovery
+  remains distinct from direct loading in the current session.
+- [x] Pstack owns execution; `matt-teach` is distinct from pstack's explainer;
+  pstack owns TDD. Existing repository plans and domain references are configured.
+- [x] Routine implementation/review/design decisions reuse approved scope.
+- [x] Verification guidance names the actual native commands and runtime settings.
 - [ ] An agreed change completes implementation, independent review, CI and merge
   without Cillian prompting each phase.
 - [ ] A gardener pass ships useful verified improvements without changing the
   agreed domain behavior.
 - [ ] On-demand explanations show real domains and their interactions.
 - [ ] The month-long adoption has an actual start date after setup is verified.
+
+## Implementation and remaining decisions
+
+The active root instructions route agents through the feature map and pstack.
+Stale onboarding/runtime instructions and conflicting skill references have been
+removed or corrected. The existing offline evaluator now runs with normal checks;
+source inventories include new files and the intended owned directories. Native
+tests share production compatibility settings. Recipe-import recovery retains
+the original submitted command when its outcome is unknown.
+
+Pstack is pinned to the reviewed Codex port below. Current-host model roles are in
+`~/.codex/pstack-models.md`; unavailable models must be resolved against the host.
+Matt's source revision and license are tracked beside the local skills. Their
+Codex invocation policies are preserved in `agents/openai.yaml`. The local Git
+exclusions that hid new docs and README files were removed; secret/runtime
+exclusions remain.
+
+Still requiring a product decision: PDR-0006's recurring human calibration for
+ordinary green model/prompt candidates. Its current policy and unfulfilled human
+ratings remain intact. Whole-application domain dependency changes also require
+agreement on the intended ownership; this cleanup does not invent that architecture.
+
+The Impeccable native engine still emits old process instructions. The maintained
+skill explicitly makes those subordinate to repository/user/host authority, and
+its reproduction is recorded in the skill doctor reference. Hook dispatch and
+fresh-host discovery are not claimed verified by static validation.
 
 ## Source snapshots reviewed
 
@@ -105,6 +135,6 @@ Acceptance for subsequent setup:
   [design guide](https://x.com/poteto/status/2097732320606507506), and
   [Ben's visual walkthrough](https://x.com/BHolmesDev/status/2106829942206173497).
 
-The Codex port's package and file-coverage validators passed in this chat. That
-does not establish installed end-to-end behavior in Meal Planner. No bundle has
-been installed or activated by this agreement record.
+The Codex port's package and file-coverage validators passed during evaluation.
+Installation and source checks are complete; the delivery acceptance above is
+closed only with actual review, CI and merge evidence.

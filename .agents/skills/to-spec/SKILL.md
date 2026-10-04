@@ -6,7 +6,7 @@ description: 'Turn the current conversation into a spec and publish it to the pr
 
 This skill takes the current conversation context and codebase understanding and produces a spec. Do NOT interview the user; just synthesize what you already know.
 
-The issue tracker and triage label vocabulary should have been provided to you. If not, tell the user to run `/setup-matt-pocock-skills`.
+Read `docs/agents/issue-tracker.md` and `docs/agents/domain.md`. They configure the existing repository plans and domain references. This local tracker uses plan status, not triage labels; missing external label vocabulary is not a setup problem. Reuse this configuration instead of asking to run setup again.
 
 ## Process
 
@@ -14,9 +14,11 @@ The issue tracker and triage label vocabulary should have been provided to you. 
 
 2. Sketch out the seams at which you're going to test the feature. Existing seams should be preferred to new ones. Use the highest seam possible. If new seams are needed, propose them at the highest point you can. The fewer seams across the codebase, the better - the ideal number is one.
 
-Check with the user that these seams match their expectations.
+Reuse the agreed verification criteria and choose implementation seams within that direction. Ask only when the choice changes the product outcome or domain responsibility.
 
-3. Write the spec using the template below, then publish it to the project issue tracker. Apply the `ready-for-agent` triage label - no need for additional triage.
+3. Write the spec using the template below, then publish it to the project issue tracker. Use the configured plan template and status; labels apply only if the configured tracker actually uses them.
+
+Use the repository plan template as the file structure. The prompts below help identify useful content; they are not a requirement to add every section.
 
 <spec-template>
 
@@ -30,7 +32,7 @@ The solution to the problem, from the user's perspective.
 
 ## User Stories
 
-A LONG, numbered list of user stories. Each user story should be in the format of:
+A concise set of the relevant user outcomes. Each user story should be in the format of:
 
 1. As an <actor>, I want a <feature>, so that <benefit>
 
@@ -38,7 +40,7 @@ A LONG, numbered list of user stories. Each user story should be in the format o
 1. As a mobile bank customer, I want to see balance on my accounts, so that I can make better informed decisions about my spending
 </user-story-example>
 
-This list of user stories should be extremely extensive and cover all aspects of the feature.
+Cover the agreed behavior and meaningful edge cases without inventing scope or repeating acceptance criteria.
 
 ## Implementation Decisions
 
