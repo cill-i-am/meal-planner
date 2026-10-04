@@ -49,12 +49,12 @@ const liveIdentity = HouseholdIdentityGenerator.of({
     }),
 });
 
-export const HouseholdCanonicalEncodingLive = Layer.succeed(
+const HouseholdCanonicalEncodingLive = Layer.succeed(
   HouseholdCanonicalEncoding,
   canonicalEncoding
 );
 export const HouseholdDigestLive = Layer.succeed(HouseholdDigest, digest);
-export const HouseholdIdentityGeneratorLive = Layer.succeed(
+const HouseholdIdentityGeneratorLive = Layer.succeed(
   HouseholdIdentityGenerator,
   liveIdentity
 );

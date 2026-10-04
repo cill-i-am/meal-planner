@@ -36,13 +36,9 @@ export const makeNativeAuthTestService = (
       fromNative(() => auth.api.getSetupInvitation(input)),
     leaveOrganization: (input) =>
       fromNative(() => auth.api.leaveOrganization(input)),
-    listOrganizations: (input) =>
-      fromNative(() => auth.api.listOrganizations(input)),
     rejectInvitation: (input) =>
       fromNative(() => auth.api.rejectInvitation(input)),
     removeMember: (input) => fromNative(() => auth.api.removeMember(input)),
-    setActiveOrganization: (input) =>
-      fromNative(() => auth.api.setActiveOrganization(input)),
   },
   createHouseholdInvitation: (request) =>
     fromNative(() => auth.createHouseholdInvitation(request)),

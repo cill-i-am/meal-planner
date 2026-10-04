@@ -12,4 +12,3 @@ export {
   InvitationReadUnavailable,
   makeInvitationReadApiClientLayer,
 } from "./invitation-read-api.js";
-export type { InvitationReadApiClient as InvitationReadApiClientType } from "./invitation-read-api.js";

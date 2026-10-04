@@ -6,10 +6,10 @@ const ConfigText = Schema.String.pipe(
   Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
 );
 
-export const ServerHost = ConfigText.pipe(Schema.brand("ServerHost"));
-export type ServerHost = typeof ServerHost.Type;
+const ServerHost = ConfigText.pipe(Schema.brand("ServerHost"));
+type ServerHost = typeof ServerHost.Type;
 
-export interface ServerConfig {
+interface ServerConfig {
   readonly host: ServerHost;
   readonly port: number;
 }

@@ -25,7 +25,7 @@ import {
   verification,
 } from "./auth.database-schema.js";
 
-export type AuthAtomicDatabase = Pick<
+type AuthAtomicDatabase = Pick<
   DrizzleD1Database,
   "insert" | "update" | "delete" | "select" | "batch"
 >;
