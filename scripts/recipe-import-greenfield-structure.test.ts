@@ -1,22 +1,15 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path = require("node:path");
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
+import { readOwnedSources } from "./owned-source-files.js";
 
-const trackedFiles = execFileSync("git", ["ls-files", "-z"], {
-  cwd: repositoryRoot,
-  encoding: "utf-8",
-})
-  .split("\0")
-  .filter(
-    (entryPath) =>
-      entryPath.length > 0 && existsSync(path.join(repositoryRoot, entryPath))
-  );
+const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 
 const isProductionSource = (entryPath: string): boolean =>
   [".ts", ".tsx"].includes(path.extname(entryPath)) &&
@@ -53,25 +46,21 @@ const classifyWebProductionSource = (
 
 const loadSources = (
   paths: readonly string[],
-  include: (path: string) => boolean
-): Promise<readonly { readonly path: string; readonly source: string }[]> => {
+  include: (path: string) => boolean,
+  root = repositoryRoot
+): readonly { readonly path: string; readonly source: string }[] => {
   const requestedPaths = paths.map((entryPath) =>
-    path.relative(repositoryRoot, entryPath)
+    path.relative(root, entryPath)
   );
-  const files = trackedFiles.filter(
-    (entryPath) =>
+  const files = readOwnedSources(root).filter(
+    ({ file }) =>
       requestedPaths.some(
         (requestedPath) =>
-          entryPath === requestedPath ||
-          entryPath.startsWith(`${requestedPath}${path.sep}`)
-      ) && include(entryPath)
+          file === requestedPath ||
+          file.startsWith(`${requestedPath}${path.sep}`)
+      ) && include(file)
   );
-  return Promise.all(
-    files.map(async (entryPath) => ({
-      path: entryPath,
-      source: await readFile(path.join(repositoryRoot, entryPath), "utf-8"),
-    }))
-  );
+  return files.map(({ file, source }) => ({ path: file, source }));
 };
 
 const violations = (
@@ -87,6 +76,32 @@ const violations = (
   );
 
 describe("greenfield recipe-import architecture", () => {
+  it("detects runtime secrets in new untracked browser source", () => {
+    const root = mkdtempSync(
+      path.join(tmpdir(), "meal-planner-recipe-structure-")
+    );
+    try {
+      execFileSync("git", ["init", "--quiet", root]);
+      mkdirSync(path.join(root, "apps/web/src"), { recursive: true });
+      writeFileSync(path.join(root, "apps/web/src/tracked.ts"), "export {};\n");
+      execFileSync("git", ["add", "."], { cwd: root });
+      writeFileSync(
+        path.join(root, "apps/web/src/untracked.ts"),
+        "const secret = process.env.SECRET;\n"
+      );
+      const sources = loadSources(
+        [path.join(root, "apps/web/src")],
+        (entryPath) => classifyWebProductionSource(entryPath) !== undefined,
+        root
+      );
+      expect(violations(sources, /\bprocess\.env\b/u)).toEqual([
+        "apps/web/src/untracked.ts:1: const secret = process.env.SECRET;",
+      ]);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
   it.each([
     ["apps/web/src/worker.ts", "website-worker"],
     ["apps/web/src/background.worker.ts", "browser"],
@@ -118,8 +133,8 @@ describe("greenfield recipe-import architecture", () => {
     expect(classifyWebProductionSource(entryPath)).toBe(expected);
   });
 
-  it("keeps browser and website worker code free of runtime secrets", async () => {
-    const sources = await loadSources(
+  it("keeps browser and website worker code free of runtime secrets", () => {
+    const sources = loadSources(
       [`${repositoryRoot}/apps/web/src`],
       (entryPath) => classifyWebProductionSource(entryPath) !== undefined
     );

@@ -1,6 +1,6 @@
 {
   "version": "private-discovery-rubric-v1",
-  "authority": "docs/decisions/product/0006-ai-evaluation-and-release-evidence.md",
+  "authority": "docs/decisions/pdr-0006-ai-evaluation-and-release-evidence.md",
   "scope": "wi03_adult_discovery",
   "criticalSoftDimensions": [
     {

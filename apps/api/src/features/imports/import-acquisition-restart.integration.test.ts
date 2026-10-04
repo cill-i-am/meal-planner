@@ -5,10 +5,11 @@ import { fileURLToPath } from "node:url";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { workerObservability } from "../../infrastructure/worker-observability.js";
 import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 
-const compatibilityDate = "2026-07-14";
-const compatibilityFlags = ["nodejs_compat"];
+const { date: compatibilityDate, flags: compatibilityFlags } =
+  workerObservability.compatibility;
 const fixturePath = fileURLToPath(
   new URL("import-acquisition-restart.test-fixture.ts", import.meta.url)
 );

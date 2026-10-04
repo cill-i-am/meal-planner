@@ -1,5 +1,7 @@
 import type { MiniflareWorkerConfig } from "miniflare";
 
+import { workerObservability } from "../../infrastructure/worker-observability.js";
+
 export const privateOutputTestBindings = {
   PrivateOutputApi: {
     exportName: "PrivateOutputApi",
@@ -18,8 +20,8 @@ export const privateOutputRuntimeWorker = (
 ) =>
   ({
     config: {
-      compatibilityDate: "2026-07-14",
-      compatibilityFlags: ["nodejs_compat"],
+      compatibilityDate: workerObservability.compatibility.date,
+      compatibilityFlags: workerObservability.compatibility.flags,
       env: {
         AccountOutputLifecycle: {
           exportName: "AccountOutputLifecycle",
@@ -63,8 +65,8 @@ export const privateOutputControlWorker = (
 ) =>
   ({
     config: {
-      compatibilityDate: "2026-07-14",
-      compatibilityFlags: ["nodejs_compat"],
+      compatibilityDate: workerObservability.compatibility.date,
+      compatibilityFlags: workerObservability.compatibility.flags,
       env: privateOutputRuntimeWorker(manifest).config.env,
       manifest,
       name: "private-output-control",

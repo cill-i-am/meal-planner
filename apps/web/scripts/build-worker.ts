@@ -11,6 +11,7 @@ import {
 import { makeSourceContext, resolveSource } from "alchemy/Cloudflare/Workers";
 import { Effect } from "effect";
 
+import { workerObservability } from "../../api/src/infrastructure/worker-observability.js";
 import { websiteSource } from "../website-source.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -21,7 +22,7 @@ const output = await Effect.runPromise(
       const source = yield* resolveSource(props);
       const build = yield* source.build(
         makeSourceContext({
-          compatibility: { date: "2026-07-14", flags: ["nodejs_compat"] },
+          compatibility: workerObservability.compatibility,
           fqn: "MealPlannerWebsite",
           id: "MealPlannerWebsite",
           props,

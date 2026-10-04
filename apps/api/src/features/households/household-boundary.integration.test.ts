@@ -45,6 +45,7 @@ import {
   vi,
 } from "vitest";
 
+import { workerObservability } from "../../infrastructure/worker-observability.js";
 import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 import * as authSchema from "../auth/auth.database-schema.js";
 import {
@@ -94,8 +95,8 @@ import { MemberDepartureWorkflowInput } from "./people/member-departure.js";
 // Native integration cases include auth, durable writes, and persisted-runtime restarts.
 vi.setConfig({ testTimeout: 30_000 });
 
-const compatibilityDate = "2026-07-14";
-const compatibilityFlags = ["nodejs_compat"];
+const { date: compatibilityDate, flags: compatibilityFlags } =
+  workerObservability.compatibility;
 const secret = "local-boundary-test-secret-at-least-32-characters";
 const temporaryDirectories: string[] = [];
 let runtime: Miniflare | undefined;

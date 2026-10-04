@@ -13,6 +13,8 @@ import { readMigrationRecords } from "alchemy/SQL/Migrations/index";
 import { Effect, Schema } from "effect";
 import type { MiniflareWorkerConfig } from "miniflare";
 
+import { workerObservability } from "../infrastructure/worker-observability.js";
+
 /** Bundle a native Worker fixture and its text assets for Miniflare. */
 export const bundleWorkerFixture = async (
   inputPath: string,
@@ -66,7 +68,7 @@ export const bundleWorkerFixture = async (
         const id = path.basename(inputPath);
         return yield* source.build(
           makeSourceContext({
-            compatibility: { date: "2026-07-14", flags: ["nodejs_compat"] },
+            compatibility: workerObservability.compatibility,
             fqn: id,
             id,
             props,
