@@ -1,75 +1,26 @@
 ---
-title: Use useTransition Over Manual Loading States
+title: Use Transitions for Non-Urgent Rendering
 impact: LOW
-impactDescription: reduces re-renders and improves code clarity
+impactDescription: keeps urgent interactions responsive during expensive updates
 tags: rendering, transitions, useTransition, loading, state
 ---
 
-## Use useTransition Over Manual Loading States
+## Use Transitions for Non-Urgent Rendering
 
-Use `useTransition` instead of manual `useState` for loading states. This provides built-in `isPending` state and automatically manages transitions.
+Use `useTransition` for non-urgent React rendering when it improves a measured
+interaction. Keep controlled input updates synchronous. `isPending` describes a
+Transition; it does not replace the query or mutation adapter's network state.
 
-**Incorrect (manual loading state):**
+In this app, the feature's TanStack Query hook owns remote data, pending state,
+errors and invalidation. Screens own drafts and navigation. Do not copy query
+results into component state or hand-write a second request lifecycle to obtain
+a Transition loading indicator. See [data ownership](../engineering/DATA_FLOW_AND_STATE.md).
 
-```tsx
-function SearchResults() {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+React 19 supports async Transition actions, but state updates after `await` need
+another `startTransition` to be marked as Transitions. Interruptible rendering
+does not cancel a network request or guarantee async results arrive in order.
+The operation owner must handle cancellation, ordering and failures explicitly.
+An unknown command result still requires retry or reconciliation of the same
+submitted command; interruption is not evidence that the server did not commit.
 
-  const handleSearch = async (value: string) => {
-    setIsLoading(true);
-    setQuery(value);
-    const data = await fetchResults(value);
-    setResults(data);
-    setIsLoading(false);
-  };
-
-  return (
-    <>
-      <input onChange={(e) => handleSearch(e.target.value)} />
-      {isLoading && <Spinner />}
-      <ResultsList results={results} />
-    </>
-  );
-}
-```
-
-**Correct (useTransition with built-in pending state):**
-
-```tsx
-import { useTransition, useState } from "react";
-
-function SearchResults() {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState([]);
-  const [isPending, startTransition] = useTransition();
-
-  const handleSearch = (value: string) => {
-    setQuery(value); // Update input immediately
-
-    startTransition(async () => {
-      // Fetch and update results
-      const data = await fetchResults(value);
-      setResults(data);
-    });
-  };
-
-  return (
-    <>
-      <input onChange={(e) => handleSearch(e.target.value)} />
-      {isPending && <Spinner />}
-      <ResultsList results={results} />
-    </>
-  );
-}
-```
-
-**Benefits:**
-
-- **Automatic pending state**: No need to manually manage `setIsLoading(true/false)`
-- **Error resilience**: Pending state correctly resets even if the transition throws
-- **Better responsiveness**: Keeps the UI responsive during updates
-- **Interrupt handling**: New transitions automatically cancel pending ones
-
-Reference: [useTransition](https://react.dev/reference/react/useTransition)
+Reference: [React useTransition](https://react.dev/reference/react/useTransition).

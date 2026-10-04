@@ -1,46 +1,25 @@
 ---
 title: Preload Based on User Intent
 impact: MEDIUM
-impactDescription: reduces perceived latency
+impactDescription: reduces perceived latency for likely next interactions
 tags: bundle, preload, user-intent, hover
 ---
 
 ## Preload Based on User Intent
 
-Preload heavy bundles before they're needed to reduce perceived latency.
+Preload a heavy bundle before a likely interaction when the delay is visible.
+Prefer the router's existing preload mechanism for routes. Keep preload failures
+with that owner; a failed speculative load must leave the actual action able to
+retry or show its normal error state.
 
-**Example (preload on hover/focus):**
+For a custom import triggered by hover or focus, explicitly handle rejection.
+Do not initialize a module or start remote work merely because its bundle was
+preloaded. Initialization needs an owner, cleanup and a failure path. Avoid eager
+feature-flag effects that start work before the user needs it.
 
-```tsx
-function EditorButton({ onClick }: { onClick: () => void }) {
-  const preload = () => {
-    if (typeof window !== "undefined") {
-      void import("./monaco-editor");
-    }
-  };
+A `typeof window` guard prevents browser-only code from executing on the server.
+It does not by itself prove that an imported module is excluded from the server
+bundle. Verify emitted bundles when bundle size is the reason for the change.
 
-  return (
-    <button onMouseEnter={preload} onFocus={preload} onClick={onClick}>
-      Open Editor
-    </button>
-  );
-}
-```
-
-**Example (preload when feature flag is enabled):**
-
-```tsx
-function FlagsProvider({ children, flags }: Props) {
-  useEffect(() => {
-    if (flags.editorEnabled && typeof window !== "undefined") {
-      void import("./monaco-editor").then((mod) => mod.init());
-    }
-  }, [flags.editorEnabled]);
-
-  return (
-    <FlagsContext.Provider value={flags}>{children}</FlagsContext.Provider>
-  );
-}
-```
-
-The `typeof window !== 'undefined'` check prevents bundling preloaded modules for SSR, optimizing server bundle size and build speed.
+See [dynamic imports](bundle-dynamic-imports.md) and
+[async ownership](../engineering/ASYNC_AND_WORKFLOWS.md#promise-ownership).

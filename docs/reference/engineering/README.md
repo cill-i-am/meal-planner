@@ -37,10 +37,11 @@ Check current official documentation against the installed package version.
 
 ## Reading and enforcement
 
-The thirteen topic documents retain the original coding-standards library's rules
-and examples. The `coding-standards` skill is another route to the same pages, not
-a separate copy. Examples teach a pattern; they do not claim that every helper or
-folder shown already exists. Check the actual code and installed version.
+These topic documents own the engineering rules. The `coding-standards` skill is
+another route to the same pages, not a separate copy. Keep project constraints
+here and use official documentation for library mechanics. Examples explain a
+rule; they do not claim that every helper or folder shown already exists. Check
+the actual code and installed version before applying one.
 
 Apply these standards to the work you are doing. They are not a requirement to
 audit unchanged code or ask for approval for routine choices. Add tests only when

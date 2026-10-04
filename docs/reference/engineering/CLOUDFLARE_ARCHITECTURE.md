@@ -24,11 +24,11 @@ Keep Cloudflare objects and raw bindings in infrastructure and composition code.
 - Runtime payloads do not carry raw `Env`, request objects, execution contexts, database handles, secrets, or dependency bags.
 - Stateful-object names are normalized through domain-owned canonicalization before lookup.
 - New application state in Durable Objects/Agents uses SQLite-backed storage, not legacy KV-backed object storage.
-- Application-owned Cloudflare SQL schemas, queries, and migrations use the project-standard Drizzle layer.
+- Application-owned SQL schemas, queries and migrations stay at the owning persistence seam and use its accepted storage adapter. Current household and D1 persistence use Drizzle; do not bypass their migrations or transaction boundaries.
 
 ## Strong defaults
 
-- New Worker projects use the Cloudflare Vite integration and root `cloudflare.config.ts` as the primary configuration source.
+- Meal Planner uses native Alchemy for deployment and runtime composition. Follow the [infrastructure guide](../../how-to/operate-infrastructure.md); do not create a second Wrangler or generic Cloudflare configuration source.
 - Enable Node compatibility for Cloudflare Workers projects.
 - Generate Worker environment declarations from deployment configuration. Do not add hand-written compatibility declarations to preserve an obsolete API.
 - New non-Effect multi-route Cloudflare HTTP apps use Hono unless the repo has another established framework or the Worker is tiny/pass-through/static/direct Agent routing.
@@ -155,7 +155,16 @@ Keep one cohesive owner when a split would add routing without a concrete respon
 
 ## Storage
 
-Use the storage interface and schema ownership accepted for the subsystem. Household Durable Object SQLite may use the native SQL API; use Drizzle where it is the established adapter. Keep queries, migrations, row parsing, and transactions at the owning persistence seam. Do not add an ORM or rewrite storage merely to satisfy a general preference.
+Use the storage interface and schema ownership accepted for the subsystem.
+[Household storage](../household.md#private-household-storage) uses Drizzle SQLite,
+Drizzle Kit migrations and Alchemy's per-object migration runtime. Application
+queries do not bypass that adapter with native SQL. D1 persistence also uses its
+established Drizzle schemas and migrations.
+
+A subsystem with an explicitly accepted native-SQL design may use that API at its
+own persistence seam. This is not permission to replace an existing adapter.
+Keep queries, migrations, row parsing and transactions with the storage owner;
+do not add an ORM or rewrite storage merely to satisfy a general preference.
 
 Stateful-object storage stays local to the object that owns the coordination responsibility. One object should not read/mutate another object's local SQLite state by bypassing its interface unless an explicit distributed-storage design assigns ownership elsewhere.
 
@@ -169,7 +178,17 @@ Do not use Agent fibers as a substitute for cross-service orchestration with com
 
 ## Cloudflare testing
 
-Use `@cloudflare/vitest-pool-workers` for tests that touch Workers runtime APIs or bindings:
+Use the existing [Worker test workspace](../../../tools/worker-tests/package.json)
+(`@meal-planner/worker-tests`) and its [configuration](../../../tools/worker-tests/vitest.config.ts)
+for tests that touch Workers runtime APIs or bindings. It uses
+`@cloudflare/vitest-plugin` 1.3.6 with Vitest 4.1.11; ordinary workspaces use Vitest
+5.0.3. This split satisfies the plugin's peer compatibility requirements. Keep it
+unless a verified dependency change calls for a migration. The
+[official integration](https://developers.cloudflare.com/workers/testing/vitest-integration/)
+runs tests inside the Workers runtime.
+
+The native workspace runs API `*.worker.test.ts` files. Use representative runtime
+tests when the claim involves:
 
 - generated `Env`;
 - Durable Objects, Agents;
@@ -197,7 +216,7 @@ Check the relevant items below when reviewing a change. The sections above expla
 - Hand-authoring broad global `Env` declarations when generated types exist.
 - Assuming `AsyncLocalStorage` survives DO/Agent/service binding calls.
 - Building object names inline in many files.
-- Forgetting `_identity` storage for stateful objects.
+- Missing canonical identity or provenance checks where alarms, recovery or the domain model require them.
 - Creating raw Durable Objects by habit instead of using Agents.
-- Scattering raw SQL or hand-written migration systems beside Drizzle.
+- Bypassing the accepted storage adapter, schema owner or migration system.
 - Testing workerd-dependent behavior only in Node.

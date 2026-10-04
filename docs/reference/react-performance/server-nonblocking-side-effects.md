@@ -1,41 +1,27 @@
 ---
-title: Use Platform Background Work for Non-Critical Side Effects
+title: Own Post-Response Work
 impact: MEDIUM
-impactDescription: faster response times without losing important work
+impactDescription: reduces response latency without losing required work
 tags: server, async, logging, analytics, side-effects, cloudflare
 ---
 
-## Use Platform Background Work for Non-Critical Side Effects
+## Own Post-Response Work
 
-Do not block the response on analytics, audit logs, notifications, or cleanup unless the user-visible result depends on them. Use a platform-supported background primitive.
+Move work after the response only when completing it is not part of the command's
+success contract. Required audit/provenance writes, receipts and persisted state
+belong in the owning transaction or durable delivery mechanism. Do not classify
+them as optional simply to improve response latency.
 
-**Incorrect (logging blocks the response):**
+For bounded best-effort Worker work, use the actual execution context's
+`ctx.waitUntil` at the composition seam. The owner must classify failures and emit
+safe telemetry. Require the expected execution context; `waitUntil?.(...)`
+silently skips scheduling when it is absent. Keep backend work within its Effect lifetime
+and the runtime ownership described in [async workflows](../engineering/ASYNC_AND_WORKFLOWS.md#promise-ownership).
 
-```typescript
-export const updateProfile = createServerFn({ method: "POST" })
-  .validator((input: unknown) => parseUpdateProfile(input))
-  .handler(async ({ data }) => {
-    const profile = await saveProfile(data);
-    await writeAuditLog({ action: "profile.updated", userId: profile.userId });
+`waitUntil` extends an HTTP invocation for up to 30 seconds after the response or
+client disconnect; it does not provide durable acceptance or retries. Use the
+established queue, outbox or workflow when work must survive that lifetime.
+Do not return a successful acceptance result until the required durable record
+has been saved.
 
-    return profile;
-  });
-```
-
-**Correct (critical mutation completes, non-critical work is scheduled):**
-
-```typescript
-export const updateProfile = createServerFn({ method: "POST" })
-  .validator((input: unknown) => parseUpdateProfile(input))
-  .handler(async ({ data, context }) => {
-    const profile = await saveProfile(data);
-
-    context.waitUntil?.(
-      writeAuditLog({ action: "profile.updated", userId: profile.userId })
-    );
-
-    return profile;
-  });
-```
-
-For work that must be durable or retried, use a queue, workflow, or durable background pipeline instead of an in-memory promise.
+Reference: [Cloudflare execution context](https://developers.cloudflare.com/workers/runtime-apis/context/#waituntil).

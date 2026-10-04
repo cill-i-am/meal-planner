@@ -1,80 +1,23 @@
 ---
-title: Cache Repeated Function Calls
+title: Cache Repeated Pure Computation
 impact: MEDIUM
-impactDescription: avoid redundant computation
+impactDescription: avoids repeated computation without changing data ownership
 tags: javascript, cache, memoization, performance
 ---
 
-## Cache Repeated Function Calls
+## Cache Repeated Pure Computation
 
-Use a module-level Map to cache function results when the same function is called repeatedly with the same inputs during render.
+Cache a pure calculation only when repeated work is a measured cost and its
+result depends entirely on the cache key. Prefer local derivation or memoization
+when the component owns the inputs. A shared cache needs a size bound, a clear
+lifetime and an invalidation policy; see [explicit caches](server-cache-explicit.md).
 
-**Incorrect (redundant computation):**
+Do not cache authentication decisions derived from `document.cookie`. Cookie
+presence is not proof of an authenticated session, and a cached boolean can
+outlive logout or an account change. Use the auth feature's current session
+state for presentation and authorize protected operations on the server.
 
-```typescript
-function ProjectList({ projects }: { projects: Project[] }) {
-  return (
-    <div>
-      {projects.map(project => {
-        // slugify() called 100+ times for same project names
-        const slug = slugify(project.name)
-
-        return <ProjectCard key={project.id} slug={slug} />
-      })}
-    </div>
-  )
-}
-```
-
-**Correct (cached results):**
-
-```typescript
-// Module-level cache
-const slugifyCache = new Map<string, string>()
-
-function cachedSlugify(text: string): string {
-  if (slugifyCache.has(text)) {
-    return slugifyCache.get(text)!
-  }
-  const result = slugify(text)
-  slugifyCache.set(text, result)
-  return result
-}
-
-function ProjectList({ projects }: { projects: Project[] }) {
-  return (
-    <div>
-      {projects.map(project => {
-        // Computed only once per unique project name
-        const slug = cachedSlugify(project.name)
-
-        return <ProjectCard key={project.id} slug={slug} />
-      })}
-    </div>
-  )
-}
-```
-
-**Simpler pattern for single-value functions:**
-
-```typescript
-let isLoggedInCache: boolean | null = null;
-
-function isLoggedIn(): boolean {
-  if (isLoggedInCache !== null) {
-    return isLoggedInCache;
-  }
-
-  isLoggedInCache = document.cookie.includes("auth=");
-  return isLoggedInCache;
-}
-
-// Clear cache when auth changes
-function onAuthChange() {
-  isLoggedInCache = null;
-}
-```
-
-Use a Map (not a hook) so it works everywhere: utilities, event handlers, not just React components.
-
-Reference: [How we made the Vercel Dashboard twice as fast](https://vercel.com/blog/how-we-made-the-vercel-dashboard-twice-as-fast)
+Keep request/user values out of shared server module state. A performance cache
+must not become another owner of domain or remote query state. See
+[data ownership](../engineering/DATA_FLOW_AND_STATE.md) and
+[server auth boundaries](server-auth-boundaries.md).

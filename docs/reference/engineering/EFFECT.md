@@ -118,7 +118,7 @@ boundaries. Do not use `Effect.orDie` to request a retry. Native recovery tests
 must assert terminal defects before explicitly restarting the failed step and
 checking that durable replay does not duplicate work.
 
-Use the repository's canonical test command. In Vite+ projects, still run tests through `vp test`. If the package manager requires an explicit `vitest` peer for `@effect/vitest`, pin it to the exact Vitest version bundled by the installed Vite+ version.
+Use the repository's `pnpm test` command or a focused package test command. Keep `@effect/vitest` compatible with the Vitest version used by that workspace; the native Worker workspace deliberately has its own compatible runner. See [Cloudflare testing](CLOUDFLARE_ARCHITECTURE.md#cloudflare-testing).
 
 Prefer Effect-aware tests and test services:
 
