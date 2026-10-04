@@ -13,4 +13,4 @@ Meal Planner helps a household decide what to eat and what to buy. It learns eac
 
 This pnpm monorepo contains the [API](apps/api/README.md), [web app](apps/web/README.md) and shared API types under `packages/`. Use the versions and scripts in [package.json](package.json).
 
-Run the checks relevant to your change: `pnpm check`, `pnpm test`, `pnpm lint` and `pnpm build`. `pnpm dev` starts the local **Tesco Node catalogue host**, not the complete web and Cloudflare application. See [local development](docs/how-to/local-development.md) and [infrastructure operations](docs/how-to/operate-infrastructure.md) for setup. Never commit provider credentials or cookies.
+Use [local development](docs/how-to/local-development.md) to choose the application runtime and verification commands. [Infrastructure operations](docs/how-to/operate-infrastructure.md) covers provider setup and deployment. Never commit provider credentials or cookies.

@@ -81,5 +81,5 @@ as the same account, **Check and continue** retries the original command and key
 [Accessibility tests](../../../../apps/web/e2e/accessibility.spec.ts) check
 validation focus, names and contrast, desktop dialogs, mobile drawers, Escape,
 focus restoration, and persistence after edits. Closing a name edit returns focus
-to **Manage {name}**. See the [runtime guide](../../../how-to/local-development.md#run-the-auth-and-family-reference-journey)
+to **Manage {name}**. See the [runtime guide](../../../how-to/local-development.md#run-the-integrated-browser-journeys)
 for the narrowly scoped Base UI focus-guard exception and proof limits.

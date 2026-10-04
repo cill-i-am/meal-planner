@@ -56,12 +56,17 @@ as required by Alchemy's sidecar cleanup.
 
 Run the relevant package checks and required CI checks. Root commands are
 `pnpm check`, `pnpm lint`, `pnpm format:check`, `pnpm test` and `pnpm build`.
-Use `pnpm test:container` for synthetic media tests.
+Use `pnpm test:container` for synthetic media tests. For focused API checks, run
+`pnpm --filter @meal-planner/api test` for the Node/Workflow suites and
+`pnpm --filter @meal-planner/worker-tests test` for native Worker/D1 test files.
+Root `pnpm test` includes both. Ordinary suites use Vitest 5.0.3; the native
+Worker workspace pins Vitest 4.1.11 for `@cloudflare/vitest-plugin` 1.3.6.
+`pnpm test:stack` separately exercises the full local Alchemy graph.
 [Testing standards](../reference/engineering/TESTING_AND_VERIFICATION.md) explain
 which runtime to use for each kind of check. `python3 scripts/check-docs.py`
 checks document links and record structure without application dependencies.
 
-## Run the auth and family reference journey
+## Run the integrated browser journeys
 
 Install Chromium and WebKit once, then run the page-object suite:
 
@@ -72,7 +77,7 @@ pnpm --filter @meal-planner/web test:e2e
 
 Playwright invokes Alchemy’s actual Website Vite source provider and starts an
 isolated Miniflare runtime on port 4398. It runs the compiled Website entry,
-shared production auth/family API composition, D1
+shared production API composition, D1
 with real migrations, household SQLite Durable Objects, and the private-output
 Worker. Each run uses temporary storage and deletes it on shutdown. No Cloudflare
 credentials, deployment, external email, or AI provider are needed.
@@ -90,13 +95,15 @@ standalone Node build and is disabled when Alchemy injects its Cloudflare plugin
 
 The suite covers signup, saved roster corrections, completion, invitation
 acceptance, password reset, a creation response lost after commit, session expiry,
-account changes across tabs, and competing edits. It runs in desktop Chromium and
-mobile WebKit, with keyboard/focus checks and axe WCAG A/AA scans. The scan excludes
+account changes across tabs, and competing edits. It also covers saved food-profile
+correction and a fresh adult private review with a synthetic model, including
+explicit confirmation, saved versions and closed earlier history. It runs in
+desktop Chromium and mobile WebKit, with keyboard/focus checks and axe WCAG A/AA scans. The scan excludes
 only Base UI’s hidden WebKit VoiceOver focus guards, an
 [upstream expected behavior](https://github.com/mui/base-ui/issues/5237); it keeps
-all rules enabled for app controls. This is not a full screen-reader audit. It stops at
-the post-setup boundary. Linked-account departures, real email delivery, and the
-rest of the product need their separate environments and tests.
+all rules enabled for app controls. This is not a full screen-reader audit.
+Linked-account departures, real inbox delivery, live model quality, recipe-import browser journeys, and other product
+flows need their separate environments and tests.
 
 `pnpm --filter @meal-planner/web test` runs DOM tests in Vitest's Chromium browser
 mode and pure tests in Node. Playwright journey failures retain traces under

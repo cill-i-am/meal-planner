@@ -1,6 +1,6 @@
 # Family onboarding design brief
 
-This brief records the Paper design reviewed on 20 September 2026. It covers login and signup through family setup and the handoff to private discovery. It preserves the agreed design for implementation; it does not implement the screens.
+This brief records the Paper design reviewed on 20 September 2026. It covers login and signup through family setup and the handoff to private discovery. It preserves visual decisions and a dated screen inventory. The [family API](../../../docs/reference/family-api.md) and [current onboarding plan](../../../docs/plans/onboarding.md) own behavior and remaining acceptance.
 
 ## Design authority
 
@@ -21,8 +21,8 @@ The audience is Ireland-first adults with varied family routines, dietary needs,
 - Email/password login and signup, including field and service errors.
 - Family creation, people entry, roster review, and completion.
 - Adult invitations, recipient responses, and partial-operation recovery.
-- Save & exit with resumption of the pending step.
-- Password recovery, marked as proposed until delivery is configured.
+- Log out and return to saved family resources.
+- Password recovery screens and token handling; live mail activation remains open.
 
 Private discovery, portions, routines, meal planning, and shopping remain outside this design slice.
 
@@ -31,11 +31,14 @@ Private discovery, portions, routines, meal planning, and shopping remain outsid
 - Use a centered, narrow form with one main task at a time. This was the selected third composition; workspace and progress-rail alternatives were not selected.
 - Preserve the themed appearance when adopting shadcn. Keep the segmented choice; the user rejected a neutral reskin and radio circles.
 - Use **family** in product copy. Keep internal `household` identifiers.
-- **Add and invite** collects an adult's email and invites them in the same user action. Recipients can join or decline. **Manage profile** creates a dependant without an account invitation.
+- Adult/Child selection is independent of account access. **Invite them to join**
+  is optional for adults; **Add and invite** coordinates the selected invitation.
+  Recipients can join or decline. A child has a managed profile without an account.
 - Keep one-person families valid. Another person's invitation or discovery must not block the creator.
 - Reuse the account name when proposing the creator's person name. Preserve explicit creation and canonical account/person linking.
-- Preserve safe drafts and original command identities. Resolve an active person draft before continuing; do not silently discard it.
-- **Save & exit** saves the pending step. Resume checks canonical state before continuing that operation. A failed checkpoint save stays on the origin with an error.
+- Keep drafts and exact unresolved commands in mounted memory. Reload reads saved
+  resources. Log out does not persist drafts or navigation; this follows
+  [decision D26](../../../docs/plans/family-resource-onboarding.md#d26--no-persisted-browser-mutations-27-september-2026).
 - Omit **Get help signing in**. Do not invent a support destination or claim password-reset delivery exists.
 
 The user asked whether age is needed for portions. The inspected person/profile schemas contain no DOB, age, or portion default. [PDR-0004](../../../docs/decisions/pdr-0004-meal-content-portions-recipes-and-shopping.md) specifies appetite-based portions. Keep DOB out of this setup; portion implementation belongs to later discovery/profile work.
@@ -57,8 +60,8 @@ Each feature has matching desktop and mobile designs. Paper groups main screens 
 ## Implementation references
 
 - [Error contract](onboarding-error-contract.md): field validation and Better Auth/household API failures.
-- [Transition contract](onboarding-transitions.md): recovery destinations, saved setup, and segmented-field behavior.
-- [Implementation gaps](../../../docs/plans/onboarding.md): 14 open gaps and code evidence.
+- [Transition reference](onboarding-transitions.md): recovery destinations, saved-resource return, and segmented-field behavior.
+- [Onboarding plan](../../../docs/plans/onboarding.md): current implementation and remaining acceptance.
 - [Design decisions and checks](experiments/compact-themed-shadcn.md): the resolved critique findings and static verification.
 - [First critique](onboarding-critique-2026-09-20.md) and [second critique](onboarding-critique-round2-2026-09-20.md): historical findings and resolutions.
 
