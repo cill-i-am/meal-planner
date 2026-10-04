@@ -27,11 +27,11 @@ import {
 } from "../../components/ui/collapsible.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
+import { apiEffectQuery } from "../api-client/index.js";
 import { useAccount } from "../auth/index.js";
 import {
   PersonRow,
   useFamilyRoster,
-  peopleEffectQuery,
   PersonCreation,
   PersonDraft,
   useAddFamilyPerson,
@@ -361,7 +361,7 @@ export const AddPersonPage = () => {
     }
   };
   const logout = useMutation(
-    peopleEffectQuery.mutationOptions({
+    apiEffectQuery.mutationOptions({
       mutationFn: () => account.logout("/setup"),
       mutationKey: ["setup-logout"],
     })

@@ -1,7 +1,4 @@
-export {
-  makeBrowserHouseholdPeopleOperations,
-  makeHouseholdPeopleEffectOperations,
-} from "./browser-operations.js";
+export { makeHouseholdPeopleEffectOperations } from "./browser-operations.js";
 export {
   householdPeopleFailureCode,
   isAmbiguousHouseholdPeopleFailure,
@@ -9,7 +6,6 @@ export {
 } from "./operations.js";
 export type {
   HouseholdPeopleEffectOperations,
-  HouseholdPeopleOperations,
   HouseholdPeopleOperationFailureCode,
 } from "./operations.js";
 export {

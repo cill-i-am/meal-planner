@@ -5,7 +5,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { HouseholdProfilesPanel } from "./household-profiles-panel.js";
@@ -69,7 +69,9 @@ it.each([false, true])(
               .fn()
               .mockResolvedValue({ nextBeforeVersion: null, versions: [] }),
           }}
-          peopleOperations={{ list: vi.fn().mockResolvedValue(roster) }}
+          peopleOperations={{
+            list: vi.fn().mockReturnValue(Effect.succeed(roster)),
+          }}
         />
       </QueryClientProvider>
     );
@@ -130,7 +132,9 @@ it.each(["success", "definitive rejection"])(
               .fn()
               .mockResolvedValue({ nextBeforeVersion: null, versions: [] }),
           }}
-          peopleOperations={{ list: vi.fn().mockResolvedValue(roster) }}
+          peopleOperations={{
+            list: vi.fn().mockReturnValue(Effect.succeed(roster)),
+          }}
         />
       </QueryClientProvider>
     );
@@ -193,7 +197,9 @@ it("retains one ambiguous command across edits and remount, retrying its exact p
         accountId={accountId}
         organizationId="household-a"
         operations={operations}
-        peopleOperations={{ list: vi.fn().mockResolvedValue(roster) }}
+        peopleOperations={{
+          list: vi.fn().mockReturnValue(Effect.succeed(roster)),
+        }}
       />
     </QueryClientProvider>
   );
@@ -249,7 +255,9 @@ it("requires reload and explicit reapplication after a stale version without aut
             .fn()
             .mockResolvedValue({ nextBeforeVersion: null, versions: [] }),
         }}
-        peopleOperations={{ list: vi.fn().mockResolvedValue(roster) }}
+        peopleOperations={{
+          list: vi.fn().mockReturnValue(Effect.succeed(roster)),
+        }}
       />
     </QueryClientProvider>
   );
@@ -332,7 +340,9 @@ it.each([
               versions: [profile],
             }),
           }}
-          peopleOperations={{ list: vi.fn().mockResolvedValue(roster) }}
+          peopleOperations={{
+            list: vi.fn().mockReturnValue(Effect.succeed(roster)),
+          }}
         />
       </QueryClientProvider>
     );
@@ -385,7 +395,9 @@ it("keeps the selected person's profile scoped to the family cache key", async (
             .fn()
             .mockResolvedValue({ nextBeforeVersion: null, versions: [] }),
         }}
-        peopleOperations={{ list: vi.fn().mockResolvedValue(roster) }}
+        peopleOperations={{
+          list: vi.fn().mockReturnValue(Effect.succeed(roster)),
+        }}
       />
     </QueryClientProvider>
   );

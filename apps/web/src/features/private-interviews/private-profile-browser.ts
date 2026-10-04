@@ -1,6 +1,9 @@
+import { Effect, Result } from "effect";
+
+import { browserApiRuntime } from "../api-client/index.js";
 import { displayedIdentityHeaders } from "../auth/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
-import { makeBrowserHouseholdPeopleOperations } from "../household-people/index.js";
+import { makeHouseholdPeopleEffectOperations } from "../household-people/index.js";
 import {
   makeBrowserHouseholdProfileOperations,
   ProfileOperationError,
@@ -9,7 +12,17 @@ import { browserObservedFetch } from "../observability/browser-observability.js"
 
 /** The roster supplies the currently linked participant; there is no target selector. */
 export const readCurrentPrivateProfile = async (scope: DisplayedIdentity) => {
-  const roster = await makeBrowserHouseholdPeopleOperations(scope).list(false);
+  const result = await Effect.runPromise(
+    Effect.result(
+      makeHouseholdPeopleEffectOperations(scope, browserApiRuntime()).list(
+        false
+      )
+    )
+  );
+  if (Result.isFailure(result)) {
+    throw result.failure;
+  }
+  const roster = result.success;
   if (roster.currentPersonId === null) {
     throw new ProfileOperationError("self_required");
   }

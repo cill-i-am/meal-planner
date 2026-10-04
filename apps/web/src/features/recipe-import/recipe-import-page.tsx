@@ -37,8 +37,9 @@ import { Label } from "../../components/ui/label.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
 import { Separator } from "../../components/ui/separator.js";
 import { Skeleton } from "../../components/ui/skeleton.js";
+import { apiEffectQuery } from "../api-client/index.js";
+import type { RecipeImportOperations } from "./browser-operations.js";
 import { recipeImportQueryKeys } from "./household-query-isolation.js";
-import type { RecipeImportOperations } from "./operations.js";
 import { RecipeDetailsForm } from "./recipe-details-form.js";
 import { RecipeDetails } from "./recipe-details.js";
 
@@ -652,106 +653,120 @@ export const RecipeImportPage = ({
       session.active = false;
     };
   }, [session]);
-  const createMutation = useMutation({
-    mutationFn: operations.create,
-    retry: false,
-  });
+  const createMutation = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: operations.create,
+      retry: false,
+    })
+  );
   const createdIntent = session.active ? createMutation.data : undefined;
   const activeIntentId = createdIntent?.id ?? initialIntentId;
-  const intentQuery = useQuery({
-    enabled: activeIntentId !== undefined,
-    initialData: createdIntent,
-    queryFn:
-      activeIntentId === undefined
-        ? skipToken
-        : () => operations.getIntent({ intentId: activeIntentId }),
-    queryKey: recipeImportQueryKeys.intent(householdId, activeIntentId),
-    refetchInterval: (query) =>
-      query.state.data?.status === "processing" ? pollIntervalMs : false,
-    retry: false,
-  });
+  const intentQuery = useQuery(
+    apiEffectQuery.queryOptions({
+      enabled: activeIntentId !== undefined,
+      initialData: createdIntent,
+      queryFn:
+        activeIntentId === undefined
+          ? skipToken
+          : () => operations.getIntent({ intentId: activeIntentId }),
+      queryKey: recipeImportQueryKeys.intent(householdId, activeIntentId),
+      refetchInterval: (query) =>
+        query.state.data?.status === "processing" ? pollIntervalMs : false,
+      retry: false,
+    })
+  );
   const intent = intentQuery.data;
   const actionReference =
     intent?.status === "requires_action" ? intent.action : undefined;
   const actionIntentId = actionReference === undefined ? undefined : intent?.id;
-  const actionQuery = useQuery({
-    enabled: actionReference !== undefined,
-    queryFn:
-      actionReference === undefined || actionIntentId === undefined
-        ? skipToken
-        : () =>
-            operations.getAction({
-              actionId: actionReference.id,
-              intentId: actionIntentId,
-            }),
-    queryKey: recipeImportQueryKeys.action(
-      householdId,
-      actionIntentId,
-      actionReference?.id
-    ),
-    retry: false,
-  });
+  const actionQuery = useQuery(
+    apiEffectQuery.queryOptions({
+      enabled: actionReference !== undefined,
+      queryFn:
+        actionReference === undefined || actionIntentId === undefined
+          ? skipToken
+          : () =>
+              operations.getAction({
+                actionId: actionReference.id,
+                intentId: actionIntentId,
+              }),
+      queryKey: recipeImportQueryKeys.action(
+        householdId,
+        actionIntentId,
+        actionReference?.id
+      ),
+      retry: false,
+    })
+  );
   const recipeId =
     intent?.status === "succeeded" ? intent.result.recipeId : undefined;
-  const recipeQuery = useQuery({
-    enabled: recipeId !== undefined,
-    queryFn:
-      recipeId === undefined
-        ? skipToken
-        : () => operations.getRecipe({ recipeId }),
-    queryKey: recipeImportQueryKeys.recipe(householdId, recipeId),
-    retry: false,
-  });
-  const confirmMutation = useMutation({
-    mutationFn: operations.confirmAction,
-    onSuccess: (succeeded) => {
-      if (!session.active) {
-        return;
-      }
-      queryClient.setQueryData(
-        recipeImportQueryKeys.intent(householdId, succeeded.id),
-        succeeded
-      );
-      return queryClient.invalidateQueries({
-        queryKey: recipeImportQueryKeys.actions(householdId, succeeded.id),
-      });
-    },
-    retry: false,
-  });
-  const answerMutation = useMutation({
-    mutationFn: operations.answerAction,
-    onSuccess: (updated) => {
-      if (!session.active) {
-        return;
-      }
-      queryClient.setQueryData(
-        recipeImportQueryKeys.intent(householdId, updated.id),
-        updated
-      );
-      return Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: recipeImportQueryKeys.intent(householdId, updated.id),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: recipeImportQueryKeys.actions(householdId, updated.id),
-        }),
-      ]);
-    },
-    retry: false,
-  });
-  const cancelMutation = useMutation({
-    mutationFn: operations.cancel,
-    onSuccess: (cancelled) => {
-      if (!session.active) {
-        return;
-      }
-      return queryClient.setQueryData(
-        recipeImportQueryKeys.intent(householdId, cancelled.id),
-        cancelled
-      );
-    },
-    retry: false,
-  });
+  const recipeQuery = useQuery(
+    apiEffectQuery.queryOptions({
+      enabled: recipeId !== undefined,
+      queryFn:
+        recipeId === undefined
+          ? skipToken
+          : () => operations.getRecipe({ recipeId }),
+      queryKey: recipeImportQueryKeys.recipe(householdId, recipeId),
+      retry: false,
+    })
+  );
+  const confirmMutation = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: operations.confirmAction,
+      onSuccess: (succeeded) => {
+        if (!session.active) {
+          return;
+        }
+        queryClient.setQueryData(
+          recipeImportQueryKeys.intent(householdId, succeeded.id),
+          succeeded
+        );
+        return queryClient.invalidateQueries({
+          queryKey: recipeImportQueryKeys.actions(householdId, succeeded.id),
+        });
+      },
+      retry: false,
+    })
+  );
+  const answerMutation = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: operations.answerAction,
+      onSuccess: (updated) => {
+        if (!session.active) {
+          return;
+        }
+        queryClient.setQueryData(
+          recipeImportQueryKeys.intent(householdId, updated.id),
+          updated
+        );
+        return Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: recipeImportQueryKeys.intent(householdId, updated.id),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: recipeImportQueryKeys.actions(householdId, updated.id),
+          }),
+        ]);
+      },
+      retry: false,
+    })
+  );
+  const cancelMutation = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: operations.cancel,
+      onSuccess: (cancelled) => {
+        if (!session.active) {
+          return;
+        }
+        return queryClient.setQueryData(
+          recipeImportQueryKeys.intent(householdId, cancelled.id),
+          cancelled
+        );
+      },
+      retry: false,
+    })
+  );
 
   const hasRequestFailure =
     session.active &&

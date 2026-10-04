@@ -21,7 +21,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { afterEach, expect, it, vi } from "vitest";
 
 import {
@@ -1037,7 +1037,9 @@ it("refreshes the sibling shared profile and history on canonical settlement whi
         accountId="user-a"
         operations={operations}
         organizationId={context.householdId}
-        peopleOperations={{ list: vi.fn().mockResolvedValue(roster) }}
+        peopleOperations={{
+          list: vi.fn().mockReturnValue(Effect.succeed(roster)),
+        }}
       />
     </QueryClientProvider>
   );

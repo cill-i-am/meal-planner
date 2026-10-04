@@ -15,10 +15,10 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { RecipeImportOperations } from "./operations.js";
+import type { RecipeImportOperations } from "./browser-operations.js";
 import { RecipeDetails } from "./recipe-details.js";
 import { RecipeImportPage } from "./recipe-import-page.js";
 
@@ -116,9 +116,9 @@ const makeOperations = (
   answerAction: vi.fn(),
   cancel: vi.fn(),
   confirmAction: vi.fn(),
-  create: vi.fn(async () => processing),
+  create: vi.fn(() => Effect.succeed(processing)),
   getAction: vi.fn(),
-  getIntent: vi.fn(async () => processing),
+  getIntent: vi.fn(() => Effect.succeed(processing)),
   getRecipe: vi.fn(),
   ...overrides,
 });
@@ -156,8 +156,8 @@ describe("RecipeImportPage", () => {
 
   it("submits a recipe import in the active household session", async () => {
     const create = vi.fn(
-      async (_input: Parameters<RecipeImportOperations["create"]>[0]) =>
-        processing
+      (_input: Parameters<RecipeImportOperations["create"]>[0]) =>
+        Effect.succeed(processing)
     );
     renderPage(makeOperations({ create }));
     const user = userEvent.setup();
@@ -185,9 +185,11 @@ describe("RecipeImportPage", () => {
   it("shows a safe error when the API request fails", async () => {
     renderPage(
       makeOperations({
-        create: vi.fn(async () => {
-          throw new Error("secret");
-        }),
+        create: vi.fn(() =>
+          Effect.sync(() => {
+            throw new Error("secret");
+          })
+        ),
       })
     );
     const user = userEvent.setup();
@@ -206,16 +208,16 @@ describe("RecipeImportPage", () => {
   });
 
   it("confirms the exact review version and renders the saved recipe", async () => {
-    const confirmAction = vi.fn<RecipeImportOperations["confirmAction"]>(
-      async () => succeeded
+    const confirmAction = vi.fn<RecipeImportOperations["confirmAction"]>(() =>
+      Effect.succeed(succeeded)
     );
-    const getRecipe = vi.fn(async () => savedRecipe);
+    const getRecipe = vi.fn(() => Effect.succeed(savedRecipe));
     renderPage(
       makeOperations({
         confirmAction,
-        create: vi.fn(async () => processing),
-        getAction: vi.fn(async () => activeAction),
-        getIntent: vi.fn(async () => requiresAction),
+        create: vi.fn(() => Effect.succeed(processing)),
+        getAction: vi.fn(() => Effect.succeed(activeAction)),
+        getIntent: vi.fn(() => Effect.succeed(requiresAction)),
         getRecipe,
       })
     );
@@ -272,14 +274,14 @@ describe("RecipeImportPage", () => {
       ...Schema.encodeSync(RecipeImportAction)(activeAction),
       review: { ...activeAction.review, editableFields: ["name", "tags"] },
     });
-    const answerAction = vi.fn<RecipeImportOperations["answerAction"]>(
-      async () => requiresAction
+    const answerAction = vi.fn<RecipeImportOperations["answerAction"]>(() =>
+      Effect.succeed(requiresAction)
     );
     renderPage(
       makeOperations({
         answerAction,
-        getAction: vi.fn(async () => action),
-        getIntent: vi.fn(async () => requiresAction),
+        getAction: vi.fn(() => Effect.succeed(action)),
+        getIntent: vi.fn(() => Effect.succeed(requiresAction)),
       })
     );
     const user = userEvent.setup();
@@ -371,14 +373,14 @@ it("saves structured ingredient corrections while retaining the source wording",
     ...activeAction,
     review: { ...activeAction.review, editableFields: ["ingredients"] },
   });
-  const answerAction = vi.fn<RecipeImportOperations["answerAction"]>(
-    async () => requiresAction
+  const answerAction = vi.fn<RecipeImportOperations["answerAction"]>(() =>
+    Effect.succeed(requiresAction)
   );
   renderPage(
     makeOperations({
       answerAction,
-      getAction: vi.fn(async () => action),
-      getIntent: vi.fn(async () => requiresAction),
+      getAction: vi.fn(() => Effect.succeed(action)),
+      getIntent: vi.fn(() => Effect.succeed(requiresAction)),
     })
   );
   const user = userEvent.setup();
@@ -419,14 +421,14 @@ it("lets a reviewer supply missing yield and waiting time with their own wording
     ...activeAction,
     review: { ...activeAction.review, editableFields: ["servings", "times"] },
   });
-  const answerAction = vi.fn<RecipeImportOperations["answerAction"]>(
-    async () => requiresAction
+  const answerAction = vi.fn<RecipeImportOperations["answerAction"]>(() =>
+    Effect.succeed(requiresAction)
   );
   renderPage(
     makeOperations({
       answerAction,
-      getAction: vi.fn(async () => action),
-      getIntent: vi.fn(async () => requiresAction),
+      getAction: vi.fn(() => Effect.succeed(action)),
+      getIntent: vi.fn(() => Effect.succeed(requiresAction)),
     })
   );
   const user = userEvent.setup();

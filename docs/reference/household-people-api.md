@@ -101,6 +101,27 @@ The full access-first process is in
 [Stage 1 Work Item 02](../plans/household-people/02-account-linking-invitations-and-departure.md)
 and [ADR-0010](../decisions/adr-0010-coordinate-membership-departure-before-person-archival.md).
 
+## Browser operations
+
+The [people feature](../../apps/web/src/features/household-people/index.ts)
+exports required Effect operations backed by the shared generated client. Family
+setup, the people panel, and food-profile roster reads execute them through the
+[API transport feature's Effect Query adapter](../../apps/web/src/features/api-client/index.tsx).
+The people slice owns request shaping, closed failure codes, exact-command
+recovery, and invalidation. Shared transport owns execution and cancellation,
+without moving household rules into a platform module.
+
+Effect owns transient transport retries; Query retries are disabled. A single
+decoded rejection is final. Defects, interruption, malformed replies, and mixed
+Causes preserve an uncertain write result. The UI checks the adapter's complete
+Cause before selecting a rejection; it must not treat only the first failure as
+proof. Retried commands retain their original payload, mutation ID, and expected
+versions. Cancelling a read reaches fetch; it does not undo a sent write.
+
+The private interview's Promise callback executes the roster Effect at its own
+boundary. There is no second Promise interface for the people client. Profile
+read/write operations retain their existing interface.
+
 ## Household-visible profiles
 
 Work Item 03 adds reads for the current profile, a specific version, paged

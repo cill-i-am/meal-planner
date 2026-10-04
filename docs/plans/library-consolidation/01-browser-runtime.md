@@ -15,6 +15,45 @@ between two PRs. They edit this same plan. Package observations from September 1
 are historical; use the implementation checkout's manifests, lockfile, source,
 and tests to establish the starting point.
 
+## Scoped people and recipe-import delivery
+
+The October 4 deletion review selected two concrete refactors: remove the people
+Promise facade and replace the recipe-import Promise client. This delivery uses
+installed Effect 4.0.0, Effect Query 1.0.0, and TanStack Query 5.102.8. It does not
+run the broader profile/AtomHttpApi experiment below or upgrade dependencies.
+
+Both slices expose generated-client Effects through their public feature APIs.
+The API transport feature provides a stateless Effect Query adapter. Feature
+slices retain domain inputs, request shaping, failure projection, cache policy,
+and recovery. People uses its existing transport retry policy once, with Query
+retries disabled. Recipe-import retains no automatic mutation retries. Query
+cancellation reaches fetch in both slices.
+
+Removed: the people Promise facade and duplicate Promise operation type; the
+recipe-import Promise runner and handwritten result interface; duplicated empty
+people Query adapter setup. Recipe operation results are inferred from the
+shared generated contract. All production people operations are required; the
+panel no longer treats supplied operations as optional capabilities.
+
+Remaining: profile and household Promise clients, the family query adapter, and
+the private interview's narrow Promise callback. Profile roster reads use the
+people Effect API, while profile writes and their recovery remain unchanged.
+The broader profile pilot and acceptance checklist below remain proposed.
+
+Validation on October 4: `pnpm test` passed 1,660 tests; workspace typechecks,
+lint, formatting, the production build, documentation checks (including 24
+checker tests), and Ultracite doctor passed. The existing public-feature boundary
+check includes recipe-import and passed. The 14 family, food-profile, and private
+review Playwright journeys passed against local Website/API Workers on Chromium
+and mobile WebKit. An earlier run crossed a five-hour pause and expired Worker
+connections; the fresh runs used macOS’s native sleep inhibitor without changing
+checks or timeout limits.
+
+Feature tests cover exact-command recovery, deterministic and ambiguous failures,
+full Cause projection, and query cancellation through both generated clients.
+Recipe-import request/review behavior is verified by Chromium component and
+client tests; no live TikTok acquisition or paid model flow was exercised.
+
 ## Scope
 
 First make one complete profile flow work: read, save, and refresh from the server.

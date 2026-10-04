@@ -17,12 +17,12 @@ import {
 } from "../../components/ui/card.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
+import { apiEffectQuery } from "../api-client/index.js";
 import { useAccount } from "../auth/index.js";
 import {
   useCreateFamily,
   useFamilyActions,
   useFamilyList,
-  peopleEffectQuery,
 } from "../family/index.js";
 import { SetupFrame } from "./setup-ui.js";
 
@@ -107,13 +107,13 @@ export const FamilyNamePage = () => {
   };
   const { pendingRequest } = mutation;
   const exit = useMutation(
-    peopleEffectQuery.mutationOptions({
+    apiEffectQuery.mutationOptions({
       mutationFn: () => account.logout("/setup"),
       mutationKey: ["setup-logout"],
     })
   );
   const existingFamily = useMutation(
-    peopleEffectQuery.mutationOptions({
+    apiEffectQuery.mutationOptions({
       mutationFn: (id: string) =>
         actions.selectFamily(
           Schema.decodeUnknownSync(HouseholdOrganizationId)(id)
