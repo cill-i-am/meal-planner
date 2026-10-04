@@ -40,7 +40,22 @@ need a fresh review, not an automatic rebase. Revoking access prevents new comma
 from being released and new output from being sent; it does not roll back a command
 already dispatched to household storage.
 
-Using base Agent does not add private HTTP responses, RPC methods that return
+Confirmation continuation uses the shared [Effect HttpApi contract](../../packages/private-interview-api/src/confirmation-http.ts)
+and its [typed handler](../../apps/api/src/features/private-output/private-confirmation.http.ts).
+Only UUID session, mutation and generation metadata crosses this endpoint. The
+same-origin, empty-body guard runs before releasing the frozen reviewed command;
+malformed metadata or a supplied body returns a body-free 403. Successful
+continuation returns a body-free 204, and an unavailable result returns a
+body-free 503. HTTP acceptance does not settle the browser's pending command:
+the session's canonical socket settlement remains authoritative.
+
+The [generated-client operation](../../apps/web/src/features/private-interviews/private-confirmation.ts)
+uses the existing authenticated transport and the socket owner's abort signal.
+Its Promise callback is the bridge to that native protocol owner; it adds no
+second writable cache. Interruption and unknown results preserve the original
+command for explicit recovery.
+
+Using base Agent does not add private HTTP response bodies, RPC methods that return
 transcripts, SDK state synchronization or parent access to transcripts.
 
 ## Fresh profile review
@@ -63,6 +78,7 @@ command. A stale profile version requires a fresh review.
   [socket lifecycle tests](../../apps/api/src/features/private-output/private-output-socket.test.ts).
 - [Interview coverage rules](discovery-coverage.md), [household data](household.md),
   [discovery integration tests](../../apps/api/src/features/private-output/private-discovery.integration.test.ts).
+- [Confirmation transport tests](../../apps/web/src/features/private-interviews/private-confirmation.test.ts).
 - [Fresh review browser journey](../../apps/web/e2e/private-review-journey.spec.ts),
   [browser component tests](../../apps/web/src/features/private-interviews/private-interviews-panel.test.tsx),
   [native A-to-B confirmation test](../../apps/api/src/features/households/household-boundary.integration.test.ts).

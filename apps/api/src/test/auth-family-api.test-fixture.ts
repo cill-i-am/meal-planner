@@ -3,7 +3,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Redacted } from "effect";
+import { Effect, Layer, Redacted } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 
 import { makeAuthFamilyHttpLayer } from "../auth-family.js";
@@ -13,6 +13,7 @@ import { makeAuthenticatedOrganizationResolver } from "../features/auth/auth.pri
 import type { HouseholdDomainWorkerMethods } from "../features/households/household-domain-worker.js";
 import { makeHouseholdInvitationRecipientVerifier } from "../features/households/household-request-composition.js";
 import type { MemberDepartureWorkflowStarter } from "../features/households/people/member-departure.js";
+import { makePrivateConfirmationHttpLayer } from "../features/private-output/private-confirmation.http.js";
 import type {
   PrivateOutputApiPort,
   PrivateOutputMutationPort,
@@ -123,24 +124,31 @@ export default {
           }
           const resolver = makeAuthenticatedOrganizationResolver({ auth });
           const handler = yield* HttpRouter.toHttpEffect(
-            makeAuthFamilyHttpLayer({
-              auth,
-              database,
-              departureWorkflow: departures,
-              domain,
-              headers: request.headers,
-              resolver,
-              sendInvitationEmail: (mail) =>
-                Effect.promise(() =>
-                  env.TEST_MAIL.put(
-                    mail.email,
-                    JSON.stringify({
-                      kind: "invitation",
-                      url: `${env.BASE_URL}/invitation/${encodeURIComponent(mail.invitationId)}`,
-                    })
-                  )
-                ).pipe(Effect.asVoid),
-            })
+            Layer.mergeAll(
+              makePrivateConfirmationHttpLayer({
+                auth,
+                household: domain,
+                output: env.PrivateOutputApi,
+              }),
+              makeAuthFamilyHttpLayer({
+                auth,
+                database,
+                departureWorkflow: departures,
+                domain,
+                headers: request.headers,
+                resolver,
+                sendInvitationEmail: (mail) =>
+                  Effect.promise(() =>
+                    env.TEST_MAIL.put(
+                      mail.email,
+                      JSON.stringify({
+                        kind: "invitation",
+                        url: `${env.BASE_URL}/invitation/${encodeURIComponent(mail.invitationId)}`,
+                      })
+                    )
+                  ).pipe(Effect.asVoid),
+              })
+            )
           );
           return HttpServerResponse.toWeb(
             yield* raceWithRequestSignal(request.signal, handler).pipe(

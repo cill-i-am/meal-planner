@@ -49,11 +49,6 @@ import {
   decodeAcquisitionCheckpoint,
   recoverHouseholdVerifiedAcquisitionCheckpoint,
 } from "./import-acquisition-checkpoint.js";
-import { loadStagedOperatorCarousel } from "./import-carousel-staging.js";
-import {
-  prepareTikTokCarouselEvidence,
-  produceTikTokCarouselRecipeDraft,
-} from "./import-carousel.js";
 import {
   makeR2SpeechAudioExtractor,
   makeR2VisualFrameSampler,
@@ -62,7 +57,6 @@ import {
 import { sha256Bytes } from "./import-digest.js";
 import { inspectHouseholdEvidenceReferences } from "./import-evidence-availability.js";
 import {
-  makeHouseholdCarouselEvidenceRepository,
   makeHouseholdImportEvidenceCurrentRepository,
   makeHouseholdRecipeDraftRepository,
   makeHouseholdSpeechTranscriptionRepository,
@@ -135,12 +129,8 @@ import {
   PostAcquisitionJournalCheckpoint,
   postAcquisitionRestartOptions,
 } from "./import-workflow-journal.js";
-import type { SourceCanonicalId } from "./import.contracts.js";
-import {
-  ImportId,
-  ImportTimestamp,
-  SourceDescriptor,
-} from "./import.contracts.js";
+import type { SourceCanonicalId, ImportId } from "./import.contracts.js";
+import { ImportTimestamp, SourceDescriptor } from "./import.contracts.js";
 import {
   workflowStartRefused,
   workflowStartUnavailable,
@@ -471,30 +461,6 @@ export const runAcquisitionTask = <
   });
 
 export { ImportWorkflowInput } from "./import-workflow-input.js";
-const CarouselEvidenceTaskCheckpoint = Schema.Union([
-  Schema.Struct({
-    _tag: Schema.Literal("Failed"),
-    code: Schema.String,
-    stage: Schema.Literal("visual"),
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("Succeeded"),
-    evidence: Schema.Struct({
-      byteLength: Schema.Number,
-      completedAt: ImportTimestamp,
-      deleteAt: ImportTimestamp,
-      descriptorFingerprint: Schema.String,
-      dispatchId: Schema.String,
-      generation: AcquisitionGeneration,
-      imageCount: Schema.Number,
-      importId: ImportId,
-      manifestKey: Schema.String,
-      manifestSha256: Schema.String,
-    }),
-    stage: Schema.Literal("visual"),
-  }),
-]);
-
 const currentProviderAccountingTimestamp = () =>
   Schema.decodeUnknownSync(ProviderAccountingTimestamp)(
     new Date().toISOString()
@@ -764,8 +730,6 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 organizationId,
               };
               return {
-                carousel:
-                  makeHouseholdCarouselEvidenceRepository(evidenceInput),
                 current:
                   makeHouseholdImportEvidenceCurrentRepository(evidenceInput),
                 recipe: makeHouseholdRecipeDraftRepository(evidenceInput),
@@ -1001,90 +965,6 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 }
                 return null;
               });
-            const stagedCarousel = yield* loadStagedOperatorCarousel({
-              bucket,
-              importId,
-            }).pipe(Effect.orDie);
-            if (stagedCarousel !== null) {
-              const carouselGeneration = Schema.decodeUnknownSync(
-                AcquisitionGeneration
-              )(executionGeneration);
-              const carouselResult = yield* Effect.gen(
-                function* completeCarouselStages() {
-                  yield* intentTransitions
-                    .advanceStage("analyzing_evidence")
-                    .pipe(Effect.orDie);
-                  yield* intentTransitions
-                    .advanceComponent("speech", "skipped")
-                    .pipe(Effect.orDie);
-                  yield* intentTransitions
-                    .advanceComponent("visuals", "processing")
-                    .pipe(Effect.orDie);
-                  const visual = yield* runProviderTask(
-                    "extract-carousel-visual-evidence-v1",
-                    "visual",
-                    prepareTikTokCarouselEvidence({
-                      adapter: stagedCarousel.adapter,
-                      bucket,
-                      carouselRepository:
-                        evidenceRepositories(carouselGeneration).carousel,
-                      descriptor: stagedCarousel.descriptor,
-                      importId,
-                      now,
-                      visualExtractor,
-                    }),
-                    (evidence) => ({
-                      _tag: "Succeeded" as const,
-                      evidence,
-                      stage: "visual" as const,
-                    }),
-                    trace,
-                    retryLifecycle("visual")
-                  ).pipe(
-                    Effect.flatMap((value) =>
-                      Schema.decodeUnknownEffect(
-                        CarouselEvidenceTaskCheckpoint
-                      )(value)
-                    ),
-                    Effect.orDie
-                  );
-                  if (visual._tag === "Failed") {
-                    return visual;
-                  }
-                  yield* intentTransitions
-                    .advanceComponent("visuals", "completed")
-                    .pipe(Effect.orDie);
-                  yield* intentTransitions
-                    .advanceStage("extracting_recipe")
-                    .pipe(Effect.orDie);
-                  return yield* task(
-                    "extract-carousel-recipe-v1",
-                    "recipe",
-                    produceTikTokCarouselRecipeDraft({
-                      bucket,
-                      descriptor: stagedCarousel.descriptor,
-                      evidence: visual.evidence,
-                      extractor: recipeExtractor,
-                      importId,
-                      lifecycle: recipeLifecycle,
-                      now,
-                      recipeRepository:
-                        evidenceRepositories(carouselGeneration).recipe,
-                    })
-                  );
-                }
-              );
-              if (carouselResult._tag === "Failed") {
-                yield* intentTransitions
-                  .fail(
-                    carouselResult.stage,
-                    publicIntentFailureForProviderStage(carouselResult.stage),
-                    `carousel:${carouselGeneration}`
-                  )
-                  .pipe(Effect.orDie);
-              }
-              return carouselResult;
-            }
             const encodedOutcome = yield* Cloudflare.Workflows.task(
               "resolve-acquire-store-verify-v2",
               recoverHouseholdVerifiedAcquisitionCheckpoint({

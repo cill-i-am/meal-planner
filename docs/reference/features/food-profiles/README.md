@@ -53,4 +53,8 @@ covers the focused opening, and the [native A-to-B test](../../../../apps/api/sr
 covers a synthetic model proposal, correction, two explicit confirmations,
 profile versions/audit, and prior transcript exclusion. The browser journey
 also rejects a B model context containing earlier dialogue or missing the saved
-fact. These tests do not exercise a live model or establish conversation quality.
+fact. The [confirmation transport tests](../../../../apps/web/src/features/private-interviews/private-confirmation.test.ts)
+exercise the generated client, scoped headers, empty requests, response decoding
+and cancellation. Native boundary tests reject copied, unadmitted, cross-origin,
+malformed and body-substituted confirmations without exposing private bodies.
+These tests do not exercise a live model or establish conversation quality.

@@ -37,6 +37,7 @@ import {
   makeRecipeImportHttpApiLayer,
 } from "../imports/import-intent-api.http.js";
 import { RecipeImportWorkflowDispatcher } from "../imports/import-workflow-dispatcher.js";
+import { makePrivateConfirmationHttpLayer } from "../private-output/private-confirmation.http.js";
 import type {
   PrivateOutputApiPort,
   PrivateOutputMutationPort,
@@ -1091,6 +1092,11 @@ export default {
                   HttpRouter.provideRequest(familyServices)
                 ),
                 householdLayer,
+                makePrivateConfirmationHttpLayer({
+                  auth,
+                  household: privateHousehold,
+                  output: env.PrivateOutputApi,
+                }),
                 mealPlanLayer,
                 peopleLayer,
                 makeRecipeImportHttpApiLayer().pipe(

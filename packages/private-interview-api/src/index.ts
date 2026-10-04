@@ -7,6 +7,17 @@ import {
 } from "@meal-planner/household-api";
 import { Schema } from "effect";
 
+export {
+  PrivateConfirmationApi,
+  PrivateConfirmationApiClient,
+  PrivateConfirmationMetadata,
+  PrivateConfirmationRequestGuard,
+  PrivateConfirmationForbidden,
+  PrivateConfirmationUnauthorized,
+  PrivateConfirmationUnavailable,
+  makePrivateConfirmationApiClientLayer,
+} from "./confirmation-http.js";
+
 export const MAX_PRIVATE_FRAME_BYTES = 32_768;
 export const MAX_MESSAGE_LENGTH = 4000;
 export const MAX_PAGE_SIZE = 25;

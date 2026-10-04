@@ -160,6 +160,12 @@ invalid evidence allows the next claim. A lost claim reply retries the same
 identity and generation. A lost Workflow response therefore reconstructs the same
 encoded command without changing its mutation digest.
 
+The active source resolver rejects photo posts before acquisition. There is no
+operator staging ingress or Workflow reader for manually staged carousels. The
+carousel evidence types, integrity rules and household commit protocol remain
+available for a future supported acquisition path; their presence does not mean
+that the runtime imports photo posts.
+
 R2 references include byte length, SHA-256, deletion time, object kind, and
 generation. Reads return the video acquisition's media-and-manifest set or the
 carousel stage's single committed manifest with the same stable import,
