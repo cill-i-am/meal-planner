@@ -268,7 +268,9 @@ While the screen is mounted, it retains one submitted create, answer,
 cancellation, or confirmation command until the result is known. An unknown
 result blocks a different write and offers an explicit retry with the exact
 original payload, expected version, and idempotency key. A decoded client
-rejection releases the command so the user can correct it; a transport failure,
+rejection on the first attempt releases the command so the user can correct it.
+Once any attempt has an unknown result, a later rejection cannot settle that
+earlier attempt; the command remains available for replay. A transport failure,
 server error, or defect does not prove rejection. The screen does not persist or
 automatically replay a command after reload. Server receipts remain the source
 of truth for exact-key replay, and canonical-source deduplication serves a

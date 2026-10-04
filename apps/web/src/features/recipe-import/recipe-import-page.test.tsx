@@ -309,6 +309,77 @@ describe("RecipeImportPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps an unknown create after a later unauthorized retry", async () => {
+    const keys: (string | null)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init);
+        if (request.method !== "POST") {
+          return Response.json(
+            Schema.encodeSync(ProcessingRecipeImportIntent)(processing)
+          );
+        }
+        keys.push(request.headers.get("idempotency-key"));
+        if (keys.length === 1) {
+          throw new Error("Response lost after commit");
+        }
+        if (keys.length === 2) {
+          return Response.json(
+            {
+              code: "unauthorized",
+              detail: "Session expired",
+              status: 401,
+              title: "Unauthorized",
+              type: "https://meal-planner.local/problems/unauthorized",
+            },
+            {
+              headers: { "content-type": "application/problem+json" },
+              status: 401,
+            }
+          );
+        }
+        return Response.json(
+          Schema.encodeSync(ProcessingRecipeImportIntent)(processing),
+          {
+            headers: {
+              location: `/v1/recipe-import-intents/${intentId}`,
+              "retry-after": "1",
+            },
+            status: 201,
+          }
+        );
+      })
+    );
+    renderPage(
+      makeRecipeImportEffectOperations(
+        parseDisplayedIdentity({
+          organizationId: "organization-a",
+          userId: "user-a",
+        }),
+        browserApiRuntime()
+      )
+    );
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "Recipe link" }),
+      "https://www.tiktok.com/@cook/video/7390123456789012345"
+    );
+    await user.click(screen.getByRole("button", { name: "Import recipe" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Retry import request" })
+    );
+    await waitFor(() => expect(keys).toHaveLength(2));
+    await user.click(
+      await screen.findByRole("button", { name: "Retry import request" })
+    );
+    await waitFor(() => expect(keys).toHaveLength(3));
+    expect(new Set(keys).size).toBe(1);
+    expect(
+      await screen.findByRole("heading", { name: "Working on your recipe" })
+    ).toBeInTheDocument();
+  });
+
   it("releases a decoded server rejection so a corrected create gets a new identity", async () => {
     const keys: string[] = [];
     vi.stubGlobal(

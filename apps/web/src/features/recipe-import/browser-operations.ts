@@ -29,7 +29,7 @@ class RecipeImportOperationError<Failure> extends Data.TaggedError(
   "RecipeImportOperationError"
 )<{ readonly cause: Failure }> {}
 
-/** Only a sole decoded client rejection proves that the server did not accept a new command. */
+/** Classify the current attempt; an earlier unknown result must still be preserved by the caller. */
 export const isDefiniteRecipeImportRejection = (error: Error | null) => {
   const cause = queryFailureCause(error);
   if (

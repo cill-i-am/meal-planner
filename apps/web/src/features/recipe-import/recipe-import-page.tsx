@@ -26,7 +26,7 @@ import {
 } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Schema } from "effect";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { Alert } from "../../components/ui/alert.js";
@@ -694,6 +694,26 @@ export const RecipeImportPage = ({
     [householdId, operations]
   );
   const retained = usePendingRequest<ImportCommand>(session.requestScope);
+  const unknownCommand = useRef<{ scope: string; key: string } | null>(null);
+  const releaseResolved = (key: string) => {
+    if (
+      unknownCommand.current?.scope === session.requestScope &&
+      unknownCommand.current.key === key
+    ) {
+      unknownCommand.current = null;
+    }
+    retained.release(key);
+  };
+  const settleWriteFailure = (error: Error, key: string) => {
+    const wasUnknown =
+      unknownCommand.current?.scope === session.requestScope &&
+      unknownCommand.current.key === key;
+    if (wasUnknown || !isDefiniteRecipeImportRejection(error)) {
+      unknownCommand.current = { key, scope: session.requestScope };
+      return;
+    }
+    retained.release(key);
+  };
   useEffect(() => {
     session.active = true;
     return () => {
@@ -704,12 +724,10 @@ export const RecipeImportPage = ({
     apiEffectQuery.mutationOptions({
       mutationFn: operations.create,
       onError: (error, command) => {
-        if (isDefiniteRecipeImportRejection(error)) {
-          retained.release(command.idempotencyKey);
-        }
+        settleWriteFailure(error, command.idempotencyKey);
       },
       onSuccess: (_created, command) => {
-        retained.release(command.idempotencyKey);
+        releaseResolved(command.idempotencyKey);
       },
       retry: false,
     })
@@ -770,12 +788,10 @@ export const RecipeImportPage = ({
     apiEffectQuery.mutationOptions({
       mutationFn: operations.confirmAction,
       onError: (error, command) => {
-        if (isDefiniteRecipeImportRejection(error)) {
-          retained.release(command.idempotencyKey);
-        }
+        settleWriteFailure(error, command.idempotencyKey);
       },
       onSuccess: (succeeded, command) => {
-        retained.release(command.idempotencyKey);
+        releaseResolved(command.idempotencyKey);
         if (!session.active) {
           return;
         }
@@ -794,12 +810,10 @@ export const RecipeImportPage = ({
     apiEffectQuery.mutationOptions({
       mutationFn: operations.answerAction,
       onError: (error, command) => {
-        if (isDefiniteRecipeImportRejection(error)) {
-          retained.release(command.idempotencyKey);
-        }
+        settleWriteFailure(error, command.idempotencyKey);
       },
       onSuccess: (updated, command) => {
-        retained.release(command.idempotencyKey);
+        releaseResolved(command.idempotencyKey);
         if (!session.active) {
           return;
         }
@@ -823,12 +837,10 @@ export const RecipeImportPage = ({
     apiEffectQuery.mutationOptions({
       mutationFn: operations.cancel,
       onError: (error, command) => {
-        if (isDefiniteRecipeImportRejection(error)) {
-          retained.release(command.idempotencyKey);
-        }
+        settleWriteFailure(error, command.idempotencyKey);
       },
       onSuccess: (cancelled, command) => {
-        retained.release(command.idempotencyKey);
+        releaseResolved(command.idempotencyKey);
         if (!session.active) {
           return;
         }
