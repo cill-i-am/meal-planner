@@ -2,13 +2,21 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path = require("node:path");
 
-const ownedDirectories = new Set(["apps", "packages", "scripts", "tools"]);
+const ownedDirectories = new Set([
+  "apps",
+  "evals",
+  "packages",
+  "scripts",
+  "stacks",
+  "tools",
+]);
 const ownedRootFiles = new Set([
   "alchemy.run.ts",
   "alchemy.run.structural.test.ts",
   "oxfmt.config.ts",
   "oxlint.config.ts",
   "vitest.alchemy.config.ts",
+  "vitest.stack.config.ts",
 ]);
 const sourceExtensions = new Set([
   ".cjs",

@@ -13,14 +13,15 @@ or deployment. Keep those stages separate when reporting progress.
 The [transactional email plan](auth-email-delivery.md) tracks the invitation and
 reset delivery code, Paper designs, and separate production activation checks.
 
-The active [family resource refactor](family-resource-onboarding.md) simplifies
-auth through family setup before establishing the wider app template. Its
-running decision log records implementation choices and validation.
+The completed [family resource refactor](family-resource-onboarding.md) is the
+reference architecture for auth through setup. Its decision log explains the
+current resource and recovery model.
 
 Continue [private discovery](private-discovery/README.md): finish the
 [evaluation and conversation-tone work](private-discovery/03-adaptive-discovery-and-evaluation.md),
-then [repeat reviews and dependant assistance](private-discovery/04-repeat-review-and-dependant-assistance.md).
-The [onboarding plan](onboarding.md) tracks G01–G14 from the agreed Paper designs.
+and independently implement the permitted [dependant assistance](private-discovery/04-repeat-review-and-dependant-assistance.md)
+while final quality acceptance remains open. The [onboarding plan](onboarding.md)
+separates implemented G01–G14 behavior from remaining acceptance.
 Coordinate changes to shared forms and auth files. Finished designs do not mean
 those screens have been implemented.
 
@@ -43,12 +44,14 @@ trying a small end-to-end flow in the next.
 
 ## Engineering and interface work
 
-- [Codebase design coverage](codebase-design-coverage.md): up to twenty deletion-test
-  passes across the repository, with coverage and delivery evidence.
+- [Autonomous delivery and codebase gardening](agent-workflow-adoption.md):
+  installed workflows, delivery verification and remaining policy decisions.
+- [Codebase design coverage](codebase-design-coverage.md): completed twenty-pass
+  review and cleanup, with coverage and delivery evidence.
 - [Alchemy and Effect stable upgrade](alchemy-effect-upgrade-2026-10-02.md):
   current versions, boundary migrations and delivery checks.
-- [Reduce custom library plumbing](library-consolidation/README.md): four plans
-  from the overlapping proposals #219–#225. These are plans, not implemented changes.
+- [Reduce custom library plumbing](library-consolidation/README.md): completed
+  browser consolidation and separately proposed remaining client/form work.
 - [Fix import confidence and unknown usage](import-confidence-and-accounting.md).
 - [Infrastructure review findings](infrastructure-upgrade-review.md): dated findings,
   not an instruction to perform another upgrade.

@@ -19,11 +19,12 @@ For framework mechanics, use [tanstack-routing](../../../.agents/skills/tanstack
 
 Use installed React/TanStack APIs and verify version-sensitive advice. Keep cancellation and concurrency bounded where needed; examples using native Promises do not override Effect ownership in backend workflows. Confirm the optimization addresses the original problem without broadening scope.
 
-## Preserved examples
+## Topic references
 
-These examples retain the original repository material; no automatic performance
-skill fires on every component edit. Their applicability is conditional on the
-stated problem and installed version, not a mandate to optimize all code.
+Read the topic that matches the measured problem. Keep project ownership and
+safety rules from the engineering references; use official documentation for
+version-specific APIs. Generic examples are conditional illustrations, not a
+second application architecture.
 
 - [_sections](_sections.md)
 - [_template](_template.md)

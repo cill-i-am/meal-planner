@@ -252,7 +252,7 @@ jobs:
       - name: Install project browser
         run: pnpm --filter @meal-planner/web exec playwright install --with-deps ${{ matrix.browser }}
 
-      - name: Test auth and family journeys against local Workers
+      - name: Test application journeys against local Workers
         run: pnpm --filter @meal-planner/web test:e2e --project=${{ matrix.project }} --shard=${{ matrix.shard }}/2 --workers=1
 
       - name: Retain browser failure traces
@@ -263,9 +263,22 @@ jobs:
           path: apps/web/test-results
           retention-days: 3
 
+  required-checks:
+    name: Required checks
+    needs: [changes, quality, tests, media-container, auth-family-e2e]
+    if: always() && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require successful verification
+        env:
+          REQUIRED_SUCCEEDED: ${{ needs.changes.result == 'success' && needs.quality.result == 'success' && needs.tests.result == 'success' && needs.auth-family-e2e.result == 'success' }}
+          MEDIA_SUCCEEDED: ${{ needs.media-container.result == 'success' || (needs.changes.outputs.containers == 'false' && needs.media-container.result == 'skipped') }}
+        run: test "$REQUIRED_SUCCEEDED" = true && test "$MEDIA_SUCCEEDED" = true
+
   deploy:
     name: Deploy Alchemy
-    needs: [changes, quality, tests, media-container, auth-family-e2e]
+    needs: required-checks
     if: >-
       !cancelled() && !failure() && vars.ALCHEMY_DEPLOYMENTS_ENABLED == 'true' && github.event.action != 'closed' && (((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: ubuntu-latest

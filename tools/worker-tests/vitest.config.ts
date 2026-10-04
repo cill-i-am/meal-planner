@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 
+import { workerObservability } from "../../apps/api/src/infrastructure/worker-observability.js";
+
 const readDrizzleD1Migrations = (migrationsPath: string) => {
   const sqlFiles = readdirSync(migrationsPath, { recursive: true })
     .map(String)
@@ -48,8 +50,8 @@ export default defineConfig({
             )
           ),
         },
-        compatibilityDate: "2026-07-14",
-        compatibilityFlags: ["nodejs_compat"],
+        compatibilityDate: workerObservability.compatibility.date,
+        compatibilityFlags: workerObservability.compatibility.flags,
         d1Databases: ["MealPlannerAuthDatabase", "ProviderAccountingDatabase"],
         r2Buckets: ["ImportEvidenceBucket"],
       },

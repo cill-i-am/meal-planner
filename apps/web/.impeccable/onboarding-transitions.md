@@ -1,10 +1,10 @@
 # Family onboarding transitions
 
-Design contract, updated 22 September 2026. The setup header uses Log out: save the current checkpoint before ending the session. The recovery rows below remain acceptance rules for interrupted operations; check the implementation ledger for current coverage. See [implementation gaps](../../../docs/plans/onboarding.md) and [error mapping](onboarding-error-contract.md).
+The September 22, 2026 Paper transitions preserve visual, focus and recovery destinations. [Saved-resource family setup](../../../docs/reference/family-api.md) owns behavior; its [D26 decision](../../../docs/plans/family-resource-onboarding.md#d26--no-persisted-browser-mutations-27-september-2026) replaced checkpoint and persisted-draft transitions. See [remaining acceptance](../../../docs/plans/onboarding.md) and [error presentation](onboarding-error-contract.md).
 
 ## Password recovery
 
-Recovery remains proposed until G07 provides real delivery. Never show a successful request confirmation for RESET_PASSWORD_DISABLED. All screens have desktop and mobile counterparts on the Recovery page.
+Recovery screens and token handling are implemented. Real delivery remains in the [email activation plan](../../../docs/plans/auth-email-delivery.md). Never show a successful request confirmation for RESET_PASSWORD_DISABLED. All screens have desktop and mobile counterparts on the Recovery page.
 
 | From | Trigger | Destination / behavior |
 | --- | --- | --- |
@@ -12,7 +12,7 @@ Recovery remains proposed until G07 provides real delivery. Never show a success
 | Request reset · screen 1 | Valid request succeeds | Check your email · screen 2. Same generic confirmation for known and unknown addresses: “If an account uses this email, we’ll send a reset link.” |
 | Check your email | Use another email | Request reset, with the submitted email retained and editable. |
 | Check your email | Back to log in | Log in; preserve intended continuation. |
-| Reset email | Valid reset link | Choose a new password · screen 3. Do not store the reset token in a durable setup draft. |
+| Reset email | Valid reset link | Choose a new password · screen 3. Keep the reset token out of browser storage. |
 | New password | Save new password succeeds | Password updated · screen 4. Clear both password fields and the consumed token. Success is shown only after confirmation. |
 | Password updated | Log in | Log in, then the original permitted setup/invitation destination after authentication. No automatic sign-in is implied. |
 | New password / validation | Back to log in | Log in; discard the password draft. |
@@ -21,22 +21,11 @@ Recovery remains proposed until G07 provides real delivery. Never show a success
 
 Paper IDs: request D `4U-0` / M `UC-0`; check email D `2YD-0` / M `2YV-0`; new password D `2ZO-0` / M `30K-0`; updated D `31R-0` / M `329-0`. Get help copy remains removed.
 
-## Log out, save and resume
+## Log out and return
 
-Log out writes an authenticated checkpoint, then signs out and opens Log in. Submitted commands are checkpointed when sent; Log out also saves an unfinished draft. The separate Setup saved screen (D `332-0` / M `33K-0`) represents an already durable checkpoint and is no longer the header action’s destination. The illustrated pending invitation is a synthetic example; the next-step label follows the actual checkpoint.
+Log out ends the session without saving navigation or form drafts. Reload and later login read the saved family and people resources, then select the permitted route. Setup saved and durable checkpoint destinations belong to the replaced Paper flow.
 
-| Origin | Next-step label | Resume rule |
-| --- | --- | --- |
-| Finish Jamie’s invitation | Finish Jamie’s invitation | Reconcile the retained person and invitation command. If invitation completion is still needed, return to that stage. If settled, advance to the current People view. Never create a second person or blindly send another invitation. |
-| Your family didn’t load | Review your family | Reload the canonical roster for the saved family. Return to Review on success, or its unavailable state on failure. Do not treat missing data as an empty family. |
-| Finish joining your family | Finish joining your family | Check the accepted invitation, membership and person link. Complete only the retained linking operation; if already linked, advance to Ready. Do not accept the invitation or create a profile again. |
-| Ordinary incomplete setup | The incomplete step’s title | Restore safe draft values, then reconcile them with current canonical state. Resolve an existing person draft before moving on. |
-
-Sign out only after the checkpoint is durable. If saving fails, remain signed in on the origin with the draft intact and show a retryable error. Retrying saves the same checkpoint. Log out does not cancel, retry or declare success for an uncertain operation, and must not race a second mutation against it.
-
-Retain only the safe draft, intended step, owning account/family/person context and original pending command identity needed to resume. Never persist passwords, reset tokens or raw auth/provider payloads in browser storage. The authenticated setup progress is owned by the server.
-
-Resume setup, returning after a closed page, and logging in again all resolve the checkpoint against canonical state. An expired session goes through Log in with the intended continuation retained. Changed permissions or a removed family use the corresponding access state; they never fall back to creating a replacement family. Log out clears the session and in-memory secrets, while retaining the account-owned checkpoint for a later authenticated return.
+While the submitting screen is mounted, preserve the exact command, target, versions and request identity when its result is unknown. Retry only through its existing recovery action. Reload does not replay a browser command. Saved person, invitation and membership results remain canonical; a return must not recreate a person or accept an already-settled invitation. Do not store passwords, reset tokens or submitted setup drafts in browser storage.
 
 ## Person type and optional invitation
 
@@ -46,4 +35,4 @@ The group invalid modifier supplies the destructive outline and halo shown in Pa
 
 The choices are **Adult** and **Child**. Person type is independent of account access. A child has no account; an adult can also participate in family meal planning without one. For adults, show a separate **Invite them to join** checkbox, unchecked initially. Email is required only when inviting. The primary action is **Add person**, or **Add and invite** when the checkbox is checked. Changing person type clears the invitation choice so it cannot carry over silently.
 
-Log out retains the draft and invitation choice before signing out. After submission, retain the exact creation and invitation commands for recovery. An uninvited adult appears as **Adult**, with **Invite to join** as a separate, optional action on the people list and family review. Do not describe an invitation as required.
+The mounted form retains the draft and invitation choice. After submission, keep the exact creation and invitation commands for mounted recovery. An uninvited adult appears as **Adult**, with **Invite to join** as a separate, optional action on the people list and family review. Do not describe an invitation as required.

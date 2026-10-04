@@ -26,7 +26,7 @@ import {
 } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Schema } from "effect";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { Alert } from "../../components/ui/alert.js";
@@ -38,7 +38,9 @@ import { PendingButton } from "../../components/ui/pending-button.js";
 import { Separator } from "../../components/ui/separator.js";
 import { Skeleton } from "../../components/ui/skeleton.js";
 import { apiEffectQuery } from "../api-client/index.js";
+import { usePendingRequest } from "../request-recovery/index.js";
 import type { RecipeImportOperations } from "./browser-operations.js";
+import { isDefiniteRecipeImportRejection } from "./browser-operations.js";
 import { recipeImportQueryKeys } from "./household-query-isolation.js";
 import { RecipeDetailsForm } from "./recipe-details-form.js";
 import { RecipeDetails } from "./recipe-details.js";
@@ -49,6 +51,24 @@ type ActiveReviewAction = Extract<
     readonly status: "active";
   }
 >;
+
+type ImportCommand =
+  | {
+      readonly kind: "create";
+      readonly input: Parameters<RecipeImportOperations["create"]>[0];
+    }
+  | {
+      readonly kind: "answer";
+      readonly input: Parameters<RecipeImportOperations["answerAction"]>[0];
+    }
+  | {
+      readonly kind: "cancel";
+      readonly input: Parameters<RecipeImportOperations["cancel"]>[0];
+    }
+  | {
+      readonly kind: "confirm";
+      readonly input: Parameters<RecipeImportOperations["confirmAction"]>[0];
+    };
 
 const stageLabels = {
   acquiring_media: "Getting the source",
@@ -132,11 +152,13 @@ const PlanningTagSelect = <T extends keyof typeof planningTagLabels>({
 
 const NameAnswerForm = ({
   action,
+  isBlocked,
   isPending,
   makeRequestId,
   submit,
 }: {
   readonly action: ActiveReviewAction;
+  readonly isBlocked: boolean;
   readonly isPending: boolean;
   readonly makeRequestId: () => string;
   readonly submit: (
@@ -195,7 +217,7 @@ const NameAnswerForm = ({
         )}
       </form.Field>
       <PendingButton
-        disabled={isPending}
+        disabled={isBlocked || isPending}
         pending={isPending}
         pendingLabel="Saving recipe name…"
         type="submit"
@@ -208,11 +230,13 @@ const NameAnswerForm = ({
 
 const TagsAnswerForm = ({
   action,
+  isBlocked,
   isPending,
   makeRequestId,
   submit,
 }: {
   readonly action: ActiveReviewAction;
+  readonly isBlocked: boolean;
   readonly isPending: boolean;
   readonly makeRequestId: () => string;
   readonly submit: (
@@ -340,7 +364,12 @@ const TagsAnswerForm = ({
       >
         {({ canSubmit, cuisine }) => (
           <PendingButton
-            disabled={!canSubmit || cuisine.trim().length === 0 || isPending}
+            disabled={
+              !canSubmit ||
+              cuisine.trim().length === 0 ||
+              isBlocked ||
+              isPending
+            }
             pending={isPending}
             pendingLabel="Saving planning tags…"
             type="submit"
@@ -354,9 +383,11 @@ const TagsAnswerForm = ({
 };
 
 const ImportRecipeForm = ({
+  isBlocked,
   isPending,
   submit,
 }: {
+  readonly isBlocked: boolean;
   readonly isPending: boolean;
   readonly submit: (sourceUrl: RecipeSourceUrl) => void;
 }) => {
@@ -401,7 +432,9 @@ const ImportRecipeForm = ({
               >
                 {({ canSubmit, isSubmitting }) => (
                   <PendingButton
-                    disabled={!canSubmit || isSubmitting || isPending}
+                    disabled={
+                      !canSubmit || isSubmitting || isBlocked || isPending
+                    }
                     pending={isPending}
                     pendingLabel="Starting import…"
                     type="submit"
@@ -428,6 +461,7 @@ const ImportRecipeForm = ({
 
 const ProcessingStatus = ({
   cancel,
+  isBlocked,
   isCancelling,
   isCreating,
   intent,
@@ -436,6 +470,7 @@ const ProcessingStatus = ({
   readonly cancel: (
     input: Parameters<RecipeImportOperations["cancel"]>[0]
   ) => void;
+  readonly isBlocked: boolean;
   readonly isCancelling: boolean;
   readonly isCreating: boolean;
   readonly intent: RecipeImportIntent | undefined;
@@ -456,7 +491,7 @@ const ProcessingStatus = ({
       </p>
       {intent?.status === "processing" ? (
         <PendingButton
-          disabled={isCancelling}
+          disabled={isBlocked || isCancelling}
           pending={isCancelling}
           pendingLabel="Cancelling import…"
           onClick={() =>
@@ -516,6 +551,7 @@ const RecipeReview = ({
   answer,
   confirm,
   isAnswering,
+  isBlocked,
   isConfirming,
   makeRequestId,
 }: {
@@ -527,6 +563,7 @@ const RecipeReview = ({
     input: Parameters<RecipeImportOperations["confirmAction"]>[0]
   ) => void;
   readonly isAnswering: boolean;
+  readonly isBlocked: boolean;
   readonly isConfirming: boolean;
   readonly makeRequestId: () => string;
 }) => (
@@ -545,6 +582,7 @@ const RecipeReview = ({
     <RecipeDetailsForm
       key={`${action.id}:${action.actionVersion}:details`}
       action={action}
+      isBlocked={isBlocked}
       isPending={isAnswering}
       makeRequestId={makeRequestId}
       submit={answer}
@@ -552,6 +590,7 @@ const RecipeReview = ({
     {action.review.editableFields.includes("name") ? (
       <NameAnswerForm
         action={action}
+        isBlocked={isBlocked}
         isPending={isAnswering}
         key={`${action.id}:${action.actionVersion}`}
         makeRequestId={makeRequestId}
@@ -561,6 +600,7 @@ const RecipeReview = ({
     {action.review.editableFields.includes("tags") ? (
       <TagsAnswerForm
         action={action}
+        isBlocked={isBlocked}
         isPending={isAnswering}
         key={`${action.id}:${action.actionVersion}:tags`}
         makeRequestId={makeRequestId}
@@ -570,7 +610,7 @@ const RecipeReview = ({
     <div className="approve-bar">
       <p>Confirm this recipe to save it.</p>
       <PendingButton
-        disabled={isConfirming || isAnswering}
+        disabled={isBlocked || isConfirming || isAnswering}
         pending={isConfirming}
         pendingLabel="Saving recipe…"
         onClick={() =>
@@ -646,7 +686,34 @@ export const RecipeImportPage = ({
   readonly pollIntervalMs?: number;
 }) => {
   const queryClient = useQueryClient();
-  const session = useMemo(() => ({ active: true }), [householdId]);
+  const session = useMemo(
+    () => ({
+      active: true,
+      requestScope: `${householdId}:${crypto.randomUUID()}`,
+    }),
+    [householdId, operations]
+  );
+  const retained = usePendingRequest<ImportCommand>(session.requestScope);
+  const unknownCommand = useRef<{ scope: string; key: string } | null>(null);
+  const releaseResolved = (key: string) => {
+    if (
+      unknownCommand.current?.scope === session.requestScope &&
+      unknownCommand.current.key === key
+    ) {
+      unknownCommand.current = null;
+    }
+    retained.release(key);
+  };
+  const settleWriteFailure = (error: Error, key: string) => {
+    const wasUnknown =
+      unknownCommand.current?.scope === session.requestScope &&
+      unknownCommand.current.key === key;
+    if (wasUnknown || !isDefiniteRecipeImportRejection(error)) {
+      unknownCommand.current = { key, scope: session.requestScope };
+      return;
+    }
+    retained.release(key);
+  };
   useEffect(() => {
     session.active = true;
     return () => {
@@ -656,6 +723,12 @@ export const RecipeImportPage = ({
   const createMutation = useMutation(
     apiEffectQuery.mutationOptions({
       mutationFn: operations.create,
+      onError: (error, command) => {
+        settleWriteFailure(error, command.idempotencyKey);
+      },
+      onSuccess: (_created, command) => {
+        releaseResolved(command.idempotencyKey);
+      },
       retry: false,
     })
   );
@@ -714,7 +787,11 @@ export const RecipeImportPage = ({
   const confirmMutation = useMutation(
     apiEffectQuery.mutationOptions({
       mutationFn: operations.confirmAction,
-      onSuccess: (succeeded) => {
+      onError: (error, command) => {
+        settleWriteFailure(error, command.idempotencyKey);
+      },
+      onSuccess: (succeeded, command) => {
+        releaseResolved(command.idempotencyKey);
         if (!session.active) {
           return;
         }
@@ -732,7 +809,11 @@ export const RecipeImportPage = ({
   const answerMutation = useMutation(
     apiEffectQuery.mutationOptions({
       mutationFn: operations.answerAction,
-      onSuccess: (updated) => {
+      onError: (error, command) => {
+        settleWriteFailure(error, command.idempotencyKey);
+      },
+      onSuccess: (updated, command) => {
+        releaseResolved(command.idempotencyKey);
         if (!session.active) {
           return;
         }
@@ -755,7 +836,11 @@ export const RecipeImportPage = ({
   const cancelMutation = useMutation(
     apiEffectQuery.mutationOptions({
       mutationFn: operations.cancel,
-      onSuccess: (cancelled) => {
+      onError: (error, command) => {
+        settleWriteFailure(error, command.idempotencyKey);
+      },
+      onSuccess: (cancelled, command) => {
+        releaseResolved(command.idempotencyKey);
         if (!session.active) {
           return;
         }
@@ -768,6 +853,37 @@ export const RecipeImportPage = ({
     })
   );
 
+  const isWritePending =
+    createMutation.isPending ||
+    answerMutation.isPending ||
+    cancelMutation.isPending ||
+    confirmMutation.isPending;
+  const isWriteBlocked = isWritePending || retained.pending !== undefined;
+  const runCommand = (command: ImportCommand) => {
+    if (command.kind === "create") {
+      createMutation.mutate(command.input);
+    } else if (command.kind === "answer") {
+      answerMutation.mutate(command.input);
+    } else if (command.kind === "cancel") {
+      cancelMutation.mutate(command.input);
+    } else {
+      confirmMutation.mutate(command.input);
+    }
+  };
+  const submit = (command: ImportCommand) => {
+    if (isWriteBlocked) {
+      return;
+    }
+    runCommand(retained.retain(command.input.idempotencyKey, command));
+  };
+  const retryPending = () => {
+    const command = retained.pending;
+    if (command === undefined || isWritePending) {
+      return;
+    }
+    runCommand(command);
+  };
+
   const hasRequestFailure =
     session.active &&
     (actionQuery.isError ||
@@ -777,6 +893,20 @@ export const RecipeImportPage = ({
       createMutation.isError ||
       intentQuery.isError ||
       recipeQuery.isError);
+  const hasDefiniteWriteRejection = [
+    answerMutation.error,
+    cancelMutation.error,
+    confirmMutation.error,
+    createMutation.error,
+  ].some(isDefiniteRecipeImportRejection);
+  let requestFailureMessage = "Please try again later.";
+  if (retained.pending) {
+    requestFailureMessage =
+      "The request may have completed. Retry it to check the result.";
+  } else if (hasDefiniteWriteRejection) {
+    requestFailureMessage =
+      "The request was rejected. Check the details or sign in again before trying again.";
+  }
   const action = actionQuery.data;
   const recipe = recipeQuery.data;
 
@@ -810,11 +940,15 @@ export const RecipeImportPage = ({
           </div>
 
           <ImportRecipeForm
+            isBlocked={isWriteBlocked}
             isPending={createMutation.isPending}
             submit={(sourceUrl) =>
-              createMutation.mutate({
-                idempotencyKey: idempotencyKey(makeRequestId),
-                request: { source: { kind: "tiktok", url: sourceUrl } },
+              submit({
+                input: {
+                  idempotencyKey: idempotencyKey(makeRequestId),
+                  request: { source: { kind: "tiktok", url: sourceUrl } },
+                },
+                kind: "create",
               })
             }
           />
@@ -823,8 +957,9 @@ export const RecipeImportPage = ({
 
           <div aria-live="polite" className="flow-region">
             <ProcessingStatus
-              cancel={cancelMutation.mutate}
+              cancel={(input) => submit({ input, kind: "cancel" })}
               intent={intent}
+              isBlocked={isWriteBlocked}
               isCancelling={cancelMutation.isPending}
               isCreating={createMutation.isPending}
               makeRequestId={makeRequestId}
@@ -832,7 +967,16 @@ export const RecipeImportPage = ({
             {hasRequestFailure ? (
               <Alert>
                 <h2>This import couldn’t be completed</h2>
-                <p>Please try again later.</p>
+                <p>{requestFailureMessage}</p>
+                {retained.pending ? (
+                  <Button
+                    disabled={isWritePending}
+                    onClick={retryPending}
+                    type="button"
+                  >
+                    Retry import request
+                  </Button>
+                ) : null}
               </Alert>
             ) : null}
             <IntentOutcome intent={intent} />
@@ -848,9 +992,10 @@ export const RecipeImportPage = ({
             action?.status === "active" ? (
               <RecipeReview
                 action={action}
-                answer={answerMutation.mutate}
-                confirm={confirmMutation.mutate}
+                answer={(input) => submit({ input, kind: "answer" })}
+                confirm={(input) => submit({ input, kind: "confirm" })}
                 isAnswering={answerMutation.isPending}
+                isBlocked={isWriteBlocked}
                 isConfirming={confirmMutation.isPending}
                 makeRequestId={makeRequestId}
               />

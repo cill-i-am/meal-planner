@@ -38,7 +38,7 @@ If a representative environment is unavailable, name the unproven claim instead 
 - Use focused behavior tests and property tests for pure Domain Modules.
 - Use property tests for parsers, smart constructors, state machines, serialization round trips, normalization, idempotence, and lawful combinators when properties express the invariant better than examples.
 - Colocate tests with the owning module using `.test.ts` / `.test.tsx` unless the repository has an established different layout.
-- Use the repository's canonical test command. In Vite+ projects, run tests through `vp test` and import ordinary test APIs from `vite-plus/test` unless Effect-specific testing applies.
+- Use the repository's `pnpm test` command or a focused package test command. Ordinary tests import from `vitest`; Effect-specific testing follows [Effect conventions](EFFECT.md).
 - In non-Effect Vitest property tests, use the project-standard Fast-Check integration such as `@fast-check/vitest`.
 - In Effect projects, use `@effect/vitest` and Effect Schema-derived generation as described in [`EFFECT.md`](EFFECT.md).
 
@@ -123,7 +123,7 @@ For Drizzle persistence tests that do not depend on Cloudflare runtime semantics
 
 A hand-written in-memory fake is not proof of SQL/schema/transaction behavior.
 
-When the claim depends on Cloudflare D1, Durable Objects, Agents, workerd serialization, bindings, or runtime behavior, use `@cloudflare/vitest-pool-workers` and the relevant local binding/runtime.
+When the claim depends on Cloudflare D1, Durable Objects, Agents, workerd serialization, bindings, or runtime behavior, use the existing `@meal-planner/worker-tests` workspace with `@cloudflare/vitest-plugin` and the relevant local binding/runtime. Its runner versions and scope are described in [Cloudflare testing](CLOUDFLARE_ARCHITECTURE.md#cloudflare-testing).
 
 ## Runtime behavior
 

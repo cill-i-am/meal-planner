@@ -1,10 +1,15 @@
 # Refactor family setup around saved resources
 
-Status: active
+Status: done
 Delivery record: [PR #254](https://github.com/cill-i-am/meal-planner/pull/254)
 Owner: Codex, with Cillian for product decisions
 Baseline: `630e2d18e9ca3c060e82aaf84a578b33ac902a66` (fetched origin/main)
 Delivery: implementation, checks, review, and merge; no deployment
+
+The main history contains the reference implementation in `bc6eda2` (#254),
+the browser consolidation in `ba32bca` (#257), and session/production composition
+proof in `bd91aa6` (#259). This closes repository delivery; the email plan and
+onboarding plan retain their separate environment/product acceptance.
 
 ## Outcome and scope
 
@@ -170,7 +175,7 @@ frontend entry points only. Authenticated family journeys, native persistence,
 fault injection, and actual mail delivery were not rerun for this documentation
 change; the feature map specifies their prerequisites and evidence requirements.
 
-### Frontend architecture iteration — active
+### Frontend architecture iteration — implemented
 
 Cillian approved the frontend proposals and requested full use of TanStack Start
 on 27 September 2026. Move mutation lifecycle into feature hooks, narrow family
@@ -185,7 +190,7 @@ Acceptance for this iteration:
 - [x] Screens delegate retained-request handling, result classification, and cache invalidation.
 - [x] Family context no longer exposes account operations or a people-client factory.
 - [x] Unknown writes retain exact input and keys while mounted; partial invitation success remains visible.
-- [ ] Relevant behavior tests, browser/SSR verification, docs, review, and hosted checks pass.
+- [x] Relevant behavior tests, browser/SSR verification, docs, review, and hosted checks passed through the delivered reference iterations.
 
 The browser adapter supplies protocol transport, not domain authority. Exact
 request retention protects retries while a screen is mounted; it does not
@@ -281,8 +286,9 @@ public index. No new package or universal controller is needed.
 
 ### D31 — Browser components and native end-to-end journeys
 
-Vitest 4.1.11 uses its matching Playwright provider for Chromium DOM tests. Pure
-logic stays in Node; existing native API tests retain workerd. Playwright 1.63.0
+The delivered iteration used Vitest 4.1.11 with its matching Playwright provider
+for Chromium DOM tests. Use the [local-development guide](../how-to/local-development.md#verification)
+for the installed runner split. Pure logic stays in Node; existing native API tests retain workerd. Playwright 1.63.0
 page objects own screen interactions, while journey tests own user outcomes.
 The temporary Miniflare runtime uses production handlers, real D1 migrations,
 household SQLite and private-output bindings, with local mail capture. Cloudflare

@@ -2,11 +2,13 @@
 
 This TanStack Start website provides same-origin authentication, household people/profiles, private discovery and the recipe-import flow. The [plans](../../docs/plans/README.md) distinguish implemented slices from remaining work. Better Auth owns identity and organization membership. The browser never receives a bearer token or selects a synthetic profile.
 
+Use [local development](../../docs/how-to/local-development.md) for runtime and test commands.
+
 ## Account routes
 
 `/login` and `/signup` implement the Paper Auth screens with shadcn components. The `redirect` search parameter preserves a same-origin destination through account navigation. The protected workspace sends anonymous visitors to `/login`. Successful authentication refreshes account/family queries before navigation.
 
-`/forgot-password` requests a reset link; `/reset-password` validates the link and accepts a new password. Mail callbacks default to mocks, so request success does not prove email delivery. Use the [auth and family feature map](../../docs/reference/features/auth-family/README.md) for user paths and evidence, and the [family reference](../../docs/reference/family-api.md) for saved-resource setup behavior.
+`/forgot-password` requests a reset link; `/reset-password` validates the link and accepts a new password. Production composes the Cloudflare mail adapter behind the delivery gate; tests capture mail locally. Request success does not prove inbox delivery. Use the [auth and family feature map](../../docs/reference/features/auth-family/README.md) for user paths and evidence, and the [family reference](../../docs/reference/family-api.md) for saved-resource setup behavior.
 
 ## Runtime boundary
 
@@ -23,6 +25,6 @@ Better Auth uses its own Cloudflare D1 database through the official Drizzle ada
 - This slice supports email/password rather than username/password because Better Auth's native credential flow is email-based.
 - The household storage tracer uses the selected Better Auth organization ID only after API-side membership authorization; the browser cannot select a Durable Object directly.
 - It remains a single-intent recipe-import experience without a saved-recipe browser/listing, batch/run UI, general correction editor, or realtime import transport.
-- Batch and provider-settlement routes remain system-principal-only and cannot be selected in this UI. Operator-carousel remains household-principal scoped and is outside this page.
+- Batch and provider-settlement routes remain system-principal-only and cannot be selected in this UI.
 - The current UI presents the generated review and offers name and planning-tag editors when the canonical action marks those fields editable. It submits each typed answer with the current action version; no arbitrary correction editor is implied.
 - The web workspace makes no direct provider calls. Any TikTok/media/AI/provider work remains behind the canonical API, and this interface has no Tesco, basket, checkout, payment, publish, or external-message effects.

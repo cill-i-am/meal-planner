@@ -11,9 +11,9 @@ comparison only if it preserves the import code's behavior. Fewer lines or a new
 dependency is not the goal. Keep domain conversion, safety confirmation, and the
 provider acceptance and accounting rules.
 
-This plan owns both changes. The [review sequence](README.md) separates the JSON
-and form details, but the implementations can proceed independently when they do
-not edit the same files. Architecture tooling belongs in the separate
+This plan owns both changes. The JSON and form implementations can proceed independently when they do
+not edit the same files. The [parent](README.md) lists the remaining consolidation
+scopes. Architecture tooling belongs in the separate
 [cancelled guard assessment](04-architecture-guard.md), not a third requirement here.
 
 ## Scope

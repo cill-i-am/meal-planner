@@ -1,5 +1,7 @@
 import {
+  IntentRedirectedProblem,
   makeRecipeImportApiClientLayer,
+  ProblemDetails,
   RecipeImportApiClient,
 } from "@meal-planner/recipe-import-api";
 import type {
@@ -12,9 +14,13 @@ import type {
   RecipeImportIntentId,
   Recipe,
 } from "@meal-planner/recipe-import-api";
-import { Data, Effect, Layer } from "effect";
+import { Cause, Data, Effect, Layer, Option, Schema } from "effect";
 
-import { apiHttpLayer } from "../api-client/index.js";
+import {
+  apiHttpLayer,
+  queryFailure,
+  queryFailureCause,
+} from "../api-client/index.js";
 import type { ApiRuntime } from "../api-client/index.js";
 import { displayedIdentityHeaders } from "../auth/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
@@ -22,6 +28,27 @@ import type { DisplayedIdentity } from "../auth/index.js";
 class RecipeImportOperationError<Failure> extends Data.TaggedError(
   "RecipeImportOperationError"
 )<{ readonly cause: Failure }> {}
+
+/** Classify the current attempt; an earlier unknown result must still be preserved by the caller. */
+export const isDefiniteRecipeImportRejection = (error: Error | null) => {
+  const cause = queryFailureCause(error);
+  if (
+    Option.isSome(cause) &&
+    (cause.value.reasons.length !== 1 ||
+      !cause.value.reasons.every(Cause.isFailReason))
+  ) {
+    return false;
+  }
+  const failure = queryFailure(error);
+  if (!(failure instanceof RecipeImportOperationError)) {
+    return false;
+  }
+  const problem = Schema.decodeUnknownOption(ProblemDetails)(failure.cause);
+  return (
+    (Option.isSome(problem) && problem.value.status < 500) ||
+    Schema.is(IntentRedirectedProblem)(failure.cause)
+  );
+};
 
 const makeClientRunner = (runtime: ApiRuntime, scope: DisplayedIdentity) => {
   const layer = makeRecipeImportApiClientLayer({

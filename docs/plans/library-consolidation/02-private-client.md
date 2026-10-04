@@ -2,7 +2,7 @@
 
 Status: proposed
 Owner: unassigned
-Depends on: [working browser runtime](01-browser-runtime.md)
+Depends on: [completed shared browser execution](01-browser-runtime.md)
 Delivery: remove duplicated client-state code while preserving private data and commands
 
 ## Outcome and context
@@ -44,7 +44,7 @@ Use the following owners after the cleanup:
 
 | Data | Owner |
 | --- | --- |
-| Local and derived screen controls | The compatible shared browser runtime/state setup |
+| Local and derived screen controls | Mounted React state in the owning feature |
 | Chat display and messages arriving now | The existing published TanStack integration |
 | Saved private history and message IDs | The authorized private session and its transactions |
 | Confirmed profiles, versions, and saved command results | Household authority |
@@ -55,11 +55,11 @@ snapshots, and notification code only where the chosen library takes over. Do no
 build a generic event bus or keep separate writable transcripts in atoms, Query,
 and the SDK. Private or provisional cards are not confirmed Household facts.
 
-Reuse the [browser runtime's](01-browser-runtime.md) working registry, lifetime
-rules, and package choice. A Query fallback does not prove that atom bindings
-work. Resolve package gaps in the shared setup, rather than adding another Effect
-version or runtime. Tests using no real provider can proceed before the runtime
-switch.
+Use the [completed browser execution setup](01-browser-runtime.md) where an
+operation needs Effect/Query execution. It supplies no registry or local-state
+framework. Keep the private client's supported SDK connection owner and domain
+recovery mechanism. Provider-free tests can proceed independently of live quality
+evaluation.
 
 ### Keep access checks, recovery, and saving behavior
 
@@ -96,7 +96,7 @@ Read the client, panels, cards, and tests in
 confirmation. Trace the published adapter used after #218, rather than building
 one from an old example.
 
-Coordinate profile schemas, forms, shared registry, and lockfile edits with the
+Coordinate profile schemas, forms, shared transport, and lockfile edits with the
 [browser runtime](01-browser-runtime.md) and [form work](03-forms-and-json.md).
 
 ## Acceptance

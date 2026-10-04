@@ -1,6 +1,6 @@
 # TypeScript Contracts
 
-Use TypeScript to express what values and operations are valid. Do not use assertions to skip checks that have not happened. Keep interfaces precise, make values immutable by default, document exports and preserve compiler and lint checks.
+Use TypeScript to express what values and operations are valid. Do not use assertions to skip checks that have not happened. Keep interfaces precise, make values immutable by default, document non-obvious contracts and preserve compiler and lint checks.
 
 ## Non-negotiables
 
@@ -11,7 +11,7 @@ Use TypeScript to express what values and operations are valid. Do not use asser
 - Ordinary domain values, builders, interfaces, and classes do not expose callable `then` unless intentionally promise-like and documented.
 - Static checks and established compiler, lint, formatter, and test-runner contracts preserve strictness, exhaustive finite-variant handling, and existing safety checks; do not weaken them to admit changed code.
 - Caller-owned inputs are not mutated unless the function contract explicitly says it mutates a caller-provided builder/accumulator.
-- Direct exports and public methods on exported classes have standard JSDoc explaining their contract.
+- Document non-obvious public contracts, authority, invariants, lifetimes and failures. Use JSDoc where it helps callers; do not repeat names or type signatures.
 
 ## Strong defaults
 
@@ -21,7 +21,7 @@ Use TypeScript to express what values and operations are valid. Do not use asser
 - Use nullish semantics (`??`) for defaults that mean "absent".
 - Use direct optional assignment when the receiving type allows `undefined`.
 - Use guard clauses for invalid/precondition/failure/non-applicable paths to keep the main path flat.
-- Import directly from the file that owns the abstraction; avoid new barrels unless an external package interface requires one.
+- Within a feature, import directly from the file that owns the abstraction. Across features, use the curated public API or explicit boundary subpath described in [Feature slices](FEATURE_SLICE_ARCHITECTURE.md#public-api-and-imports).
 - Use `import type` / `export type` for type-only imports/exports.
 - Use precise file names; avoid `utils`, `helpers`, `common`, and `misc` dumping grounds.
 - Avoid TypeScript `namespace` unless interop requires it. Namespace imports are fine when they preserve a module shape.
@@ -312,18 +312,16 @@ Comments explain invariants, trade-offs, safety, and non-obvious domain rules. A
 
 Keep toolchain guidance here while it remains useful for ordinary TypeScript work. Split it into a linked reference only if it becomes too detailed for this page.
 
-For new TypeScript projects, prefer Vite+ as formatter/linter/type checker/test runner/task interface.
+Use the repository's scripts in [package.json](../../../package.json):
+`pnpm check`, `pnpm lint`, `pnpm format:check` and `pnpm test`. Run focused
+package checks when they cover the change. TypeScript owns type checking, Oxfmt
+owns formatting, Oxlint owns linting, and Vitest owns tests. Do not install another
+toolchain to follow a generic example.
 
-Use the repository's canonical static-check and test commands. In Vite+ projects:
-
-- `vp check` is the canonical static check;
-- `vp test` is the normal local/CI test command;
-- Oxfmt owns formatting with defaults;
-- Oxlint owns correctness/safety/performance/maintainability rules;
-- warnings and unused suppressions are not tolerated;
-- keep default correctness plugins and semantic checks for assertions, async loops, parameter mutation, caught-error preservation, JSDoc structure, accumulating spread, barrels, unsafe type operations, floating promises, invalid thrown values, nullish defaults, switch exhaustiveness, unknown catch callbacks, module mocks, and method spies;
-- test configuration lives in `vite.config.ts`, not standalone Vitest config;
-- ordinary tests import from `vite-plus/test`.
+Preserve warnings-as-errors, unused-suppression reporting and the established
+safety checks. Ordinary tests import from `vitest`; Effect-specific testing follows
+[Effect conventions](EFFECT.md#testing). Native Worker tests use the separate
+[Worker test workspace](../../../tools/worker-tests/package.json).
 
 Keep tool defaults unless a correctness requirement or demonstrated false positive justifies an override. Do not enable whole lint categories merely to enforce aesthetic preferences.
 
@@ -338,6 +336,6 @@ Check the relevant items below when reviewing a change. The sections above expla
 - `filter(Boolean)` accidentally removing `0`, `false`, or `""`.
 - Spread-in-reduce quadratic accumulation.
 - Conditional object spreads used only to avoid `undefined`.
-- Exported functions/classes/types without JSDoc.
+- Non-obvious public contracts, authority, lifetimes or failures left undocumented.
 - Adding barrels or dumping helpers into `utils.ts`.
 - Weakening lint/type config to make changed code pass.

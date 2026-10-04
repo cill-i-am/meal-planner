@@ -10,6 +10,6 @@ Define theme colours in OKLCH and consume them through semantic tokens. Use OKLC
 
 Every icon-only action needs an accessible name and a shadcn Tooltip that appears on hover and keyboard focus. Keep the tooltip accurate when the action changes, such as Show password / Hide password.
 
-Implement an agreed design without asking for approval again. For a new screen or substantial redesign, agree it in Paper before coding the UI. If Paper is unavailable, say so and continue with work the committed references support. Do not treat an old screenshot as the latest design.
+Implement an agreed design without asking for approval again. Within approved product direction, develop and inspect new screens or substantial redesigns in Paper, then own implementation and visual verification. Return to Cillian for unresolved changes to the intended experience or domain responsibilities, not routine layout choices. If Paper is unavailable, say so and continue with work the committed references support. Do not treat an old screenshot as the latest design.
 
 For form behavior, read [the form rules](../../docs/reference/forms.md). [PRODUCT.md](PRODUCT.md) and [.impeccable/config.json](.impeccable/config.json) are inputs to the design tools. Do not regenerate or replace them during unrelated work.

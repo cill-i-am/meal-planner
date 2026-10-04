@@ -12,6 +12,7 @@ import { Effect, Schema } from "effect";
 import { Miniflare } from "miniflare";
 import { expect, it } from "vitest";
 
+import { workerObservability } from "../../infrastructure/worker-observability.js";
 import { makeProviderAccountingDatabase } from "./provider-accounting.database.js";
 import {
   ProviderAccountingDispatchId,
@@ -98,7 +99,7 @@ const withAppliedBaseline = async (
     workers: [
       {
         config: {
-          compatibilityDate: "2026-07-14",
+          compatibilityDate: workerObservability.compatibility.date,
           env: {
             ProviderAccountingDatabase: {
               id: "ProviderAccountingDatabase",

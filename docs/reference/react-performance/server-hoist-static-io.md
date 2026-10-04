@@ -1,51 +1,24 @@
 ---
-title: Hoist Static I/O to Module Level
+title: Reuse Immutable Static Data
 impact: HIGH
-impactDescription: avoids repeated file/network I/O per request
-tags: server, io, performance, server-functions, server-routes
+impactDescription: avoids repeated static-data work where the runtime permits it
+tags: server, io, performance, cloudflare
 ---
 
-## Hoist Static I/O to Module Level
+## Reuse Immutable Static Data
 
-When loading immutable static assets or templates in server functions, server routes, or worker code, hoist the I/O operation to module level. Module-level code runs once when the module is first imported in the current process/isolate, not on every request.
+Reuse build-time static assets and immutable public data when repeated loading
+is a measured cost. Keep request-specific values, user data and secrets out of
+module state. Refreshable caches need a bounded lifetime and keys that preserve
+account isolation; see [explicit caches](server-cache-explicit.md).
 
-**Incorrect (reads template on every request):**
+Cloudflare Workers forbid `fetch()` at module scope: network I/O must run inside
+a handler. Do not retain request-owned I/O promises across Worker invocations.
+Use the established asset pipeline for bundled assets and perform runtime I/O
+inside its owning request or durable task. Isolate reuse is not guaranteed.
 
-```typescript
-import fs from "node:fs/promises";
+A Node process with a real filesystem has different startup rules. Its loader
+must still own startup failure and refresh policy; a Node example is not a Worker
+implementation.
 
-export async function renderEmail(data: EmailData) {
-  const template = await fs.readFile("./templates/welcome.html", "utf-8");
-  return applyTemplate(template, data);
-}
-```
-
-**Correct (starts static I/O once):**
-
-```typescript
-import fs from "node:fs/promises";
-
-const welcomeTemplate = fs.readFile("./templates/welcome.html", "utf-8");
-
-export async function renderEmail(data: EmailData) {
-  return applyTemplate(await welcomeTemplate, data);
-}
-```
-
-**Correct (static fetch starts once):**
-
-```typescript
-const logoData = fetch(new URL("./assets/logo.png", import.meta.url)).then(
-  (response) => response.arrayBuffer()
-);
-
-export async function getLogoBytes() {
-  return logoData;
-}
-```
-
-Use this pattern for static fonts, icons, templates, public config files, and reference data that does not change at runtime.
-
-Do not use this pattern for request-specific data, user data, secrets that should not persist in memory, large files that would waste memory, or values that need runtime refresh. Use a bounded TTL cache for refreshable data.
-
-Cloudflare may reuse worker isolates across requests, but reuse is not guaranteed. Treat module-level static I/O as an opportunistic performance optimization.
+Reference: [Cloudflare Fetch API](https://developers.cloudflare.com/workers/runtime-apis/fetch/).

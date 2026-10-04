@@ -4,9 +4,9 @@ Load this before finalizing nontrivial Alchemy work.
 
 ## Safety
 
-- Do not run deploy, destroy, mutating dev, bootstrap, token creation, adoption, state/profile clearing, or real-cloud tests without explicit confirmation.
+- Before deploy, destroy, mutating dev, bootstrap, token creation, adoption, state/profile clearing or real-cloud tests, check the actual provider, account, stack, stage and effects. Reuse task authorization covering that exact scope; request only missing authorization for effects outside it.
 - Treat `alchemy unsafe nuke` as catastrophic. Never run it from a broad or inferred approval.
-- Do not pass `--yes` locally unless the user explicitly requested the exact operation.
+- Use native `--yes` only after verifying existing authorization covers the actual target and effects; the flag grants no authority.
 - CI cleanup must hard-refuse `prod` and shared long-lived stages.
 - Never commit `.alchemy/`, credential stores, raw secrets, generated tokens, or unredacted connection strings.
 
