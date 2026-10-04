@@ -123,6 +123,52 @@ describe("agent conversation proposals", () => {
     expect(block.people[0]?.draftId).toMatch(/^[\da-f-]{36}$/u);
   });
 
+  it("keeps unchanged people identities when a corrected roster replaces the draft", () => {
+    const [first] = prepareConversationBlocks({
+      blocks: [
+        Schema.decodeUnknownSync(ConversationModelBlock)({
+          _tag: "RosterProposal",
+          creatorName: "Morgan",
+          familyName: "Morgan’s family",
+          people: [
+            { displayName: "Louise", kind: "adult" },
+            { displayName: "Seth", kind: "dependant" },
+          ],
+        }),
+      ],
+      context: setupContext,
+      focusPersonId: null,
+      scope: { _tag: "AccountPrivateSetup" },
+      turnId,
+    });
+    if (first?._tag !== "RosterProposal") {
+      throw new Error("Expected a roster");
+    }
+    const [corrected] = prepareConversationBlocks({
+      blocks: [
+        Schema.decodeUnknownSync(ConversationModelBlock)({
+          _tag: "RosterProposal",
+          creatorName: "Morgan",
+          familyName: "The Table",
+          people: [
+            { displayName: "Louise", kind: "adult" },
+            { displayName: "Farah", kind: "dependant" },
+          ],
+        }),
+      ],
+      context: setupContext,
+      focusPersonId: null,
+      previousRoster: first,
+      scope: { _tag: "AccountPrivateSetup" },
+      turnId,
+    });
+    if (corrected?._tag !== "RosterProposal") {
+      throw new Error("Expected a corrected roster");
+    }
+    expect(corrected.people[0]?.draftId).toBe(first.people[0]?.draftId);
+    expect(corrected.people[1]?.draftId).not.toBe(first.people[1]?.draftId);
+  });
+
   it("rejects person facts and family planning blocks in account-private setup", () => {
     expect(() =>
       prepareConversationBlocks({

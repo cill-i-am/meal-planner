@@ -1,5 +1,6 @@
 import {
   ConversationChatMetadata,
+  ConversationBlock,
   ConversationScope,
   ConversationTurnId,
 } from "@meal-planner/agent-conversations-api";
@@ -101,6 +102,7 @@ export const ConversationModelContext = Schema.Struct({
   planningContent: Schema.NullOr(PlanningContentSnapshot),
   profiles: Schema.Array(PersonProfile),
   setupAccountDisplayName: Schema.NullOr(Schema.String),
+  setupRoster: Schema.NullOr(ConversationBlock.members[1]),
 });
 export type ConversationModelContext = typeof ConversationModelContext.Type;
 

@@ -646,6 +646,7 @@ body {
   --radius-sm: calc(var(--control-radius) * 0.6);
   --radius-xl: 14px;
   --radius-2xl: 16px;
+  --radius-table: 50%;
   --color-card: var(--background);
   --color-card-foreground: var(--foreground);
   --color-popover: var(--background);

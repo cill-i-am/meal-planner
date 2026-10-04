@@ -48,15 +48,21 @@ test("reviews an assistant meal and a full two-week family plan, then changes on
     `planning-${crypto.randomUUID()}@example.test`
   );
   await page
-    .getByRole("textbox", { exact: true, name: "Tell us about your family" })
+    .getByRole("textbox", { exact: true, name: "Your message" })
     .fill("Set up my family");
   await page.getByRole("button", { exact: true, name: "Send message" }).click();
+  await expect(
+    page
+      .getByRole("region", { name: "Your family table" })
+      .getByRole("heading", { name: "The Test Table" })
+  ).toBeVisible();
   await page
-    .getByRole("button", { exact: true, name: "Create our family" })
-    .click();
-  const familyPage = new FamilyPage(page);
-  await familyPage.expectReview();
-  await familyPage.confirm();
+    .getByRole("textbox", { exact: true, name: "Your message" })
+    .fill("Yes, everyone looks right.");
+  await page.getByRole("button", { exact: true, name: "Send message" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Find the food they say yes to." })
+  ).toBeVisible();
 
   const familyResponse = await page.request.get("/v1/families");
   const [family] = Schema.decodeUnknownSync(Schema.NonEmptyArray(Family))(

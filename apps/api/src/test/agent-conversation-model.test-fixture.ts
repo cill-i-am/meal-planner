@@ -23,9 +23,15 @@ const ProviderRequest = Schema.Struct({
 type Context = typeof ConversationModelContext.Type;
 
 const assertFixtureScope = (context: Context, phrase: string) => {
+  const setupPhrase =
+    phrase === "Set up my family" ||
+    phrase === "Me, my partner Sam and our kids Maya and Leo." ||
+    phrase === "Change Leo to Theo, and call us the River family." ||
+    phrase === "Sam is an adult." ||
+    phrase === "Yes, everyone looks right.";
   if (
-    (context.family === null && phrase !== "Set up my family") ||
-    (context.family !== null && phrase === "Set up my family") ||
+    (context.family === null && !setupPhrase) ||
+    (context.family !== null && setupPhrase) ||
     (context.family === null && context.setupAccountDisplayName === null) ||
     (context.family !== null && context.setupAccountDisplayName !== null)
   ) {
@@ -180,30 +186,18 @@ const fullWeekProposal = (context: Context) => {
   };
 };
 
-/** Each accepted phrase has one bounded, context-derived proposal. Unknown input fails the fixture. */
-export const agentConversationModelResponse = async (
-  request: Pick<Request, "url" | "json">
-) => {
-  if (request.url !== "https://conversation-model.test/run") {
-    throw new Error(
-      "External network is forbidden in agent conversation tests"
-    );
-  }
-  const input = Schema.decodeUnknownSync(ProviderRequest)(await request.json());
-  const context = Schema.decodeUnknownSync(
-    Schema.fromJsonString(ConversationModelContext)
-  )(input.body.messages[1]?.content);
-  const latest = input.body.messages.at(-1);
-  if (latest?.role !== "user") {
-    throw new Error("Expected an admitted user turn");
-  }
-  assertFixtureScope(context, latest.content);
+interface FixtureOutput {
+  readonly reply: string;
+  readonly blocks: readonly Record<string, unknown>[];
+  readonly setupConfirmation?: { readonly _tag: "ConfirmDisplayedRoster" };
+}
 
-  let output: {
-    readonly reply: string;
-    readonly blocks: readonly Record<string, unknown>[];
-  };
-  if (latest.content === "Set up my family") {
+const setupFixtureOutput = (
+  context: Context,
+  phrase: string
+): FixtureOutput => {
+  let output: FixtureOutput;
+  if (phrase === "Set up my family") {
     const creatorName = context.setupAccountDisplayName;
     if (creatorName === null) {
       throw new Error("Authenticated account name is required for setup");
@@ -219,6 +213,114 @@ export const agentConversationModelResponse = async (
       ],
       reply: "Review this family and the people who will join it.",
     };
+  } else if (phrase === "Me, my partner Sam and our kids Maya and Leo.") {
+    const creatorName = context.setupAccountDisplayName;
+    if (creatorName === null || context.setupRoster !== null) {
+      throw new Error("Expected a fresh private family setup");
+    }
+    output = {
+      blocks: [
+        {
+          _tag: "RosterProposal",
+          creatorName,
+          familyName: `${creatorName.split(" ")[0]}’s family`,
+          people: [
+            { displayName: "Sam", kind: "adult" },
+            { displayName: "Maya", kind: "dependant" },
+            { displayName: "Leo", kind: "dependant" },
+          ],
+        },
+      ],
+      reply: "Does everyone look right?",
+    };
+  } else if (phrase === "Change Leo to Theo, and call us the River family.") {
+    const roster = context.setupRoster;
+    if (
+      roster === null ||
+      !roster.people.some(
+        (person) => person.displayName === "Leo" && person.kind === "dependant"
+      )
+    ) {
+      throw new Error("Expected the proposed roster with Leo");
+    }
+    output = {
+      blocks: [
+        {
+          _tag: "RosterProposal",
+          creatorName: roster.creatorName,
+          familyName: "River family",
+          people: roster.people.map((person) => ({
+            displayName:
+              person.displayName === "Leo" ? "Theo" : person.displayName,
+            kind: person.kind,
+          })),
+        },
+      ],
+      reply: "Does everyone look right now?",
+    };
+  } else if (phrase === "Sam is an adult.") {
+    const roster = context.setupRoster;
+    if (
+      roster === null ||
+      !roster.people.some((person) => person.displayName === "Sam")
+    ) {
+      throw new Error("Expected the proposed roster with Sam");
+    }
+    output = {
+      blocks: [
+        {
+          _tag: "RosterProposal",
+          creatorName: roster.creatorName,
+          familyName: roster.familyName,
+          people: roster.people.map((person) => ({
+            displayName: person.displayName,
+            kind: person.displayName === "Sam" ? "adult" : person.kind,
+          })),
+        },
+      ],
+      reply: "Sam is an adult. Does everyone look right?",
+    };
+  } else if (phrase === "Yes, everyone looks right.") {
+    if (context.setupRoster === null) {
+      throw new Error("Expected a proposed roster before confirmation");
+    }
+    output = {
+      blocks: [],
+      reply: "I’ll create your family now.",
+      setupConfirmation: { _tag: "ConfirmDisplayedRoster" },
+    };
+  } else {
+    throw new Error("Unexpected synthetic setup phrase");
+  }
+  return output;
+};
+
+/** Each accepted phrase has one bounded, context-derived proposal. Unknown input fails the fixture. */
+export const agentConversationModelResponse = async (
+  request: Pick<Request, "url" | "json">
+) => {
+  if (request.url !== "https://conversation-model.test/run") {
+    throw new Error(
+      "External network is forbidden in agent conversation tests"
+    );
+  }
+  const input = Schema.decodeUnknownSync(ProviderRequest)(await request.json());
+  const contextMessage = input.body.messages.find(
+    (message) =>
+      message.role === "system" && message.content.startsWith('{"family":')
+  );
+  const context = Schema.decodeUnknownSync(
+    Schema.fromJsonString(ConversationModelContext)
+  )(contextMessage?.content);
+  const latest = input.body.messages.at(-1);
+  if (latest?.role !== "user") {
+    throw new Error("Expected an admitted user turn");
+  }
+  assertFixtureScope(context, latest.content);
+
+  let output: FixtureOutput;
+  if (context.family === null) {
+    output = setupFixtureOutput(context, latest.content);
   } else if (asksFirstFoodQuestion(latest.content)) {
     output = {
       blocks: [
@@ -243,9 +345,13 @@ export const agentConversationModelResponse = async (
       ],
       reply: "Pasta sounds promising. Who enjoys it most?",
     };
-  } else if (latest.content === "Sam likes pasta") {
+  } else if (
+    latest.content === "Sam likes pasta" ||
+    latest.content === "Maya likes pasta"
+  ) {
+    const childName = latest.content === "Maya likes pasta" ? "Maya" : "Sam";
     const child = context.people.find(
-      (person) => person.kind === "dependant" && person.displayName === "Sam"
+      (person) => person.kind === "dependant" && person.displayName === childName
     );
     const profile = context.profiles.find(
       (value) => value.personId === child?.id
@@ -266,12 +372,12 @@ export const agentConversationModelResponse = async (
               targetKind: "dish",
             },
           },
-          explanation: "Sam likes pasta.",
+          explanation: `${childName} likes pasta.`,
           personId: child.id,
           profileVersion: profile.version,
         },
       ],
-      reply: "Sam's preference is ready for your review.",
+      reply: `${childName}'s preference is ready for your review.`,
     };
   } else if (
     latest.content === "Set our meal occasions" &&
@@ -371,7 +477,10 @@ export const agentConversationModelResponse = async (
             tool_calls: [
               {
                 function: {
-                  arguments: JSON.stringify(output),
+                  arguments: JSON.stringify({
+                    ...output,
+                    setupConfirmation: output.setupConfirmation ?? null,
+                  }),
                   name: "submitConversationTurn",
                 },
                 id: "synthetic-agent-conversation",

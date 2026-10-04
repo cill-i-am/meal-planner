@@ -1,4 +1,7 @@
-import type { ConversationScope } from "@meal-planner/agent-conversations-api";
+import type {
+  ConversationBlock,
+  ConversationScope,
+} from "@meal-planner/agent-conversations-api";
 import type { MealPlanResolution } from "@meal-planner/household-api";
 import { Schema } from "effect";
 
@@ -43,7 +46,11 @@ const compactChoice = (resolution: MealPlanResolution) => {
 /** Collapse repeated dates and omit audits before constructing a provider request. */
 export const projectConversationModelContext = (
   context: ConversationCanonicalContext,
-  scope: ConversationScope
+  scope: ConversationScope,
+  setupRoster: Extract<
+    ConversationBlock,
+    { _tag: "RosterProposal" }
+  > | null = null
 ): ConversationModelContext => {
   const { plan } = context;
   const setupAccountDisplayName =
@@ -55,6 +62,7 @@ export const projectConversationModelContext = (
       ...context,
       plan: null,
       setupAccountDisplayName,
+      setupRoster: scope._tag === "AccountPrivateSetup" ? setupRoster : null,
     });
   }
   const version = plan._tag === "Approved" ? plan.active : plan.proposed;
@@ -110,5 +118,6 @@ export const projectConversationModelContext = (
       totalCoverage: version.coverage.length,
     },
     setupAccountDisplayName,
+    setupRoster: null,
   });
 };

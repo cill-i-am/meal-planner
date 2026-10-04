@@ -30,8 +30,6 @@ import { cn } from "../../lib/utils.js";
 import type { AgentConversationController } from "./conversation-controller.js";
 import type { ConversationPerson } from "./conversation-surface.js";
 
-type Purpose = "food-discovery" | "family-setup";
-
 const failureMessage = (failure: string) => {
   switch (failure) {
     case "not_configured": {
@@ -147,14 +145,12 @@ const ConversationHistory = ({
   conversation,
   blocks,
   renderBlock,
-  purpose,
   localError,
   onRetry,
 }: {
   readonly conversation: AgentConversationController;
   readonly blocks: readonly ConversationBlock[];
   readonly renderBlock: (block: ConversationBlock) => ReactNode;
-  readonly purpose: Purpose;
   readonly localError: string | null;
   readonly onRetry: () => Promise<void>;
 }) => {
@@ -202,14 +198,12 @@ const ConversationHistory = ({
                     >
                       Refresh conversation
                     </Button>
-                    {purpose === "food-discovery" && (
-                      <Button
-                        render={<a href="#saved-food-facts" />}
-                        variant="outline"
-                      >
-                        Review saved facts
-                      </Button>
-                    )}
+                    <Button
+                      render={<a href="#saved-food-facts" />}
+                      variant="outline"
+                    >
+                      Review saved facts
+                    </Button>
                   </div>
                 </Alert>
               </MessageScrollerItem>
@@ -255,12 +249,8 @@ const ConversationHistory = ({
 };
 
 const composerPlaceholder = (
-  purpose: Purpose,
   selectedPerson: ConversationPerson | undefined
 ) => {
-  if (purpose === "family-setup") {
-    return "Tell us who’s at your table…";
-  }
   if (selectedPerson !== undefined) {
     return `Tell us about ${selectedPerson.displayName}…`;
   }
@@ -268,7 +258,6 @@ const composerPlaceholder = (
 };
 
 const ConversationComposer = ({
-  purpose,
   selectedPerson,
   draft,
   onDraftChange,
@@ -276,7 +265,6 @@ const ConversationComposer = ({
   disabled,
   buttonLabel,
 }: {
-  readonly purpose: Purpose;
   readonly selectedPerson: ConversationPerson | undefined;
   readonly draft: string;
   readonly onDraftChange: (value: string) => void;
@@ -294,9 +282,7 @@ const ConversationComposer = ({
     <FieldGroup>
       <Field>
         <FieldLabel htmlFor="food-conversation-message">
-          {purpose === "family-setup"
-            ? "Tell us about your family"
-            : "Your message"}
+          Your message
         </FieldLabel>
         <Textarea
           id="food-conversation-message"
@@ -304,7 +290,7 @@ const ConversationComposer = ({
           value={draft}
           disabled={disabled}
           onChange={(event) => onDraftChange(event.target.value)}
-          placeholder={composerPlaceholder(purpose, selectedPerson)}
+          placeholder={composerPlaceholder(selectedPerson)}
         />
       </Field>
       <Button
@@ -353,32 +339,9 @@ const FirstFoodInvitation = ({
   </div>
 );
 
-const EmptyConversation = ({
-  purpose,
-  disabled,
-  onStartFoodQuestions,
-}: {
-  readonly purpose: Purpose;
-  readonly disabled: boolean;
-  readonly onStartFoodQuestions: () => Promise<void>;
-}) => {
-  if (purpose === "family-setup") {
-    return (
-      <p className="text-muted-foreground px-5 py-6 text-sm leading-6">
-        Tell me who you’re feeding. We’ll make a family draft you can edit
-        before saving.
-      </p>
-    );
-  }
-  return (
-    <FirstFoodInvitation disabled={disabled} onStart={onStartFoodQuestions} />
-  );
-};
-
 const ReadyConversationPanel = ({
   conversation,
   selectedPerson,
-  purpose,
   blocks,
   renderBlock,
   localError,
@@ -390,7 +353,6 @@ const ReadyConversationPanel = ({
 }: {
   readonly conversation: AgentConversationController;
   readonly selectedPerson: ConversationPerson | undefined;
-  readonly purpose: Purpose;
   readonly blocks: readonly ConversationBlock[];
   readonly renderBlock: (block: ConversationBlock) => ReactNode;
   readonly localError: string | null;
@@ -434,20 +396,17 @@ const ReadyConversationPanel = ({
             conversation={conversation}
             blocks={blocks}
             renderBlock={renderBlock}
-            purpose={purpose}
             localError={localError}
             onRetry={onRetry}
           />
         </div>
       ) : (
-        <EmptyConversation
-          purpose={purpose}
+        <FirstFoodInvitation
           disabled={disabled}
-          onStartFoodQuestions={onStartFoodQuestions}
+          onStart={onStartFoodQuestions}
         />
       )}
       <ConversationComposer
-        purpose={purpose}
         selectedPerson={selectedPerson}
         draft={draft}
         onDraftChange={onDraftChange}
@@ -465,7 +424,6 @@ export const ConversationPresentation = ({
   selectedPersonId,
   onSelectPerson,
   onOpenPrivate,
-  purpose,
   blocks,
   renderBlock,
   localError,
@@ -482,7 +440,6 @@ export const ConversationPresentation = ({
     | ((personId: HouseholdPersonId | null) => void)
     | undefined;
   readonly onOpenPrivate?: (() => void) | undefined;
-  readonly purpose: Purpose;
   readonly blocks: readonly ConversationBlock[];
   readonly renderBlock: (block: ConversationBlock) => ReactNode;
   readonly localError: string | null;
@@ -497,11 +454,7 @@ export const ConversationPresentation = ({
   );
   return (
     <section
-      aria-label={
-        purpose === "family-setup"
-          ? "Family setup conversation"
-          : "Food conversation"
-      }
+      aria-label="Food conversation"
       className="flex min-w-0 flex-col gap-6"
     >
       {people.length > 0 && onSelectPerson !== undefined && (
@@ -536,7 +489,6 @@ export const ConversationPresentation = ({
         <ReadyConversationPanel
           conversation={conversation}
           selectedPerson={selectedPerson}
-          purpose={purpose}
           blocks={blocks}
           renderBlock={renderBlock}
           localError={localError}

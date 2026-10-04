@@ -53,6 +53,7 @@ const makeConversation = (
   act: vi.fn(),
   actionState: null,
   busy: false,
+  confirmSetup: async () => null,
   error: null,
   messages: [],
   pendingAction: null,

@@ -8,6 +8,7 @@ import type {
   FoodAnswer,
   ReviewedRoster,
   ConversationActionState,
+  ConversationChatMetadata,
 } from "@meal-planner/agent-conversations-api";
 import type {
   HouseholdPersonId,
@@ -45,6 +46,7 @@ export interface ConversationDisplayMessage {
 }
 
 export interface ConversationSubmitContext {
+  readonly displayedRoster?: ConversationChatMetadata["displayedRoster"];
   readonly focusPersonId?: HouseholdPersonId | null;
   readonly planId?: MealPlanId | null;
   readonly answerToBlockId?: ConversationBlockId | null;
@@ -71,6 +73,7 @@ export interface AgentConversationController {
     safetyConfirmation?: "I confirm this safety constraint change" | null
   ) => Promise<ConversationActionState>;
   readonly retryAction: () => Promise<ConversationActionState | null>;
+  readonly confirmSetup: () => Promise<ConversationActionState | null>;
   readonly refresh: () => Promise<void>;
 }
 
@@ -142,6 +145,7 @@ const ReadyConversation = ({
     useState<ConversationActionState | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [recoveryBlocked, setRecoveryBlocked] = useState(false);
+  const [recoveryReady, setRecoveryReady] = useState(false);
   const [localTurn, setLocalTurn] = useState<{
     readonly version: number;
     readonly fromMessage: number;
@@ -176,6 +180,8 @@ const ReadyConversation = ({
       setActionError(
         error instanceof Error ? error.message : "Saved action unavailable."
       );
+    } finally {
+      setRecoveryReady(true);
     }
   }, [storageKey, view.actions]);
 
@@ -222,7 +228,8 @@ const ReadyConversation = ({
         );
         setActionState(result);
         if (result._tag === "Committed" || result._tag === "Rejected") {
-          globalThis.sessionStorage.removeItem(storageKey);
+          // Keep the request until the conversation includes its receipt. A
+          // remount during navigation must never submit an old confirmation again.
           setPendingAction(null);
           await refresh();
           if (result._tag === "Committed" && scope._tag === "FamilyShared") {
@@ -268,6 +275,7 @@ const ReadyConversation = ({
       safetyConfirmation?: "I confirm this safety constraint change" | null
     ): Promise<ConversationActionState> => {
       if (
+        !recoveryReady ||
         recoveryBlocked ||
         pendingAction !== null ||
         block.status !== "proposed"
@@ -321,8 +329,83 @@ const ReadyConversation = ({
       setPendingAction(action);
       return dispatchAction(action);
     },
-    [dispatchAction, pendingAction, recoveryBlocked, storageKey]
+    [dispatchAction, pendingAction, recoveryBlocked, recoveryReady, storageKey]
   );
+
+  const confirmSetup =
+    useCallback(async (): Promise<ConversationActionState | null> => {
+      const turn = view.turns.at(-1);
+      const confirmation =
+        turn?.status === "succeeded" ? turn.setupConfirmation : null;
+      if (
+        scope._tag !== "AccountPrivateSetup" ||
+        !confirmation ||
+        !recoveryReady ||
+        recoveryBlocked
+      ) {
+        return null;
+      }
+      const recorded = view.actions.find(
+        (entry) => entry.action.actionId === confirmation.actionId
+      );
+      if (
+        recorded?.state._tag === "Committed" ||
+        recorded?.state._tag === "Rejected"
+      ) {
+        setActionState(recorded.state);
+        return recorded.state;
+      }
+      // Unknown actions need an explicit retry, including after a reload.
+      if (pendingAction !== null) {
+        return null;
+      }
+      const block = view.blocks.find(
+        (candidate) => candidate.id === confirmation.blockId
+      );
+      if (
+        block?._tag !== "RosterProposal" ||
+        block.revision !== confirmation.revision ||
+        block.status !== "proposed"
+      ) {
+        setActionError(
+          "The table changed. Check the current family before confirming again."
+        );
+        return null;
+      }
+      const action = Schema.decodeUnknownSync(ConversationAction)({
+        actionId: confirmation.actionId,
+        blockId: block.id,
+        decision: "accept",
+        expectedRevision: block.revision,
+        reviewedRoster: {
+          creatorName: block.creatorName,
+          familyName: block.familyName,
+          people: block.people,
+        },
+        safetyConfirmation: null,
+      });
+      try {
+        globalThis.sessionStorage.setItem(storageKey, JSON.stringify(action));
+      } catch {
+        setRecoveryBlocked(true);
+        setActionError(
+          "This browser can’t retain the save safely. Enable session storage and try again."
+        );
+        return null;
+      }
+      setPendingAction(action);
+      return await dispatchAction(action);
+    }, [
+      dispatchAction,
+      pendingAction,
+      recoveryBlocked,
+      recoveryReady,
+      scope,
+      storageKey,
+      view.actions,
+      view.blocks,
+      view.turns,
+    ]);
 
   const retryAction = useCallback(() => {
     if (pendingAction === null) {
@@ -335,6 +418,7 @@ const ReadyConversation = ({
     async (text: string, context: ConversationSubmitContext = {}) => {
       const trimmed = text.trim();
       if (
+        !recoveryReady ||
         recoveryBlocked ||
         pendingAction !== null ||
         chat.isLoading ||
@@ -345,6 +429,10 @@ const ReadyConversation = ({
       if (trimmed.length < 1 || trimmed.length > 2000) {
         throw new Error("Write between 1 and 2,000 characters.");
       }
+      setActionError(null);
+      setActionState((current) =>
+        current?._tag === "Rejected" ? null : current
+      );
       setLocalTurn({
         fromMessage: chat.messages.length,
         version: view.version,
@@ -352,6 +440,7 @@ const ReadyConversation = ({
       await chat.sendMessage(trimmed, {
         body: {
           answerToBlockId: context.answerToBlockId ?? null,
+          displayedRoster: context.displayedRoster ?? null,
           expectedVersion: view.version,
           focusPersonId: context.focusPersonId ?? null,
           foodAnswer: context.foodAnswer ?? null,
@@ -360,7 +449,7 @@ const ReadyConversation = ({
         whenBusy: "drop",
       });
     },
-    [chat, pendingAction, recoveryBlocked, view.version]
+    [chat, pendingAction, recoveryBlocked, recoveryReady, view.version]
   );
 
   const messages: ConversationDisplayMessage[] = [
@@ -393,6 +482,7 @@ const ReadyConversation = ({
       actionState?._tag === "Pending" ||
       chat.isLoading ||
       chat.sessionGenerating,
+    confirmSetup,
     error:
       actionError ??
       (chat.error
@@ -403,7 +493,7 @@ const ReadyConversation = ({
     recoveryBlocked,
     refresh,
     retryAction,
-    status: "ready",
+    status: recoveryReady ? "ready" : "loading",
     submit,
     view,
   };
@@ -446,7 +536,8 @@ export const AgentConversationProvider = ({
   const controller: AgentConversationController = {
     act: unavailable,
     actionState: null,
-    busy: true,
+    busy: !query.isError,
+    confirmSetup: unavailable,
     error: query.isError ? "The conversation could not be loaded." : null,
     messages: [],
     pendingAction: null,

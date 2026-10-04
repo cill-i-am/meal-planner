@@ -77,6 +77,7 @@ describe("agent conversation contract", () => {
     expect(
       decode({
         answerToBlockId: null,
+        displayedRoster: null,
         expectedVersion: 0,
         focusPersonId: null,
         foodAnswer: null,
@@ -90,6 +91,36 @@ describe("agent conversation contract", () => {
         expectedVersion: 0,
         text: "Help me plan our week",
         turnId: id,
+      })
+    ).toThrow();
+  });
+
+  it("requires a typed setup confirmation with a displayed roster reference", () => {
+    const decode = Schema.decodeUnknownSync(ConversationTurnRequest, {
+      onExcessProperty: "error",
+    });
+    expect(
+      decode({
+        answerToBlockId: null,
+        displayedRoster: { blockId: id, revision: 1 },
+        expectedVersion: 2,
+        focusPersonId: null,
+        foodAnswer: null,
+        planId: null,
+        text: "Yes, that looks right",
+        turnId: "run-confirm-roster",
+      }).displayedRoster
+    ).toEqual({ blockId: id, revision: 1 });
+    expect(() =>
+      decode({
+        answerToBlockId: null,
+        displayedRoster: { blockId: id, revision: 0 },
+        expectedVersion: 2,
+        focusPersonId: null,
+        foodAnswer: null,
+        planId: null,
+        text: "Yes",
+        turnId: "run-confirm-roster",
       })
     ).toThrow();
   });

@@ -6,10 +6,7 @@ export type {
   AgentConversationController,
   ConversationDisplayMessage,
 } from "./conversation-controller.js";
-export {
-  ConversationSurface,
-  FamilySetupConversationSurface,
-} from "./conversation-surface.js";
+export { ConversationSurface } from "./conversation-surface.js";
 export type {
   ConversationPerson,
   PlanProposalReview,
@@ -18,3 +15,10 @@ export type {
 } from "./conversation-surface.js";
 export { FamilyConversationPanel, OurTastesPage } from "./our-tastes-page.js";
 export { conversationCatalog } from "./conversation-catalog.js";
+export {
+  FamilySetupChat,
+  FamilySetupChatHistory,
+  FamilySetupChatComposer,
+  currentSetupRoster,
+  setupRosterValue,
+} from "./family-setup-chat.js";

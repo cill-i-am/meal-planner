@@ -1,6 +1,6 @@
 # Agent conversations
 
-The conversation Agent stores messages, proposed blocks, turn status, and action receipts. Saved family, person, profile, planning content, and meal-plan state stays with the services that already own it. A model reply can propose a change; an adult must review and accept the block before the API host sends a canonical command.
+The conversation Agent stores messages, proposed blocks, turn status, and action receipts. Saved family, person, profile, planning content, and meal-plan state stays with the services that already own it. A model reply can propose a change; an adult reviews the displayed block before the API host sends a canonical command. In private family setup, an explicit conversational confirmation can accept that displayed roster through the same action endpoint.
 
 ## Scopes and entry points
 
@@ -17,8 +17,9 @@ The host uses the existing [application access boundary](../../apps/api/src/feat
 
 Private family setup receives the signed-in account's display name from the
 authenticated API host. The assistant uses it for the creator and asks only for
-missing details, such as the family name. The person can correct the proposed
-name before saving. This setup field is null for shared family conversations;
+missing people's names or roles. An omitted family name becomes a visible label
+from the creator's given name, which the person can correct before saving.
+This setup field is null for shared family conversations;
 account email, session identifiers and credentials are not model context.
 
 For a shared turn, the [API host](../../apps/api/src/agent-conversations.ts) reads the family through `FamilyService` and obtains the current people, confirmed profile facts, planning content, and an explicitly selected meal plan through admitted household operations. The selected `planId` and `focusPersonId` locate existing records; they do not carry authority or saved content. A focused person must be active, and an adult may focus on themselves or a dependant. The host leaves out profile audit history and provisional facts. Private interview transcripts never enter shared conversation context.
@@ -28,6 +29,16 @@ The Agent retains the full admitted snapshot. The model receives bounded recent 
 ## Reviewed actions and recovery
 
 `beginAction` saves the exact decision and allocates stable command IDs before any canonical write. Repeating the same action ID and payload returns the saved reservation. A changed payload with that ID conflicts. The browser retains an action whose result is unknown and retries it with the same ID.
+
+Family setup renders assistant replies as plain messages and roster proposals as
+the persistent family table. Routine questions do not need generated UI blocks.
+The browser retains the exact submitted action in account-scoped session storage
+until a conversation read contains its terminal receipt. Reloading an unresolved
+save never replays it automatically; the adult can say **try again** or use
+**Check save** to retry that request. A committed setup action completes family
+setup and opens food discovery. Manual setup is an explicit alternative.
+
+For setup confirmation, the chat request names the roster block ID and revision currently on screen. The model returns a typed confirmation intent. The Agent accepts it only for the latest previously saved, still proposed private roster, and only when the turn contains no roster edits. It saves the exact roster reference and a stable action ID on the completed turn. The browser then submits that ID and the exact displayed roster through the existing setup action endpoint. The Agent rejects stale roster actions and requires actions using the confirmation ID to carry the exact roster fields. A corrected roster replaces the previous proposal; unchanged people keep their draft IDs. The assistant asks whether the displayed people look right in its reply text and can suggest a visible family label from the creator's given name when no family name was supplied.
 
 | Accepted block | Canonical command |
 | --- | --- |

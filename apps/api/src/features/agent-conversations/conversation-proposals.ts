@@ -377,6 +377,9 @@ export const prepareConversationBlocks = (input: {
   readonly blocks: readonly ConversationModelBlock[];
   readonly context: ConversationCanonicalContext;
   readonly focusPersonId: string | null;
+  readonly previousRoster?:
+    | Extract<ConversationBlock, { _tag: "RosterProposal" }>
+    | undefined;
   readonly scope: ConversationScope;
   readonly turnId: typeof ConversationTurnId.Type;
 }): readonly ConversationBlock[] => {
@@ -438,12 +441,22 @@ export const prepareConversationBlocks = (input: {
       });
     }
     if (block._tag === "RosterProposal") {
+      const available = new Map<string, string[]>();
+      for (const person of input.previousRoster?.people ?? []) {
+        const key = `${person.kind}:${person.displayName.toLocaleLowerCase()}`;
+        const ids = available.get(key) ?? [];
+        ids.push(person.draftId);
+        available.set(key, ids);
+      }
       return Schema.decodeUnknownSync(ConversationBlock)({
         ...block,
         ...common,
         people: block.people.map((person) => ({
           ...person,
-          draftId: crypto.randomUUID(),
+          draftId:
+            available
+              .get(`${person.kind}:${person.displayName.toLocaleLowerCase()}`)
+              ?.shift() ?? crypto.randomUUID(),
         })),
       });
     }

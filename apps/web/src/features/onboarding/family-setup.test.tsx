@@ -17,7 +17,13 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Schema } from "effect";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -68,8 +74,31 @@ const conversationView = Schema.decodeUnknownSync(ConversationView)({
   version: 1,
 });
 
-const makeTransport = (withProposal = false) => {
+const confirmationActionId = "00000000-0000-4000-8000-000000000101";
+const confirmedConversationView = Schema.decodeUnknownSync(ConversationView)({
+  ...conversationView,
+  turns: [
+    {
+      failure: null,
+      id: "00000000-0000-4000-8000-000000000102",
+      setupConfirmation: {
+        _tag: "ConfirmDisplayedRoster",
+        actionId: confirmationActionId,
+        blockId: conversationView.blocks[0]?.id,
+        revision: 1,
+      },
+      status: "succeeded",
+    },
+  ],
+});
+
+const makeTransport = (
+  mode: "unavailable" | "proposal" | "confirmation" = "unavailable"
+) => {
   let family: object | null = null;
+  let completed = 0;
+  let loseActionResponse = false;
+  let committedAction: ConversationAction | null = null;
   let failLeo = false;
   let denyFamily = false;
   const familyCreates: CreateFamily[] = [];
@@ -92,9 +121,26 @@ const makeTransport = (withProposal = false) => {
       });
     }
     if (path === "/v1/agent-conversations/setup") {
-      return withProposal
-        ? Response.json(conversationView)
-        : Response.json({ message: "Provider unavailable" }, { status: 503 });
+      return mode === "unavailable"
+        ? Response.json({ message: "Provider unavailable" }, { status: 503 })
+        : Response.json({
+            ...(mode === "confirmation"
+              ? confirmedConversationView
+              : conversationView),
+            actions:
+              committedAction === null
+                ? []
+                : [
+                    {
+                      action: committedAction,
+                      state: {
+                        _tag: "Committed",
+                        actionId: committedAction.actionId,
+                        familyId: "family-1",
+                      },
+                    },
+                  ],
+          });
     }
     if (
       path === "/v1/agent-conversations/setup/actions" &&
@@ -104,6 +150,7 @@ const makeTransport = (withProposal = false) => {
         await request.json()
       );
       acceptedActions.push(action);
+      committedAction = action;
       if (action.decision !== "accept" || !action.reviewedRoster) {
         throw new Error("A reviewed roster is required.");
       }
@@ -117,6 +164,10 @@ const makeTransport = (withProposal = false) => {
         updatedAtEpochMs: 1,
         version: 1,
       };
+      if (loseActionResponse) {
+        loseActionResponse = false;
+        throw new Error("The committed response was lost.");
+      }
       return Response.json({
         _tag: "Committed",
         actionId: action.actionId,
@@ -150,6 +201,17 @@ const makeTransport = (withProposal = false) => {
       return Response.json(family);
     }
     if (path === "/v1/families/family-1") {
+      return Response.json(family);
+    }
+    if (
+      path === "/v1/families/family-1/complete-setup" &&
+      request.method === "POST"
+    ) {
+      completed += 1;
+      family = {
+        ...family,
+        setup: { completedAtEpochMs: 1, status: "complete" },
+      };
       return Response.json(family);
     }
     if (path.endsWith("/organization/set-active")) {
@@ -217,11 +279,15 @@ const makeTransport = (withProposal = false) => {
     blockLeo: () => {
       failLeo = true;
     },
+    completed: () => completed,
     creatorRenames,
     denyFamily: () => {
       denyFamily = true;
     },
     familyCreates,
+    loseNextActionResponse: () => {
+      loseActionResponse = true;
+    },
     personCreates,
     transport,
   };
@@ -252,6 +318,11 @@ const renderSetup = (
         getParentRoute: () => root,
         path: "/setup/review",
       }),
+      createRoute({
+        component: () => <h1>Food discovery</h1>,
+        getParentRoute: () => root,
+        path: "/",
+      }),
     ]),
   });
   render(
@@ -281,9 +352,12 @@ afterEach(() => {
 it("creates a reviewed manual family and child when chat is unavailable", async () => {
   const fixture = makeTransport();
   const user = renderSetup(fixture);
-  await user.click(
-    await screen.findByRole("button", { name: "Set up without chat" })
-  );
+  const manualButton = await screen.findByRole("button", {
+    name: "Add manually instead",
+  });
+  await waitFor(() => expect(manualButton).toBeEnabled());
+  await user.click(manualButton);
+  await screen.findByLabelText("Family name");
   await user.type(screen.getByLabelText("Family name"), "Murphy family");
   await user.clear(screen.getByLabelText("Your name"));
   await user.type(screen.getByLabelText("Your name"), "Alexandra");
@@ -299,37 +373,119 @@ it("creates a reviewed manual family and child when chat is unavailable", async 
   ]);
 });
 
-it("submits an edited agent proposal through one reviewed action", async () => {
-  const fixture = makeTransport(true);
-  const user = renderSetup(fixture);
-  await screen.findByLabelText("Family name");
-  await user.clear(screen.getByLabelText("Family name"));
-  await user.type(screen.getByLabelText("Family name"), "Our family");
-  await user.click(screen.getByRole("button", { name: "Edit" }));
-  await user.click(screen.getByRole("button", { name: "Child" }));
-  await user.click(screen.getByRole("button", { name: "Create our family" }));
-  await screen.findByRole("heading", { name: "Review your family" });
+it("saves the exact displayed roster on an explicit confirmation and opens food discovery", async () => {
+  const fixture = makeTransport("confirmation");
+  renderSetup(fixture);
+  await screen.findByRole("heading", { name: "Food discovery" });
   expect(fixture.acceptedActions).toHaveLength(1);
   expect(fixture.acceptedActions[0]).toMatchObject({
+    actionId: confirmationActionId,
     blockId: conversationView.blocks[0]?.id,
     decision: "accept",
     expectedRevision: 1,
     reviewedRoster: {
-      familyName: "Our family",
-      people: [{ displayName: "Sam", kind: "dependant" }],
+      creatorName: "Alex",
+      familyName: "Murphy family",
+      people: [{ displayName: "Sam", kind: "adult" }],
     },
   });
+  expect(fixture.completed()).toBe(1);
   expect(fixture.familyCreates).toHaveLength(0);
   expect(fixture.personCreates).toHaveLength(0);
+});
+
+it("recovers a committed save after its response is lost and the page reloads", async () => {
+  const fixture = makeTransport("confirmation");
+  fixture.loseNextActionResponse();
+  renderSetup(fixture);
+  await screen.findByRole("button", { name: "Check save" });
+  expect(fixture.acceptedActions).toHaveLength(1);
+  expect(fixture.completed()).toBe(0);
+  cleanup();
+  renderSetup(fixture);
+  await screen.findByRole("heading", { name: "Food discovery" });
+  expect(fixture.acceptedActions).toHaveLength(1);
+  expect(fixture.completed()).toBe(1);
+});
+
+it("shows the chat roster at the table and carries it into manual editing", async () => {
+  const fixture = makeTransport("proposal");
+  const user = renderSetup(fixture);
+  await screen.findByRole("heading", { name: "Murphy family" });
+  const table = screen.getByRole("region", { name: "Your family table" });
+  expect(
+    within(table).getByRole("heading", { name: "Murphy family" })
+  ).toBeVisible();
+  expect(
+    within(table).getByRole("list", { name: "Family members" })
+  ).toHaveTextContent("AlexYou");
+  expect(
+    within(table).getByRole("list", { name: "Family members" })
+  ).toHaveTextContent("SamAdult");
+  expect(screen.queryByLabelText("Family name")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Create our family" })
+  ).not.toBeInTheDocument();
+  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  await user.type(
+    screen.getByRole("textbox", { name: "Your message" }),
+    "Could we add Rory?"
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Add manually instead" })
+    ).toBeEnabled()
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Add manually instead" })
+  );
+  expect(await screen.findByLabelText("Family name")).toHaveValue(
+    "Murphy family"
+  );
+  expect(
+    screen.queryByRole("textbox", { name: "Your message" })
+  ).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Your name")).toHaveValue("Alex");
+  await user.clear(screen.getByLabelText("Family name"));
+  await user.type(screen.getByLabelText("Family name"), "Weekend family");
+  await user.click(screen.getByRole("button", { name: "Edit" }));
+  expect(screen.getByLabelText("Name", { exact: true })).toHaveValue("Sam");
+  await user.clear(screen.getByLabelText("Name", { exact: true }));
+  await user.type(screen.getByLabelText("Name", { exact: true }), "Samuel");
+  await user.click(
+    screen.getByRole("button", { name: "Return to conversation" })
+  );
+  expect(
+    screen.queryByRole("textbox", { name: "Family name" })
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "Your message" })).toHaveValue(
+    "Could we add Rory?"
+  );
+  expect(
+    within(screen.getByRole("region", { name: "Your family table" })).getByRole(
+      "heading",
+      { name: "Murphy family" }
+    )
+  ).toBeVisible();
+  await user.click(
+    screen.getByRole("button", { name: "Add manually instead" })
+  );
+  expect(screen.getByRole("textbox", { name: "Family name" })).toHaveValue(
+    "Weekend family"
+  );
+  expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Samuel");
+  expect(fixture.familyCreates).toHaveLength(0);
 });
 
 it("keeps earlier people saved and retries the uncertain person with its original ID", async () => {
   const fixture = makeTransport();
   fixture.blockLeo();
   const user = renderSetup(fixture);
-  await user.click(
-    await screen.findByRole("button", { name: "Set up without chat" })
-  );
+  const manualButton = await screen.findByRole("button", {
+    name: "Add manually instead",
+  });
+  await waitFor(() => expect(manualButton).toBeEnabled());
+  await user.click(manualButton);
   await user.type(screen.getByLabelText("Family name"), "Murphy family");
   await user.click(screen.getByRole("button", { name: "Add someone" }));
   await user.type(screen.getByLabelText("Name", { exact: true }), "Maya");
@@ -368,9 +524,11 @@ it("keeps the draft editable after a definite family permission rejection", asyn
   const fixture = makeTransport();
   fixture.denyFamily();
   const user = renderSetup(fixture);
-  await user.click(
-    await screen.findByRole("button", { name: "Set up without chat" })
-  );
+  const manualButton = await screen.findByRole("button", {
+    name: "Add manually instead",
+  });
+  await waitFor(() => expect(manualButton).toBeEnabled());
+  await user.click(manualButton);
   await user.type(screen.getByLabelText("Family name"), "Murphy family");
   await user.click(screen.getByRole("button", { name: "Create our family" }));
   await screen.findByText(/This account can’t create a family/u);
@@ -394,9 +552,11 @@ it("continues from a confirmed family when its list refresh fails", async () => 
   }
   const fixture = makeTransport();
   const user = renderSetup(fixture, new FailingListRefreshClient());
-  await user.click(
-    await screen.findByRole("button", { name: "Set up without chat" })
-  );
+  const manualButton = await screen.findByRole("button", {
+    name: "Add manually instead",
+  });
+  await waitFor(() => expect(manualButton).toBeEnabled());
+  await user.click(manualButton);
   await user.type(screen.getByLabelText("Family name"), "Murphy family");
   await user.click(screen.getByRole("button", { name: "Create our family" }));
   await screen.findByRole("heading", { name: "Review your family" });

@@ -10,23 +10,48 @@ import { expect, test } from "./fixtures.js";
 import { AuthPage } from "./pages/auth-page.js";
 import { FamilyPage } from "./pages/family-page.js";
 
-test("a reviewed agent roster survives a lost save response and leads into food discovery", async ({
+test("chat corrections, confirmation and a lost save lead into food discovery", async ({
   page,
 }) => {
   await new AuthPage(page).signUp(
     "Alex",
     `agent-journey-${crypto.randomUUID()}@example.test`
   );
-  await page
-    .getByRole("textbox", { exact: true, name: "Tell us about your family" })
-    .fill("Set up my family");
-  await page.getByRole("button", { exact: true, name: "Send message" }).click();
-  await expect(page.getByLabel("Family name", { exact: true })).toHaveValue(
-    "The Test Table"
-  );
-  await page
-    .getByLabel("Family name", { exact: true })
-    .fill("Our reviewed table");
+  const sendSetup = async (message: string) => {
+    await page
+      .getByRole("textbox", { exact: true, name: "Your message" })
+      .fill(message);
+    await page
+      .getByRole("button", { exact: true, name: "Send message" })
+      .click();
+  };
+  const table = page.getByRole("region", { name: "Your family table" });
+  await sendSetup("Me, my partner Sam and our kids Maya and Leo.");
+  await expect(
+    table.getByRole("heading", { name: "Alex’s family" })
+  ).toBeVisible();
+  await expect(
+    table.getByRole("list", { name: "Family members" })
+  ).toContainText("Leo");
+  await expect(page.getByLabel("Family name", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Create our family" })
+  ).toHaveCount(0);
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
+  await sendSetup("Change Leo to Theo, and call us the River family.");
+  await expect(
+    table.getByRole("heading", { name: "River family" })
+  ).toBeVisible();
+  await expect(
+    table.getByRole("list", { name: "Family members" })
+  ).toContainText("Theo");
+  await expect(
+    table.getByRole("list", { name: "Family members" })
+  ).not.toContainText("Leo");
+  await sendSetup("Sam is an adult.");
+  await expect(
+    table.getByRole("list", { name: "Family members" })
+  ).toContainText("SamAdult");
 
   const submissions: ConversationAction[] = [];
   page.on("request", (request) => {
@@ -43,11 +68,9 @@ test("a reviewed agent roster survives a lost save response and leads into food 
     "/__test/conversation/lose-next-advance"
   );
   expect(fault.ok()).toBe(true);
-  await page
-    .getByRole("button", { exact: true, name: "Create our family" })
-    .click();
+  await sendSetup("Yes, everyone looks right.");
   await expect(
-    page.getByRole("button", { exact: true, name: "Check and continue" })
+    page.getByRole("button", { exact: true, name: "Check save" })
   ).toBeVisible();
 
   const firstRead = await page.request.get("/v1/families");
@@ -56,14 +79,25 @@ test("a reviewed agent roster survives a lost save response and leads into food 
     await firstRead.json()
   );
   expect(families).toHaveLength(1);
-  expect(families[0]?.name).toBe("Our reviewed table");
-  await page
-    .getByRole("button", { exact: true, name: "Check and continue" })
-    .click();
-  const family = new FamilyPage(page);
-  await family.expectReview();
+  expect(families[0]?.name).toBe("River family");
+  await page.getByRole("button", { exact: true, name: "Check save" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Find the food they say yes to." })
+  ).toBeVisible();
   expect(submissions).toHaveLength(2);
   expect(submissions[1]).toEqual(submissions[0]);
+  expect(submissions[0]).toMatchObject({
+    decision: "accept",
+    reviewedRoster: {
+      creatorName: "Alex",
+      familyName: "River family",
+      people: [
+        { displayName: "Sam", kind: "adult" },
+        { displayName: "Maya", kind: "dependant" },
+        { displayName: "Theo", kind: "dependant" },
+      ],
+    },
+  });
 
   const familyId = families[0].id;
   const peopleResponse = await page.request.get(
@@ -75,17 +109,18 @@ test("a reviewed agent roster survives a lost save response and leads into food 
   );
   expect(people.people.map((person) => person.displayName).toSorted()).toEqual([
     "Alex",
+    "Maya",
     "Sam",
+    "Theo",
   ]);
-  const sam = people.people.find((person) => person.displayName === "Sam");
-  expect(sam?.kind).toBe("dependant");
-  if (sam === undefined) {
-    throw new Error("The reviewed child must be saved.");
+  expect(
+    people.people.find((person) => person.displayName === "Sam")?.kind
+  ).toBe("adult");
+  const maya = people.people.find((person) => person.displayName === "Maya");
+  if (maya === undefined) {
+    throw new Error("The confirmed child must be saved.");
   }
   await page.reload();
-  await family.expectReview();
-  await family.confirm();
-  await page.goto("/?area=tastes");
   await expect(
     page.getByRole("heading", { name: "Find the food they say yes to." })
   ).toBeVisible();
@@ -113,7 +148,7 @@ test("a reviewed agent roster survives a lost save response and leads into food 
 
   await conversation
     .getByRole("textbox", { exact: true, name: "Your message" })
-    .fill("Sam likes pasta");
+    .fill("Maya likes pasta");
   await conversation
     .getByRole("button", { exact: true, name: "Send message" })
     .click();
@@ -129,7 +164,7 @@ test("a reviewed agent roster survives a lost save response and leads into food 
   ).toBeVisible();
 
   const savedProfile = await page.request.get(
-    `/v1/families/${familyId}/people/${sam.id}/profile`
+    `/v1/families/${familyId}/people/${maya.id}/profile`
   );
   expect(savedProfile.ok()).toBe(true);
   const profile = Schema.decodeUnknownSync(PersonProfile)(
@@ -145,6 +180,65 @@ test("a reviewed agent roster survives a lost save response and leads into food 
   await expect(
     conversation.getByText("Confirmed for family", { exact: true })
   ).toBeVisible();
+});
+
+test("a lost confirmation response recovers on reload without a second family", async ({
+  page,
+}) => {
+  await new AuthPage(page).signUp(
+    "Alex",
+    `agent-reload-${crypto.randomUUID()}@example.test`
+  );
+  const composer = page.getByRole("textbox", {
+    exact: true,
+    name: "Your message",
+  });
+  await composer.fill("Me, my partner Sam and our kids Maya and Leo.");
+  await page.getByRole("button", { exact: true, name: "Send message" }).click();
+  await expect(
+    page
+      .getByRole("region", { name: "Your family table" })
+      .getByRole("heading", { name: "Alex’s family" })
+  ).toBeVisible();
+  const submissions: ConversationAction[] = [];
+  page.on("request", (request) => {
+    if (
+      request.method() === "POST" &&
+      request.url().endsWith("/agent-conversations/setup/actions")
+    ) {
+      submissions.push(
+        Schema.decodeUnknownSync(ConversationAction)(request.postDataJSON())
+      );
+    }
+  });
+  const fault = await page.request.post(
+    "/__test/conversation/lose-next-advance"
+  );
+  expect(fault.ok()).toBe(true);
+  await composer.fill("Yes, everyone looks right.");
+  await page.getByRole("button", { exact: true, name: "Send message" }).click();
+  await expect(
+    page.getByRole("button", { exact: true, name: "Check save" })
+  ).toBeVisible();
+  expect(submissions).toHaveLength(1);
+  await page.reload();
+  await expect(
+    page.getByRole("button", { exact: true, name: "Check save" })
+  ).toBeVisible();
+  expect(submissions).toHaveLength(1);
+  await page.getByRole("button", { exact: true, name: "Check save" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Find the food they say yes to." })
+  ).toBeVisible();
+  expect(submissions).toHaveLength(2);
+  expect(submissions[1]).toEqual(submissions[0]);
+  const response = await page.request.get("/v1/families");
+  const families = Schema.decodeUnknownSync(Schema.NonEmptyArray(Family))(
+    await response.json()
+  );
+  expect(families).toHaveLength(1);
+  expect(families[0]?.name).toBe("Alex’s family");
+  expect(families[0]?.setup.status).toBe("complete");
 });
 
 test("family conversation requires a linked active adult as well as account membership", async ({

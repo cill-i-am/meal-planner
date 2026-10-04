@@ -55,14 +55,17 @@ export const SetupFrame = ({
   children,
   action,
   step,
+  contentClassName,
 }: {
   readonly children: ReactNode;
   readonly action?: ReactNode;
   readonly step?: "family" | "people" | "ready";
+  readonly contentClassName?: string;
 }) => {
   const hydrated = useHydrated();
   return (
     <AccountLayout
+      contentClassName={contentClassName}
       headerAction={
         <fieldset disabled={!hydrated} className="contents">
           {action}

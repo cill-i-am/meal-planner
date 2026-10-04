@@ -8,7 +8,7 @@
         "value": "inter",
         "files": ["apps/web/src/styles.css"],
         "createdAt": "2026-09-28T22:51:14.730Z",
-        "reason": "Agent: apps/web/DESIGN.md specifies Inter for body text and controls; approved connected-entry and family-edit Paper designs pair it with Instrument Serif display headings."
+        "reason": "Project DESIGN.md and the approved Paper foundation specify Inter for body text with Instrument Serif display headings; retain the agreed type system."
       }
     ]
   }

@@ -16,8 +16,10 @@ import { SetupFrame } from "./setup-ui.js";
 
 export const ManualFamilySetup = ({
   onChat,
+  initial,
 }: {
   readonly onChat: () => void;
+  readonly initial?: ReviewedRoster | null;
 }) => {
   const account = useAccount();
   const actions = useFamilyActions();
@@ -58,7 +60,7 @@ export const ManualFamilySetup = ({
   const busy = manual.state === "pending" || opening || loggingOut;
   return (
     <SetupFrame
-      step="family"
+      contentClassName="justify-start py-6 md:py-10"
       action={
         <Button
           variant="link"
@@ -79,27 +81,28 @@ export const ManualFamilySetup = ({
         </Button>
       }
     >
-      <div className="mx-auto grid w-full max-w-7xl gap-8 px-4 py-10 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] md:gap-14 md:px-10 md:py-20">
+      <div className="mx-auto grid w-full max-w-7xl gap-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] md:gap-14">
         <div className="flex flex-col items-start gap-6">
           <h1
-            id="auth-title"
+            id="manual-family-title"
             tabIndex={-1}
             className="font-display text-5xl leading-none tracking-tight outline-none md:text-7xl"
           >
             Who’s at
-            <br />
+            <br className="hidden lg:block" />
             your table?
           </h1>
           <p className="text-muted-foreground max-w-lg text-base leading-7">
-            Add everyone you plan meals for. Check the details, then create your
-            family.
+            {initial
+              ? "Edit your table’s draft here. Your changes stay here when you return to the conversation."
+              : "Add everyone you plan meals for. Check the details, then create your family."}
           </p>
           <Button
             variant="link"
             disabled={busy || manual.state === "unknown"}
             onClick={onChat}
           >
-            Tell us in your own words
+            Return to conversation
           </Button>
           {manual.familyId && manual.state === "unknown" && (
             <OperationError>
@@ -151,11 +154,13 @@ export const ManualFamilySetup = ({
           )}
         </div>
         <FamilyRosterEditor
-          initial={{
-            creatorName: account.user.name,
-            familyName: "",
-            people: [],
-          }}
+          initial={
+            initial ?? {
+              creatorName: account.user.name,
+              familyName: "",
+              people: [],
+            }
+          }
           onAccept={save}
           onRetry={retry}
           status={manual.state}

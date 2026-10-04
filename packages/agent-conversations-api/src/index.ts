@@ -417,6 +417,9 @@ export const SubmitConversationTurn = Schema.Struct({
     Schema.check(Schema.isMaxLength(4))
   ),
   reply: MessageText,
+  setupConfirmation: Schema.NullOr(
+    Schema.Struct({ _tag: Schema.Literal("ConfirmDisplayedRoster") })
+  ),
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type SubmitConversationTurn = typeof SubmitConversationTurn.Type;
 
@@ -441,6 +444,14 @@ export const ConversationTurnState = Schema.Struct({
     ])
   ),
   id: ConversationTurnId,
+  setupConfirmation: Schema.NullOr(
+    Schema.Struct({
+      _tag: Schema.Literal("ConfirmDisplayedRoster"),
+      actionId: ConversationActionId,
+      blockId: ConversationBlockId,
+      revision: Revision,
+    })
+  ),
   status: Schema.Literals(["running", "succeeded", "failed", "interrupted"]),
 });
 export type ConversationTurnState = typeof ConversationTurnState.Type;
@@ -518,6 +529,9 @@ export type ConversationView = typeof ConversationView.Type;
 
 export const ConversationChatMetadata = Schema.Struct({
   answerToBlockId: Schema.NullOr(ConversationBlockId),
+  displayedRoster: Schema.NullOr(
+    Schema.Struct({ blockId: ConversationBlockId, revision: Revision })
+  ),
   expectedVersion: ConversationView.fields.version,
   focusPersonId: Schema.NullOr(HouseholdPersonId),
   foodAnswer: Schema.NullOr(FoodAnswer),
@@ -528,6 +542,7 @@ export type ConversationChatMetadata = typeof ConversationChatMetadata.Type;
 /** The dedicated SSE bridge accepts this closed body; the host injects authority. */
 export const ConversationTurnRequest = Schema.Struct({
   answerToBlockId: Schema.NullOr(ConversationBlockId),
+  displayedRoster: ConversationChatMetadata.fields.displayedRoster,
   expectedVersion: ConversationView.fields.version,
   focusPersonId: Schema.NullOr(HouseholdPersonId),
   foodAnswer: Schema.NullOr(FoodAnswer),

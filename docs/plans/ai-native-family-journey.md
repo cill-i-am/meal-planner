@@ -137,3 +137,51 @@ creator linking, person creation and exact mutation replay without duplication.
 Shared planning model quality remains unverified. Private interview inference
 and recipe import workflows remain unconfigured locally. See the
 [local guide](../how-to/local-development.md).
+
+
+## Conversational family creation refinement
+
+The October follow-up replaces the chat-to-form handoff with plain conversation
+and a persistent family table. The authenticated name fills the first place.
+People arrive from typed proposals, corrections update the table, and explicit
+agreement saves the exact displayed family and opens food discovery automatically.
+Manual entry is a deliberate switch; unsent chat and manual edits survive switching
+modes. Remote state and uncertain writes remain owned by the existing controller,
+Agent and canonical family services.
+
+Five implementation and review passes were completed:
+
+1. **Interaction:** replaced generated text cards and click approval with plain
+   questions, typed conversational agreement and a stable reviewed action.
+2. **Table and motion:** retained the table throughout setup; added place arrivals,
+   short exits and name transitions, with reduced motion and a quiet send sound.
+3. **Conversation:** shortened replies, removed UI jargon and duplicate questions,
+   used account context and aligned the composer with desktop dialogue.
+4. **Recovery and access:** retained exact unknown actions across reload; fixed the
+   unavailable-chat manual path, disabled composer styling and manual draft loss.
+   Added live table announcements, a scroll tooltip and a concise save cue.
+5. **Independent critique:** separate GPT-6 Sol reviewers evaluated design and ran
+   the narrow Impeccable detector. Visual findings were corrected on desktop and
+   mobile. The final design assessment scored 30/40; all three detector scans were
+   clean. Overlay injection was not verified because the alternate browser
+   preflight stalled; no overlay is claimed.
+
+The [conversation-first Paper page](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-L-0)
+contains twelve desktop/mobile states: initial place, displayed draft, correction,
+agreement and saving, uncertain-save retry and deliberate manual entry. Existing
+approved designs remain in their original pages. Paper uses fictional sample names.
+[Jakub Krehel's Better UI skills](https://github.com/jakubkrehel/skills) informed
+motion, layout, accessibility and copy; no dependencies were upgraded.
+
+Verification includes 19 focused API tests and 7 shared-contract tests, 14 browser
+component tests, and the native family journey on Chromium and mobile WebKit.
+The separate planning journey passed Chromium after restarting its disposable
+fixture; its earlier 429 came from reusing synthetic client IPs across runs.
+Type checks, narrow lint, formatting, documentation links and migration checks
+passed. Final native results are recorded with the completed branch commit.
+
+A separate live Alchemy run used GPT-6 Luna through the existing Cloudflare-billed
+Gateway. A disposable account described four people, changed Leo to Theo and the
+family name, explicitly agreed, reached food discovery without another click and
+retained all corrected people after reload. This proves that exercised live path;
+it does not replace the deterministic recovery tests or claim deployed changes.

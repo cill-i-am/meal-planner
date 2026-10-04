@@ -1,58 +1,163 @@
 import type {
-  ConversationBlock,
-  ConversationActionState,
+  ConversationActionId,
   ReviewedRoster,
 } from "@meal-planner/agent-conversations-api";
+import type { Family } from "@meal-planner/families";
 import type { HouseholdOrganizationId } from "@meal-planner/household-api";
 import { useNavigate } from "@tanstack/react-router";
 import { Effect } from "effect";
-import { useState } from "react";
+import { Activity, useEffect, useRef, useState } from "react";
 
 import { OperationError } from "../../components/operation-error.js";
 import { Button } from "../../components/ui/button.js";
 import {
   AgentConversationProvider,
-  FamilySetupConversationSurface,
+  FamilySetupChat,
+  FamilySetupChatComposer,
+  FamilySetupChatHistory,
+  setupRosterValue,
   useAgentConversation,
 } from "../agent-conversations/index.js";
 import { useAccount } from "../auth/index.js";
-import { useFamilyActions, useFamilyList } from "../family/index.js";
-import { FamilyRosterEditor } from "./family-proposal-review.js";
+import {
+  useCompleteFamilySetup,
+  useFamilyActions,
+  useFamilyList,
+} from "../family/index.js";
+import { FamilyTable } from "./family-table.js";
 import { ManualFamilySetup } from "./manual-family-setup.js";
 import { SetupFrame } from "./setup-ui.js";
 
-type RosterProposal = Extract<
-  ConversationBlock,
-  { readonly _tag: "RosterProposal" }
->;
 const setupScope = { _tag: "AccountPrivateSetup" } as const;
 
-const FamilyConversationSetup = ({
-  onManual,
+const tableStage = (
+  familyId: HouseholdOrganizationId | null,
+  saving: boolean,
+  unknown: boolean
+): "draft" | "saving" | "saved" | "unknown" => {
+  if (familyId) {
+    return "saved";
+  }
+  if (unknown) {
+    return "unknown";
+  }
+  return saving ? "saving" : "draft";
+};
+
+const JoinedFamilies = ({
+  families,
+  busy,
+  onSelect,
 }: {
-  readonly onManual: () => void;
+  readonly families: readonly Family[] | undefined;
+  readonly busy: boolean;
+  readonly onSelect: (id: HouseholdOrganizationId) => Promise<void>;
 }) => {
+  if (!families || families.length === 0) {
+    return null;
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-muted-foreground text-sm">Continue with</span>
+      {families.map((family) => (
+        <Button
+          key={family.id}
+          variant="link"
+          disabled={busy}
+          onClick={() => {
+            void onSelect(family.id);
+          }}
+        >
+          {family.name}
+        </Button>
+      ))}
+    </div>
+  );
+};
+
+const FamilySetupConversationError = () => {
+  const conversation = useAgentConversation();
+  if (conversation.status === "unavailable") {
+    return (
+      <OperationError>
+        Chat couldn’t load. You can add your family manually.
+      </OperationError>
+    );
+  }
+  if (conversation.actionState?._tag === "Rejected") {
+    return (
+      <OperationError>
+        The draft changed before it could save. Check the table and tell me what
+        to change.
+      </OperationError>
+    );
+  }
+  return null;
+};
+
+const FamilyConversationSetup = () => {
   const account = useAccount();
   const conversation = useAgentConversation();
   const families = useFamilyList();
   const actions = useFamilyActions();
+  const finish = useCompleteFamilySetup();
   const navigate = useNavigate();
+  const [mode, setMode] = useState<"conversation" | "manual">("conversation");
+  const [manualSession, setManualSession] = useState<{
+    readonly initial: ReviewedRoster | null;
+  } | null>(null);
   const [opening, setOpening] = useState(false);
   const [navigationError, setNavigationError] = useState(false);
   const [logoutError, setLogoutError] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const attemptedConfirmation = useRef<ConversationActionId | null>(null);
+  const attemptedNavigation = useRef<HouseholdOrganizationId | null>(null);
+  const roster = setupRosterValue(conversation);
+  const busy = opening || loggingOut || conversation.busy;
+  const committedFamily =
+    conversation.actionState?._tag === "Committed"
+      ? conversation.actionState.familyId
+      : null;
+  const confirmation = conversation.view?.turns.at(-1)?.setupConfirmation;
 
-  const proposals =
-    conversation.view?.blocks.filter(
-      (block): block is RosterProposal =>
-        block._tag === "RosterProposal" &&
-        (block.status === "proposed" || block.status === "pending")
-    ) ?? [];
-  const proposal = proposals.at(-1);
-  const actionBusy = conversation.actionState?._tag === "Pending";
-  const busy = opening || loggingOut || actionBusy;
+  const continueToFood = async (familyId: HouseholdOrganizationId) => {
+    setOpening(true);
+    setNavigationError(false);
+    try {
+      await finish.mutateAsync(familyId);
+      await Effect.runPromise(actions.selectFamily(familyId));
+      await navigate({ href: "/?area=tastes" });
+    } catch {
+      setNavigationError(true);
+    } finally {
+      setOpening(false);
+    }
+  };
 
-  const openReview = async (familyId: HouseholdOrganizationId) => {
+  useEffect(() => {
+    if (
+      !confirmation ||
+      conversation.status !== "ready" ||
+      conversation.busy ||
+      conversation.pendingAction !== null ||
+      conversation.recoveryBlocked ||
+      attemptedConfirmation.current === confirmation.actionId
+    ) {
+      return;
+    }
+    attemptedConfirmation.current = confirmation.actionId;
+    void conversation.confirmSetup();
+  }, [confirmation, conversation]);
+
+  useEffect(() => {
+    if (!committedFamily || attemptedNavigation.current === committedFamily) {
+      return;
+    }
+    attemptedNavigation.current = committedFamily;
+    void continueToFood(committedFamily);
+  }, [committedFamily]);
+
+  const openExistingFamily = async (familyId: HouseholdOrganizationId) => {
     setOpening(true);
     setNavigationError(false);
     try {
@@ -64,168 +169,125 @@ const FamilyConversationSetup = ({
       setOpening(false);
     }
   };
-  const handleActionResult = async (state: ConversationActionState | null) => {
-    if (state?._tag === "Committed" && state.familyId) {
-      await openReview(state.familyId);
-    }
-  };
-  const accept = async (reviewed: ReviewedRoster) => {
-    if (!proposal) {
-      return;
-    }
-    const result = await conversation.act(proposal, "accept", reviewed);
-    await handleActionResult(result);
-  };
-  const retry = async () => {
-    const result = await conversation.retryAction();
-    await handleActionResult(result);
-  };
 
   return (
-    <SetupFrame
-      step="family"
-      action={
-        <Button
-          variant="link"
-          disabled={busy || conversation.pendingAction !== null}
-          onClick={async () => {
-            setLoggingOut(true);
-            setLogoutError(false);
-            try {
-              await Effect.runPromise(account.logout("/setup"));
-            } catch {
-              setLogoutError(true);
-            } finally {
-              setLoggingOut(false);
-            }
-          }}
-        >
-          Log out
-        </Button>
-      }
+    <FamilySetupChat
+      conversation={{ ...conversation, busy }}
+      name={account.user.name}
     >
-      <div className="mx-auto grid w-full max-w-7xl gap-8 px-4 py-10 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] md:gap-14 md:px-10 md:py-20">
-        <div className="flex min-w-0 flex-col items-start gap-6">
-          <div className="flex flex-col gap-5">
-            <h1
-              id="auth-title"
-              tabIndex={-1}
-              className="font-display text-5xl leading-none tracking-tight outline-none md:text-7xl"
+      {manualSession !== null && (
+        <Activity mode={mode === "manual" ? "visible" : "hidden"}>
+          <ManualFamilySetup
+            initial={manualSession.initial}
+            onChat={() => setMode("conversation")}
+          />
+        </Activity>
+      )}
+      <Activity mode={mode === "conversation" ? "visible" : "hidden"}>
+        <SetupFrame
+          contentClassName="justify-start py-6 md:py-10"
+          action={
+            <Button
+              variant="link"
+              disabled={busy || conversation.pendingAction !== null}
+              onClick={async () => {
+                setLoggingOut(true);
+                setLogoutError(false);
+                try {
+                  await Effect.runPromise(account.logout("/setup"));
+                } catch {
+                  setLogoutError(true);
+                } finally {
+                  setLoggingOut(false);
+                }
+              }}
             >
-              Who’s at
-              <br />
-              your table?
-            </h1>
-            <p className="text-muted-foreground max-w-lg text-base leading-7">
-              Tell me who you’re feeding. We’ll build your family together.
-            </p>
-          </div>
-          <Button
-            variant="link"
-            disabled={busy || conversation.pendingAction !== null}
-            onClick={onManual}
-          >
-            Set up without chat
-          </Button>
-          {conversation.status === "unavailable" && (
-            <OperationError>
-              Chat is unavailable just now. You can still set up your family
-              yourself.
-            </OperationError>
-          )}
-          {conversation.status !== "unavailable" && (
-            <FamilySetupConversationSurface conversation={conversation} />
-          )}
-          {families.data && families.data.length > 0 && (
-            <div className="flex w-full flex-col gap-2">
-              <p className="text-muted-foreground text-sm">
-                Or continue with a family you’ve already joined:
-              </p>
-              {families.data.map((family) => (
-                <Button
-                  key={family.id}
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => {
-                    void openReview(family.id);
-                  }}
-                >
-                  {family.name}
-                </Button>
-              ))}
+              Log out
+            </Button>
+          }
+        >
+          <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 md:gap-8">
+            <div className="grid min-w-0 gap-x-12 gap-y-5 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:items-center">
+              <h1
+                id="auth-title"
+                tabIndex={-1}
+                className="font-display text-5xl leading-none tracking-tight outline-none sm:text-6xl lg:col-start-1 lg:row-start-1 lg:text-7xl"
+              >
+                Who’s at
+                <br className="hidden lg:block" /> your table?
+              </h1>
+              <div className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+                <FamilyTable
+                  creatorName={account.user.name}
+                  roster={roster}
+                  stage={tableStage(
+                    committedFamily,
+                    opening || conversation.actionState?._tag === "Pending",
+                    conversation.actionState?._tag === "Unknown"
+                  )}
+                />
+              </div>
+              <div className="flex min-w-0 flex-col gap-5 lg:col-start-1 lg:row-start-2">
+                <FamilySetupChatHistory />
+                <FamilySetupConversationError />
+                {navigationError && (
+                  <OperationError>
+                    Your family is saved, but the next step couldn’t open. Try
+                    continuing again.
+                  </OperationError>
+                )}
+                {navigationError && committedFamily && (
+                  <Button
+                    variant="link"
+                    disabled={busy}
+                    onClick={() => {
+                      void continueToFood(committedFamily);
+                    }}
+                  >
+                    Continue with saved family
+                  </Button>
+                )}
+                {logoutError && (
+                  <OperationError>
+                    Log out didn’t finish. Try again.
+                  </OperationError>
+                )}
+                <FamilySetupChatComposer />
+              </div>
             </div>
-          )}
-          {navigationError && (
-            <OperationError>
-              Your family is saved, but we couldn’t open the review. Try again.
-            </OperationError>
-          )}
-          {conversation.actionState?._tag === "Committed" &&
-            conversation.actionState.familyId && (
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <Button
-                variant="outline"
-                disabled={busy}
+                variant="link"
+                disabled={
+                  busy ||
+                  conversation.pendingAction !== null ||
+                  conversation.recoveryBlocked
+                }
                 onClick={() => {
-                  const savedFamilyId = conversation.actionState;
-                  if (
-                    savedFamilyId?._tag === "Committed" &&
-                    savedFamilyId.familyId
-                  ) {
-                    void openReview(savedFamilyId.familyId);
-                  }
+                  setManualSession((current) => current ?? { initial: roster });
+                  setMode("manual");
                 }}
               >
-                Open saved family
+                Add manually instead
               </Button>
-            )}
-          {logoutError && (
-            <OperationError>We couldn’t log you out. Try again.</OperationError>
-          )}
-        </div>
-        <div className="min-w-0 md:sticky md:top-6 md:self-start">
-          {proposal ? (
-            <FamilyRosterEditor
-              key={`${proposal.id}:${proposal.revision}`}
-              initial={{
-                creatorName: proposal.creatorName,
-                familyName: proposal.familyName,
-                people: proposal.people,
-              }}
-              onAccept={accept}
-              onRetry={retry}
-              actionState={conversation.actionState}
-              busy={busy}
-              error={conversation.error}
-            />
-          ) : (
-            <div className="border-input bg-muted/30 flex min-h-80 flex-col items-center justify-center gap-4 rounded-full border border-dashed px-8 text-center">
-              <span
-                aria-hidden="true"
-                className="bg-person-lilac font-display flex size-20 items-center justify-center rounded-full text-5xl"
-              >
-                ?
-              </span>
-              <h2 className="font-display text-3xl">Your table starts here</h2>
-              <p className="text-muted-foreground text-sm">
-                A description is enough to begin.
-              </p>
+              <JoinedFamilies
+                families={families.data}
+                busy={busy}
+                onSelect={openExistingFamily}
+              />
             </div>
-          )}
-        </div>
-      </div>
-    </SetupFrame>
+          </div>
+        </SetupFrame>
+      </Activity>
+    </FamilySetupChat>
   );
 };
 
-/** Signed-in entry keeps chat optional while both paths use reviewed family details. */
 export const FamilySetupPage = () => {
   const account = useAccount();
-  const [mode, setMode] = useState<"conversation" | "manual">("conversation");
-  return mode === "manual" ? (
-    <ManualFamilySetup onChat={() => setMode("conversation")} />
-  ) : (
+  return (
     <AgentConversationProvider accountId={account.user.id} scope={setupScope}>
-      <FamilyConversationSetup onManual={() => setMode("manual")} />
+      <FamilyConversationSetup />
     </AgentConversationProvider>
   );
 };

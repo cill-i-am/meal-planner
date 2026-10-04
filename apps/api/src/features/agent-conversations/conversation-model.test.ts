@@ -1,10 +1,14 @@
-import { ConversationScope } from "@meal-planner/agent-conversations-api";
+import {
+  ConversationBlock,
+  ConversationScope,
+} from "@meal-planner/agent-conversations-api";
 import type { CloudflareBindingConfig } from "@tanstack/ai-cloudflare";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { responsesToolSse } from "../../test/cloudflare-responses.test-fixture.js";
 import { encodeKimiCompletion } from "../private-output/private-discovery-kimi-stream.test-fixtures.js";
+import { projectConversationModelContext } from "./conversation-model-context.js";
 import {
   ConversationModelFailure,
   selectConversationModelAdapterConfig,
@@ -63,6 +67,44 @@ interface CapturedRequestBody {
 }
 
 describe("conversation model transport", () => {
+  it("shows the active proposed roster only in private setup model context", () => {
+    const block = Schema.decodeUnknownSync(ConversationBlock)({
+      _tag: "RosterProposal",
+      creatorName: "Morgan",
+      familyName: "Morgan’s family",
+      id: "a1b2c3d4-e5f6-47a8-b9c0-123456789abc",
+      people: [
+        {
+          displayName: "Louise",
+          draftId: "b1b2c3d4-e5f6-47a8-b9c0-123456789abc",
+          kind: "adult",
+        },
+      ],
+      revision: 1,
+      status: "proposed",
+      turnId: "run-proposed-roster",
+    });
+    if (block._tag !== "RosterProposal") {
+      throw new Error("Expected roster block");
+    }
+    expect(
+      projectConversationModelContext(
+        setupContext,
+        { _tag: "AccountPrivateSetup" },
+        block
+      ).setupRoster
+    ).toEqual(block);
+    expect(
+      projectConversationModelContext(
+        familyContext,
+        Schema.decodeUnknownSync(ConversationScope)({
+          _tag: "FamilyShared",
+          familyId: "family-test",
+        })
+      ).setupRoster
+    ).toBeNull();
+  });
+
   it("selects direct REST only with complete server credentials", () => {
     expect(
       selectConversationModelAdapterConfig(
@@ -263,6 +305,7 @@ describe("conversation model transport", () => {
         },
       ],
       reply: "I can prepare a roster after you share a family name.",
+      setupConfirmation: null,
     };
     const ProviderRequest = Schema.Struct({
       instructions: Schema.String,
@@ -356,8 +399,9 @@ describe("conversation model transport", () => {
       '"setupAccountDisplayName":"Morgan"'
     );
     expect(providerRequest?.instructions).toContain(
-      "ask only for a family name"
+      "use a visible plain label from the creator’s given name"
     );
+    expect(providerRequest?.instructions).toContain("ConfirmDisplayedRoster");
     const schema = JSON.stringify(providerRequest?.tools[0]?.parameters);
     expect(schema).toContain("Question");
     expect(schema).toContain("RosterProposal");
@@ -375,6 +419,7 @@ describe("conversation model transport", () => {
         },
       ],
       reply: "I have a food question for your review.",
+      setupConfirmation: null,
     };
     let strict: boolean | undefined;
     let parameters: unknown;

@@ -14,28 +14,33 @@ Enter `/setup` while signed in. Without a family it opens `/setup/family`.
 An incomplete selected family opens `/setup/review`; a completed one enters `/`.
 The `familyId` search parameter identifies the chosen family on setup routes.
 
-**Who’s at your table?** accepts a natural-language description. The assistant
-already receives the signed-in account name and asks only for missing setup
-details. The user can correct that name in chat or in the roster review. The
-assistant may ask a clarifying question before showing a draft. The draft keeps the family
-name, the organiser’s name, and each person’s Adult or Child role editable. The
-user selects **Create our family** to accept that exact roster. The server saves
-the family and people through their canonical operations and returns its action
-state. A lost or partial result keeps the same reviewed action for **Check and
-continue**; it does not submit another roster.
+**Who’s at your table?** accepts a natural-language description. The account
+name already occupies the first place. A typed proposal fills the other places
+around the same table, with each person's name and Adult or Child role. Chat
+stays plain text. Describe corrections to update the displayed draft; an omitted
+family name uses a visible label from the creator's given name.
 
-**Set up without chat** opens the same editor with an empty family and people
-draft. It uses the existing family and person commands, retaining each submitted
-request ID while this screen stays mounted. If the family is saved but a later
-person is uncertain, the screen shows the confirmed count and lets the user
-check the same remaining request or open the saved family. Chat availability does
-not block setup. Existing families appear as named buttons. Successful creation
-opens **Your family** at `/setup/review?familyId=…`. **Add someone else** opens
-`/setup/people`.
-**Continue** opens `/setup/ready`, headed **Your family is ready.**
-Both **Tell us how you eat** and **I’ll do this later** complete setup before
-leaving. Stop verification at the destination boundary (`/?area=tastes`
-or `/`); the destination features are outside this map.
+Explicit agreement in chat accepts the exact displayed block and revision. The
+server binds that agreement to a stable action ID; the browser submits the exact
+roster through the canonical action endpoint. A committed receipt completes setup
+and automatically opens food discovery at `/?area=tastes`. No additional approval
+button appears. A lost result retains the request across reload; say **try again**
+or use **Check save** to retry that same action. Reload never retries it silently.
+
+**Add manually instead** opens the roster editor with the displayed draft.
+**Return to conversation** preserves the chat, unsent message and manual edits
+while switching modes; manual edits remain unsaved until its create action. Manual
+creation uses existing family and person commands, retaining submitted request
+IDs while mounted. If a later person is uncertain, the screen shows the confirmed
+count and can check the remaining request or open the saved family. Chat failure
+does not disable manual setup.
+
+Manual creation and selecting an existing family open **Your family** at
+`/setup/review?familyId=…`. **Add someone else** opens `/setup/people`.
+**Continue** opens `/setup/ready`, headed **Your family is ready.** Both
+**Tell us how you eat** and **I’ll do this later** complete setup before leaving.
+Stop verification at the destination boundary (`/?area=tastes` or `/`); the
+food features are outside this map.
 
 If the setup route cannot load its family data, **Your family couldn’t be
 loaded** offers both **Try again** and **Log out and sign in again**. The latter
@@ -51,18 +56,18 @@ family extraction.
 
 | Path | Drive | Proof |
 | --- | --- | --- |
-| Assistant draft | Describe a family and answer any clarification; edit a proposed name or role; select **Create our family** | The accepted roster, not the unreviewed text, becomes the saved family and people |
-| Manual create | Select **Set up without chat**, enter a family name and people, then **Create our family** | Review shows the creator once and each confirmed person; saved family has `in_progress` setup |
+| Assistant draft | Describe a family; correct a name or role in chat; explicitly agree with the table | The exact displayed roster saves once, setup completes, and food discovery opens automatically |
+| Manual create | Select **Add manually instead**, enter a family name and people, then **Create our family** | Review shows the creator once and each confirmed person; saved family has `in_progress` setup |
 | Persistence | Reload review and open it in a second authenticated tab | Same family ID, saved name, and roster; no second create request |
 | Choose existing | Open family setup and select a listed family | URL and roster identify that family; no new family is created |
 | Review → confirm | Select **Continue** | Confirmation opens; no `complete-setup` write occurred |
 | Finish | Select either final action in separate runs | Completion succeeds before leaving; later GET shows `complete` with completion time |
 | Incomplete creator | With an interrupted native create fixture, open review and select **Finish creating family** | Same family gains its creator person once via `resume-creation` |
-| Unknown creation result | Lose a response after submission; select **Check and continue** while the screen stays mounted | The same action or person mutation ID and reviewed payload are retried; one effective family and roster result |
+| Unknown creation result | Lose a chat save response; say **try again** or use **Check save**, including after reload | The same action or person mutation ID and reviewed payload are retried; one effective family and roster result |
 | Partial person save | Interrupt a later manual person command after the family and earlier people save | Confirmed people remain saved; the screen shows the count and retries only the uncertain command |
-| Chat unavailable | Fail the conversation read, then select **Set up without chat** | Manual family creation remains available |
+| Chat unavailable | Fail the conversation read, then select **Add manually instead** | Manual family creation remains available |
 | Unsent form | Type a name, then log out before submitting | No family write and no persisted form draft |
-| Reload after an unknown result | Reload after the write response is lost | Reads saved families; does not restore or automatically replay the submitted mutation |
+| Reload after an unknown result | Reload after the write response is lost | Chat restores the exact unresolved action for explicit retry; manual setup reads saved resources without replaying its in-memory mutation |
 | Permission failure | Open another family's URL with an unrelated account | No protected roster or authorized write; an explicit failure is shown |
 
 For response loss, use an owned network fault fixture that can distinguish a
@@ -75,8 +80,9 @@ Rendering **Your family is ready.** does not itself complete setup. The final
 button does. Members **Continue** is navigation only. Completion does not freeze
 the resource or roster.
 
-Pending submitted requests and unsent forms live only in memory. Reloading
-reads saved resources and restores neither local state. A read must not create the missing creator;
+Manual requests and unsent forms live in memory. Chat retains its exact submitted
+action in account-scoped session storage until a read includes its terminal receipt.
+Reloaded unknown actions require an explicit retry. A read must not create the missing creator;
 recovery is an explicit action. Members who cannot manage an incomplete family
 need the organizer to finish setup.
 

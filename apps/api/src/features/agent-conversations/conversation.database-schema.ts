@@ -29,6 +29,7 @@ export const conversationTurns = sqliteTable("agent_conversation_turns", {
   id: text("id").primaryKey(),
   replyJson: text("reply_json"),
   requestJson: text("request_json").notNull(),
+  setupConfirmationJson: text("setup_confirmation_json"),
   startedAt: integer("started_at").notNull(),
   status: text("status", {
     enum: ["running", "succeeded", "failed", "interrupted"],

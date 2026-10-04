@@ -1,6 +1,6 @@
 ---
 name: Meal Planner
-description: Food-led account entry and calm family setup with focused forms.
+description: Food-led account entry and conversational family setup with a living table.
 ---
 
 # Meal Planner design
@@ -10,6 +10,10 @@ description: Food-led account entry and calm family setup with focused forms.
 [Paper is the source of truth for the visual design](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0). Its Overview contains the current foundations, component states and responsive patterns; [Explorations](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-D-0) preserves earlier alternatives on one page. This document records the onboarding design reviewed on 21–22 September 2026. Check the relevant live screens, states, and tokens before adding or changing UI. The working rules are in [AGENTS.md](AGENTS.md).
 
 The [connected account entry](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-J-0) uses a white surface, ink type, Instrument Serif display headings and a food image on signup. Login and recovery keep the form centered and plain. Their [additional states](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-K-0) show validation, pending, rejected and recovery outcomes.
+
+The [conversation-first table](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-L-0), refined on 4 October 2026, replaces the card-and-approval handoff during family creation. Plain conversation and an oval table share one surface. The account holder is seated from the start; additional people arrive in pastel avatars as a typed draft becomes available. Names and roles stay visible. Corrections update those places, and explicit agreement in chat saves the displayed draft and opens food discovery. **Add manually instead** opens the seeded form deliberately.
+
+The table and chat stack on mobile. The page scrolls naturally; the transcript has its own keyboard-accessible scroller and a labelled jump-to-end control. The composer never covers a seat. New places enter once with opacity, scale and a short upward movement over a 350ms spring with no bounce; corrections preserve stable person keys. Exits take 150ms and name changes cross-fade over 120ms. Reduced motion removes spatial movement. Sending a message uses the existing quiet activation sound and mute control, with no sounds per avatar or arriving word. Status text distinguishes a draft, saving and a saved family.
 
 The earlier family setup surfaces use a diffuse lilac, blue, rose, and peach gradient behind opaque white task cards. White fields, underlined links, pastel avatars, and black pill buttons complete that theme. A framed card footer separates secondary navigation or supporting lists from the main task. Keep each task easy to scan.
 
@@ -108,13 +112,7 @@ Short Invite and Edit forms use content-sized mobile sheets with 24px top corner
 
 Both the people list and family review label an uninvited adult simply **Adult** and offer **Invite to join** as a separate action. An accessible, labelled menu holds Edit name and Remove. The current person's menu only offers editing. Opening an action preserves the add-person draft and return location. A removal confirmation explains whether it also cancels an invitation or removes a joined adult's family access. Keep unresolved requests and their exact mutation identity until the result is confirmed; do not make a person disappear before access changes finish. Email delivery remains mocked.
 
-Roster dialogs and mobile sheets contain their primary action and Cancel. Keep
-**Log out** in the setup page header. It saves the current draft and exact
-pending command before signing out; a save failure keeps the person signed in on
-the current screen with the draft intact. Submitted commands are already
-checkpointed, so the header action need not save periodically. If the account
-cannot load and prevents the setup header from appearing, expose **Log out and
-sign in again** in the account error card footer.
+Roster dialogs and mobile sheets contain their primary action and Cancel. Keep **Log out** in the setup page header. It saves the current draft and exact pending command before signing out; a save failure keeps the person signed in on the current screen with the draft intact. Submitted commands are already checkpointed, so the header action need not save periodically. If the account cannot load and prevents the setup header from appearing, expose **Log out and sign in again** in the account error card footer.
 
 Opening and cancelling a roster action are immediate local UI changes. They do not save setup progress or refetch the session. Only submitted commands are checkpointed before dispatch, retaining their target, version and mutation ID across unknown outcomes. A newly observed pending command takes precedence over an unsubmitted local draft; a different unresolved local command must not be overwritten.
 

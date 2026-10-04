@@ -79,7 +79,6 @@ export const ConversationSurface = ({
   onRosterReview,
   onOpenPrivate,
   planId,
-  purpose = "food-discovery",
   onPlanChangeCommitted,
   onPlanProposalReview,
   onPlanningContentProposalReview,
@@ -94,7 +93,6 @@ export const ConversationSurface = ({
   ) => void;
   readonly onOpenPrivate?: () => void;
   readonly planId?: MealPlanId | null;
-  readonly purpose?: "food-discovery" | "family-setup";
   readonly onPlanChangeCommitted?: () => void;
   readonly onPlanProposalReview?: PlanProposalReview;
   readonly onPlanningContentProposalReview?: PlanningContentProposalReview;
@@ -108,10 +106,8 @@ export const ConversationSurface = ({
   const lastTurn = conversation.view?.turns.at(-1);
   const assistantNotConfigured = lastTurn?.failure === "not_configured";
   const blocks =
-    conversation.view?.blocks.filter(
-      (block) =>
-        belongsToSelection(block, selectedPersonId) &&
-        (purpose !== "family-setup" || block._tag !== "RosterProposal")
+    conversation.view?.blocks.filter((block) =>
+      belongsToSelection(block, selectedPersonId)
     ) ?? [];
   const answer = async (
     block: Extract<ConversationBlock, { _tag: "Question" }>,
@@ -314,7 +310,6 @@ export const ConversationSurface = ({
       selectedPersonId={selectedPersonId}
       onSelectPerson={onSelectPerson}
       onOpenPrivate={onOpenPrivate}
-      purpose={purpose}
       blocks={blocks}
       renderBlock={renderBlock}
       localError={localError}
@@ -326,11 +321,3 @@ export const ConversationSurface = ({
     />
   );
 };
-
-export const FamilySetupConversationSurface = ({
-  conversation,
-}: {
-  readonly conversation: AgentConversationController;
-}) => (
-  <ConversationSurface conversation={conversation} purpose="family-setup" />
-);

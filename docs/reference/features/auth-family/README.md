@@ -26,7 +26,11 @@ the affected entries and their cross-feature journeys.
 
 ```mermaid
 flowchart LR
-  Account[Sign up or log in] --> Name[Name family]
+  Account[Sign up or log in] --> Chat[Describe family in chat]
+  Chat --> Table[Check the living table]
+  Table --> Agree[Agree in conversation]
+  Agree --> Food[Food discovery]
+  Chat --> Name[Choose manual setup]
   Name --> Members[Review members]
   Members --> Add[Add or manage person]
   Add --> Members

@@ -4,6 +4,7 @@ import {
   ConversationAction,
   ConversationActionId,
   ConversationBlock,
+  ConversationBlockId,
   ConversationMessage,
   ConversationTurnRequest,
   ConversationView,
@@ -17,7 +18,7 @@ import { HouseholdOrganizationId } from "@meal-planner/household-api";
 import { EventType, toServerSentEventsResponse } from "@tanstack/ai";
 import type { StreamChunk } from "@tanstack/ai";
 import { Agent } from "agents";
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import { migrate } from "drizzle-orm/durable-sqlite/migrator";
 import { Data, Schema } from "effect";
@@ -32,6 +33,10 @@ import type {
   ConversationModelReply,
 } from "./conversation-model.js";
 import { prepareConversationBlocks } from "./conversation-proposals.js";
+import {
+  matchesConfirmedRosterAction,
+  prepareSetupConfirmation,
+} from "./conversation-setup-confirmation.js";
 import {
   ConversationAccess,
   ConversationCanonicalContext,
@@ -96,6 +101,12 @@ const StoredReply = Schema.Struct({
   messageId: Schema.String.pipe(Schema.check(Schema.isUUID())),
   text: SubmitConversationTurn.fields.reply,
 });
+const StoredSetupConfirmation = Schema.Struct({
+  _tag: Schema.Literal("ConfirmDisplayedRoster"),
+  actionId: ConversationActionId,
+  blockId: ConversationBlockId,
+  revision: Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(1))),
+});
 const parseBlockJson = Schema.decodeUnknownSync(
   Schema.fromJsonString(ConversationBlock),
   { onExcessProperty: "error" }
@@ -106,6 +117,10 @@ const parseActionJson = Schema.decodeUnknownSync(
 );
 const parseReplyJson = Schema.decodeUnknownSync(
   Schema.fromJsonString(StoredReply),
+  { onExcessProperty: "error" }
+);
+const parseSetupConfirmationJson = Schema.decodeUnknownSync(
+  Schema.fromJsonString(StoredSetupConfirmation),
   { onExcessProperty: "error" }
 );
 const parseCommandIdsJson = Schema.decodeUnknownSync(
@@ -175,6 +190,60 @@ export interface ConversationEnvironment
 export class AgentConversation extends Agent<ConversationEnvironment> {
   readonly #database = drizzle(this.ctx.storage);
   readonly #running = new Map<string, Promise<ConversationModelReply>>();
+
+  #latestProposedRoster(): Extract<
+    ConversationBlock,
+    { _tag: "RosterProposal" }
+  > | null {
+    const row = this.#database
+      .select({
+        blockJson: conversationBlocks.blockJson,
+        status: conversationBlocks.status,
+      })
+      .from(conversationBlocks)
+      .innerJoin(
+        conversationMessages,
+        eq(conversationMessages.turnId, conversationBlocks.turnId)
+      )
+      .where(
+        and(
+          eq(conversationBlocks.tag, "RosterProposal"),
+          eq(conversationMessages.role, "assistant")
+        )
+      )
+      .orderBy(desc(conversationMessages.ordinal))
+      .get();
+    if (row === undefined || row.status !== "proposed") {
+      return null;
+    }
+    const block = parseBlockJson(row.blockJson);
+    if (block._tag !== "RosterProposal") {
+      return fail("binding_conflict");
+    }
+    return block;
+  }
+
+  #setupConfirmationForActionId(actionId: ConversationActionId) {
+    const rows = this.#database
+      .select({
+        setupConfirmationJson: conversationTurns.setupConfirmationJson,
+      })
+      .from(conversationTurns)
+      .where(isNotNull(conversationTurns.setupConfirmationJson))
+      .all();
+    for (const row of rows) {
+      if (row.setupConfirmationJson === null) {
+        continue;
+      }
+      const confirmation = parseSetupConfirmationJson(
+        row.setupConfirmationJson
+      );
+      if (confirmation.actionId === actionId) {
+        return confirmation;
+      }
+    }
+    return null;
+  }
 
   constructor(
     context: NativeCloudflare.DurableObjectState,
@@ -280,6 +349,10 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
       .map((row) => ({
         failure: row.failure,
         id: row.id,
+        setupConfirmation:
+          row.setupConfirmationJson === null
+            ? null
+            : parseSetupConfirmationJson(row.setupConfirmationJson),
         status: row.status,
       }));
     return Schema.decodeUnknownSync(ConversationView)({
@@ -345,6 +418,7 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
     const binding = this.#binding(access);
     const request = Schema.decodeUnknownSync(ConversationTurnRequest)({
       answerToBlockId: input.metadata.answerToBlockId,
+      displayedRoster: input.metadata.displayedRoster,
       expectedVersion: input.metadata.expectedVersion,
       focusPersonId: input.focusPersonId,
       foodAnswer: input.metadata.foodAnswer,
@@ -400,6 +474,19 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
     const context = Schema.decodeUnknownSync(ConversationCanonicalContext, {
       onExcessProperty: "error",
     })(input.context);
+    const setupRoster =
+      access.scope._tag === "AccountPrivateSetup"
+        ? this.#latestProposedRoster()
+        : null;
+    if (
+      (access.scope._tag !== "AccountPrivateSetup" &&
+        request.displayedRoster !== null) ||
+      (request.displayedRoster !== null &&
+        (setupRoster?.id !== request.displayedRoster.blockId ||
+          setupRoster.revision !== request.displayedRoster.revision))
+    ) {
+      fail("stale_version");
+    }
     if (
       input.focusPersonId !== input.metadata.focusPersonId ||
       input.planId !== input.metadata.planId ||
@@ -472,10 +559,24 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
     this.#running.set(request.turnId, outcome.promise);
     const controller = new AbortController();
     const accept = (value: typeof SubmitConversationTurn.Type) => {
+      if (
+        value.blocks.filter((block) => block._tag === "RosterProposal").length >
+        1
+      ) {
+        throw new ConversationModelFailure({ reason: "invalid_output" });
+      }
+      const setupConfirmation = prepareSetupConfirmation({
+        displayedRoster: request.displayedRoster,
+        latestRoster: setupRoster,
+        modelTurn: value,
+        newActionId: () => crypto.randomUUID(),
+        scope: access.scope,
+      });
       const blocks = prepareConversationBlocks({
         blocks: value.blocks as readonly ConversationModelBlock[],
         context,
         focusPersonId: request.focusPersonId,
+        previousRoster: setupRoster ?? undefined,
         scope: access.scope,
         turnId: request.turnId,
       });
@@ -504,6 +605,15 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
         if (current?.status !== "running") {
           fail("turn_conflict");
         }
+        if (setupConfirmation !== null) {
+          const latest = this.#latestProposedRoster();
+          if (
+            latest?.id !== setupRoster?.id ||
+            latest?.revision !== setupRoster?.revision
+          ) {
+            throw new ConversationModelFailure({ reason: "invalid_output" });
+          }
+        }
         if (request.answerToBlockId !== null) {
           const question = this.#database
             .select()
@@ -520,6 +630,18 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
             .run();
         }
         for (const { block, json } of storedBlocks) {
+          if (block._tag === "RosterProposal") {
+            this.#database
+              .update(conversationBlocks)
+              .set({ status: "dismissed" })
+              .where(
+                and(
+                  eq(conversationBlocks.tag, "RosterProposal"),
+                  eq(conversationBlocks.status, "proposed")
+                )
+              )
+              .run();
+          }
           this.#database
             .insert(conversationBlocks)
             .values({
@@ -546,6 +668,10 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
           .set({
             finishedAt: Date.now(),
             replyJson: JSON.stringify(reply),
+            setupConfirmationJson:
+              setupConfirmation === null
+                ? null
+                : JSON.stringify(setupConfirmation),
             status: "succeeded",
           })
           .where(eq(conversationTurns.id, request.turnId))
@@ -592,6 +718,7 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
         messages,
         runId: request.turnId,
         scope: access.scope,
+        setupRoster,
         threadId: binding.conversationId,
       });
       const producer = (async () => {
@@ -636,6 +763,42 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
     ) as unknown as NativeCloudflare.Response;
   }
 
+  #assertActionReview(
+    access: typeof ConversationAccess.Type,
+    action: typeof ConversationAction.Type,
+    parsed: ConversationBlock
+  ): void {
+    const confirmation =
+      access.scope._tag === "AccountPrivateSetup"
+        ? this.#setupConfirmationForActionId(action.actionId)
+        : null;
+    if (
+      confirmation !== null &&
+      (parsed._tag !== "RosterProposal" ||
+        !matchesConfirmedRosterAction(action, parsed, confirmation))
+    ) {
+      fail("stale_review");
+    }
+    if (parsed._tag === "RosterProposal" && action.decision === "accept") {
+      const latest = this.#latestProposedRoster();
+      if (latest?.id !== parsed.id || latest.revision !== parsed.revision) {
+        fail("stale_review");
+      }
+    }
+    if (
+      action.decision === "accept" &&
+      (parsed._tag === "Question" ||
+        parsed._tag === "RecipeDetails" ||
+        (parsed._tag === "RosterProposal") !==
+          (action.reviewedRoster !== null) ||
+        (parsed._tag === "PersonFactProposal" &&
+          parsed.requiresSafetyConfirmation) !==
+          (action.safetyConfirmation !== null))
+    ) {
+      fail("not_actionable");
+    }
+  }
+
   /** Reserve the exact reviewed action before any cross-resource write begins. */
   beginAction(untrusted: {
     readonly access: typeof ConversationAccess.Type;
@@ -675,18 +838,7 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
         return fail("stale_review");
       }
       const parsed = parseBlockJson(block.blockJson);
-      if (
-        action.decision === "accept" &&
-        (parsed._tag === "Question" ||
-          parsed._tag === "RecipeDetails" ||
-          (parsed._tag === "RosterProposal") !==
-            (action.reviewedRoster !== null) ||
-          (parsed._tag === "PersonFactProposal" &&
-            parsed.requiresSafetyConfirmation) !==
-            (action.safetyConfirmation !== null))
-      ) {
-        fail("not_actionable");
-      }
+      this.#assertActionReview(access, action, parsed);
       let commandCount = 0;
       if (action.decision === "accept") {
         commandCount =

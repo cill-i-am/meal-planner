@@ -1,16 +1,19 @@
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
+import { cn } from "../lib/utils.js";
 import { InteractionSoundToggle } from "./interaction-sound-toggle.js";
 
 export const AccountLayout = ({
   children,
   headerAction,
   progress,
+  contentClassName,
 }: {
   readonly children: ReactNode;
   readonly headerAction?: ReactNode;
   readonly progress?: ReactNode;
+  readonly contentClassName?: string | undefined;
 }) => {
   const surface = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -61,7 +64,12 @@ export const AccountLayout = ({
         </div>
       </header>
       {progress}
-      <main className="relative isolate flex min-h-140 flex-1 flex-col items-center overflow-clip px-4 py-8 md:px-8 md:py-18">
+      <main
+        className={cn(
+          "relative isolate flex min-h-140 flex-1 flex-col items-center overflow-clip px-4 py-8 md:px-8 md:py-18",
+          contentClassName
+        )}
+      >
         <div
           aria-hidden="true"
           className="bg-auth-glow motion-safe:animate-auth-drift motion-safe:group-has-[[data-slot=field]:focus-within]/auth:animate-auth-drift-paused motion-safe:group-data-[paused=true]/auth:animate-auth-drift-paused pointer-events-none absolute inset-0 -z-10 origin-[50%_20%] motion-reduce:animate-none"
