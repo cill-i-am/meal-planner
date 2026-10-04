@@ -140,7 +140,7 @@ export const syntheticMealPlanRequest = Schema.decodeUnknownSync(
 const mutationKey = (draftId: string, mutationId: string) =>
   `${draftId}:${mutationId}`;
 
-export const makeInMemoryMealPlanDraftRepository = (): {
+const makeInMemoryMealPlanDraftRepository = (): {
   readonly drafts: MealPlan[];
   readonly repository: MealPlanDraftRepository;
 } => {

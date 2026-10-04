@@ -7,7 +7,7 @@ import { makeTescoXapiCatalogueLive } from "./catalogue/xapi-catalogue.js";
 import { loadTescoConfig } from "./tesco.config.js";
 import type { TescoConfig } from "./tesco.config.js";
 
-export const makeTescoLive = (config: TescoConfig) => {
+const makeTescoLive = (config: TescoConfig) => {
   const authSessionLive = makeTescoAuthSessionLive(config.authBootstrap).pipe(
     Layer.provide(makeTescoSoftLoginAuthRefreshLive(config.softLogin))
   );

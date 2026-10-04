@@ -1,149 +1,160 @@
 import { Effect, Schema, SchemaGetter } from "effect";
+import {
+  HttpApi,
+  HttpApiEndpoint,
+  HttpApiGroup,
+  HttpApiMiddleware,
+  HttpApiSchema,
+} from "effect/http-api";
 
-import type { InvalidRequest } from "../../../app/http/http-failure.js";
 import {
-  optionalParam,
-  requiredParam,
-  urlFromRequest,
-} from "../../../app/http/query-params.js";
-import {
+  CatalogueProductResults,
+  CatalogueSuggestions,
   FacetId,
   PageNumber,
   ResultCount,
   SearchQuery,
   SortBy,
 } from "./catalogue.model.js";
-import type {
-  CatalogueProductResults,
-  CatalogueSuggestions,
-  CatalogueSuggestionsInput,
-  CategoryProductsInput,
-  SearchCatalogueInput,
-} from "./catalogue.model.js";
 
-const PageNumberFromString = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/^[1-9]\d*$/u)),
+const PageNumberFromString = Schema.String.check(
+  Schema.isPattern(/^[1-9]\d*$/u)
+).pipe(
   Schema.decodeTo(PageNumber, {
     decode: SchemaGetter.transform(Number),
     encode: SchemaGetter.transform(String),
   })
 );
-
-const ResultCountFromString = Schema.String.pipe(
-  Schema.check(Schema.isPattern(/^[1-9]\d*$/u)),
+const ResultCountFromString = Schema.String.check(
+  Schema.isPattern(/^[1-9]\d*$/u)
+).pipe(
   Schema.decodeTo(ResultCount, {
     decode: SchemaGetter.transform(Number),
     encode: SchemaGetter.transform(String),
   })
 );
+const defaultPage = Schema.decodeUnknownSync(PageNumber)(1);
+const defaultCount = Schema.decodeUnknownSync(ResultCount)(24);
+const defaultLimit = Schema.decodeUnknownSync(ResultCount)(10);
+const defaultSort = Schema.decodeUnknownSync(SortBy)("relevance");
 
-const DefaultPageNumber = Schema.decodeUnknownSync(PageNumber)(1);
-const DefaultResultCount = Schema.decodeUnknownSync(ResultCount)(24);
-const DefaultSuggestionLimit = Schema.decodeUnknownSync(ResultCount)(10);
-const DefaultSortBy = Schema.decodeUnknownSync(SortBy)("relevance");
-
-const PageNumberWithDefault = PageNumber.pipe(
-  Schema.withDecodingDefaultTypeKey(Effect.succeed(DefaultPageNumber))
-);
-
-const ResultCountWithDefault = ResultCount.pipe(
-  Schema.withDecodingDefaultTypeKey(Effect.succeed(DefaultResultCount))
-);
-
-const SortByWithDefault = SortBy.pipe(
-  Schema.withDecodingDefaultTypeKey(Effect.succeed(DefaultSortBy))
-);
-
-/** Public POST body accepted by the catalogue search route. */
-export const SearchRequestBody = Schema.Struct({
-  count: ResultCountWithDefault,
-  page: PageNumberWithDefault,
-  query: SearchQuery,
-  sortBy: SortByWithDefault,
-});
-
-/** Public path parameters accepted by catalogue category routes. */
-export const CategoryPathParams = Schema.Struct({ facet: FacetId });
-
-/** Public POST body accepted by the category products route. */
-export const CategoryProductsRequestBody = Schema.Struct({
-  count: ResultCountWithDefault,
-  page: PageNumberWithDefault,
-  sortBy: SortByWithDefault,
-});
-
-/** Decode one search URL into a fully populated stable catalogue input. */
-export const searchInputFromUrl = (
-  requestUrl: string
-): Effect.Effect<SearchCatalogueInput, InvalidRequest> =>
-  Effect.gen(function* decodeSearchUrl() {
-    const url = urlFromRequest(requestUrl);
-    const query = yield* requiredParam(url, "query", SearchQuery);
-    const page = yield* optionalParam(url, "page", PageNumberFromString);
-    const count = yield* optionalParam(url, "count", ResultCountFromString);
-    const sortBy = yield* optionalParam(url, "sortBy", SortBy);
-
-    return {
-      count: count ?? DefaultResultCount,
-      page: page ?? DefaultPageNumber,
-      query,
-      sortBy: sortBy ?? DefaultSortBy,
-    };
-  });
-
-/** Decode one category URL into a fully populated stable catalogue input. */
-export const categoryInputFromUrl = (
-  requestUrl: string,
-  facet: FacetId
-): Effect.Effect<CategoryProductsInput, InvalidRequest> =>
-  Effect.gen(function* decodeCategoryUrl() {
-    const url = urlFromRequest(requestUrl);
-    const page = yield* optionalParam(url, "page", PageNumberFromString);
-    const count = yield* optionalParam(url, "count", ResultCountFromString);
-    const sortBy = yield* optionalParam(url, "sortBy", SortBy);
-    return {
-      count: count ?? DefaultResultCount,
-      facet,
-      page: page ?? DefaultPageNumber,
-      sortBy: sortBy ?? DefaultSortBy,
-    };
-  });
-
-/** Decode one suggestions URL into a fully populated stable catalogue input. */
-export const suggestionsInputFromUrl = (
-  requestUrl: string
-): Effect.Effect<CatalogueSuggestionsInput, InvalidRequest> =>
-  Effect.gen(function* decodeSuggestionsUrl() {
-    const url = urlFromRequest(requestUrl);
-    const query = yield* requiredParam(url, "query", SearchQuery);
-    const limit = yield* optionalParam(url, "limit", ResultCountFromString);
-
-    return { limit: limit ?? DefaultSuggestionLimit, query };
-  });
-
-/** Explicit HTTP projection for one stable catalogue listing. */
-export const toCatalogueProductResultsResponse = (
-  result: CatalogueProductResults
-) => {
-  const results = result.results.map((product) => {
-    const projected = {
-      id: product.id,
-      title: product.title,
-      type: product.type,
-    };
-    return product.defaultImageUrl === undefined
-      ? projected
-      : { ...projected, defaultImageUrl: product.defaultImageUrl };
-  });
-  const projected = { pageInformation: result.pageInformation, results };
-  return result.sortBy === undefined
-    ? projected
-    : { ...projected, sortBy: result.sortBy };
+const ListingBody = {
+  count: ResultCount.pipe(
+    Schema.withDecodingDefaultTypeKey(Effect.succeed(defaultCount))
+  ),
+  page: PageNumber.pipe(
+    Schema.withDecodingDefaultTypeKey(Effect.succeed(defaultPage))
+  ),
+  sortBy: SortBy.pipe(
+    Schema.withDecodingDefaultTypeKey(Effect.succeed(defaultSort))
+  ),
+};
+const ListingQuery = {
+  count: ResultCountFromString.pipe(
+    Schema.withDecodingDefaultTypeKey(Effect.succeed(defaultCount))
+  ),
+  page: PageNumberFromString.pipe(
+    Schema.withDecodingDefaultTypeKey(Effect.succeed(defaultPage))
+  ),
+  sortBy: ListingBody.sortBy,
 };
 
-/** Explicit HTTP projection for stable catalogue suggestions. */
-export const toCatalogueSuggestionsResponse = (
-  suggestions: CatalogueSuggestions
+/** The protocol exposes fixed messages, never provider or decoder diagnostics. */
+const failure = <const Code extends string, const Message extends string>(
+  error: Code,
+  message: Message,
+  status: number
 ) => ({
-  results: suggestions.results.map(({ query }) => ({ query })),
+  body: { error, message },
+  schema: Schema.Struct({
+    error: Schema.Literal(error),
+    message: Schema.Literal(message),
+  }).pipe(HttpApiSchema.status(status)),
 });
+export const CatalogueHttpFailures = {
+  authentication: failure(
+    "upstream_authentication_unavailable",
+    "The upstream service is not currently authenticated.",
+    503
+  ),
+  invalid: failure("invalid_request", "The request is invalid.", 400),
+  rejected: failure(
+    "upstream_request_rejected",
+    "The upstream service rejected the request.",
+    502
+  ),
+  response: failure(
+    "upstream_invalid_response",
+    "The upstream service returned an invalid response.",
+    502
+  ),
+  unavailable: failure(
+    "upstream_unavailable",
+    "The upstream service is unavailable.",
+    502
+  ),
+};
+const upstreamErrors = [
+  CatalogueHttpFailures.authentication.schema,
+  CatalogueHttpFailures.unavailable.schema,
+  CatalogueHttpFailures.rejected.schema,
+  CatalogueHttpFailures.response.schema,
+];
+
+export class CatalogueRequestGuard extends HttpApiMiddleware.Service<CatalogueRequestGuard>()(
+  "CatalogueRequestGuard",
+  {
+    error: [
+      CatalogueHttpFailures.invalid.schema,
+      CatalogueHttpFailures.response.schema,
+    ],
+  }
+) {}
+
+/** Feature-owned contract for the Node host's bounded catalogue reads. */
+export const TescoCatalogueApi = HttpApi.make("tescoCatalogueApi")
+  .add(
+    HttpApiGroup.make("catalogue").add(
+      HttpApiEndpoint.get("search", "/tesco/search", {
+        error: upstreamErrors,
+        query: { ...ListingQuery, query: SearchQuery },
+        success: CatalogueProductResults,
+      }),
+      HttpApiEndpoint.post("searchBody", "/tesco/search", {
+        error: upstreamErrors,
+        payload: Schema.Struct({ ...ListingBody, query: SearchQuery }),
+        success: CatalogueProductResults,
+      }),
+      HttpApiEndpoint.get(
+        "categoryProducts",
+        "/tesco/categories/:facet/products",
+        {
+          error: upstreamErrors,
+          params: { facet: FacetId },
+          query: ListingQuery,
+          success: CatalogueProductResults,
+        }
+      ),
+      HttpApiEndpoint.post(
+        "categoryProductsBody",
+        "/tesco/categories/:facet/products",
+        {
+          error: upstreamErrors,
+          params: { facet: FacetId },
+          payload: Schema.Struct(ListingBody),
+          success: CatalogueProductResults,
+        }
+      ),
+      HttpApiEndpoint.get("suggestions", "/tesco/suggestions", {
+        error: upstreamErrors,
+        query: {
+          limit: ResultCountFromString.pipe(
+            Schema.withDecodingDefaultTypeKey(Effect.succeed(defaultLimit))
+          ),
+          query: SearchQuery,
+        },
+        success: CatalogueSuggestions,
+      })
+    )
+  )
+  .middleware(CatalogueRequestGuard);
