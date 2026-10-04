@@ -8,7 +8,7 @@ Application logic should not read `process.env`, import platform bindings, or pa
 
 Use `Config.redacted` or the installed equivalent for secrets. Keep Redacted values wrapped until the concrete adapter initializes a client.
 
-Config constructor and provider APIs are exact-pin details; inspect the target package and compile a probe.
+Config constructor and provider APIs are exact-pin details; inspect the target package and validate the changed code through normal compilation or focused tests; add a probe only when uncertainty remains.
 
 ## Recipe Chooser
 

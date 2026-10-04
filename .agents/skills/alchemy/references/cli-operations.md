@@ -66,7 +66,7 @@ pnpm alchemy plan --stage pr-42 --profile sandbox
 the same plan path. It reads credentials, state, and provider APIs as needed.
 A first run using `Cloudflare.state()` can separately offer to bootstrap the
 remote state Worker and supporting secrets; decline that prompt unless
-bootstrap was explicitly approved. Review:
+the actual bootstrap target and effects are covered by existing authorization. Review:
 
 - target stack, stage, profile, account, and region;
 - creates, updates, replacements, deletes, and no-ops;
@@ -75,7 +75,7 @@ bootstrap was explicitly approved. Review:
 - state-store access and unresolved outputs;
 - unexpected resources caused by a wrong stage or empty state.
 
-Never convert a successful plan into deploy approval on the user's behalf.
+A successful plan supplies evidence, not authority. Deploy when the existing task covers its actual target and effects; request only missing scope.
 
 ## Interactive And CI Behavior
 

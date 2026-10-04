@@ -6,7 +6,7 @@ A detector result is defect evidence, not proof of quality. Inspect the rendered
 
 ## 1. Establish the system
 
-Read DESIGN.md and representative tokens, shared components, patterns, and neighboring flows. If no formal system exists, use coherent project conventions.
+Use the approved Paper design with DESIGN.md, representative tokens, shared components, patterns and neighboring flows. If no formal system exists, use coherent project conventions.
 
 Classify each drift before fixing it:
 

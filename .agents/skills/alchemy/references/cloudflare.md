@@ -22,7 +22,7 @@ export default Alchemy.Stack(
 );
 ```
 
-`Cloudflare.state()` is the normal team/CI state store. First-run bootstrap creates state infrastructure and credentials, so it requires confirmation. Use a distinct state worker name only when account/team ownership requires isolation.
+`Cloudflare.state()` is the normal team/CI state store. First-run bootstrap creates state infrastructure and credentials, so verify the actual target and effects are covered by existing authorization; request only missing scope. Use a distinct state worker name only when account/team ownership requires isolation.
 
 ## Application Router
 

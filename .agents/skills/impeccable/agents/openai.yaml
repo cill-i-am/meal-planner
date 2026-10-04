@@ -1,4 +1,4 @@
 interface:
-  display_name: Impeccable
-  short_description: Design and inspect a specific frontend surface
-  default_prompt: Use Impeccable for the requested surface within its agreed design.
+  display_name: "Impeccable"
+  short_description: "Design and inspect a specific frontend surface"
+  default_prompt: "Use $impeccable for the requested surface within its agreed design."

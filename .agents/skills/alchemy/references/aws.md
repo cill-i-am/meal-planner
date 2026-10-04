@@ -21,7 +21,7 @@ export default Alchemy.Stack(
 );
 ```
 
-`AWS.state()` stores state in the target account and region. Keep the account, region, profile, and stage explicit before any mutation. `alchemy aws bootstrap` creates the per-account assets bucket used by Lambda deployments and therefore requires confirmation.
+`AWS.state()` stores state in the target account and region. Keep the account, region, profile, and stage explicit before any mutation. `alchemy aws bootstrap` creates the per-account assets bucket used by Lambda deployments so verify existing authorization covers its account, region and effects; request only missing scope.
 
 ## Choose A Runtime
 
