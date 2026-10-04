@@ -22,8 +22,10 @@ import {
   HouseholdRecipeImportFailure,
   HouseholdRecordRecipeImportDispatchResult,
 } from "../households/recipe-import/household-recipe-import.contract.js";
-import { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
-import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
+import {
+  ImportWorkflowIdentity,
+  ImportIntentExecutionGeneration,
+} from "../households/shared-kernel/workflow-identity.js";
 import { ImportTraceContext } from "./import-observability.js";
 import { ImportId } from "./import.contracts.js";
 import type { ImportWorkflowReconciler } from "./import.workflow.js";

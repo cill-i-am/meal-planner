@@ -23,7 +23,7 @@ import {
   HouseholdResolveRecipeImportSourceInput,
 } from "../households/recipe-import/household-recipe-import.contract.js";
 import { HouseholdMemberAdmission } from "../households/rpc/command-envelope.js";
-import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
+import { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
 import { acquireStoreVerify } from "./import-media-acquirer.js";
 import type {
   AcquisitionBucketLike,

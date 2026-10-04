@@ -47,6 +47,7 @@ it("consumes the reference frontend slices only through their public APIs", () =
     "family",
     "household-people",
     "household-profiles",
+    "households",
     "recipe-import",
     "onboarding",
     "invitations",

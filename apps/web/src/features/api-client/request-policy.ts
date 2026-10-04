@@ -1,4 +1,4 @@
-import { Option, Schedule, Schema } from "effect";
+import { Cause, Option, Schedule, Schema } from "effect";
 import { HttpClientError } from "effect/http";
 
 /** One retry owner: Effect. React Query must not multiply these attempts. */
@@ -21,3 +21,25 @@ export const queryFailure = (cause: unknown): unknown => {
   const decoded = Schema.decodeUnknownOption(QueryFailure)(cause);
   return Option.isSome(decoded) ? decoded.value.failure : cause;
 };
+
+const QueryCause = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("EffectQueryFailure"),
+    failureCause: Schema.declare<Cause.Cause<unknown>>(Cause.isCause),
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("EffectQueryDefect"),
+    defectCause: Schema.declare<Cause.Cause<unknown>>(Cause.isCause),
+  }),
+]);
+/** Preserve the complete cause when a feature decides whether a write is unresolved. */
+export const queryFailureCause = (
+  cause: unknown
+): Option.Option<Cause.Cause<unknown>> =>
+  Schema.decodeUnknownOption(QueryCause)(cause).pipe(
+    Option.map((value) =>
+      value._tag === "EffectQueryFailure"
+        ? value.failureCause
+        : value.defectCause
+    )
+  );

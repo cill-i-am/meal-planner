@@ -25,7 +25,6 @@ import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Clock, Effect, Option, Schema } from "effect";
 
-import { ImportIntentExecutionGeneration } from "../../imports/import-intent-transition.js";
 import { ImportTraceContext } from "../../imports/import-observability.js";
 import { ImportId } from "../../imports/import.contracts.js";
 import { ensureHouseholdProvenance } from "../foundation/household-provenance.js";
@@ -51,7 +50,10 @@ import {
   HouseholdDigest,
   HouseholdIdentityGenerator,
 } from "../shared-kernel/authority-services.js";
-import { makeImportWorkflowIdentity } from "../shared-kernel/workflow-identity.js";
+import {
+  ImportIntentExecutionGeneration,
+  makeImportWorkflowIdentity,
+} from "../shared-kernel/workflow-identity.js";
 import {
   HouseholdRecipeImportFailure,
   HouseholdRecipeImportExecutionView,

@@ -22,4 +22,5 @@ export {
   transientRetry,
   isTransientHttpFailure,
   queryFailure,
+  queryFailureCause,
 } from "./request-policy.js";

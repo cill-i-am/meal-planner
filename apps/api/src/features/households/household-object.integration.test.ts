@@ -20,7 +20,6 @@ import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
-import { ApprovedRecipe } from "../imports/import-recipe-review.js";
 import {
   syntheticReplacementRecipeId,
   syntheticMealPlanRequest,
@@ -623,7 +622,7 @@ describe("household person registry on real Durable Object SQLite", () => {
 });
 /* eslint-enable no-use-before-define */
 const MealPlanWire = Schema.toEncoded(MealPlan);
-const ApprovedRecipeWire = Schema.toEncoded(ApprovedRecipe);
+const ApprovedRecipeWire = Schema.toEncoded(MealPlanRecipeSnapshot);
 const ManualMealSwapRequestWire = Schema.toEncoded(
   HouseholdManualMealSwapCommand
 );

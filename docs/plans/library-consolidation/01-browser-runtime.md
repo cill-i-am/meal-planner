@@ -35,10 +35,10 @@ people Query adapter setup. Recipe operation results are inferred from the
 shared generated contract. All production people operations are required; the
 panel no longer treats supplied operations as optional capabilities.
 
-Remaining: profile and household Promise clients, the family query adapter, and
-the private interview's narrow Promise callback. Profile roster reads use the
-people Effect API, while profile writes and their recovery remain unchanged.
-The broader profile pilot and acceptance checklist below remain proposed.
+That delivery left profile and household Promise clients and the family query
+adapter for the follow-up below. The private interview's narrow Promise callback
+remains an integration boundary. The broader AtomHttpApi pilot and acceptance
+checklist below remain proposed.
 
 Validation on October 4: `pnpm test` passed 1,660 tests; workspace typechecks,
 lint, formatting, the production build, documentation checks (including 24
@@ -53,6 +53,34 @@ Feature tests cover exact-command recovery, deterministic and ambiguous failures
 full Cause projection, and query cancellation through both generated clients.
 Recipe-import request/review behavior is verified by Chromium component and
 client tests; no live TikTok acquisition or paid model flow was exercised.
+
+## Follow-up deletion delivery
+
+The second October 4 review removes the profile and household Promise clients
+and the duplicate family Query adapter. The existing generated contracts now
+return Effects through each feature's public entrypoint and use `apiEffectQuery`.
+Profile recovery, mutation identity, version guards, cache keys, and pagination
+remain in the profile slice. Only a sole decoded rejection is definitive; a mixed
+Cause preserves an unresolved command. The private interview executes Effects
+only at its Promise callback boundary. No dependencies were upgraded.
+
+The same review removes the unused import transition reducer and the older
+recipe-review model. Execution generation remains a branded schema in the
+household workflow shared kernel. The live household contract continues to own
+review answers and confirmation; the import slice directly projects the initial
+draft into that contract. Native admission, receipts, lifecycle, and review
+coverage remain in place. Uncalled recovery readers, grounding helpers, route
+exports, and encoded person aliases are deleted with their dormant callers.
+
+Validation on October 4: `pnpm test` passed 1,745 tests, including 1,064 API,
+264 frontend, and 122 native Worker tests. The 14 family, food-profile, and
+private-review journeys passed on Chromium and mobile WebKit against local
+Website/API Workers. Workspace typechecks, lint, formatting, production build,
+documentation checks and 24 checker tests, and Ultracite doctor also passed.
+Generated-client tests cover scoped profile reads, pagination, cancellation, and
+full Cause projection; existing native workflow and household coverage remains.
+No live TikTok acquisition or paid model flow was exercised. The AtomHttpApi
+experiment below remains proposed.
 
 ## Scope
 

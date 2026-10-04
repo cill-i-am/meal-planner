@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { Button } from "../../components/ui/button.js";
-import type { HouseholdOperations } from "./operations.js";
+import { apiEffectQuery } from "../api-client/index.js";
+import type { HouseholdOperations } from "./browser-operations.js";
 
 export const HouseholdDomainStatus = ({
   organizationId,
@@ -10,11 +11,13 @@ export const HouseholdDomainStatus = ({
   readonly operations: HouseholdOperations;
   readonly organizationId: string;
 }) => {
-  const household = useQuery({
-    queryFn: operations.current,
-    queryKey: [organizationId, "household-domain"],
-    retry: false,
-  });
+  const household = useQuery(
+    apiEffectQuery.queryOptions({
+      queryFn: operations.current,
+      queryKey: [organizationId, "household-domain"],
+      retry: false,
+    })
+  );
 
   if (household.isPending) {
     return <span role="status">Preparing household storage…</span>;

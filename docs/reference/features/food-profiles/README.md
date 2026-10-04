@@ -21,9 +21,10 @@ conversation quality, AI proposals, and assisted dependant interviews belong to
    session shows current shared facts and asks what changed. Review and confirm
    any proposed change; a completed earlier session remains history only.
 
-The roster is read through the people feature’s public Effect operations and the
-shared Effect Query adapter. The food-profile slice still owns roster invalidation
-and profile recovery; profile read/write operations retain their current interface.
+The roster uses the people feature’s public Effect operations. Profile reads,
+writes, and history use generated-client Effects and the shared Effect Query
+adapter. The food-profile slice owns invalidation and profile recovery. A sole
+decoded rejection releases a command; mixed Causes and defects preserve it.
 
 ## Evidence
 
@@ -32,7 +33,9 @@ drives visible controls. The [journey](../../../../apps/web/e2e/food-profile-jou
 crosses signup, family setup, the real local Website/API Workers, a profile save,
 correction, and reload. The [Vitest browser tests](../../../../apps/web/src/features/household-profiles/household-profiles-panel.test.tsx)
 exercise recovery and cache behavior in Chromium with a synthetic operations
-adapter. The [profile form tests](../../../../apps/web/src/features/household-profiles/profile-fact-form.test.tsx)
+adapter. The [generated-client browser tests](../../../../apps/web/src/features/household-profiles/browser-operations.browser.test.ts)
+cover scoped reads, pagination, cancellation, and full Cause projection.
+The [profile form tests](../../../../apps/web/src/features/household-profiles/profile-fact-form.test.tsx)
 cover explicit safety confirmation.
 
 Record the commit, runtime, action, result, and any unexercised paths for each

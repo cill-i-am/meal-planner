@@ -1,9 +1,10 @@
 import { HouseholdStatus } from "@meal-planner/household-api";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { parseDisplayedIdentity } from "../auth/displayed-identity.js";
-import { makeBrowserHouseholdOperations } from "./browser-operations.js";
+import { browserApiRuntime } from "../api-client/index.js";
+import { parseDisplayedIdentity } from "../auth/index.js";
+import { makeHouseholdEffectOperations } from "./browser-operations.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -36,12 +37,15 @@ describe("browser household operations", () => {
     );
     vi.stubGlobal("fetch", fetch);
 
-    const result = await makeBrowserHouseholdOperations(
-      parseDisplayedIdentity({
-        organizationId: "organization-a",
-        userId: "user-a",
-      })
-    ).current();
+    const result = await Effect.runPromise(
+      makeHouseholdEffectOperations(
+        parseDisplayedIdentity({
+          organizationId: "organization-a",
+          userId: "user-a",
+        }),
+        browserApiRuntime()
+      ).current()
+    );
 
     expect(result.organizationId).toBe("organization-a");
     expect(fetch).toHaveBeenCalledOnce();

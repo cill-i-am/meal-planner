@@ -20,14 +20,6 @@ export const normalizeRecipeGroundingText = (value: string) =>
     .replaceAll(/\s+/gu, " ")
     .trim();
 
-export const recipeEvidenceContains = (evidence: string, value: string) => {
-  const normalizedValue = normalizeRecipeGroundingText(value);
-  return (
-    normalizedValue.length > 0 &&
-    normalizeRecipeGroundingText(evidence).includes(normalizedValue)
-  );
-};
-
 /** A selected fragment cannot remove source polarity or conditions. */
 const preservesRecipeClauseQualifiers = (evidence: string, span: string) => {
   const start = evidence.indexOf(span);

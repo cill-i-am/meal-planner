@@ -7,11 +7,10 @@ import {
   RenameHouseholdPersonPayload,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureOperationId,
-  HouseholdMemberDepartureStart,
-  HouseholdPerson,
   HouseholdPeopleRoster,
   HouseholdInvitationDigest,
   HouseholdPersonId,
+  HouseholdPerson,
   HouseholdPersonLinkageSubject,
   HouseholdPersonMutationId,
   ListHouseholdPeopleUrlParams,
@@ -28,8 +27,6 @@ import {
   HouseholdPeopleMemberAdmission,
   HouseholdSystemAdmission,
 } from "../rpc/command-envelope.js";
-
-const PersonWire = Schema.toEncoded(HouseholdPerson);
 
 /** Closed private creator bootstrap input. */
 export const HouseholdBootstrapCreatorPersonInput = Schema.Struct({
@@ -214,24 +211,6 @@ export const HouseholdTransitionPersonInput = Schema.Struct({
 });
 export type HouseholdTransitionPersonInput =
   typeof HouseholdTransitionPersonInput.Type;
-
-/** Encoded privacy-safe person result crossing the private Worker boundary. */
-export const HouseholdPersonWire = PersonWire;
-
-/** Encoded privacy-safe departure operation crossing the private Worker boundary. */
-export const HouseholdMemberDepartureOperationWire = Schema.toEncoded(
-  HouseholdMemberDepartureOperation
-);
-
-/** Encoded privacy-safe Workflow authority crossing the private Worker boundary. */
-export const HouseholdMemberDepartureSystemStateWire = Schema.toEncoded(
-  HouseholdMemberDepartureSystemState
-);
-
-/** Encoded privacy-safe departure start crossing the private Worker boundary. */
-export const HouseholdMemberDepartureStartWire = Schema.toEncoded(
-  HouseholdMemberDepartureStart
-);
 
 export const HouseholdRenamePersonInput = Schema.Struct({
   admission: HouseholdPeopleMemberAdmission,

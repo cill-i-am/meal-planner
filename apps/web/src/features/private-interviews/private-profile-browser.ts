@@ -5,7 +5,7 @@ import { displayedIdentityHeaders } from "../auth/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
 import { makeHouseholdPeopleEffectOperations } from "../household-people/index.js";
 import {
-  makeBrowserHouseholdProfileOperations,
+  makeHouseholdProfileEffectOperations,
   ProfileOperationError,
 } from "../household-profiles/index.js";
 import { browserObservedFetch } from "../observability/browser-observability.js";
@@ -26,9 +26,17 @@ export const readCurrentPrivateProfile = async (scope: DisplayedIdentity) => {
   if (roster.currentPersonId === null) {
     throw new ProfileOperationError("self_required");
   }
-  return makeBrowserHouseholdProfileOperations(scope).get(
-    roster.currentPersonId
+  const profile = await Effect.runPromise(
+    Effect.result(
+      makeHouseholdProfileEffectOperations(scope, browserApiRuntime()).get(
+        roster.currentPersonId
+      )
+    )
   );
+  if (Result.isFailure(profile)) {
+    throw profile.failure;
+  }
+  return profile.success;
 };
 
 export const continuePrivateConfirmation = async (

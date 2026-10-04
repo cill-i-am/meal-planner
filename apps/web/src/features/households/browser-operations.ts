@@ -2,36 +2,36 @@ import {
   HouseholdApiClient,
   makeHouseholdApiClientLayer,
 } from "@meal-planner/household-api";
-import { Effect, Layer } from "effect";
+import { Data, Effect, Layer } from "effect";
 
-import { apiHttpLayer, browserApiRuntime } from "../api-client/index.js";
+import { apiHttpLayer } from "../api-client/index.js";
+import type { ApiRuntime } from "../api-client/index.js";
 import { displayedIdentityHeaders } from "../auth/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
-import type { HouseholdOperations } from "./operations.js";
 
-const makeClientRunner = (baseUrl: string | URL, scope: DisplayedIdentity) => {
+class HouseholdOperationError<Failure> extends Data.TaggedError(
+  "HouseholdOperationError"
+)<{ readonly cause: Failure }> {}
+
+/** The server checks live membership against the displayed identity. */
+export const makeHouseholdEffectOperations = (
+  scope: DisplayedIdentity,
+  runtime: ApiRuntime
+) => {
   const layer = makeHouseholdApiClientLayer({
-    baseUrl,
+    baseUrl: runtime.baseUrl,
     headers: displayedIdentityHeaders(scope),
-  }).pipe(Layer.provide(apiHttpLayer(browserApiRuntime())));
-  return <A, E>(
-    operation: (client: HouseholdApiClient) => Effect.Effect<A, E>
-  ): Promise<A> =>
-    Effect.runPromise(
-      HouseholdApiClient.pipe(Effect.flatMap(operation), Effect.provide(layer))
-    );
+  }).pipe(Layer.provide(apiHttpLayer(runtime)));
+  return {
+    current: () =>
+      HouseholdApiClient.pipe(
+        Effect.flatMap((client) => client.households.current()),
+        Effect.provide(layer),
+        Effect.mapError((cause) => new HouseholdOperationError({ cause }))
+      ),
+  };
 };
 
-/** The server verifies that the live session still matches the displayed identity. */
-export const makeBrowserHouseholdOperations = (
-  scope: DisplayedIdentity
-): HouseholdOperations => {
-  let clientRunner: ReturnType<typeof makeClientRunner> | undefined;
-  const run: ReturnType<typeof makeClientRunner> = (operation) => {
-    clientRunner ??= makeClientRunner(globalThis.location.origin, scope);
-    return clientRunner(operation);
-  };
-  return {
-    current: () => run((client) => client.households.current()),
-  };
-};
+export type HouseholdOperations = ReturnType<
+  typeof makeHouseholdEffectOperations
+>;

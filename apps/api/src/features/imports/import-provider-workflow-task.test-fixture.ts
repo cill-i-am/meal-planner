@@ -20,6 +20,7 @@ import { HouseholdDispatchId } from "../households/foundation/import-workflow-ad
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { HouseholdOrganizationId } from "../households/household.contract.js";
 import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
+import { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
 import { makeProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
 import {
   ProviderAccountingDispatchId,
@@ -28,7 +29,6 @@ import {
   providerKnownZeroCostFailure,
 } from "../provider-accounting/provider-accounting.js";
 import { makeD1ProviderAccountingRepository } from "../provider-accounting/provider-accounting.repository.d1.js";
-import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import {
   AcquisitionGeneration,
   Sha256Hex,

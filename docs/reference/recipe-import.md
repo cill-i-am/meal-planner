@@ -236,6 +236,12 @@ result ID, version, ordinal, receipt, Workflow ID, or object name. Expected
 domain failures are closed and tagged at the private boundary, then exhaustively
 mapped to stable public errors.
 
+The household recipe-import contract owns lifecycle transitions, review answers,
+and confirmation. The import slice projects an extracted draft directly into the
+initial review view. The dormant transition reducer and older review model are
+removed; execution generation remains a branded schema in the household
+[workflow shared kernel](../../apps/api/src/features/households/shared-kernel/workflow-identity.ts).
+
 ## Browser ownership
 
 The [recipe-import feature](../../apps/web/src/features/recipe-import/index.ts)

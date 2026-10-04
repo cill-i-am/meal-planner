@@ -6,4 +6,4 @@ Keep roster and profile reads, mutation identity, uncertain-result recovery, and
 
 The existing generated `HouseholdPeopleApiClient` covers profile HTTP calls. Preserve the submitted command and mutation ID after an unknown result; a stale version requires a fresh read and explicit resubmission. Keep safety changes on their separate confirmation path.
 
-Roster reads consume the people feature’s public Effect operations through `apiEffectQuery`. Profile read/write operations retain their existing interface; do not duplicate people transport or move profile recovery into the shared execution adapter.
+Roster reads consume the people feature’s public Effect operations. Profile reads and writes expose generated-client Effects and use `apiEffectQuery`, including history pagination. Only a sole decoded rejection is definitive; inspect the complete query Cause before releasing an unresolved command. Do not duplicate people transport or move profile recovery into the shared execution adapter.

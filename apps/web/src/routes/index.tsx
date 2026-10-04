@@ -29,10 +29,12 @@ import {
 import {
   HouseholdProfilesPanel,
   invalidateHouseholdProfiles,
-  makeBrowserHouseholdProfileOperations,
+  makeHouseholdProfileEffectOperations,
 } from "../features/household-profiles/index.js";
-import { makeBrowserHouseholdOperations } from "../features/households/browser-operations.js";
-import { HouseholdDomainStatus } from "../features/households/household-domain-status.js";
+import {
+  makeHouseholdEffectOperations,
+  HouseholdDomainStatus,
+} from "../features/households/index.js";
 import { PrivateInterviewsPanel } from "../features/private-interviews/private-interviews-panel.js";
 import {
   makeRecipeImportEffectOperations,
@@ -60,9 +62,9 @@ const AuthenticatedMealPlanner = ({
   const clients = useMemo(() => {
     const identity = { organizationId, userId };
     return {
-      household: makeBrowserHouseholdOperations(identity),
+      household: makeHouseholdEffectOperations(identity, runtime),
       people: makeHouseholdPeopleEffectOperations(identity, runtime),
-      profiles: makeBrowserHouseholdProfileOperations(identity),
+      profiles: makeHouseholdProfileEffectOperations(identity, runtime),
       recipes: makeRecipeImportEffectOperations(identity, runtime),
     };
   }, [userId, organizationId, runtime]);

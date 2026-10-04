@@ -21,7 +21,7 @@ import { apiEffectQuery } from "../api-client/index.js";
 import type { HouseholdPeopleEffectOperations } from "../household-people/index.js";
 import {
   isAmbiguousProfileError,
-  ProfileOperationError,
+  profileOperationFailure,
 } from "./operations.js";
 import type { HouseholdProfileOperations } from "./operations.js";
 
@@ -59,24 +59,33 @@ export const usePersonProfile = (
   organizationId: string,
   personId: HouseholdPersonId
 ) =>
-  useQuery({
-    queryFn: () => operations.get(personId),
-    queryKey: profileKey(organizationId, personId),
-  });
+  useQuery(
+    apiEffectQuery.queryOptions({
+      queryFn: () => operations.get(personId),
+      queryKey: profileKey(organizationId, personId),
+      retry: false,
+    })
+  );
 
 export const useProfileHistory = (
   operations: HouseholdProfileOperations,
   organizationId: string,
   personId: HouseholdPersonId
-) =>
-  useInfiniteQuery({
+) => {
+  const options = {
     getNextPageParam: (page: ProfileVersionPage) =>
       page.nextBeforeVersion ?? undefined,
     initialPageParam: null as number | null,
+    queryKey: [...profileKey(organizationId, personId), "history"],
+    retry: false,
+  };
+  const { queryFn } = apiEffectQuery.infiniteQueryOptions({
+    ...options,
     queryFn: ({ pageParam }) =>
       operations.versions(personId, pageParam ?? undefined),
-    queryKey: [...profileKey(organizationId, personId), "history"],
   });
+  return useInfiniteQuery({ ...options, queryFn });
+};
 
 /** One submitted command owns its identity until the result is known. */
 export const useHouseholdProfileState = ({
@@ -130,40 +139,41 @@ export const useHouseholdProfileState = ({
       retry: false,
     })
   );
-  const mutation = useMutation({
-    mutationFn: (change: PendingProfileChange) =>
-      operations.mutate(change.personId, change.payload),
-    onError: (error, submitted) => {
-      updatePending((current) => {
-        if (!ownsPendingChange(current, submitted)) {
-          return current;
-        }
-        if (
-          error instanceof ProfileOperationError &&
-          error.code === "authentication_required"
-        ) {
-          return { ...submitted, authenticationRequired: true };
-        }
-        return isAmbiguousProfileError(error) ? current : null;
-      });
-    },
-    onSuccess: async (result, submitted) => {
-      client.setQueryData<PersonProfile>(
-        profileKey(organizationId, result.personId),
-        (existing) =>
-          existing !== undefined && existing.version > result.version
-            ? existing
-            : result
-      );
-      updatePending((current) =>
-        ownsPendingChange(current, submitted) ? null : current
-      );
-      await client.invalidateQueries({
-        queryKey: profileKey(organizationId, result.personId),
-      });
-    },
-    retry: false,
-  });
+  const mutation = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: (change: PendingProfileChange) =>
+        operations.mutate(change.personId, change.payload),
+      onError: (error, submitted) => {
+        updatePending((current) => {
+          if (!ownsPendingChange(current, submitted)) {
+            return current;
+          }
+          if (
+            profileOperationFailure(error)?.code === "authentication_required"
+          ) {
+            return { ...submitted, authenticationRequired: true };
+          }
+          return isAmbiguousProfileError(error) ? current : null;
+        });
+      },
+      onSuccess: async (result, submitted) => {
+        client.setQueryData<PersonProfile>(
+          profileKey(organizationId, result.personId),
+          (existing) =>
+            existing !== undefined && existing.version > result.version
+              ? existing
+              : result
+        );
+        updatePending((current) =>
+          ownsPendingChange(current, submitted) ? null : current
+        );
+        await client.invalidateQueries({
+          queryKey: profileKey(organizationId, result.personId),
+        });
+      },
+      retry: false,
+    })
+  );
   const send = (
     personId: HouseholdPersonId,
     profile: PersonProfile,

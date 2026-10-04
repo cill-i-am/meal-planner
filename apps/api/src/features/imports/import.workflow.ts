@@ -30,7 +30,10 @@ import type { HouseholdDomainWorkerMethods } from "../households/household-domai
 import type { HouseholdOrganizationId } from "../households/household.contract.js";
 import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
 import type { HouseholdRecipeImportLifecycleTransition } from "../households/recipe-import/household-recipe-import.contract.js";
-import type { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
+import type {
+  ImportWorkflowIdentity,
+  ImportIntentExecutionGeneration,
+} from "../households/shared-kernel/workflow-identity.js";
 import { makeProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
 import {
   ProviderAccountingRunId,
@@ -65,7 +68,6 @@ import {
   makeHouseholdSpeechTranscriptionRepository,
   makeHouseholdVisualEvidenceRepository,
 } from "./import-evidence.repository.household.js";
-import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import {
   acquireStoreVerify,
   readVerifiedAcquisitionEvidence,

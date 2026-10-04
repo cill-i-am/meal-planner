@@ -1013,11 +1013,15 @@ it("refreshes the sibling shared profile and history on canonical settlement whi
     ],
   });
   const operations = {
-    get: vi.fn().mockResolvedValue(initialProfile),
-    mutate: vi.fn().mockRejectedValue(new ProfileOperationError("ambiguous")),
+    get: vi.fn().mockReturnValue(Effect.succeed(initialProfile)),
+    mutate: vi
+      .fn()
+      .mockReturnValue(Effect.fail(new ProfileOperationError("ambiguous"))),
     versions: vi
       .fn()
-      .mockResolvedValue({ nextBeforeVersion: null, versions: [] }),
+      .mockReturnValue(
+        Effect.succeed({ nextBeforeVersion: null, versions: [] })
+      ),
   };
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -1080,11 +1084,13 @@ it("refreshes the sibling shared profile and history on canonical settlement whi
   await user.click(
     screen.getByRole("button", { name: "Refresh current profile" })
   );
-  operations.get.mockResolvedValue(confirmedProfile);
-  operations.versions.mockResolvedValue({
-    nextBeforeVersion: null,
-    versions: [confirmedProfile],
-  });
+  operations.get.mockReturnValue(Effect.succeed(confirmedProfile));
+  operations.versions.mockReturnValue(
+    Effect.succeed({
+      nextBeforeVersion: null,
+      versions: [confirmedProfile],
+    })
+  );
   const outcome = {
     profileVersion: confirmedProfile.version,
     type: "committed" as const,

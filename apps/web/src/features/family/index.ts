@@ -5,7 +5,6 @@ export {
   useFamilyList,
 } from "./family-context.js";
 export {
-  familyEffectQuery,
   familyKeys,
   familyOperation,
   familyListQuery,

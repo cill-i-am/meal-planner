@@ -35,7 +35,6 @@ import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Exit, Option, Schema } from "effect";
 
 import migrations from "../../../household-migrations/migrations.js";
-import { ApprovedRecipe } from "../imports/import-recipe-review.js";
 import type { MealPlanServiceError } from "../meal-planning/meal-plan.js";
 import { HouseholdOutputFenceLive } from "../private-output/household-output-fence.js";
 import { HouseholdImportBatchQueueWriter } from "./batches/household-import-batch-queue.port.js";
@@ -117,7 +116,7 @@ import {
 } from "./shared-kernel/authority-services.js";
 import { HouseholdAuthorityServicesLive } from "./shared-kernel/authority-services.live.js";
 
-const ApprovedRecipeWire = Schema.toEncoded(ApprovedRecipe);
+const ApprovedRecipeWire = Schema.toEncoded(MealPlanRecipeSnapshot);
 const MealPlanWire = Schema.toEncoded(MealPlan);
 const MealPlanPolicyWire = Schema.toEncoded(MealPlanPolicy);
 const MealPlanRequestWire = Schema.toEncoded(MealPlanRequest);

@@ -14,7 +14,7 @@ import { PendingButton } from "../../components/ui/pending-button.js";
 import type { HouseholdPeopleEffectOperations } from "../household-people/index.js";
 import {
   isAmbiguousProfileError,
-  ProfileOperationError,
+  profileOperationFailure,
 } from "./operations.js";
 import type { HouseholdProfileOperations } from "./operations.js";
 import { describeProfileFact, ProfileFactForm } from "./profile-fact-form.js";
@@ -48,7 +48,8 @@ const standingLabel = (fact: ProfileFact) => {
     : "Confirmed by a household adult";
 };
 const profileErrorMessage = (error: Error | null) => {
-  if (!(error instanceof ProfileOperationError)) {
+  const failure = profileOperationFailure(error);
+  if (failure === undefined) {
     return "This profile could not be loaded. Retry when the service is available.";
   }
   const messages = {
@@ -75,7 +76,7 @@ const profileErrorMessage = (error: Error | null) => {
     stale_version:
       "This profile changed. Reload it, review the latest version, then explicitly reapply your change.",
   };
-  return messages[error.code];
+  return messages[failure.code];
 };
 
 const ProfileHistory = ({
@@ -257,10 +258,7 @@ const SelectedProfile = ({
   const definitiveError =
     error !== null &&
     !isAmbiguousProfileError(error) &&
-    !(
-      error instanceof ProfileOperationError &&
-      error.code === "authentication_required"
-    );
+    !(profileOperationFailure(error)?.code === "authentication_required");
   const disabled =
     blocked ||
     person.lifecycle === "archived" ||
