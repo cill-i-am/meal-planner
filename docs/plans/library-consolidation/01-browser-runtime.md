@@ -15,6 +15,127 @@ between two PRs. They edit this same plan. Package observations from September 1
 are historical; use the implementation checkout's manifests, lockfile, source,
 and tests to establish the starting point.
 
+## Scoped people and recipe-import delivery
+
+The October 4 deletion review selected two concrete refactors: remove the people
+Promise facade and replace the recipe-import Promise client. This delivery uses
+installed Effect 4.0.0, Effect Query 1.0.0, and TanStack Query 5.102.8. It does not
+run the broader profile/AtomHttpApi experiment below or upgrade dependencies.
+
+Both slices expose generated-client Effects through their public feature APIs.
+The API transport feature provides a stateless Effect Query adapter. Feature
+slices retain domain inputs, request shaping, failure projection, cache policy,
+and recovery. People uses its existing transport retry policy once, with Query
+retries disabled. Recipe-import retains no automatic mutation retries. Query
+cancellation reaches fetch in both slices.
+
+Removed: the people Promise facade and duplicate Promise operation type; the
+recipe-import Promise runner and handwritten result interface; duplicated empty
+people Query adapter setup. Recipe operation results are inferred from the
+shared generated contract. All production people operations are required; the
+panel no longer treats supplied operations as optional capabilities.
+
+That delivery left profile and household Promise clients and the family query
+adapter for the follow-up below. The private interview's narrow Promise callback
+remains an integration boundary. The broader AtomHttpApi pilot and acceptance
+checklist below remain proposed.
+
+Validation on October 4: `pnpm test` passed 1,660 tests; workspace typechecks,
+lint, formatting, the production build, documentation checks (including 24
+checker tests), and Ultracite doctor passed. The existing public-feature boundary
+check includes recipe-import and passed. The 14 family, food-profile, and private
+review Playwright journeys passed against local Website/API Workers on Chromium
+and mobile WebKit. An earlier run crossed a five-hour pause and expired Worker
+connections; the fresh runs used macOS’s native sleep inhibitor without changing
+checks or timeout limits.
+
+Feature tests cover exact-command recovery, deterministic and ambiguous failures,
+full Cause projection, and query cancellation through both generated clients.
+Recipe-import request/review behavior is verified by Chromium component and
+client tests; no live TikTok acquisition or paid model flow was exercised.
+
+## Follow-up deletion delivery
+
+The second October 4 review removes the profile and household Promise clients
+and the duplicate family Query adapter. The existing generated contracts now
+return Effects through each feature's public entrypoint and use `apiEffectQuery`.
+Profile recovery, mutation identity, version guards, cache keys, and pagination
+remain in the profile slice. Only a sole decoded rejection is definitive; a mixed
+Cause preserves an unresolved command. The private interview executes Effects
+only at its Promise callback boundary. No dependencies were upgraded.
+
+The same review removes the unused import transition reducer and the older
+recipe-review model. Execution generation remains a branded schema in the
+household workflow shared kernel. The live household contract continues to own
+review answers and confirmation; the import slice directly projects the initial
+draft into that contract. Native admission, receipts, lifecycle, and review
+coverage remain in place. Uncalled recovery readers, grounding helpers, route
+exports, and encoded person aliases are deleted with their dormant callers.
+
+Validation on October 4: `pnpm test` passed 1,645 tests, including 1,064 API,
+264 frontend, and 122 native Worker tests. The 14 family, food-profile, and
+private-review journeys passed on Chromium and mobile WebKit against local
+Website/API Workers. Workspace typechecks, lint, formatting, production build,
+documentation checks and 24 checker tests, and Ultracite doctor also passed.
+Generated-client tests cover scoped profile reads, pagination, cancellation, and
+full Cause projection; existing native workflow and household coverage remains.
+No live TikTok acquisition or paid model flow was exercised. The AtomHttpApi
+experiment below remains proposed.
+
+## Remaining small deletion delivery
+
+The third October 4 review selects six small cleanup groups. Authentication,
+password recovery, and invitations now use the existing stateless `apiEffectQuery`
+adapter. Their domain failures, retry windows, cache keys, and recovery stay in
+their slices. Better Auth commands keep their native client.
+
+Remove the test-only recipe-import HTTP assembly wrapper, unused observability
+helpers and queue event, unused constants and exports, unused recipe projections,
+and the private interview's redundant refresh alias. Tests compose the live HTTP
+layers, retain native workflow/provider correlation assertions, and use the live
+ingredient formatter. Actual provider gateway logging protections remain;
+the gateway comment now describes the installed binding's per-request logging
+setting. The operator-carousel path and confirmation HTTP refactor remain outside
+this delivery. The broader AtomHttpApi experiment remains proposed.
+
+Validation on October 4: `pnpm test` passed 1,644 tests, including 1,063 API,
+264 frontend, and 122 native Worker tests. All 14 family, food-profile, and
+private-review journeys passed on Chromium and mobile WebKit against local
+Website/API Workers. Typechecks, lint, formatting, production build,
+documentation checks and 24 checker tests, and Ultracite doctor passed.
+The only removed test exercised the unused gateway-header helper; live telemetry
+redaction and workflow/provider correlation checks remain. No live TikTok
+acquisition or paid model flow was exercised.
+
+## Carousel staging and private confirmation delivery
+
+Remove the operator carousel writer, staging store and unreachable Workflow
+branch. There was no production staging ingress, and source resolution rejects
+photo posts before acquisition. Keep the carousel evidence types, integrity
+checks and household commit rules; this delivery does not add photo acquisition.
+
+Replace manual confirmation URL matching, fetch and status decoding with the
+shared private-interview Effect HttpApi contract, generated browser client and
+typed handler. Mount the same layer in production and both native test hosts.
+The feature owns its transport; household authority remains the sole profile
+writer, and the private session owns frozen commands, receipts and recovery.
+
+The endpoint accepts only branded UUID metadata and an empty same-origin request.
+Responses carry no private bodies. The socket owner's Promise callback runs the
+Effect with its abort signal; HTTP acceptance leaves the saved command pending
+until canonical socket settlement. Invalid metadata is rejected before release.
+No storage migration, dependency upgrade or additional writable cache is needed.
+The broader AtomHttpApi experiment remains proposed.
+
+Validation on October 4: `pnpm test` passed 1,635 tests, including 1,050 API,
+268 frontend and 122 native Worker tests. All 14 family, food-profile and
+private-review journeys passed on Chromium and mobile WebKit against local
+Website/API Workers. Typechecks, production build, lint, formatting,
+documentation checks and 24 checker tests, and Ultracite doctor passed.
+Native confirmation tests cover copied references, lost replies, generation
+changes, explicit recovery, empty response bodies and malformed metadata.
+No live TikTok acquisition or paid model flow was exercised.
+
 ## Scope
 
 First make one complete profile flow work: read, save, and refresh from the server.

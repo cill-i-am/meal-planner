@@ -27,7 +27,12 @@ import {
   RestoreReturningAdultLinkPayload,
   RetryMemberDeparturePayload,
 } from "@meal-planner/household-api";
-import { PublishedRecipeSnapshot } from "@meal-planner/recipe-domain";
+import {
+  makeRecipeContent,
+  PublishedRecipeSnapshot,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+} from "@meal-planner/recipe-domain";
 import { Recipe } from "@meal-planner/recipe-import-api";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle/Cloudflare";
@@ -49,7 +54,7 @@ import type {
   HouseholdReadMealPlanInput,
   HouseholdListSavedRecipesInput,
 } from "./household-meal-plan.contract.js";
-import { HouseholdObjectRuntime } from "./household-object-runtime.js";
+import { makeHouseholdObjectRuntime } from "./household-object-runtime.js";
 import type {
   HouseholdDomainFailure,
   HouseholdEnsureInput,
@@ -130,7 +135,7 @@ const SavedRecipePageWire = Schema.toEncoded(SavedRecipePage);
 const alchemyRuntimeContractKey = "shape";
 const HouseholdObjectTestRuntime = Effect.gen(
   function* initializeHouseholdObjectTestRuntime() {
-    const household = yield* yield* HouseholdObjectRuntime.pipe(
+    const household = yield* yield* makeHouseholdObjectRuntime(migrations).pipe(
       Effect.provide(HouseholdAuthorityServicesLive),
       Effect.provide(HouseholdOutputFenceLive),
       Effect.provideService(HouseholdImportBatchQueueWriter, {
@@ -285,11 +290,15 @@ const HouseholdObjectTestRuntime = Effect.gen(
                   approvedAt: "2026-08-22T00:00:00.000Z",
                   extractionFingerprint: index.toString(16).padStart(64, "0"),
                   importId,
-                  recipe: {
-                    ingredientLines: [`Ingredient ${index}`],
-                    instructions: [`Cook recipe ${index}.`],
+                  recipe: makeRecipeContent({
+                    ingredients: [
+                      recipeIngredientFromText(`Ingredient ${index}`),
+                    ],
+                    instructions: [
+                      recipeInstructionFromText(`Cook recipe ${index}.`, 1),
+                    ],
                     name: `Approved recipe ${index}`,
-                  },
+                  }),
                   source: {
                     evidenceFingerprint: (index + count)
                       .toString(16)
@@ -298,7 +307,6 @@ const HouseholdObjectTestRuntime = Effect.gen(
                   },
                   tags: {
                     cuisines: ["Irish"],
-                    dietaryFit: "household_match",
                     difficulty: "easy",
                     leftovers: "one_meal",
                     mealTypes: ["dinner"],
@@ -309,24 +317,7 @@ const HouseholdObjectTestRuntime = Effect.gen(
                 const publicRecipe = Schema.decodeUnknownSync(Recipe)({
                   id: recipeId,
                   object: "recipe",
-                  recipe: {
-                    author: null,
-                    category: null,
-                    cookTimeMinutes: 10,
-                    cuisine: "Irish",
-                    description: null,
-                    ingredientLines: [`Ingredient ${index}`],
-                    ingredientQuantities: null,
-                    ingredientUnits: null,
-                    instructions: [`Cook recipe ${index}.`],
-                    name: `Approved recipe ${index}`,
-                    nutrition: null,
-                    prepTimeMinutes: 5,
-                    temperatureCelsius: null,
-                    tools: ["Pot"],
-                    totalTimeMinutes: 15,
-                    yield: "2 servings",
-                  },
+                  recipe: planningRecipe.recipe,
                   tags: planningRecipe.tags,
                 });
                 return connection.insert(householdRecipes).values({

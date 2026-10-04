@@ -25,16 +25,13 @@ import type {
   RecipeExtraction,
   RecipeExtractor,
   RecipeExtractorDescriptor as RecipeExtractorDescriptorType,
-  RecipeNumberFact,
-  RecipeStringFact,
-  RecipeUnresolvedField,
 } from "./import-recipe-extractor.js";
 import {
   DurableRecipeExtractionFailureCode,
   decodeRecipeExtraction,
   RecipeExtractorDescriptor,
 } from "./import-recipe-extractor.js";
-import { recipeEvidenceContains } from "./import-recipe-grounding.js";
+import { groundRecipeCandidate } from "./import-recipe-grounding.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import type { ImportTransitionError } from "./import.repository.js";
 import {
@@ -135,7 +132,7 @@ const visualEvidenceReason = (error: {
   return "visual_evidence_invalid";
 };
 
-export const RecipeFailureRecoveryPolicy = Schema.Literals([
+const RecipeFailureRecoveryPolicy = Schema.Literals([
   "dispatch_retry",
   "durable_recovery",
   "none",
@@ -348,178 +345,35 @@ const assembleEvidence = (
     } satisfies RecipeEvidenceAssembly;
   });
 
-const scalarFacts = (extraction: RecipeExtraction) => [
-  extraction.author,
-  extraction.category,
-  extraction.cookTimeMinutes,
-  extraction.cuisine,
-  extraction.description,
-  extraction.name,
-  extraction.nutrition,
-  extraction.prepTimeMinutes,
-  extraction.sourceUrl,
-  extraction.temperatureCelsius,
-  extraction.totalTimeMinutes,
-  extraction.yield,
-];
-
-const allSupportedFacts = (extraction: RecipeExtraction) => [
-  ...scalarFacts(extraction),
-  ...(extraction.ingredientLines.state === "supported"
-    ? extraction.ingredientLines.items
-    : []),
-  ...(extraction.instructions.state === "supported"
-    ? extraction.instructions.items
-    : []),
-  ...(extraction.supportedClaims.state === "supported"
-    ? extraction.supportedClaims.items
-    : []),
-  ...(extraction.tools.state === "supported" ? extraction.tools.items : []),
-];
-
-const expectedUnresolvedFields = (extraction: RecipeExtraction) => {
-  const fields: [RecipeUnresolvedField, { readonly state: string }][] = [
-    ["author", extraction.author],
-    ["category", extraction.category],
-    ["cook_time_minutes", extraction.cookTimeMinutes],
-    ["cuisine", extraction.cuisine],
-    ["description", extraction.description],
-    ["ingredient_lines", extraction.ingredientLines],
-    ["instructions", extraction.instructions],
-    ["name", extraction.name],
-    ["nutrition", extraction.nutrition],
-    ["prep_time_minutes", extraction.prepTimeMinutes],
-    ["temperature_celsius", extraction.temperatureCelsius],
-    ["tools", extraction.tools],
-    ["total_time_minutes", extraction.totalTimeMinutes],
-    ["yield", extraction.yield],
-  ];
-  return fields
-    .filter(([, fact]) => fact.state === "unresolved")
-    .map(([field]) => field);
-};
-
-const supportedStringValue = (fact: RecipeStringFact) =>
-  fact.state === "supported" ? fact.value : null;
-
-const cites = (fact: RecipeStringFact, evidenceId: string | undefined) =>
-  fact.state === "supported" &&
-  evidenceId !== undefined &&
-  fact.citations.some((citation) => citation.evidenceId === evidenceId);
-
-const numberFactIsSupportedBy = (
-  fact: RecipeNumberFact,
-  evidenceById: ReadonlyMap<string, RecipeEvidenceItem>,
-  predicate: (item: RecipeEvidenceItem, value: number) => boolean
-) =>
-  fact.state === "unresolved" ||
-  fact.citations.some((citation) => {
-    const item = evidenceById.get(citation.evidenceId);
-    return item !== undefined && predicate(item, fact.value);
-  });
-
-const timeIsSupported = (item: RecipeEvidenceItem, value: number) =>
-  new RegExp(`\\b${value}\\s*(?:minutes?|mins?)\\b`, "iu").test(item.value);
-
-const temperatureIsSupported = (item: RecipeEvidenceItem, value: number) =>
-  new RegExp(`\\b${value}\\s*(?:°\\s*)?c\\b`, "iu").test(item.value);
-
-const numericFactsAreGrounded = (
-  extraction: RecipeExtraction,
-  evidenceById: ReadonlyMap<string, RecipeEvidenceItem>
-) =>
-  [
-    extraction.cookTimeMinutes,
-    extraction.prepTimeMinutes,
-    extraction.totalTimeMinutes,
-  ].every((fact) =>
-    numberFactIsSupportedBy(fact, evidenceById, timeIsSupported)
-  ) &&
-  numberFactIsSupportedBy(
-    extraction.temperatureCelsius,
-    evidenceById,
-    temperatureIsSupported
-  );
-
-const extractionIsGrounded = (
+export const extractionIsGrounded = (
   extraction: RecipeExtraction,
   assembly: RecipeEvidenceAssembly,
-  source: VerifiedSourceMetadata
+  source: Pick<VerifiedSourceMetadata, "canonicalUrl" | "creator">
 ) => {
-  const evidenceById = new Map(
-    assembly.items.map((item) => [item.evidenceId, item] as const)
-  );
-  const citationsAreReal = allSupportedFacts(extraction).every((fact) => {
-    if (fact.state !== "supported") {
-      return true;
-    }
-    const citedEvidence = fact.citations.map((citation) => ({
-      citation,
-      item: evidenceById.get(citation.evidenceId),
-    }));
-    return (
-      citedEvidence.every(
-        ({ citation, item }) =>
-          item !== undefined &&
-          item.origin === citation.origin &&
-          (fact.origin === "inferred" || fact.origin === citation.origin)
-      ) &&
-      citedEvidence.some(({ item }) =>
-        item === undefined
-          ? false
-          : recipeEvidenceContains(item.value, String(fact.value))
-      )
-    );
-  });
-  const listsAreConsistent = [
-    extraction.ingredientLines,
-    extraction.instructions,
-    extraction.supportedClaims,
-    extraction.tools,
-  ].every(
-    (list) =>
-      list.state === "unresolved" ||
-      list.items.every((item) => item.state === "supported")
-  );
-  const sourceUrl = supportedStringValue(extraction.sourceUrl);
+  const expected = groundRecipeCandidate(extraction.recipe, assembly.items);
+  const sourceUrl =
+    expected.sourceUrl.state === "supported" ? expected.sourceUrl.value : null;
   const expectedAuthor =
     source.creator.displayName ?? source.creator.handle ?? null;
-  const author = supportedStringValue(extraction.author);
-  const sourceUrlEvidence = assembly.items.find(
-    (item) => item.kind === "source_url"
-  );
-  const creatorEvidence = assembly.items.find(
-    (item) => item.kind === "creator"
-  );
-  const unresolved = extraction.unresolvedFields;
-  const requiredUnresolved = [
-    ...expectedUnresolvedFields(extraction),
-    "ingredient_quantities" as const,
-    "ingredient_units" as const,
-  ];
   return (
-    citationsAreReal &&
-    numericFactsAreGrounded(extraction, evidenceById) &&
-    listsAreConsistent &&
-    extraction.usage.inputEvidenceItems === assembly.items.length &&
     sourceUrl === source.canonicalUrl &&
-    cites(extraction.sourceUrl, sourceUrlEvidence?.evidenceId) &&
-    (expectedAuthor === null
-      ? extraction.author.state === "unresolved"
-      : author === expectedAuthor &&
-        cites(extraction.author, creatorEvidence?.evidenceId)) &&
-    new Set(unresolved).size === unresolved.length &&
-    requiredUnresolved.length === unresolved.length &&
-    requiredUnresolved.every((field) => unresolved.includes(field))
+    expected.recipe.author?.name === (expectedAuthor ?? undefined) &&
+    extraction.usage.inputEvidenceItems === assembly.items.length &&
+    JSON.stringify(extraction.recipe) === JSON.stringify(expected.recipe) &&
+    JSON.stringify(extraction.sourceUrl) ===
+      JSON.stringify(expected.sourceUrl) &&
+    JSON.stringify(extraction.evidence) === JSON.stringify(expected.evidence) &&
+    JSON.stringify(extraction.unresolvedFields) ===
+      JSON.stringify(expected.unresolvedFields)
   );
 };
 
-/** Semantic recipe boundary: accessible non-food evidence must never become a draft. */
+/** Accessible non-food evidence must never become a draft. */
 export const hasMinimumRecipeEvidence = (extraction: RecipeExtraction) =>
-  extraction.ingredientLines.state === "supported" &&
-  extraction.ingredientLines.items.length > 0 &&
-  extraction.instructions.state === "supported" &&
-  extraction.instructions.items.length > 0;
+  extraction.recipe.ingredients !== null &&
+  extraction.recipe.ingredients.length > 0 &&
+  extraction.recipe.instructions !== null &&
+  extraction.recipe.instructions.length > 0;
 
 interface RecipeDraftClaimContext {
   readonly descriptor: RecipeExtractorDescriptorType;

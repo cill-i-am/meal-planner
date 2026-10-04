@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect";
-import type { Prompt } from "effect/unstable/ai";
+import type { Prompt } from "effect/ai";
 
 import { isProviderKnownZeroCostFailure } from "../provider-accounting/provider-accounting.js";
 import type { ImportCorrelationId } from "./import-observability.js";

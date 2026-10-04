@@ -1,13 +1,14 @@
 import { useMemo } from "react";
 
+import { useApiRuntime } from "../api-client/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
 import {
   HouseholdPeoplePanel,
-  makeBrowserHouseholdPeopleOperations,
+  makeHouseholdPeopleEffectOperations,
 } from "../household-people/index.js";
 import {
   HouseholdProfilesPanel,
-  makeBrowserHouseholdProfileOperations,
+  makeHouseholdProfileEffectOperations,
 } from "../household-profiles/index.js";
 
 export const FamilyDetails = ({
@@ -18,15 +19,13 @@ export const FamilyDetails = ({
   readonly currentMemberId?: string;
 }) => {
   const { organizationId, userId } = scope;
+  const runtime = useApiRuntime();
   const operations = useMemo(
     () => ({
-      people: makeBrowserHouseholdPeopleOperations({ organizationId, userId }),
-      profiles: makeBrowserHouseholdProfileOperations({
-        organizationId,
-        userId,
-      }),
+      people: makeHouseholdPeopleEffectOperations(scope, runtime),
+      profiles: makeHouseholdProfileEffectOperations(scope, runtime),
     }),
-    [organizationId, userId]
+    [organizationId, userId, runtime]
   );
   return (
     <div className="flex flex-col gap-8 py-6">

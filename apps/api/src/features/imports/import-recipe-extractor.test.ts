@@ -1,3 +1,8 @@
+import {
+  emptyRecipeDetails,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+} from "@meal-planner/recipe-domain";
 import { Schema } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
@@ -12,21 +17,11 @@ import type {
 } from "./import-recipe-extractor.js";
 
 const candidate = {
-  category: "pasta",
-  cookTimeMinutes: 12,
-  cuisine: null,
-  description: "quick tomato pasta",
-  ingredientLines: ["tomatoes", "pasta"],
-  instructions: ["boil the pasta"],
+  ...emptyRecipeDetails,
+  ingredients: [recipeIngredientFromText("tomatoes")],
+  instructions: [recipeInstructionFromText("boil the pasta", 1)],
   name: "tomato pasta",
-  nutrition: null,
-  prepTimeMinutes: null,
-  supportedClaims: ["ready in 12 minutes"],
-  temperatureCelsius: null,
-  tools: ["pan"],
-  totalTimeMinutes: 12,
-  yield: null,
-} as const;
+};
 
 describe("recipe extraction contracts", () => {
   it("keeps untrusted candidates structurally distinct from grounded facts", () => {

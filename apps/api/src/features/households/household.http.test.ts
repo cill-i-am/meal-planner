@@ -24,7 +24,7 @@ import {
   UserId,
 } from "@meal-planner/household-api";
 import { Effect, Layer, Schema } from "effect";
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { JsonHttpPlatformServices } from "../../infrastructure/json-http-platform.js";

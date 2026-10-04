@@ -3,6 +3,13 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import { HouseholdPerson } from "@meal-planner/household-api";
+import {
+  emptyRecipeDetails,
+  makeRecipeContent,
+  RecipeContent,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+} from "@meal-planner/recipe-domain";
 import { Effect, Schema } from "effect";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -33,28 +40,15 @@ const recipeImportReview = (
 ) => ({
   answers: [],
   blockers: { invalidFields: [], unresolvedRequiredFields: [] },
-  editableFields: ["name", "ingredient_lines", "instructions", "tags"],
-  recipe: {
-    author: null,
-    category: null,
-    cookTimeMinutes: 15,
-    cuisine: "Irish",
-    description: null,
-    ingredientLines,
-    ingredientQuantities: null,
-    ingredientUnits: null,
-    instructions: ["Cook locally."],
+  editableFields: ["name", "ingredients", "instructions", "tags"],
+  recipe: Schema.decodeUnknownSync(RecipeContent)({
+    ...emptyRecipeDetails,
+    ingredients: ingredientLines.map(recipeIngredientFromText),
+    instructions: [recipeInstructionFromText("Cook locally.", 1)],
     name,
-    nutrition: null,
-    prepTimeMinutes: 10,
-    temperatureCelsius: null,
-    tools: ["Pot"],
-    totalTimeMinutes: 25,
-    yield: "2 servings",
-  },
+  }),
   tags: {
     cuisines: ["Irish"],
-    dietaryFit: "household_match",
     difficulty: "easy",
     leftovers: "one_meal",
     mealTypes: ["dinner"],
@@ -678,7 +672,6 @@ const makeRuntime = () =>
           },
           manifest: fixtureManifest,
           name: "worker",
-          type: "worker",
         },
       },
       privateOutputRuntimeWorker(privateOutputManifest),
@@ -901,28 +894,15 @@ describe("household Durable Object", () => {
       review: {
         answers: [],
         blockers: { invalidFields: [], unresolvedRequiredFields: [] },
-        editableFields: ["name", "ingredient_lines", "instructions", "tags"],
-        recipe: {
-          author: null,
-          category: null,
-          cookTimeMinutes: 15,
-          cuisine: "Irish",
+        editableFields: ["name", "ingredients", "instructions", "tags"],
+        recipe: makeRecipeContent({
           description: "Provider-free household tracer.",
-          ingredientLines: ["1 local ingredient"],
-          ingredientQuantities: null,
-          ingredientUnits: null,
-          instructions: ["Cook locally."],
+          ingredients: [recipeIngredientFromText("1 local ingredient")],
+          instructions: [recipeInstructionFromText("Cook locally.", 1)],
           name: "Household tracer stew",
-          nutrition: null,
-          prepTimeMinutes: 10,
-          temperatureCelsius: null,
-          tools: ["Pot"],
-          totalTimeMinutes: 25,
-          yield: "2 servings",
-        },
+        }),
         tags: {
           cuisines: ["Irish"],
-          dietaryFit: "household_match",
           difficulty: "easy",
           leftovers: "one_meal",
           mealTypes: ["dinner"],
@@ -1317,8 +1297,10 @@ describe("household Durable Object", () => {
       actionId: oversized.actionId,
       answers: [
         {
-          field: "ingredient_lines",
-          value: Array.from({ length: 132 }, () => "x".repeat(4000)),
+          field: "ingredients",
+          value: Array.from({ length: 64 }, () =>
+            recipeIngredientFromText("x".repeat(4000))
+          ),
         },
       ],
       expectedActionVersion: 1,
@@ -1345,13 +1327,13 @@ describe("household Durable Object", () => {
     ).toMatchObject({ error: { reason: "invalid_input" }, ok: false });
 
     const bounded = await prepareReview("ab", "7000000000000000402");
-    const boundedIngredientLines = Array.from({ length: 124 }, () =>
-      "y".repeat(4000)
+    const boundedIngredients = Array.from({ length: 60 }, () =>
+      recipeIngredientFromText("y".repeat(4000))
     );
     expect(
       await dispatchHouseholdCommand({
         actionId: bounded.actionId,
-        answers: [{ field: "ingredient_lines", value: boundedIngredientLines }],
+        answers: [{ field: "ingredients", value: boundedIngredients }],
         expectedActionVersion: 1,
         idempotencyKey: "bounded-correction",
         intentId: bounded.intentId,
@@ -1396,7 +1378,7 @@ describe("household Durable Object", () => {
     } while (cursor !== null);
     expect(listed).toHaveLength(1);
     expect(listed[0]).toMatchObject({
-      recipe: { ingredientLines: { length: boundedIngredientLines.length } },
+      recipe: { ingredients: { length: boundedIngredients.length } },
     });
   });
 
@@ -1484,28 +1466,14 @@ describe("household Durable Object", () => {
         review: {
           answers: [],
           blockers: { invalidFields: [], unresolvedRequiredFields: [] },
-          editableFields: ["name", "ingredient_lines", "instructions", "tags"],
-          recipe: {
-            author: null,
-            category: null,
-            cookTimeMinutes: 15,
-            cuisine: "Irish",
-            description: null,
-            ingredientLines: ["1 race-safe ingredient"],
-            ingredientQuantities: null,
-            ingredientUnits: null,
-            instructions: ["Cook safely."],
+          editableFields: ["name", "ingredients", "instructions", "tags"],
+          recipe: makeRecipeContent({
+            ingredients: [recipeIngredientFromText("1 race-safe ingredient")],
+            instructions: [recipeInstructionFromText("Cook safely.", 1)],
             name: "Race-safe stew",
-            nutrition: null,
-            prepTimeMinutes: 10,
-            temperatureCelsius: null,
-            tools: ["Pot"],
-            totalTimeMinutes: 25,
-            yield: "2 servings",
-          },
+          }),
           tags: {
             cuisines: ["Irish"],
-            dietaryFit: "household_match",
             difficulty: "easy",
             leftovers: "one_meal",
             mealTypes: ["dinner"],
@@ -1536,28 +1504,14 @@ describe("household Durable Object", () => {
       review: {
         answers: [],
         blockers: { invalidFields: [], unresolvedRequiredFields: [] },
-        editableFields: ["name", "ingredient_lines", "instructions", "tags"],
-        recipe: {
-          author: null,
-          category: null,
-          cookTimeMinutes: 15,
-          cuisine: "Irish",
-          description: null,
-          ingredientLines: ["1 rollback ingredient"],
-          ingredientQuantities: null,
-          ingredientUnits: null,
-          instructions: ["Commit atomically."],
+        editableFields: ["name", "ingredients", "instructions", "tags"],
+        recipe: makeRecipeContent({
+          ingredients: [recipeIngredientFromText("1 rollback ingredient")],
+          instructions: [recipeInstructionFromText("Commit atomically.", 1)],
           name: "Rollback stew",
-          nutrition: null,
-          prepTimeMinutes: 10,
-          temperatureCelsius: null,
-          tools: ["Pot"],
-          totalTimeMinutes: 25,
-          yield: "2 servings",
-        },
+        }),
         tags: {
           cuisines: ["Irish"],
-          dietaryFit: "household_match",
           difficulty: "easy",
           leftovers: "one_meal",
           mealTypes: ["dinner"],
@@ -1631,28 +1585,14 @@ describe("household Durable Object", () => {
       review: {
         answers: [],
         blockers: { invalidFields: [], unresolvedRequiredFields: [] },
-        editableFields: ["name", "ingredient_lines", "instructions", "tags"],
-        recipe: {
-          author: null,
-          category: null,
-          cookTimeMinutes: 15,
-          cuisine: "Irish",
-          description: null,
-          ingredientLines: ["1 local ingredient"],
-          ingredientQuantities: null,
-          ingredientUnits: null,
-          instructions: ["Cook locally."],
+        editableFields: ["name", "ingredients", "instructions", "tags"],
+        recipe: makeRecipeContent({
+          ingredients: [recipeIngredientFromText("1 local ingredient")],
+          instructions: [recipeInstructionFromText("Cook locally.", 1)],
           name: "Terminal race stew",
-          nutrition: null,
-          prepTimeMinutes: 10,
-          temperatureCelsius: null,
-          tools: ["Pot"],
-          totalTimeMinutes: 25,
-          yield: "2 servings",
-        },
+        }),
         tags: {
           cuisines: ["Irish"],
-          dietaryFit: "household_match",
           difficulty: "easy",
           leftovers: "one_meal",
           mealTypes: ["dinner"],

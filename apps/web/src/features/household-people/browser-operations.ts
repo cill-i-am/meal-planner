@@ -2,12 +2,11 @@ import {
   HouseholdPeopleApiClient,
   makeHouseholdPeopleApiClientLayer,
 } from "@meal-planner/household-api";
-import { Cause, Effect, Exit, Option, Predicate, Result, Schema } from "effect";
-import * as HttpClientError from "effect/unstable/http/HttpClientError";
+import { Cause, Effect, Option, Predicate, Result, Schema } from "effect";
+import * as HttpClientError from "effect/http/HttpClientError";
 
 import {
   apiHttpLayer,
-  browserApiRuntime,
   transientRetry,
   isTransientHttpFailure,
 } from "../api-client/index.js";
@@ -18,10 +17,7 @@ import {
   decodeHouseholdPeopleOperationFailure,
   HouseholdPeopleOperationError,
 } from "./operations.js";
-import type {
-  HouseholdPeopleEffectOperations,
-  HouseholdPeopleOperations,
-} from "./operations.js";
+import type { HouseholdPeopleEffectOperations } from "./operations.js";
 
 const AmbiguousHttpClientFailureReason = Schema.Struct({
   _tag: Schema.Literals(["DecodeError", "EmptyBodyError", "TransportError"]),
@@ -213,20 +209,6 @@ const makeClientRunner = (scope: DisplayedIdentity, runtime: ApiRuntime) => {
     });
 };
 
-const runEffectOperation = async <A>(
-  effect: Effect.Effect<A, unknown>
-): Promise<A> => {
-  const exit = await Effect.runPromiseExit(effect);
-  if (Exit.isSuccess(exit)) {
-    return exit.value;
-  }
-  const failure = Cause.findErrorOption(exit.cause);
-  if (Option.isSome(failure)) {
-    throw failure.value;
-  }
-  return Effect.runPromise(Effect.failCause(exit.cause));
-};
-
 /** Same-origin generated client; membership authority remains server-side. */
 export const makeHouseholdPeopleEffectOperations = (
   scope: DisplayedIdentity,
@@ -351,50 +333,5 @@ export const makeHouseholdPeopleEffectOperations = (
           payload,
         })
       ),
-  };
-};
-
-/** Promise facade for consumers outside Effect query and mutation adapters. */
-export const makeBrowserHouseholdPeopleOperations = (
-  scope: DisplayedIdentity
-): HouseholdPeopleOperations => {
-  const operations = makeHouseholdPeopleEffectOperations(
-    scope,
-    browserApiRuntime()
-  );
-  return {
-    archive: (personId, payload) =>
-      runEffectOperation(operations.archive(personId, payload)),
-    associateInvitation: (payload) =>
-      runEffectOperation(operations.associateInvitation(payload)),
-    bootstrapCreator: (payload) =>
-      runEffectOperation(operations.bootstrapCreator(payload)),
-    cancelDeparture: (operationId, payload) =>
-      runEffectOperation(operations.cancelDeparture(operationId, payload)),
-    completeAdultLink: (payload) =>
-      runEffectOperation(operations.completeAdultLink(payload)),
-    create: (payload) => runEffectOperation(operations.create(payload)),
-    departAdult: (payload) =>
-      runEffectOperation(operations.departAdult(payload)),
-    getDeparture: (operationId) =>
-      runEffectOperation(operations.getDeparture(operationId)),
-    getDepartureByMutation: (mutationId) =>
-      runEffectOperation(operations.getDepartureByMutation(mutationId)),
-    inviteAdult: (payload) =>
-      runEffectOperation(operations.inviteAdult(payload)),
-    list: (includeArchived) =>
-      runEffectOperation(operations.list(includeArchived)),
-    remove: (personId, payload) =>
-      runEffectOperation(operations.remove(personId, payload)),
-    rename: (personId, payload) =>
-      runEffectOperation(operations.rename(personId, payload)),
-    repairAdultLink: (payload) =>
-      runEffectOperation(operations.repairAdultLink(payload)),
-    restore: (personId, payload) =>
-      runEffectOperation(operations.restore(personId, payload)),
-    retryDeparture: (operationId, payload) =>
-      runEffectOperation(operations.retryDeparture(operationId, payload)),
-    returnAdult: (payload) =>
-      runEffectOperation(operations.returnAdult(payload)),
   };
 };

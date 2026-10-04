@@ -15,7 +15,7 @@ import {
   makeHouseholdPeopleApiClientLayer,
 } from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 
 import { startLocalPreview } from "../local/preview-runtime.js";
 

@@ -1,5 +1,4 @@
-import { Option, Schema } from "effect";
-import { FastCheck } from "effect/testing";
+import { Arbitrary, Effect, Option, Schema } from "effect";
 import { expect, it } from "vitest";
 
 import {
@@ -8,45 +7,29 @@ import {
   ProfileFactStanding,
 } from "./profiles.js";
 
-it("round trips every closed fact family with bounded labels", () => {
-  const label = FastCheck.stringMatching(
-    /^[A-Za-z][A-Za-z0-9 ]{0,118}[A-Za-z0-9]$/u
-  );
-  const fact = FastCheck.oneof(
-    FastCheck.record({
-      _tag: FastCheck.constant("FoodPreference"),
-      label,
-      sentiment: FastCheck.constantFrom("like", "dislike", "strong_dislike"),
-      targetKind: FastCheck.constantFrom("ingredient", "dish", "cuisine"),
-    }),
-    FastCheck.record({
-      _tag: FastCheck.constant("HardConstraint"),
-      category: FastCheck.constantFrom(
-        "allergen",
-        "dietary_rule",
-        "ingredient_avoidance",
-        "other_safety"
-      ),
-      handling: FastCheck.constantFrom("exclude", "requires_adaptation"),
-      label,
-    }),
-    FastCheck.constant({ _tag: "NoKnownHardConstraints" })
-  );
-  FastCheck.assert(
-    FastCheck.property(fact, (value) => {
-      const decoded = Schema.decodeUnknownSync(ProfileFactValue)(value);
-      expect(Schema.encodeSync(ProfileFactValue)(decoded)).toEqual(value);
-      expect(
-        Option.isNone(
-          Schema.decodeUnknownOption(ProfileFactValue)({
+it("round trips every closed fact family with bounded labels", async () => {
+  const result = await Effect.runPromise(
+    Arbitrary.checkEffect(
+      Arbitrary.schema(ProfileFactValue),
+      (value) => {
+        const decoded = Schema.decodeUnknownSync(ProfileFactValue)(value);
+        expect(Schema.encodeSync(ProfileFactValue)(decoded)).toEqual(value);
+        return Option.isNone(
+          Schema.decodeUnknownOption(ProfileFactValue, {
+            onExcessProperty: "error",
+          })({
             ...value,
             transcript: "private",
           })
-        )
-      ).toBe(true);
-    }),
-    { numRuns: 150, seed: 1303 }
+        );
+      },
+      { runs: 150, seed: 1303 }
+    )
   );
+  expect(result, Arbitrary.formatCheckFailure(result)).toMatchObject({
+    _tag: "Passed",
+    runs: 150,
+  });
 });
 
 it("rejects unbounded labels, invented source or standing, and command authority injection", () => {
@@ -78,7 +61,9 @@ it("rejects unbounded labels, invented source or standing, and command authority
   };
   expect(
     Option.isSome(
-      Schema.decodeUnknownOption(MutatePersonProfilePayload)(payload)
+      Schema.decodeUnknownOption(MutatePersonProfilePayload, {
+        onExcessProperty: "error",
+      })(payload)
     )
   ).toBe(true);
   for (const extra of [
@@ -88,7 +73,9 @@ it("rejects unbounded labels, invented source or standing, and command authority
   ]) {
     expect(
       Option.isNone(
-        Schema.decodeUnknownOption(MutatePersonProfilePayload)({
+        Schema.decodeUnknownOption(MutatePersonProfilePayload, {
+          onExcessProperty: "error",
+        })({
           ...payload,
           ...extra,
         })
@@ -96,7 +83,9 @@ it("rejects unbounded labels, invented source or standing, and command authority
     ).toBe(true);
     expect(
       Option.isNone(
-        Schema.decodeUnknownOption(MutatePersonProfilePayload)({
+        Schema.decodeUnknownOption(MutatePersonProfilePayload, {
+          onExcessProperty: "error",
+        })({
           ...payload,
           command: { ...payload.command, ...extra },
         })
@@ -105,7 +94,9 @@ it("rejects unbounded labels, invented source or standing, and command authority
   }
   expect(
     Option.isNone(
-      Schema.decodeUnknownOption(MutatePersonProfilePayload)({
+      Schema.decodeUnknownOption(MutatePersonProfilePayload, {
+        onExcessProperty: "error",
+      })({
         ...payload,
         command: {
           _tag: "ConfirmHardConstraintReduction",

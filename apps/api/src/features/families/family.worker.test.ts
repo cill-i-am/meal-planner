@@ -13,7 +13,7 @@ import { eq } from "drizzle-orm";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { drizzle } from "drizzle-orm/d1";
 import { Effect, Result, Schema, Layer } from "effect";
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import * as authSchema from "../auth/auth.database-schema.js";
@@ -43,7 +43,7 @@ const actor = async () => {
   return id;
 };
 const input = (name: string) =>
-  Schema.decodeUnknownSync(CreateFamily)({
+  Schema.decodeUnknownSync(CreateFamily, { onExcessProperty: "error" })({
     mutationId: crypto.randomUUID(),
     name,
   });
@@ -83,7 +83,9 @@ describe("Family resource persistence in D1", () => {
         Effect.result(
           s.create(a, "A", {
             ...command,
-            name: Schema.decodeUnknownSync(CreateFamily)({
+            name: Schema.decodeUnknownSync(CreateFamily, {
+              onExcessProperty: "error",
+            })({
               ...command,
               name: "Other name",
             }).name,
@@ -106,7 +108,9 @@ describe("Family resource persistence in D1", () => {
       FamilyStore.use((s) => s.create(owner, "Creator", input("Before")))
     );
     const { id } = created.family;
-    const update = Schema.decodeUnknownSync(UpdateFamily)({
+    const update = Schema.decodeUnknownSync(UpdateFamily, {
+      onExcessProperty: "error",
+    })({
       expectedVersion: 1,
       mutationId: crypto.randomUUID(),
       name: "After",
@@ -149,11 +153,13 @@ describe("Family resource persistence in D1", () => {
         s.update(
           owner,
           id,
-          Schema.decodeUnknownSync(UpdateFamily)({
-            expectedVersion: complete.version,
-            mutationId: crypto.randomUUID(),
-            name: "Still editable",
-          })
+          Schema.decodeUnknownSync(UpdateFamily, { onExcessProperty: "error" })(
+            {
+              expectedVersion: complete.version,
+              mutationId: crypto.randomUUID(),
+              name: "Still editable",
+            }
+          )
         )
       )
     );

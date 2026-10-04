@@ -288,7 +288,6 @@ export const startLocalPreview = async (
           },
           manifest: gatewayManifest,
           name: "local-preview-gateway",
-          type: "worker",
         },
       },
       {
@@ -311,7 +310,6 @@ export const startLocalPreview = async (
             ),
           },
           name: "website",
-          type: "worker",
         },
       },
       {
@@ -357,7 +355,6 @@ export const startLocalPreview = async (
           },
           manifest: api,
           name: "api",
-          type: "worker",
         },
       },
       {
@@ -381,7 +378,6 @@ export const startLocalPreview = async (
           },
           manifest: domain,
           name: "household-domain",
-          type: "worker",
         },
       },
       {

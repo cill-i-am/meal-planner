@@ -185,3 +185,39 @@ Gateway. A disposable account described four people, changed Leo to Theo and the
 family name, explicitly agreed, reached food discovery without another click and
 retained all corrected people after reload. This proves that exercised live path;
 it does not replace the deterministic recovery tests or claim deployed changes.
+
+## Merge latest main into the feature branch
+
+Status: in progress
+
+The conversational setup refinement was committed as `88c3512`. The next
+explicit goal fetches and merges `origin/main` at `253e982` into this feature
+branch. It does not merge into main or deploy. The histories diverged by 15
+feature commits and 17 main commits, with 42 conflicted files.
+
+### Combined behavior
+
+- Keep the conversational family table, exact confirmation, retry receipts,
+  manual alternative and complete meal workspace.
+- Adopt main's structured recipe content and planning tags at the published
+  recipe boundary. Keep the richer person-and-occasion plan lifecycle and
+  remove the superseded slot planner.
+- Adopt stable Effect 4, Alchemy beta.80, native command and migration ownership,
+  typed browser operations, observability and main's required CI gate.
+- Refresh the existing Alchemy patch against the exact package. Keep its native
+  agent export beside generated Effect Durable Object and SQL migration bridges.
+- Native dev reads explicit optional local model settings and does not create
+  remote gateways or tokens. Deployment keeps its stage-owned resources.
+- Reject unexpected people queries and externally supplied stock reservations
+  with explicit Effect 4 boundary parsing. Reject setup acceptance without the
+  exact saved conversational confirmation.
+
+### Verification in progress
+
+Workspace typecheck and production build pass. Shared package suites pass
+(92 tests), frontend suites pass (284), root infrastructure checks pass (101),
+and native Worker suites pass (122). The first full API run passed 1,091 tests
+and identified three integration failures; all three have focused passing
+regressions after fixes. The first full desktop/mobile browser run passed 30
+journeys and identified four failures in tests for the newly collapsed food
+sections. Focused reruns and full local Alchemy stack startup are in progress.

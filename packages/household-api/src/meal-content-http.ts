@@ -1,11 +1,11 @@
 import { Context, Layer } from "effect";
-import { HttpClient, HttpClientRequest } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest } from "effect/http";
 import {
   HttpApi,
   HttpApiClient,
   HttpApiEndpoint,
   HttpApiGroup,
-} from "effect/unstable/httpapi";
+} from "effect/http-api";
 
 import {
   MutatePlanningContentPayload,
@@ -57,7 +57,10 @@ export const HouseholdPlanningContentGroup = HttpApiGroup.make(
 
 export const HouseholdPlanningContentApi = HttpApi.make(
   "householdPlanningContentApi"
-).add(HouseholdPlanningContentGroup);
+)
+  .annotate(HttpApi.PayloadParseOptions, { onExcessProperty: "error" })
+  .annotate(HttpApi.QueryParseOptions, { onExcessProperty: "error" })
+  .add(HouseholdPlanningContentGroup);
 export type HouseholdPlanningContentApiClient = HttpApiClient.ForApi<
   typeof HouseholdPlanningContentApi
 >;

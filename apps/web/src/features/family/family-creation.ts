@@ -9,21 +9,21 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Schema } from "effect";
 import { useState } from "react";
 
-import { useApiRuntime, queryFailure } from "../api-client/index.js";
+import {
+  apiEffectQuery,
+  useApiRuntime,
+  queryFailure,
+} from "../api-client/index.js";
 import type { ApiRuntime } from "../api-client/index.js";
 import { useAccount } from "../auth/index.js";
 import { usePendingRequest } from "../request-recovery/index.js";
-import {
-  familyEffectQuery,
-  familyOperation,
-  familyKeys,
-} from "./family-operations.js";
+import { familyOperation, familyKeys } from "./family-operations.js";
 
 export const familyCreationMutationOptions = (
   runtime: ApiRuntime,
   userId: UserId
 ) =>
-  familyEffectQuery.mutationOptions({
+  apiEffectQuery.mutationOptions({
     mutationFn: (payload: CreateFamily) =>
       familyOperation(runtime, userId, (api) =>
         api.families.create({ payload })
@@ -37,7 +37,10 @@ export const useCreateFamily = () => {
   const queryClient = useQueryClient();
   const retained = usePendingRequest<CreateFamily>(`${user.id}:family-create`);
   const scope = user.id;
-  const [receipt, setReceipt] = useState<{ scope: string; result: Family }>();
+  const [receipt, setReceipt] = useState<{
+    scope: string;
+    result: Family;
+  }>();
   const saved = receipt?.scope === scope ? receipt.result : undefined;
   const mutation = useMutation({
     ...familyCreationMutationOptions(runtime, user.id),
@@ -74,7 +77,7 @@ export const useCreateFamily = () => {
       }
       const command =
         retained.pending ??
-        Schema.decodeUnknownSync(CreateFamily)({
+        Schema.decodeUnknownSync(CreateFamily, { onExcessProperty: "error" })({
           mutationId: crypto.randomUUID(),
           name,
         });

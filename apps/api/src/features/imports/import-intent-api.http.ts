@@ -27,16 +27,12 @@ import {
 } from "@meal-planner/recipe-import-api";
 import type { RecipeId } from "@meal-planner/recipe-import-api";
 import { absurd, Cause, Context, Effect, Layer, Schema } from "effect";
-import {
-  HttpRouter,
-  HttpServerRequest,
-  HttpServerResponse,
-} from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import {
   HttpApiBuilder,
   HttpApiMiddleware,
   HttpApiSchema,
-} from "effect/unstable/httpapi";
+} from "effect/http-api";
 
 import { JsonHttpPlatformServices } from "../../infrastructure/json-http-platform.js";
 import {
@@ -623,9 +619,6 @@ export const makeRecipeReadHttpApiLayer = () =>
     Layer.provide(JsonHttpPlatformServices)
   );
 
-// eslint-disable-next-line typescript/no-explicit-any -- Effect's heterogeneous Route collection uses unconstrained error and context parameters.
-type AnyHttpRoute = HttpRouter.Route<any, any>;
-
 const notFound = HttpServerResponse.json(
   { error: { code: "not_found", message: "The route was not found." } },
   { status: 404 }
@@ -637,15 +630,3 @@ const RecipeImportNotFoundRoutes = [
 
 export const makeRecipeImportNotFoundHttpLayer = () =>
   HttpRouter.addAll(RecipeImportNotFoundRoutes);
-
-/** Mount the canonical typed API beside explicitly named operational routes. */
-export const makeRecipeImportWorkerHttpLayer = <
-  const OperationalRoutes extends readonly AnyHttpRoute[],
->(options: {
-  readonly operationalRoutes: OperationalRoutes;
-}) =>
-  Layer.mergeAll(
-    HttpRouter.addAll(options.operationalRoutes),
-    makeRecipeImportHttpApiLayer(),
-    makeRecipeImportNotFoundHttpLayer()
-  );

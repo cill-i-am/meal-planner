@@ -20,8 +20,10 @@ import type {
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
 import { InvitationRejectionReason } from "@meal-planner/household-api";
-import { Option, Schema } from "effect";
+import { Cause, Option, Schema } from "effect";
 import type { Effect } from "effect";
+
+import { queryFailure, queryFailureCause } from "../api-client/index.js";
 
 export const HouseholdPeopleOperationFailureCode = Schema.Literals([
   "bootstrap_conflict",
@@ -76,20 +78,21 @@ export class HouseholdPeopleOperationError extends Error {
   }
 }
 
-/** Generated-client operations for Effect query and mutation adapters. */
-export type HouseholdPeopleEffectOperations = {
-  readonly [K in keyof HouseholdPeopleOperations]-?: (
-    ...args: Parameters<NonNullable<HouseholdPeopleOperations[K]>>
-  ) => Effect.Effect<
-    Awaited<ReturnType<NonNullable<HouseholdPeopleOperations[K]>>>,
-    HouseholdPeopleOperationError
-  >;
-};
-
 export const householdPeopleFailureCode = (
   error: Error | null
-): HouseholdPeopleOperationFailureCode | undefined =>
-  Option.getOrUndefined(decodeHouseholdPeopleOperationFailure(error))?.code;
+): HouseholdPeopleOperationFailureCode | undefined => {
+  const wrapped = queryFailureCause(error);
+  if (
+    Option.isSome(wrapped) &&
+    (wrapped.value.reasons.length !== 1 ||
+      wrapped.value.reasons.some((reason) => !Cause.isFailReason(reason)))
+  ) {
+    return "transport_unavailable";
+  }
+  return Option.getOrUndefined(
+    decodeHouseholdPeopleOperationFailure(queryFailure(error))
+  )?.code;
+};
 
 export const isAmbiguousHouseholdPeopleFailure = (error: Error | null) => {
   const code = householdPeopleFailureCode(error);
@@ -101,61 +104,81 @@ export const isAmbiguousHouseholdPeopleFailure = (error: Error | null) => {
   );
 };
 
-/** Browser-facing household people operations. */
-export interface HouseholdPeopleOperations {
-  readonly rename?: (
+/** Generated-client operations shared by screens and their test adapters. */
+export interface HouseholdPeopleEffectOperations {
+  readonly rename: (
     personId: HouseholdPersonId,
     payload: RenameHouseholdPersonPayload
-  ) => Promise<HouseholdPerson>;
-  readonly associateInvitation?: (
+  ) => Effect.Effect<HouseholdPerson, HouseholdPeopleOperationError>;
+  readonly associateInvitation: (
     payload: AssociateHouseholdAdultInvitationPayload
-  ) => Promise<HouseholdPerson>;
-  readonly remove?: (
+  ) => Effect.Effect<HouseholdPerson, HouseholdPeopleOperationError>;
+  readonly remove: (
     personId: HouseholdPersonId,
     payload: TransitionHouseholdPersonPayload
-  ) => Promise<HouseholdPerson>;
+  ) => Effect.Effect<HouseholdPerson, HouseholdPeopleOperationError>;
   readonly archive: (
     personId: HouseholdPersonId,
     payload: TransitionHouseholdPersonPayload
-  ) => Promise<HouseholdPerson>;
+  ) => Effect.Effect<HouseholdPerson, HouseholdPeopleOperationError>;
   readonly bootstrapCreator: (
     payload: BootstrapHouseholdCreatorPayload
-  ) => Promise<HouseholdPerson>;
+  ) => Effect.Effect<HouseholdPerson, HouseholdPeopleOperationError>;
   readonly create: (
     payload: CreateHouseholdPersonPayload
-  ) => Promise<HouseholdPerson>;
-  readonly completeAdultLink?: (
+  ) => Effect.Effect<HouseholdPerson, HouseholdPeopleOperationError>;
+  readonly completeAdultLink: (
     payload: CompleteHouseholdAdultLinkPayload
-  ) => Promise<HouseholdPerson>;
-  readonly cancelDeparture?: (
+  ) => Effect.Effect<HouseholdPerson, HouseholdPeopleOperationError>;
+  readonly cancelDeparture: (
     operationId: HouseholdMemberDepartureOperationId,
     payload: CancelHouseholdAdultDeparturePayload
-  ) => Promise<HouseholdMemberDepartureOperation>;
-  readonly departAdult?: (
+  ) => Effect.Effect<
+    HouseholdMemberDepartureOperation,
+    HouseholdPeopleOperationError
+  >;
+  readonly departAdult: (
     payload: DepartHouseholdAdultPayload
-  ) => Promise<HouseholdMemberDepartureOperation>;
-  readonly getDeparture?: (
+  ) => Effect.Effect<
+    HouseholdMemberDepartureOperation,
+    HouseholdPeopleOperationError
+  >;
+  readonly getDeparture: (
     operationId: HouseholdMemberDepartureOperationId
-  ) => Promise<HouseholdMemberDepartureOperation>;
-  readonly getDepartureByMutation?: (
+  ) => Effect.Effect<
+    HouseholdMemberDepartureOperation,
+    HouseholdPeopleOperationError
+  >;
+  readonly getDepartureByMutation: (
     mutationId: HouseholdPersonMutationId
-  ) => Promise<HouseholdMemberDepartureOperation>;
-  readonly inviteAdult?: (
+  ) => Effect.Effect<
+    HouseholdMemberDepartureOperation,
+    HouseholdPeopleOperationError
+  >;
+  readonly inviteAdult: (
     payload: InviteHouseholdAdultPayload
-  ) => Promise<HouseholdAdultInvitationResult>;
-  readonly list: (includeArchived: boolean) => Promise<HouseholdPeopleRoster>;
-  readonly repairAdultLink?: (
+  ) => Effect.Effect<
+    HouseholdAdultInvitationResult,
+    HouseholdPeopleOperationError
+  >;
+  readonly list: (
+    includeArchived: boolean
+  ) => Effect.Effect<HouseholdPeopleRoster, HouseholdPeopleOperationError>;
+  readonly repairAdultLink: (
     payload: RepairHouseholdAdultLinkPayload
-  ) => Promise<HouseholdPerson>;
-  readonly retryDeparture?: (
+  ) => Effect.Effect<HouseholdPerson, HouseholdPeopleOperationError>;
+  readonly retryDeparture: (
     operationId: HouseholdMemberDepartureOperationId,
     payload: RetryHouseholdAdultDeparturePayload
-  ) => Promise<HouseholdMemberDepartureOperation>;
-  readonly returnAdult?: (
+  ) => Effect.Effect<
+    HouseholdMemberDepartureOperation,
+    HouseholdPeopleOperationError
+  >;
+  readonly returnAdult: (
     payload: ReturnHouseholdAdultPayload
-  ) => Promise<HouseholdPerson>;
+  ) => Effect.Effect<HouseholdPerson, HouseholdPeopleOperationError>;
   readonly restore: (
     personId: HouseholdPersonId,
     payload: TransitionHouseholdPersonPayload
-  ) => Promise<HouseholdPerson>;
+  ) => Effect.Effect<HouseholdPerson, HouseholdPeopleOperationError>;
 }

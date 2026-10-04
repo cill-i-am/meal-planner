@@ -4,6 +4,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import { Effect } from "effect";
 
 import { AgentProvider } from "../../infrastructure/agent-provider.js";
+import { workerObservability } from "../../infrastructure/worker-observability.js";
 import type {
   AccountOutputLifecycle,
   HouseholdAgent,
@@ -20,7 +21,7 @@ export class PrivateOutputWorker extends Cloudflare.Worker<PrivateOutputWorker>(
   Effect.gen(function* PrivateOutputWorkerProps() {
     const provider = yield* AgentProvider;
     return {
-      compatibility: { date: "2026-07-14", flags: ["nodejs_compat"] },
+      ...workerObservability,
       env: {
         AccountOutputLifecycle:
           Cloudflare.DurableObject<AccountOutputLifecycle>(
@@ -41,10 +42,7 @@ export class PrivateOutputWorker extends Cloudflare.Worker<PrivateOutputWorker>(
             "PrivateInterviewSession"
           ),
       },
-      main: globalThis.__ALCHEMY_RUNTIME__
-        ? "private-output-worker.ts"
-        : new URL("private-output-worker.ts", import.meta.url).href,
-      observability: { enabled: false },
+      main: new URL("private-output-worker.ts", import.meta.url).href,
       workersDev: false,
     };
   })

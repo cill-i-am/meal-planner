@@ -6,54 +6,72 @@ and the [web scripts](../../apps/web/package.json) for the required versions and
 commands. Install application tools with `pnpm install --frozen-lockfile` when
 needed. Documentation checks need only Python 3.
 
-## Local Tesco catalogue host
+## Native Alchemy development
 
-`pnpm dev` starts the API's Node host, not the full household web and Worker app.
-The [API README](../../apps/api/README.md) lists the required shell settings.
-The host uses Effect Config to read process environment variables; it does not
-load `.env` files. Use authorized provider credentials and keep them out of records.
+Run `pnpm dev` from the repository root. This starts the actual Alchemy stack:
+Website with Vite hot reload, API, D1 migrations, SQLite Durable Objects, queues,
+Workflows, R2 and the local media container. Docker must be running for the media
+container. Open the Website URL printed by Alchemy.
 
-## Web and Cloudflare behavior
+`pnpm dev` calls `alchemy dev --env-file .dev.vars` directly. Keep local application
+configuration in the ignored `.dev.vars` file, separate from production `.env`.
+For a fresh checkout, use `.env.example` as a reference and provide the app's
+required auth secret, import token and opaque system identities. Existing local
+configuration remains usable; no cloud credentials are needed for local storage.
 
-See the [web README](../../apps/web/README.md) for web entrypoints and the
-[infrastructure guide](operate-infrastructure.md) for bindings, stages and local
-runtime checks. Running the frontend alone does not test Worker routing, D1,
-Durable Objects or private output. Use the existing native test configurations
-when changing those parts.
+Alchemy captures household SQL migrations during construction and embeds them
+in the Worker, so the CLI needs no custom SQL import hook. The existing household
+migration ledger is adopted in place; Drizzle still generates the SQL.
 
-Do not assume `alchemy dev` or `plan` is read-only or local. Setting up remote
-state can change infrastructure. Inspect the wrapper and target before running it.
-The live preview below runs the household web app with local storage and live
-Workers AI. Other provider workflows still need their own runtime.
+Alchemy selects its default `dev_<username>` stage. Local state and resource data
+are held under `.alchemy/` and survive restarts. Use
+`pnpm dev --stage dev_example` for a separate local environment, or
+`pnpm exec alchemy dev --env-file PATH` for another application configuration.
+Stop with Ctrl+C. These are Alchemy's native options, without a custom launcher.
+
+The stack selects `Alchemy.localState()` during native dev and hosted Cloudflare
+state for deployment. It skips live AI Gateway provisioning locally. Email uses
+Alchemy's local simulator; inspect its emitted mail files. AI has no local
+emulator: Alchemy prepares remote AI bindings, which require a valid Cloudflare
+profile, and actual model calls incur provider charges. A missing AI profile does
+not make the local auth and household features require a cloud deployment.
+
+Follow [Alchemy local development](https://alchemy.run/cloudflare/local-development/)
+for platform behavior and supported bindings. `pnpm dev:tesco` retains the separate
+Node catalogue host; its configuration is documented in the
+[API README](../../apps/api/README.md).
+
+## Native stack integration tests
+
+`pnpm test:stack` uses [Alchemy's test harness](https://alchemy.run/testing/)
+with `dev: true`, the real stack and its default RPC sidecar topology. Each run
+uses a unique local stage, disposable application secrets, real D1 migrations and
+native service bindings. It checks Website/API readiness and household creation,
+request replay and reads through the generated auth and Effect clients. The
+harness destroys its stage after the suite. Keep Docker running for this test.
+The Vitest configuration explicitly runs lifecycle hooks in registration order,
+as required by Alchemy's sidecar cleanup.
 
 ## Live family and planning agent
 
-### Full Alchemy development stack
+Native development does not create agent gateways or API tokens. To use an
+existing Cloudflare-billed model locally, supply `LOCAL_AGENT_ACCOUNT_ID`,
+`LOCAL_AGENT_API_TOKEN`, `LOCAL_AGENT_GATEWAY_ID`,
+`LOCAL_AGENT_CONVERSATION_CONFIG` and `LOCAL_AGENT_PRIVATE_DISCOVERY_CONFIG` in
+your ignored environment file. The two config values use the provider schemas
+in the [agent conversation reference](../reference/agent-conversations.md) and
+[private discovery reference](../reference/private-discovery.md). Keep tokens
+private. Missing local model settings leave auth and family storage available;
+chat reports that its model is not configured. Actual inference uses Cloudflare
+credits.
 
-For a walkthrough with frontend hot reload and the full Worker service graph,
-run Alchemy's development command with a dedicated stage and an ignored local
-environment file:
+For this worktree's existing local dataset, the native command is:
 
 ```sh
-ALCHEMY_PROFILE=ceird-admin-global node --import tsx node_modules/alchemy/bin/alchemy.js dev \
-  --stage dev_cillian_a56d --profile ceird-admin-global --env-file .alchemy/local-dev.env
+pnpm exec alchemy dev --stage dev_cillian_a56d --profile ceird-admin-global --env-file .alchemy/local-dev.env
 ```
 
-The Website requests `http://localhost:4399`; use the URL Alchemy prints if that
-port is occupied. Accounts and application storage belong to this local stage.
-Workers, D1, Durable Objects, queues, workflows, R2 and the media container run
-locally. Agent and import gateways plus the scoped inference token are real
-Cloudflare resources owned by the development stage. GPT-6 Luna calls use
-Cloudflare credits. Email goes to Alchemy's local simulator.
-
-The local environment file needs separate `BETTER_AUTH_SECRET` and
-`MEAL_PLANNER_IMPORT_API_TOKEN` values, the system import actor and household
-scope IDs, and the email sender/delivery settings described in the
-[API README](../../apps/api/README.md). Keep it ignored and private. Alchemy's
-runtime Workerd dependency is pinned to the same version as the native tests;
-the older bundled binary cannot run the private Worker's compatibility date
-or the family-resource migration. Do not rewrite applied migrations to work
-around an older local runtime.
+The Website requests port 4399; use the URL Alchemy prints if it is occupied.
 
 ### Persistent limited preview
 
@@ -94,8 +112,8 @@ departure workflows are not configured in this preview. Email is captured in
 local KV storage and is never sent externally. Test seed, fault injection and
 mail inspection routes are absent.
 
-The separate `dev:auth-family` command below uses scripted model responses for
-repeatable tests. Use `dev:preview` when trying your own chat messages.
+The auth and family test fixture uses scripted model responses for repeatable
+tests. Use `dev:preview` when trying your own chat messages.
 
 After building the web Worker, verify the preview's service connections without
 calling a model:
@@ -117,6 +135,7 @@ token through their bindings. Both use GPT-6 Luna through Cloudflare Responses.
 The local preview above continues to use its own explicit loopback configuration
 and does not create these deployed resources. Credit purchases remain an account
 billing operation; deployment needs the intended Alchemy stage and profile.
+
 
 ## Verification
 
@@ -146,8 +165,8 @@ credentials, deployment, external email, or AI provider are needed.
 Run the standalone build and this suite sequentially in a checkout; building
 while Miniflare watches client assets can restart the test server.
 
-For a manual walkthrough, run `pnpm --filter @meal-planner/web dev:auth-family`
-and open `http://127.0.0.1:4398/signup`. Stop the process with Ctrl+C when finished.
+For a manual walkthrough of the full application, use `pnpm dev` above.
+The focused fixture is started only by its test commands.
 Test mail is captured at `/__test/mail?email=ENCODED_TEST_EMAIL`. This endpoint, `/__test/expire-session`, and
 the test-client IP header exist only in the isolated fixture. The build script
 calls Alchemy’s public source-provider API without evaluating the deployment

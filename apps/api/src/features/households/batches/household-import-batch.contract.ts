@@ -40,7 +40,7 @@ export const HouseholdAdmitImportBatchInput = Schema.Struct({
   admission: HouseholdMemberAdmission,
   idempotencyKey: IdempotencyKey,
   request: CreateRecipeImportBatchRequest,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdAdmitImportBatchInput =
   typeof HouseholdAdmitImportBatchInput.Type;
 
@@ -49,7 +49,7 @@ export const HouseholdBatchQueueMessage = Schema.Struct({
   generation: PositiveSafeInteger,
   itemId: RecipeImportBatchItemId,
   organizationId: HouseholdMemberAdmission.fields.organizationId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdBatchQueueMessage = typeof HouseholdBatchQueueMessage.Type;
 
 export const HouseholdAdmitImportBatchResult = Schema.Struct({
@@ -62,14 +62,14 @@ export type HouseholdAdmitImportBatchResult =
 export const HouseholdReadImportBatchInput = Schema.Struct({
   admission: HouseholdMemberAdmission,
   batchId: RecipeImportBatchId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdReadImportBatchInput =
   typeof HouseholdReadImportBatchInput.Type;
 
 export const HouseholdClaimImportBatchItemInput = Schema.Struct({
   admission: HouseholdSystemAdmission,
   message: HouseholdBatchQueueMessage,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdClaimImportBatchItemInput =
   typeof HouseholdClaimImportBatchItemInput.Type;
 
@@ -79,7 +79,7 @@ export const HouseholdClaimedImportBatchItem = Schema.Struct({
   idempotencyKey: IdempotencyKey,
   source: CreateRecipeImportBatchItemRequest.fields.source,
 });
-export const HouseholdTerminalImportBatchItem = Schema.Struct({
+const HouseholdTerminalImportBatchItem = Schema.Struct({
   _tag: Schema.Literal("Terminal"),
   batch: RecipeImportBatch,
 });
@@ -100,7 +100,7 @@ const HouseholdBatchItemMutationCommon = {
 export const HouseholdCompleteImportBatchItemInput = Schema.Struct({
   ...HouseholdBatchItemMutationCommon,
   intentId: RecipeImportIntentId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdCompleteImportBatchItemInput =
   typeof HouseholdCompleteImportBatchItemInput.Type;
 
@@ -110,7 +110,7 @@ export const HouseholdFailImportBatchItemInput = Schema.Struct({
     "dispatch_exhausted",
     "import_admission_failed",
   ]),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdFailImportBatchItemInput =
   typeof HouseholdFailImportBatchItemInput.Type;
 
@@ -120,6 +120,6 @@ export const HouseholdRecordImportBatchDispatchInput = Schema.Struct({
   expectedGeneration: PositiveSafeInteger,
   itemId: RecipeImportBatchItemId,
   outcome: Schema.Literals(["delivered", "retry", "exhausted"]),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdRecordImportBatchDispatchInput =
   typeof HouseholdRecordImportBatchDispatchInput.Type;

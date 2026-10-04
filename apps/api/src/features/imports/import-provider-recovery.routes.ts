@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { HttpRouter, HttpServerRequest } from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest } from "effect/http";
 
 import {
   ProviderRecoveryRequest,
@@ -53,7 +53,3 @@ export const ProviderRecoveryRouteDefinitions = [
     }).pipe((effect) => respond(effect, ProviderRecoveryResponse, () => 200))
   ),
 ] as const;
-
-export const ProviderRecoveryRoutes = HttpRouter.addAll(
-  ProviderRecoveryRouteDefinitions
-);

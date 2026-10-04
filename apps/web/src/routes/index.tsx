@@ -34,7 +34,7 @@ import {
 import type { WorkspaceSearch } from "../features/meal-workspace/index.js";
 import {
   RecipeImportWorkspace,
-  makeBrowserRecipeImportOperations,
+  makeRecipeImportEffectOperations,
 } from "../features/recipe-import/index.js";
 
 const WorkspaceContent = ({
@@ -47,9 +47,10 @@ const WorkspaceContent = ({
   readonly currentMemberId?: string;
 }) => {
   const { organizationId, userId } = scope;
+  const runtime = useApiRuntime();
   const recipes = useMemo(
-    () => makeBrowserRecipeImportOperations({ organizationId, userId }),
-    [organizationId, userId]
+    () => makeRecipeImportEffectOperations(scope, runtime),
+    [organizationId, userId, runtime]
   );
   if (search.import === true || search.intentId !== undefined) {
     return (
@@ -116,8 +117,9 @@ const AuthenticatedMealPlanner = ({
   readonly onSelectFamily: (id: string) => void;
   readonly onSignOut: () => void;
 }) => {
+  const runtime = useApiRuntime();
   const family = useQuery(
-    familyQuery(useApiRuntime(), scope.userId, scope.organizationId)
+    familyQuery(runtime, scope.userId, scope.organizationId)
   );
   if (family.isPending) {
     return <StatusScreen title="Loading your family…" />;

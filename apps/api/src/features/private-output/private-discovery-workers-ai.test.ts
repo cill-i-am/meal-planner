@@ -80,7 +80,9 @@ const unknownUsage = {
   inputTokens: null,
   outputTokens: null,
 };
-const output = Schema.decodeUnknownSync(SubmitDiscoveryTurn)({
+const output = Schema.decodeUnknownSync(SubmitDiscoveryTurn, {
+  onExcessProperty: "error",
+})({
   intent: {
     _tag: "Continue",
     proposals: [],
@@ -141,7 +143,9 @@ interface CapturedOptions {
     readonly collectLog: boolean;
     readonly id: string;
     readonly requestTimeoutMs: number;
-    readonly retries: { readonly maxAttempts: number };
+    readonly retries: {
+      readonly maxAttempts: number;
+    };
     readonly skipCache: boolean;
   };
   readonly returnRawResponse: boolean;
@@ -352,10 +356,9 @@ describe("private discovery native TanStack provider", () => {
     const result = await Effect.runPromise(
       test.model.generate(test.generateInput)
     );
-    const standard = Schema.toStandardJSONSchemaV1(
-      Schema.toStandardSchemaV1(
-        makePrivateDiscoveryProviderOutput(test.input.context.cards)
-      )
+    const standard = Schema.toJsonSchemaDocument(
+      makePrivateDiscoveryProviderOutput(test.input.context.cards),
+      { onExcessProperty: "error" }
     );
     expect(test.run).toHaveBeenCalledOnce();
     expect(test.beforeDispatch).toHaveBeenCalledOnce();
@@ -382,9 +385,7 @@ describe("private discovery native TanStack provider", () => {
             function: {
               description: expect.any(String),
               name: "submitDiscoveryTurn",
-              parameters: standard["~standard"].jsonSchema.input({
-                target: "draft-2020-12",
-              }),
+              parameters: { ...standard.schema, $defs: standard.definitions },
               strict: true,
             },
             type: "function",

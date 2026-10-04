@@ -65,7 +65,9 @@ describe("bounded private context without model-owned questions", () => {
     { ...note("usual_meals"), detail: "   " },
   ])("rejects obsolete question/state and empty context fields", (invalid) => {
     expect(() =>
-      Schema.decodeUnknownSync(PrivateDiscoveryContinuityNote)(invalid)
+      Schema.decodeUnknownSync(PrivateDiscoveryContinuityNote, {
+        onExcessProperty: "error",
+      })(invalid)
     ).toThrow();
   });
   it("cannot use a context note to reopen declined required meal coverage", () => {
@@ -115,7 +117,9 @@ describe("bounded private context without model-owned questions", () => {
       subject: "🍲".repeat(59),
     }));
     expect(() =>
-      Schema.decodeUnknownSync(PrivateDiscoveryContinuity)(state(...large))
+      Schema.decodeUnknownSync(PrivateDiscoveryContinuity, {
+        onExcessProperty: "error",
+      })(state(...large))
     ).toThrow();
   });
   it("preserves Stop exactly and rejects simultaneous changes or stale stop evidence", () => {
@@ -145,7 +149,9 @@ describe("bounded private context without model-owned questions", () => {
       { ...changes(), clarification: undefined },
     ]) {
       expect(() =>
-        Schema.decodeUnknownSync(PrivateDiscoveryContinuityUpdates)(invalid)
+        Schema.decodeUnknownSync(PrivateDiscoveryContinuityUpdates, {
+          onExcessProperty: "error",
+        })(invalid)
       ).toThrow();
     }
   });

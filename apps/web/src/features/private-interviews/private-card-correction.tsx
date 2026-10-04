@@ -58,13 +58,17 @@ const decodeChange = (
       return Option.none();
     }
     if (fields.action === "confirm") {
-      return Schema.decodeUnknownOption(ProfileCardChange)({
+      return Schema.decodeUnknownOption(ProfileCardChange, {
+        onExcessProperty: "error",
+      })({
         _tag: "ConfirmProfileFact",
         factId: current.id,
       });
     }
     if (fields.action === "remove") {
-      return Schema.decodeUnknownOption(ProfileCardChange)(
+      return Schema.decodeUnknownOption(ProfileCardChange, {
+        onExcessProperty: "error",
+      })(
         current.value._tag === "FoodPreference"
           ? { _tag: "RemoveOrdinaryProfileFact", factId: current.id }
           : {
@@ -103,13 +107,17 @@ const decodeChange = (
     });
   }
   if (current?.value._tag === "FoodPreference") {
-    return Schema.decodeUnknownOption(ProfileCardChange)({
+    return Schema.decodeUnknownOption(ProfileCardChange, {
+      onExcessProperty: "error",
+    })({
       _tag: "ReplaceOrdinaryProfileFact",
       fact: fact.value,
       factId: current.id,
     });
   }
-  return Schema.decodeUnknownOption(ProfileCardChange)({
+  return Schema.decodeUnknownOption(ProfileCardChange, {
+    onExcessProperty: "error",
+  })({
     _tag: "ConfirmHardConstraintReduction",
     factId: current?.id,
     replacement: fact.value,

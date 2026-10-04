@@ -12,7 +12,7 @@ export const HouseholdReadPersonProfileInput = Schema.Struct({
   admission: HouseholdPeopleMemberAdmission,
   personId: HouseholdPersonId,
   version: Schema.NullOr(ProfileVersion),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdReadPersonProfileInput =
   typeof HouseholdReadPersonProfileInput.Type;
 
@@ -20,7 +20,7 @@ export const HouseholdListProfileVersionsInput = Schema.Struct({
   admission: HouseholdPeopleMemberAdmission,
   beforeVersion: Schema.NullOr(ProfileVersion),
   personId: HouseholdPersonId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdListProfileVersionsInput =
   typeof HouseholdListProfileVersionsInput.Type;
 
@@ -28,7 +28,7 @@ export const HouseholdMutatePersonProfileInput = Schema.Struct({
   admission: HouseholdPeopleMemberAdmission,
   payload: MutatePersonProfilePayload,
   personId: HouseholdPersonId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdMutatePersonProfileInput =
   typeof HouseholdMutatePersonProfileInput.Type;
 
@@ -48,6 +48,6 @@ export const HouseholdMutateInterviewProfileInput = Schema.Struct({
     command: InterviewProfileCommand,
   }),
   personId: HouseholdPersonId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdMutateInterviewProfileInput =
   typeof HouseholdMutateInterviewProfileInput.Type;

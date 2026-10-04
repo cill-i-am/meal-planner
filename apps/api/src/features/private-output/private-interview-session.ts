@@ -18,6 +18,7 @@ import {
 } from "@tanstack/ai";
 import { reconstructChat, withPersistence } from "@tanstack/ai-persistence";
 import { Agent } from "agents";
+import { instrumentDrizzle } from "cloudflare-drizzle-tracing";
 import { eq, gt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import { migrate } from "drizzle-orm/durable-sqlite/migrator";
@@ -70,7 +71,12 @@ const Authorization = Schema.Struct({
 const decodeBinding = Schema.decodeUnknownSync(PrivateSessionBinding, {
   onExcessProperty: "error",
 });
-type CardMutation = Extract<SessionCommand, { readonly cardId: string }>;
+type CardMutation = Extract<
+  SessionCommand,
+  {
+    readonly cardId: string;
+  }
+>;
 type ThreadPersistence = ReturnType<PrivateChatPersistence["forThread"]>;
 type ParsedChatParameters = Awaited<
   ReturnType<typeof chatParamsFromRequestBody>
@@ -94,7 +100,9 @@ const sameBinding = (
   left.sessionReference === right.sessionReference;
 /** Owns private history and physical WebSockets. No transcript RPC; model output stays inside its owning private child. */
 export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> {
-  #database = drizzle(this.ctx.storage);
+  #database = instrumentDrizzle(drizzle(this.ctx.storage), {
+    attributes: { "db.namespace": "private-output" },
+  });
   #socket = new PrivateOutputSocket(this.ctx, this.#database, this.env);
   #turns = new PrivateAssistantTurns(this.#database, this.#socket);
   #chat = new PrivateChatPersistence(this.#database);
@@ -319,11 +327,16 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
     try {
       if (request.method === "POST") {
         body = await request.json();
-        input = Schema.decodeUnknownSync(
-          Schema.Struct({ privateChatContext: PrivateChatContext })
-        )(body).privateChatContext;
+        const envelope = Schema.decodeUnknownSync(
+          Schema.Struct({ privateChatContext: Schema.Unknown })
+        )(body);
+        input = Schema.decodeUnknownSync(PrivateChatContext, {
+          onExcessProperty: "error",
+        })(envelope.privateChatContext);
       } else {
-        input = Schema.decodeUnknownSync(PrivateChatContext)(
+        input = Schema.decodeUnknownSync(PrivateChatContext, {
+          onExcessProperty: "error",
+        })(
           JSON.parse(
             decodeURIComponent(
               request.headers.get("private-chat-context") ?? ""
@@ -621,9 +634,14 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       .where(eq(privateProfileCards.id, card.id))
       .run();
   }
-  #cardRejection(
-    command: CardMutation
-  ): Extract<SessionFrame, { type: "Rejected" }>["reason"] | undefined {
+  #cardRejection(command: CardMutation):
+    | Extract<
+        SessionFrame,
+        {
+          type: "Rejected";
+        }
+      >["reason"]
+    | undefined {
     const card = this.#card(command.cardId);
     if (card === undefined) {
       return "card_not_found";
@@ -679,7 +697,9 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       } else {
         closedCommand = change;
       }
-      const payload = Schema.decodeUnknownSync(MutatePersonProfilePayload)({
+      const payload = Schema.decodeUnknownSync(MutatePersonProfilePayload, {
+        onExcessProperty: "error",
+      })({
         command: closedCommand,
         expectedProfileVersion: card.expectedProfileVersion,
         mutationId: command.mutationId,
@@ -725,7 +745,8 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       return {
         generation,
         payload: Schema.decodeUnknownSync(
-          Schema.fromJsonString(MutatePersonProfilePayload)
+          Schema.fromJsonString(MutatePersonProfilePayload),
+          { onExcessProperty: "error" }
         )(pending.payloadJson),
         type: "pending",
       };
@@ -818,7 +839,12 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
     return { status: binding.status, version: binding.version };
   }
   #turnRejection():
-    | Extract<SessionFrame, { type: "Rejected" }>["reason"]
+    | Extract<
+        SessionFrame,
+        {
+          type: "Rejected";
+        }
+      >["reason"]
     | undefined {
     return this.#turns.pending() === undefined
       ? undefined

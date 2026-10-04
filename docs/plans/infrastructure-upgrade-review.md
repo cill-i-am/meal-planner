@@ -27,10 +27,9 @@ this upgrade preserves.
 Local tests exercise conversion and replay; actual deployed histories have
 not been inspected.
 
-The custom 84-line NodeNext source loader is deleted. The command wrapper
-uses the already-pinned `tsx` through Node's `--import tsx`. A real Alchemy
-CLI plan of an in-memory fixture resolves the repository's `.js`-to-`.ts`
-imports without the loader. The stage/profile and approval guards remain.
+The custom 84-line NodeNext source loader is deleted. Alchemy's native CLI resolves the repository's `.js`-to-`.ts` imports without
+that loader. The later command wrapper and D1 preflight tool were removed on
+3 October at the owner's request; use Alchemy directly.
 
 The runtime suite also exposed an Effect `.109` → `.112` failure-handling
 change. Provider accounting now grants zero-cost retry authority only to a
@@ -137,20 +136,19 @@ and accounting evidence. This is lower priority than container lifetime.
   bindings are valuable; a generic infrastructure abstraction would add another
   interface to maintain. Do not replace the working Website/Vite setup merely
   because `.76` adds more framework integrations.
-- Resolve AI Gateway stage ownership before preview automation. Its explicit
-  physical ID is `meal-planner-recipe-import`, unlike stage-derived resource
-  names. Either stage-scope that physical ID or deliberately manage it as one
-  shared account resource. Verify existing ownership first; renaming it can
-  change provider configuration and budget behavior.
+- The AI Gateway remains the shared account resource
+  `meal-planner-recipe-import`. Native Alchemy retention preserves it during
+  preview destruction; stage-local databases and Workers remain isolated.
+  See [GitHub Actions](../how-to/operate-infrastructure.md#github-actions).
 - Keep cloud-free loader and provider regression tests as the fast upgrade
   lane. Run it against unpatched candidates first, then retain only proven
   patch sections. A real stack plan can bootstrap account-wide Alchemy state,
   so it is not a harmless dependency check.
-- Consider path-sensitive execution of the expensive synthetic container CI
-  job, while retaining an always-reporting required check. Trigger it for the
-  container runtime, acquisition/artifact paths, fixtures, CI definition, and
-  dependency changes; document-only changes need no image build. Keep ordinary
-  quality checks universal.
+- Container and native-stack CI now runs for relevant backend, shared-package,
+  infrastructure and dependency changes. Ordinary quality and behavior checks
+  remain universal; manual runs include all container checks. The bespoke D1
+  source scanner and its mutation suite have been removed.
+  See [GitHub Actions](../how-to/operate-infrastructure.md#github-actions).
 
 Recommended order: container lifecycle, batch delivery recovery intervals,
 container sizing benchmark, then usage-driven Workflow/log tuning. These are

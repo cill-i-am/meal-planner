@@ -48,16 +48,20 @@ const Command = Schema.Struct({
   commandId: Schema.String,
   organizationId: Schema.String,
   scenario: Scenario,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
-
+});
 interface TestKvNamespace {
   readonly get: (key: string) => Promise<string | null>;
   readonly put: (key: string, value: string) => Promise<void>;
 }
 
 interface NativeWorkflowInstance {
-  readonly restart: () => Promise<void>;
-  readonly status: () => Promise<{ readonly status: string }>;
+  readonly restart: (options?: {
+    readonly from: { readonly name: string; readonly type: "do" };
+  }) => Promise<void>;
+  readonly status: () => Promise<{
+    readonly status: string;
+    readonly error?: { readonly name: string; readonly message: string };
+  }>;
 }
 
 interface NativeWorkflowBinding {
@@ -342,6 +346,52 @@ const waitForTerminalStatus = async (
   return workflow.get(id).then((instance) => instance.status());
 };
 
+/** Explicit test recovery preserves the terminal defect and the original native checkpoint. */
+const recoverNativeDefects = async (
+  workflow: NativeWorkflowBinding,
+  id: string,
+  scenario: (typeof Command.Type)["scenario"],
+  status: Awaited<ReturnType<NativeWorkflowInstance["status"]>>,
+  terminalDefects: readonly string[] = [],
+  remaining = 5
+): Promise<{
+  readonly status: typeof status;
+  readonly terminalDefects: readonly string[];
+}> => {
+  if (
+    status.status !== "errored" ||
+    ![
+      "admission-lost-response",
+      "dispatch-lost-response",
+      "dispatch-committed-reconcile-unavailable",
+    ].includes(scenario)
+  ) {
+    return { status, terminalDefects };
+  }
+  const failures = [...terminalDefects, status.error?.name ?? "missing-error"];
+  if (remaining === 0) {
+    return { status, terminalDefects: failures };
+  }
+  const instance = await workflow.get(id);
+  await instance.restart({
+    from: {
+      name:
+        scenario === "admission-lost-response"
+          ? "admit-household-recipe-import"
+          : "dispatch-recipe-import-workflow",
+      type: "do",
+    },
+  });
+  return recoverNativeDefects(
+    workflow,
+    id,
+    scenario,
+    await waitForTerminalStatus(workflow, id),
+    failures,
+    remaining - 1
+  );
+};
+
 const readEventually = async (
   environment: TestEnvironment,
   key: string,
@@ -377,7 +427,9 @@ export default {
     const admittedBatch = await Effect.runPromise(
       household
         .admitImportBatch(
-          Schema.decodeUnknownSync(HouseholdAdmitImportBatchInput)({
+          Schema.decodeUnknownSync(HouseholdAdmitImportBatchInput, {
+            onExcessProperty: "error",
+          })({
             admission: memberAdmission,
             idempotencyKey: `batch-${command.commandId}`,
             request: {
@@ -407,9 +459,9 @@ export default {
       if (storedMessage === null) {
         throw new Error("Expected one admitted or previously stored message.");
       }
-      message = Schema.decodeUnknownSync(HouseholdBatchQueueMessage)(
-        JSON.parse(storedMessage)
-      );
+      message = Schema.decodeUnknownSync(HouseholdBatchQueueMessage, {
+        onExcessProperty: "error",
+      })(JSON.parse(storedMessage));
     } else {
       await environment.BATCH_WORKFLOW_STATE.put(
         messageKey,
@@ -423,7 +475,11 @@ export default {
     );
     const sessionId =
       await environment.HouseholdBatchTestWorkflow.unsafeStartIntrospection();
-    let status: { readonly status: string };
+    let status: {
+      readonly status: string;
+      readonly error?: { readonly name: string; readonly message: string };
+    };
+    const terminalDefects: string[] = [];
     try {
       const created = await environment.BATCH_WORKFLOW_STATE.get(
         stateKey(workflowId, "created")
@@ -452,6 +508,14 @@ export default {
         environment.HouseholdBatchTestWorkflow,
         workflowId
       );
+      const recovered = await recoverNativeDefects(
+        environment.HouseholdBatchTestWorkflow,
+        workflowId,
+        command.scenario,
+        status
+      );
+      ({ status } = recovered);
+      terminalDefects.push(...recovered.terminalDefects);
     } finally {
       await environment.HouseholdBatchTestWorkflow.unsafeStopIntrospection(
         sessionId
@@ -468,7 +532,9 @@ export default {
     const replay = await Effect.runPromise(
       household
         .admitRecipeImport(
-          Schema.decodeUnknownSync(HouseholdAdmitRecipeImportInput)({
+          Schema.decodeUnknownSync(HouseholdAdmitRecipeImportInput, {
+            onExcessProperty: "error",
+          })({
             admission: memberAdmission,
             idempotencyKey: `item-${command.commandId}`,
             source: {
@@ -486,7 +552,9 @@ export default {
     const outbox = await Effect.runPromise(
       household
         .recordRecipeImportDispatch(
-          Schema.decodeUnknownSync(HouseholdRecordRecipeImportDispatchInput)({
+          Schema.decodeUnknownSync(HouseholdRecordRecipeImportDispatchInput, {
+            onExcessProperty: "error",
+          })({
             admission: {
               actor: {
                 _tag: "System",
@@ -543,6 +611,7 @@ export default {
         workflowIdentity: replay.workflowIdentity,
       },
       status,
+      terminalDefects,
       workflowId,
     });
   },

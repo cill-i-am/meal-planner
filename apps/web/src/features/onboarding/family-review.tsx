@@ -19,6 +19,7 @@ import {
   CardFooter,
 } from "../../components/ui/card.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
+import { apiEffectQuery } from "../api-client/index.js";
 import { useAccount } from "../auth/index.js";
 import {
   useCompleteFamilySetup,
@@ -26,7 +27,6 @@ import {
   useFamilyActions,
   PersonRow,
   useFamilyRoster,
-  peopleEffectQuery,
   RosterActions,
   RosterManagementOverlay,
   useRosterManagement,
@@ -37,7 +37,7 @@ import { SetupFrame } from "./setup-ui.js";
 const useLogout = () => {
   const account = useAccount();
   return useMutation(
-    peopleEffectQuery.mutationOptions({
+    apiEffectQuery.mutationOptions({
       mutationFn: () => account.logout("/setup"),
       mutationKey: ["setup-logout"],
     })

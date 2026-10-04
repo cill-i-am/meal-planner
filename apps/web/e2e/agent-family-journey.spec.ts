@@ -1,4 +1,7 @@
-import { ConversationAction } from "@meal-planner/agent-conversations-api";
+import {
+  ConversationAction,
+  ConversationView,
+} from "@meal-planner/agent-conversations-api";
 import { Family } from "@meal-planner/families";
 import {
   HouseholdPeopleRoster,
@@ -9,6 +12,65 @@ import { Schema } from "effect";
 import { expect, test } from "./fixtures.js";
 import { AuthPage } from "./pages/auth-page.js";
 import { FamilyPage } from "./pages/family-page.js";
+
+test("a setup roster cannot be saved without its conversational confirmation", async ({
+  page,
+}) => {
+  await new AuthPage(page).signUp(
+    "Alex",
+    `agent-unconfirmed-${crypto.randomUUID()}@example.test`
+  );
+  await page
+    .getByRole("textbox", { exact: true, name: "Your message" })
+    .fill("Me, my partner Sam and our kids Maya and Leo.");
+  await page.getByRole("button", { exact: true, name: "Send message" }).click();
+  await expect(
+    page
+      .getByRole("region", { name: "Your family table" })
+      .getByRole("heading", { name: "Alex’s family" })
+  ).toBeVisible();
+
+  const read = await page.request.get("/v1/agent-conversations/setup");
+  expect(read.ok()).toBe(true);
+  const view = Schema.decodeUnknownSync(ConversationView)(await read.json());
+  const roster = view.blocks.findLast(
+    (block) => block._tag === "RosterProposal" && block.status === "proposed"
+  );
+  if (roster?._tag !== "RosterProposal") {
+    throw new Error("Expected the current proposed roster");
+  }
+  const action = Schema.decodeUnknownSync(ConversationAction)({
+    actionId: crypto.randomUUID(),
+    blockId: roster.id,
+    decision: "accept",
+    expectedRevision: roster.revision,
+    reviewedRoster: {
+      creatorName: roster.creatorName,
+      familyName: roster.familyName,
+      people: roster.people,
+    },
+    safetyConfirmation: null,
+  });
+  const save = await page.request.post(
+    "/v1/agent-conversations/setup/actions",
+    { data: action, headers: { origin: new URL(page.url()).origin } }
+  );
+  expect(save.status()).toBe(409);
+
+  const after = await page.request.get("/v1/agent-conversations/setup");
+  expect(after.ok()).toBe(true);
+  expect(
+    Schema.decodeUnknownSync(ConversationView)(await after.json()).actions
+  ).toEqual([]);
+
+  const familiesResponse = await page.request.get("/v1/families");
+  expect(familiesResponse.ok()).toBe(true);
+  expect(
+    Schema.decodeUnknownSync(Schema.Array(Family))(
+      await familiesResponse.json()
+    )
+  ).toEqual([]);
+});
 
 test("chat corrections, confirmation and a lost save lead into food discovery", async ({
   page,

@@ -13,15 +13,41 @@ import {
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HouseholdPeoplePanel } from "./household-people-panel.js";
 import { HouseholdPeopleOperationError } from "./operations.js";
 import type {
   HouseholdPeopleOperationFailureCode,
-  HouseholdPeopleOperations,
+  HouseholdPeopleEffectOperations,
 } from "./operations.js";
+
+const unusedOperations: HouseholdPeopleEffectOperations = {
+  archive: () => Effect.die("Unexpected archive test operation"),
+  associateInvitation: () =>
+    Effect.die("Unexpected associateInvitation test operation"),
+  bootstrapCreator: () =>
+    Effect.die("Unexpected bootstrapCreator test operation"),
+  cancelDeparture: () =>
+    Effect.die("Unexpected cancelDeparture test operation"),
+  completeAdultLink: () =>
+    Effect.die("Unexpected completeAdultLink test operation"),
+  create: () => Effect.die("Unexpected create test operation"),
+  departAdult: () => Effect.die("Unexpected departAdult test operation"),
+  getDeparture: () => Effect.die("Unexpected getDeparture test operation"),
+  getDepartureByMutation: () =>
+    Effect.die("Unexpected getDepartureByMutation test operation"),
+  inviteAdult: () => Effect.die("Unexpected inviteAdult test operation"),
+  list: () => Effect.die("Unexpected list test operation"),
+  remove: () => Effect.die("Unexpected remove test operation"),
+  rename: () => Effect.die("Unexpected rename test operation"),
+  repairAdultLink: () =>
+    Effect.die("Unexpected repairAdultLink test operation"),
+  restore: () => Effect.die("Unexpected restore test operation"),
+  retryDeparture: () => Effect.die("Unexpected retryDeparture test operation"),
+  returnAdult: () => Effect.die("Unexpected returnAdult test operation"),
+};
 
 const failure = (code: HouseholdPeopleOperationFailureCode) =>
   new HouseholdPeopleOperationError(code);
@@ -122,7 +148,7 @@ const departureOperation = (
   });
 
 const renderPanel = (
-  operations: HouseholdPeopleOperations,
+  operations: HouseholdPeopleEffectOperations,
   currentMemberId?: string
 ) => {
   const queryClient = new QueryClient({
@@ -151,21 +177,24 @@ afterEach(() => {
 
 describe("HouseholdPeoplePanel", () => {
   it("selects an existing adult before inviting and never renders the submitted email", async () => {
-    const inviteAdult = vi.fn().mockResolvedValue({
-      association: "associated",
-      invitationId: "invitation-a",
-      person: {
-        ...unlinkedRoster.people[0],
-        associationState: "invitation_pending",
-        associationVersion: 1,
-      },
-    });
-    const operations: HouseholdPeopleOperations = {
+    const inviteAdult = vi.fn().mockReturnValue(
+      Effect.succeed({
+        association: "associated",
+        invitationId: "invitation-a",
+        person: {
+          ...unlinkedRoster.people[0],
+          associationState: "invitation_pending",
+          associationVersion: 1,
+        },
+      })
+    );
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       bootstrapCreator: vi.fn(),
       create: vi.fn(),
       inviteAdult,
-      list: vi.fn().mockResolvedValue(unlinkedRoster),
+      list: vi.fn().mockReturnValue(Effect.succeed(unlinkedRoster)),
       restore: vi.fn(),
     };
     renderPanel(operations);
@@ -182,8 +211,7 @@ describe("HouseholdPeoplePanel", () => {
       expect.objectContaining({
         email: "adult@example.test",
         personId,
-      }),
-      expect.anything()
+      })
     );
     expect(screen.queryByText("adult@example.test")).toBeNull();
     expect(screen.getByLabelText("Email")).toHaveValue("");
@@ -193,12 +221,13 @@ describe("HouseholdPeoplePanel", () => {
     "keeps an invalid invitation email in the form without sending it: %s",
     async (email) => {
       const inviteAdult = vi.fn();
-      const operations: HouseholdPeopleOperations = {
+      const operations: HouseholdPeopleEffectOperations = {
+        ...unusedOperations,
         archive: vi.fn(),
         bootstrapCreator: vi.fn(),
         create: vi.fn(),
         inviteAdult,
-        list: vi.fn().mockResolvedValue(unlinkedRoster),
+        list: vi.fn().mockReturnValue(Effect.succeed(unlinkedRoster)),
         restore: vi.fn(),
       };
       renderPanel(operations);
@@ -222,21 +251,24 @@ describe("HouseholdPeoplePanel", () => {
   );
 
   it("confirms self departure before submitting the exact current link", async () => {
-    const departAdult = vi.fn().mockResolvedValue({
-      canRetry: false,
-      executionGeneration: 1,
-      lastAttemptAtEpochMs: null,
-      operationId: "departure_00000000-0000-4000-8000-000000000201",
-      personId,
-      state: "prepared",
-      version: 1,
-    });
-    const operations: HouseholdPeopleOperations = {
+    const departAdult = vi.fn().mockReturnValue(
+      Effect.succeed({
+        canRetry: false,
+        executionGeneration: 1,
+        lastAttemptAtEpochMs: null,
+        operationId: "departure_00000000-0000-4000-8000-000000000201",
+        personId,
+        state: "prepared",
+        version: 1,
+      })
+    );
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       bootstrapCreator: vi.fn(),
       create: vi.fn(),
       departAdult,
-      list: vi.fn().mockResolvedValue(roster),
+      list: vi.fn().mockReturnValue(Effect.succeed(roster)),
       restore: vi.fn(),
     };
     renderPanel(operations, "member-current");
@@ -252,33 +284,35 @@ describe("HouseholdPeoplePanel", () => {
         expectedLinkVersion: 1,
         memberId: "member-current",
         personId,
-      }),
-      expect.anything()
+      })
     );
   });
 
   it("replays only the exact retained invitation after refresh without candidate selection", async () => {
     const inviteAdult = vi
       .fn()
-      .mockRejectedValueOnce(failure("people_unavailable"))
-      .mockResolvedValue({
-        association: "associated",
-        invitationId: "invitation-a",
-        person: {
-          ...unlinkedRoster.people[0],
-          associationState: "invitation_pending",
-          associationVersion: 1,
-        },
-      });
+      .mockReturnValueOnce(Effect.fail(failure("people_unavailable")))
+      .mockReturnValue(
+        Effect.succeed({
+          association: "associated",
+          invitationId: "invitation-a",
+          person: {
+            ...unlinkedRoster.people[0],
+            associationState: "invitation_pending",
+            associationVersion: 1,
+          },
+        })
+      );
     const associateInvitation = vi.fn();
     const create = vi.fn();
-    const operations: HouseholdPeopleOperations = {
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       associateInvitation,
       bootstrapCreator: vi.fn(),
       create,
       inviteAdult,
-      list: vi.fn().mockResolvedValue(unlinkedRoster),
+      list: vi.fn().mockReturnValue(Effect.succeed(unlinkedRoster)),
       restore: vi.fn(),
     };
     const firstRender = renderPanel(operations);
@@ -331,25 +365,30 @@ describe("HouseholdPeoplePanel", () => {
   it("rediscovers the original departure after refresh and repairs the same operation", async () => {
     const departAdult = vi
       .fn()
-      .mockRejectedValue(failure("people_unavailable"));
+      .mockReturnValue(Effect.fail(failure("people_unavailable")));
     const getDepartureByMutation = vi
       .fn()
-      .mockResolvedValue(
-        departureOperation("revocation_repair_required", 2, true)
+      .mockReturnValue(
+        Effect.succeed(
+          departureOperation("revocation_repair_required", 2, true)
+        )
       );
     const retryDeparture = vi
       .fn()
-      .mockResolvedValueOnce(
-        departureOperation("finalization_repair_required", 3, true)
+      .mockReturnValueOnce(
+        Effect.succeed(
+          departureOperation("finalization_repair_required", 3, true)
+        )
       )
-      .mockResolvedValueOnce(departureOperation("completed", 4));
-    const operations: HouseholdPeopleOperations = {
+      .mockReturnValueOnce(Effect.succeed(departureOperation("completed", 4)));
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       bootstrapCreator: vi.fn(),
       create: vi.fn(),
       departAdult,
       getDepartureByMutation,
-      list: vi.fn().mockResolvedValue(roster),
+      list: vi.fn().mockReturnValue(Effect.succeed(roster)),
       restore: vi.fn(),
       retryDeparture,
     };
@@ -417,22 +456,23 @@ describe("HouseholdPeoplePanel", () => {
   it("rediscovers and cancels the exact prepared departure without a replacement", async () => {
     const departAdult = vi
       .fn()
-      .mockRejectedValue(failure("people_unavailable"));
+      .mockReturnValue(Effect.fail(failure("people_unavailable")));
     const getDepartureByMutation = vi
       .fn()
-      .mockResolvedValue(departureOperation("prepared", 1));
+      .mockReturnValue(Effect.succeed(departureOperation("prepared", 1)));
     const cancelDeparture = vi
       .fn()
-      .mockRejectedValueOnce(failure("people_unavailable"))
-      .mockResolvedValueOnce(departureOperation("cancelled", 2));
-    const operations: HouseholdPeopleOperations = {
+      .mockReturnValueOnce(Effect.fail(failure("people_unavailable")))
+      .mockReturnValueOnce(Effect.succeed(departureOperation("cancelled", 2)));
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       bootstrapCreator: vi.fn(),
       cancelDeparture,
       create: vi.fn(),
       departAdult,
       getDepartureByMutation,
-      list: vi.fn().mockResolvedValue(roster),
+      list: vi.fn().mockReturnValue(Effect.succeed(roster)),
       restore: vi.fn(),
     };
     const firstRender = renderPanel(operations, "member-current");
@@ -461,6 +501,11 @@ describe("HouseholdPeoplePanel", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Cancel departure" })
     );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Retry cancelling this departure",
+      })
+    );
     expect(
       await screen.findByText("Household departure cancelled.")
     ).toBeInTheDocument();
@@ -481,16 +526,21 @@ describe("HouseholdPeoplePanel", () => {
   });
 
   it("shows persisted identities and reports stale transitions without optimistic state", async () => {
-    const archive = vi.fn().mockRejectedValue(failure("stale_version"));
-    const operations: HouseholdPeopleOperations = {
+    const archive = vi
+      .fn()
+      .mockReturnValue(Effect.fail(failure("stale_version")));
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive,
       bootstrapCreator: vi.fn(),
       create: vi.fn(),
-      list: vi.fn().mockResolvedValue(roster),
+      list: vi.fn().mockReturnValue(Effect.succeed(roster)),
       restore: vi.fn(),
     };
     renderPanel(operations);
-    expect(await screen.findByText("Cillian")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Cillian", { selector: "strong" })
+    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Archive" }));
     await userEvent.click(
       screen.getByRole("button", { name: "Confirm archive" })
@@ -503,31 +553,37 @@ describe("HouseholdPeoplePanel", () => {
   });
 
   it("does not describe a linked creator as an unlinked account", async () => {
-    const operations: HouseholdPeopleOperations = {
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       bootstrapCreator: vi.fn(),
       create: vi.fn(),
-      list: vi.fn().mockResolvedValue(roster),
+      list: vi.fn().mockReturnValue(Effect.succeed(roster)),
       restore: vi.fn(),
     };
     renderPanel(operations);
 
-    expect(await screen.findByText("Cillian")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Cillian", { selector: "strong" })
+    ).toBeInTheDocument();
     expect(screen.getByText(/you/u)).toBeInTheDocument();
     expect(screen.queryByText(/account remains unlinked/iu)).toBeNull();
   });
 
   it("requires confirmation before archiving", async () => {
     const archive = vi.fn();
-    const operations: HouseholdPeopleOperations = {
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive,
       bootstrapCreator: vi.fn(),
       create: vi.fn(),
-      list: vi.fn().mockResolvedValue(roster),
+      list: vi.fn().mockReturnValue(Effect.succeed(roster)),
       restore: vi.fn(),
     };
     renderPanel(operations);
-    expect(await screen.findByText("Cillian")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Cillian", { selector: "strong" })
+    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Archive" }));
     expect(archive).not.toHaveBeenCalled();
     expect(
@@ -538,13 +594,16 @@ describe("HouseholdPeoplePanel", () => {
   });
 
   it("creates an explicit person and restores the persisted identity", async () => {
-    const create = vi.fn().mockResolvedValue(roster.people[0]);
-    const restore = vi.fn().mockResolvedValue(archivedRoster.people[0]);
-    const operations: HouseholdPeopleOperations = {
+    const create = vi.fn().mockReturnValue(Effect.succeed(roster.people[0]));
+    const restore = vi
+      .fn()
+      .mockReturnValue(Effect.succeed(archivedRoster.people[0]));
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       bootstrapCreator: vi.fn(),
       create,
-      list: vi.fn().mockResolvedValue(archivedRoster),
+      list: vi.fn().mockReturnValue(Effect.succeed(archivedRoster)),
       restore,
     };
     renderPanel(operations);
@@ -569,12 +628,13 @@ describe("HouseholdPeoplePanel", () => {
   });
 
   it("shows explicit bootstrap pending state and submits no optimistic identity", async () => {
-    const bootstrapCreator = vi.fn(() => new Promise<never>(() => {}));
-    const operations: HouseholdPeopleOperations = {
+    const bootstrapCreator = vi.fn(() => Effect.never);
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       bootstrapCreator,
       create: vi.fn(),
-      list: vi.fn().mockResolvedValue(emptyRoster),
+      list: vi.fn().mockReturnValue(Effect.succeed(emptyRoster)),
       restore: vi.fn(),
     };
     renderPanel(operations);
@@ -596,15 +656,18 @@ describe("HouseholdPeoplePanel", () => {
 
   it("freezes a pending create intent so visible fields cannot diverge from its command", async () => {
     let submittedDisplayName: string | undefined;
-    const create: HouseholdPeopleOperations["create"] = vi.fn((payload) => {
-      submittedDisplayName = payload.displayName;
-      return new Promise<typeof HouseholdPerson.Type>(() => {});
-    });
-    const operations: HouseholdPeopleOperations = {
+    const create: HouseholdPeopleEffectOperations["create"] = vi.fn(
+      (payload) => {
+        submittedDisplayName = payload.displayName;
+        return Effect.never;
+      }
+    );
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       bootstrapCreator: vi.fn(),
       create,
-      list: vi.fn().mockResolvedValue(roster),
+      list: vi.fn().mockReturnValue(Effect.succeed(roster)),
       restore: vi.fn(),
     };
     renderPanel(operations);
@@ -620,13 +683,14 @@ describe("HouseholdPeoplePanel", () => {
 
   it("does not start a lifecycle transition while create remains pending", async () => {
     const pendingCreate = deferred<typeof HouseholdPerson.Type>();
-    const archive = vi.fn().mockResolvedValue(roster.people[0]);
-    const create = vi.fn(() => pendingCreate.promise);
-    const operations: HouseholdPeopleOperations = {
+    const archive = vi.fn().mockReturnValue(Effect.succeed(roster.people[0]));
+    const create = vi.fn(() => Effect.promise(() => pendingCreate.promise));
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive,
       bootstrapCreator: vi.fn(),
       create,
-      list: vi.fn().mockResolvedValue(roster),
+      list: vi.fn().mockReturnValue(Effect.succeed(roster)),
       restore: vi.fn(),
     };
     renderPanel(operations);
@@ -642,13 +706,14 @@ describe("HouseholdPeoplePanel", () => {
 
   it("does not start create while a lifecycle transition remains pending", async () => {
     const pendingArchive = deferred<typeof HouseholdPerson.Type>();
-    const archive = vi.fn(() => pendingArchive.promise);
-    const create = vi.fn().mockResolvedValue(roster.people[0]);
-    const operations: HouseholdPeopleOperations = {
+    const archive = vi.fn(() => Effect.promise(() => pendingArchive.promise));
+    const create = vi.fn().mockReturnValue(Effect.succeed(roster.people[0]));
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive,
       bootstrapCreator: vi.fn(),
       create,
-      list: vi.fn().mockResolvedValue(roster),
+      list: vi.fn().mockReturnValue(Effect.succeed(roster)),
       restore: vi.fn(),
     };
     renderPanel(operations);
@@ -666,17 +731,14 @@ describe("HouseholdPeoplePanel", () => {
   });
 
   it("admits only one person action before pending state rerenders", async () => {
-    const archive = vi.fn(
-      () => new Promise<typeof HouseholdPerson.Type>(() => {})
-    );
-    const create = vi.fn(
-      () => new Promise<typeof HouseholdPerson.Type>(() => {})
-    );
-    const operations: HouseholdPeopleOperations = {
+    const archive = vi.fn(() => Effect.never);
+    const create = vi.fn(() => Effect.never);
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive,
       bootstrapCreator: vi.fn(),
       create,
-      list: vi.fn().mockResolvedValue(roster),
+      list: vi.fn().mockReturnValue(Effect.succeed(roster)),
       restore: vi.fn(),
     };
     renderPanel(operations);
@@ -694,15 +756,16 @@ describe("HouseholdPeoplePanel", () => {
 
   it("gates creator bootstrap and create while either intent remains pending", async () => {
     const pendingBootstrap = deferred<typeof HouseholdPerson.Type>();
-    const bootstrapCreator = vi.fn(() => pendingBootstrap.promise);
-    const create = vi.fn(
-      () => new Promise<typeof HouseholdPerson.Type>(() => {})
+    const bootstrapCreator = vi.fn(() =>
+      Effect.promise(() => pendingBootstrap.promise)
     );
-    const operations: HouseholdPeopleOperations = {
+    const create = vi.fn(() => Effect.never);
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       bootstrapCreator,
       create,
-      list: vi.fn().mockResolvedValue(emptyRoster),
+      list: vi.fn().mockReturnValue(Effect.succeed(emptyRoster)),
       restore: vi.fn(),
     };
     renderPanel(operations);
@@ -732,11 +795,12 @@ describe("HouseholdPeoplePanel", () => {
     "shows schema-backed name validation and does not submit %j",
     async (displayName) => {
       const create = vi.fn();
-      const operations: HouseholdPeopleOperations = {
+      const operations: HouseholdPeopleEffectOperations = {
+        ...unusedOperations,
         archive: vi.fn(),
         bootstrapCreator: vi.fn(),
         create,
-        list: vi.fn().mockResolvedValue(roster),
+        list: vi.fn().mockReturnValue(Effect.succeed(roster)),
         restore: vi.fn(),
       };
       renderPanel(operations);
@@ -754,12 +818,13 @@ describe("HouseholdPeoplePanel", () => {
   it("explains when an admitted non-owner cannot bootstrap the creator", async () => {
     const bootstrapCreator = vi
       .fn()
-      .mockRejectedValue(failure("creator_required"));
-    const operations: HouseholdPeopleOperations = {
+      .mockReturnValue(Effect.fail(failure("creator_required")));
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       bootstrapCreator,
       create: vi.fn(),
-      list: vi.fn().mockResolvedValue(emptyRoster),
+      list: vi.fn().mockReturnValue(Effect.succeed(emptyRoster)),
       restore: vi.fn(),
     };
     renderPanel(operations);
@@ -773,16 +838,17 @@ describe("HouseholdPeoplePanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("retries a transient create with byte-identical variables", async () => {
+  it("retries an unavailable create with byte-identical variables", async () => {
     const create = vi
       .fn()
-      .mockRejectedValueOnce(failure("people_unavailable"))
-      .mockResolvedValueOnce(roster.people[0]);
-    const operations: HouseholdPeopleOperations = {
+      .mockReturnValueOnce(Effect.fail(failure("people_unavailable")))
+      .mockReturnValueOnce(Effect.succeed(roster.people[0]));
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       bootstrapCreator: vi.fn(),
       create,
-      list: vi.fn().mockResolvedValue(roster),
+      list: vi.fn().mockReturnValue(Effect.succeed(roster)),
       restore: vi.fn(),
     };
     renderPanel(operations);
@@ -791,6 +857,9 @@ describe("HouseholdPeoplePanel", () => {
     await userEvent.selectOptions(screen.getByLabelText("Kind"), "adult");
     await userEvent.click(screen.getByRole("button", { name: "Add person" }));
 
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Retry adding this person" })
+    );
     await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
     expect(create.mock.calls[1]?.[0]).toEqual(create.mock.calls[0]?.[0]);
   });
@@ -799,38 +868,42 @@ describe("HouseholdPeoplePanel", () => {
     const peopleByMutation = new Map<string, (typeof roster.people)[number]>();
     const attemptsByMutation = new Map<string, number>();
     const create = vi.fn(
-      async (payload: Parameters<HouseholdPeopleOperations["create"]>[0]) => {
-        const key = payload.mutationId;
-        const person =
-          peopleByMutation.get(key) ??
-          Schema.decodeUnknownSync(HouseholdPerson)({
-            associationState: "unlinked",
-            associationVersion: null,
-            createdAtEpochMs: 1,
-            displayName: payload.displayName,
-            id: personId,
-            isCurrentAdult: false,
-            kind: payload.kind,
-            lifecycle: "active",
-            updatedAtEpochMs: 1,
-            version: 1,
-          });
-        peopleByMutation.set(key, person);
-        const attempt = (attemptsByMutation.get(key) ?? 0) + 1;
-        attemptsByMutation.set(key, attempt);
-        if (attempt < 3) {
-          throw failure("people_unavailable");
-        }
-        return person;
-      }
+      (payload: Parameters<HouseholdPeopleEffectOperations["create"]>[0]) =>
+        Effect.gen(function* committedCreate() {
+          const key = payload.mutationId;
+          const person =
+            peopleByMutation.get(key) ??
+            Schema.decodeUnknownSync(HouseholdPerson)({
+              associationState: "unlinked",
+              associationVersion: null,
+              createdAtEpochMs: 1,
+              displayName: payload.displayName,
+              id: personId,
+              isCurrentAdult: false,
+              kind: payload.kind,
+              lifecycle: "active",
+              updatedAtEpochMs: 1,
+              version: 1,
+            });
+          peopleByMutation.set(key, person);
+          const attempt = (attemptsByMutation.get(key) ?? 0) + 1;
+          attemptsByMutation.set(key, attempt);
+          if (attempt < 2) {
+            return yield* Effect.fail(failure("people_unavailable"));
+          }
+          return person;
+        })
     );
-    const list = vi.fn(async () =>
-      Schema.decodeUnknownSync(HouseholdPeopleRoster)({
-        ...roster,
-        people: [...peopleByMutation.values()],
-      })
+    const list = vi.fn(() =>
+      Effect.sync(() =>
+        Schema.decodeUnknownSync(HouseholdPeopleRoster)({
+          ...roster,
+          people: [...peopleByMutation.values()],
+        })
+      )
     );
-    const operations: HouseholdPeopleOperations = {
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       bootstrapCreator: vi.fn(),
       create,
@@ -842,16 +915,18 @@ describe("HouseholdPeoplePanel", () => {
     await userEvent.type(await screen.findByLabelText("Name"), "Aoife");
     await userEvent.selectOptions(screen.getByLabelText("Kind"), "adult");
     await userEvent.click(screen.getByRole("button", { name: "Add person" }));
-    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
 
     await userEvent.click(
       screen.getByRole("button", { name: "Retry adding this person" })
     );
 
-    await waitFor(() => expect(create).toHaveBeenCalledTimes(3));
-    expect(create.mock.calls[2]?.[0]).toEqual(create.mock.calls[0]?.[0]);
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+    expect(create.mock.calls[1]?.[0]).toEqual(create.mock.calls[0]?.[0]);
     expect(peopleByMutation.size).toBe(1);
-    expect(await screen.findByText("Aoife")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Aoife", { selector: "strong" })
+    ).toBeInTheDocument();
   });
 
   it.each([
@@ -872,15 +947,17 @@ describe("HouseholdPeoplePanel", () => {
     async ({ action, button, operationsRoster, retry }) => {
       const create = vi
         .fn()
-        .mockRejectedValueOnce(failure("people_unavailable"))
-        .mockRejectedValueOnce(failure("people_unavailable"))
-        .mockResolvedValueOnce(operationsRoster.people[0]);
-      const transition = vi.fn().mockResolvedValue(operationsRoster.people[0]);
-      const operations: HouseholdPeopleOperations = {
+        .mockReturnValueOnce(Effect.fail(failure("people_unavailable")))
+        .mockReturnValueOnce(Effect.succeed(operationsRoster.people[0]));
+      const transition = vi
+        .fn()
+        .mockReturnValue(Effect.succeed(operationsRoster.people[0]));
+      const operations: HouseholdPeopleEffectOperations = {
+        ...unusedOperations,
         archive: action === "archive" ? transition : vi.fn(),
         bootstrapCreator: vi.fn(),
         create,
-        list: vi.fn().mockResolvedValue(operationsRoster),
+        list: vi.fn().mockReturnValue(Effect.succeed(operationsRoster)),
         restore: action === "restore" ? transition : vi.fn(),
       };
       renderPanel(operations);
@@ -888,7 +965,7 @@ describe("HouseholdPeoplePanel", () => {
       const name = await screen.findByLabelText("Name");
       await userEvent.type(name, "Aoife");
       await userEvent.click(screen.getByRole("button", { name: "Add person" }));
-      await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
       const exactIntent = create.mock.calls[0]?.[0];
 
       expect(name).toBeDisabled();
@@ -898,12 +975,12 @@ describe("HouseholdPeoplePanel", () => {
       ).toBeNull();
       await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
       expect(screen.getByRole("button", { name: retry })).toBeInTheDocument();
-      expect(create.mock.calls).toHaveLength(2);
+      expect(create.mock.calls).toHaveLength(1);
       expect(transition).not.toHaveBeenCalled();
 
       await userEvent.click(screen.getByRole("button", { name: retry }));
-      await waitFor(() => expect(create).toHaveBeenCalledTimes(3));
-      expect(create.mock.calls[2]?.[0]).toEqual(exactIntent);
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+      expect(create.mock.calls[1]?.[0]).toEqual(exactIntent);
       await waitFor(() =>
         expect(screen.getByRole("button", { name: button })).toBeEnabled()
       );
@@ -920,16 +997,18 @@ describe("HouseholdPeoplePanel", () => {
   it("keeps an ambiguous bootstrap as the sole intent until its exact retry resolves", async () => {
     const bootstrapCreator = vi
       .fn()
-      .mockRejectedValueOnce(failure("people_unavailable"))
-      .mockRejectedValueOnce(failure("people_unavailable"))
-      .mockResolvedValueOnce(roster.people[0]);
-    const create = vi.fn().mockResolvedValue(roster.people[0]);
+      .mockReturnValueOnce(Effect.fail(failure("people_unavailable")))
+      .mockReturnValueOnce(Effect.succeed(roster.people[0]));
+    const create = vi.fn().mockReturnValue(Effect.succeed(roster.people[0]));
     const archive = vi.fn();
-    const operations: HouseholdPeopleOperations = {
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive,
       bootstrapCreator,
       create,
-      list: vi.fn().mockResolvedValue(unlinkedRosterBeforeCreatorBootstrap),
+      list: vi
+        .fn()
+        .mockReturnValue(Effect.succeed(unlinkedRosterBeforeCreatorBootstrap)),
       restore: vi.fn(),
     };
     renderPanel(operations);
@@ -938,7 +1017,7 @@ describe("HouseholdPeoplePanel", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Set up my person" })
     );
-    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledTimes(1));
     const exactIntent = bootstrapCreator.mock.calls[0]?.[0];
 
     expect(screen.getByLabelText("Your name")).toBeDisabled();
@@ -953,8 +1032,8 @@ describe("HouseholdPeoplePanel", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Retry setting up my person" })
     );
-    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledTimes(3));
-    expect(bootstrapCreator.mock.calls[2]?.[0]).toEqual(exactIntent);
+    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledTimes(2));
+    expect(bootstrapCreator.mock.calls[1]?.[0]).toEqual(exactIntent);
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Add person" })).toBeEnabled()
     );
@@ -981,16 +1060,16 @@ describe("HouseholdPeoplePanel", () => {
     async ({ action, button, operationsRoster, retry }) => {
       const transition = vi
         .fn()
-        .mockRejectedValueOnce(failure("people_unavailable"))
-        .mockRejectedValueOnce(failure("people_unavailable"))
-        .mockResolvedValueOnce(operationsRoster.people[0]);
+        .mockReturnValueOnce(Effect.fail(failure("people_unavailable")))
+        .mockReturnValueOnce(Effect.succeed(operationsRoster.people[0]));
       const create = vi.fn();
       const bootstrapCreator = vi.fn();
-      const operations: HouseholdPeopleOperations = {
+      const operations: HouseholdPeopleEffectOperations = {
+        ...unusedOperations,
         archive: action === "archive" ? transition : vi.fn(),
         bootstrapCreator,
         create,
-        list: vi.fn().mockResolvedValue(operationsRoster),
+        list: vi.fn().mockReturnValue(Effect.succeed(operationsRoster)),
         restore: action === "restore" ? transition : vi.fn(),
       };
       renderPanel(operations);
@@ -1003,7 +1082,7 @@ describe("HouseholdPeoplePanel", () => {
           screen.getByRole("button", { name: "Confirm archive" })
         );
       }
-      await waitFor(() => expect(transition).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(transition).toHaveBeenCalledTimes(1));
       const [exactIntent] = transition.mock.calls;
 
       expect(screen.getByLabelText("Name")).toBeDisabled();
@@ -1019,8 +1098,8 @@ describe("HouseholdPeoplePanel", () => {
       expect(bootstrapCreator).not.toHaveBeenCalled();
 
       await userEvent.click(screen.getByRole("button", { name: retry }));
-      await waitFor(() => expect(transition).toHaveBeenCalledTimes(3));
-      expect(transition.mock.calls[2]).toEqual(exactIntent);
+      await waitFor(() => expect(transition).toHaveBeenCalledTimes(2));
+      expect(transition.mock.calls[1]).toEqual(exactIntent);
       await waitFor(() =>
         expect(screen.getByRole("button", { name: "Add person" })).toBeEnabled()
       );
@@ -1030,14 +1109,14 @@ describe("HouseholdPeoplePanel", () => {
   it("retries ambiguous creator bootstrap with its exact command", async () => {
     const bootstrapCreator = vi
       .fn()
-      .mockRejectedValueOnce(failure("people_unavailable"))
-      .mockRejectedValueOnce(failure("people_unavailable"))
-      .mockResolvedValueOnce(roster.people[0]);
-    const operations: HouseholdPeopleOperations = {
+      .mockReturnValueOnce(Effect.fail(failure("people_unavailable")))
+      .mockReturnValueOnce(Effect.succeed(roster.people[0]));
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       bootstrapCreator,
       create: vi.fn(),
-      list: vi.fn().mockResolvedValue(emptyRoster),
+      list: vi.fn().mockReturnValue(Effect.succeed(emptyRoster)),
       restore: vi.fn(),
     };
     renderPanel(operations);
@@ -1046,13 +1125,13 @@ describe("HouseholdPeoplePanel", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Set up my person" })
     );
-    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledTimes(1));
     await userEvent.click(
       screen.getByRole("button", { name: "Retry setting up my person" })
     );
 
-    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledTimes(3));
-    expect(bootstrapCreator.mock.calls[2]?.[0]).toEqual(
+    await waitFor(() => expect(bootstrapCreator).toHaveBeenCalledTimes(2));
+    expect(bootstrapCreator.mock.calls[1]?.[0]).toEqual(
       bootstrapCreator.mock.calls[0]?.[0]
     );
   });
@@ -1077,14 +1156,14 @@ describe("HouseholdPeoplePanel", () => {
     async ({ action, button, confirm, operationsRoster, retry }) => {
       const transition = vi
         .fn()
-        .mockRejectedValueOnce(failure("people_unavailable"))
-        .mockRejectedValueOnce(failure("people_unavailable"))
-        .mockResolvedValueOnce(operationsRoster.people[0]);
-      const operations: HouseholdPeopleOperations = {
+        .mockReturnValueOnce(Effect.fail(failure("people_unavailable")))
+        .mockReturnValueOnce(Effect.succeed(operationsRoster.people[0]));
+      const operations: HouseholdPeopleEffectOperations = {
+        ...unusedOperations,
         archive: action === "archive" ? transition : vi.fn(),
         bootstrapCreator: vi.fn(),
         create: vi.fn(),
-        list: vi.fn().mockResolvedValue(operationsRoster),
+        list: vi.fn().mockReturnValue(Effect.succeed(operationsRoster)),
         restore: action === "restore" ? transition : vi.fn(),
       };
       renderPanel(operations);
@@ -1097,23 +1176,24 @@ describe("HouseholdPeoplePanel", () => {
           screen.getByRole("button", { name: "Confirm archive" })
         );
       }
-      await waitFor(() => expect(transition).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(transition).toHaveBeenCalledTimes(1));
       await userEvent.click(screen.getByRole("button", { name: retry }));
 
-      await waitFor(() => expect(transition).toHaveBeenCalledTimes(3));
-      expect(transition.mock.calls[2]).toEqual(transition.mock.calls[0]);
+      await waitFor(() => expect(transition).toHaveBeenCalledTimes(2));
+      expect(transition.mock.calls[1]).toEqual(transition.mock.calls[0]);
     }
   );
 
   it("reports an occupied creator slot as durable and does not retry it", async () => {
     const bootstrapCreator = vi
       .fn()
-      .mockRejectedValue(failure("bootstrap_conflict"));
-    const operations: HouseholdPeopleOperations = {
+      .mockReturnValue(Effect.fail(failure("bootstrap_conflict")));
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       bootstrapCreator,
       create: vi.fn(),
-      list: vi.fn().mockResolvedValue(emptyRoster),
+      list: vi.fn().mockReturnValue(Effect.succeed(emptyRoster)),
       restore: vi.fn(),
     };
     renderPanel(operations);
@@ -1130,16 +1210,19 @@ describe("HouseholdPeoplePanel", () => {
   });
 
   it("keeps an unlinked owner in a safe non-bootstrap state after another owner wins", async () => {
-    const operations: HouseholdPeopleOperations = {
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       bootstrapCreator: vi.fn(),
       create: vi.fn(),
-      list: vi.fn().mockResolvedValue(unlinkedRoster),
+      list: vi.fn().mockReturnValue(Effect.succeed(unlinkedRoster)),
       restore: vi.fn(),
     };
     renderPanel(operations);
 
-    expect(await screen.findByText("Cillian")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Cillian", { selector: "strong" })
+    ).toBeInTheDocument();
     expect(screen.getByText(/account remains unlinked/iu)).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Set up my person" })
@@ -1149,11 +1232,14 @@ describe("HouseholdPeoplePanel", () => {
   });
 
   it("offers creator bootstrap when only non-creator roster entries exist", async () => {
-    const operations: HouseholdPeopleOperations = {
+    const operations: HouseholdPeopleEffectOperations = {
+      ...unusedOperations,
       archive: vi.fn(),
       bootstrapCreator: vi.fn(),
       create: vi.fn(),
-      list: vi.fn().mockResolvedValue(unlinkedRosterBeforeCreatorBootstrap),
+      list: vi
+        .fn()
+        .mockReturnValue(Effect.succeed(unlinkedRosterBeforeCreatorBootstrap)),
       restore: vi.fn(),
     };
     renderPanel(operations);
@@ -1172,11 +1258,12 @@ describe("HouseholdPeoplePanel", () => {
   ])(
     "reports public roster failures honestly",
     async (operationError, message) => {
-      const operations: HouseholdPeopleOperations = {
+      const operations: HouseholdPeopleEffectOperations = {
+        ...unusedOperations,
         archive: vi.fn(),
         bootstrapCreator: vi.fn(),
         create: vi.fn(),
-        list: vi.fn().mockRejectedValue(operationError),
+        list: vi.fn().mockReturnValue(Effect.fail(operationError)),
         restore: vi.fn(),
       };
       renderPanel(operations);

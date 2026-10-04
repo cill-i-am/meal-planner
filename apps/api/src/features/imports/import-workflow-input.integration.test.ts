@@ -47,7 +47,6 @@ beforeAll(async () => {
           },
           manifest: fixtureManifest,
           name: "worker",
-          type: "worker",
         },
       },
     ],

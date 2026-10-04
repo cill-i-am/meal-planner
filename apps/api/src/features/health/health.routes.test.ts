@@ -1,4 +1,4 @@
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { HealthRoutes } from "./health.routes.js";

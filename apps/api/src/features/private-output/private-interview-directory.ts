@@ -4,6 +4,7 @@ import {
   DirectoryFrame,
   MAX_PRIVATE_FRAME_BYTES,
 } from "@meal-planner/private-interview-api";
+import { instrumentDrizzle } from "cloudflare-drizzle-tracing";
 import { DurableObject } from "cloudflare:workers";
 import { eq, gt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/durable-sqlite";
@@ -45,7 +46,9 @@ const sameBinding = (
   left.personId === right.personId;
 /** Participant-private discovery metadata; no transcript or cached session lifecycle. */
 export class PrivateInterviewDirectory extends DurableObject<PrivateInterviewEnvironment> {
-  #database = drizzle(this.ctx.storage);
+  #database = instrumentDrizzle(drizzle(this.ctx.storage), {
+    attributes: { "db.namespace": "private-output" },
+  });
   #socket = new PrivateOutputSocket(this.ctx, this.#database, this.env);
   constructor(
     context: NativeCloudflare.DurableObjectState,

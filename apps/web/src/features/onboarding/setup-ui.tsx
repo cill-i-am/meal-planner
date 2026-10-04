@@ -6,7 +6,7 @@ import { AccountLayout } from "../../components/account-layout.js";
 import { Badge } from "../../components/ui/badge.js";
 import { Separator } from "../../components/ui/separator.js";
 
-export const SetupProgressBar = ({
+const SetupProgressBar = ({
   step,
 }: {
   readonly step: "family" | "people" | "ready";

@@ -255,7 +255,9 @@ export const makeHouseholdImportBatchRepository = (
                 .pipe(mapPersistence);
               const messages = yield* Effect.all(
                 pending.map((entry) =>
-                  Schema.decodeUnknownEffect(HouseholdBatchQueueMessage)({
+                  Schema.decodeUnknownEffect(HouseholdBatchQueueMessage, {
+                    onExcessProperty: "error",
+                  })({
                     batchId: entry.batchId,
                     generation: entry.generation,
                     itemId: entry.itemId,
@@ -304,7 +306,9 @@ export const makeHouseholdImportBatchRepository = (
             );
             const messages = yield* Effect.all(
               itemRows.map(({ generation, itemId }) =>
-                Schema.decodeUnknownEffect(HouseholdBatchQueueMessage)({
+                Schema.decodeUnknownEffect(HouseholdBatchQueueMessage, {
+                  onExcessProperty: "error",
+                })({
                   batchId,
                   generation,
                   itemId,
@@ -564,9 +568,9 @@ export const makeHouseholdImportBatchRepository = (
         Effect.flatMap((rows) =>
           Effect.all(
             rows.map(({ attempts, transportState, ...message }) =>
-              Schema.decodeUnknownEffect(HouseholdBatchQueueMessage)(
-                message
-              ).pipe(
+              Schema.decodeUnknownEffect(HouseholdBatchQueueMessage, {
+                onExcessProperty: "error",
+              })(message).pipe(
                 Effect.mapError(persistenceFailure),
                 Effect.map((decoded) => ({
                   attempts,

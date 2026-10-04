@@ -1,14 +1,12 @@
 import type { RuntimeContext } from "alchemy";
 import { makeLanguageModel as makeAlchemyLanguageModel } from "alchemy/Cloudflare/AI";
-import type {
-  LanguageModelClient,
-  QueryGatewayClient,
-} from "alchemy/Cloudflare/AI";
+import type { LanguageModelClient } from "alchemy/Cloudflare/AI";
 import { WorkflowStepContext } from "alchemy/Cloudflare/Workflows";
 import { Effect, Option, Predicate, Schema } from "effect";
-import type { LanguageModel, Prompt } from "effect/unstable/ai";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import type { LanguageModel, Prompt } from "effect/ai";
+import { Tool, Toolkit } from "effect/ai";
 
+import { toStrictJsonSchema } from "../../infrastructure/strict-json-schema.js";
 import {
   ProviderAccountingDispatchId,
   ProviderAccountingProviderStageId,
@@ -319,7 +317,7 @@ export const failAfter = <A, E, R>(
   );
 
 export const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
-  service: LanguageModel.Service,
+  service: LanguageModel.LanguageModel,
   input: {
     readonly acceptUnwrappedObject?: boolean;
     readonly description: string;
@@ -351,7 +349,7 @@ export const oneForcedToolCall = <Name extends string, S extends Schema.Top>(
     // arguments verbatim for the explicit fail-closed decode below. Tool.make
     // decodes parameters inside Effect's response schema first, where excess
     // object properties are stripped before this adapter can reject them.
-    parameters: Tool.getJsonSchemaFromSchema(input.toolSchema ?? input.schema),
+    parameters: toStrictJsonSchema(input.toolSchema ?? input.schema),
   });
   const toolkit = Toolkit.make(tool);
   return failAfter(
@@ -534,6 +532,7 @@ export const pricedTokenUsage = (
   ) {
     return { _tag: "Unknown" as const };
   }
+
   return {
     _tag: "Known" as const,
     actualCostMicroUsd: Math.ceil(
@@ -549,12 +548,13 @@ const workersAiGatewayOptions = (gatewayId: string) =>
     returnRawResponse: true,
   }) as const;
 
-export type WorkersAiBinding = Effect.Success<QueryGatewayClient["raw"]>;
+export type WorkersAiGatewayClient = Required<LanguageModelClient>;
+export type WorkersAiBinding = Effect.Success<WorkersAiGatewayClient["raw"]>;
 
-export const runWorkersAi = (
+const runWorkersAi = (
   ai: WorkersAiBinding,
   model: string,
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU001 alchemy@2.0.0-beta.76): LanguageModel.callRaw -> Ai.run(model, body) erases the model-correlated visual request; Schema can validate JSON but cannot restore that vendor generic without changing the forced-tool protocol. Remove when Alchemy provides a public precise visual request transport.
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU001 alchemy@2.0.0-beta.80): LanguageModel.callRaw -> Ai.run(model, body) erases the model-correlated visual request; Schema can validate JSON but cannot restore that vendor generic without changing the forced-tool protocol. Remove when Alchemy provides a public precise visual request transport.
   body: unknown,
   gatewayId: string
 ): Promise<Response> =>
@@ -603,7 +603,7 @@ export interface WorkersAiTransport {
     readonly makeLanguageModel: (parameters: {
       readonly maxTokens?: number;
       readonly temperature?: number;
-    }) => Effect.Effect<LanguageModel.Service, never, RuntimeContext>;
+    }) => Effect.Effect<LanguageModel.LanguageModel, never, RuntimeContext>;
     readonly model: typeof InstalledVisualModel;
   };
 }
@@ -633,15 +633,17 @@ export const isUnknownRecord = (
   value: Schema.Json | undefined
 ): value is Schema.JsonObject => Predicate.isObject(value);
 
-const WorkersAiProviderResponseEnvelope = Schema.Struct({
-  choices: Schema.optionalKey(Schema.Json),
-  tool_calls: Schema.optionalKey(Schema.Json),
-});
+const WorkersAiProviderResponseEnvelope = Schema.StructWithRest(
+  Schema.Struct({
+    choices: Schema.optionalKey(Schema.Json),
+    tool_calls: Schema.optionalKey(Schema.Json),
+  }),
+  [Schema.Record(Schema.String, Schema.Json)]
+);
 type WorkersAiProviderResponseEnvelope =
   typeof WorkersAiProviderResponseEnvelope.Type;
 const decodeWorkersAiProviderResponseEnvelope = Schema.decodeUnknownOption(
-  WorkersAiProviderResponseEnvelope,
-  { onExcessProperty: "preserve" }
+  WorkersAiProviderResponseEnvelope
 );
 
 const ProviderToolCallEnvelope = Schema.Struct({
@@ -665,22 +667,26 @@ const decodeProviderToolFunctionEnvelope = Schema.decodeUnknownOption(
   ProviderToolFunctionEnvelope
 );
 
-const OpenAiProviderChoiceEnvelope = Schema.Struct({
-  message: Schema.Json,
-});
+const OpenAiProviderChoiceEnvelope = Schema.StructWithRest(
+  Schema.Struct({
+    message: Schema.Json,
+  }),
+  [Schema.Record(Schema.String, Schema.Json)]
+);
 type OpenAiProviderChoiceEnvelope = typeof OpenAiProviderChoiceEnvelope.Type;
 const decodeOpenAiProviderChoiceEnvelope = Schema.decodeUnknownOption(
-  OpenAiProviderChoiceEnvelope,
-  { onExcessProperty: "preserve" }
+  OpenAiProviderChoiceEnvelope
 );
 
-const OpenAiProviderMessageEnvelope = Schema.Struct({
-  tool_calls: Schema.optionalKey(Schema.Json),
-});
+const OpenAiProviderMessageEnvelope = Schema.StructWithRest(
+  Schema.Struct({
+    tool_calls: Schema.optionalKey(Schema.Json),
+  }),
+  [Schema.Record(Schema.String, Schema.Json)]
+);
 type OpenAiProviderMessageEnvelope = typeof OpenAiProviderMessageEnvelope.Type;
 const decodeOpenAiProviderMessageEnvelope = Schema.decodeUnknownOption(
-  OpenAiProviderMessageEnvelope,
-  { onExcessProperty: "preserve" }
+  OpenAiProviderMessageEnvelope
 );
 
 type CanonicalProviderToolCall =
@@ -748,6 +754,7 @@ const decodeFlatRawToolCall = (
   if (hasArguments && toolArguments !== undefined) {
     call = { ...call, arguments: toolArguments };
   }
+
   return {
     _tag: "Call",
     arguments: toolArguments,
@@ -894,6 +901,7 @@ const decodeOpenAiToolAuthority = (
   if (authority._tag === "Invalid") {
     throw new Error(ProviderNormalizationInvalidMessage);
   }
+
   return {
     authority,
     choice: {
@@ -1011,26 +1019,26 @@ export const normalizeWorkersAiResponse = (response: Response): Response => {
 
 /**
  * Keep the installed Alchemy LanguageModel composition while dispatching
- * through the account-bound Workers AI binding. The binding cannot express
- * AI Gateway's payload-suppression header, so the proxy disables provider-side
- * gateway logging at the final SDK boundary and relies on the redacted,
+ * through the account-bound Workers AI binding. The proxy sets the supported
+ * per-request gateway.collectLog option to false at the final SDK boundary
+ * and relies on the redacted,
  * correlation-aware Worker observability events. It never touches the
  * universal gateway binding.
  */
-export const noLogWorkersAiClient = (
-  client: QueryGatewayClient,
+const noLogWorkersAiClient = (
+  client: WorkersAiGatewayClient,
   correlationId: ImportCorrelationId,
   providerStage: "visual"
-): QueryGatewayClient => ({
+): WorkersAiGatewayClient => ({
   ...client,
   raw: Effect.all([client.raw, client.id]).pipe(
     Effect.map(
       ([ai, gatewayId]) =>
         ({
           run: async (
-            // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU002 alchemy@2.0.0-beta.76): LanguageModel.callRaw -> Ai.run(model, body) erases the model-correlated visual request; Schema cannot establish the missing behavioral model/body relationship. Remove when Alchemy provides a public precise visual request transport.
+            // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU002 alchemy@2.0.0-beta.80): LanguageModel.callRaw -> Ai.run(model, body) erases the model-correlated visual request; Schema cannot establish the missing behavioral model/body relationship. Remove when Alchemy provides a public precise visual request transport.
             model: unknown,
-            // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU003 alchemy@2.0.0-beta.76): LanguageModel.callRaw -> Ai.run(model, body) erases the model-correlated visual request; Schema can validate JSON but cannot restore that vendor generic without changing the forced-tool protocol. Remove when Alchemy provides a public precise visual request transport.
+            // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU003 alchemy@2.0.0-beta.80): LanguageModel.callRaw -> Ai.run(model, body) erases the model-correlated visual request; Schema can validate JSON but cannot restore that vendor generic without changing the forced-tool protocol. Remove when Alchemy provides a public precise visual request transport.
             body: unknown
           ) => {
             let response: Response;
@@ -1060,11 +1068,11 @@ export const noLogWorkersAiClient = (
           },
         }) as WorkersAiBinding
     )
-  ) as QueryGatewayClient["raw"],
+  ) as WorkersAiGatewayClient["raw"],
 });
 
 export const makeWorkersAiTransport = (
-  client: QueryGatewayClient,
+  client: WorkersAiGatewayClient,
   correlationId: ImportCorrelationId
 ) =>
   Effect.gen(function* makeProviderTransport() {

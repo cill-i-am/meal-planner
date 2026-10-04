@@ -34,7 +34,6 @@ export const ImportObservabilityEventName = Schema.Literals([
   "provider.settlement",
   "provider.terminal",
   "provider.timeout",
-  "queue.received",
   "workflow.started",
 ]);
 export type ImportObservabilityEventName =
@@ -207,16 +206,6 @@ export const makeImportTraceContext = (
     onExcessProperty: "error",
   })({ correlationId: newCorrelationId() });
 
-export const metadataOnlyGatewayHeaders = (
-  correlationId: ImportCorrelationId
-) =>
-  ({
-    "cf-aig-collect-log": "true",
-    "cf-aig-collect-log-payload": "false",
-    "cf-aig-metadata": JSON.stringify({ correlationId }),
-    "content-type": "application/json",
-  }) as const;
-
 const eventAnnotations = (event: ImportObservabilityEvent) => {
   const annotations: Record<string, number | string> = {
     correlationId: event.correlationId,
@@ -292,17 +281,6 @@ export const emitImportObservabilityEvent = (
     ),
     Effect.asVoid
   );
-
-export const observeImportQueueReceipt = (
-  newCorrelationId: () => ImportCorrelationId = makeImportCorrelationId
-) => {
-  const trace = makeImportTraceContext(newCorrelationId);
-  return emitImportObservabilityEvent({
-    correlationId: trace.correlationId,
-    event: "queue.received",
-    outcome: "received",
-  }).pipe(Effect.as(trace));
-};
 
 export const observeImportWorkflowStart = (trace: ImportTraceContext) =>
   emitImportObservabilityEvent({

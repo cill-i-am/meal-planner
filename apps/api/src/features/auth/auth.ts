@@ -234,7 +234,7 @@ export const makeMealPlannerAuthConfiguration = ({
   };
 };
 
-export type MealPlannerAuthSecurity = ReturnType<
+type MealPlannerAuthSecurity = ReturnType<
   typeof makeMealPlannerAuthConfiguration
 >;
 

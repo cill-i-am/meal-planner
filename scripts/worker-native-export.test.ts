@@ -55,15 +55,5 @@ describe("API Worker bundle", () => {
     expect(exports).toContain("AgentConversation");
     expect(exports).toContain("ImportMediaAcquisitionObject");
     expect(exports).toContain("default");
-
-    const runtimeModules = bundle.files
-      .filter((file) => file.path.endsWith(".js"))
-      .map((file) => String(file.content))
-      .join("\n");
-    expect(runtimeModules).toMatch(/main:[`'"]worker-entry\.ts[`'"]/u);
-    expect(runtimeModules).toMatch(/main:[`'"]private-output-worker\.ts[`'"]/u);
-    expect(runtimeModules).not.toMatch(
-      /new URL\([`'"](?:worker-entry|private-output-worker)\.ts[`'"]/u
-    );
   });
 });

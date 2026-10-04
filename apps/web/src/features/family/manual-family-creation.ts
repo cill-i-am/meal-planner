@@ -18,19 +18,20 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Schema } from "effect";
 import { useRef, useState } from "react";
 
-import { queryFailure, useApiRuntime } from "../api-client/index.js";
+import {
+  apiEffectQuery,
+  queryFailure,
+  useApiRuntime,
+} from "../api-client/index.js";
 import { useAccount } from "../auth/index.js";
 import {
   HouseholdPeopleOperationError,
   makeHouseholdPeopleEffectOperations,
-} from "../household-people/client.js";
+} from "../household-people/index.js";
 import { usePendingRequest } from "../request-recovery/index.js";
 import { useCreateFamily } from "./family-creation.js";
 import { familyKeys } from "./family-operations.js";
-import {
-  familyRosterQueryOptions,
-  peopleEffectQuery,
-} from "./people-queries.js";
+import { familyRosterQueryOptions } from "./people-queries.js";
 
 type ManualStep =
   | {
@@ -71,7 +72,7 @@ export const useManualFamilyCreation = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [savedPeople, setSavedPeople] = useState(0);
   const mutation = useMutation({
-    ...peopleEffectQuery.mutationOptions({
+    ...apiEffectQuery.mutationOptions({
       mutationFn: (step: ManualStep) => {
         const people = makeHouseholdPeopleEffectOperations(
           { organizationId: step.familyId, userId: account.user.id },

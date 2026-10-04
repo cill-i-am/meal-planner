@@ -1,10 +1,12 @@
 import { makeDurableObjectBridge, makeWorkerBridge } from "alchemy/Cloudflare";
+import { withSqlMigrations } from "alchemy/Cloudflare/Bridge";
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 
+import { householdSqlMigrations } from "../../test/household-sql-migrations.test-fixture.js";
 import entrypoint from "./household-domain-worker.js";
 
 const meta = {
-  entrypoint,
+  entrypoint: withSqlMigrations(entrypoint, householdSqlMigrations),
   stack: { name: "MealPlanner", stage: "test-household-domain" },
 };
 

@@ -1,6 +1,6 @@
 import { InvitationId, InvitationView } from "@meal-planner/household-api";
 import { Context, Layer, Schema } from "effect";
-import { HttpClient, HttpClientRequest } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest } from "effect/http";
 import {
   HttpApi,
   HttpApiClient,
@@ -8,7 +8,7 @@ import {
   HttpApiGroup,
   HttpApiMiddleware,
   HttpApiSchema,
-} from "effect/unstable/httpapi";
+} from "effect/http-api";
 
 import { InvitationResponse, InvitationResponseResult } from "./invitation.js";
 
@@ -71,6 +71,8 @@ const InvitationReadGroup = HttpApiGroup.make("invitationRead").add(
 );
 
 export const InvitationReadApi = HttpApi.make("invitationReadApi")
+  .annotate(HttpApi.PayloadParseOptions, { onExcessProperty: "error" })
+  .annotate(HttpApi.QueryParseOptions, { onExcessProperty: "error" })
   .add(InvitationReadGroup)
   .middleware(InvitationReadSchemaErrors);
 

@@ -773,9 +773,16 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
         ? this.#setupConfirmationForActionId(action.actionId)
         : null;
     if (
+      access.scope._tag === "AccountPrivateSetup" &&
+      parsed._tag === "RosterProposal" &&
+      action.decision === "accept" &&
+      !matchesConfirmedRosterAction(action, parsed, confirmation)
+    ) {
+      fail("stale_review");
+    }
+    if (
       confirmation !== null &&
-      (parsed._tag !== "RosterProposal" ||
-        !matchesConfirmedRosterAction(action, parsed, confirmation))
+      (parsed._tag !== "RosterProposal" || action.decision !== "accept")
     ) {
       fail("stale_review");
     }

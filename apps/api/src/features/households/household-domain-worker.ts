@@ -22,6 +22,7 @@ import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { Effect, Schema } from "effect";
 
+import { workerObservability } from "../../infrastructure/worker-observability.js";
 import type { MealPlanServiceError } from "../meal-planning/meal-plan.js";
 import { PrivateOutputMutationsBinding } from "../private-output/private-output-binding.js";
 import type {
@@ -1208,20 +1209,11 @@ export default HouseholdDomainWorker.make(
   {
     env: { PrivateOutputMutations: PrivateOutputMutationsBinding },
     main: import.meta.url,
-    observability: {
-      enabled: true,
-      headSamplingRate: 1,
-      logs: {
-        enabled: true,
-        headSamplingRate: 1,
-        invocationLogs: false,
-        persist: true,
-      },
-      traces: { enabled: false },
-    },
+    ...workerObservability,
     workersDev: false,
   },
   HouseholdDomainWorkerRuntime.pipe(
+    Effect.provide(Cloudflare.Telemetry()),
     Effect.provide(HouseholdObjectLocator.layer),
     Effect.provide(HouseholdAuthorityServicesLive)
   )

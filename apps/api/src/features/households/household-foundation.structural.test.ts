@@ -171,6 +171,11 @@ describe("household foundation structural boundaries", () => {
         "recipe-import/household-recipe-import.repository.ts",
       ].toSorted()
     );
+    const runtime = sources.find(
+      ({ path: sourcePath }) => sourcePath === "household-object-runtime.ts"
+    )?.source;
+    expect(runtime).toBeDefined();
+    expect(runtime).not.toContain(".transaction(");
     for (const { path: sourcePath, source } of transactionOwners) {
       expect(source, `${sourcePath} performs external I/O`).not.toMatch(
         /\bfetch\s*\(|\.getByName\(|\.send\s*\(|\.put\s*\(|cloudflare:workers|alchemy\/Cloudflare/u
@@ -317,9 +322,19 @@ describe("household foundation structural boundaries", () => {
       `\`visual:fail:\${failure.dispatchId}:\${failure.sourceMediaSha256}:\${failure.failureCode}\``
     );
     expect(repository.match(/\? current\.startedAt/gu)).toHaveLength(2);
-    expect(
-      repository.match(/completedAt: failure\.completedAt/gu)
-    ).toHaveLength(4);
+    for (const factory of [
+      "makeHouseholdSpeechTranscriptionRepository",
+      "makeHouseholdVisualEvidenceRepository",
+      "makeHouseholdRecipeDraftRepository",
+    ]) {
+      const adapter = repository
+        .split(`export const ${factory}`)[1]
+        ?.split("\nexport const ")[0];
+      expect(
+        adapter?.match(/completedAt: failure\.completedAt/gu),
+        factory
+      ).toHaveLength(1);
+    }
     expect(
       repository.match(/completedAt: current\.completedAt/gu)
     ).toHaveLength(2);

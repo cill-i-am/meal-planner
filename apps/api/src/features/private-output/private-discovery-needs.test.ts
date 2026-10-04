@@ -35,7 +35,9 @@ const option = {
   quantity: "one serving",
   substitutions: null,
 };
-const continueReply = Schema.decodeUnknownSync(PrivateDiscoveryReply)({
+const continueReply = Schema.decodeUnknownSync(PrivateDiscoveryReply, {
+  onExcessProperty: "error",
+})({
   _tag: "Continue",
 });
 type Update = MealFallbackNeedUpdates["updates"][number];
@@ -886,7 +888,9 @@ describe("typed private meal fallback needs", () => {
       },
     ]) {
       expect(() =>
-        Schema.decodeUnknownSync(MealFallbackNeedUpdates)(invalid)
+        Schema.decodeUnknownSync(MealFallbackNeedUpdates, {
+          onExcessProperty: "error",
+        })(invalid)
       ).toThrow();
     }
   });
@@ -913,7 +917,9 @@ describe("typed private meal fallback needs", () => {
         value: "🍲".repeat(100),
       },
     ]);
-    const delta = Schema.decodeUnknownSync(PrivateDiscoveryContinuityUpdates)({
+    const delta = Schema.decodeUnknownSync(PrivateDiscoveryContinuityUpdates, {
+      onExcessProperty: "error",
+    })({
       ...emptyPrivateDiscoveryContinuityUpdates(),
       mealFallbackNeeds: { declarations, updates },
       notes: [],

@@ -55,7 +55,6 @@ export const privateOutputRuntimeWorker = (
       },
       manifest,
       name: "private-output",
-      type: "worker",
     },
   }) satisfies { config: MiniflareWorkerConfig };
 
@@ -69,6 +68,5 @@ export const privateOutputControlWorker = (
       env: privateOutputRuntimeWorker(manifest).config.env,
       manifest,
       name: "private-output-control",
-      type: "worker",
     },
   }) satisfies { config: MiniflareWorkerConfig };

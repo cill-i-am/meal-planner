@@ -46,8 +46,8 @@ import {
 } from "@tanstack/ai";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { Effect, Layer, Option, Result, Schema } from "effect";
-import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
-import { HttpApiBuilder, HttpApiMiddleware } from "effect/unstable/httpapi";
+import { HttpRouter, HttpServerResponse } from "effect/http";
+import { HttpApiBuilder, HttpApiMiddleware } from "effect/http-api";
 
 import type {
   ActionExecution,

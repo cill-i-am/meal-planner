@@ -1,4 +1,9 @@
 import {
+  emptyRecipeDetails,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+} from "@meal-planner/recipe-domain";
+import {
   RecipeImportAction,
   RecipeImportActionId,
   ProcessingRecipeImportIntent,
@@ -10,10 +15,11 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { RecipeImportOperations } from "./operations.js";
+import type { RecipeImportOperations } from "./browser-operations.js";
+import { RecipeDetails } from "./recipe-details.js";
 import { RecipeImportWorkspace } from "./recipe-import-page.js";
 
 afterEach(cleanup);
@@ -72,22 +78,11 @@ const activeAction = Schema.decodeUnknownSync(RecipeImportAction)({
     blockers: { invalidFields: [], unresolvedRequiredFields: [] },
     editableFields: ["name"],
     recipe: {
-      author: null,
-      category: null,
-      cookTimeMinutes: null,
-      cuisine: "Irish",
-      description: null,
-      ingredientLines: ["400 g beef"],
-      ingredientQuantities: null,
-      ingredientUnits: null,
-      instructions: ["Simmer until tender."],
+      ...emptyRecipeDetails,
+      cuisines: ["Irish"],
+      ingredients: [recipeIngredientFromText("400 g beef")],
+      instructions: [recipeInstructionFromText("Simmer until tender.", 1)],
       name: "Irish stew",
-      nutrition: null,
-      prepTimeMinutes: null,
-      temperatureCelsius: null,
-      tools: null,
-      totalTimeMinutes: null,
-      yield: null,
     },
     tags: null,
   },
@@ -108,7 +103,6 @@ const savedRecipe = Schema.decodeUnknownSync(Recipe)({
   recipe: activeAction.review.recipe,
   tags: {
     cuisines: ["Irish"],
-    dietaryFit: "household_match",
     difficulty: "easy",
     leftovers: "one_meal",
     mealTypes: ["dinner"],
@@ -122,9 +116,9 @@ const makeOperations = (
   answerAction: vi.fn(),
   cancel: vi.fn(),
   confirmAction: vi.fn(),
-  create: vi.fn(async () => processing),
+  create: vi.fn(() => Effect.succeed(processing)),
   getAction: vi.fn(),
-  getIntent: vi.fn(async () => processing),
+  getIntent: vi.fn(() => Effect.succeed(processing)),
   getRecipe: vi.fn(),
   ...overrides,
 });
@@ -150,8 +144,8 @@ const renderPage = (operations: RecipeImportOperations) =>
 describe("RecipeImportWorkspace", () => {
   it("submits a recipe import in the active household session", async () => {
     const create = vi.fn(
-      async (_input: Parameters<RecipeImportOperations["create"]>[0]) =>
-        processing
+      (_input: Parameters<RecipeImportOperations["create"]>[0]) =>
+        Effect.succeed(processing)
     );
     renderPage(makeOperations({ create }));
     const user = userEvent.setup();
@@ -179,9 +173,11 @@ describe("RecipeImportWorkspace", () => {
   it("shows a safe error when the API request fails", async () => {
     renderPage(
       makeOperations({
-        create: vi.fn(async () => {
-          throw new Error("secret");
-        }),
+        create: vi.fn(() =>
+          Effect.sync(() => {
+            throw new Error("secret");
+          })
+        ),
       })
     );
     const user = userEvent.setup();
@@ -200,16 +196,16 @@ describe("RecipeImportWorkspace", () => {
   });
 
   it("confirms the exact review version and renders the saved recipe", async () => {
-    const confirmAction = vi.fn<RecipeImportOperations["confirmAction"]>(
-      async () => succeeded
+    const confirmAction = vi.fn<RecipeImportOperations["confirmAction"]>(() =>
+      Effect.succeed(succeeded)
     );
-    const getRecipe = vi.fn(async () => savedRecipe);
+    const getRecipe = vi.fn(() => Effect.succeed(savedRecipe));
     renderPage(
       makeOperations({
         confirmAction,
-        create: vi.fn(async () => processing),
-        getAction: vi.fn(async () => activeAction),
-        getIntent: vi.fn(async () => requiresAction),
+        create: vi.fn(() => Effect.succeed(processing)),
+        getAction: vi.fn(() => Effect.succeed(activeAction)),
+        getIntent: vi.fn(() => Effect.succeed(requiresAction)),
         getRecipe,
       })
     );
@@ -225,7 +221,7 @@ describe("RecipeImportWorkspace", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Irish stew")).toBeInTheDocument();
     expect(screen.getByText("400 g beef")).toBeInTheDocument();
-    expect(screen.getByText("Simmer until tender.")).toBeInTheDocument();
+    expect(screen.getByText("1. Simmer until tender.")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Confirm recipe" }));
 
@@ -266,14 +262,14 @@ describe("RecipeImportWorkspace", () => {
       ...Schema.encodeSync(RecipeImportAction)(activeAction),
       review: { ...activeAction.review, editableFields: ["name", "tags"] },
     });
-    const answerAction = vi.fn<RecipeImportOperations["answerAction"]>(
-      async () => requiresAction
+    const answerAction = vi.fn<RecipeImportOperations["answerAction"]>(() =>
+      Effect.succeed(requiresAction)
     );
     renderPage(
       makeOperations({
         answerAction,
-        getAction: vi.fn(async () => action),
-        getIntent: vi.fn(async () => requiresAction),
+        getAction: vi.fn(() => Effect.succeed(action)),
+        getIntent: vi.fn(() => Effect.succeed(requiresAction)),
       })
     );
     const user = userEvent.setup();
@@ -306,7 +302,6 @@ describe("RecipeImportWorkspace", () => {
           field: "tags",
           value: {
             cuisines: ["Irish"],
-            dietaryFit: "household_match",
             difficulty: "medium",
             leftovers: "one_meal",
             mealTypes: ["lunch"],
@@ -317,4 +312,193 @@ describe("RecipeImportWorkspace", () => {
       expectedActionVersion: 3,
     });
   });
+});
+
+describe("structured recipe details", () => {
+  it("preserves source wording, sections and unknown amounts alongside inactive time", () => {
+    render(
+      <RecipeDetails
+        recipe={{
+          ...emptyRecipeDetails,
+          ingredients: [
+            {
+              ...recipeIngredientFromText("A handful of herbs"),
+              group: "To finish",
+            },
+          ],
+          instructions: [
+            {
+              ...recipeInstructionFromText("Leave to rest.", 1),
+              group: "Resting",
+              temperature: { unit: "C", value: 180 },
+            },
+          ],
+          name: "Soup",
+          notes: ["Refrigerate leftovers."],
+          times: {
+            ...emptyRecipeDetails.times,
+            inactive: { seconds: 1200 },
+            prep: { seconds: 0 },
+          },
+        }}
+      />
+    );
+    expect(screen.getByText("A handful of herbs")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "To finish" })
+    ).toBeInTheDocument();
+    expect(screen.getByText("Quantity not provided")).toBeInTheDocument();
+    expect(screen.getByText("Servings not provided")).toBeInTheDocument();
+    expect(screen.getByText("20 minutes")).toBeInTheDocument();
+    expect(screen.getByText("0 minutes")).toBeInTheDocument();
+    expect(screen.getByText("180°C")).toBeInTheDocument();
+    expect(screen.getByText("Refrigerate leftovers.")).toBeInTheDocument();
+  });
+});
+
+it("saves structured ingredient corrections while retaining the source wording", async () => {
+  const action = Schema.decodeUnknownSync(RecipeImportAction)({
+    ...activeAction,
+    review: { ...activeAction.review, editableFields: ["ingredients"] },
+  });
+  const answerAction = vi.fn<RecipeImportOperations["answerAction"]>(() =>
+    Effect.succeed(requiresAction)
+  );
+  renderPage(
+    makeOperations({
+      answerAction,
+      getAction: vi.fn(() => Effect.succeed(action)),
+      getIntent: vi.fn(() => Effect.succeed(requiresAction)),
+    })
+  );
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Recipe link" }),
+    "https://www.tiktok.com/@cook/video/7390123456789012345"
+  );
+  await user.click(screen.getByRole("button", { name: "Import recipe" }));
+  await user.click(await screen.findByText("Edit recipe details"));
+  await user.click(screen.getByText("Ingredients", { selector: "summary" }));
+  await user.click(screen.getByRole("button", { name: "Add amount" }));
+  const amount = screen.getByRole("spinbutton", { name: "Amount" });
+  await user.clear(amount);
+  await user.type(amount, "600");
+  await user.click(screen.getByRole("button", { name: "Save recipe details" }));
+  await waitFor(() => expect(answerAction).toHaveBeenCalledOnce());
+  expect(answerAction.mock.calls[0]?.[0].request.answers).toEqual([
+    {
+      field: "ingredients",
+      value: [
+        {
+          ...recipeIngredientFromText("400 g beef"),
+          quantity: { max: null, unit: null, value: 600 },
+        },
+      ],
+    },
+  ]);
+  await user.click(screen.getByRole("button", { name: "Clear amount" }));
+  await user.click(screen.getByRole("button", { name: "Save recipe details" }));
+  await waitFor(() => expect(answerAction).toHaveBeenCalledTimes(2));
+  expect(answerAction.mock.calls[1]?.[0].request.answers).toEqual([
+    { field: "ingredients", value: [recipeIngredientFromText("400 g beef")] },
+  ]);
+});
+
+it("lets a reviewer supply missing yield and waiting time with their own wording", async () => {
+  const action = Schema.decodeUnknownSync(RecipeImportAction)({
+    ...activeAction,
+    review: { ...activeAction.review, editableFields: ["servings", "times"] },
+  });
+  const answerAction = vi.fn<RecipeImportOperations["answerAction"]>(() =>
+    Effect.succeed(requiresAction)
+  );
+  renderPage(
+    makeOperations({
+      answerAction,
+      getAction: vi.fn(() => Effect.succeed(action)),
+      getIntent: vi.fn(() => Effect.succeed(requiresAction)),
+    })
+  );
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Recipe link" }),
+    "https://www.tiktok.com/@cook/video/7390123456789012345"
+  );
+  await user.click(screen.getByRole("button", { name: "Import recipe" }));
+  await user.click(await screen.findByText("Edit recipe details"));
+  await user.click(
+    screen.getByText("Servings or yield", { selector: "summary" })
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Add servings or yield" })
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Original source wording" }),
+    "Serves four"
+  );
+  const amount = screen.getByRole("spinbutton", { name: "Amount" });
+  await user.clear(amount);
+  await user.type(amount, "4");
+  await user.click(screen.getByText("Cooking times", { selector: "summary" }));
+  await user.click(
+    screen.getByRole("button", { name: "Add waiting or resting" })
+  );
+  const minutes = screen.getByRole("spinbutton", { name: "Minutes" });
+  await user.clear(minutes);
+  await user.type(minutes, "30");
+  await user.click(screen.getByRole("button", { name: "Save recipe details" }));
+  await waitFor(() => expect(answerAction).toHaveBeenCalledOnce());
+  expect(answerAction.mock.calls[0]?.[0].request.answers).toEqual([
+    {
+      field: "servings",
+      value: { max: null, original: "Serves four", quantity: 4, unit: null },
+    },
+    {
+      field: "times",
+      value: { ...emptyRecipeDetails.times, inactive: { seconds: 1800 } },
+    },
+  ]);
+});
+
+it("displays corrected yield and dietary meaning separately from original source wording", () => {
+  render(
+    <RecipeDetails
+      recipe={{
+        ...emptyRecipeDetails,
+        dietary: [
+          {
+            kind: "diet",
+            name: "vegan",
+            original: "Vegetarian",
+            source: "provided",
+            value: false,
+          },
+          {
+            kind: "allergen",
+            name: "milk",
+            original: "Contains dairy",
+            source: "provided",
+            value: false,
+          },
+        ],
+        ingredients: [recipeIngredientFromText("Salt")],
+        instructions: [recipeInstructionFromText("Season.", 1)],
+        name: "Soup",
+        servings: {
+          max: 8,
+          original: "Serves 4",
+          quantity: 6,
+          unit: "servings",
+        },
+      }}
+    />
+  );
+  expect(screen.getByText("Yield: 6–8 servings")).toBeInTheDocument();
+  expect(screen.getByText("Source: Serves 4")).toBeInTheDocument();
+  expect(screen.getByText("Diet: vegan — stated no")).toBeInTheDocument();
+  expect(screen.getByText("Source: Vegetarian")).toBeInTheDocument();
+  expect(
+    screen.getByText("Allergen: milk — stated absent")
+  ).toBeInTheDocument();
+  expect(screen.getByText("Source: Contains dairy")).toBeInTheDocument();
 });

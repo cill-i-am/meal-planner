@@ -1,11 +1,16 @@
+export { makeHouseholdPeopleEffectOperations } from "./browser-operations.js";
 export {
   householdPeopleFailureCode,
-  makeBrowserHouseholdPeopleOperations,
-  makeHouseholdPeopleEffectOperations,
+  isAmbiguousHouseholdPeopleFailure,
   HouseholdPeopleOperationError,
-} from "./client.js";
+} from "./operations.js";
 export type {
   HouseholdPeopleEffectOperations,
-  HouseholdPeopleOperations,
-} from "./client.js";
+  HouseholdPeopleOperationFailureCode,
+} from "./operations.js";
+export {
+  InvitationEmailInput,
+  ParticipationInput,
+  PersonNameInput,
+} from "./form-input.js";
 export { HouseholdPeoplePanel } from "./household-people-panel.js";

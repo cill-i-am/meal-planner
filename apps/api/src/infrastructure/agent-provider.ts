@@ -1,9 +1,32 @@
+import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Output from "alchemy/Output";
+import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
 
 /** Stage-owned gateway and account token for the two private Agent Workers. */
 export const AgentProvider = Effect.gen(function* AgentProvider() {
+  const { dev } = yield* Alchemy.AlchemyContext;
+  if (dev) {
+    return {
+      accountId: yield* Config.String("LOCAL_AGENT_ACCOUNT_ID").pipe(
+        Config.withDefault("")
+      ),
+      apiToken: yield* Config.Redacted("LOCAL_AGENT_API_TOKEN").pipe(
+        Config.withDefault(Redacted.make(""))
+      ),
+      conversationConfig: yield* Config.String(
+        "LOCAL_AGENT_CONVERSATION_CONFIG"
+      ).pipe(Config.withDefault("")),
+      gatewayId: yield* Config.String("LOCAL_AGENT_GATEWAY_ID").pipe(
+        Config.withDefault("")
+      ),
+      privateDiscoveryConfig: yield* Config.String(
+        "LOCAL_AGENT_PRIVATE_DISCOVERY_CONFIG"
+      ).pipe(Config.withDefault("")),
+    };
+  }
   const { accountId } = yield* yield* Cloudflare.CloudflareEnvironment;
   const gateway = yield* Cloudflare.AI.Gateway("AgentProviderGateway", {
     authentication: true,

@@ -6,11 +6,7 @@ Effect v4 API with a private Cloudflare Worker for household meal planning and r
 
 `src/worker.ts` composes Better Auth, household membership and meal-plan routes, recipe imports, provider accounting and recovery, and `/health`. The Website reaches this private Worker through a service binding; browser requests stay same-origin.
 
-`src/worker-entry.ts` also exports the native conversation Durable Object. The
-pinned Alchemy build explicitly retains that native export alongside its Effect
-exports. Source-file URLs resolve only during planning. The API captures its
-Alchemy binding context during construction and supplies it to request effects;
-the bridge supplies the request scope and execution context separately.
+`src/worker-entry.ts` exports the native conversation Durable Object beside the Worker declaration. The pinned Alchemy build explicitly retains that native export alongside its Effect exports. Source-file URLs resolve only during planning. The API captures its Alchemy binding context during construction and supplies it to request effects; the bridge supplies the request scope and execution context separately.
 
 Household state lives in the household Durable Object. Global D1 stores Better Auth and provider accounting. Alchemy owns infrastructure; Drizzle Kit owns database schemas and migrations.
 
@@ -46,6 +42,6 @@ Optional headers: `TESCO_TRANSACTION_PURPOSE`, `TESCO_RELEASE_BRANCH`.
 - `src/features/`: auth, households, meal planning, recipe imports, provider accounting, and Tesco slices.
 - `src/app/`: Node composition, config, and shared HTTP handling.
 - `src/infrastructure/`: Alchemy resources and request cancellation.
-- `src/worker.ts`: Cloudflare composition; `src/worker-entry.ts`: deployed exports; `src/main.ts`: Node entrypoint.
+- `src/worker.ts`: Cloudflare composition; `src/main.ts`: Node entrypoint.
 
 Use the root `pnpm check`, `pnpm test`, and `pnpm build` commands. For focused API verification, use `pnpm --filter @meal-planner/api check` or `pnpm --filter @meal-planner/api test`. The API test configuration separates Node tests from local Cloudflare D1 tests.

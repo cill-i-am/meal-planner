@@ -4,7 +4,7 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 
 import { NodeHttpClient } from "@effect/platform-node";
 import { Cause, Effect, Exit, Layer, Option, Redacted, Schema } from "effect";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import { describe, expect, it } from "vitest";
 
 import { TescoAuthSession } from "../auth/auth-session.port.js";
@@ -191,6 +191,7 @@ const makeUnitLive = (
       Effect.succeed(HttpClientResponse.fromWeb(request, response))
     )
   );
+
   return makeTescoXapiCatalogueLive(config).pipe(
     Layer.provide(Layer.mergeAll(TransportTest, HttpTest))
   );

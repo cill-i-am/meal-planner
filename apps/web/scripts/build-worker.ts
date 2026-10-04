@@ -22,6 +22,7 @@ const output = await Effect.runPromise(
       const build = yield* source.build(
         makeSourceContext({
           compatibility: { date: "2026-07-14", flags: ["nodejs_compat"] },
+          fqn: "MealPlannerWebsite",
           id: "MealPlannerWebsite",
           props,
           stack: { name: "MealPlanner", stage: "local-build" },

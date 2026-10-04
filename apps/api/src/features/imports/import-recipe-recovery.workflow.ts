@@ -12,7 +12,7 @@ export default class ImportRecipeRecoveryWorkflow extends Cloudflare.Workflow<Im
   }).pipe(
     Effect.provide(
       Layer.mergeAll(
-        Cloudflare.AI.QueryGatewayBinding,
+        Cloudflare.Workers.AIBinding,
         Cloudflare.D1.QueryDatabaseBinding,
         Cloudflare.R2.ReadWriteBucketBinding
       )

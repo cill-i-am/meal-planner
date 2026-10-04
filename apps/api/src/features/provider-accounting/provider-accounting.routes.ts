@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { HttpRouter, HttpServerRequest } from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest } from "effect/http";
 
 import { ImportSystemAuthorizer } from "../imports/import-system.auth.js";
 import {
@@ -51,7 +51,3 @@ export const ProviderAccountingRouteDefinitions = [
     }).pipe((effect) => respond(effect, ProviderAccountingResponse, () => 200))
   ),
 ] as const;
-
-export const ProviderAccountingRoutes = HttpRouter.addAll(
-  ProviderAccountingRouteDefinitions
-);

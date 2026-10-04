@@ -8,7 +8,8 @@ import {
   RetryHouseholdAdultDeparturePayload,
   TransitionHouseholdPersonPayload,
 } from "@meal-planner/household-api";
-import { Cause, Effect, Exit, Schema } from "effect";
+import { QueryClient, isCancelledError } from "@tanstack/react-query";
+import { Cause, Effect, Exit, Result, Schema } from "effect";
 import {
   afterAll,
   afterEach,
@@ -19,13 +20,28 @@ import {
   vi,
 } from "vitest";
 
-import { browserApiRuntime } from "../api-client/index.js";
-import { parseDisplayedIdentity } from "../auth/displayed-identity.js";
+import { apiEffectQuery, browserApiRuntime } from "../api-client/index.js";
+import { parseDisplayedIdentity } from "../auth/index.js";
 import {
   classifyHouseholdPeopleOperationCause,
   makeHouseholdPeopleEffectOperations,
-  makeBrowserHouseholdPeopleOperations,
 } from "./browser-operations.js";
+import {
+  householdPeopleFailureCode,
+  HouseholdPeopleOperationError,
+} from "./operations.js";
+
+const operationFailure = async <A, E>(operation: Effect.Effect<A, E>) => {
+  const exit = await Effect.runPromiseExit(operation);
+  if (!Exit.isFailure(exit)) {
+    throw new Error("Expected an operation failure");
+  }
+  const failure = Cause.findError(exit.cause);
+  if (!Result.isSuccess(failure)) {
+    throw new Error("Expected a typed operation failure");
+  }
+  return failure.success;
+};
 
 const fetchMock = vi.fn<typeof fetch>();
 
@@ -42,6 +58,141 @@ afterEach(() => fetchMock.mockReset());
 afterAll(() => vi.unstubAllGlobals());
 
 describe("browser household people operations", () => {
+  it("preserves the exact command during transport retries", async () => {
+    const personId = Schema.decodeUnknownSync(HouseholdPersonId)(
+      "person_00000000-0000-4000-8000-000000000101"
+    );
+    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)({
+      expectedVersion: 1,
+      mutationId: "00000000-0000-4000-8000-000000000102",
+    });
+    const requests: string[] = [];
+    fetchMock.mockImplementation(async (request, init) => {
+      const body = await new Request(request, init).text();
+      requests.push(body);
+      const response = {
+        associationState: "unlinked",
+        associationVersion: null,
+        createdAtEpochMs: 1,
+        displayName: "Aoife",
+        id: personId,
+        isCurrentAdult: false,
+        kind: "adult",
+        lifecycle: "archived",
+        updatedAtEpochMs: 2,
+        version: 2,
+      };
+      if (requests.length === 1) {
+        throw new TypeError("Committed response lost");
+      }
+      return Response.json(response);
+    });
+    const operations = makeHouseholdPeopleEffectOperations(
+      parseDisplayedIdentity({
+        organizationId: "organization-a",
+        userId: "user-a",
+      }),
+      browserApiRuntime()
+    );
+    const result = await Effect.runPromise(
+      operations.archive(personId, payload)
+    );
+    expect(result).toMatchObject({
+      id: personId,
+      lifecycle: "archived",
+      version: 2,
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toBe(requests[0]);
+    expect(JSON.parse(requests[0] ?? "null")).toEqual(
+      Schema.encodeSync(TransitionHouseholdPersonPayload)(payload)
+    );
+  });
+
+  it.each([
+    {
+      cause: Cause.fail(new HouseholdPeopleOperationError("stale_version")),
+      code: "stale_version",
+      label: "single server rejection",
+    },
+    {
+      cause: Cause.combine(
+        Cause.fail(new HouseholdPeopleOperationError("stale_version")),
+        Cause.die(new Error("response lost"))
+      ),
+      code: "transport_unavailable",
+      label: "rejection and defect",
+    },
+    {
+      cause: Cause.combine(
+        Cause.fail(new HouseholdPeopleOperationError("stale_version")),
+        Cause.fail(new HouseholdPeopleOperationError("transport_unavailable"))
+      ),
+      code: "transport_unavailable",
+      label: "multiple failures",
+    },
+    {
+      cause: Cause.die(new Error("response lost")),
+      code: "transport_unavailable",
+      label: "defect",
+    },
+  ])(
+    "preserves $label through the query error projection",
+    async ({ label, cause, code }) => {
+      const queries = new QueryClient();
+      try {
+        await queries.fetchQuery(
+          apiEffectQuery.queryOptions({
+            queryFn: () => Effect.failCause(cause),
+            queryKey: ["people-failure", label],
+            retry: false,
+          })
+        );
+      } catch (error) {
+        if (!(error instanceof Error)) {
+          throw new Error("Expected a query error", { cause: error });
+        }
+        expect(householdPeopleFailureCode(error)).toBe(code);
+        queries.clear();
+        return;
+      }
+      throw new Error("Expected the query to fail");
+    }
+  );
+
+  it("aborts the generated-client read when its query is cancelled", async () => {
+    let signal: AbortSignal | null | undefined;
+    fetchMock.mockImplementation(
+      (_request: RequestInfo | URL, init?: RequestInit) => {
+        signal = init?.signal;
+        return new Promise<Response>(() => {});
+      }
+    );
+    const operations = makeHouseholdPeopleEffectOperations(
+      parseDisplayedIdentity({
+        organizationId: "organization-a",
+        userId: "user-a",
+      }),
+      browserApiRuntime()
+    );
+    const queries = new QueryClient();
+    const queryKey = ["household-people", "cancelled-read"];
+    const pending = queries.fetchQuery(
+      apiEffectQuery.queryOptions({
+        queryFn: () => operations.list(false),
+        queryKey,
+        retry: false,
+      })
+    );
+    const cancelled = expect(pending).rejects.toSatisfy(isCancelledError);
+    await vi.waitFor(() => expect(signal).toBeDefined());
+    await queries.cancelQueries({ queryKey });
+    expect(signal?.aborted).toBe(true);
+    await cancelled;
+    expect(queries.getQueryData(queryKey)).toBeUndefined();
+    queries.clear();
+  });
+
   it("runs a generated-client roster read as an Effect", async () => {
     fetchMock.mockResolvedValueOnce(
       Response.json({
@@ -87,10 +238,13 @@ describe("browser household people operations", () => {
       }),
       browserApiRuntime()
     );
+
     const personId = Schema.decodeUnknownSync(HouseholdPersonId)(
       "person_00000000-0000-4000-8000-000000000101"
     );
-    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)({
+    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload, {
+      onExcessProperty: "error",
+    })({
       expectedVersion: 1,
       mutationId: "00000000-0000-4000-8000-000000000102",
     });
@@ -187,45 +341,60 @@ describe("browser household people operations", () => {
           { status: 202 }
         )
       );
-    const operations = makeBrowserHouseholdPeopleOperations(
+    const operations = makeHouseholdPeopleEffectOperations(
       parseDisplayedIdentity({
         organizationId: "organization-a",
         userId: "user-a",
-      })
+      }),
+      browserApiRuntime()
     );
-    const invitePayload = Schema.decodeUnknownSync(InviteHouseholdAdultPayload)(
-      {
-        email: "adult@example.test",
-        mutationId: departureMutationId,
-        personId,
-      }
+    const invitePayload = Schema.decodeUnknownSync(
+      InviteHouseholdAdultPayload,
+      { onExcessProperty: "error" }
+    )({
+      email: "adult@example.test",
+      mutationId: departureMutationId,
+      personId,
+    });
+    await Effect.runPromise(operations.inviteAdult(invitePayload));
+    await Effect.runPromise(
+      operations.associateInvitation(
+        Schema.decodeUnknownSync(AssociateHouseholdAdultInvitationPayload, {
+          onExcessProperty: "error",
+        })({
+          email: "adult@example.test",
+          mutationId: departureMutationId,
+          personId,
+        })
+      )
     );
-
-    await operations.inviteAdult?.(invitePayload);
-    await operations.associateInvitation?.(
-      Schema.decodeUnknownSync(AssociateHouseholdAdultInvitationPayload)({
-        email: "adult@example.test",
-        mutationId: departureMutationId,
-        personId,
-      })
+    await Effect.runPromise(
+      operations.getDepartureByMutation(departureMutationId)
     );
-    await operations.getDepartureByMutation?.(departureMutationId);
-    await operations.getDeparture?.(operationId);
-    await operations.cancelDeparture?.(
-      operationId,
-      Schema.decodeUnknownSync(CancelHouseholdAdultDeparturePayload)({
-        expectedOperationVersion: 2,
-        mutationId: "00000000-0000-4000-8000-000000000103",
-      })
+    await Effect.runPromise(operations.getDeparture(operationId));
+    await Effect.runPromise(
+      operations.cancelDeparture(
+        operationId,
+        Schema.decodeUnknownSync(CancelHouseholdAdultDeparturePayload, {
+          onExcessProperty: "error",
+        })({
+          expectedOperationVersion: 2,
+          mutationId: "00000000-0000-4000-8000-000000000103",
+        })
+      )
     );
-    await operations.retryDeparture?.(
-      operationId,
-      Schema.decodeUnknownSync(RetryHouseholdAdultDeparturePayload)({
-        expectedOperationVersion: 2,
-        memberId: "member-a",
-        mutationId: "00000000-0000-4000-8000-000000000104",
-        reason: "Explicit departure repair",
-      })
+    await Effect.runPromise(
+      operations.retryDeparture(
+        operationId,
+        Schema.decodeUnknownSync(RetryHouseholdAdultDeparturePayload, {
+          onExcessProperty: "error",
+        })({
+          expectedOperationVersion: 2,
+          memberId: "member-a",
+          mutationId: "00000000-0000-4000-8000-000000000104",
+          reason: "Explicit departure repair",
+        })
+      )
     );
 
     expect(
@@ -468,19 +637,24 @@ describe("browser household people operations", () => {
     const mutationId = Schema.decodeUnknownSync(HouseholdPersonMutationId)(
       "00000000-0000-4000-8000-000000000102"
     );
-    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)({
+    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload, {
+      onExcessProperty: "error",
+    })({
       expectedVersion: 1,
       mutationId,
     });
 
     await expect(
-      makeBrowserHouseholdPeopleOperations(
-        parseDisplayedIdentity({
-          organizationId: "organization-a",
-          userId: "user-a",
-        })
-      ).archive(personId, payload)
-    ).rejects.toMatchObject({ code: "stale_version" });
+      operationFailure(
+        makeHouseholdPeopleEffectOperations(
+          parseDisplayedIdentity({
+            organizationId: "organization-a",
+            userId: "user-a",
+          }),
+          browserApiRuntime()
+        ).archive(personId, payload)
+      )
+    ).resolves.toMatchObject({ code: "stale_version" });
   });
 
   it("classifies a transport failure as an ambiguous availability outcome", async () => {
@@ -489,13 +663,16 @@ describe("browser household people operations", () => {
     });
 
     await expect(
-      makeBrowserHouseholdPeopleOperations(
-        parseDisplayedIdentity({
-          organizationId: "organization-a",
-          userId: "user-a",
-        })
-      ).list(true)
-    ).rejects.toMatchObject({ code: "transport_unavailable" });
+      operationFailure(
+        makeHouseholdPeopleEffectOperations(
+          parseDisplayedIdentity({
+            organizationId: "organization-a",
+            userId: "user-a",
+          }),
+          browserApiRuntime()
+        ).list(true)
+      )
+    ).resolves.toMatchObject({ code: "transport_unavailable" });
   });
 
   it("classifies an isolated server response as transient", async () => {
@@ -504,13 +681,16 @@ describe("browser household people operations", () => {
     );
 
     await expect(
-      makeBrowserHouseholdPeopleOperations(
-        parseDisplayedIdentity({
-          organizationId: "organization-a",
-          userId: "user-a",
-        })
-      ).list(true)
-    ).rejects.toMatchObject({ code: "transport_unavailable" });
+      operationFailure(
+        makeHouseholdPeopleEffectOperations(
+          parseDisplayedIdentity({
+            organizationId: "organization-a",
+            userId: "user-a",
+          }),
+          browserApiRuntime()
+        ).list(true)
+      )
+    ).resolves.toMatchObject({ code: "transport_unavailable" });
   });
 
   it("classifies an undecodable success response as an ambiguous mutation outcome", async () => {
@@ -527,19 +707,24 @@ describe("browser household people operations", () => {
     const mutationId = Schema.decodeUnknownSync(HouseholdPersonMutationId)(
       "00000000-0000-4000-8000-000000000104"
     );
-    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)({
+    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload, {
+      onExcessProperty: "error",
+    })({
       expectedVersion: 1,
       mutationId,
     });
 
     await expect(
-      makeBrowserHouseholdPeopleOperations(
-        parseDisplayedIdentity({
-          organizationId: "organization-a",
-          userId: "user-a",
-        })
-      ).archive(personId, payload)
-    ).rejects.toMatchObject({ code: "transport_unavailable" });
+      operationFailure(
+        makeHouseholdPeopleEffectOperations(
+          parseDisplayedIdentity({
+            organizationId: "organization-a",
+            userId: "user-a",
+          }),
+          browserApiRuntime()
+        ).archive(personId, payload)
+      )
+    ).resolves.toMatchObject({ code: "transport_unavailable" });
   });
 
   it("classifies an undecodable declared 409 response as ambiguous", async () => {
@@ -549,20 +734,27 @@ describe("browser household people operations", () => {
         { headers: { "content-type": "application/problem+json" }, status: 409 }
       )
     );
+
     const personId = Schema.decodeUnknownSync(HouseholdPersonId)(
       "person_00000000-0000-4000-8000-000000000105"
     );
-    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)({
+    const payload = Schema.decodeUnknownSync(TransitionHouseholdPersonPayload, {
+      onExcessProperty: "error",
+    })({
       expectedVersion: 1,
       mutationId: "00000000-0000-4000-8000-000000000106",
     });
+
     await expect(
-      makeBrowserHouseholdPeopleOperations(
-        parseDisplayedIdentity({
-          organizationId: "organization-a",
-          userId: "user-a",
-        })
-      ).archive(personId, payload)
-    ).rejects.toMatchObject({ code: "transport_unavailable" });
+      operationFailure(
+        makeHouseholdPeopleEffectOperations(
+          parseDisplayedIdentity({
+            organizationId: "organization-a",
+            userId: "user-a",
+          }),
+          browserApiRuntime()
+        ).archive(personId, payload)
+      )
+    ).resolves.toMatchObject({ code: "transport_unavailable" });
   });
 });

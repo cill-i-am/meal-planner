@@ -15,10 +15,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@alchemy.run/better-auth": "2.0.0-beta.76",
-    "@better-auth/drizzle-adapter": "1.7.2",
-    "@effect/platform-node": "4.0.0-rc.112",
+    "@alchemy.run/better-auth": "2.0.0-beta.80",
+    "@better-auth/drizzle-adapter": "1.7.5",
+    "@effect/platform-node": "4.0.0",
     "@meal-planner/agent-conversations-api": "workspace:*",
+    "@meal-planner/browser-observability-api": "workspace:*",
     "@meal-planner/families": "workspace:*",
     "@meal-planner/household-api": "workspace:*",
     "@meal-planner/invitations": "workspace:*",
@@ -30,10 +31,11 @@
     "@tanstack/ai-persistence": "0.5.7",
     "@tanstack/openai-base": "0.10.11",
     "agents": "0.22.0",
-    "alchemy": "2.0.0-beta.76",
-    "better-auth": "1.7.2",
+    "alchemy": "2.0.0-beta.80",
+    "better-auth": "1.7.5",
+    "cloudflare-drizzle-tracing": "1.1.0",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0",
     "graphql": "17.0.2",
     "jpeg-js": "0.4.4",
     "openai": "6.49.0",
@@ -43,18 +45,17 @@
     "react-email": "6.11.0"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "1.1.4",
-    "@cloudflare/workers-types": "5.20260904.1",
-    "@distilled.cloud/cloudflare-rolldown-plugin": "0.17.1",
-    "@effect/vitest": "4.0.0-rc.112",
+    "@cloudflare/workers-types": "5.20260918.1",
+    "@effect/vitest": "4.0.0",
+    "@meal-planner/worker-tests": "workspace:*",
     "@types/node": "24.13.3",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",
-    "auth": "1.7.2",
+    "auth": "1.7.5",
     "drizzle-kit": "1.0.0-rc.5-ab785fc",
-    "miniflare": "5.20260903.0-alpha",
+    "miniflare": "5.20261001.0-alpha",
     "tsx": "4.23.13",
     "typescript": "6.0.3",
-    "vitest": "4.1.11"
+    "vitest": "5.0.3"
   }
 }

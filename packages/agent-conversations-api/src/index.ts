@@ -24,7 +24,7 @@ import {
 } from "@meal-planner/household-api";
 import { RecipeId } from "@meal-planner/recipe-import-api";
 import { Context, Layer, Schema } from "effect";
-import { HttpClient, HttpClientRequest } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest } from "effect/http";
 import {
   HttpApi,
   HttpApiClient,
@@ -32,7 +32,7 @@ import {
   HttpApiGroup,
   HttpApiMiddleware,
   HttpApiSchema,
-} from "effect/unstable/httpapi";
+} from "effect/http-api";
 
 const Id = Schema.String.pipe(Schema.check(Schema.isUUID()));
 const MessageText = Schema.Trim.check(

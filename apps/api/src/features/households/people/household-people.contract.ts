@@ -7,11 +7,10 @@ import {
   RenameHouseholdPersonPayload,
   HouseholdMemberDepartureOperation,
   HouseholdMemberDepartureOperationId,
-  HouseholdMemberDepartureStart,
-  HouseholdPerson,
   HouseholdPeopleRoster,
   HouseholdInvitationDigest,
   HouseholdPersonId,
+  HouseholdPerson,
   HouseholdPersonLinkageSubject,
   HouseholdPersonMutationId,
   ListHouseholdPeopleUrlParams,
@@ -29,13 +28,11 @@ import {
   HouseholdSystemAdmission,
 } from "../rpc/command-envelope.js";
 
-const PersonWire = Schema.toEncoded(HouseholdPerson);
-
 /** Closed private creator bootstrap input. */
 export const HouseholdBootstrapCreatorPersonInput = Schema.Struct({
   admission: HouseholdPeopleCreatorAdmission,
   payload: BootstrapHouseholdCreatorPayload,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdBootstrapCreatorPersonInput =
   typeof HouseholdBootstrapCreatorPersonInput.Type;
 
@@ -43,7 +40,7 @@ export type HouseholdBootstrapCreatorPersonInput =
 export const HouseholdAssociateAdultInvitationInput = Schema.Struct({
   admission: HouseholdPeopleCreatorAdmission,
   payload: AssociateAdultInvitationPayload,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdAssociateAdultInvitationInput =
   typeof HouseholdAssociateAdultInvitationInput.Type;
 
@@ -51,7 +48,7 @@ export type HouseholdAssociateAdultInvitationInput =
 export const HouseholdCompleteAcceptedAdultLinkInput = Schema.Struct({
   admission: HouseholdPeopleMemberAdmission,
   payload: CompleteAcceptedAdultLinkPayload,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdCompleteAcceptedAdultLinkInput =
   typeof HouseholdCompleteAcceptedAdultLinkInput.Type;
 
@@ -60,7 +57,7 @@ export const HouseholdConfirmAdultInvitationRecipientInput = Schema.Struct({
   admission: HouseholdSystemAdmission,
   invitationDigest: CompleteAcceptedAdultLinkPayload.fields.invitationDigest,
   linkageSubject: HouseholdPersonLinkageSubject,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdConfirmAdultInvitationRecipientInput =
   typeof HouseholdConfirmAdultInvitationRecipientInput.Type;
 
@@ -74,7 +71,7 @@ export const HouseholdRepairAdultAccountLinkInput = Schema.Struct({
   admission: HouseholdPeopleCreatorAdmission,
   payload: RepairAdultAccountLinkPayload,
   targetLinkageSubject: HouseholdPersonLinkageSubject,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdRepairAdultAccountLinkInput =
   typeof HouseholdRepairAdultAccountLinkInput.Type;
 
@@ -84,7 +81,7 @@ export const HouseholdPrepareMemberDepartureInput = Schema.Struct({
   payload: PrepareMemberDeparturePayload,
   removalMutationId: Schema.optionalKey(HouseholdPersonMutationId),
   targetLinkageSubject: HouseholdPersonLinkageSubject,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdPrepareMemberDepartureInput =
   typeof HouseholdPrepareMemberDepartureInput.Type;
 
@@ -93,7 +90,7 @@ export const HouseholdStartMemberDepartureInput = Schema.Struct({
   admission: HouseholdPeopleCallerAdmission,
   expectedOperationVersion: HouseholdMemberDepartureOperation.fields.version,
   operationId: HouseholdMemberDepartureOperationId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdStartMemberDepartureInput =
   typeof HouseholdStartMemberDepartureInput.Type;
 
@@ -102,7 +99,7 @@ export const HouseholdCancelMemberDepartureInput = Schema.Struct({
   admission: HouseholdPeopleCallerAdmission,
   operationId: HouseholdMemberDepartureOperationId,
   payload: CancelMemberDeparturePayload,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdCancelMemberDepartureInput =
   typeof HouseholdCancelMemberDepartureInput.Type;
 
@@ -112,7 +109,7 @@ export const HouseholdRetryMemberDepartureInput = Schema.Struct({
   operationId: HouseholdMemberDepartureOperationId,
   payload: RetryMemberDeparturePayload,
   targetLinkageSubject: Schema.NullOr(HouseholdPersonLinkageSubject),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdRetryMemberDepartureInput =
   typeof HouseholdRetryMemberDepartureInput.Type;
 
@@ -120,7 +117,7 @@ export type HouseholdRetryMemberDepartureInput =
 export const HouseholdRestoreReturningAdultLinkInput = Schema.Struct({
   admission: HouseholdPeopleMemberAdmission,
   payload: RestoreReturningAdultLinkPayload,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdRestoreReturningAdultLinkInput =
   typeof HouseholdRestoreReturningAdultLinkInput.Type;
 
@@ -128,7 +125,7 @@ export type HouseholdRestoreReturningAdultLinkInput =
 export const HouseholdGetMemberDepartureInput = Schema.Struct({
   admission: HouseholdPeopleCallerAdmission,
   operationId: HouseholdMemberDepartureOperationId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdGetMemberDepartureInput =
   typeof HouseholdGetMemberDepartureInput.Type;
 
@@ -136,7 +133,7 @@ export type HouseholdGetMemberDepartureInput =
 export const HouseholdGetMemberDepartureByMutationInput = Schema.Struct({
   admission: HouseholdPeopleCallerAdmission,
   mutationId: HouseholdPersonMutationId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdGetMemberDepartureByMutationInput =
   typeof HouseholdGetMemberDepartureByMutationInput.Type;
 
@@ -144,7 +141,7 @@ export type HouseholdGetMemberDepartureByMutationInput =
 export const HouseholdReadMemberDepartureSystemInput = Schema.Struct({
   admission: HouseholdSystemAdmission,
   operationId: HouseholdMemberDepartureOperationId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdReadMemberDepartureSystemInput =
   typeof HouseholdReadMemberDepartureSystemInput.Type;
 
@@ -161,7 +158,7 @@ export const HouseholdConfirmMemberAccessRevokedInput = Schema.Struct({
   admission: HouseholdSystemAdmission,
   expectedOperationVersion: HouseholdMemberDepartureOperation.fields.version,
   operationId: HouseholdMemberDepartureOperationId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdConfirmMemberAccessRevokedInput =
   typeof HouseholdConfirmMemberAccessRevokedInput.Type;
 
@@ -170,7 +167,7 @@ export const HouseholdFinalizeMemberDepartureInput = Schema.Struct({
   admission: HouseholdSystemAdmission,
   expectedOperationVersion: HouseholdMemberDepartureOperation.fields.version,
   operationId: HouseholdMemberDepartureOperationId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdFinalizeMemberDepartureInput =
   typeof HouseholdFinalizeMemberDepartureInput.Type;
 
@@ -180,7 +177,7 @@ export const HouseholdMarkMemberDepartureRepairRequiredInput = Schema.Struct({
   expectedOperationVersion: HouseholdMemberDepartureOperation.fields.version,
   operationId: HouseholdMemberDepartureOperationId,
   phase: Schema.Literals(["finalization", "revocation"]),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdMarkMemberDepartureRepairRequiredInput =
   typeof HouseholdMarkMemberDepartureRepairRequiredInput.Type;
 
@@ -188,21 +185,21 @@ export type HouseholdMarkMemberDepartureRepairRequiredInput =
 export const HouseholdCreatePersonInput = Schema.Struct({
   admission: HouseholdPeopleMemberAdmission,
   payload: CreateHouseholdPersonPayload,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdCreatePersonInput = typeof HouseholdCreatePersonInput.Type;
 
 /** Closed private roster-list input. */
 export const HouseholdListPeopleInput = Schema.Struct({
   admission: HouseholdPeopleMemberAdmission,
   query: Schema.toEncoded(ListHouseholdPeopleUrlParams),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdListPeopleInput = typeof HouseholdListPeopleInput.Type;
 
 /** Closed private person-read input. */
 export const HouseholdGetPersonInput = Schema.Struct({
   admission: HouseholdPeopleMemberAdmission,
   personId: HouseholdPersonId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdGetPersonInput = typeof HouseholdGetPersonInput.Type;
 
 /** Closed private lifecycle-transition input. */
@@ -211,33 +208,15 @@ export const HouseholdTransitionPersonInput = Schema.Struct({
   cancelledInvitationDigest: Schema.optionalKey(HouseholdInvitationDigest),
   payload: TransitionHouseholdPersonPayload,
   personId: HouseholdPersonId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type HouseholdTransitionPersonInput =
   typeof HouseholdTransitionPersonInput.Type;
-
-/** Encoded privacy-safe person result crossing the private Worker boundary. */
-export const HouseholdPersonWire = PersonWire;
-
-/** Encoded privacy-safe departure operation crossing the private Worker boundary. */
-export const HouseholdMemberDepartureOperationWire = Schema.toEncoded(
-  HouseholdMemberDepartureOperation
-);
-
-/** Encoded privacy-safe Workflow authority crossing the private Worker boundary. */
-export const HouseholdMemberDepartureSystemStateWire = Schema.toEncoded(
-  HouseholdMemberDepartureSystemState
-);
-
-/** Encoded privacy-safe departure start crossing the private Worker boundary. */
-export const HouseholdMemberDepartureStartWire = Schema.toEncoded(
-  HouseholdMemberDepartureStart
-);
 
 export const HouseholdRenamePersonInput = Schema.Struct({
   admission: HouseholdPeopleMemberAdmission,
   payload: RenameHouseholdPersonPayload,
   personId: HouseholdPersonId,
-}).annotate({ parseOptions: { onExcessProperty: "error" } });
+});
 export type HouseholdRenamePersonInput = typeof HouseholdRenamePersonInput.Type;
 
 /** Private roster carries invitation identities only between the DO and API. */
@@ -271,6 +250,6 @@ export const HouseholdPreparePersonRemovalInput = Schema.Struct({
   admission: HouseholdPeopleCreatorAdmission,
   payload: TransitionHouseholdPersonPayload,
   personId: HouseholdPersonId,
-}).annotate({ parseOptions: { onExcessProperty: "error" } });
+});
 export type HouseholdPreparePersonRemovalInput =
   typeof HouseholdPreparePersonRemovalInput.Type;

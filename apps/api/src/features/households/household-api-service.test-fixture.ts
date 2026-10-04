@@ -19,9 +19,9 @@ import { WorkflowEntrypoint } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Layer, Option, Redacted, Schema } from "effect";
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpRouter from "effect/http/HttpRouter";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import { makeAlchemyMealPlannerAuth } from "../auth/auth.alchemy.js";
 import * as authSchema from "../auth/auth.database-schema.js";
@@ -37,6 +37,7 @@ import {
   makeRecipeImportHttpApiLayer,
 } from "../imports/import-intent-api.http.js";
 import { RecipeImportWorkflowDispatcher } from "../imports/import-workflow-dispatcher.js";
+import { makePrivateConfirmationHttpLayer } from "../private-output/private-confirmation.http.js";
 import type {
   PrivateOutputApiPort,
   PrivateOutputMutationPort,
@@ -363,7 +364,10 @@ interface RawMemberDepartureWorkflowInstance {
 
 interface RawMemberDepartureWorkflowBinding {
   readonly createBatch: (
-    batch: readonly { readonly id?: string; readonly params?: Schema.Json }[]
+    batch: readonly {
+      readonly id?: string;
+      readonly params?: Schema.Json;
+    }[]
   ) => Promise<readonly RawMemberDepartureWorkflowInstance[]>;
   readonly get: (id: string) => Promise<RawMemberDepartureWorkflowInstance>;
 }
@@ -425,7 +429,8 @@ const handleTestSystemOperation = async (
       case "claim-acquisition-attempt": {
         result = await env.HouseholdDomainWorker.claimAcquisitionAttempt(
           Schema.decodeUnknownSync(
-            Schema.toEncoded(HouseholdClaimAcquisitionAttemptInput)
+            Schema.toEncoded(HouseholdClaimAcquisitionAttemptInput),
+            { onExcessProperty: "error" }
           )(input)
         );
         break;
@@ -457,7 +462,8 @@ const handleTestSystemOperation = async (
       case "mutate-evidence-stage": {
         result = await env.HouseholdDomainWorker.mutateEvidenceStage(
           Schema.decodeUnknownSync(
-            Schema.toEncoded(HouseholdMutateEvidenceStageInput)
+            Schema.toEncoded(HouseholdMutateEvidenceStageInput),
+            { onExcessProperty: "error" }
           )(input)
         );
         break;
@@ -465,7 +471,8 @@ const handleTestSystemOperation = async (
       case "observe-evidence-reference": {
         result = await env.HouseholdDomainWorker.observeEvidenceReference(
           Schema.decodeUnknownSync(
-            Schema.toEncoded(HouseholdObserveEvidenceReferenceInput)
+            Schema.toEncoded(HouseholdObserveEvidenceReferenceInput),
+            { onExcessProperty: "error" }
           )(input)
         );
         break;
@@ -473,7 +480,8 @@ const handleTestSystemOperation = async (
       case "prepare-recipe-recovery": {
         result = await env.HouseholdDomainWorker.prepareRecipeRecovery(
           Schema.decodeUnknownSync(
-            Schema.toEncoded(HouseholdPrepareRecipeRecoveryInput)
+            Schema.toEncoded(HouseholdPrepareRecipeRecoveryInput),
+            { onExcessProperty: "error" }
           )(input)
         );
         break;
@@ -481,7 +489,8 @@ const handleTestSystemOperation = async (
       case "read-evidence-stage": {
         result = await env.HouseholdDomainWorker.readEvidenceStage(
           Schema.decodeUnknownSync(
-            Schema.toEncoded(HouseholdReadEvidenceStageInput)
+            Schema.toEncoded(HouseholdReadEvidenceStageInput),
+            { onExcessProperty: "error" }
           )(input)
         );
         break;
@@ -489,7 +498,8 @@ const handleTestSystemOperation = async (
       case "read-acquisition-attempts": {
         result = await env.HouseholdDomainWorker.readAcquisitionAttempts(
           Schema.decodeUnknownSync(
-            Schema.toEncoded(HouseholdReadAcquisitionAttemptsInput)
+            Schema.toEncoded(HouseholdReadAcquisitionAttemptsInput),
+            { onExcessProperty: "error" }
           )(input)
         );
         break;
@@ -497,7 +507,8 @@ const handleTestSystemOperation = async (
       case "read-evidence-references": {
         result = await env.HouseholdDomainWorker.readEvidenceReferences(
           Schema.decodeUnknownSync(
-            Schema.toEncoded(HouseholdReadEvidenceReferencesInput)
+            Schema.toEncoded(HouseholdReadEvidenceReferencesInput),
+            { onExcessProperty: "error" }
           )(input)
         );
         break;
@@ -505,7 +516,8 @@ const handleTestSystemOperation = async (
       case "read-terminal-checkpoint": {
         result = await env.HouseholdDomainWorker.readImportTerminalCheckpoint(
           Schema.decodeUnknownSync(
-            Schema.toEncoded(HouseholdReadImportTerminalCheckpointInput)
+            Schema.toEncoded(HouseholdReadImportTerminalCheckpointInput),
+            { onExcessProperty: "error" }
           )(input)
         );
         break;
@@ -513,7 +525,8 @@ const handleTestSystemOperation = async (
       case "read-recipe-recovery-attempt": {
         result = await env.HouseholdDomainWorker.readRecipeRecoveryAttempt(
           Schema.decodeUnknownSync(
-            Schema.toEncoded(HouseholdReadRecipeRecoveryAttemptInput)
+            Schema.toEncoded(HouseholdReadRecipeRecoveryAttemptInput),
+            { onExcessProperty: "error" }
           )(input)
         );
         break;
@@ -534,7 +547,8 @@ const handleTestSystemOperation = async (
       default: {
         result = await env.HouseholdDomainWorker.commitAcquisitionEvidence(
           Schema.decodeUnknownSync(
-            Schema.toEncoded(HouseholdCommitAcquisitionEvidenceInput)
+            Schema.toEncoded(HouseholdCommitAcquisitionEvidenceInput),
+            { onExcessProperty: "error" }
           )(input)
         );
       }
@@ -875,9 +889,10 @@ export default {
                             ...input,
                             payload: {
                               ...input.payload,
-                              command: Schema.decodeUnknownSync(ProfileCommand)(
-                                JSON.parse(substitutedCommand)
-                              ),
+                              command: Schema.decodeUnknownSync(
+                                ProfileCommand,
+                                { onExcessProperty: "error" }
+                              )(JSON.parse(substitutedCommand)),
                             },
                           }
                     );
@@ -910,7 +925,8 @@ export default {
                 RecipeImportWorkflowDispatcher.of({
                   dispatch: ({ admission, committed }) =>
                     Schema.decodeUnknownEffect(
-                      HouseholdRecordRecipeImportDispatchInput
+                      HouseholdRecordRecipeImportDispatchInput,
+                      { onExcessProperty: "error" }
                     )({
                       admission: {
                         actor: {
@@ -1106,6 +1122,11 @@ export default {
                   HttpRouter.provideRequest(familyServices)
                 ),
                 householdLayer,
+                makePrivateConfirmationHttpLayer({
+                  auth,
+                  household: privateHousehold,
+                  output: env.PrivateOutputApi,
+                }),
                 mealPlanLayer,
                 planningContentLayer,
                 peopleLayer,

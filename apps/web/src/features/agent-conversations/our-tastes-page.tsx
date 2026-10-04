@@ -9,16 +9,17 @@ import { useMemo, useState } from "react";
 import { Alert } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
 import { Overlay } from "../../components/ui/responsive-overlay.js";
+import { apiEffectQuery, useApiRuntime } from "../api-client/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
 import {
   PlanningContentProposalReviewSheet,
   usePlanningContentSnapshot,
 } from "../food-book/index.js";
-import { makeBrowserHouseholdPeopleOperations } from "../household-people/index.js";
+import { makeHouseholdPeopleEffectOperations } from "../household-people/index.js";
 import {
   HouseholdProfilesPanel,
   invalidateHouseholdProfiles,
-  makeBrowserHouseholdProfileOperations,
+  makeHouseholdProfileEffectOperations,
 } from "../household-profiles/index.js";
 import { PrivateInterviewsPanel } from "../private-interviews/index.js";
 import {
@@ -103,13 +104,14 @@ export const OurTastesPage = ({
   readonly scope: DisplayedIdentity;
 }) => {
   const queryClient = useQueryClient();
+  const runtime = useApiRuntime();
   const peopleOperations = useMemo(
-    () => makeBrowserHouseholdPeopleOperations(scope),
-    [scope]
+    () => makeHouseholdPeopleEffectOperations(scope, runtime),
+    [scope.organizationId, scope.userId, runtime]
   );
   const profileOperations = useMemo(
-    () => makeBrowserHouseholdProfileOperations(scope),
-    [scope]
+    () => makeHouseholdProfileEffectOperations(scope, runtime),
+    [scope.organizationId, scope.userId, runtime]
   );
   const [selectedPersonId, setSelectedPersonId] =
     useState<HouseholdPersonId | null>(null);
@@ -121,12 +123,14 @@ export const OurTastesPage = ({
     >;
     readonly actions: PlanProposalReviewActions;
   } | null>(null);
-  const roster = useQuery({
-    queryFn: () => peopleOperations.list(false),
-    queryKey: ["our-tastes-roster", scope.userId, scope.organizationId],
-    retry: false,
-    staleTime: 15_000,
-  });
+  const roster = useQuery(
+    apiEffectQuery.queryOptions({
+      queryFn: () => peopleOperations.list(false),
+      queryKey: ["our-tastes-roster", scope.userId, scope.organizationId],
+      retry: false,
+      staleTime: 15_000,
+    })
+  );
   const people: ConversationPerson[] =
     roster.data?.people
       .filter((person) => person.lifecycle === "active")
@@ -278,16 +282,19 @@ export const FamilyConversationPanel = ({
   readonly onPlanProposalReview?: PlanProposalReview;
   readonly onPlanningContentProposalReview?: PlanningContentProposalReview;
 }) => {
+  const runtime = useApiRuntime();
   const peopleOperations = useMemo(
-    () => makeBrowserHouseholdPeopleOperations(scope),
-    [scope]
+    () => makeHouseholdPeopleEffectOperations(scope, runtime),
+    [scope.organizationId, scope.userId, runtime]
   );
-  const roster = useQuery({
-    queryFn: () => peopleOperations.list(false),
-    queryKey: ["our-tastes-roster", scope.userId, scope.organizationId],
-    retry: false,
-    staleTime: 15_000,
-  });
+  const roster = useQuery(
+    apiEffectQuery.queryOptions({
+      queryFn: () => peopleOperations.list(false),
+      queryKey: ["our-tastes-roster", scope.userId, scope.organizationId],
+      retry: false,
+      staleTime: 15_000,
+    })
+  );
   return (
     <AgentConversationProvider
       accountId={scope.userId}

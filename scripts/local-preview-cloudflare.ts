@@ -1,27 +1,39 @@
 import {
-  AlchemyProfile,
+  AuthError,
   AuthProviders,
   CredentialsStoreLive,
   getAuthProvider,
-  ProfileLive,
+  ProfileStore,
+  ProfileStoreLive,
 } from "alchemy/Auth";
+import * as CliKit from "alchemy/Cli/CliKit";
+import * as Interaction from "alchemy/Interaction";
 import { PlatformServices } from "alchemy/Util/PlatformServices";
 import { Cause, Effect, Layer, Redacted, Schema } from "effect";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 
-// The pinned Alchemy version has no public Cloudflare auth-provider export.
-// This is the same existing-profile seam used by alchemy-d1-preflight.ts.
-import { CloudflareAuth } from "../node_modules/alchemy/lib/Cloudflare/Auth/AuthProvider.js";
 import type {
   CloudflareAuthConfig,
   CloudflareResolvedCredentials,
-} from "../node_modules/alchemy/lib/Cloudflare/Auth/AuthProvider.js";
+} from "../node_modules/alchemy/lib/Cloudflare/Auth/AuthConfig.js";
+// The pinned Alchemy version has no public Cloudflare auth-provider export.
+import { CloudflareAuth } from "../node_modules/alchemy/lib/Cloudflare/Auth/AuthProvider.js";
 
 const AccountId = Schema.String.check(Schema.isPattern(/^[a-f0-9]{32}$/u));
-const localPreviewScopes = ["account:read", "ai:read", "ai:write"];
-const ExistingProfile = Schema.Struct({
+const localPreviewScopes = [
+  "memberships.read",
+  "account-settings.read",
+  "ai.read",
+  "ai.write",
+  "aig.run",
+];
+const LimitedOAuth = Schema.Struct({
+  access: Schema.String,
   accountId: AccountId,
+  clientId: Schema.optional(Schema.String),
+  expires: Schema.Number,
   method: Schema.Literal("oauth"),
+  refresh: Schema.String,
   scopes: Schema.mutable(Schema.Array(Schema.String)),
 });
 
@@ -32,46 +44,80 @@ export const localPreviewCloudflare = async (
   options: { readonly refreshLogin?: boolean } = {}
 ) => {
   const accountId = Schema.decodeUnknownSync(AccountId)(expectedAccount);
+  const interaction = options.refreshLogin
+    ? Layer.provide(CliKit.CliKitInteraction, CliKit.layer())
+    : Interaction.layerNonInteractive();
   const base = Layer.mergeAll(
     PlatformServices,
-    Layer.provide(ProfileLive, PlatformServices),
+    Layer.provide(ProfileStoreLive, PlatformServices),
     Layer.provide(CredentialsStoreLive, PlatformServices),
     FetchHttpClient.layer,
+    interaction,
     Layer.succeed(AuthProviders, {})
   );
   const credentials = await Effect.runPromise(
     Effect.gen(function* readExistingProfile() {
-      const profiles = yield* AlchemyProfile;
+      const profiles = yield* ProfileStore;
       const selected = yield* profiles.getProfile(profile);
-      const existing = selected?.["Cloudflare"];
-      const config = yield* Schema.decodeUnknownEffect(ExistingProfile)(
-        existing === undefined && options.refreshLogin
-          ? { accountId, method: "oauth", scopes: localPreviewScopes }
-          : existing
-      );
-      if (
-        config.accountId !== accountId ||
-        config.scopes.length !== localPreviewScopes.length ||
-        localPreviewScopes.some((scope) => !config.scopes.includes(scope))
-      ) {
+      const existing = selected?.providers["Cloudflare"];
+      if (existing === undefined && !options.refreshLogin) {
         return yield* Effect.fail(
-          new Error("Use an AI-only OAuth profile for the selected account.")
+          new Error(
+            `Cloudflare is not configured in Alchemy profile '${profile}'. Start once with --login to add its limited OAuth login.`
+          )
         );
       }
       const provider = yield* getAuthProvider<
         CloudflareAuthConfig,
         CloudflareResolvedCredentials
       >("Cloudflare");
+      const config =
+        existing === undefined
+          ? ({
+              access: "",
+              accountId,
+              expires: 0,
+              method: "oauth",
+              refresh: "",
+              scopes: [...localPreviewScopes],
+            } satisfies CloudflareAuthConfig)
+          : yield* provider.decodeConfig(profile, existing);
+      if (config.method !== "oauth") {
+        return yield* Effect.fail(
+          new Error("Use an AI-only OAuth profile for the selected account.")
+        );
+      }
+      const limited = yield* Schema.decodeUnknownEffect(LimitedOAuth)(config);
+      if (
+        limited.accountId !== accountId ||
+        limited.scopes.length !== localPreviewScopes.length ||
+        localPreviewScopes.some((scope) => !limited.scopes.includes(scope))
+      ) {
+        return yield* Effect.fail(
+          new Error("Use an AI-only OAuth profile for the selected account.")
+        );
+      }
+      const persist = (next: CloudflareAuthConfig) =>
+        profiles.setProviderConfig(profile, "Cloudflare", next).pipe(
+          Effect.mapError(
+            () =>
+              new AuthError({
+                message: "Could not save refreshed Cloudflare credentials.",
+              })
+          )
+        );
+      let current: CloudflareAuthConfig = limited;
       if (options.refreshLogin) {
-        yield* provider.login(profile, config);
-        if (existing === undefined) {
-          yield* profiles.setProfile(profile, {
-            ...selected,
-            Cloudflare: config,
-          });
+        if (selected === undefined) {
+          yield* profiles.ensureProfile(profile);
+        }
+        const refreshed = yield* provider.login(profile, limited, persist);
+        if (refreshed !== undefined) {
+          current = refreshed;
+          yield* persist(refreshed);
         }
       }
-      return yield* provider.read(profile, config);
+      return yield* provider.read(profile, current, persist);
     }).pipe(
       Effect.provide(Layer.provideMerge(CloudflareAuth, base)),
       Effect.scoped,
@@ -80,6 +126,16 @@ export const localPreviewCloudflare = async (
         const categories = cause.reasons.map((reason) => {
           if (!Cause.isFailReason(reason)) {
             return reason._tag;
+          }
+          if (
+            reason.error instanceof Error &&
+            (reason.error.message.startsWith(
+              "Cloudflare is not configured in Alchemy profile"
+            ) ||
+              reason.error.message ===
+                "Use an AI-only OAuth profile for the selected account.")
+          ) {
+            return reason.error.message;
           }
           const parsed = Schema.decodeUnknownOption(
             Schema.Struct({ _tag: Schema.String })

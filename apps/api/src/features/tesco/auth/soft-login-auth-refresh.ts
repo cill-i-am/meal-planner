@@ -1,5 +1,5 @@
 import { Effect, Layer, Option, Ref } from "effect";
-import { Headers, HttpClient } from "effect/unstable/http";
+import { Headers, HttpClient } from "effect/http";
 
 import type { TescoSoftLoginConfig } from "../tesco.config.js";
 import {

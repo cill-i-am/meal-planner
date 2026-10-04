@@ -157,6 +157,7 @@ describe("setup confirmation", () => {
       safetyConfirmation: null,
     });
     expect(matchesConfirmedRosterAction(action, roster, intent)).toBe(true);
+    expect(matchesConfirmedRosterAction(action, roster, null)).toBe(false);
     if (action.decision !== "accept" || action.reviewedRoster === null) {
       throw new Error("Expected accepted roster action");
     }

@@ -11,14 +11,16 @@ import {
 } from "../auth/auth.principal.js";
 import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
-import { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
+import {
+  ImportWorkflowIdentity,
+  ImportIntentExecutionGeneration,
+} from "../households/shared-kernel/workflow-identity.js";
 import { makeProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
 import {
   ProviderAccountingService,
   makeD1ProviderAccountingService,
 } from "../provider-accounting/provider-accounting.service.js";
 import { RecipeImportHouseholdDomain } from "./import-intent-api.http.js";
-import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import type { ImportTraceContext } from "./import-observability.js";
 import {
   ProviderRecoveryService,
@@ -35,7 +37,7 @@ import { ImportId, ImportTimestamp } from "./import.contracts.js";
 import type { ImportWorkflowReconciler } from "./import.workflow.js";
 
 /** Inputs required to construct the import HTTP route services once. */
-export interface ImportWorkerRequestLayerInput {
+interface ImportWorkerRequestLayerInput {
   readonly importWorkflowStarter: ImportWorkflowReconciler;
   readonly now: () => string;
   readonly organizationResolver: AuthenticatedOrganizationResolver;

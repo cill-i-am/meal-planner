@@ -1,5 +1,7 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as GitHub from "alchemy/GitHub";
+import * as Output from "alchemy/Output";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -8,63 +10,102 @@ import HouseholdDomainWorkerLive from "./apps/api/src/features/households/househ
 import TikTokMediaContainerLive from "./apps/api/src/features/imports/import-media-container.runtime.js";
 import { EvidenceRetentionSeconds } from "./apps/api/src/features/imports/import-media.model.js";
 import { ImportEvidenceBucket } from "./apps/api/src/infrastructure/import-evidence-bucket.js";
-import { ImportProviderGateway } from "./apps/api/src/infrastructure/import-provider-gateway.js";
+import {
+  ImportProviderGateway,
+  ImportProviderGatewayId,
+} from "./apps/api/src/infrastructure/import-provider-gateway.js";
 import { MealPlannerAuthDatabase } from "./apps/api/src/infrastructure/meal-planner-auth-database.js";
 import { ProviderAccountingDatabase } from "./apps/api/src/infrastructure/provider-accounting-database.js";
+import { workerObservability } from "./apps/api/src/infrastructure/worker-observability.js";
 import MealPlannerApi from "./apps/api/src/worker.js";
+import { productionWebsiteHostname } from "./apps/web/website-domain.js";
 import { websiteSource } from "./apps/web/website-source.js";
+
+const websiteDomainConfiguration = (dev: boolean, stage: string) =>
+  Effect.gen(function* WebsiteDomainConfiguration() {
+    if (dev || (stage !== "prod" && stage !== "e2e")) {
+      return;
+    }
+    const zoneId = yield* Config.String("CEIRD_ZONE_ID");
+    if (stage === "e2e") {
+      return {
+        domain: { name: "e2e.ceird.app", zoneId },
+        workersDev: { enabled: false, previewsEnabled: false },
+      };
+    }
+    return { domain: { name: productionWebsiteHostname, zoneId } };
+  });
+
+// Production and the long-lived E2E stage own distinct mail domains.
+// Local development and ephemeral previews do not provision sending domains.
+const stageEmailSending = (dev: boolean, stage: string) =>
+  Effect.gen(function* StageEmailSending() {
+    if (dev || (stage !== "prod" && stage !== "e2e")) {
+      return;
+    }
+    return yield* Cloudflare.Email.SendingSubdomain("MealPlannerMail", {
+      name: stage === "e2e" ? "mail.e2e.ceird.app" : "mail.ceird.app",
+      zoneId: yield* Config.String("CEIRD_ZONE_ID"),
+    });
+  });
 
 export default Alchemy.Stack(
   "MealPlanner",
   {
-    providers: Cloudflare.providers(),
-    state: Cloudflare.state(),
+    providers: Layer.mergeAll(Cloudflare.providers(), GitHub.providers()),
+    state: Layer.unwrap(
+      Alchemy.AlchemyContext.pipe(
+        Effect.map(({ dev }) =>
+          dev ? Alchemy.localState() : Cloudflare.state()
+        )
+      )
+    ),
   },
   Effect.gen(function* MealPlannerStack() {
     const stage = yield* Alchemy.Stage;
+    const { dev } = yield* Alchemy.AlchemyContext;
     const providerAccountingDatabase = yield* ProviderAccountingDatabase;
     const authDatabase = yield* MealPlannerAuthDatabase;
     const evidenceBucket = yield* ImportEvidenceBucket;
-    const importProviderGateway = yield* ImportProviderGateway;
-    // Each long-lived stage owns a distinct sending domain. Ephemeral previews
-    // do not create or delete production or E2E mail configuration.
-    const emailSending =
-      stage === "prod" || stage === "e2e"
-        ? yield* Cloudflare.Email.SendingSubdomain("MealPlannerMail", {
-            name: stage === "e2e" ? "mail.e2e.ceird.app" : "mail.ceird.app",
-            zoneId: yield* Config.string("CEIRD_ZONE_ID"),
+    const importProviderGateway = dev
+      ? undefined
+      : yield* ImportProviderGateway;
+    const emailSending = yield* stageEmailSending(dev, stage);
+    const browserAnalytics =
+      stage === "prod" && !dev
+        ? yield* Cloudflare.Rum.Site("MealPlannerWebAnalytics", {
+            host: productionWebsiteHostname,
           })
         : undefined;
     const api = yield* MealPlannerApi;
-    const websiteAddress =
-      stage === "e2e"
-        ? {
-            domain: {
-              name: "e2e.ceird.app",
-              zoneId: yield* Config.string("CEIRD_ZONE_ID"),
-            },
-            workersDev: { enabled: false, previewsEnabled: false },
-          }
-        : { workersDev: true };
+    const websiteDomainProps = yield* websiteDomainConfiguration(dev, stage);
     const website = yield* Cloudflare.Website.Vite("MealPlannerWebsite", {
       assets: { runWorkerFirst: ["/api/auth/*", "/v1/*"] },
       dev: { port: 4399 },
-      ...websiteAddress,
-      env: { MEAL_PLANNER_API: api },
-      ...websiteSource,
-      observability: {
-        enabled: true,
-        headSamplingRate: 1,
-        logs: {
-          enabled: true,
-          headSamplingRate: 1,
-          invocationLogs: false,
-          persist: true,
-        },
-        traces: { enabled: false },
+      env: {
+        BROWSER_ANALYTICS_TOKEN: browserAnalytics?.siteToken ?? "",
+        MEAL_PLANNER_API: api,
       },
+      ...websiteDomainProps,
+      ...websiteSource,
+      ...workerObservability,
       rootDir: "./apps/web",
     });
+
+    if (!dev) {
+      const github = yield* GitHub.GitHubEnv;
+      if (github?.pr) {
+        yield* GitHub.Comment("PreviewComment", {
+          allowDelete: true,
+          body: Output.interpolate`Preview: ${website.url}
+
+Commit: ${github.sha}`,
+          issueNumber: github.pr,
+          owner: github.owner,
+          repository: github.repository,
+        });
+      }
+    }
 
     return {
       apiUrl: api.url,
@@ -75,8 +116,10 @@ export default Alchemy.Stack(
       emailSendingSubdomainId: emailSending?.subdomainId ?? null,
       evidenceBucketName: evidenceBucket.bucketName,
       evidenceRetentionSeconds: EvidenceRetentionSeconds,
-      importProviderGatewayId: importProviderGateway.gatewayId,
+      importProviderGatewayId:
+        importProviderGateway?.gatewayId ?? ImportProviderGatewayId,
       providerAccountingDatabaseName: providerAccountingDatabase.databaseName,
+      webAnalyticsSiteId: browserAnalytics?.siteTag ?? null,
       websiteUrl: website.url,
       websiteWorkerName: website.workerName,
     };

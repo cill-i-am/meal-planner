@@ -20,13 +20,13 @@ import {
   HouseholdImportMutationId,
   HouseholdRecipeImportExecutionView,
 } from "../households/recipe-import/household-recipe-import.contract.js";
+import type { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
 import { sha256Bytes } from "./import-digest.js";
 import type { HouseholdEvidenceDomain } from "./import-evidence.repository.household.js";
 import {
   makeHouseholdImportEvidenceCurrentRepository,
   makeHouseholdRecipeDraftRepository,
 } from "./import-evidence.repository.household.js";
-import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import type {
   RecipeRecoveryAttempt,
   RecipeRecoveryWorkflowInput,
@@ -61,7 +61,7 @@ export type RecipeRecoveryPreparationHouseholdAuthority = Pick<
   | "readRecipeRecoveryAttempt"
 >;
 
-export interface HouseholdProviderRecovery {
+interface HouseholdProviderRecovery {
   readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
   readonly inputFingerprint: string;
@@ -234,118 +234,6 @@ export const readHouseholdRecipeRecovery = (input: {
       return null;
     }
     return yield* decodeWorkflowAttempt(result);
-  });
-
-export const readHouseholdTerminalAuthority = (input: {
-  readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
-  readonly executionGeneration: ImportIntentExecutionGeneration;
-  readonly householdDomain: RecipeRecoveryPreparationHouseholdAuthority;
-  readonly importId: RecipeRecoveryWorkflowInput["importId"];
-  readonly organizationId: HouseholdOrganizationId;
-  readonly providerDispatchId: string;
-  readonly stage: "extraction" | "speech" | "visual";
-}) =>
-  Effect.gen(function* readHouseholdTerminalStageAuthority() {
-    const authority = yield* resolveHouseholdRecoveryAuthority({
-      acquisitionGeneration: input.acquisitionGeneration,
-      executionGeneration: input.executionGeneration,
-      householdDomain: input.householdDomain,
-      importId: input.importId,
-      organizationId: input.organizationId,
-    });
-    const stage = yield* input.householdDomain
-      .readEvidenceStage({
-        admission: authority.admission,
-        expectedGeneration: input.executionGeneration,
-        intentId: authority.intentId,
-        stage: input.stage,
-      })
-      .pipe(
-        Effect.mapError(mapHouseholdFailure),
-        Effect.flatMap((rawStage) =>
-          Schema.decodeUnknownEffect(HouseholdReadEvidenceStageResult, {
-            onExcessProperty: "error",
-          })(rawStage).pipe(Effect.mapError(() => importTransitionRejected()))
-        )
-      );
-    if (
-      stage === null ||
-      stage.outcome !== "Failed" ||
-      stage.failureCode === null
-    ) {
-      return yield* Effect.fail(importTransitionRejected());
-    }
-    let expectedProviderDispatchId: string | null = stage.dispatchId;
-    if (input.stage === "extraction") {
-      expectedProviderDispatchId =
-        stage.extractionContext === null
-          ? null
-          : `recipe:${input.importId}:${input.acquisitionGeneration}:${stage.extractionContext.evidenceFingerprint}`;
-      const recoveryMatch = /^(?<root>.*):recovery:(?<ordinal>\d+)$/u.exec(
-        input.providerDispatchId
-      );
-      if (recoveryMatch !== null) {
-        const recovery = yield* input.householdDomain
-          .readRecipeRecoveryAttempt({
-            admission: authority.admission,
-            expectedGeneration: input.executionGeneration,
-            intentId: authority.intentId,
-            selector: {
-              _tag: "Latest",
-              rootDispatchId: recoveryMatch.groups?.["root"] as string,
-            },
-          })
-          .pipe(
-            Effect.mapError(mapHouseholdFailure),
-            Effect.flatMap((rawRecovery) =>
-              Schema.decodeUnknownEffect(
-                HouseholdReadRecipeRecoveryAttemptResult,
-                { onExcessProperty: "error" }
-              )(rawRecovery).pipe(
-                Effect.mapError(() => importTransitionRejected())
-              )
-            )
-          );
-        if (
-          recovery === null ||
-          recovery.currentExtractionFingerprint !== stage.inputFingerprint
-        ) {
-          return yield* Effect.fail(importTransitionRejected());
-        }
-        expectedProviderDispatchId = recovery.currentDispatchId;
-      }
-    }
-    if (expectedProviderDispatchId !== input.providerDispatchId) {
-      return yield* Effect.fail(importTransitionRejected());
-    }
-    const checkpoint = yield* input.householdDomain
-      .readImportTerminalCheckpoint({
-        admission: authority.admission,
-        expectedGeneration: input.executionGeneration,
-        intentId: authority.intentId,
-        ownershipId: stage.dispatchId,
-        stage: input.stage,
-      })
-      .pipe(
-        Effect.mapError(mapHouseholdFailure),
-        Effect.flatMap((rawCheckpoint) =>
-          Schema.decodeUnknownEffect(
-            HouseholdReadImportTerminalCheckpointResult,
-            { onExcessProperty: "error" }
-          )(rawCheckpoint).pipe(
-            Effect.mapError(() => importTransitionRejected())
-          )
-        )
-      );
-    if (
-      checkpoint === null ||
-      checkpoint.failureCode !== stage.failureCode ||
-      checkpoint.inputFingerprint !== stage.inputFingerprint ||
-      checkpoint.ownershipId !== stage.dispatchId
-    ) {
-      return yield* Effect.fail(importTransitionRejected());
-    }
-    return { authority, checkpoint, stage } as const;
   });
 
 const nextRecoveryDispatchId = (dispatchId: string) => {

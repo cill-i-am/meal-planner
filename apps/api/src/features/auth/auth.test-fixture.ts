@@ -1,6 +1,6 @@
 import { BetterAuthApiError, isAPIErrorLike } from "@alchemy.run/better-auth";
 import { Effect } from "effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import type { MealPlannerAuthService } from "./auth.alchemy.js";
 import type { MealPlannerAuth } from "./auth.js";
@@ -36,13 +36,9 @@ export const makeNativeAuthTestService = (
       fromNative(() => auth.api.getSetupInvitation(input)),
     leaveOrganization: (input) =>
       fromNative(() => auth.api.leaveOrganization(input)),
-    listOrganizations: (input) =>
-      fromNative(() => auth.api.listOrganizations(input)),
     rejectInvitation: (input) =>
       fromNative(() => auth.api.rejectInvitation(input)),
     removeMember: (input) => fromNative(() => auth.api.removeMember(input)),
-    setActiveOrganization: (input) =>
-      fromNative(() => auth.api.setActiveOrganization(input)),
   },
   createHouseholdInvitation: (request) =>
     fromNative(() => auth.createHouseholdInvitation(request)),

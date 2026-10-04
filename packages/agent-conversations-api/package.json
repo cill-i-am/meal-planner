@@ -14,10 +14,10 @@
     "@meal-planner/families": "workspace:*",
     "@meal-planner/household-api": "workspace:*",
     "@meal-planner/recipe-import-api": "workspace:*",
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0"
   },
   "devDependencies": {
     "typescript": "6.0.3",
-    "vitest": "4.1.11"
+    "vitest": "5.0.3"
   }
 }

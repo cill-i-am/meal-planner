@@ -4,8 +4,8 @@ import { Effect } from "effect";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import type { HouseholdOrganizationId } from "../households/household.contract.js";
 import type { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
+import type { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
 import { projectRecipeDraftReviewActionView } from "./import-intent-review-action.js";
-import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import type { ProduceRecipeDraftFromEvidenceInput } from "./import-recipe-draft.js";
 
 type RecipeDraftLifecycle = NonNullable<

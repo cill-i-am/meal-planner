@@ -16,7 +16,6 @@ const text = (maximum: number) =>
       Schema.isTrimmed()
     )
   );
-const strict = { parseOptions: { onExcessProperty: "error" as const } };
 const RevisitEvidence = Schema.NullOr(PrivateDiscoveryEvidence);
 
 export const FoodRestrictionsAnswer = Schema.Union([
@@ -27,10 +26,10 @@ export const FoodRestrictionsAnswer = Schema.Union([
       Schema.check(Schema.isMinLength(1), Schema.isMaxLength(10))
     ),
   }),
-]).pipe(Schema.annotate({ ...strict, identifier: "FoodRestrictionsAnswer" }));
+]).pipe(Schema.annotate({ identifier: "FoodRestrictionsAnswer" }));
 export const UsualMealsAnswer = Schema.Struct({
   description: text(600),
-}).pipe(Schema.annotate({ ...strict, identifier: "UsualMealsAnswer" }));
+}).pipe(Schema.annotate({ identifier: "UsualMealsAnswer" }));
 
 const topicState = <S extends Schema.Constraint>(value: S) =>
   Schema.Union([
@@ -50,7 +49,7 @@ const topicState = <S extends Schema.Constraint>(value: S) =>
       _tag: Schema.Literal("Declined"),
       evidence: PrivateDiscoveryEvidence,
     }),
-  ]).pipe(Schema.annotate(strict));
+  ]);
 const topicUpdate = <S extends Schema.Constraint>(value: S) =>
   Schema.NullOr(
     Schema.Union([
@@ -69,21 +68,21 @@ const topicUpdate = <S extends Schema.Constraint>(value: S) =>
         _tag: Schema.Literal("RecordDecline"),
         evidence: PrivateDiscoveryEvidence,
       }),
-    ]).pipe(Schema.annotate(strict))
+    ])
   );
 
 /** Fixed topics exist before the model runs; the model cannot create or remove them. */
 export const PrivateDiscoveryCoverage = Schema.Struct({
   foodRestrictions: topicState(FoodRestrictionsAnswer),
   usualMeals: topicState(UsualMealsAnswer),
-}).pipe(Schema.annotate(strict));
+});
 export type PrivateDiscoveryCoverage = typeof PrivateDiscoveryCoverage.Type;
 
 /** Every key is required. Null preserves the complete stored state. */
 export const PrivateDiscoveryCoverageUpdates = Schema.Struct({
   foodRestrictions: topicUpdate(FoodRestrictionsAnswer),
   usualMeals: topicUpdate(UsualMealsAnswer),
-}).pipe(Schema.annotate(strict));
+});
 export type PrivateDiscoveryCoverageUpdates =
   typeof PrivateDiscoveryCoverageUpdates.Type;
 export type PrivateDiscoveryTopic = keyof PrivateDiscoveryCoverage;

@@ -25,6 +25,11 @@ import {
   SessionFrame,
 } from "@meal-planner/private-interview-api";
 import {
+  makeRecipeContent,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+} from "@meal-planner/recipe-domain";
+import {
   Recipe,
   RecipeImportAction,
   RecipeImportBatch,
@@ -185,7 +190,6 @@ const makeRuntime = (privateAuditLogs?: string[]) =>
           env: { MEAL_PLANNER_API: { type: "worker", worker: "api" } },
           manifest: websiteManifest,
           name: "website",
-          type: "worker",
         },
       },
       {
@@ -217,7 +221,6 @@ const makeRuntime = (privateAuditLogs?: string[]) =>
           },
           manifest: apiManifest,
           name: "api",
-          type: "worker",
         },
       },
       {
@@ -230,7 +233,6 @@ const makeRuntime = (privateAuditLogs?: string[]) =>
           manifest: batchQueueManifest,
           name: "batch-consumer",
           triggers: [{ name: "household-import-batches", type: "queue" }],
-          type: "worker",
         },
       },
       {
@@ -254,7 +256,6 @@ const makeRuntime = (privateAuditLogs?: string[]) =>
           },
           manifest: domainManifest,
           name: "household-domain",
-          type: "worker",
         },
       },
       {
@@ -278,7 +279,6 @@ const makeRuntime = (privateAuditLogs?: string[]) =>
           },
           manifest: providerRecoveryManifest,
           name: "provider-recovery",
-          type: "worker",
         },
       },
       {
@@ -1229,28 +1229,15 @@ const prepareUnknownSpeechTerminal = async (input: {
 const review = {
   answers: [],
   blockers: { invalidFields: [], unresolvedRequiredFields: [] },
-  editableFields: ["name", "ingredient_lines", "instructions", "tags"],
-  recipe: {
-    author: null,
-    category: null,
-    cookTimeMinutes: 15,
-    cuisine: "Irish",
+  editableFields: ["name", "ingredients", "instructions", "tags"],
+  recipe: makeRecipeContent({
     description: "Provider-free public boundary tracer.",
-    ingredientLines: ["1 local ingredient"],
-    ingredientQuantities: null,
-    ingredientUnits: null,
-    instructions: ["Cook locally."],
+    ingredients: [recipeIngredientFromText("1 local ingredient")],
+    instructions: [recipeInstructionFromText("Cook locally.", 1)],
     name: "Public household tracer stew",
-    nutrition: null,
-    prepTimeMinutes: 10,
-    temperatureCelsius: null,
-    tools: ["Pot"],
-    totalTimeMinutes: 25,
-    yield: "2 servings",
-  },
+  }),
   tags: {
     cuisines: ["Irish"],
-    dietaryFit: "household_match",
     difficulty: "easy",
     leftovers: "one_meal",
     mealTypes: ["dinner"],

@@ -351,7 +351,8 @@ export const agentConversationModelResponse = async (
   ) {
     const childName = latest.content === "Maya likes pasta" ? "Maya" : "Sam";
     const child = context.people.find(
-      (person) => person.kind === "dependant" && person.displayName === childName
+      (person) =>
+        person.kind === "dependant" && person.displayName === childName
     );
     const profile = context.profiles.find(
       (value) => value.personId === child?.id

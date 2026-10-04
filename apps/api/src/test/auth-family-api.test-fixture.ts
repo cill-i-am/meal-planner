@@ -5,11 +5,7 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Layer, Redacted, Result, Schema } from "effect";
-import {
-  HttpRouter,
-  HttpServerRequest,
-  HttpServerResponse,
-} from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 
 import { handleAgentConversationChatRequest } from "../agent-conversations.js";
 import type { AgentConversationNamespace } from "../agent-conversations.js";
@@ -32,6 +28,7 @@ import {
   RecipeImportHouseholdDomain,
 } from "../features/imports/import-intent-api.http.js";
 import { RecipeImportWorkflowDispatcher } from "../features/imports/import-workflow-dispatcher.js";
+import { makePrivateConfirmationHttpLayer } from "../features/private-output/private-confirmation.http.js";
 import type {
   PrivateOutputApiPort,
   PrivateOutputMutationPort,
@@ -292,6 +289,11 @@ export default {
           }
           const handler = yield* HttpRouter.toHttpEffect(
             Layer.mergeAll(
+              makePrivateConfirmationHttpLayer({
+                auth,
+                household: domain,
+                output: env.PrivateOutputApi,
+              }),
               makeLocalApiCoreLayer(conversationOptions),
               makeRecipeImportHttpApiLayer().pipe(
                 Layer.provide(importServices),

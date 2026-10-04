@@ -1,5 +1,5 @@
 import type { Response as CloudflareResponse } from "@cloudflare/workers-types";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 /** Preserve WebSocket upgrades and copy ordinary headers across Cloudflare's Response types. */
 export const fromNativeWebResponse = (

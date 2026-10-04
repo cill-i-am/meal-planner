@@ -7,6 +7,7 @@ import type {
   MealOption,
   PlanningContentCommand,
   PlanningContentSnapshot,
+  PersonProfile,
 } from "@meal-planner/household-api";
 import { useForm, useStore } from "@tanstack/react-form";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -31,10 +32,11 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "../../components/ui/toggle-group.js";
+import { apiEffectQuery, useApiRuntime } from "../api-client/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
 import {
   describeProfileFact,
-  makeBrowserHouseholdProfileOperations,
+  makeHouseholdProfileEffectOperations,
 } from "../household-profiles/index.js";
 
 const ReviewFields = Schema.Struct({
@@ -61,9 +63,10 @@ export const SuitabilityReviewPanel = ({
 }) => {
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const runtime = useApiRuntime();
   const operations = useMemo(
-    () => makeBrowserHouseholdProfileOperations(scope),
-    [scope]
+    () => makeHouseholdProfileEffectOperations(scope, runtime),
+    [scope.organizationId, scope.userId, runtime]
   );
   const form = useForm({
     defaultValues: Schema.decodeUnknownSync(ReviewFields)({
@@ -77,9 +80,7 @@ export const SuitabilityReviewPanel = ({
         return;
       }
       const person = people.find((item) => item.id === value.personId);
-      const profileData = queryClient.getQueryData<
-        Awaited<ReturnType<typeof operations.get>>
-      >([
+      const profileData = queryClient.getQueryData<PersonProfile>([
         "food-book-profile-review",
         scope.userId,
         scope.organizationId,
@@ -130,22 +131,24 @@ export const SuitabilityReviewPanel = ({
   });
   const personId = useStore(form.store, (state) => state.values.personId);
   const person = people.find((item) => item.id === personId);
-  const profile = useQuery({
-    enabled: person !== undefined,
-    queryFn: () => {
-      if (!person) {
-        throw new Error("Choose a person.");
-      }
-      return operations.get(person.id);
-    },
-    queryKey: [
-      "food-book-profile-review",
-      scope.userId,
-      scope.organizationId,
-      personId,
-    ],
-    retry: false,
-  });
+  const profile = useQuery(
+    apiEffectQuery.queryOptions({
+      enabled: person !== undefined,
+      queryFn: () => {
+        if (!person) {
+          throw new Error("Choose a person.");
+        }
+        return operations.get(person.id);
+      },
+      queryKey: [
+        "food-book-profile-review",
+        scope.userId,
+        scope.organizationId,
+        personId,
+      ],
+      retry: false,
+    })
+  );
   const confirmedFacts =
     profile.data?.facts.filter((fact) => fact.standing._tag === "confirmed") ??
     [];

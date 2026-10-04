@@ -60,7 +60,9 @@ describe("application-owned private discovery coverage", () => {
       },
     ]) {
       expect(() =>
-        Schema.decodeUnknownSync(PrivateDiscoveryCoverageUpdates)(invalid)
+        Schema.decodeUnknownSync(PrivateDiscoveryCoverageUpdates, {
+          onExcessProperty: "error",
+        })(invalid)
       ).toThrow();
     }
   });
@@ -173,7 +175,9 @@ describe("application-owned private discovery coverage", () => {
 
   it("requires a nonempty typed restriction list and recognizes saved safety facts only", () => {
     expect(() =>
-      Schema.decodeUnknownSync(PrivateDiscoveryCoverageUpdates)({
+      Schema.decodeUnknownSync(PrivateDiscoveryCoverageUpdates, {
+        onExcessProperty: "error",
+      })({
         foodRestrictions: {
           _tag: "RecordAnswer",
           evidence: evidence("I have no food restrictions."),

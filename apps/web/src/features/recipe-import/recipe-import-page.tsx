@@ -1,5 +1,5 @@
 import {
-  PlanningDietaryFit,
+  RecipeText,
   PlanningDifficulty,
   PlanningLeftovers,
   PlanningMealType,
@@ -8,7 +8,6 @@ import {
 import {
   AnswerReviewRecipeActionRequest,
   IdempotencyKey,
-  RecipeReviewAnswer,
   SourceUrl,
 } from "@meal-planner/recipe-import-api";
 import type {
@@ -36,12 +35,17 @@ import { Label } from "../../components/ui/label.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
 import { Separator } from "../../components/ui/separator.js";
 import { Skeleton } from "../../components/ui/skeleton.js";
+import { apiEffectQuery } from "../api-client/index.js";
+import type { RecipeImportOperations } from "./browser-operations.js";
 import { recipeImportQueryKeys } from "./household-query-isolation.js";
-import type { RecipeImportOperations } from "./operations.js";
+import { RecipeDetailsForm } from "./recipe-details-form.js";
+import { RecipeDetails } from "./recipe-details.js";
 
 type ActiveReviewAction = Extract<
   RecipeImportAction,
-  { readonly status: "active" }
+  {
+    readonly status: "active";
+  }
 >;
 
 const stageLabels = {
@@ -55,11 +59,11 @@ const stageLabels = {
 } as const;
 
 const sourceUrlValidator = Schema.toStandardSchemaV1(SourceUrl);
-const nameValidator = Schema.toStandardSchemaV1(
-  RecipeReviewAnswer.members[0].fields.value
-);
+const nameValidator = Schema.toStandardSchemaV1(RecipeText);
 const decodeSourceUrl = Schema.decodeUnknownSync(SourceUrl);
-const decodeAnswer = Schema.decodeUnknownSync(AnswerReviewRecipeActionRequest);
+const decodeAnswer = Schema.decodeUnknownSync(AnswerReviewRecipeActionRequest, {
+  onExcessProperty: "error",
+});
 const decodeIdempotencyKey = Schema.decodeUnknownSync(IdempotencyKey);
 
 const idempotencyKey = (makeRequestId: () => string) =>
@@ -216,8 +220,8 @@ const TagsAnswerForm = ({
   const { tags } = action.review;
   const form = useForm({
     defaultValues: {
-      cuisine: tags?.cuisines.join(", ") ?? action.review.recipe.cuisine ?? "",
-      dietaryFit: tags?.dietaryFit ?? ("household_match" as const),
+      cuisine:
+        tags?.cuisines.join(", ") ?? action.review.recipe.cuisines.join(", "),
       difficulty: tags?.difficulty ?? ("easy" as const),
       leftovers: tags?.leftovers ?? ("one_meal" as const),
       mealType: tags?.mealTypes[0] ?? ("dinner" as const),
@@ -230,7 +234,6 @@ const TagsAnswerForm = ({
             field: "tags",
             value: {
               cuisines: [value.cuisine.trim()],
-              dietaryFit: value.dietaryFit,
               difficulty: value.difficulty,
               leftovers: value.leftovers,
               mealTypes: [value.mealType],
@@ -283,19 +286,6 @@ const TagsAnswerForm = ({
               onBlur={field.handleBlur}
               onChange={field.handleChange}
               schema={PlanningMealType}
-              value={field.state.value}
-            />
-          )}
-        </form.Field>
-        <form.Field name="dietaryFit">
-          {(field) => (
-            <PlanningTagSelect
-              id={`dietaryFit-${action.id}`}
-              label="Dietary fit"
-              name={field.name}
-              onBlur={field.handleBlur}
-              onChange={field.handleChange}
-              schema={PlanningDietaryFit}
               value={field.state.value}
             />
           )}
@@ -549,26 +539,14 @@ const RecipeReview = ({
     <h3 className="recipe-name">
       {action.review.recipe.name ?? "Recipe ready to confirm"}
     </h3>
-    {action.review.recipe.ingredientLines === null ? null : (
-      <section aria-labelledby="ingredients-title">
-        <h3 id="ingredients-title">Ingredients</h3>
-        <ul>
-          {action.review.recipe.ingredientLines.map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
-      </section>
-    )}
-    {action.review.recipe.instructions === null ? null : (
-      <section aria-labelledby="method-title">
-        <h3 id="method-title">Method</h3>
-        <ol>
-          {action.review.recipe.instructions.map((step) => (
-            <li key={step}>{step}</li>
-          ))}
-        </ol>
-      </section>
-    )}
+    <RecipeDetails recipe={action.review.recipe} />
+    <RecipeDetailsForm
+      key={`${action.id}:${action.actionVersion}:details`}
+      action={action}
+      isPending={isAnswering}
+      makeRequestId={makeRequestId}
+      submit={answer}
+    />
     {action.review.editableFields.includes("name") ? (
       <NameAnswerForm
         action={action}
@@ -590,7 +568,7 @@ const RecipeReview = ({
     <div className="approve-bar">
       <p>Confirm this recipe to save it.</p>
       <PendingButton
-        disabled={isConfirming}
+        disabled={isConfirming || isAnswering}
         pending={isConfirming}
         pendingLabel="Saving recipe…"
         onClick={() =>
@@ -628,11 +606,13 @@ const SavedRecipeStatus = ({
   if (recipe === undefined) {
     return null;
   }
+
   return (
     <section className="success-document" aria-labelledby="success-title">
       <p className="eyebrow success">Complete</p>
       <h2 id="success-title">Recipe saved</h2>
       <p>Added to your recipe collection.</p>
+      <RecipeDetails recipe={recipe.recipe} />
       <div className="saved-entry">
         <span>{recipe.recipe.name ?? "Recipe"}</span>
         <Badge>Saved</Badge>
@@ -663,106 +643,120 @@ export const RecipeImportWorkspace = ({
       session.active = false;
     };
   }, [session]);
-  const createMutation = useMutation({
-    mutationFn: operations.create,
-    retry: false,
-  });
+  const createMutation = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: operations.create,
+      retry: false,
+    })
+  );
   const createdIntent = session.active ? createMutation.data : undefined;
   const activeIntentId = createdIntent?.id ?? initialIntentId;
-  const intentQuery = useQuery({
-    enabled: activeIntentId !== undefined,
-    initialData: createdIntent,
-    queryFn:
-      activeIntentId === undefined
-        ? skipToken
-        : () => operations.getIntent({ intentId: activeIntentId }),
-    queryKey: recipeImportQueryKeys.intent(householdId, activeIntentId),
-    refetchInterval: (query) =>
-      query.state.data?.status === "processing" ? pollIntervalMs : false,
-    retry: false,
-  });
+  const intentQuery = useQuery(
+    apiEffectQuery.queryOptions({
+      enabled: activeIntentId !== undefined,
+      initialData: createdIntent,
+      queryFn:
+        activeIntentId === undefined
+          ? skipToken
+          : () => operations.getIntent({ intentId: activeIntentId }),
+      queryKey: recipeImportQueryKeys.intent(householdId, activeIntentId),
+      refetchInterval: (query) =>
+        query.state.data?.status === "processing" ? pollIntervalMs : false,
+      retry: false,
+    })
+  );
   const intent = intentQuery.data;
   const actionReference =
     intent?.status === "requires_action" ? intent.action : undefined;
   const actionIntentId = actionReference === undefined ? undefined : intent?.id;
-  const actionQuery = useQuery({
-    enabled: actionReference !== undefined,
-    queryFn:
-      actionReference === undefined || actionIntentId === undefined
-        ? skipToken
-        : () =>
-            operations.getAction({
-              actionId: actionReference.id,
-              intentId: actionIntentId,
-            }),
-    queryKey: recipeImportQueryKeys.action(
-      householdId,
-      actionIntentId,
-      actionReference?.id
-    ),
-    retry: false,
-  });
+  const actionQuery = useQuery(
+    apiEffectQuery.queryOptions({
+      enabled: actionReference !== undefined,
+      queryFn:
+        actionReference === undefined || actionIntentId === undefined
+          ? skipToken
+          : () =>
+              operations.getAction({
+                actionId: actionReference.id,
+                intentId: actionIntentId,
+              }),
+      queryKey: recipeImportQueryKeys.action(
+        householdId,
+        actionIntentId,
+        actionReference?.id
+      ),
+      retry: false,
+    })
+  );
   const recipeId =
     intent?.status === "succeeded" ? intent.result.recipeId : undefined;
-  const recipeQuery = useQuery({
-    enabled: recipeId !== undefined,
-    queryFn:
-      recipeId === undefined
-        ? skipToken
-        : () => operations.getRecipe({ recipeId }),
-    queryKey: recipeImportQueryKeys.recipe(householdId, recipeId),
-    retry: false,
-  });
-  const confirmMutation = useMutation({
-    mutationFn: operations.confirmAction,
-    onSuccess: (succeeded) => {
-      if (!session.active) {
-        return;
-      }
-      queryClient.setQueryData(
-        recipeImportQueryKeys.intent(householdId, succeeded.id),
-        succeeded
-      );
-      return queryClient.invalidateQueries({
-        queryKey: recipeImportQueryKeys.actions(householdId, succeeded.id),
-      });
-    },
-    retry: false,
-  });
-  const answerMutation = useMutation({
-    mutationFn: operations.answerAction,
-    onSuccess: (updated) => {
-      if (!session.active) {
-        return;
-      }
-      queryClient.setQueryData(
-        recipeImportQueryKeys.intent(householdId, updated.id),
-        updated
-      );
-      return Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: recipeImportQueryKeys.intent(householdId, updated.id),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: recipeImportQueryKeys.actions(householdId, updated.id),
-        }),
-      ]);
-    },
-    retry: false,
-  });
-  const cancelMutation = useMutation({
-    mutationFn: operations.cancel,
-    onSuccess: (cancelled) => {
-      if (!session.active) {
-        return;
-      }
-      return queryClient.setQueryData(
-        recipeImportQueryKeys.intent(householdId, cancelled.id),
-        cancelled
-      );
-    },
-    retry: false,
-  });
+  const recipeQuery = useQuery(
+    apiEffectQuery.queryOptions({
+      enabled: recipeId !== undefined,
+      queryFn:
+        recipeId === undefined
+          ? skipToken
+          : () => operations.getRecipe({ recipeId }),
+      queryKey: recipeImportQueryKeys.recipe(householdId, recipeId),
+      retry: false,
+    })
+  );
+  const confirmMutation = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: operations.confirmAction,
+      onSuccess: (succeeded) => {
+        if (!session.active) {
+          return;
+        }
+        queryClient.setQueryData(
+          recipeImportQueryKeys.intent(householdId, succeeded.id),
+          succeeded
+        );
+        return queryClient.invalidateQueries({
+          queryKey: recipeImportQueryKeys.actions(householdId, succeeded.id),
+        });
+      },
+      retry: false,
+    })
+  );
+  const answerMutation = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: operations.answerAction,
+      onSuccess: (updated) => {
+        if (!session.active) {
+          return;
+        }
+        queryClient.setQueryData(
+          recipeImportQueryKeys.intent(householdId, updated.id),
+          updated
+        );
+        return Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: recipeImportQueryKeys.intent(householdId, updated.id),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: recipeImportQueryKeys.actions(householdId, updated.id),
+          }),
+        ]);
+      },
+      retry: false,
+    })
+  );
+  const cancelMutation = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: operations.cancel,
+      onSuccess: (cancelled) => {
+        if (!session.active) {
+          return;
+        }
+        return queryClient.setQueryData(
+          recipeImportQueryKeys.intent(householdId, cancelled.id),
+          cancelled
+        );
+      },
+      retry: false,
+    })
+  );
 
   const hasRequestFailure =
     session.active &&

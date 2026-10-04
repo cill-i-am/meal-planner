@@ -177,8 +177,10 @@ const makeService = (
   digest: Effect.Success<typeof HouseholdDigest>
 ) => makeMealPlanService(makeHouseholdMealPlanRepository(database, digest));
 
-export const HouseholdObjectRuntime = Effect.gen(
-  function* initializeHouseholdObject() {
+export const makeHouseholdObjectRuntime = (
+  migrations: NonNullable<Drizzle.DurableObjectConfig["migrations"]>
+) =>
+  Effect.gen(function* initializeHouseholdObject() {
     const durableObjectState = yield* Cloudflare.DurableObjectState;
     const canonicalEncoding = yield* HouseholdCanonicalEncoding;
     const digest = yield* HouseholdDigest;
@@ -196,12 +198,7 @@ export const HouseholdObjectRuntime = Effect.gen(
         ),
         Effect.scoped
       );
-    const database = Effect.gen(function* householdDatabase() {
-      const { default: migrations } = yield* Effect.promise(
-        () => import("../../../household-migrations/migrations.js")
-      );
-      return yield* Drizzle.DurableObject({ migrations });
-    });
+    const database = Drizzle.DurableObject({ migrations });
     const planningAuthority = (
       connection: EffectSQLiteDoDatabase,
       admission: HouseholdPeopleMemberAdmission
@@ -2016,7 +2013,8 @@ export const HouseholdObjectRuntime = Effect.gen(
               command.admission.organizationId
             );
             const payload = yield* Schema.decodeUnknownEffect(
-              MutatePlanningContentPayload
+              MutatePlanningContentPayload,
+              { onExcessProperty: "error" }
             )(command.payload).pipe(Effect.mapError(invalidInput));
             const content = yield* makeHouseholdMealContentRepository(
               connection,
@@ -2534,5 +2532,4 @@ export const HouseholdObjectRuntime = Effect.gen(
           })
         ),
     });
-  }
-);
+  });

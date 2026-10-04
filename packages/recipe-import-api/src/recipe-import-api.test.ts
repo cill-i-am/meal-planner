@@ -1,6 +1,10 @@
-import { Option, Schema } from "effect";
+import {
+  emptyRecipeDetails,
+  recipeIngredientFromText,
+} from "@meal-planner/recipe-domain";
+import { Context, Option, Schema } from "effect";
 import type { JsonSchema } from "effect";
-import { OpenApi } from "effect/unstable/httpapi";
+import { HttpApi, OpenApi } from "effect/http-api";
 import { describe, expect, it } from "vitest";
 
 import * as Protocol from "./index.js";
@@ -46,55 +50,46 @@ const action = {
   type: "review_recipe",
 } as const;
 const emptyRecipe = {
-  author: null,
-  category: null,
-  cookTimeMinutes: null,
-  cuisine: null,
+  ...emptyRecipeDetails,
+
   description: null,
-  ingredientLines: null,
-  ingredientQuantities: null,
-  ingredientUnits: null,
+  ingredients: null,
+
   instructions: null,
   name: null,
   nutrition: null,
-  prepTimeMinutes: null,
-  temperatureCelsius: null,
-  tools: null,
-  totalTimeMinutes: null,
-  yield: null,
 } as const;
 const planningTags = {
   cuisines: ["Irish"],
-  dietaryFit: "household_match",
   difficulty: "easy",
   leftovers: "one_meal",
   mealTypes: ["dinner"],
   totalTimeBand: "30_to_60_minutes",
 } as const;
 const editableFields = [
-  "author",
-  "category",
-  "cook_time_minutes",
-  "cuisine",
-  "description",
-  "ingredient_lines",
-  "ingredient_quantities",
-  "ingredient_units",
-  "instructions",
   "name",
+  "author",
+  "description",
+  "language",
+  "ingredients",
+  "instructions",
+  "categories",
+  "cuisines",
+  "sourceTags",
+  "equipment",
+  "notes",
+  "times",
+  "servings",
   "nutrition",
-  "prep_time_minutes",
-  "temperature_celsius",
-  "tools",
-  "total_time_minutes",
-  "yield",
+  "dietary",
+  "media",
   "tags",
 ] as const;
 const review = {
   answers: [],
   blockers: {
     invalidFields: [],
-    unresolvedRequiredFields: ["name", "ingredient_lines", "instructions"],
+    unresolvedRequiredFields: ["name", "ingredients", "instructions"],
   },
   editableFields,
   recipe: emptyRecipe,
@@ -283,8 +278,7 @@ describe("RecipeImportIntent protocol", () => {
     );
     expect(() => Schema.decodeUnknownSync(IdempotencyKey)(" ")).toThrow();
   });
-
-  it("rejects excess properties at every public mutation boundary by default", () => {
+  it("rejects excess properties with the public mutation payload policy", () => {
     for (const [schema, value] of [
       [
         CreateRecipeImportIntentRequest,
@@ -312,7 +306,15 @@ describe("RecipeImportIntent protocol", () => {
         { expectedIntentVersion: 1, workflowId: "hidden" },
       ],
     ] as const) {
-      expect(() => Schema.decodeUnknownSync(schema)(value)).toThrow();
+      expect(() =>
+        Schema.decodeUnknownSync(
+          schema,
+          Context.getUnsafe(
+            RecipeImportApi.annotations,
+            HttpApi.PayloadParseOptions
+          )
+        )(value)
+      ).toThrow();
     }
   });
 
@@ -393,7 +395,9 @@ describe("RecipeImportIntent protocol", () => {
 
   it("rejects duplicate answer fields before invoking an action mutation", () => {
     expect(() =>
-      Schema.decodeUnknownSync(Protocol.AnswerReviewRecipeActionRequest)({
+      Schema.decodeUnknownSync(Protocol.AnswerReviewRecipeActionRequest, {
+        onExcessProperty: "error",
+      })({
         answers: [
           { field: "name", value: "First name" },
           { field: "name", value: "Second name" },
@@ -411,8 +415,19 @@ describe("RecipeImportIntent protocol", () => {
       decode({
         answers: [
           { field: "name", value: "Soda bread" },
-          { field: "cook_time_minutes", value: 45 },
-          { field: "ingredient_lines", value: ["500g flour"] },
+          {
+            field: "times",
+            value: {
+              cook: { seconds: 2700 },
+              inactive: null,
+              prep: null,
+              total: null,
+            },
+          },
+          {
+            field: "ingredients",
+            value: [recipeIngredientFromText("500g flour")],
+          },
           { field: "tags", value: planningTags },
         ],
         expectedActionVersion: 3,

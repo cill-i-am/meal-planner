@@ -79,3 +79,17 @@ node --import tsx apps/api/src/test/local-preview-family.test-fixture.ts
 
 The check uses port 4498 and a disposable directory. It signs up a synthetic
 account, creates and replays a family and person, and verifies the linked creator.
+
+## Native development after the main merge
+
+The native Alchemy stack uses local state during development. It does not
+provision the deployed agent gateway or account token. Optional `LOCAL_AGENT_*`
+settings supply an existing account, gateway, redacted token and the conversation
+and private-discovery provider configurations. Missing settings produce the
+existing `not_configured` turn failure while auth and household storage remain
+available. See [local development](../how-to/local-development.md).
+
+The Worker entry module exports the Agents SDK class separately from the
+Node-loadable infrastructure declaration. The pinned Alchemy build patch keeps
+that native export alongside its generated Effect Durable Object and migration
+bridges; the actual bundle test verifies the resulting exports.

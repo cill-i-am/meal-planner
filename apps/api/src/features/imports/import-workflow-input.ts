@@ -2,7 +2,7 @@ import { Data, Effect, Schema } from "effect";
 import { flow } from "effect/Function";
 
 import { HouseholdOrganizationId } from "../households/household.contract.js";
-import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
+import { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
 import { ImportTraceContext } from "./import-observability.js";
 import { ImportId } from "./import.contracts.js";
 

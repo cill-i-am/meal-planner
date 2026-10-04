@@ -1,5 +1,5 @@
 import { Context, Layer, Schema } from "effect";
-import { HttpClient, HttpClientRequest } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest } from "effect/http";
 import {
   HttpApi,
   HttpApiClient,
@@ -7,7 +7,7 @@ import {
   HttpApiGroup,
   HttpApiMiddleware,
   HttpApiSchema,
-} from "effect/unstable/httpapi";
+} from "effect/http-api";
 
 import type { HouseholdCurrentPrincipal } from "./household-principal.js";
 import { HouseholdOrganizationId } from "./household-principal.js";
@@ -314,7 +314,10 @@ const HouseholdsGroup = HttpApiGroup.make("households")
   )
   .middleware(HouseholdSessionAuth);
 
-export const HouseholdApi = HttpApi.make("householdApi").add(HouseholdsGroup);
+export const HouseholdApi = HttpApi.make("householdApi")
+  .annotate(HttpApi.PayloadParseOptions, { onExcessProperty: "error" })
+  .annotate(HttpApi.QueryParseOptions, { onExcessProperty: "error" })
+  .add(HouseholdsGroup);
 
 const MealPlanMutationErrors = [
   HouseholdMealPlanInvalidRequestProblem,
@@ -388,12 +391,17 @@ const MealPlansGroup = HttpApiGroup.make("mealPlans")
   .middleware(HouseholdSessionAuth);
 
 export const HouseholdMealPlanApi = HttpApi.make("householdMealPlanApi")
+  .annotate(HttpApi.PayloadParseOptions, { onExcessProperty: "error" })
+  .annotate(HttpApi.QueryParseOptions, { onExcessProperty: "error" })
   .add(MealPlansGroup)
   .middleware(HouseholdMealPlanSchemaErrors);
 
 export const AuthenticatedHouseholdPlanningContentApi = HttpApi.make(
   "householdPlanningContentApi"
-).add(HouseholdPlanningContentGroup.middleware(HouseholdSessionAuth));
+)
+  .annotate(HttpApi.PayloadParseOptions, { onExcessProperty: "error" })
+  .annotate(HttpApi.QueryParseOptions, { onExcessProperty: "error" })
+  .add(HouseholdPlanningContentGroup.middleware(HouseholdSessionAuth));
 
 const PeopleGroup = HttpApiGroup.make("people")
   .add(
@@ -768,6 +776,8 @@ const PeopleGroup = HttpApiGroup.make("people")
 
 /** Authenticated public household people API. */
 export const HouseholdPeopleApi = HttpApi.make("householdPeopleApi")
+  .annotate(HttpApi.PayloadParseOptions, { onExcessProperty: "error" })
+  .annotate(HttpApi.QueryParseOptions, { onExcessProperty: "error" })
   .add(PeopleGroup)
   .middleware(HouseholdPeopleSchemaErrors);
 

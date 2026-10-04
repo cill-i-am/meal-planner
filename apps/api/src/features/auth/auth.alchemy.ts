@@ -7,7 +7,7 @@ import {
 import type { BetterAuthInstance } from "@alchemy.run/better-auth";
 import type { RuntimeContext } from "alchemy";
 import { Effect, Redacted, Scope } from "effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import {
   fetchGuardedMealPlannerAuth,
@@ -35,9 +35,7 @@ type AuthOperation =
   | "getActiveMember"
   | "getActiveMemberRole"
   | "leaveOrganization"
-  | "listOrganizations"
-  | "removeMember"
-  | "setActiveOrganization";
+  | "removeMember";
 type BoundAuthApi = {
   readonly [K in AuthOperation]: AlchemyAuth["api"][K] extends (
     ...args: infer Args
@@ -60,7 +58,7 @@ export interface MealPlannerAuthService {
   ) => Effect.Effect<HttpServerResponse.HttpServerResponse>;
 }
 
-export type AlchemyMealPlannerAuthOptions = Omit<
+type AlchemyMealPlannerAuthOptions = Omit<
   MealPlannerAuthOptions,
   "secret" | "sendPasswordResetEmail"
 > &
@@ -118,13 +116,9 @@ export const makeAlchemyMealPlannerAuth = (
           provideRuntime(auth.api.getSetupInvitation(input)),
         leaveOrganization: (input) =>
           provideRuntime(auth.api.leaveOrganization(input)),
-        listOrganizations: (input) =>
-          provideRuntime(auth.api.listOrganizations(input)),
         rejectInvitation: (input) =>
           provideRuntime(auth.api.rejectInvitation(input)),
         removeMember: (input) => provideRuntime(auth.api.removeMember(input)),
-        setActiveOrganization: (input) =>
-          provideRuntime(auth.api.setActiveOrganization(input)),
       },
       createHouseholdInvitation: ({ invitationId, ...request }) =>
         provideRuntime(

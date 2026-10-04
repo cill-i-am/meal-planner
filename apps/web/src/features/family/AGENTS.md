@@ -17,3 +17,5 @@ Keep roster responsibilities separate: [roster-model.ts](roster-model.ts) holds 
 A confirmed server save remains successful even when a later refresh fails. Keep its returned result and let the screen retry continuation without another create command. Effect Query failures and ordinary callback errors have different shapes; decode or narrow them before using adapter-specific methods.
 
 An expired-session person save keeps its exact command and offers login in another tab. Retry in the original mounted screen after authenticating as the same user. Account changes still dispose private local state. Restore focus to the matching roster action after an overlay closes, including the renamed person's menu button.
+
+Family and people query and mutation options use `apiEffectQuery` from the API transport feature. This is execution wiring; domain commands, saved-request lifetime, and invalidation stay in their feature slices.

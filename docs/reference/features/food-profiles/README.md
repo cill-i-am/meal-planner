@@ -21,6 +21,11 @@ conversation quality, AI proposals, and assisted dependant interviews belong to
    session shows current shared facts and asks what changed. Review and confirm
    any proposed change; a completed earlier session remains history only.
 
+The roster uses the people feature’s public Effect operations. Profile reads,
+writes, and history use generated-client Effects and the shared Effect Query
+adapter. The food-profile slice owns invalidation and profile recovery. A sole
+decoded rejection releases a command; mixed Causes and defects preserve it.
+
 ## Evidence
 
 The [Playwright page object](../../../../apps/web/e2e/pages/food-profile-page.ts)
@@ -28,7 +33,9 @@ drives visible controls. The [journey](../../../../apps/web/e2e/food-profile-jou
 crosses signup, family setup, the real local Website/API Workers, a profile save,
 correction, and reload. The [Vitest browser tests](../../../../apps/web/src/features/household-profiles/household-profiles-panel.test.tsx)
 exercise recovery and cache behavior in Chromium with a synthetic operations
-adapter. The [profile form tests](../../../../apps/web/src/features/household-profiles/profile-fact-form.test.tsx)
+adapter. The [generated-client browser tests](../../../../apps/web/src/features/household-profiles/browser-operations.browser.test.ts)
+cover scoped reads, pagination, cancellation, and full Cause projection.
+The [profile form tests](../../../../apps/web/src/features/household-profiles/profile-fact-form.test.tsx)
 cover explicit safety confirmation.
 
 Record the commit, runtime, action, result, and any unexercised paths for each
@@ -46,4 +53,8 @@ covers the focused opening, and the [native A-to-B test](../../../../apps/api/sr
 covers a synthetic model proposal, correction, two explicit confirmations,
 profile versions/audit, and prior transcript exclusion. The browser journey
 also rejects a B model context containing earlier dialogue or missing the saved
-fact. These tests do not exercise a live model or establish conversation quality.
+fact. The [confirmation transport tests](../../../../apps/web/src/features/private-interviews/private-confirmation.test.ts)
+exercise the generated client, scoped headers, empty requests, response decoding
+and cancellation. Native boundary tests reject copied, unadmitted, cross-origin,
+malformed and body-substituted confirmations without exposing private bodies.
+These tests do not exercise a live model or establish conversation quality.

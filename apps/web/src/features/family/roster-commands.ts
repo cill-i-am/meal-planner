@@ -5,7 +5,7 @@ import {
 } from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
 
-import type { HouseholdPeopleEffectOperations } from "../household-people/client.js";
+import type { HouseholdPeopleEffectOperations } from "../household-people/index.js";
 import type { RosterCommand } from "./person-commands.js";
 
 export const runRosterCommand = (
@@ -16,7 +16,9 @@ export const runRosterCommand = (
     case "invite": {
       return people
         .inviteAdult(
-          Schema.decodeUnknownSync(InviteHouseholdAdultPayload)({
+          Schema.decodeUnknownSync(InviteHouseholdAdultPayload, {
+            onExcessProperty: "error",
+          })({
             email: command.email,
             mutationId: command.mutationId,
             personId: command.person.id,
@@ -28,7 +30,9 @@ export const runRosterCommand = (
       return people
         .rename(
           command.person.id,
-          Schema.decodeUnknownSync(RenameHouseholdPersonPayload)({
+          Schema.decodeUnknownSync(RenameHouseholdPersonPayload, {
+            onExcessProperty: "error",
+          })({
             displayName: command.name,
             expectedVersion: command.person.version,
             mutationId: command.mutationId,
@@ -40,7 +44,9 @@ export const runRosterCommand = (
       return people
         .remove(
           command.person.id,
-          Schema.decodeUnknownSync(TransitionHouseholdPersonPayload)({
+          Schema.decodeUnknownSync(TransitionHouseholdPersonPayload, {
+            onExcessProperty: "error",
+          })({
             expectedVersion: command.person.version,
             mutationId: command.mutationId,
           })

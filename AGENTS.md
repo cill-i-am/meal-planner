@@ -6,9 +6,9 @@ This is a greenfield application. Replace obsolete code rather than adding backw
 
 Prefer reliable, secure open-source libraries to custom code. Use supported extensions when a library needs adapting. Build from scratch only when existing options cannot meet the requirements efficiently.
 
-Choose the simplest solution that meets the requirements. Avoid speculative abstractions and overengineering.
+Choose the simplest solution that meets the requirements. Avoid speculative abstractions and overengineering. Do not add unnecessary wrappers or abstractions around supported tools. Use their native commands and APIs; do not invent deployment or database preflight layers.
 
-For app-owned browser/server APIs, define a shared Effect HttpApi contract and use its generated client and Effect handler. Keep remote query/mutation state with the chosen React adapter; do not hand-write fetch and JSON decoding when the contract covers them. Use [runtime import intents](apps/api/src/features/imports/import-intent-transition.ts) for durable asynchronous work, not as the default shape for creating an ordinary domain entity. See [protocol contracts](docs/reference/engineering/FEATURE_SLICE_ARCHITECTURE.md#protocol-contracts) and [workflow selection](docs/reference/engineering/ASYNC_AND_WORKFLOWS.md#workflow-selection).
+For app-owned browser/server APIs, define a shared Effect HttpApi contract and use its generated client and Effect handler. Keep remote query/mutation state with the chosen React adapter; do not hand-write fetch and JSON decoding when the contract covers them. Use [runtime import intents](apps/api/src/features/households/recipe-import/household-recipe-import.contract.ts) for durable asynchronous work, not as the default shape for creating an ordinary domain entity. See [protocol contracts](docs/reference/engineering/FEATURE_SLICE_ARCHITECTURE.md#protocol-contracts) and [workflow selection](docs/reference/engineering/ASYNC_AND_WORKFLOWS.md#workflow-selection).
 
 When using or changing an API or library, always check its current official documentation against the installed version. Do not upgrade just to match an example.
 
@@ -30,6 +30,6 @@ When creating subagents, choose the model best suited to the job from Sol, Luna 
 
 Complete the assigned plan, check the result, fix related failures and reach the requested delivery point. Do not ask whether to continue at each milestone. Make routine decisions from the available evidence.
 
-Implementation requests include repository work through merge after required checks and reviews pass, unless the request sets a narrower endpoint. This does not authorize deployment or other external actions. Use permission already given for the same work. If something is genuinely blocked, finish the independent work and report the exact problem. Planning-only and review-only requests stay in scope.
+Implementation requests include repository work through merge after required checks and reviews pass, unless the request sets a narrower endpoint. This does not authorize unrelated external actions. Use permission already given for the same work. If something is genuinely blocked, finish the independent work and report the exact problem. Planning-only and review-only requests stay in scope.
 
 Preserve unrelated changes and use a separate checkout when work would conflict. Keep credentials and private data out of source, logs and work records. Update the plan and affected docs. Report what changed, what was checked and what remains.

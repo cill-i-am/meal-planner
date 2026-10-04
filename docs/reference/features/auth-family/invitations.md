@@ -41,6 +41,10 @@ keep full links out of shared screenshots and logs.
 
 ## Gotchas
 
+Recipient query and mutation options use the shared stateless Effect Query
+adapter. The invitation feature retains recipient-scoped keys, transport retry
+policy, and the exact unresolved response command.
+
 Accepted in Better Auth and linked in household storage are separate persistence
 steps. The server owns their coordination. Seeing “accepted” is not enough to
 prove that the user can enter the household as the correct person.

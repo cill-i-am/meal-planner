@@ -1,14 +1,12 @@
-import { Data, Effect, Layer } from "effect";
-import { createEffectQuery } from "effect-query";
+import { Data, Effect } from "effect";
 
+import { apiEffectQuery } from "../api-client/index.js";
 import type { makeAuthClient } from "../auth/index.js";
 import {
   requireAuthSuccess,
   AuthRequestError,
   parseRetryAfter,
 } from "../auth/index.js";
-
-const effectQuery = createEffectQuery(Layer.empty);
 
 export class RecoveryFailure extends Data.TaggedError("RecoveryFailure")<{
   readonly authError: AuthRequestError;
@@ -50,7 +48,7 @@ export const requestPasswordResetMutationOptions = (
   auth: ReturnType<typeof makeAuthClient>,
   redirect: string
 ) =>
-  effectQuery.mutationOptions({
+  apiEffectQuery.mutationOptions({
     mutationFn: (email: string) => {
       const callback = new URL("/reset-password", window.location.origin);
       callback.searchParams.set("redirect", redirect);
@@ -65,7 +63,7 @@ export const resetPasswordMutationOptions = (
   auth: ReturnType<typeof makeAuthClient>,
   token: string | undefined
 ) =>
-  effectQuery.mutationOptions({
+  apiEffectQuery.mutationOptions({
     mutationFn: (password: string) =>
       token
         ? submitRecovery((options) =>

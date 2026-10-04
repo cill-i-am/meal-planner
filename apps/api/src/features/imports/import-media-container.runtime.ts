@@ -6,8 +6,8 @@ import path from "node:path";
 import { Readable } from "node:stream";
 
 import { Effect, Option, Schema, Stream } from "effect";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import { makeContainerMediaAcquirer } from "./import-media-acquirer.container.js";
 import type { MediaAcquirer } from "./import-media-acquirer.js";
@@ -38,7 +38,7 @@ import { makeTikTokSourceResolver } from "./import-source-resolver.tiktok.js";
 export const TikTokMediaContainerDockerfile = `
 FROM node:24.20.0-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS tools
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential ca-certificates curl git gnupg nasm xz-utils && rm -rf /var/lib/apt/lists/*
-RUN curl --fail --location --output /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_linux && echo "58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a  /usr/local/bin/yt-dlp" | sha256sum --check && chmod 0555 /usr/local/bin/yt-dlp
+RUN curl --fail --location --retry 3 --retry-max-time 60 --max-time 30 --output /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_linux && echo "58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a  /usr/local/bin/yt-dlp" | sha256sum --check && chmod 0555 /usr/local/bin/yt-dlp
 RUN gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys DD1EC9E8DE085C629B3E1846B18E8928B3948D64 && test "$(gpg --with-colons --fingerprint DD1EC9E8DE085C629B3E1846B18E8928B3948D64 | awk -F: '$1 == "fpr" { print $10; exit }')" = "DD1EC9E8DE085C629B3E1846B18E8928B3948D64"
 RUN git init /tmp/ffmpeg-source && cd /tmp/ffmpeg-source && git remote add origin https://github.com/FFmpeg/FFmpeg.git && git fetch --depth 1 origin tag n9.0.1 && git verify-tag n9.0.1 && test "$(git rev-parse 'n9.0.1^{commit}')" = "bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa" && git checkout --detach n9.0.1 && test "$(git rev-parse HEAD)" = "bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa" && mkdir /tmp/ffmpeg && git archive --format=tar n9.0.1 | tar --extract --directory /tmp/ffmpeg
 RUN cd /tmp/ffmpeg && ./configure --disable-debug --disable-doc --disable-ffplay --disable-network --disable-shared --enable-static && make -j2 && make install && ffmpeg -version | grep "ffmpeg version 9.0.1" && ffprobe -version | grep "ffprobe version 9.0.1"
@@ -88,7 +88,7 @@ const decodeFrameDimensions = Schema.decodeUnknownEffect(
   )
 );
 
-export interface TikTokMediaContainerRuntimeDependencies {
+interface TikTokMediaContainerRuntimeDependencies {
   readonly acquirer: MediaAcquirer;
   readonly artifacts: ReturnType<typeof makeTemporaryArtifactStore>;
   readonly makeTemporaryRoot?: (importId: string) => Promise<string>;
@@ -430,6 +430,8 @@ export default TikTokMediaContainer.make(
     instanceType: "standard-1",
     main: import.meta.url,
     maxInstances: 2,
+    observability: { logs: { enabled: true } },
+    publish: { repository: "meal-planner-media" },
     runtime: "node",
   },
   ProductionTikTokMediaContainerRuntime

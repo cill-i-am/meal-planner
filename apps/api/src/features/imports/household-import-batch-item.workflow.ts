@@ -22,8 +22,10 @@ import {
   HouseholdRecipeImportFailure,
   HouseholdRecordRecipeImportDispatchResult,
 } from "../households/recipe-import/household-recipe-import.contract.js";
-import { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
-import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
+import {
+  ImportWorkflowIdentity,
+  ImportIntentExecutionGeneration,
+} from "../households/shared-kernel/workflow-identity.js";
 import { ImportTraceContext } from "./import-observability.js";
 import { ImportId } from "./import.contracts.js";
 import type { ImportWorkflowReconciler } from "./import.workflow.js";
@@ -44,34 +46,53 @@ const BatchImportAdmissionStep = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("Rejected") }),
 ]);
 
+interface HouseholdBatchStepUnavailable {
+  readonly _tag: "HouseholdBatchStepUnavailable";
+  readonly operation: "admit" | "claim" | "complete" | "dispatch" | "fail";
+}
+const batchStepUnavailable = (
+  operation: HouseholdBatchStepUnavailable["operation"]
+): HouseholdBatchStepUnavailable => ({
+  _tag: "HouseholdBatchStepUnavailable",
+  operation,
+});
+
 interface HouseholdImportBatchWorkflowPorts {
   readonly admit: (
     claimed: typeof HouseholdClaimedImportBatchItem.Type,
     message: typeof HouseholdBatchQueueMessage.Type
   ) => Effect.Effect<
     typeof BatchImportAdmissionStep.Encoded,
-    never,
+    HouseholdBatchStepUnavailable,
     RuntimeContext
   >;
   readonly claim: (
     message: typeof HouseholdBatchQueueMessage.Type
   ) => Effect.Effect<
     typeof HouseholdClaimImportBatchItemResult.Encoded,
-    never,
+    HouseholdBatchStepUnavailable,
     RuntimeContext
   >;
   readonly complete: (
     admitted: typeof HouseholdAdmitRecipeImportResult.Type,
     message: typeof HouseholdBatchQueueMessage.Type
-  ) => Effect.Effect<typeof RecipeImportBatch.Encoded, never, RuntimeContext>;
+  ) => Effect.Effect<
+    typeof RecipeImportBatch.Encoded,
+    HouseholdBatchStepUnavailable,
+    RuntimeContext
+  >;
   readonly dispatch: (
     admitted: typeof HouseholdAdmitRecipeImportResult.Type,
     message: typeof HouseholdBatchQueueMessage.Type
-  ) => Effect.Effect<boolean, never, RuntimeContext>;
+  ) => Effect.Effect<boolean, HouseholdBatchStepUnavailable, RuntimeContext>;
   readonly fail: (
     message: typeof HouseholdBatchQueueMessage.Type,
     failureCode: (typeof HouseholdFailImportBatchItemInput.Type)["failureCode"]
-  ) => Effect.Effect<typeof RecipeImportBatch.Encoded, never, RuntimeContext>;
+  ) => Effect.Effect<
+    typeof RecipeImportBatch.Encoded,
+    HouseholdBatchStepUnavailable,
+    RuntimeContext
+  >;
 }
 
 const isAuthoritativeAdmissionRejection = (
@@ -79,8 +100,11 @@ const isAuthoritativeAdmissionRejection = (
 ) =>
   Schema.is(HouseholdRecipeImportFailure)(error) &&
   error.reason !== "persistence_unavailable";
-
-const isProvenPreStartRefusal = <Error extends { readonly _tag: string }>(
+const isProvenPreStartRefusal = <
+  Error extends {
+    readonly _tag: string;
+  },
+>(
   cause: Cause.Cause<Error>
 ) => {
   const failure = Cause.findErrorOption(cause);
@@ -129,9 +153,17 @@ export const makeHouseholdImportBatchWorkflowPorts = (input: {
           Effect.catchIf(isAuthoritativeAdmissionRejection, () =>
             Effect.succeed({ _tag: "Rejected" as const })
           ),
-          Effect.flatMap(Schema.decodeUnknownEffect(BatchImportAdmissionStep)),
-          Effect.flatMap(Schema.encodeEffect(BatchImportAdmissionStep)),
-          Effect.orDie
+          Effect.flatMap((value) =>
+            Schema.decodeUnknownEffect(BatchImportAdmissionStep)(value).pipe(
+              Effect.orDie
+            )
+          ),
+          Effect.flatMap((value) =>
+            Schema.encodeEffect(BatchImportAdmissionStep)(value).pipe(
+              Effect.orDie
+            )
+          ),
+          Effect.mapError(() => batchStepUnavailable("admit"))
         ),
     claim: (queueMessage) =>
       household
@@ -139,7 +171,7 @@ export const makeHouseholdImportBatchWorkflowPorts = (input: {
           admission: systemAdmission,
           message: queueMessage,
         })
-        .pipe(Effect.orDie),
+        .pipe(Effect.mapError(() => batchStepUnavailable("claim"))),
     complete: (admitted, queueMessage) =>
       household
         .completeImportBatchItem({
@@ -149,24 +181,24 @@ export const makeHouseholdImportBatchWorkflowPorts = (input: {
           intentId: admitted.intent.id,
           itemId: queueMessage.itemId,
         })
-        .pipe(Effect.orDie),
+        .pipe(Effect.mapError(() => batchStepUnavailable("complete"))),
     dispatch: (admitted, queueMessage) =>
       Effect.gen(function* dispatchRecipeImportWorkflow() {
         const importId = yield* Schema.decodeUnknownEffect(ImportId)(
           admitted.intent.id
-        );
+        ).pipe(Effect.orDie);
         const executionGeneration = yield* Schema.decodeUnknownEffect(
           ImportIntentExecutionGeneration
-        )(1);
+        )(1).pipe(Effect.orDie);
         const dispatchId = yield* Schema.decodeUnknownEffect(
           HouseholdDispatchId
-        )(admitted.dispatchId);
+        )(admitted.dispatchId).pipe(Effect.orDie);
         const workflowIdentity = yield* Schema.decodeUnknownEffect(
           ImportWorkflowIdentity
-        )(admitted.workflowIdentity);
+        )(admitted.workflowIdentity).pipe(Effect.orDie);
         const trace = yield* Schema.decodeUnknownEffect(ImportTraceContext)({
           correlationId: queueMessage.itemId,
-        });
+        }).pipe(Effect.orDie);
         const record = (outcome: "prepared" | "started" | "unavailable") =>
           household
             .recordRecipeImportDispatch({
@@ -183,10 +215,10 @@ export const makeHouseholdImportBatchWorkflowPorts = (input: {
               workflowIdentity,
             })
             .pipe(
-              Effect.flatMap(
+              Effect.flatMap((value) =>
                 Schema.decodeUnknownEffect(
                   HouseholdRecordRecipeImportDispatchResult
-                )
+                )(value).pipe(Effect.orDie)
               )
             );
         const prepared = yield* record("prepared");
@@ -230,7 +262,7 @@ export const makeHouseholdImportBatchWorkflowPorts = (input: {
                 )
             )
           );
-      }).pipe(Effect.orDie),
+      }).pipe(Effect.mapError(() => batchStepUnavailable("dispatch"))),
     fail: (queueMessage, failureCode) =>
       household
         .failImportBatchItem({
@@ -240,7 +272,7 @@ export const makeHouseholdImportBatchWorkflowPorts = (input: {
           failureCode,
           itemId: queueMessage.itemId,
         })
-        .pipe(Effect.orDie),
+        .pipe(Effect.mapError(() => batchStepUnavailable("fail"))),
   };
 };
 

@@ -1,8 +1,10 @@
 import { Schema } from "effect";
 
-import { ImportIntentExecutionGeneration } from "../../imports/import-intent-transition.js";
 import { ImportId } from "../../imports/import.contracts.js";
-import { ImportWorkflowIdentity } from "../shared-kernel/workflow-identity.js";
+import {
+  ImportIntentExecutionGeneration,
+  ImportWorkflowIdentity,
+} from "../shared-kernel/workflow-identity.js";
 
 export const HouseholdDispatchId = Schema.String.pipe(
   Schema.check(

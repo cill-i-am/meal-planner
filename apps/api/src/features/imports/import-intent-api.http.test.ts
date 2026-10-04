@@ -1,5 +1,11 @@
 import { HouseholdOrganizationId, UserId } from "@meal-planner/household-api";
 import {
+  emptyRecipeDetails,
+  makeRecipeContent,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+} from "@meal-planner/recipe-domain";
+import {
   CancelledRecipeImportIntent,
   IdempotencyKey,
   ProcessingRecipeImportIntent,
@@ -14,8 +20,8 @@ import {
   makeRecipeImportApiClientLayer,
 } from "@meal-planner/recipe-import-api";
 import { Effect, Layer, Schema } from "effect";
-import { FetchHttpClient, HttpRouter } from "effect/unstable/http";
-import { OpenApi } from "effect/unstable/httpapi";
+import { FetchHttpClient, HttpRouter } from "effect/http";
+import { OpenApi } from "effect/http-api";
 import { afterAll, describe, expect, it } from "vitest";
 
 import {
@@ -30,7 +36,7 @@ import {
   RecipeImportHouseholdDomain,
   makeRecipeImportHttpApiLayer,
   makeRecipeReadHttpApiLayer,
-  makeRecipeImportWorkerHttpLayer,
+  makeRecipeImportNotFoundHttpLayer,
 } from "./import-intent-api.http.js";
 import { ProviderRecoveryService } from "./import-provider-recovery.js";
 import { ProviderRecoveryRouteDefinitions } from "./import-provider-recovery.routes.js";
@@ -78,55 +84,46 @@ const actionReference = {
   type: "review_recipe",
 } as const;
 const emptyRecipe = {
-  author: null,
-  category: null,
-  cookTimeMinutes: null,
-  cuisine: null,
+  ...emptyRecipeDetails,
+
   description: null,
-  ingredientLines: null,
-  ingredientQuantities: null,
-  ingredientUnits: null,
+  ingredients: null,
+
   instructions: null,
   name: null,
   nutrition: null,
-  prepTimeMinutes: null,
-  temperatureCelsius: null,
-  tools: null,
-  totalTimeMinutes: null,
-  yield: null,
 } as const;
 const planningTags = {
   cuisines: ["Irish"],
-  dietaryFit: "household_match",
   difficulty: "easy",
   leftovers: "one_meal",
   mealTypes: ["dinner"],
   totalTimeBand: "30_to_60_minutes",
 } as const;
 const editableFields = [
-  "author",
-  "category",
-  "cook_time_minutes",
-  "cuisine",
-  "description",
-  "ingredient_lines",
-  "ingredient_quantities",
-  "ingredient_units",
-  "instructions",
   "name",
+  "author",
+  "description",
+  "language",
+  "ingredients",
+  "instructions",
+  "categories",
+  "cuisines",
+  "sourceTags",
+  "equipment",
+  "notes",
+  "times",
+  "servings",
   "nutrition",
-  "prep_time_minutes",
-  "temperature_celsius",
-  "tools",
-  "total_time_minutes",
-  "yield",
+  "dietary",
+  "media",
   "tags",
 ] as const;
 const review = {
   answers: [],
   blockers: {
     invalidFields: [],
-    unresolvedRequiredFields: ["name", "ingredient_lines", "instructions"],
+    unresolvedRequiredFields: ["name", "ingredients", "instructions"],
   },
   editableFields,
   recipe: emptyRecipe,
@@ -169,7 +166,11 @@ const timeline = Schema.decodeUnknownSync(RecipeImportTimeline)({
 const recipe = Schema.decodeUnknownSync(Recipe)({
   id: recipeId,
   object: "recipe",
-  recipe: emptyRecipe,
+  recipe: makeRecipeContent({
+    ingredients: [recipeIngredientFromText("500g flour")],
+    instructions: [recipeInstructionFromText("Bake the bread.", 1)],
+    name: "Soda bread",
+  }),
   tags: planningTags,
 });
 const processingIntentWire = Schema.encodeUnknownSync(
@@ -279,12 +280,14 @@ const makeApp = async (options: MakeAppOptions = {}) => {
     if (options.readOnly) {
       return makeRecipeReadHttpApiLayer();
     }
-    if (options.operationalRoutes !== undefined) {
-      return makeRecipeImportWorkerHttpLayer({
-        operationalRoutes: options.operationalRoutes,
-      });
+    if (options.operationalRoutes === undefined) {
+      return makeRecipeImportHttpApiLayer();
     }
-    return makeRecipeImportHttpApiLayer();
+    return Layer.mergeAll(
+      HttpRouter.addAll(options.operationalRoutes),
+      makeRecipeImportHttpApiLayer(),
+      makeRecipeImportNotFoundHttpLayer()
+    );
   })();
   return HttpRouter.toWebHandler(
     apiLayer.pipe(Layer.provide(services), HttpRouter.provideRequest(services)),

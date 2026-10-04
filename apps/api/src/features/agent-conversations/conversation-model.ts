@@ -18,6 +18,7 @@ import { OpenAIBaseResponsesTextAdapter } from "@tanstack/openai-base";
 import { Data, Option, Schema } from "effect";
 import OpenAI from "openai";
 
+import { toStrictJsonSchema } from "../../infrastructure/strict-json-schema.js";
 import { projectConversationModelContext } from "./conversation-model-context.js";
 import {
   ConversationCanonicalContext,
@@ -308,9 +309,7 @@ export const streamConversationTurn = (input: {
   const standard = Schema.toStandardJSONSchemaV1(
     Schema.toStandardSchemaV1(modelSubmission)
   );
-  const parameters = standard["~standard"].jsonSchema.input({
-    target: "draft-2020-12",
-  });
+  const parameters = toStrictJsonSchema(modelSubmission);
   const encoder = new TextEncoder();
   let adapter: ConversationTextAdapter | ConversationResponsesAdapter;
   let requestBytes: number;

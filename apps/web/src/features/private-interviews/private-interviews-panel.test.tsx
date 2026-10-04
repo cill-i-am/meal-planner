@@ -21,7 +21,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { afterEach, expect, it, vi } from "vitest";
 
 import {
@@ -73,7 +73,12 @@ class Socket implements PrivateInterviewSocket {
     if (command?.type !== type) {
       throw new Error(`Expected ${type}`);
     }
-    return command as Extract<DirectoryCommand | SessionCommand, { type: T }>;
+    return command as Extract<
+      DirectoryCommand | SessionCommand,
+      {
+        type: T;
+      }
+    >;
   }
 }
 
@@ -86,7 +91,10 @@ const list = (socket: Socket, reservations = [reservation]) =>
   });
 
 const fixture = () => {
-  const sockets: { readonly path: string; readonly socket: Socket }[] = [];
+  const sockets: {
+    readonly path: string;
+    readonly socket: Socket;
+  }[] = [];
   const storage = new Map<string, string>();
   let ordinal = 1;
   const dependencies = {
@@ -1005,11 +1013,15 @@ it("refreshes the sibling shared profile and history on canonical settlement whi
     ],
   });
   const operations = {
-    get: vi.fn().mockResolvedValue(initialProfile),
-    mutate: vi.fn().mockRejectedValue(new ProfileOperationError("ambiguous")),
+    get: vi.fn().mockReturnValue(Effect.succeed(initialProfile)),
+    mutate: vi
+      .fn()
+      .mockReturnValue(Effect.fail(new ProfileOperationError("ambiguous"))),
     versions: vi
       .fn()
-      .mockResolvedValue({ nextBeforeVersion: null, versions: [] }),
+      .mockReturnValue(
+        Effect.succeed({ nextBeforeVersion: null, versions: [] })
+      ),
   };
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -1029,7 +1041,9 @@ it("refreshes the sibling shared profile and history on canonical settlement whi
         accountId="user-a"
         operations={operations}
         organizationId={context.householdId}
-        peopleOperations={{ list: vi.fn().mockResolvedValue(roster) }}
+        peopleOperations={{
+          list: vi.fn().mockReturnValue(Effect.succeed(roster)),
+        }}
       />
     </QueryClientProvider>
   );
@@ -1070,11 +1084,13 @@ it("refreshes the sibling shared profile and history on canonical settlement whi
   await user.click(
     screen.getByRole("button", { name: "Refresh current profile" })
   );
-  operations.get.mockResolvedValue(confirmedProfile);
-  operations.versions.mockResolvedValue({
-    nextBeforeVersion: null,
-    versions: [confirmedProfile],
-  });
+  operations.get.mockReturnValue(Effect.succeed(confirmedProfile));
+  operations.versions.mockReturnValue(
+    Effect.succeed({
+      nextBeforeVersion: null,
+      versions: [confirmedProfile],
+    })
+  );
   const outcome = {
     profileVersion: confirmedProfile.version,
     type: "committed" as const,
@@ -1265,8 +1281,11 @@ it("reconciles recovered confirmation once without automatic household continuat
   expect(client.getSnapshot().confirmationStatus).toBe("idle");
   expect(client.getSnapshot().pendingConfirmation).toBe(exact.mutationId);
 });
-
-const chatHistory = (activeRun: { runId: string } | null = null) =>
+const chatHistory = (
+  activeRun: {
+    runId: string;
+  } | null = null
+) =>
   Response.json({
     activeRun,
     messages: [

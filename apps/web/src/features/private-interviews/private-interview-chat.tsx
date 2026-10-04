@@ -132,8 +132,8 @@ export const PrivateInterviewChat = ({
   }, [client, endpoint, generation]);
   const chat = useChat({
     connection,
-    onError: client.refreshSession,
-    onFinish: client.refreshSession,
+    onError: client.refreshCards,
+    onFinish: client.refreshCards,
     persistence: true,
     queue: "drop",
     threadId: sessionReference,
@@ -189,7 +189,7 @@ export const PrivateInterviewChat = ({
     } catch {
       setCancelStatus("failed");
     }
-    client.refreshSession();
+    client.refreshCards();
   };
   return (
     <section

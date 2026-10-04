@@ -33,7 +33,7 @@ import type { PrivateDiscoveryEvidenceMessage } from "./private-discovery-needs.
 export const PRIVATE_DISCOVERY_CONTINUITY_BYTES = 8192;
 export const PRIVATE_DISCOVERY_CONTINUITY_NOTE_LIMIT = 12;
 export const PRIVATE_DISCOVERY_CONTINUITY_UPDATE_LIMIT = 6;
-export const PRIVATE_DISCOVERY_REPLY_LENGTH = 2000;
+const PRIVATE_DISCOVERY_REPLY_LENGTH = 2000;
 
 const NoteKey = Schema.String.pipe(
   Schema.check(Schema.isMinLength(1), Schema.isMaxLength(32))
@@ -54,7 +54,7 @@ export const PrivateDiscoveryContinuityNote = Schema.Struct({
       Schema.isTrimmed()
     )
   ),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 const continuityBytes = (continuity: typeof ContinuityState.Type) =>
   new TextEncoder().encode(JSON.stringify(continuity)).byteLength;
 
@@ -66,8 +66,7 @@ const PrivateDiscoveryNotes = Schema.Array(PrivateDiscoveryContinuityNote).pipe(
       (notes) => new Set(notes.map((note) => note.key)).size === notes.length,
       { message: "Continuity note keys must be unique" }
     )
-  ),
-  Schema.annotate({ parseOptions: { onExcessProperty: "error" } })
+  )
 );
 const ContinuityState = Schema.Struct({
   clarification: PrivateDiscoveryClarification,
@@ -82,8 +81,7 @@ export const PrivateDiscoveryContinuity = ContinuityState.pipe(
         continuityBytes(continuity) <= PRIVATE_DISCOVERY_CONTINUITY_BYTES,
       { message: "Continuity exceeds its serialized byte limit" }
     )
-  ),
-  Schema.annotate({ parseOptions: { onExcessProperty: "error" } })
+  )
 );
 export type PrivateDiscoveryContinuity = typeof PrivateDiscoveryContinuity.Type;
 export const PrivateDiscoveryContinuityJson = Schema.fromJsonString(
@@ -97,7 +95,7 @@ export const PrivateDiscoveryContinuityUpdates = Schema.Struct({
   notes: Schema.Array(PrivateDiscoveryContinuityNote).pipe(
     Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_CONTINUITY_UPDATE_LIMIT))
   ),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export const emptyPrivateDiscoveryContinuity =
   (): PrivateDiscoveryContinuity => ({
     clarification: { _tag: "None" },
@@ -118,8 +116,7 @@ export const PrivateDiscoveryReply = Schema.Union([
     _tag: Schema.Literal("Stop"),
     evidence: PrivateDiscoveryEvidence,
   }),
-]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
-
+]);
 export type PrivateDiscoveryReplyDecision =
   | {
       readonly _tag: "Ask";
@@ -134,15 +131,20 @@ export type PrivateDiscoveryReplyDecision =
               | "extraPreparation"
             )[];
           }
-        | { readonly _tag: "ProfileClarification" }
+        | {
+            readonly _tag: "ProfileClarification";
+          }
         | {
             readonly _tag: "RequiredTopic";
             readonly topic: PrivateDiscoveryTopic;
           };
     }
-  | { readonly _tag: "Review" }
-  | { readonly _tag: "Stop" };
-
+  | {
+      readonly _tag: "Review";
+    }
+  | {
+      readonly _tag: "Stop";
+    };
 export class PrivateDiscoveryContinuationFailure extends Data.TaggedError(
   "PrivateDiscoveryContinuationFailure"
 )<{

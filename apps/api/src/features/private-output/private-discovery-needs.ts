@@ -79,7 +79,7 @@ export const MealFallbackNeed = Schema.Struct({
   reason: DescribedField,
   subject: Subject,
   subjectEvidence: PrivateDiscoveryEvidence,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type MealFallbackNeed = typeof MealFallbackNeed.Type;
 export const MealFallbackNeeds = Schema.Array(MealFallbackNeed).pipe(
   Schema.check(
@@ -162,7 +162,7 @@ export const MealFallbackNeedUpdates = Schema.Struct({
   ).pipe(
     Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_FALLBACK_UPDATE_LIMIT))
   ),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type MealFallbackNeedUpdates = typeof MealFallbackNeedUpdates.Type;
 
 export class PrivateDiscoveryNeedFailure extends Data.TaggedError(
@@ -226,7 +226,12 @@ const answered = <T>(
 const replaceFieldDisposition = (
   need: MealFallbackNeed,
   name: FieldName,
-  value: Exclude<AnyField, { readonly _tag: "Answered" }>
+  value: Exclude<
+    AnyField,
+    {
+      readonly _tag: "Answered";
+    }
+  >
 ): MealFallbackNeed => {
   switch (name) {
     case "reason": {

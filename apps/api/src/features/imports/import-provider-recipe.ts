@@ -1,6 +1,6 @@
 import { Effect, Option, Schema } from "effect";
-import { Tool } from "effect/unstable/ai";
 
+import { toStrictJsonSchema } from "../../infrastructure/strict-json-schema.js";
 import {
   isProviderKnownZeroCostFailure,
   providerKnownZeroCostFailure,
@@ -149,13 +149,13 @@ const recipePromptText = (input: RecipeEvidenceAssembly) =>
       "Copy short exact phrases from the evidence whenever possible. " +
       "Return null for an unsupported scalar and an empty array for an " +
       "unsupported list. If the content is not food or not a recipe, return " +
-      "null scalars and empty ingredientLines and instructions.",
-    "Select ingredientLines as individual ingredient phrases and instructions " +
+      "null scalars and null ingredients and instructions.",
+    "Select ingredients as objects retaining exact original ingredient phrases and instructions " +
       "as individual cooking-action phrases. When the evidence contains both " +
-      "an ingredient phrase and a cooking-action phrase, ingredientLines and " +
+      "an ingredient phrase and a cooking-action phrase, ingredients and " +
       "instructions must each contain at least one short exact supported phrase. " +
       "Do not reject recipe narration merely because quantities, timings, title, " +
-      "or other fields are missing. Include a numeric value only when the exact " +
+      "or other fields are missing. Retain exact instruction text. Ingredient quantity, unit, preparation and optional status must be supported within its original phrase. Set ingredientId and localName to null and step ingredients to empty arrays. Only include nutrition with an explicit basis and provided nutrient amounts. Do not infer dietary or allergen claims from ingredients. Set media and language to empty/null unless directly supported. Include a numeric value only when the exact " +
       "number and its unit occur in the evidence. Do not return source identity, " +
       "citations, provenance, confidence, state, reasons, or unresolved-field " +
       "bookkeeping; the trusted adapter derives those.",
@@ -200,7 +200,7 @@ const decodeRecipeCandidate = Schema.decodeUnknownResult(RecipeCandidate, {
   onExcessProperty: "error",
 });
 const recipeCandidateJsonSchema = Schema.decodeUnknownSync(Schema.Json)(
-  Tool.getJsonSchemaFromSchema(RecipeCandidate)
+  toStrictJsonSchema(RecipeCandidate)
 );
 const recipeJsonModeRequest = (
   request: RecipeEvidenceAssembly

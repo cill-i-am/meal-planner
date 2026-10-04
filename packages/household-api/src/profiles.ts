@@ -1,5 +1,5 @@
 import { Data, Schema } from "effect";
-import { HttpApiSchema } from "effect/unstable/httpapi";
+import { HttpApiSchema } from "effect/http-api";
 
 import { HouseholdPeopleAuditActorId } from "./people-http.js";
 import { HouseholdPersonId, HouseholdPersonMutationId } from "./people.js";
@@ -34,7 +34,6 @@ export const FoodPreference = Schema.Struct({
 }).pipe(
   Schema.annotate({
     identifier: "FoodPreference",
-    parseOptions: { onExcessProperty: "error" },
   })
 );
 
@@ -48,14 +47,11 @@ export const HardConstraint = Schema.Struct({
   ]),
   handling: Schema.Literals(["exclude", "requires_adaptation"]),
   label: ProfileLabel,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
-
+});
 export const ProfileFactValue = Schema.Union([
   FoodPreference,
   HardConstraint,
-  Schema.Struct({ _tag: Schema.Literal("NoKnownHardConstraints") }).pipe(
-    Schema.annotate({ parseOptions: { onExcessProperty: "error" } })
-  ),
+  Schema.Struct({ _tag: Schema.Literal("NoKnownHardConstraints") }),
 ]).pipe(Schema.annotate({ identifier: "ProfileFactValue" }));
 export type ProfileFactValue = typeof ProfileFactValue.Type;
 
@@ -112,14 +108,14 @@ export const ProfileCommand = Schema.Union([
     factId: ProfileFactId,
     replacement: Schema.NullOr(ProfileFactValue),
   }),
-]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+]);
 export type ProfileCommand = typeof ProfileCommand.Type;
 
 export const MutatePersonProfilePayload = Schema.Struct({
   command: ProfileCommand,
   expectedProfileVersion: ProfileVersion,
   mutationId: HouseholdPersonMutationId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type MutatePersonProfilePayload = typeof MutatePersonProfilePayload.Type;
 
 /** Each version is also its immutable audit record; there is no second writer. */
@@ -198,8 +194,7 @@ export const ListProfileVersionsQuery = Schema.Struct({
       Schema.check(Schema.isInt(), Schema.isGreaterThan(0))
     )
   ),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
-
+});
 export const InterviewProfileOutcome = Schema.Union([
   Schema.Struct({
     profileVersion: ProfileVersion,

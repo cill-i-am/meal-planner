@@ -110,19 +110,23 @@ export class PrivateInterviewSession extends ProductionSession {
   }
 
   commandAtTime(
-    input: { readonly generation: string; readonly payload: string },
+    input: {
+      readonly generation: string;
+      readonly payload: string;
+    },
     now: number
   ) {
     const nativeNow = Date.now;
     Date.now = () => now;
     try {
-      const socket = this.ctx
-        .getWebSockets()
-        .find(
-          (candidate) =>
-            (candidate.deserializeAttachment() as { generation?: string })
-              .generation === input.generation
-        );
+      const socket = this.ctx.getWebSockets().find(
+        (candidate) =>
+          (
+            candidate.deserializeAttachment() as {
+              generation?: string;
+            }
+          ).generation === input.generation
+      );
       if (socket !== undefined) {
         super.webSocketMessage(socket, input.payload);
       }
@@ -166,25 +170,31 @@ type SessionPort = {
   readonly state: Promise<unknown>;
   readonly ctx: {
     readonly storage: {
-      readonly sql: { readonly exec: (query: string) => Promise<unknown> };
+      readonly sql: {
+        readonly exec: (query: string) => Promise<unknown>;
+      };
     };
   };
 };
 export class PrivateInterviewDirectory extends ProductionDirectory {
   commandAtTime(
-    input: { readonly generation: string; readonly payload: string },
+    input: {
+      readonly generation: string;
+      readonly payload: string;
+    },
     now: number
   ) {
     const nativeNow = Date.now;
     Date.now = () => now;
     try {
-      const socket = this.ctx
-        .getWebSockets()
-        .find(
-          (candidate) =>
-            (candidate.deserializeAttachment() as { generation?: string })
-              .generation === input.generation
-        );
+      const socket = this.ctx.getWebSockets().find(
+        (candidate) =>
+          (
+            candidate.deserializeAttachment() as {
+              generation?: string;
+            }
+          ).generation === input.generation
+      );
       if (socket !== undefined) {
         super.webSocketMessage(socket, input.payload);
       }
@@ -260,9 +270,9 @@ export default {
     request: Request,
     env: Environment
   ): Promise<Response | NativeCloudflare.Response> {
-    const input = Schema.decodeUnknownSync(Command)(
-      JSON.parse(request.headers.get("x-test-command") ?? "null")
-    );
+    const input = Schema.decodeUnknownSync(Command, {
+      onExcessProperty: "error",
+    })(JSON.parse(request.headers.get("x-test-command") ?? "null"));
     const child = env.PrivateInterviewSession.getByName(
       await privateOutputKey("session", input.sessionReference)
     );

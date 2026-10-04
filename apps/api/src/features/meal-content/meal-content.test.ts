@@ -495,7 +495,9 @@ describe("planning content authority", () => {
       version: 1,
     };
     expect(() =>
-      Schema.decodeUnknownSync(MutatePlanningContentPayload)({
+      Schema.decodeUnknownSync(MutatePlanningContentPayload, {
+        onExcessProperty: "error",
+      })({
         command: {
           _tag: "PutPreparedPortion",
           value: { ...portionWrite, reservations: [] },

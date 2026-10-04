@@ -1,6 +1,8 @@
 /* eslint-disable max-classes-per-file -- Native namespaces share one lifecycle implementation and export module. */
+
 import type * as NativeCloudflare from "@cloudflare/workers-types";
 import { Agent } from "agents";
+import { instrumentDrizzle } from "cloudflare-drizzle-tracing";
 import { and, eq, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import { migrate } from "drizzle-orm/durable-sqlite/migrator";
@@ -38,7 +40,9 @@ interface OutputLifecycleEnvironment extends Cloudflare.Env {
 
 /** Serialize output registration with canonical writers, without owning authority. */
 class OutputLifecycle extends Agent<OutputLifecycleEnvironment> {
-  #database = drizzle(this.ctx.storage);
+  #database = instrumentDrizzle(drizzle(this.ctx.storage), {
+    attributes: { "db.namespace": "private-output" },
+  });
 
   constructor(
     context: NativeCloudflare.DurableObjectState,

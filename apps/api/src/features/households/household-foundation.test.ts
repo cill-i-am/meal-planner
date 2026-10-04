@@ -1,7 +1,6 @@
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { ImportIntentExecutionGeneration } from "../imports/import-intent-transition.js";
 import { ImportId } from "../imports/import.contracts.js";
 import { HouseholdImportWorkflowOutboxPayload } from "./foundation/import-workflow-admission.contract.js";
 import { routeAdmittedHouseholdCommand } from "./household-command-router.js";
@@ -22,7 +21,10 @@ import {
   HouseholdDigest,
 } from "./shared-kernel/authority-services.js";
 import { makeHouseholdAuthorityTestLayer } from "./shared-kernel/authority-services.live.js";
-import { makeImportWorkflowIdentity } from "./shared-kernel/workflow-identity.js";
+import {
+  ImportIntentExecutionGeneration,
+  makeImportWorkflowIdentity,
+} from "./shared-kernel/workflow-identity.js";
 
 const authorityLayer = makeHouseholdAuthorityTestLayer({
   identities: ["dispatch-test-1"],

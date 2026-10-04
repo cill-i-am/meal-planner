@@ -16,7 +16,7 @@ export const MemberDepartureWorkflowInput = Schema.Struct({
   ),
   operationId: HouseholdMemberDepartureOperationId,
   organizationId: HouseholdOrganizationId,
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type MemberDepartureWorkflowInput =
   typeof MemberDepartureWorkflowInput.Type;
 export type MemberDepartureWorkflowInputEncoded =
@@ -31,7 +31,7 @@ export const MemberDepartureRemovalOutcome = Schema.Struct({
     "returned_success",
     "unknown",
   ]),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+});
 export type MemberDepartureRemovalOutcome =
   typeof MemberDepartureRemovalOutcome.Type;
 

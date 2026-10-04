@@ -4,20 +4,12 @@ export interface InvalidImportRequest {
   readonly _tag: "InvalidImportRequest";
 }
 
-export interface InvalidImportId {
-  readonly _tag: "InvalidImportId";
-}
-
 export interface InvalidSource {
   readonly _tag: "InvalidSource";
 }
 
 export interface SourceIdentityUnavailable {
   readonly _tag: "SourceIdentityUnavailable";
-}
-
-export interface SourceValidationUnavailable {
-  readonly _tag: "SourceValidationUnavailable";
 }
 
 export interface UnauthorizedImportCaller {
@@ -64,8 +56,6 @@ export interface CarouselProcessingUnavailable {
 
 export type SourceIdentityError = InvalidSource | SourceIdentityUnavailable;
 
-export type SourceAvailabilityError = SourceValidationUnavailable;
-
 export const invalidImportRequest = (): InvalidImportRequest => ({
   _tag: "InvalidImportRequest",
 });
@@ -74,10 +64,6 @@ export const invalidSource = (): InvalidSource => ({ _tag: "InvalidSource" });
 
 export const sourceIdentityUnavailable = (): SourceIdentityUnavailable => ({
   _tag: "SourceIdentityUnavailable",
-});
-
-export const sourceValidationUnavailable = (): SourceValidationUnavailable => ({
-  _tag: "SourceValidationUnavailable",
 });
 
 export const unauthorizedImportCaller = (): UnauthorizedImportCaller => ({
@@ -104,8 +90,3 @@ export const workflowStartRefused = (): WorkflowStartRefused => ({
 export const importTransitionRejected = (): ImportTransitionRejected => ({
   _tag: "ImportTransitionRejected",
 });
-
-export const carouselProcessingUnavailable =
-  (): CarouselProcessingUnavailable => ({
-    _tag: "CarouselProcessingUnavailable",
-  });

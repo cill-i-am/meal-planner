@@ -1,21 +1,23 @@
-import { HttpRouter } from "effect/unstable/http";
+import { Effect, Layer } from "effect";
+import { HttpRouter, HttpServerResponse } from "effect/http";
 
 import { HealthRoutes } from "../features/health/health.routes.js";
 import { TescoCatalogueRoutes } from "../features/tesco/catalogue/catalogue.routes.js";
-import { json } from "./http/responses.js";
 
-export const AppRoutes = HttpRouter.addAll([
-  ...HealthRoutes,
-  ...TescoCatalogueRoutes,
-  HttpRouter.route(
-    "*",
-    "*",
-    json(
-      {
-        error: "NotFound",
-        message: "Route not found",
-      },
-      404
-    )
-  ),
-]);
+export const AppRoutes = Layer.merge(
+  TescoCatalogueRoutes,
+  HttpRouter.addAll([
+    ...HealthRoutes,
+    HttpRouter.route(
+      "*",
+      "*",
+      HttpServerResponse.json(
+        {
+          error: "NotFound",
+          message: "Route not found",
+        },
+        { status: 404 }
+      ).pipe(Effect.orDie)
+    ),
+  ])
+);

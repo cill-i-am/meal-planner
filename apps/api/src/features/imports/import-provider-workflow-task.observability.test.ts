@@ -24,7 +24,10 @@ const captureAttempt = async (attempt: number) => {
   const exit = await Effect.runPromiseExit(
     runProviderTaskAttempt(
       "speech",
-      Effect.fail({ code: "timeout" }),
+      Effect.fail({
+        code: "timeout",
+        privateDetail: "private-provider-result",
+      }),
       () => "unused",
       { correlationId }
     ).pipe(
@@ -79,6 +82,21 @@ describe("provider task observability", () => {
     const { entries, exit } = await captureAttempt(1);
 
     expect(exit._tag).toBe("Failure");
+    if (exit._tag === "Failure") {
+      expect(exit.cause.reasons).toEqual([
+        expect.objectContaining({
+          _tag: "Fail",
+          error: {
+            _tag: "RetryableProviderTaskFailure",
+            code: "timeout",
+            stage: "speech",
+          },
+        }),
+      ]);
+      expect(JSON.stringify(exit.cause)).not.toContain(
+        "private-provider-result"
+      );
+    }
     expect(entries).toEqual([
       [
         {

@@ -1,7 +1,7 @@
 import type { Effect } from "effect";
 import { Schema } from "effect";
-import type { HttpApiClient } from "effect/unstable/httpapi";
-import { OpenApi } from "effect/unstable/httpapi";
+import type { HttpApiClient } from "effect/http-api";
+import { OpenApi } from "effect/http-api";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {

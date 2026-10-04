@@ -11,7 +11,7 @@ import {
   Semaphore,
   Stream,
 } from "effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import { MaximumAcquisitionAttemptSeconds } from "./import-media.model.js";
 

@@ -1,6 +1,6 @@
 import * as Cloudflare from "alchemy/Cloudflare";
 import { Cause, Effect } from "effect";
-import { ClientAbort } from "effect/unstable/http/HttpServerError";
+import { ClientAbort } from "effect/http/HttpServerError";
 
 /** Minimal AbortSignal capability needed by the Worker request boundary. */
 export interface RequestCancellationSignal {

@@ -31,7 +31,9 @@ export const useInvitationResponse = (invitationId: InvitationId) => {
     submit: async (decision: "accept" | "decline") => {
       const command =
         retained.pending ??
-        Schema.decodeUnknownSync(InvitationResponse)({
+        Schema.decodeUnknownSync(InvitationResponse, {
+          onExcessProperty: "error",
+        })({
           decision,
           mutationId: crypto.randomUUID(),
         });

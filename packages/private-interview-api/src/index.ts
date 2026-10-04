@@ -7,6 +7,17 @@ import {
 } from "@meal-planner/household-api";
 import { Schema } from "effect";
 
+export {
+  PrivateConfirmationApi,
+  PrivateConfirmationApiClient,
+  PrivateConfirmationMetadata,
+  PrivateConfirmationRequestGuard,
+  PrivateConfirmationForbidden,
+  PrivateConfirmationUnauthorized,
+  PrivateConfirmationUnavailable,
+  makePrivateConfirmationApiClientLayer,
+} from "./confirmation-http.js";
+
 export const MAX_PRIVATE_FRAME_BYTES = 32_768;
 export const MAX_MESSAGE_LENGTH = 4000;
 export const MAX_PAGE_SIZE = 25;
@@ -80,7 +91,7 @@ export const ProfileCardChange = Schema.Union([
     factId: ProfileFactId,
     replacement: Schema.NullOr(ProfileFactValue),
   }),
-]).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+]);
 export type ProfileCardChange = typeof ProfileCardChange.Type;
 export { InterviewProfileOutcome as ConfirmationOutcome } from "@meal-planner/household-api";
 export const ProfileCard = Schema.Struct({

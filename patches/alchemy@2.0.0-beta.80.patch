@@ -1,0 +1,887 @@
+diff --git a/lib/Cloudflare/D1/ApplyMigrations.d.ts b/lib/Cloudflare/D1/ApplyMigrations.d.ts
+index 0c993525..809c5be5 100644
+--- a/lib/Cloudflare/D1/ApplyMigrations.d.ts
++++ b/lib/Cloudflare/D1/ApplyMigrations.d.ts
+@@ -30 +30,2 @@ export declare const makeD1MigrationExecutor: <E>(raw: D1SqlExecutor<E>) => SqlE
+-//# sourceMappingURL=ApplyMigrations.d.ts.map
+\ No newline at end of file
++//# sourceMappingURL=ApplyMigrations.d.ts.map
++export declare const makeCloudD1MigrationExecutor: (options: { accountId: string; databaseId: string }) => Effect.Effect<SqlExecutor, never, import("@distilled.cloud/cloudflare/d1").CloudflareOpContext>;
+diff --git a/lib/Cloudflare/D1/ApplyMigrations.js b/lib/Cloudflare/D1/ApplyMigrations.js
+index 96924932..dcac2ad7 100644
+--- a/lib/Cloudflare/D1/ApplyMigrations.js
++++ b/lib/Cloudflare/D1/ApplyMigrations.js
+@@ -0,0 +1,2 @@
++import * as d1 from "@distilled.cloud/cloudflare/d1";
++import { importD1Database } from "./ImportDatabase.js";
+@@ -29 +31,16 @@ export const makeD1MigrationExecutor = (raw) => ({
+-//# sourceMappingURL=ApplyMigrations.js.map
+\ No newline at end of file
++/** Preserve compound SQL and commit each migration with its ledger atomically. */
++export const makeCloudD1MigrationExecutor = (options) => Effect.gen(function* () {
++    const queryDb = yield* d1.queryDatabase;
++    const services = yield* Effect.context();
++    const executor = makeD1MigrationExecutor((sql) => queryDb({ ...options, sql }));
++    return {
++        ...executor,
++        batch: (statements) => importD1Database({
++            ...options,
++            sqlData: statements.map((statement) => statement.trim())
++                .filter((statement) => statement.length > 0)
++                .map((statement) => statement.endsWith(";") ? statement : `${statement};`)
++                .join("\n"),
++        }).pipe(Effect.provideContext(services), Effect.asVoid, Effect.mapError((cause) => new MigrationError({ message: "D1 migration import failed", cause }))),
++    };
++});
+diff --git a/lib/Cloudflare/D1/Database.js b/lib/Cloudflare/D1/Database.js
+index 47ddc1d0..b1428b75 100644
+--- a/lib/Cloudflare/D1/Database.js
++++ b/lib/Cloudflare/D1/Database.js
+@@ -6 +5,0 @@ import * as Stream from "effect/Stream";
+-import * as HttpClient from "effect/http/HttpClient";
+@@ -19 +18 @@ import { generateLocalId, LOCAL_PROVIDERS_URL, localRuntimeServices, } from "../
+-import { makeD1MigrationExecutor } from "./ApplyMigrations.js";
++import { makeCloudD1MigrationExecutor, makeD1MigrationExecutor } from "./ApplyMigrations.js";
+@@ -348,2 +347 @@ export const ProviderLive = () => Provider.succeed(Database, {
+-                    const queryDb = yield* d1.queryDatabase;
+-                    yield* apply(makeD1MigrationExecutor((sql) => queryDb({ accountId: acct, databaseId, sql })));
++                    yield* apply(yield* makeCloudD1MigrationExecutor({ accountId: acct, databaseId }));
+@@ -557 +554,0 @@ const runImports = (accountId, databaseId, importFiles, rootDir, previous) => Ef
+-//# sourceMappingURL=Database.js.map
+\ No newline at end of file
+diff --git a/lib/Cloudflare/Queues/Consumer.d.ts b/lib/Cloudflare/Queues/Consumer.d.ts
+index ba85c40f..35e75d1d 100644
+--- a/lib/Cloudflare/Queues/Consumer.d.ts
++++ b/lib/Cloudflare/Queues/Consumer.d.ts
+@@ -22,0 +23,8 @@ export type ConsumerProps = {
++    /**
++     * Physical ID of the dead letter queue.
++     *
++     * Required for the guarded delete-and-recreate compatibility fallback when
++     * Cloudflare accepts an update but omits the requested dead letter queue on
++     * readback.
++     */
++    deadLetterQueueId?: string;
+diff --git a/lib/Cloudflare/Queues/Consumer.js b/lib/Cloudflare/Queues/Consumer.js
+index de1bff8e..70ae3f07 100644
+--- a/lib/Cloudflare/Queues/Consumer.js
++++ b/lib/Cloudflare/Queues/Consumer.js
+@@ -101,0 +102,16 @@ Effect.catchTag("QueueNotFound", () => Effect.succeed(undefined)));
++const observeWorkerConsumer = Effect.fn(function* (options) {
++    if (isLiveId(options.consumerId)) {
++        const fetched = yield* queues
++            .getConsumer({
++            accountId: options.accountId,
++            queueId: options.queueId,
++            consumerId: options.consumerId,
++        })
++            .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.succeed(undefined)));
++        const observed = fetched ? toObserved(fetched) : undefined;
++        if (observed) {
++            return observed;
++        }
++    }
++    return yield* findWorkerConsumer(options.accountId, options.queueId);
++});
+@@ -143 +159 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+-    diff: Effect.fn(function* ({ olds, news, output }) {
++    diff: Effect.fn(function* ({ news, output }) {
+@@ -147,3 +163,3 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+-        // If either contain `dev:` IDs, we need to update to live ones.
+-        // The live resource doesn't exist yet, so there's no need to replace even when we otherwise would.
+-        if (!isLiveId(output?.queueId) || !isLiveId(output?.consumerId)) {
++        // A dev queue does not exist in the live account, so there is
++        // nothing physical to observe yet.
++        if (!isLiveId(output?.queueId)) {
+@@ -159,0 +176,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
++        // Stable resources are diffed directly from persisted state by
++        // Plan.make; provider.read is not called on that path. Observe the
++        // physical consumer here so out-of-band DLQ/settings drift cannot be
++        // hidden by optimistic cached props. This is read-only and remains
++        // Consumer-scoped.
++        const observed = yield* observeWorkerConsumer({
++            accountId,
++            queueId: output.queueId,
++            consumerId: output.consumerId,
++        });
++        if (!observed ||
++            !isLiveId(output.consumerId) ||
++            observed.consumerId !== output.consumerId) {
++            return { action: "update" };
++        }
+@@ -171,3 +202,3 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+-        if (JSON.stringify(olds.settings ?? {}) !==
+-            JSON.stringify(news.settings ?? {}) ||
+-            (olds.deadLetterQueue ?? undefined) !==
++        if (JSON.stringify(normalizeConsumerSettings(observed.settings)) !==
++            JSON.stringify(normalizeConsumerSettings(news.settings)) ||
++            observed.deadLetterQueue !==
+@@ -175,2 +206 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+-            (output?.scriptName !== undefined &&
+-                news.scriptName !== output.scriptName)) {
++            (observed.scriptName !== undefined && news.scriptName !== observed.scriptName)) {
+@@ -180 +210 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+-    reconcile: Effect.fn(function* ({ news, output }) {
++    reconcile: Effect.fn(function* ({ news, olds, output }) {
+@@ -229 +259 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+-        // Owned consumer pointing at a different script: rebuild
++        // Owned consumer pointing at a different scriptName: rebuild
+@@ -373,3 +403,8 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+-        yield* queues.getConsumer({ accountId: acct, queueId, consumerId }).pipe(Effect.flatMap((fetched) => toObserved(fetched)?.scriptName === news.scriptName
+-            ? Effect.void
+-            : Effect.fail("ScriptUnbound")), Effect.catchTag("ConsumerNotFound", () => Effect.fail("ScriptUnbound")), Effect.retry({
++        let converged = yield* queues
++            .getConsumer({ accountId: acct, queueId, consumerId })
++            .pipe(Effect.flatMap((fetched) => {
++            const observed = toObserved(fetched);
++            return observed?.scriptName === news.scriptName
++                ? Effect.succeed(observed)
++                : Effect.fail("ScriptUnbound");
++        }), Effect.catchTag("ConsumerNotFound", () => Effect.fail("ScriptUnbound")), Effect.retry({
+@@ -378,0 +414,63 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
++        const desiredDeadLetterQueue = news.deadLetterQueue ?? undefined;
++        const deadLetterQueueIdentityUnchanged = isLiveId(olds?.deadLetterQueueId) &&
++            isLiveId(news.deadLetterQueueId) &&
++            olds?.deadLetterQueueId === news.deadLetterQueueId;
++        const settingsConverged = JSON.stringify(normalizeConsumerSettings(converged.settings)) ===
++            JSON.stringify(normalizeConsumerSettings(news.settings));
++        const canReplaceForMissingDeadLetterQueue = deadLetterQueueIdentityUnchanged &&
++            owned &&
++            observed?.consumerId === consumerId &&
++            output?.consumerId === consumerId &&
++            observed.scriptName === news.scriptName &&
++            observed.deadLetterQueue === undefined &&
++            JSON.stringify(normalizeConsumerSettings(observed.settings)) ===
++                JSON.stringify(normalizeConsumerSettings(news.settings)) &&
++            desiredDeadLetterQueue !== undefined &&
++            converged.consumerId === consumerId &&
++            converged.scriptName === news.scriptName &&
++            converged.deadLetterQueue === undefined &&
++            settingsConverged;
++        if (canReplaceForMissingDeadLetterQueue) {
++            yield* verifyConsumerReplacementSafety({
++                accountId: acct,
++                consumerId,
++                deadLetterQueueId: news.deadLetterQueueId,
++                deadLetterQueueName: desiredDeadLetterQueue,
++                queueId,
++                scriptName: news.scriptName,
++                settings: news.settings,
++            });
++            yield* queues.deleteConsumer({
++                accountId: acct,
++                queueId,
++                consumerId,
++            });
++            yield* waitForConsumerDeletion(acct, queueId, consumerId);
++            const replacement = yield* queues.createConsumer({
++                accountId: acct,
++                queueId,
++                scriptName: news.scriptName,
++                type: "worker",
++                deadLetterQueue: desiredDeadLetterQueue,
++                settings: news.settings,
++            });
++            const replacementConsumerId = replacement.consumerId;
++            if (!isLiveId(replacementConsumerId) ||
++                replacementConsumerId === consumerId) {
++                return yield* Effect.fail("ConsumerReplacementUnconverged");
++            }
++            converged = yield* readConvergedConsumer({
++                accountId: acct,
++                consumerId: replacementConsumerId,
++                queueId,
++                scriptName: news.scriptName,
++            });
++            consumerId = replacementConsumerId;
++        }
++        if (converged.consumerId !== consumerId ||
++            converged.scriptName !== news.scriptName ||
++            converged.deadLetterQueue !== desiredDeadLetterQueue ||
++            JSON.stringify(normalizeConsumerSettings(converged.settings)) !==
++                JSON.stringify(normalizeConsumerSettings(news.settings))) {
++            return yield* Effect.fail("ConsumerUnconverged");
++        }
+@@ -380 +478 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+-            consumerId,
++            consumerId: converged.consumerId,
+@@ -382 +480 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+-            scriptName: news.scriptName,
++            scriptName: converged.scriptName,
+@@ -384,2 +482,2 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+-            deadLetterQueue: news.deadLetterQueue,
+-            settings: news.settings,
++            deadLetterQueue: converged.deadLetterQueue,
++            settings: converged.settings,
+@@ -427 +525,2 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+-            if (fetched) {
++            const observed = fetched ? toObserved(fetched) : undefined;
++            if (observed) {
+@@ -429 +528 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+-                    consumerId: fetched.consumerId,
++                    consumerId: observed.consumerId,
+@@ -433,2 +532,2 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+-                    deadLetterQueue: output.deadLetterQueue,
+-                    settings: output.settings,
++                    deadLetterQueue: observed.deadLetterQueue,
++                    settings: observed.settings,
+@@ -450,2 +549,2 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+-                    deadLetterQueue: output.deadLetterQueue,
+-                    settings: output.settings,
++                    deadLetterQueue: match.deadLetterQueue,
++                    settings: match.settings,
+@@ -459 +558,14 @@ const toObserved = (c) => c.consumerId && c.type === "worker"
+-    ? { consumerId: c.consumerId, scriptName: c.scriptName ?? undefined }
++    ? {
++        consumerId: c.consumerId,
++        deadLetterQueue: c.deadLetterQueue ?? undefined,
++        scriptName: c.scriptName ?? undefined,
++        settings: c.settings
++            ? {
++                batchSize: c.settings.batchSize ?? undefined,
++                maxConcurrency: c.settings.maxConcurrency ?? undefined,
++                maxRetries: c.settings.maxRetries ?? undefined,
++                maxWaitTimeMs: c.settings.maxWaitTimeMs ?? undefined,
++                retryDelay: c.settings.retryDelay ?? undefined,
++            }
++            : undefined,
++    }
+@@ -460,0 +573,80 @@ const toObserved = (c) => c.consumerId && c.type === "worker"
++const normalizeConsumerSettings = (settings) => ({
++    batchSize: settings?.batchSize ?? 10,
++    maxConcurrency: settings?.maxConcurrency,
++    maxRetries: settings?.maxRetries ?? 3,
++    maxWaitTimeMs: settings?.maxWaitTimeMs ?? 5000,
++    retryDelay: settings?.retryDelay ?? 0,
++});
++const replacementUnsafe = (reason) => Effect.fail({
++    _tag: "ConsumerReplacementUnsafe",
++    reason,
++});
++const verifyConsumerReplacementSafety = Effect.fn(function* (options) {
++    if (!isLiveId(options.deadLetterQueueId)) {
++        return yield* replacementUnsafe("dead-letter-queue-id-missing");
++    }
++    const sourceQueue = yield* queues.getQueue({
++        accountId: options.accountId,
++        queueId: options.queueId,
++    });
++    const workerConsumers = (sourceQueue.consumers ?? []).flatMap((consumer) => {
++        const observed = toObserved(consumer);
++        return observed ? [observed] : [];
++    });
++    if (sourceQueue.queueId !== options.queueId ||
++        sourceQueue.producersTotalCount !== 0 ||
++        (sourceQueue.producers?.length ?? 0) !== 0 ||
++        sourceQueue.consumersTotalCount !== 1 ||
++        workerConsumers.length !== 1 ||
++        workerConsumers[0]?.consumerId !== options.consumerId ||
++        workerConsumers[0]?.scriptName !== options.scriptName ||
++        workerConsumers[0]?.deadLetterQueue !== undefined ||
++        JSON.stringify(normalizeConsumerSettings(workerConsumers[0]?.settings)) !==
++            JSON.stringify(normalizeConsumerSettings(options.settings))) {
++        return yield* replacementUnsafe("source-queue-ownership-or-activity");
++    }
++    const sourceMetrics = yield* queues.getMetricsQueue({
++        accountId: options.accountId,
++        queueId: options.queueId,
++    });
++    if (sourceMetrics.backlogCount !== 0 || sourceMetrics.backlogBytes !== 0) {
++        return yield* replacementUnsafe("source-queue-backlog");
++    }
++    const deadLetterQueue = yield* queues.getQueue({
++        accountId: options.accountId,
++        queueId: options.deadLetterQueueId,
++    });
++    if (deadLetterQueue.queueId !== options.deadLetterQueueId ||
++        deadLetterQueue.queueName !== options.deadLetterQueueName ||
++        deadLetterQueue.producersTotalCount !== 0 ||
++        (deadLetterQueue.producers?.length ?? 0) !== 0 ||
++        deadLetterQueue.consumersTotalCount !== 0 ||
++        (deadLetterQueue.consumers?.length ?? 0) !== 0) {
++        return yield* replacementUnsafe("dead-letter-queue-identity-or-activity");
++    }
++    const deadLetterMetrics = yield* queues.getMetricsQueue({
++        accountId: options.accountId,
++        queueId: options.deadLetterQueueId,
++    });
++    if (deadLetterMetrics.backlogCount !== 0 ||
++        deadLetterMetrics.backlogBytes !== 0) {
++        return yield* replacementUnsafe("dead-letter-queue-backlog");
++    }
++});
++const waitForConsumerDeletion = (accountId, queueId, consumerId) => queues
++    .getConsumer({ accountId, queueId, consumerId })
++    .pipe(Effect.flatMap(() => Effect.fail("ConsumerStillAttached")), Effect.catchTag("ConsumerNotFound", () => Effect.void), Effect.retry({
++    while: (error) => error === "ConsumerStillAttached",
++    schedule: queueHandlerReadinessSchedule,
++}));
++const readConvergedConsumer = (options) => queues
++    .getConsumer(options)
++    .pipe(Effect.flatMap((fetched) => {
++    const observed = toObserved(fetched);
++    return observed?.scriptName === options.scriptName
++        ? Effect.succeed(observed)
++        : Effect.fail("ScriptUnbound");
++}), Effect.catchTag("ConsumerNotFound", () => Effect.fail("ScriptUnbound")), Effect.retry({
++    while: (error) => error === "ScriptUnbound",
++    schedule: queueHandlerReadinessSchedule,
++}));
+diff --git a/lib/Cloudflare/Queues/EventSource.d.ts b/lib/Cloudflare/Queues/EventSource.d.ts
+index 98e8a3a6..2bdf6e5d 100644
+--- a/lib/Cloudflare/Queues/EventSource.d.ts
++++ b/lib/Cloudflare/Queues/EventSource.d.ts
+@@ -6,0 +7 @@ import * as Stream from "effect/Stream";
++import type { Input } from "../../Input.ts";
+@@ -33 +34,3 @@ export interface MessagesProps {
+-    deadLetterQueue?: string;
++    deadLetterQueue?: Input<string>;
++    /** Physical ID paired with `deadLetterQueue` for guarded reconciliation. */
++    deadLetterQueueId?: Input<string>;
+diff --git a/lib/Cloudflare/Queues/EventSource.js b/lib/Cloudflare/Queues/EventSource.js
+index 4f79fdff..cfab5331 100644
+--- a/lib/Cloudflare/Queues/EventSource.js
++++ b/lib/Cloudflare/Queues/EventSource.js
+@@ -70,0 +71 @@ export const EventSourceLive = Layer.effect(EventSource, Effect.gen(function* ()
++                    deadLetterQueueId: props.deadLetterQueueId,
+diff --git a/lib/Cloudflare/Workers/Sources/Rolldown.d.ts b/lib/Cloudflare/Workers/Sources/Rolldown.d.ts
+index 3cf80d29..6e98f5bc 100644
+--- a/lib/Cloudflare/Workers/Sources/Rolldown.d.ts
++++ b/lib/Cloudflare/Workers/Sources/Rolldown.d.ts
+@@ -13,0 +14,2 @@ export interface WorkerBuildOptions extends Bundle.BundleConfig {
++    /** Named native exports retained beside generated Effect bridges. */
++    nativeExports?: readonly string[];
+@@ -53 +55 @@ export declare const makeEffectVirtualEntry: (exports: Record<string, WorkerExpo
+-}) => (importPath: string) => string;
++}, nativeExports?: readonly string[]) => (importPath: string) => string;
+diff --git a/lib/Cloudflare/Workers/Sources/Rolldown.js b/lib/Cloudflare/Workers/Sources/Rolldown.js
+index 2792c017..561ede17 100644
+--- a/lib/Cloudflare/Workers/Sources/Rolldown.js
++++ b/lib/Cloudflare/Workers/Sources/Rolldown.js
+@@ -134 +134 @@ export const WorkerBundle = Effect.gen(function* () {
+-                        virtualEntryPlugin(makeEffectVirtualEntry(options.entry.exports, options.stack)),
++                        virtualEntryPlugin(makeEffectVirtualEntry(options.entry.exports, options.stack, options.extraOptions?.nativeExports)),
+@@ -174 +174 @@ export const WorkerBundle = Effect.gen(function* () {
+-export const makeEffectVirtualEntry = (exports, stack) => {
++export const makeEffectVirtualEntry = (exports, stack, nativeExports = []) => {
+@@ -188,0 +189,5 @@ export const makeEffectVirtualEntry = (exports, stack) => {
++    for (const name of nativeExports) {
++        if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) || Object.hasOwn(exports, name)) {
++            throw new Error(`Invalid or duplicate native Worker export: ${name}`);
++        }
++    }
+@@ -209,0 +215 @@ export default makeWorkerBridge(WorkerEntrypoint, meta);
++${nativeExports.length > 0 ? `export { ${nativeExports.join(", ")} } from ${JSON.stringify(importPath)};` : ""}
+diff --git a/lib/Cloudflare/Workers/WorkerProvider.js b/lib/Cloudflare/Workers/WorkerProvider.js
+index 622b336b..2b137099 100644
+--- a/lib/Cloudflare/Workers/WorkerProvider.js
++++ b/lib/Cloudflare/Workers/WorkerProvider.js
+@@ -800 +800,2 @@ const workerAssetConfigForHash = (assets) => {
+-const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, selfUrl, }) => resolveMetadataHashValue({
++/** @internal exported for provider-path regression testing. */
++export const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, selfUrl, }) => resolveMetadataHashValue({
+@@ -811,4 +812,2 @@ const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, selfUrl,
+-    bindings: bindings.map((binding) => ({
+-        sid: binding.sid,
+-        data: binding.data,
+-    })),
++    bindings: bindings.flatMap((binding) => binding.data.bindings ?? []),
++    containers: Array.from(new Set(bindings.flatMap((binding) => (binding.data.containers ?? []).map((container) => container.className)))).sort(),
+@@ -816 +815 @@ const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, selfUrl,
+-    cache: props.cache,
++    cache: props.cache ?? getCacheBinding(bindings),
+@@ -3616 +3615,3 @@ export const LiveWorkerProvider = () => Provider.effect(Worker, Effect.gen(funct
+-            if (!isResolved(news))
++            // Plan invokes diff before and after binding Outputs resolve. Hash
++            // only the final binding shape used by reconcile.
++            if (!isResolved(news) || !isResolved(newBindings))
+@@ -4705 +4705,0 @@ const validateWorkerTags = (scriptName, tags, alchemyTagCount) => Effect.gen(fun
+-//# sourceMappingURL=WorkerProvider.js.map
+\ No newline at end of file
+diff --git a/src/Cloudflare/D1/ApplyMigrations.ts b/src/Cloudflare/D1/ApplyMigrations.ts
+index aa79c99b..6b30d08f 100644
+--- a/src/Cloudflare/D1/ApplyMigrations.ts
++++ b/src/Cloudflare/D1/ApplyMigrations.ts
+@@ -0,0 +1,2 @@
++import * as d1 from "@distilled.cloud/cloudflare/d1";
++import { importD1Database } from "./ImportDatabase.ts";
+@@ -79,0 +82,24 @@ export const makeD1MigrationExecutor = <E>(
++
++/** Preserve compound SQL and commit each migration with its ledger atomically. */
++export const makeCloudD1MigrationExecutor = (options: {
++  accountId: string;
++  databaseId: string;
++}): Effect.Effect<SqlExecutor, never, d1.CloudflareOpContext> => Effect.gen(function* () {
++  const queryDb = yield* d1.queryDatabase;
++  const services = yield* Effect.context<Effect.Services<ReturnType<typeof importD1Database>>>();
++  const executor = makeD1MigrationExecutor((sql) => queryDb({ ...options, sql }));
++  return {
++    ...executor,
++    batch: (statements: ReadonlyArray<string>) => importD1Database({
++      ...options,
++      sqlData: statements.map((statement) => statement.trim())
++        .filter((statement) => statement.length > 0)
++        .map((statement) => statement.endsWith(";") ? statement : `${statement};`)
++        .join("\n"),
++    }).pipe(
++      Effect.provideContext(services),
++      Effect.asVoid,
++      Effect.mapError((cause) => new MigrationError({ message: "D1 migration import failed", cause })),
++    ),
++  } satisfies SqlExecutor;
++});
+diff --git a/src/Cloudflare/D1/Database.ts b/src/Cloudflare/D1/Database.ts
+index f8a163f5..60d0fcc4 100644
+--- a/src/Cloudflare/D1/Database.ts
++++ b/src/Cloudflare/D1/Database.ts
+@@ -33 +33 @@ import type { Providers } from "../Providers.ts";
+-import { makeD1MigrationExecutor } from "./ApplyMigrations.ts";
++import { makeCloudD1MigrationExecutor, makeD1MigrationExecutor } from "./ApplyMigrations.ts";
+@@ -526,6 +526 @@ export const ProviderLive = () =>
+-                const queryDb = yield* d1.queryDatabase;
+-                yield* apply(
+-                  makeD1MigrationExecutor((sql) =>
+-                    queryDb({ accountId: acct, databaseId, sql }),
+-                  ),
+-                );
++                yield* apply(yield* makeCloudD1MigrationExecutor({ accountId: acct, databaseId }));
+diff --git a/src/Cloudflare/Queues/Consumer.ts b/src/Cloudflare/Queues/Consumer.ts
+index 2f2ed17b..393ef252 100644
+--- a/src/Cloudflare/Queues/Consumer.ts
++++ b/src/Cloudflare/Queues/Consumer.ts
+@@ -37,0 +38,8 @@ export type ConsumerProps = {
++  /**
++   * Physical ID of the dead letter queue.
++   *
++   * Required for the guarded delete-and-recreate compatibility fallback when
++   * Cloudflare accepts an update but omits the requested dead letter queue on
++   * readback.
++   */
++  deadLetterQueueId?: string;
+@@ -222,0 +231,23 @@ const findWorkerConsumer = (acct: string, queueId: string) =>
++const observeWorkerConsumer = Effect.fn(function* (options: {
++  accountId: string;
++  queueId: string;
++  consumerId?: string;
++}) {
++  if (isLiveId(options.consumerId)) {
++    const fetched = yield* queues
++      .getConsumer({
++        accountId: options.accountId,
++        queueId: options.queueId,
++        consumerId: options.consumerId,
++      })
++      .pipe(
++        Effect.catchTag("ConsumerNotFound", () => Effect.succeed(undefined)),
++      );
++    const observed = fetched ? toObserved(fetched) : undefined;
++    if (observed) {
++      return observed;
++    }
++  }
++  return yield* findWorkerConsumer(options.accountId, options.queueId);
++});
++
+@@ -285 +316 @@ export const ConsumerProviderLive = () =>
+-    diff: Effect.fn(function* ({ olds, news, output }) {
++    diff: Effect.fn(function* ({ news, output }) {
+@@ -288,3 +319,3 @@ export const ConsumerProviderLive = () =>
+-      // If either contain `dev:` IDs, we need to update to live ones.
+-      // The live resource doesn't exist yet, so there's no need to replace even when we otherwise would.
+-      if (!isLiveId(output?.queueId) || !isLiveId(output?.consumerId)) {
++      // A dev queue does not exist in the live account, so there is
++      // nothing physical to observe yet.
++      if (!isLiveId(output?.queueId)) {
+@@ -300,0 +332,17 @@ export const ConsumerProviderLive = () =>
++      // Stable resources are diffed directly from persisted state by
++      // Plan.make; provider.read is not called on that path. Observe the
++      // physical consumer here so out-of-band DLQ/settings drift cannot be
++      // hidden by optimistic cached props. This is read-only and remains
++      // Consumer-scoped.
++      const observed = yield* observeWorkerConsumer({
++        accountId,
++        queueId: output.queueId,
++        consumerId: output.consumerId,
++      });
++      if (
++        !observed ||
++        !isLiveId(output.consumerId) ||
++        observed.consumerId !== output.consumerId
++      ) {
++        return { action: "update" };
++      }
+@@ -313,3 +361,3 @@ export const ConsumerProviderLive = () =>
+-        JSON.stringify(olds.settings ?? {}) !==
+-          JSON.stringify(news.settings ?? {}) ||
+-        (olds.deadLetterQueue ?? undefined) !==
++        JSON.stringify(normalizeConsumerSettings(observed.settings)) !==
++          JSON.stringify(normalizeConsumerSettings(news.settings)) ||
++        observed.deadLetterQueue !==
+@@ -317,2 +365 @@ export const ConsumerProviderLive = () =>
+-        (output?.scriptName !== undefined &&
+-          news.scriptName !== output.scriptName)
++        (observed.scriptName !== undefined && news.scriptName !== observed.scriptName)
+@@ -323 +370 @@ export const ConsumerProviderLive = () =>
+-    reconcile: Effect.fn(function* ({ news, output }) {
++    reconcile: Effect.fn(function* ({ news, olds, output }) {
+@@ -384 +431 @@ export const ConsumerProviderLive = () =>
+-      // Owned consumer pointing at a different script: rebuild
++      // Owned consumer pointing at a different scriptName: rebuild
+@@ -561,14 +608,93 @@ export const ConsumerProviderLive = () =>
+-      yield* queues.getConsumer({ accountId: acct, queueId, consumerId }).pipe(
+-        Effect.flatMap((fetched) =>
+-          toObserved(fetched)?.scriptName === news.scriptName
+-            ? Effect.void
+-            : Effect.fail("ScriptUnbound" as const),
+-        ),
+-        Effect.catchTag("ConsumerNotFound", () =>
+-          Effect.fail("ScriptUnbound" as const),
+-        ),
+-        Effect.retry({
+-          while: (e) => e === "ScriptUnbound",
+-          schedule: queueHandlerReadinessSchedule,
+-        }),
+-      );
++      let converged = yield* queues
++        .getConsumer({ accountId: acct, queueId, consumerId })
++        .pipe(
++          Effect.flatMap((fetched) => {
++            const observed = toObserved(fetched);
++            return observed?.scriptName === news.scriptName
++              ? Effect.succeed(observed)
++              : Effect.fail("ScriptUnbound" as const);
++          }),
++          Effect.catchTag("ConsumerNotFound", () =>
++            Effect.fail("ScriptUnbound" as const),
++          ),
++          Effect.retry({
++            while: (e) => e === "ScriptUnbound",
++            schedule: queueHandlerReadinessSchedule,
++          }),
++        );
++
++      const desiredDeadLetterQueue = news.deadLetterQueue ?? undefined;
++      const deadLetterQueueIdentityUnchanged =
++        isLiveId(olds?.deadLetterQueueId) &&
++        isLiveId(news.deadLetterQueueId) &&
++        olds?.deadLetterQueueId === news.deadLetterQueueId;
++      const settingsConverged =
++        JSON.stringify(normalizeConsumerSettings(converged.settings)) ===
++        JSON.stringify(normalizeConsumerSettings(news.settings));
++      const canReplaceForMissingDeadLetterQueue =
++        deadLetterQueueIdentityUnchanged &&
++        owned &&
++        observed?.consumerId === consumerId &&
++        output?.consumerId === consumerId &&
++        observed.scriptName === news.scriptName &&
++        observed.deadLetterQueue === undefined &&
++        JSON.stringify(normalizeConsumerSettings(observed.settings)) ===
++          JSON.stringify(normalizeConsumerSettings(news.settings)) &&
++        desiredDeadLetterQueue !== undefined &&
++        converged.consumerId === consumerId &&
++        converged.scriptName === news.scriptName &&
++        converged.deadLetterQueue === undefined &&
++        settingsConverged;
++
++      if (canReplaceForMissingDeadLetterQueue) {
++        yield* verifyConsumerReplacementSafety({
++          accountId: acct,
++          consumerId,
++          deadLetterQueueId: news.deadLetterQueueId,
++          deadLetterQueueName: desiredDeadLetterQueue,
++          queueId,
++          scriptName: news.scriptName,
++          settings: news.settings,
++        });
++
++        yield* queues.deleteConsumer({
++          accountId: acct,
++          queueId,
++          consumerId,
++        });
++        yield* waitForConsumerDeletion(acct, queueId, consumerId);
++
++        const replacement = yield* queues.createConsumer({
++          accountId: acct,
++          queueId,
++          scriptName: news.scriptName,
++          type: "worker",
++          deadLetterQueue: desiredDeadLetterQueue,
++          settings: news.settings,
++        });
++        const replacementConsumerId = replacement.consumerId;
++        if (
++          !isLiveId(replacementConsumerId) ||
++          replacementConsumerId === consumerId
++        ) {
++          return yield* Effect.fail("ConsumerReplacementUnconverged" as const);
++        }
++
++        converged = yield* readConvergedConsumer({
++          accountId: acct,
++          consumerId: replacementConsumerId,
++          queueId,
++          scriptName: news.scriptName,
++        });
++        consumerId = replacementConsumerId;
++      }
++
++      if (
++        converged.consumerId !== consumerId ||
++        converged.scriptName !== news.scriptName ||
++        converged.deadLetterQueue !== desiredDeadLetterQueue ||
++        JSON.stringify(normalizeConsumerSettings(converged.settings)) !==
++          JSON.stringify(normalizeConsumerSettings(news.settings))
++      ) {
++        return yield* Effect.fail("ConsumerUnconverged" as const);
++      }
+@@ -577 +703 @@ export const ConsumerProviderLive = () =>
+-        consumerId,
++        consumerId: converged.consumerId,
+@@ -579 +705 @@ export const ConsumerProviderLive = () =>
+-        scriptName: news.scriptName!,
++        scriptName: converged.scriptName,
+@@ -581,2 +707,2 @@ export const ConsumerProviderLive = () =>
+-        deadLetterQueue: news.deadLetterQueue,
+-        settings: news.settings,
++        deadLetterQueue: converged.deadLetterQueue,
++        settings: converged.settings,
+@@ -634 +760,2 @@ export const ConsumerProviderLive = () =>
+-        if (fetched) {
++        const observed = fetched ? toObserved(fetched) : undefined;
++        if (observed) {
+@@ -636 +763 @@ export const ConsumerProviderLive = () =>
+-            consumerId: fetched.consumerId!,
++            consumerId: observed.consumerId,
+@@ -640,2 +767,2 @@ export const ConsumerProviderLive = () =>
+-            deadLetterQueue: output.deadLetterQueue,
+-            settings: output.settings,
++            deadLetterQueue: observed.deadLetterQueue,
++            settings: observed.settings,
+@@ -660,2 +787,2 @@ export const ConsumerProviderLive = () =>
+-            deadLetterQueue: output.deadLetterQueue,
+-            settings: output.settings,
++            deadLetterQueue: match.deadLetterQueue,
++            settings: match.settings,
+@@ -669,0 +797 @@ type ObservedConsumer = {
++  deadLetterQueue: string | undefined;
+@@ -670,0 +799 @@ type ObservedConsumer = {
++  settings: ConsumerSettings | undefined;
+@@ -674,0 +804 @@ const toObserved = (c: {
++  deadLetterQueue?: string | null;
+@@ -675,0 +806,7 @@ const toObserved = (c: {
++  settings?: {
++    batchSize?: number | null;
++    maxConcurrency?: number | null;
++    maxRetries?: number | null;
++    maxWaitTimeMs?: number | null;
++    retryDelay?: number | null;
++  } | null;
+@@ -680 +817,14 @@ const toObserved = (c: {
+-    ? { consumerId: c.consumerId, scriptName: c.scriptName ?? undefined }
++    ? {
++        consumerId: c.consumerId,
++        deadLetterQueue: c.deadLetterQueue ?? undefined,
++        scriptName: c.scriptName ?? undefined,
++        settings: c.settings
++          ? {
++              batchSize: c.settings.batchSize ?? undefined,
++              maxConcurrency: c.settings.maxConcurrency ?? undefined,
++              maxRetries: c.settings.maxRetries ?? undefined,
++              maxWaitTimeMs: c.settings.maxWaitTimeMs ?? undefined,
++              retryDelay: c.settings.retryDelay ?? undefined,
++            }
++          : undefined,
++      }
+@@ -682,0 +833,133 @@ const toObserved = (c: {
++const normalizeConsumerSettings = (
++  settings: ConsumerSettings | undefined,
++): Required<Pick<ConsumerSettings, "batchSize" | "maxRetries" | "maxWaitTimeMs">> &
++  Pick<ConsumerSettings, "maxConcurrency" | "retryDelay"> => ({
++  batchSize: settings?.batchSize ?? 10,
++  maxConcurrency: settings?.maxConcurrency,
++  maxRetries: settings?.maxRetries ?? 3,
++  maxWaitTimeMs: settings?.maxWaitTimeMs ?? 5000,
++  retryDelay: settings?.retryDelay ?? 0,
++});
++
++const replacementUnsafe = (reason: string) =>
++  Effect.fail({
++    _tag: "ConsumerReplacementUnsafe",
++    reason,
++  } as const);
++
++const verifyConsumerReplacementSafety = Effect.fn(function* (options: {
++  accountId: string;
++  consumerId: string;
++  deadLetterQueueId?: string;
++  deadLetterQueueName: string;
++  queueId: string;
++  scriptName: string;
++  settings?: ConsumerSettings;
++}) {
++  if (!isLiveId(options.deadLetterQueueId)) {
++    return yield* replacementUnsafe("dead-letter-queue-id-missing");
++  }
++
++  const sourceQueue = yield* queues.getQueue({
++    accountId: options.accountId,
++    queueId: options.queueId,
++  });
++  const workerConsumers = (sourceQueue.consumers ?? []).flatMap((consumer) => {
++    const observed = toObserved(consumer);
++    return observed ? [observed] : [];
++  });
++  if (
++    sourceQueue.queueId !== options.queueId ||
++    sourceQueue.producersTotalCount !== 0 ||
++    (sourceQueue.producers?.length ?? 0) !== 0 ||
++    sourceQueue.consumersTotalCount !== 1 ||
++    workerConsumers.length !== 1 ||
++    workerConsumers[0]?.consumerId !== options.consumerId ||
++    workerConsumers[0]?.scriptName !== options.scriptName ||
++    workerConsumers[0]?.deadLetterQueue !== undefined ||
++    JSON.stringify(
++      normalizeConsumerSettings(workerConsumers[0]?.settings),
++    ) !== JSON.stringify(normalizeConsumerSettings(options.settings))
++  ) {
++    return yield* replacementUnsafe("source-queue-ownership-or-activity");
++  }
++
++  const sourceMetrics = yield* queues.getMetricsQueue({
++    accountId: options.accountId,
++    queueId: options.queueId,
++  });
++  if (sourceMetrics.backlogCount !== 0 || sourceMetrics.backlogBytes !== 0) {
++    return yield* replacementUnsafe("source-queue-backlog");
++  }
++
++  const deadLetterQueue = yield* queues.getQueue({
++    accountId: options.accountId,
++    queueId: options.deadLetterQueueId,
++  });
++  if (
++    deadLetterQueue.queueId !== options.deadLetterQueueId ||
++    deadLetterQueue.queueName !== options.deadLetterQueueName ||
++    deadLetterQueue.producersTotalCount !== 0 ||
++    (deadLetterQueue.producers?.length ?? 0) !== 0 ||
++    deadLetterQueue.consumersTotalCount !== 0 ||
++    (deadLetterQueue.consumers?.length ?? 0) !== 0
++  ) {
++    return yield* replacementUnsafe(
++      "dead-letter-queue-identity-or-activity",
++    );
++  }
++
++  const deadLetterMetrics = yield* queues.getMetricsQueue({
++    accountId: options.accountId,
++    queueId: options.deadLetterQueueId,
++  });
++  if (
++    deadLetterMetrics.backlogCount !== 0 ||
++    deadLetterMetrics.backlogBytes !== 0
++  ) {
++    return yield* replacementUnsafe("dead-letter-queue-backlog");
++  }
++});
++
++const waitForConsumerDeletion = (
++  accountId: string,
++  queueId: string,
++  consumerId: string,
++) =>
++  queues
++    .getConsumer({ accountId, queueId, consumerId })
++    .pipe(
++      Effect.flatMap(() =>
++        Effect.fail("ConsumerStillAttached" as const),
++      ),
++      Effect.catchTag("ConsumerNotFound", () => Effect.void),
++      Effect.retry({
++        while: (error) => error === "ConsumerStillAttached",
++        schedule: queueHandlerReadinessSchedule,
++      }),
++    );
++
++const readConvergedConsumer = (options: {
++  accountId: string;
++  consumerId: string;
++  queueId: string;
++  scriptName: string;
++}) =>
++  queues
++    .getConsumer(options)
++    .pipe(
++      Effect.flatMap((fetched) => {
++        const observed = toObserved(fetched);
++        return observed?.scriptName === options.scriptName
++          ? Effect.succeed(observed)
++          : Effect.fail("ScriptUnbound" as const);
++      }),
++      Effect.catchTag("ConsumerNotFound", () =>
++        Effect.fail("ScriptUnbound" as const),
++      ),
++      Effect.retry({
++        while: (error) => error === "ScriptUnbound",
++        schedule: queueHandlerReadinessSchedule,
++      }),
++    );
++
+diff --git a/src/Cloudflare/Queues/EventSource.ts b/src/Cloudflare/Queues/EventSource.ts
+index 7e19f329..f539b1a2 100644
+--- a/src/Cloudflare/Queues/EventSource.ts
++++ b/src/Cloudflare/Queues/EventSource.ts
+@@ -7,0 +8 @@ import * as Stream from "effect/Stream";
++import type { Input } from "../../Input.ts";
+@@ -40 +41,3 @@ export interface MessagesProps {
+-  deadLetterQueue?: string;
++  deadLetterQueue?: Input<string>;
++  /** Physical ID paired with `deadLetterQueue` for guarded reconciliation. */
++  deadLetterQueueId?: Input<string>;
+@@ -214,0 +218 @@ export const EventSourceLive = Layer.effect(
++              deadLetterQueueId: props.deadLetterQueueId,
+diff --git a/src/Cloudflare/Workers/Sources/Rolldown.ts b/src/Cloudflare/Workers/Sources/Rolldown.ts
+index ce7a8441..d5d9f99a 100644
+--- a/src/Cloudflare/Workers/Sources/Rolldown.ts
++++ b/src/Cloudflare/Workers/Sources/Rolldown.ts
+@@ -24,0 +25,2 @@ export interface WorkerBuildOptions extends Bundle.BundleConfig {
++  /** Named native exports retained beside generated Effect bridges. */
++  nativeExports?: readonly string[];
+@@ -210 +212 @@ export const WorkerBundle = Effect.gen(function* () {
+-                makeEffectVirtualEntry(options.entry.exports, options.stack),
++                makeEffectVirtualEntry(options.entry.exports, options.stack, options.extraOptions?.nativeExports),
+@@ -282,0 +285 @@ export const makeEffectVirtualEntry = (
++  nativeExports: readonly string[] = [],
+@@ -295,0 +299,5 @@ export const makeEffectVirtualEntry = (
++  for (const name of nativeExports) {
++    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) || Object.hasOwn(exports, name)) {
++      throw new Error(`Invalid or duplicate native Worker export: ${name}`);
++    }
++  }
+@@ -316,0 +325 @@ export default makeWorkerBridge(WorkerEntrypoint, meta);
++${nativeExports.length > 0 ? `export { ${nativeExports.join(", ")} } from ${JSON.stringify(importPath)};` : ""}
+diff --git a/src/Cloudflare/Workers/WorkerProvider.ts b/src/Cloudflare/Workers/WorkerProvider.ts
+index 798e8499..09a69f46 100644
+--- a/src/Cloudflare/Workers/WorkerProvider.ts
++++ b/src/Cloudflare/Workers/WorkerProvider.ts
+@@ -1160 +1160,2 @@ const workerAssetConfigForHash = (assets: WorkerProps["assets"]) => {
+-const resolveWorkerMetadataHash = ({
++/** @internal exported for provider-path regression testing. */
++export const resolveWorkerMetadataHash = ({
+@@ -1178,4 +1179,4 @@ const resolveWorkerMetadataHash = ({
+-    bindings: bindings.map((binding) => ({
+-      sid: binding.sid,
+-      data: binding.data,
+-    })),
++    bindings: bindings.flatMap((binding) => binding.data.bindings ?? []),
++    containers: Array.from(new Set(bindings.flatMap((binding) =>
++      (binding.data.containers ?? []).map((container) => container.className)
++    ))).sort(),
+@@ -1183 +1184 @@ const resolveWorkerMetadataHash = ({
+-    cache: props.cache,
++    cache: props.cache ?? getCacheBinding(bindings),
+@@ -4932 +4933,3 @@ export const LiveWorkerProvider = () =>
+-          if (!isResolved(news)) return undefined;
++          // Plan invokes diff before and after binding Outputs resolve. Hash
++          // only the final binding shape used by reconcile.
++          if (!isResolved(news) || !isResolved(newBindings)) return undefined;

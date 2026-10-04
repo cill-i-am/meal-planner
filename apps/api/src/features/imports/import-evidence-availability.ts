@@ -7,7 +7,7 @@ type EvidenceReference = NonNullable<
   typeof HouseholdReadEvidenceReferencesResult.Type
 >["references"][number];
 
-export interface InspectedEvidenceReference {
+interface InspectedEvidenceReference {
   readonly availability: "available" | "missing";
   readonly reference: EvidenceReference;
 }

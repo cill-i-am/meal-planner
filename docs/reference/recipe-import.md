@@ -1,5 +1,8 @@
 # Recipe import architecture
 
+The [structured recipe content reference](recipe-content.md) owns the shared
+content model, evidence grounding, review edits and planning projection.
+
 ## Canonical authority
 
 Each organization has one SQLite-backed `HouseholdObject`. It is the only writer
@@ -157,6 +160,12 @@ invalid evidence allows the next claim. A lost claim reply retries the same
 identity and generation. A lost Workflow response therefore reconstructs the same
 encoded command without changing its mutation digest.
 
+The active source resolver rejects photo posts before acquisition. There is no
+operator staging ingress or Workflow reader for manually staged carousels. The
+carousel evidence types, integrity rules and household commit protocol remain
+available for a future supported acquisition path; their presence does not mean
+that the runtime imports photo posts.
+
 R2 references include byte length, SHA-256, deletion time, object kind, and
 generation. Reads return the video acquisition's media-and-manifest set or the
 carousel stage's single committed manifest with the same stable import,
@@ -232,6 +241,28 @@ Public requests never accept an organization ID, actor ID, authoritative time,
 result ID, version, ordinal, receipt, Workflow ID, or object name. Expected
 domain failures are closed and tagged at the private boundary, then exhaustively
 mapped to stable public errors.
+
+The household recipe-import contract owns lifecycle transitions, review answers,
+and confirmation. The import slice projects an extracted draft directly into the
+initial review view. The dormant transition reducer and older review model are
+removed; execution generation remains a branded schema in the household
+[workflow shared kernel](../../apps/api/src/features/households/shared-kernel/workflow-identity.ts).
+
+## Browser ownership
+
+The [recipe-import feature](../../apps/web/src/features/recipe-import/index.ts)
+shapes generated-client requests as Effects. Its operation type is inferred from
+that adapter, using the shared contract's domain inputs and decoded results.
+There is no separate handwritten Promise client contract or runner.
+
+The recipe-import screen uses the shared Effect Query execution adapter and owns
+its intent, action, and recipe caches, polling, and invalidation. Transport
+configuration comes from application composition. Displayed identity headers,
+idempotency keys, expected review versions, and session lifetime guards stay at
+their existing boundaries. Query cancellation reaches the generated client's
+fetch; mutations are not automatically retried. A tagged browser error preserves
+the original generated-client failure as its cause and keeps private details out
+of visible messages.
 
 ## Migrations and proof
 

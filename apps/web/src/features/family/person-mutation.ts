@@ -4,16 +4,19 @@ import type { Effect } from "effect";
 import { Schema } from "effect";
 import { useState } from "react";
 
-import { useApiRuntime, queryFailure } from "../api-client/index.js";
+import {
+  useApiRuntime,
+  queryFailure,
+  apiEffectQuery,
+} from "../api-client/index.js";
 import { useAccount } from "../auth/index.js";
 import {
   makeHouseholdPeopleEffectOperations,
   HouseholdPeopleOperationError,
-} from "../household-people/client.js";
+} from "../household-people/index.js";
 import { usePendingRequest } from "../request-recovery/index.js";
 import { useFamily } from "./family-context.js";
 import { familyKeys } from "./family-operations.js";
-import { peopleEffectQuery } from "./people-queries.js";
 import { PersonCreation } from "./person-commands.js";
 import { savePerson } from "./person-save.js";
 
@@ -38,7 +41,7 @@ export const useAddFamilyPerson = () => {
   }>();
   const saved = receipt?.scope === scope ? receipt.result : undefined;
   const mutation = useMutation({
-    ...peopleEffectQuery.mutationOptions({
+    ...apiEffectQuery.mutationOptions({
       mutationFn: (request: typeof PersonRequest.Type) =>
         savePerson(
           request.command,

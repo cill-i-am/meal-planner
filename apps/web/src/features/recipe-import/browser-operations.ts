@@ -2,40 +2,55 @@ import {
   makeRecipeImportApiClientLayer,
   RecipeImportApiClient,
 } from "@meal-planner/recipe-import-api";
-import { Effect, Layer } from "effect";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import type {
+  AnswerReviewRecipeActionRequest,
+  CancelRecipeImportIntentRequest,
+  ConfirmRecipeImportActionRequest,
+  CreateRecipeImportIntentRequest,
+  IdempotencyKey,
+  RecipeImportActionId,
+  RecipeImportIntentId,
+  Recipe,
+} from "@meal-planner/recipe-import-api";
+import { Data, Effect, Layer } from "effect";
 
+import { apiHttpLayer } from "../api-client/index.js";
+import type { ApiRuntime } from "../api-client/index.js";
 import { displayedIdentityHeaders } from "../auth/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
-import type { RecipeImportOperations } from "./operations.js";
 
-const makeClientRunner = (baseUrl: string | URL, scope: DisplayedIdentity) => {
+class RecipeImportOperationError<Failure> extends Data.TaggedError(
+  "RecipeImportOperationError"
+)<{ readonly cause: Failure }> {}
+
+const makeClientRunner = (runtime: ApiRuntime, scope: DisplayedIdentity) => {
   const layer = makeRecipeImportApiClientLayer({
-    baseUrl,
+    baseUrl: runtime.baseUrl,
     headers: displayedIdentityHeaders(scope),
-  }).pipe(Layer.provide(FetchHttpClient.layer));
+  }).pipe(Layer.provide(apiHttpLayer(runtime)));
   return <A, E>(
     operation: (client: RecipeImportApiClient) => Effect.Effect<A, E>
-  ): Promise<A> =>
-    Effect.runPromise(
-      RecipeImportApiClient.pipe(
-        Effect.flatMap(operation),
-        Effect.provide(layer)
-      )
+  ) =>
+    RecipeImportApiClient.pipe(
+      Effect.flatMap(operation),
+      Effect.provide(layer),
+      Effect.mapError((cause) => new RecipeImportOperationError({ cause }))
     );
 };
 
-/** Browser-owned generated client. Native fetch sends same-origin cookies by default. */
-export const makeBrowserRecipeImportOperations = (
-  scope: DisplayedIdentity
-): RecipeImportOperations => {
-  let clientRunner: ReturnType<typeof makeClientRunner> | undefined;
-  const run: ReturnType<typeof makeClientRunner> = (operation) => {
-    clientRunner ??= makeClientRunner(globalThis.location.origin, scope);
-    return clientRunner(operation);
-  };
+/** Generated-client request shaping; the query adapter owns execution. */
+export const makeRecipeImportEffectOperations = (
+  scope: DisplayedIdentity,
+  runtime: ApiRuntime
+) => {
+  const run = makeClientRunner(runtime, scope);
   return {
-    answerAction: (input) =>
+    answerAction: (input: {
+      readonly actionId: RecipeImportActionId;
+      readonly idempotencyKey: IdempotencyKey;
+      readonly intentId: RecipeImportIntentId;
+      readonly request: AnswerReviewRecipeActionRequest;
+    }) =>
       run((client) =>
         client.recipeImportIntents.answerAction({
           headers: { "idempotency-key": input.idempotencyKey },
@@ -43,7 +58,11 @@ export const makeBrowserRecipeImportOperations = (
           payload: input.request,
         })
       ),
-    cancel: (input) =>
+    cancel: (input: {
+      readonly idempotencyKey: IdempotencyKey;
+      readonly intentId: RecipeImportIntentId;
+      readonly request: CancelRecipeImportIntentRequest;
+    }) =>
       run((client) =>
         client.recipeImportIntents.cancel({
           headers: { "idempotency-key": input.idempotencyKey },
@@ -51,7 +70,12 @@ export const makeBrowserRecipeImportOperations = (
           payload: input.request,
         })
       ),
-    confirmAction: (input) =>
+    confirmAction: (input: {
+      readonly actionId: RecipeImportActionId;
+      readonly idempotencyKey: IdempotencyKey;
+      readonly intentId: RecipeImportIntentId;
+      readonly request: ConfirmRecipeImportActionRequest;
+    }) =>
       run((client) =>
         client.recipeImportIntents.confirmAction({
           headers: { "idempotency-key": input.idempotencyKey },
@@ -59,7 +83,10 @@ export const makeBrowserRecipeImportOperations = (
           payload: input.request,
         })
       ),
-    create: (input) =>
+    create: (input: {
+      readonly idempotencyKey: IdempotencyKey;
+      readonly request: CreateRecipeImportIntentRequest;
+    }) =>
       run((client) =>
         client.recipeImportIntents
           .create({
@@ -68,21 +95,28 @@ export const makeBrowserRecipeImportOperations = (
           })
           .pipe(Effect.map((response) => response.body))
       ),
-    getAction: (input) =>
+    getAction: (input: {
+      readonly actionId: RecipeImportActionId;
+      readonly intentId: RecipeImportIntentId;
+    }) =>
       run((client) =>
         client.recipeImportIntents.getAction({
           params: { actionId: input.actionId, id: input.intentId },
         })
       ),
-    getIntent: (input) =>
+    getIntent: (input: { readonly intentId: RecipeImportIntentId }) =>
       run((client) =>
         client.recipeImportIntents
           .get({ params: { id: input.intentId } })
           .pipe(Effect.map((response) => response.body))
       ),
-    getRecipe: (input) =>
+    getRecipe: (input: { readonly recipeId: Recipe["id"] }) =>
       run((client) =>
         client.recipes.get({ params: { recipeId: input.recipeId } })
       ),
   };
 };
+
+export type RecipeImportOperations = ReturnType<
+  typeof makeRecipeImportEffectOperations
+>;

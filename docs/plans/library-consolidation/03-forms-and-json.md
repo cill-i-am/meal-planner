@@ -14,7 +14,7 @@ provider acceptance and accounting rules.
 This plan owns both changes. The [review sequence](README.md) separates the JSON
 and form details, but the implementations can proceed independently when they do
 not edit the same files. Architecture tooling belongs in the separate
-[optional guard plan](04-architecture-guard.md), not a third requirement here.
+[cancelled guard assessment](04-architecture-guard.md), not a third requirement here.
 
 ## Scope
 
@@ -171,7 +171,7 @@ provider calls or cloud actions.
 This plan replaces the overlapping form and utility proposals, originally based
 on `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`. Their old workflow and permission
 links are historical. The architecture work previously in #224 belongs only in
-the [guard plan](04-architecture-guard.md) and #225. Comparison and form checks
+the [cancelled guard assessment](04-architecture-guard.md) and #225. Comparison and form checks
 remain unverified work, not results claimed by this document.
 
 - [Original #223 proposal](https://github.com/cill-i-am/meal-planner/blob/483c853c9f4506301f45de2dbe4a9bc86bd79c60/docs/delivery/library-consolidation/03-schema-and-json-utilities.md).

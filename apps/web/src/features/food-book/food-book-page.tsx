@@ -12,6 +12,7 @@ import type {
   PlanningContentCommand,
   SavedRecipeSummary,
 } from "@meal-planner/household-api";
+import { formatRecipeIngredient } from "@meal-planner/recipe-domain";
 import { RecipeId } from "@meal-planner/recipe-import-api";
 import type {
   CorrectedRecipe,
@@ -285,11 +286,13 @@ const RecipeIntro = ({
       </Alert>
     )}
     <div className="text-muted-foreground flex flex-wrap gap-2 text-sm">
-      {recipe.totalTimeMinutes !== null && (
-        <span>{recipe.totalTimeMinutes} minutes total</span>
+      {recipe.times.total !== null && (
+        <span>{Math.ceil(recipe.times.total.seconds / 60)} minutes total</span>
       )}
-      {recipe.yield !== null && <span>· Source yield: {recipe.yield}</span>}
-      {recipe.author !== null && <span>· {recipe.author}</span>}
+      {recipe.servings !== null && (
+        <span>· Source yield: {recipe.servings.original}</span>
+      )}
+      {recipe.author !== null && <span>· {recipe.author.name}</span>}
     </div>
   </>
 );
@@ -335,8 +338,8 @@ const RecipeDetail = ({
     );
   }
   const { recipe } = recipeQuery.data;
-  const method = recipe.instructions ?? [];
-  const ingredients = recipe.ingredientLines ?? [];
+  const method = recipe.instructions?.map((step) => step.text) ?? [];
+  const ingredients = recipe.ingredients?.map(formatRecipeIngredient) ?? [];
   if (cooking && method.length > 0) {
     return (
       <FocusedCookView

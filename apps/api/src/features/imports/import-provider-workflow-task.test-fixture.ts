@@ -1,3 +1,8 @@
+import {
+  emptyRecipeDetails,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+} from "@meal-planner/recipe-domain";
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
 import {
@@ -15,6 +20,7 @@ import { HouseholdDispatchId } from "../households/foundation/import-workflow-ad
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { HouseholdOrganizationId } from "../households/household.contract.js";
 import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
+import { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
 import { makeProviderAccountingDatabase } from "../provider-accounting/provider-accounting.database.js";
 import {
   ProviderAccountingDispatchId,
@@ -23,7 +29,6 @@ import {
   providerKnownZeroCostFailure,
 } from "../provider-accounting/provider-accounting.js";
 import { makeD1ProviderAccountingRepository } from "../provider-accounting/provider-accounting.repository.d1.js";
-import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import {
   AcquisitionGeneration,
   Sha256Hex,
@@ -284,28 +289,17 @@ const nativeRecipeRecoveryAttempt = (
 };
 
 const emptyRecipeProviderSelection = {
-  category: null,
-  cookTimeMinutes: null,
-  cuisine: null,
-  description: null,
-  ingredientLines: [],
-  instructions: [],
+  ...emptyRecipeDetails,
+  ingredients: null,
+  instructions: null,
   name: null,
-  nutrition: null,
-  prepTimeMinutes: null,
-  supportedClaims: [],
-  temperatureCelsius: null,
-  tools: [],
-  totalTimeMinutes: null,
-  yield: null,
 } as const;
 
 const recoveredRecipeProviderSelection = {
   ...emptyRecipeProviderSelection,
-  ingredientLines: ["1 onion"],
-  instructions: ["Cook the onion"],
+  ingredients: [recipeIngredientFromText("1 onion")],
+  instructions: [recipeInstructionFromText("Cook the onion", 1)],
   name: "Recovered onion",
-  supportedClaims: ["Recovered onion", "1 onion", "Cook the onion"],
 } as const;
 
 const installedRecipeConservativeDispatch = (
@@ -763,7 +757,7 @@ const recipeRecoveryFailure = (
 
 const providerWorkflowExport = {
   kind: "workflow" as const,
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU005 alchemy@2.0.0-beta.76): WorkflowExport.make(env: unknown) erases behaviorful KV/D1 bindings; Schema cannot reconstruct branded host handles or their runtime behavior. Remove when Alchemy provides a precise env generic or supported real-runtime harness.
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU005 alchemy@2.0.0-beta.80): WorkflowExport.make(env: unknown) erases behaviorful KV/D1 bindings; Schema cannot reconstruct branded host handles or their runtime behavior. Remove when Alchemy provides a precise env generic or supported real-runtime harness.
   make: (rawEnv: unknown) => {
     const env = rawEnv as ProviderWorkflowTestEnv;
     return Effect.succeed((rawInput: Schema.Json) =>
@@ -789,7 +783,7 @@ const providerWorkflowExport = {
           const generation = decodeGeneration(1);
           if (
             input.scenario === "recipe_recovery_subsequent_success" &&
-            (yield* readNumber(env, event.instanceId, "workflow-runs")) === 1
+            (yield* readNumber(env, event.instanceId, "workflow-runs")) <= 2
           ) {
             return yield* task(
               "extract-recipe-recovery-v1",
@@ -1095,6 +1089,11 @@ const ProviderWorkflowCommand = Schema.Union([
   }),
   Schema.Struct({ action: Schema.Literal("restart"), ...CommandId.fields }),
   Schema.Struct({
+    action: Schema.Literal("restart-crashed"),
+    ...CommandId.fields,
+    step: Schema.String,
+  }),
+  Schema.Struct({
     action: Schema.Literals(["run", "run-waiting"]),
     id: Schema.String,
     input: ProviderWorkflowInput,
@@ -1176,7 +1175,10 @@ export default {
         );
       }
       const start = async (
-        input: Exclude<typeof command, { readonly action: "restart" }>["input"]
+        input: Exclude<
+          typeof command,
+          { readonly action: "restart" | "restart-crashed" }
+        >["input"]
       ) => {
         await workflow.unsafeSetIntrospectionOperations(sessionId, [
           {
@@ -1194,10 +1196,19 @@ export default {
       const restart = async () => {
         const instance = await workflow.get(command.id);
         await instance.restart({
-          from: { name: "finalize-terminal", type: "do" },
+          from: {
+            name:
+              command.action === "restart-crashed"
+                ? command.step
+                : "finalize-terminal",
+            type: "do",
+          },
         });
       };
-      await (command.action === "restart" ? restart() : start(command.input));
+      await (command.action === "restart" ||
+      command.action === "restart-crashed"
+        ? restart()
+        : start(command.input));
 
       const instance = await workflow.get(command.id);
       await (command.action === "run-waiting"
@@ -1207,10 +1218,7 @@ export default {
             "recovery-loop-terminal-persistences",
             1
           )
-        : Promise.race([
-            workflow.unsafeWaitForStatus(command.id, "complete"),
-            workflow.unsafeWaitForStatus(command.id, "errored"),
-          ]));
+        : waitForWorkflowTerminal(env, command.id, instance));
       return Response.json(await instance.status());
     } finally {
       await workflow.unsafeStopIntrospection(sessionId);

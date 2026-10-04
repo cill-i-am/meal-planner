@@ -1,5 +1,7 @@
 import { Layer } from "effect";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+
+import { browserObservedFetch } from "../observability/browser-observability.js";
 
 /** A host supplies transport and origin; feature operations never read ambient location. */
 export interface ApiRuntime {
@@ -9,7 +11,7 @@ export interface ApiRuntime {
 
 export const browserApiRuntime = (): ApiRuntime => ({
   baseUrl: window.location.origin,
-  fetch: (input, init) => globalThis.fetch(input, init),
+  fetch: browserObservedFetch,
 });
 
 export const apiHttpLayer = (runtime: ApiRuntime) =>

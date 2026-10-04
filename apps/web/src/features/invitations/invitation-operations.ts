@@ -4,17 +4,15 @@ import {
   makeInvitationReadApiClientLayer,
 } from "@meal-planner/invitations";
 import type { InvitationResponse } from "@meal-planner/invitations";
-import { Effect, Layer } from "effect";
-import { createEffectQuery } from "effect-query";
+import { Effect } from "effect";
 
 import {
+  apiEffectQuery,
   apiHttpLayer,
   transientRetry,
   isTransientHttpFailure,
 } from "../api-client/index.js";
 import type { ApiRuntime } from "../api-client/index.js";
-
-const effectQuery = createEffectQuery(Layer.empty);
 
 /** The query cache owns this recipient-scoped server view. */
 export const invitationReadQueryOptions = (
@@ -22,7 +20,7 @@ export const invitationReadQueryOptions = (
   id: InvitationId,
   userId: UserId
 ) =>
-  effectQuery.queryOptions({
+  apiEffectQuery.queryOptions({
     queryFn: () =>
       InvitationReadApiClient.use((api) =>
         api.invitationRead.read({ params: { id } })
@@ -51,7 +49,7 @@ export const respondInvitationMutationOptions = (
   userId: UserId,
   id: InvitationId
 ) =>
-  effectQuery.mutationOptions({
+  apiEffectQuery.mutationOptions({
     mutationFn: (payload: InvitationResponse) =>
       InvitationReadApiClient.use((api) =>
         api.invitationRead.respond({ params: { id }, payload })

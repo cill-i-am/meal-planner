@@ -1,13 +1,13 @@
 import { HouseholdOrganizationId } from "@meal-planner/household-api";
 import { Context, Layer, Schema } from "effect";
-import { HttpClient, HttpClientRequest } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest } from "effect/http";
 import {
   HttpApi,
   HttpApiClient,
   HttpApiEndpoint,
   HttpApiGroup,
   HttpApiMiddleware,
-} from "effect/unstable/httpapi";
+} from "effect/http-api";
 
 import { CreateFamily, Family, UpdateFamily } from "./family.js";
 import {
@@ -66,6 +66,8 @@ const Families = HttpApiGroup.make("families").add(
   })
 );
 export const FamilyApi = HttpApi.make("familyApi")
+  .annotate(HttpApi.PayloadParseOptions, { onExcessProperty: "error" })
+  .annotate(HttpApi.QueryParseOptions, { onExcessProperty: "error" })
   .add(Families)
   .middleware(FamilySchemaErrors);
 export type FamilyApiClient = HttpApiClient.ForApi<typeof FamilyApi>;

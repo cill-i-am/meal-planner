@@ -3,11 +3,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Layer, Redacted } from "effect";
-import {
-  HttpRouter,
-  HttpServerRequest,
-  HttpServerResponse,
-} from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 
 import { handleAgentConversationChatRequest } from "../agent-conversations.js";
 import type { AgentConversationNamespace } from "../agent-conversations.js";
@@ -27,6 +23,7 @@ import {
   makeRecipeReadHttpApiLayer,
   RecipeImportHouseholdDomain,
 } from "../features/imports/import-intent-api.http.js";
+import { makePrivateConfirmationHttpLayer } from "../features/private-output/private-confirmation.http.js";
 import type {
   PrivateOutputApiPort,
   PrivateOutputMutationPort,
@@ -174,6 +171,11 @@ export default {
           const handler = yield* HttpRouter.toHttpEffect(
             Layer.mergeAll(
               makeLocalApiCoreLayer(options),
+              makePrivateConfirmationHttpLayer({
+                auth,
+                household: domain,
+                output: env.PrivateOutputApi,
+              }),
               makeRecipeReadHttpApiLayer().pipe(
                 Layer.provide(recipeReadServices),
                 HttpRouter.provideRequest(recipeReadServices)

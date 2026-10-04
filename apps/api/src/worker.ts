@@ -1,11 +1,15 @@
+import { BrowserTelemetryPath } from "@meal-planner/browser-observability-api";
 import { EmailAddress } from "@meal-planner/household-api";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import { instrumentDrizzle } from "cloudflare-drizzle-tracing";
 import { drizzle } from "drizzle-orm/d1";
-import { Config, Layer, Schema, Stream } from "effect";
+import { ByteSize, Config, Layer, Logger, Schema, Stream } from "effect";
 import * as Effect from "effect/Effect";
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import * as HttpIncomingMessage from "effect/http/HttpIncomingMessage";
+import * as HttpRouter from "effect/http/HttpRouter";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import {
   handleAgentConversationChatRequest,
@@ -45,7 +49,10 @@ import {
   makeRecipeImportHttpApiLayer,
   makeRecipeImportNotFoundHttpLayer,
 } from "./features/imports/import-intent-api.http.js";
-import { makeImportTraceContext } from "./features/imports/import-observability.js";
+import {
+  ImportCorrelationId,
+  makeImportTraceContext,
+} from "./features/imports/import-observability.js";
 import { ProviderRecoveryRouteDefinitions } from "./features/imports/import-provider-recovery.routes.js";
 import { makeRecipeRecoveryWorkflowStarter } from "./features/imports/import-recipe-recovery.js";
 import ImportRecipeRecoveryWorkflow from "./features/imports/import-recipe-recovery.workflow.js";
@@ -59,6 +66,8 @@ import { ImportSystemAuthorizationConfig } from "./features/imports/import.auth.
 import ImportAcquisitionWorkflow, {
   makeImportWorkflowStarter,
 } from "./features/imports/import.workflow.js";
+import { BrowserEventsHttpLayer } from "./features/observability/browser-events.http.js";
+import { makePrivateConfirmationHttpLayer } from "./features/private-output/private-confirmation.http.js";
 import {
   PrivateOutputApiBinding,
   PrivateOutputMutationsBinding,
@@ -76,6 +85,11 @@ import { MealPlannerAuthDatabase } from "./infrastructure/meal-planner-auth-data
 import { fromNativeWebResponse } from "./infrastructure/native-http-response.js";
 import { ProviderAccountingDatabase } from "./infrastructure/provider-accounting-database.js";
 import { withCurrentRequestCancellation } from "./infrastructure/request-cancellation.js";
+import {
+  HttpRequestId,
+  observeHttpRequest,
+} from "./infrastructure/request-observability.js";
+import { workerObservability } from "./infrastructure/worker-observability.js";
 
 const MealPlannerOperationalRoutes = [
   ...HealthRoutes,
@@ -92,36 +106,17 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     const conversationBindings = yield* agentConversationBindings;
     return {
       build: { nativeExports: ["AgentConversation"] },
+      ...workerObservability,
       env: {
         ...conversationBindings,
         PrivateOutputApi: PrivateOutputApiBinding,
         PrivateOutputMutations: PrivateOutputMutationsBinding,
       },
-      main: globalThis.__ALCHEMY_RUNTIME__
-        ? "worker-entry.ts"
-        : new URL("worker-entry.ts", import.meta.url).href,
-      observability: {
-        enabled: true,
-        headSamplingRate: 1,
-        logs: {
-          enabled: true,
-          headSamplingRate: 1,
-          // Invocation logs include request/response metadata and fetch URLs.
-          // Emit only the application's closed, allowlisted event contract.
-          invocationLogs: false,
-          persist: true,
-        },
-        traces: {
-          // Automatic Worker tracing records url.full/url.path/url.query.
-          // Closed Effect events remain in application logs.
-          enabled: false,
-        },
-      },
+      main: new URL("worker-entry.ts", import.meta.url).href,
       workersDev: false,
     };
   }),
   Effect.gen(function* MealPlannerApiWorker() {
-    const runtimeContext = yield* Cloudflare.Worker;
     const providerAccountingQueryDatabase = yield* Cloudflare.D1.QueryDatabase(
       ProviderAccountingDatabase
     );
@@ -138,10 +133,8 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     const householdDomain = yield* Cloudflare.Workers.bindWorker(
       HouseholdDomainWorker
     );
-    const workerEnvironment = yield* Cloudflare.Workers.WorkerEnvironment;
-    const conversations = workerEnvironment["AgentConversation"];
     const emailSenderAddress = Schema.decodeUnknownSync(EmailAddress)(
-      yield* Config.string("MEAL_PLANNER_EMAIL_SENDER_ADDRESS").pipe(
+      yield* Config.String("MEAL_PLANNER_EMAIL_SENDER_ADDRESS").pipe(
         Config.withDefault("noreply@mail.ceird.app")
       )
     );
@@ -150,22 +143,22 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
       { allowedSenderAddresses: [emailSenderAddress] }
     );
     const emailClient = yield* Cloudflare.Email.Send(emailBinding);
-    const emailDeliveryEnabled = yield* Config.boolean(
+    const emailDeliveryEnabled = yield* Config.Boolean(
       "MEAL_PLANNER_EMAIL_DELIVERY_ENABLED"
     ).pipe(Config.withDefault(false));
     const householdBatchWorkflowLauncher = makeHouseholdBatchWorkflowLauncher(
       householdBatchItemWorkflow
     );
-    const authSecret = yield* Config.redacted("BETTER_AUTH_SECRET");
+    const authSecret = yield* Config.Redacted("BETTER_AUTH_SECRET");
     const importSystemApiToken = yield* ImportSystemAuthorizationConfig.pipe(
       Effect.orDie
     );
     const importSystemActorId = Schema.decodeUnknownSync(ImportActorId)(
-      yield* Config.string("MEAL_PLANNER_IMPORT_ACTOR_ID")
+      yield* Config.String("MEAL_PLANNER_IMPORT_ACTOR_ID")
     );
     const importSystemHouseholdScopeId = Schema.decodeUnknownSync(
       HouseholdScopeId
-    )(yield* Config.string("MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID"));
+    )(yield* Config.String("MEAL_PLANNER_IMPORT_HOUSEHOLD_SCOPE_ID"));
     const importSystemPrincipal = Schema.decodeUnknownSync(ImportPrincipal)({
       actorId: importSystemActorId,
       householdScopeId: importSystemHouseholdScopeId,
@@ -199,17 +192,54 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           ).pipe(Effect.asVoid)
         )
     );
+    const browserEventLimit = yield* Cloudflare.Workers.RateLimit(
+      "BROWSER_EVENT_LIMIT",
+      {
+        namespaceId: 1002,
+        simple: { limit: 60, period: 60 },
+      }
+    );
     return {
       fetch: Effect.gen(function* handleMealPlannerRequest() {
+        const runtimeContext = yield* RuntimeContext;
         const request = yield* HttpServerRequest.HttpServerRequest;
         const webRequest = request.source;
         if (!(webRequest instanceof Request)) {
           return yield* Effect.die("Expected a Web Request source.");
         }
+        if (new URL(webRequest.url).pathname === BrowserTelemetryPath) {
+          if (
+            webRequest.headers.get("origin") !== new URL(webRequest.url).origin
+          ) {
+            return HttpServerResponse.empty({ status: 403 });
+          }
+          const { success } = yield* browserEventLimit
+            .limit({
+              key: webRequest.headers.get("cf-connecting-ip") ?? "local",
+            })
+            .pipe(Effect.orElseSucceed(() => ({ success: false })));
+          if (!success) {
+            return HttpServerResponse.empty({ status: 429 });
+          }
+          const handler = yield* HttpRouter.toHttpEffect(
+            BrowserEventsHttpLayer
+          );
+          return yield* handler.pipe(
+            Effect.provideService(
+              HttpIncomingMessage.MaxBodySize,
+              ByteSize.kibibytes(4)
+            )
+          );
+        }
         const providerAccountingDatabase =
           yield* providerAccountingQueryDatabase.raw;
-        const authDatabase = drizzle(yield* authQueryDatabase.raw);
+        const authDatabase = instrumentDrizzle(
+          drizzle(yield* authQueryDatabase.raw),
+          { attributes: { "db.namespace": "auth" } }
+        );
         const requestOrigin = new URL(webRequest.url).origin;
+        const workerEnvironment = yield* Cloudflare.Workers.WorkerEnvironment;
+        const conversations = workerEnvironment["AgentConversation"];
         const outputApi = yield* privateOutputApiPort;
         const outputMutations = yield* privateOutputMutationPort;
         const outputFence = makeAuthOutputFence(outputMutations);
@@ -269,7 +299,10 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         if (privateInterview !== null) {
           return fromNativeWebResponse(privateInterview);
         }
-        const trace = makeImportTraceContext();
+        const requestId = yield* HttpRequestId;
+        const trace = makeImportTraceContext(() =>
+          Schema.decodeUnknownSync(ImportCorrelationId)(requestId)
+        );
         const requestServices = makeImportWorkerRequestLayer({
           householdDomain,
           importWorkflowStarter: makeImportWorkflowStarter(
@@ -321,6 +354,11 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           Layer.mergeAll(
             HttpRouter.addAll(MealPlannerOperationalRoutes),
             authFamilyRoutes,
+            makePrivateConfirmationHttpLayer({
+              auth,
+              household: householdDomain,
+              output: outputApi,
+            }),
             makeRecipeImportHttpApiLayer(),
             householdRequestLayer,
             householdMealPlanRequestLayer,
@@ -332,12 +370,21 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
             HttpRouter.provideRequest(requestServices)
           )
         );
-        return yield* withCurrentRequestCancellation(routeHandler);
-      }).pipe(Effect.provideService(RuntimeContext, runtimeContext)),
+        return yield* routeHandler;
+      }).pipe(
+        withCurrentRequestCancellation,
+        observeHttpRequest,
+        Effect.provideService(
+          Logger.CurrentLoggers,
+          new Set([Logger.consoleJson])
+        )
+      ),
     };
   }).pipe(
     Effect.provide(
       Layer.mergeAll(
+        Cloudflare.Telemetry(),
+        Cloudflare.Workers.RateLimitBinding,
         Cloudflare.D1.QueryDatabaseBinding,
         Cloudflare.Email.SendBinding,
         Cloudflare.R2.ReadWriteBucketBinding,

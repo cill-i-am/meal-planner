@@ -1,45 +1,27 @@
-import { Effect } from "effect";
-import { HttpRouter } from "effect/unstable/http";
+import { Effect, Layer } from "effect";
+import { HttpApiBuilder, HttpApiMiddleware } from "effect/http-api";
 
-import {
-  InvalidRequest,
-  UpstreamAuthenticationUnavailable,
-  UpstreamInvalidResponse,
-  UpstreamRequestRejected,
-  UpstreamUnavailable,
-} from "../../../app/http/http-failure.js";
-import type { HttpFailure } from "../../../app/http/http-failure.js";
-import { decodeBody, routeJson } from "../../../app/http/responses.js";
 import type { TescoCatalogueError } from "./catalogue.errors.js";
 import {
-  CategoryPathParams,
-  CategoryProductsRequestBody,
-  SearchRequestBody,
-  categoryInputFromUrl,
-  searchInputFromUrl,
-  suggestionsInputFromUrl,
-  toCatalogueProductResultsResponse,
-  toCatalogueSuggestionsResponse,
+  CatalogueHttpFailures,
+  CatalogueRequestGuard,
+  TescoCatalogueApi,
 } from "./catalogue.http.js";
 import { TescoCatalogue } from "./catalogue.port.js";
 
-const getCategoryPathParams = HttpRouter.schemaPathParams(
-  CategoryPathParams
-).pipe(Effect.mapError(() => new InvalidRequest({ location: "path" })));
-
-const toHttpFailure = (error: TescoCatalogueError): HttpFailure => {
+const toHttpFailure = (error: TescoCatalogueError) => {
   switch (error._tag) {
     case "TescoCatalogueAuthenticationUnavailable": {
-      return new UpstreamAuthenticationUnavailable({ upstream: "tesco" });
+      return CatalogueHttpFailures.authentication.body;
     }
     case "TescoCatalogueUnavailable": {
-      return new UpstreamUnavailable({ upstream: "tesco" });
+      return CatalogueHttpFailures.unavailable.body;
     }
     case "TescoCatalogueRequestRejected": {
-      return new UpstreamRequestRejected({ upstream: "tesco" });
+      return CatalogueHttpFailures.rejected.body;
     }
     case "TescoCatalogueResponseInvalid": {
-      return new UpstreamInvalidResponse({ upstream: "tesco" });
+      return CatalogueHttpFailures.response.body;
     }
     default: {
       return error satisfies never;
@@ -47,72 +29,49 @@ const toHttpFailure = (error: TescoCatalogueError): HttpFailure => {
   }
 };
 
-export const TescoCatalogueRoutes = [
-  HttpRouter.route("GET", "/tesco/search", (request) =>
-    routeJson(
-      Effect.gen(function* () {
-        const tesco = yield* TescoCatalogue;
-        const search = yield* searchInputFromUrl(request.url);
-        return toCatalogueProductResultsResponse(
-          yield* tesco.search(search).pipe(Effect.mapError(toHttpFailure))
-        );
-      })
-    )
-  ),
-  HttpRouter.route(
-    "POST",
-    "/tesco/search",
-    routeJson(
-      Effect.gen(function* () {
-        const tesco = yield* TescoCatalogue;
-        const search = yield* decodeBody(SearchRequestBody);
-        return toCatalogueProductResultsResponse(
-          yield* tesco.search(search).pipe(Effect.mapError(toHttpFailure))
-        );
-      })
-    )
-  ),
-  HttpRouter.route("GET", "/tesco/categories/:facet/products", (request) =>
-    routeJson(
-      Effect.gen(function* () {
-        const tesco = yield* TescoCatalogue;
-        const { facet } = yield* getCategoryPathParams;
-        const category = yield* categoryInputFromUrl(request.url, facet);
-        return toCatalogueProductResultsResponse(
-          yield* tesco
-            .categoryProducts(category)
+const CatalogueHandlers = HttpApiBuilder.group(
+  TescoCatalogueApi,
+  "catalogue",
+  (handlers) =>
+    Effect.gen(function* catalogueHandlers() {
+      const catalogue = yield* TescoCatalogue;
+      return handlers
+        .handle("search", ({ query }) =>
+          catalogue.search(query).pipe(Effect.mapError(toHttpFailure))
+        )
+        .handle("searchBody", ({ payload }) =>
+          catalogue.search(payload).pipe(Effect.mapError(toHttpFailure))
+        )
+        .handle("categoryProducts", ({ params, query }) =>
+          catalogue
+            .categoryProducts({ ...params, ...query })
             .pipe(Effect.mapError(toHttpFailure))
-        );
-      })
-    )
-  ),
-  HttpRouter.route(
-    "POST",
-    "/tesco/categories/:facet/products",
-    routeJson(
-      Effect.gen(function* () {
-        const tesco = yield* TescoCatalogue;
-        const { facet } = yield* getCategoryPathParams;
-        const body = yield* decodeBody(CategoryProductsRequestBody);
-        return toCatalogueProductResultsResponse(
-          yield* tesco
-            .categoryProducts({ facet, ...body })
+        )
+        .handle("categoryProductsBody", ({ params, payload }) =>
+          catalogue
+            .categoryProducts({ ...params, ...payload })
             .pipe(Effect.mapError(toHttpFailure))
+        )
+        .handle("suggestions", ({ query }) =>
+          catalogue.suggestions(query).pipe(Effect.mapError(toHttpFailure))
         );
-      })
+    })
+);
+
+export const TescoCatalogueRoutes = HttpApiBuilder.layer(
+  TescoCatalogueApi
+).pipe(
+  Layer.provide(CatalogueHandlers),
+  Layer.provide(
+    HttpApiMiddleware.layerSchemaErrorTransform(
+      CatalogueRequestGuard,
+      // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect transforms a typed schema failure without creating a Promise boundary.
+      (error) =>
+        Effect.fail(
+          error.kind === "Body" || error.kind === "ResponseHeaders"
+            ? CatalogueHttpFailures.response.body
+            : CatalogueHttpFailures.invalid.body
+        )
     )
-  ),
-  HttpRouter.route("GET", "/tesco/suggestions", (request) =>
-    routeJson(
-      Effect.gen(function* () {
-        const tesco = yield* TescoCatalogue;
-        const suggestions = yield* suggestionsInputFromUrl(request.url);
-        return toCatalogueSuggestionsResponse(
-          yield* tesco
-            .suggestions(suggestions)
-            .pipe(Effect.mapError(toHttpFailure))
-        );
-      })
-    )
-  ),
-] as const;
+  )
+);

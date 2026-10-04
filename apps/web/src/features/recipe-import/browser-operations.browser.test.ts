@@ -2,11 +2,13 @@ import {
   RecipeImportIntent,
   RecipeImportIntentId,
 } from "@meal-planner/recipe-import-api";
-import { Schema } from "effect";
+import { QueryClient, isCancelledError } from "@tanstack/react-query";
+import { Effect, Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { parseDisplayedIdentity } from "../auth/displayed-identity.js";
-import { makeBrowserRecipeImportOperations } from "./browser-operations.js";
+import { apiEffectQuery, browserApiRuntime } from "../api-client/index.js";
+import { parseDisplayedIdentity } from "../auth/index.js";
+import { makeRecipeImportEffectOperations } from "./browser-operations.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -35,6 +37,40 @@ const processing = Schema.encodeSync(RecipeImportIntent)(
 );
 
 describe("browser recipe import operations", () => {
+  it("aborts the generated-client read when its query is cancelled", async () => {
+    let signal: AbortSignal | null | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_request: RequestInfo | URL, init?: RequestInit) => {
+        signal = init?.signal;
+        return new Promise<Response>(() => {});
+      })
+    );
+    const operations = makeRecipeImportEffectOperations(
+      parseDisplayedIdentity({
+        organizationId: "organization-a",
+        userId: "user-a",
+      }),
+      browserApiRuntime()
+    );
+    const queries = new QueryClient();
+    const queryKey = ["recipe-import", "cancelled-read"];
+    const pending = queries.fetchQuery(
+      apiEffectQuery.queryOptions({
+        queryFn: () => operations.getIntent({ intentId }),
+        queryKey,
+        retry: false,
+      })
+    );
+    const cancelled = expect(pending).rejects.toSatisfy(isCancelledError);
+    await vi.waitFor(() => expect(signal).toBeDefined());
+    await queries.cancelQueries({ queryKey });
+    expect(signal?.aborted).toBe(true);
+    await cancelled;
+    expect(queries.getQueryData(queryKey)).toBeUndefined();
+    queries.clear();
+  });
+
   it("uses the same-origin generated client without a bearer credential", async () => {
     const fetch = vi.fn(
       async (request: RequestInfo | URL, init?: RequestInit) => {
@@ -53,13 +89,14 @@ describe("browser recipe import operations", () => {
     );
     vi.stubGlobal("fetch", fetch);
 
-    const operations = makeBrowserRecipeImportOperations(
+    const operations = makeRecipeImportEffectOperations(
       parseDisplayedIdentity({
         organizationId: "organization-a",
         userId: "user-a",
-      })
+      }),
+      browserApiRuntime()
     );
-    const result = await operations.getIntent({ intentId });
+    const result = await Effect.runPromise(operations.getIntent({ intentId }));
 
     expect(result.id).toBe(intentId);
     expect(fetch).toHaveBeenCalledOnce();

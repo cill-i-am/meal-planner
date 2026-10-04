@@ -1,4 +1,9 @@
 import {
+  makeRecipeContent,
+  recipeIngredientFromText,
+  recipeInstructionFromText,
+} from "@meal-planner/recipe-domain";
+import {
   CanonicalTikTokUrl,
   IdempotencyKey,
   RecipeReviewActionView,
@@ -19,28 +24,20 @@ const sourceUrl = `https://www.tiktok.com/@mealplanner/video/${videoId}`;
 const review = {
   answers: [],
   blockers: { invalidFields: [], unresolvedRequiredFields: [] },
-  editableFields: ["name", "ingredient_lines", "instructions", "tags"],
-  recipe: {
-    author: null,
-    category: null,
-    cookTimeMinutes: 15,
-    cuisine: "Italian",
-    description: "Provider-free native fixture recipe.",
-    ingredientLines: ["500 g pasta", "1 jar pesto"],
-    ingredientQuantities: null,
-    ingredientUnits: null,
-    instructions: ["Boil the pasta.", "Drain and stir through the pesto."],
+  editableFields: ["name", "ingredients", "instructions", "tags"],
+  recipe: makeRecipeContent({
+    ingredients: [
+      recipeIngredientFromText("500 g pasta"),
+      recipeIngredientFromText("1 jar pesto"),
+    ],
+    instructions: [
+      recipeInstructionFromText("Boil the pasta.", 1),
+      recipeInstructionFromText("Drain and stir through the pesto.", 2),
+    ],
     name: "Pasta night",
-    nutrition: null,
-    prepTimeMinutes: 5,
-    temperatureCelsius: null,
-    tools: ["Hob", "Pot"],
-    totalTimeMinutes: 20,
-    yield: "4 servings",
-  },
+  }),
   tags: {
     cuisines: ["Italian"],
-    dietaryFit: "household_match",
     difficulty: "easy",
     leftovers: "one_meal",
     mealTypes: ["dinner"],

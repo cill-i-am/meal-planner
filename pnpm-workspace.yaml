@@ -1,13 +1,39 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "tools/worker-tests"
 allowBuilds:
   core-js-pure: false
   esbuild: true
   msgpackr-extract: true
   sharp: false
   workerd: true
-overrides:
-  "@alchemy.run/cloudflare-runtime>workerd": "1.20260903.1"
+minimumReleaseAgeExclude:
+  - "@alchemy.run/better-auth@2.0.0-beta.80"
+  - "@alchemy.run/cloudflare-runtime@2.0.0-beta.80"
+  - "@alchemy.run/floci@2.0.0-beta.80"
+  - "@alchemy.run/node-utils@2.0.0-beta.80"
+  - "@distilled.cloud/acme@1.0.0-rc.13"
+  - "@distilled.cloud/aws@1.0.0-rc.13"
+  - "@distilled.cloud/axiom@1.0.0-rc.13"
+  - "@distilled.cloud/cloudflare@1.0.0-rc.13"
+  - "@distilled.cloud/core@1.0.0-rc.13"
+  - "@distilled.cloud/doppler@1.0.0-rc.13"
+  - "@distilled.cloud/fly-io@1.0.0-rc.13"
+  - "@distilled.cloud/gcp@1.0.0-rc.13"
+  - "@distilled.cloud/hetzner@1.0.0-rc.13"
+  - "@distilled.cloud/infisical@1.0.0-rc.13"
+  - "@distilled.cloud/neon@1.0.0-rc.13"
+  - "@distilled.cloud/planetscale@1.0.0-rc.13"
+  - "@distilled.cloud/prisma@1.0.0-rc.13"
+  - "@distilled.cloud/railway@1.0.0-rc.13"
+  - "@distilled.cloud/stripe@1.0.0-rc.13"
+  - "@distilled.cloud/zerossl@1.0.0-rc.13"
+  - alchemy@2.0.0-beta.80
+  - "@cloudflare/vitest-plugin@1.3.6"
+  - wrangler@4.147.0
+  - "@cloudflare/workers-types@5.20261002.1"
+  - cloudflare-drizzle-tracing@1.1.0
 patchedDependencies:
-  alchemy@2.0.0-beta.76: patches/alchemy@2.0.0-beta.76.patch
+  alchemy@2.0.0-beta.80: patches/alchemy@2.0.0-beta.80.patch
+  cloudflare-drizzle-tracing@1.1.0: patches/cloudflare-drizzle-tracing@1.1.0.patch

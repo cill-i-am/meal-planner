@@ -51,9 +51,10 @@ export const prepareSetupConfirmation = (input: {
 export const matchesConfirmedRosterAction = (
   action: ConversationAction,
   roster: Extract<ConversationBlock, { _tag: "RosterProposal" }>,
-  confirmation: NonNullable<ConversationTurnState["setupConfirmation"]>
+  confirmation: ConversationTurnState["setupConfirmation"]
 ): boolean => {
   if (
+    confirmation === null ||
     action.decision !== "accept" ||
     action.reviewedRoster === null ||
     action.safetyConfirmation !== null ||

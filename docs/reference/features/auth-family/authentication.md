@@ -79,6 +79,11 @@ and native [auth tests](../../../../apps/api/src/features/auth/auth.worker.test.
 
 ## Browser regression coverage
 
+Authentication and recovery mutation options use the shared stateless Effect
+Query adapter. Better Auth still owns native commands; these features own retry
+windows, safe return destinations, and account refresh. Passwords and reset
+tokens remain transient.
+
 [Playwright journeys](../../../../apps/web/e2e/family-journey.spec.ts) exercise
 signup and password reset through native local Workers. A JavaScript-disabled
 browser also checks that SSR credential fields and submission stay disabled until
@@ -96,3 +101,12 @@ original tab, inspect saved server data before making a new change.
 TanStack Query rechecks identity on `visibilitychange`. Headless browsers keep
 pages visible, so the page object delivers this browser event explicitly. Cookies,
 account reads, and cache isolation still use the real runtime.
+
+## Native account storage
+
+The Alchemy beta.80 adapter requires Better Auth 1.7.5. Its native account schema
+uses `providerId` and `accountId`; the former `issuer` field is removed by a
+Drizzle migration. The app retains a unique index on the native identity pair
+for atomic password reset. Existing account credentials and sessions are
+preserved; conflicting historical identities fail migration rather than being
+discarded. Local migration tests and native reset tests verify this boundary.
