@@ -158,10 +158,6 @@ export const AcquisitionTaskStepConfig = {
   retries: { limit: 3, delay: "2 seconds", backoff: "exponential" },
   timeout: "17 minutes",
 } as const;
-export const MaximumNestedAcquisitionAttempts = 9;
-export const MaximumScheduledWorkflowSeconds = 2985;
-export const MaximumAbsoluteWorkflowSeconds = 3066;
-
 const TypedAcquisitionRetrySchedule = Schedule.exponential("1 second").pipe(
   Schedule.upTo({ times: 2 })
 );

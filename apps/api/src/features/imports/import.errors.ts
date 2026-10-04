@@ -4,10 +4,6 @@ export interface InvalidImportRequest {
   readonly _tag: "InvalidImportRequest";
 }
 
-export interface InvalidImportId {
-  readonly _tag: "InvalidImportId";
-}
-
 export interface InvalidSource {
   readonly _tag: "InvalidSource";
 }
@@ -94,8 +90,3 @@ export const workflowStartRefused = (): WorkflowStartRefused => ({
 export const importTransitionRejected = (): ImportTransitionRejected => ({
   _tag: "ImportTransitionRejected",
 });
-
-export const carouselProcessingUnavailable =
-  (): CarouselProcessingUnavailable => ({
-    _tag: "CarouselProcessingUnavailable",
-  });

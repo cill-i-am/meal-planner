@@ -1,10 +1,10 @@
 import type { UserId } from "@meal-planner/household-api";
 import { organizationClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
-import { Effect, Layer } from "effect";
-import { createEffectQuery } from "effect-query";
+import { Effect } from "effect";
 import { createContext, useContext } from "react";
 
+import { apiEffectQuery } from "../api-client/index.js";
 import { AuthRequestError, parseRetryAfter } from "./auth-errors.js";
 import type { parseSignIn, parseSignUp } from "./auth-input.js";
 
@@ -64,8 +64,6 @@ export type AuthenticationInput =
   | { readonly kind: "login"; readonly input: ReturnType<typeof parseSignIn> }
   | { readonly kind: "signup"; readonly input: ReturnType<typeof parseSignUp> };
 
-const effectQuery = createEffectQuery(Layer.empty);
-
 export const authenticate = (
   authClient: ReturnType<typeof makeAuthClient>,
   command: AuthenticationInput
@@ -96,7 +94,7 @@ export const authenticate = (
 export const authenticationMutationOptions = (
   authClient: ReturnType<typeof makeAuthClient>
 ) =>
-  effectQuery.mutationOptions({
+  apiEffectQuery.mutationOptions({
     mutationFn: (command: AuthenticationInput) =>
       authenticate(authClient, command),
     mutationKey: ["authenticate"],

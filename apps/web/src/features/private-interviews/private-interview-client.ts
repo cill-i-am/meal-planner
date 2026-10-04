@@ -1148,10 +1148,6 @@ export class PrivateInterviewClient {
     });
   };
 
-  refreshSession = () => {
-    this.refreshCards();
-  };
-
   hasGeneration = (generation: string) =>
     this.#sessionGeneration === generation;
 

@@ -35,7 +35,7 @@ import { ProviderAccountingService } from "../provider-accounting/provider-accou
 import {
   RecipeImportHouseholdDomain,
   makeRecipeImportHttpApiLayer,
-  makeRecipeImportWorkerHttpLayer,
+  makeRecipeImportNotFoundHttpLayer,
 } from "./import-intent-api.http.js";
 import { ProviderRecoveryService } from "./import-provider-recovery.js";
 import { ProviderRecoveryRouteDefinitions } from "./import-provider-recovery.routes.js";
@@ -277,9 +277,11 @@ const makeApp = async (options: MakeAppOptions = {}) => {
   const apiLayer =
     options.operationalRoutes === undefined
       ? makeRecipeImportHttpApiLayer()
-      : makeRecipeImportWorkerHttpLayer({
-          operationalRoutes: options.operationalRoutes,
-        });
+      : Layer.mergeAll(
+          HttpRouter.addAll(options.operationalRoutes),
+          makeRecipeImportHttpApiLayer(),
+          makeRecipeImportNotFoundHttpLayer()
+        );
   return HttpRouter.toWebHandler(
     apiLayer.pipe(Layer.provide(services), HttpRouter.provideRequest(services)),
     { disableLogger: true }

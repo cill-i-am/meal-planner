@@ -7,7 +7,6 @@ import {
   ImportObservabilityTraceStore,
   emitImportObservabilityEvent,
   makeImportCorrelationId,
-  metadataOnlyGatewayHeaders,
 } from "./import-observability.js";
 
 const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(
@@ -22,15 +21,6 @@ describe("private import observability", () => {
     expect(first).not.toBe(second);
     expect(Schema.is(ImportCorrelationId)(first)).toBe(true);
     expect(Schema.is(ImportCorrelationId)(second)).toBe(true);
-  });
-
-  it("sets metadata-only AI Gateway headers with no payload-bearing values", () => {
-    expect(metadataOnlyGatewayHeaders(correlationId)).toEqual({
-      "cf-aig-collect-log": "true",
-      "cf-aig-collect-log-payload": "false",
-      "cf-aig-metadata": JSON.stringify({ correlationId }),
-      "content-type": "application/json",
-    });
   });
 
   it.each([

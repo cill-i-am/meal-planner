@@ -17,7 +17,7 @@ import {
   ImportCorrelationId,
   ImportObservabilityTraceStore,
   emitImportObservabilityEvent,
-  observeImportQueueReceipt,
+  makeImportTraceContext,
   observeImportWorkflowStart,
 } from "./import-observability.js";
 import { makeVisualTransport } from "./import-provider-adapters.test-fixture.js";
@@ -261,7 +261,7 @@ describe("opaque import correlation continuity", () => {
     await Effect.runPromise(
       Effect.gen(function* correlatedPath() {
         let creations = 0;
-        const trace = yield* observeImportQueueReceipt(() => {
+        const trace = makeImportTraceContext(() => {
           creations += 1;
           return correlationId;
         });
@@ -312,7 +312,6 @@ describe("opaque import correlation continuity", () => {
     );
 
     expect(events.map((event) => event.event)).toEqual([
-      "queue.received",
       "import.accepted",
       "workflow.started",
       "budget.reservation",
@@ -357,24 +356,21 @@ describe("opaque import correlation continuity", () => {
       get: (_id: string) => Effect.succeed(activeInstance),
     });
     await Effect.runPromise(
-      Effect.gen(function* reconcileExistingWorkflow() {
-        yield* observeImportQueueReceipt(() => reconciliationCorrelationId);
-        yield* reconciliationStarter.dispatchAdmission({
+      reconciliationStarter
+        .dispatchAdmission({
           executionGeneration,
           importId,
           organizationId,
           trace: { correlationId: reconciliationCorrelationId },
           workflowIdentity,
-        });
-      }).pipe(Effect.provideService(ImportObservabilityTraceStore, traceStore))
+        })
+        .pipe(Effect.provideService(ImportObservabilityTraceStore, traceStore))
     );
 
     const reconciliationEvents = events.filter(
       (event) => event.correlationId === reconciliationCorrelationId
     );
-    expect(reconciliationEvents.map((event) => event.event)).toEqual([
-      "queue.received",
-    ]);
+    expect(reconciliationEvents).toEqual([]);
     expect(
       JSON.stringify({
         events,

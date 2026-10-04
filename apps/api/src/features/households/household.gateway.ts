@@ -77,12 +77,6 @@ export type MealPlanSwapFailure =
   | MealPlanDecisionFailure
   | MealPlanSwapRejected;
 
-export type HouseholdMealPlanFailure =
-  | MealPlanCreateFailure
-  | MealPlanDecisionFailure
-  | MealPlanReadFailure
-  | MealPlanSwapFailure;
-
 export interface HouseholdMealPlanGateway {
   readonly approve: (input: {
     readonly payload: DecideMealPlanPayload;

@@ -9,7 +9,7 @@ import {
   recipeIngredientFromText,
   recipeInstructionFromText,
   recipeContentBlockers,
-  recipeDisplayText,
+  formatRecipeIngredient,
 } from "./content.js";
 import { scaleRecipeIngredients } from "./scaling.js";
 
@@ -61,10 +61,7 @@ describe("structured recipe content", () => {
     if (first === undefined || second === undefined) {
       throw new Error("Missing scaled ingredients");
     }
-    expect(
-      recipeDisplayText({ ...recipe, ingredients: [first, second] })
-        .ingredients[0]
-    ).toBe("4–6 large tomatoes, chopped");
+    expect(formatRecipeIngredient(first)).toBe("4–6 large tomatoes, chopped");
   });
   it("refuses to guess a baseline for ranged, unknown or non-serving yields", () => {
     expect(scaleRecipeIngredients({ ...recipe, servings: null }, 4)).toEqual({
