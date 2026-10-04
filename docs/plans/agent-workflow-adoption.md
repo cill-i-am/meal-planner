@@ -71,7 +71,11 @@ and important state transitions first. These explanations are distinct from
 runtime verification evidence. No visual artifact is required for every PR.
 
 The proposed maintenance cadence is cleanup during normal delivery plus a weekly
-focused gardener sweep. Scheduling is recorded separately from installation.
+focused gardener sweep. No recurring automation is active. A proposed five-run
+Monday-morning schedule was rejected by automatic approval review because future
+scheduled code changes and merges need explicit authorization. The proposed scope
+is verified maintenance within existing domain behavior, with independent review,
+required CI and merge; material product decisions still return to Cillian.
 
 ## Adoption and current audit
 
@@ -93,12 +97,13 @@ Acceptance for subsequent setup:
   pstack owns TDD. Existing repository plans and domain references are configured.
 - [x] Routine implementation/review/design decisions reuse approved scope.
 - [x] Verification guidance names the actual native commands and runtime settings.
-- [ ] An agreed change completes implementation, independent review, CI and merge
-  without Cillian prompting each phase.
-- [ ] A gardener pass ships useful verified improvements without changing the
-  agreed domain behavior.
 - [ ] On-demand explanations show real domains and their interactions.
-- [ ] The month-long adoption has an actual start date after setup is verified.
+
+[PR #281](https://github.com/cill-i-am/meal-planner/pull/281) is the delivery receipt
+for the first autonomous implementation and gardening pass. Its actual review,
+required-check and merge state determine completion; a merge-ready state does not.
+The month-long trial begins when that PR merges and runs for one calendar month.
+Use the merge timestamp rather than maintaining a second delivery-status checklist.
 
 ## Implementation and remaining decisions
 
