@@ -43,6 +43,8 @@ trying a small end-to-end flow in the next.
 
 ## Engineering and interface work
 
+- [Autonomous delivery and codebase gardening](agent-workflow-adoption.md):
+  agreed agent workflow, current obstacle audit, and pending installation.
 - [Codebase design coverage](codebase-design-coverage.md): up to twenty deletion-test
   passes across the repository, with coverage and delivery evidence.
 - [Alchemy and Effect stable upgrade](alchemy-effect-upgrade-2026-10-02.md):
