@@ -61,7 +61,7 @@ export type RecipeRecoveryPreparationHouseholdAuthority = Pick<
   | "readRecipeRecoveryAttempt"
 >;
 
-export interface HouseholdProviderRecovery {
+interface HouseholdProviderRecovery {
   readonly acquisitionGeneration: RecipeRecoveryWorkflowInput["acquisitionGeneration"];
   readonly importId: RecipeRecoveryWorkflowInput["importId"];
   readonly inputFingerprint: string;

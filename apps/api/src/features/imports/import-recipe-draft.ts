@@ -132,7 +132,7 @@ const visualEvidenceReason = (error: {
   return "visual_evidence_invalid";
 };
 
-export const RecipeFailureRecoveryPolicy = Schema.Literals([
+const RecipeFailureRecoveryPolicy = Schema.Literals([
   "dispatch_retry",
   "durable_recovery",
   "none",

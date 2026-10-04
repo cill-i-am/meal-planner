@@ -206,7 +206,7 @@ export class PrivateDiscoveryFailure extends Data.TaggedError(
   readonly provenance: PrivateDiscoveryProvenance | null;
 }> {}
 
-export interface PrivateDiscoveryModel {
+interface PrivateDiscoveryModel {
   readonly generate: (input: {
     readonly beforeDispatch: (provenance: PrivateDiscoveryProvenance) => void;
     readonly context: PrivateDiscoveryContext;

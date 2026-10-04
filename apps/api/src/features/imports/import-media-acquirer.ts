@@ -45,7 +45,7 @@ import {
   SourceCanonicalId,
 } from "./import.contracts.js";
 
-export interface ValidatedMediaArtifact {
+interface ValidatedMediaArtifact {
   readonly audioStreams: readonly {
     readonly codec: string;
     readonly index: number;

@@ -551,7 +551,7 @@ const workersAiGatewayOptions = (gatewayId: string) =>
 export type WorkersAiGatewayClient = Required<LanguageModelClient>;
 export type WorkersAiBinding = Effect.Success<WorkersAiGatewayClient["raw"]>;
 
-export const runWorkersAi = (
+const runWorkersAi = (
   ai: WorkersAiBinding,
   model: string,
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- TODO(ASU001 alchemy@2.0.0-beta.80): LanguageModel.callRaw -> Ai.run(model, body) erases the model-correlated visual request; Schema can validate JSON but cannot restore that vendor generic without changing the forced-tool protocol. Remove when Alchemy provides a public precise visual request transport.
@@ -1019,13 +1019,13 @@ export const normalizeWorkersAiResponse = (response: Response): Response => {
 
 /**
  * Keep the installed Alchemy LanguageModel composition while dispatching
- * through the account-bound Workers AI binding. The binding cannot express
- * AI Gateway's payload-suppression header, so the proxy disables provider-side
- * gateway logging at the final SDK boundary and relies on the redacted,
+ * through the account-bound Workers AI binding. The proxy sets the supported
+ * per-request gateway.collectLog option to false at the final SDK boundary
+ * and relies on the redacted,
  * correlation-aware Worker observability events. It never touches the
  * universal gateway binding.
  */
-export const noLogWorkersAiClient = (
+const noLogWorkersAiClient = (
   client: WorkersAiGatewayClient,
   correlationId: ImportCorrelationId,
   providerStage: "visual"

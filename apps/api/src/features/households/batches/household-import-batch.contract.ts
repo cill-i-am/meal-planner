@@ -79,7 +79,7 @@ export const HouseholdClaimedImportBatchItem = Schema.Struct({
   idempotencyKey: IdempotencyKey,
   source: CreateRecipeImportBatchItemRequest.fields.source,
 });
-export const HouseholdTerminalImportBatchItem = Schema.Struct({
+const HouseholdTerminalImportBatchItem = Schema.Struct({
   _tag: Schema.Literal("Terminal"),
   batch: RecipeImportBatch,
 });

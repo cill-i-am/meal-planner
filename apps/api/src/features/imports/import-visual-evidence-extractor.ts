@@ -8,7 +8,7 @@ export const MaximumVisualFrames = 12;
 export const MaximumVisualFrameBytes = 1_048_576;
 export const MaximumVisualInputBytes = 6_291_456;
 export const MaximumVisualObservations = 256;
-export const VisualConfidenceThreshold = 0.8;
+const VisualConfidenceThreshold = 0.8;
 
 const TrimmedNonEmptyString = Schema.String.pipe(
   Schema.check(Schema.isTrimmed(), Schema.isNonEmpty())
@@ -263,7 +263,7 @@ export interface VisualFrameArtifact {
   readonly width: number;
 }
 
-export interface VisualFrameSamplingInput {
+interface VisualFrameSamplingInput {
   readonly durationMilliseconds: number;
   readonly generation: AcquisitionGeneration;
   readonly importId: ImportId;

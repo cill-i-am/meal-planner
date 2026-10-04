@@ -32,7 +32,7 @@ type NativeForcedToolDecode =
       readonly wrappedInArray: boolean;
     };
 
-export type ForcedToolDecodeReason =
+type ForcedToolDecodeReason =
   | "invalid_arguments"
   | "invalid_cardinality"
   | "invalid_native_envelope"

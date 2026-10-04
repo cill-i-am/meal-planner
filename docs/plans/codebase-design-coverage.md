@@ -37,13 +37,13 @@ inventory or identifier search alone does not complete a pass.
 | 3 | API auth, families, invitations and email | Reviewed | Remove unused bound `listOrganizations` and `setActiveOrganization` methods from production and test adapters, and hide internal auth helper types. Keep output fences, atomic native endpoint extensions, deterministic invitation identity and family creator-link recovery. Trusted native fixture creation still uses the bound `createOrganization` method. |
 | 4 | Household foundation and shared kernel | Reviewed | Hide the two internal-only live Layers. Keep canonical encoding, digest and identity services: production and deterministic test adapters vary at these real seams. Keep the provenance check and durable admission repository because they enforce household isolation, stable workflow identity and replayable dispatch. |
 | 5 | Household people and profiles | Reviewed | Keep the control-plane adapter, purpose-separated identities, profile policy and transactional writers. Their interfaces hide recipient authority, safety confirmation, audit/version updates, departure recovery and mutation receipts. The small command adapters select distinct domain operations; removing them would spread those rules into callers. |
-| 6 | Household imports, evidence, batches and meal plans | Pending | |
-| 7 | Private authority, directory, session and confirmation | Pending | |
-| 8 | Private chat, discovery and model adapters | Pending | |
-| 9 | Import source resolution, media and acquisition | Pending | |
-| 10 | Import evidence, speech, visual and carousel extraction | Pending | |
-| 11 | Recipe draft, grounding, review and recovery | Pending | |
-| 12 | Import orchestration and provider accounting | Pending | |
+| 6 | Household imports, evidence, batches and meal plans | Reviewed | Hide internal batch/evidence component declarations. Keep the queue writer service type public because exported declaration signatures require it. Keep queue send classification, transactional import authority, integrity checks, replay receipts and approved recipe publication. |
+| 7 | Private authority, directory, session and confirmation | Reviewed | Keep native directory/session, lifecycle coordination, socket fencing and confirmation. They enforce synchronous generation/expiry checks, hibernation attachment safety, exact-command recovery and household-only profile writes; deleting them would distribute authority policy across callers. |
+| 8 | Private chat, discovery and model adapters | Reviewed | Hide internal discovery byte limits and the internal base model interface. Keep bounded continuity, deterministic topic/proposal selection, participant evidence validation, application acceptance and published SDK streaming/persistence adapters. |
+| 9 | Import source resolution, media and acquisition | Reviewed | Hide internal downloader/runtime input types and its default Node client. Keep DNS pinning, public-address checks, credential scope, bounded streaming, checksums, acquisition leases and checkpoint recovery; these are real external and runtime seams. |
+| 10 | Import evidence, speech, visual and carousel extraction | Reviewed | Remove the uncalled household carousel repository adapter and its recovery helper, left after PR #277. Keep carousel domain/evidence rules, native household integrity checks and their tests. Keep VisualEvidenceExtractionInput public because exported provider signatures require it. Timestamp checks now target each of the three live evidence adapters separately. |
+| 11 | Recipe draft, grounding, review and recovery | Reviewed | Hide internal recipe recovery policy, recovery result and durable host/dependency types. Keep grounding, draft lifecycle, recorded provider dispatch and recipe-only restart machinery: they preserve original evidence, timestamps, generation and unknown-result recovery. |
+| 12 | Import orchestration and provider accounting | Reviewed | Hide internal provider retry helpers, Workers AI helpers and Worker composition input type. Keep native task retries, safe checkpoints, provider logging protection and conservative accounting. Correct the logging comment against current binding documentation and installed types; no dispatch or logging settings changed. |
 | 13 | Tesco integration and meal-planning service | Pending | |
 | 14 | Web auth, family, onboarding, invitations and recovery | Pending | |
 | 15 | Web people, profiles, household status and private interviews | Pending | |
@@ -66,7 +66,19 @@ invitation client type alias and internal-only host/auth/authority exports.
 Local validation on October 4: 1,635 tests, 14 Chromium/mobile WebKit family,
 food-profile and private-review journeys, typechecks, production build, lint,
 formatting, documentation checks and 24 checker tests, and Ultracite doctor passed.
-Deployment is pending. Live provider calls and real notifications were not used.
+[PR #278](https://github.com/cill-i-am/meal-planner/pull/278) merged as
+`d826dfd214a7fcbb5c3403e1139c75076c1d3f0b`. Its hosted CI, preview checks,
+production deployment and site smoke checks passed; preview cleanup completed.
+Live provider calls and real notifications were not used.
+
+Passes 6–12 select the uncalled carousel repository adapter and 31 internal-only
+exports. Declaration generation requires two apparently unused types to remain
+public; those exports are retained. A structural timestamp assertion included the
+removed adapter; its replacement checks all three live adapters individually.
+Local validation of this second batch passed 1,635 tests, including native Worker
+and provider Workflow coverage, plus typechecks, production build, lint,
+formatting and documentation checks. No tests were removed. Hosted CI and
+deployment are pending; no live acquisition, model calls or notifications ran.
 
 At completion, record the reviewed scopes, removed and retained interfaces,
 delivery PRs and verification limits here. Paid providers and real household
@@ -74,7 +86,6 @@ notifications are not required to prove a deletion or transport refactor.
 
 ## Next action
 
-Review household imports, evidence and batches, then work through the ledger
-without repeatedly revisiting only the smallest browser modules. The first five
-passes have selected a small interface cleanup; validation and delivery are
-pending.
+Deliver the second batch, then review Tesco/meal planning, the remaining web
+features, Worker persistence and tooling. Consider native-contract consolidation
+for the Node catalogue HTTP cluster after tracing its tests and request rules.

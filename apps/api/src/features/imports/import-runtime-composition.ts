@@ -54,7 +54,7 @@ import type {
 type RecoveryCheckpoint = typeof ProviderTaskCheckpoint.Type;
 
 /** Durable host operations needed by the Effect-owned recipe recovery loop. */
-export interface RecipeRecoveryLoopDependencies<Requirements = never> {
+interface RecipeRecoveryLoopDependencies<Requirements = never> {
   readonly persistUnknown: (
     attempt: RecipeRecoveryAttempt,
     durableTaskName: string
@@ -198,7 +198,7 @@ const recoveryMutationId = (semanticKey: string) =>
   ).pipe(Effect.map(Schema.decodeUnknownSync(HouseholdImportMutationId)));
 
 /** Cloudflare primitives retained by the recipe recovery Workflow host. */
-export interface ImportRecipeRecoveryDurableHost {
+interface ImportRecipeRecoveryDurableHost {
   readonly task: typeof Cloudflare.Workflows.task;
   readonly waitForEvent: typeof Cloudflare.Workflows.waitForEvent;
 }

@@ -349,9 +349,19 @@ describe("household foundation structural boundaries", () => {
       `\`visual:fail:\${failure.dispatchId}:\${failure.sourceMediaSha256}:\${failure.failureCode}\``
     );
     expect(repository.match(/\? current\.startedAt/gu)).toHaveLength(2);
-    expect(
-      repository.match(/completedAt: failure\.completedAt/gu)
-    ).toHaveLength(4);
+    for (const factory of [
+      "makeHouseholdSpeechTranscriptionRepository",
+      "makeHouseholdVisualEvidenceRepository",
+      "makeHouseholdRecipeDraftRepository",
+    ]) {
+      const adapter = repository
+        .split(`export const ${factory}`)[1]
+        ?.split("\nexport const ")[0];
+      expect(
+        adapter?.match(/completedAt: failure\.completedAt/gu),
+        factory
+      ).toHaveLength(1);
+    }
     expect(
       repository.match(/completedAt: current\.completedAt/gu)
     ).toHaveLength(2);

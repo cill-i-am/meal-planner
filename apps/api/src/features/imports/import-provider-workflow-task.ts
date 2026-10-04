@@ -18,7 +18,7 @@ export interface ProviderTaskRetryLifecycle {
   readonly working: (attempt: number) => Effect.Effect<void>;
 }
 
-export interface CodedProviderTaskFailure {
+interface CodedProviderTaskFailure {
   readonly code: string;
   readonly reasonCode?: ProviderTaskFailureCheckpoint["reasonCode"];
 }
@@ -26,7 +26,7 @@ export type ProviderTaskFailure =
   | CodedProviderTaskFailure
   | ImportTransitionError;
 
-export const providerTaskFailureCode = (error: ProviderTaskFailure): string =>
+const providerTaskFailureCode = (error: ProviderTaskFailure): string =>
   "code" in error ? error.code : "stage_failed";
 
 const providerTaskFailureReasonCode = (
@@ -34,7 +34,7 @@ const providerTaskFailureReasonCode = (
 ): ProviderTaskFailureCheckpoint["reasonCode"] =>
   "reasonCode" in error ? error.reasonCode : undefined;
 
-export const isRetryableProviderTaskFailure = (
+const isRetryableProviderTaskFailure = (
   code: string
 ): code is "provider_unavailable" | "throttled" | "timeout" =>
   code === "provider_unavailable" || code === "throttled" || code === "timeout";

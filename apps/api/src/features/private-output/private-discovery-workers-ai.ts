@@ -27,8 +27,8 @@ import type {
 } from "./private-discovery-model.js";
 import { privateDiscoveryInstructions } from "./private-discovery-prompt.js";
 
-export const PRIVATE_DISCOVERY_INPUT_BYTES = 32_768;
-export const PRIVATE_DISCOVERY_RESPONSE_BYTES = 65_536;
+const PRIVATE_DISCOVERY_INPUT_BYTES = 32_768;
+const PRIVATE_DISCOVERY_RESPONSE_BYTES = 65_536;
 const PositiveAmount = Schema.Number.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(0))
 );
