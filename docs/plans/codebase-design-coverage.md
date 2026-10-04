@@ -12,7 +12,11 @@ substantive passes. Stop earlier if all areas have been examined and the selecte
 refactors are delivered. A pass may retain every module when its interface earns
 its keep. Previous deliveries in PRs #273–#277 are the baseline, not new passes.
 
-The tracked baseline contains 764 code, configuration and migration files. Review
+The initial assignment contained 764 code, configuration and migration files.
+The final gap check adds eleven files: two stylesheets, a motion reference HTML
+file, two installed dependency patches, the example environment, two ignore
+files, and the vendored launcher, Windows launcher and version metadata. The
+complete source/configuration inventory therefore contains 775 baseline files. Review
 runtime interfaces, their real callers, test seams and ownership within each area.
 Generated files, migrations, lockfiles and vendored code get an ownership and
 consumer check; do not hand-edit generated output or remove data protections.
@@ -44,14 +48,14 @@ inventory or identifier search alone does not complete a pass.
 | 10 | Import evidence, speech, visual and carousel extraction | Reviewed | Remove the uncalled household carousel repository adapter and its recovery helper, left after PR #277. Keep carousel domain/evidence rules, native household integrity checks and their tests. Keep VisualEvidenceExtractionInput public because exported provider signatures require it. Timestamp checks now target each of the three live evidence adapters separately. |
 | 11 | Recipe draft, grounding, review and recovery | Reviewed | Hide internal recipe recovery policy, recovery result and durable host/dependency types. Keep grounding, draft lifecycle, recorded provider dispatch and recipe-only restart machinery: they preserve original evidence, timestamps, generation and unknown-result recovery. |
 | 12 | Import orchestration and provider accounting | Reviewed | Hide internal provider retry helpers, Workers AI helpers and Worker composition input type. Keep native task retries, safe checkpoints, provider logging protection and conservative accounting. Correct the logging comment against current binding documentation and installed types; no dispatch or logging settings changed. |
-| 13 | Tesco integration and meal-planning service | Pending | |
-| 14 | Web auth, family, onboarding, invitations and recovery | Pending | |
-| 15 | Web people, profiles, household status and private interviews | Pending | |
-| 16 | Web recipe import, route composition and browser journeys | Pending | |
-| 17 | UI components, styling, browser transport and observability | Pending | |
-| 18 | Worker composition, persistence, infrastructure and native fixtures | Pending | |
-| 19 | Architecture checks, lint rules, evaluations and instruction tooling | Pending | |
-| 20 | Whole-repo caller graph, public exports, documentation and coverage gaps | Pending | |
+| 13 | Tesco integration and meal-planning service | Reviewed | Replace the Node catalogue HTTP cluster with a feature-owned Effect HttpApi contract and generated-client coverage. Remove manual query decoding, JSON wrappers and the second error hierarchy; keep fixed safe responses, domain schemas and defaults. Hide the internal Tesco Layer factory and synthetic planning repository factory. Keep serialized authentication refresh, the read-only GraphQL allowlist, ranking/revision policy and native persistence. |
+| 14 | Web auth, family, onboarding, invitations and recovery | Reviewed | Hide the internal setup progress component. Keep account/family providers, auth retry deadlines, roster command shaping, invitation scopes and retained requests: these own identity, cache lifetimes, exact-command retry and definite-versus-unknown failure behavior. Onboarding composition serves several routes and prevents family loading from leaking into invitations. |
+| 15 | Web people, profiles, household status and private interviews | Reviewed | Keep feature-owned Effect operations and state hooks. The former Promise facades are already gone. Profile history pagination, scoped session storage, complete Cause classification, saved private commands, socket admission generations and recovery retain real responsibilities; deleting them would spread safety and recovery rules into React callers. |
+| 16 | Web recipe import, route composition and browser journeys | Reviewed | Keep shared household query keys, decoded navigation, route-level identity/runtime composition, generated route output and browser journey page objects. Keys prevent household cache collisions; the page objects centralize real user actions and completion checks across journeys. Earlier Effect migrations already removed redundant operation interfaces. |
+| 17 | UI components, styling, browser transport and observability | Reviewed | Keep documented shadcn/Base UI primitives, BaseMotionElement, MotionProvider, responsive overlay lifecycle, form field composition and pending-state accessibility. Keep server transport cookie/identity forwarding, browser telemetry and Effect retry policy. These adapt supported libraries or own resource, accessibility and request semantics. |
+| 18 | Worker composition, persistence, infrastructure and native fixtures | Reviewed | Keep separate native binding tokens, private RPC schemas, admitted command routing, Durable Object composition and household SQLite repositories. They preserve authority, provenance, transactional receipts, generation fences, outbox dispatch and crash recovery. Keep native fixtures and immutable migration history; generated schemas/snapshots are not hand-edited. Request cancellation and observability preserve interruption and redact auth paths. |
+| 19 | Architecture checks, lint rules, evaluations and instruction tooling | Reviewed | Keep native Alchemy migration/queue regression probes, ownership/architecture checks and supported Oxlint plugin rules. They exercise installed dependency behavior and enforce source boundaries. Keep evaluation scenario/rubric ownership and vendored instruction tooling; the launcher and browser helpers have actual hook/command consumers and are maintained by their upstream owner. |
+| 20 | Whole-repo caller graph, public exports, documentation and coverage gaps | Reviewed | Reconcile all 775 source/configuration files, including eleven missed by the initial extension inventory. Retain dependency patches used by pnpm, semantic theme styles and approved visual references. Check changed exports against runtime/test callers and emitted declarations; retain public protocol/domain schemas and genuine adapter seams. Correct the installed Effect tagged-error name in engineering guidance. No unassigned source/configuration files remain. |
 
 ## Verification and delivery
 
@@ -77,8 +81,20 @@ public; those exports are retained. A structural timestamp assertion included th
 removed adapter; its replacement checks all three live adapters individually.
 Local validation of this second batch passed 1,635 tests, including native Worker
 and provider Workflow coverage, plus typechecks, production build, lint,
-formatting and documentation checks. No tests were removed. Hosted CI and
-deployment are pending; no live acquisition, model calls or notifications ran.
+formatting and documentation checks. No tests were removed.
+[PR #279](https://github.com/cill-i-am/meal-planner/pull/279) merged as
+`f7d558dc83fd291b28d79053e4336b9a6db64ea6`. Hosted CI, preview verification,
+production deployment and public site smoke checks passed; preview cleanup
+completed. No live acquisition, model calls or notifications ran.
+
+Passes 13–20 select the catalogue contract consolidation and three internal-only
+exports. The obsolete projection-helper tests move to real HTTP boundary checks;
+new generated-client tests cover all five routes, defaults, invalid inputs and
+public output projection. Local validation passed 1,645 tests, typechecks,
+production build, lint, formatting, 309 documentation checks and 24 checker
+tests. The catalogue remains a Node-host feature; production smoke checks
+exercise the deployed Worker/site surface. No live Tesco or paid model calls
+were used. Hosted delivery is pending.
 
 At completion, record the reviewed scopes, removed and retained interfaces,
 delivery PRs and verification limits here. Paid providers and real household
@@ -86,6 +102,7 @@ notifications are not required to prove a deletion or transport refactor.
 
 ## Next action
 
-Deliver the second batch, then review Tesco/meal planning, the remaining web
-features, Worker persistence and tooling. Consider native-contract consolidation
-for the Node catalogue HTTP cluster after tracing its tests and request rules.
+All twenty review scopes are complete. Deliver and verify the catalogue contract
+batch, then close this plan. This is an interface/caller/ownership review with
+selected refactors, not a correctness audit of every line or a paid-provider
+acceptance run.

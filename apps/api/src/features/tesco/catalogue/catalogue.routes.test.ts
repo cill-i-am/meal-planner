@@ -3,6 +3,7 @@ import { HttpRouter } from "effect/http";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { AppRoutes } from "../../../app/routes.js";
+import { JsonHttpPlatformServices } from "../../../infrastructure/json-http-platform.js";
 import {
   TescoCatalogueAuthenticationUnavailable,
   TescoCatalogueRequestRejected,
@@ -15,9 +16,9 @@ import { TescoCatalogueRoutes } from "./catalogue.routes.js";
 
 const makeApp = (service: TescoCatalogue) =>
   HttpRouter.toWebHandler(
-    Layer.mergeAll(
-      HttpRouter.addAll(TescoCatalogueRoutes),
-      Layer.succeed(TescoCatalogue, TescoCatalogue.of(service))
+    TescoCatalogueRoutes.pipe(
+      Layer.provide(Layer.succeed(TescoCatalogue, TescoCatalogue.of(service))),
+      Layer.provide(JsonHttpPlatformServices)
     ),
     { disableLogger: true }
   );
@@ -81,6 +82,9 @@ describe("Tesco catalogue routes", () => {
   ])(
     "projects $failure._tag to a fixed safe response",
     async ({ failure, expected }) => {
+      Object.assign(failure, {
+        message: "Bearer secret-token: provider said account unavailable",
+      });
       const app = makeApp(failingCatalogue(failure));
       apps.push(app);
 
@@ -89,7 +93,9 @@ describe("Tesco catalogue routes", () => {
       );
 
       expect(response.status).toBe(expected.status);
-      await expect(response.json()).resolves.toStrictEqual(expected.body);
+      const body = await response.json();
+      expect(body).toStrictEqual(expected.body);
+      expect(JSON.stringify(body)).not.toContain("secret-token");
     }
   );
 
@@ -137,28 +143,30 @@ describe("Tesco catalogue routes", () => {
   it("does not expose a generic GraphQL operation", async () => {
     const calls: string[] = [];
     const app = HttpRouter.toWebHandler(
-      Layer.mergeAll(
-        AppRoutes,
-        Layer.succeed(
-          TescoCatalogue,
-          TescoCatalogue.of({
-            categoryProducts: () =>
-              Effect.sync(() => {
-                calls.push("categoryProducts");
-                throw new Error("Unexpected Tesco catalogue operation");
-              }),
-            search: () =>
-              Effect.sync(() => {
-                calls.push("search");
-                throw new Error("Unexpected Tesco catalogue operation");
-              }),
-            suggestions: () =>
-              Effect.sync(() => {
-                calls.push("suggestions");
-                throw new Error("Unexpected Tesco catalogue operation");
-              }),
-          })
-        )
+      AppRoutes.pipe(
+        Layer.provide(
+          Layer.succeed(
+            TescoCatalogue,
+            TescoCatalogue.of({
+              categoryProducts: () =>
+                Effect.sync(() => {
+                  calls.push("categoryProducts");
+                  throw new Error("Unexpected Tesco catalogue operation");
+                }),
+              search: () =>
+                Effect.sync(() => {
+                  calls.push("search");
+                  throw new Error("Unexpected Tesco catalogue operation");
+                }),
+              suggestions: () =>
+                Effect.sync(() => {
+                  calls.push("suggestions");
+                  throw new Error("Unexpected Tesco catalogue operation");
+                }),
+            })
+          )
+        ),
+        Layer.provide(JsonHttpPlatformServices)
       ),
       { disableLogger: true }
     );

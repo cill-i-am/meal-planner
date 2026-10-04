@@ -1,9 +1,13 @@
-import { HttpRouter } from "effect/http";
+import { Effect } from "effect";
+import { HttpRouter, HttpServerResponse } from "effect/http";
 
-import { json } from "../../app/http/responses.js";
 import { healthResponse } from "./health.model.js";
 
 /** Shared health route consumed by the Node and Cloudflare hosts. */
 export const HealthRoutes = [
-  HttpRouter.route("GET", "/health", json(healthResponse)),
+  HttpRouter.route(
+    "GET",
+    "/health",
+    HttpServerResponse.json(healthResponse).pipe(Effect.orDie)
+  ),
 ] as const;
