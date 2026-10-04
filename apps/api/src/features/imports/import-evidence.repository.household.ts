@@ -11,12 +11,12 @@ import type { HouseholdDomainWorkerMethods } from "../households/household-domai
 import type { HouseholdOrganizationId } from "../households/household.contract.js";
 import type { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
 import { HouseholdRecipeImportExecutionView } from "../households/recipe-import/household-recipe-import.contract.js";
+import type { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
 import type {
   CarouselEvidenceClaim,
   CarouselEvidenceRepository,
   CompletedCarouselEvidence,
 } from "./import-carousel.repository.js";
-import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import type { ImportCorrelationId } from "./import-observability.js";
 import type {

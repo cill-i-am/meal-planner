@@ -4,13 +4,17 @@ import {
   HouseholdUnauthorizedProblem,
   makeHouseholdPeopleApiClientLayer,
 } from "@meal-planner/household-api";
-import { Cause, Effect, Exit, Layer, Option, Schema } from "effect";
+import type {
+  HouseholdPersonId,
+  MutatePersonProfilePayload,
+} from "@meal-planner/household-api";
+import { Cause, Effect, Layer, Option, Result, Schema } from "effect";
 
-import { apiHttpLayer, browserApiRuntime } from "../api-client/index.js";
+import { apiHttpLayer } from "../api-client/index.js";
+import type { ApiRuntime } from "../api-client/index.js";
 import { displayedIdentityHeaders } from "../auth/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
 import { ProfileOperationError } from "./operations.js";
-import type { HouseholdProfileOperations } from "./operations.js";
 
 /** Only a sole, decoded server rejection is definitive. Defects and mixed causes stay ambiguous. */
 export const classifyProfileCause = <E>(
@@ -40,42 +44,48 @@ export const classifyProfileCause = <E>(
   return new ProfileOperationError(problem.value.code);
 };
 
-export const makeBrowserHouseholdProfileOperations = (
-  scope: DisplayedIdentity
-): HouseholdProfileOperations => {
-  const run = async <A, E>(
+export const makeHouseholdProfileEffectOperations = (
+  scope: DisplayedIdentity,
+  runtime: ApiRuntime
+) => {
+  const layer = makeHouseholdPeopleApiClientLayer({
+    baseUrl: runtime.baseUrl,
+    headers: displayedIdentityHeaders(scope),
+  }).pipe(Layer.provide(apiHttpLayer(runtime)));
+  const run = <A, E>(
     operation: (client: HouseholdPeopleApiClient) => Effect.Effect<A, E>
-  ): Promise<A> => {
-    const layer = makeHouseholdPeopleApiClientLayer({
-      baseUrl: globalThis.location.origin,
-      headers: displayedIdentityHeaders(scope),
-    }).pipe(Layer.provide(apiHttpLayer(browserApiRuntime())));
-    const exit = await Effect.runPromiseExit(
-      HouseholdPeopleApiClient.pipe(
-        Effect.flatMap(operation),
-        Effect.provide(layer)
-      )
+  ) =>
+    HouseholdPeopleApiClient.pipe(
+      Effect.flatMap(operation),
+      Effect.provide(layer),
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterrupts(cause)) {
+          const failure = Cause.findError(cause);
+          if (Result.isFailure(failure)) {
+            return Effect.failCause(failure.failure);
+          }
+        }
+        return Effect.fail(classifyProfileCause(cause));
+      })
     );
-    if (Exit.isSuccess(exit)) {
-      return exit.value;
-    }
-    throw classifyProfileCause(exit.cause);
-  };
   return {
-    get: (personId) =>
+    get: (personId: HouseholdPersonId) =>
       run((client) =>
         client.people.getProfile({
           params: { familyId: scope.organizationId, personId },
         })
       ),
-    mutate: (personId, payload) =>
+    mutate: (
+      personId: HouseholdPersonId,
+      payload: MutatePersonProfilePayload
+    ) =>
       run((client) =>
         client.people.mutateProfile({
           params: { familyId: scope.organizationId, personId },
           payload,
         })
       ),
-    versions: (personId, beforeVersion) =>
+    versions: (personId: HouseholdPersonId, beforeVersion?: number) =>
       run((client) =>
         client.people.listProfileVersions({
           params: { familyId: scope.organizationId, personId },
@@ -84,3 +94,7 @@ export const makeBrowserHouseholdProfileOperations = (
       ),
   };
 };
+
+export type HouseholdProfileOperations = ReturnType<
+  typeof makeHouseholdProfileEffectOperations
+>;

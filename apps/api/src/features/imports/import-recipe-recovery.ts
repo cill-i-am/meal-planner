@@ -4,7 +4,7 @@ import { flow } from "effect/Function";
 
 import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
 import { HouseholdOrganizationId } from "../households/household.contract.js";
-import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
+import { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportTraceContext } from "./import-observability.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";

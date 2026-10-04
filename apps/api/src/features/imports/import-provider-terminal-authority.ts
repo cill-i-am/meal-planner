@@ -7,7 +7,7 @@ import {
 } from "../households/evidence/household-evidence.contract.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import type { HouseholdSystemAdmission } from "../households/rpc/command-envelope.js";
-import type { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
+import type { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
 import type { AcquisitionGeneration } from "./import-media.model.js";
 import type { ProviderTaskFailureCheckpoint } from "./import-provider-workflow-checkpoint.js";
 import { ImportId } from "./import.contracts.js";

@@ -1,11 +1,22 @@
 import { Effect, Schema } from "effect";
 
-import type { ImportIntentExecutionGeneration } from "../../imports/import-intent-transition.js";
 import type { ImportId } from "../../imports/import.contracts.js";
 import {
   HouseholdCanonicalEncoding,
   HouseholdDigest,
 } from "./authority-services.js";
+
+/** Parsed generation shared by household authority and its durable executors. */
+export const ImportIntentExecutionGeneration = Schema.Number.pipe(
+  Schema.check(
+    Schema.isInt(),
+    Schema.isGreaterThanOrEqualTo(0),
+    Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
+  ),
+  Schema.brand("ImportIntentExecutionGeneration")
+);
+export type ImportIntentExecutionGeneration =
+  typeof ImportIntentExecutionGeneration.Type;
 
 export const ImportWorkflowIdentity = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^import-acquisition:v1:[a-f\d]{64}$/u)),

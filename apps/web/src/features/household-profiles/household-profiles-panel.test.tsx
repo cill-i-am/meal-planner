@@ -47,13 +47,15 @@ it.each([false, true])(
     const user = userEvent.setup();
     const mutate = vi.fn();
     if (ambiguousFirst) {
-      mutate.mockRejectedValueOnce(new ProfileOperationError("ambiguous"));
+      mutate.mockReturnValueOnce(
+        Effect.fail(new ProfileOperationError("ambiguous"))
+      );
     }
     mutate
-      .mockRejectedValueOnce(
-        new ProfileOperationError("authentication_required")
+      .mockReturnValueOnce(
+        Effect.fail(new ProfileOperationError("authentication_required"))
       )
-      .mockResolvedValueOnce(empty);
+      .mockReturnValueOnce(Effect.succeed(empty));
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -63,11 +65,13 @@ it.each([false, true])(
           accountId="user-a"
           organizationId="auth"
           operations={{
-            get: vi.fn().mockResolvedValue(empty),
+            get: vi.fn().mockReturnValue(Effect.succeed(empty)),
             mutate,
             versions: vi
               .fn()
-              .mockResolvedValue({ nextBeforeVersion: null, versions: [] }),
+              .mockReturnValue(
+                Effect.succeed({ nextBeforeVersion: null, versions: [] })
+              ),
           }}
           peopleOperations={{
             list: vi.fn().mockReturnValue(Effect.succeed(roster)),
@@ -113,10 +117,26 @@ it.each(["success", "definitive rejection"])(
     const newer = Promise.withResolvers<PersonProfile>();
     const mutate = vi
       .fn()
-      .mockReturnValueOnce(original.promise)
-      .mockResolvedValueOnce(empty)
-      .mockReturnValueOnce(newer.promise)
-      .mockRejectedValue(new ProfileOperationError("ambiguous"));
+      .mockReturnValueOnce(
+        Effect.tryPromise({
+          catch: (error) =>
+            error instanceof ProfileOperationError
+              ? error
+              : new ProfileOperationError("ambiguous", { cause: error }),
+          try: () => original.promise,
+        })
+      )
+      .mockReturnValueOnce(Effect.succeed(empty))
+      .mockReturnValueOnce(
+        Effect.tryPromise({
+          catch: (error) =>
+            error instanceof ProfileOperationError
+              ? error
+              : new ProfileOperationError("ambiguous", { cause: error }),
+          try: () => newer.promise,
+        })
+      )
+      .mockReturnValue(Effect.fail(new ProfileOperationError("ambiguous")));
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -126,11 +146,13 @@ it.each(["success", "definitive rejection"])(
           accountId="user-a"
           organizationId="overlap"
           operations={{
-            get: vi.fn().mockResolvedValue(empty),
+            get: vi.fn().mockReturnValue(Effect.succeed(empty)),
             mutate,
             versions: vi
               .fn()
-              .mockResolvedValue({ nextBeforeVersion: null, versions: [] }),
+              .mockReturnValue(
+                Effect.succeed({ nextBeforeVersion: null, versions: [] })
+              ),
           }}
           peopleOperations={{
             list: vi.fn().mockReturnValue(Effect.succeed(roster)),
@@ -180,13 +202,15 @@ it("retains one ambiguous command across edits and remount, retrying its exact p
   const user = userEvent.setup();
   const mutate = vi
     .fn()
-    .mockRejectedValue(new ProfileOperationError("ambiguous"));
+    .mockReturnValue(Effect.fail(new ProfileOperationError("ambiguous")));
   const operations = {
-    get: vi.fn().mockResolvedValue(empty),
+    get: vi.fn().mockReturnValue(Effect.succeed(empty)),
     mutate,
     versions: vi
       .fn()
-      .mockResolvedValue({ nextBeforeVersion: null, versions: [] }),
+      .mockReturnValue(
+        Effect.succeed({ nextBeforeVersion: null, versions: [] })
+      ),
   };
   const queryClient = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
@@ -238,8 +262,8 @@ it("requires reload and explicit reapplication after a stale version without aut
   const user = userEvent.setup();
   const mutate = vi
     .fn()
-    .mockRejectedValue(new ProfileOperationError("stale_version"));
-  const get = vi.fn().mockResolvedValue(empty);
+    .mockReturnValue(Effect.fail(new ProfileOperationError("stale_version")));
+  const get = vi.fn().mockReturnValue(Effect.succeed(empty));
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -253,7 +277,9 @@ it("requires reload and explicit reapplication after a stale version without aut
           mutate,
           versions: vi
             .fn()
-            .mockResolvedValue({ nextBeforeVersion: null, versions: [] }),
+            .mockReturnValue(
+              Effect.succeed({ nextBeforeVersion: null, versions: [] })
+            ),
         }}
         peopleOperations={{
           list: vi.fn().mockReturnValue(Effect.succeed(roster)),
@@ -333,12 +359,14 @@ it.each([
           accountId="user-a"
           organizationId={`source-${source}`}
           operations={{
-            get: vi.fn().mockResolvedValue(profile),
+            get: vi.fn().mockReturnValue(Effect.succeed(profile)),
             mutate: vi.fn(),
-            versions: vi.fn().mockResolvedValue({
-              nextBeforeVersion: null,
-              versions: [profile],
-            }),
+            versions: vi.fn().mockReturnValue(
+              Effect.succeed({
+                nextBeforeVersion: null,
+                versions: [profile],
+              })
+            ),
           }}
           peopleOperations={{
             list: vi.fn().mockReturnValue(Effect.succeed(roster)),
@@ -381,8 +409,8 @@ it("keeps the selected person's profile scoped to the family cache key", async (
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const getFirst = vi.fn().mockResolvedValue(first);
-  const getSecond = vi.fn().mockResolvedValue(second);
+  const getFirst = vi.fn().mockReturnValue(Effect.succeed(first));
+  const getSecond = vi.fn().mockReturnValue(Effect.succeed(second));
   const view = (organizationId: string, get: typeof getFirst) => (
     <QueryClientProvider client={client}>
       <HouseholdProfilesPanel
@@ -393,7 +421,9 @@ it("keeps the selected person's profile scoped to the family cache key", async (
           mutate: vi.fn(),
           versions: vi
             .fn()
-            .mockResolvedValue({ nextBeforeVersion: null, versions: [] }),
+            .mockReturnValue(
+              Effect.succeed({ nextBeforeVersion: null, versions: [] })
+            ),
         }}
         peopleOperations={{
           list: vi.fn().mockReturnValue(Effect.succeed(roster)),

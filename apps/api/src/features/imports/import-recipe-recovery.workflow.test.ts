@@ -18,7 +18,7 @@ import { HouseholdDispatchId } from "../households/foundation/import-workflow-ad
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import { HouseholdOrganizationId } from "../households/household.contract.js";
 import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
-import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
+import { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
 import { RecipeDraft } from "./import-recipe-draft.repository.js";

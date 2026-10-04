@@ -3,13 +3,15 @@ import { Effect, Schema, Tracer } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
 import { HouseholdOrganizationId } from "../households/household.contract.js";
-import { ImportWorkflowIdentity } from "../households/shared-kernel/workflow-identity.js";
+import {
+  ImportWorkflowIdentity,
+  ImportIntentExecutionGeneration,
+} from "../households/shared-kernel/workflow-identity.js";
 import {
   ProviderAccountingRunId,
   ProviderAccountingTimestamp,
 } from "../provider-accounting/provider-accounting.js";
 import type { ProviderAccountingRepository } from "../provider-accounting/provider-accounting.js";
-import { ImportIntentExecutionGeneration } from "./import-intent-transition.js";
 import type { ImportObservabilityEvent } from "./import-observability.js";
 import {
   ImportCorrelationId,

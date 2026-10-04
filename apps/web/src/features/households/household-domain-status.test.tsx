@@ -2,11 +2,11 @@ import { HouseholdStatus } from "@meal-planner/household-api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { HouseholdOperations } from "./browser-operations.js";
 import { HouseholdDomainStatus } from "./household-domain-status.js";
-import type { HouseholdOperations } from "./operations.js";
 
 afterEach(cleanup);
 
@@ -36,7 +36,7 @@ const renderStatus = (
 describe("HouseholdDomainStatus", () => {
   it("shows initialization progress", () => {
     renderStatus({
-      current: vi.fn(() => new Promise<typeof readyHousehold>(() => {})),
+      current: vi.fn(() => Effect.never),
     });
 
     expect(
@@ -48,9 +48,9 @@ describe("HouseholdDomainStatus", () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Infinity } },
     });
-    const first = { current: vi.fn(async () => readyHousehold) };
+    const first = { current: vi.fn(() => Effect.succeed(readyHousehold)) };
     const second = {
-      current: vi.fn(() => new Promise<typeof readyHousehold>(() => {})),
+      current: vi.fn(() => Effect.never),
     };
     const view = render(
       <QueryClientProvider client={client}>
@@ -82,7 +82,7 @@ describe("HouseholdDomainStatus", () => {
 
   it("shows a user-legible ready state", async () => {
     renderStatus({
-      current: vi.fn(async () => readyHousehold),
+      current: vi.fn(() => Effect.succeed(readyHousehold)),
     });
 
     expect(
@@ -93,8 +93,8 @@ describe("HouseholdDomainStatus", () => {
   it("shows a retryable safe failure", async () => {
     const current = vi
       .fn<HouseholdOperations["current"]>()
-      .mockRejectedValueOnce(new Error("private failure"))
-      .mockResolvedValueOnce(readyHousehold);
+      .mockReturnValueOnce(Effect.die(new Error("private failure")))
+      .mockReturnValueOnce(Effect.succeed(readyHousehold));
     renderStatus({ current });
 
     expect(

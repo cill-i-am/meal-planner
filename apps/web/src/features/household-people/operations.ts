@@ -23,7 +23,7 @@ import { InvitationRejectionReason } from "@meal-planner/household-api";
 import { Cause, Option, Schema } from "effect";
 import type { Effect } from "effect";
 
-import { queryFailure } from "../api-client/index.js";
+import { queryFailure, queryFailureCause } from "../api-client/index.js";
 
 export const HouseholdPeopleOperationFailureCode = Schema.Literals([
   "bootstrap_conflict",
@@ -78,26 +78,14 @@ export class HouseholdPeopleOperationError extends Error {
   }
 }
 
-const QueryDefect = Schema.Struct({
-  _tag: Schema.Literal("EffectQueryDefect"),
-});
-const QueryFailureCause = Schema.Struct({
-  _tag: Schema.Literal("EffectQueryFailure"),
-  failureCause: Schema.declare<Cause.Cause<unknown>>(Cause.isCause),
-});
-const decodeQueryFailureCause = Schema.decodeUnknownOption(QueryFailureCause);
-
 export const householdPeopleFailureCode = (
   error: Error | null
 ): HouseholdPeopleOperationFailureCode | undefined => {
-  const wrapped = decodeQueryFailureCause(error);
+  const wrapped = queryFailureCause(error);
   if (
-    Schema.is(QueryDefect)(error) ||
-    (Option.isSome(wrapped) &&
-      (wrapped.value.failureCause.reasons.length !== 1 ||
-        wrapped.value.failureCause.reasons.some(
-          (reason) => !Cause.isFailReason(reason)
-        )))
+    Option.isSome(wrapped) &&
+    (wrapped.value.reasons.length !== 1 ||
+      wrapped.value.reasons.some((reason) => !Cause.isFailReason(reason)))
   ) {
     return "transport_unavailable";
   }

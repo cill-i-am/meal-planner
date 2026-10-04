@@ -8,7 +8,6 @@ import {
   makeHouseholdSpeechTranscriptionRepository,
   makeHouseholdVisualEvidenceRepository,
 } from "../imports/import-evidence.repository.household.js";
-import { ImportIntentExecutionGeneration } from "../imports/import-intent-transition.js";
 import type {
   AcquisitionBucketLike,
   AcquisitionMediaSource,
@@ -80,6 +79,7 @@ import {
   HouseholdMemberAdmission,
   HouseholdSystemAdmission,
 } from "./rpc/command-envelope.js";
+import { ImportIntentExecutionGeneration } from "./shared-kernel/workflow-identity.js";
 
 interface TestKvNamespace {
   readonly get: (key: string) => Promise<string | null>;

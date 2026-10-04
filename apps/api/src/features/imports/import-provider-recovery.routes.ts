@@ -53,7 +53,3 @@ export const ProviderRecoveryRouteDefinitions = [
     }).pipe((effect) => respond(effect, ProviderRecoveryResponse, () => 200))
   ),
 ] as const;
-
-export const ProviderRecoveryRoutes = HttpRouter.addAll(
-  ProviderRecoveryRouteDefinitions
-);

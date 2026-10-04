@@ -118,9 +118,10 @@ Cause before selecting a rejection; it must not treat only the first failure as
 proof. Retried commands retain their original payload, mutation ID, and expected
 versions. Cancelling a read reaches fetch; it does not undo a sent write.
 
-The private interview's Promise callback executes the roster Effect at its own
-boundary. There is no second Promise interface for the people client. Profile
-read/write operations retain their existing interface.
+Profile reads, writes, and history also expose generated-client Effects through
+the shared adapter. Their feature owns version guards and unresolved-command
+recovery. The private interview's Promise callback executes roster and profile
+Effects at its own boundary; neither client has a second Promise interface.
 
 ## Household-visible profiles
 

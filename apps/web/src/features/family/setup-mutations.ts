@@ -1,20 +1,16 @@
 import type { HouseholdOrganizationId } from "@meal-planner/household-api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { useApiRuntime } from "../api-client/index.js";
+import { apiEffectQuery, useApiRuntime } from "../api-client/index.js";
 import { useAccount } from "../auth/index.js";
-import {
-  familyEffectQuery,
-  familyKeys,
-  familyOperation,
-} from "./family-operations.js";
+import { familyKeys, familyOperation } from "./family-operations.js";
 
 export const useResumeFamilyCreation = (familyId: HouseholdOrganizationId) => {
   const runtime = useApiRuntime();
   const { user } = useAccount();
   const queryClient = useQueryClient();
   return useMutation(
-    familyEffectQuery.mutationOptions({
+    apiEffectQuery.mutationOptions({
       mutationFn: () =>
         familyOperation(runtime, user.id, (api) =>
           api.families.resumeCreation({ params: { familyId } })
@@ -31,7 +27,7 @@ export const useCompleteFamilySetup = () => {
   const { user } = useAccount();
   const queryClient = useQueryClient();
   return useMutation(
-    familyEffectQuery.mutationOptions({
+    apiEffectQuery.mutationOptions({
       mutationFn: (familyId: HouseholdOrganizationId) =>
         familyOperation(runtime, user.id, (api) =>
           api.families.complete({ params: { familyId } })

@@ -7,17 +7,16 @@ import type {
   HouseholdOrganizationId,
   UserId,
 } from "@meal-planner/household-api";
-import { Effect, Layer, Schema } from "effect";
-import { createEffectQuery } from "effect-query";
+import { Effect, Schema } from "effect";
 
 import {
   apiHttpLayer,
+  apiEffectQuery,
   transientRetry,
   isTransientHttpFailure,
 } from "../api-client/index.js";
 import type { ApiRuntime } from "../api-client/index.js";
 
-export const familyEffectQuery = createEffectQuery(Layer.empty);
 export const familyKeys = {
   all: (userId: UserId) => ["families", userId] as const,
   detail: (userId: UserId, familyId: HouseholdOrganizationId | undefined) =>
@@ -46,7 +45,7 @@ export const familyOperation = <A, E>(
     Effect.provide(apiHttpLayer(runtime))
   );
 export const familyListQuery = (runtime: ApiRuntime, userId: UserId) =>
-  familyEffectQuery.queryOptions({
+  apiEffectQuery.queryOptions({
     queryFn: () =>
       familyOperation(runtime, userId, (api) => api.families.list()),
     queryKey: familyKeys.list(userId),
@@ -58,7 +57,7 @@ export const familyQuery = (
   userId: UserId,
   familyId: HouseholdOrganizationId | undefined
 ) =>
-  familyEffectQuery.queryOptions({
+  apiEffectQuery.queryOptions({
     enabled: familyId !== undefined,
     queryFn: () => {
       if (familyId === undefined) {
