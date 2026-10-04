@@ -1,6 +1,6 @@
 import { Effect, Result } from "effect";
 
-import type { HouseholdPeopleEffectOperations } from "../household-people/client.js";
+import type { HouseholdPeopleEffectOperations } from "../household-people/index.js";
 import type { PersonCreation } from "./person-commands.js";
 
 /** Two explicit product actions; a rejected invitation does not erase the saved person. */

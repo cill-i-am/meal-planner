@@ -17,13 +17,8 @@ type TikTokHandoff =
   | { readonly _tag: "CanonicalLocation"; readonly url: URL }
   | { readonly _tag: "HandoffHtml"; readonly body: string };
 
-type TikTokOEmbed =
-  | { readonly _tag: "AvailableBody"; readonly body: string }
-  | { readonly _tag: "PrivateOrUnavailable" };
-
 const DefaultDeadlineMilliseconds = 5000;
 const MaximumHandoffBodyBytes = 512 * 1024;
-const MaximumOEmbedBodyBytes = 65_536;
 const MaximumRedirects = 5;
 
 const allowedTikTokHosts = new Set([
@@ -154,25 +149,11 @@ const readBoundedBody = (response: Response, maximumBytes: number) => {
   );
 };
 
-const fetchManual = (
-  fetcher: TikTokFetcher,
-  input: URL,
-  headers?: HeadersInit
-) =>
+const fetchManual = (fetcher: TikTokFetcher, input: URL) =>
   Effect.tryPromise({
     catch: unavailable,
-    try: (signal) => {
-      const request =
-        headers === undefined
-          ? { method: "GET" as const, redirect: "manual" as const, signal }
-          : {
-              headers,
-              method: "GET" as const,
-              redirect: "manual" as const,
-              signal,
-            };
-      return fetcher(input, request);
-    },
+    try: (signal) =>
+      fetcher(input, { method: "GET", redirect: "manual", signal }),
   });
 
 const withDeadline = <A>(
@@ -235,34 +216,7 @@ export const makeTikTokHttpTransport = (
     }
   );
 
-  const fetchOEmbed = Effect.fn("TikTokHttpTransport.fetchOEmbed")(
-    function* fetchOEmbed(videoUrl: string) {
-      const endpoint = new URL("https://www.tiktok.com/oembed");
-      endpoint.searchParams.set("url", videoUrl);
-      const response = yield* fetchManual(fetcher, endpoint, {
-        accept: "application/json",
-      });
-
-      if (response.status === 401 || response.status === 404) {
-        yield* cancelResponseBody(response);
-        return { _tag: "PrivateOrUnavailable" as const };
-      }
-      if (response.status !== 200) {
-        yield* cancelResponseBody(response);
-        return yield* Effect.fail(unavailable());
-      }
-      return {
-        _tag: "AvailableBody" as const,
-        body: yield* readBoundedBody(response, MaximumOEmbedBodyBytes),
-      };
-    }
-  );
-
   return {
-    fetchOEmbed: (
-      videoUrl: string
-    ): Effect.Effect<TikTokOEmbed, TikTokTransportFailure> =>
-      withDeadline(fetchOEmbed(videoUrl), deadlineMilliseconds),
     resolveHandoff: (
       initial: URL
     ): Effect.Effect<TikTokHandoff, TikTokTransportFailure> =>

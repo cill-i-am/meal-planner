@@ -8,7 +8,7 @@ import { Schema } from "effect";
 import {
   InvitationEmailInput,
   PersonNameInput,
-} from "../household-people/form-input.js";
+} from "../household-people/index.js";
 import { RosterCommand } from "./person-commands.js";
 
 export const RosterRequest = Schema.Struct({

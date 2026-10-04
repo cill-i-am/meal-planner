@@ -45,7 +45,7 @@ import {
   PersonNameInput,
   ParticipationInput,
   InvitationEmailInput,
-} from "../household-people/form-input.js";
+} from "../household-people/index.js";
 import { SetupFrame } from "./setup-ui.js";
 
 const nameValidator = Schema.toStandardSchemaV1(PersonNameInput);

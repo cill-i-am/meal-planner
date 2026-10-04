@@ -1,7 +1,7 @@
 import {
   HouseholdPeopleOperationError,
   householdPeopleFailureCode,
-} from "../household-people/client.js";
+} from "../household-people/index.js";
 
 export const terminalFailure = (error: Error) =>
   [

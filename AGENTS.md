@@ -30,6 +30,6 @@ When creating subagents, choose the model best suited to the job from Sol, Luna 
 
 Complete the assigned plan, check the result, fix related failures and reach the requested delivery point. Do not ask whether to continue at each milestone. Make routine decisions from the available evidence.
 
-Implementation requests include repository work through merge after required checks and reviews pass, unless the request sets a narrower endpoint. This does not authorize deployment or other external actions. Use permission already given for the same work. If something is genuinely blocked, finish the independent work and report the exact problem. Planning-only and review-only requests stay in scope.
+Implementation requests include repository work through merge after required checks and reviews pass, unless the request sets a narrower endpoint. This does not authorize unrelated external actions. Use permission already given for the same work. If something is genuinely blocked, finish the independent work and report the exact problem. Planning-only and review-only requests stay in scope.
 
 Preserve unrelated changes and use a separate checkout when work would conflict. Keep credentials and private data out of source, logs and work records. Update the plan and affected docs. Report what changed, what was checked and what remains.

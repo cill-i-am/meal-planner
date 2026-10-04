@@ -5,7 +5,7 @@ import {
 } from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
 
-import type { HouseholdPeopleEffectOperations } from "../household-people/client.js";
+import type { HouseholdPeopleEffectOperations } from "../household-people/index.js";
 import type { RosterCommand } from "./person-commands.js";
 
 export const runRosterCommand = (

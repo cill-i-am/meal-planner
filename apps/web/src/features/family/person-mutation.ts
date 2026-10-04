@@ -9,7 +9,7 @@ import { useAccount } from "../auth/index.js";
 import {
   makeHouseholdPeopleEffectOperations,
   HouseholdPeopleOperationError,
-} from "../household-people/client.js";
+} from "../household-people/index.js";
 import { usePendingRequest } from "../request-recovery/index.js";
 import { useFamily } from "./family-context.js";
 import { familyKeys } from "./family-operations.js";

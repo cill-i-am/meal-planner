@@ -2,8 +2,8 @@ import { HouseholdPerson, InvitationId } from "@meal-planner/household-api";
 import { Effect, Schema } from "effect";
 import { expect, it } from "vitest";
 
-import { HouseholdPeopleOperationError } from "../household-people/client.js";
-import type { HouseholdPeopleEffectOperations } from "../household-people/client.js";
+import { HouseholdPeopleOperationError } from "../household-people/index.js";
+import type { HouseholdPeopleEffectOperations } from "../household-people/index.js";
 import { PersonCreation } from "./person-commands.js";
 import { savePerson } from "./person-save.js";
 
