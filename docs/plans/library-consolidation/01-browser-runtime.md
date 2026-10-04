@@ -107,6 +107,35 @@ The only removed test exercised the unused gateway-header helper; live telemetry
 redaction and workflow/provider correlation checks remain. No live TikTok
 acquisition or paid model flow was exercised.
 
+## Carousel staging and private confirmation delivery
+
+Remove the operator carousel writer, staging store and unreachable Workflow
+branch. There was no production staging ingress, and source resolution rejects
+photo posts before acquisition. Keep the carousel evidence types, integrity
+checks and household commit rules; this delivery does not add photo acquisition.
+
+Replace manual confirmation URL matching, fetch and status decoding with the
+shared private-interview Effect HttpApi contract, generated browser client and
+typed handler. Mount the same layer in production and both native test hosts.
+The feature owns its transport; household authority remains the sole profile
+writer, and the private session owns frozen commands, receipts and recovery.
+
+The endpoint accepts only branded UUID metadata and an empty same-origin request.
+Responses carry no private bodies. The socket owner's Promise callback runs the
+Effect with its abort signal; HTTP acceptance leaves the saved command pending
+until canonical socket settlement. Invalid metadata is rejected before release.
+No storage migration, dependency upgrade or additional writable cache is needed.
+The broader AtomHttpApi experiment remains proposed.
+
+Validation on October 4: `pnpm test` passed 1,635 tests, including 1,050 API,
+268 frontend and 122 native Worker tests. All 14 family, food-profile and
+private-review journeys passed on Chromium and mobile WebKit against local
+Website/API Workers. Typechecks, production build, lint, formatting,
+documentation checks and 24 checker tests, and Ultracite doctor passed.
+Native confirmation tests cover copied references, lost replies, generation
+changes, explicit recovery, empty response bodies and malformed metadata.
+No live TikTok acquisition or paid model flow was exercised.
+
 ## Scope
 
 First make one complete profile flow work: read, save, and refresh from the server.

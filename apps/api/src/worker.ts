@@ -59,6 +59,7 @@ import ImportAcquisitionWorkflow, {
   makeImportWorkflowStarter,
 } from "./features/imports/import.workflow.js";
 import { BrowserEventsHttpLayer } from "./features/observability/browser-events.http.js";
+import { makePrivateConfirmationHttpLayer } from "./features/private-output/private-confirmation.http.js";
 import {
   PrivateOutputApiBinding,
   PrivateOutputMutationsBinding,
@@ -308,6 +309,11 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           Layer.mergeAll(
             HttpRouter.addAll(MealPlannerOperationalRoutes),
             authFamilyRoutes,
+            makePrivateConfirmationHttpLayer({
+              auth,
+              household: householdDomain,
+              output: outputApi,
+            }),
             makeRecipeImportHttpApiLayer(),
             householdRequestLayer,
             householdMealPlanRequestLayer,

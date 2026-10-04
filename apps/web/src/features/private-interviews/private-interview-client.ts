@@ -4,6 +4,7 @@ import {
   ConfirmProfileCard,
   RejectProfileCard,
   ReviseProfileCard,
+  PrivateConfirmationMetadata,
   DirectoryFrame,
   MAX_PAGE_SIZE,
   MAX_PRIVATE_FRAME_BYTES,
@@ -23,14 +24,16 @@ import type {
 } from "@meal-planner/private-interview-api";
 import { Schema } from "effect";
 
+import { browserApiRuntime } from "../api-client/index.js";
 import { displayedIdentityHeaders } from "../auth/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
 import { ProfileOperationError } from "../household-profiles/index.js";
 import { browserObservedFetch } from "../observability/browser-observability.js";
 import {
-  readCurrentPrivateProfile,
   continuePrivateConfirmation,
-} from "./private-profile-browser.js";
+  makePrivateConfirmationEffectOperations,
+} from "./private-confirmation.js";
+import { readCurrentPrivateProfile } from "./private-profile-browser.js";
 import { matchesCurrentProfileReview } from "./private-profile-review.js";
 
 const SessionMutation = Schema.Union([
@@ -1224,45 +1227,59 @@ export class PrivateInterviewClient {
 
 export const browserPrivateInterviewDependencies = (
   scope: DisplayedIdentity
-): PrivateInterviewDependencies => ({
-  connect: (path) => {
-    const url = new URL(path, globalThis.location.origin);
-    url.searchParams.set("expectedUserId", scope.userId);
-    url.searchParams.set("expectedOrganizationId", scope.organizationId);
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(url);
-    const transport: PrivateInterviewSocket = {
-      close: () => socket.close(),
-      onDisconnect: null,
-      onFailure: null,
-      onFrame: null,
-      send: (data) => socket.send(data),
-    };
-    socket.addEventListener("message", (event) =>
-      transport.onFrame?.({ data: event.data })
-    );
-    socket.addEventListener("close", (event) =>
-      transport.onDisconnect?.({ code: event.code })
-    );
-    socket.addEventListener("error", () => transport.onFailure?.());
-    return transport;
-  },
-  continueConfirmation: (session, mutation, generation, signal) =>
-    continuePrivateConfirmation(session, mutation, generation, signal, scope),
-  fetchChat: (input, init) => {
-    const headers = new Headers(init?.headers);
-    for (const [name, value] of Object.entries(
-      displayedIdentityHeaders(scope)
-    )) {
-      headers.set(name, value);
-    }
-    return browserObservedFetch(input, { ...init, headers });
-  },
-  makeId: () => crypto.randomUUID(),
-  readCurrentProfile: () => readCurrentPrivateProfile(scope),
-  storage: {
-    getItem: (key) => globalThis.sessionStorage.getItem(key),
-    removeItem: (key) => globalThis.sessionStorage.removeItem(key),
-    setItem: (key, value) => globalThis.sessionStorage.setItem(key, value),
-  },
-});
+): PrivateInterviewDependencies => {
+  const confirmations = makePrivateConfirmationEffectOperations(
+    scope,
+    browserApiRuntime()
+  );
+  return {
+    connect: (path) => {
+      const url = new URL(path, globalThis.location.origin);
+      url.searchParams.set("expectedUserId", scope.userId);
+      url.searchParams.set("expectedOrganizationId", scope.organizationId);
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      const socket = new WebSocket(url);
+      const transport: PrivateInterviewSocket = {
+        close: () => socket.close(),
+        onDisconnect: null,
+        onFailure: null,
+        onFrame: null,
+        send: (data) => socket.send(data),
+      };
+      socket.addEventListener("message", (event) =>
+        transport.onFrame?.({ data: event.data })
+      );
+      socket.addEventListener("close", (event) =>
+        transport.onDisconnect?.({ code: event.code })
+      );
+      socket.addEventListener("error", () => transport.onFailure?.());
+      return transport;
+    },
+    continueConfirmation: (session, mutation, generation, signal) =>
+      continuePrivateConfirmation(
+        Schema.decodeUnknownSync(PrivateConfirmationMetadata)({
+          generation,
+          mutationId: mutation,
+          sessionReference: session,
+        }),
+        confirmations,
+        { signal }
+      ),
+    fetchChat: (input, init) => {
+      const headers = new Headers(init?.headers);
+      for (const [name, value] of Object.entries(
+        displayedIdentityHeaders(scope)
+      )) {
+        headers.set(name, value);
+      }
+      return browserObservedFetch(input, { ...init, headers });
+    },
+    makeId: () => crypto.randomUUID(),
+    readCurrentProfile: () => readCurrentPrivateProfile(scope),
+    storage: {
+      getItem: (key) => globalThis.sessionStorage.getItem(key),
+      removeItem: (key) => globalThis.sessionStorage.removeItem(key),
+      setItem: (key, value) => globalThis.sessionStorage.setItem(key, value),
+    },
+  };
+};

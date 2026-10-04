@@ -9899,6 +9899,7 @@ describe("canonical private profile cards", () => {
       mutationId
     );
     expect(prematureResponse.status).toBe(503);
+    expect(await prematureResponse.text()).toBe("");
     expect(
       await freezePrivateCard(connection, card, 0, mutationId)
     ).toMatchObject({ type: "ConfirmationPending" });
@@ -9910,6 +9911,7 @@ describe("canonical private profile cards", () => {
           mutationId
         );
         expect(deniedResponse.status).toBe(503);
+        expect(await deniedResponse.text()).toBe("");
       })
     );
     const crossOriginResponse = await postPrivateConfirmation(
@@ -9919,6 +9921,7 @@ describe("canonical private profile cards", () => {
       { Origin: "https://foreign.test" }
     );
     expect(crossOriginResponse.status).toBe(403);
+    expect(await crossOriginResponse.text()).toBe("");
     const substitutedBodyResponse = await postPrivateConfirmation(
       setup.memberCookie,
       connection,
@@ -9930,6 +9933,22 @@ describe("canonical private profile cards", () => {
       })
     );
     expect(substitutedBodyResponse.status).toBe(403);
+    expect(await substitutedBodyResponse.text()).toBe("");
+    const malformedGeneration = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      mutationId,
+      { "x-private-output-generation": "not-a-generation" }
+    );
+    expect(malformedGeneration.status).toBe(403);
+    expect(await malformedGeneration.text()).toBe("");
+    const malformedMutation = await postPrivateConfirmation(
+      setup.memberCookie,
+      connection,
+      "not-a-mutation"
+    );
+    expect(malformedMutation.status).toBe(403);
+    expect(await malformedMutation.text()).toBe("");
     expect(await readCardProfile(setup)).toMatchObject({
       facts: [],
       version: 0,
@@ -9940,6 +9959,7 @@ describe("canonical private profile cards", () => {
       mutationId
     );
     expect(confirmedResponse.status).toBe(204);
+    expect(await confirmedResponse.text()).toBe("");
     connection.socket.close();
   });
 
