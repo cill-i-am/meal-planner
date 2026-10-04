@@ -6,7 +6,7 @@ import { Layer } from "effect";
 import { createEffectQuery } from "effect-query";
 
 import type { ApiRuntime } from "../api-client/index.js";
-import { makeHouseholdPeopleEffectOperations } from "../household-people/client.js";
+import { makeHouseholdPeopleEffectOperations } from "../household-people/index.js";
 import { familyKeys } from "./family-operations.js";
 
 export const peopleEffectQuery = createEffectQuery(Layer.empty);

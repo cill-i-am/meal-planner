@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 
 import { useApiRuntime } from "../api-client/index.js";
 import { useAccount } from "../auth/index.js";
-import { makeHouseholdPeopleEffectOperations } from "../household-people/client.js";
+import { makeHouseholdPeopleEffectOperations } from "../household-people/index.js";
 import { usePendingRequest } from "../request-recovery/index.js";
 import { useFamily } from "./family-context.js";
 import { familyKeys } from "./family-operations.js";

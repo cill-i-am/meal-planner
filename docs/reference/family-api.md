@@ -155,8 +155,10 @@ Family identity/name and setup remain separate records in the same transaction;
 physical storage and feature ownership answer different questions.
 
 Frontend features own their query keys and operations. Other features use their
-public interfaces. Onboarding composes account and family loading; invitations
-only require the account. Form drafts remain in the frontend feature and are
+public interfaces. Family and onboarding import people operations, errors and
+form inputs through the household people feature's `index.ts` entrypoint.
+Onboarding composes account and family loading; invitations only require the
+account. Form drafts remain in the frontend feature and are
 not shared API types. Shared visual components do not import product features.
 
 The [boundary checks](../../scripts/family-feature-boundaries.test.ts) guard

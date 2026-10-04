@@ -51,7 +51,3 @@ export const ProviderAccountingRouteDefinitions = [
     }).pipe((effect) => respond(effect, ProviderAccountingResponse, () => 200))
   ),
 ] as const;
-
-export const ProviderAccountingRoutes = HttpRouter.addAll(
-  ProviderAccountingRouteDefinitions
-);

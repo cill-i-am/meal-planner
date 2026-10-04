@@ -8,11 +8,11 @@ import { Button } from "../../components/ui/button.js";
 import { FieldGroup } from "../../components/ui/field.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
 import { Overlay } from "../../components/ui/responsive-overlay.js";
-import { householdPeopleFailureCode } from "../household-people/client.js";
 import {
   InvitationEmailInput,
   PersonNameInput,
-} from "../household-people/form-input.js";
+  householdPeopleFailureCode,
+} from "../household-people/index.js";
 import type { RosterCommand } from "./person-commands.js";
 import { terminalFailure, failureMessage } from "./roster-feedback.js";
 import { commandFromForm } from "./roster-model.js";
