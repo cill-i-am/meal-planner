@@ -446,11 +446,13 @@ const DetailControl = ({
 
 export const RecipeDetailsForm = ({
   action,
+  isBlocked,
   isPending,
   makeRequestId,
   submit,
 }: {
   readonly action: ActiveReviewAction;
+  readonly isBlocked: boolean;
   readonly isPending: boolean;
   readonly makeRequestId: () => string;
   readonly submit: (
@@ -505,7 +507,10 @@ export const RecipeDetailsForm = ({
           void form.handleSubmit();
         }}
       >
-        <fieldset disabled={isPending} className="flex flex-col gap-5">
+        <fieldset
+          disabled={isBlocked || isPending}
+          className="flex flex-col gap-5"
+        >
           <p className="text-muted-foreground text-sm">
             Keep the original wording. Add quantities and other details only
             when you can confirm them. Leave anything unknown as not provided.

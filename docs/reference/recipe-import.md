@@ -264,6 +264,17 @@ fetch; mutations are not automatically retried. A tagged browser error preserves
 the original generated-client failure as its cause and keeps private details out
 of visible messages.
 
+While the screen is mounted, it retains one submitted create, answer,
+cancellation, or confirmation command until the result is known. An unknown
+result blocks a different write and offers an explicit retry with the exact
+original payload, expected version, and idempotency key. A decoded client
+rejection releases the command so the user can correct it; a transport failure,
+server error, or defect does not prove rejection. The screen does not persist or
+automatically replay a command after reload. Server receipts remain the source
+of truth for exact-key replay, and canonical-source deduplication serves a
+separate purpose. A change in the generated operations' displayed identity
+ends the browser's pending-request scope.
+
 ## Migrations and proof
 
 Drizzle Kit owns the checked-in per-object SQLite migration under

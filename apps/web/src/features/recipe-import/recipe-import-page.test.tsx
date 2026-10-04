@@ -4,6 +4,7 @@ import {
   recipeInstructionFromText,
 } from "@meal-planner/recipe-domain";
 import {
+  CancelledRecipeImportIntent,
   RecipeImportAction,
   RecipeImportActionId,
   ProcessingRecipeImportIntent,
@@ -18,11 +19,17 @@ import userEvent from "@testing-library/user-event";
 import { Effect, Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { browserApiRuntime } from "../api-client/index.js";
+import { parseDisplayedIdentity } from "../auth/index.js";
 import type { RecipeImportOperations } from "./browser-operations.js";
+import { makeRecipeImportEffectOperations } from "./browser-operations.js";
 import { RecipeDetails } from "./recipe-details.js";
 import { RecipeImportPage } from "./recipe-import-page.js";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const intentId = Schema.decodeUnknownSync(RecipeImportIntentId)(
   "11111111-1111-4111-8111-111111111111"
@@ -42,6 +49,17 @@ const processing = Schema.decodeUnknownSync(ProcessingRecipeImportIntent)({
   processing: { startedAt: timestamp, type: "resolving_source" },
   source: { kind: "tiktok", resolution: "pending" },
   status: "processing",
+  updatedAt: timestamp,
+});
+const cancelled = Schema.decodeUnknownSync(CancelledRecipeImportIntent)({
+  cancelledAt: timestamp,
+  createdAt: timestamp,
+  id: intentId,
+  intentVersion: 2,
+  links: processing.links,
+  object: "recipe_import_intent",
+  source: processing.source,
+  status: "cancelled",
   updatedAt: timestamp,
 });
 const requiresAction = Schema.decodeUnknownSync(
@@ -123,7 +141,11 @@ const makeOperations = (
   ...overrides,
 });
 
-const renderPage = (operations: RecipeImportOperations, onSignOut = vi.fn()) =>
+const renderPage = (
+  operations: RecipeImportOperations,
+  onSignOut = vi.fn(),
+  makeRequestId = () => "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+) =>
   render(
     <QueryClientProvider
       client={
@@ -135,7 +157,7 @@ const renderPage = (operations: RecipeImportOperations, onSignOut = vi.fn()) =>
       <RecipeImportPage
         householdId="household-1"
         householdName="Barron household"
-        makeRequestId={() => "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+        makeRequestId={makeRequestId}
         onSignOut={onSignOut}
         operations={operations}
         pollIntervalMs={60_000}
@@ -205,6 +227,299 @@ describe("RecipeImportPage", () => {
       })
     ).toBeInTheDocument();
     expect(screen.queryByText("secret")).not.toBeInTheDocument();
+  });
+
+  it("retries a committed create after its response is lost with the exact original request", async () => {
+    const attempts: { key: string | null; body: string }[] = [];
+    const receipts = new Map<string, string>();
+    const fetch = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init);
+        if (request.method === "POST") {
+          const key = request.headers.get("idempotency-key");
+          const body = await request.text();
+          attempts.push({ body, key });
+          expect(request.headers.get("x-meal-planner-user")).toBe("user-a");
+          expect(request.headers.get("x-meal-planner-household")).toBe(
+            "organization-a"
+          );
+          expect(request.credentials).toBe("same-origin");
+          if (key === null) {
+            throw new Error("Missing request identity");
+          }
+          if (!receipts.has(key)) {
+            receipts.set(key, body);
+          }
+          if (attempts.length === 1) {
+            throw new Error("Response lost after commit");
+          }
+          expect(receipts.get(key)).toBe(body);
+          return Response.json(
+            Schema.encodeSync(ProcessingRecipeImportIntent)(processing),
+            {
+              headers: {
+                location: `/v1/recipe-import-intents/${intentId}`,
+                "retry-after": "1",
+              },
+              status: 201,
+            }
+          );
+        }
+        return Response.json(
+          Schema.encodeSync(ProcessingRecipeImportIntent)(processing)
+        );
+      }
+    );
+    vi.stubGlobal("fetch", fetch);
+    const operations = makeRecipeImportEffectOperations(
+      parseDisplayedIdentity({
+        organizationId: "organization-a",
+        userId: "user-a",
+      }),
+      browserApiRuntime()
+    );
+    renderPage(operations);
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "Recipe link" }),
+      "https://www.tiktok.com/@cook/video/7390123456789012345"
+    );
+    await user.click(screen.getByRole("button", { name: "Import recipe" }));
+    await waitFor(() => expect(attempts).toHaveLength(1));
+    expect(
+      screen.getByRole("button", { name: "Import recipe" })
+    ).toBeDisabled();
+    expect(
+      screen.getByText(
+        "The request may have completed. Retry it to check the result."
+      )
+    ).toBeInTheDocument();
+    await user.click(
+      await screen.findByRole("button", { name: "Retry import request" })
+    );
+
+    await waitFor(() => expect(attempts).toHaveLength(2));
+    expect(attempts[1]).toEqual(attempts[0]);
+    expect(receipts.size).toBe(1);
+    expect(
+      await screen.findByRole("heading", { name: "Working on your recipe" })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Retry import request" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("releases a decoded server rejection so a corrected create gets a new identity", async () => {
+    const keys: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init);
+        if (request.method === "POST") {
+          keys.push(request.headers.get("idempotency-key") ?? "missing");
+          return Response.json(
+            {
+              code: "invalid_request",
+              detail: "Invalid recipe source",
+              status: 400,
+              title: "Invalid request",
+              type: "https://meal-planner.local/problems/invalid-request",
+            },
+            {
+              headers: { "content-type": "application/problem+json" },
+              status: 400,
+            }
+          );
+        }
+        throw new Error("Unexpected read");
+      })
+    );
+    let ordinal = 0;
+    const operations = makeRecipeImportEffectOperations(
+      parseDisplayedIdentity({
+        organizationId: "organization-a",
+        userId: "user-a",
+      }),
+      browserApiRuntime()
+    );
+    renderPage(operations, vi.fn(), () => {
+      ordinal += 1;
+      return `aaaaaaaa-aaaa-4aaa-8aaa-${String(ordinal).padStart(12, "0")}`;
+    });
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "Recipe link" }),
+      "https://www.tiktok.com/@cook/video/7390123456789012345"
+    );
+    await user.click(screen.getByRole("button", { name: "Import recipe" }));
+    await waitFor(() => expect(keys).toHaveLength(1));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Import recipe" })
+      ).toBeEnabled()
+    );
+    expect(
+      screen.getByText(
+        "The request was rejected. Check the details or sign in again before trying again."
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Retry import request" })
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Import recipe" }));
+    await waitFor(() => expect(keys).toHaveLength(2));
+    expect(keys[1]).not.toBe(keys[0]);
+  });
+
+  it("does not carry an unknown command into a changed displayed session", async () => {
+    const first = makeOperations({
+      create: vi.fn(() => Effect.die(new Error("Lost response"))),
+    });
+    const second = makeOperations();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const page = (operations: RecipeImportOperations) => (
+      <QueryClientProvider client={client}>
+        <RecipeImportPage
+          householdId="household-1"
+          householdName="Barron household"
+          onSignOut={vi.fn()}
+          operations={operations}
+        />
+      </QueryClientProvider>
+    );
+    const view = render(page(first));
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "Recipe link" }),
+      "https://www.tiktok.com/@cook/video/7390123456789012345"
+    );
+    await user.click(screen.getByRole("button", { name: "Import recipe" }));
+    await screen.findByRole("button", { name: "Retry import request" });
+
+    view.rerender(page(second));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Retry import request" })
+      ).not.toBeInTheDocument()
+    );
+    expect(screen.getByRole("button", { name: "Import recipe" })).toBeEnabled();
+    expect(second.create).not.toHaveBeenCalled();
+  });
+
+  it("replays the original answer even if the review draft changes after a lost response", async () => {
+    let committed = false;
+    const answerAction = vi.fn<RecipeImportOperations["answerAction"]>(() => {
+      if (!committed) {
+        committed = true;
+        return Effect.die(new Error("Lost response"));
+      }
+      return Effect.succeed(requiresAction);
+    });
+    renderPage(
+      makeOperations({
+        answerAction,
+        getAction: vi.fn(() => Effect.succeed(activeAction)),
+        getIntent: vi.fn(() => Effect.succeed(requiresAction)),
+      })
+    );
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "Recipe link" }),
+      "https://www.tiktok.com/@cook/video/7390123456789012345"
+    );
+    await user.click(screen.getByRole("button", { name: "Import recipe" }));
+    const name = await screen.findByRole("textbox", { name: "Recipe name" });
+    await user.clear(name);
+    await user.type(name, "Irish stew updated");
+    await user.click(screen.getByRole("button", { name: "Save recipe name" }));
+    await screen.findByRole("button", { name: "Retry import request" });
+    await user.clear(name);
+    await user.type(name, "A different name");
+    expect(
+      screen.getByRole("button", { name: "Save recipe name" })
+    ).toBeDisabled();
+    await user.click(
+      screen.getByRole("button", { name: "Retry import request" })
+    );
+    await waitFor(() => expect(answerAction).toHaveBeenCalledTimes(2));
+    expect(answerAction.mock.calls[1]?.[0]).toBe(
+      answerAction.mock.calls[0]?.[0]
+    );
+    expect(answerAction.mock.calls[1]?.[0].request.answers).toEqual([
+      { field: "name", value: "Irish stew updated" },
+    ]);
+  });
+
+  it("replays the same cancellation version and key after an unknown result", async () => {
+    let committed = false;
+    const cancel = vi.fn<RecipeImportOperations["cancel"]>(() => {
+      if (!committed) {
+        committed = true;
+        return Effect.die(new Error("Lost response"));
+      }
+      return Effect.succeed(cancelled);
+    });
+    renderPage(makeOperations({ cancel }));
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "Recipe link" }),
+      "https://www.tiktok.com/@cook/video/7390123456789012345"
+    );
+    await user.click(screen.getByRole("button", { name: "Import recipe" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Cancel import" })
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Retry import request" })
+    );
+    await waitFor(() => expect(cancel).toHaveBeenCalledTimes(2));
+    expect(cancel.mock.calls[1]?.[0]).toBe(cancel.mock.calls[0]?.[0]);
+    expect(cancel.mock.calls[1]?.[0].request).toEqual({
+      expectedIntentVersion: 1,
+    });
+  });
+
+  it("replays the same confirmation version and key after an unknown result", async () => {
+    let committed = false;
+    const confirmAction = vi.fn<RecipeImportOperations["confirmAction"]>(() => {
+      if (!committed) {
+        committed = true;
+        return Effect.die(new Error("Lost response"));
+      }
+      return Effect.succeed(succeeded);
+    });
+    renderPage(
+      makeOperations({
+        confirmAction,
+        getAction: vi.fn(() => Effect.succeed(activeAction)),
+        getIntent: vi.fn(() => Effect.succeed(requiresAction)),
+        getRecipe: vi.fn(() => Effect.succeed(savedRecipe)),
+      })
+    );
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "Recipe link" }),
+      "https://www.tiktok.com/@cook/video/7390123456789012345"
+    );
+    await user.click(screen.getByRole("button", { name: "Import recipe" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Confirm recipe" })
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Retry import request" })
+    );
+    await waitFor(() => expect(confirmAction).toHaveBeenCalledTimes(2));
+    expect(confirmAction.mock.calls[1]?.[0]).toBe(
+      confirmAction.mock.calls[0]?.[0]
+    );
+    expect(confirmAction.mock.calls[1]?.[0].request).toEqual({
+      expectedActionVersion: 3,
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Recipe saved" })
+    ).toBeInTheDocument();
   });
 
   it("confirms the exact review version and renders the saved recipe", async () => {
