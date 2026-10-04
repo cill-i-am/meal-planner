@@ -21,6 +21,10 @@ conversation quality, AI proposals, and assisted dependant interviews belong to
    session shows current shared facts and asks what changed. Review and confirm
    any proposed change; a completed earlier session remains history only.
 
+The roster is read through the people feature’s public Effect operations and the
+shared Effect Query adapter. The food-profile slice still owns roster invalidation
+and profile recovery; profile read/write operations retain their current interface.
+
 ## Evidence
 
 The [Playwright page object](../../../../apps/web/e2e/pages/food-profile-page.ts)

@@ -2,13 +2,12 @@ import type { HouseholdPerson } from "@meal-planner/household-api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 
-import { useApiRuntime } from "../api-client/index.js";
+import { useApiRuntime, apiEffectQuery } from "../api-client/index.js";
 import { useAccount } from "../auth/index.js";
 import { makeHouseholdPeopleEffectOperations } from "../household-people/index.js";
 import { usePendingRequest } from "../request-recovery/index.js";
 import { useFamily } from "./family-context.js";
 import { familyKeys } from "./family-operations.js";
-import { peopleEffectQuery } from "./people-queries.js";
 import type { RosterCommand } from "./person-commands.js";
 import { runRosterCommand } from "./roster-commands.js";
 import { terminalFailure } from "./roster-feedback.js";
@@ -42,7 +41,7 @@ export const useRosterManagement = () => {
       }
     : localPresentation;
   const mutation = useMutation({
-    ...peopleEffectQuery.mutationOptions({
+    ...apiEffectQuery.mutationOptions({
       mutationFn: (pending: PendingRosterRequest) =>
         runRosterCommand(
           pending.state.command,

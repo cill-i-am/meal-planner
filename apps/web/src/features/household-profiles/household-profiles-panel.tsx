@@ -11,7 +11,7 @@ import { Alert } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
 import { Label } from "../../components/ui/label.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
-import type { HouseholdPeopleOperations } from "../household-people/index.js";
+import type { HouseholdPeopleEffectOperations } from "../household-people/index.js";
 import {
   isAmbiguousProfileError,
   ProfileOperationError,
@@ -341,7 +341,7 @@ export const HouseholdProfilesPanel = ({
   readonly accountId: string;
   readonly operations: HouseholdProfileOperations;
   readonly organizationId: string;
-  readonly peopleOperations: Pick<HouseholdPeopleOperations, "list">;
+  readonly peopleOperations: Pick<HouseholdPeopleEffectOperations, "list">;
 }) => {
   const { clearError, error, isSaving, pending, retryPending, roster, send } =
     useHouseholdProfileState({

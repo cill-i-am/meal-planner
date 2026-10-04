@@ -16,7 +16,7 @@ import { Field, FieldGroup, FieldLabel } from "../../components/ui/field.js";
 import { Input } from "../../components/ui/input.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
 import { Textarea } from "../../components/ui/textarea.js";
-import type { RecipeImportOperations } from "./operations.js";
+import type { RecipeImportOperations } from "./browser-operations.js";
 
 type ActiveReviewAction = Extract<
   RecipeImportAction,

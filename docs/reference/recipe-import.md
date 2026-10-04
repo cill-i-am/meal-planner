@@ -236,6 +236,22 @@ result ID, version, ordinal, receipt, Workflow ID, or object name. Expected
 domain failures are closed and tagged at the private boundary, then exhaustively
 mapped to stable public errors.
 
+## Browser ownership
+
+The [recipe-import feature](../../apps/web/src/features/recipe-import/index.ts)
+shapes generated-client requests as Effects. Its operation type is inferred from
+that adapter, using the shared contract's domain inputs and decoded results.
+There is no separate handwritten Promise client contract or runner.
+
+The recipe-import screen uses the shared Effect Query execution adapter and owns
+its intent, action, and recipe caches, polling, and invalidation. Transport
+configuration comes from application composition. Displayed identity headers,
+idempotency keys, expected review versions, and session lifetime guards stay at
+their existing boundaries. Query cancellation reaches the generated client's
+fetch; mutations are not automatically retried. A tagged browser error preserves
+the original generated-client failure as its cause and keeps private details out
+of visible messages.
+
 ## Migrations and proof
 
 Drizzle Kit owns the checked-in per-object SQLite migration under

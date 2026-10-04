@@ -24,7 +24,7 @@ import type {
 import { familyQuery } from "../features/family/index.js";
 import {
   HouseholdPeoplePanel,
-  makeBrowserHouseholdPeopleOperations,
+  makeHouseholdPeopleEffectOperations,
 } from "../features/household-people/index.js";
 import {
   HouseholdProfilesPanel,
@@ -35,7 +35,7 @@ import { makeBrowserHouseholdOperations } from "../features/households/browser-o
 import { HouseholdDomainStatus } from "../features/households/household-domain-status.js";
 import { PrivateInterviewsPanel } from "../features/private-interviews/private-interviews-panel.js";
 import {
-  makeBrowserRecipeImportOperations,
+  makeRecipeImportEffectOperations,
   decodeRecipeImportSearch,
   RecipeImportPage,
 } from "../features/recipe-import/index.js";
@@ -55,16 +55,17 @@ const AuthenticatedMealPlanner = ({
 }) => {
   const queryClient = useQueryClient();
   const { userId, organizationId } = scope;
-  const family = useQuery(familyQuery(useApiRuntime(), userId, organizationId));
+  const runtime = useApiRuntime();
+  const family = useQuery(familyQuery(runtime, userId, organizationId));
   const clients = useMemo(() => {
     const identity = { organizationId, userId };
     return {
       household: makeBrowserHouseholdOperations(identity),
-      people: makeBrowserHouseholdPeopleOperations(identity),
+      people: makeHouseholdPeopleEffectOperations(identity, runtime),
       profiles: makeBrowserHouseholdProfileOperations(identity),
-      recipes: makeBrowserRecipeImportOperations(identity),
+      recipes: makeRecipeImportEffectOperations(identity, runtime),
     };
-  }, [userId, organizationId]);
+  }, [userId, organizationId, runtime]);
   if (family.isPending) {
     return <StatusScreen title="Loading your family…" />;
   }

@@ -15,10 +15,7 @@ export {
   familyCreationMutationOptions,
   useCreateFamily,
 } from "./family-creation.js";
-export {
-  peopleEffectQuery,
-  familyRosterQueryOptions,
-} from "./people-queries.js";
+export { familyRosterQueryOptions } from "./people-queries.js";
 export { useFamilyRoster } from "./roster-query.js";
 export { PersonRow } from "./person-row.js";
 export { PersonCreation, PersonDraft } from "./person-commands.js";

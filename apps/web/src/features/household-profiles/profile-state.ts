@@ -17,7 +17,8 @@ import {
 import type { QueryClient } from "@tanstack/react-query";
 import { Schema } from "effect";
 
-import type { HouseholdPeopleOperations } from "../household-people/index.js";
+import { apiEffectQuery } from "../api-client/index.js";
+import type { HouseholdPeopleEffectOperations } from "../household-people/index.js";
 import {
   isAmbiguousProfileError,
   ProfileOperationError,
@@ -87,7 +88,7 @@ export const useHouseholdProfileState = ({
   readonly accountId: string;
   readonly operations: HouseholdProfileOperations;
   readonly organizationId: string;
-  readonly peopleOperations: Pick<HouseholdPeopleOperations, "list">;
+  readonly peopleOperations: Pick<HouseholdPeopleEffectOperations, "list">;
 }) => {
   const client = useQueryClient();
   const pendingKey = [
@@ -122,10 +123,13 @@ export const useHouseholdProfileState = ({
     queryFn: readPending,
     queryKey: pendingKey,
   });
-  const roster = useQuery({
-    queryFn: () => peopleOperations.list(true),
-    queryKey: ["household-people", organizationId],
-  });
+  const roster = useQuery(
+    apiEffectQuery.queryOptions({
+      queryFn: () => peopleOperations.list(true),
+      queryKey: ["household-people", organizationId],
+      retry: false,
+    })
+  );
   const mutation = useMutation({
     mutationFn: (change: PendingProfileChange) =>
       operations.mutate(change.personId, change.payload),

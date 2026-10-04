@@ -24,6 +24,7 @@ import { Button } from "../../components/ui/button.js";
 import { Input } from "../../components/ui/input.js";
 import { Label } from "../../components/ui/label.js";
 import { PendingButton } from "../../components/ui/pending-button.js";
+import { apiEffectQuery } from "../api-client/index.js";
 import { parseDisplayedIdentity } from "../auth/index.js";
 import {
   DepartureRecovery,
@@ -36,7 +37,7 @@ import {
 } from "./operations.js";
 import type {
   HouseholdPeopleOperationFailureCode,
-  HouseholdPeopleOperations,
+  HouseholdPeopleEffectOperations,
 } from "./operations.js";
 import {
   clearDepartureIntent,
@@ -59,9 +60,6 @@ const hasFailureCode = (
   error: Error | null,
   code: HouseholdPeopleOperationFailureCode
 ) => householdPeopleFailureCode(error) === code;
-
-const retryAmbiguousFailure = (failureCount: number, error: Error) =>
-  failureCount < 1 && isAmbiguousHouseholdPeopleFailure(error);
 
 const resetMutationIfSettled = (mutation: {
   readonly isPending: boolean;
@@ -463,7 +461,7 @@ const hasAmbiguousRetryIntent = (mutation: {
 
 interface TransitionMutationVariables {
   readonly action: "archive" | "restore";
-  readonly personId: Parameters<HouseholdPeopleOperations["archive"]>[0];
+  readonly personId: Parameters<HouseholdPeopleEffectOperations["archive"]>[0];
   readonly payload: TransitionHouseholdPersonPayload;
 }
 
@@ -529,7 +527,7 @@ export const HouseholdPeoplePanel = ({
 }: {
   readonly accountId: string;
   readonly currentMemberId?: string;
-  readonly operations: HouseholdPeopleOperations;
+  readonly operations: HouseholdPeopleEffectOperations;
   readonly organizationId: string;
 }) => {
   const queryClient = useQueryClient();
@@ -546,7 +544,13 @@ export const HouseholdPeoplePanel = ({
     [currentMemberId]
   );
   const queryKey = ["household-people", organizationId] as const;
-  const roster = useQuery({ queryFn: () => operations.list(true), queryKey });
+  const roster = useQuery(
+    apiEffectQuery.queryOptions({
+      queryFn: () => operations.list(true),
+      queryKey,
+      retry: false,
+    })
+  );
   const refresh = () => queryClient.invalidateQueries({ queryKey });
   const subscribeToRetainedIntents = useCallback(
     (listener: () => void) =>
@@ -575,161 +579,171 @@ export const HouseholdPeoplePanel = ({
       clearDepartureIntent(scope);
     }
   };
-  const bootstrap = useMutation({
-    mutationFn: (payload: BootstrapHouseholdCreatorPayload) =>
-      operations.bootstrapCreator(payload),
-    onSettled: () => {
-      personActionLock.current = false;
-    },
-    onSuccess: refresh,
-    retry: retryAmbiguousFailure,
-  });
-  const create = useMutation({
-    mutationFn: (payload: CreateHouseholdPersonPayload) =>
-      operations.create(payload),
-    onSettled: () => {
-      personActionLock.current = false;
-    },
-    onSuccess: refresh,
-    retry: retryAmbiguousFailure,
-  });
-  const transition = useMutation({
-    mutationFn: ({
-      action,
-      personId,
-      payload,
-    }: {
-      readonly action: "archive" | "restore";
-      readonly personId: Parameters<HouseholdPeopleOperations["archive"]>[0];
-      readonly payload: TransitionHouseholdPersonPayload;
-    }) =>
-      action === "archive"
-        ? operations.archive(personId, payload)
-        : operations.restore(personId, payload),
-    onSettled: () => {
-      personActionLock.current = false;
-    },
-    onSuccess: refresh,
-    retry: retryAmbiguousFailure,
-  });
-  const inviteAdult = useMutation({
-    mutationFn:
-      operations.inviteAdult ??
-      (() => Promise.reject(new Error("unsupported"))),
-    onMutate: (payload) => {
-      retainInvitationIntent(scope, payload);
-    },
-    onSettled: () => {
-      personActionLock.current = false;
-    },
-    onSuccess: () => {
-      clearInvitationIntent(scope);
-      void refresh();
-    },
-    retry: false,
-  });
-  const completeAdultLink = useMutation({
-    mutationFn:
-      operations.completeAdultLink ??
-      (() => Promise.reject(new Error("unsupported"))),
-    onSettled: () => {
-      personActionLock.current = false;
-    },
-    onSuccess: refresh,
-    retry: retryAmbiguousFailure,
-  });
-  const departAdult = useMutation({
-    mutationFn:
-      operations.departAdult ??
-      (() => Promise.reject(new Error("unsupported"))),
-    onMutate: (payload) => {
-      retainDepartureIntent(scope, payload);
-    },
-    onSettled: () => {
-      personActionLock.current = false;
-    },
-    onSuccess: (operation) => {
-      acceptDepartureOperation(operation);
-      void refresh();
-    },
-    retry: false,
-  });
-  const getDeparture = useMutation({
-    mutationFn: (operationId: HouseholdMemberDepartureOperationId) =>
-      operations.getDeparture === undefined
-        ? Promise.reject(new Error("unsupported"))
-        : operations.getDeparture(operationId),
-    onSettled: () => {
-      personActionLock.current = false;
-    },
-    onSuccess: (operation) => {
-      acceptDepartureOperation(operation);
-    },
-    retry: retryAmbiguousFailure,
-  });
-  const getDepartureByMutation = useMutation({
-    mutationFn: (
-      retainedMutationId: NonNullable<
-        (typeof retainedIntents)["departure"]
-      >["mutationId"]
-    ) =>
-      operations.getDepartureByMutation === undefined
-        ? Promise.reject(new Error("unsupported"))
-        : operations.getDepartureByMutation(retainedMutationId),
-    onSettled: () => {
-      personActionLock.current = false;
-    },
-    onSuccess: acceptDepartureOperation,
-    retry: retryAmbiguousFailure,
-  });
-  const cancelDeparture = useMutation({
-    mutationFn: ({ operationId, payload }: CancelDepartureMutationVariables) =>
-      operations.cancelDeparture === undefined
-        ? Promise.reject(new Error("unsupported"))
-        : operations.cancelDeparture(operationId, payload),
-    onSettled: () => {
-      personActionLock.current = false;
-    },
-    onSuccess: (operation) => {
-      acceptDepartureOperation(operation);
-      void refresh();
-    },
-    retry: retryAmbiguousFailure,
-  });
-  const retryDeparture = useMutation({
-    mutationFn: ({ operationId, payload }: RetryDepartureMutationVariables) =>
-      operations.retryDeparture === undefined
-        ? Promise.reject(new Error("unsupported"))
-        : operations.retryDeparture(operationId, payload),
-    onSettled: () => {
-      personActionLock.current = false;
-    },
-    onSuccess: (operation) => {
-      acceptDepartureOperation(operation);
-      void refresh();
-    },
-    retry: retryAmbiguousFailure,
-  });
-  const repairAdultLink = useMutation({
-    mutationFn:
-      operations.repairAdultLink ??
-      (() => Promise.reject(new Error("unsupported"))),
-    onSettled: () => {
-      personActionLock.current = false;
-    },
-    onSuccess: refresh,
-    retry: retryAmbiguousFailure,
-  });
-  const returnAdult = useMutation({
-    mutationFn:
-      operations.returnAdult ??
-      (() => Promise.reject(new Error("unsupported"))),
-    onSettled: () => {
-      personActionLock.current = false;
-    },
-    onSuccess: refresh,
-    retry: retryAmbiguousFailure,
-  });
+  const bootstrap = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: (payload: BootstrapHouseholdCreatorPayload) =>
+        operations.bootstrapCreator(payload),
+      onSettled: () => {
+        personActionLock.current = false;
+      },
+      onSuccess: refresh,
+      retry: false,
+    })
+  );
+  const create = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: (payload: CreateHouseholdPersonPayload) =>
+        operations.create(payload),
+      onSettled: () => {
+        personActionLock.current = false;
+      },
+      onSuccess: refresh,
+      retry: false,
+    })
+  );
+  const transition = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: ({
+        action,
+        personId,
+        payload,
+      }: {
+        readonly action: "archive" | "restore";
+        readonly personId: Parameters<
+          HouseholdPeopleEffectOperations["archive"]
+        >[0];
+        readonly payload: TransitionHouseholdPersonPayload;
+      }) =>
+        action === "archive"
+          ? operations.archive(personId, payload)
+          : operations.restore(personId, payload),
+      onSettled: () => {
+        personActionLock.current = false;
+      },
+      onSuccess: refresh,
+      retry: false,
+    })
+  );
+  const inviteAdult = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: operations.inviteAdult,
+      onMutate: (payload) => {
+        retainInvitationIntent(scope, payload);
+      },
+      onSettled: () => {
+        personActionLock.current = false;
+      },
+      onSuccess: () => {
+        clearInvitationIntent(scope);
+        void refresh();
+      },
+      retry: false,
+    })
+  );
+  const completeAdultLink = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: operations.completeAdultLink,
+      onSettled: () => {
+        personActionLock.current = false;
+      },
+      onSuccess: refresh,
+      retry: false,
+    })
+  );
+  const departAdult = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: operations.departAdult,
+      onMutate: (payload) => {
+        retainDepartureIntent(scope, payload);
+      },
+      onSettled: () => {
+        personActionLock.current = false;
+      },
+      onSuccess: (operation) => {
+        acceptDepartureOperation(operation);
+        void refresh();
+      },
+      retry: false,
+    })
+  );
+  const getDeparture = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: (operationId: HouseholdMemberDepartureOperationId) =>
+        operations.getDeparture(operationId),
+      onSettled: () => {
+        personActionLock.current = false;
+      },
+      onSuccess: (operation) => {
+        acceptDepartureOperation(operation);
+      },
+      retry: false,
+    })
+  );
+  const getDepartureByMutation = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: (
+        retainedMutationId: NonNullable<
+          (typeof retainedIntents)["departure"]
+        >["mutationId"]
+      ) => operations.getDepartureByMutation(retainedMutationId),
+      onSettled: () => {
+        personActionLock.current = false;
+      },
+      onSuccess: acceptDepartureOperation,
+      retry: false,
+    })
+  );
+  const cancelDeparture = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: ({
+        operationId,
+        payload,
+      }: CancelDepartureMutationVariables) =>
+        operations.cancelDeparture(operationId, payload),
+      onSettled: () => {
+        personActionLock.current = false;
+      },
+      onSuccess: (operation) => {
+        acceptDepartureOperation(operation);
+        void refresh();
+      },
+      retry: false,
+    })
+  );
+  const retryDeparture = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: ({ operationId, payload }: RetryDepartureMutationVariables) =>
+        operations.retryDeparture(operationId, payload),
+      onSettled: () => {
+        personActionLock.current = false;
+      },
+      onSuccess: (operation) => {
+        acceptDepartureOperation(operation);
+        void refresh();
+      },
+      retry: false,
+    })
+  );
+  const repairAdultLink = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: operations.repairAdultLink,
+      onSettled: () => {
+        personActionLock.current = false;
+      },
+      onSuccess: refresh,
+      retry: false,
+    })
+  );
+  const returnAdult = useMutation(
+    apiEffectQuery.mutationOptions({
+      mutationFn: operations.returnAdult,
+      onSettled: () => {
+        personActionLock.current = false;
+      },
+      onSuccess: refresh,
+      retry: false,
+    })
+  );
   const isPersonMutationPending = [
     bootstrap.isPending,
     cancelDeparture.isPending,
@@ -879,11 +893,7 @@ export const HouseholdPeoplePanel = ({
     };
     const renderDepartureRecovery = () => {
       const retainedDeparture = retainedIntents.departure;
-      if (
-        departureOperation === null &&
-        (retainedDeparture === null ||
-          operations.getDepartureByMutation === undefined)
-      ) {
+      if (departureOperation === null && retainedDeparture === null) {
         return null;
       }
       return (
@@ -891,8 +901,7 @@ export const HouseholdPeoplePanel = ({
           disabled={departureRecoveryDisabled}
           isRecovering={getDepartureByMutation.isPending}
           operation={departureOperation}
-          {...(operations.cancelDeparture === undefined ||
-          hasAmbiguousRetryIntent(cancelDeparture)
+          {...(hasAmbiguousRetryIntent(cancelDeparture)
             ? {}
             : {
                 onCancel: (operation) =>
@@ -909,8 +918,7 @@ export const HouseholdPeoplePanel = ({
                     })
                   ),
               })}
-          {...(operations.getDeparture === undefined ||
-          departureOperation === null
+          {...(departureOperation === null
             ? {}
             : {
                 onRead: (operation: HouseholdMemberDepartureOperation) =>
@@ -918,9 +926,7 @@ export const HouseholdPeoplePanel = ({
                     getDeparture.mutate(operation.operationId)
                   ),
               })}
-          {...(retainedDeparture === null ||
-          operations.getDepartureByMutation === undefined ||
-          departureOperation !== null
+          {...(retainedDeparture === null || departureOperation !== null
             ? {}
             : {
                 onRecover: () =>
@@ -928,8 +934,7 @@ export const HouseholdPeoplePanel = ({
                     getDepartureByMutation.mutate(retainedDeparture.mutationId)
                   ),
               })}
-          {...(operations.retryDeparture === undefined ||
-          hasAmbiguousRetryIntent(retryDeparture)
+          {...(hasAmbiguousRetryIntent(retryDeparture)
             ? {}
             : {
                 onRetry: (operation, memberId) =>
@@ -1015,36 +1020,27 @@ export const HouseholdPeoplePanel = ({
               ? {}
               : { currentMemberId: parsedMemberId })}
             disabled={isPersonMutationPending || hasUnresolvedIntent}
-            {...(operations.completeAdultLink === undefined
-              ? {}
-              : {
-                  onCompleteLink: (payload) =>
-                    runNewIntent(() => completeAdultLink.mutate(payload)),
-                })}
-            {...(operations.departAdult === undefined || departureUnresolved
+            onCompleteLink={(payload) =>
+              runNewIntent(() => completeAdultLink.mutate(payload))
+            }
+            {...(departureUnresolved
               ? {}
               : {
                   onDepart: (payload) =>
                     runNewIntent(() => departAdult.mutate(payload)),
                 })}
-            {...(operations.inviteAdult === undefined || invitationIntentActive
+            {...(invitationIntentActive
               ? {}
               : {
                   onInvite: (payload) =>
                     runNewIntent(() => inviteAdult.mutate(payload)),
                 })}
-            {...(operations.repairAdultLink === undefined
-              ? {}
-              : {
-                  onRepair: (payload) =>
-                    runNewIntent(() => repairAdultLink.mutate(payload)),
-                })}
-            {...(operations.returnAdult === undefined
-              ? {}
-              : {
-                  onReturn: (payload) =>
-                    runNewIntent(() => returnAdult.mutate(payload)),
-                })}
+            onRepair={(payload) =>
+              runNewIntent(() => repairAdultLink.mutate(payload))
+            }
+            onReturn={(payload) =>
+              runNewIntent(() => returnAdult.mutate(payload))
+            }
             roster={roster.data}
           />
           {renderInvitationRecovery()}
