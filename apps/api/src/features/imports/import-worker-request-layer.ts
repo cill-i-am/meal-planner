@@ -37,7 +37,7 @@ import { ImportId, ImportTimestamp } from "./import.contracts.js";
 import type { ImportWorkflowReconciler } from "./import.workflow.js";
 
 /** Inputs required to construct the import HTTP route services once. */
-export interface ImportWorkerRequestLayerInput {
+interface ImportWorkerRequestLayerInput {
   readonly importWorkflowStarter: ImportWorkflowReconciler;
   readonly now: () => string;
   readonly organizationResolver: AuthenticatedOrganizationResolver;

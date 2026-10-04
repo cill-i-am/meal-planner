@@ -5,7 +5,7 @@ import type { AcquisitionGeneration } from "./import-media.model.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import type { ImportTransitionError } from "./import.repository.js";
 
-export type VisualEvidenceOutcome = "empty" | "found" | "low_confidence";
+type VisualEvidenceOutcome = "empty" | "found" | "low_confidence";
 export interface CompletedVisualEvidence {
   readonly byteLength: number;
   readonly completedAt: ImportTimestamp;

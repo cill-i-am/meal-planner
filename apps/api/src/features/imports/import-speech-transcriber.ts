@@ -84,7 +84,7 @@ export interface SpeechAudioArtifact {
 }
 
 /** Generation-fenced input to the audio extraction seam. */
-export interface SpeechAudioExtractionInput {
+interface SpeechAudioExtractionInput {
   readonly generation: AcquisitionGeneration;
   readonly importId: ImportId;
   readonly mediaKey: string;

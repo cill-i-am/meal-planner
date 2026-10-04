@@ -33,7 +33,7 @@ import type { PrivateDiscoveryEvidenceMessage } from "./private-discovery-needs.
 export const PRIVATE_DISCOVERY_CONTINUITY_BYTES = 8192;
 export const PRIVATE_DISCOVERY_CONTINUITY_NOTE_LIMIT = 12;
 export const PRIVATE_DISCOVERY_CONTINUITY_UPDATE_LIMIT = 6;
-export const PRIVATE_DISCOVERY_REPLY_LENGTH = 2000;
+const PRIVATE_DISCOVERY_REPLY_LENGTH = 2000;
 
 const NoteKey = Schema.String.pipe(
   Schema.check(Schema.isMinLength(1), Schema.isMaxLength(32))

@@ -141,7 +141,7 @@ export interface SecureMediaDownloadClient {
 }
 
 /** Immediate request-only view; never encode, checkpoint, persist, log, or return from RPC. */
-export interface SecureMediaRequestHeaders extends MediaRequestHeaders {
+interface SecureMediaRequestHeaders extends MediaRequestHeaders {
   readonly cookie?: string;
 }
 
@@ -169,7 +169,7 @@ const responseContentLength = (
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 };
 
-export const NodeSecureMediaDownloadClient: SecureMediaDownloadClient = {
+const NodeSecureMediaDownloadClient: SecureMediaDownloadClient = {
   request: (url, address, signal, requestHeaders) =>
     // eslint-disable-next-line promise/avoid-new -- Node HTTPS exposes response callbacks, not a promise API.
     new Promise((resolve, reject) => {

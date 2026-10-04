@@ -79,7 +79,7 @@ export const HouseholdReadAcquisitionAttemptsResult = Schema.Array(
 export type HouseholdReadAcquisitionAttemptsResult =
   typeof HouseholdReadAcquisitionAttemptsResult.Type;
 
-export const HouseholdOriginalMediaReference = Schema.Struct({
+const HouseholdOriginalMediaReference = Schema.Struct({
   byteLength: PositiveSafeInteger,
   deleteAt: ImportTimestamp,
   key: R2ObjectKey,
@@ -87,7 +87,7 @@ export const HouseholdOriginalMediaReference = Schema.Struct({
   sha256: HouseholdEvidenceSha256,
 });
 
-export const HouseholdAcquisitionManifestReference = Schema.Struct({
+const HouseholdAcquisitionManifestReference = Schema.Struct({
   byteLength: PositiveSafeInteger,
   deleteAt: ImportTimestamp,
   key: R2ObjectKey,
@@ -298,7 +298,7 @@ const EvidenceCost = Schema.Struct({
   estimatedMicroUsd: NonNegativeSafeInteger,
 });
 
-export const HouseholdSpeechEvidenceResult = Schema.Struct({
+const HouseholdSpeechEvidenceResult = Schema.Struct({
   _tag: Schema.Literal("Speech"),
   completedAt: ImportTimestamp,
   cost: EvidenceCost,
@@ -315,7 +315,7 @@ export const HouseholdSpeechEvidenceResult = Schema.Struct({
     inputBytes: NonNegativeSafeInteger,
   }),
 });
-export const HouseholdVisualEvidenceResult = Schema.Struct({
+const HouseholdVisualEvidenceResult = Schema.Struct({
   _tag: Schema.Literal("Visual"),
   completedAt: ImportTimestamp,
   cost: EvidenceCost,
@@ -333,7 +333,7 @@ export const HouseholdVisualEvidenceResult = Schema.Struct({
     modelCalls: Schema.Literal(1),
   }),
 });
-export const HouseholdCarouselEvidenceResult = Schema.Struct({
+const HouseholdCarouselEvidenceResult = Schema.Struct({
   _tag: Schema.Literal("Carousel"),
   completedAt: ImportTimestamp,
   descriptorFingerprint: HouseholdEvidenceSha256,
@@ -342,7 +342,7 @@ export const HouseholdCarouselEvidenceResult = Schema.Struct({
   manifestKey: R2ObjectKey,
   manifestSha256: HouseholdEvidenceSha256,
 });
-export const HouseholdExtractionEvidenceResult = Schema.Struct({
+const HouseholdExtractionEvidenceResult = Schema.Struct({
   _tag: Schema.Literal("Extraction"),
   draft: RecipeDraft,
 });

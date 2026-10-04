@@ -12,11 +12,6 @@ import type { HouseholdOrganizationId } from "../households/household.contract.j
 import type { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
 import { HouseholdRecipeImportExecutionView } from "../households/recipe-import/household-recipe-import.contract.js";
 import type { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
-import type {
-  CarouselEvidenceClaim,
-  CarouselEvidenceRepository,
-  CompletedCarouselEvidence,
-} from "./import-carousel.repository.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import type { ImportCorrelationId } from "./import-observability.js";
 import type {
@@ -181,21 +176,6 @@ const visualStatus = (outcome: "empty" | "found" | "low_confidence") => {
     return "visual_evidence_empty" as const;
   }
   return "visual_evidence_low_confidence" as const;
-};
-
-const carouselRecovery = (
-  failureCode:
-    | "carousel_inaccessible"
-    | "carousel_layout_drift"
-    | "carousel_partial"
-) => {
-  if (failureCode === "carousel_inaccessible") {
-    return "check_source_visibility" as const;
-  }
-  if (failureCode === "carousel_partial") {
-    return "request_complete_carousel" as const;
-  }
-  return "update_carousel_adapter" as const;
 };
 
 export interface HouseholdImportEvidenceCurrent {
@@ -717,158 +697,6 @@ export const makeHouseholdVisualEvidenceRepository = (
           }
         );
       }),
-  };
-};
-
-export const makeHouseholdCarouselEvidenceRepository = (
-  input: HouseholdEvidenceRepositoryInput
-): CarouselEvidenceRepository => {
-  const boundary = makeBoundary(input);
-  const completed = (
-    stage: NonNullable<Effect.Success<ReturnType<typeof boundary.read>>>
-  ) => {
-    if (
-      stage.outcome !== "Completed" ||
-      stage.result?._tag !== "Carousel" ||
-      stage.reference?.kind !== "carousel_manifest"
-    ) {
-      return Effect.fail(importTransitionRejected());
-    }
-    const { result } = stage;
-    return Effect.succeed({
-      byteLength: stage.reference.byteLength,
-      completedAt: result.completedAt,
-      deleteAt: stage.reference.deleteAt,
-      descriptorFingerprint: result.descriptorFingerprint,
-      dispatchId: result.dispatchId,
-      generation: input.acquisitionGeneration,
-      imageCount: result.imageCount,
-      importId: decodeImportId(input.intentId),
-      manifestKey: result.manifestKey,
-      manifestSha256: result.manifestSha256,
-    } satisfies CompletedCarouselEvidence);
-  };
-  return {
-    claim: (claim) =>
-      Effect.gen(function* claimCarouselEvidence() {
-        yield* assertIdentity(input, claim.importId, claim.generation);
-        const receipt = yield* boundary.mutate(
-          `carousel:claim:${claim.descriptorFingerprint}`,
-          {
-            inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
-              claim.descriptorFingerprint
-            ),
-            operation: {
-              _tag: "Claim",
-              dispatchId: claim.dispatchId,
-              stage: "carousel",
-              startedAt: claim.startedAt,
-            },
-          }
-        );
-        if (receipt.outcome === "Completed") {
-          const stage = yield* boundary.read("carousel");
-          if (stage === null) {
-            return yield* Effect.fail(importTransitionRejected());
-          }
-          return {
-            _tag: "Completed" as const,
-            evidence: yield* completed(stage),
-          };
-        }
-        if (receipt.outcome === "Failed") {
-          const stage = yield* boundary.read("carousel");
-          const code = stage?.failureCode;
-          if (
-            code !== "carousel_inaccessible" &&
-            code !== "carousel_layout_drift" &&
-            code !== "carousel_partial"
-          ) {
-            return yield* Effect.fail(importTransitionRejected());
-          }
-          return {
-            _tag: "Failed" as const,
-            code,
-            recovery: carouselRecovery(code),
-          };
-        }
-        if (receipt.outcome === "RecoveryPrepared") {
-          return yield* Effect.fail(importTransitionRejected());
-        }
-        return {
-          _tag: receipt.outcome,
-        } satisfies CarouselEvidenceClaim;
-      }),
-    complete: (evidence) =>
-      assertIdentity(input, evidence.importId, evidence.generation).pipe(
-        Effect.andThen(
-          boundary.mutate(`carousel:complete:${evidence.manifestSha256}`, {
-            inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
-              evidence.descriptorFingerprint
-            ),
-            operation: {
-              _tag: "Complete",
-              dispatchId: evidence.dispatchId,
-              reference: {
-                byteLength: evidence.byteLength,
-                deleteAt: evidence.deleteAt,
-                key: evidence.manifestKey,
-                kind: "carousel_manifest",
-                sha256: Schema.decodeUnknownSync(Sha256Hex)(
-                  evidence.manifestSha256
-                ),
-              },
-              result: {
-                _tag: "Carousel",
-                completedAt: evidence.completedAt,
-                descriptorFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
-                  evidence.descriptorFingerprint
-                ),
-                dispatchId: evidence.dispatchId,
-                imageCount: evidence.imageCount,
-                manifestKey: evidence.manifestKey,
-                manifestSha256: Schema.decodeUnknownSync(Sha256Hex)(
-                  evidence.manifestSha256
-                ),
-              },
-              stage: "carousel",
-            },
-          })
-        ),
-        Effect.as(evidence)
-      ),
-    fail: (failure) =>
-      assertIdentity(input, failure.importId, failure.generation).pipe(
-        Effect.andThen(
-          boundary.mutate(
-            `carousel:fail:${failure.descriptorFingerprint}:${failure.code}`,
-            {
-              inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
-                failure.descriptorFingerprint
-              ),
-              operation: {
-                _tag: "Fail",
-                completedAt: failure.completedAt,
-                dispatchId: `carousel:${failure.importId}:${failure.generation}`,
-                failureCode: failure.code,
-                recovery: failure.recovery,
-                stage: "carousel",
-              },
-            }
-          )
-        ),
-        Effect.asVoid
-      ),
-    findParent: (importId) =>
-      String(importId) === String(input.intentId)
-        ? Effect.succeed(
-            Option.some({
-              canonicalId: input.canonicalSourceId,
-              generation: input.acquisitionGeneration,
-              status: "queued",
-            })
-          )
-        : Effect.succeed(Option.none()),
   };
 };
 

@@ -88,7 +88,7 @@ const decodeFrameDimensions = Schema.decodeUnknownEffect(
   )
 );
 
-export interface TikTokMediaContainerRuntimeDependencies {
+interface TikTokMediaContainerRuntimeDependencies {
   readonly acquirer: MediaAcquirer;
   readonly artifacts: ReturnType<typeof makeTemporaryArtifactStore>;
   readonly makeTemporaryRoot?: (importId: string) => Promise<string>;
