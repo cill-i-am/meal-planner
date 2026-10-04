@@ -1,9 +1,9 @@
 # Codebase design coverage
 
-Status: active
+Status: done
 Owner: Codex
 Baseline: `b6379f0e8fc8a4c6a38f343cbabfbf91a65fe350`
-Delivery: justified simplifications merged, deployed and verified
+Delivery: three cleanup batches; release evidence in PRs #278–#280
 
 ## Outcome and scope
 
@@ -94,15 +94,19 @@ public output projection. Local validation passed 1,645 tests, typechecks,
 production build, lint, formatting, 309 documentation checks and 24 checker
 tests. The catalogue remains a Node-host feature; production smoke checks
 exercise the deployed Worker/site surface. No live Tesco or paid model calls
-were used. Hosted delivery is pending.
+were used.
+[PR #280](https://github.com/cill-i-am/meal-planner/pull/280) carries the final
+batch. Its required checks and preview/production workflow provide the hosted
+release evidence; this ledger records the completed design review.
 
-At completion, record the reviewed scopes, removed and retained interfaces,
-delivery PRs and verification limits here. Paid providers and real household
+The ledger records reviewed scopes, removed and retained interfaces, delivery
+PRs and verification limits. Paid providers and real household
 notifications are not required to prove a deletion or transport refactor.
 
-## Next action
+## Completion
 
-All twenty review scopes are complete. Deliver and verify the catalogue contract
-batch, then close this plan. This is an interface/caller/ownership review with
-selected refactors, not a correctness audit of every line or a paid-provider
-acceptance run.
+All twenty review scopes are complete, with no source/configuration gaps in the
+baseline inventory. The selected changes are grouped in PRs #278–#280. Deep
+modules and safety boundaries are retained with reasons above. This is an
+interface/caller/ownership review with selected refactors, not a correctness
+audit of every line or a paid-provider acceptance run.
