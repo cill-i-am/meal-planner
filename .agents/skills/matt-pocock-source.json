@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/mattpocock/skills",
+  "revision": "24fe0ef7737efae15c87225755e9f6f5965e4888",
+  "license": "matt-pocock-LICENSE",
+  "integration": "Project-owned adaptations; pstack owns execution. Matt teach is named matt-teach to avoid the pstack explainer collision.",
+  "dependencies": "research supports wayfinder; grading, templates and other assets remain inside their selected skill folders."
+}

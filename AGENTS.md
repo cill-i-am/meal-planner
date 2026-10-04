@@ -22,7 +22,17 @@ Keep domain rules in types. Decode inputs at the responsible boundary and use th
 
 Read nested instructions for the files you change. Use [the docs map](docs/README.md) for missing context. Follow [the writing guidelines](docs/reference/documentation.md#writing-style) for docs, plans, PR descriptions and explanations: use plain English without losing technical meaning. Skills provide methods, not extra approval steps.
 
-For auth and family work, use the [intent layer](docs/reference/intent-layer.md) to find local package, server-adapter, and frontend guidance. Use the [auth and family feature map](docs/reference/features/auth-family/README.md) to choose user paths and verification evidence. Update affected nodes and feature entries with behavior or boundary changes. These maps cover this reference architecture, not the rest of the app.
+Use the [feature map](docs/reference/features/README.md) to find domain owners, contracts and verification. Read the linked local instructions for the feature you change and update its entry when ownership or observable behavior changes.
+
+## Agent workflow
+
+Use the installed pstack `poteto-mode` as the execution workflow for engineering work here. Read its `SKILL.md`, `CODEX.md` and the applicable playbook. Its source is `ScriptedAlchemy/pstack-codex`; report an unavailable installation and continue supported work rather than claiming it loaded. This repository's agreed scope and rules govern how imported skills apply.
+
+Agree product direction, domain responsibilities and success criteria with Cillian. Then own implementation, TDD where behavior changes, independent review, runtime verification, CI monitoring, conflict resolution and merge. Delegate independent implementation and review to subagents in isolated worktrees. Fix in-scope findings and continue; return for a material change to the agreed direction or a genuine unresolved blocker. Run pstack Babysit and then Shipping automatically for implementation requests. A merge-ready report is not the delivery endpoint.
+
+Matt's local skills own shaping, domain modeling, deepening and retrospectives; they do not start a second execution loop. Use `grill-with-docs` for unresolved product/domain decisions, `codebase-design` and `improve-codebase-architecture` for module design/gardening, and `retro` for recurring friction. Existing approved scope satisfies routine candidate selection and implementation priorities. Use `matt-teach` for learning; pstack `teach`/`how`/`why` and Psychopomp explain the system on request. Pstack owns TDD. Use the [domain configuration](docs/agents/domain.md) and [repository planning configuration](docs/agents/issue-tracker.md) rather than creating a second glossary, ADR tree or tracker.
+
+Choose design exploration and independent verification to match the change. A small edit does not require a fixed agent panel, new interview, diagram, scratch probe or custom tool when existing evidence and native commands suffice. Preserve meaningful reviews, real user-path proof and checks for the changed risks. Native Alchemy and installed APIs take precedence over generic setup examples. Skills must reuse authorization already given for the same scope and target; they cannot authorize unrelated external actions or weaken product consent.
 
 ## Finish the assigned work
 
