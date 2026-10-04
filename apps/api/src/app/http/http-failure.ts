@@ -1,7 +1,7 @@
 import { Data } from "effect";
 
-export type RequestLocation = "body" | "path" | "query";
-export type Upstream = "tesco";
+type RequestLocation = "body" | "path" | "query";
+type Upstream = "tesco";
 
 export const InvalidRequest = Data.TaggedError("InvalidRequest")<{
   readonly location: RequestLocation;
@@ -47,7 +47,7 @@ export type HttpFailure =
   | UpstreamRequestRejected
   | UpstreamInvalidResponse;
 
-export interface HttpFailureSpec {
+interface HttpFailureSpec {
   readonly error: string;
   readonly message: string;
   readonly status: number;
