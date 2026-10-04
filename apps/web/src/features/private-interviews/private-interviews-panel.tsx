@@ -75,9 +75,7 @@ const Notice = ({
             This session changed on another connection. Review its history
             before deciding whether to submit again.
           </p>
-          <Button onClick={client.refreshSession}>
-            Review updated history
-          </Button>
+          <Button onClick={client.refreshCards}>Review updated history</Button>
         </Alert>
       );
     }

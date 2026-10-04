@@ -72,7 +72,7 @@ draft into that contract. Native admission, receipts, lifecycle, and review
 coverage remain in place. Uncalled recovery readers, grounding helpers, route
 exports, and encoded person aliases are deleted with their dormant callers.
 
-Validation on October 4: `pnpm test` passed 1,745 tests, including 1,064 API,
+Validation on October 4: `pnpm test` passed 1,645 tests, including 1,064 API,
 264 frontend, and 122 native Worker tests. The 14 family, food-profile, and
 private-review journeys passed on Chromium and mobile WebKit against local
 Website/API Workers. Workspace typechecks, lint, formatting, production build,
@@ -81,6 +81,31 @@ Generated-client tests cover scoped profile reads, pagination, cancellation, and
 full Cause projection; existing native workflow and household coverage remains.
 No live TikTok acquisition or paid model flow was exercised. The AtomHttpApi
 experiment below remains proposed.
+
+## Remaining small deletion delivery
+
+The third October 4 review selects six small cleanup groups. Authentication,
+password recovery, and invitations now use the existing stateless `apiEffectQuery`
+adapter. Their domain failures, retry windows, cache keys, and recovery stay in
+their slices. Better Auth commands keep their native client.
+
+Remove the test-only recipe-import HTTP assembly wrapper, unused observability
+helpers and queue event, unused constants and exports, unused recipe projections,
+and the private interview's redundant refresh alias. Tests compose the live HTTP
+layers, retain native workflow/provider correlation assertions, and use the live
+ingredient formatter. Actual provider gateway logging protections remain;
+the gateway comment now describes the installed binding's per-request logging
+setting. The operator-carousel path and confirmation HTTP refactor remain outside
+this delivery. The broader AtomHttpApi experiment remains proposed.
+
+Validation on October 4: `pnpm test` passed 1,644 tests, including 1,063 API,
+264 frontend, and 122 native Worker tests. All 14 family, food-profile, and
+private-review journeys passed on Chromium and mobile WebKit against local
+Website/API Workers. Typechecks, lint, formatting, production build,
+documentation checks and 24 checker tests, and Ultracite doctor passed.
+The only removed test exercised the unused gateway-header helper; live telemetry
+redaction and workflow/provider correlation checks remain. No live TikTok
+acquisition or paid model flow was exercised.
 
 ## Scope
 

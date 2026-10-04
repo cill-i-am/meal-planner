@@ -314,15 +314,6 @@ export const makeRecipeContent = (
     ...content,
   });
 
-export const recipeGroups = (
-  recipe: Pick<RecipeContent, "ingredients" | "instructions">
-): readonly string[] => [
-  ...new Set(
-    [...recipe.ingredients, ...recipe.instructions].flatMap((item) =>
-      item.group === null ? [] : [item.group]
-    )
-  ),
-];
 export const formatRecipeIngredient = (
   ingredient: RecipeIngredient
 ): string => {
@@ -334,11 +325,3 @@ export const formatRecipeIngredient = (
   const name = ingredient.localName ?? ingredient.name;
   return `${amount}${ingredient.size === null ? "" : `${ingredient.size} `}${name}${ingredient.preparation === null ? "" : `, ${ingredient.preparation}`}${ingredient.note === null ? "" : ` (${ingredient.note})`}${ingredient.optional === true ? " (optional)" : ""}`;
 };
-
-/** Flat display is derived; there is no second editable recipe authority. */
-export const recipeDisplayText = (
-  recipe: Pick<RecipeContent, "ingredients" | "instructions">
-) => ({
-  ingredients: recipe.ingredients.map(formatRecipeIngredient),
-  instructions: recipe.instructions.map((instruction) => instruction.text),
-});

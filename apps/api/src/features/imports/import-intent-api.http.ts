@@ -599,9 +599,6 @@ export const makeRecipeImportHttpApiLayer = () =>
     Layer.provide(JsonHttpPlatformServices)
   );
 
-// eslint-disable-next-line typescript/no-explicit-any -- Effect's heterogeneous Route collection uses unconstrained error and context parameters.
-type AnyHttpRoute = HttpRouter.Route<any, any>;
-
 const notFound = HttpServerResponse.json(
   { error: { code: "not_found", message: "The route was not found." } },
   { status: 404 }
@@ -613,15 +610,3 @@ const RecipeImportNotFoundRoutes = [
 
 export const makeRecipeImportNotFoundHttpLayer = () =>
   HttpRouter.addAll(RecipeImportNotFoundRoutes);
-
-/** Mount the canonical typed API beside explicitly named operational routes. */
-export const makeRecipeImportWorkerHttpLayer = <
-  const OperationalRoutes extends readonly AnyHttpRoute[],
->(options: {
-  readonly operationalRoutes: OperationalRoutes;
-}) =>
-  Layer.mergeAll(
-    HttpRouter.addAll(options.operationalRoutes),
-    makeRecipeImportHttpApiLayer(),
-    makeRecipeImportNotFoundHttpLayer()
-  );

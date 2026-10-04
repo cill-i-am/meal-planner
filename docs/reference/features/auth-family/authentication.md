@@ -66,6 +66,11 @@ and native [auth tests](../../../../apps/api/src/features/auth/auth.worker.test.
 
 ## Browser regression coverage
 
+Authentication and recovery mutation options use the shared stateless Effect
+Query adapter. Better Auth still owns native commands; these features own retry
+windows, safe return destinations, and account refresh. Passwords and reset
+tokens remain transient.
+
 [Playwright journeys](../../../../apps/web/e2e/family-journey.spec.ts) exercise
 signup and password reset through native local Workers. A JavaScript-disabled
 browser also checks that SSR credential fields and submission stay disabled until
