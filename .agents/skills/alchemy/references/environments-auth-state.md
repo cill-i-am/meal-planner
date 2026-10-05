@@ -50,8 +50,8 @@ pnpm alchemy profile show --profile sandbox
   write local profiles.
 - Keep an explicit production profile when account separation matters.
 - Never commit profile or credential files.
-- Treat `profile delete`/credential removal as an authentication mutation
-  requiring confirmation.
+- Treat `profile delete`/credential removal as an authentication mutation.
+  Verify its exact profile and effects are authorized; reuse existing authorization.
 
 ## Auth Provider Model
 
@@ -111,7 +111,7 @@ State is the persisted record the next plan diffs against. It is not a live inve
 
 Use one authoritative state store per stack/stage. Do not casually switch stores: an empty store can make every resource appear new and trigger recovery/adoption behavior.
 
-Remote bootstrap can itself create cloud resources and credentials, so it requires confirmation. Keep `.alchemy/` gitignored even when remote state is the normal path.
+Remote bootstrap can create cloud resources and credentials. Verify that the target and these effects are covered by existing authorization; request only missing scope. Keep `.alchemy/` gitignored even when remote state is the normal path.
 
 ## Custom State Store
 
@@ -136,7 +136,7 @@ so inspect the stack and command before treating dev as read-only.
 - Confirm ports and generated local URLs.
 - Verify frontend traffic in the browser/network panel.
 - Keep production-only secrets out of local profiles.
-- Treat dev startup as cloud-mutating unless a plan proves otherwise.
+- Inspect dev startup, selected resources and state setup to establish actual local/cloud effects; the command name alone does not prove them.
 
 ## CI
 

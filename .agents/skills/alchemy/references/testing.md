@@ -46,7 +46,7 @@ afterAll.skipIf(!process.env.CI)(destroy(Stack));
 - Decide and document whether local runs preserve a stack for iteration.
 - CI should normally destroy its unique stage even after test failure.
 
-Harness `deploy` and `destroy` do not prompt. Running such a suite is therefore a real cloud mutation and requires explicit user authorization in an agent session.
+Harness `deploy` and `destroy` do not prompt. Before running the suite, verify that its provider, environment, spend, deployed resources and cleanup are authorized. Reuse authorization already covering those effects; otherwise finish independent local checks and request the missing scope.
 
 ## Exercise Real Behavior
 

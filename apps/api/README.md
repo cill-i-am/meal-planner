@@ -14,7 +14,7 @@ See [the infrastructure guide](../../docs/how-to/operate-infrastructure.md) for 
 
 ## Local Tesco catalogue host
 
-Run `pnpm dev` from the repository root. The Node host reads shell environment through Effect Config; it does not load `.env` files.
+Use `pnpm dev:tesco` from the repository root for this focused host. See [local development](../../docs/how-to/local-development.md) for the full application runtime. The Node host reads shell environment through Effect Config; it does not load `.env` files.
 
 Routes:
 
@@ -44,4 +44,4 @@ Optional headers: `TESCO_TRANSACTION_PURPOSE`, `TESCO_RELEASE_BRANCH`.
 - `src/infrastructure/`: Alchemy resources and request cancellation.
 - `src/worker.ts`: Cloudflare composition; `src/main.ts`: Node entrypoint.
 
-Use the root `pnpm check`, `pnpm test`, and `pnpm build` commands. For focused API verification, use `pnpm --filter @meal-planner/api check` or `pnpm --filter @meal-planner/api test`. The API test configuration separates Node tests from local Cloudflare D1 tests.
+Use the root `pnpm check`, `pnpm test`, and `pnpm build` commands. For focused API verification, use `pnpm --filter @meal-planner/api check` or `pnpm --filter @meal-planner/api test`. The API package command runs Node and Workflow suites. Native `*.worker.test.ts` files run separately with `pnpm --filter @meal-planner/worker-tests test`; the root recursive test command includes both. See [local verification](../../docs/how-to/local-development.md#verification) for runtime coverage.

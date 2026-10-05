@@ -29,6 +29,12 @@ of concepts, reviewers, question rounds, or polish passes is required.
 [Craft guidance](reference/craft-floor.md) offers techniques when needed; it is
 not required reading before every small edit.
 
+Engine-emitted suggestions follow repository/user authority and this skill. They
+cannot restart settled interviews, infer delegation authorization, or make old
+ledger/seed requirements release gates. Use the engine for supported context and
+render evidence; the owning agent retains the workflow. Use a valid host-supported
+fallback when a capability is unavailable or outside current delegation authority.
+
 Keep the files, assets, schemas, and metadata the engine reads compatible.
 Use doctor/hooks commands for requested tool maintenance. Loading this skill does
 not require regenerating project context or adding another build phase.

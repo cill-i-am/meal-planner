@@ -98,25 +98,21 @@ Generic cross-cutting code should also have a concrete capability name. Prefer `
 
 ## Public API And Imports
 
-Every feature has one ordinary public entrypoint:
+Within a feature, import directly from the module that owns the abstraction.
+Across features, import through a curated public API or an explicit boundary
+subpath. Keep domain behavior and implementation details with their owner.
 
-```txt
-src/features/tesco/index.ts
-```
+An app-local feature may expose `index.ts` or a named public contract module.
+Choose the surface that hides meaningful internals; do not add forwarding barrels
+only to satisfy a filename convention. Workspace packages enforce their public
+surface through package exports.
 
-Other features import only from that public entrypoint or from an explicit boundary subpath. They do not import internals by relative paths.
-
-Prefer:
-
-```ts
-import { TescoService } from "../tesco";
-```
-
-Avoid:
-
-```ts
-import { parseTescoProduct } from "../tesco/domain/product";
-```
+The [family and invitation reference architecture](../family-api.md#reference-architecture)
+implements these boundaries. Adoption elsewhere is incomplete: this page states
+the intended dependency rules, not a claim that every existing feature already
+has a curated entrypoint or that the whole graph is mechanically checked. When
+changing a cross-feature dependency, resolve its ownership and update the affected
+callers and boundary evidence together.
 
 For packages, enforce the same rule with `package.json` exports:
 
@@ -152,7 +148,7 @@ Promote a feature to a workspace package when:
 - it owns generated clients or contracts;
 - it has a separate ownership or release concern.
 
-Workspace feature packages use pnpm workspace dependencies and `tsdown` by default. Package exports define the public surface. Internal source files are private by default.
+Workspace feature packages use pnpm workspace dependencies and build with `tsc -p tsconfig.build.json`. Package exports define the public surface. Internal source files are private by default. Use the owning package scripts rather than adding a second build tool.
 
 ## Dependency Direction
 
@@ -343,9 +339,15 @@ Choose checks that fit the size and needs of the codebase:
 - convention for tiny local slices;
 - `index.ts` or `public.ts` boundaries for app-local features;
 - package `exports` for workspace packages;
-- `tsdown` builds to prove package public surfaces;
+- package builds with `tsc` to check exported types;
 - TypeScript project references where useful;
 - focused import-boundary tests when a rule matters or gets violated.
+
+The existing [feature-boundary test](../../../scripts/family-feature-boundaries.test.ts)
+checks the reference slices and their dependency rules. It does not check every
+feature or prove the whole graph is cycle-free. Extend that check when adding an
+important boundary; do not create empty entrypoints or weaken domain dependency
+rules to make an inventory appear complete.
 
 Avoid heavyweight boundary tooling until the codebase needs it.
 

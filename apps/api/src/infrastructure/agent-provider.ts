@@ -5,9 +5,8 @@ import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 
-/** Stage-owned gateway and account token for the two private Agent Workers. */
 export const AgentProvider = Effect.gen(function* AgentProvider() {
-  const { dev } = yield* Alchemy.AlchemyContext;
+  const dev = yield* Alchemy.ALCHEMY_DEV;
   if (dev) {
     return {
       accountId: yield* Config.String("LOCAL_AGENT_ACCOUNT_ID").pipe(

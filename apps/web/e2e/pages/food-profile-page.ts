@@ -14,6 +14,7 @@ export class FoodProfilePage {
   async open() {
     const disclosure = this.page.locator("details#saved-food-facts");
     await expect(disclosure).toBeVisible();
+    await expect(disclosure).not.toHaveAttribute("inert", "");
     if ((await disclosure.getAttribute("open")) === null) {
       await disclosure.locator(":scope > summary").click();
     }

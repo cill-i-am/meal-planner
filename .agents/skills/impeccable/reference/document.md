@@ -1,6 +1,6 @@
 Generate a `DESIGN.md` file at the project root that captures the current visual design system, so AI agents generating new screens stay on-brand.
 
-DESIGN.md follows the [official DESIGN.md format spec](https://raw.githubusercontent.com/google-labs-code/design.md/main/docs/spec.md): optional YAML frontmatter carrying machine-readable design tokens, followed by up to eight markdown sections in a fixed order. **Tokens are normative; prose provides context for how to apply them.** Sections may be omitted when not relevant, but those present stay in the specified order. Use the canonical headings below so the file remains portable across DESIGN.md-aware tools.
+DESIGN.md follows the [official DESIGN.md format spec](https://raw.githubusercontent.com/google-labs-code/design.md/main/docs/spec.md): optional YAML frontmatter carrying machine-readable design tokens, followed by up to eight markdown sections in a fixed order. **Tokens are the machine-readable record; prose explains how to apply them.** Live Paper remains the repository's visual authority. Source and rendered output prove implementation; record drift from the approved design as drift, not as a replacement decision. Sections may be omitted when not relevant, but those present stay in the specified order. Use the canonical headings below so the file remains portable across DESIGN.md-aware tools.
 
 ## The frontmatter: token schema
 
@@ -68,16 +68,16 @@ Omit irrelevant sections rather than filling them with invented rules. Put respo
 - An existing `DESIGN.md` is stale (the design has drifted).
 - Before a large redesign, to capture the current state as a reference.
 
-If a `DESIGN.md` already exists, **do not silently overwrite it**. Show the user the existing file first. STOP and use Codex's structured user-input/question tool when available; if unavailable, ask directly in chat to clarify what you cannot infer. The choice is refresh, overwrite, or merge.
+If `DESIGN.md` exists, update it in place within the assigned maintenance or design scope. Preserve established decisions and tool schemas. Ask only when the request leaves a material replacement or design decision unresolved; reuse authorization already given.
 
 ## Two paths
 
-- **Scan mode** (default): the project has design tokens, components, or rendered output. Extract, then confirm descriptive language. Use when there's code to analyze.
-- **Seed mode**: the project is pre-implementation. Ensure PRODUCT.md exists, then reuse new-work's visual-world workshop and write its directional DESIGN.md seed. Re-run in scan mode once there's code.
+- **Scan mode** (default): the project has design tokens, components, or rendered output. Extract and reuse established descriptive language. Use when there's code to analyze.
+- **Seed mode**: the project is pre-implementation. Ensure PRODUCT.md exists, then use the agreed Paper direction through [new-work.md](new-work.md) and write a clearly marked design seed. Re-run in scan mode once there's code.
 
-Decide by scanning first (Scan mode Step 1). If the scan finds no tokens, no component files, and no rendered site, offer seed mode; don't silently switch. `$impeccable document --seed` requests new-work's world workshop, but it does not authorize replacing coherent code: when an incumbent system exists, offer scan mode or route an explicit identity-replacement request through new-work.
+Scan first. When there is no implemented system, record the agreed design in seed mode and state that implementation tokens remain unknown. `$impeccable document --seed` requests a design seed; preserve a coherent incumbent system unless replacing it is in scope.
 
-## Scan mode (approach C: auto-extract, then confirm descriptive language)
+## Scan mode: extract the implemented system
 
 ### Step 1: Find the design assets
 
@@ -113,17 +113,16 @@ From the auto-extracted tokens, draft the YAML frontmatter now (you'll write it 
 
 Skip anything the project doesn't have. Empty scale keys or fabricated tokens pollute the spec.
 
-### Step 3: Ask the user for qualitative language
+### Step 3: Ground the descriptive language
 
-The following require creative input that cannot be auto-extracted. Ask them in two structured rounds of no more than three questions each (or the harness's lower limit), waiting between rounds:
+Reuse the approved Paper design and existing design record for atmosphere,
+color character, typography, elevation and component language. Describe observed
+choices plainly when no named metaphor exists. A new north-star name is optional.
+Ask only about a material unresolved design choice; a documentation refresh does
+not require creative interviews or another approval round.
 
-- **Creative North Star**: a single named metaphor for the whole system ("The Editorial Sanctuary", "The Golden State Curator", "The Lab Notebook"). Offer 2-3 options that honor PRODUCT.md's brand personality.
-- **Overview voice**: mood adjectives, aesthetic philosophy in 2-3 sentences, and any confirmed visual anti-reference.
-- **Color character** (for auto-extracted colors): descriptive names ("Deep Muted Teal-Navy", not "blue-800"). Suggest 2-3 options per key color based on hue/saturation.
-- **Elevation philosophy**: flat/layered/lifted. If shadows exist, is their role ambient or structural?
-- **Component philosophy**: the feel of buttons, cards, inputs in one phrase ("tactile and confident" vs. "refined and restrained").
-
-Carry a line from PRODUCT.md only when it is a durable brand commitment that actually constrains the visual system. Page strategy and surface concepts do not belong here.
+Carry a line from PRODUCT.md only when it is a durable brand commitment that
+constrains the visual system. Keep page strategy in its owning brief or plan.
 
 ### Step 4: Write DESIGN.md
 
@@ -315,13 +314,13 @@ The `html` and `css` fields must be **self-contained, drop-in snippets** that re
 
 #### What to include
 
-Aim for a tight set of **5-10 components** that best represent the visual system:
+Include the components needed to represent the actual visual system:
 
 - **Canonical primitives (always include if the project has them):** button (each variant as a separate component entry), input/text field, navigation, chip/tag, card.
 - **Signature components (include if distinctive):** the recurring custom patterns that actually define the implemented system.
 - **Skip the rest.** Utility components, form building blocks, wrapper layouts: not worth documenting unless visually distinctive.
 
-If the project has **no component library yet** (bare landing page, new project), synthesize canonical primitives from the tokens using best-practice defaults consistent with the DESIGN.md's rules. Every `.impeccable/design.json` has *something* to render, even on day zero.
+If no components are implemented, leave the component list empty. Tool previews must not turn invented examples into normative system rules.
 
 #### Tonal ramps
 
@@ -339,29 +338,27 @@ Pull directly from the DESIGN.md you just wrote:
 
 Do not reword. The panel shows these as secondary collapsible context; the same voice that's in the Markdown carries through.
 
-### Step 5: Confirm and refine
+### Step 5: Verify and report
 
-1. Show the user the full DESIGN.md you wrote. Briefly highlight the non-obvious creative choices (descriptive color names, atmosphere language, named rules).
-2. Mention that `.impeccable/design.json` was also written alongside; the live panel will now render this project's actual button/input/nav primitives instead of generic approximations.
-3. Offer to refine any section: "Want me to revise a section, add component patterns I missed, or adjust the atmosphere language?"
-
-Your own write is the freshest source; subsequent commands in this session don't need a reload.
+Check that the recorded values match their source and that sidecar JSON parses.
+Report the files changed, meaningful choices and unresolved design drift. Resume
+any enclosing implementation request; recording the system adds no approval gate.
 
 ## Seed mode
 
 For projects with no visual system to extract yet. Produces a user-chosen visual-world scaffold, not a fabricated token spec.
 
-### Step 1: Route through new-work's workshop
+### Step 1: Reuse the agreed design
 
-PRODUCT.md is the prerequisite. If it is missing, load [init.md](init.md) and complete its product interview first. Do not create a visual identity without durable product context.
-
-If PRODUCT.md exists, load [new-work.md](new-work.md) and resolve visual authority. Seed mode requires a concrete first surface: use the target the user named, or ask what they want to make first. Run new-work's **Create or replace the visual world** flow, then **Commit the world**, so the visual world and its first expression are chosen together. Stop after the directional DESIGN.md seed and surface brief; do not implement. A structured simulated user counts as the user and must get the same choice.
-
-If new-work already completed the workshop in this session, use its chosen direction directly. Do not ask again.
+Use PRODUCT.md and the assigned first surface. If product context is missing,
+follow [init.md](init.md) using available evidence. Resolve visual authority with
+[new-work.md](new-work.md), preserving the agreed Paper composition. Ask only for
+an actual unresolved product or design decision. A seed-only request ends after
+the record; an enclosing implementation request continues within its scope.
 
 ### Step 2: Write seed DESIGN.md
 
-Use the canonical section order from Scan mode. Populate the selected workshop direction and leave unresolved implementation facts as honest placeholders. The seed commits a world and its invariants; it does not pretend implementation tokens already exist.
+Use the canonical section order from Scan mode. Populate the agreed design direction and leave unresolved implementation facts as honest placeholders. The seed commits a world and its invariants; it does not pretend implementation tokens already exist.
 
 Lead the file with:
 
@@ -382,7 +379,7 @@ Per-section guidance in seed mode:
 
 Seed mode writes a minimal frontmatter with `name` and `description` only; no colors, typography, rounded, spacing, or components yet. Real tokens land on the next Scan-mode run. Skip the `.impeccable/design.json` sidecar in seed mode for the same reason: nothing to render.
 
-### Step 3: Confirm
+### Step 3: Report
 
 1. Show the seed DESIGN.md. Call out that it is a seed (the marker is the literal commitment).
 2. Tell the user: "Re-run `$impeccable document` once you have some code. That pass will extract real tokens and generate the sidecar."
@@ -391,7 +388,7 @@ Your own write is the freshest source; no reload needed.
 
 ## Style guidelines
 
-- **Frontmatter first, prose second.** Tokens go in the YAML frontmatter; prose contextualizes them. Don't redefine a token value in two places; the frontmatter is normative.
+- **Frontmatter first, prose second.** Record tokens once in YAML; prose explains their use. Preserve Paper as visual authority and report implementation drift.
 - **Carry only durable product constraints.** A binding logo, identity asset, accessibility need, or brand commitment from PRODUCT.md may constrain DESIGN.md. Surface strategy stays in its surface brief.
 - **Match the spec.** Use its eight canonical sections in order and omit any that are irrelevant. Put motion guidance with the world or component it affects rather than creating a token group the schema does not support.
 - **Descriptive > technical**: "Gently curved edges (8px radius)" > "rounded-lg". Include the technical value in parens, lead with the description.
@@ -408,9 +405,9 @@ Your own write is the freshest source; no reload needed.
 - Don't paste raw CSS class names. Translate to descriptive language.
 - Don't extract every token. Stop at what's actually reused; one-offs pollute the system.
 - Don't invent components that don't exist. If the project only has buttons and cards, only document those.
-- Don't overwrite an existing DESIGN.md without asking.
+- Update an existing DESIGN.md within the assigned scope, preserving approved decisions and unresolved differences.
 - Don't duplicate content from PRODUCT.md. DESIGN.md is strictly visual.
 - Don't replace canonical sections with near-synonyms. Put layout and responsive behavior in `Layout`; put motion with the affected world or component.
 - Don't rename sections even slightly. "Colors" not "Color Palette & Roles". "Typography" not "Typography Rules". Tooling parsing depends on exact headers.
-- Don't duplicate token values between frontmatter and prose. If a color is in `colors.primary` as hex, the prose can name it and describe its role but should not reassert a different hex. The frontmatter is normative.
+- Don't duplicate token values between frontmatter and prose. If a color is in `colors.primary` as hex, the prose can name it and describe its role but should not reassert a different hex. The frontmatter owns the recorded token value; approved Paper still owns visual intent.
 - Don't invent frontmatter token groups outside Stitch's schema (no `motion:`, `breakpoints:`, `shadows:` at the top level). Stitch's Zod schema only accepts `colors`, `typography`, `rounded`, `spacing`, `components`. Anything else belongs in the sidecar's `extensions`.

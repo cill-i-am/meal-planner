@@ -138,7 +138,12 @@ Browser forms submit through the appropriate typed client; canonical writes and 
 
 Do not retry mutations unless the command has an explicit idempotency strategy.
 
-Keep mutation wiring in the route or page while the workflow is still taking shape. Extract only shared schemas, parsers, and small boundary adapters into the feature slice, for example `src/features/auth/shared/*`. Do not create a reusable `AuthForms`-style component unless deleting it would spread meaningful complexity across several callers.
+Feature hooks own mutation execution, retained requests, result classification,
+and cache invalidation. Screens own local drafts, form composition, and navigation.
+Use the [family creation hook](../../apps/web/src/features/family/family-creation.ts)
+and [setup mutation hooks](../../apps/web/src/features/family/setup-mutations.ts)
+as the reference. Share schemas, parsers, and field behavior where their meaning
+matches; keep each screen's fields and actions explicit.
 
 ## Reactions
 

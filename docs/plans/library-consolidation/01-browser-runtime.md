@@ -1,295 +1,65 @@
-# Share the browser's Effect setup
+# Shared browser Effect execution
 
-Status: proposed
-Owner: unassigned
-Delivery: working profile and people screens using one tested setup, with the fallback if needed
+Status: done
+Owner: web feature slices
+Delivery: generated-client Effects and one stateless Effect Query adapter
 
-## Outcome and context
+## Result
 
-Keep the existing people and profile behavior while removing repeated Effect
-client Layers, Promise runners, and error handling. Each migrated operation should
-have one owner. Adding a wrapper around both old implementations is not enough.
+The October 4 cleanup removed repeated Promise clients and Query execution
+adapters across people, profiles, family setup, recipe import, auth, recovery,
+and invitations. The shared [API transport feature](../../../apps/web/src/features/api-client/index.tsx)
+provides `apiEffectQuery`. TanStack Query owns remote state. Features keep domain
+commands, request shaping, failure projection, retry policy, cache keys, versions,
+and recovery. Better Auth keeps its native commands.
 
-The [review sequence](README.md) splits the approach and its detailed checks
-between two PRs. They edit this same plan. Package observations from September 16
-are historical; use the implementation checkout's manifests, lockfile, source,
-and tests to establish the starting point.
+The private interview runs Effects at its SDK Promise callback boundary. Its
+confirmation HTTP transport uses the generated private-interview contract.
+The cleanup also removed dormant import-review helpers and operator-carousel
+staging; carousel evidence types and integrity/household commit rules remain.
+No photo acquisition was added.
 
-## Scoped people and recipe-import delivery
+This delivered the plan's reduction in duplicate execution code with the installed
+Query integration. The earlier AtomHttpApi pilot was not run and is removed from
+the active work queue. A future replacement needs a concrete problem and scoped
+experiment; it is not a prerequisite for private-client cleanup.
 
-The October 4 deletion review selected two concrete refactors: remove the people
-Promise facade and replace the recipe-import Promise client. This delivery uses
-installed Effect 4.0.0, Effect Query 1.0.0, and TanStack Query 5.102.8. It does not
-run the broader profile/AtomHttpApi experiment below or upgrade dependencies.
+## Preserved boundaries
 
-Both slices expose generated-client Effects through their public feature APIs.
-The API transport feature provides a stateless Effect Query adapter. Feature
-slices retain domain inputs, request shaping, failure projection, cache policy,
-and recovery. People uses its existing transport retry policy once, with Query
-retries disabled. Recipe-import retains no automatic mutation retries. Query
-cancellation reaches fetch in both slices.
+The transport adapter has no domain state or recovery ownership. Reads carry
+cancellation to fetch. Mutation retries follow the owning feature's contract;
+recipe import has no automatic mutation retries. Browser cancellation does not
+roll back a server write.
 
-Removed: the people Promise facade and duplicate Promise operation type; the
-recipe-import Promise runner and handwritten result interface; duplicated empty
-people Query adapter setup. Recipe operation results are inferred from the
-shared generated contract. All production people operations are required; the
-panel no longer treats supplied operations as optional capabilities.
+A sole decoded rejection can settle a retained command. Transport failures,
+malformed responses, and mixed Causes preserve uncertainty where there is no
+proof of rejection. Exact payload, request identity, target versions, and binding
+stay with the feature's existing recovery mechanism. Account or family changes
+must not expose old private data or let late callbacks settle a newer command.
 
-That delivery left profile and household Promise clients and the family query
-adapter for the follow-up below. The private interview's narrow Promise callback
-remains an integration boundary. The broader AtomHttpApi pilot and acceptance
-checklist below remain proposed.
+Family forms and submitted commands remain in mounted memory, as defined by
+[family resource decision D26](../family-resource-onboarding.md#d26--no-persisted-browser-mutations-27-september-2026).
+Private sessions retain their own durable server command and history contracts.
+This result adds no writable cache or persisted browser draft.
 
-Validation on October 4: `pnpm test` passed 1,660 tests; workspace typechecks,
-lint, formatting, the production build, documentation checks (including 24
-checker tests), and Ultracite doctor passed. The existing public-feature boundary
-check includes recipe-import and passed. The 14 family, food-profile, and private
-review Playwright journeys passed against local Website/API Workers on Chromium
-and mobile WebKit. An earlier run crossed a five-hour pause and expired Worker
-connections; the fresh runs used macOS’s native sleep inhibitor without changing
-checks or timeout limits.
+## Recorded verification and limits
 
-Feature tests cover exact-command recovery, deterministic and ambiguous failures,
-full Cause projection, and query cancellation through both generated clients.
-Recipe-import request/review behavior is verified by Chromium component and
-client tests; no live TikTok acquisition or paid model flow was exercised.
+The October 4 implementation record reported passing repository typechecks,
+lint, formatting, production builds, documentation checks and checker tests.
+The final confirmation/staging cleanup recorded 1,635 tests: 1,050 API,
+268 frontend and 122 native Worker tests, plus the other package/structural suites.
+All 14 family, food-profile and private-review Playwright journeys passed in
+Chromium and mobile WebKit against local Website/API Workers.
 
-## Follow-up deletion delivery
+Generated-client tests cover scoped profile reads, pagination, cancellation,
+and full Cause projection. Native confirmation tests cover copied references,
+lost replies, generation changes, explicit recovery, empty bodies and malformed
+metadata. Existing workflow admission, receipts, lifecycle and review tests remain.
 
-The second October 4 review removes the profile and household Promise clients
-and the duplicate family Query adapter. The existing generated contracts now
-return Effects through each feature's public entrypoint and use `apiEffectQuery`.
-Profile recovery, mutation identity, version guards, cache keys, and pagination
-remain in the profile slice. Only a sole decoded rejection is definitive; a mixed
-Cause preserves an unresolved command. The private interview executes Effects
-only at its Promise callback boundary. No dependencies were upgraded.
-
-The same review removes the unused import transition reducer and the older
-recipe-review model. Execution generation remains a branded schema in the
-household workflow shared kernel. The live household contract continues to own
-review answers and confirmation; the import slice directly projects the initial
-draft into that contract. Native admission, receipts, lifecycle, and review
-coverage remain in place. Uncalled recovery readers, grounding helpers, route
-exports, and encoded person aliases are deleted with their dormant callers.
-
-Validation on October 4: `pnpm test` passed 1,645 tests, including 1,064 API,
-264 frontend, and 122 native Worker tests. The 14 family, food-profile, and
-private-review journeys passed on Chromium and mobile WebKit against local
-Website/API Workers. Workspace typechecks, lint, formatting, production build,
-documentation checks and 24 checker tests, and Ultracite doctor also passed.
-Generated-client tests cover scoped profile reads, pagination, cancellation, and
-full Cause projection; existing native workflow and household coverage remains.
-No live TikTok acquisition or paid model flow was exercised. The AtomHttpApi
-experiment below remains proposed.
-
-## Remaining small deletion delivery
-
-The third October 4 review selects six small cleanup groups. Authentication,
-password recovery, and invitations now use the existing stateless `apiEffectQuery`
-adapter. Their domain failures, retry windows, cache keys, and recovery stay in
-their slices. Better Auth commands keep their native client.
-
-Remove the test-only recipe-import HTTP assembly wrapper, unused observability
-helpers and queue event, unused constants and exports, unused recipe projections,
-and the private interview's redundant refresh alias. Tests compose the live HTTP
-layers, retain native workflow/provider correlation assertions, and use the live
-ingredient formatter. Actual provider gateway logging protections remain;
-the gateway comment now describes the installed binding's per-request logging
-setting. The operator-carousel path and confirmation HTTP refactor remain outside
-this delivery. The broader AtomHttpApi experiment remains proposed.
-
-Validation on October 4: `pnpm test` passed 1,644 tests, including 1,063 API,
-264 frontend, and 122 native Worker tests. All 14 family, food-profile, and
-private-review journeys passed on Chromium and mobile WebKit against local
-Website/API Workers. Typechecks, lint, formatting, production build,
-documentation checks and 24 checker tests, and Ultracite doctor passed.
-The only removed test exercised the unused gateway-header helper; live telemetry
-redaction and workflow/provider correlation checks remain. No live TikTok
-acquisition or paid model flow was exercised.
-
-## Carousel staging and private confirmation delivery
-
-Remove the operator carousel writer, staging store and unreachable Workflow
-branch. There was no production staging ingress, and source resolution rejects
-photo posts before acquisition. Keep the carousel evidence types, integrity
-checks and household commit rules; this delivery does not add photo acquisition.
-
-Replace manual confirmation URL matching, fetch and status decoding with the
-shared private-interview Effect HttpApi contract, generated browser client and
-typed handler. Mount the same layer in production and both native test hosts.
-The feature owns its transport; household authority remains the sole profile
-writer, and the private session owns frozen commands, receipts and recovery.
-
-The endpoint accepts only branded UUID metadata and an empty same-origin request.
-Responses carry no private bodies. The socket owner's Promise callback runs the
-Effect with its abort signal; HTTP acceptance leaves the saved command pending
-until canonical socket settlement. Invalid metadata is rejected before release.
-No storage migration, dependency upgrade or additional writable cache is needed.
-The broader AtomHttpApi experiment remains proposed.
-
-Validation on October 4: `pnpm test` passed 1,635 tests, including 1,050 API,
-268 frontend and 122 native Worker tests. All 14 family, food-profile and
-private-review journeys passed on Chromium and mobile WebKit against local
-Website/API Workers. Typechecks, production build, lint, formatting,
-documentation checks and 24 checker tests, and Ultracite doctor passed.
-Native confirmation tests cover copied references, lost replies, generation
-changes, explicit recovery, empty response bodies and malformed metadata.
-No live TikTok acquisition or paid model flow was exercised.
-
-## Scope
-
-First make one complete profile flow work: read, save, and refresh from the server.
-Then migrate the other profile and people operations, including the roster,
-invitations, and departure. Keep the generated Effect HTTP contracts, household
-writes, and recovery that retries the exact original command.
-
-Inspect household and import adapters too, but change them only where the shared
-setup requires it within this scope. List the adapters left unchanged; do not
-claim that the whole app has migrated.
-
-Do not replace HTTP with RPC, roll out LiveStore, change authentication or storage,
-change interview behavior, build a universal frontend service framework, or remove
-unrelated Query uses. The [household contract](../../reference/household.md) and
-[people API](../../reference/household-people-api.md) define behavior to preserve.
-
-## Approach and trade-offs
-
-### Prove one working flow first
-
-Record how existing operations return results, which caches own their data, and
-how unresolved requests are saved. Run a real generated HttpApi profile read and
-write through the installed `AtomHttpApi` and compatible React bindings. Check the
-actual exports, peer dependencies, resolved versions, and production web build.
-Test how that version exposes HTTP failures, decoding errors, defects, and
-interruption. A type signature or upstream example cannot prove that it preserves
-the full Effect Cause.
-
-Prefer native atoms when the full flow works without suppressing peer checks,
-copying library internals, or upgrading the whole stack. Otherwise keep Query and
-share one account/household-scoped Effect runner and error adapter. Record the
-failing case and the chosen fallback here. The fallback must remove the repeated
-runners too. An unfinished experiment, or leaving both options running, is not a
-completed change.
-
-Record routine integration choices in this plan. Create a separate decision
-record only for a consequential architecture choice.
-
-### Separate screen lifetime from saved commands
-
-Scope the browser registry and runtime to the account, household, and current
-binding or generation. Prefer keeping client-side loading. If adding server
-execution, use per-request state and test simultaneous server rendering and
-hydration for different users. Do not serialize private data or pending commands
-by default.
-
-When a screen is disposed, remove subscriptions and cancel obsolete reads. Hide
-old-context data and ignore late results or cache invalidations. An unresolved
-command must keep its original payload, ID, expected versions, and binding outside
-the disposable screen state. Recover it only under the existing matching-context
-rules.
-
-Cancelling a sent request does not undo a server write. A cache key does not grant
-access. Keep each workflow's existing rules for which actions can run while
-another is unresolved; do not add a lock across the whole household.
-
-### Replace the old code, then remove it
-
-Finish the profile flow, then the other profile and people operations. Promise
-consumers may use one thin adapter to the same runtime. Keep each feature's
-rejection and recovery behavior. Replace manual Cause traversal only when public
-Effect APIs preserve the tested behavior, including any legitimate serialized or
-wrapped failure interface.
-
-After confirmed success, refresh only the affected server data. When the result is
-unknown, keep the original saved request. Once replacement tests cover the
-behavior, remove its old Query ownership, repeated client creation, obsolete
-subscriptions, and unused exports. Leave unrelated Query consumers alone. A
-future replicated resource must not also have separate writable copies in atoms
-or Query.
-
-## Source and coordination
-
-Start with `household-profiles/browser-operations.ts` and
-`household-people/browser-operations.ts` under `apps/web/src/features/`. Read their
-public operation contracts and tests, people saved-request handling, and panels.
-Check auth state, `apps/web/src/router.tsx`, `packages/household-api/`, and the
-manifests. Coordinate shared profile submission, schemas, and lockfile edits with
-[forms and JSON](03-forms-and-json.md).
-
-The [private-client work](02-private-client.md) needs the working runtime and its
-lifetime rules, not just a merged plan. #218 is merged: use its resulting
-interfaces, not an old discovery-branch snapshot.
-
-## Acceptance
-
-- [ ] The real generated-client profile read/save/refresh flow shows loading,
-  errors, and confirmed server success in a local browser. Roster, invitation,
-  departure, and profile recovery keep their distinct results and action restrictions.
-- [ ] A single decoded server rejection is final, shown to the user, and not retried.
-  A sign-in requirement remains a distinct result. Transport, 5xx, and decoding
-  failures, defects, interruption, and mixed Causes keep the write result unknown
-  when there is no proof. Do not classify a mixed Cause using only its first failure.
-- [ ] Test a lost reply after the server commits, plus malformed success and error
-  bodies through the real HTTP client. Keep the original payload, mutation ID,
-  expected versions, and binding. A retry in the matching context returns one
-  server result without creating an ID or adding automatic mutation retries.
-- [ ] While a command is unresolved, keep the existing restrictions on related
-  actions. Change the draft and start a later permitted command in a new context.
-  The earlier completion must not clear the newer saved request, change its
-  payload, or invalidate unrelated data.
-- [ ] Expiry, sign-out, and account/household switches hide old data. After access
-  is checked again, recover only the matching original request. Late reads,
-  mutations, and invalidations must not cross the binding/generation boundary,
-  including after remount.
-- [ ] Disposal removes subscriptions and interrupts obsolete reads without screen
-  updates or unhandled work. Cancelling a sent mutation keeps its unknown result
-  and recovery path; browser abort is not server rollback.
-- [ ] Any added server rendering and hydration use separate registries/caches for
-  simultaneous identities. Private or pending-command values must not enter
-  unintended serialized output. Server execution must not use browser globals.
-- [ ] Resolved package versions, exports, and peer dependencies compile in the
-  production web build without suppression. Native atoms or the documented Query
-  fallback provides one tested execution adapter. Unrelated Query consumers work.
-- [ ] List the removed runners, client creation, subscriptions, Cause handling, and
-  cache ownership, as well as the adapters and domain interfaces that remain.
-  Preserve equivalent behavioral tests. Do not leave both alternatives or two
-  authoritative caches running.
-
-### Verify the changed interfaces
-
-Before the pilot, capture existing behavior in tests. Run the same failure cases
-through the replacement's public operations. Mock-only atom tests do not establish
-HTTP decoding, browser lifetime, or server retry behavior. Use a real local
-request/response failure and browser flow. Add native, API, or shared-contract
-tests where those interfaces change.
-
-Find targeted suites and required commands in the current manifests, CI, and
-[local development guide](../../how-to/local-development.md). Run the production
-build and required checks. After intentional dependency changes, check the lockfile
-with a frozen install. Use synthetic households and invitations, not real
-notifications or paid providers. Mark scenarios not run as unverified.
-
-## Delivery and open questions
-
-Start by checking the source and packages and running the complete profile pilot.
-Use those results to choose native atoms or the shared Query adapter. Then finish
-the people migration and its checks. Package fit and replay/isolation behavior
-remain to be proved.
-
-Use affected web, API, and shared-contract tests, a failure sent through the real
-generated HTTP client, a local browser, production builds, and required repository
-checks. Record tested commits, commands and results, the chosen setup, what was
-removed, what remains, and any limits here. Put reusable behavior in the relevant
-reference rather than another handoff or status document.
-
-A rollback reverts this code change. No dual writes or storage migration are
-expected. This plan does not claim that runtime checks have passed.
-
-## Original proposals
-
-This plan replaces two overlapping September 16 proposals. Their original base
-was `c07e48c6f6709f02c054e5110cb7178a9e5d1b93`. The links retain their technical
-scope and history, not instructions to use old packages or retired workflow rules.
-
-- [Original #219 proposal](https://github.com/cill-i-am/meal-planner/blob/53d249715b6d530d38951ed257d23e59970ba05b/docs/delivery/library-consolidation/01-effect-browser-runtime.md).
-- [Original #220 proposal](https://github.com/cill-i-am/meal-planner/blob/a6adfe00f6c887367e2dea79629f9f1a03cb13db/docs/delivery/library-consolidation/01-effect-browser-integration.md).
+These are the existing delivery results, not a new runtime verification run for
+this documentation cleanup. No AtomHttpApi package fit, live TikTok acquisition,
+paid model quality, or recipe-import Playwright journey was established.
+The [private-client plan](02-private-client.md),
+[forms and JSON plan](03-forms-and-json.md), and
+[discovery evaluation](../private-discovery/03-adaptive-discovery-and-evaluation.md)
+retain their own uncompleted scope and acceptance.

@@ -11,7 +11,7 @@ Before choosing imports or copying an example:
 1. inspect the target package and lockfile;
 2. read installed module exports, implementation, and tests;
 3. inspect nearby compiling project code;
-4. compile a narrow target-project probe;
+4. validate the changed code through normal compilation and meaningful tests; use a narrow probe only for unresolved semantics;
 5. use current upstream only to clarify semantics.
 
 Do not add a v3 import fallback. Align package versions and use the API for the installed pin.

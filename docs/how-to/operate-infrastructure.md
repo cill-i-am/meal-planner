@@ -402,8 +402,8 @@ the bounded retry behavior through their public helpers and local runtime.
 `pnpm test:stack` additionally proves the real local Alchemy graph, Worker
 bundling, D1 migrations and native service bindings using `Test.make({ dev: true })`.
 Local tests do not prove remote state access, account selection or a deployed URL.
-Live provider tests create cloud resources and require separate, action-time
-approval plus an isolated stage and cleanup plan.
+Live provider tests need an isolated stage and cleanup plan. Obtain approval
+when the provider, environment, spend, and cleanup are not already authorized.
 
 ## Native observability and shared media builds
 

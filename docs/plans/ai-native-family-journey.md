@@ -188,7 +188,7 @@ it does not replace the deterministic recovery tests or claim deployed changes.
 
 ## Merge latest main into the feature branch
 
-Status: in progress
+Status: done
 
 The conversational setup refinement was committed as `88c3512`. The next
 explicit goal fetches and merges `origin/main` at `253e982` into this feature
@@ -212,12 +212,36 @@ feature commits and 17 main commits, with 42 conflicted files.
   with explicit Effect 4 boundary parsing. Reject setup acceptance without the
   exact saved conversational confirmation.
 
-### Verification in progress
+### Verification
 
-Workspace typecheck and production build pass. Shared package suites pass
-(92 tests), frontend suites pass (284), root infrastructure checks pass (101),
-and native Worker suites pass (122). The first full API run passed 1,091 tests
-and identified three integration failures; all three have focused passing
-regressions after fixes. The first full desktop/mobile browser run passed 30
-journeys and identified four failures in tests for the newly collapsed food
-sections. Focused reruns and full local Alchemy stack startup are in progress.
+The first merge was recorded as `4dc1e1f`. Main advanced during verification,
+so the same branch now also incorporates `4f01179`, including exact import-command
+recovery and the updated engineering guidance. Two additional conflicts in the
+recipe workspace and its tests were resolved without restoring the old shell.
+
+Current checks pass: workspace typecheck and production build, shared package
+suites (92 tests), frontend suites (291), root infrastructure and asset checks
+(111), native Worker suites (122), API regression (1,094), and all 36 desktop and
+mobile browser journeys. Formatting, lint, documentation checks, documentation
+checker tests and a frozen-lockfile install pass. Independent source reviews
+found and verified the setup-confirmation fix. Mobile verification found and
+fixed a disclosure tap lost before hydration.
+
+Full native Alchemy verification passes (3 tests in 22.4 seconds with the image
+cached). It checks actual API and Website routing, native migrations, signup,
+family creation, request replay, reads and same-origin telemetry. The initial
+FFmpeg source build took 17 minutes on this Mac and exceeded the first test's
+startup limit. Warming the image exposed an unsupported planning-context read
+in the provider. Using Alchemy's documented `ALCHEMY_DEV` configuration fixes
+that runtime boundary; the healthy API and complete native suite verify it.
+
+No cloud resources were deployed or new inference credentials created. Live
+local inference remains paused while permission to read the archived Alchemy
+credential source is pending. The ignored local environment file is unchanged.
+The native local preview can run its auth, household and manual planning paths.
+The current main tip was checked again as `4f01179` before the final merge commit.
+
+The pstack principles Prove It Works and Fix Root Causes guided actual Worker
+bundle and user-path checks, explicit confirmation validation, request-scoped
+runtime access and the hydration correction. PR monitoring and shipping remain
+outside the user's narrower feature-branch endpoint.

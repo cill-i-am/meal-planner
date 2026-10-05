@@ -102,6 +102,8 @@ it("includes owned tracked and untracked sources while ignoring deleted and unre
       "packages/removed.ts",
       "packages/present.mts",
       "scripts/check.js",
+      "stacks/production.ts",
+      "vitest.stack.config.ts",
       "tools/lint.cts",
       ".agents/skill/tool.ts",
       "docs/example.ts",
@@ -115,6 +117,11 @@ it("includes owned tracked and untracked sources while ignoring deleted and unre
     execFileSync("git", ["add", "."], { cwd: root });
     rmSync(path.join(root, "packages/removed.ts"));
     writeFileSync(path.join(root, "apps/api/untracked.ts"), "export {};\n");
+    mkdirSync(path.join(root, "evals/discovery"), { recursive: true });
+    writeFileSync(
+      path.join(root, "evals/discovery/validate.ts"),
+      "export {};\n"
+    );
 
     expect(
       readOwnedSources(root)
@@ -123,10 +130,13 @@ it("includes owned tracked and untracked sources while ignoring deleted and unre
     ).toEqual([
       "apps/api/tracked.ts",
       "apps/api/untracked.ts",
+      "evals/discovery/validate.ts",
       "oxlint.config.ts",
       "packages/present.mts",
       "scripts/check.js",
+      "stacks/production.ts",
       "tools/lint.cts",
+      "vitest.stack.config.ts",
     ]);
   } finally {
     rmSync(root, { force: true, recursive: true });

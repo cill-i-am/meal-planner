@@ -4,6 +4,7 @@ import type {
   MealPlanId,
 } from "@meal-planner/household-api";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useHydrated } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
 import { Alert } from "../../components/ui/alert.js";
@@ -104,6 +105,7 @@ export const OurTastesPage = ({
   readonly scope: DisplayedIdentity;
 }) => {
   const queryClient = useQueryClient();
+  const hydrated = useHydrated();
   const runtime = useApiRuntime();
   const peopleOperations = useMemo(
     () => makeHouseholdPeopleEffectOperations(scope, runtime),
@@ -224,6 +226,7 @@ export const OurTastesPage = ({
       <details
         className="group border-border border-t pt-6"
         id="private-food-conversations"
+        inert={!hydrated}
         open={privateOpen}
         onToggle={(event) => setPrivateOpen(event.currentTarget.open)}
       >
@@ -250,6 +253,7 @@ export const OurTastesPage = ({
       <details
         className="group border-border border-t pt-6"
         id="saved-food-facts"
+        inert={!hydrated}
       >
         <summary className="flex min-h-11 cursor-pointer items-center justify-between font-medium">
           Review saved food facts <span aria-hidden="true">↗</span>

@@ -10,6 +10,7 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { workerObservability } from "../../infrastructure/worker-observability.js";
 import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 
 interface ProviderWorkflowInput {
@@ -32,8 +33,8 @@ interface ProviderWorkflowInput {
     | "visual_unknown";
 }
 
-const compatibilityDate = "2026-07-14";
-const compatibilityFlags = ["nodejs_compat"];
+const { date: compatibilityDate, flags: compatibilityFlags } =
+  workerObservability.compatibility;
 const fixturePath = fileURLToPath(
   new URL("import-provider-workflow-task.test-fixture.ts", import.meta.url)
 );

@@ -11,7 +11,7 @@ Use this file for retry, repeat, polling, timeout, backoff, jitter, pacing, dead
 - enforce a deadline: timeout;
 - recurring values: Schedule or Stream when consumers need a many-valued pipeline.
 
-Use Schedule instead of `while (true)` plus manual sleeps for recurring policy. Exact Schedule metadata and combinator signatures are version-sensitive; compile a probe against the installed v4 pin.
+Use Schedule instead of `while (true)` plus manual sleeps for recurring policy. Exact Schedule metadata and combinator signatures are version-sensitive; check the installed v4 pin and validate normal code or focused tests; use a probe only for remaining ambiguity.
 
 ## Core Semantics
 

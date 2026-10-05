@@ -51,7 +51,8 @@ evaluations.
 
 ## Next action
 
-Complete the discovery quality and tone evaluation in Work Item 03 when a
-provider run resumes. Then build the shorter dependant flow, preserving the
-same authority boundary. A live candidate must still prove the adult review's
-conversation quality; this provider-free browser journey is mechanics evidence.
+Build the shorter dependant flow and its deterministic browser/native checks,
+preserving the same authority boundary. This work can proceed independently of
+Work Item 03's live quality and tone evaluation. A live candidate must still
+prove conversation quality, and cumulative external-beta acceptance remains
+open; provider-free journeys establish mechanics.

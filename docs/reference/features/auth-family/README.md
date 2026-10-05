@@ -48,18 +48,10 @@ this scoped UI. Do not confuse **Edit name** on a person with renaming a family.
 
 ## Launch and establish what you can prove
 
-Use [local development](../../../how-to/local-development.md) to choose the runtime.
-`pnpm dev` starts a catalogue API host, not this app. A frontend-only run is:
-
-```sh
-pnpm --filter @meal-planner/web dev --host 127.0.0.1 --port 4391 --strictPort
-```
-
-Use an unused port and the process you own. Check its startup output and origin
-before driving. This command serves the frontend; it does not supply the API
-Worker service binding. A full integration run needs an explicitly configured
-same-origin Website/API Worker environment with auth D1 and household bindings.
-Do not launch an Alchemy deployment to turn a UI check into an integration test.
+Use [local development](../../../how-to/local-development.md) to start the native
+Alchemy application or choose a focused test runtime. Use the Website URL printed
+by the owned process. Check its startup output and origin before driving.
+Do not launch a deployment to turn a UI check into an integration test.
 
 For browser work, use a named `agent-browser` session. Read the installed driver's
 core guide first. Set `AUTH_FAMILY_BASE_URL` to the verified instance URL, then:
@@ -82,15 +74,19 @@ Run `pnpm test:stack` for the actual local Alchemy graph, including auth D1 and
 household creation through native service bindings.
 
 Run `pnpm --filter @meal-planner/web test:e2e` for the scoped native Worker
-journeys. [Local development](../../../how-to/local-development.md#run-the-auth-and-family-reference-journey)
-lists prerequisites and a manual server command. The
+journeys. [Local development](../../../how-to/local-development.md#run-the-integrated-browser-journeys)
+lists prerequisites and the runtime boundaries. The
 [Playwright page objects](../../../../apps/web/e2e/pages/family-page.ts) own screen
 interactions; [journey tests](../../../../apps/web/e2e/family-journey.spec.ts) own
 cross-screen expectations. The suite now builds the Website through Alchemy and
 runs in desktop Chromium and mobile WebKit.
 [Session/concurrency journeys](../../../../apps/web/e2e/account-concurrency.spec.ts)
 and [accessibility checks](../../../../apps/web/e2e/accessibility.spec.ts) cover
-account isolation, expiry, competing edits, and keyboard focus. Mail is captured locally; no delivery is claimed.
+account isolation, expiry, competing edits, and keyboard focus. The same suite also
+includes [food-profile](../../../../apps/web/e2e/food-profile-journey.spec.ts) and
+[synthetic private-review](../../../../apps/web/e2e/private-review-journey.spec.ts)
+journeys outside this map. Mail is captured locally; no inbox delivery or live
+model quality is claimed.
 Vitest DOM tests use Chromium browser mode, while pure and server tests retain
 their own runtimes.
 

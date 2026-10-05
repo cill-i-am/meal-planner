@@ -11,6 +11,7 @@ import { Effect } from "effect";
 import { Miniflare } from "miniflare";
 import { describe, expect, it } from "vitest";
 
+import { workerObservability } from "../../infrastructure/worker-observability.js";
 import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
 
 const run = promisify(execFile);
@@ -76,8 +77,8 @@ describe.skipIf(!enabled)("native generation container lifetime", () => {
       workers: [
         {
           config: {
-            compatibilityDate: "2026-07-14",
-            compatibilityFlags: ["nodejs_compat"],
+            compatibilityDate: workerObservability.compatibility.date,
+            compatibilityFlags: workerObservability.compatibility.flags,
             env: {
               ImportEvidenceBucket: {
                 name: "ImportEvidenceBucket",
