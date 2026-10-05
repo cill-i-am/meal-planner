@@ -1,5 +1,5 @@
 {
-  "version": "private-discovery-rubric-v1",
+  "version": "private-discovery-rubric-v2",
   "authority": "docs/decisions/pdr-0006-ai-evaluation-and-release-evidence.md",
   "scope": "wi03_adult_discovery",
   "criticalSoftDimensions": [
@@ -94,7 +94,9 @@
   ],
   "humanReview": {
     "firstBaseline": "The product owner scores both applicable critical dimensions for the canonical fixture in every one of the eight families, with scope and rationale. WI03 evidence does not complete the WI04 or whole-Stage-2 baseline obligations.",
-    "ordinaryCandidate": "Review every hard failure, every critical soft score at 3/5 or lower, every meaningful regression or override request, and two rotating green scenarios.",
+    "ordinaryCandidate": "An ordinary green candidate can proceed through independent agent review and release without fresh human scoring only with real evaluation evidence, all hard checks passed, a human-accepted baseline and current calibration. Missing evidence or offline asset validation cannot establish green.",
+    "periodicCalibration": "Before the first candidate release in each active calendar month, the product owner scores two rotating green scenarios across applicable critical dimensions and records dated evidence. The initial full baseline counts for its month. Rotate through all eight families before repeating a pair. An overdue sample blocks reliance on the judge.",
+    "failuresAndRegressions": "Agents investigate failures, retain original evidence, fix candidates and rerun evaluation. Unresolved hard failures block release. A candidate still seeking release with critical scores at 3/5 or lower, meaningful regressions or requested overrides requires product-owner review.",
     "changedJudgeOrRubric": "A changed judge model/prompt, rubric, prohibited-outcome policy or scoring rule requires fresh human review of all eight scenarios before reliance.",
     "newBetaCohortStage": "Human-review the complete suite before expansion to a new beta cohort stage.",
     "disagreement": "Material human-versus-judge disagreement, unexplained drift or systematic leniency blocks reliance on the judge until corrected, recalibrated and revalidated. Record disagreement and resolution without private household data."
