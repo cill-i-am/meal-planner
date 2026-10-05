@@ -264,8 +264,11 @@ scope, backend invariants, runtime configuration and comments independently.
 The fixes under review cover retained Food Book and plan requests after an
 unknown response, roster cache ownership and identifiable fact review, cook
 output validation, repaired prepared-food pins, and preservation of retired
-slot-plan records. Each fix requires a focused regression check. A second review
-will examine the integrated result before the PR is published.
+slot-plan records. Focused tests reproduced the failures before the fixes and
+passed afterward. The second backend review found a further refresh deadlock
+after a cook option disappeared; its regression now verifies repair, editing
+and approval. Fresh final frontend and backend reviews passed at `d6cee5e`
+without remaining P0-P2 findings.
 
 On the first review head, all 36 desktop and mobile browser journeys passed.
 API tests (1,094), web tests (291), native Worker tests (122), shared-package
@@ -278,3 +281,12 @@ Native Alchemy now replaces the earlier limited preview launcher. The duplicate
 local runtime and standalone smoke were removed; the native stack suite owns
 that verification. The new roster-failure state is represented on desktop and
 mobile in the [Paper implementation states page](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-K-0).
+
+Integrated-head checks pass for production build, typecheck, formatting, lint,
+documentation, all 297 frontend tests, all 36 desktop and mobile journeys and
+three native Alchemy stack checks. The final API run hit three five-second
+timeouts and a subsequent closed runtime socket during concurrent heavy checks;
+the isolated two-worker run is pending. The earlier review head passed all
+1,094 API tests. No test assertions or runtime deadlines were relaxed for this
+API rerun. The generated archive snapshot was formatted automatically without
+changing its parsed structure.
