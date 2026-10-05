@@ -1,9 +1,9 @@
 # An agent-led family meal journey
 
-Status: done
+Status: active
 Owner: current implementation team
 Depends on: family resources, people and profiles, private discovery, recipe imports
-Delivery: one feature branch, `codex/ai-native-family-journey`; no merge or deployment
+Delivery: one PR from `codex/ai-native-family-journey` into main after review and required checks
 
 ## Outcome and context
 
@@ -252,4 +252,23 @@ The current main tip was checked again as `4f01179` before the final merge commi
 The pstack principles Prove It Works and Fix Root Causes guided actual Worker
 bundle and user-path checks, explicit confirmation validation, request-scoped
 runtime access and the hydration correction. PR monitoring and shipping remain
-outside the user's narrower feature-branch endpoint.
+outside the user's earlier feature-branch endpoint.
+
+## Review and main delivery, 2026-10-05
+
+The user authorized review rounds, a PR and merge into main. The branch now
+includes main at `cafd1dd`. Round one reviewed standards, the approved product
+scope, backend invariants, runtime configuration and comments independently.
+
+The fixes under review cover retained Food Book and plan requests after an
+unknown response, roster cache ownership and identifiable fact review, cook
+output validation, repaired prepared-food pins, and preservation of retired
+slot-plan records. Each fix requires a focused regression check. A second review
+will examine the integrated result before the PR is published.
+
+On the first review head, all 36 desktop and mobile browser journeys passed.
+API tests (1,094), web tests (291), native Worker tests (122), shared-package
+tests and all three native Alchemy stack checks passed. Typecheck, production
+build, lint, formatting and documentation checks passed. The native export
+bundle test exceeded its five-second default during concurrent builds and
+passed in isolation; this check will run again after the fixes.
