@@ -7,6 +7,10 @@
   their owning later stages and the complete journey required before external
   beta.
 - Owners: Household product
+- Amended: 2026-10-05. Cillian approved automated evaluation for ordinary green
+  candidates with periodic human calibration. This replaces the requirement to
+  human-review two green scenarios for every candidate. Initial calibration,
+  regression decisions, hard blockers and external-beta acceptance remain.
 
 ## Context
 
@@ -225,9 +229,13 @@ Eval dimensions use the least subjective reliable judge available:
 - **A fixed model judge** scores softer quality dimensions such as
   perceptiveness, household specificity, value of follow-up questions, clarity
   of rationale, and usefulness of a valid plan or repair.
-- **Human review** calibrates the initial rubric and judge, investigates all hard
-  failures, resolves close release decisions, and reviews every proposed
+- **Human review** calibrates the initial rubric and judge, resolves close
+  release decisions, and reviews every proposed
   acceptance of a known quality regression.
+
+Agents investigate failures, fix candidates and rerun the required evaluation.
+An unresolved hard failure blocks release. Fixing it does not require a separate
+human approval, and its original evidence remains in the run history.
 
 The model judge runs only after deterministic hard checks pass and cannot waive,
 downgrade, or compensate for a hard failure. Its model, prompt, rubric, and
@@ -253,10 +261,21 @@ not a one-time setup exercise.
   straightforward scenario and one complex scenario involving dependencies,
   exceptions, or repair. Material differences are reviewed and the rubric,
   baseline, or judge policy is clarified before external use.
-- For an ordinary candidate model, prompt, tool, or orchestration change, human
-  review covers every hard failure, every critical soft score of `3/5` or lower,
-  every meaningful regression or requested override, and two rotating green
-  scenarios as a calibration sample.
+- An ordinary candidate model, prompt, tool, or orchestration change can proceed
+  through independent agent review and release without fresh human scoring when
+  real evaluation evidence is green against a human-accepted baseline, all hard
+  checks pass, and judge calibration is current. Missing evidence or an offline
+  asset-validator pass cannot establish a green result.
+- Once per calendar month with candidate releases, the product owner scores two
+  rotating green scenarios across their applicable critical dimensions. Rotate
+  through all eight families before repeating a pair. The initial full baseline
+  counts for its month. Complete the sample before the first candidate release
+  in each later active month, using the candidate's actual evaluation evidence.
+  This batches human calibration instead of requiring it for every green change.
+- A candidate still requiring release with a critical soft score of `3/5` or
+  lower, a meaningful regression, or a requested override needs product-owner
+  review. Agents may fix and reevaluate the candidate first. Material judge
+  disagreement or drift requires human recalibration before reliance resumes.
 - A change to the judge model, judge prompt, rubric, prohibited-outcome policy,
   or scoring rules triggers a new human review of the complete eight-scenario
   suite before the changed judge becomes release evidence.

@@ -21,7 +21,7 @@
       "version": "private-discovery-scenarios-v1",
       "digest": null
     },
-    "rubric": { "version": "private-discovery-rubric-v1", "digest": null },
+    "rubric": { "version": "private-discovery-rubric-v2", "digest": null },
     "applicability": { "scope": "wi03_adult_discovery", "rubricDigest": null },
     "harness": { "name": null, "version": null, "configurationDigest": null },
     "driver": {

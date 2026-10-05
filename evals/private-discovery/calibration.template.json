@@ -2,7 +2,7 @@
   "version": "private-discovery-calibration-v1",
   "scope": "wi03_adult_discovery",
   "scenarioVersion": "private-discovery-scenarios-v1",
-  "rubricVersion": "private-discovery-rubric-v1",
+  "rubricVersion": "private-discovery-rubric-v2",
   "status": "unscored",
   "acceptedBaselineId": null,
   "runEvidenceReference": null,

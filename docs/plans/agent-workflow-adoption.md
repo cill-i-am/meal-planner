@@ -1,7 +1,7 @@
 # Autonomous delivery and codebase gardening
 
 Status: active
-Progress: workflows installed; confident cleanup implemented; delivery verification in progress
+Progress: initial adoption merged and deployed; weekly gardening enabled; calibration amendment in delivery
 Owner: Codex, with Cillian owning product direction
 Decision date: 2026-10-04
 Delivery: implement confident adoption changes through merge; return unresolved policy decisions
@@ -70,12 +70,15 @@ videos when Cillian wants to inspect the system. Explain ownership, interactions
 and important state transitions first. These explanations are distinct from
 runtime verification evidence. No visual artifact is required for every PR.
 
-The proposed maintenance cadence is cleanup during normal delivery plus a weekly
-focused gardener sweep. No recurring automation is active. A proposed five-run
-Monday-morning schedule was rejected by automatic approval review because future
-scheduled code changes and merges need explicit authorization. The proposed scope
-is verified maintenance within existing domain behavior, with independent review,
-required CI and merge; material product decisions still return to Cillian.
+The maintenance cadence is cleanup during normal delivery plus a weekly focused
+gardener sweep. On 5 October 2026, Cillian explicitly approved the recurring sweep
+and verified cleanup merges. The Codex heartbeat `meal-planner-weekly-gardening`
+is active in this task for five Monday-morning runs, from 5 October through
+2 November. Its saved schedule and active status were verified; timed execution
+has not yet been observed. It implements maintenance within existing domain
+behavior, with independent review, required CI and merge. Material product
+decisions still return to Cillian. The fifth sweep includes a workflow
+retrospective, and the automation ends within the month-long trial.
 
 ## Adoption and current audit
 
@@ -99,11 +102,9 @@ Acceptance for subsequent setup:
 - [x] Verification guidance names the actual native commands and runtime settings.
 - [ ] On-demand explanations show real domains and their interactions.
 
-[PR #281](https://github.com/cill-i-am/meal-planner/pull/281) is the delivery receipt
-for the first autonomous implementation and gardening pass. Its actual review,
-required-check and merge state determine completion; a merge-ready state does not.
-The month-long trial begins when that PR merges and runs for one calendar month.
-Use the merge timestamp rather than maintaining a second delivery-status checklist.
+[PR #281](https://github.com/cill-i-am/meal-planner/pull/281) merged on 5 October
+2026 in Dublin. Its [production CI and Alchemy deployment](https://github.com/cill-i-am/meal-planner/actions/runs/37243664026)
+passed. The month-long trial runs from that merge through 5 November 2026.
 
 ## Implementation and remaining decisions
 
@@ -121,10 +122,12 @@ Codex invocation policies are preserved in `agents/openai.yaml`. The local Git
 exclusions that hid new docs and README files were removed; secret/runtime
 exclusions remain.
 
-Still requiring a product decision: PDR-0006's recurring human calibration for
-ordinary green model/prompt candidates. Its current policy and unfulfilled human
-ratings remain intact. Whole-application domain dependency changes also require
-agreement on the intended ownership; this cleanup does not invent that architecture.
+Cillian approved replacing per-candidate green human scoring with automated
+evaluation and periodic human calibration on 5 October 2026. The amended
+[PDR-0006](../decisions/pdr-0006-ai-evaluation-and-release-evidence.md#human-calibration-cadence)
+owns that policy. The initial human ratings remain unfulfilled, and the existing
+offline validator is not a model evaluation runner. Whole-application domain
+dependency changes still require agreement on the intended ownership.
 
 The Impeccable native engine still emits old process instructions. The maintained
 skill explicitly makes those subordinate to repository/user/host authority, and
