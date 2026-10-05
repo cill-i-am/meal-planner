@@ -12,7 +12,6 @@ import {
   makeHouseholdRequestLayer,
 } from "../features/households/household-request-composition.js";
 
-/** Production handlers shared by the native test host and local preview. */
 export const makeLocalApiCoreLayer = (options: AgentConversationHostOptions) =>
   Layer.mergeAll(
     makeAuthFamilyHttpLayer(options),

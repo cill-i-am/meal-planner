@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { AccountProvider } from "../auth/index.js";
 import { FamilyProvider } from "../family/index.js";
 
-/** Creation stays account-scoped until its reviewed roster is saved; selected-family screens remount on family changes. */
 export const SetupProvider = ({
   children,
 }: {

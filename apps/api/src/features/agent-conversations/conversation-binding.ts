@@ -4,7 +4,6 @@ import { Effect } from "effect";
 import { AgentProvider } from "../../infrastructure/agent-provider.js";
 import type { AgentConversation } from "./conversation-session.js";
 
-/** Native Agent, explicit provider config, and the existing Workers AI capability. */
 export const agentConversationBindings = Effect.gen(
   function* agentConversationBindings() {
     const provider = yield* AgentProvider;
@@ -35,7 +34,6 @@ export interface AgentConversationNamespacePort {
   readonly getByName: (name: string) => AgentConversationPort;
 }
 
-/** Read the native DO binding only at the Worker composition seam. */
 export const agentConversationNamespacePort = Effect.gen(
   function* agentConversationNamespacePort() {
     const environment = yield* Cloudflare.Workers.WorkerEnvironment;

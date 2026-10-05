@@ -63,7 +63,6 @@ const foodImages: Record<
   tacos: { label: "Tacos", src: "/images/journey/tacos.avif" },
 };
 
-/** The model can only cause one of these known components to appear. */
 export const conversationCatalog = defineCatalog(schema, {
   actions: {},
   components: {

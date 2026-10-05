@@ -74,8 +74,6 @@ test("reviews an assistant meal and a full two-week family plan, then changes on
   const roster = Schema.decodeUnknownSync(HouseholdPeopleRoster)(
     await rosterResponse.json()
   );
-  // This test starts from explicitly confirmed synthetic profiles. Discovery confirmation
-  // and its persistence are covered by the separate native family journey.
   await Promise.all(
     roster.people.map(async (person) => {
       const response = await page.request.post(
@@ -120,7 +118,6 @@ test("reviews an assistant meal and a full two-week family plan, then changes on
 
   await page.getByLabel("Available equipment", { exact: true }).fill("hob");
   await saveContent(page, "Save cooking capacity");
-  // These edits share one browser form and each save advances the content version.
   /* eslint-disable no-await-in-loop -- User interactions and versioned saves must run in sequence. */
   for (const occasion of coverage.managedOccasions) {
     await page

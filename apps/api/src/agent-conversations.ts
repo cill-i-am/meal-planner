@@ -83,7 +83,6 @@ interface Account {
   readonly name: HouseholdPersonDisplayName;
 }
 
-/** The trusted service binding never accepts a browser-selected object name. */
 export interface AgentConversationStub {
   readonly initialize: (
     access: Access
@@ -207,7 +206,6 @@ const objectCall = <A>(call: () => Promise<A>) =>
     try: call,
   });
 
-/** The host supplies the actor, canonical state, and exact reviewed writes. */
 export const makeAgentConversationHost = (
   options: AgentConversationHostOptions
 ) => {

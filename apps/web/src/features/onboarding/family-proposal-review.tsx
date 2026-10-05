@@ -138,7 +138,7 @@ export const FamilyRosterEditor = ({
       try {
         await onAccept(reviewed);
       } catch {
-        // The action owner classifies the outcome and retains its exact request.
+        // The action owner presents the failure and retains this exact request for retry.
       }
     },
     validators: { onSubmit: rosterValidator },

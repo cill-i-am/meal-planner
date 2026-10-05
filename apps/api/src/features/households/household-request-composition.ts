@@ -1298,7 +1298,6 @@ export const makeHouseholdPeopleGateway = (options: {
   };
 };
 
-/** Adapt authenticated household operations to admitted private RPC commands. */
 export const makeHouseholdMealPlanGateway = (options: {
   readonly domain: HouseholdMealPlanDomainPort;
 }): HouseholdMealPlanGateway => {
@@ -1491,7 +1490,6 @@ export const makeHouseholdMealPlanRequestLayer = (options: {
   );
 };
 
-/** Mount authenticated planning content over the same household domain binding. */
 export const makeHouseholdPlanningContentRequestLayer = (options: {
   readonly gateway: HouseholdPlanningContentGateway;
   readonly resolver: AuthenticatedOrganizationResolver;

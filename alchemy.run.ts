@@ -36,8 +36,6 @@ const websiteDomainConfiguration = (dev: boolean, stage: string) =>
     return { domain: { name: productionWebsiteHostname, zoneId } };
   });
 
-// Production and the long-lived E2E stage own distinct mail domains.
-// Local development and ephemeral previews do not provision sending domains.
 const stageEmailSending = (dev: boolean, stage: string) =>
   Effect.gen(function* StageEmailSending() {
     if (dev || (stage !== "prod" && stage !== "e2e")) {

@@ -21,7 +21,6 @@ type Actor = Pick<HouseholdPeoplePrincipal, "actorId" | "linkageSubject">;
 const unavailable = () =>
   MealPlanPersistenceFailure.make({ operation: "read" });
 
-/** Resolve planning inputs from the household's saved content and confirmed profiles. */
 export const readHouseholdPlanningAuthority = (
   database: EffectSQLiteDoDatabase,
   actor: Actor,

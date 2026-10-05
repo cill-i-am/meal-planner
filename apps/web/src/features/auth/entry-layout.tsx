@@ -4,7 +4,6 @@ import type { CSSProperties, ReactNode } from "react";
 import { InteractionSoundToggle } from "../../components/interaction-sound-toggle.js";
 import { cn } from "../../lib/utils.js";
 
-/** The connected entry screens share a quiet header and a flat form surface. */
 export const EntryLayout = ({
   children,
   headerAction,

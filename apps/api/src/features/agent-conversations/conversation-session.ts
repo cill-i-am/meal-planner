@@ -724,7 +724,7 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
       const producer = (async () => {
         try {
           for await (const _chunk of stream) {
-            // Validation and persistence occur in the model tool callback.
+            // Consume SDK events to run its tool callback; only accepted replies reach the caller.
           }
         } catch (error) {
           onFailure(
@@ -740,7 +740,7 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
         try {
           await outcome.promise;
         } catch {
-          // A typed failed turn also ends the Agent's local lifetime.
+          // The failed turn is already recorded; its settlement ends this local lifetime.
         }
       })();
       // The binding adapter may keep Ai.run pending after cancellation. The

@@ -55,7 +55,6 @@ const digest = async (value: string) => {
   ).join("");
 };
 
-/** Seeds through the same admitted import lifecycle that publishes a recipe. */
 export const seedNativeRecipe = (
   domain: HouseholdDomainWorkerMethods,
   admission: typeof HouseholdMemberAdmission.Type

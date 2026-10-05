@@ -54,7 +54,6 @@ interface Progress {
   readonly nextPerson: number;
 }
 
-/** One reviewed manual draft is saved through the existing family and people commands. */
 export const useManualFamilyCreation = () => {
   const account = useAccount();
   const runtime = useApiRuntime();

@@ -19,7 +19,6 @@ describe("API Worker bundle", () => {
           .build({
             compatibility: { date: "2026-07-14", flags: ["nodejs_compat"] },
             entry: {
-              // Only the export kind is used by the bundle's virtual entry.
               exports: {
                 ImportMediaAcquisitionObject: {
                   constructor: Effect.succeed(Effect.succeed({})),

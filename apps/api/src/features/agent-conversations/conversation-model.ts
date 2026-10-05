@@ -35,7 +35,6 @@ const TOOL_VERSION = "submit-conversation-turn-v7";
 const MAX_CONTEXT_BYTES = 196_608;
 const MAX_REQUEST_BYTES = 262_144;
 const MAX_TOOL_BYTES = 262_144;
-/** Setup exposes only the two admitted block variants to the provider. */
 const SetupConversationTurn = Schema.Struct({
   blocks: Schema.Array(
     Schema.Union([
@@ -267,7 +266,6 @@ const replyChunks = (reply: ConversationModelReply): StreamChunk[] => [
   { messageId: reply.messageId, type: EventType.TEXT_MESSAGE_END },
 ];
 
-/** Model execution owns its deadline; only the accepted application reply streams. */
 export const streamConversationTurn = (input: {
   readonly environment: ConversationModelEnvironment;
   readonly context: ConversationCanonicalContext;

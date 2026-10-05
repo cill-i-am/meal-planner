@@ -43,7 +43,6 @@ const compactChoice = (resolution: MealPlanResolution) => {
   }
 };
 
-/** Collapse repeated dates and omit audits before constructing a provider request. */
 export const projectConversationModelContext = (
   context: ConversationCanonicalContext,
   scope: ConversationScope,

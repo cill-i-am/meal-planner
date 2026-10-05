@@ -20,11 +20,9 @@ const SyntheticConversationRequest = Schema.Struct({
 });
 type SyntheticConversationRequest = typeof SyntheticConversationRequest.Type;
 
-/** Replaces only provider transport; production Agent storage and guards stay native. */
 export class AgentConversation extends ProductionAgentConversation {
   #loseAdvanceStep: number | null = null;
 
-  /** Test-only fault after the durable receipt is saved, before the caller sees it. */
   armLostAdvance(step: number): void {
     this.#loseAdvanceStep = step;
   }

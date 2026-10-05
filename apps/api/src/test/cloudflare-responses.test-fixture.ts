@@ -1,7 +1,6 @@
 const event = (type: string, payload: Record<string, unknown>) =>
   `event: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`;
 
-/** A provider-free Responses stream carrying one completed function call. */
 export const responsesToolSse = (
   argumentsJson: string,
   name = "submitConversationTurn",

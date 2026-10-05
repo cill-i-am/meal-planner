@@ -372,7 +372,6 @@ const validBlock = (
   }
 };
 
-/** Check model references against the admitted snapshot before saving proposals. */
 export const prepareConversationBlocks = (input: {
   readonly blocks: readonly ConversationModelBlock[];
   readonly context: ConversationCanonicalContext;

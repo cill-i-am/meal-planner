@@ -142,7 +142,6 @@ describe("conversation model transport", () => {
       gateway: { id: "existing-gateway", skipCache: true },
     });
 
-    // Only identity is observed here; the provider is never invoked.
     const binding = {} as CloudflareBindingConfig["binding"];
     const native = selectConversationModelAdapterConfig(
       {
@@ -227,7 +226,6 @@ describe("conversation model transport", () => {
       }),
       { headers: { "content-type": "text/event-stream" } }
     );
-    // The installed adapter calls only `run`; the provider remains local to this test.
     const binding = {
       run: (_model: string, body: CapturedRequestBody) => {
         requestBody = body;
@@ -260,7 +258,7 @@ describe("conversation model transport", () => {
     let thrown: unknown;
     try {
       for await (const _chunk of stream) {
-        // All model chunks are withheld until the reviewed tool is accepted.
+        // The SDK invokes the tool callback only when its stream is consumed.
       }
     } catch (error) {
       thrown = error;
@@ -479,7 +477,7 @@ describe("conversation model transport", () => {
       threadId: "thread-shared-responses-local-test",
     });
     for await (const _chunk of stream) {
-      // Consume the reviewed reply through the same chat loop as the UI.
+      // The SDK invokes the tool callback only when its stream is consumed.
     }
     expect(accepted).toBe(1);
     expect(strict).toBe(false);

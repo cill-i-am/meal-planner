@@ -19,7 +19,6 @@ const admittedFields = (admission: HouseholdPeopleMemberAdmission) =>
     return { actorId, at };
   });
 
-/** Complete audit identity and time from admitted household authority. */
 export const admitMealPlanChange = (
   admission: HouseholdPeopleMemberAdmission,
   planId: MealPlanId,

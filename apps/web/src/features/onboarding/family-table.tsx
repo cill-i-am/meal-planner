@@ -65,7 +65,6 @@ const FamilyPlace = ({
   );
 };
 
-/** The same table stays present from the account's first place to the confirmed roster. */
 export const FamilyTable = ({
   creatorName,
   roster,

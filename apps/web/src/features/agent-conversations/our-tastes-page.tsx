@@ -99,7 +99,6 @@ const FamilyConversation = ({
   );
 };
 
-/** The shared conversation and the adult's private interview have separate owners. */
 export const OurTastesPage = ({
   scope,
 }: {

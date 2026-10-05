@@ -1101,7 +1101,6 @@ export const HouseholdMealPlanHttpApiLayer = HttpApiBuilder.layer(
   Layer.provide(HouseholdAuthorityServicesLive)
 );
 
-/** Mount the authenticated household planning content API. */
 export const HouseholdPlanningContentHttpApiLayer = HttpApiBuilder.layer(
   AuthenticatedHouseholdPlanningContentApi
 ).pipe(

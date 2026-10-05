@@ -62,7 +62,6 @@ const knownYield = (option: MealOption) => {
   return quantity._tag === "Known" ? quantity : null;
 };
 
-/** Expand compact model rows only against the admitted Draft requirement matrix. */
 // eslint-disable-next-line complexity -- This boundary expands bounded rows and validates exact canonical allocations before saving one review block.
 export const materializePlanSchedule = (input: {
   readonly proposal: PlanScheduleProposal;

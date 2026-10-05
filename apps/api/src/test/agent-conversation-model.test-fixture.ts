@@ -295,7 +295,6 @@ const setupFixtureOutput = (
   return output;
 };
 
-/** Each accepted phrase has one bounded, context-derived proposal. Unknown input fails the fixture. */
 export const agentConversationModelResponse = async (
   request: Pick<Request, "url" | "json">
 ) => {

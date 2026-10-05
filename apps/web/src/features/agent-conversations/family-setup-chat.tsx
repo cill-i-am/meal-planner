@@ -65,7 +65,6 @@ const useSetupChat = () => {
   return context;
 };
 
-/** Presentation composes around one conversation; the controller owns remote state and writes. */
 export const FamilySetupChat = ({
   conversation,
   name,
