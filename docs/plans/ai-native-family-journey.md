@@ -1,6 +1,6 @@
 # An agent-led family meal journey
 
-Status: active
+Status: done
 Owner: current implementation team
 Depends on: family resources, people and profiles, private discovery, recipe imports
 Delivery: one PR from `codex/ai-native-family-journey` into main after review and required checks
@@ -284,9 +284,9 @@ mobile in the [Paper implementation states page](https://app.paper.design/file/0
 
 Integrated-head checks pass for production build, typecheck, formatting, lint,
 documentation, all 297 frontend tests, all 36 desktop and mobile journeys and
-three native Alchemy stack checks. The final API run hit three five-second
-timeouts and a subsequent closed runtime socket during concurrent heavy checks;
-the isolated two-worker run is pending. The earlier review head passed all
-1,094 API tests. No test assertions or runtime deadlines were relaxed for this
-API rerun. The generated archive snapshot was formatted automatically without
-changing its parsed structure.
+three native Alchemy stack checks. All 1,105 API tests pass in the isolated
+two-worker run. The earlier concurrent run hit three five-second timeouts and a
+subsequent closed runtime socket; no API assertions or deadlines were relaxed.
+The generated archive snapshot was formatted automatically without changing
+its parsed structure. [PR #284](https://github.com/cill-i-am/meal-planner/pull/284)
+tracks the hosted checks, independent shipping verdict and main merge.
