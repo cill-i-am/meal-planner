@@ -591,6 +591,37 @@ const collectCoverage = (
   return collected;
 };
 
+const validateCookOutputs = (
+  cook: MealPlanVersion["cookEvents"][number],
+  option: PlanningContentSnapshot["options"][number],
+  authority: PlanningAuthority,
+  outputIds: Set<string>
+): ValidationReason | null => {
+  if (option.kind === "external") {
+    return cook.outputs.length > 0 ? "invalid_cook_output" : null;
+  }
+  const yieldQuantity =
+    option.kind === "packaged" ? option.quantity : option.yield;
+  for (const output of cook.outputs) {
+    if (
+      outputIds.has(output.outputId) ||
+      authority.content.preparedPortions.some(
+        (item) => item.id === output.outputId
+      )
+    ) {
+      return "invalid_cook_output";
+    }
+    if (
+      yieldQuantity._tag === "Known" &&
+      output.quantity.unit !== yieldQuantity.unit
+    ) {
+      return "quantity_unit_mismatch";
+    }
+    outputIds.add(output.outputId);
+  }
+  return null;
+};
+
 const validateCookEvents = (
   version: MealPlanVersion,
   request: MealPlanRequest,
@@ -601,9 +632,10 @@ const validateCookEvents = (
   const eventIds = new Set<string>();
   const outputIds = new Set<string>();
   for (const cook of version.cookEvents) {
+    const option = findExactOption(authority.content, cook.option);
     if (
       eventIds.has(cook.eventId) ||
-      !hasExactOption(authority.content, cook.option) ||
+      option === undefined ||
       cook.date < request.startDate ||
       cook.date >= dateAt(request.startDate, request.weeks * 7)
     ) {
@@ -611,8 +643,7 @@ const validateCookEvents = (
     }
     eventIds.add(cook.eventId);
     if (approval) {
-      const option = findExactOption(authority.content, cook.option);
-      if (option === undefined || !isShoppingResolved(option)) {
+      if (!isShoppingResolved(option)) {
         return "unresolved_shopping";
       }
       const preparation = preparationIssueForCook(authority, option, cook.date);
@@ -630,16 +661,9 @@ const validateCookEvents = (
     if (meal !== undefined && meal.date < cook.date) {
       return "cook_event_conflict";
     }
-    for (const output of cook.outputs) {
-      if (
-        outputIds.has(output.outputId) ||
-        authority.content.preparedPortions.some(
-          (item) => item.id === output.outputId
-        )
-      ) {
-        return "invalid_cook_output";
-      }
-      outputIds.add(output.outputId);
+    const outputIssue = validateCookOutputs(cook, option, authority, outputIds);
+    if (outputIssue !== null) {
+      return outputIssue;
     }
   }
   return null;
@@ -672,9 +696,10 @@ const validateAllocatedYields = (
     }
     const cook = version.cookEvents.find((entry) => entry.eventId === eventId);
     const matchingOutputs =
-      cook?.outputs
-        .filter((output) => output.quantity.unit === yieldQuantity.unit)
-        .reduce((total, output) => total + output.quantity.amount, 0) ?? 0;
+      cook?.outputs.reduce(
+        (total, output) => total + output.quantity.amount,
+        0
+      ) ?? 0;
     if (
       allocation.amount + matchingOutputs >
       yieldQuantity.amount * (cook?.batchCount ?? 1) + 1e-9
@@ -713,9 +738,10 @@ const validateUnallocatedCookYields = (
       }
       continue;
     }
-    const produced = cook.outputs
-      .filter((output) => output.quantity.unit === yieldQuantity.unit)
-      .reduce((total, output) => total + output.quantity.amount, 0);
+    const produced = cook.outputs.reduce(
+      (total, output) => total + output.quantity.amount,
+      0
+    );
     if (produced > yieldQuantity.amount * cook.batchCount + 1e-9) {
       return "prepared_overallocated";
     }
@@ -1249,12 +1275,11 @@ export const rebasePlanVersion = (
   const rebased: MealPlanVersion = {
     ...version,
     coverage,
-    pins: pinsFor(authority, coverage, version.cookEvents),
   };
   const repaired = repairPreparedDependencies(rebased, request, authority);
   return {
     changed: [...changed, ...repaired.changed],
-    version: repaired.version,
+    version: repinPlanVersion(repaired.version, authority),
   };
 };
 

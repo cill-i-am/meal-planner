@@ -989,7 +989,7 @@ describe("meal plan lifecycle", () => {
       stockSourceOption: "roast",
     });
     const coverage = flexibleCoverage(planRequest, original);
-    const first = coverage[0];
+    const [first] = coverage;
     if (first === undefined) {
       throw new Error("Expected breakfast coverage");
     }
@@ -1083,6 +1083,7 @@ describe("meal plan lifecycle", () => {
     },
     { allocated: true, optionKind: "recipe", reason: "quantity_unit_mismatch" },
     { allocated: true, optionKind: "external", reason: "invalid_cook_output" },
+    { allocated: false, optionKind: "external", reason: "invalid_cook_output" },
   ] as const)(
     "rejects $optionKind cook outputs with incompatible units when allocated=$allocated",
     async ({ allocated, optionKind, reason }) => {
@@ -1112,7 +1113,7 @@ describe("meal plan lifecycle", () => {
             }
           : base;
       const coverage = flexibleCoverage(planRequest, context);
-      const first = coverage[0];
+      const [first] = coverage;
       if (first === undefined) {
         throw new Error("Expected breakfast coverage");
       }
@@ -1174,6 +1175,83 @@ describe("meal plan lifecycle", () => {
     }
   );
 
+  it("keeps a valid prepared output available for a later meal", async () => {
+    const planRequest = request();
+    const context = authority({ recipeResolved: true });
+    const coverage = flexibleCoverage(planRequest, context);
+    const [, later] = coverage;
+    if (later === undefined) {
+      throw new Error("Expected a later meal");
+    }
+    coverage[1] = {
+      ...later,
+      resolution: decodeResolution({
+        _tag: "Prepared",
+        outputId: "output_roast",
+        quantity: { amount: 1, unit: "portion" },
+        rationale: "Use a portion from the cook event.",
+      }),
+    };
+    const service = makeMealPlanService(memoryRepository());
+    const created = await Effect.runPromise(
+      service.create(
+        planRequest,
+        context,
+        flexibleCoverage(planRequest, context)
+      )
+    );
+    const changed = await Effect.runPromise(
+      service.change(
+        {
+          actorId,
+          at,
+          change: {
+            _tag: "ReplaceDraftPlan",
+            cookEvents: [
+              {
+                batchCount: 1,
+                date: planRequest.startDate,
+                eventId: "event_roast",
+                option: Schema.decodeUnknownSync(PlanningOptionRef)(roast),
+                outputs: [
+                  {
+                    outputId: "output_roast",
+                    quantity: { amount: 1, unit: "portion" },
+                    source: "adult_confirmed",
+                  },
+                ],
+              },
+            ],
+            coverage,
+          },
+          expectedRevision: 0,
+          mutationId: decodeMutationId("valid_roast_output"),
+          planId: created.planId,
+          reason: "Plan a cooked meal for later.",
+        },
+        context
+      )
+    );
+    expect(changed._tag).toBe("Draft");
+    const approved = await Effect.runPromise(
+      service.approve(
+        {
+          actorId,
+          at,
+          expectedRevision: 1,
+          mutationId: decodeMutationId("approve_valid_roast_output"),
+          planId: created.planId,
+          reason: "Approve prepared meal.",
+        },
+        context
+      )
+    );
+    expect(approved.active.coverage[1]?.resolution).toMatchObject({
+      _tag: "Prepared",
+      outputId: "output_roast",
+    });
+  });
+
   it("refuses approval of a stored prepared meal from an invalid cook output", async () => {
     const planRequest = request();
     const context = authority({ recipeResolved: true });
@@ -1189,7 +1267,7 @@ describe("meal plan lifecycle", () => {
     if (created._tag !== "Draft") {
       throw new Error("Expected draft");
     }
-    const preparedEntry = created.proposed.coverage[1];
+    const [, preparedEntry] = created.proposed.coverage;
     if (preparedEntry === undefined) {
       throw new Error("Expected a later meal");
     }
