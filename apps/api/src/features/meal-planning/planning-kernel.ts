@@ -1272,8 +1272,16 @@ export const rebasePlanVersion = (
       return prior;
     }
   );
+  const cookEvents = version.cookEvents.filter((cook) => {
+    const option = findExactOption(authority.content, cook.option);
+    return (
+      option !== undefined &&
+      validateCookOutputs(cook, option, authority, new Set()) === null
+    );
+  });
   const rebased: MealPlanVersion = {
     ...version,
+    cookEvents,
     coverage,
   };
   const repaired = repairPreparedDependencies(rebased, request, authority);

@@ -1252,6 +1252,139 @@ describe("meal plan lifecycle", () => {
     });
   });
 
+  it("refreshes a removed cook option and lets the adult resolve its dependent meal", async () => {
+    const planRequest = request();
+    const original = authority({ recipeResolved: true });
+    const coverage = flexibleCoverage(planRequest, original);
+    const [, later] = coverage;
+    if (later === undefined) {
+      throw new Error("Expected a later meal");
+    }
+    coverage[1] = {
+      ...later,
+      resolution: decodeResolution({
+        _tag: "Prepared",
+        outputId: "output_roast",
+        quantity: { amount: 1, unit: "portion" },
+        rationale: "Use a portion from the cook event.",
+      }),
+    };
+    const service = makeMealPlanService(memoryRepository());
+    const created = await Effect.runPromise(
+      service.create(
+        planRequest,
+        original,
+        flexibleCoverage(planRequest, original)
+      )
+    );
+    const planned = await Effect.runPromise(
+      service.change(
+        {
+          actorId,
+          at,
+          change: {
+            _tag: "ReplaceDraftPlan",
+            cookEvents: [
+              {
+                batchCount: 1,
+                date: planRequest.startDate,
+                eventId: "event_roast",
+                option: Schema.decodeUnknownSync(PlanningOptionRef)(roast),
+                outputs: [
+                  {
+                    outputId: "output_roast",
+                    quantity: { amount: 1, unit: "portion" },
+                    source: "adult_confirmed",
+                  },
+                ],
+              },
+            ],
+            coverage,
+          },
+          expectedRevision: 0,
+          mutationId: decodeMutationId("plan_removed_roast"),
+          planId: created.planId,
+          reason: "Plan a cooked meal for later.",
+        },
+        original
+      )
+    );
+    expect(planned.revision).toBe(1);
+    const current: PlanningAuthority = {
+      ...original,
+      content: Schema.decodeUnknownSync(PlanningContentSnapshot)({
+        ...original.content,
+        configVersion: 2,
+        options: original.content.options.filter(
+          (option) => option.optionId !== roast.optionId
+        ),
+      }),
+    };
+    const refreshed = await Effect.runPromise(
+      service.change(
+        {
+          actorId,
+          at,
+          change: { _tag: "RefreshInputs" },
+          expectedRevision: 1,
+          mutationId: decodeMutationId("refresh_removed_roast"),
+          planId: created.planId,
+          reason: "The recipe was removed.",
+        },
+        current
+      )
+    );
+    if (refreshed._tag !== "Draft") {
+      throw new Error("Expected draft");
+    }
+    expect(refreshed.proposed.cookEvents).toEqual([]);
+    expect(refreshed.proposed.coverage[1]?.resolution).toMatchObject({
+      _tag: "Gap",
+      reason: "dependent_output_removed",
+    });
+    expect(refreshed.proposed.pins.preparedSources).toEqual([]);
+    expect(refreshed.proposed.pins.content).toEqual([]);
+    expect(refreshed.audit.at(-1)?.changedRequirements).toContainEqual(
+      later.requirement
+    );
+    const repaired = await Effect.runPromise(
+      service.change(
+        {
+          actorId,
+          at,
+          change: {
+            _tag: "SetCoverage",
+            requirement: later.requirement,
+            resolution: decodeResolution({
+              _tag: "Flexible",
+              rationale: "Adult chose a flexible meal.",
+            }),
+          },
+          expectedRevision: 2,
+          mutationId: decodeMutationId("resolve_removed_roast"),
+          planId: created.planId,
+          reason: "Resolve the missing prepared meal.",
+        },
+        current
+      )
+    );
+    expect(repaired.revision).toBe(3);
+    const approved = await Effect.runPromise(
+      service.approve(
+        {
+          actorId,
+          at,
+          expectedRevision: 3,
+          mutationId: decodeMutationId("approve_removed_roast"),
+          planId: created.planId,
+          reason: "Approve the repaired plan.",
+        },
+        current
+      )
+    );
+    expect(approved._tag).toBe("Approved");
+  });
+
   it("refuses approval of a stored prepared meal from an invalid cook output", async () => {
     const planRequest = request();
     const context = authority({ recipeResolved: true });
