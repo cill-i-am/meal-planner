@@ -303,7 +303,7 @@ it("redirects anonymous home requests and keeps their destination across auth ro
   await user.click(screen.getByRole("link", { name: "Log in" }));
   await user.click(screen.getByRole("link", { name: "Forgot password?" }));
   expect(
-    await screen.findByRole("heading", { name: "Reset your password" })
+    await screen.findByRole("heading", { name: "Let’s get you back in." })
   ).toBeInTheDocument();
   await user.click(screen.getByRole("link", { name: "Back to log in" }));
   expect(router.state.location.pathname).toBe("/login");

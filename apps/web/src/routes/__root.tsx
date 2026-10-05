@@ -69,9 +69,10 @@ export const Route = createRootRouteWithContext<{
         name: "cloudflare-rum-token",
       },
       { content: "width=device-width, initial-scale=1", name: "viewport" },
-      { title: "Import a recipe · Meal Planner" },
+      { title: "The family edit · Meal Planner" },
       {
-        content: "Review one recipe draft before saving it to Recipe Bank.",
+        content:
+          "Discover what works for your family and plan everyone's week of food.",
         name: "description",
       },
     ],

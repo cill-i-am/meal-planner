@@ -11,7 +11,18 @@ export class FoodProfilePage {
     return this.page.getByRole("region", { name: "Food profiles" });
   }
 
+  async open() {
+    const disclosure = this.page.locator("details#saved-food-facts");
+    await expect(disclosure).toBeVisible();
+    await expect(disclosure).not.toHaveAttribute("inert", "");
+    if ((await disclosure.getAttribute("open")) === null) {
+      await disclosure.locator(":scope > summary").click();
+    }
+    await expect(this.region).toBeVisible();
+  }
+
   async expectPerson(name: string) {
+    await this.open();
     await expect(
       this.region.getByRole("heading", { name: `${name}’s food profile` })
     ).toBeVisible();
@@ -41,12 +52,14 @@ export class FoodProfilePage {
   }
 
   async expectPreference(label: string) {
+    await this.open();
     await expect(
       this.region.getByText(`${label}: like (ingredient)`, { exact: true })
     ).toBeVisible();
   }
 
   async expectVersion(version: number) {
+    await this.open();
     await expect(
       this.region.getByText(`Profile version ${version}.`)
     ).toBeVisible();

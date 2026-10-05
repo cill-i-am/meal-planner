@@ -8,6 +8,8 @@ Use Effect Query options with TanStack Query for remote state; React owns form a
 
 A saved person and an invitation are separate outcomes. Keep a successfully saved person when its invitation fails. Keep unknown submitted commands in memory while mounted through [request recovery](../request-recovery/AGENTS.md), using the original payload, version, and key. Never invent success after an unknown response.
 
+The manual family setup path saves one reviewed local roster through the existing family and people operations. It keeps the accepted draft and exact person command IDs while mounted, advances only after a confirmed save, and exposes the saved family when a later person is uncertain. The agent proposal path has its own server-side action owner and must not duplicate these browser writes.
+
 [Onboarding](../onboarding/AGENTS.md) owns screen composition; it does not own these operations. See [people behaviors](../../../../../docs/reference/features/auth-family/people.md) and colocated save tests plus native people integration tests.
 
 Keep roster responsibilities separate: [roster-model.ts](roster-model.ts) holds pure decisions and command construction; [roster-commands.ts](roster-commands.ts) dispatches typed operations; [use-roster-management.ts](use-roster-management.ts) owns mutation lifetime and cache updates. Actions, overlays, and feedback own presentation. Pass request IDs into pure command construction. A family change remounts its context subtree so dialogs and saved results cannot cross families.

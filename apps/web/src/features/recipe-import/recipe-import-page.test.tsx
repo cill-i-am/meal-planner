@@ -24,7 +24,7 @@ import { parseDisplayedIdentity } from "../auth/index.js";
 import type { RecipeImportOperations } from "./browser-operations.js";
 import { makeRecipeImportEffectOperations } from "./browser-operations.js";
 import { RecipeDetails } from "./recipe-details.js";
-import { RecipeImportPage } from "./recipe-import-page.js";
+import { RecipeImportWorkspace } from "./recipe-import-page.js";
 
 afterEach(() => {
   cleanup();
@@ -143,7 +143,6 @@ const makeOperations = (
 
 const renderPage = (
   operations: RecipeImportOperations,
-  onSignOut = vi.fn(),
   makeRequestId = () => "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 ) =>
   render(
@@ -154,28 +153,16 @@ const renderPage = (
         })
       }
     >
-      <RecipeImportPage
+      <RecipeImportWorkspace
         householdId="household-1"
-        householdName="Barron household"
         makeRequestId={makeRequestId}
-        onSignOut={onSignOut}
         operations={operations}
         pollIntervalMs={60_000}
       />
     </QueryClientProvider>
   );
 
-describe("RecipeImportPage", () => {
-  it("shows the authenticated household and logs out", async () => {
-    const onSignOut = vi.fn(async () => {});
-    renderPage(makeOperations(), onSignOut);
-
-    expect(screen.getByText("Barron household")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Log out" }));
-
-    expect(onSignOut).toHaveBeenCalledOnce();
-  });
-
+describe("RecipeImportWorkspace", () => {
   it("submits a recipe import in the active household session", async () => {
     const create = vi.fn(
       (_input: Parameters<RecipeImportOperations["create"]>[0]) =>
@@ -413,7 +400,7 @@ describe("RecipeImportPage", () => {
       }),
       browserApiRuntime()
     );
-    renderPage(operations, vi.fn(), () => {
+    renderPage(operations, () => {
       ordinal += 1;
       return `aaaaaaaa-aaaa-4aaa-8aaa-${String(ordinal).padStart(12, "0")}`;
     });
@@ -452,10 +439,8 @@ describe("RecipeImportPage", () => {
     });
     const page = (operations: RecipeImportOperations) => (
       <QueryClientProvider client={client}>
-        <RecipeImportPage
+        <RecipeImportWorkspace
           householdId="household-1"
-          householdName="Barron household"
-          onSignOut={vi.fn()}
           operations={operations}
         />
       </QueryClientProvider>

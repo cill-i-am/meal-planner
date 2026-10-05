@@ -1,13 +1,16 @@
 import { Context, Schema } from "effect";
+import { HttpApiSchema } from "effect/http-api";
 
 import { HouseholdOrganizationId } from "./household-principal.js";
-import type { MealPlan } from "./meal-plan.js";
 import {
-  ManualSwapAudit,
   MealPlanActorId,
   MealPlanApproved,
+  MealPlanAudit,
   MealPlanDraft,
+  MealPlanProposedRevision,
+  MealPlanRuleViolation,
 } from "./meal-plan.js";
+import type { MealPlan } from "./meal-plan.js";
 import { ProblemDetails } from "./problem-details.js";
 
 export const HouseholdMealPlanPrincipal = Schema.Struct({
@@ -15,112 +18,75 @@ export const HouseholdMealPlanPrincipal = Schema.Struct({
   organizationId: HouseholdOrganizationId,
 });
 export type HouseholdMealPlanPrincipal = typeof HouseholdMealPlanPrincipal.Type;
-
 export class HouseholdMealPlanCurrentPrincipal extends Context.Service<
   HouseholdMealPlanCurrentPrincipal,
   HouseholdMealPlanPrincipal
 >()("meal-planner/HouseholdMealPlanCurrentPrincipal") {}
 
-const HouseholdMealPlanAuditEntry = Schema.Struct({
-  fromRecipe: ManualSwapAudit.fields.fromRecipe,
-  mutationId: ManualSwapAudit.fields.mutationId,
-  reason: ManualSwapAudit.fields.reason,
-  slotId: ManualSwapAudit.fields.slotId,
-  swappedAt: ManualSwapAudit.fields.swappedAt,
-  toRecipe: ManualSwapAudit.fields.toRecipe,
-});
-
-const HouseholdMealPlanResponseFields = {
-  audit: Schema.Array(HouseholdMealPlanAuditEntry),
-  draftId: MealPlanDraft.fields.draftId,
-  gaps: MealPlanDraft.fields.gaps,
-  meals: MealPlanDraft.fields.meals,
-  policy: MealPlanDraft.fields.policy,
+// The household receives the change and time; the internal actor digest stays private.
+const PublicFields = {
+  audit: Schema.Array(
+    Schema.Struct({
+      action: MealPlanAudit.fields.action,
+      at: MealPlanAudit.fields.at,
+      changedRequirements: MealPlanAudit.fields.changedRequirements,
+      mutationId: MealPlanAudit.fields.mutationId,
+      reason: MealPlanAudit.fields.reason,
+    })
+  ),
+  planId: MealPlanDraft.fields.planId,
   request: MealPlanDraft.fields.request,
   revision: MealPlanDraft.fields.revision,
 } as const;
 
-const HouseholdMealPlanDecisionFields = {
-  decidedAt: MealPlanApproved.fields.decision.fields.decidedAt,
-  mutationId: MealPlanApproved.fields.decision.fields.mutationId,
-  reason: MealPlanApproved.fields.decision.fields.reason,
-} as const;
-
-/** Browser-safe meal-plan response with internal actor attribution removed. */
 export const HouseholdMealPlanResponse = Schema.Union([
   Schema.Struct({
-    ...HouseholdMealPlanResponseFields,
+    ...PublicFields,
     _tag: Schema.Literal("Draft"),
+    proposed: MealPlanDraft.fields.proposed,
   }),
   Schema.Struct({
-    ...HouseholdMealPlanResponseFields,
+    ...PublicFields,
     _tag: Schema.Literal("Approved"),
-    decision: Schema.Struct({
-      ...HouseholdMealPlanDecisionFields,
-      outcome: Schema.Literal("approved"),
-    }),
+    active: MealPlanApproved.fields.active,
   }),
   Schema.Struct({
-    ...HouseholdMealPlanResponseFields,
-    _tag: Schema.Literal("Rejected"),
-    decision: Schema.Struct({
-      ...HouseholdMealPlanDecisionFields,
-      outcome: Schema.Literal("rejected"),
-    }),
+    ...PublicFields,
+    _tag: Schema.Literal("ProposedRevision"),
+    active: MealPlanProposedRevision.fields.active,
+    proposed: MealPlanProposedRevision.fields.proposed,
   }),
 ]);
 export type HouseholdMealPlanResponse = typeof HouseholdMealPlanResponse.Type;
 
-const projectAuditEntry = (entry: ManualSwapAudit) => ({
-  fromRecipe: entry.fromRecipe,
-  mutationId: entry.mutationId,
-  reason: entry.reason,
-  slotId: entry.slotId,
-  swappedAt: entry.swappedAt,
-  toRecipe: entry.toRecipe,
-});
-
-/** Project the internal household aggregate onto its public HTTP contract. */
 export const toHouseholdMealPlanResponse = (
   plan: MealPlan
 ): HouseholdMealPlanResponse => {
-  const record = {
-    audit: plan.audit.map(projectAuditEntry),
-    draftId: plan.draftId,
-    gaps: plan.gaps,
-    meals: plan.meals,
-    policy: plan.policy,
+  const common = {
+    audit: plan.audit.map(({ actorId: _actorId, ...entry }) => entry),
+    planId: plan.planId,
     request: plan.request,
     revision: plan.revision,
   };
-
-  if (plan._tag === "Draft") {
-    return { ...record, _tag: "Draft" };
+  switch (plan._tag) {
+    case "Draft": {
+      return { ...common, _tag: "Draft", proposed: plan.proposed };
+    }
+    case "Approved": {
+      return { ...common, _tag: "Approved", active: plan.active };
+    }
+    case "ProposedRevision": {
+      return {
+        ...common,
+        _tag: "ProposedRevision",
+        active: plan.active,
+        proposed: plan.proposed,
+      };
+    }
+    default: {
+      return plan satisfies never;
+    }
   }
-
-  if (plan._tag === "Approved") {
-    return {
-      ...record,
-      _tag: "Approved",
-      decision: {
-        decidedAt: plan.decision.decidedAt,
-        mutationId: plan.decision.mutationId,
-        outcome: "approved",
-        reason: plan.decision.reason,
-      },
-    };
-  }
-
-  return {
-    ...record,
-    _tag: "Rejected",
-    decision: {
-      decidedAt: plan.decision.decidedAt,
-      mutationId: plan.decision.mutationId,
-      outcome: "rejected",
-      reason: plan.decision.reason,
-    },
-  };
 };
 
 export const HouseholdMealPlanInvalidRequestProblem = ProblemDetails(
@@ -131,9 +97,25 @@ export const HouseholdMealPlanNotFoundProblem = ProblemDetails(
   404,
   "meal_plan_not_found"
 );
-export const HouseholdMealPlanConflictProblem = ProblemDetails(
-  409,
-  "meal_plan_conflict"
+export const HouseholdMealPlanConflictReason = Schema.Union([
+  MealPlanRuleViolation.fields.reason,
+  Schema.Literals([
+    "invalid_transition",
+    "mutation_conflict",
+    "request_conflict",
+    "version_conflict",
+  ]),
+]);
+export type HouseholdMealPlanConflictReason =
+  typeof HouseholdMealPlanConflictReason.Type;
+export const HouseholdMealPlanConflictProblem = Schema.Struct({
+  code: Schema.Literal("meal_plan_conflict"),
+  message: Schema.String,
+  reason: HouseholdMealPlanConflictReason,
+  status: Schema.Literal(409),
+}).pipe(
+  HttpApiSchema.status(409),
+  HttpApiSchema.asJson({ contentType: "application/problem+json" })
 );
 export const HouseholdMealPlanInternalProblem = ProblemDetails(
   500,

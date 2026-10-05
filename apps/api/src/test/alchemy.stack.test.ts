@@ -19,6 +19,7 @@ import Stack from "../../../../alchemy.run.js";
 import { HealthResponse } from "../features/health/health.model.js";
 
 const stage = `test_native_${randomUUID().slice(0, 8)}`;
+vi.stubEnv("ALCHEMY_DEV", "true");
 vi.stubEnv("BETTER_AUTH_SECRET", randomBytes(48).toString("base64url"));
 vi.stubEnv(
   "MEAL_PLANNER_IMPORT_API_TOKEN",

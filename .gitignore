@@ -12,6 +12,7 @@ coverage/
 *.log
 # Impeccable's platform-specific engine is fetched locally, not tracked.
 **/skills/impeccable/scripts/bin/
+/.impeccable/hook.cache.json
 # Local documentation-check test bytecode.
 __pycache__/
 # Local browser proof for the scoped auth/family feature map.

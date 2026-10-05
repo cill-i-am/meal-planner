@@ -1,4 +1,4 @@
-import { MealPlanRecipeSnapshot } from "@meal-planner/household-api";
+import { PublishedRecipeSnapshot } from "@meal-planner/recipe-domain";
 import {
   ActiveRecipeImportAction,
   AnswerReviewRecipeActionRequest,
@@ -284,7 +284,7 @@ export const HouseholdRecipePageInput = Schema.Struct({
 export type HouseholdRecipePageInput = typeof HouseholdRecipePageInput.Type;
 
 export const HouseholdRecipePage = Schema.Struct({
-  items: Schema.Array(MealPlanRecipeSnapshot),
+  items: Schema.Array(PublishedRecipeSnapshot),
   nextCursor: Schema.NullOr(HouseholdRecipePageCursor),
 });
 export type HouseholdRecipePage = typeof HouseholdRecipePage.Type;

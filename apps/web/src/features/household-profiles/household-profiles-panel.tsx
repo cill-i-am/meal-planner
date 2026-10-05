@@ -335,11 +335,15 @@ export const HouseholdProfilesPanel = ({
   operations,
   organizationId,
   peopleOperations,
+  selectedPersonId,
+  onSelectPerson,
 }: {
   readonly accountId: string;
   readonly operations: HouseholdProfileOperations;
   readonly organizationId: string;
   readonly peopleOperations: Pick<HouseholdPeopleEffectOperations, "list">;
+  readonly selectedPersonId?: HouseholdPersonId | null;
+  readonly onSelectPerson?: (personId: HouseholdPersonId) => void;
 }) => {
   const { clearError, error, isSaving, pending, retryPending, roster, send } =
     useHouseholdProfileState({
@@ -411,12 +415,21 @@ export const HouseholdProfilesPanel = ({
               disabled={pending !== null}
               value={
                 pending?.personId ??
-                (field.state.value ||
+                (selectedPersonId ||
+                  field.state.value ||
                   roster.data?.currentPersonId ||
                   roster.data?.people[0]?.id ||
                   "")
               }
-              onChange={(event) => field.handleChange(event.target.value)}
+              onChange={(event) => {
+                field.handleChange(event.target.value);
+                const person = roster.data?.people.find(
+                  (candidate) => candidate.id === event.target.value
+                );
+                if (person !== undefined) {
+                  onSelectPerson?.(person.id);
+                }
+              }}
             >
               {roster.data?.people.map((person) => (
                 <option key={person.id} value={person.id}>
@@ -432,7 +445,8 @@ export const HouseholdProfilesPanel = ({
         {(selected) => {
           const personId =
             pending?.personId ??
-            (selected ||
+            (selectedPersonId ||
+              selected ||
               roster.data?.currentPersonId ||
               roster.data?.people[0]?.id);
           const person = roster.data?.people.find(

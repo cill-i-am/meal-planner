@@ -1,5 +1,5 @@
-import { MealPlanRecipeSnapshot } from "@meal-planner/household-api";
 import {
+  PublishedRecipeSnapshot,
   RecipeContent,
   recipeContentBlockers,
 } from "@meal-planner/recipe-domain";
@@ -95,7 +95,7 @@ const EncodedReview = Schema.fromJsonString(
   })
 );
 const EncodedRecipe = Schema.fromJsonString(Recipe);
-const EncodedPlanningRecipe = Schema.fromJsonString(MealPlanRecipeSnapshot);
+const EncodedPlanningRecipe = Schema.fromJsonString(PublishedRecipeSnapshot);
 const EncodedTimelineEvent = Schema.fromJsonString(RecipeImportTimelineEvent);
 const EncodedAdmission = Schema.fromJsonString(
   HouseholdImportWorkflowAdmissionResult
@@ -1231,7 +1231,7 @@ export const makeHouseholdRecipeImportRepository = (
               recipe: publishable.recipe,
               tags: publishable.tags,
             });
-            const planningRecipe = yield* decode(MealPlanRecipeSnapshot, {
+            const planningRecipe = yield* decode(PublishedRecipeSnapshot, {
               approvedAt: confirmedAt,
               extractionFingerprint: storedReview.extractionFingerprint,
               importId: input.intentId,
@@ -1496,7 +1496,7 @@ export const makeHouseholdRecipeImportRepository = (
 
   const readPlanningRecipe = (
     admission: (typeof HouseholdReadRecipeInput.Type)["admission"],
-    importId: typeof MealPlanRecipeSnapshot.Type.importId
+    importId: typeof PublishedRecipeSnapshot.Type.importId
   ) =>
     Effect.andThen(
       authorize(admission.organizationId),
@@ -1528,7 +1528,7 @@ export const makeHouseholdRecipeImportRepository = (
         .orderBy(asc(householdRecipes.recipeId))
         .limit(input.limit + 1)
         .pipe(mapPersistence);
-      const items: (typeof MealPlanRecipeSnapshot.Type)[] = [];
+      const items: (typeof PublishedRecipeSnapshot.Type)[] = [];
       const includedRecipeIds: string[] = [];
       let bytes = 0;
       for (const row of rows.slice(0, input.limit)) {

@@ -19,7 +19,18 @@ export class PrivateReviewPage {
       .first();
   }
 
+  async open() {
+    const disclosure = this.page.locator("details#private-food-conversations");
+    await expect(disclosure).toBeVisible();
+    await expect(disclosure).not.toHaveAttribute("inert", "");
+    if ((await disclosure.getAttribute("open")) === null) {
+      await disclosure.locator(":scope > summary").click();
+    }
+    await expect(this.region).toBeVisible();
+  }
+
   async start() {
+    await this.open();
     await this.region
       .getByRole("button", { name: "Update my food profile" })
       .click();
@@ -64,6 +75,7 @@ export class PrivateReviewPage {
   }
 
   async select(ordinal: number) {
+    await this.open();
     await this.region
       .getByRole("navigation", { name: "Your private sessions" })
       .getByRole("button", { name: new RegExp(`Session ${ordinal}\\b`, "u") })

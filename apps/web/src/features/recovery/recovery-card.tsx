@@ -1,15 +1,6 @@
 import type { ReactNode } from "react";
 
-import { AccountLayout } from "../../components/account-layout.js";
-import {
-  Card,
-  CardBody,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from "../../components/ui/card.js";
+import { EntryFormSurface, EntryLayout } from "../auth/index.js";
 
 export const RecoveryCard = ({
   title,
@@ -22,27 +13,24 @@ export const RecoveryCard = ({
   readonly children: ReactNode;
   readonly footer?: ReactNode;
 }) => (
-  <AccountLayout>
-    <Card
-      className="w-full max-w-(--container-auth)"
-      aria-labelledby="auth-title"
-    >
-      <CardBody>
-        <CardHeader>
-          <CardTitle>
-            <h1
-              id="auth-title"
-              tabIndex={-1}
-              className="text-task-mobile/8 md:text-task-desktop/9 font-semibold tracking-tight focus:outline-none"
-            >
-              {title}
-            </h1>
-          </CardTitle>
-          {description && <CardDescription>{description}</CardDescription>}
-        </CardHeader>
-        <CardContent>{children}</CardContent>
-      </CardBody>
-      {footer && <CardFooter>{footer}</CardFooter>}
-    </Card>
-  </AccountLayout>
+  <EntryLayout>
+    <EntryFormSurface className="mx-auto pt-26 md:pt-31">
+      <div className="flex flex-col">
+        <h1
+          id="auth-title"
+          tabIndex={-1}
+          className="font-display text-entry-mobile tracking-entry md:text-entry-desktop font-normal focus:outline-none motion-safe:[view-transition-name:auth-heading]"
+        >
+          {title}
+        </h1>
+        {description && (
+          <p className="text-muted-foreground mt-6 text-sm leading-5.75">
+            {description}
+          </p>
+        )}
+        <div className="mt-10 flex flex-col">{children}</div>
+        {footer && <div className="mt-4 flex justify-center">{footer}</div>}
+      </div>
+    </EntryFormSurface>
+  </EntryLayout>
 );

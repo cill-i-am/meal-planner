@@ -1,3 +1,8 @@
+import { Schema } from "effect";
+
+import { RecipeContent, RecipeText } from "./content.js";
+import { PlanningTags } from "./planning-tags.js";
+
 export {
   RecipeText,
   RecipeDuration,
@@ -39,3 +44,18 @@ export {
   RecipeReviewEditableField,
   RecipeReviewAnswer,
 } from "./review.js";
+
+/** Reviewed, source-grounded recipe snapshot available to household planning. */
+export const PublishedRecipeSnapshot = Schema.Struct({
+  approvedAt: Schema.DateTimeUtcFromString,
+  extractionFingerprint: RecipeText,
+  importId: Schema.String.pipe(Schema.check(Schema.isUUID())),
+  recipe: RecipeContent,
+  source: Schema.Struct({
+    evidenceFingerprint: RecipeText,
+    sourceUrl: Schema.NullOr(RecipeText),
+  }),
+  tags: PlanningTags,
+  version: Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(1))),
+});
+export type PublishedRecipeSnapshot = typeof PublishedRecipeSnapshot.Type;

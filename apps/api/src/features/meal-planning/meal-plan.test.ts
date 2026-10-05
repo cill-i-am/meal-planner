@@ -1,807 +1,1580 @@
+import { describe, expect, it } from "@effect/vitest";
 import {
-  MealPlanDecisionRequest,
-  MealPlanPolicy,
-  MealPlanRecipeSnapshotId,
-  MealPlanRecipeSnapshot,
+  MealPlanActorId,
+  MealPlanInstant,
+  MealPlanMutationId,
+  MealPlanPersonPin,
   MealPlanRequest,
-  ManualMealSwapRequest,
+  MealPlanResolution,
+  MealPlanVersion,
+  PlanningContentSnapshot,
+  PlanningContentVersion,
+  PlanningOptionRef,
+  PlanningOptionVersion,
 } from "@meal-planner/household-api";
-import {
-  makeRecipeContent,
-  recipeIngredientFromText,
-  recipeInstructionFromText,
-  PlanningTags,
-} from "@meal-planner/recipe-domain";
+import type {
+  MealPlan,
+  MealPlanCoverage,
+  MealPlanId,
+} from "@meal-planner/household-api";
 import { Effect, Option, Schema } from "effect";
-import { describe, expect, it } from "vitest";
 
+import { makeMealPlanService } from "./meal-plan.js";
+import type { MealPlanRepository } from "./meal-plan.js";
 import {
-  makeSyntheticMealPlanTracer,
-  syntheticHardConstraintRecipeId,
-  syntheticMealPlanRequest,
-  syntheticPlanningPolicy,
-  syntheticRejectedRecipeId,
-  syntheticReplacementRecipeId,
-} from "./meal-plan.fake.js";
-import {
-  addMealPlanCandidatePage,
-  makeMealPlanProposal,
-  makeMealPlanCandidateFrontier,
-  MealPlanRecipeAuthorityToken,
-  selectMealPlanCandidates,
-} from "./meal-plan.js";
+  changePlanVersion,
+  makeInitialPlanVersion,
+  repinPlanVersion,
+  requiredCoverage,
+  validatePlanVersion,
+} from "./planning-kernel.js";
+import type { PlanningAuthority } from "./planning-kernel.js";
 
-const decodeCandidateId = Schema.decodeUnknownSync(MealPlanRecipeSnapshotId);
-const decodeCandidateTags = Schema.decodeUnknownSync(PlanningTags);
-const decodeCandidatePolicy = Schema.decodeUnknownSync(MealPlanPolicy);
-const decodeCandidateRequest = Schema.decodeUnknownSync(MealPlanRequest);
-const decodeCandidateAuthorityToken = Schema.decodeUnknownSync(
-  MealPlanRecipeAuthorityToken
-);
-const decodeCandidateSnapshot = Schema.decodeUnknownSync(
-  MealPlanRecipeSnapshot
-);
-
-const candidateId = (index: number) =>
-  decodeCandidateId(
-    `018f47ad-91aa-7c35-b6fe-${index.toString().padStart(12, "0")}`
-  );
-
-const candidateTags = (input: {
-  readonly cuisine: string;
-  readonly mealTypes: readonly ("breakfast" | "dinner" | "lunch")[];
-}) =>
-  decodeCandidateTags({
-    cuisines: [input.cuisine],
-    difficulty: "easy",
-    leftovers: "none",
-    mealTypes: input.mealTypes,
-    totalTimeBand: "under_30_minutes",
-  });
-
-const candidateAuthorityToken = (index: number, reviewVersion = 1) => {
-  const fingerprint = index.toString(16).padStart(64, "0");
-  return decodeCandidateAuthorityToken({
-    extractionFingerprint: fingerprint,
-    reviewVersion,
-    tagsFingerprint: fingerprint,
-  });
+const adultId = "person_11111111-1111-4111-8111-111111111111";
+const childId = "person_22222222-2222-4222-8222-222222222222";
+const cereal = {
+  kind: "packaged",
+  optionId: "option_cereal",
+  optionVersion: 1,
 };
+const roast = { kind: "recipe", optionId: "option_roast", optionVersion: 1 };
+const allWeekdays = [0, 1, 2, 3, 4, 5, 6];
+const readyPreparation = {
+  attention: "low",
+  cleanup: "low",
+  elapsedTime: { _tag: "Known", minutes: 0 },
+  handsOnTime: { _tag: "Known", minutes: 0 },
+  requiredEquipment: [],
+  startRequirement: "none",
+  substantialCookEvent: "no",
+};
+const roastPreparation = {
+  attention: "moderate",
+  cleanup: "moderate",
+  elapsedTime: { _tag: "Known", minutes: 45 },
+  handsOnTime: { _tag: "Known", minutes: 20 },
+  requiredEquipment: ["oven"],
+  startRequirement: "during_window",
+  substantialCookEvent: "yes",
+};
+const decodeRequest = Schema.decodeUnknownSync(MealPlanRequest);
+const decodeResolution = Schema.decodeUnknownSync(MealPlanResolution);
+const actorId = Schema.decodeUnknownSync(MealPlanActorId)("adult_actor_1");
+const at = Schema.decodeUnknownSync(MealPlanInstant)(
+  "2026-09-28T10:00:00.000Z"
+);
+const decodeMutationId = (value: string) =>
+  Schema.decodeUnknownSync(MealPlanMutationId)(value);
 
-const candidateSnapshot = (candidate: {
-  readonly authorityToken: ReturnType<typeof candidateAuthorityToken>;
-  readonly importId: ReturnType<typeof candidateId>;
-  readonly tags: ReturnType<typeof candidateTags>;
-}) =>
-  decodeCandidateSnapshot({
-    approvedAt: "2026-08-19T20:00:00.000Z",
-    extractionFingerprint: candidate.authorityToken.extractionFingerprint,
-    importId: candidate.importId,
-    recipe: makeRecipeContent({
-      ingredients: [recipeIngredientFromText("1 bounded ingredient")],
-      instructions: [
-        recipeInstructionFromText("Prepare the bounded candidate.", 1),
-      ],
-      name: `Candidate ${candidate.importId}`,
+const authority = (
+  input: {
+    readonly weeks?: number;
+    readonly childReview?: "compatible" | "incompatible" | "unknown";
+    readonly twoPeople?: boolean;
+    readonly allOccasions?: boolean;
+    readonly withRoutine?: boolean;
+    readonly recipeResolved?: boolean;
+    readonly stockConfirmedFor?: string;
+    readonly stockSourceOption?: "roast" | "none";
+    readonly childReviewOption?: "cereal" | "roast";
+  } = {}
+): PlanningAuthority => {
+  const people = [
+    Schema.decodeUnknownSync(MealPlanPersonPin)({
+      personId: adultId,
+      profileVersion: 1,
+      safetyState: "confirmed_none",
     }),
-    source: {
-      evidenceFingerprint: `evidence:${candidate.importId}`,
-      sourceUrl: null,
+    ...(input.twoPeople
+      ? [
+          Schema.decodeUnknownSync(MealPlanPersonPin)({
+            personId: childId,
+            profileVersion: 1,
+            safetyState: "has_constraints",
+          }),
+        ]
+      : []),
+  ];
+  const occasionNames = input.allOccasions
+    ? ["breakfast", "lunch", "dinner", "snack"]
+    : ["breakfast"];
+  const content = Schema.decodeUnknownSync(PlanningContentSnapshot)({
+    availability: people.flatMap(({ personId }) =>
+      occasionNames.map((name) => ({
+        handsOffStart: "available",
+        location: "home",
+        occasionId: `occasion_${name}`,
+        personId,
+        preparationWindowMinutes: 60,
+        weekdays: allWeekdays,
+      }))
+    ),
+    configVersion: 1,
+    cookingCapacity: {
+      availableEquipment: ["oven"],
+      maximumSubstantialCookEventsPerWeek: 7,
     },
-    tags: candidate.tags,
-    version: 1,
+    fallbacks: [],
+    managedOccasions: people.flatMap(({ personId }) =>
+      occasionNames.map((name) => ({
+        label: name,
+        occasionId: `occasion_${name}`,
+        personId,
+        state: "managed",
+        weekdays: allWeekdays,
+      }))
+    ),
+    oneOffRoutines: [],
+    options: [
+      {
+        ...cereal,
+        cover: null,
+        label: "Cereal",
+        preparation: readyPreparation,
+        productIdentity: null,
+        productName: "Cereal",
+        quantity: { _tag: "Known", amount: 1, sourceText: null, unit: "item" },
+        substitutionPolicy: "exact_only",
+      },
+      {
+        ...roast,
+        cover: null,
+        label: "Roast dinner",
+        preparation: roastPreparation,
+        recipeId: "018f47ad-91aa-7c35-b6fe-000000000401",
+        recipeImportId: "018f47ad-91aa-7c35-b6fe-000000000401",
+        recipeVersion: 1,
+        shoppingComponents: input.recipeResolved
+          ? [
+              {
+                name: "potato",
+                quantity: {
+                  _tag: "Known",
+                  amount: 500,
+                  sourceText: null,
+                  unit: "g",
+                },
+                substitutionPolicy: "similar_acceptable",
+              },
+            ]
+          : [],
+        shoppingStatus: input.recipeResolved ? "reviewed" : "unresolved",
+        yield: input.recipeResolved
+          ? { _tag: "Known", amount: 2, sourceText: null, unit: "portion" }
+          : { _tag: "Unresolved", sourceText: "yield not given" },
+      },
+    ],
+    preparedPortions: input.stockConfirmedFor
+      ? [
+          {
+            confirmedForWeekStart: input.stockConfirmedFor,
+            id: "stock_portion_1",
+            label: "Prepared lunch",
+            lastCorrectionReason: "Adult confirmed this portion.",
+            quantity: {
+              _tag: "Known",
+              amount: 2,
+              sourceText: null,
+              unit: "portion",
+            },
+            remainingAmount: 2,
+            reservations: [],
+            sourceCookEventId: null,
+            sourceOptionRef: input.stockSourceOption === "roast" ? roast : null,
+            state: "available",
+            storage: "freezer",
+            version: 1,
+          },
+        ]
+      : [],
+    routines: input.withRoutine
+      ? [
+          {
+            choice: { _tag: "Options", optionRefs: [cereal], selection: "pin" },
+            id: "routine_breakfast",
+            occasionId: "occasion_breakfast",
+            scope: { _tag: "Household" },
+            state: "active",
+            version: 1,
+            weekdays: allWeekdays,
+          },
+        ]
+      : [],
+    suitabilityReviews: input.childReview
+      ? [
+          {
+            confirmedByActorId: "adult_actor_1",
+            id: "review_cereal",
+            optionRef: input.childReviewOption === "roast" ? roast : cereal,
+            personId: childId,
+            profileVersion: 1,
+            reason: "Reviewed ingredients",
+            status: input.childReview,
+            version: 1,
+          },
+        ]
+      : [],
   });
-
-const referenceCandidateSelection = (input: {
-  readonly candidates: readonly {
-    readonly importId: ReturnType<typeof candidateId>;
-    readonly tags: ReturnType<typeof candidateTags>;
-  }[];
-  readonly policy: ReturnType<typeof decodeCandidatePolicy>;
-  readonly request: ReturnType<typeof decodeCandidateRequest>;
-}) => {
-  const uses = new Map<string, number>();
-  return input.request.slots.map((slot) => {
-    const [candidate] = input.candidates
-      .filter(
-        ({ importId, tags }) =>
-          tags.mealTypes.includes(slot.mealType) &&
-          input.policy.allowedDifficulties.includes(tags.difficulty) &&
-          input.policy.allowedTotalTimeBands.includes(tags.totalTimeBand) &&
-          (uses.get(importId) ?? 0) < input.policy.maxRecipeUses
-      )
-      .toSorted((left, right) => {
-        const leftPreferred = left.tags.cuisines.some((cuisine) =>
-          input.policy.preferredCuisines.includes(cuisine)
-        );
-        const rightPreferred = right.tags.cuisines.some((cuisine) =>
-          input.policy.preferredCuisines.includes(cuisine)
-        );
-        const preferredDifference =
-          Number(rightPreferred) - Number(leftPreferred);
-        return preferredDifference === 0
-          ? left.importId.localeCompare(right.importId)
-          : preferredDifference;
-      });
-    if (candidate === undefined) {
-      return { slotId: slot.slotId } as const;
-    }
-    uses.set(candidate.importId, (uses.get(candidate.importId) ?? 0) + 1);
-    return { importId: candidate.importId, slotId: slot.slotId } as const;
-  });
+  return { content, people };
 };
 
-describe("bounded meal-plan candidate selection", () => {
-  it("preserves greedy selection across arbitrary pages larger than 128 candidates", () => {
-    const request = decodeCandidateRequest({
-      requestKey: "candidate-frontier-large-catalogue",
-      slots: [
-        {
-          date: "2026-08-24",
-          mealType: "dinner",
-          servings: 2,
-          slotId: "dinner-one",
+const request = (weeks = 1) =>
+  decodeRequest({
+    requestKey: `week_${weeks}_family`,
+    startDate: "2026-09-28",
+    weeks,
+  });
+
+const flexibleCoverage = (
+  planRequest: ReturnType<typeof request>,
+  context: PlanningAuthority
+): MealPlanCoverage[] =>
+  requiredCoverage(planRequest, context).map((requirement) => ({
+    requirement,
+    resolution: decodeResolution({
+      _tag: "Flexible",
+      rationale: "Adult chose a flexible meal.",
+    }),
+  }));
+
+describe("family meal planning domain", () => {
+  it("expands twelve weeks for every person and managed occasion", () => {
+    const context = authority({ allOccasions: true, twoPeople: true });
+    const entries = requiredCoverage(request(12), context);
+    expect(entries).toHaveLength(12 * 7 * 4 * 2);
+    expect(
+      new Set(
+        entries.map(
+          (entry) => `${entry.personId}:${entry.date}:${entry.occasion}`
+        )
+      ).size
+    ).toBe(entries.length);
+    expect(entries.some((entry) => entry.date === "2026-12-20")).toBe(true);
+  });
+
+  it("applies a shared routine only to people with suitable current content", () => {
+    const planRequest = request();
+    const blocked = makeInitialPlanVersion(
+      planRequest,
+      authority({ twoPeople: true, withRoutine: true })
+    );
+    expect(
+      blocked.coverage.filter(
+        ({ resolution }) => resolution._tag === "MealOption"
+      )
+    ).toHaveLength(7);
+    expect(
+      blocked.coverage.filter(
+        ({ resolution }) =>
+          resolution._tag === "Gap" &&
+          resolution.reason === "unconfirmed_suitability"
+      )
+    ).toHaveLength(7);
+    const reviewed = makeInitialPlanVersion(
+      planRequest,
+      authority({
+        childReview: "compatible",
+        twoPeople: true,
+        withRoutine: true,
+      })
+    );
+    expect(
+      reviewed.coverage.every(
+        ({ resolution }) => resolution._tag === "MealOption"
+      )
+    ).toBe(true);
+    expect(
+      validatePlanVersion(
+        reviewed,
+        planRequest,
+        authority({
+          childReview: "compatible",
+          twoPeople: true,
+          withRoutine: true,
+        }),
+        false
+      )
+    ).toBeNull();
+  });
+
+  it("cannot approve an unresolved gap or an incompatible option", () => {
+    const planRequest = request();
+    const context = authority({ twoPeople: true });
+    const draft = makeInitialPlanVersion(planRequest, context);
+    expect(validatePlanVersion(draft, planRequest, context, true)?.reason).toBe(
+      "unresolved_gap"
+    );
+    const incompatible = authority({
+      childReview: "incompatible",
+      twoPeople: true,
+      withRoutine: true,
+    });
+    const complete = flexibleCoverage(planRequest, incompatible);
+    const childIndex = complete.findIndex(
+      ({ requirement }) => requirement.personId === childId
+    );
+    const childCoverage = complete[childIndex];
+    if (childCoverage === undefined) {
+      throw new Error("Expected child coverage");
+    }
+    complete[childIndex] = {
+      ...childCoverage,
+      resolution: decodeResolution({
+        _tag: "MealOption",
+        eventId: "event_1",
+        option: cereal,
+        quantity: null,
+        rationale: "Adult proposal.",
+      }),
+    };
+    const proposed = makeInitialPlanVersion(
+      planRequest,
+      incompatible,
+      complete
+    );
+    expect(
+      validatePlanVersion(proposed, planRequest, incompatible, true)?.reason
+    ).toBe("incompatible_option");
+  });
+
+  it("repairs a meal dependent on removed adult-confirmed cook output", () => {
+    const planRequest = request();
+    const context = authority();
+    const coverage = flexibleCoverage(planRequest, context);
+    const second = coverage.at(1);
+    if (second === undefined) {
+      throw new Error("Expected a second coverage entry");
+    }
+    coverage[1] = {
+      ...second,
+      resolution: decodeResolution({
+        _tag: "Prepared",
+        outputId: "output_roast",
+        quantity: { amount: 1, unit: "portion" },
+        rationale: "Planned leftover.",
+      }),
+    };
+    const initial = makeInitialPlanVersion(planRequest, context, coverage);
+    const withCook = changePlanVersion(
+      initial,
+      {
+        _tag: "SetCookEvent",
+        event: {
+          batchCount: 1,
+          date: planRequest.startDate,
+          eventId: "event_roast",
+          option: Schema.decodeUnknownSync(PlanningOptionRef)(roast),
+          outputs: [
+            {
+              outputId: "output_roast",
+              quantity: { amount: 2, unit: "portion" },
+              source: "adult_confirmed",
+            },
+          ],
         },
-        {
-          date: "2026-08-25",
-          mealType: "dinner",
-          servings: 2,
-          slotId: "dinner-two",
+      },
+      planRequest,
+      context
+    );
+    expect("_tag" in withCook).toBe(false);
+    if ("_tag" in withCook) {
+      return;
+    }
+    const removed = changePlanVersion(
+      withCook.version,
+      { _tag: "RemoveCookEvent", eventId: "event_roast" },
+      planRequest,
+      context
+    );
+    expect("_tag" in removed).toBe(false);
+    if ("_tag" in removed) {
+      return;
+    }
+    expect(removed.changed).toHaveLength(1);
+    expect(removed.version.coverage[1]?.resolution).toMatchObject({
+      _tag: "Gap",
+      reason: "dependent_output_removed",
+    });
+  });
+
+  it("requires reviewed quantities and rejects an event that exceeds its batch yield", () => {
+    const planRequest = request();
+    const context = authority({ recipeResolved: true });
+    const coverage = flexibleCoverage(planRequest, context);
+    const [first] = coverage;
+    if (first === undefined) {
+      throw new Error("Expected breakfast coverage");
+    }
+    coverage[0] = {
+      ...first,
+      resolution: decodeResolution({
+        _tag: "MealOption",
+        eventId: "event_roast",
+        option: roast,
+        quantity: null,
+        rationale: "Proposed roast.",
+      }),
+    };
+    const incomplete = makeInitialPlanVersion(planRequest, context, coverage);
+    expect(
+      validatePlanVersion(incomplete, planRequest, context, true)?.reason
+    ).toBe("unresolved_allocation");
+    coverage[0] = {
+      ...first,
+      resolution: decodeResolution({
+        _tag: "MealOption",
+        eventId: "event_roast",
+        option: roast,
+        quantity: { amount: 3, unit: "portion" },
+        rationale: "Proposed roast.",
+      }),
+    };
+    const excessive = makeInitialPlanVersion(planRequest, context, coverage);
+    expect(
+      validatePlanVersion(excessive, planRequest, context, true)?.reason
+    ).toBe("prepared_overallocated");
+    const orphanOutput = changePlanVersion(
+      makeInitialPlanVersion(
+        planRequest,
+        context,
+        flexibleCoverage(planRequest, context)
+      ),
+      {
+        _tag: "SetCookEvent",
+        event: {
+          batchCount: 1,
+          date: planRequest.startDate,
+          eventId: "event_extra",
+          option: Schema.decodeUnknownSync(PlanningOptionRef)(roast),
+          outputs: [
+            {
+              outputId: "output_extra",
+              quantity: { amount: 3, unit: "portion" },
+              source: "adult_confirmed",
+            },
+          ],
         },
-        {
-          date: "2026-08-26",
-          mealType: "breakfast",
-          servings: 2,
-          slotId: "breakfast-one",
+      },
+      planRequest,
+      context
+    );
+    expect(orphanOutput).toMatchObject({
+      _tag: "MealPlanRuleViolation",
+      reason: "prepared_overallocated",
+    });
+  });
+
+  it("shares one event across person-local occasions while keeping date and yield limits", () => {
+    const planRequest = request();
+    const base = authority({
+      childReview: "compatible",
+      childReviewOption: "roast",
+      recipeResolved: true,
+      twoPeople: true,
+    });
+    const localOccasion = (personId: string) =>
+      personId === adultId ? "adult-dinner" : "child-dinner";
+    const context: PlanningAuthority = {
+      ...base,
+      content: Schema.decodeUnknownSync(PlanningContentSnapshot)({
+        ...base.content,
+        availability: base.content.availability.map((entry) => ({
+          ...entry,
+          occasionId: localOccasion(entry.personId),
+        })),
+        managedOccasions: base.content.managedOccasions.map((entry) => ({
+          ...entry,
+          occasionId: localOccasion(entry.personId),
+        })),
+      }),
+    };
+    const withSharedEvent = (childDate: string, adultAmount: number) => {
+      const coverage = flexibleCoverage(planRequest, context).map((entry) => {
+        const isAdult =
+          entry.requirement.personId === adultId &&
+          entry.requirement.date === planRequest.startDate;
+        const isChild =
+          entry.requirement.personId === childId &&
+          entry.requirement.date === childDate;
+        return isAdult || isChild
+          ? {
+              ...entry,
+              resolution: decodeResolution({
+                _tag: "MealOption",
+                eventId: "shared-roast",
+                option: roast,
+                quantity: {
+                  amount: isAdult ? adultAmount : 1,
+                  unit: "portion",
+                },
+                rationale: "One shared dinner cook.",
+              }),
+            }
+          : entry;
+      });
+      return makeInitialPlanVersion(planRequest, context, coverage);
+    };
+    const shared = withSharedEvent(planRequest.startDate, 1);
+    expect(
+      shared.coverage.filter(
+        ({ resolution }) =>
+          resolution._tag === "MealOption" &&
+          resolution.eventId === "shared-roast"
+      )
+    ).toHaveLength(2);
+    expect(validatePlanVersion(shared, planRequest, context, true)).toBeNull();
+    expect(
+      validatePlanVersion(
+        withSharedEvent("2026-09-29", 1),
+        planRequest,
+        context,
+        true
+      )?.reason
+    ).toBe("cook_event_conflict");
+    expect(
+      validatePlanVersion(
+        withSharedEvent(planRequest.startDate, 2),
+        planRequest,
+        context,
+        true
+      )?.reason
+    ).toBe("prepared_overallocated");
+  });
+
+  it("keeps missing preparation context visible and blocks approval without equipment or capacity", () => {
+    const planRequest = request();
+    const routineContext = authority({ withRoutine: true });
+    const missingAvailability = {
+      ...routineContext,
+      content: PlanningContentSnapshot.make({
+        ...routineContext.content,
+        availability: [],
+      }),
+    };
+    const proposed = makeInitialPlanVersion(planRequest, missingAvailability);
+    expect(proposed.coverage[0]?.resolution).toMatchObject({
+      _tag: "Gap",
+      reason: "preparation_context_unresolved",
+    });
+
+    const context = authority({ recipeResolved: true });
+    const coverage = flexibleCoverage(planRequest, context);
+    const [first] = coverage;
+    if (first === undefined) {
+      throw new Error("Expected breakfast coverage");
+    }
+    coverage[0] = {
+      ...first,
+      resolution: decodeResolution({
+        _tag: "MealOption",
+        eventId: "event_roast",
+        option: roast,
+        quantity: { amount: 1, unit: "portion" },
+        rationale: "Adult chose roast.",
+      }),
+    };
+    const withoutOven = {
+      ...context,
+      content: PlanningContentSnapshot.make({
+        ...context.content,
+        cookingCapacity: {
+          availableEquipment: [],
+          maximumSubstantialCookEventsPerWeek: 7,
         },
-        {
-          date: "2026-08-27",
-          mealType: "dinner",
-          servings: 2,
-          slotId: "dinner-three",
+      }),
+    };
+    const ovenPlan = makeInitialPlanVersion(planRequest, withoutOven, coverage);
+    expect(
+      validatePlanVersion(ovenPlan, planRequest, withoutOven, true)?.reason
+    ).toBe("missing_equipment");
+
+    const noCookCapacity = {
+      ...context,
+      content: PlanningContentSnapshot.make({
+        ...context.content,
+        cookingCapacity: {
+          availableEquipment: ["oven"],
+          maximumSubstantialCookEventsPerWeek: 0,
         },
+      }),
+    };
+    const capacityPlan = makeInitialPlanVersion(
+      planRequest,
+      noCookCapacity,
+      coverage
+    );
+    expect(
+      validatePlanVersion(capacityPlan, planRequest, noCookCapacity, true)
+        ?.reason
+    ).toBe("cooking_capacity_exceeded");
+  });
+
+  it("pins option content so an approved week keeps its reviewed food details", () => {
+    const planRequest = request();
+    const context = authority({ recipeResolved: true });
+    const coverage = flexibleCoverage(planRequest, context);
+    const [first] = coverage;
+    if (first === undefined) {
+      throw new Error("Expected breakfast coverage");
+    }
+    coverage[0] = {
+      ...first,
+      resolution: decodeResolution({
+        _tag: "MealOption",
+        eventId: "event_roast",
+        option: roast,
+        quantity: { amount: 1, unit: "portion" },
+        rationale: "Adult chose roast.",
+      }),
+    };
+    const version = makeInitialPlanVersion(planRequest, context, coverage);
+    const [pinned] = version.pins.contentSnapshots;
+    expect(pinned).toMatchObject({
+      kind: "recipe",
+      label: "Roast dinner",
+      optionVersion: 1,
+    });
+    const edited = {
+      ...context,
+      content: PlanningContentSnapshot.make({
+        ...context.content,
+        configVersion: PlanningContentVersion.make(2),
+        options: context.content.options.map((option) =>
+          option.kind === "recipe"
+            ? {
+                ...option,
+                label: "New roast title",
+                optionVersion: PlanningOptionVersion.make(2),
+              }
+            : option
+        ),
+      }),
+    };
+    expect(version.pins.contentSnapshots[0]).toMatchObject({
+      label: "Roast dinner",
+    });
+    expect(
+      validatePlanVersion(version, planRequest, edited, true)?.reason
+    ).toBe("config_version_changed");
+    expect(
+      Schema.decodeUnknownSync(MealPlanVersion)(
+        Schema.encodeSync(MealPlanVersion)(version)
+      ).pins.contentSnapshots[0]
+    ).toMatchObject({ label: "Roast dinner" });
+  });
+
+  it("uses stock only in its confirmed week and never before a cook event", () => {
+    const planRequest = request(2);
+    const context = authority({
+      recipeResolved: true,
+      stockConfirmedFor: "2026-10-05",
+      stockSourceOption: "roast",
+    });
+    const coverage = flexibleCoverage(planRequest, context);
+    const [first] = coverage;
+    const nextWeek = coverage.find(
+      ({ requirement }) => requirement.date === "2026-10-05"
+    );
+    if (first === undefined || nextWeek === undefined) {
+      throw new Error("Expected both weeks");
+    }
+    const prepared = decodeResolution({
+      _tag: "Prepared",
+      outputId: "stock_portion_1",
+      quantity: { amount: 1, unit: "portion" },
+      rationale: "Confirmed stock.",
+    });
+    const firstWeekPlan = makeInitialPlanVersion(
+      planRequest,
+      context,
+      coverage.map((entry) =>
+        entry === first ? { ...entry, resolution: prepared } : entry
+      )
+    );
+    expect(
+      validatePlanVersion(firstWeekPlan, planRequest, context, true)?.reason
+    ).toBe("prepared_output_missing");
+    const secondWeekPlan = makeInitialPlanVersion(
+      planRequest,
+      context,
+      coverage.map((entry) =>
+        entry === nextWeek ? { ...entry, resolution: prepared } : entry
+      )
+    );
+    expect(
+      validatePlanVersion(secondWeekPlan, planRequest, context, true)
+    ).toBeNull();
+
+    const cookContext = authority({ recipeResolved: true });
+    const beforeCook = {
+      ...makeInitialPlanVersion(
+        request(),
+        authority({ recipeResolved: true }),
+        flexibleCoverage(request(), authority({ recipeResolved: true }))
+      ),
+      cookEvents: [
         {
-          date: "2026-08-28",
-          mealType: "lunch",
-          servings: 2,
-          slotId: "lunch-gap",
+          batchCount: 1,
+          date: Schema.decodeUnknownSync(MealPlanRequest)({
+            requestKey: "later_cook",
+            startDate: "2026-09-29",
+            weeks: 1,
+          }).startDate,
+          eventId: "event_roast",
+          option: Schema.decodeUnknownSync(PlanningOptionRef)(roast),
+          outputs: [
+            {
+              outputId: "output_roast",
+              quantity: { amount: 1, unit: "portion" },
+              source: "adult_confirmed" as const,
+            },
+          ],
         },
       ],
-    });
-    const policy = decodeCandidatePolicy({
-      allowedDifficulties: ["easy"],
-      allowedTotalTimeBands: ["under_30_minutes"],
-      maxRecipeUses: 1,
-      preferredCuisines: ["preferred"],
-      version: "candidate-frontier-v1",
-    });
-    const ordinaryDinners = Array.from({ length: 180 }, (_, index) => ({
-      authorityToken: candidateAuthorityToken(index + 1),
-      importId: candidateId(index + 1),
-      tags: candidateTags({ cuisine: "ordinary", mealTypes: ["dinner"] }),
-    }));
-    const candidates = [
-      ...ordinaryDinners,
-      {
-        authorityToken: candidateAuthorityToken(900),
-        importId: candidateId(900),
-        tags: candidateTags({
-          cuisine: "preferred",
-          mealTypes: ["dinner"],
-        }),
-      },
-      {
-        authorityToken: candidateAuthorityToken(901),
-        importId: candidateId(901),
-        tags: candidateTags({
-          cuisine: "ordinary",
-          mealTypes: ["breakfast"],
-        }),
-      },
-    ];
-
-    let frontier = makeMealPlanCandidateFrontier({ policy, request });
-    for (let offset = 0; offset < candidates.length; offset += 17) {
-      frontier = addMealPlanCandidatePage(
-        frontier,
-        candidates.slice(offset, offset + 17)
-      );
+    };
+    const [firstDay] = beforeCook.coverage;
+    if (firstDay === undefined) {
+      throw new Error("Expected first day");
     }
-    frontier = addMealPlanCandidatePage(frontier, [
-      ...candidates.slice(0, 1),
-      ...candidates.slice(0, 1),
-    ]);
-    const selection = selectMealPlanCandidates(frontier);
-    const actual = request.slots.map((slot) => {
-      const assignment = selection.assignments.find(
-        (candidateAssignment) => candidateAssignment.slot.slotId === slot.slotId
-      );
-      return assignment === undefined
-        ? { slotId: slot.slotId }
-        : {
-            importId: assignment.importId,
-            slotId: assignment.slot.slotId,
-          };
-    });
-
-    expect(actual).toEqual(
-      referenceCandidateSelection({ candidates, policy, request })
-    );
-    expect(actual).toEqual([
-      { importId: candidateId(900), slotId: "dinner-one" },
-      { importId: candidateId(1), slotId: "dinner-two" },
-      { importId: candidateId(901), slotId: "breakfast-one" },
-      { importId: candidateId(2), slotId: "dinner-three" },
-      { slotId: "lunch-gap" },
-    ]);
-    expect(selection.gaps).toEqual([
-      {
-        reason: "no_eligible_approved_recipe",
-        slotId: "lunch-gap",
-      },
-    ]);
-    const retainedCandidates = frontier.rankedCandidatesBySlot.flat();
-    expect(retainedCandidates.length).toBeLessThanOrEqual(
-      request.slots.length * request.slots.length
-    );
-    expect(
-      retainedCandidates.every(
-        (candidate) =>
-          Object.keys(candidate).toSorted().join(",") ===
-          "authorityToken,importId,preferred"
-      )
-    ).toBe(true);
-    expect(
-      frontier.rankedCandidatesBySlot.every(
-        (rankedCandidates) =>
-          new Set(rankedCandidates.map(({ importId }) => importId)).size ===
-          rankedCandidates.length
-      )
-    ).toBe(true);
-    expect(JSON.stringify(frontier.rankedCandidatesBySlot)).not.toContain(
-      "ordinary"
-    );
-
-    const fullProposal = makeMealPlanProposal(
-      selection,
-      new Map(
-        candidates.map((candidate) => [
-          candidate.importId,
-          candidateSnapshot(candidate),
-        ])
-      ),
-      policy
-    );
-    expect(
-      fullProposal.meals.map(({ sourceRecipe, slotId }) => ({
-        importId: sourceRecipe.importId,
-        slotId,
-      }))
-    ).toEqual(actual.filter((result) => "importId" in result));
-    expect(fullProposal.gaps).toEqual(selection.gaps);
-  });
-
-  it("retains only compact rank facts under the maximum 31-slot bound", () => {
-    const request = decodeCandidateRequest({
-      requestKey: "candidate-frontier-maximum-bound",
-      slots: Array.from({ length: 31 }, (_, index) => ({
-        date: `2026-08-${(index + 1).toString().padStart(2, "0")}`,
-        mealType: "dinner",
-        servings: 2,
-        slotId: `bounded-slot-${index + 1}`,
-      })),
-    });
-    const policy = decodeCandidatePolicy({
-      allowedDifficulties: ["easy"],
-      allowedTotalTimeBands: ["under_30_minutes"],
-      maxRecipeUses: 1,
-      preferredCuisines: ["preferred"],
-      version: "candidate-frontier-bound-v1",
-    });
-    const candidates = Array.from({ length: 1000 }, (_, index) => ({
-      authorityToken: candidateAuthorityToken(index + 1),
-      importId: candidateId(index + 1),
-      tags: candidateTags({
-        cuisine: `discarded-candidate-tag-${index}`,
-        mealTypes: ["dinner"],
-      }),
-    }));
-    let frontier = makeMealPlanCandidateFrontier({ policy, request });
-    for (let offset = 0; offset < candidates.length; offset += 23) {
-      frontier = addMealPlanCandidatePage(
-        frontier,
-        candidates.slice(offset, offset + 23)
-      );
-    }
-
-    const retained = frontier.rankedCandidatesBySlot.flat();
-    const encodedFrontier = JSON.stringify(frontier.rankedCandidatesBySlot);
-    expect(retained).toHaveLength(31 * 31);
-    expect(
-      retained.every(
-        (candidate) =>
-          Object.keys(candidate).toSorted().join(",") ===
-          "authorityToken,importId,preferred"
-      )
-    ).toBe(true);
-    expect(
-      retained.every(
-        ({ authorityToken }) =>
-          Object.keys(authorityToken).toSorted().join(",") ===
-            "extractionFingerprint,reviewVersion,tagsFingerprint" &&
-          authorityToken.extractionFingerprint.length === 64 &&
-          authorityToken.tagsFingerprint.length === 64
-      )
-    ).toBe(true);
-    expect(encodedFrontier).not.toContain("discarded-candidate-tag");
-    expect(new TextEncoder().encode(encodedFrontier).byteLength).toBeLessThan(
-      320_000
-    );
-  });
-
-  it("preserves shared-candidate usage limits and later-page preferred winners", () => {
-    const request = decodeCandidateRequest({
-      requestKey: "candidate-frontier-shared-usage",
-      slots: Array.from({ length: 7 }, (_, index) => ({
-        date: `2026-09-${(index + 1).toString().padStart(2, "0")}`,
-        mealType: index === 6 ? "breakfast" : "dinner",
-        servings: 2,
-        slotId: `slot-${index + 1}`,
-      })),
-    });
-    const policy = decodeCandidatePolicy({
-      allowedDifficulties: ["easy"],
-      allowedTotalTimeBands: ["under_30_minutes"],
-      maxRecipeUses: 2,
-      preferredCuisines: ["preferred"],
-      version: "candidate-frontier-v2",
-    });
-    const candidates = Array.from({ length: 150 }, (_, index) => ({
-      authorityToken: candidateAuthorityToken(index + 1),
-      importId: candidateId(index + 1),
-      tags: candidateTags({ cuisine: "ordinary", mealTypes: ["dinner"] }),
-    }));
-    candidates.push({
-      authorityToken: candidateAuthorityToken(999),
-      importId: candidateId(999),
-      tags: candidateTags({
-        cuisine: "preferred",
-        mealTypes: ["breakfast", "dinner"],
-      }),
-    });
-
-    let frontier = makeMealPlanCandidateFrontier({ policy, request });
-    for (const page of [
-      candidates.slice(0, 60),
-      candidates.slice(60, 120),
-      candidates.slice(120),
-    ]) {
-      frontier = addMealPlanCandidatePage(frontier, page);
-    }
-    const selection = selectMealPlanCandidates(frontier);
-
-    expect(
-      selection.assignments.map(({ importId, slot }) => ({
-        importId,
-        slotId: slot.slotId,
-      }))
-    ).toEqual(
-      referenceCandidateSelection({ candidates, policy, request }).filter(
-        (result) => "importId" in result
-      )
-    );
-    expect(selection.assignments.map(({ importId }) => importId)).toEqual([
-      candidateId(999),
-      candidateId(999),
-      candidateId(1),
-      candidateId(1),
-      candidateId(2),
-      candidateId(2),
-    ]);
-    expect(selection.gaps).toEqual([
-      {
-        reason: "no_eligible_approved_recipe",
-        slotId: "slot-7",
-      },
-    ]);
-  });
-
-  it("preserves the first observed authority token for duplicate candidate versions", () => {
-    const request = decodeCandidateRequest({
-      requestKey: "candidate-frontier-authority-token",
-      slots: [
+    const withEarlyLeftover = {
+      ...beforeCook,
+      coverage: [
         {
-          date: "2026-09-08",
-          mealType: "dinner",
-          servings: 2,
-          slotId: "authority-slot",
+          ...firstDay,
+          resolution: decodeResolution({
+            _tag: "Prepared",
+            outputId: "output_roast",
+            quantity: { amount: 1, unit: "portion" },
+            rationale: "Leftover.",
+          }),
         },
+        ...beforeCook.coverage.slice(1),
       ],
-    });
-    const policy = decodeCandidatePolicy({
-      allowedDifficulties: ["easy"],
-      allowedTotalTimeBands: ["under_30_minutes"],
-      maxRecipeUses: 1,
-      preferredCuisines: ["preferred"],
-      version: "candidate-frontier-authority-v1",
-    });
-    const importId = candidateId(777);
-    const firstAuthorityToken = candidateAuthorityToken(777, 0);
-    const changedAuthorityToken = candidateAuthorityToken(778, 1);
-    const firstPage = [
-      {
-        authorityToken: firstAuthorityToken,
-        importId,
-        tags: candidateTags({ cuisine: "ordinary", mealTypes: ["dinner"] }),
-      },
-    ];
-    const changedVersionPage = [
-      {
-        authorityToken: changedAuthorityToken,
-        importId,
-        tags: candidateTags({ cuisine: "preferred", mealTypes: ["dinner"] }),
-      },
-    ];
+    };
+    expect(
+      validatePlanVersion(
+        repinPlanVersion(
+          Schema.decodeUnknownSync(MealPlanVersion)(withEarlyLeftover),
+          cookContext
+        ),
+        request(),
+        cookContext,
+        true
+      )?.reason
+    ).toBe("prepared_output_missing");
+  });
 
-    const frontier = addMealPlanCandidatePage(
-      addMealPlanCandidatePage(
-        makeMealPlanCandidateFrontier({ policy, request }),
-        firstPage
-      ),
-      changedVersionPage
+  it("requires a known, compatible source for prepared stock assigned to a child", () => {
+    const planRequest = request();
+    const prepared = decodeResolution({
+      _tag: "Prepared",
+      outputId: "stock_portion_1",
+      quantity: { amount: 1, unit: "portion" },
+      rationale: "Adult selected a prepared portion.",
+    });
+    const planFor = (context: PlanningAuthority) => {
+      const coverage = flexibleCoverage(planRequest, context);
+      const childEntry = coverage.find(
+        ({ requirement }) => requirement.personId === childId
+      );
+      if (childEntry === undefined) {
+        throw new Error("Expected child requirement");
+      }
+      return makeInitialPlanVersion(
+        planRequest,
+        context,
+        coverage.map((entry) =>
+          entry === childEntry ? { ...entry, resolution: prepared } : entry
+        )
+      );
+    };
+    const base = {
+      childReviewOption: "roast" as const,
+      stockConfirmedFor: "2026-09-28",
+      twoPeople: true,
+    };
+    const unknownSource = authority({ ...base, stockSourceOption: "none" });
+    expect(
+      validatePlanVersion(
+        planFor(unknownSource),
+        planRequest,
+        unknownSource,
+        true
+      )?.reason
+    ).toBe("unreviewed_suitability");
+    const adultCoverage = flexibleCoverage(planRequest, unknownSource);
+    const adultEntry = adultCoverage.find(
+      ({ requirement }) => requirement.personId === adultId
     );
+    if (adultEntry === undefined) {
+      throw new Error("Expected adult requirement");
+    }
+    const unknownAdultSource = makeInitialPlanVersion(
+      planRequest,
+      unknownSource,
+      adultCoverage.map((entry) =>
+        entry === adultEntry ? { ...entry, resolution: prepared } : entry
+      )
+    );
+    expect(
+      validatePlanVersion(unknownAdultSource, planRequest, unknownSource, true)
+        ?.reason
+    ).toBe("unreviewed_suitability");
 
-    expect(frontier.rankedCandidatesBySlot).toEqual([
-      [{ authorityToken: firstAuthorityToken, importId, preferred: false }],
+    const unreviewed = authority({ ...base, stockSourceOption: "roast" });
+    expect(
+      validatePlanVersion(planFor(unreviewed), planRequest, unreviewed, true)
+        ?.reason
+    ).toBe("unreviewed_suitability");
+
+    const incompatible = authority({
+      ...base,
+      childReview: "incompatible",
+      stockSourceOption: "roast",
+    });
+    expect(
+      validatePlanVersion(
+        planFor(incompatible),
+        planRequest,
+        incompatible,
+        true
+      )?.reason
+    ).toBe("incompatible_option");
+
+    const compatible = authority({
+      ...base,
+      childReview: "compatible",
+      stockSourceOption: "roast",
+    });
+    const approved = planFor(compatible);
+    expect(
+      validatePlanVersion(approved, planRequest, compatible, true)
+    ).toBeNull();
+    expect(approved.pins.preparedSources).toMatchObject([
+      { optionRef: roast, outputId: "stock_portion_1" },
     ]);
-    expect(selectMealPlanCandidates(frontier).assignments).toEqual([
-      {
-        authorityToken: firstAuthorityToken,
-        importId,
-        slot: request.slots[0],
-      },
-    ]);
+  });
+
+  it("checks the cook option for the person eating its prepared output", () => {
+    const planRequest = request();
+    const planFor = (context: PlanningAuthority) => {
+      const coverage = flexibleCoverage(planRequest, context);
+      const childEntry = coverage.find(
+        ({ requirement }) =>
+          requirement.personId === childId && requirement.date === "2026-09-29"
+      );
+      if (childEntry === undefined) {
+        throw new Error("Expected child requirement");
+      }
+      const initial = makeInitialPlanVersion(planRequest, context, coverage);
+      const withCook = Schema.decodeUnknownSync(MealPlanVersion)({
+        ...initial,
+        cookEvents: [
+          {
+            batchCount: 1,
+            date: planRequest.startDate,
+            eventId: "event_roast",
+            option: roast,
+            outputs: [
+              {
+                outputId: "output_roast",
+                quantity: { amount: 1, unit: "portion" },
+                source: "adult_confirmed",
+              },
+            ],
+          },
+        ],
+        coverage: coverage.map((entry) =>
+          entry === childEntry
+            ? {
+                ...entry,
+                resolution: decodeResolution({
+                  _tag: "Prepared",
+                  outputId: "output_roast",
+                  quantity: { amount: 1, unit: "portion" },
+                  rationale: "Roast from Monday's cook.",
+                }),
+              }
+            : entry
+        ),
+      });
+      return repinPlanVersion(withCook, context);
+    };
+    const base = {
+      childReviewOption: "roast" as const,
+      recipeResolved: true,
+      twoPeople: true,
+    };
+    const unreviewed = authority(base);
+    expect(
+      validatePlanVersion(planFor(unreviewed), planRequest, unreviewed, true)
+        ?.reason
+    ).toBe("unreviewed_suitability");
+    const incompatible = authority({ ...base, childReview: "incompatible" });
+    expect(
+      validatePlanVersion(
+        planFor(incompatible),
+        planRequest,
+        incompatible,
+        true
+      )?.reason
+    ).toBe("incompatible_option");
+    const compatible = authority({ ...base, childReview: "compatible" });
+    expect(
+      validatePlanVersion(planFor(compatible), planRequest, compatible, true)
+    ).toBeNull();
   });
 });
 
-describe("provider-free meal-plan tracer", () => {
-  it("creates an approved-only deterministic draft with explicit hard-constraint gaps", async () => {
-    const tracer = makeSyntheticMealPlanTracer();
+const memoryRepository = (): MealPlanRepository => {
+  const plans = new Map<string, MealPlan>();
+  const receipts = new Map<string, { fingerprint: string; plan: MealPlan }>();
+  return {
+    create: ({ draft }) =>
+      Effect.sync(() => {
+        plans.set(draft.planId, draft);
+        return draft;
+      }),
+    find: (planId) =>
+      Effect.sync(() => {
+        const plan = plans.get(planId);
+        return plan === undefined ? Option.none<MealPlan>() : Option.some(plan);
+      }),
+    findMutation: ({ planId, mutationId, mutationFingerprint }) =>
+      Effect.gen(function* findReceipt() {
+        const receipt = receipts.get(`${planId}:${mutationId}`);
+        if (receipt && receipt.fingerprint !== mutationFingerprint) {
+          return yield* Effect.fail({
+            _tag: "MealPlanMutationConflict" as const,
+            mutationId,
+          });
+        }
+        return receipt === undefined
+          ? Option.none<MealPlan>()
+          : Option.some(receipt.plan);
+      }),
+    listRecent: () => Effect.sync(() => [...plans.values()]),
+    save: ({ next, expectedRevision, mutationFingerprint, mutationId }) =>
+      Effect.gen(function* savePlan() {
+        const current = plans.get(next.planId);
+        if (current === undefined) {
+          return yield* Effect.fail({
+            _tag: "MealPlanNotFound" as const,
+            planId: next.planId,
+          });
+        }
+        if (current.revision !== expectedRevision) {
+          return yield* Effect.fail({
+            _tag: "MealPlanVersionConflict" as const,
+            actualRevision: current.revision,
+            expectedRevision,
+          });
+        }
+        plans.set(next.planId, next);
+        receipts.set(`${next.planId}:${mutationId}`, {
+          fingerprint: mutationFingerprint,
+          plan: next,
+        });
+        return next;
+      }),
+  };
+};
 
-    const first = await Effect.runPromise(
-      tracer.service.create(syntheticMealPlanRequest, syntheticPlanningPolicy)
-    );
-    const replay = await Effect.runPromise(
-      tracer.service.create(syntheticMealPlanRequest, syntheticPlanningPolicy)
-    );
-    const independent = await Effect.runPromise(
-      makeSyntheticMealPlanTracer().service.create(
-        syntheticMealPlanRequest,
-        syntheticPlanningPolicy
-      )
-    );
-
-    expect(first).toEqual(replay);
-    expect(first).toEqual(independent);
-    expect(first._tag).toBe("Draft");
-    expect(first.revision).toBe(0);
-    expect(first.meals).toHaveLength(1);
-    expect(first.meals[0]).toMatchObject({
-      reasons: [
-        "approved_recipe",
-        "meal_type_match",
-        "hard_constraints_satisfied",
-        "preferred_cuisine",
-      ],
-      relevantTags: {
-        cuisines: ["Synthetic Mediterranean"],
-        difficulty: "easy",
-        leftovers: "one_meal",
-        mealTypes: ["dinner"],
-        totalTimeBand: "under_30_minutes",
-      },
-      servings: 2,
-      slotId: "synthetic-dinner",
-      sourceRecipe: {
-        recipe: { name: "Synthetic Tomato Orzo" },
-      },
+describe("meal plan lifecycle", () => {
+  it("refreshes pins after unavailable prepared food becomes a gap", async () => {
+    const planRequest = request();
+    const original = authority({
+      recipeResolved: true,
+      stockConfirmedFor: "2026-09-28",
+      stockSourceOption: "roast",
     });
-    expect(first.gaps).toEqual([
-      {
-        reason: "no_eligible_approved_recipe",
-        slotId: "synthetic-breakfast",
-      },
-    ]);
-    expect(
-      first.meals.some(
-        ({ sourceRecipe }) =>
-          sourceRecipe.recipe.name === "Synthetic Rejected Pancakes"
-      )
-    ).toBe(false);
-    expect(tracer.drafts).toHaveLength(1);
-
-    const maximumRequestKey = "a".repeat(128);
-    const boundaryDraft = await Effect.runPromise(
-      makeSyntheticMealPlanTracer().service.create(
-        Schema.decodeUnknownSync(MealPlanRequest)({
-          requestKey: maximumRequestKey,
-          slots: [
-            {
-              date: "2026-07-27",
-              mealType: "dinner",
-              servings: 2,
-              slotId: "synthetic-boundary-dinner",
-            },
-          ],
-        }),
-        syntheticPlanningPolicy
+    const coverage = flexibleCoverage(planRequest, original);
+    const [first] = coverage;
+    if (first === undefined) {
+      throw new Error("Expected breakfast coverage");
+    }
+    coverage[0] = {
+      ...first,
+      resolution: decodeResolution({
+        _tag: "Prepared",
+        outputId: "stock_portion_1",
+        quantity: { amount: 1, unit: "portion" },
+        rationale: "Use confirmed stock.",
+      }),
+    };
+    const service = makeMealPlanService(memoryRepository());
+    const created = await Effect.runPromise(
+      service.create(planRequest, original, coverage)
+    );
+    const current: PlanningAuthority = {
+      ...original,
+      content: Schema.decodeUnknownSync(PlanningContentSnapshot)({
+        ...original.content,
+        configVersion: 2,
+        preparedPortions: [],
+      }),
+    };
+    const refreshed = await Effect.runPromise(
+      service.change(
+        {
+          actorId,
+          at,
+          change: { _tag: "RefreshInputs" },
+          expectedRevision: 0,
+          mutationId: decodeMutationId("refresh_missing_stock"),
+          planId: created.planId,
+          reason: "Stock is no longer available.",
+        },
+        current
       )
     );
-    expect(boundaryDraft.draftId).toBe(`draft-${maximumRequestKey}`);
-    expect(() =>
-      Schema.decodeUnknownSync(MealPlanRequest)({
-        requestKey: "a".repeat(129),
-        slots: [
-          {
-            date: "2026-07-27",
-            mealType: "dinner",
-            servings: 2,
-            slotId: "synthetic-adjacent-boundary-dinner",
+    if (refreshed._tag !== "Draft") {
+      throw new Error("Expected draft");
+    }
+    expect(refreshed.proposed.coverage[0]?.resolution).toMatchObject({
+      _tag: "Gap",
+      reason: "dependent_output_removed",
+    });
+    expect(refreshed.proposed.pins.preparedSources).toEqual([]);
+    expect(refreshed.proposed.pins.content).toEqual([]);
+    const repaired = await Effect.runPromise(
+      service.change(
+        {
+          actorId,
+          at,
+          change: {
+            _tag: "SetCoverage",
+            requirement: first.requirement,
+            resolution: decodeResolution({
+              _tag: "Flexible",
+              rationale: "Adult chose a flexible meal.",
+            }),
           },
-        ],
-      })
-    ).toThrow();
+          expectedRevision: 1,
+          mutationId: decodeMutationId("replace_missing_stock"),
+          planId: created.planId,
+          reason: "Resolve the missing prepared food.",
+        },
+        current
+      )
+    );
+    expect(repaired.revision).toBe(2);
+    const approved = await Effect.runPromise(
+      service.approve(
+        {
+          actorId,
+          at,
+          expectedRevision: 2,
+          mutationId: decodeMutationId("approve_refreshed_stock"),
+          planId: created.planId,
+          reason: "Approve repaired week.",
+        },
+        current
+      )
+    );
+    expect(approved._tag).toBe("Approved");
   });
 
-  it("validates and audits a manual swap exactly once", async () => {
-    const tracer = makeSyntheticMealPlanTracer();
-    const draft = await Effect.runPromise(
-      tracer.service.create(syntheticMealPlanRequest, syntheticPlanningPolicy)
-    );
-    const decodeSwap = Schema.decodeUnknownSync(ManualMealSwapRequest);
-    const baseSwap = {
-      actorId: "synthetic_operator",
-      draftId: draft.draftId,
-      expectedRevision: 0,
-      reason: "Exercise the explicit manual review seam.",
-      slotId: "synthetic-dinner",
-      swappedAt: "2026-07-22T10:03:00.000Z",
-    } as const;
-
-    const rejected = await Effect.runPromise(
-      Effect.flip(
-        tracer.service.swap(
-          decodeSwap({
-            ...baseSwap,
-            mutationId: "swap-rejected-recipe",
-            replacementImportId: syntheticRejectedRecipeId,
-          })
-        )
-      )
-    );
-    expect(rejected).toMatchObject({
-      _tag: "MealPlanSwapRejected",
-      reason: "recipe_not_approved",
-    });
-
-    const hardConstraintViolation = await Effect.runPromise(
-      Effect.flip(
-        tracer.service.swap(
-          decodeSwap({
-            ...baseSwap,
-            mutationId: "swap-hard-constraint",
-            replacementImportId: syntheticHardConstraintRecipeId,
-          })
-        )
-      )
-    );
-    expect(hardConstraintViolation).toMatchObject({
-      _tag: "MealPlanSwapRejected",
-      reason: "hard_constraint_violation",
-    });
-
-    const request = decodeSwap({
-      ...baseSwap,
-      mutationId: "swap-valid-recipe",
-      replacementImportId: syntheticReplacementRecipeId,
-    });
-    const swapped = await Effect.runPromise(tracer.service.swap(request));
-    const replay = await Effect.runPromise(
-      tracer.service.swap(
-        decodeSwap({
-          ...request,
-          swappedAt: "2026-07-22T10:05:00.000Z",
-        })
-      )
-    );
-
-    expect(swapped).toEqual(replay);
-    expect(swapped._tag).toBe("Draft");
-    expect(swapped.revision).toBe(1);
-    expect(swapped.meals[0]?.sourceRecipe.recipe.name).toBe(
-      "Synthetic Bean Traybake"
-    );
-    expect(swapped.audit).toHaveLength(1);
-    expect(swapped.audit[0]).toMatchObject({
-      actorId: "synthetic_operator",
-      fromRecipe: { recipe: { name: "Synthetic Tomato Orzo" } },
-      mutationId: "swap-valid-recipe",
-      toRecipe: { recipe: { name: "Synthetic Bean Traybake" } },
-    });
-    expect(swapped.audit[0]?.swappedAt).toEqual(request.swappedAt);
-
-    const stale = await Effect.runPromise(
-      Effect.flip(
-        tracer.service.swap(
-          decodeSwap({
-            ...baseSwap,
-            mutationId: "swap-stale-revision",
-            replacementImportId: syntheticHardConstraintRecipeId,
-          })
-        )
-      )
-    );
-    expect(stale).toMatchObject({
-      _tag: "MealPlanVersionConflict",
-      actualRevision: 1,
-      expectedRevision: 0,
-    });
-    const mutationCollision = await Effect.runPromise(
-      Effect.flip(
-        tracer.service.swap(
-          decodeSwap({
-            ...baseSwap,
-            mutationId: "swap-valid-recipe",
-            replacementImportId: syntheticHardConstraintRecipeId,
-          })
-        )
-      )
-    );
-    expect(mutationCollision).toMatchObject({
-      _tag: "MealPlanMutationConflict",
-      mutationId: "swap-valid-recipe",
-    });
-    expect(
-      Option.getOrThrow(
-        await Effect.runPromise(tracer.service.read(draft.draftId))
-      )
-    ).toEqual(swapped);
-
-    const maxUseTracer = makeSyntheticMealPlanTracer();
-    const maxUseDraft = await Effect.runPromise(
-      maxUseTracer.service.create(
-        Schema.decodeUnknownSync(MealPlanRequest)({
-          requestKey: "synthetic-max-use",
-          slots: [
+  it.each([
+    {
+      allocated: false,
+      optionKind: "recipe",
+      reason: "quantity_unit_mismatch",
+    },
+    { allocated: true, optionKind: "recipe", reason: "quantity_unit_mismatch" },
+    { allocated: true, optionKind: "external", reason: "invalid_cook_output" },
+    { allocated: false, optionKind: "external", reason: "invalid_cook_output" },
+  ] as const)(
+    "rejects $optionKind cook outputs with incompatible units when allocated=$allocated",
+    async ({ allocated, optionKind, reason }) => {
+      const planRequest = request();
+      const base = authority({ recipeResolved: true });
+      const external = {
+        kind: "external",
+        optionId: "option_takeaway",
+        optionVersion: 1,
+      };
+      const context: PlanningAuthority =
+        optionKind === "external"
+          ? {
+              ...base,
+              content: Schema.decodeUnknownSync(PlanningContentSnapshot)({
+                ...base.content,
+                options: [
+                  ...base.content.options,
+                  {
+                    ...external,
+                    cover: null,
+                    label: "Takeaway",
+                    provider: null,
+                  },
+                ],
+              }),
+            }
+          : base;
+      const coverage = flexibleCoverage(planRequest, context);
+      const [first] = coverage;
+      if (first === undefined) {
+        throw new Error("Expected breakfast coverage");
+      }
+      const option = optionKind === "external" ? external : roast;
+      if (allocated) {
+        coverage[0] = {
+          ...first,
+          resolution: decodeResolution({
+            _tag: "MealOption",
+            eventId: "event_bad_output",
+            option,
+            quantity:
+              optionKind === "external" ? null : { amount: 1, unit: "portion" },
+            rationale: "Use the planned meal.",
+          }),
+        };
+      }
+      const service = makeMealPlanService(memoryRepository());
+      const created = await Effect.runPromise(
+        service.create(planRequest, context, coverage)
+      );
+      const failure = await Effect.runPromise(
+        service
+          .change(
             {
-              date: "2026-07-27",
-              mealType: "dinner",
-              servings: 2,
-              slotId: "synthetic-dinner-one",
+              actorId,
+              at,
+              change: {
+                _tag: "SetCookEvent",
+                event: {
+                  batchCount: 1,
+                  date: planRequest.startDate,
+                  eventId: "event_bad_output",
+                  option: Schema.decodeUnknownSync(PlanningOptionRef)(option),
+                  outputs: [
+                    {
+                      outputId: "output_bad",
+                      quantity: { amount: 100, unit: "kg" },
+                      source: "adult_confirmed",
+                    },
+                  ],
+                },
+              },
+              expectedRevision: 0,
+              mutationId: decodeMutationId(
+                `bad_output_${optionKind}_${allocated}`
+              ),
+              planId: created.planId,
+              reason: "Record a cook event.",
             },
+            context
+          )
+          .pipe(Effect.flip)
+      );
+      expect(failure).toMatchObject({
+        _tag: "MealPlanRuleViolation",
+        reason,
+      });
+    }
+  );
+
+  it("keeps a valid prepared output available for a later meal", async () => {
+    const planRequest = request();
+    const context = authority({ recipeResolved: true });
+    const coverage = flexibleCoverage(planRequest, context);
+    const [, later] = coverage;
+    if (later === undefined) {
+      throw new Error("Expected a later meal");
+    }
+    coverage[1] = {
+      ...later,
+      resolution: decodeResolution({
+        _tag: "Prepared",
+        outputId: "output_roast",
+        quantity: { amount: 1, unit: "portion" },
+        rationale: "Use a portion from the cook event.",
+      }),
+    };
+    const service = makeMealPlanService(memoryRepository());
+    const created = await Effect.runPromise(
+      service.create(
+        planRequest,
+        context,
+        flexibleCoverage(planRequest, context)
+      )
+    );
+    const changed = await Effect.runPromise(
+      service.change(
+        {
+          actorId,
+          at,
+          change: {
+            _tag: "ReplaceDraftPlan",
+            cookEvents: [
+              {
+                batchCount: 1,
+                date: planRequest.startDate,
+                eventId: "event_roast",
+                option: Schema.decodeUnknownSync(PlanningOptionRef)(roast),
+                outputs: [
+                  {
+                    outputId: "output_roast",
+                    quantity: { amount: 1, unit: "portion" },
+                    source: "adult_confirmed",
+                  },
+                ],
+              },
+            ],
+            coverage,
+          },
+          expectedRevision: 0,
+          mutationId: decodeMutationId("valid_roast_output"),
+          planId: created.planId,
+          reason: "Plan a cooked meal for later.",
+        },
+        context
+      )
+    );
+    expect(changed._tag).toBe("Draft");
+    const approved = await Effect.runPromise(
+      service.approve(
+        {
+          actorId,
+          at,
+          expectedRevision: 1,
+          mutationId: decodeMutationId("approve_valid_roast_output"),
+          planId: created.planId,
+          reason: "Approve prepared meal.",
+        },
+        context
+      )
+    );
+    expect(approved.active.coverage[1]?.resolution).toMatchObject({
+      _tag: "Prepared",
+      outputId: "output_roast",
+    });
+  });
+
+  it("refreshes a removed cook option and lets the adult resolve its dependent meal", async () => {
+    const planRequest = request();
+    const original = authority({ recipeResolved: true });
+    const coverage = flexibleCoverage(planRequest, original);
+    const [, later] = coverage;
+    if (later === undefined) {
+      throw new Error("Expected a later meal");
+    }
+    coverage[1] = {
+      ...later,
+      resolution: decodeResolution({
+        _tag: "Prepared",
+        outputId: "output_roast",
+        quantity: { amount: 1, unit: "portion" },
+        rationale: "Use a portion from the cook event.",
+      }),
+    };
+    const service = makeMealPlanService(memoryRepository());
+    const created = await Effect.runPromise(
+      service.create(
+        planRequest,
+        original,
+        flexibleCoverage(planRequest, original)
+      )
+    );
+    const planned = await Effect.runPromise(
+      service.change(
+        {
+          actorId,
+          at,
+          change: {
+            _tag: "ReplaceDraftPlan",
+            cookEvents: [
+              {
+                batchCount: 1,
+                date: planRequest.startDate,
+                eventId: "event_roast",
+                option: Schema.decodeUnknownSync(PlanningOptionRef)(roast),
+                outputs: [
+                  {
+                    outputId: "output_roast",
+                    quantity: { amount: 1, unit: "portion" },
+                    source: "adult_confirmed",
+                  },
+                ],
+              },
+            ],
+            coverage,
+          },
+          expectedRevision: 0,
+          mutationId: decodeMutationId("plan_removed_roast"),
+          planId: created.planId,
+          reason: "Plan a cooked meal for later.",
+        },
+        original
+      )
+    );
+    expect(planned.revision).toBe(1);
+    const current: PlanningAuthority = {
+      ...original,
+      content: Schema.decodeUnknownSync(PlanningContentSnapshot)({
+        ...original.content,
+        configVersion: 2,
+        options: original.content.options.filter(
+          (option) => option.optionId !== roast.optionId
+        ),
+      }),
+    };
+    const refreshed = await Effect.runPromise(
+      service.change(
+        {
+          actorId,
+          at,
+          change: { _tag: "RefreshInputs" },
+          expectedRevision: 1,
+          mutationId: decodeMutationId("refresh_removed_roast"),
+          planId: created.planId,
+          reason: "The recipe was removed.",
+        },
+        current
+      )
+    );
+    if (refreshed._tag !== "Draft") {
+      throw new Error("Expected draft");
+    }
+    expect(refreshed.proposed.cookEvents).toEqual([]);
+    expect(refreshed.proposed.coverage[1]?.resolution).toMatchObject({
+      _tag: "Gap",
+      reason: "dependent_output_removed",
+    });
+    expect(refreshed.proposed.pins.preparedSources).toEqual([]);
+    expect(refreshed.proposed.pins.content).toEqual([]);
+    expect(refreshed.audit.at(-1)?.changedRequirements).toContainEqual(
+      later.requirement
+    );
+    const repaired = await Effect.runPromise(
+      service.change(
+        {
+          actorId,
+          at,
+          change: {
+            _tag: "SetCoverage",
+            requirement: later.requirement,
+            resolution: decodeResolution({
+              _tag: "Flexible",
+              rationale: "Adult chose a flexible meal.",
+            }),
+          },
+          expectedRevision: 2,
+          mutationId: decodeMutationId("resolve_removed_roast"),
+          planId: created.planId,
+          reason: "Resolve the missing prepared meal.",
+        },
+        current
+      )
+    );
+    expect(repaired.revision).toBe(3);
+    const approved = await Effect.runPromise(
+      service.approve(
+        {
+          actorId,
+          at,
+          expectedRevision: 3,
+          mutationId: decodeMutationId("approve_removed_roast"),
+          planId: created.planId,
+          reason: "Approve the repaired plan.",
+        },
+        current
+      )
+    );
+    expect(approved._tag).toBe("Approved");
+  });
+
+  it("refuses approval of a stored prepared meal from an invalid cook output", async () => {
+    const planRequest = request();
+    const context = authority({ recipeResolved: true });
+    const repository = memoryRepository();
+    const service = makeMealPlanService(repository);
+    const created = await Effect.runPromise(
+      service.create(
+        planRequest,
+        context,
+        flexibleCoverage(planRequest, context)
+      )
+    );
+    if (created._tag !== "Draft") {
+      throw new Error("Expected draft");
+    }
+    const [, preparedEntry] = created.proposed.coverage;
+    if (preparedEntry === undefined) {
+      throw new Error("Expected a later meal");
+    }
+    const unsafe = {
+      ...created,
+      proposed: repinPlanVersion(
+        Schema.decodeUnknownSync(MealPlanVersion)({
+          ...created.proposed,
+          cookEvents: [
             {
-              date: "2026-07-28",
-              mealType: "dinner",
-              servings: 2,
-              slotId: "synthetic-dinner-two",
+              batchCount: 1,
+              date: planRequest.startDate,
+              eventId: "event_bad_source",
+              option: roast,
+              outputs: [
+                {
+                  outputId: "output_bad_source",
+                  quantity: { amount: 100, unit: "kg" },
+                  source: "adult_confirmed",
+                },
+              ],
             },
           ],
+          coverage: created.proposed.coverage.map((entry) =>
+            entry === preparedEntry
+              ? {
+                  ...entry,
+                  resolution: decodeResolution({
+                    _tag: "Prepared",
+                    outputId: "output_bad_source",
+                    quantity: { amount: 1, unit: "kg" },
+                    rationale: "Use the cooked meal.",
+                  }),
+                }
+              : entry
+          ),
         }),
-        syntheticPlanningPolicy
-      )
+        context
+      ),
+      revision: 1,
+    };
+    await Effect.runPromise(
+      repository.save({
+        expectedRevision: 0,
+        mutationFingerprint: "stored_invalid_draft",
+        mutationId: decodeMutationId("stored_invalid_draft"),
+        next: unsafe,
+      })
     );
-    const maxUseViolation = await Effect.runPromise(
-      Effect.flip(
-        maxUseTracer.service.swap(
-          decodeSwap({
-            ...baseSwap,
-            draftId: maxUseDraft.draftId,
-            mutationId: "swap-max-use-violation",
-            replacementImportId: syntheticReplacementRecipeId,
-            slotId: "synthetic-dinner-one",
-          })
+    const failure = await Effect.runPromise(
+      service
+        .approve(
+          {
+            actorId,
+            at,
+            expectedRevision: 1,
+            mutationId: decodeMutationId("approve_invalid_source"),
+            planId: created.planId,
+            reason: "Review prepared meal.",
+          },
+          context
         )
-      )
+        .pipe(Effect.flip)
     );
-    expect(maxUseViolation).toMatchObject({
-      _tag: "MealPlanSwapRejected",
-      reason: "hard_constraint_violation",
+    expect(failure).toMatchObject({
+      _tag: "MealPlanRuleViolation",
+      reason: "quantity_unit_mismatch",
     });
   });
 
-  it("keeps drafts review-gated and rejects stale or terminal lifecycle writes", async () => {
-    const tracer = makeSyntheticMealPlanTracer();
-    const draft = await Effect.runPromise(
-      tracer.service.create(syntheticMealPlanRequest, syntheticPlanningPolicy)
+  it("accepts a complete agent proposal atomically and preserves its retry result", async () => {
+    const context = authority();
+    const planRequest = request();
+    const service = makeMealPlanService(memoryRepository());
+    const created = await Effect.runPromise(
+      service.create(planRequest, context)
     );
-    const decodeDecision = Schema.decodeUnknownSync(MealPlanDecisionRequest);
-    const decisionBase = {
-      actorId: "synthetic_operator",
-      decidedAt: "2026-07-22T10:04:00.000Z",
-      draftId: draft.draftId,
+    if (created._tag !== "Draft") {
+      throw new Error("Expected draft");
+    }
+    expect(
+      created.proposed.coverage.every(
+        ({ resolution }) => resolution._tag === "Gap"
+      )
+    ).toBe(true);
+    const complete = flexibleCoverage(planRequest, context);
+    const [first] = complete;
+    if (first === undefined) {
+      throw new Error("Expected first occasion");
+    }
+    complete[0] = {
+      ...first,
+      resolution: decodeResolution({
+        _tag: "MealOption",
+        eventId: "event_cereal",
+        option: cereal,
+        quantity: { amount: 1, unit: "item" },
+        rationale: "Reviewed breakfast.",
+      }),
+    };
+    const command = {
+      actorId,
+      at,
+      change: {
+        _tag: "ReplaceDraftPlan" as const,
+        cookEvents: [],
+        coverage: complete,
+      },
       expectedRevision: 0,
-      reason: "Synthetic tracer approval.",
-    } as const;
-    const approve = decodeDecision({
-      ...decisionBase,
-      mutationId: "approve-synthetic-draft",
+      mutationId: decodeMutationId("whole_week_1"),
+      planId: created.planId,
+      reason: "Review a full proposal.",
+    };
+    const changed = await Effect.runPromise(service.change(command, context));
+    expect(changed._tag).toBe("Draft");
+    expect(changed.revision).toBe(1);
+    expect(await Effect.runPromise(service.change(command, context))).toEqual(
+      changed
+    );
+    const approved = await Effect.runPromise(
+      service.approve(
+        {
+          actorId,
+          at,
+          expectedRevision: 1,
+          mutationId: decodeMutationId("approve_week_1"),
+          planId: created.planId,
+          reason: "Approve this week.",
+        },
+        context
+      )
+    );
+    expect(
+      approved.active.coverage.every(
+        ({ resolution }) => resolution._tag !== "Gap"
+      )
+    ).toBe(true);
+  });
+
+  it("keeps an approved version immutable while a later revision is proposed", async () => {
+    const context = authority();
+    const planRequest = request();
+    const service = makeMealPlanService(memoryRepository());
+    const created = await Effect.runPromise(
+      service.create(
+        planRequest,
+        context,
+        flexibleCoverage(planRequest, context)
+      )
+    );
+    const command = (id: string, revision: number) => ({
+      actorId,
+      at,
+      expectedRevision: revision,
+      mutationId: decodeMutationId(id),
+      planId: created.planId as MealPlanId,
+      reason: "Adult review.",
     });
-
-    expect(draft._tag).toBe("Draft");
-    const approved = await Effect.runPromise(tracer.service.approve(approve));
-    const approveReplay = await Effect.runPromise(
-      tracer.service.approve(
-        decodeDecision({
-          ...approve,
-          decidedAt: "2026-07-22T10:06:00.000Z",
-        })
-      )
+    const approved = await Effect.runPromise(
+      service.approve(command("approve_1", 0), context)
     );
-    expect(approved).toEqual(approveReplay);
-    expect(approved).toMatchObject({ _tag: "Approved", revision: 1 });
-    expect(approved.decision.decidedAt).toEqual(approve.decidedAt);
-
-    const changedDecisionIntent = await Effect.runPromise(
-      Effect.flip(
-        tracer.service.approve(
-          decodeDecision({
-            ...approve,
-            decidedAt: "2026-07-22T10:06:00.000Z",
-            reason: "A materially different approval reason.",
-          })
-        )
-      )
+    const replay = await Effect.runPromise(
+      service.approve(command("approve_1", 0), context)
     );
-    expect(changedDecisionIntent).toMatchObject({
-      _tag: "MealPlanMutationConflict",
-      mutationId: "approve-synthetic-draft",
-    });
-
-    const decisionCollision = await Effect.runPromise(
-      Effect.flip(tracer.service.reject(approve))
+    expect(replay).toEqual(approved);
+    const proposed = await Effect.runPromise(
+      service.proposeRevision(command("revision_1", 1), context)
     );
-    expect(decisionCollision).toMatchObject({
-      _tag: "MealPlanMutationConflict",
-      mutationId: "approve-synthetic-draft",
-    });
-
-    const illegalReject = await Effect.runPromise(
-      Effect.flip(
-        tracer.service.reject(
-          decodeDecision({
-            ...decisionBase,
-            expectedRevision: 1,
-            mutationId: "reject-approved-draft",
-          })
-        )
-      )
-    );
-    expect(illegalReject).toMatchObject({
-      _tag: "MealPlanTransitionRejected",
-      lifecycle: "Approved",
-    });
-
-    const stored = Option.getOrThrow(
-      await Effect.runPromise(tracer.service.read(draft.draftId))
-    );
-    expect(stored).toEqual(approved);
-
-    const rejectedTracer = makeSyntheticMealPlanTracer();
-    const rejectedDraft = await Effect.runPromise(
-      rejectedTracer.service.create(
-        syntheticMealPlanRequest,
-        syntheticPlanningPolicy
-      )
-    );
-    const rejected = await Effect.runPromise(
-      rejectedTracer.service.reject(
-        decodeDecision({
-          ...decisionBase,
-          draftId: rejectedDraft.draftId,
-          mutationId: "reject-synthetic-draft",
-        })
-      )
-    );
-    expect(rejected).toMatchObject({ _tag: "Rejected", revision: 1 });
+    expect(proposed._tag).toBe("ProposedRevision");
+    if (proposed._tag !== "ProposedRevision") {
+      return;
+    }
+    expect(proposed.active).toEqual(approved.active);
+    expect(proposed.proposed.number).toBe(approved.active.number + 1);
+    expect(proposed.audit.at(-1)?.action).toBe("propose_revision");
   });
 });

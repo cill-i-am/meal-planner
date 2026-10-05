@@ -18,7 +18,7 @@ export class AuthPage {
       .getByRole("button", { exact: true, name: "Create account" })
       .click();
     await expect(
-      this.page.getByRole("heading", { name: "Name your family" })
+      this.page.getByRole("heading", { name: "Who’s at your table?" })
     ).toBeVisible();
   }
 

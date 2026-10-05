@@ -8,9 +8,12 @@ export class FamilyPage {
   }
 
   async create(name: string) {
+    await this.page
+      .getByRole("button", { name: "Add manually instead" })
+      .click();
     await this.page.getByLabel("Family name", { exact: true }).fill(name);
     await this.page
-      .getByRole("button", { exact: true, name: "Create family" })
+      .getByRole("button", { exact: true, name: "Create our family" })
       .click();
     await this.expectReview();
   }

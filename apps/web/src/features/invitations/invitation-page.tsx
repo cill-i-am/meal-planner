@@ -169,8 +169,8 @@ export const InvitationPage = ({
     try {
       const result = await respond.submit(decision);
       await navigate({
-        search: result.status === "joined" ? { familyId: result.familyId } : {},
-        to: "/setup",
+        search: {},
+        to: result.status === "joined" ? "/" : "/setup",
       });
     } catch {
       setActionError(

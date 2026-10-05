@@ -8,13 +8,13 @@ const Avatar = ({
   size = "default",
   ...props
 }: AvatarPrimitive.Root.Props & {
-  size?: "default" | "sm" | "lg";
+  size?: "default" | "sm" | "lg" | "xl";
 }) => (
   <AvatarPrimitive.Root
     data-slot="avatar"
     data-size={size}
     className={cn(
-      "group/avatar after:border-border relative flex size-8 shrink-0 rounded-full select-none after:absolute after:inset-0 after:rounded-full after:border after:mix-blend-darken data-[size=lg]:size-10 data-[size=sm]:size-6 dark:after:mix-blend-lighten",
+      "group/avatar after:border-border data-[size=xl]:shadow-surface data-[size=xl]:ring-background relative flex size-8 shrink-0 rounded-full select-none after:absolute after:inset-0 after:rounded-full after:border after:mix-blend-darken data-[size=lg]:size-10 data-[size=sm]:size-6 data-[size=xl]:size-20 data-[size=xl]:ring-1 dark:after:mix-blend-lighten",
       className
     )}
     {...props}
@@ -42,7 +42,7 @@ const AvatarFallback = ({
   <AvatarPrimitive.Fallback
     data-slot="avatar-fallback"
     className={cn(
-      "bg-muted text-muted-foreground flex size-full items-center justify-center rounded-full text-sm group-data-[size=sm]/avatar:text-xs",
+      "bg-muted text-muted-foreground group-data-[size=xl]/avatar:font-display flex size-full items-center justify-center rounded-full text-sm group-data-[size=sm]/avatar:text-xs group-data-[size=xl]/avatar:text-4xl",
       {
         blue: "bg-person-blue text-foreground",
         lilac: "bg-person-lilac text-foreground",

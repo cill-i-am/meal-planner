@@ -6,6 +6,8 @@ Effect v4 API with a private Cloudflare Worker for household meal planning and r
 
 `src/worker.ts` composes Better Auth, household membership and meal-plan routes, recipe imports, provider accounting and recovery, and `/health`. The Website reaches this private Worker through a service binding; browser requests stay same-origin.
 
+`src/worker-entry.ts` exports the native conversation Durable Object beside the Worker declaration. The pinned Alchemy build explicitly retains that native export alongside its Effect exports. Source-file URLs resolve only during planning. The API captures its Alchemy binding context during construction and supplies it to request effects; the bridge supplies the request scope and execution context separately.
+
 Household state lives in the household Durable Object. Global D1 stores Better Auth and provider accounting. Alchemy owns infrastructure; Drizzle Kit owns database schemas and migrations.
 
 See [the infrastructure guide](../../docs/how-to/operate-infrastructure.md) for bindings, configuration, local runtime proof, and deployment boundaries. [The recipe-import architecture](../../docs/reference/recipe-import.md) describes import authority and processing.

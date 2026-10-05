@@ -12,6 +12,16 @@ The AI proposes facts. The participant must confirm a reviewed command before it
 can change household data. An unfinished proposal or raw conversation history is
 not a confirmed command.
 
+## Shared family conversation
+
+The [shared family conversation](agent-conversations.md) is a separate scope
+from an adult's private interview. Its context includes current confirmed
+household facts and admitted planning records. It never receives private
+interview transcripts or unfinished private proposals. A shared suggestion
+changes a profile, routine, meal setup or plan only after an authorized adult
+reviews and accepts the typed action. The browser displays private interview
+history separately from confirmed facts in Our tastes.
+
 ## Current runtime
 
 `PrivateInterviewSession` extends Cloudflare's **base Agent**.
@@ -57,6 +67,14 @@ command for explicit recovery.
 
 Using base Agent does not add private HTTP response bodies, RPC methods that return
 transcripts, SDK state synchronization or parent access to transcripts.
+
+The deployed [private Worker binding](../../apps/api/src/features/private-output/private-output-binding.ts)
+uses the same stage-owned AI Gateway and scoped token as the family conversation.
+Its model is GPT-6 Luna through Cloudflare Responses. The model receives only the
+bound participant's private session context. It must return one closed
+`submitDiscoveryTurn` tool call; application code validates the result before
+recording a private proposal. Gateway logging, caching and provider response
+storage are disabled. A missing binding fails the turn as `not_configured`.
 
 ## Fresh profile review
 

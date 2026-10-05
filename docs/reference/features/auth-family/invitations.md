@@ -49,6 +49,12 @@ Accepted in Better Auth and linked in household storage are separate persistence
 steps. The server owns their coordination. Seeing “accepted” is not enough to
 prove that the user can enter the household as the correct person.
 
+The recipient-verification callback keeps the request's Effect context when
+Better Auth invokes its Promise hook, so the household RPC retains its Worker
+bindings. After joining selects the family, navigation opens the workspace with
+its own search contract. Completed setup also drops the setup-only `familyId`
+parameter before opening the workspace.
+
 A response operation cannot demonstrate that the invitation email arrived.
 Invitation read permission is recipient-specific; knowledge of an ID is not
 permission. Avoid testing with the organizer session when the case requires the

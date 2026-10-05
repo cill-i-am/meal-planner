@@ -12,10 +12,17 @@ import {
   HouseholdPersonAssociationConflict,
   HouseholdPersonMutationCollision,
   MealPlan,
+  MealPlanSummary,
   MealPlanNotFound,
   MealPlanPersistenceFailure,
-  MealPlanPolicy,
   MealPlanRequest,
+  PlanningContentSnapshot,
+  SavedRecipePage,
+  PlanningContentRejected,
+  ChangeMealPlanPayload,
+  DecideMealPlanPayload,
+  MutatePlanningContentPayload,
+  SavedRecipePageQuery,
 } from "@meal-planner/household-api";
 import type {
   AssociateAdultInvitationPayload,
@@ -26,11 +33,7 @@ import type {
   HouseholdPeopleFailure,
   HouseholdPeoplePrincipal,
   InviteHouseholdAdultPayload,
-  MealPlanMutationConflict,
-  MealPlanRequestConflict,
-  MealPlanSwapRejected,
-  MealPlanTransitionRejected,
-  MealPlanVersionConflict,
+  MealPlanId,
   HouseholdOrganizationId,
 } from "@meal-planner/household-api";
 import { Clock, Effect, Layer, Schema } from "effect";
@@ -41,15 +44,17 @@ import type { AuthenticatedOrganizationResolver } from "../auth/auth.principal.j
 import { AuthenticatedOrganizationResolver as AuthenticatedOrganizationResolverService } from "../auth/auth.principal.js";
 import type { HouseholdDomainWorkerMethods } from "./household-domain-worker.js";
 import type {
-  HouseholdCreateMealPlanFromRecipeBankInput,
+  HouseholdChangeMealPlanInput,
+  HouseholdCreateMealPlanInput,
   HouseholdDecideMealPlanInput,
+  HouseholdListSavedRecipesInput,
   HouseholdMealPlanWire,
+  HouseholdMealPlanSummaryListWire,
+  HouseholdMutatePlanningContentInput,
+  HouseholdPlanningContentWire,
+  HouseholdReadPlanningContentInput,
   HouseholdReadMealPlanInput,
-  HouseholdSwapMealPlanFromRecipeBankInput,
-} from "./household-meal-plan.contract.js";
-import {
-  HouseholdManualMealSwapCommand,
-  HouseholdMealPlanDecisionCommand,
+  HouseholdSavedRecipePageWire,
 } from "./household-meal-plan.contract.js";
 import type {
   HouseholdDomainFailure,
@@ -60,21 +65,21 @@ import { HouseholdInvalidInput } from "./household.contract.js";
 import type {
   HouseholdDomainGateway,
   HouseholdMealPlanGateway,
+  HouseholdPlanningContentGateway,
   HouseholdPeopleGateway,
-  MealPlanCreateFailure,
-  MealPlanDecisionFailure,
-  MealPlanReadFailure,
-  MealPlanSwapFailure,
+  HouseholdMealPlanFailure,
 } from "./household.gateway.js";
 import {
   HouseholdDomainGateway as HouseholdDomainGatewayService,
   HouseholdMealPlanGateway as HouseholdMealPlanGatewayService,
+  HouseholdPlanningContentGateway as HouseholdPlanningContentGatewayService,
   HouseholdPeopleGateway as HouseholdPeopleGatewayService,
   HouseholdPeopleOrganizerRequired,
 } from "./household.gateway.js";
 import {
   HouseholdHttpApiLayer,
   HouseholdMealPlanHttpApiLayer,
+  HouseholdPlanningContentHttpApiLayer,
   HouseholdPeopleHttpApiLayer,
 } from "./household.http.js";
 import {
@@ -113,7 +118,6 @@ import {
   deriveHouseholdPersonLinkageSubject,
 } from "./people/household-people.identity.js";
 import type { MemberDepartureWorkflowStarter } from "./people/member-departure.js";
-import type { HouseholdRecipeImportFailure } from "./recipe-import/household-recipe-import.contract.js";
 import {
   makeHouseholdMemberAdmission,
   makeHouseholdPeopleAdmission,
@@ -128,31 +132,43 @@ interface HouseholdDomainPort {
 
 type MealPlanDomainFailure =
   | HouseholdDomainFailure
-  | MealPlanMutationConflict
-  | MealPlanNotFound
-  | MealPlanPersistenceFailure
-  | MealPlanRequestConflict
-  | MealPlanSwapRejected
-  | MealPlanTransitionRejected
-  | MealPlanVersionConflict
-  | HouseholdRecipeImportFailure;
+  | HouseholdMealPlanFailure
+  | PlanningContentRejected;
 
 interface HouseholdMealPlanDomainPort {
-  readonly approveMealPlan: (
-    input: HouseholdDecideMealPlanInput
-  ) => Effect.Effect<HouseholdMealPlanWire, MealPlanDomainFailure>;
-  readonly createMealPlanFromRecipeBank: (
-    input: HouseholdCreateMealPlanFromRecipeBankInput
+  readonly createMealPlan: (
+    input: HouseholdCreateMealPlanInput
   ) => Effect.Effect<HouseholdMealPlanWire, MealPlanDomainFailure>;
   readonly readMealPlan: (
     input: HouseholdReadMealPlanInput
   ) => Effect.Effect<HouseholdMealPlanWire | null, MealPlanDomainFailure>;
-  readonly rejectMealPlan: (
+  readonly listMealPlans: (
+    input: HouseholdReadPlanningContentInput
+  ) => Effect.Effect<HouseholdMealPlanSummaryListWire, MealPlanDomainFailure>;
+  readonly changeMealPlan: (
+    input: HouseholdChangeMealPlanInput
+  ) => Effect.Effect<HouseholdMealPlanWire, MealPlanDomainFailure>;
+  readonly approveMealPlan: (
     input: HouseholdDecideMealPlanInput
   ) => Effect.Effect<HouseholdMealPlanWire, MealPlanDomainFailure>;
-  readonly swapMealPlanFromRecipeBank: (
-    input: HouseholdSwapMealPlanFromRecipeBankInput
+  readonly proposeMealPlanRevision: (
+    input: HouseholdDecideMealPlanInput
   ) => Effect.Effect<HouseholdMealPlanWire, MealPlanDomainFailure>;
+  readonly acceptMealPlanRevision: (
+    input: HouseholdDecideMealPlanInput
+  ) => Effect.Effect<HouseholdMealPlanWire, MealPlanDomainFailure>;
+  readonly rejectMealPlanRevision: (
+    input: HouseholdDecideMealPlanInput
+  ) => Effect.Effect<HouseholdMealPlanWire, MealPlanDomainFailure>;
+  readonly readPlanningContent: (
+    input: HouseholdReadPlanningContentInput
+  ) => Effect.Effect<HouseholdPlanningContentWire, MealPlanDomainFailure>;
+  readonly mutatePlanningContent: (
+    input: HouseholdMutatePlanningContentInput
+  ) => Effect.Effect<HouseholdPlanningContentWire, MealPlanDomainFailure>;
+  readonly listSavedRecipes: (
+    input: HouseholdListSavedRecipesInput
+  ) => Effect.Effect<HouseholdSavedRecipePageWire, MealPlanDomainFailure>;
 }
 
 interface HouseholdPeopleDomainPort {
@@ -309,80 +325,66 @@ const linkageSubject = (
   );
 
 /** Capture the authenticated Better Auth invitation recipient at acceptance time. */
-export const makeHouseholdInvitationRecipientVerifier =
-  (
-    domain: Pick<
-      HouseholdDomainWorkerMethods,
-      "confirmAdultInvitationRecipient"
-    >
-  ) =>
-  (input: {
-    readonly invitationId: InvitationId;
-    readonly organizationId: HouseholdOrganizationId;
-    readonly userId: UserId;
-  }): Promise<void> =>
-    Effect.runPromise(
-      Effect.gen(function* verifyInvitationRecipient() {
-        const { organizationId } = input;
-        const acceptedInvitationDigest = yield* deriveHouseholdInvitationDigest(
-          organizationId,
-          input.invitationId
-        );
-        const recipientLinkageSubject =
-          yield* deriveHouseholdPersonLinkageSubject(
-            organizationId,
-            input.userId
-          );
-        yield* domain.confirmAdultInvitationRecipient({
-          admission: {
-            actor: {
-              _tag: "System",
-              purpose: "person_invitation_acceptance",
+export const makeHouseholdInvitationRecipientVerifier = (
+  domain: Pick<HouseholdDomainWorkerMethods, "confirmAdultInvitationRecipient">
+) =>
+  Effect.gen(function* makeInvitationRecipientVerifier() {
+    const requestContext = yield* Effect.context<never>();
+    return (input: {
+      readonly invitationId: InvitationId;
+      readonly organizationId: HouseholdOrganizationId;
+      readonly userId: UserId;
+    }): Promise<void> =>
+      Effect.runPromise(
+        Effect.gen(function* verifyInvitationRecipient() {
+          const { organizationId } = input;
+          const acceptedInvitationDigest =
+            yield* deriveHouseholdInvitationDigest(
+              organizationId,
+              input.invitationId
+            );
+          const recipientLinkageSubject =
+            yield* deriveHouseholdPersonLinkageSubject(
+              organizationId,
+              input.userId
+            );
+          yield* domain.confirmAdultInvitationRecipient({
+            admission: {
+              actor: {
+                _tag: "System",
+                purpose: "person_invitation_acceptance",
+              },
+              organizationId,
             },
-            organizationId,
-          },
-          invitationDigest: acceptedInvitationDigest,
-          linkageSubject: recipientLinkageSubject,
-        });
-      })
-    );
+            invitationDigest: acceptedInvitationDigest,
+            linkageSubject: recipientLinkageSubject,
+          });
+        }).pipe(Effect.provideContext(requestContext))
+      );
+  });
 
 const persistenceFailure = (operation: "create" | "read" | "save") =>
   MealPlanPersistenceFailure.make({ operation });
 
-const mapCreateFailure = (
-  error: MealPlanDomainFailure
-): MealPlanCreateFailure =>
-  error._tag === "MealPlanRequestConflict" ||
-  error._tag === "MealPlanPersistenceFailure"
-    ? error
-    : persistenceFailure("create");
-
-const mapReadFailure = (error: MealPlanDomainFailure): MealPlanReadFailure =>
-  error._tag === "MealPlanNotFound" ||
-  error._tag === "MealPlanPersistenceFailure"
-    ? error
-    : persistenceFailure("read");
-
-const mapDecisionFailure = (
-  error: MealPlanDomainFailure
-): MealPlanDecisionFailure => {
+const mapPlanFailure = (
+  error: MealPlanDomainFailure,
+  operation: "create" | "read" | "save"
+): HouseholdMealPlanFailure => {
   switch (error._tag) {
     case "MealPlanMutationConflict":
     case "MealPlanNotFound":
     case "MealPlanPersistenceFailure":
+    case "MealPlanRequestConflict":
+    case "MealPlanRuleViolation":
     case "MealPlanTransitionRejected":
     case "MealPlanVersionConflict": {
       return error;
     }
     default: {
-      return persistenceFailure("save");
+      return persistenceFailure(operation);
     }
   }
 };
-
-const mapSwapFailure = (error: MealPlanDomainFailure): MealPlanSwapFailure =>
-  error._tag === "MealPlanSwapRejected" ? error : mapDecisionFailure(error);
 
 const decodeMealPlan = (wire: HouseholdMealPlanWire) =>
   Schema.decodeUnknownEffect(MealPlan)(wire).pipe(
@@ -1296,109 +1298,147 @@ export const makeHouseholdPeopleGateway = (options: {
   };
 };
 
-/**
- * Adapt admitted household operations to the private household worker.
- * Recipe selection and hydration stay inside the household authority.
- */
 export const makeHouseholdMealPlanGateway = (options: {
   readonly domain: HouseholdMealPlanDomainPort;
-}): HouseholdMealPlanGateway => ({
-  approve: ({ draftId, payload, principal }) =>
-    Effect.gen(function* approveHouseholdMealPlan() {
-      const admission = yield* makeHouseholdMemberAdmission(principal).pipe(
-        Effect.mapError(() => persistenceFailure("save"))
-      );
-      const request = yield* Schema.encodeEffect(
-        HouseholdMealPlanDecisionCommand
-      )({
-        ...payload,
-        draftId,
-      }).pipe(Effect.mapError(() => persistenceFailure("save")));
-      const wire = yield* options.domain
-        .approveMealPlan({
-          admission,
-          request,
-        })
-        .pipe(Effect.mapError(mapDecisionFailure));
+}): HouseholdMealPlanGateway => {
+  const admissionFor = (principal: HouseholdPeoplePrincipal) =>
+    makeHouseholdPeopleAdmission(principal).pipe(
+      Effect.mapError(() => persistenceFailure("read"))
+    );
+  const decision = (
+    method:
+      | "approveMealPlan"
+      | "proposeMealPlanRevision"
+      | "acceptMealPlanRevision"
+      | "rejectMealPlanRevision",
+    input: {
+      readonly planId: MealPlanId;
+      readonly payload: DecideMealPlanPayload;
+      readonly principal: HouseholdPeoplePrincipal;
+    }
+  ) =>
+    Effect.gen(function* decideMealPlan() {
+      const admission = yield* admissionFor(input.principal);
+      const wire = yield* options.domain[method]({
+        admission,
+        payload: Schema.encodeSync(DecideMealPlanPayload)(input.payload),
+        planId: input.planId,
+      }).pipe(Effect.mapError((error) => mapPlanFailure(error, "save")));
       return yield* decodeMealPlan(wire);
-    }),
-  create: ({ payload, principal }) =>
-    Effect.gen(function* createHouseholdMealPlan() {
-      const admission = yield* makeHouseholdMemberAdmission(principal).pipe(
-        Effect.mapError(() => persistenceFailure("create"))
-      );
-      const [policy, request] = yield* Effect.all([
-        Schema.encodeEffect(MealPlanPolicy)(payload.policy).pipe(
-          Effect.mapError(() => persistenceFailure("create"))
-        ),
-        Schema.encodeEffect(MealPlanRequest)(payload.request).pipe(
-          Effect.mapError(() => persistenceFailure("create"))
-        ),
-      ]);
+    });
+  return {
+    acceptRevision: (input) => decision("acceptMealPlanRevision", input),
+    approve: (input) => decision("approveMealPlan", input),
+    change: ({ planId, payload, principal }) =>
+      Effect.gen(function* changeMealPlan() {
+        const admission = yield* admissionFor(principal);
+        const wire = yield* options.domain
+          .changeMealPlan({
+            admission,
+            payload: Schema.encodeSync(ChangeMealPlanPayload)(payload),
+            planId,
+          })
+          .pipe(Effect.mapError((error) => mapPlanFailure(error, "save")));
+        return yield* decodeMealPlan(wire);
+      }),
+    create: ({ payload, principal }) =>
+      Effect.gen(function* createMealPlan() {
+        const admission = yield* admissionFor(principal);
+        const wire = yield* options.domain
+          .createMealPlan({
+            admission,
+            request: Schema.encodeSync(MealPlanRequest)(payload),
+          })
+          .pipe(Effect.mapError((error) => mapPlanFailure(error, "create")));
+        return yield* decodeMealPlan(wire);
+      }),
+    list: ({ principal }) =>
+      Effect.gen(function* listMealPlans() {
+        const admission = yield* admissionFor(principal);
+        const wire = yield* options.domain
+          .listMealPlans({ admission })
+          .pipe(Effect.mapError((error) => mapPlanFailure(error, "read")));
+        return yield* Schema.decodeUnknownEffect(Schema.Array(MealPlanSummary))(
+          wire
+        ).pipe(Effect.mapError(() => persistenceFailure("read")));
+      }),
+    proposeRevision: (input) => decision("proposeMealPlanRevision", input),
+    read: ({ planId, principal }) =>
+      Effect.gen(function* readMealPlan() {
+        const admission = yield* admissionFor(principal);
+        const wire = yield* options.domain
+          .readMealPlan({ admission, planId })
+          .pipe(Effect.mapError((error) => mapPlanFailure(error, "read")));
+        if (wire === null) {
+          return yield* Effect.fail(MealPlanNotFound.make({ planId }));
+        }
+        return yield* decodeMealPlan(wire);
+      }),
+    rejectRevision: (input) => decision("rejectMealPlanRevision", input),
+  };
+};
+
+const planningContentAdmissionFor = (principal: HouseholdPeoplePrincipal) =>
+  makeHouseholdPeopleAdmission(principal).pipe(
+    Effect.mapError(() =>
+      PlanningContentRejected.make({ reason: "unavailable" })
+    )
+  );
+const planningContentFailure = (
+  error: MealPlanDomainFailure
+): PlanningContentRejected =>
+  error._tag === "PlanningContentRejected"
+    ? error
+    : PlanningContentRejected.make({ reason: "unavailable" });
+
+export const makeHouseholdPlanningContentGateway = (options: {
+  readonly domain: HouseholdMealPlanDomainPort;
+}): HouseholdPlanningContentGateway => ({
+  listSavedRecipes: ({ principal, query }) =>
+    Effect.gen(function* listSavedRecipes() {
+      const admission = yield* planningContentAdmissionFor(principal);
       const wire = yield* options.domain
-        .createMealPlanFromRecipeBank({
+        .listSavedRecipes({
           admission,
-          policy,
-          request,
+          query: Schema.encodeSync(SavedRecipePageQuery)(query),
         })
-        .pipe(Effect.mapError(mapCreateFailure));
-      return yield* decodeMealPlan(wire).pipe(
-        Effect.mapError(() => persistenceFailure("create"))
+        .pipe(Effect.mapError(planningContentFailure));
+      return yield* Schema.decodeUnknownEffect(SavedRecipePage)(wire).pipe(
+        Effect.mapError(() =>
+          PlanningContentRejected.make({ reason: "unavailable" })
+        )
       );
     }),
-  read: ({ draftId, principal }) =>
-    Effect.gen(function* readHouseholdMealPlan() {
-      const admission = yield* makeHouseholdMemberAdmission(principal).pipe(
-        Effect.mapError(() => persistenceFailure("read"))
-      );
+  mutate: ({ principal, payload }) =>
+    Effect.gen(function* mutatePlanningContent() {
+      const admission = yield* planningContentAdmissionFor(principal);
       const wire = yield* options.domain
-        .readMealPlan({
+        .mutatePlanningContent({
           admission,
-          draftId,
+          payload: Schema.encodeSync(MutatePlanningContentPayload)(payload),
         })
-        .pipe(Effect.mapError(mapReadFailure));
-      if (wire === null) {
-        return yield* Effect.fail(MealPlanNotFound.make({ draftId }));
-      }
-      return yield* decodeMealPlan(wire);
+        .pipe(Effect.mapError(planningContentFailure));
+      return yield* Schema.decodeUnknownEffect(PlanningContentSnapshot)(
+        wire
+      ).pipe(
+        Effect.mapError(() =>
+          PlanningContentRejected.make({ reason: "unavailable" })
+        )
+      );
     }),
-  reject: ({ draftId, payload, principal }) =>
-    Effect.gen(function* rejectHouseholdMealPlan() {
-      const admission = yield* makeHouseholdMemberAdmission(principal).pipe(
-        Effect.mapError(() => persistenceFailure("save"))
-      );
-      const request = yield* Schema.encodeEffect(
-        HouseholdMealPlanDecisionCommand
-      )({
-        ...payload,
-        draftId,
-      }).pipe(Effect.mapError(() => persistenceFailure("save")));
+  read: (principal) =>
+    Effect.gen(function* readPlanningContent() {
+      const admission = yield* planningContentAdmissionFor(principal);
       const wire = yield* options.domain
-        .rejectMealPlan({
-          admission,
-          request,
-        })
-        .pipe(Effect.mapError(mapDecisionFailure));
-      return yield* decodeMealPlan(wire);
-    }),
-  swap: ({ draftId, payload, principal }) =>
-    Effect.gen(function* swapHouseholdMealPlan() {
-      const admission = yield* makeHouseholdMemberAdmission(principal).pipe(
-        Effect.mapError(() => persistenceFailure("save"))
+        .readPlanningContent({ admission })
+        .pipe(Effect.mapError(planningContentFailure));
+      return yield* Schema.decodeUnknownEffect(PlanningContentSnapshot)(
+        wire
+      ).pipe(
+        Effect.mapError(() =>
+          PlanningContentRejected.make({ reason: "unavailable" })
+        )
       );
-      const request = yield* Schema.encodeEffect(
-        HouseholdManualMealSwapCommand
-      )({
-        ...payload,
-        draftId,
-      }).pipe(Effect.mapError(() => persistenceFailure("save")));
-      const wire = yield* options.domain
-        .swapMealPlanFromRecipeBank({
-          admission,
-          request,
-        })
-        .pipe(Effect.mapError(mapSwapFailure));
-      return yield* decodeMealPlan(wire);
     }),
 });
 
@@ -1444,6 +1484,21 @@ export const makeHouseholdMealPlanRequestLayer = (options: {
     Layer.succeed(HouseholdMealPlanGatewayService, options.gateway)
   );
   return HouseholdMealPlanHttpApiLayer.pipe(
+    Layer.provide(JsonHttpPlatformServices),
+    Layer.provide(requestServices),
+    HttpRouter.provideRequest(requestServices)
+  );
+};
+
+export const makeHouseholdPlanningContentRequestLayer = (options: {
+  readonly gateway: HouseholdPlanningContentGateway;
+  readonly resolver: AuthenticatedOrganizationResolver;
+}) => {
+  const requestServices = Layer.mergeAll(
+    Layer.succeed(AuthenticatedOrganizationResolverService, options.resolver),
+    Layer.succeed(HouseholdPlanningContentGatewayService, options.gateway)
+  );
+  return HouseholdPlanningContentHttpApiLayer.pipe(
     Layer.provide(JsonHttpPlatformServices),
     Layer.provide(requestServices),
     HttpRouter.provideRequest(requestServices)

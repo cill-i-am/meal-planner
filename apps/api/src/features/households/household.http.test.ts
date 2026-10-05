@@ -1,24 +1,26 @@
 import {
   BootstrapHouseholdCreatorPayload,
+  ChangeMealPlanPayload,
   CreateMealPlanPayload,
   DecideMealPlanPayload,
   HouseholdCreatorBootstrapConflict,
-  HouseholdMealPlanPrincipal,
+  HouseholdMealPlanResponse,
   HouseholdOrganizationId,
   HouseholdPeopleRoster,
   HouseholdPerson,
   HouseholdStatus,
   MealPlan,
-  MealPlanActorId,
-  MealPlanDraftId,
+  MealPlanDraft,
+  MealPlanId,
   MealPlanMutationId,
   MealPlanNotFound,
   MealPlanPersistenceFailure,
-  MealPlanRecipeSnapshotId,
   MealPlanRequestConflict,
-  MealPlanSwapRejected,
+  MealPlanRuleViolation,
+  MealPlanTransitionRejected,
   MealPlanVersionConflict,
-  SwapMealPlanPayload,
+  toHouseholdMealPlanResponse,
+  toMealPlanSummary,
   UserId,
 } from "@meal-planner/household-api";
 import { Effect, Layer, Schema } from "effect";
@@ -53,86 +55,61 @@ const householdStatus = Schema.decodeUnknownSync(HouseholdStatus)({
   organizationId,
   status: "ready",
 });
-const actorId = Schema.decodeUnknownSync(MealPlanActorId)("authenticated-user");
-const admittedActorId = Schema.decodeUnknownSync(MealPlanActorId)(
-  "b6613fdfccc63dff6de05dfe53238e12f9469481e51f4da22b72beb7d17bfb4e"
-);
-const draftId = Schema.decodeUnknownSync(MealPlanDraftId)("draft-week-1");
-const createMealPlanPayload = Schema.decodeUnknownSync(CreateMealPlanPayload, {
-  onExcessProperty: "error",
-})({
-  policy: {
-    allowedDifficulties: ["easy"],
-    allowedTotalTimeBands: ["under_30_minutes"],
-    maxRecipeUses: 1,
-    preferredCuisines: ["Mediterranean"],
-    version: "policy-v1",
-  },
-  request: {
-    requestKey: "week-1",
-    slots: [
-      {
-        date: "2026-08-24",
-        mealType: "dinner",
-        servings: 2,
-        slotId: "monday-dinner",
-      },
-    ],
-  },
+const planId = Schema.decodeUnknownSync(MealPlanId)("plan-week-1");
+const createMealPlanPayload = Schema.decodeUnknownSync(CreateMealPlanPayload)({
+  requestKey: "week-1",
+  startDate: "2026-08-24",
+  weeks: 1,
 });
-const createdMealPlan = Schema.decodeUnknownSync(MealPlan)({
+const createdMealPlan = Schema.decodeUnknownSync(MealPlanDraft)({
   _tag: "Draft",
   audit: [],
-  draftId: "draft-week-1",
-  gaps: [
-    {
-      reason: "no_eligible_approved_recipe",
-      slotId: "monday-dinner",
+  planId,
+  proposed: {
+    cookEvents: [],
+    coverage: [],
+    number: 1,
+    pins: {
+      configVersion: 0,
+      content: [],
+      contentSnapshots: [],
+      people: [],
+      preparedSources: [],
+      routines: [],
     },
-  ],
-  meals: [],
-  policy: createMealPlanPayload.policy,
-  request: createMealPlanPayload.request,
+  },
+  request: createMealPlanPayload,
   revision: 0,
 });
 const approvedMealPlan = Schema.decodeUnknownSync(MealPlan)({
   ...createdMealPlan,
   _tag: "Approved",
-  decision: {
-    actorId,
-    decidedAt: "2026-08-24T18:00:00.000Z",
-    mutationId: "decision-1",
-    outcome: "approved",
-    reason: "The household reviewed this plan.",
-  },
+  active: createdMealPlan.proposed,
+  audit: [
+    {
+      action: "approve",
+      actorId: "a".repeat(64),
+      at: "2026-08-24T18:00:00.000Z",
+      changedRequirements: [],
+      mutationId: "decision-1",
+      reason: "The household reviewed this plan.",
+    },
+  ],
   revision: 1,
 });
-const rejectedMealPlan = Schema.decodeUnknownSync(MealPlan)({
-  ...createdMealPlan,
-  _tag: "Rejected",
-  decision: {
-    actorId,
-    decidedAt: "2026-08-24T18:00:00.000Z",
-    mutationId: "decision-1",
-    outcome: "rejected",
-    reason: "The household reviewed this plan.",
-  },
-  revision: 1,
+const revisedMealPlan = Schema.decodeUnknownSync(MealPlan)({
+  ...Schema.encodeSync(MealPlan)(approvedMealPlan),
+  _tag: "ProposedRevision",
+  proposed: { ...createdMealPlan.proposed, number: 2 },
+  revision: 2,
 });
-const swapMealPlanPayload = Schema.decodeUnknownSync(SwapMealPlanPayload, {
-  onExcessProperty: "error",
-})({
+const changeMealPlanPayload = Schema.decodeUnknownSync(ChangeMealPlanPayload)({
+  change: { _tag: "RefreshInputs" },
   expectedRevision: 0,
-  mutationId: Schema.decodeUnknownSync(MealPlanMutationId)("swap-1"),
-  reason: "Use the quicker approved recipe tonight.",
-  replacementImportId: Schema.decodeUnknownSync(MealPlanRecipeSnapshotId)(
-    "a9f513cb-d1cc-4ae8-99fb-20113da1b83a"
-  ),
-  slotId: "monday-dinner",
+  mutationId: Schema.decodeUnknownSync(MealPlanMutationId)("change-1"),
+  reason: "Refresh confirmed planning inputs.",
 });
-const decideMealPlanPayload = Schema.decodeUnknownSync(DecideMealPlanPayload, {
-  onExcessProperty: "error",
-})({
+const decideMealPlanPayload = Schema.decodeUnknownSync(DecideMealPlanPayload)({
   expectedRevision: 0,
   mutationId: Schema.decodeUnknownSync(MealPlanMutationId)("decision-1"),
   reason: "The household reviewed this plan.",
@@ -248,9 +225,7 @@ describe("household HttpApi boundary", () => {
 });
 
 describe("household people identity and owner boundary", () => {
-  const apps: {
-    readonly dispose: () => Promise<void>;
-  }[] = [];
+  const apps: { readonly dispose: () => Promise<void> }[] = [];
   const creator = Schema.decodeUnknownSync(HouseholdPerson)({
     associationState: "linked",
     associationVersion: 1,
@@ -269,8 +244,7 @@ describe("household people identity and owner boundary", () => {
     people: [creator],
   });
   const bootstrapPayload = Schema.decodeUnknownSync(
-    BootstrapHouseholdCreatorPayload,
-    { onExcessProperty: "error" }
+    BootstrapHouseholdCreatorPayload
   )({ displayName: "Owner", mutationId: "bootstrap-owner" });
 
   afterAll(async () => {
@@ -361,7 +335,6 @@ describe("household people identity and owner boundary", () => {
         )
       )
     );
-
     expect(responses.map(({ status }) => status)).toEqual([200, 200, 200, 200]);
 
     const principals = admitted as readonly {
@@ -455,10 +428,23 @@ describe("household people identity and owner boundary", () => {
   });
 });
 
+const gatewayWith = (
+  overrides: Partial<HouseholdMealPlanGateway>
+): HouseholdMealPlanGateway =>
+  HouseholdMealPlanGateway.of({
+    acceptRevision: () => Effect.die("Unexpected revision acceptance"),
+    approve: () => Effect.die("Unexpected approval"),
+    change: () => Effect.die("Unexpected change"),
+    create: () => Effect.die("Unexpected creation"),
+    list: () => Effect.die("Unexpected list"),
+    proposeRevision: () => Effect.die("Unexpected revision proposal"),
+    read: () => Effect.die("Unexpected read"),
+    rejectRevision: () => Effect.die("Unexpected revision rejection"),
+    ...overrides,
+  });
+
 describe("household meal-plan HttpApi boundary", () => {
-  const apps: {
-    readonly dispose: () => Promise<void>;
-  }[] = [];
+  const apps: { readonly dispose: () => Promise<void> }[] = [];
   const admittedResolver = AuthenticatedOrganizationResolver.of({
     resolve: () =>
       Effect.succeed({
@@ -467,6 +453,21 @@ describe("household meal-plan HttpApi boundary", () => {
         userId: authenticatedUserId,
       }),
   });
+  const sessionHeaders = {
+    "content-type": "application/json",
+    cookie: "better-auth.session_token=session",
+  };
+  const request = (path: string, payload?: Schema.Json) =>
+    new Request(
+      `https://meal-planner.test${path}`,
+      payload === undefined
+        ? { headers: sessionHeaders }
+        : {
+            body: JSON.stringify(payload),
+            headers: sessionHeaders,
+            method: "POST",
+          }
+    );
 
   afterAll(async () => {
     await Promise.all(apps.map(({ dispose }) => dispose()));
@@ -495,455 +496,302 @@ describe("household meal-plan HttpApi boundary", () => {
     return app;
   };
 
-  it("creates a plan only for the organization and actor admitted by Better Auth", async () => {
+  it("uses the admitted household people principal for creation and returns a public plan", async () => {
     const admittedInputs: unknown[] = [];
     const app = makeMealPlanApp({
-      gateway: HouseholdMealPlanGateway.of({
-        approve: () => Effect.die("Unexpected approve"),
+      gateway: gatewayWith({
         create: (input) =>
           Effect.sync(() => {
             admittedInputs.push(input);
             return createdMealPlan;
           }),
-        read: () => Effect.die("Unexpected read"),
-        reject: () => Effect.die("Unexpected reject"),
-        swap: () => Effect.die("Unexpected swap"),
       }),
     });
 
     const response = await app.handler(
-      new Request("https://meal-planner.test/v1/meal-plans", {
-        body: JSON.stringify(
-          Schema.encodeSync(CreateMealPlanPayload)(createMealPlanPayload)
-        ),
-        headers: {
-          "content-type": "application/json",
-          cookie: "better-auth.session_token=session",
-        },
-        method: "POST",
-      })
+      request("/v1/meal-plans", createMealPlanPayload)
     );
 
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toEqual(
-      Schema.encodeSync(MealPlan)(createdMealPlan)
+      toHouseholdMealPlanResponse(createdMealPlan)
     );
-    expect(admittedInputs).toEqual([
-      {
-        payload: createMealPlanPayload,
-        principal: Schema.decodeUnknownSync(HouseholdMealPlanPrincipal)({
-          actorId: admittedActorId,
-          organizationId,
-        }),
-      },
-    ]);
-  });
-
-  it("rejects identity-bearing and unknown command fields before the household gateway", async () => {
-    let routed = false;
-    const app = makeMealPlanApp({
-      gateway: HouseholdMealPlanGateway.of({
-        approve: () => {
-          routed = true;
-          return Effect.succeed(createdMealPlan);
-        },
-        create: () => {
-          routed = true;
-          return Effect.succeed(createdMealPlan);
-        },
-        read: () => Effect.die("Unexpected read"),
-        reject: () => Effect.die("Unexpected reject"),
-        swap: () => {
-          routed = true;
-          return Effect.succeed(createdMealPlan);
-        },
-      }),
+    expect(admittedInputs).toHaveLength(1);
+    expect(admittedInputs[0]).toMatchObject({
+      payload: createMealPlanPayload,
+      principal: { creatorAuthority: null, organizationId },
     });
-    const headers = {
-      "content-type": "application/json",
-      cookie: "better-auth.session_token=session",
+    const { principal } = admittedInputs[0] as {
+      readonly principal: {
+        readonly actorId: string;
+        readonly linkageSubject: string;
+      };
     };
-    const requests = [
-      new Request("https://meal-planner.test/v1/meal-plans", {
-        body: JSON.stringify({
-          ...Schema.encodeSync(CreateMealPlanPayload)(createMealPlanPayload),
-          organizationId: "browser-supplied-organization",
-        }),
-        headers,
-        method: "POST",
-      }),
-      new Request(`https://meal-planner.test/v1/meal-plans/${draftId}/swaps`, {
-        body: JSON.stringify({
-          ...Schema.encodeSync(SwapMealPlanPayload)(swapMealPlanPayload),
-          actorId: "browser-supplied-actor",
-        }),
-        headers,
-        method: "POST",
-      }),
-      new Request(
-        `https://meal-planner.test/v1/meal-plans/${draftId}/approve`,
-        {
-          body: JSON.stringify({
-            ...Schema.encodeSync(DecideMealPlanPayload)(decideMealPlanPayload),
-            decidedAt: "2026-08-24T18:00:00.000Z",
-          }),
-          headers,
-          method: "POST",
-        }
-      ),
-    ];
-
-    const responses = await Promise.all(
-      requests.map((request) => app.handler(request))
-    );
-
-    expect(responses.map(({ status }) => status)).toEqual([400, 400, 400]);
-    expect(routed).toBe(false);
+    expect(principal.actorId).toMatch(/^[a-f\d]{64}$/u);
+    expect(principal.linkageSubject).toMatch(/^[a-f\d]{64}$/u);
+    expect(principal.actorId).not.toBe(principal.linkageSubject);
+    expect(JSON.stringify(admittedInputs)).not.toContain("session_token");
   });
 
-  it("rejects impossible calendar dates before the household gateway", async () => {
-    let routed = false;
+  it("routes list, read and every plan transition with decoded inputs", async () => {
+    const calls: { readonly operation: string; readonly input: unknown }[] = [];
+    const record = (
+      operation: string,
+      input:
+        | Parameters<HouseholdMealPlanGateway["read"]>[0]
+        | Parameters<HouseholdMealPlanGateway["change"]>[0]
+        | Parameters<HouseholdMealPlanGateway["approve"]>[0],
+      result: MealPlan
+    ) =>
+      Effect.sync(() => {
+        calls.push({ input, operation });
+        return result;
+      });
     const app = makeMealPlanApp({
-      gateway: HouseholdMealPlanGateway.of({
-        approve: () => Effect.die("Unexpected approve"),
-        create: () => {
-          routed = true;
-          return Effect.succeed(createdMealPlan);
-        },
-        read: () => Effect.die("Unexpected read"),
-        reject: () => Effect.die("Unexpected reject"),
-        swap: () => Effect.die("Unexpected swap"),
+      gateway: gatewayWith({
+        acceptRevision: (input) =>
+          record("acceptRevision", input, approvedMealPlan),
+        approve: (input) => record("approve", input, approvedMealPlan),
+        change: (input) => record("change", input, createdMealPlan),
+        list: (input) =>
+          Effect.sync(() => {
+            calls.push({ input, operation: "list" });
+            return [toMealPlanSummary(createdMealPlan)];
+          }),
+        proposeRevision: (input) =>
+          record("proposeRevision", input, revisedMealPlan),
+        read: (input) => record("read", input, createdMealPlan),
+        rejectRevision: (input) =>
+          record("rejectRevision", input, approvedMealPlan),
       }),
     });
-    const payload = Schema.encodeSync(CreateMealPlanPayload)(
-      createMealPlanPayload
-    );
-
-    const response = await app.handler(
-      new Request("https://meal-planner.test/v1/meal-plans", {
-        body: JSON.stringify({
-          ...payload,
-          request: {
-            ...payload.request,
-            slots: [{ ...payload.request.slots[0], date: "2026-99-99" }],
-          },
-        }),
-        headers: {
-          "content-type": "application/json",
-          cookie: "better-auth.session_token=session",
-        },
-        method: "POST",
-      })
-    );
-
-    expect(response.status).toBe(400);
-    expect(routed).toBe(false);
-  });
-
-  it("routes read, swap, approve, and reject through the admitted principal", async () => {
-    const calls: object[] = [];
-    const app = makeMealPlanApp({
-      gateway: HouseholdMealPlanGateway.of({
-        approve: (input) =>
-          Effect.sync(() => {
-            calls.push({ input, operation: "approve" });
-            return approvedMealPlan;
-          }),
-        create: () => Effect.die("Unexpected create"),
-        read: (input) =>
-          Effect.sync(() => {
-            calls.push({ input, operation: "read" });
-            return approvedMealPlan;
-          }),
-        reject: (input) =>
-          Effect.sync(() => {
-            calls.push({ input, operation: "reject" });
-            return rejectedMealPlan;
-          }),
-        swap: (input) =>
-          Effect.sync(() => {
-            calls.push({ input, operation: "swap" });
-            return createdMealPlan;
-          }),
-      }),
-    });
-
+    const operations = [
+      ["change", "changes", changeMealPlanPayload],
+      ["approve", "approve", decideMealPlanPayload],
+      ["proposeRevision", "propose-revision", decideMealPlanPayload],
+      ["acceptRevision", "accept-revision", decideMealPlanPayload],
+      ["rejectRevision", "reject-revision", decideMealPlanPayload],
+    ] as const;
     const requests = [
-      new Request(`https://meal-planner.test/v1/meal-plans/${draftId}`, {
-        headers: { cookie: "better-auth.session_token=session" },
-      }),
-      new Request(`https://meal-planner.test/v1/meal-plans/${draftId}/swaps`, {
-        body: JSON.stringify(
-          Schema.encodeSync(SwapMealPlanPayload)(swapMealPlanPayload)
-        ),
-        headers: {
-          "content-type": "application/json",
-          cookie: "better-auth.session_token=session",
-        },
-        method: "POST",
-      }),
-      ...(["approve", "reject"] as const).map(
-        (decision) =>
-          new Request(
-            `https://meal-planner.test/v1/meal-plans/${draftId}/${decision}`,
-            {
-              body: JSON.stringify(
-                Schema.encodeSync(DecideMealPlanPayload)(decideMealPlanPayload)
-              ),
-              headers: {
-                "content-type": "application/json",
-                cookie: "better-auth.session_token=session",
-              },
-              method: "POST",
-            }
-          )
+      request("/v1/meal-plans"),
+      request(`/v1/meal-plans/${planId}`),
+      ...operations.map(([, path, payload]) =>
+        request(`/v1/meal-plans/${planId}/${path}`, payload)
       ),
     ];
-
     const responses = await Promise.all(
-      requests.map((request) => app.handler(request))
+      requests.map((value) => app.handler(value))
     );
 
-    expect(responses.map(({ status }) => status)).toEqual([200, 200, 200, 200]);
-    const responseBodies = await Promise.all(
+    expect(responses.map(({ status }) => status)).toEqual([
+      200, 200, 200, 200, 200, 200, 200,
+    ]);
+    const bodies = await Promise.all(
       responses.map((response) => response.json())
     );
-    expect(responseBodies[0]).not.toHaveProperty("decision.actorId");
-    expect(responseBodies[2]).not.toHaveProperty("decision.actorId");
-    expect(responseBodies[3]).not.toHaveProperty("decision.actorId");
-    expect(JSON.stringify(responseBodies)).not.toContain(actorId);
-    expect(calls).toHaveLength(4);
-    expect(calls).toEqual(
-      expect.arrayContaining([
-        {
-          input: {
-            draftId,
-            principal: { actorId: admittedActorId, organizationId },
-          },
-          operation: "read",
-        },
-        {
-          input: {
-            draftId,
-            payload: swapMealPlanPayload,
-            principal: { actorId: admittedActorId, organizationId },
-          },
-          operation: "swap",
-        },
-        {
-          input: {
-            draftId,
-            payload: decideMealPlanPayload,
-            principal: { actorId: admittedActorId, organizationId },
-          },
-          operation: "approve",
-        },
-        {
-          input: {
-            draftId,
-            payload: decideMealPlanPayload,
-            principal: { actorId: admittedActorId, organizationId },
-          },
-          operation: "reject",
-        },
-      ])
+    expect(bodies[0]).toEqual([toMealPlanSummary(createdMealPlan)]);
+    expect(bodies[1]).toEqual(toHouseholdMealPlanResponse(createdMealPlan));
+    expect(bodies[3]).toEqual(
+      Schema.encodeSync(HouseholdMealPlanResponse)(
+        toHouseholdMealPlanResponse(approvedMealPlan)
+      )
     );
+    expect(bodies[4]).toEqual(
+      Schema.encodeSync(HouseholdMealPlanResponse)(
+        toHouseholdMealPlanResponse(revisedMealPlan)
+      )
+    );
+    expect(JSON.stringify(bodies)).not.toContain('"actorId"');
+    const byOperation = new Map(
+      calls.map((call) => [call.operation, call.input])
+    );
+    expect([...byOperation.keys()].toSorted()).toEqual(
+      ["list", "read", ...operations.map(([operation]) => operation)].toSorted()
+    );
+    for (const call of calls) {
+      expect(call.input).toMatchObject({
+        principal: { creatorAuthority: null, organizationId },
+      });
+    }
+    expect(byOperation.get("read")).toMatchObject({ planId });
+    for (const [operation] of operations) {
+      expect(byOperation.get(operation)).toMatchObject({ planId });
+    }
+    expect(byOperation.get("change")).toMatchObject({
+      payload: changeMealPlanPayload,
+    });
+    for (const [operation] of operations.slice(1)) {
+      expect(byOperation.get(operation)).toMatchObject({
+        payload: decideMealPlanPayload,
+      });
+    }
   });
 
-  it("maps domain and storage failures to stable non-leaking problems", async () => {
-    const requestConflict = Schema.decodeUnknownSync(MealPlanRequestConflict)({
-      _tag: "MealPlanRequestConflict",
-      draftId,
+  it("rejects identity fields, impossible dates and invalid ranges before reaching the gateway", async () => {
+    let routed = false;
+    const app = makeMealPlanApp({
+      gateway: gatewayWith({
+        approve: () => {
+          routed = true;
+          return Effect.succeed(approvedMealPlan);
+        },
+        change: () => {
+          routed = true;
+          return Effect.succeed(createdMealPlan);
+        },
+        create: () => {
+          routed = true;
+          return Effect.succeed(createdMealPlan);
+        },
+      }),
     });
+    const requests = [
+      request("/v1/meal-plans", {
+        ...createMealPlanPayload,
+        organizationId: "browser-supplied",
+      }),
+      request("/v1/meal-plans", {
+        ...createMealPlanPayload,
+        startDate: "2026-99-99",
+      }),
+      request("/v1/meal-plans", { ...createMealPlanPayload, weeks: 13 }),
+      request(`/v1/meal-plans/${planId}/changes`, {
+        ...changeMealPlanPayload,
+        actorId: "browser-supplied",
+      }),
+      request(`/v1/meal-plans/${planId}/approve`, {
+        ...decideMealPlanPayload,
+        decidedAt: "2026-08-24T18:00:00.000Z",
+      }),
+    ];
+    const responses = await Promise.all(
+      requests.map((value) => app.handler(value))
+    );
+
+    expect(responses.map(({ status }) => status)).toEqual([
+      400, 400, 400, 400, 400,
+    ]);
+    expect(routed).toBe(false);
+  });
+
+  it("maps missing plans, rule and lifecycle conflicts, and storage failures to stable problems", async () => {
     const notFound = Schema.decodeUnknownSync(MealPlanNotFound)({
       _tag: "MealPlanNotFound",
-      draftId,
+      planId,
     });
-    const swapRejected = Schema.decodeUnknownSync(MealPlanSwapRejected)({
-      _tag: "MealPlanSwapRejected",
-      reason: "recipe_not_approved",
+    const requestConflict = Schema.decodeUnknownSync(MealPlanRequestConflict)({
+      _tag: "MealPlanRequestConflict",
+      planId,
     });
-    const persistenceFailure = Schema.decodeUnknownSync(
-      MealPlanPersistenceFailure
-    )({ _tag: "MealPlanPersistenceFailure", operation: "save" });
     const versionConflict = Schema.decodeUnknownSync(MealPlanVersionConflict)({
       _tag: "MealPlanVersionConflict",
       actualRevision: 3,
       expectedRevision: 0,
     });
+    const ruleViolation = Schema.decodeUnknownSync(MealPlanRuleViolation)({
+      _tag: "MealPlanRuleViolation",
+      reason: "unresolved_gap",
+    });
+    const transitionRejected = Schema.decodeUnknownSync(
+      MealPlanTransitionRejected
+    )({
+      _tag: "MealPlanTransitionRejected",
+      lifecycle: "Draft",
+    });
+    const persistenceFailure = Schema.decodeUnknownSync(
+      MealPlanPersistenceFailure
+    )({
+      _tag: "MealPlanPersistenceFailure",
+      operation: "save",
+    });
     const app = makeMealPlanApp({
-      gateway: HouseholdMealPlanGateway.of({
+      gateway: gatewayWith({
+        acceptRevision: () => Effect.fail(versionConflict),
         approve: () => Effect.fail(persistenceFailure),
+        change: () => Effect.fail(ruleViolation),
         create: () => Effect.fail(requestConflict),
+        proposeRevision: () => Effect.fail(transitionRejected),
         read: () => Effect.fail(notFound),
-        reject: () => Effect.fail(versionConflict),
-        swap: () => Effect.fail(swapRejected),
       }),
     });
-    const sessionHeaders = {
-      "content-type": "application/json",
-      cookie: "better-auth.session_token=session",
-    };
-    const requests = [
-      new Request("https://meal-planner.test/v1/meal-plans", {
-        body: JSON.stringify(
-          Schema.encodeSync(CreateMealPlanPayload)(createMealPlanPayload)
-        ),
-        headers: sessionHeaders,
-        method: "POST",
-      }),
-      new Request(`https://meal-planner.test/v1/meal-plans/${draftId}`, {
-        headers: sessionHeaders,
-      }),
-      new Request(`https://meal-planner.test/v1/meal-plans/${draftId}/swaps`, {
-        body: JSON.stringify(
-          Schema.encodeSync(SwapMealPlanPayload)(swapMealPlanPayload)
-        ),
-        headers: sessionHeaders,
-        method: "POST",
-      }),
-      ...(["approve", "reject"] as const).map(
-        (decision) =>
-          new Request(
-            `https://meal-planner.test/v1/meal-plans/${draftId}/${decision}`,
-            {
-              body: JSON.stringify(
-                Schema.encodeSync(DecideMealPlanPayload)(decideMealPlanPayload)
-              ),
-              headers: sessionHeaders,
-              method: "POST",
-            }
-          )
+    const responses = await Promise.all([
+      app.handler(request("/v1/meal-plans", createMealPlanPayload)),
+      app.handler(request(`/v1/meal-plans/${planId}`)),
+      app.handler(
+        request(`/v1/meal-plans/${planId}/changes`, changeMealPlanPayload)
       ),
-    ];
-
-    const responses = await Promise.all(
-      requests.map((request) => app.handler(request))
-    );
+      app.handler(
+        request(`/v1/meal-plans/${planId}/approve`, decideMealPlanPayload)
+      ),
+      app.handler(
+        request(
+          `/v1/meal-plans/${planId}/propose-revision`,
+          decideMealPlanPayload
+        )
+      ),
+      app.handler(
+        request(
+          `/v1/meal-plans/${planId}/accept-revision`,
+          decideMealPlanPayload
+        )
+      ),
+    ]);
 
     expect(responses.map(({ status }) => status)).toEqual([
-      409, 404, 400, 500, 409,
+      409, 404, 409, 500, 409, 409,
     ]);
-    await expect(
-      Promise.all(responses.map((response) => response.json()))
-    ).resolves.toEqual([
-      {
-        code: "meal_plan_conflict",
-        message: "The meal plan changed or conflicts with an earlier request.",
-        status: 409,
-      },
-      {
-        code: "meal_plan_not_found",
-        message: "Meal plan not found.",
-        status: 404,
-      },
-      {
-        code: "invalid_request",
-        message: "The meal-plan request is invalid.",
-        status: 400,
-      },
-      {
-        code: "internal_error",
-        message: "Household storage is temporarily unavailable.",
-        status: 500,
-      },
-      {
-        code: "meal_plan_conflict",
-        message: "The meal plan changed or conflicts with an earlier request.",
-        status: 409,
-      },
+    const problems = await Promise.all(
+      responses.map((response) => response.json())
+    );
+    expect(problems.map((problem) => problem.code)).toEqual([
+      "meal_plan_conflict",
+      "meal_plan_not_found",
+      "meal_plan_conflict",
+      "internal_error",
+      "meal_plan_conflict",
+      "meal_plan_conflict",
     ]);
+    expect(problems.map((problem) => problem.reason ?? null)).toEqual([
+      "request_conflict",
+      null,
+      "unresolved_gap",
+      null,
+      "invalid_transition",
+      "version_conflict",
+    ]);
+    expect(JSON.stringify(problems)).not.toContain("actualRevision");
   });
 
-  it("rejects invalid public input before the household gateway", async () => {
-    let routed = false;
+  it("explains missing managed occasions on first draft creation", async () => {
     const app = makeMealPlanApp({
-      gateway: HouseholdMealPlanGateway.of({
-        approve: () => Effect.die("Unexpected approve"),
-        create: () => {
-          routed = true;
-          return Effect.succeed(createdMealPlan);
-        },
-        read: () => Effect.die("Unexpected read"),
-        reject: () => Effect.die("Unexpected reject"),
-        swap: () => Effect.die("Unexpected swap"),
+      gateway: gatewayWith({
+        create: () =>
+          Effect.fail(
+            Schema.decodeUnknownSync(MealPlanRuleViolation)({
+              _tag: "MealPlanRuleViolation",
+              reason: "config_missing",
+            })
+          ),
       }),
     });
-
     const response = await app.handler(
-      new Request("https://meal-planner.test/v1/meal-plans", {
-        body: JSON.stringify({ policy: {}, request: {} }),
-        headers: {
-          "content-type": "application/json",
-          cookie: "better-auth.session_token=session",
-        },
-        method: "POST",
-      })
+      request("/v1/meal-plans", createMealPlanPayload)
     );
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toEqual({
-      code: "invalid_request",
-      message: "The meal-plan request is invalid.",
-      status: 400,
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "meal_plan_conflict",
+      reason: "config_missing",
     });
-    expect(routed).toBe(false);
   });
 
-  it("rejects oversized meal-plan requests before the household gateway", async () => {
+  it("rejects unauthenticated requests before routing", async () => {
     let routed = false;
     const app = makeMealPlanApp({
-      gateway: HouseholdMealPlanGateway.of({
-        approve: () => Effect.die("Unexpected approve"),
+      gateway: gatewayWith({
         create: () => {
           routed = true;
           return Effect.succeed(createdMealPlan);
         },
-        read: () => Effect.die("Unexpected read"),
-        reject: () => Effect.die("Unexpected reject"),
-        swap: () => Effect.die("Unexpected swap"),
-      }),
-    });
-    const oversizedSlots = Array.from({ length: 32 }, (_, index) => ({
-      date: "2026-08-24",
-      mealType: "dinner",
-      servings: 2,
-      slotId: `slot-${String(index + 1)}`,
-    }));
-
-    const response = await app.handler(
-      new Request("https://meal-planner.test/v1/meal-plans", {
-        body: JSON.stringify({
-          ...Schema.encodeSync(CreateMealPlanPayload)(createMealPlanPayload),
-          request: {
-            requestKey: "oversized-plan",
-            slots: oversizedSlots,
-          },
-        }),
-        headers: {
-          "content-type": "application/json",
-          cookie: "better-auth.session_token=session",
-        },
-        method: "POST",
-      })
-    );
-
-    expect(response.status).toBe(400);
-    expect(routed).toBe(false);
-  });
-
-  it("rejects unauthenticated meal-plan requests before routing", async () => {
-    let routed = false;
-    const app = makeMealPlanApp({
-      gateway: HouseholdMealPlanGateway.of({
-        approve: () => Effect.die("Unexpected approve"),
-        create: () => {
-          routed = true;
-          return Effect.succeed(createdMealPlan);
-        },
-        read: () => Effect.die("Unexpected read"),
-        reject: () => Effect.die("Unexpected reject"),
-        swap: () => Effect.die("Unexpected swap"),
       }),
       resolver: AuthenticatedOrganizationResolver.of({
         resolve: () =>
@@ -952,12 +800,9 @@ describe("household meal-plan HttpApi boundary", () => {
           ),
       }),
     });
-
     const response = await app.handler(
       new Request("https://meal-planner.test/v1/meal-plans", {
-        body: JSON.stringify(
-          Schema.encodeSync(CreateMealPlanPayload)(createMealPlanPayload)
-        ),
+        body: JSON.stringify(createMealPlanPayload),
         headers: { "content-type": "application/json" },
         method: "POST",
       })

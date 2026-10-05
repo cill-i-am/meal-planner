@@ -1,18 +1,33 @@
+import { HouseholdOrganizationId } from "@meal-planner/household-api";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Effect, Layer, Redacted } from "effect";
+import { Effect, Layer, Redacted, Result, Schema } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 
-import { makeAuthFamilyHttpLayer } from "../auth-family.js";
+import { handleAgentConversationChatRequest } from "../agent-conversations.js";
+import type { AgentConversationNamespace } from "../agent-conversations.js";
+import { conversationObjectName } from "../features/agent-conversations/conversation-session.js";
+import { ConversationAccess } from "../features/agent-conversations/conversation.contract.js";
 import { makeAlchemyMealPlannerAuth } from "../features/auth/auth.alchemy.js";
 import * as authSchema from "../features/auth/auth.database-schema.js";
-import { makeAuthenticatedOrganizationResolver } from "../features/auth/auth.principal.js";
+import {
+  AuthPrincipalResolver,
+  AuthenticatedOrganizationResolver,
+  makeAuthPrincipalResolver,
+  makeAuthenticatedOrganizationResolver,
+} from "../features/auth/auth.principal.js";
 import type { HouseholdDomainWorkerMethods } from "../features/households/household-domain-worker.js";
 import { makeHouseholdInvitationRecipientVerifier } from "../features/households/household-request-composition.js";
 import type { MemberDepartureWorkflowStarter } from "../features/households/people/member-departure.js";
+import { HouseholdMemberAdmission } from "../features/households/rpc/command-envelope.js";
+import {
+  makeRecipeImportHttpApiLayer,
+  RecipeImportHouseholdDomain,
+} from "../features/imports/import-intent-api.http.js";
+import { RecipeImportWorkflowDispatcher } from "../features/imports/import-workflow-dispatcher.js";
 import { makePrivateConfirmationHttpLayer } from "../features/private-output/private-confirmation.http.js";
 import type {
   PrivateOutputApiPort,
@@ -21,12 +36,21 @@ import type {
 import { makeAuthOutputFence } from "../features/private-output/private-output-mutation.js";
 import { handlePrivateInterviewRequest } from "../features/private-output/private-output.http.js";
 import { raceWithRequestSignal } from "../infrastructure/request-cancellation.js";
+import { makeLocalApiCoreLayer } from "../local/api-core.js";
+import { seedNativeRecipe } from "./agent-conversation-recipe-seed.test-fixture.js";
 
 interface Env {
   readonly BASE_URL: string;
   readonly BETTER_AUTH_SECRET: string;
   readonly MealPlannerAuthDatabase: AnyD1Database;
   readonly HouseholdDomainWorker: object;
+  readonly AgentConversation: Omit<AgentConversationNamespace, "getByName"> & {
+    readonly getByName: (name: string) => ReturnType<
+      AgentConversationNamespace["getByName"]
+    > & {
+      readonly armLostAdvance: (step: number) => Promise<void>;
+    };
+  };
   readonly PrivateOutputApi: PrivateOutputApiPort;
   readonly PrivateOutputMutations: PrivateOutputMutationPort;
   readonly TEST_MAIL: {
@@ -34,6 +58,7 @@ interface Env {
     put: (key: string, value: string) => Promise<void>;
   };
 }
+export { AgentConversation } from "./agent-conversation-control.test-fixture.js";
 const context = RuntimeContext.of({
   Type: "AuthFamilyE2E",
   env: {},
@@ -51,6 +76,8 @@ const departures: MemberDepartureWorkflowStarter = {
   signalRemovalOutcome: () =>
     Effect.die("Linked-account departures are outside this fixture"),
 };
+const isRecipeSeedRequest = (path: string, method: string) =>
+  path === "/__test/conversation/seed-recipe" && method === "POST";
 export default {
   fetch: (request: Request, env: Env) =>
     Effect.runPromise(
@@ -88,7 +115,7 @@ export default {
                 JSON.stringify({ ...mail, kind: "reset" })
               ),
             verifyInvitationRecipient:
-              makeHouseholdInvitationRecipientVerifier(domain),
+              yield* makeHouseholdInvitationRecipientVerifier(domain),
           });
           if (
             url.pathname === "/__test/expire-session" &&
@@ -113,6 +140,61 @@ export default {
               yield* auth.fetchHttpEffect(request)
             );
           }
+          if (
+            url.pathname === "/__test/conversation/lose-next-advance" &&
+            request.method === "POST"
+          ) {
+            const session = yield* auth.api.getSession({
+              headers: request.headers,
+            });
+            if (session === null) {
+              return new Response(null, { status: 401 });
+            }
+            const digest = yield* Effect.promise(() =>
+              crypto.subtle.digest(
+                "SHA-256",
+                new TextEncoder().encode(session.user.id)
+              )
+            );
+            const accountKey = Array.from(new Uint8Array(digest), (byte) =>
+              byte.toString(16).padStart(2, "0")
+            ).join("");
+            const access = Schema.decodeUnknownSync(ConversationAccess)({
+              accountKey,
+              scope: { _tag: "AccountPrivateSetup" },
+            });
+            const name = yield* Effect.promise(() =>
+              conversationObjectName(access)
+            );
+            const stub = env.AgentConversation.getByName(name);
+            yield* Effect.promise(() => stub.armLostAdvance(0));
+            return new Response(null, { status: 204 });
+          }
+          if (
+            url.pathname === "/__test/conversation/add-unlinked-membership" &&
+            request.method === "POST"
+          ) {
+            const session = yield* auth.api.getSession({
+              headers: request.headers,
+            });
+            if (session === null) {
+              return new Response(null, { status: 401 });
+            }
+            const body = yield* Effect.promise(() => request.json());
+            const { familyId } = Schema.decodeUnknownSync(
+              Schema.Struct({ familyId: HouseholdOrganizationId })
+            )(body);
+            yield* Effect.promise(() =>
+              database.insert(authSchema.member).values({
+                createdAt: new Date(),
+                id: crypto.randomUUID(),
+                organizationId: familyId,
+                role: "member",
+                userId: session.user.id,
+              })
+            );
+            return new Response(null, { status: 204 });
+          }
           const privateInterview = yield* handlePrivateInterviewRequest({
             auth,
             household: domain,
@@ -123,6 +205,88 @@ export default {
             return privateInterview;
           }
           const resolver = makeAuthenticatedOrganizationResolver({ auth });
+          const importServices = Layer.mergeAll(
+            Layer.succeed(
+              AuthPrincipalResolver,
+              makeAuthPrincipalResolver({ auth })
+            ),
+            Layer.succeed(AuthenticatedOrganizationResolver, resolver),
+            Layer.succeed(RecipeImportHouseholdDomain, domain),
+            Layer.succeed(
+              RecipeImportWorkflowDispatcher,
+              RecipeImportWorkflowDispatcher.of({
+                dispatch: () =>
+                  Effect.die("Recipe import dispatch is outside this fixture"),
+              })
+            )
+          );
+          const sendInvitationEmail = (mail: {
+            readonly email: string;
+            readonly invitationId: string;
+          }) =>
+            Effect.promise(() =>
+              env.TEST_MAIL.put(
+                mail.email,
+                JSON.stringify({
+                  kind: "invitation",
+                  url: `${env.BASE_URL}/invitation/${encodeURIComponent(mail.invitationId)}`,
+                })
+              )
+            ).pipe(Effect.asVoid);
+          const conversationOptions = {
+            auth,
+            conversations: env.AgentConversation,
+            database,
+            departureWorkflow: departures,
+            domain,
+            headers: request.headers,
+            resolver,
+            sendInvitationEmail,
+          };
+          if (isRecipeSeedRequest(url.pathname, request.method)) {
+            const outcome = yield* Effect.result(
+              Effect.gen(function* seedAdmittedRecipe() {
+                const body = Schema.decodeUnknownSync(
+                  Schema.Struct({ familyId: HouseholdOrganizationId })
+                )(yield* Effect.promise(() => request.json()));
+                yield* resolver.resolve(request.headers, body.familyId);
+                const principal = yield* makeAuthPrincipalResolver({
+                  auth,
+                }).resolve(request.headers);
+                const admission = Schema.decodeUnknownSync(
+                  HouseholdMemberAdmission
+                )({
+                  actor: { _tag: "Member", actorId: principal.actorId },
+                  organizationId: body.familyId,
+                });
+                return yield* seedNativeRecipe(domain, admission);
+              })
+            );
+            return Result.isSuccess(outcome)
+              ? Response.json(outcome.success, { status: 201 })
+              : Response.json(
+                  {
+                    error:
+                      outcome.failure instanceof Error
+                        ? outcome.failure.message
+                        : JSON.stringify(outcome.failure),
+                  },
+                  { status: 500 }
+                );
+          }
+          const conversationResponse =
+            yield* handleAgentConversationChatRequest({
+              ...conversationOptions,
+              request,
+            }).pipe(
+              Effect.provideService(
+                HttpServerRequest.HttpServerRequest,
+                HttpServerRequest.fromWeb(request)
+              )
+            );
+          if (conversationResponse !== null) {
+            return conversationResponse;
+          }
           const handler = yield* HttpRouter.toHttpEffect(
             Layer.mergeAll(
               makePrivateConfirmationHttpLayer({
@@ -130,24 +294,11 @@ export default {
                 household: domain,
                 output: env.PrivateOutputApi,
               }),
-              makeAuthFamilyHttpLayer({
-                auth,
-                database,
-                departureWorkflow: departures,
-                domain,
-                headers: request.headers,
-                resolver,
-                sendInvitationEmail: (mail) =>
-                  Effect.promise(() =>
-                    env.TEST_MAIL.put(
-                      mail.email,
-                      JSON.stringify({
-                        kind: "invitation",
-                        url: `${env.BASE_URL}/invitation/${encodeURIComponent(mail.invitationId)}`,
-                      })
-                    )
-                  ).pipe(Effect.asVoid),
-              })
+              makeLocalApiCoreLayer(conversationOptions),
+              makeRecipeImportHttpApiLayer().pipe(
+                Layer.provide(importServices),
+                HttpRouter.provideRequest(importServices)
+              )
             )
           );
           return HttpServerResponse.toWeb(

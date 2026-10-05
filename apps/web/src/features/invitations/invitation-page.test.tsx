@@ -20,6 +20,7 @@ import {
   AuthClientContext,
   makeAuthClient,
 } from "../auth/index.js";
+import { decodeWorkspaceSearch } from "../meal-workspace/index.js";
 import { InvitationPage, InvitationPageForRoute } from "./invitation-page.js";
 
 let logoutCalls = 0;
@@ -112,12 +113,20 @@ class TestIntersectionObserver {
 const setup = async () => {
   const root = createRootRoute({ component: Outlet });
   const router = createRouter({
-    history: createMemoryHistory({ initialEntries: ["/"] }),
+    history: createMemoryHistory({
+      initialEntries: ["/invitation/synthetic-invite"],
+    }),
     routeTree: root.addChildren([
       createRoute({
         component: () => <h1>Log in</h1>,
         getParentRoute: () => root,
         path: "/login",
+      }),
+      createRoute({
+        component: () => <h1>Your family workspace</h1>,
+        getParentRoute: () => root,
+        path: "/",
+        validateSearch: decodeWorkspaceSearch,
       }),
       createRoute({
         component: () => (
@@ -130,7 +139,7 @@ const setup = async () => {
           </AccountProvider>
         ),
         getParentRoute: () => root,
-        path: "/",
+        path: "/invitation/$invitationId",
       }),
       createRoute({
         component: () => <h1>Your account</h1>,
@@ -208,7 +217,7 @@ it("joins through one generated server operation after explicit consent", async 
   await screen.findByRole("heading", { name: "Join Synthetic family" });
   expect(responses).toHaveLength(0);
   await user.click(screen.getByRole("button", { name: "Join family" }));
-  await screen.findByRole("heading", { name: "Your account" });
+  await screen.findByRole("heading", { name: "Your family workspace" });
   expect(responses).toEqual([
     { decision: "accept", mutationId: expect.any(String) },
   ]);
@@ -224,7 +233,7 @@ it("retries an uncertain acceptance on the mounted screen with its original key"
   const [first] = responses;
   failResponse = false;
   await user.click(await screen.findByRole("button", { name: "Continue" }));
-  await screen.findByRole("heading", { name: "Your account" });
+  await screen.findByRole("heading", { name: "Your family workspace" });
   expect(responses.at(-1)).toEqual(first);
 });
 it("reads the accepted state after reload without replaying a browser mutation", async () => {
@@ -252,6 +261,7 @@ it("keeps an uncertain decline as a decline when retrying", async () => {
   failResponse = false;
   await user.click(await screen.findByRole("button", { name: "Continue" }));
   await waitFor(() => expect(responses).toHaveLength(4));
+  await screen.findByRole("heading", { name: "Your account" });
   expect(responses.at(-1)).toEqual(first);
   expect(first).toMatchObject({ decision: "decline" });
 });

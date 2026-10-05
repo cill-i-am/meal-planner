@@ -1,4 +1,5 @@
 import { HouseholdOrganizationId } from "@meal-planner/household-api";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   createFileRoute,
   useRouter,
@@ -6,9 +7,15 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { Schema } from "effect";
+import { useState } from "react";
 
 import { StatusScreen } from "../components/status-screen.js";
-import { accountQuery } from "../features/auth/index.js";
+import { Button } from "../components/ui/button.js";
+import {
+  accountQuery,
+  requireAuthSuccess,
+  useAuthClient,
+} from "../features/auth/index.js";
 import {
   familyListQuery,
   familyQuery,
@@ -41,9 +48,45 @@ export const Route = createFileRoute("/setup")({
   ),
   errorComponent: () => {
     const router = useRouter();
+    const auth = useAuthClient();
+    const queryClient = useQueryClient();
+    const [signingOut, setSigningOut] = useState(false);
+    const [signOutError, setSignOutError] = useState(false);
     return (
       <StatusScreen
         title="Your family couldn’t be loaded"
+        footer={
+          <div className="flex flex-col items-start gap-3">
+            <Button
+              disabled={signingOut}
+              onClick={async () => {
+                setSigningOut(true);
+                setSignOutError(false);
+                try {
+                  await requireAuthSuccess(auth.signOut());
+                  queryClient.clear();
+                  await router.navigate({
+                    replace: true,
+                    search: { redirect: router.state.location.href },
+                    to: "/login",
+                  });
+                } catch {
+                  setSignOutError(true);
+                } finally {
+                  setSigningOut(false);
+                }
+              }}
+              variant="outline"
+            >
+              {signingOut ? "Logging out…" : "Log out and sign in again"}
+            </Button>
+            {signOutError && (
+              <p className="text-destructive text-sm" role="alert">
+                We couldn’t log you out. Try again.
+              </p>
+            )}
+          </div>
+        }
         retry={() => router.invalidate()}
       />
     );

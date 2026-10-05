@@ -21,6 +21,32 @@ import MealPlannerApi from "./apps/api/src/worker.js";
 import { productionWebsiteHostname } from "./apps/web/website-domain.js";
 import { websiteSource } from "./apps/web/website-source.js";
 
+const websiteDomainConfiguration = (dev: boolean, stage: string) =>
+  Effect.gen(function* WebsiteDomainConfiguration() {
+    if (dev || (stage !== "prod" && stage !== "e2e")) {
+      return;
+    }
+    const zoneId = yield* Config.String("CEIRD_ZONE_ID");
+    if (stage === "e2e") {
+      return {
+        domain: { name: "e2e.ceird.app", zoneId },
+        workersDev: { enabled: false, previewsEnabled: false },
+      };
+    }
+    return { domain: { name: productionWebsiteHostname, zoneId } };
+  });
+
+const stageEmailSending = (dev: boolean, stage: string) =>
+  Effect.gen(function* StageEmailSending() {
+    if (dev || (stage !== "prod" && stage !== "e2e")) {
+      return;
+    }
+    return yield* Cloudflare.Email.SendingSubdomain("MealPlannerMail", {
+      name: stage === "e2e" ? "mail.e2e.ceird.app" : "mail.ceird.app",
+      zoneId: yield* Config.String("CEIRD_ZONE_ID"),
+    });
+  });
+
 export default Alchemy.Stack(
   "MealPlanner",
   {
@@ -42,15 +68,7 @@ export default Alchemy.Stack(
     const importProviderGateway = dev
       ? undefined
       : yield* ImportProviderGateway;
-    // The sending domain is account-wide. Only production owns its lifecycle;
-    // preview and developer stages must not create or delete the same domain.
-    const emailSending =
-      stage === "prod"
-        ? yield* Cloudflare.Email.SendingSubdomain("MealPlannerMail", {
-            name: "mail.ceird.app",
-            zoneId: yield* Config.String("CEIRD_ZONE_ID"),
-          })
-        : undefined;
+    const emailSending = yield* stageEmailSending(dev, stage);
     const browserAnalytics =
       stage === "prod" && !dev
         ? yield* Cloudflare.Rum.Site("MealPlannerWebAnalytics", {
@@ -58,17 +76,10 @@ export default Alchemy.Stack(
           })
         : undefined;
     const api = yield* MealPlannerApi;
-    const websiteDomainProps =
-      stage === "prod" && !dev
-        ? {
-            domain: {
-              name: productionWebsiteHostname,
-              zoneId: yield* Config.String("CEIRD_ZONE_ID"),
-            },
-          }
-        : undefined;
+    const websiteDomainProps = yield* websiteDomainConfiguration(dev, stage);
     const website = yield* Cloudflare.Website.Vite("MealPlannerWebsite", {
       assets: { runWorkerFirst: ["/api/auth/*", "/v1/*"] },
+      dev: { port: 4399 },
       env: {
         BROWSER_ANALYTICS_TOKEN: browserAnalytics?.siteToken ?? "",
         MEAL_PLANNER_API: api,
@@ -100,6 +111,7 @@ Commit: ${github.sha}`,
       authDatabaseName: authDatabase.databaseName,
       emailSendingEnabled: emailSending?.enabled ?? null,
       emailSendingSubdomain: emailSending?.name ?? null,
+      emailSendingSubdomainId: emailSending?.subdomainId ?? null,
       evidenceBucketName: evidenceBucket.bucketName,
       evidenceRetentionSeconds: EvidenceRetentionSeconds,
       importProviderGatewayId:

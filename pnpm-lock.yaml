@@ -106,7 +106,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  alchemy@2.0.0-beta.80: 5190ea9688b0a83ecac6adcc766fa6198f82d65250374fbc31edcf9e64a6c382
+  alchemy@2.0.0-beta.80: 8cb013e6cf02c7578d03f40b57310ea61e6dc9ee867be693425e88a1849b6ff7
   cloudflare-drizzle-tracing@1.1.0: 5b3a49cb652c318d3eff25434263c8159f9f51f37c499230af0cc147ae36fd6a
 
 importers:
@@ -139,7 +139,7 @@ importers:
         version: 24.13.3
       alchemy:
         specifier: 2.0.0-beta.80
-        version: 2.0.0-beta.80(patch_hash=5190ea9688b0a83ecac6adcc766fa6198f82d65250374fbc31edcf9e64a6c382)(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.2.1))(@effect/vitest@4.0.0(effect@4.0.0)(vitest@5.0.3))(@types/node@24.13.3)(@types/react@19.2.18)(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20261002.1)(@effect/sql-d1@4.0.0(effect@4.0.0))(@effect/sql-sqlite-do@4.0.0(effect@4.0.0))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0)(mysql2@3.24.3(@types/node@24.13.3))(valibot@1.2.0(typescript@6.0.3))(zod@4.5.4))(effect@4.0.0)(hono@4.11.4)(mysql2@3.24.3(@types/node@24.13.3))(typescript@6.0.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.21.3)
+        version: 2.0.0-beta.80(patch_hash=8cb013e6cf02c7578d03f40b57310ea61e6dc9ee867be693425e88a1849b6ff7)(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.2.1))(@effect/vitest@4.0.0(effect@4.0.0)(vitest@5.0.3))(@types/node@24.13.3)(@types/react@19.2.18)(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20261002.1)(@effect/sql-d1@4.0.0(effect@4.0.0))(@effect/sql-sqlite-do@4.0.0(effect@4.0.0))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0)(mysql2@3.24.3(@types/node@24.13.3))(valibot@1.2.0(typescript@6.0.3))(zod@4.5.4))(effect@4.0.0)(hono@4.11.4)(mysql2@3.24.3(@types/node@24.13.3))(typescript@6.0.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.21.3)
       effect:
         specifier: 4.0.0
         version: 4.0.0
@@ -169,13 +169,16 @@ importers:
     dependencies:
       '@alchemy.run/better-auth':
         specifier: 2.0.0-beta.80
-        version: 2.0.0-beta.80(e15ec0c9bd568e95fc76deb18d9851c9)
+        version: 2.0.0-beta.80(323b27a095e1847f5db45cacc8135060)
       '@better-auth/drizzle-adapter':
         specifier: 1.7.5
         version: 1.7.5(@better-auth/core@1.7.5(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.2)(better-call@1.4.0(zod@4.5.4))(jose@6.2.11)(kysely@0.29.5)(nanostores@1.5.3))(@better-auth/utils@0.4.2)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260918.1)(@effect/sql-d1@4.0.0(effect@4.0.0))(@effect/sql-sqlite-do@4.0.0(effect@4.0.0))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0)(mysql2@3.24.3(@types/node@24.13.3))(valibot@1.2.0(typescript@6.0.3))(zod@4.5.4))
       '@effect/platform-node':
         specifier: 4.0.0
         version: 4.0.0(effect@4.0.0)(redis@6.2.1)
+      '@meal-planner/agent-conversations-api':
+        specifier: workspace:*
+        version: link:../../packages/agent-conversations-api
       '@meal-planner/browser-observability-api':
         specifier: workspace:*
         version: link:../../packages/browser-observability-api
@@ -206,12 +209,15 @@ importers:
       '@tanstack/ai-persistence':
         specifier: 0.5.7
         version: 0.5.7(@tanstack/ai@0.54.0(zod@4.5.4))(vitest@5.0.3)
+      '@tanstack/openai-base':
+        specifier: 0.10.11
+        version: 0.10.11(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.7.3)(@tanstack/ai@0.54.0(zod@4.5.4))(ws@8.21.3)(zod@4.5.4)
       agents:
         specifier: 0.22.0
         version: 0.22.0(@babel/core@8.0.1)(@babel/runtime@7.29.7)(@modelcontextprotocol/client@2.0.0)(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.5.4))(@modelcontextprotocol/server@2.0.0)(@tanstack/ai@0.54.0(zod@4.5.4))(react@19.2.8)(rolldown@1.2.7)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))(zod@4.5.4)
       alchemy:
         specifier: 2.0.0-beta.80
-        version: 2.0.0-beta.80(patch_hash=5190ea9688b0a83ecac6adcc766fa6198f82d65250374fbc31edcf9e64a6c382)(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.2.1))(@effect/vitest@4.0.0(effect@4.0.0)(vitest@5.0.3))(@types/node@24.13.3)(@types/react@19.2.18)(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260918.1)(@effect/sql-d1@4.0.0(effect@4.0.0))(@effect/sql-sqlite-do@4.0.0(effect@4.0.0))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0)(mysql2@3.24.3(@types/node@24.13.3))(valibot@1.2.0(typescript@6.0.3))(zod@4.5.4))(effect@4.0.0)(hono@4.11.4)(mysql2@3.24.3(@types/node@24.13.3))(typescript@6.0.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.21.3)
+        version: 2.0.0-beta.80(patch_hash=8cb013e6cf02c7578d03f40b57310ea61e6dc9ee867be693425e88a1849b6ff7)(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.2.1))(@effect/vitest@4.0.0(effect@4.0.0)(vitest@5.0.3))(@types/node@24.13.3)(@types/react@19.2.18)(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260918.1)(@effect/sql-d1@4.0.0(effect@4.0.0))(@effect/sql-sqlite-do@4.0.0(effect@4.0.0))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0)(mysql2@3.24.3(@types/node@24.13.3))(valibot@1.2.0(typescript@6.0.3))(zod@4.5.4))(effect@4.0.0)(hono@4.11.4)(mysql2@3.24.3(@types/node@24.13.3))(typescript@6.0.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.21.3)
       better-auth:
         specifier: 1.7.5
         version: 1.7.5(@tanstack/react-start@1.168.49(crossws@0.4.12(srvx@1.0.3))(esbuild@0.28.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(rolldown@1.2.7)(supports-color@10.2.2)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)))(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260918.1)(@effect/sql-d1@4.0.0(effect@4.0.0))(@effect/sql-sqlite-do@4.0.0(effect@4.0.0))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0)(mysql2@3.24.3(@types/node@24.13.3))(valibot@1.2.0(typescript@6.0.3))(zod@4.5.4))(mysql2@3.24.3(@types/node@24.13.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@5.0.3)
@@ -230,6 +236,9 @@ importers:
       jpeg-js:
         specifier: 0.4.4
         version: 0.4.4
+      openai:
+        specifier: 6.49.0
+        version: 6.49.0(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.7.3)(ws@8.21.3)(zod@4.5.4)
       parse5:
         specifier: 8.0.1
         version: 8.0.1
@@ -288,6 +297,18 @@ importers:
       '@fontsource-variable/inter':
         specifier: 5.3.0
         version: 5.3.0
+      '@fontsource/instrument-serif':
+        specifier: 5.3.0
+        version: 5.3.0
+      '@json-render/core':
+        specifier: 0.21.0
+        version: 0.21.0(zod@4.5.4)
+      '@json-render/react':
+        specifier: 0.21.0
+        version: 0.21.0(react@19.2.8)(zod@4.5.4)
+      '@meal-planner/agent-conversations-api':
+        specifier: workspace:*
+        version: link:../../packages/agent-conversations-api
       '@meal-planner/browser-observability-api':
         specifier: workspace:*
         version: link:../../packages/browser-observability-api
@@ -309,6 +330,9 @@ importers:
       '@meal-planner/recipe-import-api':
         specifier: workspace:*
         version: link:../../packages/recipe-import-api
+      '@shadcn/react':
+        specifier: 0.3.1
+        version: 0.3.1(@types/react@19.2.18)(react@19.2.8)
       '@tanstack/ai':
         specifier: 0.54.0
         version: 0.54.0(zod@4.5.4)
@@ -363,6 +387,9 @@ importers:
       tailwind-merge:
         specifier: 3.7.0
         version: 3.7.0
+      zod:
+        specifier: 4.5.4
+        version: 4.5.4
     devDependencies:
       '@axe-core/playwright':
         specifier: 4.13.0
@@ -409,6 +436,28 @@ importers:
       vite:
         specifier: 8.2.2
         version: 8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)
+      vitest:
+        specifier: 5.0.3
+        version: 5.0.3(@types/node@24.13.3)(@vitest/browser-playwright@5.0.3)(@vitest/ui@5.0.3)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
+
+  packages/agent-conversations-api:
+    dependencies:
+      '@meal-planner/families':
+        specifier: workspace:*
+        version: link:../families
+      '@meal-planner/household-api':
+        specifier: workspace:*
+        version: link:../household-api
+      '@meal-planner/recipe-import-api':
+        specifier: workspace:*
+        version: link:../recipe-import-api
+      effect:
+        specifier: 4.0.0
+        version: 4.0.0
+    devDependencies:
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
       vitest:
         specifier: 5.0.3
         version: 5.0.3(@types/node@24.13.3)(@vitest/browser-playwright@5.0.3)(@vitest/ui@5.0.3)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -1945,6 +1994,9 @@ packages:
   '@fontsource-variable/inter@5.3.0':
     resolution: {integrity: sha512-OupL48va4JNofb97w6NYeF9S7W/kHNKM0Er8Dem5nqi4jeOLrVJDoE8tZEpnMJmtkvNbB1EIPPwHcdkF6b1oUA==}
 
+  '@fontsource/instrument-serif@5.3.0':
+    resolution: {integrity: sha512-mDiaIg0u67sYV59fie92Wz4sM8UiVlbL7fLxnFPCKkX15DMASEnQTREbaP5S5/3DCcsoAOcQ0sV9E4AeY4QqYQ==}
+
   '@hono/node-server@1.19.9':
     resolution: {integrity: sha512-vHL6w3ecZsky+8P5MD+eFfaGTyCeOHUIFYMGpQGbrBTSmNNoxv0if69rEZ5giu36weC5saFuznL411gRX7bJDw==}
     engines: {node: '>=18.14.1'}
@@ -2155,6 +2207,16 @@ packages:
   '@js-temporal/polyfill@0.5.1':
     resolution: {integrity: sha512-hloP58zRVCRSpgDxmqCWJNlizAlUgJFqG2ypq79DCvyv9tHjRYMDOcPFjzfl/A1/YxDvRCZz8wvZvmapQnKwFQ==}
     engines: {node: '>=12'}
+
+  '@json-render/core@0.21.0':
+    resolution: {integrity: sha512-vysEbTjO1y8mEgAsp0tztRyaWCkNsBrG8MhAqbndGK3qmMXjMRdCNtk21+AQRNKdRelFGVAwBgtUNW8tfjQlsw==}
+    peerDependencies:
+      zod: ^4.0.0
+
+  '@json-render/react@0.21.0':
+    resolution: {integrity: sha512-z/fZg0L8fJe2dnnQjWkmMw409iBclSWcOqdjoBy8eLHeBr/7F7VipzkY1CfgA2Fa5uW+zxZ54OvWMtdDcsp/yg==}
+    peerDependencies:
+      react: ^19.2.3
 
   '@keyv/bigmap@1.3.1':
     resolution: {integrity: sha512-WbzE9sdmQtKy8vrNPa9BRnwZh5UF4s1KTmSK0KUVLo3eff5BlQNNWDnFOouNpKfPKDnms9xynJjsMYjMaT/aFQ==}
@@ -3059,6 +3121,17 @@ packages:
       eslint: '>=9.30.0'
     peerDependenciesMeta:
       eslint:
+        optional: true
+
+  '@shadcn/react@0.3.1':
+    resolution: {integrity: sha512-2gOR0HDMtWeRsCZfNDaU0YDFdgH3zsDQ6lz67Fv/y/qjY9y+R8kJqAn6q56phqv7/zHi0wqURjntrNO9zL7vnQ==}
+    peerDependencies:
+      '@types/react': '>=19'
+      react: '>=19'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      react:
         optional: true
 
   '@sindresorhus/is@7.2.0':
@@ -6820,9 +6893,9 @@ snapshots:
     optionalDependencies:
       zod: 4.5.4
 
-  '@alchemy.run/better-auth@2.0.0-beta.80(e15ec0c9bd568e95fc76deb18d9851c9)':
+  '@alchemy.run/better-auth@2.0.0-beta.80(323b27a095e1847f5db45cacc8135060)':
     dependencies:
-      alchemy: 2.0.0-beta.80(patch_hash=5190ea9688b0a83ecac6adcc766fa6198f82d65250374fbc31edcf9e64a6c382)(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.2.1))(@effect/vitest@4.0.0(effect@4.0.0)(vitest@5.0.3))(@types/node@24.13.3)(@types/react@19.2.18)(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260918.1)(@effect/sql-d1@4.0.0(effect@4.0.0))(@effect/sql-sqlite-do@4.0.0(effect@4.0.0))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0)(mysql2@3.24.3(@types/node@24.13.3))(valibot@1.2.0(typescript@6.0.3))(zod@4.5.4))(effect@4.0.0)(hono@4.11.4)(mysql2@3.24.3(@types/node@24.13.3))(typescript@6.0.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.21.3)
+      alchemy: 2.0.0-beta.80(patch_hash=8cb013e6cf02c7578d03f40b57310ea61e6dc9ee867be693425e88a1849b6ff7)(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.2.1))(@effect/vitest@4.0.0(effect@4.0.0)(vitest@5.0.3))(@types/node@24.13.3)(@types/react@19.2.18)(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260918.1)(@effect/sql-d1@4.0.0(effect@4.0.0))(@effect/sql-sqlite-do@4.0.0(effect@4.0.0))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0)(mysql2@3.24.3(@types/node@24.13.3))(valibot@1.2.0(typescript@6.0.3))(zod@4.5.4))(effect@4.0.0)(hono@4.11.4)(mysql2@3.24.3(@types/node@24.13.3))(typescript@6.0.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.21.3)
       better-auth: 1.7.5(@tanstack/react-start@1.168.49(crossws@0.4.12(srvx@1.0.3))(esbuild@0.28.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(rolldown@1.2.7)(supports-color@10.2.2)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)))(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260918.1)(@effect/sql-d1@4.0.0(effect@4.0.0))(@effect/sql-sqlite-do@4.0.0(effect@4.0.0))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0)(mysql2@3.24.3(@types/node@24.13.3))(valibot@1.2.0(typescript@6.0.3))(zod@4.5.4))(mysql2@3.24.3(@types/node@24.13.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@5.0.3)
       effect: 4.0.0
     optionalDependencies:
@@ -8103,6 +8176,8 @@ snapshots:
 
   '@fontsource-variable/inter@5.3.0': {}
 
+  '@fontsource/instrument-serif@5.3.0': {}
+
   '@hono/node-server@1.19.9(hono@4.11.4)':
     dependencies:
       hono: 4.11.4
@@ -8256,6 +8331,17 @@ snapshots:
   '@js-temporal/polyfill@0.5.1':
     dependencies:
       jsbi: 4.3.2
+
+  '@json-render/core@0.21.0(zod@4.5.4)':
+    dependencies:
+      zod: 4.5.4
+
+  '@json-render/react@0.21.0(react@19.2.8)(zod@4.5.4)':
+    dependencies:
+      '@json-render/core': 0.21.0(zod@4.5.4)
+      react: 19.2.8
+    transitivePeerDependencies:
+      - zod
 
   '@keyv/bigmap@1.3.1(keyv@5.6.0)':
     dependencies:
@@ -8886,6 +8972,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
       - typescript
+
+  '@shadcn/react@0.3.1(@types/react@19.2.18)(react@19.2.8)':
+    optionalDependencies:
+      '@types/react': 19.2.18
+      react: 19.2.8
 
   '@sindresorhus/is@7.2.0': {}
 
@@ -9831,7 +9922,7 @@ snapshots:
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
-  alchemy@2.0.0-beta.80(patch_hash=5190ea9688b0a83ecac6adcc766fa6198f82d65250374fbc31edcf9e64a6c382)(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.2.1))(@effect/vitest@4.0.0(effect@4.0.0)(vitest@5.0.3))(@types/node@24.13.3)(@types/react@19.2.18)(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260918.1)(@effect/sql-d1@4.0.0(effect@4.0.0))(@effect/sql-sqlite-do@4.0.0(effect@4.0.0))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0)(mysql2@3.24.3(@types/node@24.13.3))(valibot@1.2.0(typescript@6.0.3))(zod@4.5.4))(effect@4.0.0)(hono@4.11.4)(mysql2@3.24.3(@types/node@24.13.3))(typescript@6.0.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.21.3):
+  alchemy@2.0.0-beta.80(patch_hash=8cb013e6cf02c7578d03f40b57310ea61e6dc9ee867be693425e88a1849b6ff7)(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.2.1))(@effect/vitest@4.0.0(effect@4.0.0)(vitest@5.0.3))(@types/node@24.13.3)(@types/react@19.2.18)(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260918.1)(@effect/sql-d1@4.0.0(effect@4.0.0))(@effect/sql-sqlite-do@4.0.0(effect@4.0.0))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0)(mysql2@3.24.3(@types/node@24.13.3))(valibot@1.2.0(typescript@6.0.3))(zod@4.5.4))(effect@4.0.0)(hono@4.11.4)(mysql2@3.24.3(@types/node@24.13.3))(typescript@6.0.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.21.3):
     dependencies:
       '@alchemy.run/cloudflare-runtime': 2.0.0-beta.80(@distilled.cloud/cloudflare@1.0.0-rc.13(effect@4.0.0))(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.2.1))(@types/node@24.13.3)(effect@4.0.0)(rolldown@1.2.5)(typescript@6.0.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
       '@alchemy.run/floci': 2.0.0-beta.80(effect@4.0.0)
@@ -9888,7 +9979,7 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  alchemy@2.0.0-beta.80(patch_hash=5190ea9688b0a83ecac6adcc766fa6198f82d65250374fbc31edcf9e64a6c382)(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.2.1))(@effect/vitest@4.0.0(effect@4.0.0)(vitest@5.0.3))(@types/node@24.13.3)(@types/react@19.2.18)(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20261002.1)(@effect/sql-d1@4.0.0(effect@4.0.0))(@effect/sql-sqlite-do@4.0.0(effect@4.0.0))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0)(mysql2@3.24.3(@types/node@24.13.3))(valibot@1.2.0(typescript@6.0.3))(zod@4.5.4))(effect@4.0.0)(hono@4.11.4)(mysql2@3.24.3(@types/node@24.13.3))(typescript@6.0.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.21.3):
+  alchemy@2.0.0-beta.80(patch_hash=8cb013e6cf02c7578d03f40b57310ea61e6dc9ee867be693425e88a1849b6ff7)(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.2.1))(@effect/vitest@4.0.0(effect@4.0.0)(vitest@5.0.3))(@types/node@24.13.3)(@types/react@19.2.18)(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20261002.1)(@effect/sql-d1@4.0.0(effect@4.0.0))(@effect/sql-sqlite-do@4.0.0(effect@4.0.0))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.0)(mysql2@3.24.3(@types/node@24.13.3))(valibot@1.2.0(typescript@6.0.3))(zod@4.5.4))(effect@4.0.0)(hono@4.11.4)(mysql2@3.24.3(@types/node@24.13.3))(typescript@6.0.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))(ws@8.21.3):
     dependencies:
       '@alchemy.run/cloudflare-runtime': 2.0.0-beta.80(@distilled.cloud/cloudflare@1.0.0-rc.13(effect@4.0.0))(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.2.1))(@types/node@24.13.3)(effect@4.0.0)(rolldown@1.2.5)(typescript@6.0.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
       '@alchemy.run/floci': 2.0.0-beta.80(effect@4.0.0)

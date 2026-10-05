@@ -14,10 +14,21 @@ which family it is allowed to access; no real credentials belong in the report.
 
 ## Driving it with agent-browser
 
-### Create and complete
+### Create through conversation
+
+1. Sign up with a disposable account. Verify its name occupies the first place.
+2. Describe a partner and two children. Check all four table names and roles.
+3. Correct a name or role in chat. Verify the same table updates without a form.
+4. Explicitly confirm the displayed family. Verify one stable save action, completed
+   setup and automatic entry at `/?area=tastes`.
+5. Reload. Verify the corrected family remains saved.
+6. In a separate fault run, lose the action response, reload, and explicitly retry
+   **Check save** or **try again**. Verify the same action ID and reviewed payload.
+
+### Create manually and complete
 
 1. Create a disposable account through signup and enter setup.
-2. Name the family. Record its returned ID; confirm the creator appears once.
+2. Select **Add manually instead** and name the family. Record its returned ID; confirm the creator appears once.
 3. Add a child and an adult without invitation. Reload and verify all three people.
 4. Edit one person's name, cancel another edit, and verify the saved results.
 5. Select **Continue**. Confirm setup is still `in_progress`.

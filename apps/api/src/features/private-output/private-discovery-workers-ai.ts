@@ -1,9 +1,12 @@
+/* eslint-disable max-classes-per-file -- Each published adapter belongs to this model boundary. */
 import type * as NativeCloudflare from "@cloudflare/workers-types";
 import { chat, EventType, maxIterations, toolDefinition } from "@tanstack/ai";
-import type { ChatMiddleware, StreamChunk } from "@tanstack/ai";
+import type { ChatMiddleware, StreamChunk, TextOptions } from "@tanstack/ai";
 import { CloudflareTextAdapter } from "@tanstack/ai-cloudflare";
 import type { CloudflareBindingConfig } from "@tanstack/ai-cloudflare";
+import { OpenAIBaseResponsesTextAdapter } from "@tanstack/openai-base";
 import { Effect, Option, Schema } from "effect";
+import OpenAI from "openai";
 
 import { toStrictJsonSchema } from "../../infrastructure/strict-json-schema.js";
 import { PrivateChatReply } from "./private-chat-reply.js";
@@ -32,7 +35,7 @@ const PRIVATE_DISCOVERY_RESPONSE_BYTES = 65_536;
 const PositiveAmount = Schema.Number.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(0))
 );
-export const PrivateDiscoveryConfiguration = Schema.Struct({
+const PrivateDiscoveryBaseConfiguration = {
   gatewayId: Schema.String.pipe(
     Schema.check(Schema.isNonEmpty(), Schema.isMaxLength(64))
   ),
@@ -40,14 +43,17 @@ export const PrivateDiscoveryConfiguration = Schema.Struct({
   maxOutputTokens: Schema.Int.pipe(
     Schema.check(Schema.isBetween({ maximum: 65_536, minimum: 1 }))
   ),
-  model: Schema.Literals([
-    "@cf/openai/gpt-oss-120b",
-    "@cf/moonshotai/kimi-k2.6",
-  ]),
   outputUsdPerMillionTokens: PositiveAmount,
   timeoutMs: Schema.Int.pipe(
     Schema.check(Schema.isBetween({ maximum: 900_000, minimum: 1000 }))
   ),
+};
+export const WorkersAIPrivateDiscoveryConfiguration = Schema.Struct({
+  ...PrivateDiscoveryBaseConfiguration,
+  model: Schema.Literals([
+    "@cf/openai/gpt-oss-120b",
+    "@cf/moonshotai/kimi-k2.6",
+  ]),
 }).pipe(
   Schema.check(
     Schema.makeFilter(
@@ -58,11 +64,34 @@ export const PrivateDiscoveryConfiguration = Schema.Struct({
     )
   )
 );
+export type WorkersAIPrivateDiscoveryConfiguration =
+  typeof WorkersAIPrivateDiscoveryConfiguration.Type;
+export const CloudflareResponsesPrivateDiscoveryConfiguration = Schema.Struct({
+  ...PrivateDiscoveryBaseConfiguration,
+  maxOutputTokens: Schema.Int.pipe(
+    Schema.check(Schema.isBetween({ maximum: 16_384, minimum: 1 }))
+  ),
+  model: Schema.Literal("openai/gpt-6-luna"),
+  provider: Schema.Literal("cloudflare-responses"),
+  timeoutMs: Schema.Int.pipe(
+    Schema.check(Schema.isBetween({ maximum: 300_000, minimum: 1000 }))
+  ),
+}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
+export type CloudflareResponsesPrivateDiscoveryConfiguration =
+  typeof CloudflareResponsesPrivateDiscoveryConfiguration.Type;
+export const PrivateDiscoveryConfiguration = Schema.Union([
+  WorkersAIPrivateDiscoveryConfiguration,
+  CloudflareResponsesPrivateDiscoveryConfiguration,
+]);
 export type PrivateDiscoveryConfiguration =
   typeof PrivateDiscoveryConfiguration.Type;
 export interface PrivateDiscoveryModelEnvironment {
   readonly PRIVATE_DISCOVERY_CONFIG?: string | null;
   readonly PrivateDiscoveryAI?: CloudflareBindingConfig["binding"];
+  readonly CLOUDFLARE_ACCOUNT_ID?: string | null;
+  readonly CLOUDFLARE_API_TOKEN?: string | null;
+  /** Local provider fixture seam; production uses the SDK's fetch. */
+  readonly responsesFetch?: typeof fetch;
 }
 
 const failure = (
@@ -75,6 +104,15 @@ const configuration = Schema.decodeUnknownOption(
   Schema.fromJsonString(PrivateDiscoveryConfiguration),
   { onExcessProperty: "error" }
 );
+const RestCredentials = Schema.Struct({
+  accountId: Schema.String.pipe(
+    Schema.check(Schema.isPattern(/^[a-f\d]{32}$/u))
+  ),
+  apiKey: Schema.String.pipe(
+    Schema.check(Schema.isNonEmpty(), Schema.isPattern(/^\S+$/u))
+  ),
+});
+const restCredentials = Schema.decodeUnknownOption(RestCredentials);
 
 const unknownUsage: PrivateDiscoveryUsage = {
   estimatedCostUsd: null,
@@ -91,7 +129,7 @@ const submissionDescription =
   "Submit one private discovery intent for application validation. This never confirms a household fact.";
 
 const providerRequest = (
-  config: PrivateDiscoveryConfiguration,
+  config: WorkersAIPrivateDiscoveryConfiguration,
   context: PrivateDiscoveryContext,
   parameters: Record<string, unknown>
 ) => ({
@@ -131,7 +169,7 @@ const providerRequest = (
 
 /** App-owned request contract; the maintained adapter owns SDK streaming and tool assembly. */
 class PrivateDiscoveryTextAdapter extends CloudflareTextAdapter<
-  PrivateDiscoveryConfiguration["model"]
+  WorkersAIPrivateDiscoveryConfiguration["model"]
 > {
   readonly #request: ReturnType<typeof providerRequest>;
 
@@ -154,6 +192,53 @@ class PrivateDiscoveryTextAdapter extends CloudflareTextAdapter<
   }
 }
 
+/** The published Responses adapter owns streaming and function-call assembly. */
+class PrivateDiscoveryResponsesAdapter extends OpenAIBaseResponsesTextAdapter<"openai/gpt-6-luna"> {
+  readonly #config: CloudflareResponsesPrivateDiscoveryConfiguration;
+  readonly #instructions: string;
+
+  constructor(
+    config: CloudflareResponsesPrivateDiscoveryConfiguration,
+    credentials: typeof RestCredentials.Type,
+    instructions: string,
+    transport?: typeof fetch
+  ) {
+    const options: ConstructorParameters<typeof OpenAI>[0] = {
+      apiKey: credentials.apiKey,
+      baseURL: `https://api.cloudflare.com/client/v4/accounts/${credentials.accountId}/ai/v1`,
+      defaultHeaders: {
+        "cf-aig-collect-log": "false",
+        "cf-aig-gateway-id": config.gatewayId,
+        "cf-aig-max-attempts": "1",
+        "cf-aig-request-timeout": String(config.timeoutMs),
+        "cf-aig-skip-cache": "true",
+      },
+      maxRetries: 0,
+      timeout: config.timeoutMs,
+    };
+    if (transport !== undefined) {
+      options.fetch = transport;
+    }
+    super(config.model, "cloudflare-responses", new OpenAI(options));
+    this.#config = config;
+    this.#instructions = instructions;
+  }
+
+  protected override mapOptionsToRequest(
+    options: TextOptions<Record<string, unknown>>
+  ) {
+    return {
+      ...super.mapOptionsToRequest(options),
+      instructions: this.#instructions,
+      max_output_tokens: this.#config.maxOutputTokens,
+      parallel_tool_calls: false,
+      reasoning: { effort: "medium" as const },
+      store: false,
+      tool_choice: { name: "submitDiscoveryTurn", type: "function" as const },
+    };
+  }
+}
+
 const safeReplyChunks = (reply: PrivateChatReply): StreamChunk[] => [
   {
     messageId: reply.messageId,
@@ -173,8 +258,7 @@ const streamDiscovery = (
   input: PrivateDiscoveryStreamInput
 ) => {
   const configured = configuration(environment.PRIVATE_DISCOVERY_CONFIG);
-  const ai = environment.PrivateDiscoveryAI;
-  if (Option.isNone(configured) || ai === undefined) {
+  if (Option.isNone(configured)) {
     throw failure("not_configured");
   }
   const config = configured.value;
@@ -182,7 +266,10 @@ const streamDiscovery = (
     model: config.model,
     policyVersion: PRIVATE_DISCOVERY_POLICY_VERSION,
     promptVersion: PRIVATE_DISCOVERY_PROMPT_VERSION,
-    provider: "cloudflare-workers-ai",
+    provider:
+      config.model === "openai/gpt-6-luna"
+        ? "cloudflare-responses"
+        : "cloudflare-workers-ai",
     toolVersion: PRIVATE_DISCOVERY_TOOL_VERSION,
   };
   const failed = (
@@ -206,18 +293,70 @@ const streamDiscovery = (
       parseOptions: { onExcessProperty: "error" },
     })
   );
-  const request = providerRequest(
-    config,
-    context,
-    toStrictJsonSchema(outputSchema)
-  );
+  const parameters = toStrictJsonSchema(outputSchema);
   const encoder = new TextEncoder();
   if (
     encoder.encode(JSON.stringify(context)).byteLength >
-      PRIVATE_DISCOVERY_CONTEXT_BYTES ||
-    encoder.encode(JSON.stringify(request)).byteLength >
-      PRIVATE_DISCOVERY_INPUT_BYTES
+    PRIVATE_DISCOVERY_CONTEXT_BYTES
   ) {
+    return reject(failed("context_limit"));
+  }
+  let adapter: PrivateDiscoveryTextAdapter | PrivateDiscoveryResponsesAdapter;
+  let requestBytes: number;
+  if (config.model === "openai/gpt-6-luna") {
+    const request = {
+      input: input.chat.messages,
+      instructions: `${privateDiscoveryInstructions}\n\n${JSON.stringify(context)}`,
+      max_output_tokens: config.maxOutputTokens,
+      model: config.model,
+      parallel_tool_calls: false,
+      reasoning: { effort: "medium" },
+      store: false,
+      tool_choice: { name: "submitDiscoveryTurn", type: "function" },
+      tools: [
+        {
+          name: "submitDiscoveryTurn",
+          parameters,
+          type: "function",
+        },
+      ],
+    };
+    requestBytes = encoder.encode(JSON.stringify(request)).byteLength;
+    const credentials = restCredentials({
+      accountId: environment.CLOUDFLARE_ACCOUNT_ID,
+      apiKey: environment.CLOUDFLARE_API_TOKEN,
+    });
+    if (Option.isNone(credentials)) {
+      throw failure("not_configured");
+    }
+    adapter = new PrivateDiscoveryResponsesAdapter(
+      config,
+      credentials.value,
+      `${privateDiscoveryInstructions}\n\n${JSON.stringify(context)}`,
+      environment.responsesFetch
+    );
+  } else {
+    const ai = environment.PrivateDiscoveryAI;
+    if (ai === undefined) {
+      throw failure("not_configured");
+    }
+    const request = providerRequest(config, context, parameters);
+    requestBytes = encoder.encode(JSON.stringify(request)).byteLength;
+    adapter = new PrivateDiscoveryTextAdapter(
+      {
+        binding: ai,
+        gateway: {
+          collectLog: false,
+          id: config.gatewayId,
+          requestTimeoutMs: config.timeoutMs,
+          retries: { maxAttempts: 1 },
+          skipCache: true,
+        },
+      },
+      request
+    );
+  }
+  if (requestBytes > PRIVATE_DISCOVERY_INPUT_BYTES) {
     return reject(failed("context_limit"));
   }
   const controller = input.abortController;
@@ -442,19 +581,7 @@ const streamDiscovery = (
   });
   return chat({
     abortController: controller,
-    adapter: new PrivateDiscoveryTextAdapter(
-      {
-        binding: ai,
-        gateway: {
-          collectLog: false,
-          id: config.gatewayId,
-          requestTimeoutMs: config.timeoutMs,
-          retries: { maxAttempts: 1 },
-          skipCache: true,
-        },
-      },
-      request
-    ),
+    adapter,
     agentLoopStrategy: maxIterations(1),
     debug: false,
     messages: input.chat.messages,

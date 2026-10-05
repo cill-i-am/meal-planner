@@ -158,7 +158,7 @@ export const PrivateDiscoveryProvenance = Schema.Struct({
   model: Schema.String,
   policyVersion: Schema.String,
   promptVersion: Schema.String,
-  provider: Schema.Literal("cloudflare-workers-ai"),
+  provider: Schema.Literals(["cloudflare-workers-ai", "cloudflare-responses"]),
   toolVersion: Schema.String,
 });
 export type PrivateDiscoveryProvenance = typeof PrivateDiscoveryProvenance.Type;

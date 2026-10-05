@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -8,6 +9,19 @@ const readRepoFile = (path: string): string =>
   readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf-8");
 
 describe("Alchemy source structure (no provider lifecycle or runtime proof)", () => {
+  it("loads the deployment graph in Node without evaluating Worker-only modules", () => {
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", "-e", "import('./alchemy.run.ts')"],
+      {
+        cwd: import.meta.dirname,
+        encoding: "utf-8",
+        timeout: 15_000,
+      }
+    );
+    expect(result.status, result.stderr).toBe(0);
+  }, 20_000);
+
   it("disables provider request logging and retention", () => {
     const source = readRepoFile(
       "./apps/api/src/infrastructure/import-provider-gateway.ts"
@@ -29,11 +43,23 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
   it("keeps the Worker identity stable, private, and preserves its optional URL output", () => {
     const stackSource = readRepoFile("./alchemy.run.ts");
     const workerSource = readRepoFile("./apps/api/src/worker.ts");
+    const privateOutputBindingSource = readRepoFile(
+      "./apps/api/src/features/private-output/private-output-binding.ts"
+    );
 
     expect(workerSource).toContain('"MealPlannerApi"');
-    expect(workerSource).toContain("main: import.meta.url");
+    expect(workerSource).toContain(
+      'main: new URL("worker-entry.ts", import.meta.url).href'
+    );
     expect(workerSource).toContain("...workerObservability");
     expect(workerSource).toContain("Cloudflare.Telemetry()");
+    expect(readRepoFile("./apps/api/src/worker-entry.ts")).toContain(
+      "export { AgentConversation }"
+    );
+    expect(privateOutputBindingSource).toContain(
+      'main: new URL("private-output-worker.ts", import.meta.url).href'
+    );
+
     expect(workerSource).toContain("workersDev: false");
     expect(stackSource).toContain("apiUrl: api.url");
     expect(stackSource).toContain("apiWorkerName: api.workerName");

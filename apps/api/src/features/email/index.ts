@@ -43,7 +43,8 @@ export const makeCloudflareEmailSender =
   (
     client: Pick<Cloudflare.Email.SendClient, "send">,
     runtimeContext: BaseRuntimeContext,
-    enabled: boolean
+    enabled: boolean,
+    senderAddress: EmailAddress
   ) =>
   (mail: OutboundEmail): Promise<void> => {
     if (!enabled) {
@@ -52,7 +53,7 @@ export const makeCloudflareEmailSender =
     return Effect.runPromise(
       client
         .send({
-          from: { email: "noreply@mail.ceird.app", name: "Meal Planner" },
+          from: { email: senderAddress, name: "Meal Planner" },
           html: mail.html,
           subject: mail.subject,
           text: mail.text,

@@ -1,26 +1,20 @@
 diff --git a/lib/Cloudflare/D1/ApplyMigrations.d.ts b/lib/Cloudflare/D1/ApplyMigrations.d.ts
-index 0c9935255b73ac427d76e4e1b19074aafabfcc0b..809c5be594df7083e83bf3dc27a26a6891f51e5b 100644
+index 0c993525..809c5be5 100644
 --- a/lib/Cloudflare/D1/ApplyMigrations.d.ts
 +++ b/lib/Cloudflare/D1/ApplyMigrations.d.ts
-@@ -28,3 +28,4 @@ export type D1SqlExecutor<E = unknown, R = never> = (sql: string) => Effect.Effe
-  */
- export declare const makeD1MigrationExecutor: <E>(raw: D1SqlExecutor<E>) => SqlExecutor;
- //# sourceMappingURL=ApplyMigrations.d.ts.map
+@@ -30 +30,2 @@ export declare const makeD1MigrationExecutor: <E>(raw: D1SqlExecutor<E>) => SqlE
+-//# sourceMappingURL=ApplyMigrations.d.ts.map
+\ No newline at end of file
++//# sourceMappingURL=ApplyMigrations.d.ts.map
 +export declare const makeCloudD1MigrationExecutor: (options: { accountId: string; databaseId: string }) => Effect.Effect<SqlExecutor, never, import("@distilled.cloud/cloudflare/d1").CloudflareOpContext>;
 diff --git a/lib/Cloudflare/D1/ApplyMigrations.js b/lib/Cloudflare/D1/ApplyMigrations.js
-index 969249320fda95b2f0ce39544c0520db470bbc0f..dcac2ad78231da0a88cc94c856189b8f72d8df01 100644
+index 96924932..dcac2ad7 100644
 --- a/lib/Cloudflare/D1/ApplyMigrations.js
 +++ b/lib/Cloudflare/D1/ApplyMigrations.js
-@@ -1,3 +1,5 @@
+@@ -0,0 +1,2 @@
 +import * as d1 from "@distilled.cloud/cloudflare/d1";
 +import { importD1Database } from "./ImportDatabase.js";
- import * as Effect from "effect/Effect";
- import { inlineSqlParams, MigrationError, } from "../../SQL/Migrations/index.js";
- /**
-@@ -26,4 +28,19 @@ export const makeD1MigrationExecutor = (raw) => ({
-         cause,
-     }))),
- });
+@@ -29 +31,16 @@ export const makeD1MigrationExecutor = (raw) => ({
 -//# sourceMappingURL=ApplyMigrations.js.map
 \ No newline at end of file
 +/** Preserve compound SQL and commit each migration with its ledger atomically. */
@@ -40,50 +34,26 @@ index 969249320fda95b2f0ce39544c0520db470bbc0f..dcac2ad78231da0a88cc94c856189b8f
 +    };
 +});
 diff --git a/lib/Cloudflare/D1/Database.js b/lib/Cloudflare/D1/Database.js
-index 47ddc1d0a5d82948677271089404794bc57f7e5d..b1428b75eea4b12fe519d81997bcc18e92ea0ce8 100644
+index 47ddc1d0..b1428b75 100644
 --- a/lib/Cloudflare/D1/Database.js
 +++ b/lib/Cloudflare/D1/Database.js
-@@ -3,7 +3,6 @@ import * as Effect from "effect/Effect";
- import * as Layer from "effect/Layer";
- import * as Option from "effect/Option";
- import * as Stream from "effect/Stream";
+@@ -6 +5,0 @@ import * as Stream from "effect/Stream";
 -import * as HttpClient from "effect/http/HttpClient";
- import { isResolved } from "../../Diff.js";
- import * as ProviderLayer from "../../Local/ProviderLayer.js";
- import * as RpcProvider from "../../Local/RpcProvider.js";
-@@ -16,7 +15,7 @@ import { recordsEqual } from "../../Util/equal.js";
- import { CloudflareEnvironment } from "../CloudflareEnvironment.js";
- import { localAccountId } from "../LocalAccount.js";
- import { generateLocalId, LOCAL_PROVIDERS_URL, localRuntimeServices, } from "../LocalRuntime.js";
+@@ -19 +18 @@ import { generateLocalId, LOCAL_PROVIDERS_URL, localRuntimeServices, } from "../
 -import { makeD1MigrationExecutor } from "./ApplyMigrations.js";
 +import { makeCloudD1MigrationExecutor, makeD1MigrationExecutor } from "./ApplyMigrations.js";
- import { cloneDatabase } from "./CloneDatabase.js";
- import { importD1Database } from "./ImportDatabase.js";
- import { withLocalD1Executor } from "./LocalD1Gateway.js";
-@@ -345,8 +344,7 @@ export const ProviderLive = () => Provider.succeed(Database, {
-                 input: migrationsInput,
-                 stamped: stampedOf(output),
-                 withExecutor: (apply) => Effect.gen(function* () {
+@@ -348,2 +347 @@ export const ProviderLive = () => Provider.succeed(Database, {
 -                    const queryDb = yield* d1.queryDatabase;
 -                    yield* apply(makeD1MigrationExecutor((sql) => queryDb({ accountId: acct, databaseId, sql })));
 +                    yield* apply(yield* makeCloudD1MigrationExecutor({ accountId: acct, databaseId }));
-                 }),
-             })
-             : undefined;
-@@ -554,4 +552,3 @@ const runImports = (accountId, databaseId, importFiles, rootDir, previous) => Ef
-     }
-     return hashes;
- });
+@@ -557 +554,0 @@ const runImports = (accountId, databaseId, importFiles, rootDir, previous) => Ef
 -//# sourceMappingURL=Database.js.map
 \ No newline at end of file
 diff --git a/lib/Cloudflare/Queues/Consumer.d.ts b/lib/Cloudflare/Queues/Consumer.d.ts
-index ba85c40f3241d582b2458d6b880c54182d8ecfc9..35e75d1d08e040d85312f28dbd3c1586a5a4b3cc 100644
+index ba85c40f..35e75d1d 100644
 --- a/lib/Cloudflare/Queues/Consumer.d.ts
 +++ b/lib/Cloudflare/Queues/Consumer.d.ts
-@@ -20,6 +20,14 @@ export type ConsumerProps = {
-      * Optional dead letter queue name for failed messages.
-      */
-     deadLetterQueue?: string;
+@@ -22,0 +23,8 @@ export type ConsumerProps = {
 +    /**
 +     * Physical ID of the dead letter queue.
 +     *
@@ -92,17 +62,11 @@ index ba85c40f3241d582b2458d6b880c54182d8ecfc9..35e75d1d08e040d85312f28dbd3c1586
 +     * readback.
 +     */
 +    deadLetterQueueId?: string;
-     /**
-      * Consumer settings.
-      */
 diff --git a/lib/Cloudflare/Queues/Consumer.js b/lib/Cloudflare/Queues/Consumer.js
-index de1bff8e55708f09f6ff7294d81ea2af6d80d648..70ae3f0731862b171e66d6efbe1486b5829e4c7b 100644
+index de1bff8e..70ae3f07 100644
 --- a/lib/Cloudflare/Queues/Consumer.js
 +++ b/lib/Cloudflare/Queues/Consumer.js
-@@ -99,6 +99,22 @@ const findWorkerConsumer = (acct, queueId) => queues.listConsumers.items({ accou
- // consumer yet" — the caller falls through to createConsumer, which
- // retries QueueNotFound until the queue propagates.
- Effect.catchTag("QueueNotFound", () => Effect.succeed(undefined)));
+@@ -101,0 +102,16 @@ Effect.catchTag("QueueNotFound", () => Effect.succeed(undefined)));
 +const observeWorkerConsumer = Effect.fn(function* (options) {
 +    if (isLiveId(options.consumerId)) {
 +        const fetched = yield* queues
@@ -119,31 +83,17 @@ index de1bff8e55708f09f6ff7294d81ea2af6d80d648..70ae3f0731862b171e66d6efbe1486b5
 +    }
 +    return yield* findWorkerConsumer(options.accountId, options.queueId);
 +});
- export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
-     // The `consumerId` is not marked as stable because if you start in dev mode, the ID will change on first deploy.
-     stables: ["accountId"],
-@@ -140,13 +156,13 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
-         Effect.catchTag(["QueueNotFound", "InvalidRoute"], () => Effect.succeed([]))), { concurrency: 10 });
-         return rows.flat();
-     }),
+@@ -143 +159 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
 -    diff: Effect.fn(function* ({ olds, news, output }) {
 +    diff: Effect.fn(function* ({ news, output }) {
-         const { accountId } = yield* yield* CloudflareEnvironment;
-         if (!isResolved(news))
-             return undefined;
+@@ -147,3 +163,3 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
 -        // If either contain `dev:` IDs, we need to update to live ones.
 -        // The live resource doesn't exist yet, so there's no need to replace even when we otherwise would.
 -        if (!isLiveId(output?.queueId) || !isLiveId(output?.consumerId)) {
 +        // A dev queue does not exist in the live account, so there is
 +        // nothing physical to observe yet.
 +        if (!isLiveId(output?.queueId)) {
-             return { action: "update" };
-         }
-         if ((output?.accountId ?? accountId) !== accountId) {
-@@ -157,6 +173,21 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
-         if (output?.queueId && news.queueId !== output.queueId) {
-             return { action: "replace", deleteFirst: true };
-         }
+@@ -159,0 +176,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
 +        // Stable resources are diffed directly from persisted state by
 +        // Plan.make; provider.read is not called on that path. Observe the
 +        // physical consumer here so out-of-band DLQ/settings drift cannot be
@@ -159,44 +109,24 @@ index de1bff8e55708f09f6ff7294d81ea2af6d80d648..70ae3f0731862b171e66d6efbe1486b5
 +            observed.consumerId !== output.consumerId) {
 +            return { action: "update" };
 +        }
-         // Settings / DLQ / script drift is an update. We DON'T
-         // escalate scriptName changes to `replace` because the
-         // engine resolves cross-resource Output<string> refs (a
-@@ -168,16 +199,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
-         // we detect script drift and rebuild the consumer in
-         // place (Cloudflare's PUT silently ignores `script_name`
-         // changes, so reconcile does delete-then-create).
+@@ -171,3 +202,3 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
 -        if (JSON.stringify(olds.settings ?? {}) !==
 -            JSON.stringify(news.settings ?? {}) ||
 -            (olds.deadLetterQueue ?? undefined) !==
 +        if (JSON.stringify(normalizeConsumerSettings(observed.settings)) !==
 +            JSON.stringify(normalizeConsumerSettings(news.settings)) ||
 +            observed.deadLetterQueue !==
-                 (news.deadLetterQueue ?? undefined) ||
+@@ -175,2 +206 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
 -            (output?.scriptName !== undefined &&
 -                news.scriptName !== output.scriptName)) {
 +            (observed.scriptName !== undefined && news.scriptName !== observed.scriptName)) {
-             return { action: "update" };
-         }
-     }),
+@@ -180 +210 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
 -    reconcile: Effect.fn(function* ({ news, output }) {
 +    reconcile: Effect.fn(function* ({ news, olds, output }) {
-         const { accountId } = yield* yield* CloudflareEnvironment;
-         const acct = output?.accountId ?? accountId;
-         // Only use `output.queueId` if it's a live ID (i.e. no `dev:` prefix).
-@@ -226,7 +256,7 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
-         if (!observed) {
-             observed = yield* findWorkerConsumer(acct, queueId);
-         }
+@@ -229 +259 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
 -        // Owned consumer pointing at a different script: rebuild
 +        // Owned consumer pointing at a different scriptName: rebuild
-         // it in place. Cloudflare's PUT consumer silently ignores
-         // `script_name` changes on existing consumers (the live
-         // record stays pinned to the original worker), and the
-@@ -370,19 +400,87 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
-             while: (e) => e._tag === "QueueHandlerMissing",
-             schedule: queueHandlerReadinessSchedule,
-         }));
+@@ -373,3 +403,8 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
 -        yield* queues.getConsumer({ accountId: acct, queueId, consumerId }).pipe(Effect.flatMap((fetched) => toObserved(fetched)?.scriptName === news.scriptName
 -            ? Effect.void
 -            : Effect.fail("ScriptUnbound")), Effect.catchTag("ConsumerNotFound", () => Effect.fail("ScriptUnbound")), Effect.retry({
@@ -208,9 +138,7 @@ index de1bff8e55708f09f6ff7294d81ea2af6d80d648..70ae3f0731862b171e66d6efbe1486b5
 +                ? Effect.succeed(observed)
 +                : Effect.fail("ScriptUnbound");
 +        }), Effect.catchTag("ConsumerNotFound", () => Effect.fail("ScriptUnbound")), Effect.retry({
-             while: (e) => e === "ScriptUnbound",
-             schedule: queueHandlerReadinessSchedule,
-         }));
+@@ -378,0 +414,63 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
 +        const desiredDeadLetterQueue = news.deadLetterQueue ?? undefined;
 +        const deadLetterQueueIdentityUnchanged = isLiveId(olds?.deadLetterQueueId) &&
 +            isLiveId(news.deadLetterQueueId) &&
@@ -274,55 +202,35 @@ index de1bff8e55708f09f6ff7294d81ea2af6d80d648..70ae3f0731862b171e66d6efbe1486b5
 +                JSON.stringify(normalizeConsumerSettings(news.settings))) {
 +            return yield* Effect.fail("ConsumerUnconverged");
 +        }
-         return {
+@@ -380 +478 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
 -            consumerId,
 +            consumerId: converged.consumerId,
-             queueId,
+@@ -382 +480 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
 -            scriptName: news.scriptName,
 +            scriptName: converged.scriptName,
-             accountId: acct,
+@@ -384,2 +482,2 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
 -            deadLetterQueue: news.deadLetterQueue,
 -            settings: news.settings,
 +            deadLetterQueue: converged.deadLetterQueue,
 +            settings: converged.settings,
-         };
-     }),
-     delete: Effect.fn(function* ({ output }) {
-@@ -424,14 +522,15 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
-                 consumerId: output.consumerId,
-             })
-                 .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.succeed(undefined)));
+@@ -427 +525,2 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
 -            if (fetched) {
 +            const observed = fetched ? toObserved(fetched) : undefined;
 +            if (observed) {
-                 return {
+@@ -429 +528 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
 -                    consumerId: fetched.consumerId,
 +                    consumerId: observed.consumerId,
-                     queueId: output.queueId,
-                     scriptName: toObserved(fetched)?.scriptName ?? output.scriptName,
-                     accountId: output.accountId,
+@@ -433,2 +532,2 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
 -                    deadLetterQueue: output.deadLetterQueue,
 -                    settings: output.settings,
 +                    deadLetterQueue: observed.deadLetterQueue,
 +                    settings: observed.settings,
-                 };
-             }
-         }
-@@ -447,8 +546,8 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
-                     queueId: output.queueId,
-                     scriptName: match.scriptName ?? output.scriptName,
-                     accountId: output.accountId,
+@@ -450,2 +549,2 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
 -                    deadLetterQueue: output.deadLetterQueue,
 -                    settings: output.settings,
 +                    deadLetterQueue: match.deadLetterQueue,
 +                    settings: match.settings,
-                 };
-             }
-         }
-@@ -456,8 +555,101 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
-     }),
- });
- const toObserved = (c) => c.consumerId && c.type === "worker"
+@@ -459 +558,14 @@ const toObserved = (c) => c.consumerId && c.type === "worker"
 -    ? { consumerId: c.consumerId, scriptName: c.scriptName ?? undefined }
 +    ? {
 +        consumerId: c.consumerId,
@@ -338,7 +246,7 @@ index de1bff8e55708f09f6ff7294d81ea2af6d80d648..70ae3f0731862b171e66d6efbe1486b5
 +            }
 +            : undefined,
 +    }
-     : undefined;
+@@ -460,0 +573,80 @@ const toObserved = (c) => c.consumerId && c.type === "worker"
 +const normalizeConsumerSettings = (settings) => ({
 +    batchSize: settings?.batchSize ?? 10,
 +    maxConcurrency: settings?.maxConcurrency,
@@ -419,105 +327,85 @@ index de1bff8e55708f09f6ff7294d81ea2af6d80d648..70ae3f0731862b171e66d6efbe1486b5
 +    while: (error) => error === "ScriptUnbound",
 +    schedule: queueHandlerReadinessSchedule,
 +}));
- // ~60s budget — Worker reconcile uploads typically land in 2–10s,
- // but a fresh container/asset deploy can stretch that.
- const queueHandlerReadinessSchedule = Schedule.max([
 diff --git a/lib/Cloudflare/Queues/EventSource.d.ts b/lib/Cloudflare/Queues/EventSource.d.ts
-index 98e8a3a642a8f0ff5a6c5eb2f167b4275232a69e..2bdf6e5d1c0e6854724909d4514a0e7ec04e158d 100644
+index 98e8a3a6..2bdf6e5d 100644
 --- a/lib/Cloudflare/Queues/EventSource.d.ts
 +++ b/lib/Cloudflare/Queues/EventSource.d.ts
-@@ -4,6 +4,7 @@ import * as Duration from "effect/Duration";
- import * as Effect from "effect/Effect";
- import * as Layer from "effect/Layer";
- import * as Stream from "effect/Stream";
+@@ -6,0 +7 @@ import * as Stream from "effect/Stream";
 +import type { Input } from "../../Input.ts";
- import { Worker } from "../Workers/Worker.ts";
- import type { Queue } from "./Queue.ts";
- /**
-@@ -30,7 +31,9 @@ export interface MessagesProps {
-      */
-     retryDelay?: Duration.Input;
-     /** Optional dead-letter queue name. */
+@@ -33 +34,3 @@ export interface MessagesProps {
 -    deadLetterQueue?: string;
 +    deadLetterQueue?: Input<string>;
 +    /** Physical ID paired with `deadLetterQueue` for guarded reconciliation. */
 +    deadLetterQueueId?: Input<string>;
- }
- /**
-  * Convert a {@link MessagesProps} (with `Duration.Input` time fields)
 diff --git a/lib/Cloudflare/Queues/EventSource.js b/lib/Cloudflare/Queues/EventSource.js
-index 4f79fdff1eebd98f888781ee9f3655750f72879b..cfab533151025e4320c51c75eca91b1d78470d68 100644
+index 4f79fdff..cfab5331 100644
 --- a/lib/Cloudflare/Queues/EventSource.js
 +++ b/lib/Cloudflare/Queues/EventSource.js
-@@ -68,6 +68,7 @@ export const EventSourceLive = Layer.effect(EventSource, Effect.gen(function* ()
-                     scriptName: host.workerName,
-                     settings: toConsumerSettings(props),
-                     deadLetterQueue: props.deadLetterQueue,
+@@ -70,0 +71 @@ export const EventSourceLive = Layer.effect(EventSource, Effect.gen(function* ()
 +                    deadLetterQueueId: props.deadLetterQueueId,
-                 });
-             }));
-         }
+diff --git a/lib/Cloudflare/Workers/Sources/Rolldown.d.ts b/lib/Cloudflare/Workers/Sources/Rolldown.d.ts
+index 3cf80d29..6e98f5bc 100644
+--- a/lib/Cloudflare/Workers/Sources/Rolldown.d.ts
++++ b/lib/Cloudflare/Workers/Sources/Rolldown.d.ts
+@@ -13,0 +14,2 @@ export interface WorkerBuildOptions extends Bundle.BundleConfig {
++    /** Named native exports retained beside generated Effect bridges. */
++    nativeExports?: readonly string[];
+@@ -53 +55 @@ export declare const makeEffectVirtualEntry: (exports: Record<string, WorkerExpo
+-}) => (importPath: string) => string;
++}, nativeExports?: readonly string[]) => (importPath: string) => string;
+diff --git a/lib/Cloudflare/Workers/Sources/Rolldown.js b/lib/Cloudflare/Workers/Sources/Rolldown.js
+index 2792c017..561ede17 100644
+--- a/lib/Cloudflare/Workers/Sources/Rolldown.js
++++ b/lib/Cloudflare/Workers/Sources/Rolldown.js
+@@ -134 +134 @@ export const WorkerBundle = Effect.gen(function* () {
+-                        virtualEntryPlugin(makeEffectVirtualEntry(options.entry.exports, options.stack)),
++                        virtualEntryPlugin(makeEffectVirtualEntry(options.entry.exports, options.stack, options.extraOptions?.nativeExports)),
+@@ -174 +174 @@ export const WorkerBundle = Effect.gen(function* () {
+-export const makeEffectVirtualEntry = (exports, stack) => {
++export const makeEffectVirtualEntry = (exports, stack, nativeExports = []) => {
+@@ -188,0 +189,5 @@ export const makeEffectVirtualEntry = (exports, stack) => {
++    for (const name of nativeExports) {
++        if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) || Object.hasOwn(exports, name)) {
++            throw new Error(`Invalid or duplicate native Worker export: ${name}`);
++        }
++    }
+@@ -209,0 +215 @@ export default makeWorkerBridge(WorkerEntrypoint, meta);
++${nativeExports.length > 0 ? `export { ${nativeExports.join(", ")} } from ${JSON.stringify(importPath)};` : ""}
 diff --git a/lib/Cloudflare/Workers/WorkerProvider.js b/lib/Cloudflare/Workers/WorkerProvider.js
-index 622b336b29d2b8c60406cd84660719afae6c8c96..2b137099e5b6c71ee0fa2f72e1bcdd198b277f60 100644
+index 622b336b..2b137099 100644
 --- a/lib/Cloudflare/Workers/WorkerProvider.js
 +++ b/lib/Cloudflare/Workers/WorkerProvider.js
-@@ -797,7 +797,8 @@ const workerAssetConfigForHash = (assets) => {
-  * the bundle/vite/asset-content hashes, so a change to e.g. a compatibility
-  * flag or observability config planned as a noop and silently never deployed.
-  */
+@@ -800 +800,2 @@ const workerAssetConfigForHash = (assets) => {
 -const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, selfUrl, }) => resolveMetadataHashValue({
 +/** @internal exported for provider-path regression testing. */
 +export const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, selfUrl, }) => resolveMetadataHashValue({
-     accountId,
-     selfUrl,
-     stack: { name: stack.name, stage: stack.stage },
-@@ -808,12 +809,10 @@ const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, selfUrl,
-     // materialized as different attribute projections between reconcile and a
-     // later plan; hashing props.env as well would turn those irrelevant shape
-     // differences into perpetual updates.
+@@ -811,4 +812,2 @@ const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, selfUrl,
 -    bindings: bindings.map((binding) => ({
 -        sid: binding.sid,
 -        data: binding.data,
 -    })),
 +    bindings: bindings.flatMap((binding) => binding.data.bindings ?? []),
 +    containers: Array.from(new Set(bindings.flatMap((binding) => (binding.data.containers ?? []).map((container) => container.className)))).sort(),
-     assets: workerAssetConfigForHash(props.assets),
+@@ -816 +815 @@ const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, selfUrl,
 -    cache: props.cache,
 +    cache: props.cache ?? getCacheBinding(bindings),
-     limits: props.limits,
-     logpush: props.logpush,
-     observability: props.observability,
-@@ -3613,7 +3612,9 @@ export const LiveWorkerProvider = () => Provider.effect(Worker, Effect.gen(funct
-             // form against the stripped stored props and re-plans an update
-             // forever (#874).
-             const news = stripEffects(desired);
+@@ -3616 +3615,3 @@ export const LiveWorkerProvider = () => Provider.effect(Worker, Effect.gen(funct
 -            if (!isResolved(news))
 +            // Plan invokes diff before and after binding Outputs resolve. Hash
 +            // only the final binding shape used by reconcile.
 +            if (!isResolved(news) || !isResolved(newBindings))
-                 return undefined;
-             if ((output?.accountId ?? accountId) !== accountId) {
-                 return { action: "replace" };
-@@ -4702,4 +4703,3 @@ const validateWorkerTags = (scriptName, tags, alchemyTagCount) => Effect.gen(fun
-         }
-     }
- });
+@@ -4705 +4705,0 @@ const validateWorkerTags = (scriptName, tags, alchemyTagCount) => Effect.gen(fun
 -//# sourceMappingURL=WorkerProvider.js.map
 \ No newline at end of file
 diff --git a/src/Cloudflare/D1/ApplyMigrations.ts b/src/Cloudflare/D1/ApplyMigrations.ts
-index aa79c99b10f59988b7c92de5cf8bf8ef4473e2f5..6b30d08fa758302ecc2c5a09ca0974776807310b 100644
+index aa79c99b..6b30d08f 100644
 --- a/src/Cloudflare/D1/ApplyMigrations.ts
 +++ b/src/Cloudflare/D1/ApplyMigrations.ts
-@@ -1,3 +1,5 @@
+@@ -0,0 +1,2 @@
 +import * as d1 from "@distilled.cloud/cloudflare/d1";
 +import { importD1Database } from "./ImportDatabase.ts";
- import * as Effect from "effect/Effect";
- import {
-   inlineSqlParams,
-@@ -77,3 +79,27 @@ export const makeD1MigrationExecutor = <E>(
-       ),
-     ),
- });
+@@ -79,0 +82,24 @@ export const makeD1MigrationExecutor = <E>(
 +
 +/** Preserve compound SQL and commit each migration with its ledger atomically. */
 +export const makeCloudD1MigrationExecutor = (options: {
@@ -543,22 +431,13 @@ index aa79c99b10f59988b7c92de5cf8bf8ef4473e2f5..6b30d08fa758302ecc2c5a09ca097477
 +  } satisfies SqlExecutor;
 +});
 diff --git a/src/Cloudflare/D1/Database.ts b/src/Cloudflare/D1/Database.ts
-index f8a163f50e9cdcc905198002d7f1f94b0b9cf527..60d0fcc4eeb21423b5f49a0916b6d26de79ef42c 100644
+index f8a163f5..60d0fcc4 100644
 --- a/src/Cloudflare/D1/Database.ts
 +++ b/src/Cloudflare/D1/Database.ts
-@@ -30,7 +30,7 @@ import {
-   localRuntimeServices,
- } from "../LocalRuntime.ts";
- import type { Providers } from "../Providers.ts";
+@@ -33 +33 @@ import type { Providers } from "../Providers.ts";
 -import { makeD1MigrationExecutor } from "./ApplyMigrations.ts";
 +import { makeCloudD1MigrationExecutor, makeD1MigrationExecutor } from "./ApplyMigrations.ts";
- import { cloneDatabase } from "./CloneDatabase.ts";
- import { importD1Database } from "./ImportDatabase.ts";
- import { withLocalD1Executor } from "./LocalD1Gateway.ts";
-@@ -523,12 +523,7 @@ export const ProviderLive = () =>
-             stamped: stampedOf(output),
-             withExecutor: (apply) =>
-               Effect.gen(function* () {
+@@ -526,6 +526 @@ export const ProviderLive = () =>
 -                const queryDb = yield* d1.queryDatabase;
 -                yield* apply(
 -                  makeD1MigrationExecutor((sql) =>
@@ -566,17 +445,11 @@ index f8a163f50e9cdcc905198002d7f1f94b0b9cf527..60d0fcc4eeb21423b5f49a0916b6d26d
 -                  ),
 -                );
 +                yield* apply(yield* makeCloudD1MigrationExecutor({ accountId: acct, databaseId }));
-               }),
-           })
-         : undefined;
 diff --git a/src/Cloudflare/Queues/Consumer.ts b/src/Cloudflare/Queues/Consumer.ts
-index 2f2ed17b67ebc2a4054242e94f43e340a982bd0f..393ef2525219690797719ef0526e00ec18c12496 100644
+index 2f2ed17b..393ef252 100644
 --- a/src/Cloudflare/Queues/Consumer.ts
 +++ b/src/Cloudflare/Queues/Consumer.ts
-@@ -35,6 +35,14 @@ export type ConsumerProps = {
-    * Optional dead letter queue name for failed messages.
-    */
-   deadLetterQueue?: string;
+@@ -37,0 +38,8 @@ export type ConsumerProps = {
 +  /**
 +   * Physical ID of the dead letter queue.
 +   *
@@ -585,13 +458,7 @@ index 2f2ed17b67ebc2a4054242e94f43e340a982bd0f..393ef2525219690797719ef0526e00ec
 +   * readback.
 +   */
 +  deadLetterQueueId?: string;
-   /**
-    * Consumer settings.
-    */
-@@ -220,6 +228,29 @@ const findWorkerConsumer = (acct: string, queueId: string) =>
-     Effect.catchTag("QueueNotFound", () => Effect.succeed(undefined)),
-   );
- 
+@@ -222,0 +231,23 @@ const findWorkerConsumer = (acct: string, queueId: string) =>
 +const observeWorkerConsumer = Effect.fn(function* (options: {
 +  accountId: string;
 +  queueId: string;
@@ -615,30 +482,17 @@ index 2f2ed17b67ebc2a4054242e94f43e340a982bd0f..393ef2525219690797719ef0526e00ec
 +  return yield* findWorkerConsumer(options.accountId, options.queueId);
 +});
 +
- export const ConsumerProviderLive = () =>
-   Provider.succeed(Consumer, {
-     // The `consumerId` is not marked as stable because if you start in dev mode, the ID will change on first deploy.
-@@ -282,12 +313,12 @@ export const ConsumerProviderLive = () =>
-       );
-       return rows.flat();
-     }),
+@@ -285 +316 @@ export const ConsumerProviderLive = () =>
 -    diff: Effect.fn(function* ({ olds, news, output }) {
 +    diff: Effect.fn(function* ({ news, output }) {
-       const { accountId } = yield* yield* CloudflareEnvironment;
-       if (!isResolved(news)) return undefined;
+@@ -288,3 +319,3 @@ export const ConsumerProviderLive = () =>
 -      // If either contain `dev:` IDs, we need to update to live ones.
 -      // The live resource doesn't exist yet, so there's no need to replace even when we otherwise would.
 -      if (!isLiveId(output?.queueId) || !isLiveId(output?.consumerId)) {
 +      // A dev queue does not exist in the live account, so there is
 +      // nothing physical to observe yet.
 +      if (!isLiveId(output?.queueId)) {
-         return { action: "update" };
-       }
-       if ((output?.accountId ?? accountId) !== accountId) {
-@@ -298,6 +329,23 @@ export const ConsumerProviderLive = () =>
-       if (output?.queueId && news.queueId !== output.queueId) {
-         return { action: "replace", deleteFirst: true } as const;
-       }
+@@ -300,0 +332,17 @@ export const ConsumerProviderLive = () =>
 +      // Stable resources are diffed directly from persisted state by
 +      // Plan.make; provider.read is not called on that path. Observe the
 +      // physical consumer here so out-of-band DLQ/settings drift cannot be
@@ -656,45 +510,24 @@ index 2f2ed17b67ebc2a4054242e94f43e340a982bd0f..393ef2525219690797719ef0526e00ec
 +      ) {
 +        return { action: "update" };
 +      }
-       // Settings / DLQ / script drift is an update. We DON'T
-       // escalate scriptName changes to `replace` because the
-       // engine resolves cross-resource Output<string> refs (a
-@@ -310,17 +358,16 @@ export const ConsumerProviderLive = () =>
-       // place (Cloudflare's PUT silently ignores `script_name`
-       // changes, so reconcile does delete-then-create).
-       if (
+@@ -313,3 +361,3 @@ export const ConsumerProviderLive = () =>
 -        JSON.stringify(olds.settings ?? {}) !==
 -          JSON.stringify(news.settings ?? {}) ||
 -        (olds.deadLetterQueue ?? undefined) !==
 +        JSON.stringify(normalizeConsumerSettings(observed.settings)) !==
 +          JSON.stringify(normalizeConsumerSettings(news.settings)) ||
 +        observed.deadLetterQueue !==
-           (news.deadLetterQueue ?? undefined) ||
+@@ -317,2 +365 @@ export const ConsumerProviderLive = () =>
 -        (output?.scriptName !== undefined &&
 -          news.scriptName !== output.scriptName)
 +        (observed.scriptName !== undefined && news.scriptName !== observed.scriptName)
-       ) {
-         return { action: "update" } as const;
-       }
-     }),
+@@ -323 +370 @@ export const ConsumerProviderLive = () =>
 -    reconcile: Effect.fn(function* ({ news, output }) {
 +    reconcile: Effect.fn(function* ({ news, olds, output }) {
-       const { accountId } = yield* yield* CloudflareEnvironment;
-       const acct = output?.accountId ?? accountId;
-       // Only use `output.queueId` if it's a live ID (i.e. no `dev:` prefix).
-@@ -381,7 +428,7 @@ export const ConsumerProviderLive = () =>
-         observed = yield* findWorkerConsumer(acct, queueId);
-       }
- 
+@@ -384 +431 @@ export const ConsumerProviderLive = () =>
 -      // Owned consumer pointing at a different script: rebuild
 +      // Owned consumer pointing at a different scriptName: rebuild
-       // it in place. Cloudflare's PUT consumer silently ignores
-       // `script_name` changes on existing consumers (the live
-       // record stays pinned to the original worker), and the
-@@ -558,28 +605,107 @@ export const ConsumerProviderLive = () =>
-           }),
-         );
- 
+@@ -561,14 +608,93 @@ export const ConsumerProviderLive = () =>
 -      yield* queues.getConsumer({ accountId: acct, queueId, consumerId }).pipe(
 -        Effect.flatMap((fetched) =>
 -          toObserved(fetched)?.scriptName === news.scriptName
@@ -802,65 +635,41 @@ index 2f2ed17b67ebc2a4054242e94f43e340a982bd0f..393ef2525219690797719ef0526e00ec
 +      ) {
 +        return yield* Effect.fail("ConsumerUnconverged" as const);
 +      }
- 
-       return {
+@@ -577 +703 @@ export const ConsumerProviderLive = () =>
 -        consumerId,
 +        consumerId: converged.consumerId,
-         queueId,
+@@ -579 +705 @@ export const ConsumerProviderLive = () =>
 -        scriptName: news.scriptName!,
 +        scriptName: converged.scriptName,
-         accountId: acct,
+@@ -581,2 +707,2 @@ export const ConsumerProviderLive = () =>
 -        deadLetterQueue: news.deadLetterQueue,
 -        settings: news.settings,
 +        deadLetterQueue: converged.deadLetterQueue,
 +        settings: converged.settings,
-       };
-     }),
-     delete: Effect.fn(function* ({ output }) {
-@@ -631,14 +757,15 @@ export const ConsumerProviderLive = () =>
-               Effect.succeed(undefined),
-             ),
-           );
+@@ -634 +760,2 @@ export const ConsumerProviderLive = () =>
 -        if (fetched) {
 +        const observed = fetched ? toObserved(fetched) : undefined;
 +        if (observed) {
-           return {
+@@ -636 +763 @@ export const ConsumerProviderLive = () =>
 -            consumerId: fetched.consumerId!,
 +            consumerId: observed.consumerId,
-             queueId: output.queueId,
-             scriptName: toObserved(fetched)?.scriptName ?? output.scriptName,
-             accountId: output.accountId,
+@@ -640,2 +767,2 @@ export const ConsumerProviderLive = () =>
 -            deadLetterQueue: output.deadLetterQueue,
 -            settings: output.settings,
 +            deadLetterQueue: observed.deadLetterQueue,
 +            settings: observed.settings,
-           };
-         }
-       }
-@@ -657,8 +784,8 @@ export const ConsumerProviderLive = () =>
-             queueId: output.queueId,
-             scriptName: match.scriptName ?? output.scriptName,
-             accountId: output.accountId,
+@@ -660,2 +787,2 @@ export const ConsumerProviderLive = () =>
 -            deadLetterQueue: output.deadLetterQueue,
 -            settings: output.settings,
 +            deadLetterQueue: match.deadLetterQueue,
 +            settings: match.settings,
-           };
-         }
-       }
-@@ -667,19 +794,175 @@ export const ConsumerProviderLive = () =>
-   });
- 
- type ObservedConsumer = {
+@@ -669,0 +797 @@ type ObservedConsumer = {
 +  deadLetterQueue: string | undefined;
-   consumerId: string;
+@@ -670,0 +799 @@ type ObservedConsumer = {
 +  settings: ConsumerSettings | undefined;
-   scriptName: string | undefined;
- };
- 
- const toObserved = (c: {
+@@ -674,0 +804 @@ const toObserved = (c: {
 +  deadLetterQueue?: string | null;
-   consumerId?: string | null;
+@@ -675,0 +806,7 @@ const toObserved = (c: {
 +  settings?: {
 +    batchSize?: number | null;
 +    maxConcurrency?: number | null;
@@ -868,10 +677,7 @@ index 2f2ed17b67ebc2a4054242e94f43e340a982bd0f..393ef2525219690797719ef0526e00ec
 +    maxWaitTimeMs?: number | null;
 +    retryDelay?: number | null;
 +  } | null;
-   scriptName?: string | null;
-   type?: "worker" | "http_pull" | null;
- }): ObservedConsumer | undefined =>
-   c.consumerId && c.type === "worker"
+@@ -680 +817,14 @@ const toObserved = (c: {
 -    ? { consumerId: c.consumerId, scriptName: c.scriptName ?? undefined }
 +    ? {
 +        consumerId: c.consumerId,
@@ -887,8 +693,7 @@ index 2f2ed17b67ebc2a4054242e94f43e340a982bd0f..393ef2525219690797719ef0526e00ec
 +            }
 +          : undefined,
 +      }
-     : undefined;
- 
+@@ -682,0 +833,133 @@ const toObserved = (c: {
 +const normalizeConsumerSettings = (
 +  settings: ConsumerSettings | undefined,
 +): Required<Pick<ConsumerSettings, "batchSize" | "maxRetries" | "maxWaitTimeMs">> &
@@ -1022,58 +827,48 @@ index 2f2ed17b67ebc2a4054242e94f43e340a982bd0f..393ef2525219690797719ef0526e00ec
 +      }),
 +    );
 +
- // ~60s budget — Worker reconcile uploads typically land in 2–10s,
- // but a fresh container/asset deploy can stretch that.
- const queueHandlerReadinessSchedule = Schedule.max([
 diff --git a/src/Cloudflare/Queues/EventSource.ts b/src/Cloudflare/Queues/EventSource.ts
-index 7e19f329d2e8a95fe39eb5ca7c7da10580298377..f539b1a28ba5dc19552a3b75ac1533aa8870e487 100644
+index 7e19f329..f539b1a2 100644
 --- a/src/Cloudflare/Queues/EventSource.ts
 +++ b/src/Cloudflare/Queues/EventSource.ts
-@@ -5,6 +5,7 @@ import * as Duration from "effect/Duration";
- import * as Effect from "effect/Effect";
- import * as Layer from "effect/Layer";
- import * as Stream from "effect/Stream";
+@@ -7,0 +8 @@ import * as Stream from "effect/Stream";
 +import type { Input } from "../../Input.ts";
- import * as Namespace from "../../Namespace.ts";
- import { RuntimeContext } from "../../RuntimeContext.ts";
- import type { FunctionContext } from "../../Serverless/Function.ts";
-@@ -37,7 +38,9 @@ export interface MessagesProps {
-    */
-   retryDelay?: Duration.Input;
-   /** Optional dead-letter queue name. */
+@@ -40 +41,3 @@ export interface MessagesProps {
 -  deadLetterQueue?: string;
 +  deadLetterQueue?: Input<string>;
 +  /** Physical ID paired with `deadLetterQueue` for guarded reconciliation. */
 +  deadLetterQueueId?: Input<string>;
- }
- 
- /**
-@@ -212,6 +215,7 @@ export const EventSourceLive = Layer.effect(
-               scriptName: host.workerName,
-               settings: toConsumerSettings(props),
-               deadLetterQueue: props.deadLetterQueue,
+@@ -214,0 +218 @@ export const EventSourceLive = Layer.effect(
 +              deadLetterQueueId: props.deadLetterQueueId,
-             });
-           }),
-         );
+diff --git a/src/Cloudflare/Workers/Sources/Rolldown.ts b/src/Cloudflare/Workers/Sources/Rolldown.ts
+index ce7a8441..d5d9f99a 100644
+--- a/src/Cloudflare/Workers/Sources/Rolldown.ts
++++ b/src/Cloudflare/Workers/Sources/Rolldown.ts
+@@ -24,0 +25,2 @@ export interface WorkerBuildOptions extends Bundle.BundleConfig {
++  /** Named native exports retained beside generated Effect bridges. */
++  nativeExports?: readonly string[];
+@@ -210 +212 @@ export const WorkerBundle = Effect.gen(function* () {
+-                makeEffectVirtualEntry(options.entry.exports, options.stack),
++                makeEffectVirtualEntry(options.entry.exports, options.stack, options.extraOptions?.nativeExports),
+@@ -282,0 +285 @@ export const makeEffectVirtualEntry = (
++  nativeExports: readonly string[] = [],
+@@ -295,0 +299,5 @@ export const makeEffectVirtualEntry = (
++  for (const name of nativeExports) {
++    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) || Object.hasOwn(exports, name)) {
++      throw new Error(`Invalid or duplicate native Worker export: ${name}`);
++    }
++  }
+@@ -316,0 +325 @@ export default makeWorkerBridge(WorkerEntrypoint, meta);
++${nativeExports.length > 0 ? `export { ${nativeExports.join(", ")} } from ${JSON.stringify(importPath)};` : ""}
 diff --git a/src/Cloudflare/Workers/WorkerProvider.ts b/src/Cloudflare/Workers/WorkerProvider.ts
-index 798e8499d1db0184d14defbd50e1e5bd0288e291..09a69f465fb86fddc9a1ec270932c37b48826add 100644
+index 798e8499..09a69f46 100644
 --- a/src/Cloudflare/Workers/WorkerProvider.ts
 +++ b/src/Cloudflare/Workers/WorkerProvider.ts
-@@ -1157,7 +1157,8 @@ const workerAssetConfigForHash = (assets: WorkerProps["assets"]) => {
-  * the bundle/vite/asset-content hashes, so a change to e.g. a compatibility
-  * flag or observability config planned as a noop and silently never deployed.
-  */
+@@ -1160 +1160,2 @@ const workerAssetConfigForHash = (assets: WorkerProps["assets"]) => {
 -const resolveWorkerMetadataHash = ({
 +/** @internal exported for provider-path regression testing. */
 +export const resolveWorkerMetadataHash = ({
-   props,
-   bindings,
-   accountId,
-@@ -1175,12 +1176,12 @@ const resolveWorkerMetadataHash = ({
-     // materialized as different attribute projections between reconcile and a
-     // later plan; hashing props.env as well would turn those irrelevant shape
-     // differences into perpetual updates.
+@@ -1178,4 +1179,4 @@ const resolveWorkerMetadataHash = ({
 -    bindings: bindings.map((binding) => ({
 -      sid: binding.sid,
 -      data: binding.data,
@@ -1082,20 +877,11 @@ index 798e8499d1db0184d14defbd50e1e5bd0288e291..09a69f465fb86fddc9a1ec270932c37b
 +    containers: Array.from(new Set(bindings.flatMap((binding) =>
 +      (binding.data.containers ?? []).map((container) => container.className)
 +    ))).sort(),
-     assets: workerAssetConfigForHash(props.assets),
+@@ -1183 +1184 @@ const resolveWorkerMetadataHash = ({
 -    cache: props.cache,
 +    cache: props.cache ?? getCacheBinding(bindings),
-     limits: props.limits,
-     logpush: props.logpush,
-     observability: props.observability,
-@@ -4929,7 +4930,9 @@ export const LiveWorkerProvider = () =>
-           // form against the stripped stored props and re-plans an update
-           // forever (#874).
-           const news = stripEffects(desired);
+@@ -4932 +4933,3 @@ export const LiveWorkerProvider = () =>
 -          if (!isResolved(news)) return undefined;
 +          // Plan invokes diff before and after binding Outputs resolve. Hash
 +          // only the final binding shape used by reconcile.
 +          if (!isResolved(news) || !isResolved(newBindings)) return undefined;
-           if ((output?.accountId ?? accountId) !== accountId) {
-             return { action: "replace" };
-           }

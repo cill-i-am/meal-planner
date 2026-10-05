@@ -10,6 +10,11 @@ or deployment. Keep those stages separate when reporting progress.
 
 ## Immediate work
 
+The [agent-led family meal journey](ai-native-family-journey.md) connects the
+approved Paper entry and planning designs on one feature branch. Implementation
+and local verification are complete across discovery, content, routines and
+weekly planning; live-provider evaluation and integration remain separate next steps.
+
 The [transactional email plan](auth-email-delivery.md) tracks the invitation and
 reset delivery code, Paper designs, and separate production activation checks.
 

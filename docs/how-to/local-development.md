@@ -52,6 +52,38 @@ harness destroys its stage after the suite. Keep Docker running for this test.
 The Vitest configuration explicitly runs lifecycle hooks in registration order,
 as required by Alchemy's sidecar cleanup.
 
+## Live family and planning agent
+
+Native development does not create agent gateways or API tokens. To use an
+existing Cloudflare-billed model locally, supply `LOCAL_AGENT_ACCOUNT_ID`,
+`LOCAL_AGENT_API_TOKEN`, `LOCAL_AGENT_GATEWAY_ID`,
+`LOCAL_AGENT_CONVERSATION_CONFIG` and `LOCAL_AGENT_PRIVATE_DISCOVERY_CONFIG` in
+your ignored environment file. The two config values use the provider schemas
+in the [agent conversation reference](../reference/agent-conversations.md) and
+[private discovery reference](../reference/private-discovery.md). Keep tokens
+private. Missing local model settings leave auth and family storage available;
+chat reports that its model is not configured. Actual inference uses Cloudflare
+credits.
+
+For this worktree's existing local dataset, the native command is:
+
+```sh
+pnpm exec alchemy dev --stage dev_cillian_a56d --profile ceird-admin-global --env-file .alchemy/local-dev.env
+```
+
+The Website requests port 4399; use the URL Alchemy prints if it is occupied.
+
+### Deployed model bindings
+
+The [deployed AI provider](../../apps/api/src/infrastructure/agent-provider.ts)
+creates a gateway and a scoped account token for each Alchemy stage. The API
+Worker and private interview Worker receive the gateway ID, model settings and
+token through their bindings. Both use GPT-6 Luna through Cloudflare Responses.
+Native development uses the explicit local configuration above and does not
+create these deployed resources. Credit purchases remain an account
+billing operation; deployment needs the intended Alchemy stage and profile.
+
+
 ## Verification
 
 Run the relevant package checks and required CI checks. Root commands are
