@@ -1,7 +1,7 @@
 # Autonomous delivery and codebase gardening
 
 Status: active
-Progress: initial adoption merged and deployed; weekly gardening enabled; calibration amendment in delivery
+Progress: initial adoption merged and deployed; weekly gardening enabled; calibration amendment delivered in PR #282
 Owner: Codex, with Cillian owning product direction
 Decision date: 2026-10-04
 Delivery: implement confident adoption changes through merge; return unresolved policy decisions
@@ -74,11 +74,20 @@ The maintenance cadence is cleanup during normal delivery plus a weekly focused
 gardener sweep. On 5 October 2026, Cillian explicitly approved the recurring sweep
 and verified cleanup merges. The Codex heartbeat `meal-planner-weekly-gardening`
 is active in this task for five Monday-morning runs, from 5 October through
-2 November. Its saved schedule and active status were verified; timed execution
-has not yet been observed. It implements maintenance within existing domain
-behavior, with independent review, required CI and merge. Material product
-decisions still return to Cillian. The fifth sweep includes a workflow
+2 November. Its first heartbeat was received on 5 October 2026 at 09:02 UTC.
+It implements maintenance within existing domain behavior, with independent
+review, required CI and merge. Material product decisions still return to Cillian. The fifth sweep includes a workflow
 retrospective, and the automation ends within the month-long trial.
+
+The 5 October gardening pass used PR #282 baseline `3f53ba75`, with no source
+changes since its delivery that morning. It followed the recent twenty-pass
+design review and PR #281's import-recovery fix. The pass checked imports,
+provider accounting, source-inventory helpers, feature-boundary checks and the
+evaluation validator.
+No new production-code refactor was justified. The existing provider accounting
+paths, carousel integrity rules and checks remain useful. This was a bounded
+follow-up to the completed coverage review, not another whole-codebase
+correctness audit.
 
 ## Adoption and current audit
 
@@ -123,8 +132,10 @@ exclusions that hid new docs and README files were removed; secret/runtime
 exclusions remain.
 
 Cillian approved replacing per-candidate green human scoring with automated
-evaluation and periodic human calibration on 5 October 2026. The amended
-[PDR-0006](../decisions/pdr-0006-ai-evaluation-and-release-evidence.md#human-calibration-cadence)
+evaluation and periodic human calibration on 5 October 2026. The amendment was
+delivered in [PR #282](https://github.com/cill-i-am/meal-planner/pull/282), whose
+[production run passed](https://github.com/cill-i-am/meal-planner/actions/runs/37268383611).
+The amended [PDR-0006](../decisions/pdr-0006-ai-evaluation-and-release-evidence.md#human-calibration-cadence)
 owns that policy. The initial human ratings remain unfulfilled, and the existing
 offline validator is not a model evaluation runner. Whole-application domain
 dependency changes still require agreement on the intended ownership.
