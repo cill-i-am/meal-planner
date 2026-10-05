@@ -1,7 +1,8 @@
-import { MealPlan } from "@meal-planner/household-api";
-import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+
+import { MealPlan } from "@meal-planner/household-api";
 import { Schema } from "effect";
 import { expect, it } from "vitest";
 
@@ -9,8 +10,8 @@ const migrationsRoot = fileURLToPath(
   new URL("../../../household-migrations/", import.meta.url)
 );
 const migrations = readdirSync(migrationsRoot)
-  .filter((name) => /^\d{14}_/.test(name))
-  .sort();
+  .filter((name) => /^\d{14}_/u.test(name))
+  .toSorted();
 const retirementName = "retire_slot_meal_plans";
 const retirementIndex = migrations.findIndex((name) =>
   name.endsWith(retirementName)
@@ -19,7 +20,7 @@ const retirementIndex = migrations.findIndex((name) =>
 const migrate = (database: DatabaseSync, names: readonly string[]) => {
   for (const name of names) {
     database.exec(
-      readFileSync(`${migrationsRoot}/${name}/migration.sql`, "utf8")
+      readFileSync(`${migrationsRoot}/${name}/migration.sql`, "utf-8")
     );
   }
 };
@@ -94,14 +95,28 @@ it("retires old slot plans and receipts while current plans remain readable", ()
       .prepare("INSERT INTO household_meal_plans VALUES (?, ?, ?, ?)")
       .run("draft-old-request", oldPlanJson, "old-request-digest", 1);
     database
-      .prepare("INSERT INTO household_meal_plan_mutation_receipts VALUES (?, ?, ?, ?)")
-      .run("draft-old-request", "old-mutation-digest", "approve-old", oldPlanJson);
+      .prepare(
+        "INSERT INTO household_meal_plan_mutation_receipts VALUES (?, ?, ?, ?)"
+      )
+      .run(
+        "draft-old-request",
+        "old-mutation-digest",
+        "approve-old",
+        oldPlanJson
+      );
     database
       .prepare("INSERT INTO household_meal_plans VALUES (?, ?, ?, ?)")
       .run("draft-current-request", currentPlanJson, "current-digest", 0);
     database
-      .prepare("INSERT INTO household_meal_plan_mutation_receipts VALUES (?, ?, ?, ?)")
-      .run("draft-current-request", "current-mutation-digest", "change-current", currentPlanJson);
+      .prepare(
+        "INSERT INTO household_meal_plan_mutation_receipts VALUES (?, ?, ?, ?)"
+      )
+      .run(
+        "draft-current-request",
+        "current-mutation-digest",
+        "change-current",
+        currentPlanJson
+      );
     const before = rows<{ plan_json: string }>(
       database,
       "SELECT plan_json FROM household_meal_plans ORDER BY rowid DESC LIMIT 12"
@@ -122,7 +137,7 @@ it("retires old slot plans and receipts while current plans remain readable", ()
     ]);
     expect(
       Schema.decodeUnknownSync(Schema.fromJsonString(MealPlan))(
-        active[0]!.plan_json
+        active[0]?.plan_json
       ).planId
     ).toBe("draft-current-request");
     expect(
@@ -136,7 +151,10 @@ it("retires old slot plans and receipts while current plans remain readable", ()
       },
     ]);
     expect(
-      rows(database, "SELECT * FROM household_meal_plan_retired_mutation_receipts")
+      rows(
+        database,
+        "SELECT * FROM household_meal_plan_retired_mutation_receipts"
+      )
     ).toEqual([
       {
         draft_id: "draft-old-request",
@@ -169,11 +187,16 @@ it("preserves malformed old rows and orphan receipts, and replay does not change
       .prepare("INSERT INTO household_meal_plans VALUES (?, ?, ?, ?)")
       .run("draft-malformed", "{broken", "malformed-digest", 7);
     database
-      .prepare("INSERT INTO household_meal_plan_mutation_receipts VALUES (?, ?, ?, ?)")
+      .prepare(
+        "INSERT INTO household_meal_plan_mutation_receipts VALUES (?, ?, ?, ?)"
+      )
       .run("draft-orphan", "orphan-digest", "orphan-change", "{receipt");
     const retirementSql = readFileSync(
       `${migrationsRoot}/${migrations[retirementIndex]}/migration.sql`,
-      "utf8"
+      "utf-8"
+    );
+    const retirementDataSql = retirementSql.slice(
+      retirementSql.indexOf("INSERT OR IGNORE")
     );
     database.exec(retirementSql);
     const first = {
@@ -201,7 +224,7 @@ it("preserves malformed old rows and orphan receipts, and replay does not change
         },
       ],
     });
-    database.exec(retirementSql);
+    database.exec(retirementDataSql);
     expect({
       plans: rows(database, "SELECT * FROM household_meal_plan_retired_plans"),
       receipts: rows(
@@ -213,6 +236,57 @@ it("preserves malformed old rows and orphan receipts, and replay does not change
     expect(
       rows(database, "SELECT * FROM household_meal_plan_mutation_receipts")
     ).toEqual([]);
+  } finally {
+    database.close();
+  }
+});
+
+it("rolls back the retirement if a later delete fails", () => {
+  expect(retirementIndex).toBeGreaterThan(0);
+  const database = new DatabaseSync(":memory:");
+  try {
+    migrate(database, migrations.slice(0, retirementIndex));
+    database
+      .prepare("INSERT INTO household_meal_plans VALUES (?, ?, ?, ?)")
+      .run("draft-old-request", oldPlanJson, "old-request-digest", 1);
+    database
+      .prepare(
+        "INSERT INTO household_meal_plan_mutation_receipts VALUES (?, ?, ?, ?)"
+      )
+      .run(
+        "draft-old-request",
+        "old-mutation-digest",
+        "approve-old",
+        oldPlanJson
+      );
+    const retirementSql = readFileSync(
+      `${migrationsRoot}/${migrations[retirementIndex]}/migration.sql`,
+      "utf-8"
+    );
+    database.exec("BEGIN");
+    database.exec(`CREATE TRIGGER block_plan_retirement BEFORE DELETE ON household_meal_plans
+      BEGIN SELECT RAISE(ABORT, 'blocked delete'); END`);
+    expect(() => database.exec(retirementSql)).toThrow("blocked delete");
+    database.exec("ROLLBACK");
+    expect(rows(database, "SELECT draft_id FROM household_meal_plans")).toEqual(
+      [{ draft_id: "draft-old-request" }]
+    );
+    expect(
+      rows(
+        database,
+        "SELECT mutation_id FROM household_meal_plan_mutation_receipts"
+      )
+    ).toEqual([{ mutation_id: "approve-old" }]);
+    expect(
+      rows(
+        database,
+        "SELECT name FROM sqlite_master WHERE name = 'household_meal_plan_retired_plans'"
+      )
+    ).toEqual([]);
+    database.exec(retirementSql);
+    expect(
+      rows(database, "SELECT draft_id FROM household_meal_plan_retired_plans")
+    ).toEqual([{ draft_id: "draft-old-request" }]);
   } finally {
     database.close();
   }

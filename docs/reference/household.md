@@ -97,6 +97,42 @@ Effect Clock time. A mutation cannot provide another actor or audit timestamp.
 
 Better Auth D1 manages identity and organizations. It does not store meal-plan state.
 
+### Retired slot-based plans
+
+The household migration `20261005181104_retire_slot_meal_plans` removes plans
+written by the earlier slot-based planner from the active plan and mutation-receipt
+tables. It first copies every original column into
+`household_meal_plan_retired_plans` and
+`household_meal_plan_retired_mutation_receipts` in the same household SQLite
+database. A malformed old plan under the former `draft-${requestKey}` identity
+and a receipt without its plan are retained. Current plans remain active, even
+when their `planId` begins with `draft-`.
+
+Retired plans no longer appear in the planner. Their slot decisions do not supply
+the new model's person-specific coverage, safety state, input versions or cook
+events. An old approval cannot approve a new plan. Recovery requires a household
+operator to inspect the original records and create a new plan through the current
+workflow. The active API never reads the retired tables.
+
+For an authorized household database inspection, retrieve the exact source row
+and its receipts with these read-only queries. Substitute the old `draft_id`
+as a bound parameter in both queries:
+
+```sql
+SELECT draft_id, plan_json, request_fingerprint_digest, revision
+FROM household_meal_plan_retired_plans
+WHERE draft_id = ?;
+
+SELECT draft_id, mutation_id, mutation_fingerprint, result_json
+FROM household_meal_plan_retired_mutation_receipts
+WHERE draft_id = ?
+ORDER BY mutation_id;
+```
+
+`plan_json` and `result_json` are the original stored bytes. Handle them as
+household-private data. The migration keeps the archive tables in the Drizzle
+schema so later generated migrations retain them.
+
 ## Household person registry authority
 
 Only `HouseholdObject` SQLite writes household people, active or archived status,

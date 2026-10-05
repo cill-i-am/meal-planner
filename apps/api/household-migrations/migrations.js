@@ -11,6 +11,7 @@ import m0009 from "./20260903214851_household_domain/migration.sql";
 import m0010 from "./20260904202917_household_domain/migration.sql";
 import m0011 from "./20260906145049_household_domain/migration.sql";
 import m0012 from "./20260928210119_planning_content/migration.sql";
+import m0013 from "./20261005181104_retire_slot_meal_plans/migration.sql";
 
 export default {
   migrations: {
@@ -27,5 +28,6 @@ export default {
     "20260904202917_household_domain": m0010,
     "20260906145049_household_domain": m0011,
     "20260928210119_planning_content": m0012,
+    "20261005181104_retire_slot_meal_plans": m0013,
   },
 };
