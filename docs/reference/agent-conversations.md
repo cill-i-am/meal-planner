@@ -58,31 +58,7 @@ The host marks each completed step in the Agent. If a response is lost after a c
 
 The [Agent implementation](../../apps/api/src/features/agent-conversations/conversation-session.ts) owns conversation persistence and replay. The [family reference](family-api.md) and [household data reference](household.md) own the canonical records and permissions.
 
-## Local live preview
-
-The opt-in [local preview API entry](../../apps/api/src/local/preview-api.ts) exports the production `AgentConversation` and mounts the same authenticated family, conversation, household, planning-content, and plan handlers as the native test host. Its selected model uses the local runner's real Workers AI REST configuration. The entry accepts only its configured loopback origin and exposes a small unauthenticated readiness route. It has no test-control, seed, or captured-mail read routes. Reset and invitation messages stay in a local mail capture binding; they are not sent externally.
-
-The preview mounts the canonical recipe-detail GET contract without import writes because the import Workflow is not configured locally. Linked-account departure requests receive a typed Workflow-unavailable result. Private discovery has no live provider in this preview and reports its missing configuration. Local preview observations are separate from deterministic browser tests and from deployed provider evidence.
-
-The selected preview model is `openai/gpt-6-luna`, called through Cloudflare's
-Responses endpoint and billed from prepaid AI Gateway credits. It uses the
-same AI-only Cloudflare OAuth profile. The model proposes one closed tool result;
-the existing Agent guards validate it before any proposal is accepted. Account
-setup exposes only questions and roster proposals in its tool schema. See the
-[local runtime guide](../how-to/local-development.md#live-family-and-planning-agent)
-for startup, billing requirements and future Alchemy ownership.
-
-To check the local host's family and household bindings without calling a model,
-build the web Worker, then run this from the repository root:
-
-```sh
-node --import tsx apps/api/src/test/local-preview-family.test-fixture.ts
-```
-
-The check uses port 4498 and a disposable directory. It signs up a synthetic
-account, creates and replays a family and person, and verifies the linked creator.
-
-## Native development after the main merge
+## Native local development
 
 The native Alchemy stack uses local state during development. It does not
 provision the deployed agent gateway or account token. Optional `LOCAL_AGENT_*`

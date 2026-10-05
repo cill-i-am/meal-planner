@@ -73,67 +73,14 @@ pnpm exec alchemy dev --stage dev_cillian_a56d --profile ceird-admin-global --en
 
 The Website requests port 4399; use the URL Alchemy prints if it is occupied.
 
-### Persistent limited preview
-
-Build the web Worker, then start the persistent local preview:
-
-```sh
-pnpm --filter @meal-planner/web build:e2e
-pnpm dev:preview --profile meal-planner-local-ai --account ACCOUNT_ID --login
-```
-
-The first login creates a separate Alchemy profile limited to account
-identification and Workers AI. Later starts can omit `--login`; use it again to
-renew that profile's authorization. An existing profile with broader OAuth
-scopes cannot be renewed through this command.
-
-Open `http://127.0.0.1:4399`. The preview uses the production conversation Agent,
-auth handlers and household Durable Objects. Chat sends messages to Workers AI
-using `openai/gpt-6-luna` through Cloudflare's Responses endpoint. It consumes
-prepaid AI Gateway credits; no separate OpenAI API key is needed. The first
-inference request may create the account's default AI Gateway. Cloudflare returns
-HTTP 402 when there are insufficient credits. Fund the gateway in the dashboard
-before trying chat. Credentials stay in the server process. Starting the local
-server does not deploy Workers or create remote databases or email resources.
-
-Use `--gateway GATEWAY_ID` to select an existing gateway. The default is
-`default`. `--model @cf/openai/gpt-oss-120b` explicitly selects the original
-Workers AI model for comparison; the preview never falls back to it silently.
-
-Local accounts, conversations and household data persist under
-`.alchemy/local-preview/data`, including across Ctrl+C and restart. Keep this
-ignored directory private. Use `--data-directory PATH` and `--port PORT` for a
-separate local dataset. The server binds only to `127.0.0.1`. Stop it before
-rebuilding the web Worker.
-
-Family setup and shared planning conversations use the live model. Saved recipe
-reads are available. Recipe import, private interview inference and member
-departure workflows are not configured in this preview. Email is captured in
-local KV storage and is never sent externally. Test seed, fault injection and
-mail inspection routes are absent.
-
-The auth and family test fixture uses scripted model responses for repeatable
-tests. Use `dev:preview` when trying your own chat messages.
-
-After building the web Worker, verify the preview's service connections without
-calling a model:
-
-```sh
-node --import tsx apps/api/src/test/local-preview-family.test-fixture.ts
-```
-
-This smoke runs on port 4498 with disposable local data. It checks signup,
-family creation, creator linking, person creation and exact request replay,
-then stops its runtime and removes its temporary data.
-
 ### Deployed model bindings
 
 The [deployed AI provider](../../apps/api/src/infrastructure/agent-provider.ts)
 creates a gateway and a scoped account token for each Alchemy stage. The API
 Worker and private interview Worker receive the gateway ID, model settings and
 token through their bindings. Both use GPT-6 Luna through Cloudflare Responses.
-The local preview above continues to use its own explicit loopback configuration
-and does not create these deployed resources. Credit purchases remain an account
+Native development uses the explicit local configuration above and does not
+create these deployed resources. Credit purchases remain an account
 billing operation; deployment needs the intended Alchemy stage and profile.
 
 

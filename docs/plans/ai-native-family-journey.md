@@ -117,7 +117,7 @@ Provider configuration is explicit, and unavailable models return an actionable
 state. Hosted CI, merge and deployment are not claimed. No external email or
 production deployment was activated.
 
-The follow-up local preview uses an AI-only Alchemy OAuth profile. Local account
+The earlier limited preview used an AI-only Alchemy OAuth profile. Local account
 and household data persist across restarts. Initial GPT-OSS family turns exposed
 invalid tool output. A scoped setup schema and exact examples produced a valid
 live question; roster quality remained under investigation. The user then chose
@@ -135,7 +135,8 @@ was then corrected. The user's retained creation action recovered successfully
 to the four-person family review. A separate provider-free native smoke verified
 creator linking, person creation and exact mutation replay without duplication.
 Shared planning model quality remains unverified. Private interview inference
-and recipe import workflows remain unconfigured locally. See the
+and recipe import workflows were unconfigured in that limited preview. Native
+Alchemy development now owns the local runtime; see the
 [local guide](../how-to/local-development.md).
 
 
@@ -272,3 +273,8 @@ tests and all three native Alchemy stack checks passed. Typecheck, production
 build, lint, formatting and documentation checks passed. The native export
 bundle test exceeded its five-second default during concurrent builds and
 passed in isolation; this check will run again after the fixes.
+
+Native Alchemy now replaces the earlier limited preview launcher. The duplicate
+local runtime and standalone smoke were removed; the native stack suite owns
+that verification. The new roster-failure state is represented on desktop and
+mobile in the [Paper implementation states page](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-K-0).
