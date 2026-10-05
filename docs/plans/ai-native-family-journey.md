@@ -235,10 +235,18 @@ startup limit. Warming the image exposed an unsupported planning-context read
 in the provider. Using Alchemy's documented `ALCHEMY_DEV` configuration fixes
 that runtime boundary; the healthy API and complete native suite verify it.
 
-No cloud resources were deployed or new inference credentials created. Live
-local inference remains paused while permission to read the archived Alchemy
-credential source is pending. The ignored local environment file is unchanged.
-The native local preview can run its auth, household and manual planning paths.
+No cloud resources were deployed or new inference credentials created. On
+2026-10-05, the user authorized reading the archived Alchemy credential source.
+The existing dev gateway and scoped token were restored to the ignored local
+environment file, with owner-only permissions. Native Alchemy development uses
+GPT-6 Luna through Cloudflare Responses for both conversation configurations.
+
+A separate synthetic account verified live family setup in the browser: the
+agent used the account name, added three people to the table, corrected a child's
+name and the family name, and saved the family after conversational confirmation.
+It advanced automatically to Our tastes. Reload retained all four people and the
+corrected names. The live food conversation then returned its first question.
+This verifies those exercised paths; it is not a broad model-quality evaluation.
 The current main tip was checked again as `4f01179` before the final merge commit.
 
 The pstack principles Prove It Works and Fix Root Causes guided actual Worker
