@@ -1,5 +1,7 @@
 import {
+  ChangeMealPlanPayload,
   CreateMealPlanPayload,
+  DecideMealPlanPayload,
   MealPlanDate,
   MealPlanId,
   MealPlanMutationId,
@@ -8,8 +10,6 @@ import {
   HouseholdMealPlanConflictProblem,
 } from "@meal-planner/household-api";
 import type {
-  ChangeMealPlanPayload,
-  DecideMealPlanPayload,
   HouseholdMealPlanResponse,
   HouseholdPerson,
   MealPlanSummary,
@@ -54,6 +54,7 @@ import {
   foodBookQueryOptions,
   invalidatePlanningContent,
 } from "../food-book/index.js";
+import { useSessionPendingRequest } from "../request-recovery/index.js";
 import { CoverageEditor } from "./coverage-editor.js";
 import {
   changeMealPlanMutationOptions,
@@ -89,6 +90,31 @@ type PendingRequest =
       readonly planId: MealPlanId;
       readonly payload: DecideMealPlanPayload;
     };
+const PendingRequestSchema = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("create"),
+    payload: CreateMealPlanPayload,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("change"),
+    payload: ChangeMealPlanPayload,
+    planId: MealPlanId,
+  }),
+  Schema.Struct({
+    kind: Schema.Literals([
+      "approve",
+      "proposeRevision",
+      "acceptRevision",
+      "rejectRevision",
+    ]),
+    payload: DecideMealPlanPayload,
+    planId: MealPlanId,
+  }),
+]);
+const requestIdentity = (request: PendingRequest) =>
+  request.kind === "create"
+    ? request.payload.requestKey
+    : request.payload.mutationId;
 
 const isoToday = () => {
   const now = new Date();
@@ -656,7 +682,6 @@ interface ProposalReviewState {
 const PlanRequestStatus = ({
   requestError,
   retained,
-  failure,
   rejectedReason,
   pending,
   loading,
@@ -667,7 +692,6 @@ const PlanRequestStatus = ({
 }: {
   readonly requestError: string | null;
   readonly retained: PendingRequest | null;
-  readonly failure: Error | null;
   readonly rejectedReason: string | null;
   readonly pending: boolean;
   readonly loading: boolean;
@@ -683,7 +707,7 @@ const PlanRequestStatus = ({
         <AlertDescription>{requestError}</AlertDescription>
       </Alert>
     )}
-    {retained && failure && (
+    {retained && !pending && (
       <Alert variant="destructive">
         <AlertTitle>
           {rejectedReason ? "Plan request needs review" : "Save result unknown"}
@@ -1082,55 +1106,73 @@ export const MealPlanningPage = ({
     readonly block: Parameters<PlanProposalReview>[0];
     readonly actions: PlanProposalReviewActions;
   } | null>(null);
-  const [retained, setRetained] = useState<PendingRequest | null>(null);
+  const retainedRequest = useSessionPendingRequest(
+    `meal-planner.meal-plan.request.v1:${JSON.stringify([scope.userId, scope.organizationId])}`,
+    PendingRequestSchema,
+    requestIdentity
+  );
+  const retained = retainedRequest.pending;
   const [requestError, setRequestError] = useState<string | null>(null);
-  const onSuccess = async (plan: HouseholdMealPlanResponse) => {
+  const onSuccess = async (
+    plan: HouseholdMealPlanResponse,
+    request: PendingRequest
+  ) => {
     client.setQueryData([...mealPlanKey(scope), "detail", plan.planId], plan);
     setSelectedId(plan.planId);
     setNewPlanOpen(false);
-    setRetained(null);
+    retainedRequest.release(request);
     setRequestError(null);
     await Promise.all([
       client.invalidateQueries({ queryKey: [...mealPlanKey(scope), "list"] }),
       invalidatePlanningContent(client, scope),
     ]);
   };
-  const onFailure = (error: Error) => {
+  const onFailure = (error: Error, request: PendingRequest) => {
     const reason = rejectionMessage(error);
     if (reason !== null) {
-      setRetained(null);
+      retainedRequest.release(request);
       setRequestError(reason);
     }
   };
   const create = useMutation({
     ...createMealPlanMutationOptions(runtime, scope),
-    onError: onFailure,
-    onSuccess,
+    onError: (error, payload) => onFailure(error, { kind: "create", payload }),
+    onSuccess: (plan, payload) => onSuccess(plan, { kind: "create", payload }),
   });
   const change = useMutation({
     ...changeMealPlanMutationOptions(runtime, scope),
-    onError: onFailure,
-    onSuccess,
+    onError: (error, request) =>
+      onFailure(error, { kind: "change", ...request }),
+    onSuccess: (plan, request) =>
+      onSuccess(plan, { kind: "change", ...request }),
   });
   const approve = useMutation({
     ...decideMealPlanMutationOptions(runtime, scope, "approve"),
-    onError: onFailure,
-    onSuccess,
+    onError: (error, request) =>
+      onFailure(error, { kind: "approve", ...request }),
+    onSuccess: (plan, request) =>
+      onSuccess(plan, { kind: "approve", ...request }),
   });
   const proposeRevision = useMutation({
     ...decideMealPlanMutationOptions(runtime, scope, "proposeRevision"),
-    onError: onFailure,
-    onSuccess,
+    onError: (error, request) =>
+      onFailure(error, { kind: "proposeRevision", ...request }),
+    onSuccess: (plan, request) =>
+      onSuccess(plan, { kind: "proposeRevision", ...request }),
   });
   const acceptRevision = useMutation({
     ...decideMealPlanMutationOptions(runtime, scope, "acceptRevision"),
-    onError: onFailure,
-    onSuccess,
+    onError: (error, request) =>
+      onFailure(error, { kind: "acceptRevision", ...request }),
+    onSuccess: (plan, request) =>
+      onSuccess(plan, { kind: "acceptRevision", ...request }),
   });
   const rejectRevision = useMutation({
     ...decideMealPlanMutationOptions(runtime, scope, "rejectRevision"),
-    onError: onFailure,
-    onSuccess,
+    onError: (error, request) =>
+      onFailure(error, { kind: "rejectRevision", ...request }),
+    onSuccess: (plan, request) =>
+      onSuccess(plan, { kind: "rejectRevision", ...request }),
   });
   const pending = [
     create,
@@ -1140,11 +1182,20 @@ export const MealPlanningPage = ({
     acceptRevision,
     rejectRevision,
   ].some((mutation) => mutation.isPending);
+  const changePending = pending || retainedRequest.isBlocked;
   const run = (request: PendingRequest) => {
-    if (retained !== null && retained !== request) {
+    if (
+      !retainedRequest.isReady ||
+      retainedRequest.error !== null ||
+      pending ||
+      (retained !== null &&
+        requestIdentity(retained) !== requestIdentity(request))
+    ) {
       return;
     }
-    setRetained(request);
+    if (retained === null && !retainedRequest.retain(request)) {
+      return;
+    }
     setRequestError(null);
     switch (request.kind) {
       case "create": {
@@ -1297,13 +1348,12 @@ export const MealPlanningPage = ({
     >
       <PlanningHeader
         hasPlan={detail.data !== undefined}
-        pending={pending || retained !== null}
+        pending={changePending}
         onNew={() => setNewPlanOpen(true)}
       />
       <PlanRequestStatus
-        requestError={requestError}
+        requestError={retainedRequest.error ?? requestError}
         retained={retained}
-        failure={failure}
         rejectedReason={rejectedReason}
         pending={pending}
         loading={list.isPending || content.isPending || roster.isPending}
@@ -1329,7 +1379,7 @@ export const MealPlanningPage = ({
           detailPlan={detail.data}
           detailPending={detail.isPending}
           detailError={detail.isError}
-          pending={pending || retained !== null}
+          pending={changePending}
           onNew={() => setNewPlanOpen(true)}
           onSelect={setSelectedId}
           onReadPlan={async () => {
@@ -1365,7 +1415,7 @@ export const MealPlanningPage = ({
         weeks={weeks}
         setWeeks={setWeeks}
         createPlan={createPlan}
-        pending={pending || retained !== null}
+        pending={changePending}
         peopleCount={people.length}
         hasManagedMeals={hasManagedMeals}
         proposalReview={proposalReview}

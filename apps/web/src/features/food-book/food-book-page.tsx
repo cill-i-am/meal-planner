@@ -2,13 +2,13 @@ import {
   HouseholdPlanningContentConflictProblem,
   HouseholdPlanningContentInvalidProblem,
   MealOption,
+  MutatePlanningContentPayload,
   PlanningContentId,
   PlanningContentMutationId,
 } from "@meal-planner/household-api";
 import type {
   PlanningContentSnapshot,
   HouseholdPerson,
-  MutatePlanningContentPayload,
   PlanningContentCommand,
   SavedRecipeSummary,
 } from "@meal-planner/household-api";
@@ -56,6 +56,7 @@ import type {
 import { queryFailure, useApiRuntime } from "../api-client/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
 import { familyRosterQueryOptions } from "../family/index.js";
+import { useSessionPendingRequest } from "../request-recovery/index.js";
 import { FocusedCookView } from "./focused-cook-view.js";
 import { FoodCover } from "./food-cover.js";
 import { NewMealOption } from "./new-meal-option.js";
@@ -1017,7 +1018,7 @@ const FoodBookLoadStatus = ({
   loadError,
   saveError,
   retained,
-  mutationError,
+  pending,
   onReload,
   onReconcile,
   onRetry,
@@ -1026,7 +1027,7 @@ const FoodBookLoadStatus = ({
   readonly loadError: boolean;
   readonly saveError: string | null;
   readonly retained: MutatePlanningContentPayload | null;
-  readonly mutationError: boolean;
+  readonly pending: boolean;
   readonly onReload: () => Promise<void>;
   readonly onReconcile: () => Promise<void>;
   readonly onRetry: (request: MutatePlanningContentPayload) => void;
@@ -1056,7 +1057,7 @@ const FoodBookLoadStatus = ({
         <AlertDescription>{saveError}</AlertDescription>
       </Alert>
     )}
-    {retained && mutationError && (
+    {retained && !pending && (
       <Alert variant="destructive">
         <AlertTitle>Save result unknown</AlertTitle>
         <AlertDescription>
@@ -1065,7 +1066,11 @@ const FoodBookLoadStatus = ({
           <Button variant="link" onClick={onReconcile}>
             Check saved meals
           </Button>{" "}
-          <Button variant="link" onClick={() => onRetry(retained)}>
+          <Button
+            variant="link"
+            disabled={pending}
+            onClick={() => onRetry(retained)}
+          >
             Retry same request
           </Button>
         </AlertDescription>
@@ -1103,14 +1108,17 @@ export const FoodBookPage = ({
     readonly block: Parameters<PlanningContentProposalReview>[0];
     readonly actions: PlanProposalReviewActions;
   } | null>(null);
-  const [retained, setRetained] = useState<MutatePlanningContentPayload | null>(
-    null
+  const retainedRequest = useSessionPendingRequest(
+    `meal-planner.food-book.request.v1:${JSON.stringify([scope.userId, scope.organizationId])}`,
+    MutatePlanningContentPayload,
+    (request) => request.mutationId
   );
+  const retained = retainedRequest.pending;
   const [saveError, setSaveError] = useState<string | null>(null);
   const addingMutationId = useRef<PlanningContentMutationId | null>(null);
   const mutation = useMutation({
     ...foodBookMutationOptions(runtime, scope),
-    onError: async (error) => {
+    onError: async (error, request) => {
       const failure = queryFailure(error);
       if (failure instanceof FoodBookOperationFailure) {
         const conflict = Schema.decodeUnknownOption(
@@ -1120,7 +1128,7 @@ export const FoodBookPage = ({
           HouseholdPlanningContentInvalidProblem
         )(failure.cause);
         if (Option.isSome(conflict) || Option.isSome(invalid)) {
-          setRetained(null);
+          retainedRequest.release(request);
           setSaveError(
             "The Food book rejected this change. Refresh the latest details, then review and save a new request."
           );
@@ -1130,14 +1138,14 @@ export const FoodBookPage = ({
     },
     onSuccess: (snapshot, request) => {
       client.setQueryData(foodBookKey(scope), snapshot);
-      setRetained(null);
+      retainedRequest.release(request);
       if (request.mutationId === addingMutationId.current) {
         addingMutationId.current = null;
         setAdding(false);
       }
     },
   });
-  const changePending = mutation.isPending || retained !== null;
+  const changePending = mutation.isPending || retainedRequest.isBlocked;
   const snapshot = query.data;
   const options = useMemo(
     () =>
@@ -1168,7 +1176,7 @@ export const FoodBookPage = ({
     command: PlanningContentCommand,
     source?: "new-meal-form"
   ) => {
-    if (!snapshot || retained) {
+    if (!snapshot || changePending) {
       return;
     }
     const payload = Schema.decodeUnknownSync(PlanningContentMutationId)(
@@ -1179,11 +1187,13 @@ export const FoodBookPage = ({
       expectedVersion: snapshot.configVersion,
       mutationId: payload,
     };
+    if (!retainedRequest.retain(request)) {
+      return;
+    }
     if (source === "new-meal-form") {
       addingMutationId.current = request.mutationId;
     }
     setSaveError(null);
-    setRetained(request);
     mutation.mutate(request);
   };
   const save = (option: MealOption) =>
@@ -1274,9 +1284,9 @@ export const FoodBookPage = ({
       <FoodBookLoadStatus
         loading={query.isPending}
         loadError={query.isError}
-        saveError={saveError}
+        saveError={retainedRequest.error ?? saveError}
         retained={retained}
-        mutationError={mutation.isError}
+        pending={mutation.isPending}
         onReload={async () => {
           await query.refetch();
         }}

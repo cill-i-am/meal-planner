@@ -10,10 +10,10 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Schema } from "effect";
-import { expect, it } from "vitest";
+import { afterEach, expect, it } from "vitest";
 
 import { MotionProvider } from "../../components/ui/motion-provider.js";
 import { TooltipProvider } from "../../components/ui/tooltip.js";
@@ -53,6 +53,109 @@ const snapshot = Schema.decodeUnknownSync(PlanningContentSnapshot)({
   preparedPortions: [],
   routines: [],
   suitabilityReviews: [],
+});
+
+afterEach(() => {
+  cleanup();
+  sessionStorage.clear();
+});
+
+it("restores an unknown Food book request after remount and replays its exact identity", async () => {
+  sessionStorage.clear();
+  const commands: MutatePlanningContentPayload[] = [];
+  const transport: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    if (
+      new URL(request.url).pathname === "/v1/planning-content" &&
+      request.method === "POST"
+    ) {
+      commands.push(
+        Schema.decodeUnknownSync(MutatePlanningContentPayload)(
+          await request.json()
+        )
+      );
+      if (commands.length === 2) {
+        return Response.json({ ...snapshot, configVersion: 2 });
+      }
+      throw new TypeError("Response lost after commit");
+    }
+    return Response.json(snapshot);
+  };
+  const mount = (identity = scope) => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    queryClient.setQueryData(foodBookKey(identity), snapshot);
+    queryClient.setQueryData(
+      familyKeys.people(identity.userId, identity.organizationId),
+      { people: [person] }
+    );
+    queryClient.setQueryData(
+      ["our-tastes-roster", identity.userId, identity.organizationId],
+      { people: [person] }
+    );
+    const root = createRootRoute({
+      component: () => <FoodBookPage scope={identity} />,
+    });
+    const router = createRouter({
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+      routeTree: root,
+    });
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <ApiRuntimeContext
+          value={{ baseUrl: window.location.origin, fetch: transport }}
+        >
+          <MotionProvider>
+            <TooltipProvider>
+              <RouterProvider router={router} />
+            </TooltipProvider>
+          </MotionProvider>
+        </ApiRuntimeContext>
+      </QueryClientProvider>
+    );
+  };
+  const first = mount();
+  await userEvent
+    .setup()
+    .click(await screen.findByRole("button", { name: "Save managed meals" }));
+  await waitFor(() => expect(commands).toHaveLength(1));
+  await screen.findByRole("button", { name: "Retry same request" });
+  first.unmount();
+
+  const expectNoRetainedRequest = async (
+    identity: ReturnType<typeof parseDisplayedIdentity>
+  ) => {
+    const other = mount(identity);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Add a meal" })).toBeEnabled()
+    );
+    expect(screen.queryByText("Save result unknown")).not.toBeInTheDocument();
+    other.unmount();
+  };
+  await expectNoRetainedRequest(
+    parseDisplayedIdentity({
+      organizationId: scope.organizationId,
+      userId: "another-user",
+    })
+  );
+  await expectNoRetainedRequest(
+    parseDisplayedIdentity({
+      organizationId: "another-family",
+      userId: scope.userId,
+    })
+  );
+
+  mount();
+  await userEvent
+    .setup()
+    .click(await screen.findByRole("button", { name: "Retry same request" }));
+  await waitFor(() => expect(commands).toHaveLength(2));
+  expect(commands[1]).toEqual(commands[0]);
+  await waitFor(() => expect(sessionStorage.length).toBe(0));
 });
 
 it("keeps Add meal closed until a managed-meals save has settled", async () => {
