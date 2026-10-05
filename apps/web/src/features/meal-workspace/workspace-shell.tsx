@@ -19,6 +19,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu.js";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "../../components/ui/tooltip.js";
 import { cn } from "../../lib/utils.js";
 import type { HouseholdSummary } from "../auth/index.js";
 import type { WorkspaceArea } from "./navigation.js";
@@ -102,20 +107,29 @@ const FamilyMenu = ({
   readonly onSignOut: () => void;
 }) => (
   <DropdownMenu>
-    <DropdownMenuTrigger
-      render={<Button variant="ghost" />}
-      aria-label={`${household.name}, family menu`}
-    >
-      <Avatar>
-        <AvatarFallback tone="lilac">
-          {household.name.slice(0, 1).toUpperCase()}
-        </AvatarFallback>
-      </Avatar>
-      <span className="hidden max-w-40 truncate sm:inline">
-        {household.name}
-      </span>
-      <ChevronDownIcon data-icon="inline-end" aria-hidden="true" />
-    </DropdownMenuTrigger>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <DropdownMenuTrigger
+            render={<Button variant="ghost" />}
+            aria-label={`${household.name}, family menu`}
+          />
+        }
+      >
+        <Avatar>
+          <AvatarFallback tone="lilac">
+            {household.name.slice(0, 1).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+        <span className="hidden max-w-40 truncate sm:inline">
+          {household.name}
+        </span>
+        <ChevronDownIcon data-icon="inline-end" aria-hidden="true" />
+      </TooltipTrigger>
+      <TooltipContent className="sm:hidden">
+        {household.name}, family menu
+      </TooltipContent>
+    </Tooltip>
     <DropdownMenuContent align="end" data-theme="journey" className="min-w-60">
       <DropdownMenuGroup>
         <DropdownMenuLabel>{household.name}</DropdownMenuLabel>

@@ -11,6 +11,8 @@ The conversation Agent stores messages, proposed blocks, turn status, and action
 
 Each scope has an action endpoint under the same address and a `/chat` endpoint for a TanStack AI event stream. The browser reads the conversation and submits reviewed actions through the [shared Effect HTTP contract](../../packages/agent-conversations-api/src/index.ts). The chat bridge accepts the TanStack request shape, checks its thread and turn identity, and forwards a closed input to the Agent. The host derives the scope and account key from the authenticated request. The browser cannot choose an Agent object name or supply canonical context.
 
+Shared conversation screens read the family feature's roster query. People changes invalidate that query, so the conversation uses current names and membership. If the roster read fails, the conversation stays unavailable until a roster read succeeds. A person-specific fact cannot be reviewed when its person is absent from the loaded roster.
+
 The host uses the existing [application access boundary](../../apps/api/src/features/auth/application-access.ts) for session, same-origin, and rate-limit checks. Family admission also verifies live membership and the current linked adult person before reads, turns, and actions. Conversation responses use `Cache-Control: no-store`.
 
 ## Context and privacy

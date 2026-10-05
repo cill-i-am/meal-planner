@@ -10,8 +10,9 @@ import { useMemo, useState } from "react";
 import { Alert } from "../../components/ui/alert.js";
 import { Button } from "../../components/ui/button.js";
 import { Overlay } from "../../components/ui/responsive-overlay.js";
-import { apiEffectQuery, useApiRuntime } from "../api-client/index.js";
+import { useApiRuntime } from "../api-client/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
+import { familyRosterQueryOptions } from "../family/index.js";
 import {
   PlanningContentProposalReviewSheet,
   usePlanningContentSnapshot,
@@ -126,12 +127,7 @@ export const OurTastesPage = ({
     readonly actions: PlanProposalReviewActions;
   } | null>(null);
   const roster = useQuery(
-    apiEffectQuery.queryOptions({
-      queryFn: () => peopleOperations.list(false),
-      queryKey: ["our-tastes-roster", scope.userId, scope.organizationId],
-      retry: false,
-      staleTime: 15_000,
-    })
+    familyRosterQueryOptions(runtime, scope.userId, scope.organizationId)
   );
   const people: ConversationPerson[] =
     roster.data?.people
@@ -142,6 +138,11 @@ export const OurTastesPage = ({
         isCurrentAdult: person.isCurrentAdult,
         kind: person.kind,
       })) ?? [];
+  const selectedConversationPersonId = people.some(
+    (person) => person.id === selectedPersonId
+  )
+    ? selectedPersonId
+    : null;
   return (
     <section
       aria-labelledby="our-tastes-title"
@@ -176,7 +177,7 @@ export const OurTastesPage = ({
           </Button>
         </Alert>
       )}
-      {roster.data !== undefined && (
+      {roster.isSuccess && (
         <AgentConversationProvider
           accountId={scope.userId}
           scope={{ _tag: "FamilyShared", familyId: scope.organizationId }}
@@ -184,7 +185,7 @@ export const OurTastesPage = ({
           <FamilyConversation
             scope={scope}
             people={people}
-            selectedPersonId={selectedPersonId}
+            selectedPersonId={selectedConversationPersonId}
             onSelectPerson={setSelectedPersonId}
             onOpenPrivate={() => setPrivateOpen(true)}
             onPlanningContentProposalReview={(block, actions) =>
@@ -194,7 +195,7 @@ export const OurTastesPage = ({
         </AgentConversationProvider>
       )}
       <Overlay.Root
-        open={contentReview !== null}
+        open={roster.isSuccess && contentReview !== null}
         onOpenChange={(open) => {
           if (!open) {
             setContentReview(null);
@@ -212,7 +213,7 @@ export const OurTastesPage = ({
             </Overlay.Description>
           </Overlay.Header>
           <Overlay.Body>
-            {contentReview && (
+            {roster.isSuccess && contentReview && (
               <PlanningContentProposalReviewSheet
                 scope={scope}
                 block={contentReview.block}
@@ -287,47 +288,54 @@ export const FamilyConversationPanel = ({
   readonly onPlanningContentProposalReview?: PlanningContentProposalReview;
 }) => {
   const runtime = useApiRuntime();
-  const peopleOperations = useMemo(
-    () => makeHouseholdPeopleEffectOperations(scope, runtime),
-    [scope.organizationId, scope.userId, runtime]
-  );
   const roster = useQuery(
-    apiEffectQuery.queryOptions({
-      queryFn: () => peopleOperations.list(false),
-      queryKey: ["our-tastes-roster", scope.userId, scope.organizationId],
-      retry: false,
-      staleTime: 15_000,
-    })
+    familyRosterQueryOptions(runtime, scope.userId, scope.organizationId)
   );
   return (
-    <AgentConversationProvider
-      accountId={scope.userId}
-      scope={{ _tag: "FamilyShared", familyId: scope.organizationId }}
-    >
-      <FamilyConversation
-        scope={scope}
-        people={
-          roster.data?.people
-            .filter((person) => person.lifecycle === "active")
-            .map((person) => ({
-              displayName: person.displayName,
-              id: person.id,
-              isCurrentAdult: person.isCurrentAdult,
-              kind: person.kind,
-            })) ?? []
-        }
-        selectedPersonId={null}
-        {...(planId === undefined ? {} : { planId })}
-        {...(onPlanChangeCommitted === undefined
-          ? {}
-          : { onPlanChangeCommitted })}
-        {...(onPlanProposalReview === undefined
-          ? {}
-          : { onPlanProposalReview })}
-        {...(onPlanningContentProposalReview === undefined
-          ? {}
-          : { onPlanningContentProposalReview })}
-      />
-    </AgentConversationProvider>
+    <>
+      {roster.isPending && <p role="status">Loading your family…</p>}
+      {roster.isError && (
+        <Alert>
+          <p>Your family roster could not be loaded.</p>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              await roster.refetch();
+            }}
+          >
+            Try again
+          </Button>
+        </Alert>
+      )}
+      {roster.isSuccess && (
+        <AgentConversationProvider
+          accountId={scope.userId}
+          scope={{ _tag: "FamilyShared", familyId: scope.organizationId }}
+        >
+          <FamilyConversation
+            scope={scope}
+            people={roster.data.people
+              .filter((person) => person.lifecycle === "active")
+              .map((person) => ({
+                displayName: person.displayName,
+                id: person.id,
+                isCurrentAdult: person.isCurrentAdult,
+                kind: person.kind,
+              }))}
+            selectedPersonId={null}
+            {...(planId === undefined ? {} : { planId })}
+            {...(onPlanChangeCommitted === undefined
+              ? {}
+              : { onPlanChangeCommitted })}
+            {...(onPlanProposalReview === undefined
+              ? {}
+              : { onPlanProposalReview })}
+            {...(onPlanningContentProposalReview === undefined
+              ? {}
+              : { onPlanningContentProposalReview })}
+          />
+        </AgentConversationProvider>
+      )}
+    </>
   );
 };

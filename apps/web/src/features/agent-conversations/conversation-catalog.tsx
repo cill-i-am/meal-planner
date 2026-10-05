@@ -312,7 +312,9 @@ const specForBlock = (
               : "Only the confirmed result becomes a shared food fact.",
           ],
           explanation: block.explanation,
-          title: `A food fact for ${personName(block.personId, people)}`,
+          title: people.some((person) => person.id === block.personId)
+            ? `A food fact for ${personName(block.personId, people)}`
+            : "A food fact awaiting a family member",
         };
       }
       case "RoutineProposal": {
@@ -551,11 +553,13 @@ const FactProposalCard = ({
   block,
   props,
   busy,
+  personKnown,
   onAction,
 }: {
   readonly block: Extract<ConversationBlock, { _tag: "PersonFactProposal" }>;
   readonly props: ProposalProps;
   readonly busy: boolean;
+  readonly personKnown: boolean;
   readonly onAction: (
     block: ConversationBlock,
     decision: "accept" | "dismiss",
@@ -577,6 +581,12 @@ const FactProposalCard = ({
         <CardDescription>{props.explanation}</CardDescription>
       </CardHeader>
       <CardContent>
+        {!personKnown && (
+          <p role="status" className="text-sm">
+            This food fact cannot be reviewed until this person is available in
+            your family roster.
+          </p>
+        )}
         <ul
           className="flex flex-col gap-2 text-sm"
           aria-label="Before and after food fact"
@@ -585,7 +595,7 @@ const FactProposalCard = ({
             <li key={detail}>{detail}</li>
           ))}
         </ul>
-        {block.status === "proposed" && (
+        {block.status === "proposed" && personKnown && (
           <div className="flex flex-wrap gap-2">
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger
@@ -802,6 +812,7 @@ export const ConversationBlockRenderer = ({
             block={block}
             props={props}
             busy={busy}
+            personKnown={people.some((person) => person.id === block.personId)}
             onAction={onAction}
           />
         ) : null,

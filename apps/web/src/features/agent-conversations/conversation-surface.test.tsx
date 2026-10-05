@@ -251,6 +251,52 @@ it("requires a separate safety confirmation before accepting a proposed removal"
   );
 });
 
+it("blocks review when a proposed fact's person is absent from the roster", () => {
+  const act = vi.fn();
+  const proposalView = Schema.decodeUnknownSync(ConversationView)({
+    ...view,
+    blocks: [
+      {
+        _tag: "PersonFactProposal",
+        change: {
+          _tag: "Remove",
+          factId: "fact_00000000-0000-4000-8000-000000000017",
+        },
+        explanation: "Maya may no longer need this exclusion.",
+        id: "00000000-0000-4000-8000-000000000018",
+        personId: childId,
+        profileVersion: 1,
+        requiresSafetyConfirmation: true,
+        reviewedBefore: {
+          _tag: "HardConstraint",
+          category: "allergen",
+          handling: "exclude",
+          label: "Peanuts",
+        },
+        revision: 1,
+        status: "proposed",
+        turnId: "00000000-0000-4000-8000-000000000016",
+      },
+    ],
+  });
+  render(
+    <ConversationSurface
+      conversation={{ ...makeConversation(vi.fn()), act, view: proposalView }}
+      people={[]}
+    />
+  );
+  expect(
+    screen.getByText(/cannot be reviewed until this person is available/iu)
+  ).toBeVisible();
+  expect(
+    screen.queryByText(/food fact for this person/iu)
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Review food fact" })
+  ).not.toBeInTheDocument();
+  expect(act).not.toHaveBeenCalled();
+});
+
 it("routes a meal setup proposal through explicit review before acting", async () => {
   const user = userEvent.setup();
   const setupView = Schema.decodeUnknownSync(ConversationView)({
