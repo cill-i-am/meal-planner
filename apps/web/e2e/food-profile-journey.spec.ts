@@ -74,13 +74,13 @@ test("saved food facts stays reachable while the food conversation loads", async
     await page.setViewportSize({ height: 640, width: 320 });
   }
 
-  const heldConversation = Promise.withResolvers<void>();
-  const intercepted = Promise.withResolvers<void>();
+  const heldConversation = Promise.withResolvers<null>();
+  const intercepted = Promise.withResolvers<null>();
   await page.route(
     /\/v1\/families\/[^/]+\/agent-conversation$/u,
     async (route) => {
       const response = await route.fetch();
-      intercepted.resolve();
+      intercepted.resolve(null);
       await heldConversation.promise;
       await route.fulfill({ response });
     }
@@ -96,7 +96,7 @@ test("saved food facts stays reachable while the food conversation loads", async
     throw new Error("The saved-facts summary has no visible tap target.");
   }
 
-  heldConversation.resolve();
+  heldConversation.resolve(null);
   await expect(
     page.getByRole("heading", { name: "Let’s find a first yes." })
   ).toBeVisible();
