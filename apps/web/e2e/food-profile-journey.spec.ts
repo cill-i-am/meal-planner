@@ -55,3 +55,63 @@ test("a completed family can save and correct a visible food preference", async 
     label: "Carrots",
   });
 });
+
+test("saved food facts stays reachable while the food conversation loads", async ({
+  page,
+}, testInfo) => {
+  await new AuthPage(page).signUp(
+    "Profile organizer",
+    `profile-loading-${crypto.randomUUID()}@example.test`
+  );
+  const family = new FamilyPage(page);
+  await family.create("Food profile family");
+  await family.confirm();
+  await expect(
+    page.getByRole("heading", { name: "Find the food they say yes to." })
+  ).toBeVisible();
+  const hasTouch = testInfo.project.name === "mobile-webkit";
+  if (hasTouch) {
+    await page.setViewportSize({ height: 640, width: 320 });
+  }
+
+  const heldConversation = Promise.withResolvers<void>();
+  const intercepted = Promise.withResolvers<void>();
+  await page.route(
+    /\/v1\/families\/[^/]+\/agent-conversation$/u,
+    async (route) => {
+      const response = await route.fetch();
+      intercepted.resolve();
+      await heldConversation.promise;
+      await route.fulfill({ response });
+    }
+  );
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await intercepted.promise;
+  const summary = page.locator("#saved-food-facts > summary");
+  await expect(page.getByText("Loading conversation…")).toBeVisible();
+  await summary.scrollIntoViewIfNeeded();
+  const before = await summary.boundingBox();
+  if (before === null) {
+    throw new Error("The saved-facts summary has no visible tap target.");
+  }
+
+  heldConversation.resolve();
+  await expect(
+    page.getByRole("heading", { name: "Let’s find a first yes." })
+  ).toBeVisible();
+  const x = before.x + before.width / 2;
+  const y = before.y + before.height / 2;
+  await (hasTouch ? page.touchscreen.tap(x, y) : page.mouse.click(x, y));
+  await expect(
+    page.getByRole("region", { name: "Food profiles" })
+  ).toBeVisible();
+  const firstQuestion = page.getByRole("button", {
+    name: "Ask our first food question",
+  });
+  await firstQuestion.scrollIntoViewIfNeeded();
+  await expect(firstQuestion).toBeVisible();
+  await expect(
+    page.getByRole("textbox", { name: "Your message" })
+  ).toBeVisible();
+});
