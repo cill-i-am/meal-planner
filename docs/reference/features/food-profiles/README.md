@@ -31,7 +31,9 @@ decoded rejection releases a command; mixed Causes and defects preserve it.
 The [Playwright page object](../../../../apps/web/e2e/pages/food-profile-page.ts)
 drives visible controls. The [journey](../../../../apps/web/e2e/food-profile-journey.spec.ts)
 crosses signup, family setup, the real local Website/API Workers, a profile save,
-correction, and reload. The [Vitest browser tests](../../../../apps/web/src/features/household-profiles/household-profiles-panel.test.tsx)
+correction, and reload. It also holds the family conversation response during a
+mobile reload, then taps the saved-facts disclosure at its original screen
+position to check that it remains reachable. The [Vitest browser tests](../../../../apps/web/src/features/household-profiles/household-profiles-panel.test.tsx)
 exercise recovery and cache behavior in Chromium with a synthetic operations
 adapter. The [generated-client browser tests](../../../../apps/web/src/features/household-profiles/browser-operations.browser.test.ts)
 cover scoped reads, pagination, cancellation, and full Cause projection.

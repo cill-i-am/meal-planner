@@ -24,6 +24,10 @@ rules in the API feature module because one household writer currently uses them
 Move them to a package if another host needs those operations; do not add a
 pass-through package now.
 
+The saved-facts disclosure stays in place while the family conversation loads.
+The conversation keeps a bounded frame, so an asynchronous response cannot move
+the disclosure during a mobile tap.
+
 A fresh private `ProfileEdit` session reads the current saved profile for its
 model context and opening guide. The private feature owns session state and
 proposal review; the existing household command remains the only writer of

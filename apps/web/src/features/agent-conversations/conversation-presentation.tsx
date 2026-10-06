@@ -26,7 +26,6 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "../../components/ui/toggle-group.js";
-import { cn } from "../../lib/utils.js";
 import type { AgentConversationController } from "./conversation-controller.js";
 import type { ConversationPerson } from "./conversation-surface.js";
 
@@ -311,7 +310,7 @@ const FirstFoodInvitation = ({
   readonly disabled: boolean;
   readonly onStart: () => Promise<void>;
 }) => (
-  <div className="bg-accent grid overflow-hidden md:grid-cols-[minmax(0,1fr)_minmax(17rem,0.8fr)]">
+  <div className="bg-accent grid min-h-0 flex-1 overflow-y-auto md:grid-cols-[minmax(0,1fr)_minmax(17rem,0.8fr)]">
     <div className="flex flex-col items-start justify-center p-6 md:p-8">
       <p className="text-muted-foreground text-xs font-semibold tracking-widest uppercase">
         First food question
@@ -384,12 +383,7 @@ const ReadyConversationPanel = ({
     buttonLabel = "Working…";
   }
   return (
-    <div
-      className={cn(
-        "border-border bg-card flex flex-col overflow-hidden rounded-3xl border",
-        hasHistory && "h-[min(36rem,65dvh)] min-h-[20rem]"
-      )}
-    >
+    <div className="border-border bg-card flex h-[min(36rem,65dvh)] min-h-[20rem] flex-col overflow-hidden rounded-3xl border">
       {hasHistory ? (
         <div className="min-h-0 flex-1">
           <ConversationHistory
@@ -455,7 +449,7 @@ export const ConversationPresentation = ({
   return (
     <section
       aria-label="Food conversation"
-      className="flex min-w-0 flex-col gap-6"
+      className="flex min-w-0 flex-col gap-6 [overflow-anchor:none]"
     >
       {people.length > 0 && onSelectPerson !== undefined && (
         <PersonSelector
@@ -466,24 +460,38 @@ export const ConversationPresentation = ({
         />
       )}
       {conversation.status === "loading" && (
-        <div role="status" className="flex flex-col gap-3">
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-20 w-4/5" />
+        <div
+          role="status"
+          className="border-border bg-card flex h-[min(36rem,65dvh)] min-h-[20rem] flex-col overflow-hidden rounded-3xl border"
+        >
+          <div className="bg-accent flex min-h-0 flex-1 flex-col justify-center gap-2 p-4">
+            <Skeleton className="h-5 w-28" />
+            <Skeleton className="h-10 w-4/5" />
+          </div>
+          <Skeleton className="h-20 w-full shrink-0 md:hidden" />
+          <div className="border-border flex flex-col gap-3 border-t p-4">
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-20 w-full" />
+          </div>
           <span className="sr-only">Loading conversation…</span>
         </div>
       )}
       {conversation.status === "unavailable" && (
-        <Alert>
-          <p>{conversation.error ?? "The conversation could not be loaded."}</p>
-          <Button
-            variant="outline"
-            onClick={async () => {
-              await conversation.refresh();
-            }}
-          >
-            Try again
-          </Button>
-        </Alert>
+        <div className="border-border bg-card h-[min(36rem,65dvh)] min-h-[20rem] rounded-3xl border p-6">
+          <Alert>
+            <p>
+              {conversation.error ?? "The conversation could not be loaded."}
+            </p>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                await conversation.refresh();
+              }}
+            >
+              Try again
+            </Button>
+          </Alert>
+        </div>
       )}
       {conversation.status === "ready" && (
         <ReadyConversationPanel
