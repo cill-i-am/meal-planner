@@ -4,97 +4,43 @@
 - Date: 2026-08-24
 - Owners: Household product
 
-## Context
+## Decision and reason
 
-The long-term product may include nutrition goals, pantry inventory, supermarket
-orders, MCP, embedded access, and other household features. The MVP has a narrower
-job: show that a small beta group can reach a practical, personalized weekly plan
-in less time, with fewer corrections over successive weeks.
+The first release tests whether a small invite-only beta can plan practical weeks
+faster, with less mental load and fewer corrections over time. Conversation
+quality matters through that result. Adding nutrition goals or supermarket
+ordering first would increase complexity without proving the core promise.
 
-Adding broad goal systems or supermarket ordering before that works would add
-complexity, risk, and effort for users without testing the main promise.
+The intended MVP includes household people separate from accounts, private
+repeatable adult discovery, shared confirmed profiles, broad audited adult edit
+rights, routines and personal fallbacks, and configurable occasions, locations,
+equipment, preparation windows and cooking capacity. It recommends one complete
+week across recipes, assembled, packaged and external meals, leftovers, skips and
+flexible choices. It includes private and curated recipe supply, portions,
+batches, prepared stock, versioned recipes/plans, optional review and explainable
+learning, plus retailer-neutral shopping preview and approved-plan demand.
+These are scope commitments, not claims that all are implemented.
 
-## Decision
+Qualitative observations about repetition, vegetables or effort may advise and
+gently break ties. They never block approval or override hard constraints,
+dependable routines, approved fallbacks or strong preferences. Explain observable
+reasons rather than an opaque score.
 
-### MVP promise
+## Deferred scope and revisit rule
 
-- The primary promise is reducing planning time and mental load.
-- The product covers every configured person and managed meal occasion using
-  routines, shared meals, individual alternatives, leftovers, external meals,
-  intentional skips, or explicit flexible slots.
-- The AI experience must be unusually perceptive and impressive, but its value
-  is measured by the quality and speed of the resulting plan.
+Defer generic goals, calories, macros, weight/muscle modes, clinical or therapeutic
+nutrition, continuous pantry tracking and food-safety certification. Also defer
+retailer credentials, live product/price/offer/availability matching, basket,
+checkout, payments and partnerships; MCP as a beta dependency; embedded or
+white-label distribution; public recipe contribution/marketplaces; dependant
+accounts; granular permissions or consensus; external calendars; non-household
+organizations; and fleet-wide read models without an approved use case.
 
-### Included in the MVP direction
+Keep current concepts extensible without speculative portability or unused
+abstractions. Delivery prioritizes the people-to-profile-to-routine-to-plan-to-
+review journey. Product and beta evidence remain repository-reviewed.
 
-- household people distinct from authenticated membership;
-- private repeatable adult interviews and household-visible confirmed profiles;
-- broad MVP adult edit rights with audit history;
-- AI-led person and household routine building;
-- configurable meal occasions, locations, equipment, preparation windows, and
-  cooking capacity;
-- one complete personalised recommended week with visible rationale;
-- person-specific approved and agent-proposed fallbacks;
-- recipe, assembled, packaged, and external meal options;
-- cook events, portions, prepared components, deliberate batch cooking, and
-  lightweight prepared-food stock;
-- curated catalogue and private household recipe supply;
-- immutable recipes and plan revisions;
-- optional weekly review and explainable learning proposals; and
-- retailer-neutral shopping preview and approved-plan shopping list.
-
-### Planning goals
-
-- A generic goals system is deferred.
-- The MVP does not implement calorie targets, macro optimization, weight-loss
-  mode, muscle-gain mode, goal tracking, or therapeutic diet planning.
-- The model should remain modular so a future planning-goal capability can be
-  added without redefining people, routines, portions, recipes, or plans.
-
-### Qualitative observations
-
-- The MVP may offer transparent, non-medical observations such as excessive
-  repetition, few vegetables, or an unusually high-effort week.
-- Observations are advisory and never block approval.
-- They may gently influence tie-breaking between otherwise suitable options.
-- They cannot displace hard constraints, dependable routines, approved
-  fallbacks, or strong household preferences merely to improve an abstract
-  score.
-- Explanations state the observable reason rather than presenting an opaque AI
-  judgment.
-
-### Explicitly deferred
-
-- retailer login or custody of consumer retailer credentials;
-- product, price, offer, and live availability matching;
-- basket mutation, checkout, payment, and retailer partnerships;
-- full continuous pantry inventory;
-- food-safety expiry calculation or certification;
-- calories, macros, medical diagnosis, treatment, or prescribed therapeutic
-  diets;
-- MCP as a beta dependency;
-- embedded and white-label distribution;
-- public recipe contribution or marketplace policy;
-- dependants with authenticated accounts;
-- granular household permissions and consensus approval;
-- external calendar integrations;
-- non-household organization types; and
-- fleet-wide product read models introduced without an approved use case.
-
-## Consequences
-
-- Delivery should prioritize the people-to-profile-to-routine-to-plan-to-review
-  vertical rather than breadth.
-- Technical abstractions should not be introduced only to anticipate deferred
-  capabilities.
-- Extension points are justified when they preserve a clean current model, not
-  when they create unused portability machinery.
-- Product and beta evidence live in the repository and are reviewed through pull
-  requests.
-
-## Revisit Trigger
-
-A deferred capability should be revisited only when the core beta demonstrates
-repeat household use or when a concrete dependency is required to complete the
-accepted vertical. The new proposal must identify the user outcome, authority,
-privacy and safety effects, and evidence required before changing this record.
+Revisit a deferral when repeated beta use is established or a concrete dependency
+is needed for the accepted journey. A new proposal identifies its user outcome,
+authority, privacy/safety effects and required evidence before replacing this
+choice.

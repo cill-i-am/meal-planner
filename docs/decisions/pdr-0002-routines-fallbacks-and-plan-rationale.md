@@ -4,185 +4,73 @@
 - Date: 2026-08-24
 - Owners: Household product
 
-## Context
+## Decision and reason
 
-Planning all meals must not mean choosing a separate recipe for every person and
-occasion. Households rely on repeated breakfasts, packed lunches, deliberate
-skips, takeaway, reliable alternatives for children, meals tied to a location,
-and a limited amount of cooking energy.
+Households rely on dependable repeated food and limited cooking capacity. Apply
+those patterns before recommending one coherent week; do not make adults repair
+a generic recipe calendar.
 
-The first proposed week must account for these patterns. Adults can change the
-plan, but they should not have to turn a generic result into a personal one.
+Begin with breakfast, lunch, dinner and snacks. Households may add, rename,
+disable or scope occasions by person and day. A versioned person or household
+routine expands into a period's entries. It may specify exact food or an
+approved set with pin, prefer or rotate behaviour, leftovers, external meals,
+skips, context, preparation windows, portions and capacity. Approved plans pin
+the routine version and expansion; later edits affect future periods by default.
 
-## Decision
+## Routine conflict precedence
 
-### Meal occasions and routines
+1. Hard suitability, dietary and safety constraints always win.
+2. A compatible one-off period exception overrides a recurring routine.
+3. A person routine overrides the household routine for that person.
+4. The household routine supplies the remaining baseline.
+5. Approved personal fallbacks repair incompatible or strongly avoided shared meals.
+6. Ordinary preferences affect ranking without overriding confirmed routines.
+7. Agent proposals require adult acceptance before gaining authority.
 
-- Households begin with breakfast, lunch, dinner, and snacks.
-- They may add, rename, disable, or scope meal occasions by person and day.
-- A routine is a reusable, versioned rule for one person or the household.
-- Routines expand into concrete entries when a planning period is generated.
-- An approved plan pins both the expanded entries and the routine versions used.
-- Changing a routine affects future weeks unless an adult explicitly replans an
-  active period.
-- Routines may represent exact foods, a small approved set, leftovers, eating
-  out, takeaway, an intentional skip, or another planning rule.
-- An exact or set-valued routine declares whether options are pinned, preferred,
-  or rotated.
+Apply an unambiguous compatible result automatically in drafts and make its real
+reason inspectable. Equally specific conflicts require adult resolution. Stale
+routine edits fail against the current version; never silently use last-write-wins.
 
-### Routine conflict precedence
+Location, availability, equipment and preparation windows must be practical. A
+slow cooker helps only when someone can start it. Cooking capacity is an explicit
+household target that the agent may propose changing but cannot silently alter.
+Effort includes hands-on and elapsed time, attention, cleanup, coordination,
+advance preparation and skill. Friendly effort labels are derived summaries.
 
-Routine evaluation follows this precedence:
+## Fallbacks and preferences
 
-1. Hard suitability, dietary, and safety constraints always win. No routine,
-   exception, fallback, preference, or model proposal can override them.
-2. An explicit one-off change for the current planning period overrides a
-   recurring routine where the resulting coverage remains compatible with hard
-   constraints.
-3. A person routine overrides a household routine for that person only. It does
-   not rewrite the household baseline for anyone else.
-4. A household routine supplies the baseline where no more-specific person rule
-   applies.
-5. An approved person-specific fallback repairs an incompatible or strongly
-   avoided shared meal according to the accepted fallback policy.
-6. Ordinary preferences influence ranking but do not override a confirmed
-   routine by themselves.
-7. An agent proposal has no authority until an adult accepts it through the
-   admitted product transition.
+Fallback approval belongs to a person and may specify context, priority,
+substitution policy and active or paused state. There is no fixed repertoire
+limit. A fallback is a selection reason, not a food kind; it may reuse shared
+components, be assembled, packaged, cooked or external.
 
-Where this precedence yields one compatible answer, the draft planner may apply
-it automatically and must expose the applied rationale. Where two equally
-specific rules conflict or the intended answer remains ambiguous, the planner
-keeps the conflict visible and asks an adult rather than guessing.
+- Incompatibility requires compatible alternative coverage. A strong avoid
+  normally gets an approved fallback, with adult override. Ordinary dislikes
+  lower ranking without automatically requiring a separate meal.
+- Apply approved fallbacks in drafts without asking every time. Week approval
+  includes its personal alternatives. Show relevant choices without requiring
+  adults to manage the entire repertoire each time.
+- A replacement must be active, compatible and applicable. Repair affected
+  portions, effort, cook events and shopping together.
+- Adults may pause unavailable fallbacks or products. Never silently replace an
+  exact-only product. Use another approved option, propose one, or leave the gap
+  visible. A proposed fallback can be used once, saved for future use or rejected;
+  a proposed routine can apply this period, recur or be rejected.
+- If no credible option exists, expose a gap or propose an explicitly accepted
+  flexible slot rather than invent food.
 
-Concurrent adult routine edits use optimistic concurrency against the routine
-version. A stale edit fails with a visible conflict and current state; routine
-state never uses silent last-write-wins behaviour.
+Preferences may concern ingredients, dishes or cuisines, with optional occasion
+or routine context. Suitability, preference and fallback reliability are distinct.
+Exact products can appear by name before retailer integration. Substitution is
+exact-only, ask-first or similar-products-acceptable.
 
-### Context, availability, and equipment
+Respect personal daily, weekday, weekly, fortnightly, make-again-soon, paused or
+avoid cadence. Dependable repeated food must not lose to an abstract variety
+score. Rationale identifies confirmed facts, people, routines, fallbacks,
+locations or capacity that actually affected the recommendation, never private
+transcript text. Adults can make focused changes to the recommended week.
 
-- Person routines may include normal location and availability by meal
-  occasion, such as home, office, school, travelling, or working from home.
-- One-off weekly overrides may change that baseline.
-- The household profile records available equipment and realistic preparation
-  windows.
-- The planner must account for whether someone can start a hands-off meal at the
-  required time, not merely whether the equipment exists.
-
-### Cooking capacity and effort
-
-- A household may set a weekly cooking-capacity target, such as a maximum number
-  of substantial cook events.
-- The agent may propose changing that target based on repeated observed
-  behaviour but never changes it silently.
-- Effort is multidimensional. Relevant facts include hands-on time, elapsed
-  time, attention, cleanup, coordination, advance planning, and skill or
-  cognitive load.
-- Friendly labels such as quick cook, hands-off cook, involved cook, assemble,
-  reheat, packaged, and external are derived summaries rather than the sole
-  source data.
-- A long slow-cooker meal may be low effort; a short multi-pan meal may be high
-  effort.
-
-### Person-specific fallbacks
-
-- Fallback repertoires belong to individual people. Different people may share
-  the same fallback, but one person's approval does not imply another's.
-- A fallback describes why a meal option was selected, not how it was produced.
-  It may be a shared-component variation, assembled meal, exact packaged
-  product, generic product, simple recipe, takeaway, or another external meal.
-- An incompatibility or hard constraint requires separate compatible coverage.
-- A strong avoid normally triggers an approved fallback, but an adult may
-  override it.
-- An ordinary dislike lowers ranking but does not automatically exclude the
-  shared meal.
-- Approved personal fallbacks may be applied automatically in a draft.
-- There is no hard maximum number of fallbacks per person in the MVP.
-- Each fallback may carry applicable context, priority, substitution policy,
-  and active or paused state.
-- Product views should emphasize the few fallbacks relevant to the current meal
-  rather than present the complete repertoire by default.
-- A quick **swap backup meal** action may cycle through the person's currently
-  active, compatible, and context-appropriate fallbacks.
-- The swap action must exclude paused, prohibited, incompatible, or inapplicable
-  options and must repair affected portions, effort, cook events, and shopping
-  preview in the draft.
-- An adult may temporarily pause a fallback or exact product that is unavailable.
-- If an exact-only fallback is unavailable, the planner must not silently replace
-  it with a similar product. It uses another approved compatible fallback,
-  proposes a new fallback, or leaves the problem visible.
-- When no approved fallback fits the person, context, and available effort, the
-  agent may propose a new one with three choices: use once, approve for future
-  use, or reject.
-- If the agent has no credible compatible option, it must not invent one. It
-  leaves an explicit gap or proposes a flexible slot for adult confirmation.
-- Agent-proposed routines use the equivalent choices: apply this period, save
-  as recurring, or reject.
-
-### Exact products and substitutions
-
-- A meal or fallback may reference a generic food concept and optionally an
-  exact product.
-- Exact-product preferences may be person-specific.
-- Substitution policy is one of exact only, ask before substituting, or similar
-  products acceptable.
-- This model is valid before retailer integration; exact products may appear by
-  name on a retailer-neutral shopping list.
-
-### Preferences and repetition
-
-- Preference may attach to an ingredient, dish, or cuisine.
-- Suitability and preference are separate: prohibited or incompatible is a hard
-  block; strongly avoids normally receives an alternative; ordinary dislike
-  affects ranking; likes and favourites affect ranking only.
-- Preferences are simple by default. Optional meal-occasion or routine tags may
-  express a meaningful exception without introducing a general rules language.
-- Fallback reliability is separately approved and may be context-specific.
-- Recurring foods may use daily, weekday, weekly, fortnightly, make-again-soon,
-  paused, or avoid cadence.
-- Repetition is person-specific. A reliable child meal is not removed merely to
-  improve an abstract household variety score.
-
-### Recommended week and rationale
-
-- The planner produces one strong recommended week by default.
-- That week arrives fully personalised with confirmed routines, skips,
-  locations, portions, approved fallbacks, cooking capacity, preparation
-  windows, and leftover intent already applied.
-- Approving the week approves its person-level alternatives; approved fallbacks
-  do not require separate acceptance each time.
-- Adults may optionally swap meals, alternatives, routines, or days after
-  receiving a coherent recommendation.
-- Every meaningful exception exposes planning rationale: the person, profile
-  fact, routine, fallback, location, capacity rule, or constraint that affected
-  the plan.
-- Rationale references confirmed product facts, never private transcript text.
-- The weekly summary may state how many routines, fallbacks, leftovers,
-  external meals, and cook-capacity rules were applied.
-
-## Consequences
-
-- The routine builder is a core product capability, not a convenience around a
-  recipe calendar.
-- Plan generation needs deterministic routine expansion and conflict handling
-  before model-assisted recommendation can be trusted.
-- Routine authority needs versioned mutation and optimistic concurrency; stale
-  adult edits cannot silently replace current state.
-- Automatically resolved routine conflicts need inspectable rationale, while
-  equally specific ambiguity remains visible for adult resolution.
-- Fallback selection needs a queryable applicability and availability model,
-  while the UI remains simple through context filtering and quick swapping.
-- Swapping a fallback is a plan mutation with dependency repair, not a purely
-  visual carousel that can leave quantities or shopping demand stale.
-- The UI needs a compressed shared-week projection with nested person-level
-  exceptions and inspectable rationale.
-- No decision here requires the frontend to render the raw domain union
-  directly; the appropriate projection may emerge with implementation.
-
-## Deferred
-
-- retailer-backed availability and substitutions;
-- a universal child-specific accepted-food taxonomy;
-- a general preference rules language;
-- automatic permanent routines or fallbacks without confirmation; and
-- abstract variety optimization that overrides dependable household patterns.
+Retailer availability, a universal child-food taxonomy, a general preference
+rules language and unconfirmed permanent routines or fallbacks remain deferred.
+Presentation may group shared meals and personal exceptions without exposing
+internal domain records.

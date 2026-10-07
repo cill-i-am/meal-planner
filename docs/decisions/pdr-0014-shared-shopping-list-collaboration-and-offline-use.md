@@ -4,145 +4,48 @@
 - Date: 2026-08-26
 - Owners: Household product
 
-## Context
+## Decision and reason
 
-An approved plan creates one shared shopping list. Several adults may shop, add
-items, and update the list at once. Shops can have poor connectivity, so the MVP
-needs limited offline use without becoming a general collaborative document app.
+Authorized household adults share one active shopping list. Item-level changes
+prevent checking milk from erasing another person's addition. Dependants and
+anonymous/public collaborators have no MVP access.
 
-The latest whole-list write must not overwrite everything else. Checking milk
-must not erase another adult's newly added nappies. An offline device must not
-replace newer plan-derived items when it reconnects. Requiring a server reply
-for every checkbox would also make the list unreliable while shopping.
+Adults may add manual items, edit admitted fields, check/uncheck and perform
+allowed structural actions. Record actor and authoritative time. Distinguish
+plan-derived demand, manual additions, purchased state and retained items.
+Connected clients receive accepted changes without full-page refresh and never
+replace the whole list with a local copy. Identical check-state writes are
+harmless; server acceptance order resolves competing check states.
 
-## Decision
+## Limited offline use and conflicts
 
-### One shared active list
+Cache the active list for authenticated offline viewing. Offline adults may set
+desired checked/unchecked state and add a simple manual item. Mark queued changes
+pending until accepted; do not claim other adults have received them.
 
-- All authorized household adults use the same active shopping list.
-- Any adult may add a manual item, edit an admitted item field, check or uncheck
-  an item, and perform the structural actions allowed by the current list state.
-- Dependants have no shopping-list access in the MVP.
-- Mutations record the acting adult and authoritative time and remain available
-  through ordinary household audit or item history where useful.
-- Plan-derived demand, manually added household items, purchased state, and
-  items retained after a plan revision remain distinguishable.
+Plan revisions, demand regeneration, merge/split, derived quantity changes,
+identity/unit conflict resolution and other structural recalculation require an
+online connection. Synchronize desired values, not blind toggles. Stable
+client-generated identities/idempotency keys prevent duplicate additions.
+Structural edits check current list/item versions and reject stale edits with an
+understandable conflict. Removed/replaced/materially changed offline targets stay
+unresolved or fail explicitly; never silently remap operations to another item.
+Transport, local cache and pending queues remain subordinate to server authority.
 
-### Connected collaboration
+## Revision and manual-item lifecycle
 
-- Connected clients receive accepted item and list changes without needing to
-  refresh the whole page.
-- Synchronization applies item-level operations or authoritative list changes;
-  a client never replaces the complete shared list merely because it holds a
-  local copy.
-- Two adults setting the same item to the same checked state is harmless.
-- The server's accepted operation order is authoritative when adults submit
-  different check states for the same item.
-- The product may expose who made the latest change without making routine
-  shopping interactions feel like an audit console.
+An accepted revision recalculates plan demand. Unneeded unchecked/unpurchased
+plan items leave the outstanding list while retaining history and lineage.
+Checked/purchased items remain visible for that list's lifetime as bought but no
+longer required, without counting as outstanding demand. Revisions never remove
+manual household items.
 
-### Narrow offline capability
+When creating a new active list, carry forward unchecked manual items with their
+food/non-food and manual provenance. Checked manual items finish with the archived
+list. No separate recurring-staples subsystem is required.
 
-The active list is cached locally for authenticated use when connectivity is
-lost.
-
-While offline, an adult may:
-
-- view the most recently synchronized active list;
-- set an item's desired checked or unchecked state; and
-- add a simple manual item.
-
-Those changes are shown as pending and queued for synchronization. The client
-does not claim that another adult has received them or that the server accepted
-them until synchronization succeeds.
-
-The MVP does not support offline structural recalculation. The following require
-an online connection:
-
-- applying or accepting a plan revision;
-- regenerating plan-derived shopping demand;
-- merging or splitting items;
-- changing a derived quantity or its source assumptions;
-- resolving an ingredient-identity or unit-conversion conflict; and
-- other operations whose correctness depends on current authoritative list or
-  plan state.
-
-### Conflict behaviour
-
-- Offline check state is synchronized as a desired final value, not as a blind
-  toggle.
-- Queued manual additions use a stable client-generated identity or idempotency
-  key so retry cannot create duplicates.
-- Structural commands use optimistic concurrency against the authoritative list
-  or item version.
-- A stale structural edit fails with current state and an understandable
-  conflict; the product never silently applies last-write-wins.
-- If an offline operation refers to an item that was removed, replaced, or
-  materially changed while the client was disconnected, the operation remains
-  visibly unresolved or fails explicitly. It is not silently remapped to a
-  different item.
-- Accepted plan-revision behaviour continues to preserve manual items and
-  purchased or checked state according to PDR-0004.
-
-### Manual items and plan-revision lifecycle
-
-- An accepted plan revision recalculates which plan-derived items are still
-  required by the active plan.
-- A plan-derived item that is no longer required and is neither checked nor
-  marked purchased leaves the outstanding active list. Its lineage and removal
-  remain available in the plan-revision and shopping-list history.
-- A checked or purchased plan-derived item that is no longer required remains
-  visible for the lifetime of the current list in a completed or retained state
-  labelled, directionally, **bought, but no longer required**. It does not count
-  as outstanding demand and is not silently deleted merely because the plan
-  changed after shopping began.
-- A plan revision never removes a manually added household item.
-- When a new active shopping list is created, unchecked manual items carry
-  forward automatically so an unfinished household need is not lost.
-- Checked manual items are completed with the archived list and do not carry
-  into the next active list by default.
-- Manual food and non-food items remain distinguishable from plan-derived demand
-  and retain their manual provenance after carry-forward.
-- The MVP does not introduce a separate recurring-staples checklist. Repeated
-  carry-forward or repeated manual additions may justify that capability later,
-  but the first product keeps one simple manual-item lifecycle.
-
-### Sharing boundary
-
-- The MVP shopping list is available only to authenticated authorized household
-  adults.
-- Public links, anonymous collaboration, and unauthenticated shared checklists
-  are out of scope.
-- Lightweight conveniences such as copy, print, or device-native sharing may be
-  added where they do not create an editable external authority or leak private
-  household state.
-
-## Consequences
-
-- The household authority needs stable shopping-list and item identities,
-  item-level mutation commands, idempotency, authoritative ordering, and
-  optimistic concurrency for structural edits.
-- Items need explicit origin, requirement, completion, retention, and lineage
-  state so a plan revision can remove outstanding demand without erasing
-  something already bought or manually requested.
-- List archival needs deterministic carry-forward rules for unfinished manual
-  items.
-- Clients need a rebuildable local cache, a small durable pending-operation
-  queue, synchronization status, and explicit failure handling.
-- Check and uncheck commands should express desired state rather than toggle
-  intent so replay is safe.
-- Real-time transport improves collaboration but does not become shopping-list
-  authority.
-- The MVP delivers a dependable supermarket experience without implementing a
-  general CRDT, full offline-first plan editor, or recurring-staples subsystem.
-
-## Deferred
-
-- public or anonymous shopping-list links;
-- dependant shopping-list accounts;
-- offline plan revisions or shopping-demand regeneration;
-- offline merge, split, quantity, and identity-resolution operations;
-- arbitrary multi-device collaborative document semantics;
-- household-configurable conflict policies;
-- a dedicated recurring-staples checklist or recurrence engine; and
-- retailer basket synchronization or checkout.
+Copy, print or device sharing may be added only without leaking private state or
+creating another editable authority. Public links, dependant accounts, offline
+structural operations, general collaborative-document semantics, configurable
+conflict policy, recurring-staples automation and retailer basket/checkout remain
+deferred.

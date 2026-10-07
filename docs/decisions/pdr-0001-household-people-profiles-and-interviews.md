@@ -4,201 +4,75 @@
 - Date: 2026-08-24
 - Owners: Household product
 
-## Context
+## Decision and reason
 
-A household includes people who eat and account holders who use the app. Adults
-can be both, but these are different roles. Dependants need profiles without
-accounts, and invited adults can have profiles before they join. A person's meal
-planning history must survive changes to their account.
+People who need meals are not the same as account holders. Keep household-person
+identity separate from Better Auth membership so dependants and invited adults
+can retain profiles and planning history without accounts.
 
-Discovery also has a privacy requirement. Adults need a private conversation
-where they can speak candidly. The profile facts they confirm must still be
-useful and editable by the people planning food together.
+- MVP dependants have managed profiles and cannot sign in. One adult may provide
+  provisional information for everyone and obtain a first plan before other
+  adults finish discovery.
+- A user may link to at most one person per household and belong to several
+  households. Explicit authorized link repair preserves the chosen person's
+  profile, routine, plan, feedback, recipe and audit history. Never merge or
+  delete people heuristically.
+- Confirmed profiles are visible to all household adults. Any adult may edit any
+  adult or dependant profile in the MVP. Version facts and snapshots and record
+  actor, time and source for every change.
+- Raw interviews are private to their participant. They are neither planning
+  authority nor necessary to reconstruct confirmed product state. Adults may
+  review their own profile repeatedly or edit it outside an interview.
 
-## Decision
+## Completed interview lifecycle
 
-### People and accounts
+An active interview continues until its participant completes it. Completion
+permanently closes conversation and product mutations. Retain the transcript as
+private, read-only history for that currently authorized participant; a later review starts a new
+session. Normal completion does not automatically erase transcripts. Permanent
+deletion and erasure are separate lifecycles.
 
-- A household person is distinct from an authenticated Better Auth member.
-- MVP adults may have authenticated accounts linked to their household-person
-  record.
-- MVP dependants are managed profiles only and cannot sign in.
-- A future dependant account may claim or link the existing profile without
-  creating a second person, but that flow is deferred.
-- One adult can create the household, add all people, enter provisional
-  information, and generate the first plan before invited adults complete their
-  own discovery sessions.
-- One authenticated user may link to at most one household person within a given
-  household.
-- The same authenticated user may belong to several households and link to one
-  household person in each.
-- An incorrect or duplicate account link is repaired through an explicit
-  authorized operation. The product does not automatically merge or delete
-  household people, and repair must preserve the chosen person's profile,
-  routine, plan, feedback, recipe, and audit history.
+Support and product staff have no default transcript access. The participant may
+grant read-only access to one named completed transcript for an explicit purpose.
+The grant is time-limited, revocable and audited. It grants no other-session or
+household-wide visibility, cannot reopen the interview or mutate product state,
+and does not replace ordinary confirmation of any suggested enduring change.
 
-### Profile visibility and editing
+## Minimum profile for the first plan
 
-- Confirmed person-profile facts are visible to all adults in the household.
-- In the MVP, any adult may directly edit any adult or dependant profile.
-- Every profile mutation records who changed it, when, and the change source.
-- Granular permissions, suggestions, guardianship roles, and profile-change
-  approval workflows are deferred.
+Confirm only what prevents an unsafe or obviously impractical recommendation:
 
-### Interviews and repeated review
+- active people and their managed meal occasions;
+- each person's hard-constraint status, including explicit `none known`;
+- basic location and availability for home, school, office, travel or packed food;
+- available equipment and realistic cooking capacity; and
+- at least one approved fallback for anyone unable to share ordinary meals reliably.
 
-- An adult's raw interview transcript is private to that participant.
-- The transcript is not planning authority and is not required to reconstruct
-  confirmed product state.
-- An adult may run an AI-led review of their own profile at any time. Discovery
-  is not a one-time onboarding wizard.
-- Confirmed interview outputs become household-visible profile facts.
-- Adults may also update profiles directly outside an interview.
-- Profile facts and profile snapshots are versioned so history and plan
-  provenance remain auditable.
+Likes, cuisines, detailed routines, exact products and portion refinements can
+remain provisional. Make useful understanding inspectable early and stop asking
+when this minimum is met. Tune discovery depth using first-plan quality,
+corrections, active time and abandonment, without a fixed questionnaire length.
 
-### Completed interview lifecycle
+Self-confirmed ordinary facts replace provisional input. Never silently remove
+or weaken a hard dietary or safety constraint. That requires explicit admitted
+confirmation. Soft inference from repeated behaviour may affect ranking only at
+low weight and must remain labelled, visible, editable and removable. Safety
+constraints, dietary rules, routines, goals and strong dislikes require explicit
+confirmation.
 
-- An active interview may be continued until the participant completes it.
-- Completing an interview closes and disables that conversation.
-- A completed conversation is retained as a private historical transcript and
-  becomes read-only. It cannot accept further messages, resume questioning, or
-  mutate product state.
-- A later profile review starts a new interview session rather than reopening or
-  appending to the completed conversation.
-- The participant may view their own completed transcripts. Other household
-  adults cannot view them.
-- Confirmed profile facts, routines, and audit records remain structurally
-  independent of the transcript.
-- The MVP does not automatically delete completed transcripts. Permanent
-  deletion or erasure remains a separate explicit lifecycle rather than an
-  expiry timer attached to normal interview completion.
+Use current confirmed profiles for new plans. Profile changes affect future
+planning by default; flag effects on an active week and offer remaining-period
+replanning. Approved plans retain their pinned profile and routine versions
+until a proposed revision is accepted.
 
-### Support and product-quality access
+## Departure and deferred scope
 
-- Support and product staff have no access to private interview transcripts by
-  default.
-- The participant may explicitly grant access to one named completed transcript
-  for a stated support or product-quality purpose.
-- A grant is purpose-specific, time-limited, revocable, and fully audited.
-- Granted access is read-only. It cannot reopen the conversation, send messages,
-  or mutate profile, routine, fallback, or planning state.
-- Granting access does not make the transcript visible to other household
-  adults and does not create broad access to the participant's other sessions.
-- Any enduring product-state change suggested after review of a transcript must
-  still be confirmed through the ordinary admitted household flow.
+Membership removal immediately revokes household access and archives the person
+by default; it does not erase them. Adults may archive or restore dependants.
+Archived people and their routines create no future meal requirements, while
+historical references remain stable and available to remaining authorized
+adults. A returning person reuses the same identity. Permanent erasure is separate.
 
-### Minimum profile for the first plan
-
-The first plan should be available as soon as the product can avoid an unsafe or
-obviously impractical recommendation. It does not require an exhaustive profile
-or a completed interview from every adult.
-
-Before generating the first plan, the household confirms:
-
-- every active household person who needs food coverage;
-- the managed meal occasions for those people;
-- a hard-constraint status for each person, including an explicit `none known`
-  where appropriate;
-- basic weekday location or availability needed to distinguish home, office,
-  school, travel, or packed-meal requirements;
-- the household's available cooking equipment and realistic cooking-capacity
-  boundary; and
-- at least one approved fallback for any person who cannot reliably share
-  ordinary household meals.
-
-Likes, cuisines, routine detail, exact products, portion refinements, and softer
-preferences may remain provisional or be learned in later reviews. The agent
-should create visible profile and routine artifacts early and stop asking once
-the minimum planning boundary is met, rather than withholding value until a long
-questionnaire is complete.
-
-The product will tune interview depth against measured first-plan quality,
-correction burden, active time, and abandonment. A fixed questionnaire length is
-not part of this decision.
-
-### Provisional and contradictory facts
-
-- Self-confirmed facts normally replace provisional facts entered by another
-  adult.
-- Likes, dislikes, ordinary routines, and meal habits may update directly when
-  self-confirmed information conflicts with provisional data.
-- A hard dietary or safety constraint is never silently removed or weakened.
-  Removing or weakening it requires an explicit admitted confirmation.
-- The planner uses the latest confirmed profile by default.
-
-### Active-plan effect
-
-- Approved plans pin the profile and routine versions used to create them.
-- A profile update affects future planning by default.
-- During an active week, the product flags meals affected by the change and may
-  offer a replan of the remaining period.
-- It never silently rewrites an approved plan.
-
-### Inference
-
-- The agent may infer soft, low-weight preferences from repeated behaviour or
-  feedback.
-- Inferred facts are visible, labelled, editable, and removable.
-- Safety constraints, dietary rules, routines, goals, and strong dislikes
-  require explicit confirmation before becoming authoritative.
-
-### Departure, archival, and restoration
-
-- Removing an adult's household membership revokes their account access to that
-  household immediately.
-- A membership removal does not delete the corresponding household person.
-  Leaving or removing someone archives their `HouseholdPerson` by default.
-- An adult may archive or restore a dependant profile through the same product
-  lifecycle.
-- An archived person stops generating future meal requirements and their
-  routines no longer apply to new plans.
-- Historical approved plans, profile versions, feedback, recipe changes, and
-  audit records retain stable references to the archived person.
-- Remaining authorized adults may continue to understand household history that
-  involved the archived person.
-- A departed adult cannot read household history after their membership access
-  is removed.
-- If the person returns, an adult restores the same household-person identity
-  rather than creating a duplicate profile and losing history.
-- Permanent deletion or erasure is a separate explicit lifecycle. It is not the
-  default consequence of leaving a household.
-
-## Consequences
-
-- Better Auth remains the identity and membership control plane rather than the
-  complete eater model.
-- Household planning state needs stable person identity, account-link state,
-  profile versions, mutation audit, and private interview-session boundaries.
-- The account-link capability enforces at most one linked person per user and
-  household while allowing the user to participate in several households.
-- Link repair is an explicit audited identity operation rather than a heuristic
-  merge of product records.
-- The first-plan gate is a small explicit safety-and-practicality boundary, not
-  completion of an exhaustive preference questionnaire.
-- Profile and routine artifacts must support provisional state because the first
-  plan may precede every adult's self-review.
-- Completed interviews require a closed, read-only lifecycle and participant-only
-  transcript access rather than automatic expiry or conversational reuse.
-- Retained transcripts remain private records and cannot become a hidden source
-  of current planning authority.
-- Operator surfaces exclude transcript content by default and require a scoped,
-  expiring, revocable grant before access is possible.
-- MVP permissions are intentionally broad to reduce implementation and household
-  coordination friction.
-- Private transcript handling cannot be conflated with private profile facts;
-  ordinary confirmed profile facts are shared household state.
-- Account offboarding and household-person archival are distinct transitions,
-  even where one user action coordinates both.
-- Historical projections must render archived people without reactivating their
-  routines or future meal requirements.
-
-## Deferred
-
-- dependant login and profile claiming;
-- granular adult permissions;
-- guardian-specific permissions;
-- consensus approval of profile changes;
-- hidden private confirmed profile facts;
-- cross-household person identity or profile portability; and
-- the permanent person or transcript deletion and erasure workflow.
+Dependant login and claiming, granular or guardian permissions, profile-change
+consensus, hidden confirmed profile facts, cross-household identity and profile
+portability, and permanent-erasure workflows remain deferred.

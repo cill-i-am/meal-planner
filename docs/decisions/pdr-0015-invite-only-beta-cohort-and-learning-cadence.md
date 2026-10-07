@@ -4,244 +4,89 @@
 - Date: 2026-08-26
 - Owners: Household product
 
-## Context
+## Decision and reason
 
-The first beta tests whether Meal Planner reduces the repeated work of feeding
-a household. It is not a launch, a scale test, or a one-session usability study.
+The invite-only beta tests whether households do less planning work over several
+weeks. It is not a scale test or one-session demonstration. Start Ireland-first
+for credible content, terminology, measurement and support, without making Ireland
+a domain constraint. Expand markets only when those needs can be served.
 
-That claim needs several weeks of use. Planning should take less effort as
-profiles, routines, fallbacks, portions, and feedback improve. One generated week
-cannot establish this. Too many early households would spread support thin,
-make failures harder to understand, and encourage automation before it is needed.
+## Cohort and cadence
 
-The first catalogue and cultural assumptions focus on Ireland. Start with
-households for whom that content is relevant, while keeping the domain model
-usable in other places and cultures.
+1. Dogfood with Cillian's household.
+2. Add two or three closely supported friendly households.
+3. Explicitly approve expansion to approximately six to eight participating
+   households in total when new failures become informative.
 
-## Decision
+These are operating bounds, not growth targets; dogfood may be reported
+separately. Dates, available invitations and delivery milestones do not authorize
+expansion. Recruit each household for at least four genuine weekly cycles.
+Holiday, illness, suspension or no real need to plan is not a failed return.
+Participants may pause or leave without completing four cycles or exposing
+private conversations.
 
-### Staged cohort
+Across the cohort seek practical variation: straightforward households,
+dependants/fallbacks, mixed work/school/packed-food routines, vegetarian/omnivore
+coexistence, batch cooking, capacity limits, eating out and temporary changes.
+Not every household must exercise every case. Compare weeks two through four
+with the first usable baseline using active planning time, corrections, routine
+reuse, plan use, unresolved coverage and confidence.
 
-The invite-only beta proceeds in three stages:
+The beta offers no clinical/nutrition programme, sole severe-allergy or food-safety
+safeguard, or unimplemented retailer fulfilment. Confirmed hard constraints still
+receive deterministic protection. Recruitment states current scope, invite-only
+status, four-cycle intent and withdrawal rights. Transcript/screen access is
+optional, never a participation condition. PDR-0001 governs any transcript grant.
+Prefer shared artifacts and participant explanation over private dialogue.
 
-1. **Dogfood.** Cillian's household uses the complete product path first.
-2. **Closely supported pilot.** Add two or three friendly households with direct,
-   hands-on support and frequent qualitative review.
-3. **First full cohort.** Expand to approximately six to eight participating
-   households in total once the end-to-end flow is reliable enough that new
-   failures are informative rather than repetitions of known breakage.
+## Stage readiness gates
 
-The numbers are deliberate operating bounds, not growth targets or permanent
-capacity limits. The dogfood household may be reported separately from external
-participants where that makes evidence easier to interpret.
+Block external invitations or expansion for unresolved privacy, authorization,
+isolation or hard-constraint failures; invalid approved coverage/fallbacks/
+dependencies/allocations; silent approved plan or shopping rewrites; failed required
+deterministic tests or hard-blocking evals; normal journeys requiring developer
+or out-of-band canonical-state edits; or unresolved critical incidents, including
+their cause, containment and corrective action. Explanation and transparent
+support are allowed, but hidden database fixes cannot manufacture success.
 
-Expansion between stages is an explicit product decision based on readiness
-evidence. Reaching a date, completing a sprint, or finding willing participants
-does not automatically open the next stage.
+| Transition | Evidence required |
+| --- | --- |
+| Dogfood to pilot | Cillian completes at least two consecutive genuine cycles through approval and active shopping. The second exercises review/feedback and needs no critical planner correction. No normal-path developer/database intervention. Representative initial setup through first approval takes approximately 30 active minutes. |
+| Pilot to six-to-eight total | Every pilot household completes at least two genuine cycles. Their latest two have no critical planner correction. Returning-week median active time is at most 10 minutes and later-cycle median burden at most 2 major corrections per plan. A majority improve in time, corrections or both; a majority would use it without helping test. Support does not manufacture usable plans every week. |
 
-### Four-cycle learning cadence
+The 30-minute target prompts review rather than hiding complexity or rushing
+confirmation. Explain longer cases before expansion. A mature returning household
+might approach five minutes; this is an aspiration, not the first-cohort gate.
+PDR-0006 separately requires complete synthetic evidence and human calibration.
 
-- Each household is recruited for at least four genuine weekly planning cycles.
-- A cycle means the household had a real opportunity and reason to plan; a
-  holiday, suspension, illness, or week in which the household genuinely did not
-  need the product does not count as a failed return.
-- The product compares later cycles with the household's first usable baseline,
-  including active planning time, correction burden, routine reuse, approved-plan
-  use, unresolved coverage, and confidence in the recommendation.
-- Week-one success is necessary but insufficient. The beta must show whether
-  weeks two through four require less household work.
-- A participant may pause or leave at any time. Participation does not create an
-  obligation to complete four cycles or disclose private conversation content.
+## Measurement and correction severity
 
-### Recruitment shape
+Critical corrections repair something that should invalidate a recommendation:
+missed hard constraints, invalid coverage, missing/incompatible fallbacks,
+impossible cooking/stock/portion dependencies or equivalent unsafe/invalid plans.
+Major corrections repair substantive misunderstandings in routines, alternatives,
+shared meals, cooking, portions or leftovers while the plan remains recoverable.
+Preference-only swaps are not major failures. Preserve correction reason and
+target instead of counting every edit alike.
 
-Recruit for variation in household planning problems rather than demographic
-volume. The first cohort should collectively include, where practical:
+Measure active household time separately from system/import waiting. Record
+approval and abandonment reasons, valid coverage and first-proposal gaps, reported
+plan use and reasons for deviations, genuine week-two/week-four return, and later
+improvement. Assess discovered/missed facts, unnecessary questions, accepted or
+corrected proposals, assumptions, conflicts, practical recommendations and helpful
+explanations. Length or fluency alone is not success.
 
-- a relatively straightforward household baseline;
-- households with dependants and narrow or person-specific fallback needs;
-- mixed adult work, school, packed-lunch, and location routines;
-- vegetarian and omnivore coexistence or other ordinary mixed preferences;
-- planned leftovers, batch cooking, and different cooking-capacity limits;
-- eating out, takeaway, intentional skips, or temporary schedule changes; and
-- households that already experience meal planning as meaningful recurring work.
+Use opaque correlations and minimum event categories. Never put raw transcripts,
+health disclosures, ingredient free text, source URLs, recipe evidence or
+credentials in analytics. Record support frequency and intervention type so
+assisted completion cannot silently improve time/correction metrics.
 
-Not every household needs to exercise every scenario. The cohort as a whole
-should expose enough variation to test the accepted product model.
+Before expansion beyond the first cohort, review repeated useful approvals,
+reduced time/corrections, routine/fallback/leftover reuse, catalogue/import gaps,
+extra work from exceptions, comprehension, privacy, incidents and whether people
+return because the product saves work. Thresholds may change through reviewed
+evidence, never silently to justify expansion.
 
-### Ireland-first operating boundary
-
-- Initial recruitment is Ireland-first and should align reasonably with the
-  catalogue, retailer-neutral language, measurements, food conventions, and
-  support capacity available at launch.
-- Ireland-first recruitment is an operating choice, not a domain invariant.
-  Household, food-concept, recipe, unit, planning, and shopping identities must
-  not encode Ireland as the only supported market.
-- Expansion to other markets follows evidence that catalogue coverage,
-  terminology, product expectations, and support can serve them credibly.
-
-### Suitability and expectation boundary
-
-The first beta is not intended for participants who expect Meal Planner to:
-
-- provide clinical, therapeutic, calorie, macro, weight-loss, or medical
-  nutrition advice;
-- act as the household's sole safeguard for a severe allergy or food-safety
-  decision; or
-- provide retailer fulfilment, price, availability, basket, or checkout
-  capability that remains outside the MVP.
-
-Hard constraints still receive the deterministic product protections already
-accepted. This boundary concerns beta expectations and claims, not permission to
-ignore confirmed constraints.
-
-### Consent and support
-
-- Direct support, manual curation, and operator intervention are acceptable in
-  the small beta when they help distinguish product gaps from premature
-  automation.
-- Transcript or screen access is never a condition of participation.
-- Private transcript access follows PDR-0001: a participant may grant explicit,
-  purpose-specific, time-limited, revocable, audited access to a particular
-  completed transcript.
-- The team should prefer household-visible artifact history, structured product
-  state, event evidence, and participant explanation over raw transcript review.
-- Recruitment materials state the expected four-cycle learning cadence, the
-  invite-only nature of the beta, the product's current boundaries, and the
-  participant's ability to pause or withdraw.
-
-### Hard gates for external use and cohort expansion
-
-The following block inviting external households or expanding to the next cohort
-stage regardless of planning speed or user enthusiasm:
-
-- any unresolved privacy, authorization, cross-household-isolation, or hard-
-  constraint failure;
-- any approved plan containing unresolved managed coverage, an invalid or
-  incompatible required fallback, an impossible cook or leftover dependency, or
-  an invalid, duplicated, or overdrawn portion or prepared-output allocation;
-- any silent rewrite of approved plan or shopping state;
-- a failing required deterministic test or a hard-blocking synthetic agent-eval
-  outcome under PDR-0006;
-- an ordinary end-to-end household journey that requires a developer, database
-  edit, or out-of-band mutation of canonical product state to complete; or
-- a known critical incident whose cause, containment, and required corrective
-  action remain unresolved.
-
-Hands-on explanation, support, and observation are allowed. Quietly repairing
-canonical data behind the product so that a household appears successful is not.
-
-### Dogfood to closely supported pilot
-
-Before adding the first two or three external households:
-
-- Cillian's household completes at least two consecutive genuine weekly planning
-  cycles through the product;
-- both cycles reach an approved plan and active shopping list, and the second
-  cycle includes the following-week review or equivalent feedback path;
-- the second cycle requires no critical planner correction;
-- the normal path requires no developer or database intervention; and
-- a representative initial household setup through first approved plan is
-  achievable in approximately `30 minutes` of active household interaction.
-
-The `30-minute` value is an operating target and review trigger, not permission
-to hide a complex household or rush through high-impact confirmation. A longer
-case requires an understood explanation of the complexity and correction burden
-before pilot expansion.
-
-### Closely supported pilot to first full cohort
-
-Before expanding to approximately six to eight households in total:
-
-- every pilot household completes at least two genuine weekly planning cycles;
-- no pilot household's latest two completed cycles contain a critical planner
-  correction;
-- median active planning time for a returning weekly plan is `10 minutes` or
-  less;
-- median burden in the later pilot cycles is no more than `2` major corrections
-  per plan;
-- a majority of pilot households show measurable improvement from their first
-  usable week in active time, correction burden, or both;
-- support may diagnose and explain problems, but is not required every week to
-  manufacture a complete usable plan; and
-- a majority of participants say they would use the product even if they were
-  not helping test it.
-
-The product ambition for a mature returning household is closer to a
-`5-minute` weekly planning interaction. That is an aspiration to validate after
-routines and household history mature, not the gate for entering the first full
-cohort.
-
-### Correction severity
-
-A **critical planner correction** repairs a failure that should have prevented
-or invalidated the recommendation, including:
-
-- a known hard constraint being missed;
-- a managed person, date, or meal occasion being left without valid coverage;
-- a required fallback being omitted, incompatible, or impossible to execute;
-- an impossible cook, leftover, prepared-component, or portion dependency; or
-- another error that makes the proposed or approved plan unsafe, structurally
-  invalid, or unusable as represented.
-
-A **major correction** repairs a substantive misunderstanding while the plan
-remains recoverable, including:
-
-- correcting an enduring or period-specific routine;
-- adding a missing person-level alternative;
-- replacing an unsuitable shared meal;
-- materially restructuring cook events, portions, prepared outputs, or
-  leftovers; or
-- repairing another assumption that changes meaningful household work.
-
-A preference-only edit, such as swapping one otherwise valid dinner because the
-household fancies something else, is not counted as a major planner failure.
-Metrics retain the reason and target of a correction rather than relying on raw
-edit count.
-
-### Evidence before further expansion
-
-Before expanding beyond the first full cohort, review at least:
-
-- whether households repeatedly reach complete approved plans;
-- active time and correction burden across successive weeks;
-- whether routines, fallbacks, leftovers, and prior feedback reduce later work;
-- whether catalogue gaps or household imports dominate plan completion;
-- whether people-level exceptions create unacceptable extra cooking work;
-- whether households understand the plan, rationale, repair, and shopping list;
-- privacy, authorization, support, and incident evidence; and
-- whether participants return because the product saves work rather than merely
-  because they are helping test it.
-
-The stage thresholds above are initial operating gates for the invite-only beta.
-They may be superseded by reviewed repository evidence, but they are not silently
-weakened to justify expansion.
-
-## Consequences
-
-- The beta is a longitudinal product-learning exercise rather than a one-week
-  demo or traffic milestone.
-- Recruitment, support, and instrumentation need household-level baselines and
-  four-cycle comparisons.
-- Instrumentation and qualitative review must distinguish critical corrections,
-  major corrections, and ordinary preference edits.
-- Cohort expansion requires both invariant safety and evidence of reduced
-  household work; speed cannot compensate for an invalid plan.
-- Early product work may remain manually supported without pretending that
-  manual intervention is the finished operating model.
-- Cohort diversity is judged by planning problems represented, not by maximizing
-  participant count.
-- Ireland-first content and operations do not authorize Ireland-specific domain
-  shortcuts.
-- Private transcript sharing remains optional and cannot become an implicit
-  recruitment filter.
-
-## Deferred
-
-- public self-service signup;
-- beta expansion beyond the first full cohort;
-- country-by-country launch sequencing;
-- paid acquisition or growth targets;
-- readiness thresholds for expansion beyond the first full cohort;
-- the detailed support and incident-response runbook; and
-- clinical or therapeutic nutrition cohorts.
+Public signup, later expansion thresholds, growth/paid acquisition, country
+sequencing and clinical cohorts remain deferred. PDR-0016 owns support policy;
+the detailed operational runbook remains separate implementation work.

@@ -4,167 +4,62 @@
 - Date: 2026-08-26
 - Owners: Household product
 
-## Context
+## Decision and reason
 
-The small invite-only beta includes close support. Participants need a simple
-way to report problems with a profile, conversation, plan, recipe import, or
-shopping list. They should not have to diagnose the code first.
+Beta participants need an easy contextual way to report problems without
+diagnosing code. Keep a durable report with their description and the minimum
+opaque household, actor, session, artifact, version, receipt and build identifiers
+needed for investigation. Direct support can supplement that record.
 
-Support must respect the existing privacy and data-ownership rules. Being a
-support operator does not grant access to private transcripts. A hidden database
-edit must not make a broken user journey look successful. The beta also needs
-a consistent way to tell a serious incident from a blocked task or an ordinary
-quality problem.
+Never automatically attach private transcripts, messages, health disclosures,
+source evidence or unrelated household content. Additional evidence is optional;
+transcript access always requires the separate purpose-specific, time-limited,
+revocable and audited participant grant from PDR-0001.
 
-## Decision
+## Incident levels and response
 
-### Contextual problem reporting
+| Level | Meaning and response |
+| --- | --- |
+| Critical | Credible privacy/isolation/authorization risk, ignored hard constraints, lost/corrupt/contradictory canonical state, invalid approved plans or equivalent threats to safety, privacy or product authority. Immediately block cohort expansion and pause affected operations, capabilities, households or releases as needed. |
+| Blocking | An important journey cannot complete, without current evidence of a critical violation. Prioritize restoring the product path. |
+| Quality | The journey remains usable but generic recommendations, excessive questions, weak rationale/repair, misleading presentation, poor performance or interaction materially increase work. Group reusable causes into product improvements and regression coverage. |
 
-- The product provides one clear **Report a problem** action from the relevant
-  profile, conversation, plan, recipe import, shopping list, or other supported
-  artifact.
-- A report includes the participant's description and may attach opaque
-  household, actor, session, artifact, version, command-receipt, and application-
-  build identifiers needed to investigate the problem.
-- A report does not automatically attach a private transcript, raw private
-  message text, health disclosure, imported source evidence, or unrelated
-  household content.
-- A participant may explicitly provide additional evidence where the product
-  offers that choice. Transcript access still requires the separate explicit,
-  purpose-specific, time-limited, revocable, and audited grant accepted in
-  PDR-0001.
-- Direct support messages may supplement the in-product report, but the report
-  record remains the durable correlation point for investigation and follow-up.
+Reclassify when evidence changes; an initial level proves neither presence nor
+absence of a critical failure. Cillian owns MVP beta incidents. Preserve minimal
+versions, receipts, audits, logs and participant-provided evidence. Inform affected
+participants plainly about known impact, containment and necessary action, without
+overstating certainty. Re-enable only after effective containment and correction
+are demonstrated. Close critical incidents only after recording cause, affected
+scope, containment, correction and required participant communication. Add
+deterministic or privacy-safe agent regressions where practical.
 
-### Incident levels
+Transparent temporary workarounds may help if they preserve invariants and are
+recorded as support, not ordinary product success. Recurring support cannot become
+the permanent product. Include frequency and intervention type in beta evidence.
 
-The MVP uses three practical incident levels.
+## Access and repair
 
-#### Critical
+Support is read-only by default and limited to necessary household-visible state,
+versions, receipts, audit and operational evidence under the same authorization
+boundaries as the product. Operator tooling grants no arbitrary household access.
+Private conversations require the accepted specific grant; prefer product state
+and participant explanation even when consent is available.
 
-A critical incident includes a confirmed or credible risk of:
+Repair canonical state only with narrow typed, authorized, idempotent and audited
+operator commands. Record operator, reason, target household/artifact, expected
+version, authoritative result and receipt. Preserve material before/after lineage
+where privacy permits, historical versions, approval semantics and audits.
+Explain consequential participant-visible changes. Hidden database edits are not
+an accepted repair path; missing admitted repair commands are implementation gaps,
+not permission to bypass authority.
 
-- private or cross-household information exposure;
-- an authorization or membership-isolation failure;
-- a known hard constraint being ignored or weakened;
-- corrupted, lost, or internally contradictory canonical household state;
-- an approved plan that is structurally invalid as represented; or
-- another failure that can materially undermine participant safety, privacy, or
-  trust in product authority.
+Keep runbooks, severity definitions, sanitized incidents, regression evidence and
+follow-up in repository records. Use opaque identifiers and omit participant
+names, private messages, health disclosures, source evidence, credentials and
+household free text. Fix PRs state closing regression evidence and may link the
+sanitized record. Analytics use only necessary categories/intervention types.
 
-#### Blocking
-
-A blocking incident prevents the household from completing an important journey,
-such as onboarding, interview completion, planning, revision, approval, recipe
-admission, or shopping-list use, without current evidence of a critical privacy,
-authority, or hard-constraint failure.
-
-#### Quality
-
-A quality incident leaves the workflow usable but materially weaker than the
-product bar, including generic recommendations, excessive or repeated questions,
-confusing rationale, poor repair, misleading presentation, weak performance, or
-an interaction problem that increases household effort.
-
-Severity may change as evidence develops. Initial classification is not treated
-as proof that a critical failure did or did not occur.
-
-### Critical-incident response
-
-- Cillian is the incident owner for the invite-only MVP beta.
-- A critical incident immediately blocks cohort expansion and may require the
-  affected operation, capability, household, or release to be paused while the
-  risk is contained.
-- The product preserves the minimum evidence needed to investigate, including
-  versions, receipts, audit records, relevant logs, and participant-provided
-  context, without copying private content into broad analytics or repository
-  records.
-- Affected participants are informed plainly about the known impact, current
-  containment, and any action they should take. The product does not overstate
-  certainty while investigation is incomplete.
-- Re-enabling affected behaviour requires evidence that containment and the
-  corrective change are effective. Where practical, the failure becomes a
-  deterministic regression test, a privacy-safe synthetic agent scenario, or
-  both.
-- A critical incident remains open until its cause, affected scope, containment,
-  corrective action, and required participant communication are recorded.
-
-### Blocking and quality response
-
-- Blocking incidents are prioritized because a repeatedly assisted workaround is
-  not a complete product path.
-- A temporary workaround may be used when it is transparent, does not weaken an
-  invariant, and is recorded as support intervention rather than ordinary
-  product success.
-- Quality incidents are grouped by reusable failure class. Repeated issues become
-  product changes, usability work, deterministic tests, or agent-eval scenarios
-  rather than permanent bespoke support.
-- Support frequency and intervention type remain part of beta evidence so direct
-  operator help cannot silently improve time-to-plan or correction metrics.
-
-### Support access
-
-- Support access is read-only by default and limited to the household-visible
-  artifacts, structured product state, versions, receipts, audit history, and
-  operational evidence needed for the reported issue.
-- Private interview or chat transcripts are unavailable unless the participant
-  grants the accepted transcript-specific access.
-- Support tooling enforces the same household authorization and privacy
-  boundaries as the product. An operator interface is not permission to query
-  arbitrary household data.
-- Support should prefer product state and participant explanation over raw
-  conversation review even when transcript access has been granted.
-
-### Canonical-state repair
-
-- Canonical household state is repaired only through a narrow, typed, authorized,
-  idempotent, and audited operator command.
-- A repair records the operator, reason, target household and artifact, expected
-  version, authoritative result, and receipt. Material before-and-after state or
-  lineage remains inspectable where privacy permits.
-- A repair must preserve approved-plan, recipe-version, audit, and historical
-  semantics rather than rewriting history as though the error never occurred.
-- Invisible production database edits are not an accepted beta support path.
-- If a required repair cannot be expressed through an admitted command, that is
-  a product and operational gap to implement and test; it is not permission to
-  bypass the authority boundary.
-- Participant-visible state changes caused by a repair are explained where doing
-  so is relevant to trust or subsequent household action.
-
-### Repository and privacy practice
-
-- The repository contains the support runbook, severity definitions, sanitized
-  incident summaries, regression evidence, and follow-up work needed for the
-  beta.
-- Repository records use opaque incident identifiers and must not include
-  participant names, private transcript text, raw health disclosures, recipe
-  source evidence, credentials, or private household free text.
-- Implementation pull requests may link to a sanitized incident record and must
-  state the regression evidence used to close it.
-- Product analytics record incident category and support-intervention type only
-  at the minimum granularity needed for beta learning.
-
-## Consequences
-
-- The product needs contextual problem-report contracts and a privacy-safe
-  operator support projection.
-- Support tooling must remain subordinate to household authority and transcript
-  privacy.
-- Operator repair requires explicit command design, receipts, audit, and tests;
-  direct database mutation cannot become an undocumented escape hatch.
-- Beta metrics need to distinguish self-service success from assisted completion
-  and temporary workarounds.
-- Critical failures feed both incident response and the deterministic or agent-
-  eval regression suite.
-- Cohort expansion remains evidence-based and is blocked by unresolved critical
-  incidents according to PDR-0015.
-
-## Deferred
-
-- a staffed on-call rotation or multi-operator escalation hierarchy;
-- contractual response-time or resolution-time service levels;
-- a public status page;
-- integration with a commercial customer-support platform;
-- automated participant notification beyond the invite-only operating need;
-- delegated repair roles and granular operator permissions; and
-- support processes for public self-service or large-scale production use.
+Staffed on-call rotations, multi-operator escalation, contractual response or
+resolution times, a public status page, commercial support-platform integration,
+automated notification beyond the invite-only need, delegated repair/granular
+operator roles and large-scale public-support processes remain deferred.
