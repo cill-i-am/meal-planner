@@ -1,5 +1,6 @@
 import {
   ConversationAction,
+  ConversationChatMetadata,
   ConversationView,
 } from "@meal-planner/agent-conversations-api";
 import { Family } from "@meal-planner/families";
@@ -70,6 +71,103 @@ test("a setup roster cannot be saved without its conversational confirmation", a
       await familiesResponse.json()
     )
   ).toEqual([]);
+});
+
+test("keeps setup input blocked until the completed reply's canonical roster arrives", async ({
+  page,
+}) => {
+  await new AuthPage(page).signUp(
+    "Alex",
+    `agent-refresh-${crypto.randomUUID()}@example.test`
+  );
+  const composer = page.getByRole("textbox", {
+    exact: true,
+    name: "Your message",
+  });
+  const send = page.getByRole("button", { exact: true, name: "Send message" });
+  await composer.fill("Me, my partner Sam and our kids Maya and Leo.");
+  await send.click();
+  await expect(
+    page
+      .getByRole("region", { name: "Your family table" })
+      .getByRole("heading", { name: "Alex’s family" })
+  ).toBeVisible();
+
+  const { promise: refreshReleased, resolve: releaseRefresh } =
+    Promise.withResolvers<null>();
+  const { promise: refreshCaptured, resolve: captureRefresh } =
+    Promise.withResolvers<typeof ConversationView.Type>();
+  await page.route("**/v1/agent-conversations/setup", async (route) => {
+    const response = await route.fetch();
+    captureRefresh(
+      Schema.decodeUnknownSync(ConversationView)(await response.json())
+    );
+    await refreshReleased;
+    await route.fulfill({ response });
+  });
+  try {
+    const correctionResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/agent-conversations/setup/chat") &&
+        response.request().method() === "POST"
+    );
+    await composer.fill("Sam is an adult.");
+    await send.click();
+    const correction = await correctionResponse;
+    expect(correction.ok()).toBe(true);
+    const refreshed = await refreshCaptured;
+    expect(refreshed.turns.at(-1)?.status).toBe("succeeded");
+    await expect(composer).toBeDisabled();
+    await expect(send).toBeDisabled();
+    await expect(
+      page
+        .getByRole("region", { name: "Family conversation" })
+        .getByRole("status")
+    ).toHaveText("Thinking…");
+
+    releaseRefresh(null);
+    await expect(composer).toBeEnabled();
+    const roster = refreshed.blocks.findLast(
+      (block) => block._tag === "RosterProposal" && block.status === "proposed"
+    );
+    if (roster?._tag !== "RosterProposal") {
+      throw new Error("Expected the refreshed proposed roster");
+    }
+    const confirmationResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/agent-conversations/setup/chat") &&
+        response.request().method() === "POST"
+    );
+    const saveResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/agent-conversations/setup/actions") &&
+        response.request().method() === "POST"
+    );
+    await composer.fill("Yes, everyone looks right.");
+    await send.click();
+    const confirmation = await confirmationResponse;
+    expect(confirmation.ok()).toBe(true);
+    const metadata = Schema.decodeUnknownSync(ConversationChatMetadata)(
+      confirmation.request().postDataJSON().data
+    );
+    expect(metadata.expectedVersion).toBe(refreshed.version);
+    expect(metadata.displayedRoster).toEqual({
+      blockId: roster.id,
+      revision: roster.revision,
+    });
+    const save = await saveResponse;
+    expect(save.ok()).toBe(true);
+    const action = Schema.decodeUnknownSync(ConversationAction)(
+      save.request().postDataJSON()
+    );
+    expect(action.blockId).toBe(roster.id);
+    expect(action.expectedRevision).toBe(roster.revision);
+    await expect(
+      page.getByRole("heading", { name: "Find the food they say yes to." })
+    ).toBeVisible();
+  } finally {
+    releaseRefresh(null);
+  }
 });
 
 test("chat corrections, confirmation and a lost save lead into food discovery", async ({
