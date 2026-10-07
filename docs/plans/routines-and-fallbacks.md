@@ -49,7 +49,7 @@ baseline.
 
 ## Implementation status
 
-The current branch has a versioned household planning-content snapshot, managed
+Main contains a versioned household planning-content snapshot, managed
 occasions, availability, cooking capacity, recurring and one-off routines, and
 person-specific fallbacks. The routine resolver applies one-off, person, then
 household precedence and reports equal-priority conflicts. Fallback selection
@@ -57,9 +57,9 @@ checks active state, context, priority, and the person's current suitability
 review. Option preparation metadata records equipment, hands-on and elapsed
 time, start timing, and cooking effort. Drafts show a gap when context is
 unresolved; approval checks equipment, preparation windows, and the weekly
-cook target. The HTTP and SQLite adapters are part of this branch. Adults can edit managed
+cook target. The HTTP and SQLite adapters are implemented. Adults can edit managed
 meals, availability, cooking capacity, routines, and fallbacks; existing rules
 can be edited or paused without creating duplicates. Native browser checks
 cover a full two-week plan with shared cooking and planned leftovers. The
-[AI-native journey plan](ai-native-family-journey.md) records that evidence;
+[merged journey change](https://github.com/cill-i-am/meal-planner/pull/284) records that delivery;
 broader routine scenarios and live-model evaluation remain open.

@@ -6,8 +6,7 @@ Depends on: [capability sequence](README.md#capability-sequence)
 
 ## Outcome
 
-Check the full household journey before expanding beyond internal use and the supported pilot. [Beta evidence](../explanation/product/beta-and-success.md),
-[PDR-0006](../decisions/pdr-0006-ai-evaluation-and-release-evidence.md),
+Check the full household journey before expanding beyond internal use and the supported pilot. [PDR-0006](../decisions/pdr-0006-ai-evaluation-and-release-evidence.md),
 [PDR-0015](../decisions/pdr-0015-invite-only-beta-cohort-and-learning-cadence.md) and
 [PDR-0016](../decisions/pdr-0016-beta-support-incidents-and-operator-repair.md) define the household group, safety, quality, human-rating and support requirements.
 

@@ -97,9 +97,8 @@ specific detach/archive command. Public Better Auth remove-member and leave
 routes stay disabled, as does plugin organization deletion. Credentials never
 enter Workflow or Household storage.
 
-The full access-first process is in
-[Stage 1 Work Item 02](../plans/household-people/02-account-linking-invitations-and-departure.md)
-and [ADR-0010](../decisions/adr-0010-coordinate-membership-departure-before-person-archival.md).
+[ADR-0010](../decisions/adr-0010-coordinate-membership-departure-before-person-archival.md)
+explains the access-first departure process.
 
 ## Browser operations
 

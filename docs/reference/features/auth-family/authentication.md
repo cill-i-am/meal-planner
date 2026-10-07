@@ -54,6 +54,13 @@ For an account change in another tab, refresh or refocus the first tab and confi
 that stale protected data is cleared or access is blocked before another write.
 Use the [cross-feature journey](journeys.md) for the whole isolation check.
 
+## Email ownership
+
+The shared email feature owns layout, HTML/text rendering, and the Cloudflare
+adapter. Auth owns password-reset content. Household people owns invitation
+content and submits it after association. A failed submission preserves the
+invitation and permits retry with the same invitation identity.
+
 ## Gotchas
 
 The reset form is implemented. Production auth supplies React Email content to

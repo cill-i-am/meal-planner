@@ -4,89 +4,71 @@
 
 ## Platform
 
-web
+Web, designed for both desktop and mobile.
 
 ## Stack
 
-TanStack Start with React, TanStack Query, TanStack Form, Better Auth, Effect Schema, app-local UI primitives, and generated Effect HttpApi clients. The existing codebase and `package.json` own implementation details.
+The code and `package.json` own implementation details. Follow [web instructions](AGENTS.md) when implementing an interface.
 
 ## Users
 
-Adults managing food for a whole household, including other adults and dependants with different preferences, routines, and dietary constraints. The job is to make a practical week of food work with less deciding, coordinating, cooking, and shopping effort.
-
-The first users are households in Ireland, starting with Cillian's household, then a small, closely supported invite-only beta. Dependants have managed profiles, not accounts. An adult can have a household profile before accepting an invitation and linking an account.
+Adults trying to feed a whole family with less deciding, coordinating, cooking, and shopping. People have different tastes, schedules, portions, and dietary needs. The first release serves a small, supported, invite-only household beta in Ireland.
 
 ## Product Purpose
 
-Meal Planner uses AI to help a household decide what to eat. It learns about the people and their routines, proposes a practical week, and turns an approved plan into a combined shopping list. Supermarket ordering comes later.
+Meal Planner is an AI-native household food service. It learns how a family eats and lives, recommends a practical personalised week, and turns the approved plan into a combined shopping list. Optional supermarket ordering comes later.
 
-Success means less active planning time, fewer substantive corrections over successive weeks, and households returning because the service remembers what works for them. Beta targets are evaluation gates, not demonstrated performance claims; their owner is [PDR-0015](../../docs/decisions/pdr-0015-invite-only-beta-cohort-and-learning-cadence.md).
+Success means less active planning time, fewer corrections over successive weeks, and a family returning because the service remembers what works. [Beta criteria](../../docs/decisions/pdr-0015-invite-only-beta-cohort-and-learning-cadence.md) are targets, not demonstrated results.
 
 ## Positioning
 
-Private discovery, confirmed facts, routines, food options, and deterministic checks contribute to one personalized recommendation. The plan accounts for shared meals, individual alternatives, leftovers, cooking capacity, food already available, and exceptions. The conversation should produce useful facts and plans people can see and edit, without making them wait until the end.
+The primary interface is a conversation with an attentive professional. The service understands what someone wants to achieve, asks the next useful question, and makes a concrete suggestion. It uses what it already knows and explains important assumptions in ordinary language.
+
+Questions, choices, and editable interfaces appear within the conversation when they help. A meal, a recipe, or the emerging week can become the focus of the screen. The interface updates as the conversation changes it, keeping useful work visible and easy to revisit. Typing and direct manipulation are equally valid ways to make a correction.
+
+Household profiles, versioned facts, and validation are implementation mechanisms. Their existence does not require matching screens, a setup checklist, or a fixed interview sequence. Ask for missing information when it affects the result. Confirm consequential changes in their context.
 
 ## Operating Context
 
-Use spans phones and larger screens, household setup, weekly planning, cooking, and shopping. Work, school, childcare, packed lunches, travel, eating out, and changing preparation time are ordinary planning inputs.
+Use spans planning at a desk, checking dinner on a phone, cooking, and shopping. Work, school, childcare, packed lunches, eating out, and changing preparation time are ordinary inputs.
 
-The intended journey is:
+These illustrative exchanges describe intended behaviour, not finished screens or a fixed script:
 
-1. Set up the household, its adults, and its dependants.
-2. Complete private adult discovery, correct proposed facts, and explicitly confirm what becomes part of the shared household profile.
-3. Establish routines, fallback meals, and food content, including reviewed imports into the household Recipe Bank.
-4. Review one feasible household week with understandable rationale and visible person-specific exceptions; revise it and explicitly approve it.
-5. Use the consolidated retailer-neutral shopping list and, in later delivery, explicitly approved supermarket actions.
-6. Optionally review exceptions from the week so future proposals require less effort. Ordinary use must not require daily meal confirmation.
+- **“Tuesday is chaos.”** Use known routines to propose a low-effort dinner. If timing is unknown, ask one useful question. Show the proposed change beside its effect on preparation and shopping. Ask whether it applies this week or should become a recurring preference when that distinction matters.
+- **“Can we make this?”** Turn a supported recipe source into an editable recipe in the conversation. Show missing information honestly and ask only for what is needed to save or use it. Explain acquisition failures and offer a useful next step.
+- **“That week looks good.”** Make clear which week and changes are being approved. Preserve that approved version. Later changes produce a visible proposal, with shopping consequences explained before another commitment.
+
+Someone can correct a misunderstanding, skip a nonessential question, pause, resume, or revisit an earlier result. One adult can provide provisional information and start planning before other adults complete their own reviews. Shared meals, simple alternatives, leftovers, packaged food, meals elsewhere, and intentional skips can all reduce work. Ordinary use requires no daily meal confirmation.
 
 ## Capabilities and Constraints
 
-### Current implementation
+### Implementation and scope
 
-The web app provides household account/setup flows, people and dependant management, invitations, versioned food profiles, private adult discovery with reviewable profile cards and explicit confirmation, and evidence-grounded recipe import. Discovery includes application-owned required coverage and adaptive questioning; broader model-quality evaluation and conversation-tone work remain pending. Import currently accepts one public TikTok HTTPS URL per attempt.
+The [feature map](../../docs/reference/features/README.md) links implemented behaviour to code and tests. [Remaining work](../../docs/plans/README.md) separates unfinished capabilities, evaluation, and release checks. These records do not prove deployment or beta readiness.
 
-The repo contains an early planning backend and a read-only Tesco catalogue API. That is not a complete planning or shopping experience in the web app. This record establishes neither deployment nor beta readiness. [Plans](../../docs/plans/README.md) record implementation status and the checks still needed.
-
-### Planned experience and release boundaries
-
-The agreed full product includes routines, fallbacks, shared and private food options, a workable recommended week, and changes that update related parts of the plan. It also includes versioned approval, prepared food and leftovers, a shared retailer-neutral shopping list, and optional weekly learning. These are agreed goals, not a list of finished features.
-
-Supermarket product matching, pricing, availability, basket creation, checkout, and payment are beyond the initial beta. Medical or clinical nutrition, calorie and macro tracking, continuous pantry inference, food-safety certification, dependant login, public recipe marketplaces, and generic organization management are outside that release.
+The intended product covers household learning, routines, food content, a feasible personalised week, explicit approval, retailer-neutral shopping, and optional weekly learning. Clinical nutrition, calories and macros, inferred pantry tracking, food-safety certification, dependant accounts, public recipe marketplaces, external calendar integration in the first vertical, and general organisation management are excluded. Retailer fulfilment and purchase are outside the initial beta.
 
 ### Durable boundaries
 
-- AI proposes; deterministic application code validates and commits. Hard dietary and suitability constraints remain outside model discretion.
-- Private transcripts remain private to the participating adult. Confirmed, household-visible facts provide planning authority and rationale.
-- One canonical household authority owns product state. UI projections and supermarket adapters do not become competing sources of household intent.
-- Adults explicitly approve plans. Material changes to an approved plan require a visible proposed revision; approval is never inferred from a preview.
-- Retailer adapters consume approved retailer-neutral demand. Basket creation, checkout, payment, and other external mutations require explicit approval.
-- Imported facts retain evidence, provenance, and explicit unknowns. Missing quantities, yield, timing, or nutrition must not be invented.
-- Browser requests use generated clients and same-origin authentication. Keep provider credentials and raw private provider evidence out of the browser and product copy.
+- AI proposes; application code validates and commits. Hard dietary constraints remain outside model discretion.
+- Private adult conversations stay private. Only explicitly confirmed household-visible information informs shared planning and explanations. Adults can manage dependant profiles; other adults can join later without losing their existing person or history.
+- Adults can edit household profiles and approve plans, with attribution. Hard constraints are never silently removed. Approved plans remain stable until a revision is explicitly approved.
+- One household authority owns shared product state. Presentation choices do not create another source of truth.
+- Recipe facts retain evidence and explicit unknowns. Missing quantities, yield, timing, or nutrition are not invented.
+- Retailer adapters consume approved retailer-neutral demand. Basket creation, checkout, payment, and other external mutations need explicit approval.
 
 ## Brand Commitments
 
-The current product name is Meal Planner. Explain questions, assumptions, trade-offs, progress, and failures in ordinary language. The service should act like an attentive, nutrition-aware family meal planner without making medical, therapeutic, or food-safety claims.
+Use **family** in customer-facing copy. Be perceptive, practical, and direct. Explain a question or trade-off when it helps someone decide. Avoid database terminology and medical or therapeutic claims. The [design reference](DESIGN.md) owns visual direction.
 
 ## Evidence on Hand
 
-This is the product summary used for interface work. Use the [documentation map](../../docs/README.md) and [decision records](../../docs/decisions/) for details, especially when a design affects product behavior, privacy, permissions, data ownership, or release scope.
-
-- [Vision and scope](../../docs/explanation/product/vision-and-scope.md) establish users, purpose, capabilities, and non-goals.
-- [Experience blueprint](../../docs/explanation/product/experience-blueprint.md) describes the intended household journey.
-- [PDR-0013](../../docs/decisions/pdr-0013-plan-projection-rationale-and-experience-experimentation.md) establishes plan comprehension, progressive rationale, and experimentation boundaries without freezing a layout.
-- [Current delivery](../../docs/plans/README.md) links implementation, local runtime evidence, and remaining evaluation obligations.
-- [Open decisions](../../docs/plans/README.md) owns unresolved choices, including model/provider strategy and future acquisition policy.
-
-No customer testimonials, measured time-saving claims, pricing, or public launch claims are established here. Synthetic examples must be labelled as such; private household data and discovery transcripts are not promotional assets.
+This brief owns product intent. Consult [decision records](../../docs/decisions/README.md) for the reason behind a specific boundary and [engineering references](../../docs/README.md) when implementing it. Those contracts define guarantees, not mandatory screens or conversation order. Synthetic examples are not testimonials or measured results; private transcripts are not promotional material.
 
 ## Product Principles
 
-- Save household work: prefer useful routines, shared preparation, leftovers, and low-effort alternatives over elaborate plans that create more labour.
-- Account for everyone while presenting one understandable household week.
-- Make the AI accountable through visible facts, assumptions, rationale, and editable proposals.
-- Preserve privacy, hard constraints, provenance, and explicit approval.
-- Keep drafts reversible and approved weeks stable; learn through optional feedback rather than daily tracking obligations.
+Save household effort, account for everyone, and make useful progress visible. Offer one understandable recommended week with focused alternatives where needed. Keep drafts editable, changes explainable, and weekly feedback optional.
 
 ## Accessibility & Inclusion
 
-Keyboard-operable controls, visible focus, named form fields and status regions, 44px targets, responsive document layout, and reduced-motion support are required. Preserve these established requirements throughout discovery, review, confirmation, and future planning flows.
+Support keyboard operation, visible focus, named fields and status announcements, 44px interaction targets, text enlargement, responsive layouts, and reduced motion. Preserve these requirements when generated interfaces appear or update.

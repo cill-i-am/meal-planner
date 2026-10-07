@@ -6,15 +6,15 @@ Delivery: remaining product and environment acceptance after saved-resource setu
 
 ## Implemented foundation
 
-Auth, recovery, family setup, people and invitations use the saved-resource
-architecture in the [family refactor](family-resource-onboarding.md) and
-[family API reference](../reference/family-api.md). Naming a family creates its
-canonical resource. People and completion update saved resources; routes own
-navigation. Reload reads those resources. There is no account navigation
-checkpoint, paused-setup screen or persisted draft.
+Auth, recovery, manual family setup, people, and invitations use the
+[saved-resource family API](../reference/family-api.md). Naming a family creates
+its canonical resource. People and completion update saved resources; reload
+reads those resources.
 
-Unsubmitted forms and exact submitted commands stay in mounted memory under
-[decision D26](family-resource-onboarding.md#d26--no-persisted-browser-mutations-27-september-2026).
+Manual resource forms and their exact submitted commands stay in mounted memory
+under the [manual recovery rule](../reference/family-api.md#manual-browser-recovery).
+Conversational setup separately retains an accepted action across reload for
+explicit retry, as described by the [family setup contract](../reference/features/auth-family/family-setup.md).
 Feature hooks own mutation lifecycle and invalidation. Screens own drafts and
 navigation. Server receipts, version checks and explicit recovery keep their
 existing protections. A lost response does not prove rejection or permit changing
@@ -43,12 +43,12 @@ and [form reference](../reference/forms.md), rather than a second specification.
 | G01 · Auth error identity | Safe typed errors and retry timing are implemented across the reference journey. Verify affected endpoint mappings when behavior changes. |
 | G02 · Input validation | The reference forms use TanStack Form, Effect Schema and linked shadcn errors. Keep their actual schemas and decode-on-submit boundary. |
 | G03 · Add and invite | Optional adult invitations and partial-stage recovery are implemented. Preserve the original creation/invitation commands while mounted. |
-| G04 · Invitation delivery | Adapter and association-before-send recovery are implemented. Production activation and actual inbox receipt remain in the [email plan](auth-email-delivery.md). |
+| G04 · Invitation delivery | Adapter and association-before-send recovery are implemented. E2E inbox and link journeys passed on 30 September 2026. Production activation and production inbox/link verification remain open; follow [email operations](../how-to/operate-infrastructure.md#transactional-email). |
 | G05 · Invitation decline | Recipient decline and safe roster projection exist, including `invitation_declined`. This is no longer a missing enum or recipient route. |
 | G06 · Invitation error transport | Typed person/invitation failures and unknown-result recovery exist. Verify permitted correction and retry outcomes through the feature map when changing this boundary. |
-| G07 · Recovery delivery and completion | Screens, reset callback and single-use token handling exist. Disabled delivery remains a supported unavailable state. Actual activation and mailbox journey remain in the email plan. |
+| G07 · Recovery delivery and completion | Screens, reset callback and single-use token handling exist. Disabled delivery remains a supported unavailable state. Production activation and the production mailbox journey remain unverified. E2E receipt and reset-link completion passed on 30 September 2026. |
 | G08 · Family creation recovery | Saved-resource creation and replay receipts replace checkpointed slugs. Native and browser tests cover a response lost after commit. |
-| G09 · Session and setup resume | Login continuation and reload resolve canonical saved resources. Mounted commands retain exact identity; reload does not restore or replay browser commands. Persisted draft acceptance is removed by D26. |
+| G09 · Session and setup resume | Login continuation and reload resolve canonical saved resources. Manual commands retain exact identity while mounted; reload reads saved resources. Chat restores its accepted action for explicit retry and never replays it automatically. |
 | G10 · Creator and recipient linking | Creation coordinates creator linking; invitation recovery completes the existing person link. Preserve partial results and the one-person completion path. |
 | G11 · Portions and DOB | Appetite-based portion defaults and meal-specific overrides remain outside auth/setup. [PDR-0004](../decisions/pdr-0004-meal-content-portions-recipes-and-shopping.md) owns the model. Do not infer portions from person type or add DOB. |
 | G12 · Components and accessibility | The journey uses shadcn, semantic tokens, focus/error behavior and responsive overlays. Automated keyboard/axe checks and mobile WebKit do not prove a physical-device keyboard or full VoiceOver audit. Those checks remain open. |
@@ -70,8 +70,10 @@ and [design brief](../../apps/web/.impeccable/onboarding-shape.md) for visual wo
 The earlier save-and-resume behavior was replaced by the saved-resource decisions;
 its historical checkpoint test counts are not evidence for the replacement.
 
-The [family refactor record](family-resource-onboarding.md) retains native
-persistence, SSR, browser and concurrency results and links to its delivery PRs.
+[PR #254](https://github.com/cill-i-am/meal-planner/pull/254) records the saved-resource
+refactor. [PR #257](https://github.com/cill-i-am/meal-planner/pull/257) adds the
+native browser suite; [PR #259](https://github.com/cill-i-am/meal-planner/pull/259)
+adds concurrency and mobile accessibility checks.
 The [local-development guide](../how-to/local-development.md) describes the
 repeatable integrated suite, including auth/family, food-profile and synthetic
 private-review journeys. These fixtures establish mechanics, not real email

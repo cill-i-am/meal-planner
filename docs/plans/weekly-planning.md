@@ -1,10 +1,14 @@
 # Stage 5 — Plan a complete household week
 
-Status: proposed
-Owner: unassigned
+Status: active
+Owner: meal-planning feature
 Depends on: [preceding capability](meal-content.md)
 
-This is approved product direction, not a claim that the feature is built. The order reflects dependencies and what we need to learn. It does not require every possible earlier feature to be finished before trying a small end-to-end flow.
+Main implements person/date/occasion coverage, validated approval, explicit
+revisions, and prepared-stock reservations through [PR #284](https://github.com/cill-i-am/meal-planner/pull/284).
+[Current contracts and tests](../reference/features/README.md) describe that
+implementation. The checklist below retains broader product and live-model
+acceptance; unchecked items are not proof that their underlying code is absent.
 
 ## Outcome
 

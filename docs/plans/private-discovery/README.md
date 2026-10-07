@@ -2,7 +2,7 @@
 
 Status: active
 Owner: unassigned — next discovery delivery slice
-Depends on: [household foundation](../household-people/README.md)
+Depends on: [household foundation](../../reference/household.md)
 
 ## Outcome and context
 
@@ -19,14 +19,13 @@ shopping. The complete connected journey must still pass before external beta.
 
 ## Delivery sequence
 
-Follow the child record for its actual state, evidence and limitations:
+Private-session persistence and progressive confirmation are implemented. The
+remaining work is:
 
-1. [Private session foundation](01-private-session-foundation.md).
-2. [Progressive cards and confirmation](02-progressive-cards-and-confirmation.md).
-3. [Adaptive discovery, remaining evaluation and tone](03-adaptive-discovery-and-evaluation.md).
-4. [Repeat review and dependant assistance](04-repeat-review-and-dependant-assistance.md)
-   (provider-free adult path verified; live and dependant paths remain).
-5. Cumulative acceptance below, after the child outcomes.
+1. [Adaptive discovery, evaluation, and tone](03-adaptive-discovery-and-evaluation.md).
+2. [Repeat review and dependant assistance](04-repeat-review-and-dependant-assistance.md).
+   The provider-free adult path is verified; live and dependant paths remain.
+3. Cumulative acceptance below, after those outcomes.
 
 The [current private-discovery reference](../../reference/private-discovery.md)
 and [coverage contract](../../reference/discovery-coverage.md) own runtime and

@@ -2,7 +2,7 @@
 
 Status: proposed
 Owner: unassigned
-Depends on: [completed shared browser execution](01-browser-runtime.md)
+Depends on: [shared browser execution](../../reference/household-people-api.md#browser-operations)
 Delivery: remove duplicated client-state code while preserving private data and commands
 
 ## Outcome and context
@@ -55,7 +55,7 @@ snapshots, and notification code only where the chosen library takes over. Do no
 build a generic event bus or keep separate writable transcripts in atoms, Query,
 and the SDK. Private or provisional cards are not confirmed Household facts.
 
-Use the [completed browser execution setup](01-browser-runtime.md) where an
+Use the [shared browser execution contract](../../reference/household-people-api.md#browser-operations) where an
 operation needs Effect/Query execution. It supplies no registry or local-state
 framework. Keep the private client's supported SDK connection owner and domain
 recovery mechanism. Provider-free tests can proceed independently of live quality
@@ -97,7 +97,7 @@ confirmation. Trace the published adapter used after #218, rather than building
 one from an old example.
 
 Coordinate profile schemas, forms, shared transport, and lockfile edits with the
-[browser runtime](01-browser-runtime.md) and [form work](03-forms-and-json.md).
+[browser runtime](../../reference/household-people-api.md#browser-operations) and [form work](03-forms-and-json.md).
 
 ## Acceptance
 

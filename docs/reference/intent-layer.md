@@ -27,7 +27,7 @@ the nearest ancestor's instructions; do not assume a tool loaded sibling nodes.
 | Password recovery | [Browser recovery](../../apps/web/src/features/recovery/AGENTS.md) | Server auth above |
 | Browser/SSR API transport | [Web API runtime](../../apps/web/src/features/api-client/AGENTS.md) | Router composition and the web Worker entry |
 | Retrying a submitted request in memory | [Browser request recovery](../../apps/web/src/features/request-recovery/AGENTS.md) | The feature that submits it |
-| Agent proposals during setup or shared family planning | [Agent conversation boundary](agent-conversations.md) | Family and profile operations remain canonical; the [journey plan](../plans/ai-native-family-journey.md) tracks connected screens |
+| Agent proposals during setup or shared family planning | [Agent conversation boundary](agent-conversations.md) | Family and profile operations remain canonical; the [feature map](features/README.md) links connected behaviour and tests |
 
 ```mermaid
 flowchart TD
@@ -43,9 +43,8 @@ flowchart TD
 
 The [family API reference](family-api.md) owns cross-boundary guarantees and
 adapter composition. The [feature map](features/auth-family/README.md) owns the
-user paths and verification expectations. The
-[decision log](../plans/family-resource-onboarding.md) records why the architecture
-changed. Local nodes contain only the decisions and pitfalls needed in that area.
+user paths and verification expectations. The family API reference also records
+the architecture's approval and recovery rationale. Local nodes contain only the decisions and pitfalls needed in that area.
 
 The API host’s [auth/family composition](../../apps/api/src/auth-family.ts) is
 shared with native browser tests. The [Website source inputs](../../apps/web/website-source.ts)

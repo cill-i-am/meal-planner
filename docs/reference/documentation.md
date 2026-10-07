@@ -71,9 +71,10 @@ does not prevent a later implementation request.
 
 Approved, implemented, merged, deployed and evaluated mean different things.
 Leave unmet acceptance items open. If work is deliberately deferred, record the
-actual decision and link the follow-up. When work finishes, update the reusable
-docs, keep a short result with evidence tied to the tested commit, and remove it
-from the active queue. Historical results are not instructions to repeat the work.
+actual decision and link the follow-up. When work finishes, move useful rationale into its owning reference or decision
+and any unfinished obligation into an active plan. Delete the completed plan;
+Git history and delivery PRs retain evidence tied to the tested commit.
+Historical results are not instructions to repeat the work.
 
 Use [the decision register](../decisions/README.md) for important product, privacy,
 data-ownership and storage choices, especially those that are costly to reverse.

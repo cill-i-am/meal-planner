@@ -219,12 +219,12 @@ Distinct canonical mutation intents retain independent fences and may proceed;
 settling a newer operation does not settle the unknown operation or admit output.
 This is a deliberate residual availability limit, not a complete automatic recovery
 claim. Household commands can recover a known outcome using their existing exact
-mutation receipts. See the [implementation evidence](../plans/private-output-safety.md)
+mutation receipts. See the [implementation evidence](https://github.com/cill-i-am/meal-planner/blob/83d4c4bcd25a7cde1b65cb7fef72c74ade407338/docs/plans/private-output-safety.md)
 for the native proof and disabled-path checks.
 
 ## Private session foundation — 2026-09-06
 
-[Stage 2 Work Item 01](../plans/private-discovery/01-private-session-foundation.md)
+[Stage 2 Work Item 01](https://github.com/cill-i-am/meal-planner/blob/83d4c4bcd25a7cde1b65cb7fef72c74ade407338/docs/plans/private-discovery/01-private-session-foundation.md)
 adds a participant-scoped plain native `PrivateInterviewDirectory` alongside
 `PrivateInterviewSession`. Its identity hashes the immutable account, household,
 linkage subject, and linked person. It stores reservations, creation ordinals,
@@ -270,7 +270,7 @@ Model output and repeat review remain later work.
 
 ## Private profile confirmation — 2026-09-06
 
-[Work Item 02](../plans/private-discovery/02-progressive-cards-and-confirmation.md)
+[Work Item 02](https://github.com/cill-i-am/meal-planner/blob/83d4c4bcd25a7cde1b65cb7fef72c74ade407338/docs/plans/private-discovery/02-progressive-cards-and-confirmation.md)
 extends that admitted socket with paged tentative cards, correction, rejection,
 and explicit confirmation. One synchronous session transaction freezes the exact
 reviewed closed command before an authenticated metadata-only HTTP continuation

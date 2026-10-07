@@ -1,35 +1,26 @@
 # Documentation
 
-Use the table below to find what you need. Plans describe work to do; source code
-and test results show what has been built. Neither proves that a feature has been
-deployed or passed its quality evaluation.
+For product and interaction design, read [PRODUCT.md](../apps/web/PRODUCT.md) and
+[DESIGN.md](../apps/web/DESIGN.md). They own the experience and selected visual
+references. Consult a technical contract when the work depends on its guarantees;
+contracts do not prescribe screens or conversation order.
 
-| Task | Start here |
+| Task | Reference |
 | --- | --- |
-| Understand the product | [Vision and scope](explanation/product/vision-and-scope.md), [user experience](explanation/product/experience-blueprint.md) |
-| Find remaining work | [Plans and priorities](plans/README.md) |
-| Implement or review code | [Engineering standards](reference/engineering/README.md): read the index and relevant topics |
-| Find a domain, its contract and its proof | [Feature map](reference/features/README.md) |
-| Change auth or family boundaries | [Intent layer](reference/intent-layer.md), [family API](reference/family-api.md) |
-| Exercise auth and family as a user | [Feature map and verification paths](reference/features/auth-family/README.md) |
-| Change or exercise household food profiles | [Food profile intent map](reference/food-profile-intent-layer.md), [feature journey](reference/features/food-profiles/README.md) |
-| Try a small, checked change | [First local change](tutorials/first-local-change.md) |
-| Run part of the app locally | [Local development](how-to/local-development.md) |
-| Change a form | [Build a form](how-to/build-a-form.md), [form rules](reference/forms.md) |
-| Change household data or people APIs | [Household data](reference/household.md), [people API](reference/household-people-api.md) |
-| Change the private interview or its connection | [Private discovery](reference/private-discovery.md), [interview coverage](reference/discovery-coverage.md) |
-| Change the shared or setup agent conversation | [Agent conversations](reference/agent-conversations.md) |
-| Change recipe import | [Import rules](reference/recipe-import.md), [structured content](reference/recipe-content.md), [recipe strategy](explanation/product/recipe-strategy.md) |
-| Change infrastructure or media processing | [Operations](how-to/operate-infrastructure.md), [media lifetime](reference/media-container-lifetime.md) |
-| Change the interface's appearance | [Web instructions](../apps/web/AGENTS.md), [Paper design reference](../apps/web/DESIGN.md) |
+| Find unfinished work | [Plans and priorities](plans/README.md) |
+| Implement or review code | [Engineering standards](reference/engineering/README.md), then the relevant topic |
+| Find implemented behaviour, owners, and tests | [Feature map](reference/features/README.md) |
+| Change auth, family, or profiles | [Auth/family boundaries](reference/intent-layer.md), [profile boundaries](reference/food-profile-intent-layer.md) |
+| Change private discovery | [Privacy and confirmation](reference/private-discovery.md), [coverage](reference/discovery-coverage.md) |
+| Change shared or setup conversations | [Agent conversations](reference/agent-conversations.md) |
+| Change recipe import | [Import lifecycle](reference/recipe-import.md), [recipe content](reference/recipe-content.md) |
+| Run or operate the app | [Local development](how-to/local-development.md), [infrastructure operations](how-to/operate-infrastructure.md) |
+| Build a form | [Form guide](how-to/build-a-form.md), [form rules](reference/forms.md) |
 | Investigate rendering performance | [Performance examples](reference/react-performance/README.md) |
-| Understand a design choice | [Decision records](decisions/README.md) |
-| Assess a future local-first sync engine | [LiveStore research](research/2026-09-22-livestore-local-first-sync.md) |
-| Write docs, plans or PR descriptions | [Documentation and writing guidelines](reference/documentation.md) |
+| Understand a consequential choice | [Decision records](decisions/README.md) |
+| Write documentation | [Writing and maintenance](reference/documentation.md) |
 
-The [product domain](reference/product-domain.md) defines the planned concepts;
-not all are implemented. [Household architecture](explanation/household-authority.md)
-explains which part of the system owns each kind of data.
-[Beta requirements](explanation/product/beta-and-success.md) set the release goals,
-not achieved scores. Evaluation procedures and results live
-[with their test data](../evals/private-discovery/README.md).
+Code and tests establish implemented behaviour. Plans retain unfinished acceptance.
+Accepted product decisions describe intent, which may remain unimplemented.
+[Beta readiness](plans/beta-readiness.md) requires evidence beyond local checks;
+[model evaluation](../evals/private-discovery/README.md) keeps its procedures and results.

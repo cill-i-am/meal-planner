@@ -122,7 +122,7 @@ faithfully and undo the architecture that later decisions approved.
   its later lines 379–385 and current code allow adults without accounts or
   invitations. Active gap rows 156–160 also describe missing declined state,
   reset callbacks and persisted drafts that no longer match the implementation.
-- [Browser-runtime consolidation](../plans/library-consolidation/01-browser-runtime.md)
+- [Browser-runtime consolidation](https://github.com/cill-i-am/meal-planner/blob/83d4c4bcd25a7cde1b65cb7fef72c74ade407338/docs/plans/library-consolidation/01-browser-runtime.md)
   records completed October 4 migrations but still gives an AtomHttpApi pilot and
   people migration as next work. Close the delivered Query consolidation and give
   any remaining experiment a separate, useful objective, or cancel it.

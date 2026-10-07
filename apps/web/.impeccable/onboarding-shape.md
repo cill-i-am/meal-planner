@@ -34,7 +34,7 @@ Private discovery, portions, routines, meal planning, and shopping remain outsid
 - Adult/Child selection is independent of account access. **Invite them to join** is optional for adults; **Add and invite** coordinates the selected invitation. Recipients can join or decline. A child has a managed profile without an account.
 - Keep one-person families valid. Another person's invitation or discovery must not block the creator.
 - Reuse the account name when proposing the creator's person name. Preserve explicit creation and canonical account/person linking.
-- Keep drafts and exact unresolved commands in mounted memory. Reload reads saved resources. Log out does not persist drafts or navigation; this follows [decision D26](../../../docs/plans/family-resource-onboarding.md#d26--no-persisted-browser-mutations-27-september-2026).
+- Manual resource forms keep drafts and exact unresolved commands in mounted memory. Conversational setup follows its separate [action recovery contract](../../../docs/reference/features/auth-family/family-setup.md). Reload reads saved resources. Log out does not persist drafts or navigation; this follows [manual recovery rule](../../../docs/reference/family-api.md#manual-browser-recovery).
 - Omit **Get help signing in**. Do not invent a support destination or claim password-reset delivery exists.
 
 The user asked whether age is needed for portions. The inspected person/profile schemas contain no DOB, age, or portion default. [PDR-0004](../../../docs/decisions/pdr-0004-meal-content-portions-recipes-and-shopping.md) specifies appetite-based portions. Keep DOB out of this setup; portion implementation belongs to later discovery/profile work.

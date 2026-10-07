@@ -34,7 +34,7 @@ The family and its food remain the focus. Conversation gathers context and propo
 
 The CLI detector returned no findings in the conversation, planning, food-book, workspace and onboarding source directories. Browser injection succeeded on three representative screens. Its eyebrow-label and cream-palette warnings reflected the approved visual language; the nested-composer warning reinforced the need to simplify that surface.
 
-The first browser pass found no horizontal overflow at 320, 390 or 1440 px and no WCAG A/AA violations on the sampled setup, tastes, weeks and food-book screens. It also checked keyboard navigation, the skip link, drawer Escape/focus return and mute persistence. These observations came from an intermediate bundle; the final integration checks are recorded in the [implementation plan](../../../docs/plans/ai-native-family-journey.md).
+The first browser pass found no horizontal overflow at 320, 390 or 1440 px and no WCAG A/AA violations on the sampled setup, tastes, weeks and food-book screens. It also checked keyboard navigation, the skip link, drawer Escape/focus return and mute persistence. These observations came from an intermediate bundle; the final integration checks are recorded in the [implementation plan](https://github.com/cill-i-am/meal-planner/blob/83d4c4bcd25a7cde1b65cb7fef72c74ade407338/docs/plans/ai-native-family-journey.md).
 
 Final regression checks pass: 257 web tests, 1,203 API tests, and eight native journey cases across Chromium and mobile WebKit. The browser cases cover exact retry after a committed response is lost, linked-adult admission, confirmed food facts, a complete two-week plan, shared cooks and later leftovers, explicit revisions, and recipe cooking with mute and reduced motion.
 

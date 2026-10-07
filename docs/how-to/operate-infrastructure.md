@@ -75,9 +75,14 @@ the Cloudflare submission result, provider delivery to the recipient server,
 recipient inbox receipt, and completed link
 journeys separately. Do not include action URLs or reset tokens in logs,
 screenshots, PR text, or test evidence. A provider submission can still bounce or
-be suppressed. See the [delivery plan](../plans/auth-email-delivery.md) for the
-remaining acceptance checks and the [Cloudflare Email Service guide](https://developers.cloudflare.com/email-service/)
+be suppressed. The [onboarding acceptance](../plans/onboarding.md) retains production
+activation and receipt checks. Use the [Cloudflare Email Service guide](https://developers.cloudflare.com/email-service/)
 for current eligibility and DNS requirements.
+
+Application delivery and the E2E inbox/link journeys were verified on 30 September
+2026, as recorded in the [email delivery evidence](https://github.com/cill-i-am/meal-planner/blob/83d4c4bcd25a7cde1b65cb7fef72c74ade407338/docs/plans/auth-email-delivery.md).
+That evidence covers E2E only. Production activation and production inbox/link
+journeys remain unverified.
 
 ## One-time Cloudflare state bootstrap
 
@@ -288,7 +293,7 @@ Better Auth or Alchemy automatic auth migrations.
 
 Before applying the family-resource migration, finish any submitted person or
 invitation requests retained by old setup checkpoints. The migration checks this
-and refuses to discard unresolved requests. See the [implementation decisions](../plans/family-resource-onboarding.md).
+and refuses to discard unresolved requests. The [family API reference](../reference/family-api.md) owns the replacement resource and recovery model.
 
 Household routes authenticate with the same-origin Better Auth cookie. Effect
 middleware resolves the session, requires an active organization, and verifies

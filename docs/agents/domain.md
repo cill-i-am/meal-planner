@@ -1,8 +1,9 @@
 # Domain configuration for agent skills
 
 Use the [feature map](../reference/features/README.md) to find the affected domain,
-contract, local instructions and verification. Product language belongs in the
-[product domain](../reference/product-domain.md); engineering language belongs in
+contract, local instructions and verification. Product intent belongs in
+[PRODUCT.md](../../apps/web/PRODUCT.md); domain decisions live in the
+[decision register](../decisions/README.md). Engineering language belongs in
 the [engineering vocabulary](../reference/engineering/VOCABULARY.md).
 
 When a skill says `GLOSSARY.md` or `GLOSSARY-MAP.md`, use these existing references.

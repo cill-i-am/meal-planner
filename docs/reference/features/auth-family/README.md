@@ -107,13 +107,24 @@ command submits invitation mail after association when the delivery gate is
 enabled. A reset or invitation record,
 or a provider send response, does not prove inbox delivery. Record provider
 delivery and real mailbox receipt separately during E2E activation. See the
-[email delivery plan](../../../plans/auth-email-delivery.md).
+[email operations](../../../how-to/operate-infrastructure.md#transactional-email).
 
 If the runtime, account, recipient link, or failure-injection facility is missing,
 mark that path **not exercised**, state the missing prerequisite, and run the
 available checks. Do not fabricate a seed endpoint, test credential, or full-app
-startup command. The prior family refactor's browser fixture and native test
-results are documented in [its plan](../../../plans/family-resource-onboarding.md).
+startup command. [PR #254](https://github.com/cill-i-am/meal-planner/pull/254)
+records the family refactor's browser and native verification.
+
+Automated WebKit accessibility scans exclude only Base UI's hidden focus-guard
+spans, whose VoiceOver role is [expected upstream behaviour](https://github.com/mui/base-ui/issues/5237).
+Application controls retain all rules. This does not establish physical-device
+VoiceOver acceptance.
+
+The [September 2026 E2E smoke record](https://github.com/cill-i-am/meal-planner/blob/83d4c4bcd25a7cde1b65cb7fef72c74ade407338/docs/plans/cloudflare-e2e-deployment.md)
+covers synthetic signup, family creation, and private confirmation at release
+`adb51c59c27323e13e93e53b52d76c62d5e37da2`. The separate mail record covers actual
+E2E receipt and link journeys. Neither establishes full planning approval, recipe
+import, every swap/leftover path, or current production state.
 
 ## Maintain the map
 

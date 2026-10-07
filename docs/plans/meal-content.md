@@ -46,7 +46,7 @@ pins exact versions in a planning fixture.
 
 ## Implementation status
 
-The current branch stores planning references to canonical saved recipes and
+Main stores planning references to canonical saved recipes and
 distinct assembled, packaged, and external options. Yield and material
 quantities can remain explicitly unresolved. A reviewed shopping projection
 requires known yield and quantities before plan approval. Suitability reviews

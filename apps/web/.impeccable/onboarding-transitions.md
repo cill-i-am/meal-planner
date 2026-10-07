@@ -1,10 +1,10 @@
 # Family onboarding transitions
 
-The September 22, 2026 Paper transitions preserve visual, focus and recovery destinations. [Saved-resource family setup](../../../docs/reference/family-api.md) owns behavior; its [D26 decision](../../../docs/plans/family-resource-onboarding.md#d26--no-persisted-browser-mutations-27-september-2026) replaced checkpoint and persisted-draft transitions. See [remaining acceptance](../../../docs/plans/onboarding.md) and [error presentation](onboarding-error-contract.md).
+The September 22, 2026 Paper transitions preserve visual, focus and recovery destinations. [Saved-resource family setup](../../../docs/reference/family-api.md) owns behavior; its [manual recovery rule](../../../docs/reference/family-api.md#manual-browser-recovery) replaced checkpoint and persisted-draft transitions. See [remaining acceptance](../../../docs/plans/onboarding.md) and [error presentation](onboarding-error-contract.md).
 
 ## Password recovery
 
-Recovery screens and token handling are implemented. Real delivery remains in the [email activation plan](../../../docs/plans/auth-email-delivery.md). Never show a successful request confirmation for RESET_PASSWORD_DISABLED. All screens have desktop and mobile counterparts on the Recovery page.
+Recovery screens and token handling are implemented. Production delivery verification remains in the [email operations](../../../docs/how-to/operate-infrastructure.md#transactional-email). Never show a successful request confirmation for RESET_PASSWORD_DISABLED. All screens have desktop and mobile counterparts on the Recovery page.
 
 | From | Trigger | Destination / behavior |
 | --- | --- | --- |

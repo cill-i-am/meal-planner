@@ -1,5 +1,7 @@
 # Web interface work
 
+For product or interaction design, start with [PRODUCT.md](PRODUCT.md) and the selected references in [DESIGN.md](DESIGN.md). Engineering contracts define guarantees; they do not prescribe screens or conversation order. Consult the relevant feature contract when a design depends on its behaviour.
+
 For auth and family behavior, follow the [scoped intent nodes](../../docs/reference/intent-layer.md) and [user feature map](../../docs/reference/features/auth-family/README.md). Read only the relevant feature entries, and update them when visible behavior changes. For household food profiles after setup, follow the [food profile intent map](../../docs/reference/food-profile-intent-layer.md) and [journey](../../docs/reference/features/food-profiles/README.md).
 
 For UI changes, inspect the relevant live [Paper design](https://app.paper.design/file/01M2YNGSS3QW4T1ENVYSS0ZXNP/p-1-0) and [DESIGN.md](DESIGN.md). Paper is the design source; Markdown and screenshots record a dated version. Keep shadcn as the component foundation, including its APIs, behavior and semantic tokens. Other libraries may inspire the visual theme; do not replace the foundation when applying that styling.

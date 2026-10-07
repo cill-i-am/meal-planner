@@ -81,6 +81,14 @@ Repeating the command returns the original committed result.
 
 ## Meal-plan authority
 
+Plans identify person/date/occasion coverage and pin reviewed inputs. Approval
+validates completeness, suitability, and allocation. Activating a plan version
+updates prepared-stock reservations with plan state in the household transaction.
+An approved plan remains active until an explicit revision is accepted. The
+[planning kernel](../../apps/api/src/features/meal-planning/planning-kernel.ts) and
+[household repository](../../apps/api/src/features/households/household-meal-plan.repository.ts)
+own these checks and writes.
+
 `HouseholdObject` SQLite stores the household's meal plans. It owns plan state and
 revision, the create-request fingerprint and mutation receipts for safely retrying
 swaps, approvals and rejections. One Drizzle transaction updates both plan state

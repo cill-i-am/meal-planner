@@ -30,7 +30,7 @@ The committed native upgrade tests execute the previous repository implementatio
 against its pinned baseline before applying the ordered migrations. They cover
 active, expired, and absent replay, genuine unknown outcomes, unchanged accounting
 evidence, and migration reapplication. Current verification is recorded in
-[the cleanup delivery record](../plans/anti-slop-cleanup.md).
+[the cleanup delivery record](https://github.com/cill-i-am/meal-planner/blob/83d4c4bcd25a7cde1b65cb7fef72c74ade407338/docs/plans/anti-slop-cleanup.md).
 
 Approval covers the reviewed source migration and PR merge. It does not authorize
 cloud deployment, database reset, or any live provider operation.

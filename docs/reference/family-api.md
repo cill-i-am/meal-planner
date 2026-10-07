@@ -60,14 +60,21 @@ returns the current family, without undoing later edits. Reusing the key for
 different input returns `mutation_collision`. Completion is naturally
 idempotent and increments the version only once.
 
-The browser keeps the exact submitted payload and request ID in memory while the
-screen is mounted. An explicit retry of an unknown result reuses both; definite
+### Manual browser recovery
+
+Manual resource forms keep the exact submitted payload and request ID in memory
+while the screen is mounted. An explicit retry of an unknown result reuses both; definite
 rejections allow correction. Mutation requests are not persisted in localStorage,
 sessionStorage, or a persisted Query cache. Leaving the screen or reloading loses
 that local retry state. A new page load reads saved server resources and does not
 automatically replay mutations. This does not promise to identify an uncertain
 create after a reload: inspect saved resources before starting another creation.
-Server receipts and explicit resume operations remain in place.
+Server receipts and explicit resume operations remain in place. This is the
+manual resource-command rule approved as D26 on 27 September 2026. The later
+[conversational setup path](features/auth-family/family-setup.md) separately keeps
+its exact accepted action in account-scoped session storage until a terminal
+receipt arrives. Reload restores that action for explicit retry, never automatic
+replay. [Agent conversations](agent-conversations.md) own that recovery contract.
 
 Bounded Effect retries use exponential backoff and jitter for the transient
 failures selected by each operation. Retry timing does not replace server
@@ -114,10 +121,10 @@ Public native organization create/update endpoints are disabled so they cannot
 bypass family receipts and versions. Auth identity, invitations, membership
 changes, and private-output fences retain their existing boundaries.
 
-Implementation choices and validation are recorded in the
-[running decision log](../plans/family-resource-onboarding.md). This is the
-reference architecture for new features and for existing features as they are
-changed. LiveStore and agent runtime/tooling remain separate decisions.
+Cillian approved these family/invitation boundaries as the reference architecture
+on 27 September 2026, delivered in [PR #254](https://github.com/cill-i-am/meal-planner/pull/254).
+Existing features adopt them when changed. LiveStore and agent runtime/tooling
+remain separate decisions.
 
 ## Reference architecture
 
