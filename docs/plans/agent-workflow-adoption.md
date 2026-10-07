@@ -13,8 +13,8 @@ verification, required CI, merge and authorized deployment evidence.
 
 | Pass | Area | Status | Outcome and evidence |
 | --- | --- | --- | --- |
-| 1 | Complexity enforcement and documentation/evaluation tooling | Verified; delivery pending | Baseline `6581682`. Restored native cccc 1.7.0 setup guidance inside the retained testing skill. Existing gates and domain helpers retained. |
-| 2 | Private interview input and session lifecycle | Scouting | Inspect callers and the prior intermittent WebKit input failure; no speculative fix. |
+| 1 | Complexity enforcement and documentation/evaluation tooling | Merged; production pending | PR #292 merged as `2425137`. Restored native cccc 1.7.0 setup guidance inside the retained testing skill. Existing gates and domain helpers retained. |
+| 2 | Private interview input and session lifecycle | Verified; delivery pending | Removed duplicated queued and running checks already owned by `isAssistantTurnActive`. Component tests, equivalence review and native browser journeys passed. |
 | 3 | Conversation proposals and schedule materialization | Scouting | Check recent complexity refactor and duplicated content lookup rules. |
 | 4 | Food Book and meal-planning browser data paths | Planned | |
 | 5 | Recipe acquisition and import review | Planned | |
@@ -44,3 +44,36 @@ Documentation checks passed all 211 Markdown files and 19 checker tests. Eight
 schedule tests, eight evaluation asset tests and skill validation passed.
 Oxfmt excludes `.agents` by repository defaults, so it was not counted as
 formatting evidence for the reference edit.
+
+PR #292 merged as `24251370e515ea94c5f9af6d8e0a153f8048d7fd`. The
+[production deployment](https://github.com/cill-i-am/meal-planner/actions/runs/37679585094)
+and [preview cleanup](https://github.com/cill-i-am/meal-planner/actions/runs/37679585454)
+were still running when this record was updated. Pass 1 does not count as
+completed until production is verified.
+
+## Pass 2 evidence
+
+Traced the private interview page caller, account-bound panel, generation-bound
+chat, client admission and recovery, profile loading, proposal review and
+correction, browser page object and component tests. Retained generation
+ownership, stale-callback rejection, unresolved-request recovery and explicit
+safety confirmation because they protect access, privacy and user intent.
+
+The selected deletion removes two repeated active-turn checks from
+`private-profile-cards.tsx`. The retained `isAssistantTurnActive` helper already
+checks both queued and running turns. Independent review compared 112
+combinations of the old and new expressions, with matching results and no
+findings. The 36 private interview browser component tests passed before and
+after the deletion. Web TypeScript checking, changed-file lint, formatting and
+`git diff --check` passed.
+
+The native private review journey passed in Chromium. WebKit initially failed
+before reaching the changed private panel while opening the saved food facts
+disclosure. Three baseline repeats and three changed-code repeats then passed.
+Trace analysis suggests roster loading moved the disclosure during the click,
+but the exact event targets and cause remain unproven. Pass 10 retains the
+controlled investigation. The earlier empty-input trace is a separate unresolved
+failure. This cleanup does not claim to fix either failure.
+
+Pass 2 is rebased onto merged pass 1. Its delivery remains pending independent
+review of the final patch, required CI, merge and production verification.
