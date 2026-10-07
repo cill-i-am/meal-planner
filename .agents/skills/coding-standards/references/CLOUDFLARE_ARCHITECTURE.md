@@ -28,7 +28,7 @@ Keep Cloudflare objects and raw bindings in infrastructure and composition code.
 
 ## Strong defaults
 
-- Meal Planner uses native Alchemy for deployment and runtime composition. Follow the [infrastructure guide](../../../../alchemy.run.ts); do not create a second Wrangler or generic Cloudflare configuration source.
+- Meal Planner uses native Alchemy for deployment and runtime composition. Follow the [infrastructure composition](../../../../alchemy.run.ts); do not create a second Wrangler or generic Cloudflare configuration source.
 - Enable Node compatibility for Cloudflare Workers projects.
 - Generate Worker environment declarations from deployment configuration. Do not add hand-written compatibility declarations to preserve an obsolete API.
 - New non-Effect multi-route Cloudflare HTTP apps use Hono unless the repo has another established framework or the Worker is tiny/pass-through/static/direct Agent routing.

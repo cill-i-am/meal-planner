@@ -1,8 +1,8 @@
 # Visualize an open design choice
 
 Use visual alternatives only when they clarify an actual unresolved composition.
-The repository's Paper design remains visual authority. Do not generate a new
-comp round for a precisely specified or already agreed surface.
+The current brief and supplied visual references establish direction. Do not
+generate a new comp round for a precisely specified or already agreed surface.
 
 Anchor alternatives on real product content, existing components and the agreed
 palette/type system. Use representative viewport sizes; preserve recognizable

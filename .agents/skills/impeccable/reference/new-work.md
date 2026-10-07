@@ -16,9 +16,11 @@ about a material unresolved design choice, not settled facts or routine CSS valu
 
 ## Develop the composition
 
-For new surfaces/substantial redesign, explore the composition in Paper and agree
-it with the user before application UI coding. Reuse prior agreement; there is no
-second compulsory comp tournament or confirmation. Develop alternatives only
+Use the design tool requested for the task. Paper is appropriate when requested
+or when the supplied design lives there. Develop the composition within the
+approved direction and resolve material open choices before they affect the
+implementation. Reuse prior agreement; there is no compulsory comp tournament or
+extra confirmation. Develop alternatives only
 when they clarify a genuinely open choice, not to satisfy a fixed count or dice
 roll. Preserve factual copy, behavior, privacy, error states and accessibility.
 

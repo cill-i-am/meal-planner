@@ -21,7 +21,7 @@ sampling; the API and household hosts provide Alchemy's native Effect tracer.
 This is an explicit exception for platform-generated request metadata to the
 secret-free telemetry rule below. Application-authored logs and attributes still
 use safe summaries and redacted credentials. Review platform metadata and sampling
-before real-user onboarding. See [operation and pricing](../../../../alchemy.run.ts).
+before real-user onboarding. See [runtime configuration](../../../../alchemy.run.ts).
 
 ## Request outcomes and database spans
 
