@@ -409,7 +409,6 @@ const installedRecipeConservativeDispatch = (
           });
           const recipeRepository: RecipeDraftRepository = {
             claim: () => Effect.die("unexpected repository claim"),
-            claimCarousel: () => Effect.die("unexpected carousel claim"),
             complete: (draft) =>
               increment(env, instanceId, "recipe-draft-completions").pipe(
                 Effect.as(draft)

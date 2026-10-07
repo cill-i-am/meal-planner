@@ -65,7 +65,6 @@ describe("recipe extraction failure projection", () => {
       const persisted: string[] = [];
       const repository: RecipeDraftRepository = {
         claim: () => Effect.die("unexpected repository claim"),
-        claimCarousel: () => Effect.die("unexpected carousel claim"),
         complete: () => Effect.die("unexpected recipe completion"),
         fail: ({ failureCode }) =>
           Effect.sync(() => {
