@@ -92,6 +92,11 @@ jobs:
       - name: Check formatting
         run: pnpm format:check
 
+      - name: Install complexity analyzer
+        uses: moznion/cccc-action@f766d74cf323cd9085c2c9263cebdf1ec1ebfb19 # v1
+        with:
+          version: v1.7.0
+
       - name: Lint
         run: pnpm lint
 

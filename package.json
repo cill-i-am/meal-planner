@@ -18,8 +18,10 @@
     "evals:check": "node --import tsx evals/private-discovery/validate.ts",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "lint": "oxlint --deny-warnings --report-unused-disable-directives .",
-    "lint:fix": "oxlint --fix --deny-warnings --report-unused-disable-directives .",
+    "lint": "pnpm lint:oxlint && pnpm lint:complexity",
+    "lint:complexity": "cccc --config cccc.toml --table --min 20 .",
+    "lint:fix": "oxlint --fix --deny-warnings --report-unused-disable-directives . && pnpm lint:complexity",
+    "lint:oxlint": "oxlint --deny-warnings --report-unused-disable-directives .",
     "test": "vitest run --config vitest.alchemy.config.ts && pnpm --recursive test",
     "test:stack": "vitest run --config vitest.stack.config.ts",
     "test:container": "MEAL_PLANNER_RUN_CONTAINER_TESTS=1 pnpm --filter @meal-planner/api exec vitest run --config vitest.container.config.ts"
