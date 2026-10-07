@@ -18,7 +18,7 @@ import type {
   PlanProposalReview,
   PlanProposalReviewActions,
 } from "../agent-conversations/index.js";
-import { dateLabel, resolutionLabel } from "./plan-projection.js";
+import { coverageKey, dateLabel, resolutionLabel } from "./plan-projection.js";
 
 type PlanBlock = Parameters<PlanProposalReview>[0];
 interface PlanPerson {
@@ -30,8 +30,6 @@ interface PlanProjection {
   readonly cookEvents: MealPlanVersion["cookEvents"];
 }
 
-const requirementKey = (entry: MealPlanCoverage) =>
-  `${entry.requirement.date}:${entry.requirement.occasion}:${entry.requirement.personId}`;
 const personName = (people: readonly PlanPerson[], id: string) =>
   people.find((person) => person.id === id)?.displayName ?? "Family member";
 const occasionName = (snapshot: PlanningContentSnapshot, id: string) =>
@@ -79,14 +77,14 @@ const projectChange = (
       return { cookEvents: change.cookEvents, coverage: change.coverage };
     }
     case "SetCoverage": {
-      const key = `${change.requirement.date}:${change.requirement.occasion}:${change.requirement.personId}`;
-      if (!version.coverage.some((entry) => requirementKey(entry) === key)) {
+      const key = coverageKey(change);
+      if (!version.coverage.some((entry) => coverageKey(entry) === key)) {
         return null;
       }
       return {
         cookEvents: version.cookEvents,
         coverage: version.coverage.map((entry) =>
-          requirementKey(entry) === key
+          coverageKey(entry) === key
             ? { requirement: change.requirement, resolution: change.resolution }
             : entry
         ),
@@ -230,7 +228,7 @@ const PlanCoverageDay = ({
   readonly snapshot: PlanningContentSnapshot;
 }) => {
   const previous = new Map(
-    currentVersion.coverage.map((entry) => [requirementKey(entry), entry])
+    currentVersion.coverage.map((entry) => [coverageKey(entry), entry])
   );
   const priorSnapshot = {
     ...snapshot,
@@ -245,7 +243,7 @@ const PlanCoverageDay = ({
         {coverage
           .filter((entry) => entry.requirement.date === date)
           .map((entry) => {
-            const prior = previous.get(requirementKey(entry));
+            const prior = previous.get(coverageKey(entry));
             const changed =
               prior === undefined ||
               JSON.stringify(prior.resolution) !==
@@ -257,7 +255,7 @@ const PlanCoverageDay = ({
                 : null;
             return (
               <li
-                key={requirementKey(entry)}
+                key={coverageKey(entry)}
                 className="flex flex-wrap items-start justify-between gap-3 py-3"
               >
                 <div>

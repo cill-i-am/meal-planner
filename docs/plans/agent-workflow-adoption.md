@@ -89,6 +89,21 @@ paths, carousel integrity rules and checks remain useful. This was a bounded
 follow-up to the completed coverage review, not another whole-codebase
 correctness audit.
 
+The user-requested 7 October pass followed the new agent-led journey in PRs
+#284 and #285, using baseline `8eee95c`. Proposal review reuses the existing
+meal-plan coverage identity. The apparently identical conversation dispatch
+branches remain because the generated client requires narrowed action variants.
+The pass also reproduced a chat race: the composer accepted another message
+before the completed turn's canonical refresh arrived, sending an old version
+and receiving HTTP 409. A delayed-response browser regression covers the refresh
+boundary. The fix uses the existing query's fetch state to block chat submission
+until the current conversation is available. Saved-action recovery and the
+browser plan projection keep their existing responsibilities. This additional
+pass does not consume a weekly scheduled run. The delayed-refresh regression
+failed before the fix and passed afterward. Local verification passed all 14
+Chromium/mobile WebKit family and planning journeys, 297 web tests, web typecheck,
+focused lint/format checks and documentation validation.
+
 ## Adoption and current audit
 
 Commit to this workflow for a month once setup works, then keep what works and
