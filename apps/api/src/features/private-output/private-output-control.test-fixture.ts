@@ -263,9 +263,244 @@ const Command = Schema.Struct({
   turnId: Schema.optional(Schema.String),
 });
 
+type CommandInput = typeof Command.Type;
+type CommandResult =
+  | { readonly result: unknown }
+  | {
+      readonly response:
+        | Response
+        | Promise<Response | NativeCloudflare.Response>;
+    };
+
+const routeDirectoryCommand = async (
+  request: Request,
+  directory: DirectoryPort,
+  input: CommandInput,
+  generation: { readonly generation: string }
+): Promise<CommandResult> => {
+  let result: unknown = null;
+  if (input.action === "directory-initialize" && input.participant) {
+    result = await directory.initialize(input.participant);
+  } else if (input.action === "directory-begin" && input.participant) {
+    result = await directory.beginConnection(input.participant);
+  } else if (input.action === "directory-authorize" && input.participant) {
+    result = await directory.authorizeConnection({
+      ...generation,
+      binding: input.participant,
+      expiresAt: input.expiresAt ?? 0,
+    });
+  } else if (input.action === "directory-private-http") {
+    return { response: directory.fetch(new Request(request.url)) };
+  } else if (input.action === "directory-sql") {
+    result = await directory.sql("select * from private_directory_binding");
+  } else if (input.action === "directory-state") {
+    result = await directory.state;
+  } else if (input.action === "directory-context-sql") {
+    result = await directory.ctx.storage.sql.exec(
+      "select * from private_directory_binding"
+    );
+  } else if (input.action === "directory-lifecycle") {
+    result = await directory.readOutputLifecycle();
+  } else if (
+    input.action === "directory-command-at-time" &&
+    input.now !== undefined
+  ) {
+    result = await directory.commandAtTime(
+      { ...generation, payload: input.payload ?? "" },
+      input.now
+    );
+  } else if (input.action === "directory-lose-ack") {
+    result = await directory.loseNextInvalidationAcknowledgement();
+  } else if (input.action === "directory-reserved" && input.binding) {
+    result = (await directory.readReservation(input.binding)) !== null;
+  } else if (input.action === "directory-connect") {
+    return {
+      response: directory.fetch(
+        new Request(request.url, {
+          headers: {
+            Upgrade: "websocket",
+            "private-output-generation": generation.generation,
+          },
+        })
+      ),
+    };
+  } else {
+    return { response: new Response(null, { status: 404 }) };
+  }
+  return { result };
+};
+
+const routeSessionChat = async (
+  request: Request,
+  child: SessionPort,
+  binding: typeof PrivateSessionBinding.Type,
+  profile: CommandInput["profile"],
+  generation: { readonly generation: string }
+): Promise<CommandResult> => {
+  const url = new URL("https://private-output.internal/chat");
+  url.search = new URL(request.url).search;
+  const context = {
+    binding,
+    generation: generation.generation,
+    profile: request.method === "POST" ? (profile ?? null) : null,
+  };
+  const headers = new Headers();
+  const cursor = request.headers.get("Last-Event-ID");
+  if (cursor !== null) {
+    headers.set("Last-Event-ID", cursor);
+  }
+  if (request.method === "POST") {
+    const body = Schema.decodeUnknownSync(
+      Schema.Record(Schema.String, Schema.Unknown)
+    )(await request.json());
+    headers.set("content-type", "application/json");
+    return {
+      response: child.fetch(
+        new Request(url, {
+          body: JSON.stringify({ ...body, privateChatContext: context }),
+          headers,
+          method: "POST",
+        })
+      ),
+    };
+  }
+  headers.set(
+    "private-chat-context",
+    encodeURIComponent(JSON.stringify(context))
+  );
+  return {
+    response: child.fetch(
+      new Request(url, { headers, method: request.method })
+    ),
+  };
+};
+
+const readSessionCommand = async (
+  request: Request,
+  child: SessionPort,
+  input: CommandInput
+): Promise<CommandResult | undefined> => {
+  let result: unknown = null;
+  if (input.action === "turns") {
+    result = await child.readTurns();
+  } else if (input.action === "keep-alive-references") {
+    result = await child.readKeepAliveReferences();
+  } else if (input.action === "metadata") {
+    result = await child.readMetadata();
+  } else if (input.action === "lifecycle") {
+    result = await child.readOutputLifecycle();
+  } else if (input.action === "lose-ack") {
+    result = await child.loseNextInvalidationAcknowledgement();
+  } else if (input.action === "sql") {
+    result = await child.sql("select * from private_session_binding");
+  } else if (input.action === "state") {
+    result = await child.state;
+  } else if (input.action === "context-sql") {
+    result = await child.ctx.storage.sql.exec(
+      "select * from private_session_binding"
+    );
+  } else if (input.action === "private-http") {
+    return { response: child.fetch(new Request(request.url)) };
+  } else {
+    return undefined;
+  }
+  return { result };
+};
+
+const routeSessionCommand = async (
+  request: Request,
+  child: SessionPort,
+  input: CommandInput,
+  generation: { readonly generation: string }
+): Promise<CommandResult | undefined> => {
+  let result: unknown = null;
+  if (input.action === "initialize" && input.binding) {
+    result = await child.initialize({
+      binding: input.binding,
+      scope:
+        input.discoveryScope === undefined
+          ? "ProfileEdit"
+          : input.discoveryScope,
+    });
+  } else if (input.action === "begin" && input.binding) {
+    result = await child.beginConnection(input.binding);
+  } else if (input.action === "authorize" && input.binding) {
+    result = await child.authorizeConnection({
+      ...generation,
+      binding: input.binding,
+      expiresAt: input.expiresAt ?? 0,
+    });
+  } else if (input.action === "connect") {
+    return {
+      response: child.fetch(
+        new Request("https://private-output.internal/upgrade", {
+          headers: {
+            Upgrade: "websocket",
+            "private-output-generation": generation.generation,
+          },
+        })
+      ),
+    };
+  } else if (input.action === "command-at-time" && input.now !== undefined) {
+    result = await child.commandAtTime(
+      { ...generation, payload: input.payload ?? "" },
+      input.now
+    );
+  } else if (input.action === "emit-at-time" && input.now !== undefined) {
+    result = await child.enqueueOutputAtTime(
+      { ...generation, payload: input.payload ?? "" },
+      input.now
+    );
+  } else if (input.action === "emit") {
+    result = await child.enqueueOutput({
+      ...generation,
+      payload: input.payload ?? "",
+    });
+  } else if (input.action === "chat" && input.binding) {
+    return routeSessionChat(
+      request,
+      child,
+      input.binding,
+      input.profile,
+      generation
+    );
+  } else {
+    return readSessionCommand(request, child, input);
+  }
+  return { result };
+};
+
+const routeLifecycleCommand = async (
+  coordinator: OutputLifecyclePort,
+  input: CommandInput
+): Promise<CommandResult> => {
+  const operation = { operationId: input.operationId ?? "" };
+  let result: unknown = null;
+  if (input.action === "mutation-find-pending") {
+    result = await coordinator.findPendingMutation({
+      intentKey: input.intentKey ?? "",
+    });
+  } else if (input.action === "mutation-begin") {
+    result = await coordinator.beginMutation({
+      intentKey: input.intentKey ?? "",
+    });
+  } else if (input.action === "mutation-prepare") {
+    result = await coordinator.prepareMutation(operation);
+  } else if (input.action === "mutation-dispatch") {
+    result = await coordinator.markDispatched(operation);
+  } else if (input.action === "mutation-complete") {
+    result = await coordinator.completeMutation(operation);
+  } else if (input.action === "mutation-read") {
+    result = await coordinator.readMutation(operation);
+  } else {
+    return { response: new Response(null, { status: 404 }) };
+  }
+
+  return { result };
+};
+
 /** Test-only direct capabilities; this shell is never referenced by the production worker resource. */
 export default {
-  // eslint-disable-next-line complexity -- Test-only command router keeps the production capabilities directly observable.
   async fetch(
     request: Request,
     env: Environment
@@ -278,7 +513,7 @@ export default {
     );
     const generation = { generation: input.generation ?? "" };
     try {
-      let result: unknown = null;
+      let outcome: CommandResult | undefined;
       if (
         input.action.startsWith("directory-") &&
         (input.participant || input.directoryKey)
@@ -289,183 +524,31 @@ export default {
               ? await privateDirectoryKey(input.participant)
               : "")
         );
-        if (input.action === "directory-initialize" && input.participant) {
-          result = await directory.initialize(input.participant);
-        } else if (input.action === "directory-begin" && input.participant) {
-          result = await directory.beginConnection(input.participant);
-        } else if (
-          input.action === "directory-authorize" &&
-          input.participant
-        ) {
-          result = await directory.authorizeConnection({
-            ...generation,
-            binding: input.participant,
-            expiresAt: input.expiresAt ?? 0,
-          });
-        } else if (input.action === "directory-private-http") {
-          return directory.fetch(new Request(request.url));
-        } else if (input.action === "directory-sql") {
-          result = await directory.sql(
-            "select * from private_directory_binding"
-          );
-        } else if (input.action === "directory-state") {
-          result = await directory.state;
-        } else if (input.action === "directory-context-sql") {
-          result = await directory.ctx.storage.sql.exec(
-            "select * from private_directory_binding"
-          );
-        } else if (input.action === "directory-lifecycle") {
-          result = await directory.readOutputLifecycle();
-        } else if (
-          input.action === "directory-command-at-time" &&
-          input.now !== undefined
-        ) {
-          result = await directory.commandAtTime(
-            { ...generation, payload: input.payload ?? "" },
-            input.now
-          );
-        } else if (input.action === "directory-lose-ack") {
-          result = await directory.loseNextInvalidationAcknowledgement();
-        } else if (input.action === "directory-reserved" && input.binding) {
-          result = (await directory.readReservation(input.binding)) !== null;
-        } else if (input.action === "directory-connect") {
-          return directory.fetch(
-            new Request(request.url, {
-              headers: {
-                Upgrade: "websocket",
-                "private-output-generation": generation.generation,
-              },
-            })
-          );
-        } else {
-          return new Response(null, { status: 404 });
-        }
-      } else if (input.action === "initialize" && input.binding) {
-        result = await child.initialize({
-          binding: input.binding,
-          scope:
-            input.discoveryScope === undefined
-              ? "ProfileEdit"
-              : input.discoveryScope,
-        });
-      } else if (input.action === "begin" && input.binding) {
-        result = await child.beginConnection(input.binding);
-      } else if (input.action === "authorize" && input.binding) {
-        result = await child.authorizeConnection({
-          ...generation,
-          binding: input.binding,
-          expiresAt: input.expiresAt ?? 0,
-        });
-      } else if (input.action === "connect") {
-        return child.fetch(
-          new Request("https://private-output.internal/upgrade", {
-            headers: {
-              Upgrade: "websocket",
-              "private-output-generation": generation.generation,
-            },
-          })
+        outcome = await routeDirectoryCommand(
+          request,
+          directory,
+          input,
+          generation
         );
-      } else if (
-        input.action === "command-at-time" &&
-        input.now !== undefined
-      ) {
-        result = await child.commandAtTime(
-          { ...generation, payload: input.payload ?? "" },
-          input.now
-        );
-      } else if (input.action === "emit-at-time" && input.now !== undefined) {
-        result = await child.enqueueOutputAtTime(
-          { ...generation, payload: input.payload ?? "" },
-          input.now
-        );
-      } else if (input.action === "emit") {
-        result = await child.enqueueOutput({
-          ...generation,
-          payload: input.payload ?? "",
-        });
-      } else if (input.action === "chat" && input.binding) {
-        const url = new URL("https://private-output.internal/chat");
-        url.search = new URL(request.url).search;
-        const context = {
-          binding: input.binding,
-          generation: generation.generation,
-          profile: request.method === "POST" ? (input.profile ?? null) : null,
-        };
-        const headers = new Headers();
-        const cursor = request.headers.get("Last-Event-ID");
-        if (cursor !== null) {
-          headers.set("Last-Event-ID", cursor);
-        }
-        if (request.method === "POST") {
-          const body = Schema.decodeUnknownSync(
-            Schema.Record(Schema.String, Schema.Unknown)
-          )(await request.json());
-          headers.set("content-type", "application/json");
-          return child.fetch(
-            new Request(url, {
-              body: JSON.stringify({ ...body, privateChatContext: context }),
-              headers,
-              method: "POST",
-            })
-          );
-        }
-        headers.set(
-          "private-chat-context",
-          encodeURIComponent(JSON.stringify(context))
-        );
-        return child.fetch(
-          new Request(url, { headers, method: request.method })
-        );
-      } else if (input.action === "turns") {
-        result = await child.readTurns();
-      } else if (input.action === "keep-alive-references") {
-        result = await child.readKeepAliveReferences();
-      } else if (input.action === "metadata") {
-        result = await child.readMetadata();
-      } else if (input.action === "lifecycle") {
-        result = await child.readOutputLifecycle();
-      } else if (input.action === "lose-ack") {
-        result = await child.loseNextInvalidationAcknowledgement();
-      } else if (input.action === "sql") {
-        result = await child.sql("select * from private_session_binding");
-      } else if (input.action === "state") {
-        result = await child.state;
-      } else if (input.action === "context-sql") {
-        result = await child.ctx.storage.sql.exec(
-          "select * from private_session_binding"
-        );
-      } else if (input.action === "private-http") {
-        return child.fetch(new Request(request.url));
-      } else if (input.key) {
-        const coordinator = (
-          input.scope === "household"
-            ? env.HouseholdAgent
-            : env.AccountOutputLifecycle
-        ).getByName(input.key);
-        const operation = { operationId: input.operationId ?? "" };
-        if (input.action === "mutation-find-pending") {
-          result = await coordinator.findPendingMutation({
-            intentKey: input.intentKey ?? "",
-          });
-        } else if (input.action === "mutation-begin") {
-          result = await coordinator.beginMutation({
-            intentKey: input.intentKey ?? "",
-          });
-        } else if (input.action === "mutation-prepare") {
-          result = await coordinator.prepareMutation(operation);
-        } else if (input.action === "mutation-dispatch") {
-          result = await coordinator.markDispatched(operation);
-        } else if (input.action === "mutation-complete") {
-          result = await coordinator.completeMutation(operation);
-        } else if (input.action === "mutation-read") {
-          result = await coordinator.readMutation(operation);
-        } else {
-          return new Response(null, { status: 404 });
-        }
       } else {
+        outcome = await routeSessionCommand(request, child, input, generation);
+        if (outcome === undefined && input.key) {
+          const coordinator = (
+            input.scope === "household"
+              ? env.HouseholdAgent
+              : env.AccountOutputLifecycle
+          ).getByName(input.key);
+          outcome = await routeLifecycleCommand(coordinator, input);
+        }
+      }
+      if (outcome === undefined) {
         return new Response(null, { status: 404 });
       }
-      return Response.json({ result: result ?? null });
+      if ("response" in outcome) {
+        // Returning the delegated promise preserves its rejection boundary outside the command catch.
+        return outcome.response;
+      }
+      return Response.json({ result: outcome.result ?? null });
     } catch (error) {
       return Response.json(
         { error: error instanceof Error ? error.message : "Rejected" },

@@ -1,0 +1,15 @@
+# Analyze repository-owned JavaScript and TypeScript, including tests.
+languages = ["es"]
+max-cognitive = 40
+max-cyclomatic = 40
+
+# Vendor tooling and generated code have separate integrity checks.
+# Build output and dependencies are skipped through .gitignore.
+exclude = [
+  ".agents/**",
+  "apps/api/src/features/auth/auth.database-schema.ts",
+  "apps/api/household-migrations/migrations.d.ts",
+  "**/worker-configuration.d.ts",
+  "tools/oxlint/anti-slop/no-conditional-empty-object-spread.ts",
+  "tools/oxlint/anti-slop/no-runtime-typeof.ts",
+]

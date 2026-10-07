@@ -403,7 +403,16 @@ describe("compact agent plan schedule", () => {
       weekdays: [3],
     };
     const change = materialize(2, [cook, prepared]);
-    expect(change.cookEvents).toHaveLength(2);
+    expect(
+      change.cookEvents.map(({ eventId, outputs }) => ({
+        eventId,
+        outputId: outputs[0]?.outputId,
+      }))
+    ).toEqual([
+      { eventId: "generated-1", outputId: "generated-3" },
+      { eventId: "generated-2", outputId: "generated-4" },
+    ]);
+    expect(materialize(2, [prepared, cook])).toEqual(change);
     const mondayOutput = change.cookEvents[0]?.outputs[0]?.outputId;
     const nextMondayOutput = change.cookEvents[1]?.outputs[0]?.outputId;
     expect(mondayOutput).toBeDefined();

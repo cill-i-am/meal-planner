@@ -86,6 +86,20 @@ billing operation; deployment needs the intended Alchemy stage and profile.
 
 ## Verification
 
+Install [cccc 1.7.0](https://github.com/moznion/cccc/releases/tag/v1.7.0)
+and put the `cccc` binary on your `PATH` before running lint. Use the release
+binary for your platform, or build it with `cargo install cccc-cli --version
+1.7.0 --locked`. CI installs the same release automatically.
+
+`pnpm lint` runs Oxlint and then `pnpm lint:complexity`. Oxlint keeps its
+cyclomatic limit of 20. The separate complexity check uses
+[cccc.toml](../../cccc.toml) to enforce cognitive and cyclomatic limits of 40
+per function across JavaScript and TypeScript, including tests. Scores of 40
+pass; higher scores fail. The table shows functions with either score at least
+20, but the thresholds apply to every analyzed function. Vendor tooling and
+generated files are excluded; `.gitignore` excludes dependencies and build output.
+`pnpm lint:fix` also checks complexity after Oxlint applies its fixes.
+
 Run the relevant package checks and required CI checks. Root commands are
 `pnpm check`, `pnpm lint`, `pnpm format:check`, `pnpm test` and `pnpm build`.
 Use `pnpm test:container` for synthetic media tests. For focused API checks, run
