@@ -31,7 +31,7 @@ import type {
   VisualEvidenceRepository,
 } from "./import-visual-evidence.repository.js";
 import { VisualEvidenceFailureCode } from "./import-visual-evidence.repository.js";
-import type { ImportTimestamp, SourceCanonicalId } from "./import.contracts.js";
+import type { SourceCanonicalId } from "./import.contracts.js";
 import { ImportId } from "./import.contracts.js";
 import {
   importPersistenceUnavailable,
@@ -733,13 +733,7 @@ export const makeHouseholdRecipeDraftRepository = (
       })
     );
   const claimStage = (
-    claimInput: {
-      readonly extractionFingerprint: string;
-      readonly generation: AcquisitionGeneration;
-      readonly importId: ImportId;
-      readonly startedAt: ImportTimestamp;
-    },
-    extractionContext?: Parameters<RecipeDraftRepository["claim"]>[0]
+    claimInput: Parameters<RecipeDraftRepository["claim"]>[0]
   ) =>
     assertIdentity(input, claimInput.importId, claimInput.generation).pipe(
       Effect.andThen(
@@ -749,35 +743,27 @@ export const makeHouseholdRecipeDraftRepository = (
             inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
               claimInput.extractionFingerprint
             ),
-            operation:
-              extractionContext === undefined
-                ? {
-                    _tag: "Claim",
-                    dispatchId: claimInput.extractionFingerprint,
-                    stage: "extraction",
-                    startedAt: claimInput.startedAt,
-                  }
-                : {
-                    _tag: "Claim",
-                    dispatchId: claimInput.extractionFingerprint,
-                    extractionContext: {
-                      descriptor: extractionContext.descriptor,
-                      evidenceFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
-                        extractionContext.evidenceFingerprint
-                      ),
-                      sourceMediaSha256: Schema.decodeUnknownSync(Sha256Hex)(
-                        extractionContext.sourceMediaSha256
-                      ),
-                      transcriptSha256: Schema.decodeUnknownSync(Sha256Hex)(
-                        extractionContext.transcriptSha256
-                      ),
-                      visualManifestSha256: Schema.decodeUnknownSync(Sha256Hex)(
-                        extractionContext.visualManifestSha256
-                      ),
-                    },
-                    stage: "extraction",
-                    startedAt: claimInput.startedAt,
-                  },
+            operation: {
+              _tag: "Claim",
+              dispatchId: claimInput.extractionFingerprint,
+              extractionContext: {
+                descriptor: claimInput.descriptor,
+                evidenceFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
+                  claimInput.evidenceFingerprint
+                ),
+                sourceMediaSha256: Schema.decodeUnknownSync(Sha256Hex)(
+                  claimInput.sourceMediaSha256
+                ),
+                transcriptSha256: Schema.decodeUnknownSync(Sha256Hex)(
+                  claimInput.transcriptSha256
+                ),
+                visualManifestSha256: Schema.decodeUnknownSync(Sha256Hex)(
+                  claimInput.visualManifestSha256
+                ),
+              },
+              stage: "extraction",
+              startedAt: claimInput.startedAt,
+            },
           }
         )
       ),
@@ -796,8 +782,7 @@ export const makeHouseholdRecipeDraftRepository = (
       })
     );
   return {
-    claim: (claimInput) => claimStage(claimInput, claimInput),
-    claimCarousel: (claimInput) => claimStage(claimInput),
+    claim: claimStage,
     complete: (draft: RecipeDraft) =>
       assertIdentity(input, draft.importId, draft.generation).pipe(
         Effect.andThen(

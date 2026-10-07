@@ -14,7 +14,6 @@
     "@types/node": "24.13.3",
     "@vitest/browser-playwright": "4.1.11",
     "@vitest/ui": "4.1.11",
-    "jpeg-js": "0.4.4",
     "vitest": "4.1.11"
   }
 }

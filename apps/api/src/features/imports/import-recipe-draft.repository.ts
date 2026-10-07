@@ -51,15 +51,6 @@ export interface RecipeDraftRepository {
     readonly transcriptSha256: string;
     readonly visualManifestSha256: string;
   }) => Effect.Effect<RecipeDispatchClaim, ImportTransitionError>;
-  readonly claimCarousel: (input: {
-    readonly carouselManifestSha256: string;
-    readonly descriptor: typeof RecipeExtractorDescriptor.Type;
-    readonly evidenceFingerprint: string;
-    readonly extractionFingerprint: string;
-    readonly generation: typeof AcquisitionGeneration.Type;
-    readonly importId: typeof ImportId.Type;
-    readonly startedAt: typeof ImportTimestamp.Type;
-  }) => Effect.Effect<RecipeDispatchClaim, ImportTransitionError>;
   readonly complete: (
     draft: RecipeDraft
   ) => Effect.Effect<RecipeDraft, ImportTransitionError>;
