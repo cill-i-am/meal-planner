@@ -28,6 +28,11 @@ For a shared turn, the [API host](../../apps/api/src/agent-conversations.ts) rea
 
 The Agent retains the full admitted snapshot. The model receives bounded recent messages and a smaller projection of the selected plan, including grouped current choices. Its output is decoded as a closed `submitConversationTurn` result. For a complete draft, the model can propose grouped schedule rows. Rows identify exact person-and-occasion pairs with a quantity for each person; a later row may refer to a planned cook output by row key and day offset. The Agent expands the rows against the saved requirement matrix, allocates cook and output IDs, and saves one full plan proposal. It rejects overlapping rows, missing references, and over-allocation. The Agent also checks other references and versions, assigns block IDs, and saves proposals. The model cannot execute a family, profile, content, or plan mutation. Missing or invalid provider configuration produces the typed `not_configured` turn failure; provider, output, and context-limit failures remain visible on the saved turn.
 
+After a streamed turn finishes, the browser refreshes the canonical conversation.
+The composer stays busy while that query runs, so the next turn uses the refreshed
+version and displayed roster. Stream completion alone does not make the next turn
+ready to submit.
+
 ## Reviewed actions and recovery
 
 `beginAction` saves the exact decision and allocates stable command IDs before any canonical write. Repeating the same action ID and payload returns the saved reservation. A changed payload with that ID conflicts. The browser retains an action whose result is unknown and retries it with the same ID.

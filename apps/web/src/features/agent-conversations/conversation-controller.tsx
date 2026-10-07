@@ -123,6 +123,7 @@ interface ReadyProps {
   readonly children: ReactNode;
   readonly scope: ConversationScope;
   readonly view: ConversationView;
+  readonly refreshing: boolean;
 }
 
 const ReadyConversation = ({
@@ -130,6 +131,7 @@ const ReadyConversation = ({
   children,
   scope,
   view,
+  refreshing,
 }: ReadyProps) => {
   const runtime = useApiRuntime();
   const queryClient = useQueryClient();
@@ -421,6 +423,7 @@ const ReadyConversation = ({
         !recoveryReady ||
         recoveryBlocked ||
         pendingAction !== null ||
+        refreshing ||
         chat.isLoading ||
         chat.sessionGenerating
       ) {
@@ -449,7 +452,14 @@ const ReadyConversation = ({
         whenBusy: "drop",
       });
     },
-    [chat, pendingAction, recoveryBlocked, recoveryReady, view.version]
+    [
+      chat,
+      pendingAction,
+      recoveryBlocked,
+      recoveryReady,
+      refreshing,
+      view.version,
+    ]
   );
 
   const messages: ConversationDisplayMessage[] = [
@@ -479,6 +489,7 @@ const ReadyConversation = ({
     act,
     actionState,
     busy:
+      refreshing ||
       actionState?._tag === "Pending" ||
       chat.isLoading ||
       chat.sessionGenerating,
@@ -528,6 +539,7 @@ export const AgentConversationProvider = ({
         key={query.data.id}
         scope={scope}
         view={query.data}
+        refreshing={query.isFetching}
       >
         {children}
       </ReadyConversation>

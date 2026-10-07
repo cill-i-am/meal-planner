@@ -93,17 +93,10 @@ test("keeps setup input blocked until the completed reply's canonical roster arr
       .getByRole("heading", { name: "Alex’s family" })
   ).toBeVisible();
 
-  let releaseRefresh: () => void = () => undefined;
-  const refreshReleased = new Promise<void>((resolve) => {
-    releaseRefresh = resolve;
-  });
-  let captureRefresh: (view: typeof ConversationView.Type) => void = () =>
-    undefined;
-  const refreshCaptured = new Promise<typeof ConversationView.Type>(
-    (resolve) => {
-      captureRefresh = resolve;
-    }
-  );
+  const { promise: refreshReleased, resolve: releaseRefresh } =
+    Promise.withResolvers<null>();
+  const { promise: refreshCaptured, resolve: captureRefresh } =
+    Promise.withResolvers<typeof ConversationView.Type>();
   await page.route("**/v1/agent-conversations/setup", async (route) => {
     const response = await route.fetch();
     captureRefresh(
@@ -127,10 +120,12 @@ test("keeps setup input blocked until the completed reply's canonical roster arr
     await expect(composer).toBeDisabled();
     await expect(send).toBeDisabled();
     await expect(
-      page.getByRole("region", { name: "Family conversation" }).getByRole("status")
+      page
+        .getByRole("region", { name: "Family conversation" })
+        .getByRole("status")
     ).toHaveText("Thinking…");
 
-    releaseRefresh();
+    releaseRefresh(null);
     await expect(composer).toBeEnabled();
     const roster = refreshed.blocks.findLast(
       (block) => block._tag === "RosterProposal" && block.status === "proposed"
@@ -171,7 +166,7 @@ test("keeps setup input blocked until the completed reply's canonical roster arr
       page.getByRole("heading", { name: "Find the food they say yes to." })
     ).toBeVisible();
   } finally {
-    releaseRefresh();
+    releaseRefresh(null);
   }
 });
 
