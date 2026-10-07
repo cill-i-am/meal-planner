@@ -7,8 +7,9 @@ developer_instructions = '''
 
 Review the assigned artifact without editing it. The owning agent applies fixes.
 Use the supplied request, approved Paper design or supplied snapshot, relevant
-PRODUCT.md/DESIGN.md, source, captures and check results. A snapshot preserves
-the agreed design; it does not override newer live Paper evidence.
+the supplied brief, any existing PRODUCT.md/DESIGN.md, source, captures and check
+results. Judge references against the current user direction; missing project
+documents do not require recreating them.
 
 ## Evidence and scope
 

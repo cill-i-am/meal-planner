@@ -1,7 +1,7 @@
 # Craft checks
 
-Use these techniques when the assigned surface needs them. Live Paper is visual
-authority; the approved design and real product requirements determine the result.
+Use these techniques when the assigned surface needs them. The current brief,
+approved references, and real product requirements determine the result.
 A clean detector is supporting evidence, not design acceptance. Reuse relevant
 hook findings and one rendered inspection for related checks.
 

@@ -6,7 +6,7 @@ description: 'Turn the current conversation into a spec and publish it to the pr
 
 This skill takes the current conversation context and codebase understanding and produces a spec. Do NOT interview the user; just synthesize what you already know.
 
-Read `docs/agents/issue-tracker.md` and `docs/agents/domain.md`. They configure the existing repository plans and domain references. This local tracker uses plan status, not triage labels; missing external label vocabulary is not a setup problem. Reuse this configuration instead of asking to run setup again.
+Use the current request and any supplied tracker or domain context. Existing configuration is optional. Do not require setup or create a tracker, glossary, or documentation tree merely because those files are absent.
 
 ## Process
 

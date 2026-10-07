@@ -7,9 +7,11 @@ metadata:
 
 # Interface design
 
-Use the existing Impeccable engine and assets. Follow the web AGENTS.md, live
-Paper design, and PRODUCT.md/DESIGN.md. Keep the agreed design when refining a
-screen; a refinement request is not permission for a redesign.
+Use the existing Impeccable engine and assets. The current user brief and supplied
+visual references establish direction. Read PRODUCT.md, DESIGN.md, or local
+instructions when present and relevant; they are optional. Do not recreate deleted
+project guidance or recover it from history unless asked. Keep the agreed design
+when refining a screen; a refinement request is not permission for a redesign.
 
 Read the reference for the task, not every guide. Use
 [new-work](reference/new-work.md) for a new screen and [shape](reference/shape.md)
@@ -20,8 +22,10 @@ The launcher is `scripts/impeccable` relative to this skill (or `.cmd` on Window
 Inspect setup effects before first use: it may download an engine and write a
 cache. When useful, `context --target <path>` resolves tool context for a surface.
 Reuse unchanged context; refresh it when the target or relevant inputs change.
-If unavailable, read the actual PRODUCT.md/DESIGN.md and continue supported work;
-missing tooling alone is not a new permission gate. Never fabricate live Paper access.
+If tooling is unavailable, use the supplied brief, source, and available references.
+Missing tooling or Markdown is not a setup gate. Create product/design documents
+only when requested; ordinary design work can proceed without them. Never fabricate
+live Paper access.
 
 Check the screens, states, and device sizes affected by the change. Fix related
 defects, repeat the affected checks, and complete the assignment. No fixed number

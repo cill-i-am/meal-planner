@@ -26,8 +26,8 @@ class DocumentationCheckTests(unittest.TestCase):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
 
-    def errors(self, *, contract=False):
-        return CHECKER.check(self.root, repository_contract=contract)[0]
+    def errors(self):
+        return CHECKER.check(self.root)[0]
 
     def test_local_file_and_directory_links_pass(self):
         self.write("README.md", "[Page](docs/page.md) and [directory](docs/)\n")
@@ -104,33 +104,8 @@ class DocumentationCheckTests(unittest.TestCase):
         self.write("README.md", "# Actual source\n")
         self.assertEqual(self.errors(), [])
 
-    def test_plan_requires_status_and_owner(self):
-        self.write("docs/plans/outcome.md", "# Outcome\nStatus: almost\n")
-        errors = self.errors()
-        self.assertTrue(any("Status" in error for error in errors))
-        self.assertTrue(any("Owner" in error for error in errors))
-
-    def test_proposed_plan_can_be_unassigned_without_fake_approval(self):
-        self.write("docs/plans/outcome.md", "# Outcome\nStatus: proposed\nOwner: unassigned\n")
-        self.assertEqual(self.errors(), [])
-
-    def test_decision_ids_must_be_unique(self):
-        self.write("docs/decisions/a.md", "# ADR-0001 — A\n")
-        self.write("docs/decisions/b.md", "# ADR-0001 — B\n")
-        self.assertTrue(any("duplicate decision ADR-0001" in e for e in self.errors()))
-
-    def test_architecture_and_product_prefixes_do_not_collide(self):
-        self.write("docs/decisions/a.md", "# ADR-0001 — A\n")
-        self.write("docs/decisions/b.md", "# PDR-0001 — B\n")
-        self.assertEqual(self.errors(), [])
-
-    def test_missing_standards_route_is_not_silently_accepted(self):
-        self.write("AGENTS.md", "# Instructions\n")
-        self.assertTrue(any("missing engineering-standards route" in e for e in self.errors(contract=True)))
-
-    def test_retired_policy_is_detected(self):
-        self.write("docs/agents/execution-policy.md", "# Policy\n")
-        self.assertTrue(any("retired workflow policy restored" in e for e in self.errors(contract=True)))
+    def test_empty_repository_does_not_require_project_guidance(self):
+        self.assertEqual(CHECKER.check(self.root), ([], 0))
 
     def test_cli_failure_returns_nonzero_and_specific_diagnostic(self):
         self.write("README.md", "[Missing](missing.md)\n")

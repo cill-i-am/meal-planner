@@ -1,6 +1,4 @@
 import { deepStrictEqual, equal, ok } from "node:assert/strict";
-import { statSync } from "node:fs";
-import path from "node:path";
 
 import { Schema } from "effect";
 
@@ -26,19 +24,13 @@ export const privateDiscoveryAssets = {
 };
 
 export const validatePrivateDiscoveryAssets = (
-  assets: typeof privateDiscoveryAssets,
-  repositoryRoot: string
+  assets: typeof privateDiscoveryAssets
 ) => {
   const { calibration, evidence, usage, rubric, suite } = assets;
-  ok(
-    rubric.authority.startsWith("docs/decisions/") &&
-      path.posix.normalize(rubric.authority) === rubric.authority &&
-      path.extname(rubric.authority) === ".md",
-    "Rubric authority must name a repository decision document"
-  );
-  ok(
-    statSync(path.join(repositoryRoot, rubric.authority)).isFile(),
-    `Rubric authority is not a document: ${rubric.authority}`
+  equal(
+    rubric.authority,
+    "https://github.com/cill-i-am/meal-planner/blob/a28a527759d2d5d5580f4d6d9a673f08b6d80de9/docs/decisions/pdr-0006-ai-evaluation-and-release-evidence.md",
+    "Rubric authority must retain its immutable historical provenance"
   );
   equal(usage.version, 2);
   equal(

@@ -9,7 +9,7 @@ Actively build and sharpen the project's domain model as you design. This is the
 
 ## Repository configuration
 
-Read `docs/agents/domain.md` before using the default layout below. Its existing domain references and decision register are authoritative here. References to GLOSSARY.md and docs/adr mean those configured owners; do not scaffold duplicate files.
+Use supplied product context and current code vocabulary. A glossary or decision register is optional. Create persistent domain records only when the user requests them; the layouts below are examples for that work, not prerequisites.
 
 ## File structure
 
@@ -41,7 +41,7 @@ If a `GLOSSARY-MAP.md` exists at the root, the repo has multiple contexts. The m
 │       └── docs/adr/
 ```
 
-Create files lazily: only when you have something to write. If no `GLOSSARY.md` exists, create one when the first term is resolved. If no `docs/adr/` exists, create it when the first ADR is needed.
+When the user requests persistent domain records, create only the files needed for that request. Otherwise keep the model and decisions in the conversation.
 
 ## During the session
 

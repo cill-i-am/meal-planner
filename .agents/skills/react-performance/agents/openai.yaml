@@ -1,0 +1,4 @@
+interface:
+  display_name: "React Performance"
+  short_description: "Diagnose React rendering and loading performance"
+  default_prompt: "Use $react-performance to investigate the slow interaction and verify a focused improvement."
