@@ -122,9 +122,7 @@ const reviewState = (card: ProfileCard, view: PrivateInterviewView) => {
     view.pendingConfirmation !== null ||
     isAssistantTurnActive(view.assistantTurn) ||
     view.notice !== null ||
-    !view.cardsLoaded ||
-    view.assistantTurn?.status === "queued" ||
-    view.assistantTurn?.status === "running";
+    !view.cardsLoaded;
   return {
     busy,
     current,
