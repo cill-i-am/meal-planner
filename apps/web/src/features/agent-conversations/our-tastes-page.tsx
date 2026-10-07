@@ -14,8 +14,8 @@ import { useApiRuntime } from "../api-client/index.js";
 import type { DisplayedIdentity } from "../auth/index.js";
 import { familyRosterQueryOptions } from "../family/index.js";
 import {
+  foodBookQueryOptions,
   PlanningContentProposalReviewSheet,
-  usePlanningContentSnapshot,
 } from "../food-book/index.js";
 import { makeHouseholdPeopleEffectOperations } from "../household-people/index.js";
 import {
@@ -58,7 +58,8 @@ const FamilyConversation = ({
   readonly onOpenPrivate?: () => void;
 }) => {
   const conversation = useAgentConversation();
-  const planningContent = usePlanningContentSnapshot(scope);
+  const runtime = useApiRuntime();
+  const planningContent = useQuery(foodBookQueryOptions(runtime, scope));
   return (
     <>
       {planningContent.isError && (

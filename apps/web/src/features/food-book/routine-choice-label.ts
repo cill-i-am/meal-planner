@@ -2,14 +2,6 @@ import type {
   PlanningContentSnapshot,
   RoutineChoice,
 } from "@meal-planner/household-api";
-import { useQuery } from "@tanstack/react-query";
-
-import { useApiRuntime } from "../api-client/index.js";
-import type { DisplayedIdentity } from "../auth/index.js";
-import { foodBookQueryOptions } from "./operations.js";
-
-export const usePlanningContentSnapshot = (scope: DisplayedIdentity) =>
-  useQuery(foodBookQueryOptions(useApiRuntime(), scope));
 
 export const describeRoutineChoice = (
   choice: RoutineChoice,
