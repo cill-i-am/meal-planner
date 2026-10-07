@@ -69,7 +69,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Check documentation and instruction routes
+      - name: Check Markdown links
         run: |
           python3 -m unittest discover -s scripts/tests -p 'test_docs_check.py'
           python3 scripts/check-docs.py

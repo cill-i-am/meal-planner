@@ -13,7 +13,7 @@ This command is _informed_ by the project's domain model and built on a shared d
 - Call the Skill tool with "codebase-design" for the architecture vocabulary (**module**, **interface**, **depth**, **seam**, **adapter**, **leverage**, **locality**) and its principles (the deletion test, "the interface is the test surface", "one adapter = hypothetical seam, two = real"). Use the concepts consistently while preserving the repository's actual domain, service, API and boundary names.
 - The domain language in `GLOSSARY.md` gives names to good seams; ADRs in `docs/adr/` record decisions this command should not re-litigate.
 
-Read `docs/agents/domain.md` for the existing glossary and decision locations. In this repository, GLOSSARY.md and docs/adr references below mean those configured sources.
+Use the current request and code vocabulary. Read a glossary or decision record only if one exists and applies. Their absence does not require documentation setup; do not recreate deleted guidance as part of an architecture assessment.
 
 ## Process
 

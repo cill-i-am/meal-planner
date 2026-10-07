@@ -9,7 +9,7 @@ description: Break a plan, spec, or the current conversation into a set of trace
 
 Break a plan, spec, or conversation into a set of **tickets**: tracer-bullet vertical slices, each declaring the tickets that **block** it.
 
-Read `docs/agents/issue-tracker.md` and `docs/agents/domain.md`. They configure the existing repository plans and domain references. This local tracker uses plan status, not triage labels; missing external label vocabulary is not a setup problem. Reuse this configuration instead of asking to run setup again.
+Use the current request and any supplied tracker or domain context. Existing configuration is optional. Do not require setup or create a tracker, glossary, or documentation tree merely because those files are absent.
 
 ## Process
 
@@ -42,7 +42,7 @@ Give each ticket its **blocking edges**: the other tickets that must complete be
 
 ### 4. Confirm unresolved scope
 
-Within an already approved implementation plan, choose ticket granularity and blocking edges and continue. Use the questions below only when decomposition exposes a material unresolved product/domain choice. The configured tracker in `docs/agents/issue-tracker.md` overrides the default `.scratch` layout.
+Within an already approved implementation plan, choose ticket granularity and blocking edges and continue. Use the questions below only when decomposition exposes a material unresolved product/domain choice. Use the destination requested by the user or the existing tracker when configured.
 
 For a planning request that still needs direction:
 

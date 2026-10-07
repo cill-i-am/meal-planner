@@ -1,8 +1,9 @@
 # New visual work
 
 Use for a genuinely new surface or a requested replacement identity, not a local
-component addition. The owning web instructions establish visual authority:
-live Paper is authoritative; PRODUCT.md/DESIGN.md and snapshots preserve context.
+component addition. The current user brief and supplied visual references
+establish direction. Existing product/design documents can add context; their
+absence does not require generating replacements.
 
 ## Establish the design problem
 

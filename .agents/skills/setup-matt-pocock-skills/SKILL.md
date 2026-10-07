@@ -1,7 +1,6 @@
 ---
 name: setup-matt-pocock-skills
-description: 'Configure this repo for the engineering skills: set up its issue tracker, triage label vocabulary, and domain
-  doc layout. Run once before first use of the other engineering skills.'
+description: Configure an issue tracker, triage labels, or persistent domain records when the user explicitly requests repository setup.
 ---
 
 # Setup Matt Pocock's Skills
@@ -12,7 +11,7 @@ Scaffold the per-repo configuration that the engineering skills assume:
 - **Triage labels**: the strings used for the five canonical triage roles
 - **Domain docs**: where `GLOSSARY.md` and ADRs live, and the consumer rules for reading them
 
-This repository is already configured in `docs/agents/issue-tracker.md` and `docs/agents/domain.md`. Read and preserve those choices. Reuse approved direction; run the exploratory questions below only for genuinely missing or changed preferences. Do not scaffold another tracker, glossary or ADR tree.
+Run this setup only for an explicit configuration request. Other skills can work from the conversation and code without these files. Preserve existing choices when present; never reconstruct deleted project guidance merely because a suggested file is absent.
 
 ## Process
 

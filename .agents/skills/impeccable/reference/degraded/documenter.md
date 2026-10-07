@@ -11,7 +11,7 @@ Live Paper remains visual authority; source and rendered output show how the
 implementation matches it. Report drift instead of promoting an implementation
 defect into an approved design decision.
 
-Use the project/app boundary, supplied artifact paths, PRODUCT.md, current
+Use the project/app boundary, supplied artifact paths, any existing PRODUCT.md and
 DESIGN.md, approved design evidence and `reference/document.md`. Preserve the
 format, token schema and sidecar compatibility described there. Update existing
 records in place; ordinary extensions preserve the established system.
