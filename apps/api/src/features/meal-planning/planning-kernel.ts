@@ -15,6 +15,7 @@ import { Schema } from "effect";
 
 import {
   contentSuitabilityIssue,
+  currentOptionFor,
   isShoppingResolved,
   optionPreparationIssue,
 } from "../meal-content/index.js";
@@ -85,29 +86,9 @@ export const requiredCoverage = (
   );
 };
 
-const hasExactOption = (
-  content: PlanningContentSnapshot,
-  option: {
-    readonly optionId: string;
-    readonly optionVersion: number;
-    readonly kind: string;
-  }
-): boolean =>
-  content.options.some(
-    (candidate) => optionIdentity(candidate) === optionIdentity(option)
-  );
-
-const findExactOption = (
-  content: PlanningContentSnapshot,
-  option: MealPlanOptionRef
-) =>
-  content.options.find(
-    (candidate) => optionIdentity(candidate) === optionIdentity(option)
-  );
-
 const preparationIssueForCoverage = (
   authority: PlanningAuthority,
-  option: NonNullable<ReturnType<typeof findExactOption>>,
+  option: NonNullable<ReturnType<typeof currentOptionFor>>,
   requirement: MealPlanRequirementKey
 ): MealPlanRuleViolation["reason"] | null => {
   const weekday = new Date(`${requirement.date}T00:00:00.000Z`).getUTCDay();
@@ -129,7 +110,7 @@ const preparationIssueForCoverage = (
 
 const preparationIssueForCook = (
   authority: PlanningAuthority,
-  option: NonNullable<ReturnType<typeof findExactOption>>,
+  option: NonNullable<ReturnType<typeof currentOptionFor>>,
   date: string
 ): MealPlanRuleViolation["reason"] | null => {
   if (option.kind === "external") {
@@ -162,7 +143,7 @@ const validateOptionForPerson = (
   option: MealPlanOptionRef,
   approval: boolean
 ): MealPlanRuleViolation | null => {
-  if (!hasExactOption(authority.content, option)) {
+  if (currentOptionFor(authority.content, option) === undefined) {
     return violation("content_version_changed");
   }
   const issue = contentSuitabilityIssue(authority.content, {
@@ -219,7 +200,7 @@ const cookingCapacityIssue = (
     date: string,
     optionRef: MealPlanOptionRef
   ) => {
-    const option = findExactOption(authority.content, optionRef);
+    const option = currentOptionFor(authority.content, optionRef);
     if (
       option === undefined ||
       option.kind === "external" ||
@@ -370,7 +351,7 @@ const validateContentPins = (
     return "content_version_changed";
   }
   for (const snapshot of version.pins.contentSnapshots) {
-    const current = findExactOption(authority.content, snapshot);
+    const current = currentOptionFor(authority.content, snapshot);
     if (
       current === undefined ||
       JSON.stringify(Schema.encodeSync(MealOption)(snapshot)) !==
@@ -486,7 +467,7 @@ const validateMealOptionCoverage = (
   if (!approval) {
     return null;
   }
-  const option = findExactOption(authority.content, resolution.option);
+  const option = currentOptionFor(authority.content, resolution.option);
   if (option === undefined || !isShoppingResolved(option)) {
     return "unresolved_shopping";
   }
@@ -632,7 +613,7 @@ const validateCookEvents = (
   const eventIds = new Set<string>();
   const outputIds = new Set<string>();
   for (const cook of version.cookEvents) {
-    const option = findExactOption(authority.content, cook.option);
+    const option = currentOptionFor(authority.content, cook.option);
     if (
       eventIds.has(cook.eventId) ||
       option === undefined ||
@@ -676,7 +657,7 @@ const validateAllocatedYields = (
   allocations: ReadonlyMap<string, EventAllocation>
 ): ValidationReason | null => {
   for (const [eventId, allocation] of allocations) {
-    const option = findExactOption(authority.content, allocation.option);
+    const option = currentOptionFor(authority.content, allocation.option);
     if (option === undefined) {
       return "content_version_changed";
     }
@@ -720,7 +701,7 @@ const validateUnallocatedCookYields = (
     if (allocations.has(cook.eventId)) {
       continue;
     }
-    const option = findExactOption(authority.content, cook.option);
+    const option = currentOptionFor(authority.content, cook.option);
     if (option === undefined) {
       return "content_version_changed";
     }
@@ -965,7 +946,7 @@ const pinsFor = (
     configVersion: authority.content.configVersion,
     content: [...content.values()],
     contentSnapshots: [...content.values()].flatMap((reference) => {
-      const option = findExactOption(authority.content, reference);
+      const option = currentOptionFor(authority.content, reference);
       return option === undefined ? [] : [option];
     }),
     people: authority.people,
@@ -1012,7 +993,7 @@ export const makeInitialPlanVersion = (
     eventId: string,
     rationale: string
   ): MealPlanResolution => {
-    const option = findExactOption(authority.content, optionRef);
+    const option = currentOptionFor(authority.content, optionRef);
     if (option === undefined) {
       return gap(
         "no_compatible_option",
@@ -1250,7 +1231,7 @@ export const rebasePlanVersion = (
           },
         };
       }
-      const option = findExactOption(
+      const option = currentOptionFor(
         authority.content,
         prior.resolution.option
       );
@@ -1273,7 +1254,7 @@ export const rebasePlanVersion = (
     }
   );
   const cookEvents = version.cookEvents.filter((cook) => {
-    const option = findExactOption(authority.content, cook.option);
+    const option = currentOptionFor(authority.content, cook.option);
     return (
       option !== undefined &&
       validateCookOutputs(cook, option, authority, new Set()) === null
