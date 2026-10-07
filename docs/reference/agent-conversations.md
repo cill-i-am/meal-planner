@@ -57,6 +57,12 @@ For setup confirmation, the chat request names the roster block ID and revision 
 
 The host marks each completed step in the Agent. If a response is lost after a canonical write, it repeats the same command ID so the canonical receipt can return the original result. The host does not reject a retry merely because the saved version has advanced. Known conflicts or denied actions become terminal rejected receipts; uncertain dependency outcomes stay unknown until reconciled. Dismissal changes only the proposal state.
 
+The [action receipt module](../../apps/api/src/features/agent-conversations/conversation-action.ts)
+projects a decoded execution receipt into the browser's action state. The host
+and the Agent's conversation read use the same pure projection. This needs no
+additional RPC; the Agent still owns admission, step completion, rejection,
+unknown-result recording and durable receipts.
+
 ## Runtime and evidence
 
 [Binding composition](../../apps/api/src/features/agent-conversations/conversation-binding.ts) uses a SQLite-backed `AgentConversation` Durable Object and a [stage-owned AI provider](../../apps/api/src/infrastructure/agent-provider.ts). The provider binds an authenticated Gateway ID, account ID, and scoped token to the Worker. Gateway authentication is required for Unified Billing. Deployed turns use GPT-6 Luna through Cloudflare Responses. The model request disables gateway logging, caching, SDK retries, and provider response storage. Missing or invalid config does not call a provider. The native browser fixture supplies a separate, bounded synthetic provider response to exercise the protocol and canonical writes. It also seeds one recipe through the real provider-free import lifecycle for cooking UI checks. These tests do not measure live model quality. Record native HTTP and Agent storage checks separately from browser checks and live-provider results. Deployment and provider activation require their own evidence.

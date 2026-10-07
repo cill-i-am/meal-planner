@@ -1,6 +1,5 @@
 import type {
   ConversationAction,
-  ConversationActionState,
   ConversationBlock,
   ConversationView,
 } from "@meal-planner/agent-conversations-api";
@@ -49,10 +48,9 @@ import { Effect, Layer, Option, Result, Schema } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { HttpApiBuilder, HttpApiMiddleware } from "effect/http-api";
 
-import type {
-  ActionExecution,
-  AdvanceConversationAction,
-} from "./features/agent-conversations/conversation-session.js";
+import { conversationActionState } from "./features/agent-conversations/conversation-action.js";
+import type { ActionExecution } from "./features/agent-conversations/conversation-action.js";
+import type { AdvanceConversationAction } from "./features/agent-conversations/conversation-session.js";
 import {
   ConversationAccess,
   ConversationCanonicalContext,
@@ -104,9 +102,6 @@ export interface AgentConversationStub {
     readonly actionId: Action["actionId"];
     readonly reason: "permission_denied" | "stale_review" | "not_actionable";
   }) => Promise<ActionExecution>;
-  readonly actionState: (
-    execution: ActionExecution
-  ) => Promise<typeof ConversationActionState.Type>;
   readonly fetch: (request: Request) => Promise<Response>;
 }
 
@@ -826,7 +821,7 @@ export const makeAgentConversationHost = (
         execution.status === "rejected" ||
         execution.action.decision === "dismiss"
       ) {
-        return yield* objectCall(() => stub.actionState(execution));
+        return conversationActionState(execution);
       }
       let current = execution;
       while (current.status === "pending" || current.status === "unknown") {
@@ -838,7 +833,7 @@ export const makeAgentConversationHost = (
         const familyId = yield* applyStep(atStep, access, actor, commandId);
         current = yield* advance(stub, access, atStep, familyId);
       }
-      return yield* objectCall(() => stub.actionState(current));
+      return conversationActionState(current);
     });
   const act = (action: Action, familyId?: HouseholdOrganizationId) =>
     Effect.gen(function* submitConversationAction() {
@@ -853,11 +848,7 @@ export const makeAgentConversationHost = (
           if (error.code === "conversation_unavailable") {
             return objectCall(() =>
               stub.markActionUnknown({ access, actionId: action.actionId })
-            ).pipe(
-              Effect.flatMap((unknown) =>
-                objectCall(() => stub.actionState(unknown))
-              )
-            );
+            ).pipe(Effect.map(conversationActionState));
           }
           if (
             error.code === "conversation_conflict" ||
@@ -880,11 +871,7 @@ export const makeAgentConversationHost = (
             }
             return objectCall(() =>
               stub.rejectAction({ access, actionId: action.actionId, reason })
-            ).pipe(
-              Effect.flatMap((rejected) =>
-                objectCall(() => stub.actionState(rejected))
-              )
-            );
+            ).pipe(Effect.map(conversationActionState));
           }
           return Effect.fail(error);
         })

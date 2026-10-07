@@ -4,10 +4,8 @@ export {
   conversationObjectName,
 } from "./conversation-session.js";
 export { agentConversationBindings } from "./conversation-binding.js";
-export type {
-  ActionExecution,
-  AdvanceConversationAction,
-} from "./conversation-session.js";
+export type { AdvanceConversationAction } from "./conversation-session.js";
+export type { ActionExecution } from "./conversation-action.js";
 export {
   ConversationAccess,
   ConversationCanonicalContext,
