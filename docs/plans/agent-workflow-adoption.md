@@ -104,6 +104,18 @@ failed before the fix and passed afterward. Local verification passed all 14
 Chromium/mobile WebKit family and planning journeys, 297 web tests, web typecheck,
 focused lint/format checks and documentation validation.
 
+
+The second user-requested 7 October pass used baseline `8731550` and inspected
+meal content, routines, planning and the Food Book. The planner now uses meal
+content's existing exact option lookup instead of maintaining two duplicate
+helpers. The plan service saves the version already repaired, pinned and
+validated by the kernel instead of rebuilding its pins a second time. Domain
+ownership, validation, persistence and retry identity stay unchanged. Food Book
+presentation and recovery seams remain because they own useful behavior.
+Verification passed 29 content, routine and planner tests, API typecheck and
+focused lint/format checks, all four Chromium/mobile WebKit planning journeys,
+and documentation validation. This additional pass does not consume a weekly run.
+
 ## Adoption and current audit
 
 Commit to this workflow for a month once setup works, then keep what works and

@@ -28,7 +28,6 @@ import {
   changePlanVersion,
   makeInitialPlanVersion,
   rebasePlanVersion,
-  repinPlanVersion,
   requiredCoverage,
   requirementIdentity,
   validatePlanVersion,
@@ -311,10 +310,6 @@ export const makeMealPlanService = (
         if (isRuleViolation(changed)) {
           return Effect.fail(changed);
         }
-        const proposed =
-          command.change._tag === "RefreshInputs"
-            ? changed.version
-            : repinPlanVersion(changed.version, authority);
         const next: MealPlan = {
           ...current,
           audit: [
@@ -325,7 +320,7 @@ export const makeMealPlanService = (
               changed.changed
             ),
           ],
-          proposed,
+          proposed: changed.version,
           revision: current.revision + 1,
         };
         return Effect.succeed(next);
