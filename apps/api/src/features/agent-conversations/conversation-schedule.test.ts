@@ -267,6 +267,12 @@ describe("compact agent plan schedule", () => {
     ).toThrow();
   });
 
+  it("rejects duplicate row keys even when their requirements do not overlap", () => {
+    const monday = { ...firstSharedRow, weekdays: [1] };
+    const tuesday = { ...firstSharedRow, weekdays: [2] };
+    expect(() => materialize(2, [monday, tuesday])).toThrow();
+  });
+
   it("rejects stale options, unadmitted rows, and unknown or excessive output", () => {
     expect(() =>
       materialize(2, [
@@ -473,6 +479,92 @@ describe("compact agent plan schedule", () => {
         },
       ])
     ).toThrow();
+  });
+
+  it("keeps same-date cook rows and their prepared outputs separate", () => {
+    const [, lunch] = sharedOptionRows;
+    if (lunch === undefined) {
+      throw new Error("Expected a lunch row");
+    }
+    const cooks = [0, 2].map((start) => ({
+      ...firstSharedRow,
+      key: `cook-${start}`,
+      resolution: {
+        ...firstSharedRow.resolution,
+        batchCount: 1,
+        preparedOutput: { amount: 2, unit: "portion" },
+      },
+      targets: firstSharedRow.targets.slice(start, start + 2),
+      weekIndices: [0],
+      weekdays: [1],
+    }));
+    const prepared = [0, 2].map((start) => ({
+      key: `prepared-${start}`,
+      resolution: {
+        _tag: "PreparedFromCook",
+        daysBefore: 2,
+        sourceRowKey: `cook-${start}`,
+      },
+      targets: lunch.targets.slice(start, start + 2),
+      weekIndices: [0],
+      weekdays: [3],
+    }));
+    const change = materialize(2, [...cooks, ...prepared]);
+    expect(
+      change.cookEvents.map(({ eventId, outputs }) => ({
+        eventId,
+        outputId: outputs[0]?.outputId,
+        quantity: outputs[0]?.quantity,
+      }))
+    ).toEqual([
+      {
+        eventId: "generated-1",
+        outputId: "generated-3",
+        quantity: { amount: 2, unit: "portion" },
+      },
+      {
+        eventId: "generated-2",
+        outputId: "generated-4",
+        quantity: { amount: 2, unit: "portion" },
+      },
+    ]);
+    expect(
+      change.coverage
+        .filter(
+          ({ requirement }) =>
+            requirement.date === dateAt(2) &&
+            lunch.targets.some(
+              (target) => target.occasionId === requirement.occasion
+            )
+        )
+        .map(({ resolution }) =>
+          resolution._tag === "Prepared" ? resolution.outputId : null
+        )
+    ).toEqual(["generated-3", "generated-3", "generated-4", "generated-4"]);
+  });
+
+  it("rejects prepared meals whose source row has no cook output", () => {
+    const [, lunch] = sharedOptionRows;
+    if (lunch === undefined) {
+      throw new Error("Expected a lunch row");
+    }
+    const meal = {
+      ...firstSharedRow,
+      weekIndices: [0],
+      weekdays: [1],
+    };
+    const prepared = {
+      key: "prepared-without-output",
+      resolution: {
+        _tag: "PreparedFromCook",
+        daysBefore: 2,
+        sourceRowKey: meal.key,
+      },
+      targets: lunch.targets,
+      weekIndices: [0],
+      weekdays: [3],
+    };
+    expect(() => materialize(2, [meal, prepared])).toThrow();
   });
 
   it("saves a compact model schedule as one exact canonical review block", () => {

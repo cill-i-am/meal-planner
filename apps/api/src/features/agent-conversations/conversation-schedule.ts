@@ -37,11 +37,13 @@ interface EventAllocation {
   readonly eventId: string;
   readonly option: PlanningOptionRef;
   readonly optionValue: MealOption;
+  readonly batchCount: number | null;
+  readonly preparedOutput:
+    | MealPlanCookEvent["outputs"][number]["quantity"]
+    | null;
+  readonly unit: string;
   amount: number;
-  batchCount: number | null;
-  preparedOutput: MealPlanCookEvent["outputs"][number]["quantity"] | null;
   preparedOutputId: string | null;
-  unit: string;
 }
 
 interface DeferredPrepared {
@@ -81,7 +83,6 @@ interface ScheduleAllocationBuilder {
   readonly events: Map<string, EventAllocation>;
   readonly preparedAllocations: Map<string, number>;
   readonly deferredPrepared: DeferredPrepared[];
-  readonly outputSources: Map<string, Set<EventAllocation>>;
 }
 
 const matchRowRequirements = (
@@ -163,13 +164,9 @@ const allocateMealOption = (
   content: PlanningContent,
   newId: () => string
 ): Extract<MealPlanResolution, { readonly _tag: "MealOption" }> => {
-  const { events, outputSources } = builder;
+  const { events } = builder;
   const option = validateMealOption(choice, quantity, content);
-  const eventKey = JSON.stringify([
-    requirement.date,
-    row.key,
-    optionKey(choice.option),
-  ]);
+  const eventKey = JSON.stringify([row.key, requirement.date]);
   let event = events.get(eventKey);
   if (event === undefined) {
     event = {
@@ -184,27 +181,10 @@ const allocateMealOption = (
       unit: quantity.unit,
     };
     events.set(eventKey, event);
-  } else if (
-    event.unit !== quantity.unit ||
-    (choice.batchCount !== null &&
-      event.batchCount !== null &&
-      event.batchCount !== choice.batchCount) ||
-    (choice.preparedOutput !== null &&
-      event.preparedOutput !== null &&
-      JSON.stringify(event.preparedOutput) !==
-        JSON.stringify(choice.preparedOutput))
-  ) {
+  } else if (event.unit !== quantity.unit) {
     return invalid();
   }
-  event.batchCount ??= choice.batchCount;
-  event.preparedOutput ??= choice.preparedOutput;
   event.amount += quantity.amount;
-  if (choice.preparedOutput !== null) {
-    const sourceKey = JSON.stringify([row.key, requirement.date]);
-    const sources = outputSources.get(sourceKey) ?? new Set();
-    sources.add(event);
-    outputSources.set(sourceKey, sources);
-  }
   return {
     _tag: "MealOption",
     eventId: event.eventId,
@@ -413,7 +393,7 @@ const allocateGeneratedPrepared = (
   builder: ScheduleAllocationBuilder,
   start: string
 ) => {
-  const { deferredPrepared, outputSources, assigned } = builder;
+  const { deferredPrepared, events, assigned } = builder;
   const generatedAllocations = new Map<string, number>();
   for (const { choice, key, quantity, requirement } of deferredPrepared) {
     const sourceDate = dateAt(requirement.date, -choice.daysBefore);
@@ -421,19 +401,17 @@ const allocateGeneratedPrepared = (
     const consumptionWeek = Math.floor(
       (epochDay(requirement.date) - epochDay(start)) / 7
     );
-    const sources = outputSources.get(
+    const source = events.get(
       JSON.stringify([choice.sourceRowKey, sourceDate])
     );
     if (
       sourceWeek < 0 ||
       sourceWeek !== consumptionWeek ||
-      sources?.size !== 1
+      source === undefined
     ) {
       return invalid();
     }
-    const [source] = sources;
     if (
-      source === undefined ||
       source.preparedOutput === null ||
       source.preparedOutputId === null ||
       source.preparedOutput.unit !== quantity.unit
@@ -483,7 +461,6 @@ export const materializePlanSchedule = (input: {
     assigned: new Map(),
     deferredPrepared: [],
     events: new Map(),
-    outputSources: new Map(),
     preparedAllocations: new Map(),
   };
   const claimed = new Set<string>();
