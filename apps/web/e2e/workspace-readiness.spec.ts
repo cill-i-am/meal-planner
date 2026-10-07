@@ -59,3 +59,68 @@ test("food disclosures wait for the family roster before accepting clicks", asyn
   await new PrivateReviewPage(page).open();
   await new FoodProfilePage(page).open();
 });
+
+test("sound changes wait for the workspace header and persist after reload", async ({
+  page,
+}) => {
+  await new AuthPage(page).signUp(
+    "Sound reviewer",
+    `sound-readiness-${crypto.randomUUID()}@example.test`
+  );
+  const family = new FamilyPage(page);
+  await family.create("Sound review family");
+  await family.confirm();
+  await page.goto("/?area=food");
+  await expect(
+    page.getByRole("heading", { exact: true, name: "Your food book." })
+  ).toBeVisible();
+
+  const familyReady = Promise.withResolvers<null>();
+  await page.route(
+    (url) => /^\/v1\/families\/[^/]+$/u.test(url.pathname),
+    async (route) => {
+      await familyReady.promise;
+      await route.continue();
+    }
+  );
+
+  try {
+    await page.reload({ waitUntil: "commit" });
+    await expect(
+      page.getByRole("heading", { exact: true, name: "Loading your family…" })
+    ).toBeVisible();
+    const sound = page.getByRole("button", {
+      exact: true,
+      name: "Mute interaction sounds",
+    });
+    const bounds = await sound.boundingBox();
+    if (bounds === null) {
+      throw new Error("The sound control is missing");
+    }
+    await page.mouse.click(
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2
+    );
+    expect(
+      await page.evaluate(() =>
+        localStorage.getItem("meal-planner:interaction-sound")
+      )
+    ).toBeNull();
+  } finally {
+    familyReady.resolve(null);
+  }
+
+  await expect(
+    page.getByRole("heading", { exact: true, name: "Your food book." })
+  ).toBeVisible();
+  await page
+    .getByRole("button", { exact: true, name: "Mute interaction sounds" })
+    .click();
+  await expect(
+    page.getByRole("button", { exact: true, name: "Enable interaction sounds" })
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("button", { exact: true, name: "Enable interaction sounds" })
+  ).toBeVisible();
+});

@@ -100,7 +100,7 @@ export const AccountProvider = ({
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState(false);
   if (session.isPending) {
-    return <StatusScreen title="Loading your account…" />;
+    return <StatusScreen pending title="Loading your account…" />;
   }
   if (session.error) {
     return (

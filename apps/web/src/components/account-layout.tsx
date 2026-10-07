@@ -9,11 +9,13 @@ export const AccountLayout = ({
   headerAction,
   progress,
   contentClassName,
+  soundDisabled = false,
 }: {
   readonly children: ReactNode;
   readonly headerAction?: ReactNode;
   readonly progress?: ReactNode;
   readonly contentClassName?: string | undefined;
+  readonly soundDisabled?: boolean;
 }) => {
   const surface = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -59,7 +61,7 @@ export const AccountLayout = ({
           <span>Meal Planner</span>
         </div>
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-          <InteractionSoundToggle />
+          <InteractionSoundToggle disabled={soundDisabled} />
           {headerAction}
         </div>
       </header>

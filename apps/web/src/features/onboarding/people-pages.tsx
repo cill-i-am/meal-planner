@@ -475,7 +475,7 @@ export const AddPersonPage = () => {
     );
   }
   if (roster.isPending) {
-    return <StatusScreen title="Loading your family…" />;
+    return <StatusScreen pending title="Loading your family…" />;
   }
   if (!roster.data) {
     return (

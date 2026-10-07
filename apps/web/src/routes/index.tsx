@@ -122,7 +122,7 @@ const AuthenticatedMealPlanner = ({
     familyQuery(runtime, scope.userId, scope.organizationId)
   );
   if (family.isPending) {
-    return <StatusScreen title="Loading your family…" />;
+    return <StatusScreen pending title="Loading your family…" />;
   }
   if (family.isError) {
     return (
