@@ -227,7 +227,7 @@ export const OurTastesPage = ({
       <details
         className="group border-border border-t pt-6"
         id="private-food-conversations"
-        inert={!hydrated}
+        inert={!hydrated || roster.isPending}
         open={privateOpen}
         onToggle={(event) => setPrivateOpen(event.currentTarget.open)}
       >
@@ -254,7 +254,7 @@ export const OurTastesPage = ({
       <details
         className="group border-border border-t pt-6"
         id="saved-food-facts"
-        inert={!hydrated}
+        inert={!hydrated || roster.isPending}
       >
         <summary className="flex min-h-11 cursor-pointer items-center justify-between font-medium">
           Review saved food facts <span aria-hidden="true">↗</span>
