@@ -42,6 +42,24 @@ If a representative environment is unavailable, name the unproven claim instead 
 - In non-Effect Vitest property tests, use the project-standard Fast-Check integration such as `@fast-check/vitest`.
 - In Effect projects, use `@effect/vitest` and Effect Schema-derived generation as described in [`EFFECT.md`](EFFECT.md).
 
+## Local lint setup
+
+`pnpm lint` runs Oxlint and the native cccc complexity analyzer. Install
+[cccc 1.7.0](https://github.com/moznion/cccc/releases/tag/v1.7.0) before running
+lint locally. Use the release binary for your platform or Cargo:
+
+```sh
+cargo install cccc-cli --version 1.7.0 --locked
+export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
+command -v cccc
+cccc --version
+```
+
+Confirm that `cccc` is on your `PATH` and reports version 1.7.0. Keep its version
+aligned with [CI](../../../../.github/workflows/ci.yml).
+[cccc.toml](../../../../cccc.toml) owns the thresholds and exclusions.
+Run `pnpm lint` for both checks, or `pnpm lint:complexity` for the analyzer alone.
+
 ## Behavior through interfaces
 
 Prefer:
