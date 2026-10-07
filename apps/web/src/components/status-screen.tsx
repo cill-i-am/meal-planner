@@ -19,6 +19,7 @@ export const StatusScreen = ({
   children,
   footer,
   action,
+  pending = false,
 }: {
   readonly title: string;
   readonly description?: string;
@@ -26,8 +27,9 @@ export const StatusScreen = ({
   readonly children?: ReactNode;
   readonly footer?: ReactNode;
   readonly action?: ReactNode;
+  readonly pending?: boolean;
 }) => (
-  <AccountLayout headerAction={action}>
+  <AccountLayout headerAction={action} soundDisabled={pending}>
     <Card className="w-full max-w-140">
       <CardBody>
         <CardHeader>

@@ -112,7 +112,7 @@ export const FamilyReviewPage = () => {
     }
   };
   if (roster.isPending) {
-    return <StatusScreen title="Loading your family…" />;
+    return <StatusScreen pending title="Loading your family…" />;
   }
   return (
     <SetupFrame
@@ -250,7 +250,7 @@ export const FamilyReadyPage = () => {
     }
   };
   if (roster.isPending) {
-    return <StatusScreen title="Loading your family…" />;
+    return <StatusScreen pending title="Loading your family…" />;
   }
   if (!family) {
     return <StatusScreen title="Choose a family to continue" />;

@@ -66,7 +66,7 @@ export const FamilyProvider = ({
     (requested === undefined && families.isPending) ||
     (selected !== undefined && family.isPending)
   ) {
-    return <StatusScreen title="Loading your family…" />;
+    return <StatusScreen pending title="Loading your family…" />;
   }
   if ((requested === undefined && families.isError) || family.isError) {
     return (

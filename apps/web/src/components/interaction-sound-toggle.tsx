@@ -5,7 +5,11 @@ import { Button } from "./ui/button.js";
 import { IconSwap } from "./ui/icon-swap.js";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip.js";
 
-export const InteractionSoundToggle = () => {
+export const InteractionSoundToggle = ({
+  disabled = false,
+}: {
+  readonly disabled?: boolean;
+}) => {
   const { enabled, setEnabled } = useInteractionSoundPreference();
   const label = enabled
     ? "Mute interaction sounds"
@@ -19,6 +23,7 @@ export const InteractionSoundToggle = () => {
             variant="ghost"
             size="icon"
             aria-label={label}
+            disabled={disabled}
             onClick={() => setEnabled(!enabled)}
           />
         }

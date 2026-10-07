@@ -4,6 +4,7 @@ import { afterEach, expect, it } from "vitest";
 
 import { isInteractionSoundEnabled } from "../hooks/interaction-sound-preference.js";
 import { InteractionSoundToggle } from "./interaction-sound-toggle.js";
+import { StatusScreen } from "./status-screen.js";
 
 afterEach(() => {
   cleanup();
@@ -57,4 +58,33 @@ it("reflects a saved mute preference and changes from another tab", () => {
   expect(
     screen.getByRole("button", { name: "Mute interaction sounds" })
   ).toBeVisible();
+});
+
+it("disables sound on pending status screens and keeps error screens interactive", async () => {
+  const user = userEvent.setup();
+  const mounted = render(<StatusScreen pending title="Loading your family…" />);
+  expect(
+    screen.getByRole("button", { name: "Mute interaction sounds" })
+  ).toBeDisabled();
+
+  let retried = false;
+  mounted.rerender(
+    <StatusScreen
+      title="Your family couldn’t load"
+      retry={async () => {
+        retried = true;
+      }}
+    />
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Mute interaction sounds" })
+  );
+  expect(window.localStorage.getItem("meal-planner:interaction-sound")).toBe(
+    "off"
+  );
+  await user.click(screen.getByRole("button", { name: "Try again" }));
+  expect(retried).toBe(true);
+  await user.click(
+    screen.getByRole("button", { name: "Enable interaction sounds" })
+  );
 });
