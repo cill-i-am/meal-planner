@@ -113,6 +113,9 @@ jobs:
     name: Tests (${{ matrix.name }})
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.browser && 'mcr.microsoft.com/playwright:v1.63.0-noble' || '' }}
+      options: --init --ipc=host
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -166,9 +169,6 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Install Chromium
-        if: matrix.browser
-        run: pnpm --filter @meal-planner/web exec playwright install --with-deps chromium
       - name: Run tests
         run: ${{ matrix.command }}
       - name: Retain frontend failure evidence
@@ -223,6 +223,9 @@ jobs:
     name: Browser journeys (${{ matrix.project }}, ${{ matrix.shard }}/2)
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --init --ipc=host
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -253,9 +256,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Install project browser
-        run: pnpm --filter @meal-planner/web exec playwright install --with-deps ${{ matrix.browser }}
 
       - name: Test application journeys against local Workers
         run: pnpm --filter @meal-planner/web test:e2e --project=${{ matrix.project }} --shard=${{ matrix.shard }}/2 --workers=1
