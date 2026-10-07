@@ -10,10 +10,7 @@ import {
   ConversationView,
   SubmitConversationTurn,
 } from "@meal-planner/agent-conversations-api";
-import type {
-  ConversationModelBlock,
-  ConversationActionState,
-} from "@meal-planner/agent-conversations-api";
+import type { ConversationModelBlock } from "@meal-planner/agent-conversations-api";
 import { HouseholdOrganizationId } from "@meal-planner/household-api";
 import { EventType, toServerSentEventsResponse } from "@tanstack/ai";
 import type { StreamChunk } from "@tanstack/ai";
@@ -24,6 +21,10 @@ import { migrate } from "drizzle-orm/durable-sqlite/migrator";
 import { Data, Schema } from "effect";
 
 import migrations from "../../../agent-conversation-migrations/migrations.js";
+import {
+  ActionExecution,
+  conversationActionState,
+} from "./conversation-action.js";
 import {
   ConversationModelFailure,
   streamConversationTurn,
@@ -73,19 +74,6 @@ export class ConversationSessionFailure extends Data.TaggedError(
 const fail = (reason: ConversationSessionFailure["reason"]): never => {
   throw new ConversationSessionFailure({ reason });
 };
-
-const ActionExecution = Schema.Struct({
-  action: ConversationAction,
-  block: ConversationBlock,
-  commandIds: Schema.Array(Schema.String.pipe(Schema.check(Schema.isUUID()))),
-  familyId: Schema.NullOr(HouseholdOrganizationId),
-  nextStep: Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
-  rejectionReason: Schema.NullOr(
-    Schema.Literals(["stale_review", "not_actionable", "permission_denied"])
-  ),
-  status: Schema.Literals(["pending", "unknown", "committed", "rejected"]),
-}).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
-export type ActionExecution = typeof ActionExecution.Type;
 
 export const AdvanceConversationAction = Schema.Struct({
   access: ConversationAccess,
@@ -339,7 +327,7 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
         const execution = this.#execution(row);
         return {
           action: execution.action,
-          state: this.actionState(execution),
+          state: conversationActionState(execution),
         };
       });
     const turns = this.#database
@@ -1056,39 +1044,5 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
       }
       return this.#execution(updated);
     });
-  }
-
-  /** Project an internal action receipt onto the browser's typed state. */
-  // eslint-disable-next-line class-methods-use-this -- Host RPC callers project the Agent's own action receipt through this method.
-  actionState(execution: ActionExecution): typeof ConversationActionState.Type {
-    switch (execution.status) {
-      case "pending": {
-        return { _tag: "Pending", actionId: execution.action.actionId };
-      }
-      case "unknown": {
-        return {
-          _tag: "Unknown",
-          actionId: execution.action.actionId,
-          familyId: execution.familyId,
-        };
-      }
-      case "committed": {
-        return {
-          _tag: "Committed",
-          actionId: execution.action.actionId,
-          familyId: execution.familyId,
-        };
-      }
-      case "rejected": {
-        return {
-          _tag: "Rejected",
-          actionId: execution.action.actionId,
-          reason: execution.rejectionReason ?? "stale_review",
-        };
-      }
-      default: {
-        return execution.status satisfies never;
-      }
-    }
   }
 }

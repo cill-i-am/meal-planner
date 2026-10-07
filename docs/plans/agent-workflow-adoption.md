@@ -129,6 +129,24 @@ all 14 Chromium/mobile WebKit family and planning journeys, focused lint/format
 checks and documentation validation. This additional pass does not consume a
 weekly run.
 
+The fourth user-requested 7 October pass used baseline `83d4c4b`. It removed the
+conversation Agent's stateless action-state RPC. A feature-owned pure projection
+now serves both the host response and stored conversation reads. The host no
+longer sends an execution receipt back across the RPC boundary solely to format
+its browser state. Durable admission, step completion, rejection and unknown
+outcomes still belong to the Agent; the same command identities drive recovery.
+
+Verification passed 36 conversation tests, API typecheck/build, independent
+review, all 16 Chromium/mobile WebKit family, planning and private-review
+journeys, focused lint/format checks and documentation validation.
+
+The pass also inspected the preceding production run's private-review WebKit
+timeout. The trace shows an empty message field after fill, no chat submission,
+and a profile read completing during the fill. That timing is a hypothesis,
+not a demonstrated cause. A controlled profile-response/input experiment is the
+next useful diagnostic; no speculative UI fix or weakened test was added.
+This additional pass does not consume a weekly run.
+
 ## Adoption and current audit
 
 Commit to this workflow for a month once setup works, then keep what works and
