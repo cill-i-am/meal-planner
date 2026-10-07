@@ -1,6 +1,6 @@
 {
   "version": "private-discovery-rubric-v2",
-  "authority": "docs/decisions/pdr-0006-ai-evaluation-and-release-evidence.md",
+  "authority": "https://github.com/cill-i-am/meal-planner/blob/a28a527759d2d5d5580f4d6d9a673f08b6d80de9/docs/decisions/pdr-0006-ai-evaluation-and-release-evidence.md",
   "scope": "wi03_adult_discovery",
   "criticalSoftDimensions": [
     {
