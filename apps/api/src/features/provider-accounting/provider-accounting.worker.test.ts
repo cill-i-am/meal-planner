@@ -1077,6 +1077,123 @@ describe("provider accounting", () => {
     });
   });
 
+  it.each([
+    {
+      operation: "settle_speech_unknown",
+      outcome: "speech_unknown_cost_accounted",
+      providerStageId: "speech-transcription",
+      recovery: false,
+      wrongOperation: "settle_visual_unknown",
+    },
+    {
+      operation: "settle_visual_unknown",
+      outcome: "visual_unknown_cost_accounted",
+      providerStageId: "visual-evidence",
+      recovery: false,
+      wrongOperation: "settle_speech_unknown",
+    },
+    {
+      operation: "settle_recipe_unknown",
+      outcome: "recipe_unknown_cost_accounted",
+      providerStageId: "recipe-extraction",
+      recovery: false,
+      wrongOperation: "settle_recipe_recovery_unknown",
+    },
+    {
+      operation: "settle_recipe_recovery_unknown",
+      outcome: "recipe_recovery_unknown_cost_accounted",
+      providerStageId: "recipe-extraction",
+      recovery: true,
+      wrongOperation: "settle_recipe_unknown",
+    },
+  ] as const)(
+    "reconciles $operation only for its matching dispatch identity and replays one charge",
+    async ({
+      operation,
+      outcome,
+      providerStageId,
+      recovery,
+      wrongOperation,
+    }) => {
+      const database = makeProviderAccountingDatabase(
+        testEnv.ProviderAccountingDatabase
+      );
+      const repository = makeD1ProviderAccountingRepository(database);
+      const importId = Schema.decodeUnknownSync(ImportId)(
+        "00000000-0000-4000-8000-000000000292"
+      );
+      const target = {
+        ...reservation(
+          recovery
+            ? `recipe-import:recipe-recovery:${importId}`
+            : `recipe-import:${importId}`,
+          `dispatch_${operation}`,
+          100_000
+        ),
+        providerStageId: decodeProviderStageId(providerStageId),
+      };
+      await Effect.runPromise(repository.reserve(target));
+      const invocationGeneration = await claimInvocation(repository, target);
+      await Effect.runPromise(
+        repository.settleUnknown({ ...target, invocationGeneration })
+      );
+      const accounting = makeD1ProviderAccountingService({
+        database,
+        now: () => now,
+      });
+      const request = { dispatchId: target.dispatchId, importId, operation };
+
+      await expect(
+        Effect.runPromise(
+          accounting.reconcile({ ...request, operation: wrongOperation })
+        )
+      ).rejects.toMatchObject({ code: "not_allowed" });
+      await expect(
+        Effect.runPromise(repository.readStage())
+      ).resolves.toMatchObject({
+        poisonDispatchId: target.dispatchId,
+        reservedMicroUsd: 100_000,
+        settledMicroUsd: 0,
+        state: "poisoned",
+      });
+
+      const expected = {
+        accountingScope: "recipe-import",
+        conservativeChargeMicroUsd: 100_000,
+        dispatchId: target.dispatchId,
+        importId,
+        outcome,
+      };
+      await expect(
+        Effect.runPromise(accounting.reconcile(request))
+      ).resolves.toEqual(expected);
+      await expect(
+        Effect.runPromise(accounting.reconcile(request))
+      ).resolves.toEqual(expected);
+      await expect(Effect.runPromise(repository.readStage())).resolves.toEqual({
+        budgetCapMicroUsd: 10_000_000,
+        reservedMicroUsd: 0,
+        settledMicroUsd: 100_000,
+        state: "open",
+      });
+      await expect(
+        Effect.runPromise(repository.readDispatch(target))
+      ).resolves.toMatchObject({
+        actualCostMicroUsd: null,
+        state: "settled_unknown",
+      });
+      await expect(
+        testEnv.ProviderAccountingDatabase.prepare(
+          `SELECT COUNT(*) AS count
+             FROM provider_accounting_reconciliations
+            WHERE accounting_scope = 'recipe-import' AND dispatch_id = ?`
+        )
+          .bind(target.dispatchId)
+          .first()
+      ).resolves.toEqual({ count: 1 });
+    }
+  );
+
   it("replays an immutable reconciliation while an unrelated dispatch is invoking", async () => {
     const repository = makeD1ProviderAccountingRepository(
       makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
