@@ -3,14 +3,7 @@ export {
   ConversationSessionFailure,
   conversationObjectName,
 } from "./conversation-session.js";
-export {
-  agentConversationBindings,
-  agentConversationNamespacePort,
-} from "./conversation-binding.js";
-export type {
-  AgentConversationNamespacePort,
-  AgentConversationPort,
-} from "./conversation-binding.js";
+export { agentConversationBindings } from "./conversation-binding.js";
 export type {
   ActionExecution,
   AdvanceConversationAction,

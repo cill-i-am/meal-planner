@@ -17,28 +17,3 @@ export const agentConversationBindings = Effect.gen(
     };
   }
 );
-
-export type AgentConversationPort = Pick<
-  AgentConversation,
-  | "initialize"
-  | "read"
-  | "fetch"
-  | "beginAction"
-  | "advanceAction"
-  | "markActionUnknown"
-  | "rejectAction"
-  | "actionState"
->;
-
-export interface AgentConversationNamespacePort {
-  readonly getByName: (name: string) => AgentConversationPort;
-}
-
-export const agentConversationNamespacePort = Effect.gen(
-  function* agentConversationNamespacePort() {
-    const environment = yield* Cloudflare.Workers.WorkerEnvironment;
-    const namespace: AgentConversationNamespacePort =
-      environment["AgentConversation"];
-    return namespace;
-  }
-);

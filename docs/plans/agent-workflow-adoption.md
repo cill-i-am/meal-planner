@@ -116,6 +116,19 @@ Verification passed 29 content, routine and planner tests, API typecheck and
 focused lint/format checks, all four Chromium/mobile WebKit planning journeys,
 and documentation validation. This additional pass does not consume a weekly run.
 
+
+The third user-requested 7 October pass used baseline `ecca73d` and inspected
+conversation handling and its UI adapters. It removed an unused conversation
+namespace adapter, its two types and their public re-exports. Production uses
+the host's async namespace interface and the live Worker binding; both stay in
+place. Confirmation, account isolation, replay and recovery behavior are unchanged.
+The scan retained the stateless action-result RPC because removing it would
+require a separate change to the active host/Worker protocol. Verification passed
+27 conversation tests, the native Worker bundle export test, API typecheck,
+all 14 Chromium/mobile WebKit family and planning journeys, focused lint/format
+checks and documentation validation. This additional pass does not consume a
+weekly run.
+
 ## Adoption and current audit
 
 Commit to this workflow for a month once setup works, then keep what works and
