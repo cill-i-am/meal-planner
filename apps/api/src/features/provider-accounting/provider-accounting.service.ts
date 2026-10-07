@@ -341,58 +341,40 @@ type SettlementRequest = Exclude<
   { readonly operation: "sweep_expired_recipe_replays" }
 >;
 
-const settlementIdentity = (
-  request: SettlementRequest
-): GlobalSettlementIdentity => {
+const settlementPlan = (request: SettlementRequest) => {
   switch (request.operation) {
     case "settle_speech_unknown": {
       return {
+        outcome: "speech_unknown_cost_accounted",
         providerStageId: "speech-transcription",
         runId: standardRunId(request.importId),
-      };
+      } as const;
     }
     case "settle_visual_unknown": {
       return {
+        outcome: "visual_unknown_cost_accounted",
         providerStageId: "visual-evidence",
         runId: standardRunId(request.importId),
-      };
+      } as const;
     }
     case "settle_recipe_unknown": {
       return {
         chargeMicroUsd: 100_000,
+        outcome: "recipe_unknown_cost_accounted",
         providerStageId: "recipe-extraction",
         runId: standardRunId(request.importId),
-      };
+      } as const;
     }
     case "settle_recipe_recovery_unknown": {
       return {
         chargeMicroUsd: 100_000,
+        outcome: "recipe_recovery_unknown_cost_accounted",
         providerStageId: "recipe-extraction",
         runId: recoveryRunId(request.importId),
-      };
+      } as const;
     }
     default: {
       return request satisfies never;
-    }
-  }
-};
-
-const accountedOutcome = (operation: SettlementRequest["operation"]) => {
-  switch (operation) {
-    case "settle_speech_unknown": {
-      return "speech_unknown_cost_accounted" as const;
-    }
-    case "settle_visual_unknown": {
-      return "visual_unknown_cost_accounted" as const;
-    }
-    case "settle_recipe_unknown": {
-      return "recipe_unknown_cost_accounted" as const;
-    }
-    case "settle_recipe_recovery_unknown": {
-      return "recipe_recovery_unknown_cost_accounted" as const;
-    }
-    default: {
-      return operation satisfies never;
     }
   }
 };
@@ -406,20 +388,19 @@ export const makeD1ProviderAccountingService = (input: {
       if (request.operation === "sweep_expired_recipe_replays") {
         return yield* sweepExpiredRecipeReplays(input.database);
       }
-      const identity = settlementIdentity(request);
+      const settlement = settlementPlan(request);
       const row = yield* settleGlobalUnknown(
         input.database,
         request,
-        identity,
+        settlement,
         input.now()
       );
-      const outcome = accountedOutcome(request.operation);
       return yield* Schema.decodeUnknownEffect(ProviderAccountingResponse)({
         accountingScope: row.accounting_scope,
         conservativeChargeMicroUsd: row.conservative_charge_micro_usd,
         dispatchId: row.dispatch_id,
         importId: request.importId,
-        outcome,
+        outcome: settlement.outcome,
       }).pipe(Effect.mapError(() => failure("persistence_corrupt")));
     }
   ),
