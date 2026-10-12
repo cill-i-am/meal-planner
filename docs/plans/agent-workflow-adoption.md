@@ -102,3 +102,24 @@ Controlled browser experiments turned two intermittent failures into real readin
 Version-matched native browser containers removed unreliable apt provisioning without weakening application checks, timeouts or complexity limits.
 
 Strict main checks require each PR to update after the preceding merge. Keep scouting, independent review and local verification parallel; ship current-trunk PRs sequentially. Cancel obsolete-head checks before deployment rather than spending capacity on results that cannot satisfy the merge rule.
+
+## Weekly sweep, 12 October 2026
+
+Email and observability inspection ended in an evidence-backed no-op at remote main `c22ff39056895dce0d3b791f1204971a15daba38`. No open PRs overlapped the sweep. The current repository has no tracked AGENTS.md or feature map; retained skills, production callers and tests supplied the guidance. No deleted documentation was restored.
+
+The deletion test retained these owners:
+
+- `features/email/index.ts` serves authentication and invitation templates. It owns HTML/plain-text rendering, disabled delivery, runtime provisioning and safe provider-error translation.
+- `infrastructure/request-observability.ts` owns request correlation, auth-token path truncation, safe failure categories, raw-response identity and interruption preservation.
+- `features/observability/browser-observability.ts` owns fixed diagnostic categories, response/failure preservation, collector exclusions and the 30-event limit. Its fetch adapter serves API clients and private-interview transport while preserving the SSR/test fallback.
+- `BrowserEventsHttpLayer` is the generated-contract ingestion boundary. The Worker owns same-origin admission, native rate limiting and the 4 KiB body limit before auth/database services open.
+
+A separate scout traced the callers and found no worthwhile structural deletion. The small adapters own behavior that deletion would move into their callers. Incidental export narrowing did not justify an application change. This applies pstack's Laziness Protocol and the local codebase-design deletion test.
+
+Focused verification passed 13 tests across five files: three browser reporter tests, five API telemetry/request tests, and five native workerd email/request tests. These cover privacy-safe diagnostics, correlation, cancellation, raw responses, mail rendering and delivery failure handling. The workerd tests use the existing fake mail client; no email or live provider operation was sent. The existing full-stack telemetry test was inspected but not rerun locally. This record makes no new production-runtime claim.
+
+The record PR then exposed an existing mobile WebKit race in [CI run 38238648418](https://github.com/cill-i-am/meal-planner/actions/runs/38238648418). `FamilyPage.confirm()` returned when the completion response arrived, before active-family selection, refresh and navigation finished. The next test navigation to the review page collided with the application's navigation home.
+
+The first URL-only wait passed a controlled active-family probe and 24 local caller tests, but [CI run 38239714215](https://github.com/cill-i-am/meal-planner/actions/runs/38239714215) found the same navigation collision in the recipe journey. Its trace showed the root URL before the destination finished loading. A held-document probe did not reproduce the normal client-side transition and was discarded.
+
+The final helper waits for both the home URL and its visible person selector. Holding the destination's organization-list response proved that the URL-only helper could return while the selector was hidden. With the readiness assertion, four controlled runs passed across both browsers, including immediate navigation after release. These were explicit before/after probe variants, not one unchanged regression test. All 24 tests across the five caller files then passed in Chromium and mobile WebKit, covering all seven helper call sites. Targeted lint, formatting and whitespace checks passed. Production code, retry counts, timeouts and existing assertions are unchanged. Temporary probes were removed after verification. The precise browser/router cause of the competing document request remains uncertain; this change repairs the test helper's completion contract.
