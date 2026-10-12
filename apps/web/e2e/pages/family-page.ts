@@ -105,5 +105,6 @@ export class FamilyPage {
     await this.page.getByRole("button", { name: "I’ll do this later" }).click();
     const response = await pendingResponse;
     expect(response.ok()).toBe(true);
+    await expect(this.page).toHaveURL("/");
   }
 }

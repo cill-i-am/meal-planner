@@ -105,7 +105,7 @@ Strict main checks require each PR to update after the preceding merge. Keep sco
 
 ## Weekly sweep, 12 October 2026
 
-Completed an evidence-backed no-op for email and observability at remote main `c22ff39056895dce0d3b791f1204971a15daba38`. No open PRs overlapped the sweep. The current repository has no tracked AGENTS.md or feature map; retained skills, production callers and tests supplied the guidance. No deleted documentation was restored.
+Email and observability inspection ended in an evidence-backed no-op at remote main `c22ff39056895dce0d3b791f1204971a15daba38`. No open PRs overlapped the sweep. The current repository has no tracked AGENTS.md or feature map; retained skills, production callers and tests supplied the guidance. No deleted documentation was restored.
 
 The deletion test retained these owners:
 
@@ -117,3 +117,7 @@ The deletion test retained these owners:
 A separate scout traced the callers and found no worthwhile structural deletion. The small adapters own behavior that deletion would move into their callers. Incidental export narrowing did not justify an application change. This applies pstack's Laziness Protocol and the local codebase-design deletion test.
 
 Focused verification passed 13 tests across five files: three browser reporter tests, five API telemetry/request tests, and five native workerd email/request tests. These cover privacy-safe diagnostics, correlation, cancellation, raw responses, mail rendering and delivery failure handling. The workerd tests use the existing fake mail client; no email or live provider operation was sent. The existing full-stack telemetry test was inspected but not rerun locally. This record makes no new production-runtime claim.
+
+The record PR then exposed an existing mobile WebKit race in [CI run 38238648418](https://github.com/cill-i-am/meal-planner/actions/runs/38238648418). `FamilyPage.confirm()` returned when the completion response arrived, before active-family selection, refresh and navigation finished. The next test navigation to the review page collided with the application's navigation home.
+
+Added one URL assertion to the test helper so it waits for the home destination. A controlled native probe held the real active-family request after completion. The old helper returned while that request was still held; the fixed helper remained pending and resolved after navigation. The probe passed four runs, twice per browser. All 24 tests across the five caller files then passed in Chromium and mobile WebKit, covering all seven helper call sites. Targeted lint, formatting and whitespace checks passed. Production code, retry counts, timeouts and existing assertions are unchanged. The temporary probe was removed after verification.
