@@ -102,3 +102,18 @@ Controlled browser experiments turned two intermittent failures into real readin
 Version-matched native browser containers removed unreliable apt provisioning without weakening application checks, timeouts or complexity limits.
 
 Strict main checks require each PR to update after the preceding merge. Keep scouting, independent review and local verification parallel; ship current-trunk PRs sequentially. Cancel obsolete-head checks before deployment rather than spending capacity on results that cannot satisfy the merge rule.
+
+## Weekly sweep, 12 October 2026
+
+Completed an evidence-backed no-op for email and observability at remote main `c22ff39056895dce0d3b791f1204971a15daba38`. No open PRs overlapped the sweep. The current repository has no tracked AGENTS.md or feature map; retained skills, production callers and tests supplied the guidance. No deleted documentation was restored.
+
+The deletion test retained these owners:
+
+- `features/email/index.ts` serves authentication and invitation templates. It owns HTML/plain-text rendering, disabled delivery, runtime provisioning and safe provider-error translation.
+- `infrastructure/request-observability.ts` owns request correlation, auth-token path truncation, safe failure categories, raw-response identity and interruption preservation.
+- `features/observability/browser-observability.ts` owns fixed diagnostic categories, response/failure preservation, collector exclusions and the 30-event limit. Its fetch adapter serves API clients and private-interview transport while preserving the SSR/test fallback.
+- `BrowserEventsHttpLayer` is the generated-contract ingestion boundary. The Worker owns same-origin admission, native rate limiting and the 4 KiB body limit before auth/database services open.
+
+A separate scout traced the callers and found no worthwhile structural deletion. The small adapters own behavior that deletion would move into their callers. Incidental export narrowing did not justify an application change. This applies pstack's Laziness Protocol and the local codebase-design deletion test.
+
+Focused verification passed 13 tests across five files: three browser reporter tests, five API telemetry/request tests, and five native workerd email/request tests. These cover privacy-safe diagnostics, correlation, cancellation, raw responses, mail rendering and delivery failure handling. The workerd tests use the existing fake mail client; no email or live provider operation was sent. The existing full-stack telemetry test was inspected but not rerun locally. This record makes no new production-runtime claim.
