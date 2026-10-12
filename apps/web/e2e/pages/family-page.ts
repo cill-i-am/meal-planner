@@ -106,5 +106,8 @@ export class FamilyPage {
     const response = await pendingResponse;
     expect(response.ok()).toBe(true);
     await expect(this.page).toHaveURL("/");
+    await expect(
+      this.page.getByRole("group", { name: "Choose a person" })
+    ).toBeVisible();
   }
 }
