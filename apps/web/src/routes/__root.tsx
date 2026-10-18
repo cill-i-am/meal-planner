@@ -17,7 +17,10 @@ import {
   readBrowserAnalyticsToken,
   reportReactError,
 } from "../features/observability/analytics-config.js";
-import { installBrowserErrorReporting } from "../features/observability/browser-observability.js";
+import {
+  installBrowserErrorReporting,
+  parseBrowserError,
+} from "../features/observability/browser-observability.js";
 
 const BrowserObservability = () => {
   useEffect(installBrowserErrorReporting, []);
@@ -78,5 +81,5 @@ export const Route = createRootRouteWithContext<{
     ],
   }),
   loader: () => ({ browserAnalyticsToken: readBrowserAnalyticsToken() }),
-  onCatch: reportReactError,
+  onCatch: (exception) => reportReactError(parseBrowserError(exception)),
 });

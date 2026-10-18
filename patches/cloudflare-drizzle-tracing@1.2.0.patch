@@ -1,0 +1,35 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -1,6 +1,6 @@
+-import { DrizzleTracingOptions } from './core';
+-export type { DrizzleTracingOptions } from './core';
+-export type { AttributeValue, SpanLike, TracerLike } from './tracer';
++import { DrizzleTracingOptions } from './core.js';
++export type { DrizzleTracingOptions } from './core.js';
++export type { AttributeValue, SpanLike, TracerLike } from './tracer.js';
+ /**
+  * Adds Cloudflare Workers tracing spans to every query, transaction and batch run through a Drizzle instance.
+  * Works with any Promise-based Drizzle driver since it hooks the dialect-agnostic session layer. Mutates and returns `db`.
+diff --git a/dist/effect.d.ts b/dist/effect.d.ts
+--- a/dist/effect.d.ts
++++ b/dist/effect.d.ts
+@@ -1,6 +1,6 @@
+-import { DrizzleTracingOptions } from './core';
+-export type { DrizzleTracingOptions } from './core';
+-export type { AttributeValue, SpanLike, TracerLike } from './tracer';
++import { DrizzleTracingOptions } from './core.js';
++export type { DrizzleTracingOptions } from './core.js';
++export type { AttributeValue, SpanLike, TracerLike } from './tracer.js';
+ /**
+  * Adds Cloudflare Workers tracing spans to every query, transaction and batch run through a Drizzle Effect driver,
+  * such as `drizzle-orm/effect-postgres` or `drizzle-orm/effect-d1`. Spans cover the Effect's execution, not its construction.
+diff --git a/dist/core.d.ts b/dist/core.d.ts
+--- a/dist/core.d.ts
++++ b/dist/core.d.ts
+@@ -1,4 +1,4 @@
+-import { AttributeValue, SpanLike, TracerLike } from './tracer';
++import { AttributeValue, SpanLike, TracerLike } from './tracer.js';
+ export interface DrizzleTracingOptions {
+     /** Defaults to `tracing` from `cloudflare:workers`. Pass `ctx.tracing` or a test double to override. */
+     tracer?: TracerLike;

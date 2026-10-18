@@ -1,7 +1,12 @@
 /* eslint-disable max-classes-per-file -- Each published adapter belongs to this model boundary. */
 import type * as NativeCloudflare from "@cloudflare/workers-types";
 import { chat, EventType, maxIterations, toolDefinition } from "@tanstack/ai";
-import type { ChatMiddleware, StreamChunk, TextOptions } from "@tanstack/ai";
+import type {
+  AdapterYieldChunk,
+  ChatMiddleware,
+  StreamChunk,
+  TextOptions,
+} from "@tanstack/ai";
 import { CloudflareTextAdapter } from "@tanstack/ai-cloudflare";
 import type { CloudflareBindingConfig } from "@tanstack/ai-cloudflare";
 import { OpenAIBaseResponsesTextAdapter } from "@tanstack/openai-base";
@@ -179,6 +184,34 @@ class PrivateDiscoveryTextAdapter extends CloudflareTextAdapter<
   ) {
     super(config, request.model);
     this.#request = request;
+  }
+
+  override async *chatStream(
+    options: Parameters<
+      CloudflareTextAdapter<
+        WorkersAIPrivateDiscoveryConfiguration["model"]
+      >["chatStream"]
+    >[0]
+  ): AsyncIterable<AdapterYieldChunk> {
+    let completedTool = false;
+    let run: { runId: string; threadId: string } | undefined;
+    for await (const chunk of super.chatStream(options)) {
+      if (chunk.type === "RUN_STARTED") {
+        run = { runId: chunk.runId, threadId: chunk.threadId };
+      }
+      if (chunk.type === "TOOL_CALL_END") {
+        completedTool = true;
+      }
+      // Workers AI can close a complete forced-tool proposal without a finish
+      // marker. The middleware still validates its exact schema, tool count,
+      // size and execution fence before accepting any output.
+      yield chunk.type === "RUN_ERROR" &&
+      chunk.code === "incomplete-stream" &&
+      completedTool &&
+      run !== undefined
+        ? { ...run, finishReason: "tool_calls", type: EventType.RUN_FINISHED }
+        : chunk;
+    }
   }
 
   protected override mapOptionsToRequest() {

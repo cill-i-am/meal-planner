@@ -1,7 +1,7 @@
 import { NodeServices } from "@effect/platform-node";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import ts from "typescript";
+import { parseSync } from "oxc-parser";
 import { describe, expect, it } from "vitest";
 
 import { WorkerBundle } from "../node_modules/alchemy/lib/Cloudflare/Workers/Sources/Rolldown.js";
@@ -37,23 +37,19 @@ describe("API Worker bundle", () => {
           .pipe(Effect.provide(NodeServices.layer))
       );
       const source = String(bundle.files[0].content);
-      const module = ts.createSourceFile(
-        bundle.files[0].path,
-        source,
-        ts.ScriptTarget.Latest,
-        true,
-        ts.ScriptKind.JS
-      );
-      const exports = module.statements
-        .filter(ts.isExportDeclaration)
-        .flatMap((declaration) =>
-          declaration.exportClause &&
-          ts.isNamedExports(declaration.exportClause)
-            ? declaration.exportClause.elements.map(
-                (element) => element.name.text
-              )
-            : []
+      const { program, errors } = parseSync(bundle.files[0].path, source);
+      expect(errors).toEqual([]);
+      const exports = program.body.flatMap((statement) => {
+        if (statement.type === "ExportDefaultDeclaration") {
+          return ["default"];
+        }
+        if (statement.type !== "ExportNamedDeclaration") {
+          return [];
+        }
+        return statement.specifiers.map(({ exported }) =>
+          exported.type === "Identifier" ? exported.name : exported.value
         );
+      });
 
       expect(exports).toContain("AgentConversation");
       expect(exports).toContain("ImportMediaAcquisitionObject");

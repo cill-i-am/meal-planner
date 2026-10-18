@@ -7833,8 +7833,9 @@ describe("canonical private interview output boundary", () => {
       );
       await Promise.all(
         [householdStorage, ...coordinators].map(async (storage) => {
+          // Miniflare reserves _cf_* tables; inspect every application-owned table.
           const tables = await storage.exec<{ name: string }>(
-            "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT GLOB '_cf_*' ORDER BY name"
           );
           expect(tables.length).toBeGreaterThan(0);
           await Promise.all(
@@ -8041,8 +8042,10 @@ describe("canonical private interview output boundary", () => {
         for (let attempt = 0; attempt < 100; attempt += 1) {
           if (
             // eslint-disable-next-line no-await-in-loop -- Poll a durable barrier before releasing the deliberately stalled request.
-            (await observations.get(`private-output-read:${barrier}`)) ===
-            "ready"
+            (await observations.get(
+              `private-output-read:${barrier}`,
+              "text"
+            )) === "ready"
           ) {
             reached = true;
             break;
@@ -9127,8 +9130,9 @@ describe("canonical private profile cards", () => {
     ];
     await Promise.all(
       [sharedStorage, ...coordinators].map(async (storage) => {
+        // Miniflare reserves _cf_* tables; inspect every application-owned table.
         const tables = await storage.exec<{ name: string }>(
-          "SELECT name FROM sqlite_master WHERE type = 'table'"
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT GLOB '_cf_*'"
         );
         await Promise.all(
           tables.map(async ({ name }) => {

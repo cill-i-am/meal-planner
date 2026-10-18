@@ -14,6 +14,10 @@ import {
   toHouseholdMealPlanResponse,
 } from "./index.js";
 
+declare const mealPlanClient: HttpApiClient.ForApi<
+  typeof HouseholdMealPlanApi
+>["mealPlans"];
+
 describe("Household API protocol", () => {
   it("keeps organization selection out of the browser request", () => {
     const document = OpenApi.fromApi(HouseholdApi);
@@ -44,16 +48,20 @@ describe("Household API protocol", () => {
 
 describe("Household meal-plan HTTP protocol", () => {
   it("generates typed list, creation, change, and decision methods", () => {
-    type Client = HttpApiClient.ForApi<typeof HouseholdMealPlanApi>;
-    type MealPlanClient = Client["mealPlans"];
-    type CreateResponse = Effect.Success<ReturnType<MealPlanClient["create"]>>;
-    type ReadResponse = Effect.Success<ReturnType<MealPlanClient["read"]>>;
-    type ChangeResponse = Effect.Success<ReturnType<MealPlanClient["change"]>>;
+    type CreateResponse = Effect.Success<
+      ReturnType<typeof mealPlanClient.create<"decoded-only">>
+    >;
+    type ReadResponse = Effect.Success<
+      ReturnType<typeof mealPlanClient.read<"decoded-only">>
+    >;
+    type ChangeResponse = Effect.Success<
+      ReturnType<typeof mealPlanClient.change<"decoded-only">>
+    >;
     type ApproveResponse = Effect.Success<
-      ReturnType<MealPlanClient["approve"]>
+      ReturnType<typeof mealPlanClient.approve<"decoded-only">>
     >;
     type AcceptResponse = Effect.Success<
-      ReturnType<MealPlanClient["acceptRevision"]>
+      ReturnType<typeof mealPlanClient.acceptRevision<"decoded-only">>
     >;
     expectTypeOf<CreateResponse>().toEqualTypeOf<HouseholdMealPlanResponse>();
     expectTypeOf<ReadResponse>().toEqualTypeOf<HouseholdMealPlanResponse>();

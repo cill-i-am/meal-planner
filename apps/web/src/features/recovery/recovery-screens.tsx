@@ -31,7 +31,7 @@ import {
 const LoginLink = ({ redirect }: { readonly redirect: string }) => (
   <Button
     variant="link"
-    className="h-11 px-0 text-sm"
+    size="link"
     nativeButton={false}
     role="link"
     render={<Link to="/login" search={{ redirect }} />}

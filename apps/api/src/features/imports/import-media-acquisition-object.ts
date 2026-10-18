@@ -1,4 +1,5 @@
 import * as Cloudflare from "alchemy/Cloudflare";
+import type { RuntimeContext } from "alchemy/RuntimeContext";
 import { Effect, Schema } from "effect";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 
@@ -27,24 +28,16 @@ const requireMatchingCoordinator = (
 export const ImportMediaAcquisitionObjectRuntime = Effect.fn(
   "ImportMediaAcquisitionObject.initialize"
 )(function* ImportMediaAcquisitionObjectInit() {
-  const application = yield* TikTokMediaContainer.Application;
-  // Alchemy beta.76 exposes bind at runtime but omits its signature from Platform.
-  const binding = yield* Cloudflare.Containers.ContainerPlatform.bind(
-    application
-  ) as unknown as Effect.Effect<Effect.Effect<Cloudflare.Containers.Container>>;
-  const initializationContext = yield* Effect.context();
+  const container = yield* TikTokMediaContainer;
   return Effect.gen(function* runtime() {
     const durableObjectState = yield* Cloudflare.DurableObjectState;
-    const container = yield* binding;
+    const runtimeContext = yield* Effect.context<RuntimeContext>();
     const lifetime = yield* makeAcquisitionLifetime(container);
-    // startContainer exposes an untyped environment; the captured constructor context supplies it.
-    const startMedia = Cloudflare.Containers.startContainer(
-      TikTokMediaContainer,
-      { enableInternet: true }
-    ).pipe(
-      Effect.provide(initializationContext)
-    ) as unknown as Effect.Effect<TikTokMediaContainer>;
-    const media = yield* Effect.cached(startMedia);
+    const media = yield* Effect.cached(
+      container
+        .start({ enableInternet: true })
+        .pipe(Effect.provide(runtimeContext), Effect.as(container))
+    );
     const coordinatorId = yield* Schema.decodeUnknownEffect(
       AcquisitionCoordinatorId
     )(durableObjectState.id.name).pipe(Effect.orDie);
@@ -112,7 +105,11 @@ export const ImportMediaAcquisitionObjectRuntime = Effect.fn(
         decodeIdentity(untrustedIdentity).pipe(
           Effect.flatMap((identity) =>
             lifetime.use(
-              media.pipe(Effect.flatMap((started) => started.prepare(identity)))
+              media.pipe(
+                Effect.flatMap((started) =>
+                  started.prepare(identity).pipe(Effect.provide(runtimeContext))
+                )
+              )
             )
           )
         ),
@@ -122,10 +119,9 @@ export const ImportMediaAcquisitionObjectRuntime = Effect.fn(
             lifetime.use(
               media.pipe(
                 Effect.flatMap((started) =>
-                  started.prepareProviderEvidence(
-                    decodedArtifactId,
-                    durationSeconds
-                  )
+                  started
+                    .prepareProviderEvidence(decodedArtifactId, durationSeconds)
+                    .pipe(Effect.provide(runtimeContext))
                 )
               )
             )

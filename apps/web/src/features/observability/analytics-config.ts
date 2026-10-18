@@ -4,10 +4,8 @@ import {
 } from "@tanstack/react-start";
 import { Schema } from "effect";
 
-import {
-  getBrowserReporter,
-  parseBrowserError,
-} from "./browser-observability.js";
+import { getBrowserReporter } from "./browser-observability.js";
+import type { parseBrowserError } from "./browser-observability.js";
 
 const PublicAnalyticsContext = Schema.Struct({
   browserAnalyticsToken: Schema.String,
@@ -28,7 +26,7 @@ export const readBrowserAnalyticsToken = createIsomorphicFn()
   );
 
 export const reportReactError = createIsomorphicFn()
-  .client((exception: Error) =>
-    getBrowserReporter().error("react", parseBrowserError(exception))
+  .client((errorType: ReturnType<typeof parseBrowserError>) =>
+    getBrowserReporter().error("react", errorType)
   )
-  .server((_exception: Error) => null);
+  .server((_errorType: ReturnType<typeof parseBrowserError>) => null);

@@ -2,40 +2,29 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import ts from "typescript";
+import { parseSync } from "oxc-parser";
 import { describe, expect, it } from "vitest";
 
 import { readOwnedSources } from "./owned-source-files.js";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const domainRoot = path.join(repositoryRoot, "packages/recipe-domain/src");
-const runtimeSpecifiers = (source: string) => {
-  const file = ts.createSourceFile(
-    "source.ts",
-    source,
-    ts.ScriptTarget.Latest,
-    true
-  );
-  return file.statements.flatMap((statement) => {
-    if (
-      !ts.isImportDeclaration(statement) &&
-      !ts.isExportDeclaration(statement)
-    ) {
-      return [];
+const runtimeSpecifiers = (file: string, source: string) => {
+  const { program, errors } = parseSync(file, source);
+  expect(errors, file).toEqual([]);
+  return program.body.flatMap((statement) => {
+    if (statement.type === "ImportDeclaration") {
+      return statement.importKind === "type" ? [] : [statement.source.value];
     }
     if (
-      ts.isImportDeclaration(statement) &&
-      statement.importClause?.isTypeOnly
+      (statement.type === "ExportNamedDeclaration" ||
+        statement.type === "ExportAllDeclaration") &&
+      statement.exportKind !== "type" &&
+      statement.source
     ) {
-      return [];
+      return [statement.source.value];
     }
-    if (ts.isExportDeclaration(statement) && statement.isTypeOnly) {
-      return [];
-    }
-    return statement.moduleSpecifier !== undefined &&
-      ts.isStringLiteral(statement.moduleSpecifier)
-      ? [statement.moduleSpecifier.text]
-      : [];
+    return [];
   });
 };
 
@@ -44,7 +33,10 @@ describe("recipe feature ownership", () => {
     const dependencies = readdirSync(domainRoot)
       .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
       .flatMap((file) =>
-        runtimeSpecifiers(readFileSync(path.join(domainRoot, file), "utf-8"))
+        runtimeSpecifiers(
+          file,
+          readFileSync(path.join(domainRoot, file), "utf-8")
+        )
       );
     expect(
       dependencies.filter(
@@ -59,7 +51,10 @@ describe("recipe feature ownership", () => {
         .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
         .map((file) => [
           file,
-          runtimeSpecifiers(readFileSync(path.join(domainRoot, file), "utf-8"))
+          runtimeSpecifiers(
+            file,
+            readFileSync(path.join(domainRoot, file), "utf-8")
+          )
             .filter((specifier) => specifier.startsWith("."))
             .map((specifier) =>
               path.basename(specifier).replace(/\.js$/u, ".ts")
@@ -86,7 +81,7 @@ describe("recipe feature ownership", () => {
           !file.includes(".test.")
       )
       .flatMap(({ file, source }) =>
-        runtimeSpecifiers(source)
+        runtimeSpecifiers(file, source)
           .filter(
             (specifier) =>
               specifier.includes("/features/recipe-import/") &&

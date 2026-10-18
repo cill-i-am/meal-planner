@@ -27,27 +27,28 @@
     "test:container": "MEAL_PLANNER_RUN_CONTAINER_TESTS=1 pnpm --filter @meal-planner/api exec vitest run --config vitest.container.config.ts"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20261002.1",
-    "@effect/platform-node": "4.0.0",
-    "@effect/sql-d1": "4.0.0",
-    "@effect/sql-sqlite-do": "4.0.0",
-    "@effect/vitest": "4.0.0",
-    "@oxlint/plugins": "1.83.0",
-    "@shadcn/lint": "0.1.1",
-    "@types/node": "24.13.3",
-    "alchemy": "2.0.0-beta.80",
-    "effect": "4.0.0",
-    "mysql2": "3.24.3",
-    "oxfmt": "0.68.0",
-    "oxlint": "1.83.0",
-    "tsx": "4.23.13",
-    "typescript": "6.0.3",
-    "ultracite": "7.12.0",
-    "vitest": "5.0.3"
+    "@cloudflare/workers-types": "5.20261016.1",
+    "@effect/platform-node": "4.0.5",
+    "@effect/sql-d1": "4.0.5",
+    "@effect/sql-sqlite-do": "4.0.5",
+    "@effect/vitest": "4.0.5",
+    "@oxlint/plugins": "1.88.0",
+    "@shadcn/lint": "0.2.1",
+    "@types/node": "26.6.5",
+    "alchemy": "2.0.0-beta.83",
+    "effect": "4.0.5",
+    "mysql2": "3.24.6",
+    "oxc-parser": "0.154.0",
+    "oxfmt": "0.73.0",
+    "oxlint": "1.88.0",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "ultracite": "8.0.1",
+    "vitest": "5.0.5"
   },
   "engines": {
-    "node": ">=24.20.0",
-    "pnpm": ">=12.3.4"
+    "node": ">=26.12.0",
+    "pnpm": ">=12.14.0"
   },
-  "packageManager": "pnpm@12.3.4"
+  "packageManager": "pnpm@12.14.0"
 }

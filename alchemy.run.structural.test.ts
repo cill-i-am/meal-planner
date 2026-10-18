@@ -2,7 +2,6 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const readRepoFile = (path: string): string =>
@@ -168,17 +167,16 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
   it("keeps household host fixtures out of the API production program", () => {
     const apiRoot = fileURLToPath(new URL("apps/api", import.meta.url));
     const configPath = `${apiRoot}/tsconfig.build.json`;
-    const config = ts.readConfigFile(configPath, ts.sys.readFile);
-    const parsed = ts.parseJsonConfigFileContent(
-      config.config,
-      ts.sys,
-      apiRoot,
-      undefined,
-      configPath
+    const result = spawnSync(
+      process.execPath,
+      ["node_modules/typescript/bin/tsc", "--showConfig", "-p", configPath],
+      { cwd: import.meta.dirname, encoding: "utf-8" }
     );
-    const householdFiles = parsed.fileNames
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    const config: { files: string[] } = JSON.parse(result.stdout);
+    const householdFiles = config.files
       .filter((path) => path.includes("/features/households/"))
-      .map((path) => path.slice(apiRoot.length + 1))
+      .map((path) => path.replace(/^\.\//u, ""))
       .toSorted();
 
     expect(householdFiles).toContain(
@@ -299,7 +297,9 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "Layer.mergeAll(HouseholdDomainWorkerLive, TikTokMediaContainerLive)"
     );
     expect(containerSource).toContain('"TikTokMediaContainer"');
-    expect(runtimeSource).toContain("node:24.20.0-bookworm-slim@sha256:");
+    expect(runtimeSource).toMatch(
+      /FROM node:\d+\.\d+\.\d+-bookworm-slim@sha256:[a-f\d]{64}/u
+    );
     expect(runtimeSource).toContain("2026.08.19/yt-dlp_linux");
     expect(runtimeSource).toContain("https://github.com/FFmpeg/FFmpeg.git");
     expect(runtimeSource).toContain("tag n9.0.1");
