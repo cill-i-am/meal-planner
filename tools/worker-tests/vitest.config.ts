@@ -51,7 +51,11 @@ export default defineConfig({
           ),
         },
         compatibilityDate: workerObservability.compatibility.date,
-        compatibilityFlags: workerObservability.compatibility.flags,
+        // Vitest 5 sends transformed modules over its runner WebSocket.
+        compatibilityFlags: [
+          ...workerObservability.compatibility.flags,
+          "increase_websocket_message_size",
+        ],
         d1Databases: ["MealPlannerAuthDatabase", "ProviderAccountingDatabase"],
         r2Buckets: ["ImportEvidenceBucket"],
       },

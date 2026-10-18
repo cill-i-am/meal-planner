@@ -585,6 +585,28 @@ describe("private discovery native TanStack provider", () => {
     expect(test.run).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    { argumentsText: "{not-json", name: "malformed JSON" },
+    {
+      argumentsText: JSON.stringify(output).slice(0, -1),
+      name: "truncated JSON",
+    },
+    {
+      argumentsText: JSON.stringify({ ...output, unrecognized: "extra field" }),
+      name: "an invalid schema",
+    },
+  ])(
+    "rejects $name even without a finish marker",
+    async ({ argumentsText }) => {
+      const test = fixture(() =>
+        Promise.resolve(response(prefix(argumentsText)))
+      );
+      await observe(test.model.stream(test.input));
+      expectRejected(test);
+      expect(test.run).toHaveBeenCalledOnce();
+    }
+  );
+
   it("rejects an empty native stream before persistence completion", async () => {
     const test = fixture(() =>
       Promise.resolve(

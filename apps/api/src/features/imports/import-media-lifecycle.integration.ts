@@ -59,7 +59,7 @@ describe.skipIf(!enabled)("native generation container lifetime", () => {
     await writeFile(path.join(root, "container.mjs"), entry.content);
     await writeFile(
       path.join(root, "Dockerfile"),
-      `FROM node:24.20.0-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e\nCOPY container.mjs /container.mjs\nCMD ["node", "/container.mjs"]\n`
+      `FROM node:26.12.0-bookworm-slim@sha256:298992629d69bbd5b2b03ad57094d8e4fcb3a8eeb7c4e25d29de656519568913\nCOPY container.mjs /container.mjs\nCMD ["node", "/container.mjs"]\n`
     );
     const manifest = await bundleWorkerFixture(
       path.join(fixtureRoot, "worker.ts"),

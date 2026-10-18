@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import type * as HttpBody from "effect/http/HttpBody";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as Redacted from "effect/Redacted";
 import { describe, expect, it } from "vitest";
 
 interface CloudflareCredentials {
@@ -27,7 +28,7 @@ interface CredentialsModule {
   >;
   readonly apiTokenCredentials: (options: {
     readonly apiBaseUrl: string;
-    readonly apiToken: string;
+    readonly apiToken: Redacted.Redacted<string>;
   }) => CloudflareCredentials;
 }
 
@@ -253,7 +254,7 @@ const runApplyMigrations = async (
 ): Promise<void> => {
   const credentials = modules.credentialsModule.apiTokenCredentials({
     apiBaseUrl: "https://cloudflare.invalid/client/v4",
-    apiToken: "local-test-placeholder",
+    apiToken: Redacted.make("local-test-placeholder"),
   });
 
   await modules.applyMigrationsModule

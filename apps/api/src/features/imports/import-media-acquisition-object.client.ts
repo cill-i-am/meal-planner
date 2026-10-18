@@ -1,3 +1,7 @@
+import type {
+  ContainerError,
+  ContainerStartError,
+} from "alchemy/Cloudflare/Containers";
 import type { RpcCallError, RpcDecodeError } from "alchemy/Rpc";
 import { Effect, Option, Schema, Scope, Stream } from "effect";
 import type { HttpServerError } from "effect/http/HttpServerError";
@@ -34,6 +38,8 @@ const ContainerAcquisitionFailure = Schema.Union([
 ]);
 
 type AcquisitionRpcFailure =
+  | ContainerError
+  | ContainerStartError
   | ContainerAcquisitionError
   | RpcCallError
   | RpcDecodeError;

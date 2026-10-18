@@ -40,7 +40,7 @@ interface CloudflareCredentialsModule {
   >;
   readonly apiTokenCredentials: (options: {
     readonly apiBaseUrl: string;
-    readonly apiToken: string;
+    readonly apiToken: Redacted.Redacted<string>;
   }) => CloudflareCredentials;
 }
 
@@ -209,7 +209,7 @@ const provideQueueServices = <A, R>(
 ): Effect.Effect<A, unknown> => {
   const credentials = modules.credentialsModule.apiTokenCredentials({
     apiBaseUrl: "https://cloudflare.invalid/client/v4",
-    apiToken: "local-test-placeholder",
+    apiToken: Redacted.make("local-test-placeholder"),
   });
 
   return effect.pipe(

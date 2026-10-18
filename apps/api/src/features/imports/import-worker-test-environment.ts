@@ -18,10 +18,10 @@ export type WorkerTestR2Object = Exclude<
   null
 >;
 
-/** Object body returned by a Miniflare R2 get request. */
-export type WorkerTestR2ObjectBody = Exclude<
+/** Body-bearing result; conditional R2 gets can also return metadata only. */
+export type WorkerTestR2ObjectBody = Extract<
   Awaited<ReturnType<WorkerTestR2Bucket["get"]>>,
-  null
+  { readonly arrayBuffer: () => Promise<ArrayBuffer> }
 >;
 
 /** One decoded D1 migration supplied by the Worker test harness. */

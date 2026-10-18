@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import ts from "typescript";
+import { parseSync } from "oxc-parser";
 import { expect, it } from "vitest";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -15,23 +15,19 @@ const sources = (directory: string) =>
     )
     .map((file) => path.join(directory, file));
 const imports = (file: string) => {
-  const source = ts.createSourceFile(
+  const { program, errors } = parseSync(
     file,
-    readFileSync(path.join(root, file), "utf-8"),
-    ts.ScriptTarget.Latest,
-    true
+    readFileSync(path.join(root, file), "utf-8")
   );
-  return source.statements.flatMap((statement) => {
-    if (
-      (ts.isImportDeclaration(statement) ||
-        ts.isExportDeclaration(statement)) &&
-      statement.moduleSpecifier &&
-      ts.isStringLiteral(statement.moduleSpecifier)
-    ) {
-      return [statement.moduleSpecifier.text];
-    }
-    return [];
-  });
+  expect(errors, file).toEqual([]);
+  return program.body.flatMap((statement) =>
+    (statement.type === "ImportDeclaration" ||
+      statement.type === "ExportNamedDeclaration" ||
+      statement.type === "ExportAllDeclaration") &&
+    statement.source
+      ? [statement.source.value]
+      : []
+  );
 };
 const owner = (file: string) =>
   /apps\/(?:web|api)\/src\/features\/(?<feature>[^/]+)\//u.exec(file)?.groups?.[

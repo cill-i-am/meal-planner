@@ -34,6 +34,9 @@ export default defineConfig({
         // TypeScript permits paired type/value names for Effect schemas and
         // services. The compiler checks real redeclarations; this JS rule does not.
         "no-redeclare": "off",
+        // Service factories keep helpers beside their Effect construction context.
+        // This rule also misidentifies captures in nested Effect callbacks.
+        "unicorn/consistent-function-scoping": "off",
       },
     },
     {

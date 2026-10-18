@@ -95,7 +95,7 @@ const LoginForm = ({ redirect }: { readonly redirect: string }) => {
           </span>
           <Button
             variant="link"
-            className="h-11 px-0 text-sm"
+            size="link"
             disabled={auth.pending}
             render={
               <Link
@@ -161,7 +161,7 @@ const LoginForm = ({ redirect }: { readonly redirect: string }) => {
                         action={
                           <Button
                             variant="link"
-                            className="h-11 px-0 text-sm"
+                            size="link"
                             disabled={auth.pending}
                             render={
                               <Link
@@ -275,7 +275,7 @@ const SignupForm = ({ redirect }: { readonly redirect: string }) => {
           </span>
           <Button
             variant="link"
-            className="h-11 px-0 text-sm"
+            size="link"
             disabled={auth.pending}
             render={
               <Link to="/login" search={{ redirect }} disabled={auth.pending} />
