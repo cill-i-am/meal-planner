@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": { "noEmit": true, "types": ["node", "vitest/globals"] },
+  "include": [
+    "tesco.alchemy.ts",
+    "apps/api/src/features/tesco/**/*.ts",
+    "scripts/tesco-session.ts",
+    "scripts/tesco-worker-runtime-smoke.ts"
+  ]
+}

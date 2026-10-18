@@ -186,6 +186,9 @@ importers:
       '@effect/vitest':
         specifier: 4.0.5
         version: 4.0.5(effect@4.0.5)(vitest@5.0.5)
+      '@modelcontextprotocol/sdk':
+        specifier: 1.32.1
+        version: 1.32.1(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7)
       '@oxlint/plugins':
         specifier: 1.88.0
         version: 1.88.0
@@ -197,10 +200,13 @@ importers:
         version: 26.6.5
       alchemy:
         specifier: 2.0.0-beta.83
-        version: 2.0.0-beta.83(patch_hash=7d01216a800e008c10cb8864114fb4475c05968dd01a8e23b56d5a34235ecccc)(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.3.0))(@effect/vitest@4.0.5(effect@4.0.5)(vitest@5.0.5))(@types/node@26.6.5)(@types/react@19.3.0)(effect@4.0.5)(hono@4.11.4)(mysql2@3.24.6(@types/node@26.6.5))(typescript@7.0.2)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(ws@8.21.3)
+        version: 2.0.0-beta.83(patch_hash=7d01216a800e008c10cb8864114fb4475c05968dd01a8e23b56d5a34235ecccc)(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.3.0))(@effect/vitest@4.0.5(effect@4.0.5)(vitest@5.0.5))(@types/node@26.6.5)(@types/react@19.3.0)(drizzle-kit@1.0.0-rc.5-5935859)(drizzle-orm@1.0.0-rc.5-5935859(@cloudflare/workers-types@5.20261016.1)(@effect/sql-d1@4.0.5(effect@4.0.5))(@effect/sql-sqlite-do@4.0.5(effect@4.0.5))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.5)(mysql2@3.24.6(@types/node@26.6.5))(valibot@1.2.0(typescript@7.0.2))(zod@4.6.7))(effect@4.0.5)(hono@4.13.13)(mysql2@3.24.6(@types/node@26.6.5))(typescript@7.0.2)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(ws@8.21.3)
       effect:
         specifier: 4.0.5
         version: 4.0.5
+      miniflare:
+        specifier: 5.20261012.1-beta
+        version: 5.20261012.1-beta(@types/node@26.6.5)
       mysql2:
         specifier: 3.24.6
         version: 3.24.6(@types/node@26.6.5)
@@ -261,6 +267,9 @@ importers:
       '@meal-planner/recipe-import-api':
         specifier: workspace:*
         version: link:../../packages/recipe-import-api
+      '@modelcontextprotocol/sdk':
+        specifier: 1.32.1
+        version: 1.32.1(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7)
       '@tanstack/ai':
         specifier: 0.69.0
         version: 0.69.0(patch_hash=a43f2dbe333345728235dd72cf903e1637e81426a4f7be8620a92467689f7a3f)(zod@4.6.7)
@@ -7340,10 +7349,6 @@ snapshots:
 
   '@neon-rs/load@0.0.4': {}
 
-  '@neon/functions@0.11.0(hono@4.11.4)':
-    optionalDependencies:
-      hono: 4.11.4
-
   '@neon/functions@0.11.0(hono@4.13.13)':
     optionalDependencies:
       hono: 4.13.13
@@ -8740,63 +8745,6 @@ snapshots:
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5)
       drizzle-kit: 1.0.0-rc.5-5935859
       drizzle-orm: 1.0.0-rc.5-5935859(@cloudflare/workers-types@5.20261016.1)(@effect/sql-d1@4.0.5(effect@4.0.5))(@effect/sql-sqlite-do@4.0.5(effect@4.0.5))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(effect@4.0.5)(mysql2@3.24.6(@types/node@26.6.5))(valibot@1.2.0(typescript@7.0.2))(zod@4.6.7)
-      mysql2: 3.24.6(@types/node@26.6.5)
-      vite: 8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
-      ws: 8.21.3
-    transitivePeerDependencies:
-      - '@types/node'
-      - '@types/react'
-      - bufferutil
-      - hono
-      - proxy-agent
-      - react-devtools-core
-      - typescript
-      - utf-8-validate
-
-  alchemy@2.0.0-beta.83(patch_hash=7d01216a800e008c10cb8864114fb4475c05968dd01a8e23b56d5a34235ecccc)(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.3.0))(@effect/vitest@4.0.5(effect@4.0.5)(vitest@5.0.5))(@types/node@26.6.5)(@types/react@19.3.0)(effect@4.0.5)(hono@4.11.4)(mysql2@3.24.6(@types/node@26.6.5))(typescript@7.0.2)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(ws@8.21.3):
-    dependencies:
-      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.83(@distilled.cloud/cloudflare@1.0.0-rc.15(effect@4.0.5))(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.3.0))(@types/node@26.6.5)(effect@4.0.5)(rolldown@1.2.5)(typescript@7.0.2)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
-      '@alchemy.run/floci': 2.0.0-beta.83(effect@4.0.5)
-      '@alchemy.run/node-utils': 2.0.0-beta.83
-      '@alchemy.run/sigil': 0.1.0-alpha.1(@types/react@19.3.0)
-      '@distilled.cloud/acme': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/aws': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/axiom': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/cloudflare': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/core': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/doppler': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/fly-io': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/gcp': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/hetzner': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/iceberg': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/infisical': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/neon': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/planetscale': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/prisma': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/railway': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/stripe': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/turso': 1.0.0-rc.15(effect@4.0.5)
-      '@distilled.cloud/zerossl': 1.0.0-rc.15(effect@4.0.5)
-      '@effect/sql-d1': 4.0.5(effect@4.0.5)
-      '@effect/sql-sqlite-do': 4.0.5(effect@4.0.5)
-      '@libsql/client': 0.17.4
-      '@neon/functions': 0.11.0(hono@4.11.4)
-      '@octokit/rest': 22.0.1
-      '@octokit/webhooks': 14.2.0
-      '@prisma/dev': 0.20.0(typescript@7.0.2)
-      '@types/aws-lambda': 8.10.164
-      capnweb: 0.12.0
-      effect: 4.0.5
-      fflate: 0.8.3
-      libsodium-wrappers: 0.8.4
-      pathe: 2.0.3
-      picomatch: 4.0.7
-      rolldown: 1.2.5
-      tinyglobby: 0.2.17
-      yaml: 2.9.1
-    optionalDependencies:
-      '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.3.0)
-      '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5)
       mysql2: 3.24.6(@types/node@26.6.5)
       vite: 8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
       ws: 8.21.3
