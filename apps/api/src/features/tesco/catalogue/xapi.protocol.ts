@@ -8,7 +8,6 @@ import {
   ProductTitle,
   ProductTypeName,
   SearchQuery,
-  SortBy,
 } from "./catalogue.model.js";
 import type {
   CatalogueProductResults,
@@ -35,9 +34,7 @@ const TescoProductNodeDto = Schema.Struct({
 });
 
 const TescoListingDto = Schema.Struct({
-  options: Schema.optionalKey(
-    Schema.Struct({ sortBy: Schema.optionalKey(SortBy) })
-  ),
+  // Tesco's options.sortBy lists available choices; it is not a selected sort value.
   pageInformation: PageInformation,
   results: Schema.Array(Schema.Struct({ node: TescoProductNodeDto })),
 });
@@ -93,9 +90,6 @@ const SearchReadOperation = defineReadOnlyGraphQlOperation({
           }
         }
       }
-      options {
-        sortBy
-      }
     }
   }
   `,
@@ -144,9 +138,6 @@ const CategoryProductsReadOperation = defineReadOnlyGraphQlOperation({
           }
         }
       }
-      options {
-        sortBy
-      }
     }
   }
   `,
@@ -175,13 +166,10 @@ const projectTescoListing = (
       ? projected
       : { ...projected, defaultImageUrl: node.defaultImageUrl };
   });
-  const projected: CatalogueProductResults = {
+  return {
     pageInformation: listing.pageInformation,
     results,
   };
-  return listing.options?.sortBy === undefined
-    ? projected
-    : { ...projected, sortBy: listing.options.sortBy };
 };
 
 /** Named Tesco search document paired with its response codec and projection. */

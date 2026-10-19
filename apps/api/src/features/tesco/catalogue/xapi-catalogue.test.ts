@@ -124,7 +124,7 @@ const searchRequest = (query: string) =>
 const searchResponse = {
   data: {
     search: {
-      options: { sortBy: "relevance" },
+      options: { sortBy: ["relevance", "price-ascending", "price-descending"] },
       pageInformation: {
         count: 1,
         pageNo: 1,
@@ -149,7 +149,7 @@ const searchResponse = {
 const categoryResponse = {
   data: {
     category: {
-      options: { sortBy: "price-ascending" },
+      options: { sortBy: ["relevance", "price-ascending", "price-descending"] },
       pageInformation: {
         count: 1,
         pageNo: 2,
@@ -420,7 +420,6 @@ describe("makeTescoXapiCatalogueLive", () => {
             type: "MPProduct",
           },
         ],
-        sortBy: "price-ascending",
       });
       expect(capturedBodies).toHaveLength(1);
       const body = Schema.decodeUnknownSync(CapturedGraphQlRequest)(

@@ -19,13 +19,15 @@ const searchInput = Schema.decodeUnknownSync(SearchCatalogueInput)({
 });
 
 describe("Tesco XAPI catalogue protocol", () => {
-  it("projects a Tesco search response into the stable catalogue result", async () => {
+  it("projects products without treating available sort choices as a selected sort", async () => {
     const { operation } = TescoSearchQuery;
     const result = await Effect.runPromise(
       TescoSearchQuery.decode({
         data: {
           search: {
-            options: { sortBy: "relevance" },
+            options: {
+              sortBy: ["relevance", "price-ascending", "price-descending"],
+            },
             pageInformation: {
               count: 1,
               matchType: "exact",
@@ -83,7 +85,6 @@ describe("Tesco XAPI catalogue protocol", () => {
           type: "ProductType",
         },
       ],
-      sortBy: "relevance",
     });
   });
 
