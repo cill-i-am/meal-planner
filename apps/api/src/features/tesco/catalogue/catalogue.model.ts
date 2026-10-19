@@ -90,9 +90,36 @@ export const PageInformation = Schema.Struct({
 });
 export type PageInformation = typeof PageInformation.Type;
 
+const Amount = Schema.Number.check(
+  Schema.isFinite(),
+  Schema.isGreaterThanOrEqualTo(0)
+);
+export const ProductPrice = Schema.Struct({
+  actual: Schema.NullOr(Amount),
+  unitOfMeasure: Schema.NullOr(Schema.String),
+  unitPrice: Schema.NullOr(Amount),
+});
+export const ProductPromotion = Schema.Struct({
+  description: Schema.NullOr(Schema.String),
+  endDate: Schema.NullOr(Schema.String),
+  id: Schema.String,
+  price: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Struct({
+        afterDiscount: Schema.NullOr(Amount),
+        beforeDiscount: Schema.NullOr(Amount),
+      })
+    )
+  ),
+  promotionType: Schema.NullOr(Schema.String),
+  startDate: Schema.NullOr(Schema.String),
+});
+
 export const Product = Schema.Struct({
   defaultImageUrl: Schema.optionalKey(ImageUrl),
   id: ProductId,
+  price: Schema.optionalKey(Schema.NullOr(ProductPrice)),
+  promotions: Schema.optionalKey(Schema.Array(ProductPromotion)),
   title: ProductTitle,
   type: ProductTypeName,
 });

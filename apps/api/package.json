@@ -26,6 +26,7 @@
     "@meal-planner/private-interview-api": "workspace:*",
     "@meal-planner/recipe-domain": "workspace:*",
     "@meal-planner/recipe-import-api": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@tanstack/ai": "0.69.0",
     "@tanstack/ai-cloudflare": "0.3.0",
     "@tanstack/ai-persistence": "0.9.0",

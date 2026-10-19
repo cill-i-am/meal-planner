@@ -5,10 +5,11 @@ import {
   ImageUrl,
   PageInformation,
   ProductId,
+  ProductPrice,
+  ProductPromotion,
   ProductTitle,
   ProductTypeName,
   SearchQuery,
-  SortBy,
 } from "./catalogue.model.js";
 import type {
   CatalogueProductResults,
@@ -31,13 +32,13 @@ const TescoProductNodeDto = Schema.Struct({
   __typename: ProductTypeName,
   defaultImageUrl: Schema.optionalKey(Schema.NullishOr(ImageUrl)),
   id: ProductId,
+  price: Schema.optionalKey(Schema.NullOr(ProductPrice)),
+  promotions: Schema.optionalKey(Schema.Array(ProductPromotion)),
   title: ProductTitle,
 });
 
 const TescoListingDto = Schema.Struct({
-  options: Schema.optionalKey(
-    Schema.Struct({ sortBy: Schema.optionalKey(SortBy) })
-  ),
+  // Tesco's options.sortBy lists available choices; it is not a selected sort value.
   pageInformation: PageInformation,
   results: Schema.Array(Schema.Struct({ node: TescoProductNodeDto })),
 });
@@ -79,22 +80,25 @@ const SearchReadOperation = defineReadOnlyGraphQlOperation({
           ... on ProductType {
             id
             title
+            price { actual unitPrice unitOfMeasure }
+            promotions { id description startDate endDate promotionType price {beforeDiscount afterDiscount} }
             defaultImageUrl
           }
           ... on MPProduct {
             id
             title
+            price { actual unitPrice unitOfMeasure }
+            promotions { id description startDate endDate promotionType price {beforeDiscount afterDiscount} }
             defaultImageUrl
           }
           ... on FNFProduct {
             id
             title
+            price { actual unitPrice unitOfMeasure }
+            promotions { id description startDate endDate promotionType price {beforeDiscount afterDiscount} }
             defaultImageUrl
           }
         }
-      }
-      options {
-        sortBy
       }
     }
   }
@@ -130,22 +134,25 @@ const CategoryProductsReadOperation = defineReadOnlyGraphQlOperation({
           ... on ProductType {
             id
             title
+            price { actual unitPrice unitOfMeasure }
+            promotions { id description startDate endDate promotionType price {beforeDiscount afterDiscount} }
             defaultImageUrl
           }
           ... on MPProduct {
             id
             title
+            price { actual unitPrice unitOfMeasure }
+            promotions { id description startDate endDate promotionType price {beforeDiscount afterDiscount} }
             defaultImageUrl
           }
           ... on FNFProduct {
             id
             title
+            price { actual unitPrice unitOfMeasure }
+            promotions { id description startDate endDate promotionType price {beforeDiscount afterDiscount} }
             defaultImageUrl
           }
         }
-      }
-      options {
-        sortBy
       }
     }
   }
@@ -171,17 +178,20 @@ const projectTescoListing = (
       title: node.title,
       type: node.__typename,
     };
+    if (node.price !== undefined) {
+      Object.assign(projected, { price: node.price });
+    }
+    if (node.promotions !== undefined) {
+      Object.assign(projected, { promotions: node.promotions });
+    }
     return node.defaultImageUrl === null || node.defaultImageUrl === undefined
       ? projected
       : { ...projected, defaultImageUrl: node.defaultImageUrl };
   });
-  const projected: CatalogueProductResults = {
+  return {
     pageInformation: listing.pageInformation,
     results,
   };
-  return listing.options?.sortBy === undefined
-    ? projected
-    : { ...projected, sortBy: listing.options.sortBy };
 };
 
 /** Named Tesco search document paired with its response codec and projection. */

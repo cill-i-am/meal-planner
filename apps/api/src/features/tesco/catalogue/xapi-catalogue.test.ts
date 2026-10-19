@@ -124,7 +124,7 @@ const searchRequest = (query: string) =>
 const searchResponse = {
   data: {
     search: {
-      options: { sortBy: "relevance" },
+      options: { sortBy: ["relevance", "price-ascending", "price-descending"] },
       pageInformation: {
         count: 1,
         pageNo: 1,
@@ -149,7 +149,7 @@ const searchResponse = {
 const categoryResponse = {
   data: {
     category: {
-      options: { sortBy: "price-ascending" },
+      options: { sortBy: ["relevance", "price-ascending", "price-descending"] },
       pageInformation: {
         count: 1,
         pageNo: 2,
@@ -420,7 +420,6 @@ describe("makeTescoXapiCatalogueLive", () => {
             type: "MPProduct",
           },
         ],
-        sortBy: "price-ascending",
       });
       expect(capturedBodies).toHaveLength(1);
       const body = Schema.decodeUnknownSync(CapturedGraphQlRequest)(
@@ -441,129 +440,179 @@ describe("makeTescoXapiCatalogueLive", () => {
     }
   });
 
-  it("refreshes once after 401 and retries the same proven read", async () => {
-    const capturedBodies: string[] = [];
-    const credentialObservations: {
-      readonly apiKeyMatches: boolean;
-      readonly authorizationMatches: boolean;
-    }[] = [];
-    let refreshCount = 0;
-    const server = createServer((request, response) => {
-      void (async () => {
-        try {
-          capturedBodies.push(await readRequestBody(request));
-          credentialObservations.push({
-            apiKeyMatches: request.headers["x-apikey"] === FixtureApiKey,
-            authorizationMatches:
-              request.headers.authorization ===
-              (capturedBodies.length === 1
-                ? FixtureInitialAuthorization
-                : FixtureRefreshedAuthorization),
-          });
-          if (capturedBodies.length === 1) {
-            response.writeHead(401);
-            response.end();
-            return;
+  it.each(["http", "inner"])(
+    "refreshes once after %s 401 and retries the same proven read",
+    async (envelope) => {
+      const capturedBodies: string[] = [];
+      const credentialObservations: {
+        readonly apiKeyMatches: boolean;
+        readonly authorizationMatches: boolean;
+      }[] = [];
+      let refreshCount = 0;
+      const server = createServer((request, response) => {
+        void (async () => {
+          try {
+            capturedBodies.push(await readRequestBody(request));
+            credentialObservations.push({
+              apiKeyMatches: request.headers["x-apikey"] === FixtureApiKey,
+              authorizationMatches:
+                request.headers.authorization ===
+                (capturedBodies.length === 1
+                  ? FixtureInitialAuthorization
+                  : FixtureRefreshedAuthorization),
+            });
+            if (capturedBodies.length === 1) {
+              if (envelope === "http") {
+                response.writeHead(401);
+                response.end();
+              } else {
+                respondJson(response, { ...searchResponse, status: 401 });
+              }
+              return;
+            }
+            respondJson(response, searchResponse);
+          } catch {
+            response.destroy();
           }
-          respondJson(response, searchResponse);
-        } catch {
-          response.destroy();
-        }
-      })();
-    });
-    const baseUrl = await listen(server);
-
-    try {
-      const Live = makeLive(new URL(`${baseUrl}/graphql`), {
-        onRefresh: () => {
-          refreshCount += 1;
-        },
-        refreshedAuthorization: authorization(FixtureRefreshedAuthorization),
+        })();
       });
-      const request = Schema.decodeUnknownSync(SearchCatalogueInput)({
-        count: 8,
-        page: 3,
-        query: "oats",
-        sortBy: "relevance",
-      });
+      const baseUrl = await listen(server);
 
-      await Effect.runPromise(
-        Effect.gen(function* retryProgram() {
-          const catalogue = yield* TescoCatalogue;
-          yield* catalogue.search(request);
-        }).pipe(Effect.provide(Live))
-      );
-
-      expect(refreshCount).toBe(1);
-      expect(capturedBodies).toHaveLength(2);
-      const firstBody = Schema.decodeUnknownSync(CapturedGraphQlRequest)(
-        JSON.parse(capturedBodies[0] ?? "")
-      );
-      const secondBody = Schema.decodeUnknownSync(CapturedGraphQlRequest)(
-        JSON.parse(capturedBodies[1] ?? "")
-      );
-      expect(secondBody).toStrictEqual(firstBody);
-      expect(firstBody).toStrictEqual({
-        operationName: TescoSearchQuery.operation.operationName,
-        query: TescoSearchQuery.operation.document,
-        variables: {
+      try {
+        const Live = makeLive(new URL(`${baseUrl}/graphql`), {
+          onRefresh: () => {
+            refreshCount += 1;
+          },
+          refreshedAuthorization: authorization(FixtureRefreshedAuthorization),
+        });
+        const request = Schema.decodeUnknownSync(SearchCatalogueInput)({
           count: 8,
           page: 3,
           query: "oats",
           sortBy: "relevance",
-        },
-      });
-      expect(credentialObservations).toStrictEqual([
-        { apiKeyMatches: true, authorizationMatches: true },
-        { apiKeyMatches: true, authorizationMatches: true },
-      ]);
-    } finally {
-      await close(server);
+        });
+
+        await Effect.runPromise(
+          Effect.gen(function* retryProgram() {
+            const catalogue = yield* TescoCatalogue;
+            yield* catalogue.search(request);
+          }).pipe(Effect.provide(Live))
+        );
+
+        expect(refreshCount).toBe(1);
+        expect(capturedBodies).toHaveLength(2);
+        const firstBody = Schema.decodeUnknownSync(CapturedGraphQlRequest)(
+          JSON.parse(capturedBodies[0] ?? "")
+        );
+        const secondBody = Schema.decodeUnknownSync(CapturedGraphQlRequest)(
+          JSON.parse(capturedBodies[1] ?? "")
+        );
+        expect(secondBody).toStrictEqual(firstBody);
+        expect(firstBody).toStrictEqual({
+          operationName: TescoSearchQuery.operation.operationName,
+          query: TescoSearchQuery.operation.document,
+          variables: {
+            count: 8,
+            page: 3,
+            query: "oats",
+            sortBy: "relevance",
+          },
+        });
+        expect(credentialObservations).toStrictEqual([
+          { apiKeyMatches: true, authorizationMatches: true },
+          { apiKeyMatches: true, authorizationMatches: true },
+        ]);
+      } finally {
+        await close(server);
+      }
     }
-  });
+  );
 
-  it("returns the second 401 without refreshing again", async () => {
-    let requestCount = 0;
-    let refreshCount = 0;
-    const server = createServer((_request, response) => {
-      requestCount += 1;
-      response.writeHead(401);
-      response.end();
-    });
-    const baseUrl = await listen(server);
-
-    try {
-      const Live = makeLive(new URL(`${baseUrl}/graphql`), {
-        onRefresh: () => {
-          refreshCount += 1;
-        },
-        refreshedAuthorization: authorization(FixtureRefreshedAuthorization),
+  it.each(["http", "inner"])(
+    "returns the second %s 401 without refreshing again",
+    async (envelope) => {
+      let requestCount = 0;
+      let refreshCount = 0;
+      const server = createServer((_request, response) => {
+        requestCount += 1;
+        if (envelope === "http") {
+          response.writeHead(401);
+          response.end();
+        } else {
+          respondJson(response, { ...searchResponse, status: 401 });
+        }
       });
+      const baseUrl = await listen(server);
 
-      const error = await Effect.runPromise(
-        Effect.gen(function* retryProgram() {
-          const catalogue = yield* TescoCatalogue;
-          return yield* catalogue.search(searchRequest("milk"));
-        }).pipe(Effect.provide(Live), Effect.flip)
-      );
+      try {
+        const Live = makeLive(new URL(`${baseUrl}/graphql`), {
+          onRefresh: () => {
+            refreshCount += 1;
+          },
+          refreshedAuthorization: authorization(FixtureRefreshedAuthorization),
+        });
 
-      expect(error).toMatchObject({
-        _tag: "TescoCatalogueAuthenticationUnavailable",
-        operation: "search",
-      });
-      expect(error).not.toHaveProperty("status");
-      expect(requestCount).toBe(2);
-      expect(refreshCount).toBe(1);
-    } finally {
-      await close(server);
+        const error = await Effect.runPromise(
+          Effect.gen(function* retryProgram() {
+            const catalogue = yield* TescoCatalogue;
+            return yield* catalogue.search(searchRequest("milk"));
+          }).pipe(Effect.provide(Live), Effect.flip)
+        );
+
+        expect(error).toMatchObject({
+          _tag: "TescoCatalogueAuthenticationUnavailable",
+          operation: "search",
+        });
+        expect(error).not.toHaveProperty("status");
+        expect(requestCount).toBe(2);
+        expect(refreshCount).toBe(1);
+      } finally {
+        await close(server);
+      }
     }
-  });
+  );
+
+  it.each([
+    { expected: "TescoCatalogueRequestRejected", status: 403 },
+    { expected: "TescoCatalogueUnavailable", status: 429 },
+    { expected: "TescoCatalogueUnavailable", status: 503 },
+    { expected: "TescoCatalogueResponseInvalid", status: "401" },
+  ])(
+    "rejects inner error status $status even with valid data",
+    async ({ status, expected }) => {
+      let refreshCount = 0;
+      const server = createServer((_request, response) => {
+        respondJson(response, { ...searchResponse, status });
+      });
+      const baseUrl = await listen(server);
+      try {
+        const Live = makeLive(new URL(`${baseUrl}/graphql`), {
+          onRefresh: () => {
+            refreshCount += 1;
+          },
+        });
+        const error = await Effect.runPromise(
+          Effect.gen(function* innerStatusProgram() {
+            const catalogue = yield* TescoCatalogue;
+            return yield* catalogue.search(searchRequest("milk"));
+          }).pipe(Effect.provide(Live), Effect.flip)
+        );
+        expect(error).toMatchObject({ _tag: expected, operation: "search" });
+        expect(refreshCount).toBe(0);
+      } finally {
+        await close(server);
+      }
+    }
+  );
 
   it("replaces upstream GraphQL error details with a fixed safe error", async () => {
     const providerDetail =
       "provider-internal-detail-that-must-never-cross-the-boundary";
     const server = createServer((_request, response) => {
-      respondJson(response, { errors: [{ message: providerDetail }] });
+      respondJson(response, {
+        ...searchResponse,
+        errors: [{ message: providerDetail }],
+      });
     });
     const baseUrl = await listen(server);
 
