@@ -27,6 +27,8 @@ Two minutes before access-token expiry, the object follows Tesco's silent-login 
 
 Effect 4 owns schemas, services, errors, storage orchestration, cancellation and request scopes. Alchemy owns deployment, native RPC and the object runtime. The object deliberately uses Alchemy's Effect-native Durable Object rather than an Agent: it needs encrypted storage and one alarm, with no agent execution or additional scheduler lifecycle.
 
+The session and shopping constructors receive narrow object-instance storage adapters explicitly. This is the native Durable Object interoperability boundary: the session adapter retains Alchemy's generic `RuntimeContext` requirement on its returned effects, while the shopping adapter binds that context inside the serialized object call. Keeping the requirement visible avoids a separate managed runtime or a Promise bridge that would lose native transaction/context semantics. HTTP and authentication dependencies use Effect services and Layers; the object composition root owns all storage adapters.
+
 Executor currently uses MCP SDK 1.32.1 and protocol 2025-11-25. Effect 4.0.5's request-scoped MCP transport accepts only the sessionless 2026-07-28 protocol. The official SDK's Web Standard Streamable HTTP transport supplies the compatible 2025 boundary in stateless JSON mode. Each request owns a server, transport and Effect callback scope. Closing the HTTP connection interrupts callback work. Legacy advisory cancellation notifications across separate HTTP requests do not share an in-memory cancellation registry. The SDK client integration tests cover initialization, discovery, successive calls, authentication and connection close.
 
 ## Deployment and enrollment

@@ -21,6 +21,10 @@ type AttemptResult =
   | { readonly _tag: "Unauthorized" }
   | { readonly _tag: "Success"; readonly json: Schema.Json };
 
+const TescoGraphQlStatus = Schema.Struct({
+  status: Schema.optionalKey(Schema.Int),
+});
+
 const mangoHeaders = (
   config: TescoCatalogueConfig,
   authorization: TescoAuthorization
@@ -119,6 +123,33 @@ export const makeTescoAuthenticatedGraphQlTransportLive = (
                 })
             )
           );
+
+          // Mango may report an authentication/upstream failure inside HTTP 200,
+          // including partial data. Apply the same policy before any projection.
+          const envelope = yield* Schema.decodeUnknownEffect(
+            TescoGraphQlStatus
+          )(json).pipe(
+            Effect.mapError(
+              () =>
+                new TescoAuthenticatedResponseInvalid({
+                  operation: operation.operation,
+                })
+            )
+          );
+          const status = envelope.status ?? response.status;
+          if (status === 401) {
+            return { _tag: "Unauthorized" };
+          }
+          if (isUnavailableStatus(status)) {
+            return yield* new TescoAuthenticatedRequestUnavailable({
+              operation: operation.operation,
+            });
+          }
+          if (status < 200 || status >= 300) {
+            return yield* new TescoAuthenticatedRequestRejected({
+              operation: operation.operation,
+            });
+          }
 
           if (
             Option.isSome(
