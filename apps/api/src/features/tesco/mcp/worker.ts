@@ -47,9 +47,20 @@ export default class TescoMcp extends Cloudflare.Worker<TescoMcp>()(
           program.pipe(Effect.provideService(RuntimeContext, runtimeContext));
         const handler = makeTescoMcpHttpHandler({
           capabilities: {
+            basket: bound(object.basket()),
             categoryProducts: (input) => bound(object.categoryProducts(input)),
+            checkoutHandoff: (input) => bound(object.checkoutHandoff(input)),
             connectionHealth: bound(object.connectionHealth()),
+            deliverySlots: (input) => bound(object.deliverySlots(input)),
+            favourites: (input) => bound(object.favourites(input)),
+            orderDetails: (input) => bound(object.orderDetails(input)),
+            prepareCheckout: bound(object.prepareCheckout()),
+            previousOrders: (input) => bound(object.previousOrders(input)),
+            productDetails: (input) => bound(object.productDetails(input)),
+            releaseSlot: (input) => bound(object.releaseSlot(input)),
+            reserveSlot: (input) => bound(object.reserveSlot(input)),
             search: (input) => bound(object.search(input)),
+            setBasketItems: (input) => bound(object.setBasketItems(input)),
             suggestions: (input) => bound(object.suggestions(input)),
           },
           disconnect: bound(object.disconnect()),

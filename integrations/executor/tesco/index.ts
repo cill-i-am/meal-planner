@@ -1,7 +1,7 @@
 import { accountRouter, defineApp, toolAnnotations, withApprovals } from "apps";
 import { mcpRouter } from "apps/mcp";
-import { always } from "apps/operations/approval";
 
+import { tescoApproval } from "./approval.js";
 import { tesco, tescoMcpUrl } from "./provider.js";
 
 /** Each member supplies their own account; the owner's credential is never an app-wide shared account. */
@@ -19,8 +19,8 @@ export default defineApp(
             signal: ctx.signal,
             url: tescoMcpUrl,
           }),
-          (tool) =>
-            toolAnnotations(tool)?.readOnlyHint === true ? undefined : always()
+          (tool, name) =>
+            tescoApproval(name, toolAnnotations(tool)?.readOnlyHint)
         ),
       { signal: ctx.signal }
     ),

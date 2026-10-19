@@ -14,6 +14,7 @@ import {
   CatalogueProductResults,
   CatalogueSuggestions,
 } from "../catalogue/catalogue.model.js";
+import * as Shopping from "../shopping/shopping.model.js";
 import {
   TescoMcpCapabilities,
   TescoMcpCategory,
@@ -21,6 +22,7 @@ import {
   TescoMcpSuggestions,
   TescoMcpTools,
 } from "./mcp.contract.js";
+import type { TescoSessionFailure } from "./session.model.js";
 import { TescoConnectionHealth } from "./session.model.js";
 
 export class TescoMcpTransportFailure extends Data.TaggedError(
@@ -47,7 +49,95 @@ const callTool = (
     const service = yield* TescoMcpCapabilities;
     const { name } = message.params;
     const input = message.params.arguments ?? {};
+    const invoke = <I extends Schema.Top, O extends Schema.Top>(
+      inputSchema: I,
+      outputSchema: O,
+      run: (value: I["Type"]) => Effect.Effect<O["Type"], TescoSessionFailure>
+    ) =>
+      Schema.decodeUnknownEffect(inputSchema)(input, {
+        onExcessProperty: "error",
+      }).pipe(
+        Effect.flatMap(run),
+        Effect.flatMap((value) => structuredResult(outputSchema, value))
+      );
     switch (name) {
+      case "get_product_details": {
+        return yield* invoke(
+          Shopping.ProductDetailsInput,
+          Shopping.ProductDetailsResult,
+          service.productDetails
+        );
+      }
+      case "list_favourites": {
+        return yield* invoke(
+          Shopping.ListShoppingInput,
+          Shopping.FavouritesResult,
+          service.favourites
+        );
+      }
+      case "list_previous_orders": {
+        return yield* invoke(
+          Shopping.ListShoppingInput,
+          Shopping.PreviousOrdersResult,
+          service.previousOrders
+        );
+      }
+      case "get_order_details": {
+        return yield* invoke(
+          Shopping.OrderDetailsInput,
+          Shopping.OrderDetailsResult,
+          service.orderDetails
+        );
+      }
+      case "get_basket": {
+        return yield* invoke(
+          Shopping.EmptyInput,
+          Shopping.BasketResult,
+          () => service.basket
+        );
+      }
+      case "list_delivery_slots": {
+        return yield* invoke(
+          Shopping.DeliverySlotsInput,
+          Shopping.DeliverySlotsResult,
+          service.deliverySlots
+        );
+      }
+      case "set_basket_items": {
+        return yield* invoke(
+          Shopping.SetBasketItemsInput,
+          Shopping.BasketCommandResult,
+          service.setBasketItems
+        );
+      }
+      case "reserve_delivery_slot": {
+        return yield* invoke(
+          Shopping.ReserveSlotInput,
+          Shopping.BasketCommandResult,
+          service.reserveSlot
+        );
+      }
+      case "release_delivery_slot": {
+        return yield* invoke(
+          Shopping.ReleaseSlotInput,
+          Shopping.BasketCommandResult,
+          service.releaseSlot
+        );
+      }
+      case "prepare_checkout": {
+        return yield* invoke(
+          Shopping.EmptyInput,
+          Shopping.CheckoutReview,
+          () => service.prepareCheckout
+        );
+      }
+      case "approve_checkout_handoff": {
+        return yield* invoke(
+          Shopping.CheckoutHandoffInput,
+          Shopping.CheckoutHandoffResult,
+          service.checkoutHandoff
+        );
+      }
       case "search_products": {
         const request =
           yield* Schema.decodeUnknownEffect(TescoMcpSearch)(input);
@@ -132,7 +222,7 @@ export const handleTescoMcp = (request: Request) =>
       {
         capabilities: { tools: {} },
         instructions:
-          "Private Irish Tesco catalogue, accessible through the owner's Executor. Tools are read-only. Search results describe the catalogue; they do not promise current store stock. A reauthentication_required status needs the operator's secure session-enrollment flow. Never ask agents for Tesco cookies, tokens, API keys or passwords.",
+          "Private Irish Tesco catalogue, accessible through the owner's Executor. Shopping mutations require approval through Executor. Checkout requires explicit human approval of a saved review and completion on Tesco’s payment page; no tool places an order. Search results describe the catalogue; they do not promise current store stock. A reauthentication_required status needs the operator's secure session-enrollment flow. Never ask agents for Tesco cookies, tokens, API keys or passwords.",
       }
     );
     const transport = new WebStandardStreamableHTTPServerTransport({
@@ -143,10 +233,16 @@ export const handleTescoMcp = (request: Request) =>
       Promise.resolve({
         tools: TescoMcpTools.map((tool) => ({
           annotations: {
-            destructiveHint: false,
-            idempotentHint: true,
+            destructiveHint: "destructive" in tool,
+            idempotentHint:
+              !("mutation" in tool) ||
+              [
+                "set_basket_items",
+                "reserve_delivery_slot",
+                "release_delivery_slot",
+              ].includes(tool.name),
             openWorldHint: true,
-            readOnlyHint: true,
+            readOnlyHint: !("mutation" in tool),
           },
           description: tool.description,
           inputSchema: { ...jsonSchema(tool.input), type: "object" as const },

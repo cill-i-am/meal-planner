@@ -1,6 +1,7 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 
 import { Effect, Redacted, Schema } from "effect";
+import { FetchHttpClient, HttpClient, HttpBody } from "effect/http";
 
 import {
   TescoConnectionHealth,
@@ -31,35 +32,33 @@ const enroll = Effect.gen(function* enrollTescoSession() {
     Schema.fromJsonString(EnrollmentFile)
   )(json).pipe(Effect.map(Redacted.make));
   const { executorToken, operatorToken, session } = Redacted.value(input);
-  const send = Effect.tryPromise({
-    catch: () => "Unable to contact the private Tesco MCP.",
-    try: (signal) =>
-      fetch("https://tesco-mcp.barroncillian.workers.dev/admin/session", {
-        body: JSON.stringify(session),
-        headers: {
-          authorization: `Bearer ${operatorToken}`,
-          "content-type": "application/json",
-        },
-        method: "POST",
-        redirect: "error",
-        signal,
-      }),
-  }).pipe(
-    Effect.flatMap((response) =>
-      Effect.gen(function* decodeEnrollmentResponse() {
-        if (response.status !== 200) {
-          return yield* Effect.fail(
-            `Enrollment failed with HTTP ${response.status}.`
+  const client = yield* HttpClient.HttpClient;
+  const send = client
+    .post("https://tesco-mcp.barroncillian.workers.dev/admin/session", {
+      body: HttpBody.jsonUnsafe(session),
+      headers: {
+        authorization: `Bearer ${operatorToken}`,
+        "content-type": "application/json",
+      },
+    })
+    .pipe(
+      Effect.mapError(() => "Unable to contact the private Tesco MCP."),
+      Effect.flatMap((response) =>
+        Effect.gen(function* decodeEnrollmentResponse() {
+          if (response.status !== 200) {
+            return yield* Effect.fail(
+              `Enrollment failed with HTTP ${response.status}.`
+            );
+          }
+          const result = yield* response.json.pipe(
+            Effect.mapError(() => "Invalid enrollment response.")
           );
-        }
-        const result: unknown = yield* Effect.tryPromise({
-          catch: () => "Invalid enrollment response.",
-          try: (): Promise<unknown> => response.json(),
-        });
-        return yield* Schema.decodeUnknownEffect(TescoConnectionHealth)(result);
-      })
-    )
-  );
+          return yield* Schema.decodeUnknownEffect(TescoConnectionHealth)(
+            result
+          );
+        })
+      )
+    );
   return yield* send.pipe(
     Effect.timeout("60 seconds"),
     Effect.ensuring(
@@ -75,6 +74,9 @@ const enroll = Effect.gen(function* enrollTescoSession() {
 // CLI process boundary: diagnostics cannot render a SchemaError containing a session credential.
 await Effect.runPromise(
   enroll.pipe(
+    Effect.provide(FetchHttpClient.layer),
+    Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }),
+    Effect.scoped,
     Effect.match({
       onFailure: () => {
         console.error(

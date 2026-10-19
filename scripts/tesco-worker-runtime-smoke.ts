@@ -69,13 +69,35 @@ try {
   await client.connect(transport);
   const listed = await client.listTools();
   assert.deepEqual(listed.tools.map((tool) => tool.name).toSorted(), [
+    "approve_checkout_handoff",
     "connection_status",
+    "get_basket",
+    "get_order_details",
+    "get_product_details",
     "list_category_products",
+    "list_delivery_slots",
+    "list_favourites",
+    "list_previous_orders",
+    "prepare_checkout",
+    "release_delivery_slot",
+    "reserve_delivery_slot",
     "search_products",
+    "set_basket_items",
     "suggest_products",
   ]);
   assert.ok(
-    listed.tools.every((tool) => tool.annotations?.readOnlyHint === true)
+    listed.tools
+      .filter(
+        (tool) =>
+          ![
+            "approve_checkout_handoff",
+            "prepare_checkout",
+            "release_delivery_slot",
+            "reserve_delivery_slot",
+            "set_basket_items",
+          ].includes(tool.name)
+      )
+      .every((tool) => tool.annotations?.readOnlyHint === true)
   );
   const health = await client.callTool({
     arguments: {},

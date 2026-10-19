@@ -38,9 +38,31 @@ const setup = (overrides: Partial<TescoMcpCapabilities> = {}) => {
   const rateLimit = vi.fn(() => Effect.succeed(true));
   const handler = makeTescoMcpHttpHandler({
     capabilities: {
+      basket: Effect.fail(new TescoSessionFailure({ reason: "upstream" })),
       categoryProducts: () => Effect.succeed(products),
+      checkoutHandoff: () =>
+        Effect.fail(new TescoSessionFailure({ reason: "upstream" })),
       connectionHealth: Effect.succeed(health),
+      deliverySlots: () =>
+        Effect.fail(new TescoSessionFailure({ reason: "upstream" })),
+      favourites: () =>
+        Effect.fail(new TescoSessionFailure({ reason: "upstream" })),
+      orderDetails: () =>
+        Effect.fail(new TescoSessionFailure({ reason: "upstream" })),
+      prepareCheckout: Effect.fail(
+        new TescoSessionFailure({ reason: "upstream" })
+      ),
+      previousOrders: () =>
+        Effect.fail(new TescoSessionFailure({ reason: "upstream" })),
+      productDetails: () =>
+        Effect.fail(new TescoSessionFailure({ reason: "upstream" })),
+      releaseSlot: () =>
+        Effect.fail(new TescoSessionFailure({ reason: "upstream" })),
+      reserveSlot: () =>
+        Effect.fail(new TescoSessionFailure({ reason: "upstream" })),
       search,
+      setBasketItems: () =>
+        Effect.fail(new TescoSessionFailure({ reason: "upstream" })),
       suggestions: () => Effect.succeed(suggestions),
       ...overrides,
     },
@@ -118,10 +140,53 @@ describe("private Tesco MCP HTTP boundary", () => {
         "list_category_products",
         "suggest_products",
         "connection_status",
+        "get_product_details",
+        "list_favourites",
+        "list_previous_orders",
+        "get_order_details",
+        "get_basket",
+        "list_delivery_slots",
+        "set_basket_items",
+        "reserve_delivery_slot",
+        "release_delivery_slot",
+        "prepare_checkout",
+        "approve_checkout_handoff",
       ]);
       expect(
-        discovery.tools.every((tool) => tool.annotations?.readOnlyHint === true)
+        discovery.tools
+          .filter(
+            (tool) =>
+              ![
+                "set_basket_items",
+                "reserve_delivery_slot",
+                "release_delivery_slot",
+                "prepare_checkout",
+                "approve_checkout_handoff",
+              ].includes(tool.name)
+          )
+          .every((tool) => tool.annotations?.readOnlyHint === true)
       ).toBe(true);
+      expect(
+        discovery.tools.find((tool) => tool.name === "approve_checkout_handoff")
+          ?.annotations?.readOnlyHint
+      ).toBe(false);
+      expect(
+        discovery.tools.find((tool) => tool.name === "approve_checkout_handoff")
+          ?.annotations?.destructiveHint
+      ).toBe(false);
+      expect(
+        discovery.tools.find((tool) => tool.name === "set_basket_items")
+          ?.annotations?.idempotentHint
+      ).toBe(true);
+      const strictInput = await client.callTool({
+        arguments: {
+          approved: true,
+          items: [{ productId: "123", quantity: 1, unit: "pcs" }],
+          requestId: "shopping-request-123",
+        },
+        name: "set_basket_items",
+      });
+      expect(strictInput.isError).toBe(true);
       const first = await client.callTool({
         arguments: { query: "milk" },
         name: "search_products",

@@ -5,7 +5,10 @@ import type { TescoAuthSessionError } from "../auth/auth.errors.js";
 import type { ReadOnlyGraphQlOperation } from "./graphql-read-operation.js";
 
 /** GraphQL reads whose fixed documents make one post-refresh replay safe. */
-export type TescoReplayableReadOperation = "search" | "category_products";
+export type TescoReplayableReadOperation =
+  | "search"
+  | "category_products"
+  | "shopping";
 
 /** One source-controlled, AST-proven Tesco GraphQL read. */
 export interface AuthenticatedGraphQlRead {

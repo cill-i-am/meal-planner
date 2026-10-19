@@ -6,6 +6,7 @@ import {
   Config,
   Effect,
   Layer,
+  Option,
   Redacted,
   Schema,
   Semaphore,
@@ -18,6 +19,13 @@ import { makeTescoAuthenticatedGraphQlTransportLive } from "../catalogue/authent
 import type { TescoCatalogueError } from "../catalogue/catalogue.errors.js";
 import { TescoCatalogue } from "../catalogue/catalogue.port.js";
 import { makeTescoXapiCatalogueLive } from "../catalogue/xapi-catalogue.js";
+import * as ShoppingModel from "../shopping/shopping.model.js";
+import { TescoShopping } from "../shopping/shopping.port.js";
+import {
+  makeTescoXapiShopping,
+  ShoppingCommandRecord,
+  SavedCheckoutReview,
+} from "../shopping/xapi-shopping.js";
 import { TescoApiKeyValue, TescoLocale, TescoRegion } from "../tesco.config.js";
 import type { TescoCatalogueConfig } from "../tesco.config.js";
 import {
@@ -80,7 +88,10 @@ const TescoSessionRuntime = Effect.gen(function* constructSessionObject() {
     const encryption = makeSessionEncryption(encryptionSecret);
 
     const catalogue = <A>(
-      call: (service: TescoCatalogue) => Effect.Effect<A, TescoCatalogueError>
+      call: (
+        service: TescoCatalogue,
+        shopping: TescoShopping
+      ) => Effect.Effect<A, TescoCatalogueError | TescoSessionFailure>
     ) =>
       lock.withPermits(1)(
         Effect.gen(function* invokeCatalogue() {
@@ -123,17 +134,57 @@ const TescoSessionRuntime = Effect.gen(function* constructSessionObject() {
                 ),
             })
           );
-          const live = makeTescoXapiCatalogueLive(config).pipe(
+          const stored = <S extends Schema.Top>(key: string, schema: S) =>
+            atBoundary(state.storage.get<unknown>(key)).pipe(
+              Effect.mapError(storageFailure),
+              Effect.flatMap((value) =>
+                value === undefined
+                  ? Effect.succeed(Option.none())
+                  : Schema.decodeUnknownEffect(schema)(value).pipe(
+                      Effect.map(Option.some),
+                      Effect.mapError(storageFailure)
+                    )
+              )
+            );
+          const shoppingLive = Layer.effect(
+            TescoShopping,
+            makeTescoXapiShopping(config, {
+              readCommand: (id) =>
+                stored(`tesco-command-v1-${id}`, ShoppingCommandRecord),
+              readReview: stored(
+                "tesco-checkout-review-v1",
+                SavedCheckoutReview
+              ),
+              writeCommand: (id, value) =>
+                atBoundary(
+                  state.storage.put(`tesco-command-v1-${id}`, value)
+                ).pipe(Effect.mapError(storageFailure)),
+              writeReview: (value) =>
+                atBoundary(
+                  state.storage.put("tesco-checkout-review-v1", value)
+                ).pipe(Effect.mapError(storageFailure)),
+            })
+          );
+          const live = Layer.merge(
+            makeTescoXapiCatalogueLive(config),
+            shoppingLive
+          ).pipe(
             Layer.provide(
               makeTescoAuthenticatedGraphQlTransportLive(config).pipe(
-                Layer.provide(auth)
+                Layer.provideMerge(auth)
               )
             ),
             Layer.provide(Layer.succeed(HttpClient.HttpClient, client))
           );
-          return yield* TescoCatalogue.use(call).pipe(
+          return yield* Effect.gen(function* callServices() {
+            return yield* call(yield* TescoCatalogue, yield* TescoShopping);
+          }).pipe(
             Effect.provide(live),
-            Effect.mapError(catalogueFailure)
+            Effect.mapError((error) =>
+              error._tag === "TescoSessionFailure"
+                ? error
+                : catalogueFailure(error)
+            )
           );
         }).pipe(
           Effect.timeout("70 seconds"),
@@ -153,6 +204,24 @@ const TescoSessionRuntime = Effect.gen(function* constructSessionObject() {
         Effect.scoped
       );
 
+    const shoppingCall = <S extends Schema.Top, A>(
+      schema: S,
+      input: S["Type"],
+      call: (
+        service: TescoShopping,
+        value: S["Type"]
+      ) => Effect.Effect<A, TescoSessionFailure>
+    ) =>
+      boundary(
+        Schema.decodeUnknownEffect(schema)(input, {
+          onExcessProperty: "error",
+        }).pipe(
+          Effect.mapError(invalidInput),
+          Effect.flatMap((value) =>
+            catalogue((_, shopping) => call(shopping, value))
+          )
+        )
+      );
     return {
       alarm: () =>
         boundary(lock.withPermits(1)(sessions.onAlarm)).pipe(
@@ -164,6 +233,8 @@ const TescoSessionRuntime = Effect.gen(function* constructSessionObject() {
               : Effect.void
           )
         ),
+      basket: () =>
+        shoppingCall(ShoppingModel.EmptyInput, {}, (service) => service.basket),
       categoryProducts: (input: typeof TescoMcpCategory.Type) =>
         boundary(
           Schema.decodeUnknownEffect(TescoMcpCategory)(input).pipe(
@@ -173,7 +244,21 @@ const TescoSessionRuntime = Effect.gen(function* constructSessionObject() {
             )
           )
         ),
+      checkoutHandoff: (
+        input: typeof ShoppingModel.CheckoutHandoffInput.Type
+      ) =>
+        shoppingCall(
+          ShoppingModel.CheckoutHandoffInput,
+          input,
+          (service, value) => service.checkoutHandoff(value)
+        ),
       connectionHealth: () => boundary(lock.withPermits(1)(sessions.health)),
+      deliverySlots: (input: typeof ShoppingModel.DeliverySlotsInput.Type) =>
+        shoppingCall(
+          ShoppingModel.DeliverySlotsInput,
+          input,
+          (service, value) => service.deliverySlots(value)
+        ),
       disconnect: () => boundary(lock.withPermits(1)(sessions.disconnect)),
       enroll: (input: typeof EncryptedTescoSession.Type) =>
         boundary(
@@ -188,6 +273,38 @@ const TescoSessionRuntime = Effect.gen(function* constructSessionObject() {
             })
           )
         ),
+      favourites: (input: typeof ShoppingModel.ListShoppingInput.Type) =>
+        shoppingCall(ShoppingModel.ListShoppingInput, input, (service, value) =>
+          service.favourites(value)
+        ),
+      orderDetails: (input: typeof ShoppingModel.OrderDetailsInput.Type) =>
+        shoppingCall(ShoppingModel.OrderDetailsInput, input, (service, value) =>
+          service.orderDetails(value)
+        ),
+      prepareCheckout: () =>
+        shoppingCall(
+          ShoppingModel.EmptyInput,
+          {},
+          (service) => service.prepareCheckout
+        ),
+      previousOrders: (input: typeof ShoppingModel.ListShoppingInput.Type) =>
+        shoppingCall(ShoppingModel.ListShoppingInput, input, (service, value) =>
+          service.previousOrders(value)
+        ),
+      productDetails: (input: typeof ShoppingModel.ProductDetailsInput.Type) =>
+        shoppingCall(
+          ShoppingModel.ProductDetailsInput,
+          input,
+          (service, value) => service.productDetails(value)
+        ),
+      releaseSlot: (input: typeof ShoppingModel.ReleaseSlotInput.Type) =>
+        shoppingCall(ShoppingModel.ReleaseSlotInput, input, (service, value) =>
+          service.releaseSlot(value)
+        ),
+      reserveSlot: (input: typeof ShoppingModel.ReserveSlotInput.Type) =>
+        shoppingCall(ShoppingModel.ReserveSlotInput, input, (service, value) =>
+          service.reserveSlot(value)
+        ),
       search: (input: typeof TescoMcpSearch.Type) =>
         boundary(
           Schema.decodeUnknownEffect(TescoMcpSearch)(input).pipe(
@@ -196,6 +313,12 @@ const TescoSessionRuntime = Effect.gen(function* constructSessionObject() {
               catalogue((service) => service.search(value))
             )
           )
+        ),
+      setBasketItems: (input: typeof ShoppingModel.SetBasketItemsInput.Type) =>
+        shoppingCall(
+          ShoppingModel.SetBasketItemsInput,
+          input,
+          (service, value) => service.setBasketItems(value)
         ),
       suggestions: (input: typeof TescoMcpSuggestions.Type) =>
         boundary(

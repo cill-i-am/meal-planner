@@ -5,6 +5,8 @@ import {
   ImageUrl,
   PageInformation,
   ProductId,
+  ProductPrice,
+  ProductPromotion,
   ProductTitle,
   ProductTypeName,
   SearchQuery,
@@ -30,6 +32,8 @@ const TescoProductNodeDto = Schema.Struct({
   __typename: ProductTypeName,
   defaultImageUrl: Schema.optionalKey(Schema.NullishOr(ImageUrl)),
   id: ProductId,
+  price: Schema.optionalKey(Schema.NullOr(ProductPrice)),
+  promotions: Schema.optionalKey(Schema.Array(ProductPromotion)),
   title: ProductTitle,
 });
 
@@ -76,16 +80,22 @@ const SearchReadOperation = defineReadOnlyGraphQlOperation({
           ... on ProductType {
             id
             title
+            price { actual unitPrice unitOfMeasure }
+            promotions { id description startDate endDate promotionType price {beforeDiscount afterDiscount} }
             defaultImageUrl
           }
           ... on MPProduct {
             id
             title
+            price { actual unitPrice unitOfMeasure }
+            promotions { id description startDate endDate promotionType price {beforeDiscount afterDiscount} }
             defaultImageUrl
           }
           ... on FNFProduct {
             id
             title
+            price { actual unitPrice unitOfMeasure }
+            promotions { id description startDate endDate promotionType price {beforeDiscount afterDiscount} }
             defaultImageUrl
           }
         }
@@ -124,16 +134,22 @@ const CategoryProductsReadOperation = defineReadOnlyGraphQlOperation({
           ... on ProductType {
             id
             title
+            price { actual unitPrice unitOfMeasure }
+            promotions { id description startDate endDate promotionType price {beforeDiscount afterDiscount} }
             defaultImageUrl
           }
           ... on MPProduct {
             id
             title
+            price { actual unitPrice unitOfMeasure }
+            promotions { id description startDate endDate promotionType price {beforeDiscount afterDiscount} }
             defaultImageUrl
           }
           ... on FNFProduct {
             id
             title
+            price { actual unitPrice unitOfMeasure }
+            promotions { id description startDate endDate promotionType price {beforeDiscount afterDiscount} }
             defaultImageUrl
           }
         }
@@ -162,6 +178,12 @@ const projectTescoListing = (
       title: node.title,
       type: node.__typename,
     };
+    if (node.price !== undefined) {
+      Object.assign(projected, { price: node.price });
+    }
+    if (node.promotions !== undefined) {
+      Object.assign(projected, { promotions: node.promotions });
+    }
     return node.defaultImageUrl === null || node.defaultImageUrl === undefined
       ? projected
       : { ...projected, defaultImageUrl: node.defaultImageUrl };
