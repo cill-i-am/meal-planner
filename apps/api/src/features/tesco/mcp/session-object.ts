@@ -11,7 +11,7 @@ import {
   Schema,
   Semaphore,
 } from "effect";
-import { FetchHttpClient, HttpClient, HttpIncomingMessage } from "effect/http";
+import { HttpClient, HttpIncomingMessage } from "effect/http";
 
 import { TescoAuthSession } from "../auth/auth-session.port.js";
 import { TescoCredentialsRejected } from "../auth/auth.errors.js";
@@ -33,6 +33,7 @@ import {
   TescoMcpSearch,
   TescoMcpSuggestions,
 } from "./mcp.contract.js";
+import { TescoSessionHttpLive } from "./session.http.js";
 import { EncryptedTescoSession, TescoSessionFailure } from "./session.model.js";
 import {
   makeSessionEncryption,
@@ -314,6 +315,22 @@ const TescoSessionRuntime = Effect.gen(function* constructSessionObject() {
             )
           )
         ),
+      sessionReport: () =>
+        boundary(
+          lock.withPermits(1)(
+            Effect.gen(function* sessionReport() {
+              const record = yield* storage.read;
+              return {
+                alarmAt: yield* state.storage
+                  .getAlarm()
+                  .pipe(Effect.mapError(storageFailure)),
+                hasEncryptedSession: record.session !== null,
+                health: yield* sessions.health,
+                renewals: yield* sessions.renewalHistory,
+              };
+            })
+          )
+        ),
       setBasketItems: (input: typeof ShoppingModel.SetBasketItemsInput.Type) =>
         shoppingCall(
           ShoppingModel.SetBasketItemsInput,
@@ -331,10 +348,7 @@ const TescoSessionRuntime = Effect.gen(function* constructSessionObject() {
         ),
     };
   });
-}).pipe(
-  Effect.provide(FetchHttpClient.layer),
-  Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" })
-);
+}).pipe(Effect.provide(TescoSessionHttpLive));
 
 type TescoSessionObjectShape = Effect.Success<
   Effect.Success<typeof TescoSessionRuntime>

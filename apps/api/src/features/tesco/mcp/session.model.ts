@@ -1,4 +1,5 @@
 import { Data, Schema } from "effect";
+import { parseSetCookie } from "set-cookie-parser";
 
 import {
   OAuthTokensExpiryTime,
@@ -55,6 +56,38 @@ export const StoredTescoSession = Schema.Struct({
   refreshTokenExpiresAt: EpochMs,
 });
 export type StoredTescoSession = typeof StoredTescoSession.Type;
+
+/** Bounded operator evidence contains no cookie names, values, headers or response bodies. */
+export const TescoRenewalStep = Schema.Struct({
+  receivedCookies: Schema.Int,
+  repeatedNames: Schema.Boolean,
+  stage: Schema.Literals(["login", "refresh", "other"]),
+  status: Schema.Int,
+});
+export type TescoRenewalStep = typeof TescoRenewalStep.Type;
+
+export const TescoRenewalAttempt = Schema.Struct({
+  accessTokenExpiresAt: Schema.NullOr(EpochMs),
+  failure: Schema.NullOr(
+    Schema.Literals(["transport", "redirect", "rejected", "tokens", "response"])
+  ),
+  finishedAt: EpochMs,
+  previousAccessTokenExpiresAt: EpochMs,
+  refreshCookieChanged: Schema.Boolean,
+  result: Schema.Literals(["renewed", "failed"]),
+  startedAt: EpochMs,
+  steps: Schema.Array(TescoRenewalStep).check(Schema.isMaxLength(11)),
+  tokenChanged: Schema.Boolean,
+});
+export type TescoRenewalAttempt = typeof TescoRenewalAttempt.Type;
+
+export const TescoSessionReport = Schema.Struct({
+  alarmAt: Schema.NullOr(EpochMs),
+  hasEncryptedSession: Schema.Boolean,
+  health: TescoConnectionHealth,
+  renewals: Schema.Array(TescoRenewalAttempt).check(Schema.isMaxLength(5)),
+});
+export type TescoSessionReport = typeof TescoSessionReport.Type;
 
 export class TescoSessionFailure extends Data.TaggedError(
   "TescoSessionFailure"
@@ -123,56 +156,21 @@ const cookieExpiresAt = (
     ? now / 1000 + maxAge
     : expires;
 
-/** Apply redirects' Set-Cookie values without losing cookie domain, path or expiry. */
+/** Apply every Set-Cookie field; cookie identity includes name, domain and path. */
 export const mergeSessionCookies = (
   current: readonly TescoBrowserCookie[],
-  headers: readonly string[],
+  headers: readonly string[] | string,
   url: URL,
   now: number
 ): readonly TescoBrowserCookie[] => {
   let cookies = [...current];
-  for (const header of headers) {
-    const [pair, ...attributes] = header.split(";");
-    const equals = pair?.indexOf("=") ?? -1;
-    if (pair === undefined || equals <= 0) {
-      continue;
-    }
-    let domain = url.hostname;
-    let hostOnly = true;
-    let path = url.pathname.slice(0, url.pathname.lastIndexOf("/")) || "/";
-    let secure = false;
-    let expires = -1;
-    let maxAge: number | undefined;
-    for (const attribute of attributes) {
-      const [key, ...rest] = attribute.trim().split("=");
-      const value = rest.join("=");
-      switch (key?.toLowerCase()) {
-        case "domain": {
-          domain = value.toLowerCase();
-          hostOnly = false;
-          break;
-        }
-        case "path": {
-          path = value.startsWith("/") ? value : path;
-          break;
-        }
-        case "secure": {
-          secure = true;
-          break;
-        }
-        case "expires": {
-          expires = Date.parse(value) / 1000;
-          break;
-        }
-        case "max-age": {
-          maxAge = Number(value);
-          break;
-        }
-        default: {
-          break;
-        }
-      }
-    }
+  // Effect's Cookies collection is keyed only by name and cannot represent a browser jar.
+  // Parse the original headers without decoding signed/encoded cookie values.
+  for (const parsed of parseSetCookie(headers, {
+    decodeValues: false,
+    split: true,
+  })) {
+    const domain = parsed.domain?.toLowerCase() ?? url.hostname;
     const normalizedDomain = domain.replace(/^\./u, "");
     if (
       url.hostname !== normalizedDomain &&
@@ -180,19 +178,36 @@ export const mergeSessionCookies = (
     ) {
       continue;
     }
-    expires = cookieExpiresAt(maxAge, expires, now);
-    const name = pair.slice(0, equals).trim();
-    const value = pair.slice(equals + 1).trim();
+    const defaultPath =
+      url.pathname.slice(0, url.pathname.lastIndexOf("/")) || "/";
+    const path = parsed.path?.startsWith("/") ? parsed.path : defaultPath;
+    const expires = cookieExpiresAt(
+      parsed.maxAge,
+      parsed.expires === undefined ? -1 : parsed.expires.getTime() / 1000,
+      now
+    );
+    const cookie = {
+      domain,
+      expires,
+      hostOnly: parsed.domain === undefined,
+      name: parsed.name,
+      path,
+      secure: parsed.secure === true,
+      value: parsed.value,
+    };
+    if (!Schema.is(TescoBrowserCookie)(cookie)) {
+      continue;
+    }
     cookies = cookies.filter(
-      (cookie) =>
+      (stored) =>
         !(
-          cookie.name === name &&
-          cookie.domain.replace(/^\./u, "") === normalizedDomain &&
-          cookie.path === path
+          stored.name === cookie.name &&
+          stored.domain.replace(/^\./u, "") === normalizedDomain &&
+          stored.path === path
         )
     );
-    if (value !== "" && !(expires >= 0 && expires * 1000 <= now)) {
-      cookies.push({ domain, expires, hostOnly, name, path, secure, value });
+    if (cookie.value !== "" && !(expires >= 0 && expires * 1000 <= now)) {
+      cookies.push(cookie);
     }
   }
   return cookies;

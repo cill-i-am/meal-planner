@@ -321,6 +321,9 @@ importers:
       react-email:
         specifier: 6.11.3
         version: 6.11.3(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@10.2.2)
+      set-cookie-parser:
+        specifier: 3.1.4
+        version: 3.1.4
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 5.20261016.1

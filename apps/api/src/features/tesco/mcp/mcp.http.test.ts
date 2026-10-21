@@ -35,6 +35,14 @@ const setup = (overrides: Partial<TescoMcpCapabilities> = {}) => {
   const search = vi.fn(() => Effect.succeed(products));
   const enroll = vi.fn(() => Effect.succeed(health));
   const disconnect = vi.fn(() => Effect.void);
+  const sessionReport = vi.fn(() =>
+    Effect.succeed({
+      alarmAt: null,
+      hasEncryptedSession: false,
+      health,
+      renewals: [],
+    })
+  );
   const rateLimit = vi.fn(() => Effect.succeed(true));
   const handler = makeTescoMcpHttpHandler({
     capabilities: {
@@ -71,10 +79,19 @@ const setup = (overrides: Partial<TescoMcpCapabilities> = {}) => {
     executorTokenHash: digest(executorToken),
     operatorTokenHash: digest(operatorToken),
     rateLimit: Effect.suspend(rateLimit),
+    sessionReport: Effect.suspend(sessionReport),
   });
   const fetch: typeof globalThis.fetch = (input, init) =>
     Effect.runPromise(handler(new Request(input, init)));
-  return { disconnect, enroll, fetch, handler, rateLimit, search };
+  return {
+    disconnect,
+    enroll,
+    fetch,
+    handler,
+    rateLimit,
+    search,
+    sessionReport,
+  };
 };
 
 const connect = async (fetch: typeof globalThis.fetch) => {
@@ -93,6 +110,40 @@ const connect = async (fetch: typeof globalThis.fetch) => {
 };
 
 describe("private Tesco MCP HTTP boundary", () => {
+  it("restricts the uncached renewal report to the operator without browser access", async () => {
+    const app = setup();
+    await Promise.all(
+      [{}, { authorization: `Bearer ${executorToken}` }].map(
+        async (headers) => {
+          const denied = await app.fetch("https://tesco.test/admin/session", {
+            headers,
+          });
+          expect(denied.status).toBe(401);
+        }
+      )
+    );
+    const browser = await app.fetch("https://tesco.test/admin/session", {
+      headers: {
+        authorization: `Bearer ${operatorToken}`,
+        origin: "https://tesco.test",
+      },
+    });
+    expect(browser.status).toBe(403);
+    expect(app.sessionReport).not.toHaveBeenCalled();
+    const report = await app.fetch("https://tesco.test/admin/session", {
+      headers: { authorization: `Bearer ${operatorToken}` },
+    });
+    expect(report.status).toBe(200);
+    expect(report.headers.get("cache-control")).toBe("no-store");
+    expect(await report.json()).toEqual({
+      alarmAt: null,
+      hasEncryptedSession: false,
+      health,
+      renewals: [],
+    });
+    expect(app.sessionReport).toHaveBeenCalledOnce();
+  });
+
   it("rejects unauthenticated initialization and discovery before executing or reading a body", async () => {
     const app = setup();
     await Promise.all(
