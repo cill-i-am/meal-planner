@@ -116,6 +116,8 @@ const fixture = (failCycle = 0, externalRedirect = false) => {
           "set-cookie",
           `OAuth.TokensExpiryTime=${expiryValue(now)}; Path=/; Domain=.tesco.ie; Secure`
         );
+        // Match the lossless string-valued header produced by TescoSessionHttpLive.
+        headers.set("set-cookie", headers.getSetCookie().join(", "));
         return HttpClientResponse.fromWeb(
           request,
           new Response(null, { headers, status: 302 })
@@ -185,6 +187,33 @@ describe("durable Tesco session lifecycle", () => {
             app.record.session.accessTokenExpiresAt - 120_000
           );
           expect((yield* restarted.health).state).toBe("connected");
+          const renewals = yield* restarted.renewalHistory;
+          expect(renewals).toHaveLength(cycle);
+          expect(renewals.at(-1)).toEqual({
+            accessTokenExpiresAt: app.record.session.accessTokenExpiresAt,
+            failure: null,
+            finishedAt: alarm,
+            previousAccessTokenExpiresAt: alarm + 120_000,
+            refreshCookieChanged: true,
+            result: "renewed",
+            startedAt: alarm,
+            steps: [
+              {
+                receivedCookies: 0,
+                repeatedNames: false,
+                stage: "login",
+                status: 302,
+              },
+              {
+                receivedCookies: 3,
+                repeatedNames: false,
+                stage: "refresh",
+                status: 302,
+              },
+            ],
+            tokenChanged: true,
+          });
+          expect(JSON.stringify(renewals)).not.toContain("fake-");
         }
       })
   );
@@ -202,10 +231,21 @@ describe("durable Tesco session lifecycle", () => {
         yield* service.onAlarm;
         yield* TestClock.setTime(app.requiredAlarmAt);
         expect(Exit.isFailure(yield* Effect.exit(service.onAlarm))).toBe(true);
-        expect(app.record).toEqual({
-          needsReauthentication: true,
-          session: null,
+        expect(app.record.needsReauthentication).toBe(true);
+        expect(app.record.session).toBeNull();
+        const renewals = yield* service.renewalHistory;
+        expect(renewals.map((attempt) => attempt.result)).toEqual([
+          "renewed",
+          "failed",
+        ]);
+        expect(renewals.at(-1)).toMatchObject({
+          failure: "rejected",
+          steps: [
+            { stage: "login", status: 302 },
+            { stage: "refresh", status: 421 },
+          ],
         });
+        expect(JSON.stringify(app.record)).not.toContain("fake-");
         expect(app.alarmAt).toBeNull();
         const restarted = yield* app.make;
         yield* restarted.onAlarm;
@@ -214,6 +254,28 @@ describe("durable Tesco session lifecycle", () => {
           "reauthentication_required"
         );
       })
+  );
+
+  it.effect("retains only the latest five renewal attempts", () =>
+    Effect.gen(function* boundRenewalHistory() {
+      const now = Date.now();
+      yield* TestClock.setTime(now);
+      const app = fixture();
+      const service = yield* app.make;
+      yield* service.enroll(credentials(now));
+      for (let cycle = 0; cycle < 6; cycle += 1) {
+        yield* TestClock.setTime(app.requiredAlarmAt);
+        yield* service.onAlarm;
+      }
+      const renewals = yield* service.renewalHistory;
+      expect(renewals).toHaveLength(5);
+      expect(renewals.at(0)?.previousAccessTokenExpiresAt).toBe(
+        now + 7_080_000
+      );
+      expect(renewals.at(-1)?.accessTokenExpiresAt).toBe(
+        app.record.session?.accessTokenExpiresAt
+      );
+    })
   );
 
   it.effect(

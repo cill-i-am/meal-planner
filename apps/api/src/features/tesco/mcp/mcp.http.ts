@@ -8,6 +8,7 @@ import { TescoSessionCredentials } from "./session.model.js";
 import type {
   TescoConnectionHealth,
   TescoSessionFailure,
+  TescoSessionReport,
 } from "./session.model.js";
 
 const authorized = (
@@ -75,6 +76,10 @@ export interface TescoMcpHttpOptions {
   readonly executorTokenHash: Redacted.Redacted<string>;
   readonly operatorTokenHash: Redacted.Redacted<string>;
   readonly rateLimit: Effect.Effect<boolean>;
+  readonly sessionReport: Effect.Effect<
+    TescoSessionReport,
+    TescoSessionFailure
+  >;
 }
 
 /** Every path is authenticated before request bodies, MCP initialization or tools/list are processed. */
@@ -108,13 +113,18 @@ export const makeTescoMcpHttpHandler =
         });
       }
       if (operator) {
+        if (request.method === "GET") {
+          return Response.json(yield* options.sessionReport, {
+            headers: { "cache-control": "no-store" },
+          });
+        }
         if (request.method === "DELETE") {
           yield* options.disconnect;
           return new Response(null, { status: 204 });
         }
         if (request.method !== "POST") {
           return new Response(null, {
-            headers: { allow: "POST, DELETE" },
+            headers: { allow: "GET, POST, DELETE" },
             status: 405,
           });
         }

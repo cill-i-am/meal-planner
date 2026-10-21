@@ -43,7 +43,8 @@
     "parse5": "8.0.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "react-email": "6.11.3"
+    "react-email": "6.11.3",
+    "set-cookie-parser": "3.1.4"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261016.1",

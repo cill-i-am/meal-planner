@@ -17,11 +17,15 @@ Product details include current prices, unit prices, promotional prices, ingredi
 
 `POST /mcp` accepts one dedicated 256-bit Executor bearer credential. Authentication runs before MCP initialization, discovery or body parsing. The Worker stores its SHA-256 verifier. The raw credential belongs in the owner's **user-scoped** Executor account; it is never a shared app account. Executor substitutes an opaque handle only into the Authorization header for this Worker's exact HTTPS host. A copied bearer credential grants the same access, so keep it out of source, chat, URLs, logs and agent-readable configuration.
 
-`POST /admin/session` enrolls a fresh browser session and `DELETE /admin/session` disconnects it. These require a separate operator credential; the Executor credential cannot call either operation. Browser-origin requests are refused. The operator credential is never configured in Executor.
+`POST /admin/session` enrolls a fresh browser session, `GET /admin/session` reads a sanitized renewal report, and `DELETE /admin/session` disconnects it. These require a separate operator credential; the Executor credential cannot call them. Browser-origin requests are refused. The operator credential is never configured in Executor.
 
 One SQLite-backed Durable Object owns the Tesco session. AES-GCM encrypts its cookies, bearer token and API key under a Cloudflare secret binding. Operator enrollment is encrypted before the native Worker-to-object hop. The persisted record and next alarm commit in one native storage transaction. A semaphore serializes shopping calls, enrollment and refreshes. No raw Tesco credential leaves the object through an MCP result or RPC response.
 
 Two minutes before access-token expiry, the object follows Tesco's silent-login redirects, retaining cookie domain, path and expiry. It extracts the access token directly from Set-Cookie, persists rotated cookies and schedules from the new expiry. Only `www.tesco.ie` may receive refresh cookies. The final groceries HTML page is unnecessary. A durable `refreshing` marker prevents replay after an ambiguous interruption. A failed or interrupted refresh clears the session and requires a fresh operator sign-in. Agents can inspect that state but cannot provide credentials or force refreshes.
+
+Tesco can issue repeated cookie names with different paths in one response. Effect 4.0.5's cookie collection indexes by name, and its string-valued header conversion can discard repeated Set-Cookie fields. The session HTTP Layer uses the supported Fetch service hook to combine those fields before conversion; `set-cookie-parser` preserves each cookie and its raw encoded value. Cookie replacement still uses name, domain and path together. Effect retains ownership of HTTP requests, scopes and cancellation.
+
+The last five renewal attempts are stored with the encrypted session and alarm. The operator report includes timestamps, previous/new expiry, rotation booleans and bounded HTTP status/cookie counts. It excludes cookie names, values, headers, bodies and credentials. Failed attempts remain available after credential erasure. This evidence distinguishes a renewal rejection from transport or redirect failure without logging account secrets.
 
 ## Runtime and protocol
 
@@ -56,6 +60,14 @@ node --import tsx scripts/tesco-session.ts /absolute/path/to/protected-enrollmen
 
 The command prints only connection health and removes the Tesco session from the local file after the upload attempt. Keep passwords out of the file. Delete temporary enrollment files after connecting. To revoke Executor, replace its verifier with a newly generated credential's hash and reconnect the owner's Executor account. To revoke operator access, rotate its verifier independently.
 
+While verifying renewals, retain only the mode-0600 operator file and read the sanitized report without triggering refresh:
+
+```sh
+node --import tsx scripts/tesco-session.ts /absolute/path/to/protected-enrollment.json report
+```
+
+Record enrollment health, then let the production alarms run at the real access-token expiry minus two minutes. Require three successful attempts whose previous expiry matches the preceding rotation, whose access and refresh cookies both changed, and whose new expiry increased. Verify the persisted next alarm and an authenticated catalogue call through Executor after each cycle. Do not manually refresh, re-enroll, reuse the browser's rotating session or change the encryption key during the test. Delete the temporary operator file afterward; leave the production session and alarms running.
+
 Executor source is maintained in `integrations/executor/tesco`. Its account health check initializes and lists MCP tools with the supplied credential, then verifies the same operations are refused without credentials. The provider and user-scoped account remain stable across deployments. Named basket/slot preparation tools can run within the owner's shopping request. `approve_checkout_handoff` always requires Executor's native human approval, independently of remote MCP annotations. Every unknown future tool also requires approval, even if it advertises a read-only hint.
 
 ## Commands and checkout
@@ -79,7 +91,7 @@ cd apps/api
 node node_modules/vitest/vitest.mjs run src/features/tesco
 ```
 
-Run the runtime smoke check after Alchemy has built the production bundle (a plan is sufficient). It runs that actual bundle in workerd with synthetic credentials, covering initialization, role separation, discovery, Durable Object health and missing-session errors. It catches deployment-only service dependencies that adapter tests cannot.
+Run the runtime smoke check after Alchemy has built the production bundle (a plan is sufficient). It runs that actual bundle in workerd with synthetic credentials, covering initialization, role separation, discovery, Durable Object health, missing-session errors and three actual scheduled alarm rotations. Its intercepted Tesco redirects require both same-name cookies at different paths. It catches cookie loss in the native HTTP boundary that adapter tests cannot.
 
 The shopping and Executor tests cover absolute quantities, removal, durable retry identity, interruption, inner 401 responses, partial results, placed-order protection, verified delivery windows, wrong-slot release, review expiry/tampering/changes, one-use handoff and mandatory approval even when metadata falsely claims read-only. Live acceptance covers prices, product details, favourites, real past orders and a receipt, a quantity-preserving basket command/replay, slot reservation/release/replay and review preparation. No test purchases an order.
 

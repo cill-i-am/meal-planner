@@ -76,6 +76,7 @@ export default class TescoMcp extends Cloudflare.Worker<TescoMcp>()(
               Effect.orElseSucceed(() => false)
             )
           ),
+          sessionReport: bound(object.sessionReport()),
         });
         const response = yield* handler(request.source);
         return fromNativeWebResponse(response);

@@ -1,12 +1,14 @@
 import { Buffer } from "node:buffer";
 
 import { Clock, Effect, Redacted, Schema, Stream } from "effect";
-import { Cookies, HttpBody, HttpClient } from "effect/http";
+import { HttpBody, HttpClient } from "effect/http";
+import { parseSetCookie } from "set-cookie-parser";
 
 import { TescoAuthorizationValue } from "../auth/auth.model.js";
 import type {
   EncryptedTescoSession,
   TescoConnectionHealth,
+  TescoRenewalStep,
 } from "./session.model.js";
 import {
   cookieHeaderFor,
@@ -14,6 +16,7 @@ import {
   sessionCookie,
   StoredTescoSession,
   TescoRefreshSkewMs,
+  TescoRenewalAttempt,
   TescoSessionCredentials,
   TescoSessionFailure,
   tokenExpiry,
@@ -21,6 +24,9 @@ import {
 
 export const TescoSessionRecord = Schema.Struct({
   needsReauthentication: Schema.Boolean,
+  renewals: Schema.optionalKey(
+    Schema.Array(TescoRenewalAttempt).check(Schema.isMaxLength(5))
+  ),
   session: Schema.NullOr(StoredTescoSession),
 });
 export type TescoSessionRecord = typeof TescoSessionRecord.Type;
@@ -42,6 +48,14 @@ const storageFailure = () => new TescoSessionFailure({ reason: "storage" });
 const authenticationFailure = () =>
   new TescoSessionFailure({ reason: "authentication" });
 const invalidInput = () => new TescoSessionFailure({ reason: "invalid_input" });
+
+const withRenewal = (
+  record: TescoSessionRecord,
+  attempt: TescoRenewalAttempt | undefined
+) =>
+  attempt === undefined
+    ? record
+    : { ...record, renewals: [...(record.renewals ?? []), attempt].slice(-5) };
 
 export const makeSessionEncryption = (secret: Redacted.Redacted<string>) => {
   const key = Effect.tryPromise({
@@ -110,12 +124,27 @@ export const makeTescoSessionService = <R>(
   Effect.gen(function* constructSessionService() {
     const client = yield* HttpClient.HttpClient;
     const encryption = makeSessionEncryption(encryptionSecret);
-    const disconnect = (needsReauthentication: boolean) =>
-      storage.write({ needsReauthentication, session: null }, null);
+    const disconnect = (
+      needsReauthentication: boolean,
+      attempt?: TescoRenewalAttempt
+    ) =>
+      storage.read.pipe(
+        Effect.flatMap((record) =>
+          storage.write(
+            {
+              ...withRenewal(record, attempt),
+              needsReauthentication,
+              session: null,
+            },
+            null
+          )
+        )
+      );
     const persist = (
       credentials: Redacted.Redacted<TescoSessionCredentials>,
       phase: StoredTescoSession["phase"],
-      lastRefreshedAt: number | null
+      lastRefreshedAt: number | null,
+      attempt?: TescoRenewalAttempt
     ) =>
       Effect.gen(function* persistSessionState() {
         const expiry = yield* Effect.try({
@@ -124,6 +153,7 @@ export const makeTescoSessionService = <R>(
         });
         const encrypted = yield* encryption.encrypt(credentials);
         const now = yield* Clock.currentTimeMillis;
+        const previous = yield* storage.read;
         const session: StoredTescoSession = {
           accessTokenExpiresAt: expiry.AccessToken,
           credentials: encrypted,
@@ -133,7 +163,11 @@ export const makeTescoSessionService = <R>(
         };
         // A crash while rotating is ambiguous. The watchdog clears it instead of replaying a refresh token.
         yield* storage.write(
-          { needsReauthentication: false, session },
+          {
+            ...withRenewal(previous, attempt),
+            needsReauthentication: false,
+            session,
+          },
           phase === "refreshing"
             ? now + 300_000
             : Math.max(now + 1000, expiry.AccessToken - TescoRefreshSkewMs)
@@ -159,15 +193,36 @@ export const makeTescoSessionService = <R>(
           "OAuth.RefreshToken"
         )?.value;
         yield* persist(secret, "refreshing", initial.lastRefreshedAt);
+        const steps: TescoRenewalStep[] = [];
+        let failure: NonNullable<TescoRenewalAttempt["failure"]> = "response";
+        let tokenChanged = false;
+        let refreshCookieChanged = false;
+        let accessTokenExpiresAt: number | null = null;
+        const attempt = (
+          result: TescoRenewalAttempt["result"],
+          finishedAt: number
+        ): TescoRenewalAttempt => ({
+          accessTokenExpiresAt,
+          failure: result === "renewed" ? null : failure,
+          finishedAt,
+          previousAccessTokenExpiresAt: initial.accessTokenExpiresAt,
+          refreshCookieChanged,
+          result,
+          startedAt,
+          steps,
+          tokenChanged,
+        });
         const rotate = Effect.gen(function* rotate() {
           let url = new URL(
             "https://www.tesco.ie/account/login/en-IE?from=https%3A%2F%2Fwww.tesco.ie%2Fshop%2Fen-IE&prompt=none"
           );
           for (let hop = 0; hop <= 10; hop += 1) {
             if (url.origin !== "https://www.tesco.ie") {
+              failure = "redirect";
               return yield* authenticationFailure();
             }
             const now = yield* Clock.currentTimeMillis;
+            failure = "transport";
             const response = yield* client
               .get(url, {
                 headers: {
@@ -181,7 +236,25 @@ export const makeTescoSessionService = <R>(
                 Effect.timeout("15 seconds"),
                 Effect.mapError(authenticationFailure)
               );
-            const setCookies = Cookies.toSetCookieHeaders(response.cookies);
+            const setCookies = response.headers["set-cookie"] ?? "";
+            const received = parseSetCookie(setCookies, {
+              decodeValues: false,
+            });
+            let stage: TescoRenewalStep["stage"] = "other";
+            if (url.pathname === "/account/login/en-IE") {
+              stage = "login";
+            } else if (url.pathname === "/account/auth/en-IE/refresh-token") {
+              stage = "refresh";
+            }
+            steps.push({
+              receivedCookies: received.length,
+              repeatedNames:
+                new Set(received.map((cookie) => cookie.name)).size !==
+                received.length,
+              stage,
+              status: response.status,
+            });
+            failure = "response";
             // Renewal uses headers only. Empty redirect bodies are valid; release any body reader promptly.
             yield* response.stream.pipe(
               Stream.take(1),
@@ -208,9 +281,8 @@ export const makeTescoSessionService = <R>(
               cookies,
             });
             const issued =
-              setCookies.some((cookie) =>
-                cookie.startsWith("OAuth.AccessToken=")
-              ) && authorizationCookie !== undefined;
+              received.some((cookie) => cookie.name === "OAuth.AccessToken") &&
+              authorizationCookie !== undefined;
             if (response.status >= 200 && response.status < 400 && issued) {
               const issuedCookies = cookies;
               const expiry = yield* Effect.try({
@@ -218,25 +290,41 @@ export const makeTescoSessionService = <R>(
                 try: () => tokenExpiry(issuedCookies),
               });
               const refreshedAt = yield* Clock.currentTimeMillis;
+              tokenChanged = authorization !== initialCredentials.authorization;
+              const refreshedCookie = sessionCookie(
+                cookies,
+                "OAuth.RefreshToken"
+              );
+              refreshCookieChanged =
+                refreshedCookie !== undefined &&
+                refreshedCookie.value !== previousRefresh;
+              accessTokenExpiresAt = expiry.AccessToken;
+              failure = "tokens";
               if (
-                authorization === initialCredentials.authorization ||
-                sessionCookie(cookies, "OAuth.RefreshToken")?.value ===
-                  previousRefresh ||
+                !tokenChanged ||
+                !refreshCookieChanged ||
                 expiry.AccessToken <= refreshedAt + TescoRefreshSkewMs ||
                 expiry.AccessToken <= initial.accessTokenExpiresAt
               ) {
                 return yield* authenticationFailure();
               }
-              const session = yield* persist(updated, "ready", refreshedAt);
+              const session = yield* persist(
+                updated,
+                "ready",
+                refreshedAt,
+                attempt("renewed", refreshedAt)
+              );
               return { credentials: updated, session };
             }
             // Cookie updates are committed before another redirect can consume the rotated state.
             yield* persist(updated, "refreshing", initial.lastRefreshedAt);
             if (response.status < 300 || response.status >= 400) {
+              failure = "rejected";
               return yield* authenticationFailure();
             }
             const { location } = response.headers;
             if (location === undefined) {
+              failure = "redirect";
               return yield* authenticationFailure();
             }
             const redirectFrom = url;
@@ -249,7 +337,14 @@ export const makeTescoSessionService = <R>(
         });
         return yield* rotate.pipe(
           Effect.timeout("45 seconds"),
-          Effect.onError(() => disconnect(true).pipe(Effect.orDie)),
+          Effect.onError(() =>
+            Clock.currentTimeMillis.pipe(
+              Effect.flatMap((finishedAt) =>
+                disconnect(true, attempt("failed", finishedAt))
+              ),
+              Effect.orDie
+            )
+          ),
           Effect.mapError(authenticationFailure)
         );
       });
@@ -421,5 +516,8 @@ export const makeTescoSessionService = <R>(
         }
         yield* refresh(record.session);
       }),
+      renewalHistory: storage.read.pipe(
+        Effect.map((record) => record.renewals ?? [])
+      ),
     };
   });
