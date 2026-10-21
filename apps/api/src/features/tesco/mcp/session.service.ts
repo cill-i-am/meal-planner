@@ -230,6 +230,7 @@ export const makeTescoSessionService = <R>(
                     "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                   "accept-language": "en-IE",
                   cookie: cookieHeaderFor(cookies, url, now),
+                  "user-agent": initialCredentials.userAgent,
                 },
               })
               .pipe(

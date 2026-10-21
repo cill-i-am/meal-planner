@@ -23,6 +23,8 @@ One SQLite-backed Durable Object owns the Tesco session. AES-GCM encrypts its co
 
 Two minutes before access-token expiry, the object follows Tesco's silent-login redirects, retaining cookie domain, path and expiry. It extracts the access token directly from Set-Cookie, persists rotated cookies and schedules from the new expiry. Only `www.tesco.ie` may receive refresh cookies. The final groceries HTML page is unnecessary. A durable `refreshing` marker prevents replay after an ambiguous interruption. A failed or interrupted refresh clears the session and requires a fresh operator sign-in. Agents can inspect that state but cannot provide credentials or force refreshes.
 
+Renewal retains the `userAgent` captured from the browser that enrolled the session. Tesco's login endpoint returned 403 from a bare Cloudflare request and 302 from the same Worker when only that browser User-Agent was added. The profile is required, bounded and header-safe; no Chrome version is hardcoded. It is encrypted with the session and reused across all renewal hops and rotations. This header compatibility result does not establish indefinite session validity; real near-expiry rotations remain the acceptance test.
+
 Tesco can issue repeated cookie names with different paths in one response. Effect 4.0.5's cookie collection indexes by name, and its string-valued header conversion can discard repeated Set-Cookie fields. The session HTTP Layer uses the supported Fetch service hook to combine those fields before conversion; `set-cookie-parser` preserves each cookie and its raw encoded value. Cookie replacement still uses name, domain and path together. Effect retains ownership of HTTP requests, scopes and cancellation.
 
 The last five renewal attempts are stored with the encrypted session and alarm. The operator report includes timestamps, previous/new expiry, rotation booleans and bounded HTTP status/cookie counts. It excludes cookie names, values, headers, bodies and credentials. Failed attempts remain available after credential erasure. This evidence distinguishes a renewal rejection from transport or redirect failure without logging account secrets.
@@ -52,7 +54,7 @@ pnpm exec alchemy plan tesco.alchemy.ts --stage prod --profile <profile> --env-f
 pnpm exec alchemy deploy tesco.alchemy.ts --stage prod --profile <profile> --env-file .dev.vars.tesco
 ```
 
-After a fresh Tesco browser sign-in, create a protected enrollment JSON file with `operatorToken` and `session: { authorization, cookies, mangoApiKey, mangoUrl }`. Cookies must include the groceries and `/account` paths. Run:
+After a fresh Tesco browser sign-in, create a protected enrollment JSON file with `operatorToken` and `session: { authorization, cookies, mangoApiKey, mangoUrl, userAgent }`. Cookies must include the groceries and `/account` paths. Capture the actual User-Agent from that browser's Tesco request. Existing sessions enrolled without the profile require fresh enrollment; do not substitute a guessed identity. Run:
 
 ```sh
 node --import tsx scripts/tesco-session.ts /absolute/path/to/protected-enrollment.json

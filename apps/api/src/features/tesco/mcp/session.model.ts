@@ -27,6 +27,7 @@ export const TescoSessionCredentials = Schema.Struct({
   cookies: Schema.Array(TescoBrowserCookie).check(Schema.isMaxLength(256)),
   mangoApiKey: HeaderSafe.check(Schema.isMinLength(1)),
   mangoUrl: Schema.Literal("https://xapi.tesco.com/"),
+  userAgent: HeaderSafe.check(Schema.isMinLength(1), Schema.isMaxLength(512)),
 });
 export type TescoSessionCredentials = typeof TescoSessionCredentials.Type;
 

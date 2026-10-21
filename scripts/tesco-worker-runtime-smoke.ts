@@ -96,6 +96,12 @@ const runtime = new Miniflare(
       }
       assert.equal(url.origin, "https://www.tesco.ie");
       renewalSteps.push(url.pathname);
+      // Tesco rejects bare server clients before login, independently of valid cookies.
+      if (
+        request.headers.get("user-agent") !== "Mozilla/5.0 (Tesco test browser)"
+      ) {
+        return new Response(null, { status: 403 });
+      }
       const cookies = request.headers.get("cookie") ?? "";
       assert.ok(
         cookies.includes(`OAuth.RefreshToken=fixture-refresh-${rotations}`)
@@ -231,6 +237,7 @@ try {
       ],
       mangoApiKey: "fixture-api-key",
       mangoUrl: "https://xapi.tesco.com/",
+      userAgent: "Mozilla/5.0 (Tesco test browser)",
     }),
     headers: {
       authorization: `Bearer ${operatorToken}`,
