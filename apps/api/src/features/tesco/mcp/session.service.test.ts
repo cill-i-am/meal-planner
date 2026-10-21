@@ -41,6 +41,7 @@ const credentials = (now: number) =>
     ],
     mangoApiKey: "fake-api-key",
     mangoUrl: "https://xapi.tesco.com/",
+    userAgent: "Mozilla/5.0 (Tesco test browser)",
   });
 
 const fixture = (failCycle = 0, externalRedirect = false) => {
@@ -70,6 +71,9 @@ const fixture = (failCycle = 0, externalRedirect = false) => {
           );
         }
         expect(url.origin).toBe("https://www.tesco.ie");
+        expect(request.headers["user-agent"]).toBe(
+          "Mozilla/5.0 (Tesco test browser)"
+        );
         expect(request.headers["cookie"]).toContain(
           `OAuth.RefreshToken=fake-refresh-${rotations}`
         );
@@ -153,6 +157,21 @@ const fixture = (failCycle = 0, externalRedirect = false) => {
 };
 
 describe("durable Tesco session lifecycle", () => {
+  it("requires a bounded header-safe browser identity at enrollment", () => {
+    const valid = credentials(Date.now());
+    expect(Schema.is(TescoSessionCredentials)(valid)).toBe(true);
+    for (const userAgent of [
+      undefined,
+      "",
+      "x".repeat(513),
+      "browser\r\ninjected: value",
+    ]) {
+      expect(Schema.is(TescoSessionCredentials)({ ...valid, userAgent })).toBe(
+        false
+      );
+    }
+  });
+
   it.effect(
     "chains three encrypted, persisted rotations through reconstructed services and reschedules from actual expiry",
     () =>
