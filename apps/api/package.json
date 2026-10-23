@@ -17,6 +17,7 @@
   "dependencies": {
     "@alchemy.run/better-auth": "2.0.0-beta.83",
     "@better-auth/drizzle-adapter": "1.7.10",
+    "@better-auth/oauth-provider": "1.7.10",
     "@effect/platform-node": "4.0.5",
     "@meal-planner/agent-conversations-api": "workspace:*",
     "@meal-planner/browser-observability-api": "workspace:*",

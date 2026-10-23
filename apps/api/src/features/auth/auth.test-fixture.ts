@@ -4,22 +4,36 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import type { MealPlannerAuthService } from "./auth.alchemy.js";
 import type { MealPlannerAuth } from "./auth.js";
+import {
+  DelegatedAccess,
+  makeDelegatedAccessBoundary,
+  runWithNativeDelegation,
+} from "./delegated-access.js";
 
 const fromNative = <A>(operation: () => Promise<A>) =>
-  Effect.tryPromise({
-    catch: (error) => {
-      if (isAPIErrorLike(error)) {
-        return BetterAuthApiError.fromAPIError(error);
-      }
-      throw error;
-    },
-    try: operation,
-  });
+  DelegatedAccess.pipe(
+    Effect.flatMap((grant) =>
+      Effect.tryPromise({
+        catch: (error) => {
+          if (isAPIErrorLike(error)) {
+            return BetterAuthApiError.fromAPIError(error);
+          }
+          throw error;
+        },
+        try: () => runWithNativeDelegation(grant, operation),
+      })
+    )
+  );
 
 /** Keep native Better Auth control-plane tests on their raw API seam. */
 export const makeNativeAuthTestService = (
   auth: MealPlannerAuth
 ): MealPlannerAuthService => ({
+  ...makeDelegatedAccessBoundary((body) =>
+    auth.delegatedAccessEnabled
+      ? fromNative(() => auth.api.resolveDelegatedAccess({ body }))
+      : Effect.fail({ statusCode: 503 })
+  ),
   api: {
     acceptInvitation: (input) =>
       fromNative(() => auth.api.acceptInvitation(input)),
@@ -31,7 +45,21 @@ export const makeNativeAuthTestService = (
       fromNative(() => auth.api.getActiveMember(input)),
     getActiveMemberRole: (input) =>
       fromNative(() => auth.api.getActiveMemberRole(input)),
-    getSession: (input) => fromNative(() => auth.api.getSession(input)),
+    getSession: (input) =>
+      DelegatedAccess.pipe(
+        Effect.flatMap((grant) =>
+          grant === undefined
+            ? fromNative(() => auth.api.getSession(input))
+            : fromNative(() =>
+                auth.api.resolveDelegatedAccess({ body: grant })
+              ).pipe(
+                Effect.map((current) => ({
+                  session: current.session,
+                  user: current.user,
+                }))
+              )
+        )
+      ),
     getSetupInvitation: (input) =>
       fromNative(() => auth.api.getSetupInvitation(input)),
     leaveOrganization: (input) =>
@@ -42,6 +70,7 @@ export const makeNativeAuthTestService = (
   },
   createHouseholdInvitation: (request) =>
     fromNative(() => auth.createHouseholdInvitation(request)),
+  delegatedAccessEnabled: auth.delegatedAccessEnabled,
   fetchHttpEffect: (request) =>
     Effect.promise(() => auth.fetch(request)).pipe(
       Effect.map(HttpServerResponse.fromWeb)

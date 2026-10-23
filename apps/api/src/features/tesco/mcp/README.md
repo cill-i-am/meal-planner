@@ -1,6 +1,6 @@
-# Private Tesco MCP
+# Private Tesco API and MCP
 
-This separately deployed Worker exposes private Irish Tesco shopping through the owner's personal Executor account. Effect 4 owns outbound HTTP, request/response schemas, session renewal and durable shopping coordination. The MCP SDK is the protocol compatibility boundary.
+This separately deployed Worker exposes the same 15 private Irish Tesco shopping operations through HTTP and MCP, using the owner's personal Executor credential and Tesco session. Effect 4 owns outbound HTTP, request/response schemas, session renewal and durable shopping coordination. The MCP SDK is the protocol compatibility boundary.
 
 | Capability | Tools |
 | --- | --- |
@@ -13,9 +13,17 @@ This separately deployed Worker exposes private Irish Tesco shopping through the
 
 Product details include current prices, unit prices, promotional prices, ingredients, allergens, nutrition, storage and preparation information where Tesco provides them. Prices use EUR; guide prices and availability can change. Product text is untrusted source data, never agent instructions. Past orders explicitly use Tesco's `Previous` grocery context; an omitted context returns upcoming orders. These tools do not cancel or amend placed orders.
 
+## HTTP aliases and discovery
+
+On this separate Tesco Worker, `POST /v1/<tool_name>` accepts the exact JSON input from the tool table and returns its structured output directly. For example, `POST /v1/search_products` with `{"query":"milk"}` uses the same defaults, schema, handler and result as the `search_products` MCP tool. Even read operations use POST, so clients use one input format. Send `Content-Type: application/json`; inputs are limited to 65,536 bytes and reject unknown fields.
+
+`GET /openapi.json` returns the private OpenAPI contract for all 15 HTTP operations. Discovery requires the same dedicated owner credential as calls. The contract includes request and response schemas, defaults, error responses and bearer authentication; it excludes operator enrollment. `/mcp`, these HTTP aliases and discovery share the same authentication, browser-origin refusal and Worker rate limit. This is not part of Meal Planner's general customer API: Meal Planner OAuth tokens do not grant access to the owner's retailer account. The Node development server's catalogue-only routes remain separate.
+
+HTTP success responses contain the operation's JSON result. Invalid input, a conflicting retry ID or a rejected checkout review returns 400; missing or wrong credentials return 401; browser origins return 403; wrong methods return 405; missing JSON content type returns 415; admission limits return 429 with `Retry-After`; Tesco unavailability returns 503. Upstream authentication failure uses `{"error":"tesco_reauthentication_required"}`. Discovery, results and error bodies are uncached and never include credential or parser diagnostics.
+
 ## Access and credentials
 
-`POST /mcp` accepts one dedicated 256-bit Executor bearer credential. Authentication runs before MCP initialization, discovery or body parsing. The Worker stores its SHA-256 verifier. The raw credential belongs in the owner's **user-scoped** Executor account; it is never a shared app account. Executor substitutes an opaque handle only into the Authorization header for this Worker's exact HTTPS host. A copied bearer credential grants the same access, so keep it out of source, chat, URLs, logs and agent-readable configuration.
+`POST /mcp`, `POST /v1/<tool_name>` and `GET /openapi.json` accept one dedicated 256-bit Executor bearer credential. Authentication runs before initialization, discovery or body parsing. The Worker stores its SHA-256 verifier. The raw credential belongs in the owner's **user-scoped** Executor account; it is never a shared app account. Executor substitutes an opaque handle only into the Authorization header for this Worker's exact HTTPS host. A copied bearer credential grants the same access, so keep it out of source, chat, URLs, logs and agent-readable configuration.
 
 `POST /admin/session` enrolls a fresh browser session, `GET /admin/session` reads a sanitized renewal report, and `DELETE /admin/session` disconnects it. These require a separate operator credential; the Executor credential cannot call them. Browser-origin requests are refused. The operator credential is never configured in Executor.
 
@@ -74,6 +82,8 @@ Executor source is maintained in `integrations/executor/tesco`. Its account heal
 
 ## Commands and checkout
 
+The bearer credential is a trusted owner capability, with the same access through both transports. Executor enforces human approval for checkout handoff. Any separately authorized owner HTTP caller must obtain explicit human approval of the complete saved review before calling `approve_checkout_handoff`; the server does not independently verify a human approval receipt. Do not connect this credential to a general customer agent or a caller that automatically approves handoff. Backend review fingerprint, expiry, current-basket checks and one-use consumption apply equally to HTTP and MCP.
+
 Use a fresh `requestId` for each basket or slot intent and reuse the exact ID and input for retries. The Durable Object persists a fingerprint and attempt marker before vendor I/O. A repeated ID never sends another mutation; reusing an ID for different input fails. Commands do not refresh-and-replay after HTTP failures, inner Tesco errors or interruptions. Their returned basket is authoritative; `uncertain` means inspect it before creating a new intent. These small attempt markers contain no basket contents or credentials and are retained to prevent later replay.
 
 Native DO RPC does not provide distributed cancellation. A command already started in the object can finish after the caller disconnects; its durable marker and bounded HTTP operation protect against duplicate work. Reads may renew authentication and replay once. No payment or order-placement request exists in this server.
@@ -95,6 +105,6 @@ node node_modules/vitest/vitest.mjs run src/features/tesco
 
 Run the runtime smoke check after Alchemy has built the production bundle (a plan is sufficient). It runs that actual bundle in workerd with synthetic credentials, covering initialization, role separation, discovery, Durable Object health, missing-session errors and three actual scheduled alarm rotations. Its intercepted Tesco redirects require both same-name cookies at different paths. It catches cookie loss in the native HTTP boundary that adapter tests cannot.
 
-The shopping and Executor tests cover absolute quantities, removal, durable retry identity, interruption, inner 401 responses, partial results, placed-order protection, verified delivery windows, wrong-slot release, review expiry/tampering/changes, one-use handoff and mandatory approval even when metadata falsely claims read-only. Live acceptance covers prices, product details, favourites, real past orders and a receipt, a quantity-preserving basket command/replay, slot reservation/release/replay and review preparation. No test purchases an order.
+The HTTP/MCP parity tests exercise all 15 operations, private discovery, operator credential separation, bounded input, shared retry receipts across reconstructed services, uncertain outcomes and checkout review tampering/one-use across transports. They use the real shopping policy with substituted Tesco network and storage boundaries. The shopping and Executor tests cover absolute quantities, removal, durable retry identity, interruption, inner 401 responses, partial results, placed-order protection, verified delivery windows, wrong-slot release, review expiry/tampering/changes, one-use handoff and mandatory approval even when metadata falsely claims read-only. Live acceptance covers prices, product details, favourites, real past orders and a receipt, a quantity-preserving basket command/replay, slot reservation/release/replay and review preparation. No test purchases an order.
 
 The session tests exercise three rotations across reconstructed services, retained account-path cookies, early alarms, rejected renewal, interruption, an external redirect and tampered ciphertext. Live acceptance also requires a real catalogue call through the deployed private Executor app. The earlier three-cycle feasibility probe establishes renewal behavior for that captured session, not indefinite renewal or recovery after Tesco revokes a session.

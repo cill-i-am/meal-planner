@@ -8,6 +8,7 @@ import { Data, Effect, Schema } from "effect";
 import { HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http";
 
 import type { MealPlannerAuthService } from "./auth.alchemy.js";
+import { DelegatedAccess } from "./delegated-access.js";
 
 export const AuthenticatedAccount = Schema.Struct({
   id: UserId,
@@ -49,6 +50,14 @@ export const authorizeApplicationRequest = (
   auth: Pick<MealPlannerAuthService, "fetchHttpEffect">
 ) =>
   Effect.gen(function* resolveApplicationAccess() {
+    const delegated = yield* DelegatedAccess;
+    if (delegated !== undefined) {
+      return yield* Schema.decodeUnknownEffect(AuthenticatedAccount)(
+        delegated.user
+      ).pipe(
+        Effect.mapError(() => new ApplicationAccessFailure({ statusCode: 503 }))
+      );
+    }
     const request = yield* HttpServerRequest.HttpServerRequest;
     const source = yield* HttpServerRequest.toWeb(request).pipe(Effect.orDie);
     if (

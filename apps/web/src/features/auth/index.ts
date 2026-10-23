@@ -11,7 +11,11 @@ export {
   parseRetryAfter,
 } from "./auth-errors.js";
 export { SignInInput, SignUpInput } from "./auth-input.js";
-export { decodeAuthSearch } from "./auth-navigation.js";
+export {
+  decodeAuthEntrySearch,
+  decodeAuthSearch,
+  readOAuthQuery,
+} from "./auth-navigation.js";
 export { LoginPage, SignupPage } from "./auth-screens.js";
 export { deriveAuthBoundaryState } from "./auth-state.js";
 export { getAuthViewTransition } from "./auth-view-transition.js";

@@ -1,7 +1,13 @@
 /* eslint-disable max-classes-per-file -- Native fixture exports both independently stored private child kinds. */
 import type * as NativeCloudflare from "@cloudflare/workers-types";
 import { PersonProfile } from "@meal-planner/household-api";
-import { PrivateDiscoveryScope } from "@meal-planner/private-interview-api";
+import {
+  ConfirmationOutcome,
+  DirectoryCommand,
+  ParticipantMessageText,
+  PrivateDiscoveryScope,
+  SessionCommand,
+} from "@meal-planner/private-interview-api";
 import type { CloudflareBindingConfig } from "@tanstack/ai-cloudflare";
 import { drizzle } from "drizzle-orm/durable-sqlite";
 import { Schema } from "effect";
@@ -81,6 +87,9 @@ export class PrivateInterviewSession extends ProductionSession {
   readKeepAliveReferences() {
     return this._keepAliveRefs;
   }
+  readSocketCount() {
+    return this.ctx.getWebSockets().length;
+  }
 
   enqueueOutput(input: {
     readonly generation: string;
@@ -152,8 +161,17 @@ type SessionPort = {
       | "initialize"
       | "readTurns"
       | "readKeepAliveReferences"
+      | "readSocketCount"
       | "beginConnection"
       | "authorizeConnection"
+      | "beginRequest"
+      | "authorizeRequest"
+      | "executeSession"
+      | "readSession"
+      | "startTurn"
+      | "cancelTurn"
+      | "releaseConfirmation"
+      | "settleConfirmation"
       | "invalidateOutput"
       | "enqueueOutput"
       | "enqueueOutputAtTime"
@@ -177,6 +195,9 @@ type SessionPort = {
   };
 };
 export class PrivateInterviewDirectory extends ProductionDirectory {
+  readSocketCount() {
+    return this.ctx.getWebSockets().length;
+  }
   commandAtTime(
     input: {
       readonly generation: string;
@@ -219,6 +240,10 @@ type DirectoryPort = {
       | "initialize"
       | "beginConnection"
       | "authorizeConnection"
+      | "beginRequest"
+      | "authorizeRequest"
+      | "executeDirectory"
+      | "readSocketCount"
       | "invalidateOutput"
       | "readReservation"
       | "readOutputLifecycle"
@@ -246,20 +271,29 @@ interface Environment {
 
 const Command = Schema.Struct({
   action: Schema.String,
+  afterCardOrdinal: Schema.optional(Schema.Number),
+  afterMessageOrdinal: Schema.optional(Schema.Number),
   binding: Schema.optional(PrivateSessionBinding),
+  directoryCommand: Schema.optional(DirectoryCommand),
   directoryKey: Schema.optional(Schema.String),
   discoveryScope: Schema.optional(Schema.NullOr(PrivateDiscoveryScope)),
+  expectedVersion: Schema.optional(Schema.Number),
   expiresAt: Schema.optional(Schema.Number),
   generation: Schema.optional(Schema.String),
   intentKey: Schema.optional(Schema.String),
   key: Schema.optional(Schema.String),
+  limit: Schema.optional(Schema.Number),
+  mutationId: Schema.optional(Schema.String),
   now: Schema.optional(Schema.Number),
   operationId: Schema.optional(Schema.String),
+  outcome: Schema.optional(ConfirmationOutcome),
   participant: Schema.optional(PrivateParticipantBinding),
   payload: Schema.optional(Schema.String),
   profile: Schema.optional(PersonProfile),
   scope: Schema.optional(Schema.Literals(["account", "household"])),
+  sessionCommand: Schema.optional(SessionCommand),
   sessionReference: Schema.String,
+  text: Schema.optional(ParticipantMessageText),
   turnId: Schema.optional(Schema.String),
 });
 
@@ -271,6 +305,41 @@ type CommandResult =
         | Response
         | Promise<Response | NativeCloudflare.Response>;
     };
+
+const routeDirectoryRequest = async (
+  directory: DirectoryPort,
+  input: CommandInput,
+  generation: { readonly generation: string }
+): Promise<CommandResult | undefined> => {
+  let result: unknown = null;
+  if (input.action === "directory-begin-request" && input.participant) {
+    result = await directory.beginRequest(input.participant);
+  } else if (
+    input.action === "directory-authorize-request" &&
+    input.participant
+  ) {
+    result = await directory.authorizeRequest({
+      ...generation,
+      binding: input.participant,
+      expiresAt: input.expiresAt ?? 0,
+    });
+  } else if (
+    input.action === "directory-execute-request" &&
+    input.participant &&
+    input.directoryCommand
+  ) {
+    result = await directory.executeDirectory({
+      ...generation,
+      binding: input.participant,
+      command: input.directoryCommand,
+    });
+  } else if (input.action === "directory-socket-count") {
+    result = await directory.readSocketCount();
+  } else {
+    return undefined;
+  }
+  return { result };
+};
 
 const routeDirectoryCommand = async (
   request: Request,
@@ -385,6 +454,8 @@ const readSessionCommand = async (
     result = await child.readTurns();
   } else if (input.action === "keep-alive-references") {
     result = await child.readKeepAliveReferences();
+  } else if (input.action === "socket-count") {
+    result = await child.readSocketCount();
   } else if (input.action === "metadata") {
     result = await child.readMetadata();
   } else if (input.action === "lifecycle") {
@@ -401,6 +472,56 @@ const readSessionCommand = async (
     );
   } else if (input.action === "private-http") {
     return { response: child.fetch(new Request(request.url)) };
+  } else {
+    return undefined;
+  }
+  return { result };
+};
+
+const routeSessionRequest = async (
+  child: SessionPort,
+  input: CommandInput,
+  generation: { readonly generation: string }
+): Promise<CommandResult | undefined> => {
+  if (!input.binding) {
+    return undefined;
+  }
+  const context = { ...generation, binding: input.binding };
+  let result: unknown;
+  if (input.action === "begin-request") {
+    result = await child.beginRequest(input.binding);
+  } else if (input.action === "authorize-request") {
+    result = await child.authorizeRequest({
+      ...context,
+      expiresAt: input.expiresAt ?? 0,
+    });
+  } else if (input.action === "execute-request" && input.sessionCommand) {
+    result = await child.executeSession({
+      ...context,
+      command: input.sessionCommand,
+    });
+  } else if (input.action === "read-request") {
+    result = await child.readSession({
+      ...context,
+      afterCardOrdinal: input.afterCardOrdinal ?? 0,
+      afterMessageOrdinal: input.afterMessageOrdinal ?? 0,
+      limit: input.limit ?? 25,
+    });
+  } else if (
+    input.action === "start-request-turn" &&
+    input.profile &&
+    input.text &&
+    input.turnId
+  ) {
+    result = await child.startTurn({
+      ...context,
+      expectedVersion: input.expectedVersion ?? 0,
+      profile: input.profile,
+      text: input.text,
+      turnId: input.turnId,
+    });
+  } else if (input.action === "cancel-request-turn" && input.turnId) {
+    result = await child.cancelTurn({ ...context, turnId: input.turnId });
   } else {
     return undefined;
   }
@@ -470,6 +591,33 @@ const routeSessionCommand = async (
   return { result };
 };
 
+const routeSessionConfirmation = async (
+  child: SessionPort,
+  input: CommandInput,
+  generation: { readonly generation: string }
+): Promise<CommandResult | undefined> => {
+  if (!input.binding || !input.mutationId) {
+    return undefined;
+  }
+  const context = {
+    ...generation,
+    binding: input.binding,
+    mutationId: input.mutationId,
+  };
+  if (input.action === "release-confirmation") {
+    return { result: await child.releaseConfirmation(context) };
+  }
+  if (input.action === "settle-confirmation" && input.outcome) {
+    return {
+      result: await child.settleConfirmation({
+        ...context,
+        outcome: input.outcome,
+      }),
+    };
+  }
+  return undefined;
+};
+
 const routeLifecycleCommand = async (
   coordinator: OutputLifecyclePort,
   input: CommandInput
@@ -524,14 +672,14 @@ export default {
               ? await privateDirectoryKey(input.participant)
               : "")
         );
-        outcome = await routeDirectoryCommand(
-          request,
-          directory,
-          input,
-          generation
-        );
+        outcome =
+          (await routeDirectoryRequest(directory, input, generation)) ??
+          (await routeDirectoryCommand(request, directory, input, generation));
       } else {
-        outcome = await routeSessionCommand(request, child, input, generation);
+        outcome =
+          (await routeSessionRequest(child, input, generation)) ??
+          (await routeSessionConfirmation(child, input, generation)) ??
+          (await routeSessionCommand(request, child, input, generation));
         if (outcome === undefined && input.key) {
           const coordinator = (
             input.scope === "household"

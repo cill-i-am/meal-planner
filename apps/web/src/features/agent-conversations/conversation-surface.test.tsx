@@ -1,4 +1,7 @@
-import { ConversationView } from "@meal-planner/agent-conversations-api";
+import {
+  ConversationAction,
+  ConversationView,
+} from "@meal-planner/agent-conversations-api";
 import { HouseholdPersonId } from "@meal-planner/household-api";
 import {
   cleanup,
@@ -66,6 +69,37 @@ const makeConversation = (
 });
 
 afterEach(cleanup);
+
+it("labels a confirmed request awaiting its receipt as a refresh", () => {
+  const action = Schema.decodeUnknownSync(ConversationAction)({
+    actionId: "00000000-0000-4000-8000-000000000018",
+    blockId: questionId,
+    decision: "dismiss",
+    expectedRevision: 1,
+  });
+  render(
+    <ConversationSurface
+      conversation={{
+        ...makeConversation(async () => {}),
+        actionState: {
+          _tag: "Committed",
+          actionId: action.actionId,
+          familyId: null,
+        },
+        pendingAction: action,
+      }}
+    />
+  );
+  expect(
+    screen.getByRole("button", { name: "Refresh conversation" })
+  ).toBeEnabled();
+  expect(
+    screen.getByText(
+      "The action is confirmed. Refresh the conversation before reviewing another proposal."
+    )
+  ).toBeVisible();
+  expect(screen.queryByText(/has an unknown outcome/u)).toBeNull();
+});
 
 it("starts the first food question on an explicit click", async () => {
   const user = userEvent.setup();

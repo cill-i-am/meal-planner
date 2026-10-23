@@ -1,7 +1,14 @@
 import type * as NativeCloudflare from "@cloudflare/workers-types";
-import { MutatePersonProfilePayload } from "@meal-planner/household-api";
-import type { SessionState } from "@meal-planner/private-interview-api";
 import {
+  MutatePersonProfilePayload,
+  readStoredProfilePayload,
+} from "@meal-planner/household-api";
+import type {
+  PrivateRequestSessionSnapshot,
+  SessionState,
+} from "@meal-planner/private-interview-api";
+import {
+  AssistantTurn,
   AssistantTurnId,
   MAX_PRIVATE_FRAME_BYTES,
   ParticipantMessageText,
@@ -39,9 +46,10 @@ import {
 } from "./private-confirmation.contract.js";
 import { PrivateDiscoveryFailure } from "./private-discovery-model.js";
 import { makePrivateDiscoveryModel } from "./private-discovery-workers-ai.js";
-import { Generation, PrivateOutputSocket } from "./private-output-socket.js";
+import { PrivateOutputSocket } from "./private-output-socket.js";
 import type { PrivateInterviewEnvironment } from "./private-output-socket.js";
 import {
+  Generation,
   PrivateSessionBinding,
   InitializePrivateSession,
   PrivateOutputUnavailable,
@@ -56,6 +64,12 @@ import {
   privateDiscoverySessionScopes,
   privateAssistantTurns,
 } from "./private-output.database-schema.js";
+import {
+  PrivateRequestCancel,
+  PrivateRequestTurn,
+  PrivateSessionRead,
+  PrivateSessionRequest,
+} from "./private-request.contract.js";
 
 declare const Response: typeof NativeCloudflare.Response;
 // Agent's ambient DOM declaration and the native Workers declaration describe
@@ -98,7 +112,7 @@ const sameBinding = (
   left.linkageSubject === right.linkageSubject &&
   left.personId === right.personId &&
   left.sessionReference === right.sessionReference;
-/** Owns private history and physical WebSockets. No transcript RPC; model output stays inside its owning private child. */
+/** Owns canonical private history, model turns and their socket or request output lease. */
 export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> {
   #database = instrumentDrizzle(drizzle(this.ctx.storage), {
     attributes: { "db.namespace": "private-output" },
@@ -162,8 +176,22 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       }
     });
   }
-  async beginConnection(untrusted: PrivateSessionBinding): Promise<string> {
+  beginConnection(untrusted: PrivateSessionBinding): Promise<string> {
+    return this.#beginOutput(decodeBinding(untrusted), "socket");
+  }
+  beginRequest(untrusted: PrivateSessionBinding): Promise<string> {
     const binding = decodeBinding(untrusted);
+    this.#binding(binding);
+    const current = this.#socket.read();
+    if (current !== null && this.#socket.isRequestCurrent(current.generation)) {
+      return Promise.resolve(current.generation);
+    }
+    return this.#beginOutput(binding, "request");
+  }
+  async #beginOutput(
+    binding: PrivateSessionBinding,
+    mode: "socket" | "request"
+  ): Promise<string> {
     const childName = await privateOutputKey(
       "session",
       binding.sessionReference
@@ -188,10 +216,10 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       this.#detachDeliveries(previous.generation);
     }
     try {
-      const generation = await this.#socket.begin(binding, {
-        childName,
-        targetKind: "session",
-      });
+      const target = { childName, targetKind: "session" as const };
+      const generation = await (mode === "request"
+        ? this.#socket.beginRequest(binding, target)
+        : this.#socket.begin(binding, target));
       if (pending !== null) {
         pending.generation = generation;
       }
@@ -219,6 +247,153 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
         input.generation
       );
     }
+  }
+  authorizeRequest(untrusted: typeof Authorization.Type): void {
+    const input = Schema.decodeUnknownSync(Authorization, {
+      onExcessProperty: "error",
+    })(untrusted);
+    this.#binding(input.binding);
+    this.#socket.authorizeRequest(input.generation, input.expiresAt);
+    const pending = this.#reauthorization;
+    this.#turns.reauthorize(
+      pending?.generation === input.generation
+        ? pending.previousGeneration
+        : input.generation,
+      input.generation
+    );
+    if (pending?.generation === input.generation) {
+      pending.ready.resolve(null);
+      this.#reauthorization = null;
+    }
+  }
+  #assertRequest(binding: PrivateSessionBinding, generation: string): void {
+    this.#binding(binding);
+    if (!this.#socket.isRequestCurrent(generation)) {
+      throw new PrivateOutputUnavailable({ reason: "output_disabled" });
+    }
+  }
+  executeSession(untrusted: typeof PrivateSessionRequest.Type): SessionFrame {
+    const input = Schema.decodeUnknownSync(PrivateSessionRequest, {
+      onExcessProperty: "error",
+    })(untrusted);
+    this.#assertRequest(input.binding, input.generation);
+    return this.#execute(input.command, input.generation);
+  }
+  readSession(
+    untrusted: typeof PrivateSessionRead.Type
+  ): PrivateRequestSessionSnapshot {
+    const input = Schema.decodeUnknownSync(PrivateSessionRead, {
+      onExcessProperty: "error",
+    })(untrusted);
+    this.#assertRequest(input.binding, input.generation);
+    const cards = this.#execute(
+      {
+        afterOrdinal: input.afterCardOrdinal,
+        limit: input.limit,
+        requestId: crypto.randomUUID(),
+        type: "ReadCards",
+      },
+      input.generation
+    );
+    if (cards.type !== "CardsRead") {
+      throw new PrivateOutputUnavailable({ reason: "binding_conflict" });
+    }
+    const history = this.#chat.historyPage(
+      input.afterMessageOrdinal,
+      input.limit
+    );
+    return {
+      assistantTurn: this.#turns.latest(),
+      cards: cards.cards,
+      hasMoreCards: cards.hasMore,
+      hasMoreMessages: history.hasMore,
+      messages: history.messages,
+      pendingConfirmation: cards.pendingConfirmation,
+      state: cards.state,
+    };
+  }
+  #readTurn(turnId: string): AssistantTurn {
+    const turn = this.#database
+      .select()
+      .from(privateAssistantTurns)
+      .where(eq(privateAssistantTurns.id, turnId))
+      .get();
+    if (turn === undefined) {
+      throw new PrivateOutputUnavailable({ reason: "binding_conflict" });
+    }
+    return Schema.decodeUnknownSync(AssistantTurn)(turn);
+  }
+  async startTurn(
+    untrusted: typeof PrivateRequestTurn.Type
+  ): Promise<AssistantTurn> {
+    const input = Schema.decodeUnknownSync(PrivateRequestTurn, {
+      onExcessProperty: "error",
+    })(untrusted);
+    this.#assertRequest(input.binding, input.generation);
+    const response = await this.#chatRequest(
+      new Request("https://private-output.internal/chat", {
+        body: JSON.stringify({
+          context: [],
+          forwardedProps: { expectedVersion: input.expectedVersion },
+          messages: [
+            { content: input.text, id: crypto.randomUUID(), role: "user" },
+          ],
+          privateChatContext: {
+            binding: input.binding,
+            generation: input.generation,
+            profile: input.profile,
+          },
+          runId: input.turnId,
+          state: {},
+          threadId: input.binding.sessionReference,
+          tools: [],
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      })
+    );
+    if (!response.ok) {
+      throw new PrivateOutputUnavailable({ reason: "operation_conflict" });
+    }
+    if (response.body !== null) {
+      // The native pipeline owns persistence, model execution and cancellation;
+      // request clients read its retained state instead of retaining this stream.
+      const { body } = response;
+      const drain = async () => {
+        try {
+          await body.pipeTo(new WritableStream());
+        } catch {
+          // Revocation/cancellation closes delivery; the native turn owns its outcome.
+        }
+      };
+      this.ctx.waitUntil(drain());
+    }
+    this.#assertRequest(input.binding, input.generation);
+    return this.#readTurn(input.turnId);
+  }
+  async cancelTurn(
+    untrusted: typeof PrivateRequestCancel.Type
+  ): Promise<AssistantTurn> {
+    const input = Schema.decodeUnknownSync(PrivateRequestCancel, {
+      onExcessProperty: "error",
+    })(untrusted);
+    this.#assertRequest(input.binding, input.generation);
+    const previous = this.#readTurn(input.turnId);
+    if (previous.status === "cancelled") {
+      return previous;
+    }
+    const url = new URL("https://private-output.internal/chat");
+    url.searchParams.set("runId", input.turnId);
+    const response = await this.#cancelChat(
+      { ...input, profile: null },
+      url,
+      this.#chat.forThread(input.binding.sessionReference)
+    );
+    if (!response.ok) {
+      throw new PrivateOutputUnavailable({ reason: "operation_conflict" });
+    }
+    this.#assertRequest(input.binding, input.generation);
+    return this.#readTurn(input.turnId);
   }
   override async fetch(
     request: Request | NativeCloudflare.Request
@@ -687,11 +862,8 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       updated = { ...card, status: "pending" };
       const { change } = card;
       let closedCommand;
-      if (
-        change._tag === "AddConfirmedProfileFact" ||
-        change._tag === "ConfirmProfileFact"
-      ) {
-        closedCommand = { ...change, basis: "self" };
+      if (change._tag === "AddConfirmedProfileFact") {
+        closedCommand = { _tag: "AddProfileFact", fact: change.fact };
       } else if (change._tag === "ConfirmHardConstraintReduction") {
         closedCommand = { ...change, confirmation: command.safetyConfirmation };
       } else {
@@ -744,10 +916,7 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
     ) {
       return {
         generation,
-        payload: Schema.decodeUnknownSync(
-          Schema.fromJsonString(MutatePersonProfilePayload),
-          { onExcessProperty: "error" }
-        )(pending.payloadJson),
+        payload: readStoredProfilePayload(JSON.parse(pending.payloadJson)),
         type: "pending",
       };
     }
@@ -873,138 +1042,136 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       socket.close(1008, "Invalid private command");
       return;
     }
-    const frame = this.#database.transaction(
-      (transaction): SessionFrame | undefined => {
-        if (!this.#socket.isCurrent(generation)) {
-          return;
-        }
-        const state = this.#state();
-        if (command.type === "ReadCards") {
-          const records = transaction
-            .select()
-            .from(privateProfileCards)
-            .where(gt(privateProfileCards.ordinal, command.afterOrdinal))
-            .orderBy(privateProfileCards.ordinal)
-            .limit(command.limit + 1)
-            .all();
-          const cards = records
-            .slice(0, command.limit)
-            .map((record) =>
-              Schema.decodeUnknownSync(Schema.fromJsonString(ProfileCard))(
-                record.cardJson
-              )
-            );
-          const result = () => ({
-            cards,
-            hasMore: records.length > cards.length,
-            pendingConfirmation: this.#pending()?.mutationId ?? null,
-            requestId: command.requestId,
-            state,
-            type: "CardsRead" as const,
-          });
-          while (
-            new TextEncoder().encode(JSON.stringify(result())).byteLength >
-            MAX_PRIVATE_FRAME_BYTES
-          ) {
-            cards.pop();
-          }
-          return result();
-        }
-        // Exact canonical command JSON avoids an asynchronous digest between admission and commit.
-        const intent = JSON.stringify(command);
-        const receipt = transaction
-          .select()
-          .from(privateReceipts)
-          .where(eq(privateReceipts.mutationId, command.mutationId))
-          .get();
-        if (receipt !== undefined) {
-          if (receipt.intent !== intent) {
-            return {
-              commandId: command.mutationId,
-              reason: "mutation_collision",
-              state,
-              type: "Rejected",
-            };
-          }
-          return Schema.decodeUnknownSync(SessionFrame)(
-            JSON.parse(receipt.frame)
-          );
-        }
-        if (state.status === "completed") {
-          return {
-            commandId: command.mutationId,
-            reason: "session_completed",
-            state,
-            type: "Rejected",
-          };
-        }
-        if (this.#pending() !== undefined) {
-          return {
-            commandId: command.mutationId,
-            reason: "confirmation_pending",
-            state,
-            type: "Rejected",
-          };
-        }
-        const turnRejection = this.#turnRejection();
-        if (turnRejection !== undefined) {
-          return {
-            commandId: command.mutationId,
-            reason: turnRejection,
-            state,
-            type: "Rejected",
-          };
-        }
-        if (command.expectedVersion !== state.version) {
-          return {
-            commandId: command.mutationId,
-            reason: "version_conflict",
-            state,
-            type: "Rejected",
-          };
-        }
-        if ("cardId" in command) {
-          const reason = this.#cardRejection(command);
-          if (reason !== undefined) {
-            return {
-              commandId: command.mutationId,
-              reason,
-              state,
-              type: "Rejected",
-            };
-          }
-        }
-        const next = {
-          status:
-            command.type === "CompleteSession"
-              ? ("completed" as const)
-              : ("open" as const),
-          version: state.version + 1,
-        };
-        transaction.update(privateSessionBinding).set(next).run();
-        const result: SessionFrame =
-          command.type === "CompleteSession"
-            ? {
-                mutationId: command.mutationId,
-                state: next,
-                type: "SessionCompleted",
-              }
-            : this.#mutateCard(command, next);
-        transaction
-          .insert(privateReceipts)
-          .values({
-            frame: JSON.stringify(result),
-            intent,
-            mutationId: command.mutationId,
-          })
-          .run();
-        return result;
+    const frame = this.#execute(command, generation);
+    this.#socket.send(generation, JSON.stringify(frame));
+  }
+  #execute(command: SessionCommand, generation: string): SessionFrame {
+    return this.#database.transaction((transaction): SessionFrame => {
+      if (!this.#socket.isCurrent(generation)) {
+        throw new PrivateOutputUnavailable({ reason: "output_disabled" });
       }
-    );
-    // Receipts and retained history remain permitted after completion.
-    if (frame !== undefined) {
-      this.#socket.send(generation, JSON.stringify(frame));
-    }
+      const state = this.#state();
+      if (command.type === "ReadCards") {
+        const records = transaction
+          .select()
+          .from(privateProfileCards)
+          .where(gt(privateProfileCards.ordinal, command.afterOrdinal))
+          .orderBy(privateProfileCards.ordinal)
+          .limit(command.limit + 1)
+          .all();
+        const cards = records
+          .slice(0, command.limit)
+          .map((record) =>
+            Schema.decodeUnknownSync(Schema.fromJsonString(ProfileCard))(
+              record.cardJson
+            )
+          );
+        const result = () => ({
+          cards,
+          hasMore: records.length > cards.length,
+          pendingConfirmation: this.#pending()?.mutationId ?? null,
+          requestId: command.requestId,
+          state,
+          type: "CardsRead" as const,
+        });
+        while (
+          new TextEncoder().encode(JSON.stringify(result())).byteLength >
+          MAX_PRIVATE_FRAME_BYTES
+        ) {
+          cards.pop();
+        }
+        return result();
+      }
+      // Exact canonical command JSON avoids an asynchronous digest between admission and commit.
+      const intent = JSON.stringify(command);
+      const receipt = transaction
+        .select()
+        .from(privateReceipts)
+        .where(eq(privateReceipts.mutationId, command.mutationId))
+        .get();
+      if (receipt !== undefined) {
+        if (receipt.intent !== intent) {
+          return {
+            commandId: command.mutationId,
+            reason: "mutation_collision",
+            state,
+            type: "Rejected",
+          };
+        }
+        return Schema.decodeUnknownSync(SessionFrame)(
+          JSON.parse(receipt.frame)
+        );
+      }
+      if (state.status === "completed") {
+        return {
+          commandId: command.mutationId,
+          reason: "session_completed",
+          state,
+          type: "Rejected",
+        };
+      }
+      if (this.#pending() !== undefined) {
+        return {
+          commandId: command.mutationId,
+          reason: "confirmation_pending",
+          state,
+          type: "Rejected",
+        };
+      }
+      const turnRejection = this.#turnRejection();
+      if (turnRejection !== undefined) {
+        return {
+          commandId: command.mutationId,
+          reason: turnRejection,
+          state,
+          type: "Rejected",
+        };
+      }
+      if (command.expectedVersion !== state.version) {
+        return {
+          commandId: command.mutationId,
+          reason: "version_conflict",
+          state,
+          type: "Rejected",
+        };
+      }
+      if ("cardId" in command) {
+        const reason = this.#cardRejection(command);
+        if (reason !== undefined) {
+          return {
+            commandId: command.mutationId,
+            reason,
+            state,
+            type: "Rejected",
+          };
+        }
+      }
+      const next = {
+        status:
+          command.type === "CompleteSession"
+            ? ("completed" as const)
+            : ("open" as const),
+        version: state.version + 1,
+      };
+      transaction.update(privateSessionBinding).set(next).run();
+      const result: SessionFrame =
+        command.type === "CompleteSession"
+          ? {
+              mutationId: command.mutationId,
+              state: next,
+              type: "SessionCompleted",
+            }
+          : this.#mutateCard(command, next);
+      transaction
+        .insert(privateReceipts)
+        .values({
+          frame: JSON.stringify(result),
+          intent,
+          mutationId: command.mutationId,
+        })
+        .run();
+      return result;
+    });
   }
   override webSocketClose(socket: NativeCloudflare.WebSocket): void {
     this.#detachDeliveries(

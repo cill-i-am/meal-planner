@@ -1,6 +1,7 @@
 import type {
   ConversationAction,
   ConversationBlock,
+  ConversationTurnRequest,
   ConversationView,
 } from "@meal-planner/agent-conversations-api";
 import {
@@ -11,6 +12,7 @@ import {
   ConversationInvalid,
   ConversationSchemaErrors,
   ConversationTurnId,
+  ConversationView as ConversationViewSchema,
   ConversationUnauthorized,
   ConversationUnavailable,
 } from "@meal-planner/agent-conversations-api";
@@ -486,7 +488,6 @@ export const makeAgentConversationHost = (
 
   const profileCommandFor = (
     block: Extract<ConversationBlock, { readonly _tag: "PersonFactProposal" }>,
-    basis: "self" | "household_adult",
     safetyConfirmation: "I confirm this safety constraint change" | null
   ): Effect.Effect<
     ProfileCommand,
@@ -502,15 +503,13 @@ export const makeAgentConversationHost = (
     switch (change._tag) {
       case "Add": {
         return Effect.succeed({
-          _tag: "AddConfirmedProfileFact",
-          basis,
+          _tag: "AddProfileFact",
           fact: change.fact,
         });
       }
       case "Confirm": {
         return Effect.succeed({
           _tag: "ConfirmProfileFact",
-          basis,
           factId: change.factId,
         });
       }
@@ -596,13 +595,8 @@ export const makeAgentConversationHost = (
           return yield* Effect.fail(conflict());
         }
       }
-      const basis =
-        target.kind === "adult"
-          ? ("self" as const)
-          : ("household_adult" as const);
       const command = yield* profileCommandFor(
         block,
-        basis,
         acceptedAction.safetyConfirmation
       );
       yield* people
@@ -930,7 +924,64 @@ export const makeAgentConversationHost = (
         )
       );
     });
-  return { act, chat, read };
+  const submit = (
+    request: typeof ConversationTurnRequest.Type,
+    familyId?: HouseholdOrganizationId
+  ) =>
+    Effect.gen(function* submitConversationRequest() {
+      const { access, actor } = yield* accessFor(familyId);
+      const context = yield* contextFor(
+        access,
+        actor,
+        request.focusPersonId,
+        request.planId
+      );
+      const stub = yield* stubFor(access);
+      yield* objectCall(() => stub.initialize(access));
+      const { text, turnId, ...metadata } = request;
+      const input = yield* Schema.decodeUnknownEffect(ConversationChatInput)({
+        access,
+        context,
+        focusPersonId: request.focusPersonId,
+        metadata,
+        planId: request.planId,
+        text,
+        turnId,
+      }).pipe(Effect.mapError(invalid));
+      const response = yield* objectCall(() =>
+        stub.fetch(
+          new Request("https://internal/turns", {
+            body: JSON.stringify(input),
+            headers: { "content-type": "application/json" },
+            method: "POST",
+          })
+        )
+      );
+      if (!response.ok) {
+        switch (response.status) {
+          case 409: {
+            return yield* Effect.fail(conflict());
+          }
+          case 403: {
+            return yield* Effect.fail(forbidden());
+          }
+          case 400: {
+            return yield* Effect.fail(invalid());
+          }
+          default: {
+            return yield* Effect.fail(unavailable());
+          }
+        }
+      }
+      return yield* Effect.tryPromise({
+        catch: unavailable,
+        try: () => response.json(),
+      }).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(ConversationViewSchema)),
+        Effect.mapError(unavailable)
+      );
+    });
+  return { act, chat, read, submit };
 };
 
 export const makeAgentConversationHttpLayer = (

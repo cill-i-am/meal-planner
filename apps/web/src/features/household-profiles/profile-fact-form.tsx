@@ -98,7 +98,6 @@ const proposedMeaning = (values: Fields) => {
 const commandFor = (
   value: ProfileFactValue,
   fact: ProfileFact | undefined,
-  basis: "self" | "household_adult" | "provisional",
   removal: boolean
 ): ProfileCommand => {
   if (fact !== undefined) {
@@ -115,9 +114,7 @@ const commandFor = (
     }
     return { _tag: "ReplaceOrdinaryProfileFact", fact: value, factId: fact.id };
   }
-  return basis === "provisional"
-    ? { _tag: "AddProvisionalProfileFact", fact: value }
-    : { _tag: "AddConfirmedProfileFact", basis, fact: value };
+  return { _tag: "AddProfileFact", fact: value };
 };
 
 /** Existing notebook form controls; safety changes are deliberately separate from ordinary editing. */
@@ -147,7 +144,7 @@ export const ProfileFactForm = ({
       }
       const decoded = decodeFact(value);
       if (Option.isSome(decoded)) {
-        submit(commandFor(decoded.value, fact, basis, value.removal));
+        submit(commandFor(decoded.value, fact, value.removal));
       }
     },
   });

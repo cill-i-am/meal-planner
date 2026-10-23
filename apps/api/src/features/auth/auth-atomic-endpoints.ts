@@ -25,6 +25,7 @@ import {
   ResetPasswordMutation,
 } from "./auth-atomic-store.js";
 import type { AuthAtomicStore } from "./auth-atomic-store.js";
+import { currentNativeDelegation } from "./delegated-access.js";
 
 const parseCancellation = Schema.decodeUnknownSync(CancelInvitationMutation);
 const parseCancellationPerson = Schema.decodeUnknownSync(
@@ -363,6 +364,7 @@ export const atomicOrganization = <Options extends OrganizationOptions>(
             user: session.user,
           });
           const acceptance = parseAcceptance({
+            activateOrganization: currentNativeDelegation() === undefined,
             email: session.user.email,
             invitationId: invitation.id,
             memberId: ctx.context.generateId({ model: "member" }),

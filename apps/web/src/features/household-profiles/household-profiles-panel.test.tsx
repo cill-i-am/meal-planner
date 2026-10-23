@@ -41,6 +41,58 @@ afterEach(() => {
   globalThis.sessionStorage.clear();
 });
 
+it("recovers a submitted command from before the caller-contract upgrade with its original identity", async () => {
+  const user = userEvent.setup();
+  const fact = {
+    _tag: "FoodPreference",
+    label: "Peas",
+    sentiment: "like",
+    targetKind: "ingredient",
+  };
+  const previous = {
+    payload: {
+      command: { _tag: "AddConfirmedProfileFact", basis: "self", fact },
+      expectedProfileVersion: 0,
+      mutationId: "pending-before-caller-upgrade",
+    },
+    personId,
+  };
+  globalThis.sessionStorage.setItem(
+    `meal-planner.household-profile.unresolved.v1:${JSON.stringify(["user-a", "upgrade"])}`,
+    JSON.stringify(previous)
+  );
+  const mutate = vi.fn().mockReturnValue(Effect.succeed(empty));
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <HouseholdProfilesPanel
+        accountId="user-a"
+        organizationId="upgrade"
+        operations={{
+          get: vi.fn().mockReturnValue(Effect.succeed(empty)),
+          mutate,
+          versions: vi
+            .fn()
+            .mockReturnValue(
+              Effect.succeed({ nextBeforeVersion: null, versions: [] })
+            ),
+        }}
+        peopleOperations={{
+          list: vi.fn().mockReturnValue(Effect.succeed(roster)),
+        }}
+      />
+    </QueryClientProvider>
+  );
+  await user.click(
+    await screen.findByRole("button", { name: "Retry saved change" })
+  );
+  await waitFor(() =>
+    expect(mutate).toHaveBeenCalledExactlyOnceWith(personId, {
+      ...previous.payload,
+      command: { _tag: "AddProfileFact", fact },
+    })
+  );
+});
+
 it.each([false, true])(
   "retains the exact command through reauthentication (previous ambiguity: %s)",
   async (ambiguousFirst) => {
@@ -312,6 +364,7 @@ it("requires reload and explicit reapplication after a stale version without aut
 it.each([
   ["interview", "Interview confirmation"],
   ["manual_ui", "Manual entry"],
+  ["direct", "Saved edit"],
 ] as const)(
   "labels %s provenance in household history",
   async (source, label) => {

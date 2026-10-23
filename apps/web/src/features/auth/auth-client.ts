@@ -1,7 +1,8 @@
+import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import type { UserId } from "@meal-planner/household-api";
 import { organizationClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { createContext, useContext } from "react";
 
 import { apiEffectQuery } from "../api-client/index.js";
@@ -30,6 +31,7 @@ export const makeAuthClient = (
         id: "recovery-session-refresh",
       },
       organizationClient(),
+      oauthProviderClient(),
     ],
   });
 export const AuthClientContext = createContext<ReturnType<
@@ -60,17 +62,23 @@ export const requireAuthSuccess = async <T>(
   return result.data;
 };
 
-export type AuthenticationInput =
+export type AuthenticationInput = (
   | { readonly kind: "login"; readonly input: ReturnType<typeof parseSignIn> }
-  | { readonly kind: "signup"; readonly input: ReturnType<typeof parseSignUp> };
+  | { readonly kind: "signup"; readonly input: ReturnType<typeof parseSignUp> }
+) & { readonly oauthQuery?: string | undefined };
+
+const isOAuthRedirect = Schema.is(
+  Schema.Struct({ redirect: Schema.Literal(true), url: Schema.String })
+);
 
 export const authenticate = (
   authClient: ReturnType<typeof makeAuthClient>,
   command: AuthenticationInput
-): Effect.Effect<void, AuthRequestError> =>
+): Effect.Effect<"signed-in" | "redirecting", AuthRequestError> =>
   Effect.suspend(() => {
     let retryAt: number | undefined;
     const options = {
+      body: { oauth_query: command.oauthQuery },
       onError: ({ response }: { response: Response }) => {
         const seconds = parseRetryAfter(response.headers.get("X-Retry-After"));
         if (response.status === 429 && seconds !== undefined) {
@@ -86,7 +94,16 @@ export const authenticate = (
           command.kind === "signup"
             ? authClient.signUp.email(command.input, options)
             : authClient.signIn.email(command.input, options);
-        await requireAuthSuccess(request, () => retryAt);
+        const result = await requireAuthSuccess(request, () => retryAt);
+        // Better Auth owns the registered-client redirect. Router navigation
+        // here would race its native redirect plugin and abandon the grant.
+        if (isOAuthRedirect(result)) {
+          return "redirecting";
+        }
+        if (command.oauthQuery !== undefined) {
+          throw new AuthRequestError(null);
+        }
+        return "signed-in";
       },
     });
   });

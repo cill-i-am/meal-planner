@@ -1,4 +1,4 @@
-import { Data, Schema } from "effect";
+import { Data, Option, Schema } from "effect";
 import { HttpApiSchema } from "effect/http-api";
 
 import { HouseholdPeopleAuditActorId } from "./people-http.js";
@@ -69,7 +69,7 @@ export const ProfileFact = Schema.Struct({
   createdBy: HouseholdPeopleAuditActorId,
   createdInVersion: ProfileVersion,
   id: ProfileFactId,
-  source: Schema.Literals(["manual_ui", "interview"]),
+  source: Schema.Literals(["manual_ui", "direct", "interview"]),
   standing: ProfileFactStanding,
   updatedAtEpochMs: Schema.Int,
   updatedBy: HouseholdPeopleAuditActorId,
@@ -78,7 +78,8 @@ export const ProfileFact = Schema.Struct({
 });
 export type ProfileFact = typeof ProfileFact.Type;
 
-export const ProfileCommand = Schema.Union([
+/** Immutable command evidence retained in existing profile versions and receipts. */
+export const RecordedProfileCommand = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("AddProvisionalProfileFact"),
     fact: ProfileFactValue,
@@ -109,7 +110,71 @@ export const ProfileCommand = Schema.Union([
     replacement: Schema.NullOr(ProfileFactValue),
   }),
 ]);
+export type RecordedProfileCommand = typeof RecordedProfileCommand.Type;
+
+/** Desired changes. Authority and provenance come from the verified actor. */
+export const ProfileCommand = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("AddProfileFact"),
+    fact: ProfileFactValue,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("ConfirmProfileFact"),
+    factId: ProfileFactId,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("ReplaceOrdinaryProfileFact"),
+    fact: FoodPreference,
+    factId: ProfileFactId,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("RemoveOrdinaryProfileFact"),
+    factId: ProfileFactId,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("ConfirmHardConstraintReduction"),
+    confirmation: Schema.Literal("I confirm this safety constraint change"),
+    factId: ProfileFactId,
+    replacement: Schema.NullOr(ProfileFactValue),
+  }),
+]);
 export type ProfileCommand = typeof ProfileCommand.Type;
+
+/** Recover persisted intent; old authority labels never establish present authority. */
+export const profileCommandFromRecord = (
+  command: RecordedProfileCommand
+): ProfileCommand => {
+  switch (command._tag) {
+    case "AddConfirmedProfileFact":
+    case "AddProvisionalProfileFact": {
+      return { _tag: "AddProfileFact", fact: command.fact };
+    }
+    case "ConfirmProfileFact": {
+      return { _tag: command._tag, factId: command.factId };
+    }
+    case "ConfirmHardConstraintReduction": {
+      return command;
+    }
+    case "ReplaceOrdinaryProfileFact":
+    case "RemoveOrdinaryProfileFact": {
+      return command;
+    }
+    default: {
+      throw new Error(
+        `Unreachable profile command: ${command satisfies never}`
+      );
+    }
+  }
+};
+
+/** Storage-only payload preserving pending interview commands and canonical digests. */
+export const RecordedPersonProfilePayload = Schema.Struct({
+  command: RecordedProfileCommand,
+  expectedProfileVersion: ProfileVersion,
+  mutationId: HouseholdPersonMutationId,
+});
+export type RecordedPersonProfilePayload =
+  typeof RecordedPersonProfilePayload.Type;
 
 export const MutatePersonProfilePayload = Schema.Struct({
   command: ProfileCommand,
@@ -118,6 +183,23 @@ export const MutatePersonProfilePayload = Schema.Struct({
 });
 export type MutatePersonProfilePayload = typeof MutatePersonProfilePayload.Type;
 
+/** Only durable/local recovery reads may accept the previous command representation. */
+export const readStoredProfilePayload = (
+  // eslint-disable-next-line anti-slop/no-unknown-parameters -- This persistence parser decodes both stored formats before recovery can invoke the profile writer.
+  input: unknown
+): MutatePersonProfilePayload => {
+  const current = Schema.decodeUnknownOption(MutatePersonProfilePayload, {
+    onExcessProperty: "error",
+  })(input);
+  if (Option.isSome(current)) {
+    return current.value;
+  }
+  const recorded = Schema.decodeUnknownSync(RecordedPersonProfilePayload, {
+    onExcessProperty: "error",
+  })(input);
+  return { ...recorded, command: profileCommandFromRecord(recorded.command) };
+};
+
 /** Each version is also its immutable audit record; there is no second writer. */
 export const ProfileAudit = Schema.Struct({
   actorId: HouseholdPeopleAuditActorId,
@@ -125,10 +207,10 @@ export const ProfileAudit = Schema.Struct({
   after: Schema.NullOr(ProfileFact),
   atEpochMs: Schema.Int,
   before: Schema.NullOr(ProfileFact),
-  command: ProfileCommand,
+  command: RecordedProfileCommand,
   nextVersion: ProfileVersion,
   previousVersion: ProfileVersion,
-  source: Schema.Literals(["manual_ui", "interview"]),
+  source: Schema.Literals(["manual_ui", "direct", "interview"]),
 });
 export const ProfileAuditPage = Schema.Struct({
   events: Schema.Array(ProfileAudit),

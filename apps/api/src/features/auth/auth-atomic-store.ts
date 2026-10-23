@@ -32,6 +32,7 @@ type AuthAtomicDatabase = Pick<
 
 /** Decoded Better Auth acceptance command at the native endpoint boundary. */
 export const AcceptInvitationMutation = Schema.Struct({
+  activateOrganization: Schema.optional(Schema.Boolean),
   email: EmailAddress,
   invitationId: InvitationId,
   memberId: MemberId,
@@ -248,6 +249,7 @@ export const makeAuthAtomicStore = (
                   eq(session.token, input.sessionToken),
                   eq(session.userId, input.userId),
                   ownsReceipt,
+                  sql`${input.activateOrganization ?? true}`,
                   exists(
                     database
                       .select({ id: member.id })
@@ -541,3 +543,20 @@ export const makeAuthAtomicStore = (
 };
 
 export type AuthAtomicStore = ReturnType<typeof makeAuthAtomicStore>;
+
+/** Native 1.7 stores authorization-code ownership in its verification value. */
+export const revokeUnusedOAuthCodes = async (
+  database: AuthAtomicDatabase,
+  input: { readonly userId: UserId; readonly clientId: string }
+) => {
+  const value = sql`case when json_valid(${verification.value}) then ${verification.value} else '{}' end`;
+  await database
+    .delete(verification)
+    .where(
+      and(
+        sql`json_extract(${value}, '$.type') = 'authorization_code'`,
+        sql`json_extract(${value}, '$.userId') = ${input.userId}`,
+        sql`json_extract(${value}, '$.query.client_id') = ${input.clientId}`
+      )
+    );
+};

@@ -2,7 +2,6 @@ import {
   HouseholdPersonId,
   MutatePersonProfilePayload,
   ProfileVersion,
-  ProfileCommand,
 } from "@meal-planner/household-api";
 import { Schema } from "effect";
 
@@ -32,21 +31,11 @@ export const HouseholdMutatePersonProfileInput = Schema.Struct({
 export type HouseholdMutatePersonProfileInput =
   typeof HouseholdMutatePersonProfileInput.Type;
 
-const InterviewProfileCommand = ProfileCommand.pipe(
-  Schema.check(
-    Schema.makeFilter(
-      (command) =>
-        command._tag !== "AddProvisionalProfileFact" &&
-        (!("basis" in command) || command.basis === "self")
-    )
-  )
-);
 export const HouseholdMutateInterviewProfileInput = Schema.Struct({
   admission: HouseholdPeopleMemberAdmission,
-  payload: Schema.Struct({
-    ...MutatePersonProfilePayload.fields,
-    command: InterviewProfileCommand,
-  }),
+  // The repository admits only the linked adult's own interview profile. Its
+  // common command resolver derives standing; explicit safety intent stays typed.
+  payload: MutatePersonProfilePayload,
   personId: HouseholdPersonId,
 });
 export type HouseholdMutateInterviewProfileInput =

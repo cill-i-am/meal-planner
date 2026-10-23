@@ -72,7 +72,7 @@ it("does not offer implicit safety clearance as a provisional fact", async () =>
   await user.type(screen.getByLabelText("Food or ingredient"), "Broccoli");
   await user.click(screen.getByRole("button", { name: "Add fact" }));
   expect(submit).toHaveBeenCalledExactlyOnceWith({
-    _tag: "AddProvisionalProfileFact",
+    _tag: "AddProfileFact",
     fact: {
       _tag: "FoodPreference",
       label: "Broccoli",

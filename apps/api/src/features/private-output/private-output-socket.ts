@@ -1,10 +1,13 @@
 import type * as NativeCloudflare from "@cloudflare/workers-types";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gt, or } from "drizzle-orm";
 import type { SQLiteAsyncDatabase } from "drizzle-orm/sqlite-core";
 import { Schema } from "effect";
 
 import type { PrivateDiscoveryModelEnvironment } from "./private-discovery-workers-ai.js";
-import { PrivateOutputUnavailable } from "./private-output.contract.js";
+import {
+  Generation,
+  PrivateOutputUnavailable,
+} from "./private-output.contract.js";
 import type {
   OutputLifecyclePort,
   OutputRegistration,
@@ -14,9 +17,6 @@ import { privateOutputGeneration } from "./private-output.database-schema.js";
 
 declare const WebSocketPair: typeof NativeCloudflare.WebSocketPair;
 declare const Response: typeof NativeCloudflare.Response;
-export const Generation = Schema.Struct({
-  generation: Schema.String.pipe(Schema.check(Schema.isUUID())),
-});
 export interface PrivateInterviewEnvironment
   extends Cloudflare.Env, PrivateDiscoveryModelEnvironment {
   readonly AccountOutputLifecycle: {
@@ -82,16 +82,34 @@ export class PrivateOutputSocket<TRunResult = unknown> {
       }
     }
   }
-  async begin(
+  begin(
     binding: PrivateParticipantBinding,
     target: Omit<OutputRegistration, "generation">
+  ): Promise<string> {
+    return this.#begin(binding, target, "pending");
+  }
+  /** The owning child verifies its immutable binding before requesting a lease. */
+  beginRequest(
+    binding: PrivateParticipantBinding,
+    target: Omit<OutputRegistration, "generation">
+  ): Promise<string> {
+    const current = this.read();
+    if (current?.status === "request" && Date.now() < current.expiresAt) {
+      return Promise.resolve(current.generation);
+    }
+    return this.#begin(binding, target, "pending_request");
+  }
+  async #begin(
+    binding: PrivateParticipantBinding,
+    target: Omit<OutputRegistration, "generation">,
+    status: "pending" | "pending_request"
   ): Promise<string> {
     const generation = crypto.randomUUID();
     this.#database
       .insert(privateOutputGeneration)
-      .values({ expiresAt: 0, generation, singleton: 1, status: "pending" })
+      .values({ expiresAt: 0, generation, singleton: 1, status })
       .onConflictDoUpdate({
-        set: { expiresAt: 0, generation, status: "pending" },
+        set: { expiresAt: 0, generation, status },
         target: privateOutputGeneration.singleton,
       })
       .run();
@@ -136,6 +154,33 @@ export class PrivateOutputSocket<TRunResult = unknown> {
       throw new PrivateOutputUnavailable({ reason: "output_disabled" });
     }
   }
+  /** Fresh authority may renew a live request lease, but cannot revive a stale grant. */
+  authorizeRequest(generation: string, expiresAt: number): void {
+    const now = Date.now();
+    if (expiresAt <= now) {
+      throw new PrivateOutputUnavailable({ reason: "authority_unavailable" });
+    }
+    const updated = this.#database
+      .update(privateOutputGeneration)
+      .set({ expiresAt, status: "request" })
+      .where(
+        and(
+          eq(privateOutputGeneration.generation, generation),
+          or(
+            eq(privateOutputGeneration.status, "pending_request"),
+            and(
+              eq(privateOutputGeneration.status, "request"),
+              gt(privateOutputGeneration.expiresAt, now)
+            )
+          )
+        )
+      )
+      .returning()
+      .get();
+    if (updated === undefined) {
+      throw new PrivateOutputUnavailable({ reason: "output_disabled" });
+    }
+  }
   accept(
     request: Request | NativeCloudflare.Request,
     ready: string
@@ -170,9 +215,25 @@ export class PrivateOutputSocket<TRunResult = unknown> {
     const { generation } = Schema.decodeUnknownSync(Generation)(
       socket.deserializeAttachment()
     );
-    return this.isCurrent(generation) ? generation : undefined;
+    return this.#isConnected(generation) ? generation : undefined;
   }
   isCurrent(generation: string): boolean {
+    const current = this.read();
+    return (
+      (current?.status === "connected" || current?.status === "request") &&
+      current.generation === generation &&
+      Date.now() < current.expiresAt
+    );
+  }
+  isRequestCurrent(generation: string): boolean {
+    const current = this.read();
+    return (
+      current?.status === "request" &&
+      current.generation === generation &&
+      Date.now() < current.expiresAt
+    );
+  }
+  #isConnected(generation: string): boolean {
     const current = this.read();
     return (
       current?.status === "connected" &&
@@ -189,7 +250,7 @@ export class PrivateOutputSocket<TRunResult = unknown> {
         socket.deserializeAttachment()
       );
       // No promise or forwarding emitter intervenes between this read and native physical send.
-      if (attached.generation === generation && this.isCurrent(generation)) {
+      if (attached.generation === generation && this.#isConnected(generation)) {
         socket.send(payload);
       }
     }

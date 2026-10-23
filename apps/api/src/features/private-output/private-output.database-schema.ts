@@ -47,7 +47,14 @@ export const privateOutputGeneration = sqliteTable(
     generation: text("generation").notNull(),
     singleton: integer("singleton").primaryKey(),
     status: text("status", {
-      enum: ["pending", "authorized", "connected", "invalidated"],
+      enum: [
+        "pending",
+        "authorized",
+        "connected",
+        "pending_request",
+        "request",
+        "invalidated",
+      ],
     }).notNull(),
   }
 );

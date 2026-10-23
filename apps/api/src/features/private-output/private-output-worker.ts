@@ -1,6 +1,12 @@
 /* eslint-disable max-classes-per-file -- Named native entrypoints separate admission and mutation capabilities in one worker. */
 import type * as NativeCloudflare from "@cloudflare/workers-types";
-import type { Reservation } from "@meal-planner/private-interview-api";
+import type {
+  AssistantTurn,
+  DirectoryFrame,
+  PrivateRequestSessionSnapshot,
+  Reservation,
+  SessionFrame,
+} from "@meal-planner/private-interview-api";
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { Schema } from "effect";
 
@@ -22,6 +28,13 @@ import type {
   OutputLifecyclePort,
   InitializePrivateSession,
 } from "./private-output.contract.js";
+import {
+  PrivateDirectoryRequest,
+  PrivateRequestCancel,
+  PrivateRequestTurn,
+  PrivateSessionRead,
+  PrivateSessionRequest,
+} from "./private-request.contract.js";
 
 export { AccountOutputLifecycle, HouseholdAgent } from "./output-lifecycle.js";
 export { PrivateInterviewDirectory } from "./private-interview-directory.js";
@@ -71,6 +84,15 @@ interface OutputWorkerEnvironment {
       readonly authorizeConnection: (
         input: typeof AuthorizedDirectory.Type
       ) => Promise<void>;
+      readonly beginRequest: (
+        input: PrivateParticipantBinding
+      ) => Promise<string>;
+      readonly authorizeRequest: (
+        input: typeof AuthorizedDirectory.Type
+      ) => Promise<void>;
+      readonly executeDirectory: (
+        input: typeof PrivateDirectoryRequest.Type
+      ) => Promise<DirectoryFrame>;
       readonly readReservation: (
         input: PrivateSessionBinding
       ) => Promise<typeof Reservation.Type | null>;
@@ -90,6 +112,22 @@ interface OutputWorkerEnvironment {
       readonly authorizeConnection: (
         input: typeof AuthorizedSession.Type
       ) => Promise<void>;
+      readonly beginRequest: (input: PrivateSessionBinding) => Promise<string>;
+      readonly authorizeRequest: (
+        input: typeof AuthorizedSession.Type
+      ) => Promise<void>;
+      readonly executeSession: (
+        input: typeof PrivateSessionRequest.Type
+      ) => Promise<SessionFrame>;
+      readonly readSession: (
+        input: typeof PrivateSessionRead.Type
+      ) => Promise<PrivateRequestSessionSnapshot>;
+      readonly startTurn: (
+        input: typeof PrivateRequestTurn.Type
+      ) => Promise<AssistantTurn>;
+      readonly cancelTurn: (
+        input: typeof PrivateRequestCancel.Type
+      ) => Promise<AssistantTurn>;
       readonly releaseConfirmation: (
         input: typeof ReleaseConfirmation.Type
       ) => Promise<ReleasedConfirmation>;
@@ -115,6 +153,32 @@ export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> 
     await child.initialize(binding);
     return child.beginConnection(binding);
   }
+  async beginDirectoryRequest(untrusted: PrivateParticipantBinding) {
+    const binding = Schema.decodeUnknownSync(PrivateParticipantBinding, {
+      onExcessProperty: "error",
+    })(untrusted);
+    const child = this.env.PrivateInterviewDirectory.getByName(
+      await privateDirectoryKey(binding)
+    );
+    await child.initialize(binding);
+    return child.beginRequest(binding);
+  }
+  async authorizeDirectoryRequest(untrusted: typeof AuthorizedDirectory.Type) {
+    const input = Schema.decodeUnknownSync(AuthorizedDirectory, {
+      onExcessProperty: "error",
+    })(untrusted);
+    return this.env.PrivateInterviewDirectory.getByName(
+      await privateDirectoryKey(input.binding)
+    ).authorizeRequest(input);
+  }
+  async executeDirectory(untrusted: typeof PrivateDirectoryRequest.Type) {
+    const input = Schema.decodeUnknownSync(PrivateDirectoryRequest, {
+      onExcessProperty: "error",
+    })(untrusted);
+    return this.env.PrivateInterviewDirectory.getByName(
+      await privateDirectoryKey(input.binding)
+    ).executeDirectory(input);
+  }
   async authorizeDirectoryConnection(
     untrusted: typeof AuthorizedDirectory.Type
   ) {
@@ -126,7 +190,20 @@ export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> 
     ).authorizeConnection(input);
   }
   async beginConnection(untrusted: PrivateSessionBinding) {
-    const binding = Schema.decodeUnknownSync(PrivateSessionBinding)(untrusted);
+    const binding = Schema.decodeUnknownSync(PrivateSessionBinding, {
+      onExcessProperty: "error",
+    })(untrusted);
+    const child = await this.#initializeSession(binding);
+    return child.beginConnection(binding);
+  }
+  async beginRequest(untrusted: PrivateSessionBinding) {
+    const binding = Schema.decodeUnknownSync(PrivateSessionBinding, {
+      onExcessProperty: "error",
+    })(untrusted);
+    const child = await this.#initializeSession(binding);
+    return child.beginRequest(binding);
+  }
+  async #initializeSession(binding: PrivateSessionBinding) {
     const reservation = await this.env.PrivateInterviewDirectory.getByName(
       await privateDirectoryKey(binding)
     ).readReservation(binding);
@@ -137,7 +214,7 @@ export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> 
       await privateOutputKey("session", binding.sessionReference)
     );
     await child.initialize({ binding, scope: reservation.scope });
-    return child.beginConnection(binding);
+    return child;
   }
 
   async authorizeConnection(untrusted: typeof AuthorizedSession.Type) {
@@ -147,6 +224,46 @@ export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> 
     ).authorizeConnection(input);
   }
 
+  async authorizeRequest(untrusted: typeof AuthorizedSession.Type) {
+    const input = Schema.decodeUnknownSync(AuthorizedSession, {
+      onExcessProperty: "error",
+    })(untrusted);
+    return this.env.PrivateInterviewSession.getByName(
+      await privateOutputKey("session", input.binding.sessionReference)
+    ).authorizeRequest(input);
+  }
+  async executeSession(untrusted: typeof PrivateSessionRequest.Type) {
+    const input = Schema.decodeUnknownSync(PrivateSessionRequest, {
+      onExcessProperty: "error",
+    })(untrusted);
+    return this.env.PrivateInterviewSession.getByName(
+      await privateOutputKey("session", input.binding.sessionReference)
+    ).executeSession(input);
+  }
+  async readSession(untrusted: typeof PrivateSessionRead.Type) {
+    const input = Schema.decodeUnknownSync(PrivateSessionRead, {
+      onExcessProperty: "error",
+    })(untrusted);
+    return this.env.PrivateInterviewSession.getByName(
+      await privateOutputKey("session", input.binding.sessionReference)
+    ).readSession(input);
+  }
+  async startTurn(untrusted: typeof PrivateRequestTurn.Type) {
+    const input = Schema.decodeUnknownSync(PrivateRequestTurn, {
+      onExcessProperty: "error",
+    })(untrusted);
+    return this.env.PrivateInterviewSession.getByName(
+      await privateOutputKey("session", input.binding.sessionReference)
+    ).startTurn(input);
+  }
+  async cancelTurn(untrusted: typeof PrivateRequestCancel.Type) {
+    const input = Schema.decodeUnknownSync(PrivateRequestCancel, {
+      onExcessProperty: "error",
+    })(untrusted);
+    return this.env.PrivateInterviewSession.getByName(
+      await privateOutputKey("session", input.binding.sessionReference)
+    ).cancelTurn(input);
+  }
   async releaseConfirmation(untrusted: typeof ReleaseConfirmation.Type) {
     const input = Schema.decodeUnknownSync(ReleaseConfirmation, {
       onExcessProperty: "error",

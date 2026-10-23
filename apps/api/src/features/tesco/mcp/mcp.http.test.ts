@@ -9,6 +9,9 @@ import {
   CatalogueProductResults,
   CatalogueSuggestions,
 } from "../catalogue/catalogue.model.js";
+import * as Shopping from "../shopping/shopping.model.js";
+import { makeHttpShoppingFixture } from "./http-shopping.test-fixture.js";
+import { tescoPrivateOpenApi } from "./http.contract.js";
 import type { TescoMcpCapabilities } from "./mcp.contract.js";
 import { makeTescoMcpHttpHandler } from "./mcp.http.js";
 import { TescoSessionFailure } from "./session.model.js";
@@ -31,7 +34,10 @@ const health = {
   state: "not_connected" as const,
 };
 
-const setup = (overrides: Partial<TescoMcpCapabilities> = {}) => {
+const setup = (
+  overrides: Partial<TescoMcpCapabilities> = {},
+  admitted = true
+) => {
   const search = vi.fn(() => Effect.succeed(products));
   const enroll = vi.fn(() => Effect.succeed(health));
   const disconnect = vi.fn(() => Effect.void);
@@ -43,7 +49,7 @@ const setup = (overrides: Partial<TescoMcpCapabilities> = {}) => {
       renewals: [],
     })
   );
-  const rateLimit = vi.fn(() => Effect.succeed(true));
+  const rateLimit = vi.fn(() => Effect.succeed(admitted));
   const handler = makeTescoMcpHttpHandler({
     capabilities: {
       basket: Effect.fail(new TescoSessionFailure({ reason: "upstream" })),
@@ -340,6 +346,359 @@ describe("private Tesco MCP HTTP boundary", () => {
     } finally {
       abort.abort();
       await client.close();
+    }
+  });
+});
+
+const post = (
+  app: ReturnType<typeof setup>,
+  name: string,
+  input: Schema.Json
+) =>
+  app.fetch(`https://tesco.test/v1/${name}`, {
+    body: JSON.stringify(input),
+    headers: {
+      authorization: `Bearer ${executorToken}`,
+      "content-type": "application/json",
+    },
+    method: "POST",
+  });
+
+describe("private Tesco HTTP and MCP parity", () => {
+  it("publishes all 15 private operations from the same schemas without operator enrollment", async () => {
+    const app = setup();
+    const client = await connect(app.fetch);
+    try {
+      const discovery = await client.listTools();
+      const response = await app.fetch("https://tesco.test/openapi.json", {
+        headers: { authorization: `Bearer ${executorToken}` },
+      });
+      const document = tescoPrivateOpenApi("https://tesco.test");
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(await response.json()).toEqual(document);
+      expect(Object.keys(document.paths)).toEqual(
+        discovery.tools.map((tool) => `/v1/${tool.name}`)
+      );
+      expect(document.paths).not.toHaveProperty("/admin/session");
+      for (const tool of discovery.tools) {
+        expect(document.paths[`/v1/${tool.name}`]?.post).toMatchObject({
+          description: tool.description,
+          security: [{ privateTescoBearer: [] }],
+        });
+      }
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("authenticates HTTP calls and discovery before parsing, retaining operator separation and browser denial", async () => {
+    const app = setup();
+    await Promise.all(
+      [
+        "/openapi.json",
+        "/v1/search_products",
+        "/v1/approve_checkout_handoff",
+      ].flatMap((path) =>
+        [null, operatorToken].map(async (credential) => {
+          const denied = await app.fetch(`https://tesco.test${path}`, {
+            body: "not-json",
+            headers:
+              credential === null
+                ? {}
+                : { authorization: `Bearer ${credential}` },
+            method: "POST",
+          });
+          expect(denied.status).toBe(401);
+        })
+      )
+    );
+    expect(app.rateLimit).not.toHaveBeenCalled();
+    expect(app.search).not.toHaveBeenCalled();
+    await Promise.all(
+      ["/openapi.json", "/v1/search_products"].map(async (path) => {
+        const browser = await app.fetch(`https://tesco.test${path}`, {
+          headers: {
+            authorization: `Bearer ${executorToken}`,
+            origin: "https://tesco.test",
+          },
+        });
+        expect(browser.status).toBe(403);
+      })
+    );
+    expect(app.enroll).not.toHaveBeenCalled();
+    expect(app.sessionReport).not.toHaveBeenCalled();
+    const limited = setup({}, false);
+    const response = await post(limited, "search_products", { query: "milk" });
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("60");
+    expect(limited.search).not.toHaveBeenCalled();
+  });
+
+  it("returns the exact MCP structured results for every read operation", async () => {
+    const fixture = makeHttpShoppingFixture();
+    const app = setup(await Effect.runPromise(fixture.program));
+    const client = await connect(app.fetch);
+    const reads = [
+      { input: { query: "milk" }, name: "search_products" },
+      { input: { facet: "123" }, name: "list_category_products" },
+      { input: { query: "milk" }, name: "suggest_products" },
+      { input: {}, name: "connection_status" },
+      { input: { productId: "123" }, name: "get_product_details" },
+      { input: {}, name: "list_favourites" },
+      { input: {}, name: "list_previous_orders" },
+      { input: { orderId: "order" }, name: "get_order_details" },
+      { input: {}, name: "get_basket" },
+      {
+        input: { end: "2026-10-25", start: "2026-10-24" },
+        name: "list_delivery_slots",
+      },
+    ];
+    try {
+      await Promise.all(
+        reads.map(async ({ name, input }) => {
+          const http = await post(app, name, input);
+          const mcp = await client.callTool({ arguments: input, name });
+          expect(http.status, name).toBe(200);
+          expect(http.headers.get("cache-control"), name).toBe("no-store");
+          expect(mcp.isError, name).not.toBe(true);
+          expect(await http.json(), name).toEqual(mcp.structuredContent);
+        })
+      );
+      expect(fixture.sent).toEqual([]);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("shares durable mutation retry identity across transports and reconstructed services", async () => {
+    const fixture = makeHttpShoppingFixture();
+    const app = setup(await Effect.runPromise(fixture.program));
+    const replayThroughRestartedMcp = async (
+      name: string,
+      input: Readonly<Record<string, Schema.Json>>
+    ) => {
+      const restarted = setup(await Effect.runPromise(fixture.program));
+      const client = await connect(restarted.fetch);
+      try {
+        return await client.callTool({ arguments: input, name });
+      } finally {
+        await client.close();
+      }
+    };
+    const commands = [
+      {
+        input: {
+          items: [{ productId: "123", quantity: 2, unit: "pcs" }],
+          requestId: "basket-request-http",
+        },
+        name: "set_basket_items",
+      },
+      {
+        input: {
+          expectedSlotId: "reserved-slot",
+          requestId: "release-request-http",
+        },
+        name: "release_delivery_slot",
+      },
+      {
+        input: { requestId: "reserve-request-http", slot: fixture.slot },
+        name: "reserve_delivery_slot",
+      },
+    ];
+    for (const { name, input } of commands) {
+      // eslint-disable-next-line no-await-in-loop -- Basket/slot transitions and their replay must be observed in order.
+      const first = await post(app, name, input);
+      expect(first.status, name).toBe(200);
+      // eslint-disable-next-line no-await-in-loop -- This body belongs to the current command before its replay.
+      const firstBody = await first.json();
+      const result = Schema.decodeUnknownSync(Shopping.BasketCommandResult)(
+        firstBody
+      );
+      expect(result.outcome, name).toBe("confirmed");
+      // eslint-disable-next-line no-await-in-loop -- Replay must follow the first attempt against the same durable receipt.
+      const retry = await replayThroughRestartedMcp(name, input);
+      expect(retry.isError, name).not.toBe(true);
+      expect(retry.structuredContent, name).toMatchObject({
+        basket: result.basket,
+        outcome: "confirmed",
+      });
+    }
+    expect(fixture.sent).toEqual([
+      "SetPrivateBasketItems",
+      "ReleasePrivateSlot",
+      "ReservePrivateSlot",
+    ]);
+    const conflict = await post(app, "set_basket_items", {
+      items: [{ productId: "123", quantity: 3, unit: "pcs" }],
+      requestId: "basket-request-http",
+    });
+    expect(conflict.status).toBe(400);
+    expect(fixture.sent).toHaveLength(3);
+  });
+
+  it("does not resend an uncertain HTTP command through MCP", async () => {
+    const fixture = makeHttpShoppingFixture();
+    fixture.setUnauthorized();
+    const app = setup(await Effect.runPromise(fixture.program));
+    const input = {
+      items: [{ productId: "123", quantity: 2, unit: "pcs" }],
+      requestId: "uncertain-request-http",
+    };
+    const first = await post(app, "set_basket_items", input);
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({ outcome: "uncertain" });
+    const client = await connect(app.fetch);
+    try {
+      const retry = await client.callTool({
+        arguments: input,
+        name: "set_basket_items",
+      });
+      expect(retry.structuredContent).toMatchObject({ outcome: "uncertain" });
+      expect(fixture.sent).toEqual(["SetPrivateBasketItems"]);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("shares frozen checkout reviews, rejects tampering and consumes each handoff once across transports", async () => {
+    const fixture = makeHttpShoppingFixture();
+    const app = setup(await Effect.runPromise(fixture.program));
+    const client = await connect(app.fetch);
+    try {
+      const prepared = await post(app, "prepare_checkout", {});
+      const review = Schema.decodeUnknownSync(Shopping.CheckoutReview)(
+        await prepared.json()
+      );
+      const tampered = await client.callTool({
+        arguments: {
+          review: { ...review, basket: { ...review.basket, guidePrice: 0 } },
+        },
+        name: "approve_checkout_handoff",
+      });
+      expect(tampered.isError).toBe(true);
+      const approved = await post(app, "approve_checkout_handoff", { review });
+      expect(approved.status).toBe(200);
+      expect(await approved.json()).toMatchObject({ orderPlaced: false });
+      const reused = await client.callTool({
+        arguments: { review },
+        name: "approve_checkout_handoff",
+      });
+      expect(reused.isError).toBe(true);
+      const next = await client.callTool({
+        arguments: {},
+        name: "prepare_checkout",
+      });
+      const nextReview = Schema.decodeUnknownSync(Shopping.CheckoutReview)(
+        next.structuredContent
+      );
+      const invalid = await post(app, "approve_checkout_handoff", {
+        review: { ...nextReview, fingerprint: "forged" },
+      });
+      expect(invalid.status).toBe(400);
+      const valid = await client.callTool({
+        arguments: { review: nextReview },
+        name: "approve_checkout_handoff",
+      });
+      expect(valid.structuredContent).toMatchObject({ orderPlaced: false });
+      expect(fixture.sent).toEqual([]);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("bounds and validates JSON before service invocation, and redacts upstream failures", async () => {
+    const app = setup();
+    await Promise.all(
+      [{ count: 49, query: "milk" }, { approved: true, query: "milk" }, {}].map(
+        async (input) => {
+          const invalid = await post(app, "search_products", input);
+          expect(invalid.status).toBe(400);
+        }
+      )
+    );
+    await Promise.all(
+      ["not-json", "x".repeat(65_537)].map(async (body) => {
+        const invalid = await app.fetch(
+          "https://tesco.test/v1/search_products",
+          {
+            body,
+            headers: {
+              authorization: `Bearer ${executorToken}`,
+              "content-type": "application/json",
+            },
+            method: "POST",
+          }
+        );
+        expect(invalid.status).toBe(400);
+      })
+    );
+    expect(app.search).not.toHaveBeenCalled();
+    const wrongMethod = await app.fetch(
+      "https://tesco.test/v1/search_products",
+      {
+        headers: { authorization: `Bearer ${executorToken}` },
+      }
+    );
+    expect(wrongMethod.status).toBe(405);
+    const missingJson = await app.fetch(
+      "https://tesco.test/v1/search_products",
+      {
+        body: "{}",
+        headers: { authorization: `Bearer ${executorToken}` },
+        method: "POST",
+      }
+    );
+    expect(missingJson.status).toBe(415);
+    const unavailable = setup({
+      search: () =>
+        Effect.fail(new TescoSessionFailure({ reason: "authentication" })),
+    });
+    const result = await post(unavailable, "search_products", {
+      query: "milk",
+    });
+    expect(result.status).toBe(503);
+    expect(await result.json()).toEqual({
+      error: "tesco_reauthentication_required",
+    });
+  });
+});
+
+describe("private Tesco HTTP cancellation", () => {
+  it("interrupts a scoped read when the HTTP caller aborts", async () => {
+    let started = false;
+    let released = false;
+    const app = setup({
+      search: () =>
+        Effect.acquireUseRelease(
+          Effect.sync(() => {
+            started = true;
+          }),
+          () => Effect.never,
+          () =>
+            Effect.sync(() => {
+              released = true;
+            })
+        ),
+    });
+    const abort = new AbortController();
+    const call = app.fetch("https://tesco.test/v1/search_products", {
+      body: JSON.stringify({ query: "milk" }),
+      headers: {
+        authorization: `Bearer ${executorToken}`,
+        "content-type": "application/json",
+      },
+      method: "POST",
+      signal: abort.signal,
+    });
+    const rejected = expect(call).rejects.toBeDefined();
+    try {
+      await vi.waitFor(() => expect(started).toBe(true));
+      abort.abort();
+      await rejected;
+      await vi.waitFor(() => expect(released).toBe(true));
+    } finally {
+      abort.abort();
     }
   });
 });

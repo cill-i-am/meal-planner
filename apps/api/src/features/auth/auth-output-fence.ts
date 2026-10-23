@@ -6,6 +6,7 @@ import {
   privateOutputKey,
   PrivateOutputUnavailable,
 } from "../private-output/private-output.contract.js";
+import { currentNativeDelegation } from "./delegated-access.js";
 
 export type AuthOutputFence = <A>(
   input: {
@@ -22,6 +23,10 @@ const parseIdentity = Schema.decodeUnknownSync(Identity);
 const parseUserId = Schema.decodeUnknownSync(UserId);
 const protectedModel = (model: string) =>
   model === "session" || model === "member";
+const delegatedModel = (model: string) =>
+  model === "oauthAccessToken" ||
+  model === "oauthRefreshToken" ||
+  model === "oauthConsent";
 const unsupported = () =>
   new PrivateOutputUnavailable({ reason: "unsupported_mutation" });
 
@@ -71,15 +76,81 @@ const isSessionRefresh = (
 /** Fence every enabled canonical session/member mutation at Better Auth's public adapter boundary. */
 export const fenceAuthAdapter = (
   adapter: DBAdapter,
-  fence: AuthOutputFence
+  fence: AuthOutputFence,
+  revokeUnusedCodes: (input: {
+    readonly userId: UserId;
+    readonly clientId: string;
+  }) => Promise<void>
 ): DBAdapter => {
   const wrap = (source: DBTransactionAdapter): DBTransactionAdapter => {
+    const fenceDelegatedMutation = async <A>(
+      input: AuthMutation,
+      action: string,
+      canonical: () => Promise<A>
+    ) => {
+      const rows = Schema.decodeUnknownSync(
+        Schema.Array(
+          Schema.Struct({
+            clientId: Schema.optional(Schema.String),
+            userId: Schema.optional(Schema.NullOr(UserId)),
+          })
+        )
+      )(await source.findMany({ model: input.model, where: input.where }));
+      const accountIds = [
+        ...new Set(
+          rows.flatMap((row) =>
+            row.userId === null || row.userId === undefined ? [] : [row.userId]
+          )
+        ),
+      ].toSorted();
+      const intentKey = await privateOutputKey(
+        "oauth-mutation",
+        JSON.stringify({ action, ...input })
+      );
+      let guarded = async () => {
+        if (input.model === "oauthConsent" && action.startsWith("delete")) {
+          // Native consent deletion leaves issued credentials behind. Delete
+          // this user's client grant under the same fence so re-consent cannot
+          // revive those credentials. The native provider still owns issuance.
+          await Promise.all(
+            rows.map(async (row) => {
+              if (
+                row.clientId === undefined ||
+                row.userId === undefined ||
+                row.userId === null
+              ) {
+                throw unsupported();
+              }
+              const where = [
+                { field: "clientId", value: row.clientId },
+                { field: "userId", value: row.userId },
+              ];
+              await revokeUnusedCodes({
+                clientId: row.clientId,
+                userId: row.userId,
+              });
+              await source.deleteMany({ model: "oauthRefreshToken", where });
+              await source.deleteMany({ model: "oauthAccessToken", where });
+            })
+          );
+        }
+        return canonical();
+      };
+      for (const accountId of accountIds) {
+        const next = guarded;
+        guarded = () => fence({ accountId, intentKey }, next);
+      }
+      return guarded();
+    };
     const mutate = async <A>(
       input: AuthMutation,
       action: string,
       absent: A,
       canonical: () => Promise<A>
     ): Promise<A> => {
+      if (delegatedModel(input.model)) {
+        return fenceDelegatedMutation(input, action, canonical);
+      }
       if (!protectedModel(input.model)) {
         if (
           (input.model === "user" || input.model === "organization") &&
@@ -159,7 +230,11 @@ export const fenceAuthAdapter = (
         if (protectedModel(input.model)) {
           throw unsupported();
         }
-        return source.consumeOne(input);
+        return delegatedModel(input.model)
+          ? fenceDelegatedMutation(input, "consumeOne", () =>
+              source.consumeOne(input)
+            )
+          : source.consumeOne(input);
       },
       delete: (input) =>
         mutate(input, "delete", undefined, () => source.delete(input)),
@@ -169,10 +244,35 @@ export const fenceAuthAdapter = (
         if (protectedModel(input.model)) {
           throw unsupported();
         }
-        return source.incrementOne(input);
+        return delegatedModel(input.model)
+          ? fenceDelegatedMutation(
+              { ...input, update: { ...input.set, ...input.increment } },
+              "incrementOne",
+              () => source.incrementOne(input)
+            )
+          : source.incrementOne(input);
       },
-      update: (input) =>
-        mutate(input, "update", null, () => source.update(input)),
+      update: <T>(input: Parameters<DBTransactionAdapter["update"]>[0]) => {
+        const delegated = currentNativeDelegation();
+        if (
+          delegated !== undefined &&
+          input.model === "session" &&
+          "activeOrganizationId" in input.update
+        ) {
+          // Organization endpoints may select/clear the browser's active family.
+          // Delegated family context is request-local, so retain that session row.
+          if (
+            Object.keys(input.update).some(
+              (field) =>
+                field !== "activeOrganizationId" && field !== "updatedAt"
+            )
+          ) {
+            throw unsupported();
+          }
+          return source.findOne<T>({ model: input.model, where: input.where });
+        }
+        return mutate(input, "update", null, () => source.update<T>(input));
+      },
       updateMany: (input) =>
         mutate(input, "updateMany", 0, () => source.updateMany(input)),
     };

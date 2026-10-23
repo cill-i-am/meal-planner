@@ -2,7 +2,8 @@ import { createHash, timingSafeEqual } from "node:crypto";
 
 import { Effect, Redacted, Schema, Stream } from "effect";
 
-import { TescoMcpCapabilities } from "./mcp.contract.js";
+import { tescoPrivateOpenApi } from "./http.contract.js";
+import { TescoMcpCapabilities, TescoMcpTools } from "./mcp.contract.js";
 import { handleTescoMcp } from "./mcp.protocol.js";
 import { TescoSessionCredentials } from "./session.model.js";
 import type {
@@ -34,10 +35,10 @@ const response = (status: number, error: string) =>
     { headers: { "cache-control": "no-store" }, status }
   );
 
-const readOperatorSession = (request: Request) =>
-  Effect.gen(function* decodeOperatorUpload() {
+const readJson = (request: Request) =>
+  Effect.gen(function* decodeBoundedJson() {
     const { body } = request;
-    const invalid = () => ({ _tag: "InvalidOperatorRequest" as const });
+    const invalid = () => ({ _tag: "InvalidTescoRequest" as const });
     if (body === null) {
       return yield* Effect.fail(invalid());
     }
@@ -62,9 +63,7 @@ const readOperatorSession = (request: Request) =>
       catch: invalid,
       try: () => JSON.parse(new TextDecoder().decode(bytes)) as unknown,
     });
-    return yield* Schema.decodeUnknownEffect(TescoSessionCredentials)(
-      json
-    ).pipe(Effect.map(Redacted.make));
+    return json;
   });
 
 export interface TescoMcpHttpOptions {
@@ -82,10 +81,25 @@ export interface TescoMcpHttpOptions {
   >;
 }
 
+const requestAborted = (request: Request) =>
+  Effect.callback<never>((resume) => {
+    const abort = () => resume(Effect.interrupt);
+    request.signal.addEventListener("abort", abort, { once: true });
+    if (request.signal.aborted) {
+      abort();
+    }
+    return Effect.sync(() =>
+      request.signal.removeEventListener("abort", abort)
+    );
+  });
+
 /** Every path is authenticated before request bodies, MCP initialization or tools/list are processed. */
 export const makeTescoMcpHttpHandler =
   (options: TescoMcpHttpOptions) => (request: Request) =>
     Effect.gen(function* serveAuthenticatedRequest() {
+      if (request.signal.aborted) {
+        return yield* Effect.interrupt;
+      }
       const url = new URL(request.url);
       const operator = url.pathname === "/admin/session";
       if (
@@ -108,7 +122,7 @@ export const makeTescoMcpHttpHandler =
       }
       if (!(yield* options.rateLimit)) {
         return new Response(null, {
-          headers: { "retry-after": "60" },
+          headers: { "cache-control": "no-store", "retry-after": "60" },
           status: 429,
         });
       }
@@ -133,8 +147,41 @@ export const makeTescoMcpHttpHandler =
         ) {
           return response(415, "json_required");
         }
-        const credentials = yield* readOperatorSession(request);
+        const credentials = yield* readJson(request).pipe(
+          Effect.flatMap(Schema.decodeUnknownEffect(TescoSessionCredentials)),
+          Effect.map(Redacted.make)
+        );
         return Response.json(yield* options.enroll(credentials), {
+          headers: { "cache-control": "no-store" },
+        });
+      }
+      if (url.pathname === "/openapi.json") {
+        return request.method === "GET"
+          ? Response.json(tescoPrivateOpenApi(url.origin), {
+              headers: { "cache-control": "no-store" },
+            })
+          : new Response(null, { headers: { allow: "GET" }, status: 405 });
+      }
+      const tool = TescoMcpTools.find(
+        ({ name }) => url.pathname === `/v1/${name}`
+      );
+      if (tool !== undefined) {
+        if (request.method !== "POST") {
+          return new Response(null, {
+            headers: { allow: "POST" },
+            status: 405,
+          });
+        }
+        if (
+          !request.headers.get("content-type")?.startsWith("application/json")
+        ) {
+          return response(415, "json_required");
+        }
+        const result = yield* readJson(request).pipe(
+          Effect.flatMap(tool.execute),
+          Effect.provideService(TescoMcpCapabilities, options.capabilities)
+        );
+        return Response.json(result, {
           headers: { "cache-control": "no-store" },
         });
       }
@@ -150,6 +197,7 @@ export const makeTescoMcpHttpHandler =
       mcpResponse.headers.set("cache-control", "no-store");
       return mcpResponse;
     }).pipe(
+      Effect.raceFirst(requestAborted(request)),
       Effect.scoped,
       Effect.orElseSucceed((failure) => {
         let status = 400;

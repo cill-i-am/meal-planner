@@ -196,6 +196,18 @@ export const Message = Schema.Struct({
   role: Schema.Literals(["participant", "assistant"]),
   text: Text,
 });
+/** Bounded private history and current work, without transport admission metadata. */
+export const PrivateRequestSessionSnapshot = Schema.Struct({
+  assistantTurn: Schema.NullOr(AssistantTurn),
+  cards: Schema.Array(ProfileCard),
+  hasMoreCards: Schema.Boolean,
+  hasMoreMessages: Schema.Boolean,
+  messages: Schema.Array(Message),
+  pendingConfirmation: Schema.NullOr(Id),
+  state: SessionState,
+});
+export type PrivateRequestSessionSnapshot =
+  typeof PrivateRequestSessionSnapshot.Type;
 export const Rejected = Schema.Struct({
   commandId: Id,
   reason: Schema.Literals([
