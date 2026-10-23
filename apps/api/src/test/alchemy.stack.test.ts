@@ -32,6 +32,7 @@ vi.stubEnv(
 );
 vi.stubEnv("MEAL_PLANNER_PRIVATE_DISCOVERY_CONFIG", "");
 vi.stubEnv("MEAL_PLANNER_EMAIL_DELIVERY_ENABLED", "true");
+vi.stubEnv("MEAL_PLANNER_PUBLIC_ORIGIN", "");
 
 const { test, beforeAll, afterAll, deploy, destroy } = Test.make({
   dev: true,
@@ -63,6 +64,14 @@ test(
       Effect.flatMap(Schema.decodeUnknownEffect(HealthResponse))
     );
     expect(health.ok).toBe(true);
+    const discovery = yield* Test.getWhenReady(
+      `${output.apiUrl}/.well-known/oauth-protected-resource/v1`
+    );
+    expect(discovery.status).toBe(200);
+    expect(yield* discovery.json).toMatchObject({
+      authorization_servers: ["http://localhost:4399/api/auth"],
+      resource: "http://localhost:4399/v1",
+    });
     const page = yield* Test.getWhenReady(`${output.websiteUrl}/signup`);
     expect(page.status).toBe(200);
     expect(yield* page.text).toContain("<!DOCTYPE html>");

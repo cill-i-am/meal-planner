@@ -107,21 +107,23 @@ const currentIsoTimestamp = () => new Date().toISOString();
 export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
   "MealPlannerApi",
   Effect.gen(function* MealPlannerApiProps() {
-    const { dev } = yield* AlchemyContext;
-    const publicOrigin = configuredPublicOrigin({
-      configured: yield* Config.String("MEAL_PLANNER_PUBLIC_ORIGIN").pipe(
-        Config.withDefault("")
-      ),
-      dev,
-      stage: yield* Stage,
-    });
     const conversationBindings = yield* agentConversationBindings;
     return {
       build: { nativeExports: ["AgentConversation"] },
       ...workerObservability,
       env: {
         ...conversationBindings,
-        MEAL_PLANNER_PUBLIC_ORIGIN: publicOrigin,
+        // Environment binding effects run only at deployment; props also run at cold start.
+        MEAL_PLANNER_PUBLIC_ORIGIN: Effect.gen(function* publicOriginBinding() {
+          const { dev } = yield* AlchemyContext;
+          return configuredPublicOrigin({
+            configured: yield* Config.String("MEAL_PLANNER_PUBLIC_ORIGIN").pipe(
+              Config.withDefault("")
+            ),
+            dev,
+            stage: yield* Stage,
+          });
+        }),
         PrivateOutputApi: PrivateOutputApiBinding,
         PrivateOutputMutations: PrivateOutputMutationsBinding,
       },
