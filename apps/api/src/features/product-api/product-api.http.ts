@@ -4,6 +4,7 @@ import type { MealPlannerAuthService } from "../auth/auth.alchemy.js";
 import {
   DelegatedAccess,
   delegatedAccessChallenge,
+  delegatedAccessFailure,
   protectedResourceMetadata,
 } from "../auth/delegated-access.js";
 import { readProductAccount } from "./product-account.js";
@@ -71,24 +72,37 @@ export const handleProductHttp = (
     }
     const url = new URL(request.url);
     const mcp = url.pathname === "/mcp";
+    const operation = mcp
+      ? undefined
+      : matchProductOperation(request.method, url.pathname);
     const dispatch = (applicationRequest: Request) =>
       new URL(applicationRequest.url).pathname === "/v1/account" &&
       applicationRequest.method === "GET"
         ? readProductAccount(options.auth, applicationRequest)
         : options.dispatch(applicationRequest);
     if (
-      url.pathname === "/v1/account" &&
-      request.method === "GET" &&
-      !request.headers.has("authorization")
+      operation !== undefined &&
+      !request.headers.has("authorization") &&
+      request.headers.has("cookie")
     ) {
       const response = yield* dispatch(request);
+      if (response.status === 401 && options.auth.delegatedAccessEnabled) {
+        response.headers.set(
+          "www-authenticate",
+          delegatedAccessChallenge(
+            delegatedAccessFailure(`${options.baseURL}/v1`, operation.scopes, {
+              statusCode: 401,
+            })
+          )
+        );
+      }
       response.headers.set("cache-control", "no-store");
       return response;
     }
     if (
       !mcp &&
       (!url.pathname.startsWith("/v1/") ||
-        !request.headers.has("authorization"))
+        (!request.headers.has("authorization") && operation === undefined))
     ) {
       return null;
     }
@@ -102,9 +116,6 @@ export const handleProductHttp = (
     if (origin !== null && origin !== options.baseURL) {
       return Response.json({ error: "origin_not_allowed" }, { status: 403 });
     }
-    const operation = mcp
-      ? undefined
-      : matchProductOperation(request.method, url.pathname);
     if (!mcp && operation === undefined) {
       return Response.json(
         { error: "operation_not_available" },

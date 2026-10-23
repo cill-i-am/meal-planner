@@ -200,9 +200,15 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     expect(stackSource).toContain(
       'Cloudflare.Website.Vite("MealPlannerWebsite"'
     );
-    expect(stackSource).toContain(
-      'assets: { runWorkerFirst: ["/api/auth/*", "/v1/*"] }'
-    );
+    const workerRoutes =
+      stackSource.match(/runWorkerFirst:\s*\[(?<routes>[^\]]*)\]/u)?.groups?.[
+        "routes"
+      ] ?? "";
+    expect(
+      [...workerRoutes.matchAll(/"(?<route>[^"]+)"/gu)].map(
+        (match) => match.groups?.["route"]
+      )
+    ).toEqual(["/api/auth/*", "/v1/*", "/mcp", "/.well-known/oauth-*"]);
     expect(stackSource).toContain("MEAL_PLANNER_API: api,");
     expect(stackSource).toContain(
       'BROWSER_ANALYTICS_TOKEN: browserAnalytics?.siteToken ?? ""'

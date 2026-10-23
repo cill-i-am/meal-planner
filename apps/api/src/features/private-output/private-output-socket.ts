@@ -38,6 +38,10 @@ type OutputSocketEnvironment = Pick<
   PrivateInterviewEnvironment,
   "AccountOutputLifecycle" | "HouseholdAgent"
 >;
+// Keep the existing browser slot stable across upgrades; request leases own a
+// separate bounded slot and never replace a connected browser's authority.
+const socketSlot = 1;
+const requestSlot = 2;
 /** A private child owns this concrete native socket fence; it is never an RPC target. */
 export class PrivateOutputSocket<TRunResult = unknown> {
   #context: OutputSocketContext;
@@ -75,6 +79,12 @@ export class PrivateOutputSocket<TRunResult = unknown> {
         .update(privateOutputGeneration)
         .set({ status: "invalidated" })
         .run();
+    } else {
+      this.#database
+        .update(privateOutputGeneration)
+        .set({ status: "invalidated" })
+        .where(eq(privateOutputGeneration.singleton, requestSlot))
+        .run();
     }
     for (const socket of sockets) {
       if (!resumed.has(socket)) {
@@ -93,7 +103,7 @@ export class PrivateOutputSocket<TRunResult = unknown> {
     binding: PrivateParticipantBinding,
     target: Omit<OutputRegistration, "generation">
   ): Promise<string> {
-    const current = this.read();
+    const current = this.readRequest();
     if (current?.status === "request" && Date.now() < current.expiresAt) {
       return Promise.resolve(current.generation);
     }
@@ -105,16 +115,19 @@ export class PrivateOutputSocket<TRunResult = unknown> {
     status: "pending" | "pending_request"
   ): Promise<string> {
     const generation = crypto.randomUUID();
+    const singleton = status === "pending" ? socketSlot : requestSlot;
     this.#database
       .insert(privateOutputGeneration)
-      .values({ expiresAt: 0, generation, singleton: 1, status })
+      .values({ expiresAt: 0, generation, singleton, status })
       .onConflictDoUpdate({
         set: { expiresAt: 0, generation, status },
         target: privateOutputGeneration.singleton,
       })
       .run();
-    for (const socket of this.#context.getWebSockets()) {
-      socket.close(1008, "Reauthentication required");
+    if (status === "pending") {
+      for (const socket of this.#context.getWebSockets()) {
+        socket.close(1008, "Reauthentication required");
+      }
     }
     try {
       const registration = { ...target, generation };
@@ -218,7 +231,7 @@ export class PrivateOutputSocket<TRunResult = unknown> {
     return this.#isConnected(generation) ? generation : undefined;
   }
   isCurrent(generation: string): boolean {
-    const current = this.read();
+    const current = this.read(generation);
     return (
       (current?.status === "connected" || current?.status === "request") &&
       current.generation === generation &&
@@ -226,7 +239,7 @@ export class PrivateOutputSocket<TRunResult = unknown> {
     );
   }
   isRequestCurrent(generation: string): boolean {
-    const current = this.read();
+    const current = this.readRequest();
     return (
       current?.status === "request" &&
       current.generation === generation &&
@@ -273,7 +286,26 @@ export class PrivateOutputSocket<TRunResult = unknown> {
       }
     }
   }
-  read() {
-    return this.#database.select().from(privateOutputGeneration).get() ?? null;
+  read(generation?: string) {
+    return (
+      this.#database
+        .select()
+        .from(privateOutputGeneration)
+        .where(
+          generation === undefined
+            ? eq(privateOutputGeneration.singleton, socketSlot)
+            : eq(privateOutputGeneration.generation, generation)
+        )
+        .get() ?? null
+    );
+  }
+  readRequest() {
+    return (
+      this.#database
+        .select()
+        .from(privateOutputGeneration)
+        .where(eq(privateOutputGeneration.singleton, requestSlot))
+        .get() ?? null
+    );
   }
 }

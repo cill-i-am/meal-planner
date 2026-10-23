@@ -7,6 +7,7 @@ import type { MealPlannerAuth } from "./auth.js";
 import {
   DelegatedAccess,
   makeDelegatedAccessBoundary,
+  nativeDelegatedSession,
   runWithNativeDelegation,
 } from "./delegated-access.js";
 
@@ -54,7 +55,7 @@ export const makeNativeAuthTestService = (
                 auth.api.resolveDelegatedAccess({ body: grant })
               ).pipe(
                 Effect.map((current) => ({
-                  session: current.session,
+                  session: nativeDelegatedSession(current),
                   user: current.user,
                 }))
               )

@@ -118,6 +118,63 @@ const openDirectory = async (binding: PrivateSessionBinding) => {
   });
   return { binding, generation };
 };
+const openBrowserDirectory = async (binding: PrivateSessionBinding) => {
+  const input = {
+    participant: participant(binding),
+    sessionReference: binding.sessionReference,
+  };
+  await harness.successful({ ...input, action: "directory-initialize" });
+  const generation = await harness.successful<string>({
+    ...input,
+    action: "directory-begin",
+  });
+  await harness.successful({
+    ...input,
+    action: "directory-authorize",
+    expiresAt: Date.now() + 90_000,
+    generation,
+  });
+  const response = await harness
+    .getRuntime()
+    .dispatchFetch("https://private-output.test/control", {
+      headers: {
+        Upgrade: "websocket",
+        "x-test-command": JSON.stringify({
+          ...input,
+          action: "directory-connect",
+          generation,
+        }),
+      },
+    });
+  expect(response.status).toBe(101);
+  const { webSocket: socket } = response;
+  if (socket === null) {
+    throw new Error("Expected browser directory socket");
+  }
+  const frames: DirectoryFrame[] = [];
+  socket.addEventListener("message", (event) => {
+    frames.push(
+      Schema.decodeUnknownSync(DirectoryFrame)(JSON.parse(String(event.data)))
+    );
+  });
+  socket.accept();
+  await expect
+    .poll(() => frames.some((frame) => frame.type === "DirectoryReady"))
+    .toBe(true);
+  return { binding, frames, generation, socket };
+};
+const listCommand = () => ({
+  afterOrdinal: 0,
+  limit: 25,
+  requestId: crypto.randomUUID(),
+  type: "ListSessions" as const,
+});
+const readCardsCommand = () => ({
+  afterOrdinal: 0,
+  limit: 25,
+  requestId: crypto.randomUUID(),
+  type: "ReadCards" as const,
+});
 const openSession = async (binding: PrivateSessionBinding) => {
   const input = { binding, sessionReference: binding.sessionReference };
   await harness.successful({ ...input, action: "initialize" });
@@ -212,7 +269,7 @@ const expectNoSockets = async (
   }
 };
 
-describe("native private requests without WebSocket connections", () => {
+describe("native private request transport", () => {
   it("lists stable private reservations and replays start and completion receipts", async () => {
     const directory = await openDirectory(await harness.binding());
     const start = {
@@ -361,6 +418,144 @@ describe("native private requests without WebSocket connections", () => {
     });
     expect(await sessionCommand(session, reject)).toEqual(rejected);
     await expectNoSockets(session);
+  });
+
+  it("keeps browser sockets and their running turn live while requests repeatedly list and read", async () => {
+    const release = Promise.withResolvers<LocalResponse>();
+    harness.setModelResponse(() => release.promise);
+    const binding = await harness.binding();
+    const browserDirectory = await openBrowserDirectory(binding);
+    const browserSession = await harness.open(binding, {
+      expiresAt: Date.now() + 90_000,
+    });
+    const closes: number[] = [];
+    browserDirectory.socket.addEventListener("close", (event) =>
+      closes.push(event.code)
+    );
+    browserSession.socket.addEventListener("close", (event) =>
+      closes.push(event.code)
+    );
+    const directoryGrant = await harness.successful({
+      action: "directory-lifecycle",
+      participant: participant(binding),
+      sessionReference: binding.sessionReference,
+    });
+    const sessionGrant = await harness.successful({
+      action: "lifecycle",
+      sessionReference: binding.sessionReference,
+    });
+    const browserTurn = await harness.startTurn(browserSession);
+    try {
+      await expect.poll(() => harness.calls.length).toBe(1);
+      /* eslint-disable no-await-in-loop -- Each complete admission must preserve both browser grants before the next poll. */
+      for (let poll = 0; poll < 3; poll += 1) {
+        // Independent API calls renew only their own lease, while the browser retains its grant.
+        const directory = await openDirectory(binding);
+        const session = await openSession(binding);
+        expect(directory.generation).not.toBe(browserDirectory.generation);
+        expect(session.generation).not.toBe(browserSession.generation);
+        expect(await directoryCommand(directory, listCommand())).toMatchObject({
+          type: "SessionsListed",
+        });
+        expect(await read(session)).toMatchObject({
+          assistantTurn: { id: browserTurn.turnId, status: "running" },
+          state: { version: 1 },
+        });
+        expect(
+          await harness.exchange(browserDirectory, listCommand())
+        ).toMatchObject({
+          type: "SessionsListed",
+        });
+        expect(
+          await harness.exchange(browserSession, readCardsCommand())
+        ).toMatchObject({
+          type: "CardsRead",
+        });
+        expect(
+          await harness.successful({
+            action: "directory-lifecycle",
+            participant: participant(binding),
+            sessionReference: binding.sessionReference,
+          })
+        ).toEqual(directoryGrant);
+        expect(
+          await harness.successful({
+            action: "lifecycle",
+            sessionReference: binding.sessionReference,
+          })
+        ).toEqual(sessionGrant);
+        expect(browserDirectory.socket.readyState).toBe(1);
+        expect(browserSession.socket.readyState).toBe(1);
+        expect(closes).toEqual([]);
+      }
+      /* eslint-enable no-await-in-loop */
+      release.resolve(modelResponse());
+      await browserTurn.finished;
+      const session = await openSession(binding);
+      await expect.poll(() => turnStatus(session)).toBe("succeeded");
+      const completed = await read(session);
+      expect(completed.messages).toHaveLength(2);
+      expect(harness.calls).toHaveLength(1);
+      expect(closes).toEqual([]);
+    } finally {
+      release.resolve(modelResponse());
+      await browserTurn.finished;
+      browserDirectory.socket.close();
+      browserSession.socket.close();
+    }
+  });
+
+  it("keeps request leases and a running request turn live through browser connection and reconnection", async () => {
+    const release = Promise.withResolvers<LocalResponse>();
+    harness.setModelResponse(() => release.promise);
+    const binding = await harness.binding();
+    const directory = await openDirectory(binding);
+    const session = await openSession(binding);
+    const input = turnInput(session);
+    await startTurn(input);
+    await expect.poll(() => harness.calls.length).toBe(1);
+    const browserDirectory = await openBrowserDirectory(binding);
+    const browserSession = await harness.open(binding);
+    const reconnectedDirectory = await openBrowserDirectory(binding);
+    const reconnectedSession = await harness.open(binding);
+    try {
+      expect(reconnectedDirectory.generation).not.toBe(
+        browserDirectory.generation
+      );
+      expect(reconnectedSession.generation).not.toBe(browserSession.generation);
+      const renewedDirectory = await openDirectory(binding);
+      const renewedSession = await openSession(binding);
+      expect(renewedDirectory.generation).toBe(directory.generation);
+      expect(renewedSession.generation).toBe(session.generation);
+      expect(await directoryCommand(directory, listCommand())).toMatchObject({
+        type: "SessionsListed",
+      });
+      expect(await read(session)).toMatchObject({
+        assistantTurn: { id: input.turnId, status: "running" },
+        state: { version: 1 },
+      });
+      expect(
+        await harness.exchange(reconnectedDirectory, listCommand())
+      ).toMatchObject({
+        type: "SessionsListed",
+      });
+      expect(
+        await harness.exchange(reconnectedSession, readCardsCommand())
+      ).toMatchObject({
+        type: "CardsRead",
+      });
+      release.resolve(modelResponse());
+      await expect.poll(() => turnStatus(session)).toBe("succeeded");
+      const completed = await read(session);
+      expect(completed.messages).toHaveLength(2);
+      expect(harness.calls).toHaveLength(1);
+    } finally {
+      release.resolve(modelResponse());
+      browserDirectory.socket.close();
+      browserSession.socket.close();
+      reconnectedDirectory.socket.close();
+      reconnectedSession.socket.close();
+    }
   });
 
   it("rejects missing authorization, a foreign profile, and a changed replay before model dispatch", async () => {
@@ -532,8 +727,25 @@ describe("native private requests without WebSocket connections", () => {
       const release = Promise.withResolvers<LocalResponse>();
       harness.setModelResponse(() => release.promise);
       const binding = await harness.binding();
+      const browserDirectory = await openBrowserDirectory(binding);
+      const browserSession = await harness.open(binding);
       const directory = await openDirectory(binding);
       const session = await openSession(binding);
+      expect(browserDirectory.socket.readyState).toBe(1);
+      expect(browserSession.socket.readyState).toBe(1);
+      expect(
+        await harness.successful({
+          action: "directory-socket-count",
+          participant: participant(binding),
+          sessionReference: binding.sessionReference,
+        })
+      ).toBe(1);
+      expect(
+        await harness.successful({
+          action: "socket-count",
+          sessionReference: binding.sessionReference,
+        })
+      ).toBe(1);
       const input = turnInput(session);
       await startTurn(input);
       await expect.poll(() => harness.calls.length).toBe(1);
@@ -551,6 +763,45 @@ describe("native private requests without WebSocket connections", () => {
         action: "mutation-prepare",
         operationId,
       });
+      // Miniflare's in-memory client does not forward close events from cross-object RPC.
+      // Verify both physical server sockets are gone, exact grants are invalidated,
+      // and later browser commands cannot release output.
+      expect(
+        await harness.successful({
+          action: "directory-lifecycle",
+          participant: participant(binding),
+          sessionReference: binding.sessionReference,
+        })
+      ).toMatchObject({
+        generation: browserDirectory.generation,
+        status: "invalidated",
+      });
+      expect(
+        await harness.successful({
+          action: "lifecycle",
+          sessionReference: binding.sessionReference,
+        })
+      ).toMatchObject({
+        generation: browserSession.generation,
+        status: "invalidated",
+      });
+      expect(
+        await harness.successful({
+          action: "directory-socket-count",
+          participant: participant(binding),
+          sessionReference: binding.sessionReference,
+        })
+      ).toBe(0);
+      expect(
+        await harness.successful({
+          action: "socket-count",
+          sessionReference: binding.sessionReference,
+        })
+      ).toBe(0);
+      const directoryFrameCount = browserDirectory.frames.length;
+      const sessionFrameCount = browserSession.frames.length;
+      browserDirectory.socket.send(JSON.stringify(listCommand()));
+      browserSession.socket.send(JSON.stringify(readCardsCommand()));
       await expectDenied({ ...context(session), action: "read-request" });
       await expectDenied({
         ...context(session),
@@ -598,7 +849,11 @@ describe("native private requests without WebSocket connections", () => {
         { id: input.turnId, status: "interrupted", summary: null },
       ]);
       expect(harness.calls).toHaveLength(1);
+      expect(browserDirectory.frames).toHaveLength(directoryFrameCount);
+      expect(browserSession.frames).toHaveLength(sessionFrameCount);
       await expectNoSockets(resumed, directory);
+      browserDirectory.socket.close();
+      browserSession.socket.close();
     }
   );
 

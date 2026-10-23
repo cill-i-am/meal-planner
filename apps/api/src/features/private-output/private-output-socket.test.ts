@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -58,7 +59,7 @@ const fixture = (
     .values({
       expiresAt,
       generation,
-      singleton: 1,
+      singleton: status === "pending_request" || status === "request" ? 2 : 1,
       status,
     })
     .run();
@@ -73,7 +74,7 @@ const fixture = (
     database,
     environment
   );
-  return { generation, output, sockets };
+  return { database, generation, output, sockets };
 };
 
 describe("private output on native wake", () => {
@@ -161,7 +162,9 @@ const participant = {
 };
 const target = { childName: "c".repeat(64), targetKind: "session" } as const;
 const requestFixture = (
-  register: OutputLifecyclePort["register"] = () => Promise.resolve(true)
+  register: OutputLifecyclePort["register"] = () => Promise.resolve(true),
+  status: typeof privateOutputGeneration.$inferInsert.status = "invalidated",
+  expiresAt = 0
 ) => {
   const accounts: OutputRegistration[] = [];
   const households: OutputRegistration[] = [];
@@ -179,7 +182,7 @@ const requestFixture = (
       return register(registration);
     },
   });
-  const state = fixture("invalidated", 0, {
+  const state = fixture(status, expiresAt, {
     AccountOutputLifecycle: { getByName: () => lifecycle(accounts) },
     HouseholdAgent: { getByName: () => lifecycle(households) },
   });
@@ -192,7 +195,7 @@ describe("private output request leases", () => {
     const generation = await output.beginRequest(participant, target);
     expect(accounts).toEqual([{ ...target, generation }]);
     expect(households).toEqual(accounts);
-    expect(output.read()?.status).toBe("pending_request");
+    expect(output.readRequest()?.status).toBe("pending_request");
     expect(output.isCurrent(generation)).toBe(false);
     expect(output.isRequestCurrent(generation)).toBe(false);
     expect(sockets).toEqual([]);
@@ -287,24 +290,48 @@ describe("private output request leases", () => {
       expect(() => output.authorize(generation, Date.now() + 60_000)).toThrow(
         new PrivateOutputUnavailable({ reason: "output_disabled" })
       );
-      expect(output.read()?.status).toBe(status);
+      expect(output.readRequest()?.status).toBe(status);
     }
   );
 
-  it("replaces a request lease when beginning a socket connection", async () => {
-    const { accounts, output } = requestFixture();
+  it("preserves a request lease while beginning and authorizing a browser connection", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1000);
+    const { accounts, database, output, sockets } = requestFixture();
     const request = await output.beginRequest(participant, target);
-    output.authorizeRequest(request, Date.now() + 60_000);
-    const connected = await output.begin(participant, target);
-    expect(connected).not.toBe(request);
+    output.authorizeRequest(request, 4000);
+    const lease = database
+      .select()
+      .from(privateOutputGeneration)
+      .where(eq(privateOutputGeneration.generation, request))
+      .get();
+    const browser = await output.begin(participant, target);
+    expect(browser).not.toBe(request);
     expect(accounts).toHaveLength(2);
-    expect(output.isCurrent(request)).toBe(false);
-    expect(() => output.authorizeRequest(request, Date.now() + 60_000)).toThrow(
-      new PrivateOutputUnavailable({ reason: "output_disabled" })
-    );
-    output.authorize(connected, Date.now() + 60_000);
-    expect(output.read()?.status).toBe("authorized");
-    expect(output.isRequestCurrent(connected)).toBe(false);
+    expect(output.isRequestCurrent(request)).toBe(true);
+    output.authorize(browser, 2000);
+    expect(output.isRequestCurrent(request)).toBe(true);
+    expect(output.isRequestCurrent(browser)).toBe(false);
+
+    // Native accept is covered by the runtime suite; this unit fixture resumes
+    // its persisted connected state without inventing a WebSocketPair.
+    database
+      .update(privateOutputGeneration)
+      .set({ status: "connected" })
+      .where(eq(privateOutputGeneration.generation, browser))
+      .run();
+    const retained = socket(browser);
+    sockets.push(retained);
+    expect(output.isCurrent(browser)).toBe(true);
+    expect(output.isRequestCurrent(request)).toBe(true);
+    expect(
+      database
+        .select()
+        .from(privateOutputGeneration)
+        .where(eq(privateOutputGeneration.generation, request))
+        .get()
+    ).toEqual(lease);
+    output.send(browser, "browser remains connected");
+    expect(retained.send).toHaveBeenCalledWith("browser remains connected");
   });
 
   it("does not physically send or accept an upgrade under a request lease", () => {
@@ -343,7 +370,7 @@ describe("private output request leases", () => {
     await expect(output.beginRequest(participant, target)).rejects.toEqual(
       new PrivateOutputUnavailable({ reason: "output_disabled" })
     );
-    expect(output.read()?.status).toBe("invalidated");
+    expect(output.readRequest()?.status).toBe("invalidated");
   });
 
   it("cannot authorize registration completed after invalidation", async () => {
@@ -362,5 +389,150 @@ describe("private output request leases", () => {
       output.authorizeRequest(generation, Date.now() + 60_000)
     ).toThrow(new PrivateOutputUnavailable({ reason: "output_disabled" }));
     expect(output.isCurrent(generation)).toBe(false);
+  });
+});
+
+describe("coexisting browser and request output leases", () => {
+  it("preserves the connected browser generation and expiry through request admission and renewal", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+    const {
+      accounts,
+      database,
+      generation: browser,
+      output,
+      sockets,
+    } = requestFixture(() => Promise.resolve(true), "connected", 5000);
+    const retained = socket(browser);
+    sockets.push(retained);
+    const browserLease = database
+      .select()
+      .from(privateOutputGeneration)
+      .where(eq(privateOutputGeneration.generation, browser))
+      .get();
+    const request = await output.beginRequest(participant, target);
+    expect(output.isCurrent(browser)).toBe(true);
+    expect(output.isRequestCurrent(request)).toBe(false);
+    expect(retained.close).not.toHaveBeenCalled();
+    output.authorizeRequest(request, 2500);
+    now.mockReturnValue(2000);
+    expect(await output.beginRequest(participant, target)).toBe(request);
+    output.authorizeRequest(request, 3500);
+    expect(output.isCurrent(browser)).toBe(true);
+    expect(output.isRequestCurrent(request)).toBe(true);
+    expect(accounts).toHaveLength(1);
+    expect(
+      database
+        .select()
+        .from(privateOutputGeneration)
+        .where(eq(privateOutputGeneration.generation, browser))
+        .get()
+    ).toEqual(browserLease);
+    output.send(request, "request data must not reach the browser");
+    expect(retained.send).not.toHaveBeenCalled();
+    output.send(browser, "browser data still arrives");
+    expect(retained.send).toHaveBeenCalledWith("browser data still arrives");
+    expect(retained.close).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { browserExpiresAt: 3000, expiresFirst: "request", requestExpiresAt: 2000 },
+    { browserExpiresAt: 2000, expiresFirst: "browser", requestExpiresAt: 3000 },
+  ])(
+    "expires $expiresFirst authority without expiring the other channel",
+    async ({ browserExpiresAt, requestExpiresAt }) => {
+      const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+      const {
+        generation: browser,
+        output,
+        sockets,
+      } = requestFixture(
+        () => Promise.resolve(true),
+        "connected",
+        browserExpiresAt
+      );
+      const retained = socket(browser);
+      sockets.push(retained);
+      const request = await output.beginRequest(participant, target);
+      output.authorizeRequest(request, requestExpiresAt);
+      expect(output.read()?.generation).toBe(browser);
+      expect(output.readRequest()?.generation).toBe(request);
+      expect(output.read(browser)?.expiresAt).toBe(browserExpiresAt);
+      expect(output.read(request)?.expiresAt).toBe(requestExpiresAt);
+      expect(output.isCurrent(browser)).toBe(true);
+      expect(output.isRequestCurrent(request)).toBe(true);
+      now.mockReturnValue(2000);
+      expect(output.isCurrent(browser)).toBe(browserExpiresAt > 2000);
+      expect(output.isRequestCurrent(request)).toBe(requestExpiresAt > 2000);
+      output.send(browser, "only if browser authority remains");
+      expect(retained.send).toHaveBeenCalledTimes(
+        browserExpiresAt > 2000 ? 1 : 0
+      );
+      now.mockReturnValue(3000);
+      expect(output.isCurrent(browser)).toBe(false);
+      expect(output.isRequestCurrent(request)).toBe(false);
+    }
+  );
+
+  it("preserves the browser on restart while invalidating its coexisting request lease", async () => {
+    const {
+      generation: browser,
+      output,
+      sockets,
+    } = requestFixture(
+      () => Promise.resolve(true),
+      "connected",
+      Date.now() + 60_000
+    );
+    const retained = socket(browser);
+    sockets.push(retained);
+    const request = await output.beginRequest(participant, target);
+    output.authorizeRequest(request, Date.now() + 60_000);
+    output.restart();
+    expect(output.isCurrent(browser)).toBe(true);
+    expect(output.isRequestCurrent(request)).toBe(false);
+    expect(retained.close).not.toHaveBeenCalled();
+    expect(() => output.authorizeRequest(request, Date.now() + 60_000)).toThrow(
+      new PrivateOutputUnavailable({ reason: "output_disabled" })
+    );
+    output.send(browser, "surviving native connection");
+    expect(retained.send).toHaveBeenCalledWith("surviving native connection");
+  });
+
+  it("invalidates only the matching generation until the lifecycle fences its other registration", async () => {
+    const { accounts, database, households, output, sockets } =
+      requestFixture();
+    const browser = await output.begin(participant, target);
+    output.authorize(browser, Date.now() + 60_000);
+    database
+      .update(privateOutputGeneration)
+      .set({ status: "connected" })
+      .where(eq(privateOutputGeneration.generation, browser))
+      .run();
+    const retained = socket(browser);
+    sockets.push(retained);
+    const request = await output.beginRequest(participant, target);
+    output.authorizeRequest(request, Date.now() + 60_000);
+    expect(accounts).toEqual([
+      { ...target, generation: browser },
+      { ...target, generation: request },
+    ]);
+    expect(households).toEqual(accounts);
+    output.invalidate({ generation: request });
+    expect(output.isRequestCurrent(request)).toBe(false);
+    expect(output.isCurrent(browser)).toBe(true);
+    expect(retained.close).not.toHaveBeenCalled();
+
+    // Each native lifecycle retains both registrations and fences each one.
+    for (const registration of accounts) {
+      output.invalidate({ generation: registration.generation });
+    }
+    expect(output.isCurrent(browser)).toBe(false);
+    expect(output.isRequestCurrent(request)).toBe(false);
+    expect(retained.close).toHaveBeenCalledWith(
+      1008,
+      "Reauthentication required"
+    );
+    output.send(browser, "must not escape");
+    expect(retained.send).not.toHaveBeenCalled();
   });
 });
