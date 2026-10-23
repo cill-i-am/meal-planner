@@ -12,7 +12,7 @@ import { applyD1Migrations, env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Effect, Layer, Redacted, Schema } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -113,6 +113,9 @@ const makeFixture = (
         auth,
         baseURL,
         dispatch,
+        mcpStateSecret: Redacted.make(
+          "local-product-oauth-fixture-secret-at-least-32-characters"
+        ),
         rateLimit,
       }).pipe(
         Effect.scoped,

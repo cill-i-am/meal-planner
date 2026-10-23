@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { Effect } from "effect";
+import { Effect, Redacted } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { ProductOperations, productOpenApi } from "./product-api.contract.js";
@@ -10,6 +10,7 @@ import {
   productToolRequest,
   productToolSchema,
 } from "./product-api.transport.js";
+import { makeProductMcpState } from "./product-mcp-state.js";
 import { handleProductMcp } from "./product-mcp.js";
 
 const operation = (name: string) => {
@@ -121,6 +122,14 @@ describe("shared public contracts", () => {
 describe("MCP transport", () => {
   it("negotiates an official client, filters scopes and preserves native result/errors", async () => {
     const calls: Request[] = [];
+    const state = await Effect.runPromise(
+      makeProductMcpState({
+        owner: { clientId: "contract-client", userId: "contract-user" },
+        secret: Redacted.make(
+          "local-mcp-contract-secret-at-least-32-characters"
+        ),
+      })
+    );
     const client = new Client({ name: "contract-test", version: "1" });
     const transport = new StreamableHTTPClientTransport(
       new URL("https://ceird.app/mcp"),
@@ -135,6 +144,7 @@ describe("MCP transport", () => {
                 }),
               permits: (scopes) =>
                 scopes.every((scope) => scope === "meal-planner:read"),
+              state,
             }).pipe(Effect.scoped)
           ),
       }

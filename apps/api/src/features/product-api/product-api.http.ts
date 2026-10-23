@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import type { Redacted } from "effect";
 
 import type { MealPlannerAuthService } from "../auth/auth.alchemy.js";
 import {
@@ -11,12 +12,14 @@ import { readProductAccount } from "./product-account.js";
 import { productOpenApi } from "./product-api.contract.js";
 import type { ProductScope } from "./product-api.contract.js";
 import { matchProductOperation } from "./product-api.transport.js";
+import { makeProductMcpState } from "./product-mcp-state.js";
 import { handleProductMcp } from "./product-mcp.js";
 
 export interface ProductHttpOptions {
   readonly auth: MealPlannerAuthService;
   readonly baseURL: string;
   readonly dispatch: (request: Request) => Effect.Effect<Response>;
+  readonly mcpStateSecret: Redacted.Redacted<string>;
   readonly rateLimit: (key: string) => Effect.Effect<boolean>;
 }
 
@@ -173,16 +176,25 @@ export const handleProductHttp = (
           return new Response(null, { status: 401 });
         }
         const response = mcp
-          ? yield* handleProductMcp(request, {
-              call: (applicationRequest, requiredScopes) =>
-                run(
-                  applicationRequest,
-                  requiredScopes,
-                  dispatch(applicationRequest)
-                ),
-              permits: (requiredScopes) =>
-                requiredScopes.every((scope) => grant.scopes.includes(scope)),
+          ? yield* makeProductMcpState({
+              owner: { clientId: grant.clientId, userId: grant.user.id },
+              secret: options.mcpStateSecret,
             }).pipe(
+              Effect.flatMap((state) =>
+                handleProductMcp(request, {
+                  call: (applicationRequest, requiredScopes) =>
+                    run(
+                      applicationRequest,
+                      requiredScopes,
+                      dispatch(applicationRequest)
+                    ),
+                  permits: (requiredScopes) =>
+                    requiredScopes.every((scope) =>
+                      grant.scopes.includes(scope)
+                    ),
+                  state,
+                })
+              ),
               Effect.scoped,
               Effect.orElseSucceed(() =>
                 Response.json({ error: "mcp_unavailable" }, { status: 503 })

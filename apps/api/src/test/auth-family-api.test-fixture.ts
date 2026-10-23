@@ -350,6 +350,7 @@ export default {
                   HttpServerResponse.toWeb(fromNativeWebResponse(response))
                 )
               ),
+            mcpStateSecret: Redacted.make(env.BETTER_AUTH_SECRET),
             rateLimit: () => Effect.succeed(true),
           });
           return product ?? (yield* serveApplication(request));
