@@ -1,0 +1,33 @@
+{
+  "body": {
+    "model": "clairic",
+    "state": "Title: Milk test\nDo not add milk. Add milk.\nIngredients:\n100 ml milk\nFor garnish: 50 ml milk\nNo honey.\nServes 2.",
+    "fields": {
+      "positive_action": {
+        "type": "text",
+        "instructions": "Exact complete affirmative Add milk. sentence. Do not select the earlier negative sentence or remove its negation."
+      },
+      "negative_action": {
+        "type": "text",
+        "instructions": "Exact complete Do not add milk. sentence, preserving negation."
+      },
+      "ingredients": {
+        "type": "list",
+        "items": "text",
+        "instructions": "Exact ingredient quantity phrases including a separate garnish line; preserve source order and garnish qualifier."
+      },
+      "oven_temperature": {
+        "type": "text",
+        "instructions": "Exact explicitly stated oven temperature with unit. Return null when absent; do not guess."
+      }
+    },
+    "options": {
+      "return_state_text": true
+    }
+  },
+  "dispatchId": "recipe-clairic-probe-2-v1",
+  "inputMicroUsdPerToken": 0.1,
+  "maximumCostMicroUsd": 10000,
+  "model": "@cf/cloudflare/clairic",
+  "outputMicroUsdPerToken": 0
+}

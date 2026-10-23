@@ -1,0 +1,2266 @@
+{
+  "version": "recipe-extraction-v1",
+  "expectationReview": {
+    "status": "independently_checked",
+    "reviewer": "Independent code-review subagent, 2026-10-23",
+    "scope": "All 20 source expectations, verbatim witnesses, quantities/ranges, component associations, correction polarity and nutrition basis checked independently of model output. Equipment additions and aggregate timing clarification follow review. Techniques excluded from strict metrics; semantic paraphrases require source adjudication. This is not representative live-source validation."
+  },
+  "cases": [
+    {
+      "id": "caption-complete",
+      "split": "dev",
+      "scenarios": [
+        "complete_caption",
+        "yield",
+        "time",
+        "temperature",
+        "preparation"
+      ],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/caption-complete-1",
+          "evidenceId": "caption-complete-1",
+          "kind": "caption",
+          "origin": "creator_provided",
+          "value": "Roast carrots\nServes 4\nPrep 10 minutes. Cook 25 minutes. Total 35 minutes.\n500 g carrots, sliced\n1 tbsp olive oil\nToss the sliced carrots with olive oil.\nRoast at 200°C for 25 minutes."
+        }
+      ],
+      "availableEvidenceIds": ["caption-complete-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "carrots",
+            "note": null,
+            "optional": null,
+            "original": "500 g carrots, sliced",
+            "preparation": "sliced",
+            "quantity": {
+              "value": 500,
+              "unit": "g",
+              "max": null
+            },
+            "size": null
+          },
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "olive oil",
+            "note": null,
+            "optional": null,
+            "original": "1 tbsp olive oil",
+            "preparation": null,
+            "quantity": {
+              "value": 1,
+              "unit": "tbsp",
+              "max": null
+            },
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": null,
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "Toss the sliced carrots with olive oil."
+          },
+          {
+            "duration": {
+              "seconds": 1500
+            },
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 2,
+            "techniques": [],
+            "temperature": {
+              "value": 200,
+              "unit": "C"
+            },
+            "text": "Roast at 200°C for 25 minutes."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Roast carrots",
+        "notes": [],
+        "nutrition": null,
+        "servings": {
+          "quantity": 4,
+          "max": null,
+          "unit": "serving",
+          "original": "Serves 4"
+        },
+        "sourceTags": [],
+        "times": {
+          "prep": {
+            "seconds": 600
+          },
+          "cook": {
+            "seconds": 1500
+          },
+          "total": {
+            "seconds": 2100
+          },
+          "inactive": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "caption-complete-1",
+          "quote": "Roast carrots"
+        },
+        {
+          "path": "servings",
+          "evidenceId": "caption-complete-1",
+          "quote": "Serves 4"
+        },
+        {
+          "path": "times.prep",
+          "evidenceId": "caption-complete-1",
+          "quote": "Prep 10 minutes"
+        },
+        {
+          "path": "times.cook",
+          "evidenceId": "caption-complete-1",
+          "quote": "Cook 25 minutes"
+        },
+        {
+          "path": "times.total",
+          "evidenceId": "caption-complete-1",
+          "quote": "Total 35 minutes"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "caption-complete-1",
+          "quote": "500 g carrots, sliced"
+        },
+        {
+          "path": "ingredients.1",
+          "evidenceId": "caption-complete-1",
+          "quote": "1 tbsp olive oil"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "caption-complete-1",
+          "quote": "Toss the sliced carrots with olive oil."
+        },
+        {
+          "path": "instructions.1",
+          "evidenceId": "caption-complete-1",
+          "quote": "Roast at 200°C for 25 minutes."
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [],
+      "notes": "All stated values are required; do not derive additional timings or dietary claims."
+    },
+    {
+      "id": "sparse-speech",
+      "split": "dev",
+      "scenarios": ["sparse_speech", "missing_quantity", "missing_title"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/sparse-speech-1",
+          "evidenceId": "sparse-speech-1",
+          "kind": "transcript",
+          "origin": "creator_provided",
+          "value": "I put chickpeas in the pan. Mash the chickpeas. Stir in lemon juice."
+        }
+      ],
+      "availableEvidenceIds": ["sparse-speech-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": ["pan"],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "chickpeas",
+            "note": null,
+            "optional": null,
+            "original": "chickpeas",
+            "preparation": null,
+            "quantity": null,
+            "size": null
+          },
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "lemon juice",
+            "note": null,
+            "optional": null,
+            "original": "lemon juice",
+            "preparation": null,
+            "quantity": null,
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": null,
+            "equipment": ["pan"],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "I put chickpeas in the pan."
+          },
+          {
+            "duration": null,
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 2,
+            "techniques": [],
+            "temperature": null,
+            "text": "Mash the chickpeas."
+          },
+          {
+            "duration": null,
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 3,
+            "techniques": [],
+            "temperature": null,
+            "text": "Stir in lemon juice."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": null,
+        "notes": [],
+        "nutrition": null,
+        "servings": null,
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "ingredients.0",
+          "evidenceId": "sparse-speech-1",
+          "quote": "chickpeas"
+        },
+        {
+          "path": "ingredients.1",
+          "evidenceId": "sparse-speech-1",
+          "quote": "lemon juice"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "sparse-speech-1",
+          "quote": "I put chickpeas in the pan."
+        },
+        {
+          "path": "instructions.1",
+          "evidenceId": "sparse-speech-1",
+          "quote": "Mash the chickpeas."
+        },
+        {
+          "path": "instructions.2",
+          "evidenceId": "sparse-speech-1",
+          "quote": "Stir in lemon juice."
+        },
+        {
+          "path": "equipment.0",
+          "evidenceId": "sparse-speech-1",
+          "quote": "I put chickpeas in the pan."
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [],
+      "notes": "Do not invent amounts, title, yield or duration. Pan is explicit equipment. Techniques are outside strict oracle coverage."
+    },
+    {
+      "id": "missing-values",
+      "split": "dev",
+      "scenarios": ["missing_quantity", "qualitative_quantity"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/missing-values-1",
+          "evidenceId": "missing-values-1",
+          "kind": "caption",
+          "origin": "creator_provided",
+          "value": "Simple salad\nlettuce\nsalt to taste\nToss the lettuce with salt to taste."
+        }
+      ],
+      "availableEvidenceIds": ["missing-values-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "lettuce",
+            "note": null,
+            "optional": null,
+            "original": "lettuce",
+            "preparation": null,
+            "quantity": null,
+            "size": null
+          },
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "salt",
+            "note": "to taste",
+            "optional": null,
+            "original": "salt to taste",
+            "preparation": null,
+            "quantity": null,
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": null,
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "Toss the lettuce with salt to taste."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Simple salad",
+        "notes": [],
+        "nutrition": null,
+        "servings": null,
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "missing-values-1",
+          "quote": "Simple salad"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "missing-values-1",
+          "quote": "lettuce"
+        },
+        {
+          "path": "ingredients.1",
+          "evidenceId": "missing-values-1",
+          "quote": "salt to taste"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "missing-values-1",
+          "quote": "Toss the lettuce with salt to taste."
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [],
+      "notes": "To taste is qualitative and supplies no numeric amount. No servings are supplied."
+    },
+    {
+      "id": "visual-only",
+      "split": "dev",
+      "scenarios": ["visual_only", "silent_video"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/visual-only-1",
+          "evidenceId": "visual-only-1",
+          "kind": "visual_observation",
+          "origin": "observed",
+          "value": "On-screen title: Tomato toast\nOn-screen ingredient label: 2 tomatoes, diced\nOn-screen ingredient label: 2 slices bread\nOn-screen instruction: Spread diced tomatoes on bread."
+        }
+      ],
+      "availableEvidenceIds": ["visual-only-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "tomatoes",
+            "note": null,
+            "optional": null,
+            "original": "2 tomatoes, diced",
+            "preparation": "diced",
+            "quantity": {
+              "value": 2,
+              "unit": null,
+              "max": null
+            },
+            "size": null
+          },
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "bread",
+            "note": null,
+            "optional": null,
+            "original": "2 slices bread",
+            "preparation": null,
+            "quantity": {
+              "value": 2,
+              "unit": "slices",
+              "max": null
+            },
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": null,
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "Spread diced tomatoes on bread."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Tomato toast",
+        "notes": [],
+        "nutrition": null,
+        "servings": null,
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "visual-only-1",
+          "quote": "Tomato toast"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "visual-only-1",
+          "quote": "2 tomatoes, diced"
+        },
+        {
+          "path": "ingredients.1",
+          "evidenceId": "visual-only-1",
+          "quote": "2 slices bread"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "visual-only-1",
+          "quote": "Spread diced tomatoes on bread."
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [],
+      "notes": "Synthetic written visual observation, not an image or OCR test. The explicit count unit slices must survive."
+    },
+    {
+      "id": "early-late",
+      "split": "dev",
+      "scenarios": ["early_late", "multiple_evidence"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/early-late-1",
+          "evidenceId": "early-late-1",
+          "kind": "transcript",
+          "origin": "creator_provided",
+          "value": "At the beginning: Lentil pot. Use 150 g lentils."
+        },
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/early-late-2",
+          "evidenceId": "early-late-2",
+          "kind": "transcript",
+          "origin": "creator_provided",
+          "value": "At the end: Simmer the lentils for 30 minutes. Serves 2."
+        }
+      ],
+      "availableEvidenceIds": ["early-late-1", "early-late-2"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "lentils",
+            "note": null,
+            "optional": null,
+            "original": "150 g lentils",
+            "preparation": null,
+            "quantity": {
+              "value": 150,
+              "unit": "g",
+              "max": null
+            },
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": {
+              "seconds": 1800
+            },
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "Simmer the lentils for 30 minutes."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Lentil pot",
+        "notes": [],
+        "nutrition": null,
+        "servings": {
+          "quantity": 2,
+          "max": null,
+          "unit": "serving",
+          "original": "Serves 2"
+        },
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "early-late-1",
+          "quote": "Lentil pot"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "early-late-1",
+          "quote": "150 g lentils"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "early-late-2",
+          "quote": "Simmer the lentils for 30 minutes."
+        },
+        {
+          "path": "servings",
+          "evidenceId": "early-late-2",
+          "quote": "Serves 2"
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [],
+      "notes": "Both early and late evidence items are available to every strategy."
+    },
+    {
+      "id": "silent-unobserved",
+      "split": "dev",
+      "scenarios": ["silent_video", "acquisition_missing_visual"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/silent-unobserved-1",
+          "evidenceId": "silent-unobserved-1",
+          "kind": "visual_observation",
+          "origin": "observed",
+          "value": "On-screen text: Pea mash\n200 g peas\nMash the peas."
+        }
+      ],
+      "availableEvidenceIds": [],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "peas",
+            "note": null,
+            "optional": null,
+            "original": "200 g peas",
+            "preparation": null,
+            "quantity": {
+              "value": 200,
+              "unit": "g",
+              "max": null
+            },
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": null,
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "Mash the peas."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Pea mash",
+        "notes": [],
+        "nutrition": null,
+        "servings": null,
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "silent-unobserved-1",
+          "quote": "Pea mash"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "silent-unobserved-1",
+          "quote": "200 g peas"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "silent-unobserved-1",
+          "quote": "Mash the peas."
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [],
+      "notes": "Deliberately absent acquisition: no evidence supplied to extraction. Intended visual facts exist only in the acquisition oracle."
+    },
+    {
+      "id": "fractions",
+      "split": "dev",
+      "scenarios": ["fraction", "mixed_fraction", "unicode"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/fractions-1",
+          "evidenceId": "fractions-1",
+          "kind": "caption",
+          "origin": "creator_provided",
+          "value": "Oat bowl\n1½ cups oats\n¼ tsp cinnamon\nStir oats and cinnamon together."
+        }
+      ],
+      "availableEvidenceIds": ["fractions-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "oats",
+            "note": null,
+            "optional": null,
+            "original": "1½ cups oats",
+            "preparation": null,
+            "quantity": {
+              "value": 1.5,
+              "unit": "cup",
+              "max": null
+            },
+            "size": null
+          },
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "cinnamon",
+            "note": null,
+            "optional": null,
+            "original": "¼ tsp cinnamon",
+            "preparation": null,
+            "quantity": {
+              "value": 0.25,
+              "unit": "tsp",
+              "max": null
+            },
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": null,
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "Stir oats and cinnamon together."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Oat bowl",
+        "notes": [],
+        "nutrition": null,
+        "servings": null,
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "fractions-1",
+          "quote": "Oat bowl"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "fractions-1",
+          "quote": "1½ cups oats"
+        },
+        {
+          "path": "ingredients.1",
+          "evidenceId": "fractions-1",
+          "quote": "¼ tsp cinnamon"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "fractions-1",
+          "quote": "Stir oats and cinnamon together."
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [],
+      "notes": "Unicode fractions and unit aliases are exact arithmetic; no volume-to-mass conversion."
+    },
+    {
+      "id": "components",
+      "split": "dev",
+      "scenarios": [
+        "multiple_components",
+        "same_ingredient_different_quantity",
+        "grouping"
+      ],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/components-1",
+          "evidenceId": "components-1",
+          "kind": "caption",
+          "origin": "creator_provided",
+          "value": "Yoghurt dip plate\nDip:\n200 g yoghurt\nGarnish:\n50 g yoghurt\nDip: Stir 200 g yoghurt until smooth.\nGarnish: Spoon 50 g yoghurt on top."
+        }
+      ],
+      "availableEvidenceIds": ["components-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": "Dip",
+            "ingredientId": null,
+            "localName": null,
+            "name": "yoghurt",
+            "note": null,
+            "optional": null,
+            "original": "200 g yoghurt",
+            "preparation": null,
+            "quantity": {
+              "value": 200,
+              "unit": "g",
+              "max": null
+            },
+            "size": null
+          },
+          {
+            "group": "Garnish",
+            "ingredientId": null,
+            "localName": null,
+            "name": "yoghurt",
+            "note": null,
+            "optional": null,
+            "original": "50 g yoghurt",
+            "preparation": null,
+            "quantity": {
+              "value": 50,
+              "unit": "g",
+              "max": null
+            },
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": null,
+            "equipment": [],
+            "group": "Dip",
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "Stir 200 g yoghurt until smooth."
+          },
+          {
+            "duration": null,
+            "equipment": [],
+            "group": "Garnish",
+            "ingredients": [],
+            "step": 2,
+            "techniques": [],
+            "temperature": null,
+            "text": "Spoon 50 g yoghurt on top."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Yoghurt dip plate",
+        "notes": [],
+        "nutrition": null,
+        "servings": null,
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "components-1",
+          "quote": "Yoghurt dip plate"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "components-1",
+          "quote": "Dip:\n200 g yoghurt"
+        },
+        {
+          "path": "ingredients.1",
+          "evidenceId": "components-1",
+          "quote": "Garnish:\n50 g yoghurt"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "components-1",
+          "quote": "Dip: Stir 200 g yoghurt until smooth."
+        },
+        {
+          "path": "instructions.1",
+          "evidenceId": "components-1",
+          "quote": "Garnish: Spoon 50 g yoghurt on top."
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [
+        {
+          "path": "instructions.0.text",
+          "phrases": ["until smooth"],
+          "kind": "condition"
+        }
+      ],
+      "notes": "Repeated ingredient names are separate component rows; swapping quantities or groups is wrong."
+    },
+    {
+      "id": "repeated-evidence",
+      "split": "dev",
+      "scenarios": ["repeated", "duplicate_evidence"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/repeated-evidence-1",
+          "evidenceId": "repeated-evidence-1",
+          "kind": "caption",
+          "origin": "creator_provided",
+          "value": "Bean bowl\n200 g beans\nWarm the beans."
+        },
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/repeated-evidence-2",
+          "evidenceId": "repeated-evidence-2",
+          "kind": "transcript",
+          "origin": "creator_provided",
+          "value": "Bean bowl. 200 g beans. Warm the beans."
+        }
+      ],
+      "availableEvidenceIds": ["repeated-evidence-1", "repeated-evidence-2"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "beans",
+            "note": null,
+            "optional": null,
+            "original": "200 g beans",
+            "preparation": null,
+            "quantity": {
+              "value": 200,
+              "unit": "g",
+              "max": null
+            },
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": null,
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "Warm the beans."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Bean bowl",
+        "notes": [],
+        "nutrition": null,
+        "servings": null,
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "repeated-evidence-1",
+          "quote": "Bean bowl"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "repeated-evidence-1",
+          "quote": "200 g beans"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "repeated-evidence-1",
+          "quote": "Warm the beans."
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [],
+      "notes": "Repeated evidence describes one recipe and one ingredient row, not double quantities or duplicated steps."
+    },
+    {
+      "id": "not-a-recipe",
+      "split": "dev",
+      "scenarios": ["nonrecipe", "numbers_distractor"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/not-a-recipe-1",
+          "evidenceId": "not-a-recipe-1",
+          "kind": "caption",
+          "origin": "creator_provided",
+          "value": "A review of a blue mug. It costs 12 euro and holds 300 ml. I bought 2."
+        }
+      ],
+      "availableEvidenceIds": ["not-a-recipe-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": null,
+        "instructions": null,
+        "language": null,
+        "media": [],
+        "name": null,
+        "notes": [],
+        "nutrition": null,
+        "servings": null,
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [],
+      "aliases": [],
+      "qualifiers": [],
+      "notes": "No recipe, ingredients, yield, cooking steps or cooking time are supplied."
+    },
+    {
+      "id": "range-unicode",
+      "split": "holdout",
+      "scenarios": ["range", "unicode", "unit", "yield_range"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/range-unicode-1",
+          "evidenceId": "range-unicode-1",
+          "kind": "caption",
+          "origin": "creator_provided",
+          "value": "Crème fraîche bowl\nServes 2–3\n2–3 tbsp crème fraîche\n½ cucumber, chopped\nMix the crème fraîche and chopped cucumber."
+        }
+      ],
+      "availableEvidenceIds": ["range-unicode-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "crème fraîche",
+            "note": null,
+            "optional": null,
+            "original": "2–3 tbsp crème fraîche",
+            "preparation": null,
+            "quantity": {
+              "value": 2,
+              "unit": "tbsp",
+              "max": 3
+            },
+            "size": null
+          },
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "cucumber",
+            "note": null,
+            "optional": null,
+            "original": "½ cucumber, chopped",
+            "preparation": "chopped",
+            "quantity": {
+              "value": 0.5,
+              "unit": null,
+              "max": null
+            },
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": null,
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "Mix the crème fraîche and chopped cucumber."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Crème fraîche bowl",
+        "notes": [],
+        "nutrition": null,
+        "servings": {
+          "quantity": 2,
+          "max": 3,
+          "unit": "serving",
+          "original": "Serves 2–3"
+        },
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "range-unicode-1",
+          "quote": "Crème fraîche bowl"
+        },
+        {
+          "path": "servings",
+          "evidenceId": "range-unicode-1",
+          "quote": "Serves 2–3"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "range-unicode-1",
+          "quote": "2–3 tbsp crème fraîche"
+        },
+        {
+          "path": "ingredients.1",
+          "evidenceId": "range-unicode-1",
+          "quote": "½ cucumber, chopped"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "range-unicode-1",
+          "quote": "Mix the crème fraîche and chopped cucumber."
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [],
+      "notes": "Ranges keep both endpoints. Accented names are preserved; no serving count midpoint."
+    },
+    {
+      "id": "explicit-correction",
+      "split": "holdout",
+      "scenarios": ["conflicting", "correction", "quantity_association"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/explicit-correction-1",
+          "evidenceId": "explicit-correction-1",
+          "kind": "caption",
+          "origin": "creator_provided",
+          "value": "Rice pot\nCorrection: use 120 g rice, not the 200 g shown earlier.\nBoil the rice for 12 minutes."
+        }
+      ],
+      "availableEvidenceIds": ["explicit-correction-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "rice",
+            "note": null,
+            "optional": null,
+            "original": "120 g rice",
+            "preparation": null,
+            "quantity": {
+              "value": 120,
+              "unit": "g",
+              "max": null
+            },
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": {
+              "seconds": 720
+            },
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "Boil the rice for 12 minutes."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Rice pot",
+        "notes": ["Correction: use 120 g rice, not the 200 g shown earlier."],
+        "nutrition": null,
+        "servings": null,
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "explicit-correction-1",
+          "quote": "Rice pot"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "explicit-correction-1",
+          "quote": "Correction: use 120 g rice, not the 200 g shown earlier."
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "explicit-correction-1",
+          "quote": "Boil the rice for 12 minutes."
+        },
+        {
+          "path": "notes.0",
+          "evidenceId": "explicit-correction-1",
+          "quote": "Correction: use 120 g rice, not the 200 g shown earlier."
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [
+        {
+          "path": "notes.0",
+          "phrases": ["not"],
+          "kind": "negation"
+        }
+      ],
+      "notes": "Only 120 g is the final supported quantity. 200 g is source-present but expressly rejected."
+    },
+    {
+      "id": "negative-optional",
+      "split": "holdout",
+      "scenarios": ["negation", "optionality", "missing_quantity"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/negative-optional-1",
+          "evidenceId": "negative-optional-1",
+          "kind": "caption",
+          "origin": "creator_provided",
+          "value": "Potato mash\n3 potatoes\nchives (optional)\nMash the potatoes. Do not add butter. Add chives only if wanted."
+        }
+      ],
+      "availableEvidenceIds": ["negative-optional-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "potatoes",
+            "note": null,
+            "optional": null,
+            "original": "3 potatoes",
+            "preparation": null,
+            "quantity": {
+              "value": 3,
+              "unit": null,
+              "max": null
+            },
+            "size": null
+          },
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "chives",
+            "note": null,
+            "optional": true,
+            "original": "chives (optional)",
+            "preparation": null,
+            "quantity": null,
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": null,
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "Mash the potatoes."
+          },
+          {
+            "duration": null,
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 2,
+            "techniques": [],
+            "temperature": null,
+            "text": "Do not add butter."
+          },
+          {
+            "duration": null,
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 3,
+            "techniques": [],
+            "temperature": null,
+            "text": "Add chives only if wanted."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Potato mash",
+        "notes": [],
+        "nutrition": null,
+        "servings": null,
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "negative-optional-1",
+          "quote": "Potato mash"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "negative-optional-1",
+          "quote": "3 potatoes"
+        },
+        {
+          "path": "ingredients.1",
+          "evidenceId": "negative-optional-1",
+          "quote": "chives (optional)"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "negative-optional-1",
+          "quote": "Mash the potatoes."
+        },
+        {
+          "path": "instructions.1",
+          "evidenceId": "negative-optional-1",
+          "quote": "Do not add butter."
+        },
+        {
+          "path": "instructions.2",
+          "evidenceId": "negative-optional-1",
+          "quote": "Add chives only if wanted."
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [
+        {
+          "path": "instructions.1.text",
+          "phrases": ["do not"],
+          "kind": "negation"
+        },
+        {
+          "path": "instructions.2.text",
+          "phrases": ["only if wanted"],
+          "kind": "condition"
+        },
+        {
+          "path": "ingredients.1.original",
+          "phrases": ["optional"],
+          "kind": "optionality"
+        }
+      ],
+      "notes": "Butter is a prohibited addition, not an ingredient. Conditions and optionality cannot be dropped."
+    },
+    {
+      "id": "conditional-step",
+      "split": "holdout",
+      "scenarios": ["condition", "temperature", "time", "dietary_condition"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/conditional-step-1",
+          "evidenceId": "conditional-step-1",
+          "kind": "transcript",
+          "origin": "creator_provided",
+          "value": "Crisp tofu. 250 g tofu. Bake at 180°C for 20 minutes only if the tofu is still wet. This is gluten free if you use gluten-free soy sauce."
+        }
+      ],
+      "availableEvidenceIds": ["conditional-step-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "tofu",
+            "note": null,
+            "optional": null,
+            "original": "250 g tofu",
+            "preparation": null,
+            "quantity": {
+              "value": 250,
+              "unit": "g",
+              "max": null
+            },
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": {
+              "seconds": 1200
+            },
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": {
+              "value": 180,
+              "unit": "C"
+            },
+            "text": "Bake at 180°C for 20 minutes only if the tofu is still wet."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Crisp tofu",
+        "notes": ["This is gluten free if you use gluten-free soy sauce."],
+        "nutrition": null,
+        "servings": null,
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "conditional-step-1",
+          "quote": "Crisp tofu"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "conditional-step-1",
+          "quote": "250 g tofu"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "conditional-step-1",
+          "quote": "Bake at 180°C for 20 minutes only if the tofu is still wet."
+        },
+        {
+          "path": "notes.0",
+          "evidenceId": "conditional-step-1",
+          "quote": "This is gluten free if you use gluten-free soy sauce."
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [
+        {
+          "path": "instructions.0.text",
+          "phrases": ["only if the tofu is still wet"],
+          "kind": "condition"
+        },
+        {
+          "path": "notes.0",
+          "phrases": ["if you use gluten-free soy sauce"],
+          "kind": "condition"
+        }
+      ],
+      "notes": "No unconditional gluten-free claim is justified. Soy sauce is conditional, not a mandatory ingredient."
+    },
+    {
+      "id": "long-evidence",
+      "split": "holdout",
+      "scenarios": ["long_input", "early_late", "distractor"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/long-evidence-1",
+          "evidenceId": "long-evidence-1",
+          "kind": "transcript",
+          "origin": "creator_provided",
+          "value": "White bean mash.\n400 g white beans.\nCamera note 1: the blue cloth stays beside the bowl.\nCamera note 2: the blue cloth stays beside the bowl.\nCamera note 3: the blue cloth stays beside the bowl.\nCamera note 4: the blue cloth stays beside the bowl.\nCamera note 5: the blue cloth stays beside the bowl.\nCamera note 6: the blue cloth stays beside the bowl.\nCamera note 7: the blue cloth stays beside the bowl.\nCamera note 8: the blue cloth stays beside the bowl.\nCamera note 9: the blue cloth stays beside the bowl.\nCamera note 10: the blue cloth stays beside the bowl.\nCamera note 11: the blue cloth stays beside the bowl.\nCamera note 12: the blue cloth stays beside the bowl.\nCamera note 13: the blue cloth stays beside the bowl.\nCamera note 14: the blue cloth stays beside the bowl.\nCamera note 15: the blue cloth stays beside the bowl.\nCamera note 16: the blue cloth stays beside the bowl.\nCamera note 17: the blue cloth stays beside the bowl.\nCamera note 18: the blue cloth stays beside the bowl.\nCamera note 19: the blue cloth stays beside the bowl.\nCamera note 20: the blue cloth stays beside the bowl.\nCamera note 21: the blue cloth stays beside the bowl.\nCamera note 22: the blue cloth stays beside the bowl.\nCamera note 23: the blue cloth stays beside the bowl.\nCamera note 24: the blue cloth stays beside the bowl.\nCamera note 25: the blue cloth stays beside the bowl.\nCamera note 26: the blue cloth stays beside the bowl.\nCamera note 27: the blue cloth stays beside the bowl.\nCamera note 28: the blue cloth stays beside the bowl.\nCamera note 29: the blue cloth stays beside the bowl.\nCamera note 30: the blue cloth stays beside the bowl.\nCamera note 31: the blue cloth stays beside the bowl.\nCamera note 32: the blue cloth stays beside the bowl.\nCamera note 33: the blue cloth stays beside the bowl.\nCamera note 34: the blue cloth stays beside the bowl.\nCamera note 35: the blue cloth stays beside the bowl.\nCamera note 36: the blue cloth stays beside the bowl.\nCamera note 37: the blue cloth stays beside the bowl.\nCamera note 38: the blue cloth stays beside the bowl.\nCamera note 39: the blue cloth stays beside the bowl.\nCamera note 40: the blue cloth stays beside the bowl.\nCamera note 41: the blue cloth stays beside the bowl.\nCamera note 42: the blue cloth stays beside the bowl.\nCamera note 43: the blue cloth stays beside the bowl.\nCamera note 44: the blue cloth stays beside the bowl.\nCamera note 45: the blue cloth stays beside the bowl.\nCamera note 46: the blue cloth stays beside the bowl.\nCamera note 47: the blue cloth stays beside the bowl.\nCamera note 48: the blue cloth stays beside the bowl.\nCamera note 49: the blue cloth stays beside the bowl.\nCamera note 50: the blue cloth stays beside the bowl.\nCamera note 51: the blue cloth stays beside the bowl.\nCamera note 52: the blue cloth stays beside the bowl.\nCamera note 53: the blue cloth stays beside the bowl.\nCamera note 54: the blue cloth stays beside the bowl.\nCamera note 55: the blue cloth stays beside the bowl.\nCamera note 56: the blue cloth stays beside the bowl.\nCamera note 57: the blue cloth stays beside the bowl.\nCamera note 58: the blue cloth stays beside the bowl.\nCamera note 59: the blue cloth stays beside the bowl.\nCamera note 60: the blue cloth stays beside the bowl.\nCamera note 61: the blue cloth stays beside the bowl.\nCamera note 62: the blue cloth stays beside the bowl.\nCamera note 63: the blue cloth stays beside the bowl.\nCamera note 64: the blue cloth stays beside the bowl.\nCamera note 65: the blue cloth stays beside the bowl.\nCamera note 66: the blue cloth stays beside the bowl.\nCamera note 67: the blue cloth stays beside the bowl.\nCamera note 68: the blue cloth stays beside the bowl.\nCamera note 69: the blue cloth stays beside the bowl.\nCamera note 70: the blue cloth stays beside the bowl.\nCamera note 71: the blue cloth stays beside the bowl.\nCamera note 72: the blue cloth stays beside the bowl.\nCamera note 73: the blue cloth stays beside the bowl.\nCamera note 74: the blue cloth stays beside the bowl.\nCamera note 75: the blue cloth stays beside the bowl.\nCamera note 76: the blue cloth stays beside the bowl.\nCamera note 77: the blue cloth stays beside the bowl.\nCamera note 78: the blue cloth stays beside the bowl.\nCamera note 79: the blue cloth stays beside the bowl.\nCamera note 80: the blue cloth stays beside the bowl.\nMash the white beans with a fork.\nRest 5 minutes."
+        }
+      ],
+      "availableEvidenceIds": ["long-evidence-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": ["fork"],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "white beans",
+            "note": null,
+            "optional": null,
+            "original": "400 g white beans",
+            "preparation": null,
+            "quantity": {
+              "value": 400,
+              "unit": "g",
+              "max": null
+            },
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": null,
+            "equipment": ["fork"],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "Mash the white beans with a fork."
+          },
+          {
+            "duration": {
+              "seconds": 300
+            },
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 2,
+            "techniques": [],
+            "temperature": null,
+            "text": "Rest 5 minutes."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "White bean mash",
+        "notes": [],
+        "nutrition": null,
+        "servings": null,
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": {
+            "seconds": 300
+          },
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "long-evidence-1",
+          "quote": "White bean mash"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "long-evidence-1",
+          "quote": "400 g white beans"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "long-evidence-1",
+          "quote": "Mash the white beans with a fork."
+        },
+        {
+          "path": "instructions.1",
+          "evidenceId": "long-evidence-1",
+          "quote": "Rest 5 minutes."
+        },
+        {
+          "path": "times.inactive",
+          "evidenceId": "long-evidence-1",
+          "quote": "Rest 5 minutes"
+        },
+        {
+          "path": "equipment.0",
+          "evidenceId": "long-evidence-1",
+          "quote": "Mash the white beans with a fork."
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [],
+      "notes": "Long synthetic distraction tests retention of final facts, not upstream transcript truncation."
+    },
+    {
+      "id": "compound-time",
+      "split": "holdout",
+      "scenarios": ["compound_duration", "word_number", "mixed_fraction"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/compound-time-1",
+          "evidenceId": "compound-time-1",
+          "kind": "caption",
+          "origin": "creator_provided",
+          "value": "Slow oats\n1 1/2 cups oats\nCook the oats for 1 hour 15 minutes.\nRest for five minutes."
+        }
+      ],
+      "availableEvidenceIds": ["compound-time-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "oats",
+            "note": null,
+            "optional": null,
+            "original": "1 1/2 cups oats",
+            "preparation": null,
+            "quantity": {
+              "value": 1.5,
+              "unit": "cup",
+              "max": null
+            },
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": {
+              "seconds": 4500
+            },
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "Cook the oats for 1 hour 15 minutes."
+          },
+          {
+            "duration": {
+              "seconds": 300
+            },
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 2,
+            "techniques": [],
+            "temperature": null,
+            "text": "Rest for five minutes."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Slow oats",
+        "notes": [],
+        "nutrition": null,
+        "servings": null,
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": {
+            "seconds": 300
+          },
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "compound-time-1",
+          "quote": "Slow oats"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "compound-time-1",
+          "quote": "1 1/2 cups oats"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "compound-time-1",
+          "quote": "Cook the oats for 1 hour 15 minutes."
+        },
+        {
+          "path": "instructions.1",
+          "evidenceId": "compound-time-1",
+          "quote": "Rest for five minutes."
+        },
+        {
+          "path": "times.inactive",
+          "evidenceId": "compound-time-1",
+          "quote": "Rest for five minutes."
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [],
+      "notes": "Exact unit arithmetic and explicit number words are expected. Grounder limitations must remain failures, not disappear from the oracle. Top-level cook requires a standalone aggregate label; action duration belongs to the step."
+    },
+    {
+      "id": "title-only",
+      "split": "holdout",
+      "scenarios": ["missing_recipe", "caption_only"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/title-only-1",
+          "evidenceId": "title-only-1",
+          "kind": "caption",
+          "origin": "creator_provided",
+          "value": "Tonight's soup"
+        }
+      ],
+      "availableEvidenceIds": ["title-only-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": null,
+        "instructions": null,
+        "language": null,
+        "media": [],
+        "name": "Tonight's soup",
+        "notes": [],
+        "nutrition": null,
+        "servings": null,
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "title-only-1",
+          "quote": "Tonight's soup"
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [],
+      "notes": "A title alone cannot supply ingredients or method; it is not a usable complete recipe."
+    },
+    {
+      "id": "nutrition-provided",
+      "split": "holdout",
+      "scenarios": ["nutrition", "explicit_basis", "dietary"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/nutrition-provided-1",
+          "evidenceId": "nutrition-provided-1",
+          "kind": "caption",
+          "origin": "creator_provided",
+          "value": "Plain rice\n100 g rice\nBoil the rice.\nPer serving: energy 130 kcal; protein 2.7 g.\nvegan"
+        }
+      ],
+      "availableEvidenceIds": ["nutrition-provided-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [
+          {
+            "kind": "diet",
+            "name": "vegan",
+            "original": "vegan",
+            "source": "provided",
+            "value": true
+          }
+        ],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "rice",
+            "note": null,
+            "optional": null,
+            "original": "100 g rice",
+            "preparation": null,
+            "quantity": {
+              "value": 100,
+              "unit": "g",
+              "max": null
+            },
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": null,
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "Boil the rice."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Plain rice",
+        "notes": [],
+        "nutrition": {
+          "basis": {
+            "description": null,
+            "servings": null,
+            "type": "serving"
+          },
+          "nutrients": [
+            {
+              "amount": {
+                "value": 130,
+                "unit": "kcal"
+              },
+              "name": "energy"
+            },
+            {
+              "amount": {
+                "value": 2.7,
+                "unit": "g"
+              },
+              "name": "protein"
+            }
+          ],
+          "original": "Per serving: energy 130 kcal; protein 2.7 g.",
+          "source": "provided"
+        },
+        "servings": null,
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "nutrition-provided-1",
+          "quote": "Plain rice"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "nutrition-provided-1",
+          "quote": "100 g rice"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "nutrition-provided-1",
+          "quote": "Boil the rice."
+        },
+        {
+          "path": "dietary.0",
+          "evidenceId": "nutrition-provided-1",
+          "quote": "vegan"
+        },
+        {
+          "path": "nutrition",
+          "evidenceId": "nutrition-provided-1",
+          "quote": "Per serving: energy 130 kcal; protein 2.7 g."
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [],
+      "notes": "Provided basis is per serving; yield remains unknown. Do not infer additional nutrients."
+    },
+    {
+      "id": "silent-visible",
+      "split": "holdout",
+      "scenarios": ["silent_video", "visual_only", "negation", "range"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/silent-visible-1",
+          "evidenceId": "silent-visible-1",
+          "kind": "visual_observation",
+          "origin": "observed",
+          "value": "On-screen card: Warm berries\n125–150 g berries\nOn-screen step: Warm the berries; do not boil."
+        }
+      ],
+      "availableEvidenceIds": ["silent-visible-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "berries",
+            "note": null,
+            "optional": null,
+            "original": "125–150 g berries",
+            "preparation": null,
+            "quantity": {
+              "value": 125,
+              "unit": "g",
+              "max": 150
+            },
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": null,
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "Warm the berries; do not boil."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Warm berries",
+        "notes": [],
+        "nutrition": null,
+        "servings": null,
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "silent-visible-1",
+          "quote": "Warm berries"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "silent-visible-1",
+          "quote": "125–150 g berries"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "silent-visible-1",
+          "quote": "Warm the berries; do not boil."
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [
+        {
+          "path": "instructions.0.text",
+          "phrases": ["do not boil"],
+          "kind": "negation"
+        }
+      ],
+      "notes": "Written visual fixture has no audio. Retain the warning with the cooking instruction."
+    },
+    {
+      "id": "late-evidence-missing",
+      "split": "holdout",
+      "scenarios": ["acquisition_missing_late", "sparse_speech", "early_late"],
+      "provenance": {
+        "kind": "synthetic",
+        "description": "Authored challenge text; no real creator, video, ASR/OCR capture or provider result.",
+        "capturedAt": null,
+        "sourceReference": null
+      },
+      "allEvidence": [
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/late-evidence-missing-1",
+          "evidenceId": "late-evidence-missing-1",
+          "kind": "caption",
+          "origin": "creator_provided",
+          "value": "Pumpkin soup\n500 g pumpkin"
+        },
+        {
+          "artifactReference": "synthetic://recipe-extraction-v1/late-evidence-missing-2",
+          "evidenceId": "late-evidence-missing-2",
+          "kind": "transcript",
+          "origin": "creator_provided",
+          "value": "Simmer the pumpkin for 18 minutes. Serves 3."
+        }
+      ],
+      "availableEvidenceIds": ["late-evidence-missing-1"],
+      "expected": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "pumpkin",
+            "note": null,
+            "optional": null,
+            "original": "500 g pumpkin",
+            "preparation": null,
+            "quantity": {
+              "value": 500,
+              "unit": "g",
+              "max": null
+            },
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": {
+              "seconds": 1080
+            },
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": null,
+            "text": "Simmer the pumpkin for 18 minutes."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Pumpkin soup",
+        "notes": [],
+        "nutrition": null,
+        "servings": {
+          "quantity": 3,
+          "max": null,
+          "unit": "serving",
+          "original": "Serves 3"
+        },
+        "sourceTags": [],
+        "times": {
+          "cook": null,
+          "inactive": null,
+          "prep": null,
+          "total": null
+        }
+      },
+      "witnesses": [
+        {
+          "path": "name",
+          "evidenceId": "late-evidence-missing-1",
+          "quote": "Pumpkin soup"
+        },
+        {
+          "path": "ingredients.0",
+          "evidenceId": "late-evidence-missing-1",
+          "quote": "500 g pumpkin"
+        },
+        {
+          "path": "instructions.0",
+          "evidenceId": "late-evidence-missing-2",
+          "quote": "Simmer the pumpkin for 18 minutes."
+        },
+        {
+          "path": "servings",
+          "evidenceId": "late-evidence-missing-2",
+          "quote": "Serves 3"
+        }
+      ],
+      "aliases": [],
+      "qualifiers": [],
+      "notes": "Caption acquired; final transcript absent. Missing method/yield are acquisition losses, not extractor false negatives."
+    }
+  ]
+}

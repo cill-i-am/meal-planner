@@ -1,0 +1,46 @@
+{
+  "version": "recipe-extraction-comparison-v1",
+  "date": "2026-10-23",
+  "corpusVersion": "recipe-extraction-v1",
+  "sourceProvenance": "synthetic",
+  "selectedDevelopmentCases": ["caption-complete", "fractions", "components"],
+  "plannedStrategies": ["llama", "clairic"],
+  "plannedInvocations": 6,
+  "observedTransportAttempts": 1,
+  "providerAcceptance": "unknown",
+  "trustworthyProviderResponses": 0,
+  "unknownOutcomes": 1,
+  "unattemptedPlannedInvocations": 5,
+  "comparablePairs": 0,
+  "holdoutInvocations": 0,
+  "hybridInvocations": 0,
+  "providerSpendMicroUsd": null,
+  "attemptLatencyMilliseconds": null,
+  "reservationMicroUsd": 100000,
+  "status": "stopped_after_unknown_outcome",
+  "interpretation": "No model-quality, latency, cost-benefit, grounding-improvement or adoption conclusion is available. Zero recall on failed/missing run rows is coverage accounting, not observed model performance. The unknown receipt is transport/accounting evidence and is never a provider response.",
+  "requestIntegrity": "Plan requests retain historical rates of 0.29/2.25 micro-USD per input/output Llama token. No usage was returned; no estimated charge is inferred. JSON display formatting does not change the canonical invocation request hashes.",
+  "reconciliation": "Existing ProviderAccountingRepository.settleUnknown; original dispatch retained and stage poisoned; no retry or replacement paid call.",
+  "files": [
+    {
+      "path": "clairic.plan.json",
+      "sha256": "df7f587b0a51678e49794e9a37d2b5817e7f9fac48c5fe7669ba8247e36db6bc"
+    },
+    {
+      "path": "clairic.run.json",
+      "sha256": "b13206a9c3800cb2db96f6495c64a699c09d8555744cbe36bbbcdf5887048fb5"
+    },
+    {
+      "path": "llama.plan.json",
+      "sha256": "8df9e218a344a30bf3abce2e754ceb393124c520938e9b13f513764d62f3534a"
+    },
+    {
+      "path": "llama.run.json",
+      "sha256": "65b1fcc386589524724424d8bc5fa77ef84e0ff83cb084c795b7f6e83bd724d6"
+    },
+    {
+      "path": "paired-report.json",
+      "sha256": "2629ff330e9fe5b30402e735dadb2ed6924702ba53596a0f6cf0e698eaf4c8b5"
+    }
+  ]
+}

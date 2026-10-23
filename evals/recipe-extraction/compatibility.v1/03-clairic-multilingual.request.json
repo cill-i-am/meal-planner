@@ -1,0 +1,38 @@
+{
+  "body": {
+    "model": "clairic",
+    "state": "🥕\r\nCrème de carottes\r\nIngrédients:\r\n250 g carottes\r\n1⅓ cuillère de crème\r\nMéthode:\r\nCoupez les carottes.\r\nAjoutez la crème après cuisson.\r\n注記: 生姜は任意です。",
+    "fields": {
+      "title": {
+        "type": "text",
+        "instructions": "Exact recipe title."
+      },
+      "ingredients": {
+        "type": "list",
+        "items": "text",
+        "instructions": "Exact complete ingredient phrases from the Ingrédients section, preserving fractions, spacing and order."
+      },
+      "instructions": {
+        "type": "list",
+        "items": "text",
+        "instructions": "Exact complete cooking instructions from Méthode in source order."
+      },
+      "japanese_note": {
+        "type": "text",
+        "instructions": "Exact Japanese note after 注記:, excluding the label."
+      },
+      "servings": {
+        "type": "text",
+        "instructions": "Exact explicitly stated yield or servings phrase. Return null if absent."
+      }
+    },
+    "options": {
+      "return_state_text": true
+    }
+  },
+  "dispatchId": "recipe-clairic-probe-3-v1",
+  "inputMicroUsdPerToken": 0.1,
+  "maximumCostMicroUsd": 10000,
+  "model": "@cf/cloudflare/clairic",
+  "outputMicroUsdPerToken": 0
+}

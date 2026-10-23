@@ -24,9 +24,9 @@ import type {
 } from "./import-visual-evidence-extractor.js";
 import {
   projectVisualProviderSemanticsInput,
-  representativeVisualFrameIndex,
-  VisualEvidenceProviderSemantics,
-  VisualEvidenceProviderToolArguments,
+  emptyVisualProviderSemantics,
+  MaximumVisualFrames,
+  visualEvidenceProviderSchemas,
   visualEvidenceOutcomeForObservations,
 } from "./import-visual-evidence-extractor.js";
 
@@ -34,21 +34,26 @@ export { InstalledVisualModel } from "./import-provider-kernel.js";
 
 const VisualMaximumCostMicroUsd = 100_000;
 
-const visualPrompt = (frame: VisualFrameArtifact): Prompt.RawInput => [
+const visualPrompt = (
+  frames: readonly VisualFrameArtifact[]
+): Prompt.RawInput => [
   {
     content: [
       {
         text:
-          "Record only visible text in the provided source image. " +
+          `Record only visible text in all ${frames.length} supplied source images. ` +
+          `Return exactly ${frames.length} entries in the frames array, in image order. ` +
+          "Keep an empty observations array for an image without readable text; never omit a frame slot. " +
           "The adapter owns the source frame identity and timing. " +
-          "Do not infer ingredients, quantities, steps, or other unseen facts.",
+          "Do not infer ingredients, quantities, steps, or other unseen facts. " +
+          "Record at most 256 observations across all frames.",
         type: "text",
       },
-      {
+      ...frames.map((frame) => ({
         data: frame.bytes,
         mediaType: frame.mimeType,
-        type: "file",
-      },
+        type: "file" as const,
+      })),
     ],
     role: "user",
   },
@@ -70,7 +75,8 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
     });
     return {
       extract: (request) =>
-        request.frames.length === 0
+        request.frames.length === 0 ||
+        request.frames.length > MaximumVisualFrames
           ? Effect.fail(
               adapterFailure(
                 "VisualEvidenceExtractionFailure",
@@ -81,33 +87,32 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
               .run({
                 dispatchId: request.dispatchId,
                 invoke: Effect.gen(function* invokeVisualForcedTool() {
-                  const frameIndex = representativeVisualFrameIndex(
+                  const { schema, toolSchema } = visualEvidenceProviderSchemas(
                     request.frames.length
                   );
-                  const frame = request.frames[frameIndex];
-                  if (frame === undefined) {
-                    return yield* Effect.fail("insufficient_evidence" as const);
-                  }
                   const { inputTokens, outputTokens, value } =
                     yield* oneForcedToolCall(
                       service,
                       {
                         description:
-                          "Record only observations of text visibly present in the supplied source image.",
+                          "Record visible text separately for each supplied image in the same order.",
                         name: "record_visual_evidence",
-                        normalizeValue: projectVisualProviderSemanticsInput,
-                        prompt: visualPrompt(frame),
+                        normalizeValue: (providerValue) =>
+                          projectVisualProviderSemanticsInput(
+                            providerValue,
+                            request.frames.length
+                          ),
+                        prompt: visualPrompt(request.frames),
                         // Visual evidence is optional. A provider response
                         // that cannot be normalized must not abort otherwise
                         // valid transcript processing or leave the budget
                         // poisoned. Record honest empty evidence and charge
                         // the full bounded reservation; strict forced-tool
                         // envelope and argument validation still fail closed.
-                        providerNormalizationFallback: () => ({
-                          observations: [],
-                        }),
-                        schema: VisualEvidenceProviderSemantics,
-                        toolSchema: VisualEvidenceProviderToolArguments,
+                        providerNormalizationFallback: () =>
+                          emptyVisualProviderSemantics(request.frames.length),
+                        schema,
+                        toolSchema,
                       },
                       {
                         correlationId: input.correlationId,
@@ -115,25 +120,23 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                         traceStore,
                       }
                     );
-                  const observations = value.observations.map(
-                    (observation) => ({
-                      confidence:
-                        observation.confidence > 1
-                          ? observation.confidence / 100
-                          : observation.confidence,
-                      frameIndex,
-                      kind: "visible_text" as const,
-                      regions: [
-                        {
-                          height: 1,
-                          width: 1,
-                          x: 0,
-                          y: 0,
-                        },
-                      ] as const,
-                      text: observation.text,
-                      timestampMilliseconds: frame.timestampMilliseconds,
-                    })
+                  const observations = request.frames.flatMap(
+                    (frame, frameIndex) =>
+                      (value.frames[frameIndex]?.observations ?? []).map(
+                        (observation) => ({
+                          confidence:
+                            observation.confidence > 1
+                              ? observation.confidence / 100
+                              : observation.confidence,
+                          frameIndex,
+                          kind: "visible_text" as const,
+                          regions: [
+                            { height: 1, width: 1, x: 0, y: 0 },
+                          ] as const,
+                          text: observation.text,
+                          timestampMilliseconds: frame.timestampMilliseconds,
+                        })
+                      )
                   );
                   const meteredCost = pricedTokenUsage(
                     inputTokens,
@@ -168,8 +171,11 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                         visualEvidenceOutcomeForObservations(observations),
                       provider: ProviderName,
                       usage: {
-                        inputBytes: frame.bytes.byteLength,
-                        inputFrames: 1 as const,
+                        inputBytes: request.frames.reduce(
+                          (total, frame) => total + frame.bytes.byteLength,
+                          0
+                        ),
+                        inputFrames: request.frames.length,
                         modelCalls: 1 as const,
                       },
                     },

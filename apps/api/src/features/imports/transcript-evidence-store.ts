@@ -5,10 +5,15 @@ import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
 import type { ProviderTaskDiagnosticReasonCode as ProviderTaskDiagnosticReasonCodeType } from "./import-provider-workflow-checkpoint.js";
-import { SpeechTranscript } from "./import-speech-transcriber.js";
+import {
+  AbsentSpeechEvidence,
+  FailedSpeechEvidence,
+  NoAudioSpeechEvidence,
+  SpeechTranscript,
+} from "./import-speech-transcriber.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 
-export const TranscriptEvidenceDocument = Schema.Struct({
+const AvailableTranscriptEvidenceDocument = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,
   cost: SpeechTranscript.fields.cost,
   createdAt: ImportTimestamp,
@@ -24,7 +29,46 @@ export const TranscriptEvidenceDocument = Schema.Struct({
   text: SpeechTranscript.fields.text,
   usage: SpeechTranscript.fields.usage,
 });
+const UnavailableTranscriptDocumentFields = {
+  acquisitionGeneration: AcquisitionGeneration,
+  createdAt: ImportTimestamp,
+  deleteAt: ImportTimestamp,
+  dispatchId: Schema.String,
+  importId: ImportId,
+  schemaVersion: Schema.Literal(2),
+  sourceMediaSha256: Sha256Hex,
+};
+export const TranscriptEvidenceDocument = Schema.Union([
+  AvailableTranscriptEvidenceDocument,
+  Schema.Struct({
+    ...AbsentSpeechEvidence.fields,
+    ...UnavailableTranscriptDocumentFields,
+  }),
+  Schema.Struct({
+    ...FailedSpeechEvidence.fields,
+    ...UnavailableTranscriptDocumentFields,
+  }),
+  Schema.Struct({
+    ...NoAudioSpeechEvidence.fields,
+    ...UnavailableTranscriptDocumentFields,
+  }),
+]);
 export type TranscriptEvidenceDocument = typeof TranscriptEvidenceDocument.Type;
+
+export const transcriptEvidenceStatus = (
+  document: TranscriptEvidenceDocument
+) => {
+  if (document.schemaVersion === 1) {
+    return { status: "available" as const };
+  }
+  if (document.status === "absent") {
+    return { reason: document.reason, status: document.status };
+  }
+  return { reason: document.reason, status: document.status };
+};
+
+export const transcriptEvidenceText = (document: TranscriptEvidenceDocument) =>
+  document.text;
 export const MaximumTranscriptEvidenceBytes = 2_097_152;
 
 export interface TranscriptEvidenceStoreError {

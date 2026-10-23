@@ -1,0 +1,72 @@
+{
+  "dispatchId": "recipe-clairic-probe-1-v1",
+  "requestSha256": "2b3f995c59c7fa6d8287374284ae4ac724ae9541d58e83db655504966da800b4",
+  "status": 200,
+  "body": {
+    "result": {
+      "model": "clairic",
+      "answers": {
+        "title": {
+          "type": "text",
+          "p_null": 0.013804656453430653,
+          "span": [2, 11],
+          "guess": "Café soup",
+          "confidence": 0.871620237827301,
+          "value": "Café soup"
+        },
+        "ingredients": {
+          "type": "list",
+          "value": ["Café soup", "cafe", "½ cup milk", "2 onions"],
+          "spans": [
+            [2, 11],
+            [14, 18],
+            [33, 43],
+            [44, 52],
+            [53, 63]
+          ],
+          "confidence": 0.15149580028658874
+        },
+        "instructions": {
+          "type": "list",
+          "value": [
+            "Do not add milk yet",
+            "Ch",
+            "Add milk",
+            "Cook for 5 minutes"
+          ],
+          "spans": [
+            [72, 91],
+            [93, 95],
+            [139, 147],
+            [149, 167]
+          ],
+          "confidence": 0.002884423698944748
+        },
+        "servings": {
+          "type": "text",
+          "p_null": 0.998346209526062,
+          "span": [14, 18],
+          "guess": "cafe",
+          "confidence": 0.5170044898986816,
+          "value": null
+        }
+      },
+      "truncated": false,
+      "usage": {
+        "state_tokens": 57,
+        "image_tokens": 0,
+        "schema_tokens": 499,
+        "input_tokens": 670,
+        "output_tokens": 0,
+        "passes": 3
+      },
+      "state_text": "🍳 Café soup — café\nIngredients:\n½ cup milk\n2 onions\n½ cup milk\nMethod:\nDo not add milk yet.\nChop onions then add oil when the pan is hot.\nAdd milk.\nCook for 5 minutes."
+    },
+    "success": true,
+    "errors": [],
+    "messages": [],
+    "status": 200
+  },
+  "headers": {},
+  "latencyMs": 6225
+}

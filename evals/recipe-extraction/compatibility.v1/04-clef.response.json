@@ -1,0 +1,71 @@
+{
+  "dispatchId": "recipe-clef-compatibility-v1",
+  "requestSha256": "3fd133f7e8c71b125d7b3c9800be27ec72e9a96e6ce8cf57601d59cf8d1136d3",
+  "status": 200,
+  "body": {
+    "result": {
+      "model": "clef",
+      "answers": {
+        "clear_recipe": {
+          "type": "choice",
+          "choice": "recipe",
+          "probabilities": {
+            "recipe": 0.917,
+            "unrelated": 0.0139,
+            "uncertain": 0.0691
+          },
+          "confidence": 0.7687
+        },
+        "sparse_cooking": {
+          "type": "choice",
+          "choice": "uncertain",
+          "probabilities": {
+            "recipe": 0.0217,
+            "unrelated": 0.0139,
+            "uncertain": 0.9644
+          },
+          "confidence": 0.896
+        },
+        "clearly_unrelated": {
+          "type": "choice",
+          "choice": "unrelated",
+          "probabilities": {
+            "recipe": 0.0098,
+            "unrelated": 0.9735,
+            "uncertain": 0.0167
+          },
+          "confidence": 0.9221
+        },
+        "unknown": {
+          "type": "choice",
+          "choice": "uncertain",
+          "probabilities": {
+            "recipe": 0.0494,
+            "unrelated": 0.0609,
+            "uncertain": 0.8897
+          },
+          "confidence": 0.6965
+        },
+        "sparse_safe_to_reject": { "type": "noul", "noul": 0.0177 },
+        "unknown_completeness": {
+          "type": "score",
+          "score": 0.0888,
+          "legend": {
+            "0": "No ingredients or cooking instructions are stated.",
+            "1": "Some ingredients or cooking instructions, insufficient for a draft.",
+            "2": "Ingredients and cooking instructions support a draft."
+          },
+          "probabilities": { "0": 0.9202, "1": 0.0708, "2": 0.009 },
+          "confidence": 0.7778
+        }
+      },
+      "usage": { "input_tokens": 1056, "output_tokens": 0 }
+    },
+    "success": true,
+    "errors": [],
+    "messages": [],
+    "status": 200
+  },
+  "headers": {},
+  "latencyMs": 6976
+}

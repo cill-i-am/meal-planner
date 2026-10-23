@@ -478,12 +478,14 @@ describe("installed acquisition Durable Object boundary", () => {
       }),
     ],
   ])("rejects ffprobe frame output with %s", async (_case, probe) => {
+    const defaultRunner = makeProcessRunner();
     const root = await mkdtemp(path.join(tmpdir(), "frame-dimensions-"));
     const artifactId = acquisitionCoordinatorId(
       identity.importId,
       identity.generation
     );
     const artifacts = makeTemporaryArtifactStore(() => Promise.resolve());
+    await writeFile(path.join(root, "source.mp4"), mediaBytes);
     artifacts.registerPath(
       artifactId,
       root,
@@ -496,11 +498,13 @@ describe("installed acquisition Durable Object boundary", () => {
       },
       artifacts,
       processRunner: {
-        run: () =>
-          Effect.succeed({
-            stderrBytes: 0,
-            stdout: new TextEncoder().encode(probe),
-          }),
+        run: (command, args, options) =>
+          args.includes("stream=width,height")
+            ? Effect.succeed({
+                stderrBytes: 0,
+                stdout: new TextEncoder().encode(probe),
+              })
+            : defaultRunner.run(command, args, options),
       },
       resolver: {
         resolve: () => Effect.die("source resolution is not needed"),
@@ -524,6 +528,149 @@ describe("installed acquisition Durable Object boundary", () => {
       await rm(root, { force: true, recursive: true });
     }
   });
+
+  it("prepares all visual artifacts without audio extraction for verified video-only media", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "video-only-preparation-"));
+    const defaultRunner = makeProcessRunner();
+    const commands: string[][] = [];
+    const processRunner: MediaProcessRunner = {
+      run: (command, args, options) => {
+        commands.push([command, ...args]);
+        if (command === "ffprobe" && !args.includes("stream=width,height")) {
+          return Effect.succeed({
+            stderrBytes: 0,
+            stdout: new TextEncoder().encode(
+              JSON.stringify({
+                format: {
+                  duration: "12",
+                  format_name: "mp4",
+                  size: String(mediaBytes.byteLength),
+                },
+                streams: [
+                  { codec_name: "h264", codec_type: "video", index: 0 },
+                ],
+              })
+            ),
+          });
+        }
+        return defaultRunner.run(command, args, options);
+      },
+    };
+    const artifacts = makeTemporaryArtifactStore((artifactRoot) =>
+      rm(artifactRoot, { force: true, recursive: true })
+    );
+    const runtime = makeTikTokMediaContainerRuntime({
+      acquirer: makeContainerMediaAcquirer(processRunner, {
+        download: (_locator, destination) =>
+          Effect.promise(() => writeFile(destination, mediaBytes)),
+      }),
+      artifacts,
+      makeTemporaryRoot: () => mkdtemp(path.join(root, "artifact-")),
+      processRunner,
+      resolver: makeTikTokSourceResolver(processRunner),
+    });
+    try {
+      await withInstalledAcquisitionBoundary(runtime, async (stubFor) => {
+        const client = makeAcquisitionMediaObject(stubFor(identity.generation));
+        const prepared = await Effect.runPromise(client.prepare(identity));
+        expect(prepared.audioStreams).toEqual([]);
+        const derived = await Effect.runPromise(
+          client.prepareProviderEvidence(
+            prepared.artifactId,
+            prepared.durationSeconds
+          )
+        );
+        expect(derived.audio).toEqual({
+          reason: "no_audio_stream",
+          status: "absent",
+        });
+        expect(
+          derived.frames.map((frame) => frame.timestampMilliseconds)
+        ).toEqual([2400, 6000, 9600]);
+        await Promise.all(
+          derived.frames.map(async (frame) => {
+            const chunks = await Effect.runPromise(
+              Stream.runCollect(client.readArtifact(frame.artifactId))
+            );
+            expect(Buffer.concat(chunks)).toEqual(Buffer.from(mediaBytes));
+          })
+        );
+        const audioRead = await Effect.runPromiseExit(
+          Stream.runCollect(client.readArtifact(`${prepared.artifactId}:audio`))
+        );
+        expect(Exit.isFailure(audioRead)).toBe(true);
+      });
+      expect(commands.some((args) => args.includes("0:a:0?"))).toBe(true);
+      expect(commands.some((args) => args.includes("0:a:0"))).toBe(false);
+      expect(
+        commands.filter((args) => args.includes("-frames:v"))
+      ).toHaveLength(3);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it.each(["missing", "malformed_probe", "audio_extraction_failed"] as const)(
+    "does not turn %s media preparation into audio absence",
+    async (failure) => {
+      const root = await mkdtemp(
+        path.join(tmpdir(), "audio-absence-boundary-")
+      );
+      const artifactId = acquisitionCoordinatorId(
+        identity.importId,
+        identity.generation
+      );
+      const sourcePath = path.join(root, "source.mp4");
+      if (failure !== "missing") {
+        await writeFile(sourcePath, mediaBytes);
+      }
+      const artifacts = makeTemporaryArtifactStore(() => Promise.resolve());
+      artifacts.registerPath(artifactId, root, sourcePath, "video/mp4");
+      const defaultRunner = makeProcessRunner();
+      const runtime = makeTikTokMediaContainerRuntime({
+        acquirer: {
+          acquire: () => Effect.die("source acquisition is not needed"),
+        },
+        artifacts,
+        processRunner: {
+          run: (command, args, options) => {
+            if (failure === "malformed_probe") {
+              return Effect.succeed({
+                stderrBytes: 0,
+                stdout: new TextEncoder().encode("{}"),
+              });
+            }
+            if (args.includes("0:a:0")) {
+              return Effect.fail(
+                new RetryableAcquisitionError({ stage: "process" })
+              );
+            }
+            return defaultRunner.run(command, args, options);
+          },
+        },
+        resolver: {
+          resolve: () => Effect.die("source resolution is not needed"),
+        },
+      });
+      try {
+        const exit = await Effect.runPromiseExit(
+          runtime.prepareProviderEvidence(artifactId, 12)
+        );
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isSuccess(exit)) {
+          throw new Error("Invalid evidence must not become audio absence");
+        }
+        expect(
+          Option.getOrThrow(Cause.findErrorOption(exit.cause))
+        ).toMatchObject({
+          _tag: "RetryableAcquisitionFailure",
+          stage: "container",
+        });
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    }
+  );
 
   it("classifies the container-wide process deadline as a timeout", async () => {
     const root = await mkdtemp(
@@ -686,6 +833,9 @@ describe("installed acquisition Durable Object boundary", () => {
             prepared.durationSeconds
           )
         );
+        if (!("artifactId" in derived.audio)) {
+          throw new Error("Expected audio for a source with an audio stream");
+        }
         await Promise.all(
           [
             prepared.artifactId,

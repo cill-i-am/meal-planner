@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import type { Effect } from "effect";
 
 import type { AcquisitionGeneration } from "./import-media.model.js";
+import type { SpeechEvidenceStatus } from "./import-speech-transcriber.js";
 import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import type { ImportTransitionError } from "./import.repository.js";
 
@@ -13,15 +14,16 @@ export interface CompletedTranscriptEvidence {
     readonly currency: "USD";
     readonly estimatedMicroUsd: number;
   };
-  readonly detectedLanguage: string;
+  readonly detectedLanguage: string | null;
   readonly deleteAt: ImportTimestamp;
   readonly dispatchId: string;
   readonly generation: AcquisitionGeneration;
   readonly importId: ImportId;
-  readonly model: string;
-  readonly provider: string;
+  readonly model: string | null;
+  readonly provider: string | null;
   readonly segmentsCount: number;
   readonly sourceMediaSha256: string;
+  readonly transcript?: SpeechEvidenceStatus;
   readonly transcriptKey: string;
   readonly transcriptSha256: string;
   readonly usage: {

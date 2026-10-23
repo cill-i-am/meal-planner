@@ -34,7 +34,7 @@ const expectTerminal = (effect: ReturnType<typeof validateMediaProbe>) =>
 
 describe("real media validation", () => {
   it.effect(
-    "requires an ISO BMFF file-type box, audio, video, duration, and size",
+    "requires an ISO BMFF file-type box, video, duration, and size",
     () =>
       Effect.gen(function* validateMediaProbeEffect() {
         const validated = yield* validateMediaProbe(validProbe, {
@@ -59,8 +59,19 @@ describe("real media validation", () => {
       })
   );
 
+  it.effect("accepts video-only media with explicit empty audio streams", () =>
+    Effect.gen(function* acceptVideoOnlyMedia() {
+      const validated = yield* validateMediaProbe(
+        { ...validProbe, streams: validProbe.streams.slice(0, 1) },
+        { actualBytes: 1024, maximumBytes: 2048, maximumDurationSeconds: 900 }
+      );
+      expect(validated.audioStreams).toEqual([]);
+      expect(validated.videoStreams).toEqual([{ codec: "h264", index: 0 }]);
+    })
+  );
+
   it.effect(
-    "rejects filename/MIME-only, missing stream, corrupt, and bounded-limit cases",
+    "rejects filename/MIME-only, missing video, corrupt, and bounded-limit cases",
     () =>
       Effect.all([
         expectTerminal(
@@ -78,7 +89,7 @@ describe("real media validation", () => {
         ),
         expectTerminal(
           validateMediaProbe(
-            { ...validProbe, streams: validProbe.streams.slice(0, 1) },
+            { ...validProbe, streams: validProbe.streams.slice(1) },
             {
               actualBytes: 1024,
               maximumBytes: 2048,

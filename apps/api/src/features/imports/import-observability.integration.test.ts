@@ -119,7 +119,7 @@ const visualProviderResponse = () =>
           tool_calls: [
             {
               function: {
-                arguments: JSON.stringify({ observations: [] }),
+                arguments: JSON.stringify({ frames: [{ observations: [] }] }),
                 name: "record_visual_evidence",
               },
               id: "visual-correlation-call-1",

@@ -20,31 +20,68 @@ export const normalizeRecipeGroundingText = (value: string) =>
     .replaceAll(/\s+/gu, " ")
     .trim();
 
-/** A selected fragment cannot remove source polarity or conditions. */
-const preservesRecipeClauseQualifiers = (evidence: string, span: string) => {
-  const start = evidence.indexOf(span);
-  if (start === -1) {
-    return false;
-  }
-  const before = evidence.slice(0, start);
-  const after = evidence.slice(start + span.length);
-  const prefix = before.slice(
-    Math.max(
-      before.lastIndexOf("."),
-      before.lastIndexOf("!"),
-      before.lastIndexOf(";"),
-      before.lastIndexOf("\n")
-    ) + 1
+interface RecipeEvidenceSpan {
+  readonly end: number;
+  readonly start: number;
+}
+
+const startsWithGroundingWord = /^[\p{L}\p{N}\p{M}]/u;
+const endsWithGroundingWord = /[\p{L}\p{N}\p{M}]$/u;
+
+const hasWholeWordBoundaries = (evidence: string, span: RecipeEvidenceSpan) => {
+  const before = evidence.slice(0, span.start);
+  const after = evidence.slice(span.end);
+  const selected = evidence.slice(span.start, span.end);
+  return (
+    !(
+      endsWithGroundingWord.test(before) &&
+      startsWithGroundingWord.test(selected)
+    ) &&
+    !(
+      startsWithGroundingWord.test(after) &&
+      endsWithGroundingWord.test(selected)
+    )
   );
-  const suffix = after.split(/[.!;\n]/u)[0] ?? "";
-  const clause = normalizeRecipeGroundingText(`${prefix}${span}${suffix}`);
-  const selected = normalizeRecipeGroundingText(span);
-  const qualifiers =
-    clause.match(
-      /\b(?:not|no|never|without|avoid|omit|unless|only if|only when|except|optional|optionally|don t|doesn t|do not|must not|if|when|until)\b/gu
-    ) ?? [];
-  return qualifiers.every((qualifier) =>
-    new RegExp(`(?:^|\\s)${qualifier}(?:$|\\s)`, "u").test(selected)
+};
+
+const recipeQualifier =
+  /(?<![\p{L}\p{N}\p{M}])(?:not|no|never|without|avoid|omit|unless|only if|only when|only after|only before|except|optional|optionally|don t|doesn t|do not|must not|if|when|until)(?![\p{L}\p{N}\p{M}])/gu;
+const recipeCondition =
+  /\b(?:without|unless|if|when|until|except|only after|only before)\b/u;
+
+/** Check the selected occurrence, retaining its governing polarity and conditions. */
+const preservesRecipeClauseQualifiers = (
+  evidence: string,
+  span: RecipeEvidenceSpan
+) => {
+  const selected = evidence.slice(span.start, span.end);
+  // Decimal points remain part of the same statement and cannot hide a condition.
+  const boundaries = [...evidence.matchAll(/[!;\n]|\.(?!\p{N})/gu)];
+  const before = boundaries.findLast((boundary) => boundary.index < span.start);
+  const after = boundaries.find((boundary) => boundary.index + 1 >= span.end);
+  const prefix = evidence.slice(
+    before === undefined ? 0 : before.index + 1,
+    span.start
+  );
+  const suffix = evidence.slice(span.end, after?.index ?? evidence.length);
+  // "Then" alone cannot establish qualifier scope: a trailing condition may
+  // govern both actions. Keep ambiguous partial sentences unresolved.
+  const normalizedPrefix = normalizeRecipeGroundingText(prefix);
+  const normalizedSelected = normalizeRecipeGroundingText(selected);
+  const normalizedSuffix = normalizeRecipeGroundingText(suffix);
+  const selectedStart =
+    normalizedPrefix.length === 0 ? 0 : normalizedPrefix.length + 1;
+  const selectedEnd = selectedStart + normalizedSelected.length;
+  const clause = [normalizedPrefix, normalizedSelected, normalizedSuffix]
+    .filter(Boolean)
+    .join(" ");
+  const qualifiers = [...clause.matchAll(recipeQualifier)];
+  return qualifiers.every(
+    (qualifier) =>
+      qualifier.index >= selectedStart &&
+      qualifier.index + qualifier[0].length <= selectedEnd &&
+      // Retaining just "when" or "unless" still drops the actual condition.
+      (!recipeCondition.test(qualifier[0]) || normalizedSuffix.length === 0)
   );
 };
 
@@ -127,7 +164,7 @@ const comparableTokenForms = (value: string) => {
 };
 
 const positionedGroundingTokens = (value: string) =>
-  [...value.matchAll(/[\p{L}\p{N}]+/gu)].map((match) => {
+  [...value.matchAll(/[\p{L}\p{N}\p{M}]+/gu)].map((match) => {
     const [token] = match;
     const start = match.index;
     return {
@@ -229,16 +266,21 @@ export const projectRecipeEvidenceSpan = (
     }
   }
 
-  const [best] = candidates.toSorted(
-    (left, right) =>
-      left.tokenCount - right.tokenCount ||
-      left.end - left.start - (right.end - right.start)
-  );
+  const [best] = candidates
+    .filter(
+      (span) =>
+        hasWholeWordBoundaries(evidence, span) &&
+        preservesRecipeClauseQualifiers(evidence, span)
+    )
+    .toSorted(
+      (left, right) =>
+        left.tokenCount - right.tokenCount ||
+        left.end - left.start - (right.end - right.start)
+    );
   if (best === undefined) {
     return null;
   }
-  const span = evidence.slice(best.start, best.end).trim();
-  return preservesRecipeClauseQualifiers(evidence, span) ? span : null;
+  return evidence.slice(best.start, best.end);
 };
 
 const trustedRecipeCitation = (item: RecipeEvidenceItem) => ({
@@ -443,29 +485,40 @@ export const groundRecipeCandidate = (
   const cite = (path: string, item: RecipeEvidenceItem) => {
     evidence.push({ citations: [trustedRecipeCitation(item)], path });
   };
-  const text = (
+  const matchedText = (
     value: string | null,
     path: string,
     sources = contentItems
-  ): string | null => {
-    if (value === null) {
+  ): { readonly item: RecipeEvidenceItem; readonly span: string } | null => {
+    if (value === null || value.length === 0) {
       return null;
     }
     for (const item of sources) {
-      const index = item.value
-        .toLocaleLowerCase("en")
-        .indexOf(value.toLocaleLowerCase("en"));
-      let span: string | null = item.value.slice(index, index + value.length);
-      if (index === -1) {
-        span = projectRecipeEvidenceSpan(item.value, value);
+      for (const match of item.value.matchAll(
+        new RegExp(escapePattern(value), "giu")
+      )) {
+        const position = {
+          end: match.index + match[0].length,
+          start: match.index,
+        };
+        if (
+          hasWholeWordBoundaries(item.value, position) &&
+          preservesRecipeClauseQualifiers(item.value, position)
+        ) {
+          cite(path, item);
+          return { item, span: match[0] };
+        }
       }
-      if (span !== null && preservesRecipeClauseQualifiers(item.value, span)) {
+      const span = projectRecipeEvidenceSpan(item.value, value);
+      if (span !== null) {
         cite(path, item);
-        return span;
+        return { item, span };
       }
     }
     return null;
   };
+  const text = (value: string | null, path: string, sources = contentItems) =>
+    matchedText(value, path, sources)?.span ?? null;
   const list = (
     values: readonly string[],
     path: string,
@@ -489,16 +542,11 @@ export const groundRecipeCandidate = (
         /^ingredients\.\d+\.original$/u.test(entry.path)
       ).length;
       const prefix = `ingredients.${index}`;
-      const original = text(ingredient.original, `${prefix}.original`);
-      if (original === null) {
+      const matched = matchedText(ingredient.original, `${prefix}.original`);
+      if (matched === null) {
         return [];
       }
-      const item = contentItems.find((source) =>
-        source.value.includes(original)
-      );
-      if (item === undefined) {
-        return [];
-      }
+      const { item, span: original } = matched;
       const local = [{ ...item, value: original }];
       const groundedName = text(ingredient.name, `${prefix}.name`, local);
       const name = groundedName ?? original;
@@ -545,16 +593,11 @@ export const groundRecipeCandidate = (
         /^instructions\.\d+\.text$/u.test(entry.path)
       ).length;
       const prefix = `instructions.${index}`;
-      const grounded = text(instruction.text, `${prefix}.text`);
-      if (grounded === null) {
+      const matched = matchedText(instruction.text, `${prefix}.text`);
+      if (matched === null) {
         return [];
       }
-      const item = contentItems.find((source) =>
-        source.value.includes(grounded)
-      );
-      if (item === undefined) {
-        return [];
-      }
+      const { item, span: grounded } = matched;
       const local = [{ ...item, value: grounded }];
       const duration =
         instruction.duration !== null &&

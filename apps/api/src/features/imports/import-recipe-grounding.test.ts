@@ -6,16 +6,19 @@ import {
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { AcquisitionGeneration } from "./import-media.model.js";
 import { extractionIsGrounded } from "./import-recipe-draft.js";
 import { GroundedRecipeFacts } from "./import-recipe-extractor.js";
 import type {
   RecipeEvidenceItem,
   RecipeCandidate,
+  RecipeExtraction,
 } from "./import-recipe-extractor.js";
 import {
   groundRecipeCandidate,
   projectRecipeEvidenceSpan,
 } from "./import-recipe-grounding.js";
+import { ImportId } from "./import.contracts.js";
 
 const items = (value: string): readonly RecipeEvidenceItem[] => [
   {
@@ -365,6 +368,221 @@ describe("structured recipe grounding", () => {
       items(original)
     );
     expect(result.recipe.instructions?.[0]?.text).toBe(original);
+  });
+  it.each([
+    ["Chop onions.", "Ch"],
+    ["Ajoutez les oignons.", "Aj"],
+    ["Chop onions.", "hop onions"],
+    ["Add cafe\u0301.", "Add cafe"],
+    ["Add 200g flour.", "Add 200"],
+  ])("rejects partial source words in %s", (source, selected) => {
+    const result = groundRecipeCandidate(
+      candidate({ instructions: [recipeInstructionFromText(selected, 1)] }),
+      items(source)
+    );
+    expect(result.recipe.instructions).toBeNull();
+    expect(
+      result.evidence.some((entry) => entry.path.startsWith("instructions."))
+    ).toBe(false);
+    expect(result.unresolvedFields).toContain("instructions");
+    expect(projectRecipeEvidenceSpan(source, selected)).toBeNull();
+  });
+  it.each([
+    ["Do not add milk. Add milk.", "Add milk", "Add milk"],
+    ["Do not Add milk. Add milk.", "Add milk", "Add milk"],
+    [
+      "Do not add milk. Start by adding the milk.",
+      "add milk",
+      "adding the milk",
+    ],
+  ])("grounds the valid occurrence in %s", (source, selected, expected) => {
+    const result = groundRecipeCandidate(
+      candidate({ instructions: [recipeInstructionFromText(selected, 1)] }),
+      items(source)
+    );
+    expect(result.recipe.instructions?.[0]?.text).toBe(expected);
+    expect(projectRecipeEvidenceSpan(source, selected)).toBe(expected);
+    expect(groundRecipeCandidate(result.recipe, items(source))).toEqual(result);
+  });
+  it.each([
+    ["Chop onions", null],
+    ["chopping onions", null],
+    ["add oil", null],
+    ["Add oil when", null],
+    ["Chop onions then add oil", null],
+    ["add oil when the pan is hot", "add oil when the pan is hot"],
+    [
+      "Chop onions then add oil when the pan is hot",
+      "Chop onions then add oil when the pan is hot",
+    ],
+  ])(
+    "preserves sentence conditions when action scope is ambiguous for %s",
+    (selected, expected) => {
+      const source = "Chop onions then add oil when the pan is hot.";
+      const result = groundRecipeCandidate(
+        candidate({ instructions: [recipeInstructionFromText(selected, 1)] }),
+        items(source)
+      );
+      expect(result.recipe.instructions?.[0]?.text ?? null).toBe(expected);
+      expect(projectRecipeEvidenceSpan(source, selected)).toBe(expected);
+      expect(groundRecipeCandidate(result.recipe, items(source))).toEqual(
+        result
+      );
+    }
+  );
+  it.each([
+    [
+      "If using fresh onions, chop onions then add oil when hot.",
+      "chop onions",
+    ],
+    ["If needed then add milk.", "add milk"],
+    ["If needed, chop onions then add oil.", "add oil"],
+    ["Do not chop onions then add oil.", "chop onions"],
+    ["Only after the pan is hot, add oil then stir.", "add oil"],
+    ["Add oil when the pan is hot.", "Add oil when"],
+    ["Add milk unless already thick.", "Add milk unless"],
+    ["Add milk then sugar, only if needed.", "Add milk"],
+    ["Add milk then add sugar, only if needed.", "Add milk"],
+    ["Add 1.5 g salt if needed.", "Add 1."],
+    ["Add .5 g salt if needed.", "Add ."],
+  ])(
+    "keeps incomplete or inherited source conditions unresolved in %s",
+    (source, selected) => {
+      const result = groundRecipeCandidate(
+        candidate({ instructions: [recipeInstructionFromText(selected, 1)] }),
+        items(source)
+      );
+      expect(result.recipe.instructions).toBeNull();
+      expect(projectRecipeEvidenceSpan(source, selected)).toBeNull();
+    }
+  );
+  it("keeps a complete qualified sentence independent of the following sentence", () => {
+    const source = "Do not use milk. Add oil only if needed.";
+    const result = groundRecipeCandidate(
+      candidate({
+        instructions: [recipeInstructionFromText("Do not use milk.", 1)],
+      }),
+      items(source)
+    );
+    expect(result.recipe.instructions?.[0]?.text).toBe("Do not use milk.");
+    expect(groundRecipeCandidate(result.recipe, items(source))).toEqual(result);
+  });
+  it("retains the selected evidence item for structured instruction and ingredient citations", () => {
+    const sourceItems: readonly RecipeEvidenceItem[] = [
+      ...items("Do not Cook flour for 5 minutes. Avoid 200 g flour.").map(
+        (item) => ({ ...item, evidenceId: "negative" })
+      ),
+      ...items("Cook flour for 5 minutes. 200 g flour.").map((item) => ({
+        ...item,
+        evidenceId: "positive",
+      })),
+    ];
+    const result = groundRecipeCandidate(
+      candidate({
+        ingredients: [
+          {
+            ...recipeIngredientFromText("200 g flour"),
+            name: "flour",
+            quantity: { max: null, unit: "g", value: 200 },
+          },
+        ],
+        instructions: [
+          {
+            ...recipeInstructionFromText("Cook flour for 5 minutes", 1),
+            duration: { seconds: 300 },
+          },
+        ],
+      }),
+      sourceItems
+    );
+    expect(result.recipe.instructions?.[0]?.duration).toEqual({ seconds: 300 });
+    expect(result.recipe.ingredients?.[0]?.quantity).toEqual({
+      max: null,
+      unit: "g",
+      value: 200,
+    });
+    expect(
+      result.evidence.map((entry) => [
+        entry.path,
+        entry.citations.map((citation) => citation.evidenceId),
+      ])
+    ).toEqual([
+      ["ingredients.0.original", ["positive"]],
+      ["ingredients.0.name", ["positive"]],
+      ["ingredients.0.quantity", ["positive"]],
+      ["instructions.0.text", ["positive"]],
+      ["instructions.0.duration", ["positive"]],
+    ]);
+    expect(groundRecipeCandidate(result.recipe, sourceItems)).toEqual(result);
+  });
+  it("admits source-grounded actions and rejects truncated words and conditions at the draft boundary", () => {
+    const trustedItems: readonly RecipeEvidenceItem[] = [
+      ...items(
+        "200 g onions. Chop onions then add oil when the pan is hot. Do not add milk. Add milk."
+      ),
+      {
+        artifactReference: "source",
+        evidenceId: "source",
+        kind: "source_url",
+        origin: "observed",
+        value: "https://example.com/recipe",
+      },
+    ];
+    const grounded = groundRecipeCandidate(
+      candidate({
+        ingredients: [recipeIngredientFromText("200 g onions")],
+        instructions: [
+          recipeInstructionFromText(
+            "chopping onions then add oil when the pan is hot",
+            1
+          ),
+          recipeInstructionFromText("Add milk", 2),
+        ],
+      }),
+      trustedItems
+    );
+    expect(
+      grounded.recipe.instructions?.map((instruction) => instruction.text)
+    ).toEqual(["Chop onions then add oil when the pan is hot", "Add milk"]);
+    const extraction: RecipeExtraction = {
+      ...grounded,
+      cost: { certainty: "estimated", currency: "USD", estimatedMicroUsd: 1 },
+      usage: {
+        inputEvidenceItems: trustedItems.length,
+        inputTokens: 0,
+        latencyMilliseconds: 0,
+        modelCalls: 1,
+        outputTokens: 0,
+      },
+    };
+    const assembly = {
+      evidenceFingerprint: "fingerprint",
+      generation: Schema.decodeUnknownSync(AcquisitionGeneration)(1),
+      importId: Schema.decodeUnknownSync(ImportId)(
+        "00000000-0000-4000-8000-000000000001"
+      ),
+      items: trustedItems,
+    };
+    const source = {
+      canonicalUrl: "https://example.com/recipe",
+      creator: { displayName: null, handle: null, id: null },
+    };
+    expect(extractionIsGrounded(extraction, assembly, source)).toBe(true);
+    for (const fragment of ["Ch", "Add oil when"]) {
+      expect(
+        extractionIsGrounded(
+          {
+            ...extraction,
+            recipe: {
+              ...extraction.recipe,
+              instructions: [recipeInstructionFromText(fragment, 1)],
+            },
+          },
+          assembly,
+          source
+        )
+      ).toBe(false);
+    }
   });
   it.each(["Serves 4", "Servings: 4", "Portions: 4"])(
     "derives explicit serving unit from %s",

@@ -80,7 +80,7 @@ export const validateMediaProbe = Effect.fn("ImportMedia.validateMediaProbe")(
     const videoStreams = summaries
       .filter((stream) => stream.type === "video")
       .map(({ codec, index }) => ({ codec, index }));
-    if (audioStreams.length === 0 || videoStreams.length === 0) {
+    if (videoStreams.length === 0) {
       return yield* Effect.fail(invalidMedia("unsupported_streams"));
     }
     const bytes = yield* Schema.decodeUnknownEffect(MediaByteCount)(
@@ -92,10 +92,7 @@ export const validateMediaProbe = Effect.fn("ImportMedia.validateMediaProbe")(
       Effect.mapError(() => invalidMedia("limit_exceeded"))
     );
     return {
-      audioStreams: audioStreams as [
-        (typeof audioStreams)[number],
-        ...(typeof audioStreams)[number][],
-      ],
+      audioStreams,
       bytes,
       durationSeconds: validatedDurationSeconds,
       videoStreams: videoStreams as [

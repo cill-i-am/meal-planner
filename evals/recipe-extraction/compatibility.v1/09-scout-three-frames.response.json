@@ -1,0 +1,75 @@
+{
+  "dispatchId": "visual-allframes-probe-v1",
+  "requestSha256": "2200208b0645b0b9b1ab1981eff669920857dc61483b33c62a62c13e03151208",
+  "status": 200,
+  "body": {
+    "result": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "logprobs": null,
+          "message": {
+            "annotations": null,
+            "audio": null,
+            "content": "",
+            "function_call": null,
+            "reasoning": null,
+            "refusal": null,
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{ \n    \"frames\": [\n        {\"observations\": [{\"text\": \"2 onions\"}]}, \n        {\"observations\": [{\"text\": \"Simmer 10 minutes\"}]}, \n        {\"observations\": [{\"text\": \"Serve with rice\"}]}\n    ] \n}",
+                  "name": "record_visual_evidence"
+                },
+                "id": "chatcmpl-tool-8f68d1ab79a69569",
+                "type": "function"
+              }
+            ]
+          },
+          "routed_experts": null,
+          "stop_reason": null,
+          "token_ids": null
+        }
+      ],
+      "created": 1792750334,
+      "ec_transfer_params": null,
+      "id": "chatcmpl-2ee8ba84-f9e1-4e90-8764-cfb329868b5e",
+      "kv_transfer_params": null,
+      "metrics": null,
+      "model": "@cf/meta/llama-4-scout-17b-16e-instruct",
+      "object": "chat.completion",
+      "prompt_logprobs": null,
+      "prompt_text": null,
+      "prompt_token_ids": null,
+      "response": "",
+      "service_tier": null,
+      "tool_calls": [
+        {
+          "arguments": {
+            "frames": [
+              { "observations": [{ "text": "2 onions" }] },
+              { "observations": [{ "text": "Simmer 10 minutes" }] },
+              { "observations": [{ "text": "Serve with rice" }] }
+            ]
+          },
+          "name": "record_visual_evidence"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 2235,
+        "completion_tokens": 54,
+        "total_tokens": 2289,
+        "prompt_tokens_details": { "cached_tokens": 0 },
+        "neurons": 59.03181838989258
+      }
+    },
+    "success": true,
+    "errors": [],
+    "messages": [],
+    "status": 200
+  },
+  "headers": {},
+  "latencyMs": 5281
+}

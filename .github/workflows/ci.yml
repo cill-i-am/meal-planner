@@ -127,6 +127,9 @@ jobs:
           - name: packages
             command: pnpm --recursive --filter './packages/**' test
             browser: false
+          - name: recipe-extraction
+            command: pnpm evals:recipe:test
+            browser: false
           - name: api-1-of-7
             command: pnpm --filter @meal-planner/api test --shard=1/7
             browser: false

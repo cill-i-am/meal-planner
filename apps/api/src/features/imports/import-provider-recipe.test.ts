@@ -34,6 +34,53 @@ import {
 } from "./import-recipe-extractor.js";
 
 describe("installed recipe provider adapter", () => {
+  it("charges the exact published input and output rates", async () => {
+    const gateway = makeProviderTransports(
+      recipeJsonResponse(emptyRecipeProviderSelection, {
+        completion_tokens: 1000,
+        prompt_tokens: 1000,
+        total_tokens: 2000,
+      })
+    );
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        correlationId,
+        dispatch: localDispatchGate,
+        transport: gateway.recipe,
+      })
+    );
+    const output = await Effect.runPromise(
+      adapter.extract(recipeEvidenceAssembly)
+    );
+    expect(output.cost.estimatedMicroUsd).toBe(2546);
+  });
+
+  it("prices validated zero-output usage without substituting the reservation maximum", async () => {
+    const gateway = makeProviderTransports(
+      recipeJsonResponse(emptyRecipeProviderSelection, {
+        completion_tokens: 0,
+        prompt_tokens: 20,
+        total_tokens: 20,
+      })
+    );
+    const adapter = await runFactory(
+      makeInstalledRecipeExtractor({
+        correlationId,
+        dispatch: localDispatchGate,
+        transport: gateway.recipe,
+      })
+    );
+    const output = await Effect.runPromise(
+      adapter.extract(recipeEvidenceAssembly)
+    );
+    expect(output.cost.estimatedMicroUsd).toBe(6);
+    expect(output.usage).toMatchObject({
+      inputTokens: 20,
+      modelCalls: 1,
+      outputTokens: 0,
+    });
+  });
+
   it("classifies accessible non-food evidence semantically without a draft shape", () => {
     expect(
       hasMinimumRecipeEvidence(

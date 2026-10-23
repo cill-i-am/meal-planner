@@ -1,16 +1,20 @@
-import { Effect, Schema } from "effect";
+import { Effect, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
   makeR2SpeechAudioExtractor,
   makeR2VisualFrameSampler,
+  persistDerivedProviderEvidence,
 } from "./import-derived-media.js";
 import type {
   AcquisitionBucketLike,
+  AcquisitionMediaObjectLike,
   R2ObjectBodyLike,
 } from "./import-media-acquirer.js";
+import { VerifiedPreparedMediaArtifact } from "./import-media-acquirer.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
 import { ImportId } from "./import.contracts.js";
+import { memoryBucket } from "./transcript-evidence.test-fixture.js";
 
 const hash = async (bytes: Uint8Array) =>
   Array.from(
@@ -107,7 +111,7 @@ describe("private derived provider evidence", () => {
       })
     );
 
-    expect(extractedAudio.bytes).toEqual(audio);
+    expect(extractedAudio).toMatchObject({ bytes: audio });
     expect(
       frames.map(({ timestampMilliseconds }) => timestampMilliseconds)
     ).toEqual([12_000, 30_000]);
@@ -160,4 +164,159 @@ describe("private derived provider evidence", () => {
     expect(exit._tag).toBe("Failure");
     expect(JSON.stringify(exit)).not.toContain("private/audio");
   });
+});
+
+const noAudioFixture = async () => {
+  const importId = Schema.decodeUnknownSync(ImportId)(
+    "00000000-0000-4000-8000-000000000003"
+  );
+  const generation = Schema.decodeUnknownSync(AcquisitionGeneration)(1);
+  const storage = memoryBucket();
+  const frameBytes = new Uint8Array([4, 5, 6]);
+  const frameSha256 = await hash(frameBytes);
+  const prepared = Schema.decodeUnknownSync(VerifiedPreparedMediaArtifact)({
+    artifactId: "video-only-source",
+    audioStreams: [],
+    bytes: 1024,
+    durationSeconds: 1,
+    metadata: {
+      canonicalId: "7392489304682556679",
+      canonicalUrl: "https://www.tiktok.com/@fixture/video/7392489304682556679",
+      caption: "2 onions",
+      creator: { displayName: null, handle: null, id: null },
+      observedAt: "2026-10-23T12:00:00.000Z",
+      provenance: {
+        canonicalUrl: "provider_observed",
+        caption: "creator_provided",
+        creator: { displayName: null, handle: null, id: null },
+        publishedAt: null,
+      },
+      publishedAt: null,
+    },
+    sha256: "a".repeat(64),
+    videoStreams: [{ codec: "h264", index: 0 }],
+  });
+  const frame = (index: number) => ({
+    artifactId: `video-only-frame-${index}`,
+    bytes: frameBytes.byteLength,
+    height: 1,
+    sha256: frameSha256,
+    timestampMilliseconds: index * 250,
+    width: 1,
+  });
+  const readArtifacts: string[] = [];
+  const mediaObject: AcquisitionMediaObjectLike = {
+    cleanup: () => Effect.void,
+    prepare: () => Effect.die("Unexpected source preparation"),
+    prepareProviderEvidence: () =>
+      Effect.succeed({
+        audio: { reason: "no_audio_stream", status: "absent" },
+        frames: [frame(0), frame(1), frame(2)],
+      }),
+    readArtifact: (artifactId) => {
+      readArtifacts.push(artifactId);
+      return Stream.succeed(frameBytes);
+    },
+  };
+  const input = { generation, importId };
+  const readInput = {
+    ...input,
+    mediaKey: "private/original",
+    sourceMediaSha256: prepared.sha256,
+  };
+  const manifestKey = `imports/${importId}/generations/${generation}/provider-evidence.json`;
+  return {
+    ...storage,
+    input,
+    manifestKey,
+    mediaObject,
+    prepared,
+    readArtifacts,
+    readInput,
+  };
+};
+
+describe("verified video-only derived evidence", () => {
+  it("persists all three frames and an absence marker without reading or writing audio", async () => {
+    const fixture = await noAudioFixture();
+    await Effect.runPromise(
+      persistDerivedProviderEvidence(
+        fixture.bucket,
+        fixture.mediaObject,
+        fixture.prepared,
+        fixture.input
+      )
+    );
+    expect(fixture.readArtifacts).toEqual([
+      "video-only-frame-0",
+      "video-only-frame-1",
+      "video-only-frame-2",
+    ]);
+    expect(
+      [...fixture.objects.keys()].some((key) =>
+        key.endsWith("provider-audio.wav")
+      )
+    ).toBe(false);
+    expect(
+      await Effect.runPromise(
+        makeR2SpeechAudioExtractor(fixture.bucket).extract(fixture.readInput)
+      )
+    ).toEqual({ _tag: "NoAudioStream" });
+    expect(
+      await Effect.runPromise(
+        makeR2VisualFrameSampler(fixture.bucket).sample({
+          ...fixture.readInput,
+          durationMilliseconds: 1000,
+        })
+      )
+    ).toHaveLength(3);
+  });
+
+  it("rejects absence that conflicts with the validated source probe before writing", async () => {
+    const fixture = await noAudioFixture();
+    const exit = await Effect.runPromiseExit(
+      persistDerivedProviderEvidence(
+        fixture.bucket,
+        fixture.mediaObject,
+        {
+          ...fixture.prepared,
+          audioStreams: [{ codec: "aac", index: 1 }],
+        },
+        fixture.input
+      )
+    );
+    expect(exit._tag).toBe("Failure");
+    expect(fixture.objects.size).toBe(0);
+  });
+
+  it.each(["missing", "checksum", "audio-field"] as const)(
+    "never treats a %s manifest as verified audio absence",
+    async (corruption) => {
+      const fixture = await noAudioFixture();
+      await Effect.runPromise(
+        persistDerivedProviderEvidence(
+          fixture.bucket,
+          fixture.mediaObject,
+          fixture.prepared,
+          fixture.input
+        )
+      );
+      if (corruption === "missing") {
+        fixture.objects.delete(fixture.manifestKey);
+      } else {
+        fixture.update(fixture.manifestKey, (stored) =>
+          corruption === "checksum"
+            ? { ...stored, checksums: { sha256: new Uint8Array(32).buffer } }
+            : {
+                ...stored,
+                text: () => Effect.succeed(JSON.stringify({ audio: null })),
+              }
+        );
+      }
+      const exit = await Effect.runPromiseExit(
+        makeR2SpeechAudioExtractor(fixture.bucket).extract(fixture.readInput)
+      );
+      expect(exit._tag).toBe("Failure");
+    }
+  );
 });

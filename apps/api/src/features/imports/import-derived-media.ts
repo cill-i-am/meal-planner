@@ -15,6 +15,7 @@ import {
   MediaDurationMilliseconds,
   Sha256Hex,
   ProviderEvidenceTransport,
+  ProviderAudioAbsence,
 } from "./import-media.model.js";
 import type {
   AcquisitionGeneration as AcquisitionGenerationType,
@@ -74,13 +75,13 @@ const ImageDimension = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThan(0))
 );
 
-const DerivedEvidenceManifest = Schema.Struct({
-  audio: Schema.Struct({
-    bytes: MediaByteCount,
-    durationMilliseconds: MediaDurationMilliseconds,
-    key: DerivedAudioObjectKey,
-    sha256: Sha256Hex,
-  }),
+const DerivedAudioReference = Schema.Struct({
+  bytes: MediaByteCount,
+  durationMilliseconds: MediaDurationMilliseconds,
+  key: DerivedAudioObjectKey,
+  sha256: Sha256Hex,
+});
+const DerivedEvidenceManifestFields = {
   frames: Schema.NonEmptyArray(
     Schema.Struct({
       bytes: MediaByteCount,
@@ -93,9 +94,21 @@ const DerivedEvidenceManifest = Schema.Struct({
   ),
   generation: AcquisitionGeneration,
   importId: ImportId,
-  schemaVersion: Schema.Literal(1),
   sourceMediaSha256: Sha256Hex,
-});
+};
+
+const DerivedEvidenceManifest = Schema.Union([
+  Schema.Struct({
+    ...DerivedEvidenceManifestFields,
+    audio: DerivedAudioReference,
+    schemaVersion: Schema.Literal(1),
+  }),
+  Schema.Struct({
+    ...DerivedEvidenceManifestFields,
+    audio: Schema.Union([DerivedAudioReference, ProviderAudioAbsence]),
+    schemaVersion: Schema.Literal(2),
+  }),
+]);
 
 const manifestKey = (
   importId: ImportIdType,
@@ -196,11 +209,26 @@ export const persistDerivedProviderEvidence = Effect.fn(
     transport
   ).pipe(Effect.mapError(derivedFailure));
 
-  const storedAudioKey = audioKey(input.importId, input.generation);
-  yield* putStream(bucket, mediaObject, {
-    ...derived.audio,
-    contentType: "audio/wav",
-    key: storedAudioKey,
+  const audioAbsent = "status" in derived.audio;
+  if (audioAbsent !== (prepared.audioStreams.length === 0)) {
+    return yield* Effect.fail(derivedFailure());
+  }
+  const audio = yield* Effect.gen(function* persistPreparedAudio() {
+    if ("status" in derived.audio) {
+      return derived.audio;
+    }
+    const key = audioKey(input.importId, input.generation);
+    yield* putStream(bucket, mediaObject, {
+      ...derived.audio,
+      contentType: "audio/wav",
+      key,
+    });
+    return {
+      bytes: derived.audio.bytes,
+      durationMilliseconds: derived.audio.durationMilliseconds,
+      key,
+      sha256: derived.audio.sha256,
+    };
   });
 
   const storedFrames = yield* Effect.forEach(
@@ -227,16 +255,11 @@ export const persistDerivedProviderEvidence = Effect.fn(
   );
 
   const manifest = yield* Schema.decodeUnknownEffect(DerivedEvidenceManifest)({
-    audio: {
-      bytes: derived.audio.bytes,
-      durationMilliseconds: derived.audio.durationMilliseconds,
-      key: storedAudioKey,
-      sha256: derived.audio.sha256,
-    },
+    audio,
     frames: storedFrames,
     generation: input.generation,
     importId: input.importId,
-    schemaVersion: 1,
+    schemaVersion: 2,
     sourceMediaSha256,
   }).pipe(Effect.mapError(derivedFailure));
   const bytes = new TextEncoder().encode(JSON.stringify(manifest));
@@ -292,7 +315,7 @@ const readManifest = Effect.fn("ImportDerivedMedia.readManifest")(
     const object = yield* bucket
       .get(manifestKey(importId, generation))
       .pipe(Effect.mapError(() => readFailure("getManifest")));
-    if (object === null) {
+    if (object === null || object.size < 1 || object.size > 1_048_576) {
       return yield* Effect.fail(readFailure("getManifest"));
     }
     const text = yield* object
@@ -313,6 +336,23 @@ const readManifest = Effect.fn("ImportDerivedMedia.readManifest")(
       decoded.sourceMediaSha256 !== expectedSha256
     ) {
       return yield* Effect.fail(readFailure("verifyIdentity"));
+    }
+    if (decoded.schemaVersion === 2) {
+      const bytes = new TextEncoder().encode(text);
+      const sha256 = yield* hash(bytes).pipe(
+        Effect.mapError(() => readFailure("verifyIdentity"))
+      );
+      if (
+        object.size !== bytes.byteLength ||
+        object.httpMetadata?.contentType !== "application/json" ||
+        object.httpMetadata?.cacheControl !== "private, no-store" ||
+        object.customMetadata?.["kind"] !== "provider-evidence-manifest" ||
+        object.customMetadata?.["sha256"] !== sha256 ||
+        object.checksums?.sha256 === undefined ||
+        bytesToHex(object.checksums.sha256) !== sha256
+      ) {
+        return yield* Effect.fail(readFailure("verifyIdentity"));
+      }
     }
     return decoded;
   }
@@ -348,6 +388,9 @@ export const makeR2SpeechAudioExtractor = (
         input.generation,
         input.sourceMediaSha256
       );
+      if ("status" in manifest.audio) {
+        return { _tag: "NoAudioStream" as const };
+      }
       const bytes = yield* readBytes(bucket, manifest.audio.key);
       const actualHash = yield* hash(bytes);
       if (

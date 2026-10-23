@@ -588,7 +588,7 @@ const runInstalledVisualThenRecipe = (env: ProviderWorkflowTestEnv) =>
                 {
                   function: {
                     arguments: JSON.stringify({
-                      observations: [],
+                      frames: [{ observations: [] }],
                     }),
                     name: "record_visual_evidence",
                   },
