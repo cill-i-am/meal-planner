@@ -81,8 +81,7 @@ test("reviews an assistant meal and a full two-week family plan, then changes on
         {
           data: Schema.decodeUnknownSync(MutatePersonProfilePayload)({
             command: {
-              _tag: "AddConfirmedProfileFact",
-              basis: person.isCurrentAdult ? "self" : "household_adult",
+              _tag: "AddProfileFact",
               fact: { _tag: "NoKnownHardConstraints" },
             },
             expectedProfileVersion: 0,

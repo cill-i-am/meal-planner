@@ -47,6 +47,22 @@ const standingLabel = (fact: ProfileFact) => {
     ? "Self-confirmed"
     : "Confirmed by a household adult";
 };
+const sourceLabel = (source: ProfileFact["source"]) => {
+  switch (source) {
+    case "direct": {
+      return "Saved edit";
+    }
+    case "interview": {
+      return "Interview confirmation";
+    }
+    case "manual_ui": {
+      return "Manual entry";
+    }
+    default: {
+      throw new Error(`Unreachable profile source: ${source satisfies never}`);
+    }
+  }
+};
 const profileErrorMessage = (error: Error | null) => {
   const failure = profileOperationFailure(error);
   if (failure === undefined) {
@@ -125,9 +141,7 @@ const ProfileHistory = ({
                 <p>
                   <strong>Version {version.version}</strong> · {actor} ·{" "}
                   {new Date(audit.atEpochMs).toLocaleString()} ·{" "}
-                  {audit.source === "interview"
-                    ? "Interview confirmation"
-                    : "Manual entry"}
+                  {sourceLabel(audit.source)}
                 </p>
                 <p>
                   Before:{" "}
@@ -183,11 +197,8 @@ const ProfileFacts = ({
       <li key={fact.id} className="space-y-2 py-4">
         <p className="font-semibold">{describeProfileFact(fact.value)}</p>
         <p>
-          {standingLabel(fact)} ·{" "}
-          {fact.source === "interview"
-            ? "Interview confirmation"
-            : "Manual entry"}{" "}
-          · Updated in version {fact.updatedInVersion}
+          {standingLabel(fact)} · {sourceLabel(fact.source)} · Updated in
+          version {fact.updatedInVersion}
         </p>
         <div className="flex flex-wrap gap-2">
           {fact.standing._tag === "provisional" &&
@@ -197,7 +208,6 @@ const ProfileFacts = ({
                 onClick={() =>
                   submit({
                     _tag: "ConfirmProfileFact",
-                    basis: person.isCurrentAdult ? "self" : "household_adult",
                     factId: fact.id,
                   })
                 }
@@ -216,20 +226,23 @@ const ProfileFacts = ({
             </Button>
           )}
         </div>
-        <details>
-          <summary className="min-h-11 cursor-pointer">
-            {fact.value._tag === "FoodPreference"
-              ? "Edit preference"
-              : "Change or remove safety fact"}
-          </summary>
-          <ProfileFactForm
-            key={`${fact.id}:${profile.version}`}
-            basis={basisFor(person)}
-            disabled={disabled}
-            fact={fact}
-            submit={submit}
-          />
-        </details>
+        {(fact.value._tag === "FoodPreference" ||
+          basisFor(person) !== "provisional") && (
+          <details>
+            <summary className="min-h-11 cursor-pointer">
+              {fact.value._tag === "FoodPreference"
+                ? "Edit preference"
+                : "Change or remove safety fact"}
+            </summary>
+            <ProfileFactForm
+              key={`${fact.id}:${profile.version}`}
+              basis={basisFor(person)}
+              disabled={disabled}
+              fact={fact}
+              submit={submit}
+            />
+          </details>
+        )}
       </li>
     ))}
   </ul>

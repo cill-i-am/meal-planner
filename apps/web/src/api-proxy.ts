@@ -4,5 +4,10 @@ export interface MealPlannerApiService {
 
 export const isApiRequest = (request: Request): boolean => {
   const { pathname } = new URL(request.url);
-  return pathname.startsWith("/api/auth/") || pathname.startsWith("/v1/");
+  return (
+    pathname.startsWith("/api/auth/") ||
+    pathname.startsWith("/v1/") ||
+    pathname === "/mcp" ||
+    pathname.startsWith("/.well-known/oauth-")
+  );
 };

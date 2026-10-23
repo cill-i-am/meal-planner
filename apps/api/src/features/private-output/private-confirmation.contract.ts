@@ -2,8 +2,10 @@ import { MutatePersonProfilePayload } from "@meal-planner/household-api";
 import { ConfirmationOutcome } from "@meal-planner/private-interview-api";
 import { Schema } from "effect";
 
-import { Generation } from "./private-output-socket.js";
-import { PrivateSessionBinding } from "./private-output.contract.js";
+import {
+  Generation,
+  PrivateSessionBinding,
+} from "./private-output.contract.js";
 
 export const ReleaseConfirmation = Schema.Struct({
   ...Generation.fields,

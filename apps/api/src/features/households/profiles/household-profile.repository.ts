@@ -9,6 +9,7 @@ import {
 import type {
   HouseholdPeoplePrincipal,
   MutatePersonProfilePayload,
+  RecordedPersonProfilePayload,
   ProfileVersionPage,
 } from "@meal-planner/household-api";
 import { and, desc, eq, lt } from "drizzle-orm";
@@ -26,7 +27,10 @@ import type {
   HouseholdDigestService,
   HouseholdIdentityGeneratorService,
 } from "../shared-kernel/authority-services.js";
-import { applyProfileCommand } from "./household-profile.transitions.js";
+import {
+  applyProfileCommand,
+  recordProfileCommand,
+} from "./household-profile.transitions.js";
 
 type Failure = HouseholdProfileRejected;
 type Actor = Pick<HouseholdPeoplePrincipal, "actorId" | "linkageSubject">;
@@ -104,6 +108,9 @@ interface MutationInput {
   readonly payload: MutatePersonProfilePayload;
   readonly now: number;
 }
+type RecordedMutationInput = Omit<MutationInput, "payload"> & {
+  readonly payload: RecordedPersonProfilePayload;
+};
 
 export const makeHouseholdProfileRepository = (
   database: EffectSQLiteDoDatabase,
@@ -195,18 +202,40 @@ export const makeHouseholdProfileRepository = (
   type Transaction = Parameters<
     Parameters<EffectSQLiteDoDatabase["transaction"]>[0]
   >[0];
+  const prepareMutation = (
+    transaction: Reader,
+    input: MutationInput,
+    source: "direct" | "interview"
+  ) =>
+    Effect.gen(function* prepareProfileMutation() {
+      const actorPersonId = yield* activeAdult(transaction, input.actor);
+      const person = yield* targetPerson(transaction, input.personId);
+      const command = yield* recordProfileCommand(input.payload.command, {
+        actorPersonId,
+        personId: input.personId,
+        personKind: person.kind,
+        source,
+      });
+      return {
+        actorPersonId,
+        input: {
+          ...input,
+          payload: { ...input.payload, command },
+        },
+        person,
+      };
+    });
   const commit = (
     transaction: Transaction,
-    input: MutationInput,
+    prepared: Effect.Success<ReturnType<typeof prepareMutation>>,
     digest: string,
-    source: "manual_ui" | "interview"
+    source: "direct" | "interview"
   ) =>
     Effect.gen(function* commitProfileVersion() {
-      const actorPersonId = yield* activeAdult(transaction, input.actor);
+      const { actorPersonId, input, person } = prepared;
       if (source === "interview" && actorPersonId !== input.personId) {
         return yield* Effect.fail(reject("self_required"));
       }
-      const person = yield* targetPerson(transaction, input.personId);
       const [receipt] = yield* transaction
         .select()
         .from(householdProfileVersions)
@@ -279,8 +308,8 @@ export const makeHouseholdProfileRepository = (
       return result;
     });
   const intentDigest = (
-    input: MutationInput,
-    source: "manual_ui" | "interview"
+    input: RecordedMutationInput,
+    source: "direct" | "interview"
   ) => {
     const intent = {
       actor: input.actor,
@@ -299,10 +328,23 @@ export const makeHouseholdProfileRepository = (
     input: MutationInput
   ): Effect.Effect<PersonProfile, Failure> =>
     Effect.gen(function* mutateEffect() {
-      const digest = yield* intentDigest(input, "manual_ui");
+      // The DO driver requires a synchronous transaction; hashing may suspend.
+      const admitted = yield* prepareMutation(database, input, "direct");
+      const digest = yield* intentDigest(admitted.input, "direct");
       return yield* database
         .transaction((transaction) =>
           Effect.gen(function* manualMutation() {
+            const prepared = yield* prepareMutation(
+              transaction,
+              input,
+              "direct"
+            );
+            if (
+              prepared.actorPersonId !== admitted.actorPersonId ||
+              prepared.person.kind !== admitted.person.kind
+            ) {
+              return yield* Effect.fail(reject("stale_version"));
+            }
             const [interviewReceipt] = yield* transaction
               .select()
               .from(householdInterviewProfileReceipts)
@@ -317,7 +359,7 @@ export const makeHouseholdProfileRepository = (
             if (interviewReceipt !== undefined) {
               return yield* Effect.fail(reject("mutation_collision"));
             }
-            return yield* commit(transaction, input, digest, "manual_ui");
+            return yield* commit(transaction, prepared, digest, "direct");
           })
         )
         .pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable())));
@@ -327,10 +369,22 @@ export const makeHouseholdProfileRepository = (
     input: MutationInput
   ): Effect.Effect<InterviewProfileOutcome, Failure> =>
     Effect.gen(function* interviewMutation() {
-      const digest = yield* intentDigest(input, "interview");
+      const admitted = yield* prepareMutation(database, input, "interview");
+      const digest = yield* intentDigest(admitted.input, "interview");
       return yield* database
         .transaction((transaction) =>
           Effect.gen(function* sealInterviewOutcome() {
+            const prepared = yield* prepareMutation(
+              transaction,
+              input,
+              "interview"
+            );
+            if (
+              prepared.actorPersonId !== admitted.actorPersonId ||
+              prepared.person.kind !== admitted.person.kind
+            ) {
+              return yield* Effect.fail(reject("stale_version"));
+            }
             const [receipt] = yield* transaction
               .select()
               .from(householdInterviewProfileReceipts)
@@ -397,7 +451,7 @@ export const makeHouseholdProfileRepository = (
             }
             const outcome = yield* commit(
               transaction,
-              input,
+              prepared,
               digest,
               "interview"
             ).pipe(

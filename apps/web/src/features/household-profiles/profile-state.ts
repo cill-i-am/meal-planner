@@ -2,6 +2,7 @@ import {
   HouseholdPersonId,
   HouseholdPersonMutationId,
   MutatePersonProfilePayload,
+  readStoredProfilePayload,
 } from "@meal-planner/household-api";
 import type {
   PersonProfile,
@@ -29,6 +30,10 @@ const PendingProfileChange = Schema.Struct({
   authenticationRequired: Schema.optional(Schema.Boolean),
   payload: MutatePersonProfilePayload,
   personId: HouseholdPersonId,
+});
+const StoredPendingProfileChange = Schema.Struct({
+  ...PendingProfileChange.fields,
+  payload: Schema.Unknown,
 });
 type PendingProfileChange = typeof PendingProfileChange.Type;
 
@@ -108,9 +113,13 @@ export const useHouseholdProfileState = ({
   const storageKey = `meal-planner.household-profile.unresolved.v1:${JSON.stringify([accountId, organizationId])}`;
   const readPending = (): PendingProfileChange | null => {
     const raw = globalThis.sessionStorage.getItem(storageKey);
-    return raw === null
-      ? null
-      : Schema.decodeUnknownSync(PendingProfileChange)(JSON.parse(raw));
+    if (raw === null) {
+      return null;
+    }
+    const stored = Schema.decodeUnknownSync(StoredPendingProfileChange)(
+      JSON.parse(raw)
+    );
+    return { ...stored, payload: readStoredProfilePayload(stored.payload) };
   };
   const updatePending = (
     update: (

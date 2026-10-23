@@ -6,6 +6,8 @@ const opaqueKey = Schema.String.pipe(
 );
 const operationId = Schema.String.pipe(Schema.check(Schema.isUUID()));
 
+export const Generation = Schema.Struct({ generation: operationId });
+
 export const PrivateParticipantBinding = Schema.Struct({
   accountKey: opaqueKey,
   householdKey: opaqueKey,

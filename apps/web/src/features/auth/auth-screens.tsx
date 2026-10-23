@@ -5,6 +5,7 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { Link, Navigate, useNavigate } from "@tanstack/react-router";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 
 import { useAppForm } from "../../components/forms/form.js";
@@ -22,10 +23,11 @@ import {
   signInValidator,
   signUpValidator,
 } from "./auth-input.js";
+import { isOAuthConsentReturn } from "./auth-navigation.js";
 import { EntryFormSurface, EntryLayout } from "./entry-layout.js";
 import { useAuthRetry } from "./use-auth-retry.js";
 
-const useAuthentication = (redirect: string) => {
+const useAuthentication = (redirect: string, oauthQuery?: string) => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const authClient = useAuthClient();
@@ -35,9 +37,16 @@ const useAuthentication = (redirect: string) => {
     // its old result after Better Auth has created the new session.
     onMutate: () =>
       queryClient.cancelQueries({ exact: true, queryKey: accountKey }),
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      if (result === "redirecting") {
+        return;
+      }
       await queryClient.invalidateQueries({ queryKey: accountKey });
-      await navigate({ href: redirect, replace: true });
+      await navigate({
+        href: redirect,
+        reloadDocument: isOAuthConsentReturn(redirect),
+        replace: true,
+      });
     },
   });
   // TanStack also stores errors thrown by onSuccess (refresh or navigation),
@@ -55,7 +64,9 @@ const useAuthentication = (redirect: string) => {
   }
   const feedback = authFeedback(error, mutation.variables?.kind === "signup");
   const { retryAt, retryReady, waiting } = useAuthRetry(error);
-  const blocked = mutation.isPending || waiting || feedback?.stop === true;
+  const redirecting = mutation.isSuccess && mutation.data === "redirecting";
+  const blocked =
+    mutation.isPending || redirecting || waiting || feedback?.stop === true;
   return {
     blocked,
     clearError: () => {
@@ -68,17 +79,22 @@ const useAuthentication = (redirect: string) => {
       retryReady && retryAt !== undefined
         ? "You can try again now."
         : feedback?.message,
-    pending: mutation.isPending,
+    pending: mutation.isPending || redirecting,
     submit: (input: AuthenticationInput) => {
       if (!blocked) {
-        mutation.mutate(input);
+        mutation.mutate({ ...input, oauthQuery });
       }
     },
   };
 };
 
-const LoginForm = ({ redirect }: { readonly redirect: string }) => {
-  const auth = useAuthentication(redirect);
+interface AuthPageProps {
+  readonly redirect: string;
+  readonly oauthQuery?: string | undefined;
+}
+
+const LoginForm = ({ redirect, oauthQuery }: AuthPageProps) => {
+  const auth = useAuthentication(redirect, oauthQuery);
   const form = useAppForm({
     defaultValues: { email: "", password: "" },
     listeners: { onChange: auth.clearError },
@@ -98,11 +114,23 @@ const LoginForm = ({ redirect }: { readonly redirect: string }) => {
             size="link"
             disabled={auth.pending}
             render={
-              <Link
-                to="/signup"
-                search={{ redirect }}
-                disabled={auth.pending}
-              />
+              oauthQuery ? (
+                <a
+                  href={`/signup${oauthQuery}`}
+                  aria-disabled={auth.pending}
+                  onClick={(event) => {
+                    if (auth.pending) {
+                      event.preventDefault();
+                    }
+                  }}
+                />
+              ) : (
+                <Link
+                  to="/signup"
+                  search={{ redirect }}
+                  disabled={auth.pending}
+                />
+              )
             }
             nativeButton={false}
             role="link"
@@ -134,7 +162,9 @@ const LoginForm = ({ redirect }: { readonly redirect: string }) => {
                   <span className="hidden md:inline">Welcome back.</span>
                 </form.Heading>
                 <p className="text-muted-foreground text-sm leading-5.75">
-                  Let’s pick up where you left off.
+                  {oauthQuery
+                    ? "Log in to review the app’s access request."
+                    : "Let’s pick up where you left off."}
                 </p>
               </div>
               <div className="flex flex-col">
@@ -166,7 +196,11 @@ const LoginForm = ({ redirect }: { readonly redirect: string }) => {
                             render={
                               <Link
                                 to="/forgot-password"
-                                search={{ redirect }}
+                                search={{
+                                  redirect: oauthQuery
+                                    ? `/oauth/consent${oauthQuery}`
+                                    : redirect,
+                                }}
                                 disabled={auth.pending}
                               />
                             }
@@ -257,8 +291,8 @@ const SignupStory = () => (
   </div>
 );
 
-const SignupForm = ({ redirect }: { readonly redirect: string }) => {
-  const auth = useAuthentication(redirect);
+const SignupForm = ({ redirect, oauthQuery }: AuthPageProps) => {
+  const auth = useAuthentication(redirect, oauthQuery);
   const form = useAppForm({
     defaultValues: { email: "", name: "", password: "" },
     listeners: { onChange: auth.clearError },
@@ -278,7 +312,23 @@ const SignupForm = ({ redirect }: { readonly redirect: string }) => {
             size="link"
             disabled={auth.pending}
             render={
-              <Link to="/login" search={{ redirect }} disabled={auth.pending} />
+              oauthQuery ? (
+                <a
+                  href={`/login${oauthQuery}`}
+                  aria-disabled={auth.pending}
+                  onClick={(event) => {
+                    if (auth.pending) {
+                      event.preventDefault();
+                    }
+                  }}
+                />
+              ) : (
+                <Link
+                  to="/login"
+                  search={{ redirect }}
+                  disabled={auth.pending}
+                />
+              )
             }
             nativeButton={false}
             role="link"
@@ -387,6 +437,14 @@ const SignupForm = ({ redirect }: { readonly redirect: string }) => {
   );
 };
 
+const OAuthConsentReturn = ({ redirect }: { readonly redirect: string }) => {
+  const navigate = useNavigate();
+  useEffect(() => {
+    void navigate({ href: redirect, reloadDocument: true, replace: true });
+  }, [navigate, redirect]);
+  return null;
+};
+
 const AnonymousOnly = ({
   children,
   redirect,
@@ -397,21 +455,30 @@ const AnonymousOnly = ({
   const authClient = useAuthClient();
   const session = useQuery(accountQuery(authClient));
   const pending = useIsMutating({ mutationKey: ["authenticate"] });
-  return session.data && pending === 0 ? (
-    <Navigate to={redirect} replace />
-  ) : (
-    children
-  );
+  if (session.data && pending === 0) {
+    return isOAuthConsentReturn(redirect) ? (
+      <OAuthConsentReturn redirect={redirect} />
+    ) : (
+      <Navigate to={redirect} replace />
+    );
+  }
+  return children;
 };
 
-export const LoginPage = ({ redirect }: { readonly redirect: string }) => (
-  <AnonymousOnly redirect={redirect}>
-    <LoginForm redirect={redirect} />
-  </AnonymousOnly>
-);
+export const LoginPage = (props: AuthPageProps) =>
+  props.oauthQuery ? (
+    <LoginForm {...props} />
+  ) : (
+    <AnonymousOnly redirect={props.redirect}>
+      <LoginForm {...props} />
+    </AnonymousOnly>
+  );
 
-export const SignupPage = ({ redirect }: { readonly redirect: string }) => (
-  <AnonymousOnly redirect={redirect}>
-    <SignupForm redirect={redirect} />
-  </AnonymousOnly>
-);
+export const SignupPage = (props: AuthPageProps) =>
+  props.oauthQuery ? (
+    <SignupForm {...props} />
+  ) : (
+    <AnonymousOnly redirect={props.redirect}>
+      <SignupForm {...props} />
+    </AnonymousOnly>
+  );

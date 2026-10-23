@@ -78,7 +78,14 @@ export default Alchemy.Stack(
     const api = yield* MealPlannerApi;
     const websiteDomainProps = yield* websiteDomainConfiguration(dev, stage);
     const website = yield* Cloudflare.Website.Vite("MealPlannerWebsite", {
-      assets: { runWorkerFirst: ["/api/auth/*", "/v1/*"] },
+      assets: {
+        runWorkerFirst: [
+          "/api/auth/*",
+          "/v1/*",
+          "/mcp",
+          "/.well-known/oauth-*",
+        ],
+      },
       dev: { port: 4399 },
       env: {
         BROWSER_ANALYTICS_TOKEN: browserAnalytics?.siteToken ?? "",

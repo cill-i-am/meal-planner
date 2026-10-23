@@ -70,6 +70,15 @@ export type PrivateOutputMutationPort = Pick<
 >;
 export type PrivateOutputApiPort = Pick<
   PrivateOutputApi,
+  | "beginDirectoryRequest"
+  | "authorizeDirectoryRequest"
+  | "beginRequest"
+  | "authorizeRequest"
+  | "executeDirectory"
+  | "executeSession"
+  | "readSession"
+  | "startTurn"
+  | "cancelTurn"
   | "releaseConfirmation"
   | "settleConfirmation"
   | "authorizeConnection"

@@ -141,11 +141,25 @@ const setupFailure = (reason: string | null | undefined) => {
   }
 };
 
+const setupActionNotice = (conversation: AgentConversationController) => {
+  if (conversation.actionState?._tag === "Unknown") {
+    return "The save needs checking. Send “try again”.";
+  }
+  if (
+    conversation.pendingAction !== null &&
+    (conversation.actionState?._tag === "Committed" ||
+      conversation.actionState?._tag === "Rejected")
+  ) {
+    return "The result is confirmed. Refresh to load the latest family view.";
+  }
+  return null;
+};
+
 export const FamilySetupChatHistory = () => {
   const { conversation, error, name } = useSetupChat();
   const failure = conversation.view?.turns.at(-1)?.failure;
   const issue = error ?? conversation.error ?? setupFailure(failure);
-  const unknown = conversation.actionState?._tag === "Unknown";
+  const actionNotice = setupActionNotice(conversation);
   let progress = "";
   if (conversation.busy) {
     progress =
@@ -247,11 +261,9 @@ export const FamilySetupChatHistory = () => {
         </MessageScrollerProvider>
       </div>
       {issue && <OperationError>{issue}</OperationError>}
-      {unknown && (
+      {actionNotice !== null && (
         <div className="flex flex-wrap items-center gap-3">
-          <p className="text-muted-foreground text-sm">
-            The save needs checking. Send “try again”.
-          </p>
+          <p className="text-muted-foreground text-sm">{actionNotice}</p>
           <Button
             variant="link"
             onClick={() => {

@@ -16,6 +16,7 @@ import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as InvitationInvitationIdRouteImport } from './routes/invitation.$invitationId'
+import { Route as OauthConsentRouteImport } from './routes/oauth.consent'
 import { Route as SetupIndexRouteImport } from './routes/setup.index'
 import { Route as SetupFamilyRouteImport } from './routes/setup.family'
 import { Route as SetupPeopleRouteImport } from './routes/setup.people'
@@ -57,6 +58,11 @@ const InvitationInvitationIdRoute = InvitationInvitationIdRouteImport.update({
   path: '/invitation/$invitationId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OauthConsentRoute = OauthConsentRouteImport.update({
+  id: '/oauth/consent',
+  path: '/oauth/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SetupIndexRoute = SetupIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -91,6 +97,7 @@ export interface FileRoutesByFullPath {
   '/setup': typeof SetupRouteWithChildren
   '/signup': typeof SignupRoute
   '/invitation/$invitationId': typeof InvitationInvitationIdRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/setup/family': typeof SetupFamilyRoute
   '/setup/people': typeof SetupPeopleRoute
   '/setup/ready': typeof SetupReadyRoute
@@ -104,6 +111,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/invitation/$invitationId': typeof InvitationInvitationIdRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/setup/family': typeof SetupFamilyRoute
   '/setup/people': typeof SetupPeopleRoute
   '/setup/ready': typeof SetupReadyRoute
@@ -119,6 +127,7 @@ export interface FileRoutesById {
   '/setup': typeof SetupRouteWithChildren
   '/signup': typeof SignupRoute
   '/invitation/$invitationId': typeof InvitationInvitationIdRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/setup/family': typeof SetupFamilyRoute
   '/setup/people': typeof SetupPeopleRoute
   '/setup/ready': typeof SetupReadyRoute
@@ -135,6 +144,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/signup'
     | '/invitation/$invitationId'
+    | '/oauth/consent'
     | '/setup/family'
     | '/setup/people'
     | '/setup/ready'
@@ -148,6 +158,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/invitation/$invitationId'
+    | '/oauth/consent'
     | '/setup/family'
     | '/setup/people'
     | '/setup/ready'
@@ -162,6 +173,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/signup'
     | '/invitation/$invitationId'
+    | '/oauth/consent'
     | '/setup/family'
     | '/setup/people'
     | '/setup/ready'
@@ -177,6 +189,7 @@ export interface RootRouteChildren {
   SetupRoute: typeof SetupRouteWithChildren
   SignupRoute: typeof SignupRoute
   InvitationInvitationIdRoute: typeof InvitationInvitationIdRoute
+  OauthConsentRoute: typeof OauthConsentRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -228,6 +241,13 @@ declare module '@tanstack/react-router' {
       path: '/invitation/$invitationId'
       fullPath: '/invitation/$invitationId'
       preLoaderRoute: typeof InvitationInvitationIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oauth/consent': {
+      id: '/oauth/consent'
+      path: '/oauth/consent'
+      fullPath: '/oauth/consent'
+      preLoaderRoute: typeof OauthConsentRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/setup/': {
@@ -294,6 +314,7 @@ const rootRouteChildren: RootRouteChildren = {
   SetupRoute: SetupRouteWithChildren,
   SignupRoute: SignupRoute,
   InvitationInvitationIdRoute: InvitationInvitationIdRoute,
+  OauthConsentRoute: OauthConsentRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

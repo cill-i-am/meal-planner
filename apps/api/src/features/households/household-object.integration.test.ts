@@ -2092,8 +2092,7 @@ describe("household Durable Object", () => {
         operation: "mutatePersonProfile",
         payload: {
           command: {
-            _tag: "AddConfirmedProfileFact",
-            basis: "self",
+            _tag: "AddProfileFact",
             fact: { _tag: "NoKnownHardConstraints" },
           },
           expectedProfileVersion: 0,

@@ -285,6 +285,20 @@ export class PrivateChatPersistence<TRunResult = unknown> {
       .map(toHistory);
   }
 
+  historyPage(afterOrdinal: number, limit: number) {
+    const rows = this.#database
+      .select()
+      .from(privateMessages)
+      .where(gt(privateMessages.ordinal, afterOrdinal))
+      .orderBy(asc(privateMessages.ordinal))
+      .limit(limit + 1)
+      .all();
+    return {
+      hasMore: rows.length > limit,
+      messages: rows.slice(0, limit).map(toHistory),
+    };
+  }
+
   participant(id: string): HistoryMessage | undefined {
     const row = this.#database
       .select()

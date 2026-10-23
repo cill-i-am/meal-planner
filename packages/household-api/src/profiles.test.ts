@@ -55,7 +55,7 @@ it("rejects unbounded labels, invented source or standing, and command authority
     ).toBe(true);
   }
   const payload = {
-    command: { _tag: "AddProvisionalProfileFact", fact: base },
+    command: { _tag: "AddProfileFact", fact: base },
     expectedProfileVersion: 0,
     mutationId: "profile-contract",
   };
@@ -69,6 +69,7 @@ it("rejects unbounded labels, invented source or standing, and command authority
   for (const extra of [
     { actorId: "x" },
     { source: "private_interview_proposal" },
+    { basis: "self" },
     { transcript: "private" },
   ]) {
     expect(
@@ -106,4 +107,16 @@ it("rejects unbounded labels, invented source or standing, and command authority
       })
     )
   ).toBe(true);
+  for (const command of [
+    { _tag: "AddConfirmedProfileFact", basis: "self", fact: base },
+    { _tag: "AddProvisionalProfileFact", fact: base },
+  ]) {
+    expect(
+      Option.isNone(
+        Schema.decodeUnknownOption(MutatePersonProfilePayload, {
+          onExcessProperty: "error",
+        })({ ...payload, command })
+      )
+    ).toBe(true);
+  }
 });

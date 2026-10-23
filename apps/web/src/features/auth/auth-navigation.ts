@@ -2,6 +2,20 @@ import { Option, Schema } from "effect";
 
 const AuthSearch = Schema.Struct({ redirect: Schema.optional(Schema.String) });
 const parseSearch = Schema.decodeUnknownOption(AuthSearch);
+const hasOAuthSignature = Schema.is(Schema.Struct({ sig: Schema.String }));
+
+/** Preserve provider signatures and repeated parameters byte-for-byte. */
+export const readOAuthQuery = (search: string): string | undefined =>
+  new URLSearchParams(search).has("sig") ? search : undefined;
+
+export const isOAuthConsentReturn = (redirect: string): boolean => {
+  const destination = new URL(redirect, "https://meal-planner.invalid");
+  return (
+    destination.origin === "https://meal-planner.invalid" &&
+    destination.pathname === "/oauth/consent" &&
+    readOAuthQuery(destination.search) !== undefined
+  );
+};
 
 /** Only same-origin application paths may survive an anonymous round trip. */
 export const decodeAuthSearch = (
@@ -31,3 +45,9 @@ export const decodeAuthSearch = (
     redirect: destination.pathname + destination.search + destination.hash,
   };
 };
+
+/** Adding a default query value makes Router rewrite the signed OAuth query. */
+export const decodeAuthEntrySearch = (
+  input: Record<string, unknown>
+): { redirect?: string } =>
+  hasOAuthSignature(input) ? {} : decodeAuthSearch(input);

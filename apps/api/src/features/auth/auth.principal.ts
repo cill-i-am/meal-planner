@@ -8,6 +8,7 @@ import { Context, Effect, Schema } from "effect";
 
 import type { MealPlannerAuthService } from "./auth.alchemy.js";
 import { AuthPrincipalResolutionError } from "./auth.principal.error.js";
+import { DelegatedAccess } from "./delegated-access.js";
 
 export { AuthPrincipalResolutionError } from "./auth.principal.error.js";
 
@@ -62,6 +63,7 @@ export const resolveAuthenticatedOrganization = (options: {
   readonly organizationId?: HouseholdOrganizationId | undefined;
 }) =>
   Effect.gen(function* resolveOrganization() {
+    const delegated = yield* DelegatedAccess;
     const authSession = yield* options.auth.api.getSession({
       headers: options.headers,
     });
@@ -75,7 +77,9 @@ export const resolveAuthenticatedOrganization = (options: {
       "x-meal-planner-household"
     );
     const organizationId =
-      options.organizationId ?? authSession.session.activeOrganizationId;
+      options.organizationId ??
+      delegated?.organizationId ??
+      authSession.session.activeOrganizationId;
     if (
       (expectedUser !== null && expectedUser !== authSession.user.id) ||
       (expectedOrganization !== null && expectedOrganization !== organizationId)

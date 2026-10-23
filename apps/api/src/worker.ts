@@ -1,6 +1,6 @@
 import { BrowserTelemetryPath } from "@meal-planner/browser-observability-api";
 import { EmailAddress } from "@meal-planner/household-api";
-import { RuntimeContext } from "alchemy";
+import { AlchemyContext, RuntimeContext, Stage } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { instrumentDrizzle } from "cloudflare-drizzle-tracing";
 import { drizzle } from "drizzle-orm/d1";
@@ -24,6 +24,7 @@ import {
   makeAuthenticatedOrganizationResolver,
   makeAuthPrincipalResolver,
 } from "./features/auth/auth.principal.js";
+import { DelegatedAccess } from "./features/auth/delegated-access.js";
 import { makeCloudflareEmailSender } from "./features/email/index.js";
 import { HealthRoutes } from "./features/health/health.routes.js";
 import { HouseholdDomainWorker } from "./features/households/household-domain-worker.js";
@@ -76,6 +77,8 @@ import {
 } from "./features/private-output/private-output-binding.js";
 import { makeAuthOutputFence } from "./features/private-output/private-output-mutation.js";
 import { handlePrivateInterviewRequest } from "./features/private-output/private-output.http.js";
+import { handleProductHttp } from "./features/product-api/product-api.http.js";
+import { makeProductConversationsHttpLayer } from "./features/product-api/product-conversations.http.js";
 import { ProviderAccountingRouteDefinitions } from "./features/provider-accounting/provider-accounting.routes.js";
 import {
   HouseholdImportBatchDeadLetterQueue,
@@ -84,6 +87,7 @@ import {
 import { MealPlannerAuthDatabase } from "./infrastructure/meal-planner-auth-database.js";
 import { fromNativeWebResponse } from "./infrastructure/native-http-response.js";
 import { ProviderAccountingDatabase } from "./infrastructure/provider-accounting-database.js";
+import { configuredPublicOrigin } from "./infrastructure/public-origin.js";
 import { withCurrentRequestCancellation } from "./infrastructure/request-cancellation.js";
 import {
   HttpRequestId,
@@ -103,12 +107,21 @@ const currentIsoTimestamp = () => new Date().toISOString();
 export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
   "MealPlannerApi",
   Effect.gen(function* MealPlannerApiProps() {
+    const { dev } = yield* AlchemyContext;
+    const publicOrigin = configuredPublicOrigin({
+      configured: yield* Config.String("MEAL_PLANNER_PUBLIC_ORIGIN").pipe(
+        Config.withDefault("")
+      ),
+      dev,
+      stage: yield* Stage,
+    });
     const conversationBindings = yield* agentConversationBindings;
     return {
       build: { nativeExports: ["AgentConversation"] },
       ...workerObservability,
       env: {
         ...conversationBindings,
+        MEAL_PLANNER_PUBLIC_ORIGIN: publicOrigin,
         PrivateOutputApi: PrivateOutputApiBinding,
         PrivateOutputMutations: PrivateOutputMutationsBinding,
       },
@@ -117,6 +130,9 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
     };
   }),
   Effect.gen(function* MealPlannerApiWorker() {
+    const publicOrigin = yield* Config.String(
+      "MEAL_PLANNER_PUBLIC_ORIGIN"
+    ).pipe(Config.withDefault(""));
     const providerAccountingQueryDatabase = yield* Cloudflare.D1.QueryDatabase(
       ProviderAccountingDatabase
     );
@@ -199,6 +215,10 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         simple: { limit: 60, period: 60 },
       }
     );
+    const productRequestLimit = yield* Cloudflare.Workers.RateLimit(
+      "PRODUCT_REQUEST_LIMIT",
+      { namespaceId: 1003, simple: { limit: 120, period: 60 } }
+    );
     return {
       fetch: Effect.gen(function* handleMealPlannerRequest() {
         const runtimeContext = yield* RuntimeContext;
@@ -237,7 +257,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           drizzle(yield* authQueryDatabase.raw),
           { attributes: { "db.namespace": "auth" } }
         );
-        const requestOrigin = new URL(webRequest.url).origin;
+        const requestOrigin = publicOrigin || new URL(webRequest.url).origin;
         const workerEnvironment = yield* Cloudflare.Workers.WorkerEnvironment;
         const conversations = workerEnvironment["AgentConversation"];
         const outputApi = yield* privateOutputApiPort;
@@ -252,6 +272,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         const auth = yield* makeAlchemyMealPlannerAuth({
           baseURL: requestOrigin,
           database: authDatabase,
+          delegatedAccessEnabled: publicOrigin !== "",
           outputFence,
           schema: authSchema,
           secret: authSecret,
@@ -260,117 +281,164 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           verifyInvitationRecipient:
             yield* makeHouseholdInvitationRecipientVerifier(householdDomain),
         });
-        if (new URL(webRequest.url).pathname.startsWith("/api/auth/")) {
+        if (
+          new URL(webRequest.url).pathname.startsWith("/api/auth/") ||
+          new URL(webRequest.url).pathname ===
+            "/.well-known/oauth-authorization-server/api/auth"
+        ) {
           return yield* auth.fetchHttpEffect(webRequest);
         }
-        const authenticatedOrganizationResolver =
-          makeAuthenticatedOrganizationResolver({ auth });
-        const sendInvitationEmail = makeHouseholdInvitationMailer({
-          baseURL: requestOrigin,
-          database: authDatabase,
-          send: sendEmail,
-        });
-        const departureWorkflow = makeMemberDepartureWorkflowStarter(
-          memberDepartureWorkflow
-        );
-        const agentConversationOptions = {
-          auth,
-          conversations,
-          database: authDatabase,
-          departureWorkflow,
-          domain: householdDomain,
-          headers: webRequest.headers,
-          resolver: authenticatedOrganizationResolver,
-          sendInvitationEmail,
-        };
-        const agentChat = yield* handleAgentConversationChatRequest({
-          ...agentConversationOptions,
-          request: webRequest,
-        });
-        if (agentChat !== null) {
-          return fromNativeWebResponse(agentChat);
-        }
-        const privateInterview = yield* handlePrivateInterviewRequest({
-          auth,
-          household: householdDomain,
-          output: outputApi,
-          request: webRequest,
-        });
-        if (privateInterview !== null) {
-          return fromNativeWebResponse(privateInterview);
-        }
-        const requestId = yield* HttpRequestId;
-        const trace = makeImportTraceContext(() =>
-          Schema.decodeUnknownSync(ImportCorrelationId)(requestId)
-        );
-        const requestServices = makeImportWorkerRequestLayer({
-          householdDomain,
-          importWorkflowStarter: makeImportWorkflowStarter(
-            importAcquisitionWorkflow
-          ),
-          now: currentIsoTimestamp,
-          organizationResolver: authenticatedOrganizationResolver,
-          principalResolver: makeAuthPrincipalResolver({
-            auth,
-          }),
-          providerAccountingDatabase,
-          recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter(
-            importRecipeRecoveryWorkflow
-          ),
-          runtimeContext,
-          systemApiToken: importSystemApiToken,
-          systemPrincipal: importSystemPrincipal,
-          trace,
-        });
-        const householdRequestLayer = makeHouseholdRequestLayer({
-          gateway: makeHouseholdDomainGateway(householdDomain),
-          resolver: authenticatedOrganizationResolver,
-        });
-        const householdMealPlanRequestLayer = makeHouseholdMealPlanRequestLayer(
-          {
-            gateway: makeHouseholdMealPlanGateway({
+        const serveApplication = (applicationRequest: Request) =>
+          Effect.gen(function* serveApplicationRequest() {
+            const authenticatedOrganizationResolver =
+              makeAuthenticatedOrganizationResolver({ auth });
+            const sendInvitationEmail = makeHouseholdInvitationMailer({
+              baseURL: requestOrigin,
+              database: authDatabase,
+              send: sendEmail,
+            });
+            const departureWorkflow = makeMemberDepartureWorkflowStarter(
+              memberDepartureWorkflow
+            );
+            const agentConversationOptions = {
+              auth,
+              conversations,
+              database: authDatabase,
+              departureWorkflow,
               domain: householdDomain,
-            }),
-            resolver: authenticatedOrganizationResolver,
-          }
-        );
-        const householdPlanningContentRequestLayer =
-          makeHouseholdPlanningContentRequestLayer({
-            gateway: makeHouseholdPlanningContentGateway({
-              domain: householdDomain,
-            }),
-            resolver: authenticatedOrganizationResolver,
-          });
-        const authFamilyRoutes = makeAuthFamilyHttpLayer({
-          auth,
-          database: authDatabase,
-          departureWorkflow,
-          domain: householdDomain,
-          headers: webRequest.headers,
-          resolver: authenticatedOrganizationResolver,
-          sendInvitationEmail,
-        });
-        const routeHandler = yield* HttpRouter.toHttpEffect(
-          Layer.mergeAll(
-            HttpRouter.addAll(MealPlannerOperationalRoutes),
-            authFamilyRoutes,
-            makePrivateConfirmationHttpLayer({
+              headers: applicationRequest.headers,
+              resolver: authenticatedOrganizationResolver,
+              sendInvitationEmail,
+            };
+            const agentChat = yield* handleAgentConversationChatRequest({
+              ...agentConversationOptions,
+              request: applicationRequest,
+            });
+            if (agentChat !== null) {
+              return fromNativeWebResponse(agentChat);
+            }
+            const privateInterview = yield* handlePrivateInterviewRequest({
               auth,
               household: householdDomain,
               output: outputApi,
+              request: applicationRequest,
+            });
+            if (privateInterview !== null) {
+              return fromNativeWebResponse(privateInterview);
+            }
+            const requestId = yield* HttpRequestId;
+            const trace = makeImportTraceContext(() =>
+              Schema.decodeUnknownSync(ImportCorrelationId)(requestId)
+            );
+            const requestServices = makeImportWorkerRequestLayer({
+              householdDomain,
+              importWorkflowStarter: makeImportWorkflowStarter(
+                importAcquisitionWorkflow
+              ),
+              now: currentIsoTimestamp,
+              organizationResolver: authenticatedOrganizationResolver,
+              principalResolver: makeAuthPrincipalResolver({
+                auth,
+              }),
+              providerAccountingDatabase,
+              recipeRecoveryStarter: makeRecipeRecoveryWorkflowStarter(
+                importRecipeRecoveryWorkflow
+              ),
+              runtimeContext,
+              systemApiToken: importSystemApiToken,
+              systemPrincipal: importSystemPrincipal,
+              trace,
+            });
+            const householdRequestLayer = makeHouseholdRequestLayer({
+              gateway: makeHouseholdDomainGateway(householdDomain),
+              resolver: authenticatedOrganizationResolver,
+            });
+            const householdMealPlanRequestLayer =
+              makeHouseholdMealPlanRequestLayer({
+                gateway: makeHouseholdMealPlanGateway({
+                  domain: householdDomain,
+                }),
+                resolver: authenticatedOrganizationResolver,
+              });
+            const householdPlanningContentRequestLayer =
+              makeHouseholdPlanningContentRequestLayer({
+                gateway: makeHouseholdPlanningContentGateway({
+                  domain: householdDomain,
+                }),
+                resolver: authenticatedOrganizationResolver,
+              });
+            const authFamilyRoutes = makeAuthFamilyHttpLayer({
+              auth,
+              database: authDatabase,
+              departureWorkflow,
+              domain: householdDomain,
+              headers: applicationRequest.headers,
+              resolver: authenticatedOrganizationResolver,
+              sendInvitationEmail,
+            });
+            const routeHandler = yield* HttpRouter.toHttpEffect(
+              Layer.mergeAll(
+                HttpRouter.addAll(MealPlannerOperationalRoutes),
+                authFamilyRoutes,
+                makePrivateConfirmationHttpLayer({
+                  auth,
+                  household: householdDomain,
+                  output: outputApi,
+                }),
+                makeRecipeImportHttpApiLayer(),
+                householdRequestLayer,
+                householdMealPlanRequestLayer,
+                householdPlanningContentRequestLayer,
+                makeAgentConversationHttpLayer(agentConversationOptions),
+                makeProductConversationsHttpLayer({
+                  conversation: agentConversationOptions,
+                  output: outputApi,
+                }),
+                makeRecipeImportNotFoundHttpLayer()
+              ).pipe(
+                Layer.provide(requestServices),
+                HttpRouter.provideRequest(requestServices)
+              )
+            );
+            return yield* routeHandler;
+          }).pipe(
+            Effect.provideService(
+              HttpServerRequest.HttpServerRequest,
+              HttpServerRequest.fromWeb(applicationRequest)
+            )
+          );
+        const applicationContext =
+          yield* Effect.context<
+            Effect.Services<ReturnType<typeof serveApplication>>
+          >();
+        const productResponse = yield* handleProductHttp(webRequest, {
+          auth,
+          baseURL: requestOrigin,
+          dispatch: (applicationRequest) =>
+            Effect.gen(function* dispatchAuthorizedRequest() {
+              const grant = yield* DelegatedAccess;
+              return yield* serveApplication(applicationRequest).pipe(
+                Effect.provideService(DelegatedAccess, grant),
+                Effect.provideContext(applicationContext),
+                Effect.map(HttpServerResponse.toWeb),
+                Effect.orElseSucceed(() =>
+                  Response.json(
+                    { error: "operation_unavailable" },
+                    { status: 503 }
+                  )
+                )
+              );
             }),
-            makeRecipeImportHttpApiLayer(),
-            householdRequestLayer,
-            householdMealPlanRequestLayer,
-            householdPlanningContentRequestLayer,
-            makeAgentConversationHttpLayer(agentConversationOptions),
-            makeRecipeImportNotFoundHttpLayer()
-          ).pipe(
-            Layer.provide(requestServices),
-            HttpRouter.provideRequest(requestServices)
-          )
-        );
-        return yield* routeHandler;
+          rateLimit: (key) =>
+            productRequestLimit.limit({ key }).pipe(
+              Effect.provideService(RuntimeContext, runtimeContext),
+              Effect.map(({ success }) => success),
+              Effect.orElseSucceed(() => false)
+            ),
+        });
+        return productResponse === null
+          ? yield* serveApplication(webRequest)
+          : fromNativeWebResponse(productResponse);
       }).pipe(
         withCurrentRequestCancellation,
         observeHttpRequest,

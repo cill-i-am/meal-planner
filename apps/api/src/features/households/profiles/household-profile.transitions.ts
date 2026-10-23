@@ -3,6 +3,7 @@ import type {
   HouseholdPeopleAuditActorId,
   HouseholdPersonId,
   ProfileCommand,
+  RecordedProfileCommand,
   ProfileFact,
   ProfileFactId,
   ProfileFactStanding,
@@ -19,30 +20,72 @@ interface ProfileChangeContext {
   readonly personId: HouseholdPersonId;
   readonly personKind: "adult" | "dependant";
   readonly version: ProfileVersion;
-  readonly source: "manual_ui" | "interview";
+  readonly source: ProfileFact["source"];
 }
 
 const reject = (reason: HouseholdProfileRejected["reason"]) =>
   Effect.fail(new HouseholdProfileRejected({ reason }));
-const confirmedStanding = (
-  basis: "self" | "household_adult",
-  context: ProfileChangeContext
-): Effect.Effect<ProfileFactStanding, HouseholdProfileRejected> =>
-  (
-    basis === "self"
-      ? context.actorPersonId !== context.personId
-      : context.personKind !== "dependant"
-  )
-    ? reject("self_required")
-    : Effect.succeed({ _tag: "confirmed", basis });
-
 const changeStanding = (
-  context: ProfileChangeContext
-): ProfileFactStanding => ({
-  _tag: "confirmed",
-  basis:
-    context.actorPersonId === context.personId ? "self" : "household_adult",
-});
+  context: Pick<
+    ProfileChangeContext,
+    "actorPersonId" | "personId" | "personKind"
+  >
+): ProfileFactStanding => {
+  if (context.actorPersonId === context.personId) {
+    return { _tag: "confirmed", basis: "self" };
+  }
+  return context.personKind === "dependant"
+    ? { _tag: "confirmed", basis: "household_adult" }
+    : { _tag: "provisional" };
+};
+
+/** Freeze durable intent; interview commands remain self-scoped across admission changes. */
+export const recordProfileCommand = (
+  command: ProfileCommand,
+  context: Pick<
+    ProfileChangeContext,
+    "actorPersonId" | "personId" | "personKind" | "source"
+  >
+): Effect.Effect<RecordedProfileCommand, HouseholdProfileRejected> => {
+  const standing: ProfileFactStanding =
+    context.source === "interview"
+      ? { _tag: "confirmed", basis: "self" }
+      : changeStanding(context);
+  switch (command._tag) {
+    case "AddProfileFact": {
+      if (standing._tag === "provisional") {
+        return command.fact._tag === "NoKnownHardConstraints"
+          ? reject("safety_confirmation_required")
+          : Effect.succeed({
+              _tag: "AddProvisionalProfileFact",
+              fact: command.fact,
+            });
+      }
+      return Effect.succeed({
+        _tag: "AddConfirmedProfileFact",
+        basis: standing.basis,
+        fact: command.fact,
+      });
+    }
+    case "ConfirmProfileFact": {
+      return standing._tag === "provisional"
+        ? reject("self_required")
+        : Effect.succeed({ ...command, basis: standing.basis });
+    }
+    case "ConfirmHardConstraintReduction": {
+      return standing._tag === "provisional"
+        ? reject("self_required")
+        : Effect.succeed(command);
+    }
+    case "ReplaceOrdinaryProfileFact":
+    case "RemoveOrdinaryProfileFact": {
+      return Effect.succeed(command);
+    }
+    default: {
+      return Effect.die(command satisfies never);
+    }
+  }
+};
 const updateFact = (
   fact: ProfileFact,
   context: ProfileChangeContext
@@ -81,7 +124,7 @@ const validateFacts = (facts: readonly ProfileFact[]) => {
 const addFact = (
   facts: readonly ProfileFact[],
   command: Extract<
-    ProfileCommand,
+    RecordedProfileCommand,
     { _tag: "AddProvisionalProfileFact" | "AddConfirmedProfileFact" }
   >,
   context: ProfileChangeContext
@@ -96,7 +139,7 @@ const addFact = (
     const standing: ProfileFactStanding =
       command._tag === "AddProvisionalProfileFact"
         ? { _tag: "provisional" }
-        : yield* confirmedStanding(command.basis, context);
+        : changeStanding(context);
     return yield* validateFacts([
       ...facts,
       {
@@ -140,7 +183,7 @@ const replaceFact = (
 /** Pure household profile policy; transaction and identity allocation stay with its writer. */
 export const applyProfileCommand = (
   facts: readonly ProfileFact[],
-  command: ProfileCommand,
+  command: RecordedProfileCommand,
   context: ProfileChangeContext
 ): Effect.Effect<readonly ProfileFact[], HouseholdProfileRejected> =>
   Effect.gen(function* applyProfileCommandEffect() {
@@ -156,11 +199,14 @@ export const applyProfileCommand = (
     }
     switch (command._tag) {
       case "ConfirmProfileFact": {
-        const standing = yield* confirmedStanding(command.basis, context);
+        const standing = changeStanding(context);
+        if (standing._tag === "provisional") {
+          return yield* reject("self_required");
+        }
         if (
           fact.standing._tag === "confirmed" &&
           fact.standing.basis === "self" &&
-          command.basis !== "self"
+          standing.basis !== "self"
         ) {
           return yield* reject("fact_conflict");
         }
@@ -171,6 +217,9 @@ export const applyProfileCommand = (
         );
       }
       case "ConfirmHardConstraintReduction": {
+        if (changeStanding(context)._tag === "provisional") {
+          return yield* reject("self_required");
+        }
         if (fact.value._tag === "FoodPreference") {
           return yield* reject("fact_conflict");
         }

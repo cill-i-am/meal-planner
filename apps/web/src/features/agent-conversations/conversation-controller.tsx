@@ -25,12 +25,20 @@ import {
   useEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
 } from "react";
 import type { ReactNode } from "react";
+import { createActor } from "xstate";
 
 import { useApiRuntime } from "../api-client/index.js";
 import { invalidatePlanningContent } from "../food-book/index.js";
 import { invalidateHouseholdProfiles } from "../household-profiles/index.js";
+import {
+  createConversationActionMachine,
+  dispatchConversationAction,
+  sessionConversationActions,
+} from "./conversation-action-machine.js";
+import type { ConversationActionActor } from "./conversation-action-machine.js";
 import {
   conversationChatEndpoint,
   conversationKey,
@@ -95,21 +103,6 @@ export const useAgentConversation = (): AgentConversationController => {
 const actionStorageKey = (accountId: UserId, scope: ConversationScope) =>
   `meal-planner:conversation-action:${accountId}:${scope._tag}:${scope._tag === "FamilyShared" ? scope.familyId : "setup"}`;
 
-const readSavedAction = (key: string): ConversationAction | null => {
-  const raw = globalThis.sessionStorage.getItem(key);
-  if (raw === null) {
-    return null;
-  }
-  try {
-    return Schema.decodeUnknownSync(ConversationAction)(JSON.parse(raw));
-  } catch {
-    // An unreadable request could have succeeded. Do not overwrite it.
-    throw new Error(
-      "A saved conversation action cannot be read. Review the conversation before making another change."
-    );
-  }
-};
-
 const getMessages = (view: ConversationView): ConversationDisplayMessage[] =>
   view.messages.map((message) => ({
     id: message.id,
@@ -140,52 +133,56 @@ const ReadyConversation = ({
     [accountId, scope]
   );
   const storageKey = actionStorageKey(accountId, scope);
-  const [pendingAction, setPendingAction] = useState<ConversationAction | null>(
-    null
-  );
-  const [actionState, setActionState] =
-    useState<ConversationActionState | null>(null);
+  const [actionActor, setActionActor] =
+    useState<ConversationActionActor | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [recoveryBlocked, setRecoveryBlocked] = useState(false);
-  const [recoveryReady, setRecoveryReady] = useState(false);
   const [localTurn, setLocalTurn] = useState<{
     readonly version: number;
     readonly fromMessage: number;
   } | null>(null);
 
   useEffect(() => {
-    try {
-      const saved = readSavedAction(storageKey);
-      if (saved !== null) {
-        const recorded = view.actions.find(
-          (entry) => entry.state.actionId === saved.actionId
-        );
-        if (
-          recorded?.state._tag === "Committed" ||
-          recorded?.state._tag === "Rejected"
-        ) {
-          globalThis.sessionStorage.removeItem(storageKey);
-          setActionState(recorded.state);
-        } else {
-          setPendingAction(saved);
-          setActionState(
-            recorded?.state ?? {
-              _tag: "Unknown",
-              actionId: saved.actionId,
-              familyId: null,
-            }
-          );
-        }
-      }
-    } catch (error) {
-      setRecoveryBlocked(true);
-      setActionError(
-        error instanceof Error ? error.message : "Saved action unavailable."
-      );
-    } finally {
-      setRecoveryReady(true);
-    }
-  }, [storageKey, view.actions]);
+    const actor = createActor(
+      createConversationActionMachine(
+        sessionConversationActions(
+          storageKey,
+          () => globalThis.sessionStorage,
+          (action) =>
+            submitConversationAction(runtime, accountId, scope, action)
+        )
+      )
+    ).start();
+    setActionActor(actor);
+    return () => {
+      actor.stop();
+    };
+  }, [accountId, runtime, scope, storageKey]);
+
+  const subscribe = useCallback(
+    (notify: () => void) => {
+      const subscription = actionActor?.subscribe(notify);
+      return () => subscription?.unsubscribe();
+    },
+    [actionActor]
+  );
+  const getSnapshot = useCallback(
+    () => actionActor?.getSnapshot() ?? null,
+    [actionActor]
+  );
+  const actionSnapshot = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    () => null
+  );
+  const pendingAction = actionSnapshot?.context.request ?? null;
+  const actionState = actionSnapshot?.context.result ?? null;
+  const recoveryBlocked = actionSnapshot?.matches("blocked") ?? false;
+  const recoveryReady =
+    actionSnapshot !== null && !actionSnapshot.matches("reading");
+
+  useEffect(() => {
+    actionActor?.send({ receipts: view.actions, type: "RECEIPTS" });
+  }, [actionActor, view.actions]);
 
   const refresh = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: key });
@@ -218,21 +215,21 @@ const ReadyConversation = ({
   });
 
   const dispatchAction = useCallback(
-    async (action: ConversationAction): Promise<ConversationActionState> => {
+    async (
+      action: ConversationAction,
+      retry = false
+    ): Promise<ConversationActionState> => {
+      if (actionActor === null) {
+        throw new Error("The conversation is not ready.");
+      }
       setActionError(null);
-      setActionState({ _tag: "Pending", actionId: action.actionId });
-      try {
-        const result = await submitConversationAction(
-          runtime,
-          accountId,
-          scope,
-          action
-        );
-        setActionState(result);
-        if (result._tag === "Committed" || result._tag === "Rejected") {
-          // Keep the request until the conversation includes its receipt. A
-          // remount during navigation must never submit an old confirmation again.
-          setPendingAction(null);
+      const result = await dispatchConversationAction(
+        actionActor,
+        action,
+        retry
+      );
+      if (result._tag === "Committed" || result._tag === "Rejected") {
+        try {
           await refresh();
           if (result._tag === "Committed" && scope._tag === "FamilyShared") {
             const committedBlock = view.blocks.find(
@@ -251,22 +248,15 @@ const ReadyConversation = ({
               });
             }
           }
+        } catch {
+          setActionError(
+            "The action is confirmed. Refresh the conversation to load the latest view."
+          );
         }
-        return result;
-      } catch {
-        const unknown: ConversationActionState = {
-          _tag: "Unknown",
-          actionId: action.actionId,
-          familyId: null,
-        };
-        setActionState(unknown);
-        setActionError(
-          "The action may have saved. Retry the exact saved action before making another change."
-        );
-        return unknown;
       }
+      return result;
     },
-    [accountId, queryClient, refresh, runtime, scope, storageKey, view.blocks]
+    [accountId, actionActor, queryClient, refresh, scope, view.blocks]
   );
 
   const act = useCallback(
@@ -320,18 +310,9 @@ const ReadyConversation = ({
               expectedRevision: block.revision,
             }
       );
-      try {
-        globalThis.sessionStorage.setItem(storageKey, JSON.stringify(action));
-      } catch {
-        const message =
-          "This browser cannot safely retain the action. Enable session storage before confirming.";
-        setActionError(message);
-        throw new Error(message);
-      }
-      setPendingAction(action);
       return dispatchAction(action);
     },
-    [dispatchAction, pendingAction, recoveryBlocked, recoveryReady, storageKey]
+    [dispatchAction, pendingAction, recoveryBlocked, recoveryReady]
   );
 
   const confirmSetup =
@@ -354,7 +335,6 @@ const ReadyConversation = ({
         recorded?.state._tag === "Committed" ||
         recorded?.state._tag === "Rejected"
       ) {
-        setActionState(recorded.state);
         return recorded.state;
       }
       // Unknown actions need an explicit retry, including after a reload.
@@ -387,34 +367,37 @@ const ReadyConversation = ({
         safetyConfirmation: null,
       });
       try {
-        globalThis.sessionStorage.setItem(storageKey, JSON.stringify(action));
+        return await dispatchAction(action);
       } catch {
-        setRecoveryBlocked(true);
-        setActionError(
-          "This browser can’t retain the save safely. Enable session storage and try again."
-        );
+        // Automatic setup confirmation can be interrupted by navigation. The
+        // machine keeps its saved command and exposes retention failures.
         return null;
       }
-      setPendingAction(action);
-      return await dispatchAction(action);
     }, [
       dispatchAction,
       pendingAction,
       recoveryBlocked,
       recoveryReady,
       scope,
-      storageKey,
       view.actions,
       view.blocks,
       view.turns,
     ]);
 
-  const retryAction = useCallback(() => {
+  const retryAction = useCallback(async () => {
     if (pendingAction === null) {
-      return Promise.resolve(null);
+      return null;
     }
-    return dispatchAction(pendingAction);
-  }, [dispatchAction, pendingAction]);
+    if (actionState?._tag === "Committed" || actionState?._tag === "Rejected") {
+      await refresh();
+      return actionState;
+    }
+    try {
+      return await dispatchAction(pendingAction, true);
+    } catch {
+      return null;
+    }
+  }, [actionState, dispatchAction, pendingAction, refresh]);
 
   const submit = useCallback(
     async (text: string, context: ConversationSubmitContext = {}) => {
@@ -433,9 +416,7 @@ const ReadyConversation = ({
         throw new Error("Write between 1 and 2,000 characters.");
       }
       setActionError(null);
-      setActionState((current) =>
-        current?._tag === "Rejected" ? null : current
-      );
+      actionActor?.send({ type: "CLEAR_ERROR" });
       setLocalTurn({
         fromMessage: chat.messages.length,
         version: view.version,
@@ -453,6 +434,7 @@ const ReadyConversation = ({
       });
     },
     [
+      actionActor,
       chat,
       pendingAction,
       recoveryBlocked,
@@ -490,11 +472,12 @@ const ReadyConversation = ({
     actionState,
     busy:
       refreshing ||
-      actionState?._tag === "Pending" ||
+      actionSnapshot?.hasTag("busy") === true ||
       chat.isLoading ||
       chat.sessionGenerating,
     confirmSetup,
     error:
+      actionSnapshot?.context.error ??
       actionError ??
       (chat.error
         ? "The assistant could not respond. Your conversation is still here."
@@ -526,6 +509,14 @@ export const AgentConversationProvider = ({
   readonly scope: ConversationScope;
 }) => {
   const runtime = useApiRuntime();
+  const familyId = scope._tag === "FamilyShared" ? scope.familyId : null;
+  const stableScope = useMemo<ConversationScope>(
+    () =>
+      familyId === null
+        ? { _tag: "AccountPrivateSetup" }
+        : { _tag: "FamilyShared", familyId },
+    [familyId]
+  );
   const query = useQuery({
     queryFn: () => readConversation(runtime, accountId, scope),
     queryKey: conversationKey(accountId, scope),
@@ -536,8 +527,8 @@ export const AgentConversationProvider = ({
     return (
       <ReadyConversation
         accountId={accountId}
-        key={query.data.id}
-        scope={scope}
+        key={`${accountId}:${query.data.id}`}
+        scope={stableScope}
         view={query.data}
         refreshing={query.isFetching}
       >

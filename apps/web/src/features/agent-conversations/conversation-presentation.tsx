@@ -154,6 +154,9 @@ const ConversationHistory = ({
   readonly onRetry: () => Promise<void>;
 }) => {
   const lastTurn = conversation.view?.turns.at(-1);
+  const actionConfirmed =
+    conversation.actionState?._tag === "Committed" ||
+    conversation.actionState?._tag === "Rejected";
   const pairedTurnIds = new Set(
     conversation.messages
       .filter(
@@ -220,14 +223,17 @@ const ConversationHistory = ({
               >
                 <Alert>
                   <p>
-                    A reviewed action has an unknown outcome. Retry the same
-                    action before reviewing another proposal.
+                    {actionConfirmed
+                      ? "The action is confirmed. Refresh the conversation before reviewing another proposal."
+                      : "A reviewed action has an unknown outcome. Retry the same action before reviewing another proposal."}
                   </p>
                   <Button
-                    disabled={conversation.actionState?._tag === "Pending"}
+                    disabled={conversation.busy || conversation.recoveryBlocked}
                     onClick={onRetry}
                   >
-                    Retry saved action
+                    {actionConfirmed
+                      ? "Refresh conversation"
+                      : "Retry saved action"}
                   </Button>
                 </Alert>
               </MessageScrollerItem>

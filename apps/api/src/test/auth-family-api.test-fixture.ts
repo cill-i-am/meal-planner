@@ -35,6 +35,9 @@ import type {
 } from "../features/private-output/private-output-binding.js";
 import { makeAuthOutputFence } from "../features/private-output/private-output-mutation.js";
 import { handlePrivateInterviewRequest } from "../features/private-output/private-output.http.js";
+import { handleProductHttp } from "../features/product-api/product-api.http.js";
+import { makeProductConversationsHttpLayer } from "../features/product-api/product-conversations.http.js";
+import { fromNativeWebResponse } from "../infrastructure/native-http-response.js";
 import { raceWithRequestSignal } from "../infrastructure/request-cancellation.js";
 import { makeLocalApiCoreLayer } from "../local/api-core.js";
 import { seedNativeRecipe } from "./agent-conversation-recipe-seed.test-fixture.js";
@@ -195,120 +198,161 @@ export default {
             );
             return new Response(null, { status: 204 });
           }
-          const privateInterview = yield* handlePrivateInterviewRequest({
-            auth,
-            household: domain,
-            output: env.PrivateOutputApi,
-            request,
-          });
-          if (privateInterview !== null) {
-            return privateInterview;
-          }
-          const resolver = makeAuthenticatedOrganizationResolver({ auth });
-          const importServices = Layer.mergeAll(
-            Layer.succeed(
-              AuthPrincipalResolver,
-              makeAuthPrincipalResolver({ auth })
-            ),
-            Layer.succeed(AuthenticatedOrganizationResolver, resolver),
-            Layer.succeed(RecipeImportHouseholdDomain, domain),
-            Layer.succeed(
-              RecipeImportWorkflowDispatcher,
-              RecipeImportWorkflowDispatcher.of({
-                dispatch: () =>
-                  Effect.die("Recipe import dispatch is outside this fixture"),
-              })
-            )
-          );
-          const sendInvitationEmail = (mail: {
-            readonly email: string;
-            readonly invitationId: string;
-          }) =>
-            Effect.promise(() =>
-              env.TEST_MAIL.put(
-                mail.email,
-                JSON.stringify({
-                  kind: "invitation",
-                  url: `${env.BASE_URL}/invitation/${encodeURIComponent(mail.invitationId)}`,
-                })
-              )
-            ).pipe(Effect.asVoid);
-          const conversationOptions = {
-            auth,
-            conversations: env.AgentConversation,
-            database,
-            departureWorkflow: departures,
-            domain,
-            headers: request.headers,
-            resolver,
-            sendInvitationEmail,
-          };
-          if (isRecipeSeedRequest(url.pathname, request.method)) {
-            const outcome = yield* Effect.result(
-              Effect.gen(function* seedAdmittedRecipe() {
-                const body = Schema.decodeUnknownSync(
-                  Schema.Struct({ familyId: HouseholdOrganizationId })
-                )(yield* Effect.promise(() => request.json()));
-                yield* resolver.resolve(request.headers, body.familyId);
-                const principal = yield* makeAuthPrincipalResolver({
-                  auth,
-                }).resolve(request.headers);
-                const admission = Schema.decodeUnknownSync(
-                  HouseholdMemberAdmission
-                )({
-                  actor: { _tag: "Member", actorId: principal.actorId },
-                  organizationId: body.familyId,
-                });
-                return yield* seedNativeRecipe(domain, admission);
-              })
-            );
-            return Result.isSuccess(outcome)
-              ? Response.json(outcome.success, { status: 201 })
-              : Response.json(
-                  {
-                    error:
-                      outcome.failure instanceof Error
-                        ? outcome.failure.message
-                        : JSON.stringify(outcome.failure),
-                  },
-                  { status: 500 }
-                );
-          }
-          const conversationResponse =
-            yield* handleAgentConversationChatRequest({
-              ...conversationOptions,
-              request,
-            }).pipe(
-              Effect.provideService(
-                HttpServerRequest.HttpServerRequest,
-                HttpServerRequest.fromWeb(request)
-              )
-            );
-          if (conversationResponse !== null) {
-            return conversationResponse;
-          }
-          const handler = yield* HttpRouter.toHttpEffect(
-            Layer.mergeAll(
-              makePrivateConfirmationHttpLayer({
+          const serveApplication = (applicationRequest: Request) =>
+            Effect.gen(function* serveApplicationRequest() {
+              const applicationUrl = new URL(applicationRequest.url);
+              const privateInterview = yield* handlePrivateInterviewRequest({
                 auth,
                 household: domain,
                 output: env.PrivateOutputApi,
-              }),
-              makeLocalApiCoreLayer(conversationOptions),
-              makeRecipeImportHttpApiLayer().pipe(
-                Layer.provide(importServices),
-                HttpRouter.provideRequest(importServices)
+                request: applicationRequest,
+              });
+              if (privateInterview !== null) {
+                return privateInterview;
+              }
+              const resolver = makeAuthenticatedOrganizationResolver({ auth });
+              const importServices = Layer.mergeAll(
+                Layer.succeed(
+                  AuthPrincipalResolver,
+                  makeAuthPrincipalResolver({ auth })
+                ),
+                Layer.succeed(AuthenticatedOrganizationResolver, resolver),
+                Layer.succeed(RecipeImportHouseholdDomain, domain),
+                Layer.succeed(
+                  RecipeImportWorkflowDispatcher,
+                  RecipeImportWorkflowDispatcher.of({
+                    dispatch: () =>
+                      Effect.die(
+                        "Recipe import dispatch is outside this fixture"
+                      ),
+                  })
+                )
+              );
+              const sendInvitationEmail = (mail: {
+                readonly email: string;
+                readonly invitationId: string;
+              }) =>
+                Effect.promise(() =>
+                  env.TEST_MAIL.put(
+                    mail.email,
+                    JSON.stringify({
+                      kind: "invitation",
+                      url: `${env.BASE_URL}/invitation/${encodeURIComponent(mail.invitationId)}`,
+                    })
+                  )
+                ).pipe(Effect.asVoid);
+              const conversationOptions = {
+                auth,
+                conversations: env.AgentConversation,
+                database,
+                departureWorkflow: departures,
+                domain,
+                headers: applicationRequest.headers,
+                resolver,
+                sendInvitationEmail,
+              };
+              if (
+                isRecipeSeedRequest(
+                  applicationUrl.pathname,
+                  applicationRequest.method
+                )
+              ) {
+                const outcome = yield* Effect.result(
+                  Effect.gen(function* seedAdmittedRecipe() {
+                    const body = Schema.decodeUnknownSync(
+                      Schema.Struct({ familyId: HouseholdOrganizationId })
+                    )(yield* Effect.promise(() => applicationRequest.json()));
+                    yield* resolver.resolve(
+                      applicationRequest.headers,
+                      body.familyId
+                    );
+                    const principal = yield* makeAuthPrincipalResolver({
+                      auth,
+                    }).resolve(applicationRequest.headers);
+                    const admission = Schema.decodeUnknownSync(
+                      HouseholdMemberAdmission
+                    )({
+                      actor: { _tag: "Member", actorId: principal.actorId },
+                      organizationId: body.familyId,
+                    });
+                    return yield* seedNativeRecipe(domain, admission);
+                  })
+                );
+                return Result.isSuccess(outcome)
+                  ? Response.json(outcome.success, { status: 201 })
+                  : Response.json(
+                      {
+                        error:
+                          outcome.failure instanceof Error
+                            ? outcome.failure.message
+                            : JSON.stringify(outcome.failure),
+                      },
+                      { status: 500 }
+                    );
+              }
+              const conversationResponse =
+                yield* handleAgentConversationChatRequest({
+                  ...conversationOptions,
+                  request: applicationRequest,
+                }).pipe(
+                  Effect.provideService(
+                    HttpServerRequest.HttpServerRequest,
+                    HttpServerRequest.fromWeb(applicationRequest)
+                  )
+                );
+              if (conversationResponse !== null) {
+                return conversationResponse;
+              }
+              const handler = yield* HttpRouter.toHttpEffect(
+                Layer.mergeAll(
+                  makeProductConversationsHttpLayer({
+                    conversation: conversationOptions,
+                    output: env.PrivateOutputApi,
+                  }),
+                  makePrivateConfirmationHttpLayer({
+                    auth,
+                    household: domain,
+                    output: env.PrivateOutputApi,
+                  }),
+                  makeLocalApiCoreLayer(conversationOptions),
+                  makeRecipeImportHttpApiLayer().pipe(
+                    Layer.provide(importServices),
+                    HttpRouter.provideRequest(importServices)
+                  )
+                )
+              );
+              return HttpServerResponse.toWeb(
+                yield* raceWithRequestSignal(
+                  applicationRequest.signal,
+                  handler
+                ).pipe(
+                  Effect.provideService(
+                    HttpServerRequest.HttpServerRequest,
+                    HttpServerRequest.fromWeb(applicationRequest)
+                  )
+                )
+              );
+            }).pipe(
+              Effect.orElseSucceed(() =>
+                Response.json(
+                  { error: "application_unavailable" },
+                  { status: 503 }
+                )
               )
-            )
-          );
-          return HttpServerResponse.toWeb(
-            yield* raceWithRequestSignal(request.signal, handler).pipe(
-              Effect.provideService(
-                HttpServerRequest.HttpServerRequest,
-                HttpServerRequest.fromWeb(request)
-              )
-            )
-          );
+            );
+          const product = yield* handleProductHttp(request, {
+            auth,
+            baseURL: env.BASE_URL,
+            dispatch: (applicationRequest) =>
+              serveApplication(applicationRequest).pipe(
+                Effect.scoped,
+                Effect.map((response) =>
+                  HttpServerResponse.toWeb(fromNativeWebResponse(response))
+                )
+              ),
+            rateLimit: () => Effect.succeed(true),
+          });
+          return product ?? (yield* serveApplication(request));
         })
       ).pipe(Effect.provideService(RuntimeContext, context))
     ),

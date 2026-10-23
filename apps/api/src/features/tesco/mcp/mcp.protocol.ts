@@ -10,20 +10,8 @@ import type {
 } from "@modelcontextprotocol/sdk/types.js";
 import { Data, Effect, Schema } from "effect";
 
-import {
-  CatalogueProductResults,
-  CatalogueSuggestions,
-} from "../catalogue/catalogue.model.js";
-import * as Shopping from "../shopping/shopping.model.js";
-import {
-  TescoMcpCapabilities,
-  TescoMcpCategory,
-  TescoMcpSearch,
-  TescoMcpSuggestions,
-  TescoMcpTools,
-} from "./mcp.contract.js";
-import type { TescoSessionFailure } from "./session.model.js";
-import { TescoConnectionHealth } from "./session.model.js";
+import { TescoMcpTools } from "./mcp.contract.js";
+import type { TescoMcpCapabilities } from "./mcp.contract.js";
 
 export class TescoMcpTransportFailure extends Data.TaggedError(
   "TescoMcpTransportFailure"
@@ -33,157 +21,18 @@ const toolFailure = (message: string): CallToolResult => ({
   content: [{ text: message, type: "text" }],
   isError: true,
 });
-const structuredResult = <S extends Schema.Top>(schema: S, value: S["Type"]) =>
-  Schema.encodeEffect(schema)(value).pipe(
-    Effect.map((encoded) => ({
-      content: [{ text: JSON.stringify(encoded), type: "text" as const }],
-      // Every output contract is an object; the SDK independently validates JSON-RPC envelopes.
-      structuredContent: encoded,
-    }))
-  );
-
 const callTool = (
   message: CallToolRequest
-): Effect.Effect<CallToolResult, never, TescoMcpCapabilities> =>
-  Effect.gen(function* dispatchToolRequest() {
-    const service = yield* TescoMcpCapabilities;
-    const { name } = message.params;
-    const input = message.params.arguments ?? {};
-    const invoke = <I extends Schema.Top, O extends Schema.Top>(
-      inputSchema: I,
-      outputSchema: O,
-      run: (value: I["Type"]) => Effect.Effect<O["Type"], TescoSessionFailure>
-    ) =>
-      Schema.decodeUnknownEffect(inputSchema)(input, {
-        onExcessProperty: "error",
-      }).pipe(
-        Effect.flatMap(run),
-        Effect.flatMap((value) => structuredResult(outputSchema, value))
-      );
-    switch (name) {
-      case "get_product_details": {
-        return yield* invoke(
-          Shopping.ProductDetailsInput,
-          Shopping.ProductDetailsResult,
-          service.productDetails
-        );
-      }
-      case "list_favourites": {
-        return yield* invoke(
-          Shopping.ListShoppingInput,
-          Shopping.FavouritesResult,
-          service.favourites
-        );
-      }
-      case "list_previous_orders": {
-        return yield* invoke(
-          Shopping.ListShoppingInput,
-          Shopping.PreviousOrdersResult,
-          service.previousOrders
-        );
-      }
-      case "get_order_details": {
-        return yield* invoke(
-          Shopping.OrderDetailsInput,
-          Shopping.OrderDetailsResult,
-          service.orderDetails
-        );
-      }
-      case "get_basket": {
-        return yield* invoke(
-          Shopping.EmptyInput,
-          Shopping.BasketResult,
-          () => service.basket
-        );
-      }
-      case "list_delivery_slots": {
-        return yield* invoke(
-          Shopping.DeliverySlotsInput,
-          Shopping.DeliverySlotsResult,
-          service.deliverySlots
-        );
-      }
-      case "set_basket_items": {
-        return yield* invoke(
-          Shopping.SetBasketItemsInput,
-          Shopping.BasketCommandResult,
-          service.setBasketItems
-        );
-      }
-      case "reserve_delivery_slot": {
-        return yield* invoke(
-          Shopping.ReserveSlotInput,
-          Shopping.BasketCommandResult,
-          service.reserveSlot
-        );
-      }
-      case "release_delivery_slot": {
-        return yield* invoke(
-          Shopping.ReleaseSlotInput,
-          Shopping.BasketCommandResult,
-          service.releaseSlot
-        );
-      }
-      case "prepare_checkout": {
-        return yield* invoke(
-          Shopping.EmptyInput,
-          Shopping.CheckoutReview,
-          () => service.prepareCheckout
-        );
-      }
-      case "approve_checkout_handoff": {
-        return yield* invoke(
-          Shopping.CheckoutHandoffInput,
-          Shopping.CheckoutHandoffResult,
-          service.checkoutHandoff
-        );
-      }
-      case "search_products": {
-        const request =
-          yield* Schema.decodeUnknownEffect(TescoMcpSearch)(input);
-        return yield* service
-          .search(request)
-          .pipe(
-            Effect.flatMap((value) =>
-              structuredResult(CatalogueProductResults, value)
-            )
-          );
-      }
-      case "list_category_products": {
-        const request =
-          yield* Schema.decodeUnknownEffect(TescoMcpCategory)(input);
-        return yield* service
-          .categoryProducts(request)
-          .pipe(
-            Effect.flatMap((value) =>
-              structuredResult(CatalogueProductResults, value)
-            )
-          );
-      }
-      case "suggest_products": {
-        const request =
-          yield* Schema.decodeUnknownEffect(TescoMcpSuggestions)(input);
-        return yield* service
-          .suggestions(request)
-          .pipe(
-            Effect.flatMap((value) =>
-              structuredResult(CatalogueSuggestions, value)
-            )
-          );
-      }
-      case "connection_status": {
-        yield* Schema.decodeUnknownEffect(Schema.Struct({}))(input);
-        return yield* service.connectionHealth.pipe(
-          Effect.flatMap((value) =>
-            structuredResult(TescoConnectionHealth, value)
-          )
-        );
-      }
-      default: {
-        return toolFailure("Unknown Tesco tool.");
-      }
-    }
-  }).pipe(
+): Effect.Effect<CallToolResult, never, TescoMcpCapabilities> => {
+  const tool = TescoMcpTools.find(({ name }) => name === message.params.name);
+  if (tool === undefined) {
+    return Effect.succeed(toolFailure("Unknown Tesco tool."));
+  }
+  return tool.execute(message.params.arguments ?? {}).pipe(
+    Effect.map((encoded) => ({
+      content: [{ text: JSON.stringify(encoded), type: "text" as const }],
+      structuredContent: encoded,
+    })),
     Effect.orElseSucceed((failure) => {
       if (failure._tag === "SchemaError") {
         return toolFailure("Invalid Tesco tool input or response.");
@@ -200,6 +49,7 @@ const callTool = (
       );
     })
   );
+};
 
 const jsonSchema = (schema: Schema.Top) => {
   const document = Schema.toJsonSchemaDocument(schema);

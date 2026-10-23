@@ -26,16 +26,14 @@ const operation = <A, E>(
   accountId: UserId,
   run: (api: AgentConversationsApiClientType) => Effect.Effect<A, E>
 ) =>
-  Effect.runPromise(
-    AgentConversationsApiClient.use(run).pipe(
-      Effect.provide(
-        makeAgentConversationsApiClientLayer({
-          baseUrl: runtime.baseUrl,
-          headers: { "x-meal-planner-user": accountId },
-        })
-      ),
-      Effect.provide(apiHttpLayer(runtime))
-    )
+  AgentConversationsApiClient.use(run).pipe(
+    Effect.provide(
+      makeAgentConversationsApiClientLayer({
+        baseUrl: runtime.baseUrl,
+        headers: { "x-meal-planner-user": accountId },
+      })
+    ),
+    Effect.provide(apiHttpLayer(runtime))
   );
 
 export const readConversation = (
@@ -43,10 +41,14 @@ export const readConversation = (
   accountId: UserId,
   scope: ConversationScope
 ) =>
-  operation(runtime, accountId, (api) =>
-    scope._tag === "AccountPrivateSetup"
-      ? api.agentConversations.setup()
-      : api.agentConversations.family({ params: { familyId: scope.familyId } })
+  Effect.runPromise(
+    operation(runtime, accountId, (api) =>
+      scope._tag === "AccountPrivateSetup"
+        ? api.agentConversations.setup()
+        : api.agentConversations.family({
+            params: { familyId: scope.familyId },
+          })
+    )
   );
 
 export const submitConversationAction = (

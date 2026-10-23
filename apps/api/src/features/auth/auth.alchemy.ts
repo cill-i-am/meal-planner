@@ -19,6 +19,12 @@ import type {
   MealPlannerAuthConfiguration,
   MealPlannerAuthOptions,
 } from "./auth.js";
+import {
+  DelegatedAccess,
+  makeDelegatedAccessBoundary,
+  runWithNativeDelegation,
+} from "./delegated-access.js";
+import type { DelegatedAccessBoundary } from "./delegated-access.js";
 
 type AuthProps = Omit<MealPlannerAuthConfiguration, "database" | "secret"> & {
   readonly migrate: false;
@@ -45,7 +51,8 @@ type BoundAuthApi = {
 };
 
 /** Only the application operations needed outside the native HTTP auth routes. */
-export interface MealPlannerAuthService {
+export interface MealPlannerAuthService extends DelegatedAccessBoundary {
+  readonly delegatedAccessEnabled: boolean;
   readonly api: BoundAuthApi;
   readonly createHouseholdInvitation: (
     request: HouseholdInvitationRequest
@@ -98,50 +105,77 @@ export const makeAlchemyMealPlannerAuth = (
     const provideRuntime = <A, E>(
       effect: Effect.Effect<A, E, RuntimeContext>
     ): Effect.Effect<A, E> => Effect.provideContext(effect, context);
-
-    const service: MealPlannerAuthService = {
-      api: {
-        acceptInvitation: (input) =>
-          provideRuntime(auth.api.acceptInvitation(input)),
-        cancelInvitation: (input) =>
-          provideRuntime(auth.api.cancelInvitation(input)),
-        createOrganization: (input) =>
-          provideRuntime(auth.api.createOrganization(input)),
-        getActiveMember: (input) =>
-          provideRuntime(auth.api.getActiveMember(input)),
-        getActiveMemberRole: (input) =>
-          provideRuntime(auth.api.getActiveMemberRole(input)),
-        getSession: (input) => provideRuntime(auth.api.getSession(input)),
-        getSetupInvitation: (input) =>
-          provideRuntime(auth.api.getSetupInvitation(input)),
-        leaveOrganization: (input) =>
-          provideRuntime(auth.api.leaveOrganization(input)),
-        rejectInvitation: (input) =>
-          provideRuntime(auth.api.rejectInvitation(input)),
-        removeMember: (input) => provideRuntime(auth.api.removeMember(input)),
-      },
-      createHouseholdInvitation: ({ invitationId, ...request }) =>
-        provideRuntime(
-          Effect.gen(function* createHouseholdInvitation() {
-            const native = yield* auth.auth;
-            return yield* Effect.matchEffect(
-              Effect.tryPromise({
-                catch: (error) => error,
-                try: () =>
+    const callNative = <A>(
+      operation: (native: MealPlannerAuth) => Promise<A>
+    ) =>
+      Effect.gen(function* invokeNativeAuth() {
+        const native = yield* provideRuntime(auth.auth);
+        const grant = yield* DelegatedAccess;
+        return yield* Effect.tryPromise({
+          catch: (error) => {
+            if (isAPIErrorLike(error)) {
+              return BetterAuthApiError.fromAPIError(error);
+            }
+            throw error;
+          },
+          try: () =>
+            runWithNativeDelegation(grant, () =>
+              operation({
+                ...native,
+                createHouseholdInvitation: ({ invitationId, ...request }) =>
                   security.invitationIdentity.run(invitationId, () =>
                     native.api.createInvitation(request)
                   ),
-              }),
-              {
-                onFailure: (error) =>
-                  isAPIErrorLike(error)
-                    ? Effect.fail(BetterAuthApiError.fromAPIError(error))
-                    : Effect.die(error),
-                onSuccess: Effect.succeed,
-              }
-            );
-          })
-        ),
+                delegatedAccessEnabled: security.delegatedAccessEnabled,
+              })
+            ),
+        });
+      });
+
+    const service: MealPlannerAuthService = {
+      ...makeDelegatedAccessBoundary((body) =>
+        security.delegatedAccessEnabled
+          ? callNative((native) => native.api.resolveDelegatedAccess({ body }))
+          : Effect.fail({ statusCode: 503 })
+      ),
+      api: {
+        acceptInvitation: (input) =>
+          callNative((native) => native.api.acceptInvitation(input)),
+        cancelInvitation: (input) =>
+          callNative((native) => native.api.cancelInvitation(input)),
+        createOrganization: (input) =>
+          callNative((native) => native.api.createOrganization(input)),
+        getActiveMember: (input) =>
+          callNative((native) => native.api.getActiveMember(input)),
+        getActiveMemberRole: (input) =>
+          callNative((native) => native.api.getActiveMemberRole(input)),
+        getSession: (input) =>
+          DelegatedAccess.pipe(
+            Effect.flatMap((grant) =>
+              grant === undefined
+                ? provideRuntime(auth.api.getSession(input))
+                : callNative((native) =>
+                    native.api.resolveDelegatedAccess({ body: grant })
+                  ).pipe(
+                    Effect.map((current) => ({
+                      session: current.session,
+                      user: current.user,
+                    }))
+                  )
+            )
+          ),
+        getSetupInvitation: (input) =>
+          callNative((native) => native.api.getSetupInvitation(input)),
+        leaveOrganization: (input) =>
+          callNative((native) => native.api.leaveOrganization(input)),
+        rejectInvitation: (input) =>
+          callNative((native) => native.api.rejectInvitation(input)),
+        removeMember: (input) =>
+          callNative((native) => native.api.removeMember(input)),
+      },
+      createHouseholdInvitation: (input) =>
+        callNative((native) => native.createHouseholdInvitation(input)),
+      delegatedAccessEnabled: security.delegatedAccessEnabled,
       fetchHttpEffect: (request) =>
         provideRuntime(
           Effect.gen(function* fetchGuardedAuthHttp() {

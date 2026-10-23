@@ -17,7 +17,10 @@ import { PrivateOutputUnavailable } from "../private-output/private-output.contr
 import { makeAlchemyMealPlannerAuth } from "./auth.alchemy.js";
 import type { MealPlannerAuthService } from "./auth.alchemy.js";
 import * as authSchema from "./auth.database-schema.js";
+import { makeMealPlannerAuth } from "./auth.js";
 import type { MealPlannerAuthOptions } from "./auth.js";
+import { resolveAuthenticatedOrganization } from "./auth.principal.js";
+import { makeOAuthFlowFixture } from "./oauth-flow.test-fixture.js";
 
 const testEnv = env as unknown as {
   readonly AUTH_TEST_MIGRATIONS: {
@@ -110,6 +113,77 @@ describe("Alchemy Better Auth on D1", () => {
         .pipe(Effect.flip);
       expect(error).toBeInstanceOf(BetterAuthApiError);
       expect(error.statusCode).toBe(401);
+    }).pipe(
+      Effect.scoped,
+      Effect.provideService(RuntimeContext, testRuntimeContext),
+      Effect.runPromise
+    ));
+
+  it("restores delegated authority through Alchemy's captured runtime and native Promise boundary", () =>
+    Effect.gen(function* restoreDelegatedAlchemyAuthority() {
+      const auth = yield* makeAuth();
+      const native = makeMealPlannerAuth({
+        baseURL,
+        database: drizzle(testEnv.MealPlannerAuthDatabase),
+        outputFence: (_input, canonical) => canonical(),
+        schema: authSchema,
+        secret: "local-alchemy-test-secret-at-least-32-characters",
+      });
+      const flow = makeOAuthFlowFixture(native, baseURL);
+      const accounts = yield* Effect.promise(() =>
+        Promise.all([flow.createAccount(), flow.createAccount()])
+      );
+      const grants = yield* Effect.promise(() =>
+        Promise.all(
+          accounts.map(async (account) => {
+            const family = Schema.decodeUnknownSync(
+              Schema.Struct({ id: HouseholdOrganizationId })
+            )(
+              await native.api.createOrganization({
+                body: {
+                  name: "Alchemy delegated family",
+                  slug: crypto.randomUUID(),
+                },
+                headers: new Headers({ cookie: account.cookie }),
+              })
+            );
+            const token = await flow.issueTokens(
+              account.cookie,
+              `${baseURL}/mcp`,
+              "meal-planner:read"
+            );
+            return { account, family, token };
+          })
+        )
+      );
+      yield* Effect.all(
+        grants.map(({ account, family, token }) => {
+          const request = new Request(`${baseURL}/mcp`, {
+            headers: {
+              authorization: `Bearer ${token.access_token}`,
+              "x-meal-planner-household": family.id,
+            },
+          });
+          return auth.withDelegatedAccess(
+            request,
+            `${baseURL}/mcp`,
+            ["meal-planner:read"],
+            resolveAuthenticatedOrganization({
+              auth,
+              headers: request.headers,
+            }).pipe(
+              Effect.tap((principal) => {
+                expect(principal).toMatchObject({
+                  organizationId: family.id,
+                  userId: account.user.id,
+                });
+                return Effect.void;
+              })
+            )
+          );
+        }),
+        { concurrency: "unbounded" }
+      );
     }).pipe(
       Effect.scoped,
       Effect.provideService(RuntimeContext, testRuntimeContext),

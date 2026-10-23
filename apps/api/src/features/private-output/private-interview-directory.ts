@@ -12,9 +12,10 @@ import { migrate } from "drizzle-orm/durable-sqlite/migrator";
 import { Schema } from "effect";
 
 import migrations from "../../../private-output-migrations/migrations.js";
-import { Generation, PrivateOutputSocket } from "./private-output-socket.js";
+import { PrivateOutputSocket } from "./private-output-socket.js";
 import type { PrivateInterviewEnvironment } from "./private-output-socket.js";
 import {
+  Generation,
   PrivateParticipantBinding,
   PrivateSessionBinding,
   PrivateOutputUnavailable,
@@ -26,6 +27,7 @@ import {
   privateReservations,
   privateReceipts,
 } from "./private-output.database-schema.js";
+import { PrivateDirectoryRequest } from "./private-request.contract.js";
 
 declare const Response: typeof NativeCloudflare.Response;
 const Authorization = Schema.Struct({
@@ -96,6 +98,32 @@ export class PrivateInterviewDirectory extends DurableObject<PrivateInterviewEnv
       targetKind: "directory",
     });
   }
+  beginRequest(untrusted: PrivateParticipantBinding): Promise<string> {
+    const binding = this.#binding(decodeBinding(untrusted));
+    return this.#socket.beginRequest(binding, {
+      childName: binding.bindingKey,
+      targetKind: "directory",
+    });
+  }
+  authorizeRequest(untrusted: typeof Authorization.Type): void {
+    const input = Schema.decodeUnknownSync(Authorization, {
+      onExcessProperty: "error",
+    })(untrusted);
+    this.#binding(input.binding);
+    this.#socket.authorizeRequest(input.generation, input.expiresAt);
+  }
+  executeDirectory(
+    untrusted: typeof PrivateDirectoryRequest.Type
+  ): DirectoryFrame {
+    const input = Schema.decodeUnknownSync(PrivateDirectoryRequest, {
+      onExcessProperty: "error",
+    })(untrusted);
+    this.#binding(input.binding);
+    if (!this.#socket.isRequestCurrent(input.generation)) {
+      throw new PrivateOutputUnavailable({ reason: "output_disabled" });
+    }
+    return this.#execute(input.command, input.generation);
+  }
   authorizeConnection(untrusted: typeof Authorization.Type): void {
     const input = Schema.decodeUnknownSync(Authorization, {
       onExcessProperty: "error",
@@ -163,84 +191,83 @@ export class PrivateInterviewDirectory extends DurableObject<PrivateInterviewEnv
       socket.close(1008, "Invalid private command");
       return;
     }
-    const frame = this.#database.transaction(
-      (transaction): DirectoryFrame | undefined => {
-        if (!this.#socket.isCurrent(generation)) {
-          return;
-        }
-        if (command.type === "ListSessions") {
-          const reservations = transaction
-            .select()
-            .from(privateReservations)
-            .where(gt(privateReservations.ordinal, command.afterOrdinal))
-            .orderBy(privateReservations.ordinal)
-            .limit(command.limit + 1)
-            .all();
+    const frame = this.#execute(command, generation);
+    this.#socket.send(generation, JSON.stringify(frame));
+  }
+  #execute(command: DirectoryCommand, generation: string): DirectoryFrame {
+    return this.#database.transaction((transaction): DirectoryFrame => {
+      if (!this.#socket.isCurrent(generation)) {
+        throw new PrivateOutputUnavailable({ reason: "output_disabled" });
+      }
+      if (command.type === "ListSessions") {
+        const reservations = transaction
+          .select()
+          .from(privateReservations)
+          .where(gt(privateReservations.ordinal, command.afterOrdinal))
+          .orderBy(privateReservations.ordinal)
+          .limit(command.limit + 1)
+          .all();
+        return {
+          hasMore: reservations.length > command.limit,
+          requestId: command.requestId,
+          reservations: reservations
+            .slice(0, command.limit)
+            .map((reservation) => ({
+              ...reservation,
+              scope: this.#scope(reservation.sessionReference),
+            })),
+          type: "SessionsListed",
+        };
+      }
+      const intent = JSON.stringify(command);
+      const receipt = transaction
+        .select()
+        .from(privateReceipts)
+        .where(eq(privateReceipts.mutationId, command.mutationId))
+        .get();
+      if (receipt !== undefined) {
+        if (receipt.intent !== intent) {
           return {
-            hasMore: reservations.length > command.limit,
-            requestId: command.requestId,
-            reservations: reservations
-              .slice(0, command.limit)
-              .map((reservation) => ({
-                ...reservation,
-                scope: this.#scope(reservation.sessionReference),
-              })),
-            type: "SessionsListed",
+            commandId: command.mutationId,
+            reason: "mutation_collision",
+            state: null,
+            type: "Rejected",
           };
         }
-        const intent = JSON.stringify(command);
-        const receipt = transaction
-          .select()
-          .from(privateReceipts)
-          .where(eq(privateReceipts.mutationId, command.mutationId))
-          .get();
-        if (receipt !== undefined) {
-          if (receipt.intent !== intent) {
-            return {
-              commandId: command.mutationId,
-              reason: "mutation_collision",
-              state: null,
-              type: "Rejected",
-            };
-          }
-          return Schema.decodeUnknownSync(DirectoryFrame)(
-            JSON.parse(receipt.frame)
-          );
-        }
-        const reservation = transaction
-          .insert(privateReservations)
-          .values({
-            createdAt: Date.now(),
-            sessionReference: crypto.randomUUID(),
-          })
-          .returning()
-          .get();
-        transaction
-          .insert(privateDiscoverySessionScopes)
-          .values({
-            scope: command.scope,
-            sessionReference: reservation.sessionReference,
-          })
-          .run();
-        const result: DirectoryFrame = {
-          mutationId: command.mutationId,
-          reservation: { ...reservation, scope: command.scope },
-          type: "SessionStarted",
-        };
-        transaction
-          .insert(privateReceipts)
-          .values({
-            frame: JSON.stringify(result),
-            intent,
-            mutationId: command.mutationId,
-          })
-          .run();
-        return result;
+        return Schema.decodeUnknownSync(DirectoryFrame)(
+          JSON.parse(receipt.frame)
+        );
       }
-    );
-    if (frame !== undefined) {
-      this.#socket.send(generation, JSON.stringify(frame));
-    }
+      const reservation = transaction
+        .insert(privateReservations)
+        .values({
+          createdAt: Date.now(),
+          sessionReference: crypto.randomUUID(),
+        })
+        .returning()
+        .get();
+      transaction
+        .insert(privateDiscoverySessionScopes)
+        .values({
+          scope: command.scope,
+          sessionReference: reservation.sessionReference,
+        })
+        .run();
+      const result: DirectoryFrame = {
+        mutationId: command.mutationId,
+        reservation: { ...reservation, scope: command.scope },
+        type: "SessionStarted",
+      };
+      transaction
+        .insert(privateReceipts)
+        .values({
+          frame: JSON.stringify(result),
+          intent,
+          mutationId: command.mutationId,
+        })
+        .run();
+      return result;
+    });
   }
   invalidateOutput(untrusted: typeof Generation.Type): void {
     this.#socket.invalidate(untrusted);

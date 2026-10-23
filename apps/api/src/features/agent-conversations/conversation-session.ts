@@ -360,8 +360,9 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
   override async fetch(
     request: Request | NativeCloudflare.Request
   ): Promise<globalThis.Response> {
+    const { pathname } = new URL(request.url);
     if (
-      new URL(request.url).pathname !== "/chat" ||
+      (pathname !== "/chat" && pathname !== "/turns") ||
       request.method !== "POST"
     ) {
       return new Response(null, {
@@ -372,7 +373,7 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
       const input = Schema.decodeUnknownSync(ConversationChatInput, {
         onExcessProperty: "error",
       })(await request.json());
-      const response = this.#post(input);
+      const response = this.#post(input, pathname === "/turns");
       return response as unknown as globalThis.Response;
     } catch (error) {
       let status = 400;
@@ -401,7 +402,7 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
   }
 
   // eslint-disable-next-line complexity -- Keep turn replay, admission and producer ownership in one native request boundary.
-  #post(input: ChatInput): NativeCloudflare.Response {
+  #post(input: ChatInput, snapshot = false): NativeCloudflare.Response {
     const access = Schema.decodeUnknownSync(ConversationAccess)(input.access);
     const binding = this.#binding(access);
     const request = Schema.decodeUnknownSync(ConversationTurnRequest)({
@@ -423,6 +424,9 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
     if (previous !== undefined) {
       if (previous.requestJson !== serialized) {
         fail("turn_conflict");
+      }
+      if (snapshot) {
+        return Response.json(this.read(access));
       }
       if (previous.status === "succeeded" && previous.replyJson !== null) {
         const reply = parseReplyJson(previous.replyJson);
@@ -544,6 +548,13 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
     });
     const messages = this.#recentMessages();
     const outcome = Promise.withResolvers<ConversationModelReply>();
+    const settled = (async () => {
+      try {
+        await outcome.promise;
+      } catch {
+        // Request-mode callers poll the saved failure instead of consuming a stream.
+      }
+    })();
     this.#running.set(request.turnId, outcome.promise);
     const controller = new AbortController();
     const accept = (value: typeof SubmitConversationTurn.Type) => {
@@ -724,13 +735,6 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
           this.#running.delete(request.turnId);
         }
       })();
-      const settled = (async () => {
-        try {
-          await outcome.promise;
-        } catch {
-          // The failed turn is already recorded; its settlement ends this local lifetime.
-        }
-      })();
       // The binding adapter may keep Ai.run pending after cancellation. The
       // application settles and releases its lifetime at the accepted/failed
       // outcome; the late producer has its own catch and cannot commit.
@@ -744,6 +748,9 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
           : new ConversationModelFailure({ reason: "provider_unavailable" })
       );
       this.#running.delete(request.turnId);
+    }
+    if (snapshot) {
+      return Response.json(this.read(access));
     }
     return toServerSentEventsResponse(
       safeStream(request.turnId, binding.conversationId, outcome.promise),

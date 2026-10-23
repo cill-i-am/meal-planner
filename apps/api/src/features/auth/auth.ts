@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
+import { oauthProvider } from "@better-auth/oauth-provider";
 import {
   EmailAddress,
   HouseholdOrganizationId,
@@ -15,16 +16,28 @@ import type { OrganizationOptions } from "better-auth/plugins/organization";
 import { DrizzleD1Database } from "drizzle-orm/d1";
 import { Option, Schema } from "effect";
 
+import {
+  privateOutputKey,
+  PrivateOutputUnavailable,
+} from "../private-output/private-output.contract.js";
 import { applicationAccessPlugin } from "./application-access.js";
 import {
   atomicOrganization,
   atomicPasswordResetPlugin,
 } from "./auth-atomic-endpoints.js";
-import { makeAuthAtomicStore } from "./auth-atomic-store.js";
+import {
+  makeAuthAtomicStore,
+  revokeUnusedOAuthCodes,
+} from "./auth-atomic-store.js";
 import type { PasswordResetMail } from "./auth-mail.js";
 import { fenceAuthAdapter } from "./auth-output-fence.js";
 import type { AuthOutputFence } from "./auth-output-fence.js";
+import {
+  delegatedAccessPlugin,
+  mealPlannerOAuthOptions,
+} from "./delegated-access.js";
 import { invitationViewPlugin } from "./invitation-view.js";
+import { oauthLifecyclePaths } from "./oauth-lifecycle.js";
 
 const parseEmailAddress = Schema.decodeUnknownSync(EmailAddress);
 const parseOptionalEmailAddress = Schema.decodeUnknownOption(EmailAddress);
@@ -56,6 +69,8 @@ export type MealPlannerAuthConfiguration = Omit<
     ReturnType<typeof applicationAccessPlugin>,
     ReturnType<typeof atomicPasswordResetPlugin>,
     ReturnType<typeof atomicOrganization<{ schema: typeof invitationSchema }>>,
+    ReturnType<typeof oauthProvider>,
+    ReturnType<typeof delegatedAccessPlugin>,
   ];
 };
 type AuthCore = Auth<MealPlannerAuthConfiguration>;
@@ -71,12 +86,14 @@ export interface HouseholdInvitationRequest {
 }
 
 export type MealPlannerAuth = AuthCore & {
+  readonly delegatedAccessEnabled: boolean;
   readonly createHouseholdInvitation: (
     request: HouseholdInvitationRequest
   ) => ReturnType<AuthCore["api"]["createInvitation"]>;
 };
 
 export interface MealPlannerAuthOptions {
+  readonly delegatedAccessEnabled?: boolean;
   readonly sendPasswordResetEmail?: (mail: PasswordResetMail) => Promise<void>;
   readonly outputFence: AuthOutputFence;
   readonly baseURL: string;
@@ -93,6 +110,7 @@ export interface MealPlannerAuthOptions {
 /** Share one plugin and policy configuration between the CLI and Alchemy runtime. */
 export const makeMealPlannerAuthConfiguration = ({
   baseURL,
+  delegatedAccessEnabled = true,
   database,
   outputFence,
   schema,
@@ -105,6 +123,16 @@ export const makeMealPlannerAuthConfiguration = ({
       ? { provider: "sqlite" as const }
       : { provider: "sqlite" as const, schema };
   const failures = new AsyncLocalStorage<{ failure: unknown }>();
+  const oauthLifecycleAccount = new AsyncLocalStorage<UserId>();
+  const oauthOptions = mealPlannerOAuthOptions(baseURL, delegatedAccessEnabled);
+  oauthOptions.postLogin = {
+    // Native login and session-cookie hooks can resume OAuth internally. Defer
+    // those responses to explicit consent, whose request owns the account claim.
+    // eslint-disable-next-line unicorn/no-useless-undefined -- Native undefined retains user/client consent ownership without adding a reference dimension.
+    consentReferenceId: () => undefined,
+    page: "/oauth/consent",
+    shouldRedirect: ({ user }) => oauthLifecycleAccount.getStore() !== user.id,
+  };
   const invitationIdentity = new AsyncLocalStorage<InvitationId>();
   const organizationHooks: NonNullable<
     OrganizationOptions["organizationHooks"]
@@ -137,14 +165,15 @@ export const makeMealPlannerAuthConfiguration = ({
       throw error;
     }
   };
-  const atomicStore = makeAuthAtomicStore(() => {
+  const authDatabase = () => {
     // The CLI inspects this same configuration using SQLite without running endpoints.
     // Production mutations require D1's atomic batch capability.
     if (!(database instanceof DrizzleD1Database)) {
       throw new Error("Authentication mutations require a D1 database.");
     }
     return database;
-  }, guardedFence);
+  };
+  const atomicStore = makeAuthAtomicStore(authDatabase, guardedFence);
   const emailAndPassword: NonNullable<BetterAuthOptions["emailAndPassword"]> = {
     enabled: true,
     resetPasswordTokenExpiresIn: 3600,
@@ -168,7 +197,8 @@ export const makeMealPlannerAuthConfiguration = ({
         drizzleAdapter(database, { ...adapterOptions, transaction: false })(
           options
         ),
-        guardedFence
+        guardedFence,
+        (input) => revokeUnusedOAuthCodes(authDatabase(), input)
       ),
     disabledPaths: [
       "/organization/create",
@@ -214,6 +244,8 @@ export const makeMealPlannerAuthConfiguration = ({
         } satisfies OrganizationOptions,
         atomicStore
       ),
+      oauthProvider(oauthOptions),
+      delegatedAccessPlugin(oauthOptions),
     ],
     rateLimit: { enabled: true, storage: "database" },
     secret,
@@ -221,6 +253,7 @@ export const makeMealPlannerAuthConfiguration = ({
   };
   return {
     configuration,
+    delegatedAccessEnabled,
     guard: <A>(operation: () => Promise<A>): Promise<A> =>
       failures.run({ failure: undefined }, async () => {
         const result = await operation();
@@ -231,6 +264,10 @@ export const makeMealPlannerAuthConfiguration = ({
         return result;
       }),
     invitationIdentity,
+    oauthLifecycle: ((input, canonical) =>
+      guardedFence(input, () =>
+        oauthLifecycleAccount.run(input.accountId, canonical)
+      )) satisfies AuthOutputFence,
   };
 };
 
@@ -245,6 +282,21 @@ export const fetchGuardedMealPlannerAuth = async (
   request: Request
 ): Promise<Response> => {
   try {
+    const { pathname } = new URL(request.url);
+    if (
+      !security.delegatedAccessEnabled &&
+      (pathname.includes("/.well-known/") ||
+        pathname.startsWith("/api/auth/oauth2/"))
+    ) {
+      return Response.json(
+        {
+          error: "temporarily_unavailable",
+          message:
+            "OAuth requires a configured public origin for this deployment.",
+        },
+        { status: 503 }
+      );
+    }
     const expectedUserId = request.headers.get("x-meal-planner-user");
     if (expectedUserId !== null) {
       const session = await auth.api.getSession({ headers: request.headers });
@@ -258,8 +310,64 @@ export const fetchGuardedMealPlannerAuth = async (
         );
       }
     }
-    return await security.guard(() => auth.fetch(request));
-  } catch {
+    const path = pathname.slice("/api/auth".length);
+    const execute = () => security.guard(() => auth.fetch(request));
+    if (!oauthLifecyclePaths.has(path)) {
+      return await execute();
+    }
+    let parameters: Record<string, string> = {};
+    if (path === "/oauth2/token" || path === "/oauth2/revoke") {
+      const contentType = (
+        request.headers.get("content-type") ?? ""
+      ).toLowerCase();
+      if (contentType.startsWith("application/x-www-form-urlencoded")) {
+        parameters = Object.fromEntries(
+          new URLSearchParams(await request.clone().text())
+        );
+      } else if (contentType.startsWith("application/json")) {
+        const input = Schema.decodeUnknownSync(
+          Schema.Record(Schema.String, Schema.Unknown)
+        )(await request.clone().json());
+        parameters = Object.fromEntries(
+          Object.entries(input).filter((entry): entry is [string, string] =>
+            Schema.is(Schema.String)(entry[1])
+          )
+        );
+      } else {
+        return Response.json({ error: "invalid_request" }, { status: 400 });
+      }
+    }
+    const accountId = await auth.api.resolveOAuthLifecycleAccount({
+      body: { parameters, path },
+      headers: request.headers,
+    });
+    if (accountId === null) {
+      return await execute();
+    }
+    // One durable account intent spans native consume/CAS, token creation and
+    // response. Concurrent refresh/disconnect cannot cross that native gap.
+    return await security.oauthLifecycle(
+      {
+        accountId,
+        intentKey: await privateOutputKey("oauth-lifecycle", accountId),
+      },
+      async () => {
+        const response = await execute();
+        if (response.status >= 500) {
+          // Preserve the unresolved claim: a failed database response can have
+          // committed, so allowing another grant mutation would be unsafe.
+          throw new PrivateOutputUnavailable({ reason: "mutation_pending" });
+        }
+        return response;
+      }
+    );
+  } catch (error) {
+    if (error instanceof APIError && error.statusCode < 500) {
+      return Response.json(error.body, {
+        headers: { "cache-control": "no-store" },
+        status: error.statusCode,
+      });
+    }
     return new Response(null, { status: 503 });
   }
 };
@@ -300,5 +408,6 @@ export const makeMealPlannerAuth = (
       invitationIdentity.run(invitationId, () =>
         auth.api.createInvitation(request)
       ),
+    delegatedAccessEnabled: security.delegatedAccessEnabled,
   };
 };
