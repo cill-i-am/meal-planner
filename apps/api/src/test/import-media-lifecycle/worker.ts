@@ -31,6 +31,7 @@ import {
   ImportId,
   SourceCanonicalId,
 } from "../../features/imports/import.contracts.js";
+import { LifecycleFixtureDurationSeconds } from "./fixture.js";
 
 const workerResource = { bind: () => () => Effect.void };
 // Only deployment registration metadata is synthetic. Runtime lifecycle, RPC,
@@ -146,7 +147,10 @@ export default {
       }
       if (url.pathname === "/cancel") {
         const original = acquisitionArtifactId(importId, generation);
-        yield* media.prepareProviderEvidence(original, 30);
+        yield* media.prepareProviderEvidence(
+          original,
+          LifecycleFixtureDurationSeconds
+        );
         for (const artifact of [
           original,
           `${original}:audio`,

@@ -130,10 +130,19 @@ export const recipeFacts = (
 };
 
 /** Ingredient row correspondence is fixed before scoring its nested values. */
-const rowAlignment = (
-  actual: RecipeDraftContent,
-  expected: RecipeDraftContent
-) => {
+const identityMatches = (
+  actual: string,
+  expected: string,
+  path: string,
+  item: ExtractionCase
+) =>
+  [
+    expected,
+    ...(item.aliases.find((alias) => alias.path === path)?.values ?? []),
+  ].some((value) => textKey(value) === textKey(actual));
+
+const rowAlignment = (actual: RecipeDraftContent, item: ExtractionCase) => {
+  const { expected } = item;
   const map = new Map<string, string>();
   const usedIngredients = new Set<number>();
   for (const [index, row] of (actual.ingredients ?? []).entries()) {
@@ -144,20 +153,29 @@ const rowAlignment = (
             return [];
           }
           const original = textKey(row.original) === textKey(target.original);
-          const name = textKey(row.name) === textKey(target.name);
+          const name = identityMatches(
+            row.name,
+            target.name,
+            `ingredients.${targetIndex}.name`,
+            item
+          );
           const group =
             row.group !== null &&
             target.group !== null &&
             textKey(row.group) === textKey(target.group);
-          const score =
-            Number(original) * 8 + Number(name) * 4 + Number(group) * 4;
-          return score === 0 ? [] : [{ score, targetIndex }];
+          if (!name || (row.group !== null && !group)) {
+            return [];
+          }
+          const score = Number(original) * 8 + Number(group) * 4;
+          return [{ score, targetIndex }];
         })
         .toSorted(
           (left, right) =>
             right.score - left.score || left.targetIndex - right.targetIndex
         ) ?? [];
-    const targetIndex = ranked[0]?.targetIndex;
+    const [first] = ranked;
+    const targetIndex =
+      first?.score === ranked[1]?.score ? undefined : first?.targetIndex;
     if (targetIndex !== undefined) {
       usedIngredients.add(targetIndex);
     }
@@ -168,19 +186,17 @@ const rowAlignment = (
   }
   const usedInstructions = new Set<number>();
   for (const [index, row] of (actual.instructions ?? []).entries()) {
-    let targetIndex =
+    const targetIndex =
       expected.instructions?.findIndex(
         (target, position) =>
           !usedInstructions.has(position) &&
-          textKey(row.text) === textKey(target.text)
+          identityMatches(
+            row.text,
+            target.text,
+            `instructions.${position}.text`,
+            item
+          )
       ) ?? -1;
-    if (
-      targetIndex === -1 &&
-      expected.instructions?.[index] !== undefined &&
-      !usedInstructions.has(index)
-    ) {
-      targetIndex = index;
-    }
     if (targetIndex !== -1) {
       usedInstructions.add(targetIndex);
     }
@@ -191,11 +207,8 @@ const rowAlignment = (
   }
   return map;
 };
-const alignedFacts = (
-  actual: RecipeDraftContent,
-  expected: RecipeDraftContent
-) => {
-  const alignment = rowAlignment(actual, expected);
+const alignedFacts = (actual: RecipeDraftContent, item: ExtractionCase) => {
+  const alignment = rowAlignment(actual, item);
   return recipeFacts(actual).map((fact) => {
     const prefix = /^(?:ingredients|instructions)\.\d+/u.exec(fact.path)?.[0];
     const replacement =
@@ -254,12 +267,40 @@ const metric = (
   truePositive,
 });
 
+/** Qualifier diagnostics may recognize a shortened clause without granting row credit. */
+const shortenedQualifiedClause = (
+  item: ExtractionCase,
+  actual: RecipeDraftContent,
+  path: string
+): RecipeFact | undefined => {
+  if (!/^instructions\.\d+\.text$/u.test(path)) {
+    return undefined;
+  }
+  const source = recipeFacts(item.expected).find((fact) => fact.path === path);
+  if (source === undefined || !Schema.is(Schema.String)(source.value)) {
+    return undefined;
+  }
+  const words = (text: string) =>
+    textKey(text)
+      .replaceAll(/[^\p{L}\p{N}\s]/gu, " ")
+      .replaceAll(/\s+/gu, " ")
+      .trim();
+  const clause = ` ${words(source.value)} `;
+  const row = actual.instructions?.find((instruction) => {
+    const fragment = words(instruction.text);
+    return fragment.length > 0 && clause.includes(` ${fragment} `);
+  });
+  return row === undefined
+    ? undefined
+    : { field: "instruction_text", path, value: row.text };
+};
+
 export const scoreRecipe = (
   item: ExtractionCase,
   actual: RecipeDraftContent
 ) => {
   const expected = sourceFacts(item, true);
-  const actualFacts = alignedFacts(actual, item.expected);
+  const actualFacts = alignedFacts(actual, item);
   const matched = actualFacts.filter((fact) =>
     expected.some((target) => equalsExpected(fact, target, item))
   );
@@ -272,10 +313,17 @@ export const scoreRecipe = (
   const numericAssociationErrors = unmatched.filter(
     (fact) =>
       Schema.is(Schema.Number)(fact.value) &&
-      expected.some((target) => target.path === fact.path)
+      expected.some(
+        (target) =>
+          target.path === fact.path ||
+          (target.field === fact.field &&
+            comparable(target) === comparable(fact))
+      )
   );
   const qualifierLosses = item.qualifiers.flatMap((qualifier) => {
-    const target = actualFacts.find((fact) => fact.path === qualifier.path);
+    const target =
+      actualFacts.find((fact) => fact.path === qualifier.path) ??
+      shortenedQualifiedClause(item, actual, qualifier.path);
     // Omission is recall loss; a shortened asserted clause is qualifier loss.
     if (target === undefined || !Schema.is(Schema.String)(target.value)) {
       return [];
@@ -305,7 +353,7 @@ export const scoreRecipe = (
       )
     );
   }).length;
-  const alignment = rowAlignment(actual, item.expected);
+  const alignment = rowAlignment(actual, item);
   const matchedStepPositions = (actual.instructions ?? []).flatMap(
     (instruction, index) => {
       const prefix = alignment.get(`instructions.${index}`);
@@ -398,6 +446,28 @@ const emptyRecipe = Schema.decodeUnknownSync(RecipeDraftContent)({
   times: { cook: null, inactive: null, prep: null, total: null },
 });
 
+const acquiredOracleHasRecipeCore = (item: ExtractionCase) => {
+  const paths = new Set(sourceFacts(item, true).map((fact) => fact.path));
+  return (
+    item.expected.ingredients?.some(
+      (_, index) =>
+        paths.has(`ingredients.${index}.name`) &&
+        paths.has(`ingredients.${index}.original`)
+    ) === true &&
+    item.expected.instructions?.some((_, index) =>
+      paths.has(`instructions.${index}.text`)
+    ) === true
+  );
+};
+/** Projection of import-recipe-draft's minimum-evidence gate, not an observed routing event. */
+const minimumEvidenceRoute = (
+  recipe: RecipeDraftContent
+): "draft" | "insufficient_evidence" =>
+  (recipe.ingredients?.length ?? 0) > 0 &&
+  (recipe.instructions?.length ?? 0) > 0
+    ? "draft"
+    : "insufficient_evidence";
+
 export const scoreOutput = (
   item: ExtractionCase,
   output?: PersistedExtractionOutput,
@@ -427,13 +497,44 @@ export const scoreOutput = (
     failureCode: output?.failureCode ?? null,
     grounded: scoreRecipe(item, grounded),
     measurements: output?.measurements ?? null,
+    minimumEvidenceRouting: {
+      eligible: acquiredOracleHasRecipeCore(item),
+      grounded: complete ? minimumEvidenceRoute(grounded) : null,
+      raw: complete ? minimumEvidenceRoute(candidate) : null,
+    },
     provenance: item.provenance.kind,
     raw: scoreRecipe(item, candidate),
+    requestIdentity: output?.requestIdentity ?? null,
     schemaValid: decoded._tag === "Success",
     split: item.split,
   };
 };
 export type ScoredCase = ReturnType<typeof scoreOutput>;
+
+const falseRejectionMetric = (
+  cases: readonly ScoredCase[],
+  stage: "raw" | "grounded"
+) => {
+  const eligible = cases.filter((item) => item.minimumEvidenceRouting.eligible);
+  const evaluated = eligible.filter(
+    (item) => item.minimumEvidenceRouting[stage] !== null
+  );
+  const falseRejections = evaluated.filter(
+    (item) => item.minimumEvidenceRouting[stage] === "insufficient_evidence"
+  ).length;
+  return {
+    eligibleCases: eligible.length,
+    evaluatedCases: evaluated.length,
+    falseRejections,
+    rate: ratio(falseRejections, evaluated.length),
+    unavailableCases: eligible.length - evaluated.length,
+  };
+};
+const minimumEvidenceRoutingMetrics = (cases: readonly ScoredCase[]) => ({
+  grounded: falseRejectionMetric(cases, "grounded"),
+  raw: falseRejectionMetric(cases, "raw"),
+  scope: "minimum-evidence-gate-projection" as const,
+});
 
 const totalScore = (scores: readonly RecipeScore[]) => {
   const sum = (select: (score: RecipeScore) => number) =>
@@ -474,7 +575,7 @@ const totalScore = (scores: readonly RecipeScore[]) => {
     ),
   };
 };
-const measuredDistribution = (
+export const measuredDistribution = (
   values: readonly (number | null | undefined)[]
 ) => {
   const known = values
@@ -487,6 +588,9 @@ const measuredDistribution = (
     measured: known.length,
     median:
       lower === undefined || upper === undefined ? null : (lower + upper) / 2,
+    p95: known[Math.ceil(0.95 * known.length) - 1] ?? null,
+    p95Method: "nearest_rank" as const,
+    p95SmallSample: known.length === 0 ? null : known.length < 20,
     total:
       known.length === 0 ? null : known.reduce((sum, value) => sum + value, 0),
     unavailable: values.length - known.length,
@@ -629,6 +733,15 @@ export const scoreRun = (
             item.measurements.latencySource === "unavailable"
         ).length,
       },
+      mixedLatencySources:
+        new Set(
+          cases.flatMap((item) =>
+            item.measurements === null ||
+            item.measurements.latencySource === "unavailable"
+              ? []
+              : [item.measurements.latencySource]
+          )
+        ).size > 1,
       outputTokens: measuredDistribution(
         cases.map((item) => item.measurements?.outputTokens)
       ),
@@ -639,6 +752,7 @@ export const scoreRun = (
         cases.map((item) => item.measurements?.providerLatencyMilliseconds)
       ),
     },
+    minimumEvidenceRouting: minimumEvidenceRoutingMetrics(cases),
     provenance:
       "Synthetic challenge corpus; not representative real-source or live acquisition performance.",
     raw: totalScore(cases.map((item) => item.raw)),
@@ -780,7 +894,15 @@ export const compareRuns = (baseline: RunScore, candidate: RunScore) => {
     groundedQualifierLosses: candidate.grounded.qualifierLosses,
     grounderRevision: baseline.grounderRevision,
     grounderSha256: baseline.grounderSha256,
+    measurements: {
+      baseline: baseline.measurements,
+      candidate: candidate.measurements,
+    },
     pairedCases: pairs.length,
+    pairedMinimumEvidenceRouting: {
+      baseline: minimumEvidenceRoutingMetrics(pairs.map((pair) => pair.left)),
+      candidate: minimumEvidenceRoutingMetrics(pairs.map((pair) => pair.right)),
+    },
     reasons: [
       "Small synthetic smoke/regression corpus cannot establish representative quality.",
       "Every unmatched oracle fact needs source review before it is called unsupported.",

@@ -402,22 +402,22 @@ const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
   }
 );
 
-/** Shared accounting, replay and grounding authority for one recipe invocation. */
-export const makeAccountedRecipeExtractor = (input: {
-  readonly descriptor: RecipeExtractorDescriptor;
+export const makeInstalledRecipeExtractor = Effect.fn(
+  "Imports.makeInstalledRecipeExtractor"
+)(function* makeRecipeAdapter(input: {
+  readonly correlationId: ImportCorrelationId;
   readonly dispatch: ProviderDispatchGate;
-  readonly invoke: (
-    request: RecipeEvidenceAssembly
-  ) => ReturnType<typeof runRecipeJsonMode>;
-  readonly prices: {
-    readonly inputMicroUsdPerToken: number;
-    readonly outputMicroUsdPerToken: number;
-  };
-}) =>
-  ({
-    descriptor: Schema.decodeUnknownSync(RecipeExtractorDescriptor)(
-      input.descriptor
-    ),
+  readonly transport: WorkersAiTransport["recipe"];
+}) {
+  const traceStore = Option.getOrUndefined(
+    yield* Effect.serviceOption(ImportObservabilityTraceStore)
+  );
+  return {
+    descriptor: Schema.decodeUnknownSync(RecipeExtractorDescriptor)({
+      model: input.transport.model,
+      provider: ProviderName,
+      version: "installed-workers-ai-json-schema-v1",
+    }),
     extract: (request: RecipeEvidenceAssembly) =>
       input.dispatch
         .run({
@@ -427,7 +427,10 @@ export const makeAccountedRecipeExtractor = (input: {
             `recipe:${request.importId}:${request.generation}:${request.evidenceFingerprint}`,
           invoke: Effect.gen(function* extractRecipeSemantics() {
             const startedAt = yield* Effect.sync(() => Date.now());
-            const result = yield* input.invoke(request);
+            const result = yield* runRecipeJsonMode(input.transport, request, {
+              correlationId: input.correlationId,
+              traceStore,
+            });
             if (result._tag === "Failed") {
               return {
                 cost: {
@@ -445,7 +448,7 @@ export const makeAccountedRecipeExtractor = (input: {
             const meteredCost = pricedTokenUsage(
               inputTokens,
               outputTokens,
-              input.prices
+              InstalledRecipeTokenPrices
             );
             // A schema-valid response proves this bounded recipe call
             // completed. When the provider omits trustworthy usage, charge
@@ -513,30 +516,5 @@ export const makeAccountedRecipeExtractor = (input: {
             }
           )
         ),
-  }) satisfies RecipeExtractor;
-
-export const makeInstalledRecipeExtractor = Effect.fn(
-  "Imports.makeInstalledRecipeExtractor"
-)(function* makeRecipeAdapter(input: {
-  readonly correlationId: ImportCorrelationId;
-  readonly dispatch: ProviderDispatchGate;
-  readonly transport: WorkersAiTransport["recipe"];
-}) {
-  const traceStore = Option.getOrUndefined(
-    yield* Effect.serviceOption(ImportObservabilityTraceStore)
-  );
-  return makeAccountedRecipeExtractor({
-    descriptor: {
-      model: input.transport.model,
-      provider: ProviderName,
-      version: "installed-workers-ai-json-schema-v1",
-    },
-    dispatch: input.dispatch,
-    invoke: (request) =>
-      runRecipeJsonMode(input.transport, request, {
-        correlationId: input.correlationId,
-        traceStore,
-      }),
-    prices: InstalledRecipeTokenPrices,
-  });
+  } satisfies RecipeExtractor;
 });

@@ -11,6 +11,7 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
+import type * as FileSystem from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -97,9 +98,19 @@ class EvaluationTransportError extends Data.TaggedError(
 )<{ readonly code: string }> {}
 
 const io = <A>(operation: (signal: AbortSignal) => Promise<A>, code: string) =>
-  Effect.tryPromise({
-    catch: () => new EvaluationTransportError({ code }),
-    try: operation,
+  Effect.callback<A, EvaluationTransportError>((resume, signal) => {
+    const completed = (async () => {
+      try {
+        signal.throwIfAborted();
+        const value = await operation(signal);
+        resume(Effect.succeed(value));
+      } catch {
+        resume(Effect.fail(new EvaluationTransportError({ code })));
+      }
+    })();
+    // Interruption aborts the signal, then joins native I/O that cannot be
+    // cancelled (including rename) before the accounting finalizer runs.
+    return Effect.promise(() => completed);
   });
 
 const hash = (value: string) =>
@@ -251,13 +262,21 @@ const usageFromBody = (body: Schema.Json) => {
   };
 };
 
-export const createAccountedEvaluationTransport = async (options: {
-  readonly rootDirectory: string;
-  readonly runId: string;
-  readonly maximumInvocations?: number;
-  readonly maximumReservedMicroUsd?: number;
-  readonly bridgeTimeoutMs?: number;
-}) => {
+const NativeRequestFiles = { rename, writeFile };
+
+export const createAccountedEvaluationTransport = async (
+  options: {
+    readonly rootDirectory: string;
+    readonly runId: string;
+    readonly maximumInvocations?: number;
+    readonly maximumReservedMicroUsd?: number;
+    readonly bridgeTimeoutMs?: number;
+  },
+  requestFiles: Pick<
+    typeof FileSystem,
+    "rename" | "writeFile"
+  > = NativeRequestFiles
+) => {
   const configuration = Schema.decodeUnknownSync(Configuration)({
     bridgeTimeoutMs: 600_000,
     maximumInvocations: 10,
@@ -278,8 +297,8 @@ export const createAccountedEvaluationTransport = async (options: {
   let closing: Promise<void> | null = null;
   const closeResources = async () => {
     try {
-      // Cancelling the owned fibers waits for native unknown-cost settlement
-      // before the D1 runtime becomes unavailable.
+      // Owned fibers join outstanding publication before unknown-cost settlement,
+      // so neither request files nor ledger writes can outlive this runtime.
       await Effect.runPromise(Scope.close(scope, Exit.void));
       await runtime?.dispose();
     } finally {
@@ -375,7 +394,7 @@ export const createAccountedEvaluationTransport = async (options: {
         return yield* runAccountedProviderDispatch({
           invoke: io(async (signal) => {
             // Publication happens only after the production ledger claims invocation.
-            await writeFile(
+            await requestFiles.writeFile(
               `${files.request}.tmp`,
               JSON.stringify(
                 {
@@ -390,9 +409,13 @@ export const createAccountedEvaluationTransport = async (options: {
                 null,
                 2
               ),
-              { flag: "wx", mode: 0o600 }
+              { flag: "wx", mode: 0o600, signal }
             );
-            await rename(`${files.request}.tmp`, files.request);
+            signal.throwIfAborted();
+            // Node rename has no AbortSignal support. The I/O boundary joins it
+            // on interruption before settling unknown or releasing the lock.
+            await requestFiles.rename(`${files.request}.tmp`, files.request);
+            signal.throwIfAborted();
             const response = await waitForResponse(
               files.response,
               configuration.bridgeTimeoutMs,

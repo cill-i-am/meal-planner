@@ -40,7 +40,8 @@
     },
     {
       "path": "paired-report.json",
-      "sha256": "2629ff330e9fe5b30402e735dadb2ed6924702ba53596a0f6cf0e698eaf4c8b5"
+      "sha256": "22dfa77b7155f8950c77d107121f5d66173be766f832ec3b0c7f4f5f351e4d49"
     }
-  ]
+  ],
+  "reportRegeneration": "Offline review-fix replay adds strict row identity, p95 and projected minimum-evidence false rejection; original plans and captured runs are unchanged, with no additional provider calls."
 }

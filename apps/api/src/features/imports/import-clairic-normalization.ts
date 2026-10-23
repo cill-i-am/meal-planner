@@ -25,6 +25,20 @@ const quantityPattern = new RegExp(
 );
 const unitPattern =
   /^(?:kilograms?|grams?|millilitres?|milliliters?|litres?|liters?|tablespoons?|teaspoons?|ounces?|pounds?|cups?|kg|mg|ml|tbsp|tsp|oz|lb|g|l)\b\s*/iu;
+// A supported prefix is insufficient when the source continues the number in
+// notation this parser cannot represent, such as 1,000, 1⁄2 or 2 × 400.
+const numericContinuation =
+  /^(?:[\p{N}.,/⁄\p{Pd}−+×*]|[\p{P}\p{S}]\s*\p{N}|(?:to|x)\s*\d|[eE][+-]?\d)/iu;
+
+const hasIncompleteNumericPrefix = (text: string, match: RegExpExecArray) => {
+  const prefix = text.slice(0, match.index);
+  return (
+    /(?:\p{N}\s*(?:[\p{P}\p{S}]|to|x)|\p{N}\s+|\d[eE][+-]?|[+−\p{Pd}])\s*$/iu.test(
+      prefix
+    ) ||
+    (/^[+-]/u.test(match[0]) && /\p{N}\s*$/u.test(prefix))
+  );
+};
 
 const parseAmount = (text: string): number => {
   const expanded = text.replaceAll(
@@ -47,6 +61,10 @@ const quantityFromPhrase = (text: string) => {
   if (match === null) {
     return null;
   }
+  const rest = text.slice(match[0].length);
+  if (numericContinuation.test(rest)) {
+    return null;
+  }
   const value = parseAmount(match[1] ?? "");
   const max = match[2] === undefined ? null : parseAmount(match[2]);
   if (
@@ -56,7 +74,6 @@ const quantityFromPhrase = (text: string) => {
   ) {
     return null;
   }
-  const rest = text.slice(match[0].length);
   const unit = unitPattern.exec(rest)?.[0] ?? "";
   return {
     quantity: { max, unit: unit.trim() || null, value },
@@ -79,7 +96,13 @@ const ingredientFromPhrase = (original: string) => {
   return {
     ...recipeIngredientFromText(original),
     name: name || original,
-    optional: /\boptional\b/iu.test(original) ? true : null,
+    optional:
+      /(?:\(\s*optional\s*\)|,\s*optional)\s*$/iu.test(original) &&
+      !/\b(?:not|never|no|non|if|unless|when|only|except)\b|n['’]t\b/iu.test(
+        original
+      )
+        ? true
+        : null,
     preparation: preparation?.groups?.["preparation"] ?? null,
     quantity: parsed?.quantity ?? null,
   };
@@ -91,13 +114,22 @@ const durationFromPhrase = (phrase: string | null) => {
   }
   const matches = [
     ...phrase.matchAll(
-      /(?<![\p{L}\p{N}./+−-])(?<amount>\d+(?:\.\d+)?|\.\d+)\s*(?<unit>seconds?|secs?|minutes?|mins?|hours?|hrs?)\b/giu
+      /(?<![\p{L}\p{N}\p{M}.,/⁄+−\p{Pd}])(?<amount>\d+(?:\.\d+)?|\.\d+)\s*(?<unit>seconds?|secs?|minutes?|mins?|hours?|hrs?)\b/giu
     ),
   ];
-  if (matches.length !== 1 || /\d\s*(?:[-–/⁄]|to)\s*\d/u.test(phrase)) {
+  const [match] = matches;
+  // A second timing phrase is ambiguous even when its number is unsupported.
+  const unitMentions = phrase.match(
+    /(?<!\p{L})(?:seconds?|secs?|minutes?|mins?|hours?|hrs?)\b/giu
+  );
+  if (
+    unitMentions?.length !== 1 ||
+    matches.length !== 1 ||
+    match === undefined ||
+    hasIncompleteNumericPrefix(phrase, match)
+  ) {
     return null;
   }
-  const [match] = matches;
   const amount = Number(match?.groups?.["amount"]);
   const unit = match?.groups?.["unit"]?.toLowerCase() ?? "";
   let multiplier = 1;
@@ -113,14 +145,18 @@ const durationFromPhrase = (phrase: string | null) => {
 const instructionFromPhrase = (text: string, index: number) => {
   const matches = [
     ...text.matchAll(
-      /(?<![\p{L}\p{N}./+−-])(?<amount>[+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*°?\s*(?<unit>[CF])\b/gu
+      /(?<![\p{L}\p{N}\p{M}.,/⁄+−\p{Pd}])(?<amount>[+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*°?\s*(?<unit>[CF])\b/gu
     ),
   ];
-  const ambiguous = /\d\s*(?:[-–/⁄]|to)\s*\d+(?:\.\d+)?\s*°?\s*[CF]\b/u.test(
-    text
-  );
+  const [match] = matches;
+  const unitMentions = text.match(/[\p{N}°]\s*[CF]\b/gu);
   const temperature =
-    matches.length === 1 && !ambiguous ? matches[0] : undefined;
+    unitMentions?.length === 1 &&
+    matches.length === 1 &&
+    match !== undefined &&
+    !hasIncompleteNumericPrefix(text, match)
+      ? match
+      : undefined;
   return {
     ...recipeInstructionFromText(text, index + 1),
     duration: durationFromPhrase(text),
@@ -158,7 +194,7 @@ const servingsFromPhrase = (
     quantity: parsed.quantity.value,
     unit: /^(?:serves|servings:?|portions:?)\s+/iu.test(original)
       ? "serving"
-      : parsed.rest || null,
+      : (parsed.quantity.unit ?? (parsed.rest || null)),
   };
 };
 

@@ -172,14 +172,270 @@
   "groundedQualifierLosses": 0,
   "grounderRevision": "b16bc63589f7413fc4fdbea79c18fdda60b52dde",
   "grounderSha256": "64560aca82794c56256db082da3d80a0fe396002ae5da930ac6d9a5d4c3dc1f9",
+  "measurements": {
+    "baseline": {
+      "costReservationMicroUsd": {
+        "maximum": 100000,
+        "measured": 1,
+        "median": 100000,
+        "p95": 100000,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": true,
+        "total": 100000,
+        "unavailable": 9
+      },
+      "estimatedSpendMicroUsd": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "fallbackInvocations": {
+        "maximum": 0,
+        "measured": 1,
+        "median": 0,
+        "p95": 0,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": true,
+        "total": 0,
+        "unavailable": 9
+      },
+      "inputTokens": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "internalPasses": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "knownSpendMicroUsd": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "latencyMilliseconds": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "latencySources": {
+        "client_wall": 0,
+        "provider_reported": 0,
+        "tool_wall": 0,
+        "unavailable": 10
+      },
+      "mixedLatencySources": false,
+      "outputTokens": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "providerInvocations": {
+        "maximum": 1,
+        "measured": 1,
+        "median": 1,
+        "p95": 1,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": true,
+        "total": 1,
+        "unavailable": 9
+      },
+      "providerLatencyMilliseconds": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      }
+    },
+    "candidate": {
+      "costReservationMicroUsd": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "estimatedSpendMicroUsd": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "fallbackInvocations": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "inputTokens": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "internalPasses": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "knownSpendMicroUsd": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "latencyMilliseconds": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "latencySources": {
+        "client_wall": 0,
+        "provider_reported": 0,
+        "tool_wall": 0,
+        "unavailable": 10
+      },
+      "mixedLatencySources": false,
+      "outputTokens": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "providerInvocations": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "providerLatencyMilliseconds": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      }
+    }
+  },
   "pairedCases": 0,
+  "pairedMinimumEvidenceRouting": {
+    "baseline": {
+      "grounded": {
+        "eligibleCases": 0,
+        "evaluatedCases": 0,
+        "falseRejections": 0,
+        "rate": null,
+        "unavailableCases": 0
+      },
+      "raw": {
+        "eligibleCases": 0,
+        "evaluatedCases": 0,
+        "falseRejections": 0,
+        "rate": null,
+        "unavailableCases": 0
+      },
+      "scope": "minimum-evidence-gate-projection"
+    },
+    "candidate": {
+      "grounded": {
+        "eligibleCases": 0,
+        "evaluatedCases": 0,
+        "falseRejections": 0,
+        "rate": null,
+        "unavailableCases": 0
+      },
+      "raw": {
+        "eligibleCases": 0,
+        "evaluatedCases": 0,
+        "falseRejections": 0,
+        "rate": null,
+        "unavailableCases": 0
+      },
+      "scope": "minimum-evidence-gate-projection"
+    }
+  },
   "reasons": [
     "Small synthetic smoke/regression corpus cannot establish representative quality.",
     "Every unmatched oracle fact needs source review before it is called unsupported.",
     "No paid-call or latency benefit is established by unmeasured values.",
     "Holdout strategy versions must be frozen before inspection; repeated tuning invalidates holdout."
   ],
-  "scorerSha256": "2d51ce6e7401000a0d24d2524e4fc3521242352355de02605deefc4cc000262a",
+  "scorerSha256": "516efa94a87513e2614d3c824a65e74c62053899969c78e4828572636cf4e96a",
   "split": "dev",
   "unmatchedGroundedFacts": 0,
   "usableCasesDelta": null

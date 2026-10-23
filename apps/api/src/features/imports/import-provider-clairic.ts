@@ -1,24 +1,12 @@
-import { Effect, Option, Schema } from "effect";
+import { Option, Schema } from "effect";
 
 import type {
   ClairicEvidenceText,
   ClairicSpanEncoding,
 } from "./import-clairic-evidence.js";
-import {
-  assembleClairicEvidenceText,
-  resolveClairicEvidenceSpan,
-} from "./import-clairic-evidence.js";
+import { resolveClairicEvidenceSpan } from "./import-clairic-evidence.js";
 import { normalizeClairicRecipePhrases } from "./import-clairic-normalization.js";
-import type { ImportCorrelationId } from "./import-observability.js";
-import type { ProviderDispatchGate } from "./import-provider-kernel.js";
-import {
-  failAfter,
-  ProviderName,
-  providerFailureFromStatus,
-} from "./import-provider-kernel.js";
-import { makeAccountedRecipeExtractor } from "./import-provider-recipe.js";
 import type { RecipeProviderOutcome } from "./import-provider-recipe.js";
-import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
 
 export const ExperimentalClairicRecipeModel = "@cf/cloudflare/clairic";
 export const experimentalClairicRecipeVersion = (
@@ -78,11 +66,6 @@ export const makeClairicRecipeRequest = (evidence: ClairicEvidenceText) => ({
   options: { return_state_text: true as const },
   state: evidence.state,
 });
-export interface ClairicRecipeTransport {
-  readonly run: (
-    body: ReturnType<typeof makeClairicRecipeRequest>
-  ) => Promise<Response>;
-}
 
 const Count = Schema.Int.pipe(
   Schema.check(
@@ -238,56 +221,3 @@ export const decodeClairicRecipeResponse = (
         value: normalized.value,
       };
 };
-
-/** Evaluation-only until span compatibility and paired recipe quality are measured. */
-export const makeExperimentalClairicRecipeExtractor = (input: {
-  readonly correlationId: ImportCorrelationId;
-  readonly dispatch: ProviderDispatchGate;
-  readonly transport: ClairicRecipeTransport;
-  readonly spanEncoding: ClairicSpanEncoding;
-}) =>
-  makeAccountedRecipeExtractor({
-    descriptor: {
-      model: ExperimentalClairicRecipeModel,
-      provider: ProviderName,
-      version: experimentalClairicRecipeVersion(input.spanEncoding),
-    },
-    dispatch: input.dispatch,
-    invoke: (request: RecipeEvidenceAssembly) =>
-      failAfter(
-        Effect.gen(function* invokeClairicRecipe() {
-          const evidence = assembleClairicEvidenceText(request.items);
-          const response = yield* Effect.tryPromise({
-            catch: () => "outcome_unknown" as const,
-            try: () => input.transport.run(makeClairicRecipeRequest(evidence)),
-          });
-          if (!response.ok) {
-            return {
-              _tag: "Failed" as const,
-              code: providerFailureFromStatus(response.status).code,
-            };
-          }
-          const raw = yield* Effect.tryPromise({
-            catch: () => "malformed_response" as const,
-            try: () => response.json(),
-          }).pipe(
-            Effect.flatMap(Schema.decodeUnknownEffect(Schema.Json)),
-            Effect.option
-          );
-          if (Option.isNone(raw)) {
-            return malformed;
-          }
-          return decodeClairicRecipeResponse(
-            raw.value,
-            evidence,
-            input.spanEncoding
-          );
-        }),
-        {
-          correlationId: input.correlationId,
-          providerStage: "recipe",
-          traceStore: undefined,
-        }
-      ),
-    prices: { inputMicroUsdPerToken: 0.1, outputMicroUsdPerToken: 0 },
-  });

@@ -147,6 +147,21 @@ const InterruptedResult = Schema.Struct({
   }),
   status: Schema.Literal("stopped_unknown"),
 });
+const NativeUnknownResult = Schema.Struct({
+  ledger: Schema.Struct({
+    dispatches: Schema.Array(
+      Schema.Struct({
+        actual_cost_micro_usd: Schema.NullOr(Count),
+        dispatch_id: Text,
+        maximum_cost_micro_usd: Count,
+        state: Text,
+      })
+    ),
+  }),
+  reason: Text,
+  result: Schema.optionalKey(Schema.Never),
+  status: Schema.Literal("stopped_unknown"),
+});
 const RestEnvelope = Schema.Struct({
   result: Schema.Json,
   success: Schema.Literal(true),
@@ -201,6 +216,86 @@ const interruptedOutput = (
       latencySource: unknown.latencyMs === null ? "unavailable" : latencySource,
       providerInvocations: unknown.providerInvocations,
     },
+    requestIdentity: "request_sha256",
+    status: "failed",
+    transportReceipt: receipt,
+  };
+};
+
+const nativeRequestIdentity = (
+  directory: string,
+  invocation: typeof EvaluationInvocation.Type
+): "request_sha256" | "dispatch_id_only" => {
+  let saved: string;
+  try {
+    saved = readFileSync(
+      path.join(
+        directory,
+        "bridge",
+        `${sha256(invocation.dispatchId)}.request.json`
+      ),
+      "utf-8"
+    );
+  } catch (error) {
+    const missing = Schema.decodeUnknownOption(
+      Schema.Struct({ code: Schema.Literal("ENOENT") })
+    )(error);
+    if (missing._tag === "Some") {
+      return "dispatch_id_only";
+    }
+    throw error;
+  }
+  const request = Schema.decodeUnknownSync(
+    Schema.Struct({ ...EvaluationInvocation.fields, requestSha256: Text })
+  )(JSON.parse(saved));
+  const publishedInvocation =
+    Schema.decodeUnknownSync(EvaluationInvocation)(request);
+  if (
+    request.requestSha256 !== sha256(JSON.stringify(invocation)) ||
+    request.requestSha256 !== sha256(JSON.stringify(publishedInvocation))
+  ) {
+    throw new Error(
+      "Unknown native receipt published request identity differs"
+    );
+  }
+  return "request_sha256";
+};
+
+const nativeUnknownOutput = (
+  receipt: Schema.Json,
+  invocation: typeof EvaluationInvocation.Type,
+  base: Omit<PersistedExtractionOutput, "status">,
+  directory: string
+): PersistedExtractionOutput | null => {
+  const decoded = Schema.decodeUnknownOption(NativeUnknownResult)(receipt);
+  if (decoded._tag === "None") {
+    return null;
+  }
+  const matches = decoded.value.ledger.dispatches.filter(
+    (dispatch) =>
+      dispatch.dispatch_id === invocation.dispatchId &&
+      dispatch.state === "settled_unknown"
+  );
+  const [dispatch] = matches;
+  if (
+    matches.length !== 1 ||
+    dispatch === undefined ||
+    dispatch.maximum_cost_micro_usd !== invocation.maximumCostMicroUsd ||
+    dispatch.actual_cost_micro_usd !== null
+  ) {
+    throw new Error(
+      "Unknown native receipt lacks the matching reserved dispatch"
+    );
+  }
+  return {
+    ...base,
+    failureCode: "provider_outcome_unknown",
+    measurements: {
+      ...unavailableMeasurements,
+      costReservationMicroUsd: dispatch.maximum_cost_micro_usd,
+      fallbackInvocations: 0,
+    },
+    requestIdentity: nativeRequestIdentity(directory, invocation),
     status: "failed",
     transportReceipt: receipt,
   };
@@ -249,12 +344,9 @@ const collectOutput = (
     throw error;
   }
   const receipt = Schema.decodeUnknownSync(Schema.Json)(JSON.parse(saved));
-  const interrupted = interruptedOutput(
-    receipt,
-    request.invocation,
-    base,
-    latencySource
-  );
+  const interrupted =
+    interruptedOutput(receipt, request.invocation, base, latencySource) ??
+    nativeUnknownOutput(receipt, request.invocation, base, directory);
   if (interrupted !== null) {
     return interrupted;
   }
@@ -301,6 +393,7 @@ const collectOutput = (
       failureCode: `http_${response.status}`,
       measurements,
       rawProviderResponse: response.body,
+      requestIdentity: "request_sha256",
       status: "failed",
     };
   }
@@ -311,6 +404,7 @@ const collectOutput = (
     measurements,
     rawCandidate,
     rawProviderResponse: response.body,
+    requestIdentity: "request_sha256",
     status: rawCandidate === null ? "failed" : "completed",
   };
 };

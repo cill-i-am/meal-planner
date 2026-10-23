@@ -1,6 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { Schema } from "effect";
 import { expect, it } from "vitest";
 
+import { EvaluationInvocation } from "./accounted-transport.js";
 import { readRun } from "./model.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -43,7 +50,7 @@ it("retains the checked-in stopped comparison evidence fingerprints", () => {
   }
 });
 
-it("replays the real interrupted receipt without inventing response, latency or spend, and rejects a changed request identity", () => {
+it("preserves reconciled and normal CLI unknown receipts without inventing provider response, latency, spend or external calls", () => {
   const receipt = readRun(fixture).outputs[0]?.transportReceipt;
   if (receipt === undefined) {
     throw new Error("Missing recorded reconciliation receipt");
@@ -94,8 +101,120 @@ it("replays the real interrupted receipt without inventing response, latency or 
       },
       rawCandidate: null,
       rawProviderResponse: null,
+      requestIdentity: "request_sha256",
       status: "failed",
     });
+    const nativeReceipt = {
+      ledger: Schema.decodeUnknownSync(Schema.Struct({ ledger: Schema.Json }))(
+        receipt
+      ).ledger,
+      reason: "Inspect persisted ledger; no automatic retry is authorized",
+      status: "stopped_unknown",
+    };
+    writeFileSync(receiptFile, JSON.stringify(nativeReceipt));
+    const nativeOutput = path.join(directory, "native-unknown.run.json");
+    cli([
+      "collect",
+      "--plan",
+      plan,
+      "--results",
+      directory,
+      "--out",
+      nativeOutput,
+    ]);
+    expect(readRun(nativeOutput).outputs[0]).toMatchObject({
+      failureCode: "provider_outcome_unknown",
+      measurements: {
+        costReservationMicroUsd: 100_000,
+        inputTokens: null,
+        internalPasses: null,
+        latencyMilliseconds: null,
+        providerInvocations: null,
+        providerSpendMicroUsd: { certainty: "unavailable", value: null },
+      },
+      rawCandidate: null,
+      rawProviderResponse: null,
+      requestIdentity: "dispatch_id_only",
+      status: "failed",
+      transportReceipt: nativeReceipt,
+    });
+    const invocation = Schema.decodeUnknownSync(
+      Schema.Struct({
+        requests: Schema.Array(
+          Schema.Struct({ invocation: Schema.NullOr(EvaluationInvocation) })
+        ),
+      })
+    )(JSON.parse(readFileSync(sourcePlan, "utf-8"))).requests.find(
+      (request) => request.invocation?.dispatchId === identity.dispatchId
+    )?.invocation;
+    if (invocation === undefined || invocation === null) {
+      throw new Error("Missing original invocation");
+    }
+    const bridge = path.join(directory, "bridge");
+    mkdirSync(bridge);
+    const publishedRequest = path.join(
+      bridge,
+      `${createHash("sha256").update(identity.dispatchId).digest("hex")}.request.json`
+    );
+    writeFileSync(
+      publishedRequest,
+      JSON.stringify({ ...invocation, requestSha256: identity.requestSha256 })
+    );
+    const publishedOutput = path.join(directory, "published-unknown.run.json");
+    cli([
+      "collect",
+      "--plan",
+      plan,
+      "--results",
+      directory,
+      "--out",
+      publishedOutput,
+    ]);
+    expect(readRun(publishedOutput).outputs[0]).toMatchObject({
+      measurements: {
+        costReservationMicroUsd: 100_000,
+        providerInvocations: null,
+      },
+      requestIdentity: "request_sha256",
+      transportReceipt: nativeReceipt,
+    });
+    writeFileSync(
+      publishedRequest,
+      JSON.stringify({
+        ...invocation,
+        body: { changed: "Same dispatch and reservation, different request" },
+        requestSha256: identity.requestSha256,
+      })
+    );
+    expect(() =>
+      cli([
+        "collect",
+        "--plan",
+        plan,
+        "--results",
+        directory,
+        "--out",
+        path.join(directory, "wrong-published.run.json"),
+      ])
+    ).toThrow("Unknown native receipt published request identity differs");
+    writeFileSync(
+      receiptFile,
+      JSON.stringify(nativeReceipt).replaceAll(
+        identity.dispatchId,
+        "wrong-dispatch"
+      )
+    );
+    expect(() =>
+      cli([
+        "collect",
+        "--plan",
+        plan,
+        "--results",
+        directory,
+        "--out",
+        path.join(directory, "wrong-native.run.json"),
+      ])
+    ).toThrow("Unknown native receipt lacks the matching reserved dispatch");
     writeFileSync(
       receiptFile,
       JSON.stringify(receipt).replaceAll(

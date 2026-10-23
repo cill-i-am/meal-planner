@@ -1,34 +1,24 @@
-import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { assembleClairicEvidenceText } from "./import-clairic-evidence.js";
 import {
-  correlationId,
-  localDispatchGate,
-} from "./import-provider-adapters.test-fixture.js";
-import {
   decodeClairicRecipeResponse,
-  makeExperimentalClairicRecipeExtractor,
+  makeClairicRecipeRequest,
 } from "./import-provider-clairic.js";
-import type { ProviderDispatchGate } from "./import-provider-kernel.js";
-import type { RecipeEvidenceAssembly } from "./import-recipe-extractor.js";
+import type { RecipeEvidenceItem } from "./import-recipe-extractor.js";
+import { groundRecipeCandidate } from "./import-recipe-grounding.js";
 
-const assembly: RecipeEvidenceAssembly = {
-  evidenceFingerprint: "a".repeat(64),
-  generation: 1 as never,
-  importId: "clairic-eval-only" as never,
-  items: [
-    {
-      artifactReference: "private:fixture",
-      evidenceId: "transcript",
-      kind: "transcript",
-      origin: "creator_provided",
-      value:
-        "Onion soup\n2 onions, chopped\nCook the onions for 10 minutes.\nServes 4",
-    },
-  ],
-};
-const evidence = assembleClairicEvidenceText(assembly.items);
+const items: readonly RecipeEvidenceItem[] = [
+  {
+    artifactReference: "private:fixture",
+    evidenceId: "transcript",
+    kind: "transcript",
+    origin: "creator_provided",
+    value:
+      "Onion soup\n2 onions, chopped\nCook the onions for 10 minutes.\nServes 4",
+  },
+];
+const evidence = assembleClairicEvidenceText(items);
 const textAnswer = (value: string) => ({
   span: [
     evidence.state.indexOf(value),
@@ -69,46 +59,27 @@ const response = () => ({
   },
 });
 
-describe("experimental Clairic recipe adapter", () => {
-  it("uses the common accounting boundary and retains structured grounded values", async () => {
-    const reservations: string[] = [];
-    const costs: object[] = [];
-    const dispatch: ProviderDispatchGate = {
-      run: (request) => {
-        reservations.push(request.dispatchId);
-        return request.invoke.pipe(
-          Effect.tap(({ cost }) =>
-            Effect.sync(() => {
-              costs.push(cost);
-            })
-          ),
-          Effect.map(({ value }) => value)
-        );
-      },
-    };
-    const requests: object[] = [];
-    const extractor = makeExperimentalClairicRecipeExtractor({
-      correlationId,
-      dispatch,
-      spanEncoding: "unicode-code-points",
-      transport: {
-        run: (body) => {
-          requests.push(body);
-          return Promise.resolve(Response.json(response()));
-        },
-      },
-    });
-    const output = await Effect.runPromise(extractor.extract(assembly));
-    expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({
+describe("experimental Clairic recipe request and decoder", () => {
+  it("retains source phrases and metering for evaluation through the common grounder", () => {
+    expect(makeClairicRecipeRequest(evidence)).toMatchObject({
       model: "clairic",
       options: { return_state_text: true },
       state: evidence.state,
     });
-    expect(reservations).toEqual([
-      `recipe:${assembly.importId}:1:${assembly.evidenceFingerprint}`,
-    ]);
-    expect(costs).toEqual([{ _tag: "Known", actualCostMicroUsd: 66 }]);
+    const decoded = decodeClairicRecipeResponse(
+      response(),
+      evidence,
+      "unicode-code-points"
+    );
+    expect(decoded).toMatchObject({
+      _tag: "Decoded",
+      inputTokens: 655,
+      outputTokens: 0,
+    });
+    if (decoded._tag !== "Decoded") {
+      throw new Error("Expected a source-supported recipe response");
+    }
+    const output = groundRecipeCandidate(decoded.value, items);
     expect(output.recipe.ingredients?.[0]).toMatchObject({
       name: "onions",
       original: "2 onions, chopped",
@@ -116,14 +87,6 @@ describe("experimental Clairic recipe adapter", () => {
       quantity: { max: null, unit: null, value: 2 },
     });
     expect(output.recipe.instructions?.[0]?.duration).toEqual({ seconds: 600 });
-    expect(output.usage).toMatchObject({
-      inputTokens: 655,
-      modelCalls: 1,
-      outputTokens: 0,
-    });
-    expect(extractor.descriptor.version).toBe(
-      "experimental-clairic-codepoints-v1"
-    );
   });
 
   it("respects null even when the provider attaches a confident guess and span", () => {
@@ -149,32 +112,6 @@ describe("experimental Clairic recipe adapter", () => {
     if (result._tag === "Decoded") {
       expect(result.value.name).toBeNull();
     }
-  });
-
-  it("preserves an explicitly authorized recovery dispatch and distinguishes span strategies", async () => {
-    const ids: string[] = [];
-    const dispatch: ProviderDispatchGate = {
-      run: (request) => {
-        ids.push(request.dispatchId);
-        return request.invoke.pipe(Effect.map(({ value }) => value));
-      },
-    };
-    const factory = (
-      spanEncoding: "unicode-code-points" | "utf16-code-units"
-    ) =>
-      makeExperimentalClairicRecipeExtractor({
-        correlationId,
-        dispatch,
-        spanEncoding,
-        transport: { run: () => Promise.resolve(Response.json(response())) },
-      });
-    const extractor = factory("unicode-code-points");
-    const dispatchId = `recipe:${assembly.importId}:1:${assembly.evidenceFingerprint}:recovery:2`;
-    await Effect.runPromise(extractor.extract({ ...assembly, dispatchId }));
-    expect(ids).toEqual([dispatchId]);
-    expect(factory("utf16-code-units").descriptor.version).not.toBe(
-      extractor.descriptor.version
-    );
   });
 
   it.each([
@@ -228,30 +165,10 @@ describe("experimental Clairic recipe adapter", () => {
     ).toEqual({ _tag: "Failed", code: "malformed_response" });
   });
 
-  it("does not fallback or repeat after an uncertain transport failure", async () => {
-    let invocations = 0;
-    const extractor = makeExperimentalClairicRecipeExtractor({
-      correlationId,
-      dispatch: localDispatchGate,
-      spanEncoding: "unicode-code-points",
-      transport: {
-        run: () => {
-          invocations += 1;
-          return Promise.reject(new Error("private-provider-canary"));
-        },
-      },
-    });
-    const exit = await Effect.runPromiseExit(extractor.extract(assembly));
-    expect(invocations).toBe(1);
-    expect(exit._tag).toBe("Failure");
-    expect(JSON.stringify(exit)).toContain("outcome_unknown");
-    expect(JSON.stringify(exit)).not.toContain("private-provider-canary");
-  });
-
   it("returns a failed result when a source-supported number cannot fit the recipe schema", () => {
     const value = `Cook at ${"9".repeat(400)} C.`;
     const oversized = assembleClairicEvidenceText(
-      assembly.items.map((item) => ({ ...item, value }))
+      items.map((item) => ({ ...item, value }))
     );
     const raw = response();
     expect(

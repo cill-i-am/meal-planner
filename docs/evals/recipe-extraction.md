@@ -61,15 +61,22 @@ dietary claims. `completeIngredientQuantities` additionally requires the whole
 amount/range/unit tuple to match: a correct numeric amount with the wrong unit is
 not a correct quantity.
 
-Ingredient rows are matched one-to-one before nested fields are compared. Exact
-original phrases, ingredient names and component groups determine correspondence;
-duplicate rows remain extra assertions. A number that exists elsewhere in the
-source receives no credit when assigned to the wrong ingredient or step.
+Ingredient rows are matched one-to-one before nested fields are compared. An
+ingredient name or source-reviewed name alias must match; a declared group must
+also agree. Original phrases and groups disambiguate matching names, and an
+ambiguous tie receives no row credit. Duplicate rows remain extra assertions.
+Instructions require matching text or a source-reviewed alias; array position
+cannot establish identity. A number that exists elsewhere in the source receives
+no credit when assigned to an unrelated ingredient or step.
 Generated step numbers are excluded from source-fact counts. Relative instruction
 order is evaluated only between identity-matched clauses; unrelated instructions
 receive no ordinal credit. Protected negation/condition/optionality phrases are
 checked separately. Missing clauses reduce recall; retaining an asserted
 clause while dropping its qualifier is a qualifier error.
+Qualifier diagnostics can recognize a shortened source clause independently of
+row alignment; this recognition never grants its quantity, duration or temperature
+credit. Numeric association mismatches also require source adjudication when an
+unlisted paraphrase may explain the identity mismatch.
 
 Matching normalizes case, whitespace, terminal sentence punctuation and explicit
 unit aliases. Numeric fractions are evaluated through the candidate's numeric
@@ -88,6 +95,19 @@ passes domain blockers, and needs no oracle corrections. The reported usable rat
 uses all cases in the selected split, including non-recipes and unavailable
 evidence. Read it alongside coverage and acquisition availability, not as the
 proportion of all real videos that can become recipes.
+
+`minimumEvidenceRouting` reports projected false rejection separately for raw and
+grounded candidates. It follows the production minimum-evidence gate: at least
+one ingredient and one instruction, with no title requirement. An oracle case is
+eligible only when the acquired evidence witnesses an expected ingredient's
+name and original phrase plus an expected instruction. A completed, schema-valid
+output that fails that gate is a projected false rejection. Counts include
+eligible, evaluated and unavailable cases; the rate divides rejections by
+evaluated eligible cases and is null when none were evaluated. Failed, missing,
+skipped and malformed outputs remain unavailable. Acquisition gaps remain outside
+this denominator. This is a gate projection, not an observed end-to-end routing
+event or a measured `not_recipe` classifier decision. Paired reports calculate
+this projection on comparable pairs only.
 
 Acquisition reports intended versus available source facts and evidence items.
 Extraction recall excludes facts whose witness was not acquired. An output that
@@ -110,8 +130,21 @@ estimated even when the accounting ledger settles an exact tariff calculation.
 An interrupted transport receipt can record one attempted invocation while
 provider acceptance remains unknown. It stays separate from `rawProviderResponse`;
 unmeasured failure latency and spend remain null.
+Normal CLI `stopped_unknown` receipts retain the matching dispatch's reservation
+and full native ledger receipt. An accounting claim alone does not establish an
+external provider call, so the invocation count stays null unless a separate
+attempt receipt proves it. The collector verifies a published bridge request's
+body hash when that file exists. Without it, `requestIdentity: dispatch_id_only`
+explicitly limits the receipt to the dispatch and reservation; it does not prove
+the frozen request body was published. A checked request hash is recorded as
+`request_sha256`. Older captures lacking this optional field remain unchanged.
 Measured subtotals include measured/unavailable counts. A reservation does not
 become provider spend, and absent provider usage does not become zero tokens.
+Distributions include nearest-rank p95 over measured values only, using
+`ceil(0.95 × n)` in the sorted observations. No observations produce null.
+`p95SmallSample` is true below twenty observations, where this p95 equals the
+maximum; a false flag does not establish statistical reliability. Latency-source
+counts and `mixedLatencySources` expose measurements from different clocks.
 
 Ingredient IDs and step ID references are excluded from fact scoring because
 they are adapter bookkeeping. Instruction technique classification is outside

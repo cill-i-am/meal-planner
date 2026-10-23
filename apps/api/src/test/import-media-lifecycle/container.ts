@@ -12,8 +12,13 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { makeTikTokMediaContainerRuntime } from "../../features/imports/import-media-container.runtime.js";
 import { makeTemporaryArtifactStore } from "../../features/imports/import-media-process.js";
 import { decodeTikTokMediaSession } from "../../features/imports/import-source-session.js";
+import {
+  LifecycleFixtureByteCount,
+  LifecycleFixtureDurationSeconds,
+  lifecycleFixtureProbe,
+} from "./fixture.js";
 
-const bytes = new Uint8Array(2 * 1024 * 1024).fill(77);
+const bytes = new Uint8Array(LifecycleFixtureByteCount).fill(77);
 const runtime = makeTikTokMediaContainerRuntime({
   acquirer: {
     acquire: (source, _limits, root) =>
@@ -23,7 +28,7 @@ const runtime = makeTikTokMediaContainerRuntime({
         return {
           audioStreams: [{ codec: "aac", index: 1 }],
           bytes: bytes.length,
-          durationSeconds: 12,
+          durationSeconds: LifecycleFixtureDurationSeconds,
           filePath,
           metadata: source.metadata,
           sha256: createHash("sha256").update(bytes).digest("hex"),
@@ -41,7 +46,7 @@ const runtime = makeTikTokMediaContainerRuntime({
           return {
             stderrBytes: 0,
             stdout: new TextEncoder().encode(
-              JSON.stringify({ streams: [{ height: 720, width: 1280 }] })
+              JSON.stringify(lifecycleFixtureProbe(args))
             ),
           };
         }

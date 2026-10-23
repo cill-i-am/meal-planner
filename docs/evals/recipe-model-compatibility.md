@@ -201,9 +201,10 @@ continuing without a classifier. Production therefore keeps no Clef gate.
 The production change prices validated positive input/zero-output usage instead
 of treating it as unknown. Missing or zero/zero usage remains unknown. The
 [recipe provider](../../apps/api/src/features/imports/import-provider-recipe.ts)
-exports its exact request builder and response decoder for comparison and shares
-its existing accounting/replay/grounding boundary with the explicit
-[experimental Clairic adapter](../../apps/api/src/features/imports/import-provider-clairic.ts).
+exports its exact request builder and response decoder for comparison. The
+[Clairic request and decoder](../../apps/api/src/features/imports/import-provider-clairic.ts)
+are exercised by the evaluation harness through its native accounting runner and
+the same independent grounding checks. There is no unused Clairic runtime factory.
 Normal and recovery composition still instantiate Llama. No production feature
 flag or fallback automatically selects Clairic or Clef.
 
@@ -211,9 +212,9 @@ Clairic text assembly preserves source bytes and maps spans locally. Null guesse
 changed/truncated return text, list cardinality/order/overlap failures and partial
 words are rejected. Structured normalization uses only locally supported phrases;
 fractional duration or ambiguous temperature ranges remain unresolved. Review
-found partial-number and split-surrogate errors in the first implementation;
-regressions now cover both fixes. Final independent PR review remains a separate
-gate. Source grounding still cannot certify the semantic role of every exact
+found partial-number, negated-optional, yield-unit and split-surrogate errors in
+the first implementation; regressions now cover those fixes. Source grounding
+still cannot certify the semantic role of every exact
 phrase, as probe 02 demonstrates.
 
 The [paired extraction evaluation](recipe-extraction.md) planned three

@@ -258,6 +258,105 @@ it("interruption settles the dispatched request as unknown before closing the le
   }
 });
 
+it.each(["write", "rename"] as const)(
+  "cancellation during request %s joins publication before settling unknown and closing D1",
+  async (phase) => {
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), "evaluation-transport-publication-")
+    );
+    const options = { rootDirectory, runId: "publication-test" };
+    const staged = Promise.withResolvers<null>();
+    const release = Promise.withResolvers<null>();
+    const controller = new AbortController();
+    let publicationSignal: AbortSignal | undefined;
+    const transport = await createAccountedEvaluationTransport(options, {
+      rename: async (...args) => {
+        if (phase === "rename") {
+          staged.resolve(null);
+          await release.promise;
+        }
+        await rename(...args);
+      },
+      writeFile: async (file, data, writeOptions) => {
+        publicationSignal = Schema.decodeUnknownSync(
+          Schema.Struct({ signal: Schema.instanceOf(AbortSignal) })
+        )(writeOptions).signal;
+        await writeFile(file, data, writeOptions);
+        if (phase === "write") {
+          staged.resolve(null);
+          await release.promise;
+        }
+      },
+    });
+    const files = evaluationBridgePaths(rootDirectory, "cancel-publication");
+    try {
+      const pending = Effect.runPromiseExit(
+        transport.invoke(request("cancel-publication")),
+        { signal: controller.signal }
+      );
+      // The real file is staged, but the bridge cannot observe a request yet.
+      await staged.promise;
+      await expect(readFile(files.request)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      expect(publicationSignal).toBeDefined();
+      controller.abort();
+      const closing = transport.close();
+      await expect.poll(() => publicationSignal?.aborted).toBe(true);
+      const beforeRelease = await Effect.runPromise(transport.readLedger());
+      expect(beforeRelease.dispatches).toMatchObject([
+        { invocation_generation: 1, state: "invoking" },
+      ]);
+      expect(beforeRelease.budget).toMatchObject([
+        { reserved_micro_usd: 100_000, state: "invoking" },
+      ]);
+      await expect(
+        readFile(path.join(rootDirectory, "transport.lock"))
+      ).resolves.toBeDefined();
+      release.resolve(null);
+      const interrupted = await pending;
+      expect(interrupted._tag).toBe("Failure");
+      await closing;
+      await expect(
+        readFile(path.join(rootDirectory, "transport.lock"))
+      ).rejects.toMatchObject({ code: "ENOENT" });
+      // A cancelled staged write must never publish. An already-submitted
+      // rename must finish before shutdown, while invocation is still owned.
+      await (phase === "write"
+        ? expect(readFile(files.request)).rejects.toMatchObject({
+            code: "ENOENT",
+          })
+        : expect(readFile(files.request)).resolves.toBeDefined());
+      const reopened = await createAccountedEvaluationTransport(options);
+      try {
+        const ledger = await Effect.runPromise(reopened.readLedger());
+        expect(ledger.dispatches).toMatchObject([
+          {
+            actual_cost_micro_usd: null,
+            invocation_generation: 1,
+            state: "settled_unknown",
+          },
+        ]);
+        expect(ledger.budget).toMatchObject([
+          {
+            reserved_micro_usd: 100_000,
+            settled_micro_usd: 0,
+            state: "poisoned",
+          },
+        ]);
+      } finally {
+        await reopened.close();
+      }
+    } finally {
+      release.resolve(null);
+      controller.abort();
+      await transport.close();
+      await rm(rootDirectory, { force: true, recursive: true });
+    }
+  },
+  15_000
+);
+
 it("the CLI exits nonzero and records stopped_unknown when a provider response has no usage", async () => {
   const rootDirectory = await mkdtemp(
     path.join(tmpdir(), "evaluation-transport-cli-")

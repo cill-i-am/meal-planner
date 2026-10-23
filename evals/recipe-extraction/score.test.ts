@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { groundRecipeCandidate } from "../../apps/api/src/features/imports/import-recipe-grounding.js";
 import { RecipeDraftContent } from "../../packages/recipe-domain/src/content.js";
 import {
   PersistedExtractionRun,
@@ -12,7 +13,13 @@ import {
   unavailableMeasurements,
 } from "./model.js";
 import type { PersistedExtractionOutput } from "./model.js";
-import { compareRuns, scoreOutput, scoreRecipe, scoreRun } from "./score.js";
+import {
+  compareRuns,
+  measuredDistribution,
+  scoreOutput,
+  scoreRecipe,
+  scoreRun,
+} from "./score.js";
 import { validateCorpus } from "./validate.js";
 
 const corpus = readCorpus();
@@ -193,6 +200,64 @@ describe("frozen recipe extraction evaluation", () => {
     expect(score.usable).toBe(false);
   });
 
+  it("never grants quantities to an unrelated ingredient through its group or original phrase", () => {
+    const item = caseNamed("components");
+    for (const retainOriginal of [false, true]) {
+      const ingredients =
+        item.expected.ingredients?.map((ingredient) => ({
+          ...ingredient,
+          name: "sugar",
+          original: retainOriginal
+            ? ingredient.original
+            : `${ingredient.quantity?.value} g sugar`,
+        })) ?? null;
+      const score = scoreRecipe(
+        item,
+        parseRecipe({ ...item.expected, ingredients })
+      );
+      expect(score.fields["quantity"]).toMatchObject({
+        falseNegative: 2,
+        falsePositive: 2,
+        truePositive: 0,
+      });
+      expect(score.completeIngredientQuantities.truePositive).toBe(0);
+      expect(score.numericAssociationErrors).toHaveLength(2);
+    }
+  });
+
+  it("does not let an original phrase override a conflicting component group", () => {
+    const item = caseNamed("components");
+    const ingredients =
+      item.expected.ingredients?.map((ingredient, index) => ({
+        ...ingredient,
+        group: item.expected.ingredients?.[1 - index]?.group,
+      })) ?? null;
+    const score = scoreRecipe(
+      item,
+      parseRecipe({ ...item.expected, ingredients })
+    );
+    expect(score.completeIngredientQuantities.truePositive).toBe(0);
+    expect(score.numericAssociationErrors).toHaveLength(2);
+  });
+
+  it("never grants source-present duration or temperature to an unrelated instruction at the same position", () => {
+    const item = caseNamed("caption-complete");
+    const instructions =
+      item.expected.instructions?.map((instruction) => ({
+        ...instruction,
+        text: "Throw away the food.",
+      })) ?? null;
+    const score = scoreRecipe(
+      item,
+      parseRecipe({ ...item.expected, instructions })
+    );
+    expect(score.fields["step_duration"]?.truePositive).toBe(0);
+    expect(score.fields["step_duration"]?.falseNegative).toBeGreaterThan(0);
+    expect(score.fields["temperature"]?.truePositive).toBe(0);
+    expect(score.fields["temperature"]?.falseNegative).toBeGreaterThan(0);
+    expect(score.numericAssociationErrors).toHaveLength(2);
+  });
+
   it("matches ingredient reorderings one-to-one and penalizes duplicate rows", () => {
     const item = caseNamed("components");
     const rows = item.expected.ingredients;
@@ -299,6 +364,144 @@ describe("frozen recipe extraction evaluation", () => {
     ).toThrow("Contradictory spend certainty");
   });
 
+  it("reports nearest-rank p95, including zero and the small-sample maximum boundary", () => {
+    expect(measuredDistribution([null, undefined])).toMatchObject({
+      measured: 0,
+      p95: null,
+      p95SmallSample: null,
+      unavailable: 2,
+    });
+    expect(measuredDistribution([0])).toMatchObject({
+      measured: 1,
+      p95: 0,
+      p95Method: "nearest_rank",
+      p95SmallSample: true,
+    });
+    const twenty = Array.from({ length: 20 }, (_, index) => index + 1);
+    expect(measuredDistribution(twenty.slice(0, 19))).toMatchObject({
+      p95: 19,
+      p95SmallSample: true,
+    });
+    expect(
+      measuredDistribution([null, ...twenty.toReversed(), undefined])
+    ).toMatchObject({
+      measured: 20,
+      median: 10.5,
+      p95: 19,
+      p95SmallSample: false,
+      unavailable: 2,
+    });
+    const run = scoreRun(
+      corpus,
+      runWith(
+        ["caption-complete", "fractions"].map((id, index) => ({
+          ...outputFor(id),
+          measurements: {
+            ...unavailableMeasurements,
+            latencyMilliseconds: index === 0 ? 10 : 20,
+            latencySource:
+              index === 0 ? ("client_wall" as const) : ("tool_wall" as const),
+          },
+        }))
+      ),
+      "dev"
+    );
+    expect(run.measurements.latencyMilliseconds).toMatchObject({
+      measured: 2,
+      p95: 20,
+      p95SmallSample: true,
+    });
+    expect(run.measurements.mixedLatencySources).toBe(true);
+    expect(run.measurements.providerLatencyMilliseconds.p95).toBeNull();
+  });
+
+  it("measures minimum-evidence false rejection only for completed outputs with an acquired oracle recipe core", () => {
+    const item = caseNamed("caption-complete");
+    const output = outputFor(item.id);
+    const empty = caseNamed("not-a-recipe").expected;
+    for (const recipe of [empty, { ...item.expected, instructions: null }]) {
+      const run = scoreRun(
+        corpus,
+        runWith([
+          { ...output, rawCandidate: Schema.encodeSync(Schema.Json)(recipe) },
+        ]),
+        "dev"
+      );
+      expect(run.minimumEvidenceRouting.raw).toEqual({
+        eligibleCases: 8,
+        evaluatedCases: 1,
+        falseRejections: 1,
+        rate: 1,
+        unavailableCases: 7,
+      });
+    }
+    expect(
+      scoreOutput(caseNamed("sparse-speech"), outputFor("sparse-speech"))
+        .minimumEvidenceRouting
+    ).toMatchObject({ eligible: true, raw: "draft" });
+    for (const id of [
+      "silent-unobserved",
+      "late-evidence-missing",
+      "title-only",
+      "not-a-recipe",
+    ]) {
+      expect(
+        scoreOutput(caseNamed(id), outputFor(id)).minimumEvidenceRouting
+          .eligible
+      ).toBe(false);
+    }
+    const unavailable = [
+      [],
+      [
+        {
+          ...output,
+          failureCode: "provider_outcome_unknown",
+          rawCandidate: null,
+          status: "failed" as const,
+        },
+      ],
+      [{ ...output, rawCandidate: null, status: "skipped" as const }],
+      [{ ...output, rawCandidate: { name: "Invalid partial schema" } }],
+    ];
+    for (const outputs of unavailable) {
+      expect(
+        scoreRun(corpus, runWith(outputs), "dev").minimumEvidenceRouting.raw
+      ).toEqual({
+        eligibleCases: 8,
+        evaluatedCases: 0,
+        falseRejections: 0,
+        rate: null,
+        unavailableCases: 8,
+      });
+    }
+  });
+
+  it("separates raw and grounded minimum-evidence gate projections", () => {
+    const run = scoreRun(
+      corpus,
+      {
+        ...runWith([outputFor("caption-complete")]),
+        grounderSha256: "scripted-dropping-grounder",
+      },
+      "dev",
+      {
+        apply: (candidate, evidence) => {
+          const grounded = groundRecipeCandidate(candidate, evidence);
+          return {
+            ...grounded,
+            recipe: { ...grounded.recipe, instructions: null },
+          };
+        },
+        sha256: "scripted-dropping-grounder",
+      }
+    );
+    expect(run.minimumEvidenceRouting.scope).toBe(
+      "minimum-evidence-gate-projection"
+    );
+    expect(run.minimumEvidenceRouting.raw.falseRejections).toBe(0);
+    expect(run.minimumEvidenceRouting.grounded.falseRejections).toBe(1);
+  });
+
   it("excludes missing runs from paired comparisons and reports review-required rather than a fabricated winner", () => {
     const baseline = scoreRun(
       corpus,
@@ -315,6 +518,12 @@ describe("frozen recipe extraction evaluation", () => {
     expect(comparison.pairedCases).toBe(0);
     expect(comparison.correctionOperationsDelta).toBeNull();
     expect(comparison.usableCasesDelta).toBeNull();
+    expect(
+      comparison.measurements.candidate.latencyMilliseconds.p95
+    ).toBeNull();
+    expect(
+      comparison.pairedMinimumEvidenceRouting.candidate.raw.rate
+    ).toBeNull();
     expect(
       Object.values(comparison.fields).every((field) => field.paired === 0)
     ).toBe(true);

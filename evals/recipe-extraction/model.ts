@@ -94,6 +94,9 @@ export const PersistedExtractionOutput = Schema.Struct({
   measurements: ExtractionMeasurements,
   rawCandidate: Schema.NullOr(Schema.Json),
   rawProviderResponse: Schema.NullOr(Schema.Json),
+  requestIdentity: Schema.optionalKey(
+    Schema.Literals(["request_sha256", "dispatch_id_only"])
+  ),
   status: Schema.Literals(["completed", "failed", "skipped"]),
   transportReceipt: Schema.optionalKey(Schema.Json),
 });
