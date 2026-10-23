@@ -1,0 +1,85 @@
+{
+  "body": {
+    "model": "clef",
+    "state": {
+      "cases": {
+        "clear_recipe": {
+          "caption": "Carrot soup: 200 g carrots, 500 ml water. Chop carrots. Simmer in water for 15 minutes.",
+          "media_not_yet_inspected": true
+        },
+        "sparse_cooking": {
+          "caption": "Dinner is ready! Watch how I make it 🍳 #cooking",
+          "media_not_yet_inspected": true
+        },
+        "clearly_unrelated": {
+          "caption": "This clip explains how to replace a bicycle tyre. No food or cooking is shown or discussed.",
+          "media_not_yet_inspected": false
+        },
+        "unknown": {
+          "caption": "Part two. Sound on.",
+          "media_not_yet_inspected": true
+        }
+      }
+    },
+    "questions": {
+      "clear_recipe": {
+        "type": "choice",
+        "instructions": "Classify only state.cases.clear_recipe. Consider only its own caption and media_not_yet_inspected flag. Choose uncertain if uninspected media might supply recipe details.",
+        "criteria": {
+          "recipe": "The supplied text itself contains ingredients and cooking instructions.",
+          "unrelated": "The supplied evidence explicitly establishes an unrelated subject; no uninspected media could plausibly contain recipe information.",
+          "uncertain": "Information is insufficient; recipe information may occur in uninspected media. Missing quantities alone is not proof of unrelated content."
+        }
+      },
+      "sparse_cooking": {
+        "type": "choice",
+        "instructions": "Classify only state.cases.sparse_cooking. Consider only its own caption and media_not_yet_inspected flag. Choose uncertain if uninspected media might supply recipe details.",
+        "criteria": {
+          "recipe": "The supplied text itself contains ingredients and cooking instructions.",
+          "unrelated": "The supplied evidence explicitly establishes an unrelated subject; no uninspected media could plausibly contain recipe information.",
+          "uncertain": "Information is insufficient; recipe information may occur in uninspected media. Missing quantities alone is not proof of unrelated content."
+        }
+      },
+      "clearly_unrelated": {
+        "type": "choice",
+        "instructions": "Classify only state.cases.clearly_unrelated. Consider only its own caption and media_not_yet_inspected flag. Choose uncertain if uninspected media might supply recipe details.",
+        "criteria": {
+          "recipe": "The supplied text itself contains ingredients and cooking instructions.",
+          "unrelated": "The supplied evidence explicitly establishes an unrelated subject; no uninspected media could plausibly contain recipe information.",
+          "uncertain": "Information is insufficient; recipe information may occur in uninspected media. Missing quantities alone is not proof of unrelated content."
+        }
+      },
+      "unknown": {
+        "type": "choice",
+        "instructions": "Classify only state.cases.unknown. Consider only its own caption and media_not_yet_inspected flag. Choose uncertain if uninspected media might supply recipe details.",
+        "criteria": {
+          "recipe": "The supplied text itself contains ingredients and cooking instructions.",
+          "unrelated": "The supplied evidence explicitly establishes an unrelated subject; no uninspected media could plausibly contain recipe information.",
+          "uncertain": "Information is insufficient; recipe information may occur in uninspected media. Missing quantities alone is not proof of unrelated content."
+        }
+      },
+      "sparse_safe_to_reject": {
+        "type": "noul",
+        "instructions": "Is it justified to reject state.cases.sparse_cooking as definitely unrelated to recipes before inspecting its media?",
+        "criteria": {
+          "true": "Explicit evidence proves unrelated content.",
+          "false": "It could contain a recipe; further inspection is needed."
+        }
+      },
+      "unknown_completeness": {
+        "type": "score",
+        "instructions": "Rate how much usable recipe information the text in state.cases.unknown supplies. Do not use the other cases.",
+        "criteria": [
+          "No ingredients or cooking instructions are stated.",
+          "Some ingredients or cooking instructions, insufficient for a draft.",
+          "Ingredients and cooking instructions support a draft."
+        ]
+      }
+    }
+  },
+  "dispatchId": "recipe-clef-compatibility-v1",
+  "inputMicroUsdPerToken": 0.24,
+  "maximumCostMicroUsd": 10000,
+  "model": "@cf/cloudflare/clef",
+  "outputMicroUsdPerToken": 0
+}

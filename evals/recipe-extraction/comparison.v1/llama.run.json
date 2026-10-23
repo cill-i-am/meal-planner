@@ -1,0 +1,109 @@
+{
+  "acceptanceSha256": "d47f83f507beddd49b8275c7b19c50e6052824f372646f61b9c3037cae2dd735",
+  "corpusSha256": "e3af1b51792b1bf83ab3b6e886f2e817a9a63d2ea530aae3168490ca926e6114",
+  "corpusVersion": "recipe-extraction-v1",
+  "descriptor": {
+    "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "provider": "cloudflare-workers-ai",
+    "version": "installed-workers-ai-json-schema-v1"
+  },
+  "execution": "live_provider",
+  "grounderRevision": "b16bc63589f7413fc4fdbea79c18fdda60b52dde",
+  "grounderSha256": "64560aca82794c56256db082da3d80a0fe396002ae5da930ac6d9a5d4c3dc1f9",
+  "outputs": [
+    {
+      "caseId": "caption-complete",
+      "evidenceSha256": "ceaec8e1d055252df28233e448f28227e378c5118e787ca674cedf9e2f4e4e41",
+      "failureCode": "provider_outcome_unknown",
+      "measurements": {
+        "costReservationMicroUsd": 100000,
+        "fallbackInvocations": 0,
+        "inputTokens": null,
+        "internalPasses": null,
+        "latencyMilliseconds": null,
+        "latencySource": "unavailable",
+        "outputTokens": null,
+        "providerInvocations": 1,
+        "providerLatencyMilliseconds": null,
+        "providerSpendMicroUsd": {
+          "certainty": "unavailable",
+          "value": null
+        }
+      },
+      "rawCandidate": null,
+      "rawProviderResponse": null,
+      "status": "failed",
+      "transportReceipt": {
+        "status": "stopped_unknown",
+        "dispatchId": "recipe-dev-paired-20261023:llama:caption-complete",
+        "requestSha256": "9f021dd3b4d08ed129ddd1f4da619d2b0c281ab691fd1d4e8c2f32d8c114d967",
+        "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        "reason": "external_transport_failed_without_response_then_process_interrupted",
+        "result": {
+          "_tag": "InterruptedUnknown",
+          "dispatchId": "recipe-dev-paired-20261023:llama:caption-complete",
+          "requestSha256": "9f021dd3b4d08ed129ddd1f4da619d2b0c281ab691fd1d4e8c2f32d8c114d967",
+          "cost": {
+            "_tag": "Unknown"
+          },
+          "reservationMicroUsd": 100000,
+          "usage": null,
+          "latencyMs": null,
+          "providerInvocations": 1,
+          "providerAcceptance": "unknown"
+        },
+        "reconciliation": {
+          "completedAt": "2026-10-23T10:21:24.892Z",
+          "originalProcessId": 76047,
+          "originalProcessAlive": false,
+          "method": "ProviderAccountingRepository.settleUnknown",
+          "externalCallAttempted": true,
+          "externalCallEvidence": "Operator reported one connected Cloudflare invocation that failed without a JSON response; no output, usage, exact error text or measured latency retained.",
+          "noRetryAuthorized": true
+        },
+        "ledger": {
+          "budget": [
+            {
+              "accounting_scope": "recipe-import",
+              "budget_cap_micro_usd": 10000000,
+              "created_at": "2026-10-23T10:13:23.023Z",
+              "invoking_dispatch_id": null,
+              "poison_dispatch_id": "recipe-dev-paired-20261023:llama:caption-complete",
+              "reserved_micro_usd": 100000,
+              "settled_micro_usd": 0,
+              "state": "poisoned",
+              "updated_at": "2026-10-23T10:21:24.849Z"
+            }
+          ],
+          "dispatches": [
+            {
+              "accounting_scope": "recipe-import",
+              "actual_cost_micro_usd": null,
+              "completed_at": "2026-10-23T10:21:24.849Z",
+              "created_at": "2026-10-23T10:13:23.076Z",
+              "dispatch_id": "recipe-dev-paired-20261023:llama:caption-complete",
+              "invocation_expires_at": null,
+              "invocation_generation": 1,
+              "invocation_started_at": "2026-10-23T10:13:23.076Z",
+              "maximum_cost_micro_usd": 100000,
+              "provider_stage_id": "recipe-extraction",
+              "run_id": "recipe-extraction-comparison-v1",
+              "state": "settled_unknown",
+              "updated_at": "2026-10-23T10:21:24.849Z"
+            }
+          ],
+          "limits": [
+            {
+              "id": 1,
+              "maximum_invocations": 10,
+              "maximum_reserved_micro_usd": 1000000
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "runId": "recipe-dev-paired-20261023",
+  "schemaVersion": 1,
+  "strategy": "llama"
+}

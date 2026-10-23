@@ -7,6 +7,7 @@ import {
   RecipeExtractorDescriptor,
 } from "./import-recipe-extractor.js";
 import type { DurableRecipeExtractionFailureCode } from "./import-recipe-extractor.js";
+import { SpeechEvidenceStatus } from "./import-speech-transcriber.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
 import type { ImportTransitionError } from "./import.repository.js";
 
@@ -21,7 +22,7 @@ export const RecipeDraft = Schema.Struct({
   lifecycle: Schema.Literal("needs_review"),
   schemaVersion: Schema.Literal(1),
   transcript: Schema.Union([
-    Schema.Struct({ status: Schema.Literal("available") }),
+    SpeechEvidenceStatus,
     Schema.Struct({
       reason: Schema.Literal("source_type_carousel"),
       status: Schema.Literal("not_applicable"),

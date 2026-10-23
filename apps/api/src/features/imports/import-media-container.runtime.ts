@@ -20,6 +20,10 @@ import {
   scanTemporaryWorkspace,
 } from "./import-media-process.js";
 import type { MediaProcessRunner } from "./import-media-process.js";
+import {
+  MediaProbeOutput,
+  validateMediaProbe,
+} from "./import-media-validation.js";
 import { RetryableAcquisitionError } from "./import-media.errors.js";
 import type { TikTokIdentity } from "./import-media.model.js";
 import {
@@ -246,32 +250,42 @@ export const makeTikTokMediaContainerRuntime = ({
       return yield* Effect.fail(retryableContainer());
     }
     const sourcePath = artifact.path;
-    const audioPath = path.join(artifact.root, "provider-audio.wav");
-    yield* processRunner
+    const sourceStats = yield* Effect.tryPromise({
+      catch: retryableContainer,
+      try: () => stat(sourcePath),
+    });
+    const sourceProbe = yield* processRunner
       .run(
-        "ffmpeg",
+        "ffprobe",
         [
-          "-nostdin",
-          "-y",
-          "-i",
+          "-v",
+          "error",
+          "-show_format",
+          "-show_streams",
+          "-of",
+          "json",
           sourcePath,
-          "-map",
-          "0:a:0",
-          "-ac",
-          "1",
-          "-ar",
-          "16000",
-          "-c:a",
-          "pcm_s16le",
-          audioPath,
         ],
         {
-          deadlineMilliseconds: 120_000,
+          deadlineMilliseconds: 10_000,
           failure: "retryable",
           workspaceRoot: artifact.root,
         }
       )
       .pipe(Effect.mapError(retryableContainer));
+    const parsedSourceProbe = yield* Schema.decodeUnknownEffect(
+      Schema.fromJsonString(MediaProbeOutput)
+    )(new TextDecoder().decode(sourceProbe.stdout)).pipe(
+      Effect.mapError(retryableContainer)
+    );
+    const source = yield* validateMediaProbe(parsedSourceProbe, {
+      actualBytes: sourceStats.size,
+      maximumBytes: ProductionMediaLimits.maximumMediaBytes,
+      maximumDurationSeconds: ProductionMediaLimits.maximumDurationSeconds,
+    }).pipe(Effect.mapError(retryableContainer));
+    if (source.durationSeconds !== durationSeconds) {
+      return yield* Effect.fail(retryableContainer());
+    }
     const boundedDuration = Math.max(1, durationSeconds);
     const frameFractions = [0.2, 0.5, 0.8] as const;
     const prepareFrame = Effect.fn("ImportMediaContainer.prepareFrame")(
@@ -365,28 +379,63 @@ export const makeTikTokMediaContainerRuntime = ({
     const frames = yield* Effect.forEach(frameFractions, prepareFrame, {
       concurrency: 1,
     });
-    const audioBytes = yield* Effect.tryPromise({
-      catch: retryableContainer,
-      try: () => readFile(audioPath),
-    });
-    const audioStats = yield* Effect.tryPromise({
-      catch: retryableContainer,
-      try: () => stat(audioPath),
-    });
-    if (audioStats.size !== audioBytes.byteLength) {
-      return yield* Effect.fail(retryableContainer());
+    if (source.audioStreams.length === 0) {
+      return {
+        audio: {
+          reason: "no_audio_stream" as const,
+          status: "absent" as const,
+        },
+        frames,
+      };
     }
-    const audioArtifactId = yield* Schema.decodeUnknownEffect(MediaArtifactId)(
-      `${artifactId}:audio`
-    ).pipe(Effect.mapError(retryableContainer));
-    artifacts.registerPath(
-      audioArtifactId,
-      artifact.root,
-      audioPath,
-      "audio/wav"
-    );
-    return {
-      audio: {
+    const audio = yield* Effect.gen(function* prepareAudio() {
+      const audioPath = path.join(artifact.root, "provider-audio.wav");
+      yield* processRunner
+        .run(
+          "ffmpeg",
+          [
+            "-nostdin",
+            "-y",
+            "-i",
+            sourcePath,
+            "-map",
+            "0:a:0",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le",
+            audioPath,
+          ],
+          {
+            deadlineMilliseconds: 120_000,
+            failure: "retryable",
+            workspaceRoot: artifact.root,
+          }
+        )
+        .pipe(Effect.mapError(retryableContainer));
+      const audioBytes = yield* Effect.tryPromise({
+        catch: retryableContainer,
+        try: () => readFile(audioPath),
+      });
+      const audioStats = yield* Effect.tryPromise({
+        catch: retryableContainer,
+        try: () => stat(audioPath),
+      });
+      if (audioStats.size !== audioBytes.byteLength) {
+        return yield* Effect.fail(retryableContainer());
+      }
+      const audioArtifactId = yield* Schema.decodeUnknownEffect(
+        MediaArtifactId
+      )(`${artifactId}:audio`).pipe(Effect.mapError(retryableContainer));
+      artifacts.registerPath(
+        audioArtifactId,
+        artifact.root,
+        audioPath,
+        "audio/wav"
+      );
+      return {
         artifactId: audioArtifactId,
         bytes: yield* Schema.decodeUnknownEffect(MediaByteCount)(
           audioBytes.byteLength
@@ -399,9 +448,9 @@ export const makeTikTokMediaContainerRuntime = ({
         sha256: yield* Schema.decodeUnknownEffect(Sha256Hex)(
           createHash("sha256").update(audioBytes).digest("hex")
         ).pipe(Effect.mapError(retryableContainer)),
-      },
-      frames,
-    };
+      };
+    });
+    return { audio, frames };
   });
 
   return {

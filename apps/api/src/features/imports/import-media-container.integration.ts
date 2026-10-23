@@ -276,23 +276,24 @@ ffprobe -v error -show_format -show_streams -of json /tmp/video-only.mp4 > /tmp/
       expect(validated.audioStreams).toHaveLength(1);
       expect(validated.videoStreams).toHaveLength(1);
 
-      await Promise.all(
-        (
-          [
-            ["audio-only.m4a", "audio-only.json"],
-            ["video-only.mp4", "video-only.json"],
-          ] as const
-        ).map(async ([mediaName, probeName]) => {
-          const [media, probeText] = await Promise.all([
-            readFile(path.join(root, mediaName)),
-            readFile(path.join(root, probeName), "utf-8"),
-          ]);
-          await expectRejectedProbe(
-            Schema.decodeUnknownSync(Schema.Json)(JSON.parse(probeText)),
-            media.byteLength
-          );
+      const audioOnlyBytes = await readFile(path.join(root, "audio-only.m4a"));
+      const audioOnlyProbe = Schema.decodeUnknownSync(Schema.Json)(
+        JSON.parse(await readFile(path.join(root, "audio-only.json"), "utf-8"))
+      );
+      await expectRejectedProbe(audioOnlyProbe, audioOnlyBytes.byteLength);
+      const videoOnlyBytes = await readFile(path.join(root, "video-only.mp4"));
+      const videoOnlyProbe = Schema.decodeUnknownSync(MediaProbeOutput)(
+        JSON.parse(await readFile(path.join(root, "video-only.json"), "utf-8"))
+      );
+      const videoOnly = await Effect.runPromise(
+        validateMediaProbe(videoOnlyProbe, {
+          actualBytes: videoOnlyBytes.byteLength,
+          maximumBytes: 268_435_456,
+          maximumDurationSeconds: 900,
         })
       );
+      expect(videoOnly.audioStreams).toEqual([]);
+      expect(videoOnly.videoStreams).toHaveLength(1);
       await expectRejectedProbe(
         validProbe,
         validBytes.byteLength,

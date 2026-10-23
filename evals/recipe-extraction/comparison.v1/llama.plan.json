@@ -1,0 +1,3201 @@
+{
+  "acceptanceSha256": "d47f83f507beddd49b8275c7b19c50e6052824f372646f61b9c3037cae2dd735",
+  "corpusSha256": "e3af1b51792b1bf83ab3b6e886f2e817a9a63d2ea530aae3168490ca926e6114",
+  "corpusVersion": "recipe-extraction-v1",
+  "grounderRevision": "b16bc63589f7413fc4fdbea79c18fdda60b52dde",
+  "grounderSha256": "64560aca82794c56256db082da3d80a0fe396002ae5da930ac6d9a5d4c3dc1f9",
+  "requests": [
+    {
+      "caseId": "caption-complete",
+      "evidenceSha256": "ceaec8e1d055252df28233e448f28227e378c5118e787ca674cedf9e2f4e4e41",
+      "invocation": {
+        "body": {
+          "max_tokens": 16384,
+          "messages": [
+            {
+              "content": "Select only recipe values supported by the supplied evidence. Copy short exact phrases from the evidence whenever possible. Return null for an unsupported scalar and an empty array for an unsupported list. If the content is not food or not a recipe, return null scalars and null ingredients and instructions.\nSelect ingredients as objects retaining exact original ingredient phrases and instructions as individual cooking-action phrases. When the evidence contains both an ingredient phrase and a cooking-action phrase, ingredients and instructions must each contain at least one short exact supported phrase. Do not reject recipe narration merely because quantities, timings, title, or other fields are missing. Retain exact instruction text. Ingredient quantity, unit, preparation and optional status must be supported within its original phrase. Set ingredientId and localName to null and step ingredients to empty arrays. Only include nutrition with an explicit basis and provided nutrient amounts. Do not infer dietary or allergen claims from ingredients. Set media and language to empty/null unless directly supported. Include a numeric value only when the exact number and its unit occur in the evidence. Do not return source identity, citations, provenance, confidence, state, reasons, or unresolved-field bookkeeping; the trusted adapter derives those.\n{\"evidenceId\":\"caption-complete-1\",\"kind\":\"caption\",\"origin\":\"creator_provided\",\"value\":\"Roast carrots\\nServes 4\\nPrep 10 minutes. Cook 25 minutes. Total 35 minutes.\\n500 g carrots, sliced\\n1 tbsp olive oil\\nToss the sliced carrots with olive oil.\\nRoast at 200°C for 25 minutes.\"}",
+              "role": "user"
+            }
+          ],
+          "response_format": {
+            "json_schema": {
+              "type": "object",
+              "properties": {
+                "author": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        "url": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["name", "url"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "categories": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "maxItems": 256
+                },
+                "cuisines": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "maxItems": 256
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "dietary": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": ["diet", "allergen"]
+                      },
+                      "name": {
+                        "type": "string",
+                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "original": {
+                        "type": "string",
+                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "source": {
+                        "type": "string",
+                        "enum": ["provided"]
+                      },
+                      "value": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["kind", "name", "original", "source", "value"],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 64
+                },
+                "equipment": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "maxItems": 256
+                },
+                "ingredients": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "group": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "ingredientId": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "localName": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "name": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            "note": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "optional": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "original": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            "preparation": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "quantity": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "max": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "unit": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                          "minLength": 1,
+                                          "maxLength": 4096
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "value": {
+                                      "type": "number",
+                                      "exclusiveMinimum": 0
+                                    }
+                                  },
+                                  "required": ["max", "unit", "value"],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "size": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "group",
+                            "ingredientId",
+                            "localName",
+                            "name",
+                            "note",
+                            "optional",
+                            "original",
+                            "preparation",
+                            "quantity",
+                            "size"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ],
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "group": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "ingredientId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "localName": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "name": {
+                            "type": "string",
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          "note": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "optional": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "original": {
+                            "type": "string",
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          "preparation": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "quantity": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "max": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "unit": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                        "minLength": 1,
+                                        "maxLength": 4096
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "value": {
+                                    "type": "number",
+                                    "exclusiveMinimum": 0
+                                  }
+                                },
+                                "required": ["max", "unit", "value"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "size": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "group",
+                          "ingredientId",
+                          "localName",
+                          "name",
+                          "note",
+                          "optional",
+                          "original",
+                          "preparation",
+                          "quantity",
+                          "size"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 256
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "instructions": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "duration": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "seconds": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": ["seconds"],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "equipment": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              "maxItems": 256
+                            },
+                            "group": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "ingredients": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              "maxItems": 256
+                            },
+                            "step": {
+                              "type": "integer",
+                              "maximum": 256,
+                              "exclusiveMinimum": 0
+                            },
+                            "techniques": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              "maxItems": 256
+                            },
+                            "temperature": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "unit": {
+                                      "type": "string",
+                                      "enum": ["C", "F"]
+                                    },
+                                    "value": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": ["unit", "value"],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            }
+                          },
+                          "required": [
+                            "duration",
+                            "equipment",
+                            "group",
+                            "ingredients",
+                            "step",
+                            "techniques",
+                            "temperature",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ],
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "duration": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "seconds": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": ["seconds"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "equipment": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            "maxItems": 256
+                          },
+                          "group": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "ingredients": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            "maxItems": 256
+                          },
+                          "step": {
+                            "type": "integer",
+                            "maximum": 256,
+                            "exclusiveMinimum": 0
+                          },
+                          "techniques": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            "maxItems": 256
+                          },
+                          "temperature": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "unit": {
+                                    "type": "string",
+                                    "enum": ["C", "F"]
+                                  },
+                                  "value": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": ["unit", "value"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "text": {
+                            "type": "string",
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          }
+                        },
+                        "required": [
+                          "duration",
+                          "equipment",
+                          "group",
+                          "ingredients",
+                          "step",
+                          "techniques",
+                          "temperature",
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 256
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "language": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[a-z]{2}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "media": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "alt": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "caption": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": ["hero", "gallery", "step", "thumbnail"]
+                      },
+                      "step": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "maximum": 9007199254740991,
+                            "exclusiveMinimum": 0
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": ["image", "video"]
+                      },
+                      "url": {
+                        "type": "string",
+                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      }
+                    },
+                    "required": [
+                      "alt",
+                      "caption",
+                      "role",
+                      "step",
+                      "type",
+                      "url"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 64
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "notes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "maxItems": 256
+                },
+                "nutrition": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "basis": {
+                          "type": "object",
+                          "properties": {
+                            "description": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "servings": {
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "type": "string",
+                              "enum": ["serving", "recipe", "100g"]
+                            }
+                          },
+                          "required": ["description", "servings", "type"],
+                          "additionalProperties": false
+                        },
+                        "nutrients": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "amount": {
+                                "type": "object",
+                                "properties": {
+                                  "unit": {
+                                    "type": "string",
+                                    "enum": ["g", "mg", "mcg", "kcal", "kJ"]
+                                  },
+                                  "value": {
+                                    "type": "number",
+                                    "minimum": 0
+                                  }
+                                },
+                                "required": ["unit", "value"],
+                                "additionalProperties": false
+                              },
+                              "name": {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              }
+                            },
+                            "required": ["amount", "name"],
+                            "additionalProperties": false
+                          },
+                          "minItems": 1,
+                          "maxItems": 64
+                        },
+                        "original": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": ["provided"]
+                        }
+                      },
+                      "required": ["basis", "nutrients", "original", "source"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "servings": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "max": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "original": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        "quantity": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "unit": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["max", "original", "quantity", "unit"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sourceTags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "maxItems": 256
+                },
+                "times": {
+                  "type": "object",
+                  "properties": {
+                    "cook": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "seconds": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": ["seconds"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "inactive": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "seconds": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": ["seconds"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "prep": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "seconds": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": ["seconds"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "total": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "seconds": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": ["seconds"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["cook", "inactive", "prep", "total"],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "author",
+                "categories",
+                "cuisines",
+                "description",
+                "dietary",
+                "equipment",
+                "ingredients",
+                "instructions",
+                "language",
+                "media",
+                "name",
+                "notes",
+                "nutrition",
+                "servings",
+                "sourceTags",
+                "times"
+              ],
+              "additionalProperties": false
+            },
+            "type": "json_schema"
+          },
+          "temperature": 0
+        },
+        "dispatchId": "recipe-dev-paired-20261023:llama:caption-complete",
+        "inputMicroUsdPerToken": 0.29,
+        "maximumCostMicroUsd": 100000,
+        "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        "outputMicroUsdPerToken": 2.25
+      }
+    },
+    {
+      "caseId": "fractions",
+      "evidenceSha256": "e1f83f5eae971314929da8cac537466c032b6a1900f39222a02cfc15474152c6",
+      "invocation": {
+        "body": {
+          "max_tokens": 16384,
+          "messages": [
+            {
+              "content": "Select only recipe values supported by the supplied evidence. Copy short exact phrases from the evidence whenever possible. Return null for an unsupported scalar and an empty array for an unsupported list. If the content is not food or not a recipe, return null scalars and null ingredients and instructions.\nSelect ingredients as objects retaining exact original ingredient phrases and instructions as individual cooking-action phrases. When the evidence contains both an ingredient phrase and a cooking-action phrase, ingredients and instructions must each contain at least one short exact supported phrase. Do not reject recipe narration merely because quantities, timings, title, or other fields are missing. Retain exact instruction text. Ingredient quantity, unit, preparation and optional status must be supported within its original phrase. Set ingredientId and localName to null and step ingredients to empty arrays. Only include nutrition with an explicit basis and provided nutrient amounts. Do not infer dietary or allergen claims from ingredients. Set media and language to empty/null unless directly supported. Include a numeric value only when the exact number and its unit occur in the evidence. Do not return source identity, citations, provenance, confidence, state, reasons, or unresolved-field bookkeeping; the trusted adapter derives those.\n{\"evidenceId\":\"fractions-1\",\"kind\":\"caption\",\"origin\":\"creator_provided\",\"value\":\"Oat bowl\\n1½ cups oats\\n¼ tsp cinnamon\\nStir oats and cinnamon together.\"}",
+              "role": "user"
+            }
+          ],
+          "response_format": {
+            "json_schema": {
+              "type": "object",
+              "properties": {
+                "author": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        "url": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["name", "url"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "categories": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "maxItems": 256
+                },
+                "cuisines": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "maxItems": 256
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "dietary": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": ["diet", "allergen"]
+                      },
+                      "name": {
+                        "type": "string",
+                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "original": {
+                        "type": "string",
+                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "source": {
+                        "type": "string",
+                        "enum": ["provided"]
+                      },
+                      "value": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["kind", "name", "original", "source", "value"],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 64
+                },
+                "equipment": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "maxItems": 256
+                },
+                "ingredients": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "group": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "ingredientId": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "localName": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "name": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            "note": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "optional": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "original": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            "preparation": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "quantity": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "max": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "unit": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                          "minLength": 1,
+                                          "maxLength": 4096
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "value": {
+                                      "type": "number",
+                                      "exclusiveMinimum": 0
+                                    }
+                                  },
+                                  "required": ["max", "unit", "value"],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "size": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "group",
+                            "ingredientId",
+                            "localName",
+                            "name",
+                            "note",
+                            "optional",
+                            "original",
+                            "preparation",
+                            "quantity",
+                            "size"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ],
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "group": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "ingredientId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "localName": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "name": {
+                            "type": "string",
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          "note": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "optional": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "original": {
+                            "type": "string",
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          "preparation": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "quantity": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "max": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "unit": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                        "minLength": 1,
+                                        "maxLength": 4096
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "value": {
+                                    "type": "number",
+                                    "exclusiveMinimum": 0
+                                  }
+                                },
+                                "required": ["max", "unit", "value"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "size": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "group",
+                          "ingredientId",
+                          "localName",
+                          "name",
+                          "note",
+                          "optional",
+                          "original",
+                          "preparation",
+                          "quantity",
+                          "size"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 256
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "instructions": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "duration": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "seconds": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": ["seconds"],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "equipment": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              "maxItems": 256
+                            },
+                            "group": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "ingredients": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              "maxItems": 256
+                            },
+                            "step": {
+                              "type": "integer",
+                              "maximum": 256,
+                              "exclusiveMinimum": 0
+                            },
+                            "techniques": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              "maxItems": 256
+                            },
+                            "temperature": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "unit": {
+                                      "type": "string",
+                                      "enum": ["C", "F"]
+                                    },
+                                    "value": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": ["unit", "value"],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            }
+                          },
+                          "required": [
+                            "duration",
+                            "equipment",
+                            "group",
+                            "ingredients",
+                            "step",
+                            "techniques",
+                            "temperature",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ],
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "duration": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "seconds": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": ["seconds"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "equipment": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            "maxItems": 256
+                          },
+                          "group": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "ingredients": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            "maxItems": 256
+                          },
+                          "step": {
+                            "type": "integer",
+                            "maximum": 256,
+                            "exclusiveMinimum": 0
+                          },
+                          "techniques": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            "maxItems": 256
+                          },
+                          "temperature": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "unit": {
+                                    "type": "string",
+                                    "enum": ["C", "F"]
+                                  },
+                                  "value": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": ["unit", "value"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "text": {
+                            "type": "string",
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          }
+                        },
+                        "required": [
+                          "duration",
+                          "equipment",
+                          "group",
+                          "ingredients",
+                          "step",
+                          "techniques",
+                          "temperature",
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 256
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "language": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[a-z]{2}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "media": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "alt": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "caption": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": ["hero", "gallery", "step", "thumbnail"]
+                      },
+                      "step": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "maximum": 9007199254740991,
+                            "exclusiveMinimum": 0
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": ["image", "video"]
+                      },
+                      "url": {
+                        "type": "string",
+                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      }
+                    },
+                    "required": [
+                      "alt",
+                      "caption",
+                      "role",
+                      "step",
+                      "type",
+                      "url"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 64
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "notes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "maxItems": 256
+                },
+                "nutrition": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "basis": {
+                          "type": "object",
+                          "properties": {
+                            "description": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "servings": {
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "type": "string",
+                              "enum": ["serving", "recipe", "100g"]
+                            }
+                          },
+                          "required": ["description", "servings", "type"],
+                          "additionalProperties": false
+                        },
+                        "nutrients": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "amount": {
+                                "type": "object",
+                                "properties": {
+                                  "unit": {
+                                    "type": "string",
+                                    "enum": ["g", "mg", "mcg", "kcal", "kJ"]
+                                  },
+                                  "value": {
+                                    "type": "number",
+                                    "minimum": 0
+                                  }
+                                },
+                                "required": ["unit", "value"],
+                                "additionalProperties": false
+                              },
+                              "name": {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              }
+                            },
+                            "required": ["amount", "name"],
+                            "additionalProperties": false
+                          },
+                          "minItems": 1,
+                          "maxItems": 64
+                        },
+                        "original": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": ["provided"]
+                        }
+                      },
+                      "required": ["basis", "nutrients", "original", "source"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "servings": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "max": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "original": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        "quantity": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "unit": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["max", "original", "quantity", "unit"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sourceTags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "maxItems": 256
+                },
+                "times": {
+                  "type": "object",
+                  "properties": {
+                    "cook": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "seconds": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": ["seconds"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "inactive": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "seconds": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": ["seconds"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "prep": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "seconds": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": ["seconds"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "total": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "seconds": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": ["seconds"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["cook", "inactive", "prep", "total"],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "author",
+                "categories",
+                "cuisines",
+                "description",
+                "dietary",
+                "equipment",
+                "ingredients",
+                "instructions",
+                "language",
+                "media",
+                "name",
+                "notes",
+                "nutrition",
+                "servings",
+                "sourceTags",
+                "times"
+              ],
+              "additionalProperties": false
+            },
+            "type": "json_schema"
+          },
+          "temperature": 0
+        },
+        "dispatchId": "recipe-dev-paired-20261023:llama:fractions",
+        "inputMicroUsdPerToken": 0.29,
+        "maximumCostMicroUsd": 100000,
+        "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        "outputMicroUsdPerToken": 2.25
+      }
+    },
+    {
+      "caseId": "components",
+      "evidenceSha256": "b86016bee143d19982b2ca1d6585d644466d48bb8d74ecb1c6f3d71137e69b5a",
+      "invocation": {
+        "body": {
+          "max_tokens": 16384,
+          "messages": [
+            {
+              "content": "Select only recipe values supported by the supplied evidence. Copy short exact phrases from the evidence whenever possible. Return null for an unsupported scalar and an empty array for an unsupported list. If the content is not food or not a recipe, return null scalars and null ingredients and instructions.\nSelect ingredients as objects retaining exact original ingredient phrases and instructions as individual cooking-action phrases. When the evidence contains both an ingredient phrase and a cooking-action phrase, ingredients and instructions must each contain at least one short exact supported phrase. Do not reject recipe narration merely because quantities, timings, title, or other fields are missing. Retain exact instruction text. Ingredient quantity, unit, preparation and optional status must be supported within its original phrase. Set ingredientId and localName to null and step ingredients to empty arrays. Only include nutrition with an explicit basis and provided nutrient amounts. Do not infer dietary or allergen claims from ingredients. Set media and language to empty/null unless directly supported. Include a numeric value only when the exact number and its unit occur in the evidence. Do not return source identity, citations, provenance, confidence, state, reasons, or unresolved-field bookkeeping; the trusted adapter derives those.\n{\"evidenceId\":\"components-1\",\"kind\":\"caption\",\"origin\":\"creator_provided\",\"value\":\"Yoghurt dip plate\\nDip:\\n200 g yoghurt\\nGarnish:\\n50 g yoghurt\\nDip: Stir 200 g yoghurt until smooth.\\nGarnish: Spoon 50 g yoghurt on top.\"}",
+              "role": "user"
+            }
+          ],
+          "response_format": {
+            "json_schema": {
+              "type": "object",
+              "properties": {
+                "author": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        "url": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["name", "url"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "categories": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "maxItems": 256
+                },
+                "cuisines": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "maxItems": 256
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "dietary": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": ["diet", "allergen"]
+                      },
+                      "name": {
+                        "type": "string",
+                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "original": {
+                        "type": "string",
+                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "source": {
+                        "type": "string",
+                        "enum": ["provided"]
+                      },
+                      "value": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["kind", "name", "original", "source", "value"],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 64
+                },
+                "equipment": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "maxItems": 256
+                },
+                "ingredients": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "group": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "ingredientId": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "localName": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "name": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            "note": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "optional": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "original": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            "preparation": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "quantity": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "max": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "unit": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                          "minLength": 1,
+                                          "maxLength": 4096
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "value": {
+                                      "type": "number",
+                                      "exclusiveMinimum": 0
+                                    }
+                                  },
+                                  "required": ["max", "unit", "value"],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "size": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "group",
+                            "ingredientId",
+                            "localName",
+                            "name",
+                            "note",
+                            "optional",
+                            "original",
+                            "preparation",
+                            "quantity",
+                            "size"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ],
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "group": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "ingredientId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "localName": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "name": {
+                            "type": "string",
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          "note": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "optional": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "original": {
+                            "type": "string",
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          "preparation": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "quantity": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "max": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "unit": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                        "minLength": 1,
+                                        "maxLength": 4096
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "value": {
+                                    "type": "number",
+                                    "exclusiveMinimum": 0
+                                  }
+                                },
+                                "required": ["max", "unit", "value"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "size": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "group",
+                          "ingredientId",
+                          "localName",
+                          "name",
+                          "note",
+                          "optional",
+                          "original",
+                          "preparation",
+                          "quantity",
+                          "size"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 256
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "instructions": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "duration": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "seconds": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": ["seconds"],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "equipment": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              "maxItems": 256
+                            },
+                            "group": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "ingredients": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              "maxItems": 256
+                            },
+                            "step": {
+                              "type": "integer",
+                              "maximum": 256,
+                              "exclusiveMinimum": 0
+                            },
+                            "techniques": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              "maxItems": 256
+                            },
+                            "temperature": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "unit": {
+                                      "type": "string",
+                                      "enum": ["C", "F"]
+                                    },
+                                    "value": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": ["unit", "value"],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            }
+                          },
+                          "required": [
+                            "duration",
+                            "equipment",
+                            "group",
+                            "ingredients",
+                            "step",
+                            "techniques",
+                            "temperature",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ],
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "duration": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "seconds": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": ["seconds"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "equipment": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            "maxItems": 256
+                          },
+                          "group": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "ingredients": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            "maxItems": 256
+                          },
+                          "step": {
+                            "type": "integer",
+                            "maximum": 256,
+                            "exclusiveMinimum": 0
+                          },
+                          "techniques": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            "maxItems": 256
+                          },
+                          "temperature": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "unit": {
+                                    "type": "string",
+                                    "enum": ["C", "F"]
+                                  },
+                                  "value": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": ["unit", "value"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "text": {
+                            "type": "string",
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          }
+                        },
+                        "required": [
+                          "duration",
+                          "equipment",
+                          "group",
+                          "ingredients",
+                          "step",
+                          "techniques",
+                          "temperature",
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 256
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "language": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[a-z]{2}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "media": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "alt": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "caption": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": ["hero", "gallery", "step", "thumbnail"]
+                      },
+                      "step": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "maximum": 9007199254740991,
+                            "exclusiveMinimum": 0
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": ["image", "video"]
+                      },
+                      "url": {
+                        "type": "string",
+                        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      }
+                    },
+                    "required": [
+                      "alt",
+                      "caption",
+                      "role",
+                      "step",
+                      "type",
+                      "url"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 64
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "notes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "maxItems": 256
+                },
+                "nutrition": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "basis": {
+                          "type": "object",
+                          "properties": {
+                            "description": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                  "minLength": 1,
+                                  "maxLength": 4096
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "servings": {
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "type": "string",
+                              "enum": ["serving", "recipe", "100g"]
+                            }
+                          },
+                          "required": ["description", "servings", "type"],
+                          "additionalProperties": false
+                        },
+                        "nutrients": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "amount": {
+                                "type": "object",
+                                "properties": {
+                                  "unit": {
+                                    "type": "string",
+                                    "enum": ["g", "mg", "mcg", "kcal", "kJ"]
+                                  },
+                                  "value": {
+                                    "type": "number",
+                                    "minimum": 0
+                                  }
+                                },
+                                "required": ["unit", "value"],
+                                "additionalProperties": false
+                              },
+                              "name": {
+                                "type": "string",
+                                "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              }
+                            },
+                            "required": ["amount", "name"],
+                            "additionalProperties": false
+                          },
+                          "minItems": 1,
+                          "maxItems": 64
+                        },
+                        "original": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": ["provided"]
+                        }
+                      },
+                      "required": ["basis", "nutrients", "original", "source"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "servings": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "max": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "original": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        "quantity": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "unit": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["max", "original", "quantity", "unit"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sourceTags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "maxItems": 256
+                },
+                "times": {
+                  "type": "object",
+                  "properties": {
+                    "cook": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "seconds": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": ["seconds"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "inactive": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "seconds": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": ["seconds"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "prep": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "seconds": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": ["seconds"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "total": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "seconds": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": ["seconds"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["cook", "inactive", "prep", "total"],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "author",
+                "categories",
+                "cuisines",
+                "description",
+                "dietary",
+                "equipment",
+                "ingredients",
+                "instructions",
+                "language",
+                "media",
+                "name",
+                "notes",
+                "nutrition",
+                "servings",
+                "sourceTags",
+                "times"
+              ],
+              "additionalProperties": false
+            },
+            "type": "json_schema"
+          },
+          "temperature": 0
+        },
+        "dispatchId": "recipe-dev-paired-20261023:llama:components",
+        "inputMicroUsdPerToken": 0.29,
+        "maximumCostMicroUsd": 100000,
+        "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        "outputMicroUsdPerToken": 2.25
+      }
+    }
+  ],
+  "runId": "recipe-dev-paired-20261023",
+  "split": "dev",
+  "strategy": "llama"
+}

@@ -17,8 +17,78 @@ import {
 } from "./import-provider-adapters.test-fixture.js";
 import type { ProviderDispatchGate } from "./import-provider-kernel.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
+import { syntheticThreeFrameResponse } from "./import-provider-visual.scout.test-fixture.js";
 
 describe("installed visual provider adapter", () => {
+  it("replays the accounted three-image Scout response without inventing confidence", async () => {
+    const gateway = makeProviderTransports(syntheticThreeFrameResponse);
+    const adapter = await runFactory(
+      makeInstalledVisualEvidenceExtractor({
+        correlationId,
+        dispatch: localDispatchGate,
+        transport: gateway.visual,
+      })
+    );
+    const frames = [0, 1, 2].map((index) => ({
+      bytes: new Uint8Array([index + 1]),
+      height: 140,
+      mimeType: "image/jpeg" as const,
+      sha256: "a".repeat(64),
+      timestampMilliseconds: index * 1000,
+      width: 480,
+    }));
+    const output = await Effect.runPromise(
+      adapter.extract({
+        dispatchId: "visual:import-1:1",
+        frames,
+        generation: 1 as never,
+        importId: "import-1" as never,
+        sourceMediaSha256: "b".repeat(64),
+      })
+    );
+    expect(
+      output.observations.map(
+        ({ confidence, frameIndex, text, timestampMilliseconds }) => ({
+          confidence,
+          frameIndex,
+          text,
+          timestampMilliseconds,
+        })
+      )
+    ).toEqual([
+      {
+        confidence: 0,
+        frameIndex: 0,
+        text: "2 onions",
+        timestampMilliseconds: 0,
+      },
+      {
+        confidence: 0,
+        frameIndex: 1,
+        text: "Simmer 10 minutes",
+        timestampMilliseconds: 1000,
+      },
+      {
+        confidence: 0,
+        frameIndex: 2,
+        text: "Serve with rice",
+        timestampMilliseconds: 2000,
+      },
+    ]);
+    expect(output.cost).toEqual({
+      certainty: "estimated",
+      currency: "USD",
+      estimatedMicroUsd: 650,
+    });
+    expect(output.outcome).toBe("low_confidence");
+    expect(output.usage).toEqual({
+      inputBytes: 3,
+      inputFrames: 3,
+      modelCalls: 1,
+    });
+    expect(gateway.visualRequests).toHaveLength(1);
+  });
+
   it("maps a missing visual forced-tool call without payload data", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
     const gateway = makeProviderTransports({
@@ -206,7 +276,13 @@ describe("installed visual provider adapter", () => {
       outcome: "empty",
     } as const;
     const gateway = makeProviderTransports(
-      toolResponse("record_visual_evidence", visualSemantics)
+      toolResponse("record_visual_evidence", {
+        frames: [
+          visualSemantics,
+          { observations: [{ confidence: 90, text: "Simmer 10 minutes" }] },
+          { observations: [{ confidence: 95, text: "Serve with rice" }] },
+        ],
+      })
     );
     const trace = makeRecordingTraceStore();
     const adapter = await runFactory(
@@ -262,16 +338,32 @@ describe("installed visual provider adapter", () => {
       observations: [
         {
           confidence: 0.92,
-          frameIndex: 1,
+          frameIndex: 0,
           kind: "visible_text",
           regions: [{ height: 1, width: 1, x: 0, y: 0 }],
           text: "2 onions",
+          timestampMilliseconds: 125,
+        },
+        {
+          confidence: 0.9,
+          frameIndex: 1,
+          kind: "visible_text",
+          regions: [{ height: 1, width: 1, x: 0, y: 0 }],
+          text: "Simmer 10 minutes",
           timestampMilliseconds: 500,
+        },
+        {
+          confidence: 0.95,
+          frameIndex: 2,
+          kind: "visible_text",
+          regions: [{ height: 1, width: 1, x: 0, y: 0 }],
+          text: "Serve with rice",
+          timestampMilliseconds: 750,
         },
       ],
       outcome: "found",
       provider: "cloudflare-workers-ai",
-      usage: { inputBytes: 2, inputFrames: 1, modelCalls: 1 },
+      usage: { inputBytes: 6, inputFrames: 3, modelCalls: 1 },
     });
     expect(gateway.visualRequests).toHaveLength(1);
     const [request] = gateway.visualRequests;
@@ -279,6 +371,11 @@ describe("installed visual provider adapter", () => {
     expect(request?.tools.map((tool) => tool.name)).toEqual([
       "record_visual_evidence",
     ]);
+    expect(
+      request?.prompt.content
+        .flatMap((message) => (message.role === "user" ? message.content : []))
+        .filter((part) => part.type === "file")
+    ).toHaveLength(3);
     expect(JSON.stringify(request?.prompt)).toContain(
       "adapter owns the source frame identity and timing"
     );
@@ -303,17 +400,21 @@ describe("installed visual provider adapter", () => {
   it("projects known inert visual metadata before strict semantic decoding", async () => {
     const gateway = makeProviderTransports(
       toolResponse("record_visual_evidence", {
-        observations: [
+        frames: [
           {
-            confidence: " 92 ",
-            frameIndex: "provider-owned",
-            kind: "provider-owned",
-            regions: [{ providerOwned: true }],
-            text: "  2 onions  ",
-            timestampMilliseconds: null,
+            observations: [
+              {
+                confidence: " 92 ",
+                frameIndex: "provider-owned",
+                kind: "provider-owned",
+                regions: [{ providerOwned: true }],
+                text: "  2 onions  ",
+                timestampMilliseconds: null,
+              },
+            ],
+            outcome: "provider-owned",
           },
         ],
-        outcome: "provider-owned",
       })
     );
     const adapter = await runFactory(
@@ -361,17 +462,21 @@ describe("installed visual provider adapter", () => {
   it("conservatively normalizes optional provider confidence variants", async () => {
     const gateway = makeProviderTransports(
       toolResponse("record_visual_evidence", {
-        observations: [
+        frames: [
           {
-            confidence: "92%",
-            text: "  2 onions  ",
-          },
-          {
-            text: "add stock",
-          },
-          {
-            confidence: "high",
-            text: "serve",
+            observations: [
+              {
+                confidence: "92%",
+                text: "  2 onions  ",
+              },
+              {
+                text: "add stock",
+              },
+              {
+                confidence: "high",
+                text: "serve",
+              },
+            ],
           },
         ],
       })
@@ -416,22 +521,26 @@ describe("installed visual provider adapter", () => {
   it("keeps only safe visual facts when the provider adds malformed metadata", async () => {
     const gateway = makeProviderTransports(
       toolResponse("record_visual_evidence", {
-        observations: [
+        frames: [
           {
-            confidence: 87,
-            providerPrivateNote: "must-not-escape",
-            text: "  chop the onions  ",
-          },
-          {
-            confidence: 140,
-            text: "add stock",
-          },
-          {
-            confidence: 95,
-            text: null,
+            observations: [
+              {
+                confidence: 87,
+                providerPrivateNote: "must-not-escape",
+                text: "  chop the onions  ",
+              },
+              {
+                confidence: 140,
+                text: "add stock",
+              },
+              {
+                confidence: 95,
+                text: null,
+              },
+            ],
+            providerPrivateSummary: "must-not-escape",
           },
         ],
-        providerPrivateSummary: "must-not-escape",
       })
     );
     const adapter = await runFactory(
@@ -484,7 +593,7 @@ describe("installed visual provider adapter", () => {
     "projects empty visual evidence when the provider %s",
     async (_label, body) => {
       const gateway = makeProviderTransports(
-        toolResponse("record_visual_evidence", body)
+        toolResponse("record_visual_evidence", { frames: [body] })
       );
       const adapter = await runFactory(
         makeInstalledVisualEvidenceExtractor({
@@ -560,11 +669,15 @@ describe("installed visual provider adapter", () => {
   it("derives low-confidence outcome from strict provider observations", async () => {
     const gateway = makeProviderTransports(
       toolResponse("record_visual_evidence", {
-        observations: [
+        frames: [
           {
-            confidence: 0.5,
-            frameIndex: 0,
-            text: "possible ingredient label",
+            observations: [
+              {
+                confidence: 0.5,
+                frameIndex: 0,
+                text: "possible ingredient label",
+              },
+            ],
           },
         ],
       })
@@ -726,8 +839,12 @@ describe("installed visual provider adapter", () => {
   it("discards model attempts to inject visual transport metadata", async () => {
     const gateway = makeProviderTransports(
       toolResponse("record_visual_evidence", {
-        ...validVisual,
-        providerPrivateCanary: "must-not-escape",
+        frames: [
+          {
+            ...validVisual,
+            providerPrivateCanary: "must-not-escape",
+          },
+        ],
       })
     );
     const adapter = await runFactory(

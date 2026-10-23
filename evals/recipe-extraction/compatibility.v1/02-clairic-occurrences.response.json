@@ -1,0 +1,63 @@
+{
+  "dispatchId": "recipe-clairic-probe-2-v1",
+  "requestSha256": "49436d9b38890ee97827de7f6f49951c01c6039f168e04fc2e733c00fdacfbc2",
+  "status": 200,
+  "body": {
+    "result": {
+      "model": "clairic",
+      "answers": {
+        "positive_action": {
+          "type": "text",
+          "p_null": 0.005597587674856186,
+          "span": [34, 42],
+          "guess": "Add milk",
+          "confidence": 0.8742765188217163,
+          "value": "Add milk"
+        },
+        "negative_action": {
+          "type": "text",
+          "p_null": 0.021784819662570953,
+          "span": [17, 32],
+          "guess": "Do not add milk",
+          "confidence": 0.9224702715873718,
+          "value": "Do not add milk"
+        },
+        "ingredients": {
+          "type": "list",
+          "value": ["milk", "100 ml milk", "50 ml milk", "2."],
+          "spans": [
+            [38, 42],
+            [57, 68],
+            [82, 92],
+            [110, 112]
+          ],
+          "confidence": 0.22839594467251734
+        },
+        "oven_temperature": {
+          "type": "text",
+          "p_null": 0.999961256980896,
+          "span": [93, 95],
+          "guess": "No",
+          "confidence": 0.9042230844497681,
+          "value": null
+        }
+      },
+      "truncated": false,
+      "usage": {
+        "state_tokens": 42,
+        "image_tokens": 0,
+        "schema_tokens": 590,
+        "input_tokens": 758,
+        "output_tokens": 0,
+        "passes": 4
+      },
+      "state_text": "Title: Milk test\nDo not add milk. Add milk.\nIngredients:\n100 ml milk\nFor garnish: 50 ml milk\nNo honey.\nServes 2."
+    },
+    "success": true,
+    "errors": [],
+    "messages": [],
+    "status": 200
+  },
+  "headers": {},
+  "latencyMs": 3221
+}

@@ -361,6 +361,7 @@ export const makeHouseholdSpeechTranscriptionRepository = (
       provider: result.provider,
       segmentsCount: result.segmentsCount,
       sourceMediaSha256: result.sourceMediaSha256,
+      transcript: result.transcript ?? { status: "available" },
       transcriptKey: result.transcriptKey,
       transcriptSha256: result.transcriptSha256,
       usage: result.usage,
@@ -471,6 +472,7 @@ export const makeHouseholdSpeechTranscriptionRepository = (
                 sourceMediaSha256: Schema.decodeUnknownSync(Sha256Hex)(
                   evidence.sourceMediaSha256
                 ),
+                transcript: evidence.transcript ?? { status: "available" },
                 transcriptKey: evidence.transcriptKey,
                 transcriptSha256: Schema.decodeUnknownSync(Sha256Hex)(
                   evidence.transcriptSha256

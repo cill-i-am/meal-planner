@@ -1,0 +1,34 @@
+{
+  "body": {
+    "model": "clairic",
+    "state": "🍳 Café soup — café\nIngredients:\n½ cup milk\n2 onions\n½ cup milk\nMethod:\nDo not add milk yet.\nChop onions then add oil when the pan is hot.\nAdd milk.\nCook for 5 minutes.",
+    "fields": {
+      "title": {
+        "type": "text",
+        "instructions": "Exact recipe title from the first line, excluding the emoji. Return null if absent."
+      },
+      "ingredients": {
+        "type": "list",
+        "items": "text",
+        "instructions": "Every complete ingredient line under Ingredients, in source order, retaining duplicates exactly. Stop at Method."
+      },
+      "instructions": {
+        "type": "list",
+        "items": "text",
+        "instructions": "Every complete instruction sentence under Method, in source order. Preserve negation and conditions exactly."
+      },
+      "servings": {
+        "type": "text",
+        "instructions": "Exact explicit servings or yield phrase. Return null if it is not stated. Do not infer."
+      }
+    },
+    "options": {
+      "return_state_text": true
+    }
+  },
+  "dispatchId": "recipe-clairic-probe-1-v1",
+  "inputMicroUsdPerToken": 0.1,
+  "maximumCostMicroUsd": 10000,
+  "model": "@cf/cloudflare/clairic",
+  "outputMicroUsdPerToken": 0
+}

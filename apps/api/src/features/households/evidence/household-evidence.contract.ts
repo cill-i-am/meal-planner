@@ -7,6 +7,7 @@ import {
 } from "../../imports/import-media.model.js";
 import { RecipeDraft } from "../../imports/import-recipe-draft.repository.js";
 import { RecipeExtractorDescriptor } from "../../imports/import-recipe-extractor.js";
+import { SpeechEvidenceStatus } from "../../imports/import-speech-transcriber.js";
 import {
   ImportTimestamp,
   SourceCanonicalId,
@@ -103,7 +104,7 @@ export const HouseholdCommitAcquisitionEvidenceInput = Schema.Struct({
   mutationId: HouseholdImportMutationId,
   result: Schema.Struct({
     acquiredAt: ImportTimestamp,
-    audioStreams: Schema.NonEmptyArray(MediaStreamSummary),
+    audioStreams: Schema.Array(MediaStreamSummary),
     durationSeconds: Schema.Number.pipe(
       Schema.check(Schema.isFinite(), Schema.isGreaterThan(0))
     ),
@@ -302,12 +303,13 @@ const HouseholdSpeechEvidenceResult = Schema.Struct({
   _tag: Schema.Literal("Speech"),
   completedAt: ImportTimestamp,
   cost: EvidenceCost,
-  detectedLanguage: Schema.String,
+  detectedLanguage: Schema.NullOr(Schema.String),
   dispatchId: DispatchId,
-  model: Schema.String,
-  provider: Schema.String,
+  model: Schema.NullOr(Schema.String),
+  provider: Schema.NullOr(Schema.String),
   segmentsCount: NonNegativeSafeInteger,
   sourceMediaSha256: HouseholdEvidenceSha256,
+  transcript: Schema.optionalKey(SpeechEvidenceStatus),
   transcriptKey: R2ObjectKey,
   transcriptSha256: HouseholdEvidenceSha256,
   usage: Schema.Struct({

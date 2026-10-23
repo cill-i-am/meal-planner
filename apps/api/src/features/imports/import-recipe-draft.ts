@@ -37,6 +37,7 @@ import type { ImportTransitionError } from "./import.repository.js";
 import {
   TranscriptEvidenceStore,
   TranscriptEvidenceStoreLive,
+  transcriptEvidenceStatus,
 } from "./transcript-evidence-store.js";
 import {
   VisualEvidenceStore,
@@ -295,7 +296,7 @@ const sourceEvidenceItems = (evidence: VerifiedAcquisitionEvidence) => {
 const assembleEvidence = (
   evidence: VerifiedAcquisitionEvidence,
   transcript: {
-    readonly document: { readonly text: string };
+    readonly document: { readonly text: string | null };
     readonly sha256: string;
   },
   visual: {
@@ -310,13 +311,17 @@ const assembleEvidence = (
     const sourceItems = sourceEvidenceItems(evidence);
     const items: RecipeEvidenceItem[] = [
       ...sourceItems,
-      {
-        artifactReference: `imports/${importId}/transcription/v1/generations/${evidence.generation}/transcript.json`,
-        evidenceId: `transcript:${transcript.sha256}`,
-        kind: "transcript",
-        origin: "creator_provided",
-        value: transcript.document.text,
-      },
+      ...(transcript.document.text === null
+        ? []
+        : [
+            {
+              artifactReference: `imports/${importId}/transcription/v1/generations/${evidence.generation}/transcript.json`,
+              evidenceId: `transcript:${transcript.sha256}`,
+              kind: "transcript" as const,
+              origin: "creator_provided" as const,
+              value: transcript.document.text,
+            },
+          ]),
       ...visual.document.observations.map((observation, index) => ({
         artifactReference: `imports/${importId}/visual/v1/generations/${evidence.generation}/manifest.json`,
         evidenceId: `visual:${visual.sha256}:${index}`,
@@ -696,7 +701,7 @@ export const produceRecipeDraftForImport = Effect.fn(
     now,
     recipeRepository: input.recipeRepository,
     source,
-    transcript: { status: "available" },
+    transcript: transcriptEvidenceStatus(transcript.value.document),
   };
   const lifecycleInput =
     input.lifecycle === undefined

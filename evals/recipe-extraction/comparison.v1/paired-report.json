@@ -1,0 +1,442 @@
+{
+  "acceptanceSha256": "d47f83f507beddd49b8275c7b19c50e6052824f372646f61b9c3037cae2dd735",
+  "attemptedPairCases": 0,
+  "baseline": {
+    "runId": "recipe-dev-paired-20261023",
+    "strategy": "llama"
+  },
+  "baselineCoverage": {
+    "completed": 0,
+    "failed": 1,
+    "missing": 9,
+    "skipped": 0
+  },
+  "candidate": {
+    "runId": "recipe-dev-paired-20261023",
+    "strategy": "clairic"
+  },
+  "candidateCoverage": {
+    "completed": 0,
+    "failed": 0,
+    "missing": 10,
+    "skipped": 0
+  },
+  "corpusSha256": "e3af1b51792b1bf83ab3b6e886f2e817a9a63d2ea530aae3168490ca926e6114",
+  "corpusVersion": "recipe-extraction-v1",
+  "correctionOperationsDelta": null,
+  "decision": "review_required",
+  "excludedCases": 10,
+  "fields": {
+    "equipment": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "ingredient_group": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "ingredient_name": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "ingredient_note": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "ingredient_original": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "ingredient_preparation": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "instruction_equipment": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "instruction_group": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "instruction_text": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "name": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "quantity": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "quantity_unit": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "step_duration": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "temperature": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "time_cook": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "time_prep": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "time_total": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "yield_original": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "yield_quantity": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    },
+    "yield_unit": {
+      "improved": 0,
+      "paired": 0,
+      "pairs": [],
+      "regressed": 0,
+      "tied": 0
+    }
+  },
+  "groundedNumericAssociationErrors": 0,
+  "groundedQualifierLosses": 0,
+  "grounderRevision": "b16bc63589f7413fc4fdbea79c18fdda60b52dde",
+  "grounderSha256": "64560aca82794c56256db082da3d80a0fe396002ae5da930ac6d9a5d4c3dc1f9",
+  "measurements": {
+    "baseline": {
+      "costReservationMicroUsd": {
+        "maximum": 100000,
+        "measured": 1,
+        "median": 100000,
+        "p95": 100000,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": true,
+        "total": 100000,
+        "unavailable": 9
+      },
+      "estimatedSpendMicroUsd": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "fallbackInvocations": {
+        "maximum": 0,
+        "measured": 1,
+        "median": 0,
+        "p95": 0,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": true,
+        "total": 0,
+        "unavailable": 9
+      },
+      "inputTokens": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "internalPasses": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "knownSpendMicroUsd": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "latencyMilliseconds": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "latencySources": {
+        "client_wall": 0,
+        "provider_reported": 0,
+        "tool_wall": 0,
+        "unavailable": 10
+      },
+      "mixedLatencySources": false,
+      "outputTokens": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "providerInvocations": {
+        "maximum": 1,
+        "measured": 1,
+        "median": 1,
+        "p95": 1,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": true,
+        "total": 1,
+        "unavailable": 9
+      },
+      "providerLatencyMilliseconds": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      }
+    },
+    "candidate": {
+      "costReservationMicroUsd": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "estimatedSpendMicroUsd": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "fallbackInvocations": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "inputTokens": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "internalPasses": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "knownSpendMicroUsd": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "latencyMilliseconds": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "latencySources": {
+        "client_wall": 0,
+        "provider_reported": 0,
+        "tool_wall": 0,
+        "unavailable": 10
+      },
+      "mixedLatencySources": false,
+      "outputTokens": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "providerInvocations": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      },
+      "providerLatencyMilliseconds": {
+        "maximum": null,
+        "measured": 0,
+        "median": null,
+        "p95": null,
+        "p95Method": "nearest_rank",
+        "p95SmallSample": null,
+        "total": null,
+        "unavailable": 10
+      }
+    }
+  },
+  "pairedCases": 0,
+  "pairedMinimumEvidenceRouting": {
+    "baseline": {
+      "grounded": {
+        "eligibleCases": 0,
+        "evaluatedCases": 0,
+        "falseRejections": 0,
+        "rate": null,
+        "unavailableCases": 0
+      },
+      "raw": {
+        "eligibleCases": 0,
+        "evaluatedCases": 0,
+        "falseRejections": 0,
+        "rate": null,
+        "unavailableCases": 0
+      },
+      "scope": "minimum-evidence-gate-projection"
+    },
+    "candidate": {
+      "grounded": {
+        "eligibleCases": 0,
+        "evaluatedCases": 0,
+        "falseRejections": 0,
+        "rate": null,
+        "unavailableCases": 0
+      },
+      "raw": {
+        "eligibleCases": 0,
+        "evaluatedCases": 0,
+        "falseRejections": 0,
+        "rate": null,
+        "unavailableCases": 0
+      },
+      "scope": "minimum-evidence-gate-projection"
+    }
+  },
+  "reasons": [
+    "Small synthetic smoke/regression corpus cannot establish representative quality.",
+    "Every unmatched oracle fact needs source review before it is called unsupported.",
+    "No paid-call or latency benefit is established by unmeasured values.",
+    "Holdout strategy versions must be frozen before inspection; repeated tuning invalidates holdout."
+  ],
+  "scorerSha256": "516efa94a87513e2614d3c824a65e74c62053899969c78e4828572636cf4e96a",
+  "split": "dev",
+  "unmatchedGroundedFacts": 0,
+  "usableCasesDelta": null
+}

@@ -642,13 +642,6 @@ describe("installed speech provider adapter", () => {
       undefined,
     ],
     [
-      "normalized text",
-      { text: " \n\t " },
-      "generic",
-      "normalized_text_invalid",
-      undefined,
-    ],
-    [
       "ambiguous mixed family",
       { segments: [], text: "Chop the onion.", words: [] },
       "unclassified",
@@ -680,19 +673,21 @@ describe("installed speech provider adapter", () => {
         adapter.transcribe(speechTranscriptionInput)
       );
 
-      expect(exit._tag).toBe("Failure");
-      expect(JSON.stringify(exit)).toContain("SpeechTranscriptionFailure");
+      expect(exit).toMatchObject({
+        _tag: "Success",
+        value: {
+          detectedLanguage: null,
+          reason: "malformed_response",
+          segments: [],
+          status: "failed",
+          text: null,
+        },
+      });
       expect(JSON.stringify(exit)).toContain("malformed_response");
       let expected: ImportObservabilityEvent = {
         correlationId,
-        decodeReason:
-          speechEnvelopeFailure === "normalized_text_invalid"
-            ? "speech_transcript_normalization_invalid"
-            : "speech_envelope_schema_invalid",
-        decodeStage:
-          speechEnvelopeFailure === "normalized_text_invalid"
-            ? "speech_transcript"
-            : "speech_envelope",
+        decodeReason: "speech_envelope_schema_invalid",
+        decodeStage: "speech_envelope",
         event: "provider.decode",
         outcome: "malformed",
         providerStage: "speech",
@@ -828,7 +823,16 @@ describe("installed speech provider adapter", () => {
         adapter.transcribe(speechTranscriptionInput)
       );
 
-      expect(exit._tag).toBe("Failure");
+      expect(exit).toMatchObject({
+        _tag: "Success",
+        value: {
+          detectedLanguage: null,
+          reason: "malformed_response",
+          segments: [],
+          status: "failed",
+          text: null,
+        },
+      });
       const expected = {
         correlationId,
         decodeReason: "speech_envelope_schema_invalid",
@@ -1117,7 +1121,16 @@ describe("installed speech provider adapter", () => {
         adapter.transcribe(speechTranscriptionInput)
       );
 
-      expect(exit._tag).toBe("Failure");
+      expect(exit).toMatchObject({
+        _tag: "Success",
+        value: {
+          detectedLanguage: null,
+          reason: "malformed_response",
+          segments: [],
+          status: "failed",
+          text: null,
+        },
+      });
       expect(trace.events.at(-1)).toEqual({
         correlationId,
         decodeReason: "speech_envelope_schema_invalid",
@@ -1171,7 +1184,16 @@ describe("installed speech provider adapter", () => {
         adapter.transcribe(speechTranscriptionInput)
       );
 
-      expect(exit._tag).toBe("Failure");
+      expect(exit).toMatchObject({
+        _tag: "Success",
+        value: {
+          detectedLanguage: null,
+          reason: "malformed_response",
+          segments: [],
+          status: "failed",
+          text: null,
+        },
+      });
       expect(trace.events.at(-1)).toEqual({
         correlationId,
         decodeReason: "speech_envelope_schema_invalid",
@@ -1266,7 +1288,16 @@ describe("installed speech provider adapter", () => {
         adapter.transcribe(speechTranscriptionInput)
       );
 
-      expect(exit._tag).toBe("Failure");
+      expect(exit).toMatchObject({
+        _tag: "Success",
+        value: {
+          detectedLanguage: null,
+          reason: "malformed_response",
+          segments: [],
+          status: "failed",
+          text: null,
+        },
+      });
       expect(trace.events.at(-1)).toEqual({
         correlationId,
         decodeReason: "speech_envelope_schema_invalid",
@@ -1310,7 +1341,16 @@ describe("installed speech provider adapter", () => {
       adapter.transcribe(speechTranscriptionInput)
     );
 
-    expect(exit._tag).toBe("Failure");
+    expect(exit).toMatchObject({
+      _tag: "Success",
+      value: {
+        detectedLanguage: null,
+        reason: "malformed_response",
+        segments: [],
+        status: "failed",
+        text: null,
+      },
+    });
     expect(trace.events.at(-1)).toMatchObject({
       speechEnvelopeFailure: "unsupported_property",
       speechEnvelopeUnsupportedLocation: "segment",
@@ -1377,7 +1417,16 @@ describe("installed speech provider adapter", () => {
         adapter.transcribe(speechTranscriptionInput)
       );
 
-      expect(exit._tag).toBe("Failure");
+      expect(exit).toMatchObject({
+        _tag: "Success",
+        value: {
+          detectedLanguage: null,
+          reason: "malformed_response",
+          segments: [],
+          status: "failed",
+          text: null,
+        },
+      });
       expect(trace.events.at(-1)).toEqual({
         correlationId,
         decodeReason: "speech_envelope_schema_invalid",
@@ -1454,7 +1503,16 @@ describe("installed speech provider adapter", () => {
         adapter.transcribe(speechTranscriptionInput)
       );
 
-      expect(exit._tag).toBe("Failure");
+      expect(exit).toMatchObject({
+        _tag: "Success",
+        value: {
+          detectedLanguage: null,
+          reason: "malformed_response",
+          segments: [],
+          status: "failed",
+          text: null,
+        },
+      });
       expect(trace.events.at(-1)).toMatchObject({
         speechEnvelopeFailure,
         speechEnvelopeFamily: "model_specific",
@@ -1629,7 +1687,16 @@ describe("installed speech provider adapter", () => {
           adapter.transcribe(speechTranscriptionInput)
         );
 
-        expect(exit._tag).toBe("Failure");
+        expect(exit).toMatchObject({
+          _tag: "Success",
+          value: {
+            detectedLanguage: null,
+            reason: "malformed_response",
+            segments: [],
+            status: "failed",
+            text: null,
+          },
+        });
         expect(JSON.stringify(exit)).toContain("malformed_response");
         expect(trace.events.at(-1)).toMatchObject({
           correlationId,
@@ -1703,53 +1770,75 @@ describe("installed speech provider adapter", () => {
     );
   });
 
-  it("fails closed with metadata-only transcript normalization diagnostics", async () => {
-    const trace = makeRecordingTraceStore();
-    const adapter = await runFactory(
-      makeInstalledSpeechTranscriber({
+  it.each([
+    { text: " \n\t " },
+    {
+      segments: [],
+      text: "",
+      transcription_info: { duration: 1, language: "en" },
+    },
+  ])(
+    "records verified no-speech output without fabricated transcript text",
+    async (response) => {
+      const trace = makeRecordingTraceStore();
+      const adapter = await runFactory(
+        makeInstalledSpeechTranscriber({
+          correlationId,
+          dispatch: localDispatchGate,
+          transport: makeProviderTransports(response).speech,
+        }),
+        trace.service
+      );
+      const evidence = await Effect.runPromise(
+        adapter.transcribe(speechTranscriptionInput)
+      );
+      expect(evidence).toMatchObject({
+        detectedLanguage: null,
+        reason: "no_speech_detected",
+        segments: [],
+        status: "absent",
+        text: null,
+        usage: {
+          audioDurationMilliseconds:
+            speechTranscriptionInput.audio.durationMilliseconds,
+          inputBytes: speechTranscriptionInput.audio.bytes.byteLength,
+        },
+      });
+      expect(trace.events.at(-1)).toEqual({
         correlationId,
-        dispatch: localDispatchGate,
-        transport: makeProviderTransports({
-          segments: [],
-          text: " \n\t ",
-          transcription_info: {
-            duration: 1,
-            language: "en",
-          },
-        }).speech,
-      }),
-      trace.service
-    );
+        event: "provider.decode",
+        outcome: "succeeded",
+        providerStage: "speech",
+      });
+    }
+  );
 
-    const exit = await Effect.runPromiseExit(
-      adapter.transcribe(speechTranscriptionInput)
-    );
+  it.each([
+    { text: "", word_count: 1 },
+    { text: "", words: [{ word: "Chop" }] },
+    { segments: [{ text: "Chop the onion." }], text: "" },
+    { segments: [{ words: [{ word: "Chop" }] }], text: "" },
+  ])(
+    "records contradictory empty text as failed speech instead of absence",
+    async (response) => {
+      const adapter = await runFactory(
+        makeInstalledSpeechTranscriber({
+          correlationId,
+          dispatch: localDispatchGate,
+          transport: makeProviderTransports(response).speech,
+        })
+      );
+      await expect(
+        Effect.runPromise(adapter.transcribe(speechTranscriptionInput))
+      ).resolves.toMatchObject({
+        reason: "malformed_response",
+        status: "failed",
+        text: null,
+      });
+    }
+  );
 
-    expect(exit._tag).toBe("Failure");
-    expect(JSON.stringify(exit)).toContain("malformed_response");
-    expect(trace.events.at(-1)).toEqual({
-      correlationId,
-      decodeReason: "speech_transcript_normalization_invalid",
-      decodeStage: "speech_transcript",
-      event: "provider.decode",
-      outcome: "malformed",
-      providerStage: "speech",
-      speechEnvelopeFailure: "normalized_text_invalid",
-      speechEnvelopeFamily: "model_specific",
-    });
-    expect(Object.keys(trace.events.at(-1) ?? {}).toSorted()).toEqual([
-      "correlationId",
-      "decodeReason",
-      "decodeStage",
-      "event",
-      "outcome",
-      "providerStage",
-      "speechEnvelopeFailure",
-      "speechEnvelopeFamily",
-    ]);
-  });
-
-  it("settles known cost and fails closed when the installed speech response is malformed", async () => {
+  it("settles known cost and records a failed receipt when the installed speech response is malformed", async () => {
     const trace = makeRecordingTraceStore();
     const gateway = makeProviderTransports(
       {
@@ -1797,7 +1886,16 @@ describe("installed speech provider adapter", () => {
         sourceMediaSha256: "b".repeat(64),
       })
     );
-    expect(exit._tag).toBe("Failure");
+    expect(exit).toMatchObject({
+      _tag: "Success",
+      value: {
+        detectedLanguage: null,
+        reason: "malformed_response",
+        segments: [],
+        status: "failed",
+        text: null,
+      },
+    });
     expect(JSON.stringify(exit)).toContain("malformed_response");
     expect(settledCosts).toEqual([9]);
     expect(trace.events).toEqual([

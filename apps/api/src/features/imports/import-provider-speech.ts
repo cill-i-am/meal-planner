@@ -30,6 +30,8 @@ import type {
   SpeechTranscriber,
   SpeechTranscriptionFailure,
   SpeechTranscriptionInput,
+  SpeechTranscriptionResult,
+  SpeechUnavailableEvidence,
 } from "./import-speech-transcriber.js";
 import { SpeechTranscript } from "./import-speech-transcriber.js";
 
@@ -752,6 +754,7 @@ const decodeSpeechResponse = (
       readonly _tag: "Decoded";
       readonly text: string;
     }
+  | { readonly _tag: "Absent" }
   | {
       readonly _tag: "Rejected";
       readonly decodeReason:
@@ -784,8 +787,33 @@ const decodeSpeechResponse = (
   if (Option.isNone(envelope)) {
     return rejectedSpeechEnvelope(classification, "semantic_constraint");
   }
+  const normalized = envelope.value.trim();
+  if (normalized.length === 0) {
+    // A valid empty envelope is evidence of no detected speech, never a parse fallback.
+    const segmentWords = Array.isArray(raw["segments"])
+      ? raw["segments"].map((entry) =>
+          isUnknownRecord(entry) ? entry["words"] : undefined
+        )
+      : [];
+    const nestedText =
+      [raw["segments"], raw["words"], ...segmentWords].some(
+        (entries) =>
+          Array.isArray(entries) &&
+          entries.some(
+            (entry) =>
+              isUnknownRecord(entry) &&
+              [entry["text"], entry["word"]].some(
+                (value) => Predicate.isString(value) && value.trim().length > 0
+              )
+          )
+      ) ||
+      (Predicate.isNumber(raw["word_count"]) && raw["word_count"] > 0);
+    return nestedText
+      ? rejectedSpeechEnvelope(classification, "semantic_constraint")
+      : { _tag: "Absent" };
+  }
   const text = Schema.decodeUnknownOption(SpeechTranscript.fields.text)(
-    envelope.value.trim()
+    normalized
   );
   return Option.match(text, {
     onNone: () => ({
@@ -810,6 +838,9 @@ const speechDecodeDiagnostics = (
     const { _tag, ...diagnostics } = decoded;
     return diagnostics;
   }
+  if (decoded._tag === "Absent") {
+    return {};
+  }
   if (Option.isNone(transcript)) {
     return {
       decodeReason: "speech_transcript_normalization_invalid" as const,
@@ -823,16 +854,6 @@ const speechFailure = (
   code: SafeProviderFailureCode
 ): SpeechTranscriptionFailure =>
   adapterFailure("SpeechTranscriptionFailure", code);
-
-type SpeechDispatchOutcome =
-  | {
-      readonly _tag: "Failed";
-      readonly code: "malformed_response";
-    }
-  | {
-      readonly _tag: "Transcribed";
-      readonly transcript: SpeechTranscript;
-    };
 
 export const makeInstalledSpeechTranscriber = (input: {
   readonly correlationId: ImportCorrelationId;
@@ -892,9 +913,8 @@ export const makeInstalledSpeechTranscriber = (input: {
                 );
                 const decoded = decodeSpeechResponse(raw);
                 const transcript =
-                  decoded._tag === "Rejected"
-                    ? Option.none()
-                    : Schema.decodeUnknownOption(SpeechTranscript)({
+                  decoded._tag === "Decoded"
+                    ? Schema.decodeUnknownOption(SpeechTranscript)({
                         cost: {
                           certainty: "estimated",
                           currency: "USD",
@@ -916,36 +936,51 @@ export const makeInstalledSpeechTranscriber = (input: {
                             request.audio.durationMilliseconds,
                           inputBytes: request.audio.bytes.byteLength,
                         },
-                      });
+                      })
+                    : Option.none();
                 yield* emitImportObservabilityEvent(
                   {
                     correlationId: input.correlationId,
                     ...speechDecodeDiagnostics(decoded, transcript),
                     event: "provider.decode",
-                    outcome: Option.isSome(transcript)
-                      ? "succeeded"
-                      : "malformed",
+                    outcome:
+                      decoded._tag === "Absent" || Option.isSome(transcript)
+                        ? "succeeded"
+                        : "malformed",
                     providerStage: "speech",
                   },
                   traceStore
+                );
+                const unavailable: SpeechUnavailableEvidence = {
+                  cost: {
+                    certainty: "estimated",
+                    currency: "USD",
+                    estimatedMicroUsd: estimatedCostMicroUsd,
+                  },
+                  detectedLanguage: null,
+                  model,
+                  provider: ProviderName,
+                  segments: [],
+                  text: null,
+                  usage: {
+                    audioDurationMilliseconds:
+                      request.audio.durationMilliseconds,
+                    inputBytes: request.audio.bytes.byteLength,
+                  },
+                  ...(decoded._tag === "Absent"
+                    ? { reason: "no_speech_detected", status: "absent" }
+                    : { reason: "malformed_response", status: "failed" }),
+                };
+                const result: SpeechTranscriptionResult = Option.getOrElse(
+                  transcript,
+                  () => unavailable
                 );
                 return {
                   cost: {
                     _tag: "Known" as const,
                     actualCostMicroUsd: estimatedCostMicroUsd,
                   },
-                  value: Option.match(transcript, {
-                    onNone: () =>
-                      ({
-                        _tag: "Failed",
-                        code: "malformed_response",
-                      }) satisfies SpeechDispatchOutcome,
-                    onSome: (value) =>
-                      ({
-                        _tag: "Transcribed",
-                        transcript: value,
-                      }) satisfies SpeechDispatchOutcome,
-                  }),
+                  value: result,
                 };
               }),
               {
@@ -971,10 +1006,7 @@ export const makeInstalledSpeechTranscriber = (input: {
             providerStage: "speech",
             providerStageId: "speech-transcription",
           });
-          if (outcome._tag === "Failed") {
-            return yield* Effect.fail(outcome.code);
-          }
-          return outcome.transcript;
+          return outcome;
         }).pipe(
           // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the adapter error contract.
           Effect.mapError((error) =>

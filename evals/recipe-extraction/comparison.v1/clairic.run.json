@@ -1,0 +1,17 @@
+{
+  "acceptanceSha256": "d47f83f507beddd49b8275c7b19c50e6052824f372646f61b9c3037cae2dd735",
+  "corpusSha256": "e3af1b51792b1bf83ab3b6e886f2e817a9a63d2ea530aae3168490ca926e6114",
+  "corpusVersion": "recipe-extraction-v1",
+  "descriptor": {
+    "model": "@cf/cloudflare/clairic",
+    "provider": "cloudflare-workers-ai",
+    "version": "experimental-clairic-codepoints-v1"
+  },
+  "execution": "live_provider",
+  "grounderRevision": "b16bc63589f7413fc4fdbea79c18fdda60b52dde",
+  "grounderSha256": "64560aca82794c56256db082da3d80a0fe396002ae5da930ac6d9a5d4c3dc1f9",
+  "outputs": [],
+  "runId": "recipe-dev-paired-20261023",
+  "schemaVersion": 1,
+  "strategy": "clairic"
+}

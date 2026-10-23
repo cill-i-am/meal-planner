@@ -527,8 +527,9 @@ export const pricedTokenUsage = (
     outputTokens === undefined ||
     !Number.isSafeInteger(inputTokens) ||
     !Number.isSafeInteger(outputTokens) ||
-    inputTokens <= 0 ||
-    outputTokens <= 0
+    inputTokens < 0 ||
+    outputTokens < 0 ||
+    inputTokens + outputTokens === 0
   ) {
     return { _tag: "Unknown" as const };
   }

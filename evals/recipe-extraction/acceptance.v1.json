@@ -1,0 +1,19 @@
+{
+  "version": "recipe-extraction-acceptance-v1",
+  "corpusVersion": "recipe-extraction-v1",
+  "frozenBeforeProviderRuns": true,
+  "scope": "Synthetic smoke and regression evaluation. A selection remains provisional until representative independently checked raw captures are added.",
+  "comparison": "Use identical frozen evidence, candidate schema and grounding revision; compare development and holdout separately. Freeze strategy versions before the first holdout call. Record order and repeated runs before interpreting latency differences.",
+  "hardFailures": [
+    "Any source-reviewed unsupported grounded factual assertion.",
+    "Any dropped negation, condition or optionality on an asserted retained clause.",
+    "Any wrong-but-source-present numeric value associated with an ingredient, component or step.",
+    "Any evidence fingerprint mismatch or unreported acquisition loss.",
+    "Any paid dispatch outside the existing provider-accounting boundary."
+  ],
+  "benefit": "Require paired improvements in source-supplied field precision/recall and correction burden or usable recipe count. Inspect regressions by field and case; do not hide them in an aggregate average. No improvement percentage is preselected without an application reason.",
+  "hybrid": "Consider only if the frozen local candidate has a reproducible gap the bounded fallback can address; report trigger frequency, fallback invocations, latency and known/estimated spend separately. Preserve the installed default until evidence justifies a product decision.",
+  "unknowns": "Missing usage, spend, invocation counts, latency and absent expected facts are unavailable/null, never zero or 100 percent. Reservations are not actual spend.",
+  "review": "Canonical oracle mismatch is not automatically a hallucination. Review every unmatched fact against its local witness and qualifiers before classifying it. Unreviewed mismatches block a selection; never tune the oracle solely to a model answer.",
+  "statistics": "Twenty synthetic cases and ten-case splits support descriptive paired smoke/regression counts only, not population accuracy, statistical superiority, real acquisition recall, or model claims. Scripted fixtures verify the harness, not an extractor."
+}

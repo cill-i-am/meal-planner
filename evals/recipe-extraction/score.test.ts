@@ -1,0 +1,531 @@
+import { Schema } from "effect";
+import { describe, expect, it } from "vitest";
+
+import { groundRecipeCandidate } from "../../apps/api/src/features/imports/import-recipe-grounding.js";
+import { RecipeDraftContent } from "../../packages/recipe-domain/src/content.js";
+import {
+  PersistedExtractionRun,
+  acceptanceSha256,
+  corpusSha256,
+  evidenceSha256,
+  grounderSha256,
+  readCorpus,
+  unavailableMeasurements,
+} from "./model.js";
+import type { PersistedExtractionOutput } from "./model.js";
+import {
+  compareRuns,
+  measuredDistribution,
+  scoreOutput,
+  scoreRecipe,
+  scoreRun,
+} from "./score.js";
+import { validateCorpus } from "./validate.js";
+
+const corpus = readCorpus();
+const parseRecipe = Schema.decodeUnknownSync(RecipeDraftContent);
+const caseNamed = (id: string) => {
+  const item = corpus.cases.find((entry) => entry.id === id);
+  if (item === undefined) {
+    throw new Error(`Missing test case ${id}`);
+  }
+  return item;
+};
+const outputFor = (id: string): PersistedExtractionOutput => {
+  const item = caseNamed(id);
+  return {
+    caseId: id,
+    evidenceSha256: evidenceSha256(item),
+    failureCode: null,
+    measurements: unavailableMeasurements,
+    rawCandidate: Schema.encodeSync(Schema.Json)(item.expected),
+    rawProviderResponse: null,
+    status: "completed",
+  };
+};
+const runWith = (outputs: readonly PersistedExtractionOutput[]) =>
+  Schema.decodeUnknownSync(PersistedExtractionRun)({
+    acceptanceSha256: acceptanceSha256(),
+    corpusSha256: corpusSha256(corpus),
+    corpusVersion: corpus.version,
+    descriptor: { model: "none", provider: "none", version: "1" },
+    execution: "scripted_fixture",
+    grounderRevision: "test",
+    grounderSha256: grounderSha256(),
+    outputs,
+    runId: "scripted-scorer-control",
+    schemaVersion: 1,
+    strategy: "oracle-control",
+  });
+
+describe("frozen recipe extraction evaluation", () => {
+  it("validates disjoint evidence, complete source witnesses and qualifier expectations", () => {
+    expect(validateCorpus(corpus)).toMatchObject({
+      caseCount: 20,
+      dev: 10,
+      holdout: 10,
+    });
+    const item = caseNamed("components");
+    expect(() =>
+      validateCorpus({ ...corpus, cases: [...corpus.cases, item] })
+    ).toThrow("Duplicate case");
+    expect(() =>
+      validateCorpus({ ...corpus, cases: [{ ...item, witnesses: [] }] })
+    ).toThrow("lacks witness");
+  });
+
+  it("does not turn absent facts, absent output, or absent usage into perfect scores or zero cost", () => {
+    const empty = scoreOutput(caseNamed("not-a-recipe"));
+    expect(empty.raw.precision).toBeNull();
+    expect(empty.raw.recall).toBeNull();
+    expect(empty.measurements).toBeNull();
+    const run = scoreRun(corpus, runWith([]), "dev");
+    expect(run.coverage.missing).toBe(10);
+    expect(run.raw.recall).toBe(0);
+    expect(run.measurements.knownSpendMicroUsd).toMatchObject({
+      measured: 0,
+      total: null,
+      unavailable: 10,
+    });
+    expect(run.measurements.providerInvocations.total).toBeNull();
+  });
+
+  it("scores acquisition losses separately and refuses hidden-source credit", () => {
+    const item = caseNamed("late-evidence-missing");
+    const score = scoreOutput(item, outputFor(item.id));
+    expect(score.acquisition.availableFacts).toBeLessThan(
+      score.acquisition.intendedFacts
+    );
+    expect(
+      score.raw.unmatchedOracleFacts.some((fact) =>
+        fact.path.startsWith("servings.")
+      )
+    ).toBe(true);
+    expect(
+      score.grounded.missingSourceFacts.some((fact) =>
+        fact.path.startsWith("servings.")
+      )
+    ).toBe(false);
+    expect(scoreOutput(caseNamed("silent-unobserved")).raw.recall).toBeNull();
+  });
+
+  it("rejects replay against changed evidence bytes", () => {
+    const item = caseNamed("caption-complete");
+    expect(() =>
+      scoreOutput(item, { ...outputFor(item.id), evidenceSha256: "wrong" })
+    ).toThrow("fingerprint differs");
+  });
+
+  it("rejects changed expectations and grounding under an unchanged corpus version", () => {
+    const item = caseNamed("caption-complete");
+    const run = runWith([outputFor(item.id)]);
+    const changed = {
+      ...corpus,
+      cases: corpus.cases.map((entry) =>
+        entry.id === item.id
+          ? {
+              ...entry,
+              expected: { ...entry.expected, name: "Different expectation" },
+            }
+          : entry
+      ),
+    };
+    expect(() => scoreRun(changed, run, "dev")).toThrow("fingerprint differs");
+    expect(() =>
+      scoreRun(corpus, { ...run, grounderSha256: "wrong" }, "dev")
+    ).toThrow("fingerprint differs");
+  });
+
+  it("does not give unrelated instructions credit for generated step numbers", () => {
+    const item = caseNamed("caption-complete");
+    const instructions =
+      item.expected.instructions?.map((instruction) => ({
+        ...instruction,
+        duration: null,
+        temperature: null,
+        text: "Throw away the food.",
+      })) ?? null;
+    const score = scoreRecipe(
+      item,
+      parseRecipe({ ...item.expected, instructions })
+    );
+    expect(score.fields["instruction_step"]).toBeUndefined();
+    expect(score.instructionOrder).toEqual({
+      accuracy: null,
+      comparedPairs: 0,
+      inOrderPairs: 0,
+    });
+  });
+
+  it("checks relative order only among identity-matched instruction clauses", () => {
+    const item = caseNamed("caption-complete");
+    const instructions =
+      item.expected.instructions
+        ?.toReversed()
+        .map((instruction, index) => ({ ...instruction, step: index + 1 })) ??
+      null;
+    const score = scoreRecipe(
+      item,
+      parseRecipe({ ...item.expected, instructions })
+    );
+    expect(score.instructionOrder).toEqual({
+      accuracy: 0,
+      comparedPairs: 1,
+      inOrderPairs: 0,
+    });
+    expect(score.usable).toBe(false);
+    expect(score.correctionOperations).toBe(1);
+  });
+
+  it("finds source-present quantities assigned to the wrong ingredient component", () => {
+    const item = caseNamed("components");
+    const ingredients =
+      item.expected.ingredients?.map((ingredient, index) => ({
+        ...ingredient,
+        quantity: { max: null, unit: "g", value: index === 0 ? 50 : 200 },
+      })) ?? null;
+    const score = scoreRecipe(
+      item,
+      parseRecipe({ ...item.expected, ingredients })
+    );
+    expect(score.numericAssociationErrors.map((fact) => fact.path)).toEqual([
+      "ingredients.0.quantity.value",
+      "ingredients.1.quantity.value",
+    ]);
+    expect(score.fields["quantity"]).toMatchObject({
+      falseNegative: 2,
+      falsePositive: 2,
+      truePositive: 0,
+    });
+    expect(score.usable).toBe(false);
+  });
+
+  it("never grants quantities to an unrelated ingredient through its group or original phrase", () => {
+    const item = caseNamed("components");
+    for (const retainOriginal of [false, true]) {
+      const ingredients =
+        item.expected.ingredients?.map((ingredient) => ({
+          ...ingredient,
+          name: "sugar",
+          original: retainOriginal
+            ? ingredient.original
+            : `${ingredient.quantity?.value} g sugar`,
+        })) ?? null;
+      const score = scoreRecipe(
+        item,
+        parseRecipe({ ...item.expected, ingredients })
+      );
+      expect(score.fields["quantity"]).toMatchObject({
+        falseNegative: 2,
+        falsePositive: 2,
+        truePositive: 0,
+      });
+      expect(score.completeIngredientQuantities.truePositive).toBe(0);
+      expect(score.numericAssociationErrors).toHaveLength(2);
+    }
+  });
+
+  it("does not let an original phrase override a conflicting component group", () => {
+    const item = caseNamed("components");
+    const ingredients =
+      item.expected.ingredients?.map((ingredient, index) => ({
+        ...ingredient,
+        group: item.expected.ingredients?.[1 - index]?.group,
+      })) ?? null;
+    const score = scoreRecipe(
+      item,
+      parseRecipe({ ...item.expected, ingredients })
+    );
+    expect(score.completeIngredientQuantities.truePositive).toBe(0);
+    expect(score.numericAssociationErrors).toHaveLength(2);
+  });
+
+  it("never grants source-present duration or temperature to an unrelated instruction at the same position", () => {
+    const item = caseNamed("caption-complete");
+    const instructions =
+      item.expected.instructions?.map((instruction) => ({
+        ...instruction,
+        text: "Throw away the food.",
+      })) ?? null;
+    const score = scoreRecipe(
+      item,
+      parseRecipe({ ...item.expected, instructions })
+    );
+    expect(score.fields["step_duration"]?.truePositive).toBe(0);
+    expect(score.fields["step_duration"]?.falseNegative).toBeGreaterThan(0);
+    expect(score.fields["temperature"]?.truePositive).toBe(0);
+    expect(score.fields["temperature"]?.falseNegative).toBeGreaterThan(0);
+    expect(score.numericAssociationErrors).toHaveLength(2);
+  });
+
+  it("matches ingredient reorderings one-to-one and penalizes duplicate rows", () => {
+    const item = caseNamed("components");
+    const rows = item.expected.ingredients;
+    if (rows === null || rows[0] === undefined) {
+      throw new Error("Expected component ingredients");
+    }
+    expect(
+      scoreRecipe(
+        item,
+        parseRecipe({ ...item.expected, ingredients: rows.toReversed() })
+      ).correctionOperations
+    ).toBe(0);
+    expect(
+      scoreRecipe(item, { ...item.expected, ingredients: [...rows, rows[0]] })
+        .falsePositive
+    ).toBeGreaterThan(0);
+  });
+
+  it("counts range loss and swapped units independently without treating them as a correct quantity", () => {
+    const item = caseNamed("range-unicode");
+    const ingredients =
+      item.expected.ingredients?.map((ingredient, index) =>
+        index === 0
+          ? { ...ingredient, quantity: { max: null, unit: "tsp", value: 2 } }
+          : ingredient
+      ) ?? null;
+    const score = scoreRecipe(
+      item,
+      parseRecipe({ ...item.expected, ingredients })
+    );
+    expect(score.fields["quantity_range"]?.falseNegative).toBe(1);
+    expect(score.fields["quantity_unit"]?.falsePositive).toBe(1);
+    expect(score.completeIngredientQuantities.falsePositive).toBe(1);
+    expect(score.completeIngredientQuantities.falseNegative).toBe(1);
+  });
+
+  it("detects dropped negation and conditions even when remaining words occur in the source", () => {
+    const item = caseNamed("negative-optional");
+    const instructions =
+      item.expected.instructions?.map((instruction, index) => {
+        const replacements = new Map([
+          [1, "Add butter."],
+          [2, "Add chives."],
+        ]);
+        return {
+          ...instruction,
+          text: replacements.get(index) ?? instruction.text,
+        };
+      }) ?? null;
+    const score = scoreRecipe(
+      item,
+      parseRecipe({ ...item.expected, instructions })
+    );
+    expect(score.qualifierLosses.map((entry) => entry.kind)).toEqual([
+      "negation",
+      "condition",
+    ]);
+    expect(score.correctionOperations).toBeGreaterThan(0);
+  });
+
+  it("reports raw versus grounded loss instead of improving the oracle to fit grounding", () => {
+    const item = caseNamed("compound-time");
+    const score = scoreOutput(item, outputFor(item.id));
+    expect(score.raw.falseNegative).toBe(0);
+    expect(
+      score.grounded.fields["step_duration"]?.falseNegative
+    ).toBeGreaterThan(0);
+    expect(score.grounded.correctionOperations).toBeGreaterThan(
+      score.raw.correctionOperations
+    );
+  });
+
+  it("keeps measured spend, conservative reservations and unavailable spend distinct", () => {
+    const output = outputFor("caption-complete");
+    const run = scoreRun(
+      corpus,
+      runWith([
+        {
+          ...output,
+          measurements: {
+            ...unavailableMeasurements,
+            costReservationMicroUsd: 100_000,
+          },
+        },
+      ]),
+      "dev"
+    );
+    expect(run.measurements.knownSpendMicroUsd.total).toBeNull();
+    expect(run.measurements.costReservationMicroUsd.total).toBe(100_000);
+    expect(() =>
+      scoreRun(
+        corpus,
+        runWith([
+          {
+            ...output,
+            measurements: {
+              ...unavailableMeasurements,
+              providerSpendMicroUsd: { certainty: "unavailable", value: 0 },
+            },
+          },
+        ]),
+        "dev"
+      )
+    ).toThrow("Contradictory spend certainty");
+  });
+
+  it("reports nearest-rank p95, including zero and the small-sample maximum boundary", () => {
+    expect(measuredDistribution([null, undefined])).toMatchObject({
+      measured: 0,
+      p95: null,
+      p95SmallSample: null,
+      unavailable: 2,
+    });
+    expect(measuredDistribution([0])).toMatchObject({
+      measured: 1,
+      p95: 0,
+      p95Method: "nearest_rank",
+      p95SmallSample: true,
+    });
+    const twenty = Array.from({ length: 20 }, (_, index) => index + 1);
+    expect(measuredDistribution(twenty.slice(0, 19))).toMatchObject({
+      p95: 19,
+      p95SmallSample: true,
+    });
+    expect(
+      measuredDistribution([null, ...twenty.toReversed(), undefined])
+    ).toMatchObject({
+      measured: 20,
+      median: 10.5,
+      p95: 19,
+      p95SmallSample: false,
+      unavailable: 2,
+    });
+    const run = scoreRun(
+      corpus,
+      runWith(
+        ["caption-complete", "fractions"].map((id, index) => ({
+          ...outputFor(id),
+          measurements: {
+            ...unavailableMeasurements,
+            latencyMilliseconds: index === 0 ? 10 : 20,
+            latencySource:
+              index === 0 ? ("client_wall" as const) : ("tool_wall" as const),
+          },
+        }))
+      ),
+      "dev"
+    );
+    expect(run.measurements.latencyMilliseconds).toMatchObject({
+      measured: 2,
+      p95: 20,
+      p95SmallSample: true,
+    });
+    expect(run.measurements.mixedLatencySources).toBe(true);
+    expect(run.measurements.providerLatencyMilliseconds.p95).toBeNull();
+  });
+
+  it("measures minimum-evidence false rejection only for completed outputs with an acquired oracle recipe core", () => {
+    const item = caseNamed("caption-complete");
+    const output = outputFor(item.id);
+    const empty = caseNamed("not-a-recipe").expected;
+    for (const recipe of [empty, { ...item.expected, instructions: null }]) {
+      const run = scoreRun(
+        corpus,
+        runWith([
+          { ...output, rawCandidate: Schema.encodeSync(Schema.Json)(recipe) },
+        ]),
+        "dev"
+      );
+      expect(run.minimumEvidenceRouting.raw).toEqual({
+        eligibleCases: 8,
+        evaluatedCases: 1,
+        falseRejections: 1,
+        rate: 1,
+        unavailableCases: 7,
+      });
+    }
+    expect(
+      scoreOutput(caseNamed("sparse-speech"), outputFor("sparse-speech"))
+        .minimumEvidenceRouting
+    ).toMatchObject({ eligible: true, raw: "draft" });
+    for (const id of [
+      "silent-unobserved",
+      "late-evidence-missing",
+      "title-only",
+      "not-a-recipe",
+    ]) {
+      expect(
+        scoreOutput(caseNamed(id), outputFor(id)).minimumEvidenceRouting
+          .eligible
+      ).toBe(false);
+    }
+    const unavailable = [
+      [],
+      [
+        {
+          ...output,
+          failureCode: "provider_outcome_unknown",
+          rawCandidate: null,
+          status: "failed" as const,
+        },
+      ],
+      [{ ...output, rawCandidate: null, status: "skipped" as const }],
+      [{ ...output, rawCandidate: { name: "Invalid partial schema" } }],
+    ];
+    for (const outputs of unavailable) {
+      expect(
+        scoreRun(corpus, runWith(outputs), "dev").minimumEvidenceRouting.raw
+      ).toEqual({
+        eligibleCases: 8,
+        evaluatedCases: 0,
+        falseRejections: 0,
+        rate: null,
+        unavailableCases: 8,
+      });
+    }
+  });
+
+  it("separates raw and grounded minimum-evidence gate projections", () => {
+    const run = scoreRun(
+      corpus,
+      {
+        ...runWith([outputFor("caption-complete")]),
+        grounderSha256: "scripted-dropping-grounder",
+      },
+      "dev",
+      {
+        apply: (candidate, evidence) => {
+          const grounded = groundRecipeCandidate(candidate, evidence);
+          return {
+            ...grounded,
+            recipe: { ...grounded.recipe, instructions: null },
+          };
+        },
+        sha256: "scripted-dropping-grounder",
+      }
+    );
+    expect(run.minimumEvidenceRouting.scope).toBe(
+      "minimum-evidence-gate-projection"
+    );
+    expect(run.minimumEvidenceRouting.raw.falseRejections).toBe(0);
+    expect(run.minimumEvidenceRouting.grounded.falseRejections).toBe(1);
+  });
+
+  it("excludes missing runs from paired comparisons and reports review-required rather than a fabricated winner", () => {
+    const baseline = scoreRun(
+      corpus,
+      runWith([outputFor("caption-complete")]),
+      "dev"
+    );
+    const missing = scoreRun(
+      corpus,
+      { ...runWith([]), runId: "missing-candidate" },
+      "dev"
+    );
+    const comparison = compareRuns(baseline, missing);
+    expect(comparison.decision).toBe("review_required");
+    expect(comparison.pairedCases).toBe(0);
+    expect(comparison.correctionOperationsDelta).toBeNull();
+    expect(comparison.usableCasesDelta).toBeNull();
+    expect(
+      comparison.measurements.candidate.latencyMilliseconds.p95
+    ).toBeNull();
+    expect(
+      comparison.pairedMinimumEvidenceRouting.candidate.raw.rate
+    ).toBeNull();
+    expect(
+      Object.values(comparison.fields).every((field) => field.paired === 0)
+    ).toBe(true);
+  });
+});

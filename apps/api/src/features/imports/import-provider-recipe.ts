@@ -45,6 +45,12 @@ export { InstalledRecipeModel } from "./import-provider-kernel.js";
 
 const RecipeMaximumCostMicroUsd = 100_000;
 
+/** Cloudflare catalog rates, checked 2026-10-23 against the 2026-10-20 price table. */
+export const InstalledRecipeTokenPrices = {
+  inputMicroUsdPerToken: 0.293,
+  outputMicroUsdPerToken: 2.253,
+} as const;
+
 type RecipeDispatchOutcome =
   | {
       readonly _tag: "Extracted";
@@ -202,7 +208,7 @@ const decodeRecipeCandidate = Schema.decodeUnknownResult(RecipeCandidate, {
 const recipeCandidateJsonSchema = Schema.decodeUnknownSync(Schema.Json)(
   toStrictJsonSchema(RecipeCandidate)
 );
-const recipeJsonModeRequest = (
+export const makeInstalledRecipeRequest = (
   request: RecipeEvidenceAssembly
 ): RecipeWorkersAiRequest => ({
   max_tokens: 16_384,
@@ -214,7 +220,7 @@ const recipeJsonModeRequest = (
   temperature: 0,
 });
 
-type RecipeJsonModeOutcome =
+export type RecipeProviderOutcome =
   | {
       readonly _tag: "Decoded";
       readonly inputTokens: number | undefined;
@@ -225,6 +231,71 @@ type RecipeJsonModeOutcome =
       readonly _tag: "Failed";
       readonly code: SafeProviderFailureCode;
     };
+
+const decodeRecipeResponse = (
+  raw: Schema.Json
+): {
+  readonly outcome: RecipeProviderOutcome;
+  readonly failure?: {
+    readonly decodeReason:
+      | "json_mode_envelope_invalid"
+      | "json_mode_schema_invalid";
+    readonly decodeStage: "json_mode_envelope" | "recipe_schema";
+  };
+} => {
+  const envelope = decodeRecipeJsonModeTransportEnvelope(raw);
+  if (envelope._tag === "Failure") {
+    return {
+      failure: {
+        decodeReason: "json_mode_envelope_invalid",
+        decodeStage: "json_mode_envelope",
+      },
+      outcome: { _tag: "Failed", code: "malformed_response" },
+    };
+  }
+  const selection = decodeRecipeCandidate(envelope.success.response);
+  if (selection._tag === "Failure") {
+    return {
+      failure: {
+        decodeReason: "json_mode_schema_invalid",
+        decodeStage: "recipe_schema",
+      },
+      outcome: { _tag: "Failed", code: "malformed_response" },
+    };
+  }
+  const usage =
+    envelope.success.usage === undefined
+      ? undefined
+      : Option.getOrUndefined(
+          decodeRecipeTransportUsage(envelope.success.usage)
+        );
+  if (
+    envelope.success.usage !== undefined &&
+    (usage === undefined ||
+      usage.prompt_tokens + usage.completion_tokens !== usage.total_tokens)
+  ) {
+    return {
+      failure: {
+        decodeReason: "json_mode_envelope_invalid",
+        decodeStage: "json_mode_envelope",
+      },
+      outcome: { _tag: "Failed", code: "malformed_response" },
+    };
+  }
+  return {
+    outcome: {
+      _tag: "Decoded",
+      inputTokens: usage?.prompt_tokens,
+      outputTokens: usage?.completion_tokens,
+      value: selection.success,
+    },
+  };
+};
+
+/** The evaluation collector uses the same strict decoder as live imports. */
+export const decodeInstalledRecipeResponse = (
+  raw: Schema.Json
+): RecipeProviderOutcome => decodeRecipeResponse(raw).outcome;
 
 const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
   function* runRecipeJsonModeWorkflow(
@@ -239,13 +310,13 @@ const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
       Effect.gen(function* invokeRecipeJsonMode() {
         const response = yield* Effect.tryPromise({
           catch: (error) => error,
-          try: () => transport.run(recipeJsonModeRequest(request)),
+          try: () => transport.run(makeInstalledRecipeRequest(request)),
         });
         if (!response.ok) {
           return {
             _tag: "Failed" as const,
             code: providerFailureFromStatus(response.status).code,
-          } satisfies RecipeJsonModeOutcome;
+          } satisfies RecipeProviderOutcome;
         }
         const raw = Option.getOrUndefined(
           yield* Effect.tryPromise({
@@ -257,87 +328,27 @@ const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
           return {
             _tag: "Failed" as const,
             code: "malformed_response" as const,
-          } satisfies RecipeJsonModeOutcome;
+          } satisfies RecipeProviderOutcome;
         }
-        const envelope = decodeRecipeJsonModeTransportEnvelope(raw);
-        if (envelope._tag === "Failure") {
-          yield* emitImportObservabilityEvent(
-            {
-              correlationId: observability.correlationId,
-              decodeReason: "json_mode_envelope_invalid",
-              decodeStage: "json_mode_envelope",
-              event: "provider.decode",
-              outcome: "malformed",
-              providerStage: "recipe",
-            },
-            observability.traceStore
-          );
-          return {
-            _tag: "Failed" as const,
-            code: "malformed_response" as const,
-          } satisfies RecipeJsonModeOutcome;
-        }
-        const selection = decodeRecipeCandidate(envelope.success.response);
-        if (selection._tag === "Failure") {
-          yield* emitImportObservabilityEvent(
-            {
-              correlationId: observability.correlationId,
-              decodeReason: "json_mode_schema_invalid",
-              decodeStage: "recipe_schema",
-              event: "provider.decode",
-              outcome: "malformed",
-              providerStage: "recipe",
-            },
-            observability.traceStore
-          );
-          return {
-            _tag: "Failed" as const,
-            code: "malformed_response" as const,
-          } satisfies RecipeJsonModeOutcome;
-        }
-        const usage =
-          envelope.success.usage === undefined
-            ? undefined
-            : Option.getOrUndefined(
-                decodeRecipeTransportUsage(envelope.success.usage)
-              );
-        if (
-          envelope.success.usage !== undefined &&
-          (usage === undefined ||
-            usage.prompt_tokens + usage.completion_tokens !==
-              usage.total_tokens)
-        ) {
-          yield* emitImportObservabilityEvent(
-            {
-              correlationId: observability.correlationId,
-              decodeReason: "json_mode_envelope_invalid",
-              decodeStage: "json_mode_envelope",
-              event: "provider.decode",
-              outcome: "malformed",
-              providerStage: "recipe",
-            },
-            observability.traceStore
-          );
-          return {
-            _tag: "Failed" as const,
-            code: "malformed_response" as const,
-          } satisfies RecipeJsonModeOutcome;
-        }
+        const decoded = decodeRecipeResponse(raw);
         yield* emitImportObservabilityEvent(
-          {
-            correlationId: observability.correlationId,
-            event: "provider.decode",
-            outcome: "succeeded",
-            providerStage: "recipe",
-          },
+          decoded.failure === undefined
+            ? {
+                correlationId: observability.correlationId,
+                event: "provider.decode",
+                outcome: "succeeded",
+                providerStage: "recipe",
+              }
+            : {
+                correlationId: observability.correlationId,
+                ...decoded.failure,
+                event: "provider.decode",
+                outcome: "malformed",
+                providerStage: "recipe",
+              },
           observability.traceStore
         );
-        return {
-          _tag: "Decoded" as const,
-          inputTokens: usage?.prompt_tokens,
-          outputTokens: usage?.completion_tokens,
-          value: selection.success,
-        } satisfies RecipeJsonModeOutcome;
+        return decoded.outcome;
       }),
       {
         correlationId: observability.correlationId,
@@ -398,17 +409,16 @@ export const makeInstalledRecipeExtractor = Effect.fn(
   readonly dispatch: ProviderDispatchGate;
   readonly transport: WorkersAiTransport["recipe"];
 }) {
-  const { model } = input.transport;
   const traceStore = Option.getOrUndefined(
     yield* Effect.serviceOption(ImportObservabilityTraceStore)
   );
   return {
     descriptor: Schema.decodeUnknownSync(RecipeExtractorDescriptor)({
-      model,
+      model: input.transport.model,
       provider: ProviderName,
       version: "installed-workers-ai-json-schema-v1",
     }),
-    extract: (request) =>
+    extract: (request: RecipeEvidenceAssembly) =>
       input.dispatch
         .run({
           conservativeReplay: recipeConservativeReplay(request),
@@ -435,10 +445,11 @@ export const makeInstalledRecipeExtractor = Effect.fn(
             }
             const { inputTokens, outputTokens, value } = result;
             const completedAt = yield* Effect.sync(() => Date.now());
-            const meteredCost = pricedTokenUsage(inputTokens, outputTokens, {
-              inputMicroUsdPerToken: 0.29,
-              outputMicroUsdPerToken: 2.25,
-            });
+            const meteredCost = pricedTokenUsage(
+              inputTokens,
+              outputTokens,
+              InstalledRecipeTokenPrices
+            );
             // A schema-valid response proves this bounded recipe call
             // completed. When the provider omits trustworthy usage, charge
             // the reservation maximum against the safety ledger without

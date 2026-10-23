@@ -179,7 +179,7 @@ const NullableString = Schema.NullOr(Schema.String);
 const ToolVersion = Schema.String.pipe(Schema.check(Schema.isNonEmpty()));
 const AcquisitionManifest = Schema.Struct({
   acquiredAt: ImportTimestamp,
-  audioStreams: Schema.NonEmptyArray(MediaStreamSummary),
+  audioStreams: Schema.Array(MediaStreamSummary),
   bytes: MediaByteCountSchema,
   canonicalId: SourceCanonicalId,
   canonicalUrl: Schema.String,
@@ -218,7 +218,7 @@ const AcquisitionManifest = Schema.Struct({
 
 export const VerifiedPreparedMediaArtifact = Schema.Struct({
   artifactId: MediaArtifactIdSchema,
-  audioStreams: Schema.NonEmptyArray(MediaStreamSummary),
+  audioStreams: Schema.Array(MediaStreamSummary),
   bytes: MediaByteCountSchema,
   durationSeconds: MediaDurationSecondsSchema,
   metadata: Schema.Struct({

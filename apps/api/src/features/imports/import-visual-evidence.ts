@@ -12,7 +12,6 @@ import type {
 } from "./import-visual-evidence-extractor.js";
 import {
   decodeVisualEvidence,
-  representativeVisualFrameIndex,
   validateVisualFrames,
 } from "./import-visual-evidence-extractor.js";
 import type {
@@ -246,12 +245,10 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
     const visualEvidence = yield* decodeVisualEvidence(rawVisualEvidence).pipe(
       Effect.mapError(() => pipelineFailure("visual_extraction_failed"))
     );
-    const submittedFrame =
-      frames[representativeVisualFrameIndex(frames.length)];
     if (
-      submittedFrame === undefined ||
-      visualEvidence.usage.inputBytes !== submittedFrame.bytes.byteLength ||
-      visualEvidence.usage.inputFrames !== 1 ||
+      visualEvidence.usage.inputBytes !==
+        frames.reduce((total, frame) => total + frame.bytes.byteLength, 0) ||
+      visualEvidence.usage.inputFrames !== frames.length ||
       !observationsMatchFrames(visualEvidence.observations, frames)
     ) {
       return yield* Effect.fail(pipelineFailure("visual_extraction_failed"));
@@ -270,7 +267,7 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
         configuredAgeSeconds: EvidenceRetentionSeconds,
         policy: "r2_bucket_object_age",
       },
-      schemaVersion: 1,
+      schemaVersion: 2,
       sourceEvidenceDeleteAt: evidence.deleteAt,
       sourceMediaSha256: evidence.sha256,
       usage: visualEvidence.usage,

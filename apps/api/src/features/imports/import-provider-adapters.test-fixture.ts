@@ -587,7 +587,7 @@ export const validVisual = {
 };
 
 export const validVisualSemantics = {
-  observations: [],
+  frames: [{ observations: [] }],
 } as const;
 
 export const defaultVisualUsage = {

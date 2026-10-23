@@ -1,0 +1,70 @@
+{
+  "dispatchId": "recipe-clairic-probe-3-v1",
+  "requestSha256": "65a3f4eec1461bead24210710254a2e8078c9b9e2d5a617737da432aaf4ad140",
+  "status": 200,
+  "body": {
+    "result": {
+      "model": "clairic",
+      "answers": {
+        "title": {
+          "type": "text",
+          "p_null": 0.000511859601829201,
+          "span": [3, 20],
+          "guess": "Crème de carottes",
+          "confidence": 0.9974900484085083,
+          "value": "Crème de carottes"
+        },
+        "ingredients": {
+          "type": "list",
+          "value": ["250 g carottes", "1⅓ cuillère de crème"],
+          "spans": [
+            [36, 50],
+            [52, 72]
+          ],
+          "confidence": 0.2593879551037934
+        },
+        "instructions": {
+          "type": "list",
+          "value": ["Coupez les carottes", "Aj"],
+          "spans": [
+            [84, 103],
+            [106, 108]
+          ],
+          "confidence": 0.054700112597101315
+        },
+        "japanese_note": {
+          "type": "text",
+          "p_null": 0.0002188233775086701,
+          "span": [143, 150],
+          "guess": "生姜は任意です",
+          "confidence": 0.8754333257675171,
+          "value": "生姜は任意です"
+        },
+        "servings": {
+          "type": "text",
+          "p_null": 0.999613344669342,
+          "span": [143, 148],
+          "guess": "生姜は任意",
+          "confidence": 0.227220818400383,
+          "value": null
+        }
+      },
+      "truncated": false,
+      "usage": {
+        "state_tokens": 60,
+        "image_tokens": 0,
+        "schema_tokens": 580,
+        "input_tokens": 820,
+        "output_tokens": 0,
+        "passes": 4
+      },
+      "state_text": "🥕\r\nCrème de carottes\r\nIngrédients:\r\n250 g carottes\r\n1⅓ cuillère de crème\r\nMéthode:\r\nCoupez les carottes.\r\nAjoutez la crème après cuisson.\r\n注記: 生姜は任意です。"
+    },
+    "success": true,
+    "errors": [],
+    "messages": [],
+    "status": 200
+  },
+  "headers": {},
+  "latencyMs": 3211
+}

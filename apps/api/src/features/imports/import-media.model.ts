@@ -159,14 +159,22 @@ const ImageDimension = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThan(0))
 );
 
+export const ProviderAudioAbsence = Schema.Struct({
+  reason: Schema.Literal("no_audio_stream"),
+  status: Schema.Literal("absent"),
+});
+
 /** Container output for private provider audio and visual evidence. */
 export const ProviderEvidenceTransport = Schema.Struct({
-  audio: Schema.Struct({
-    artifactId: MediaArtifactId,
-    bytes: MediaByteCount,
-    durationMilliseconds: MediaDurationMilliseconds,
-    sha256: Sha256Hex,
-  }),
+  audio: Schema.Union([
+    Schema.Struct({
+      artifactId: MediaArtifactId,
+      bytes: MediaByteCount,
+      durationMilliseconds: MediaDurationMilliseconds,
+      sha256: Sha256Hex,
+    }),
+    ProviderAudioAbsence,
+  ]),
   frames: Schema.NonEmptyArray(
     Schema.Struct({
       artifactId: MediaArtifactId,
@@ -251,7 +259,7 @@ export type VerifiedSourceMetadata = typeof VerifiedSourceMetadata.Type;
 
 export const VerifiedAcquisitionEvidence = Schema.Struct({
   acquiredAt: ImportTimestamp,
-  audioStreams: Schema.NonEmptyArray(MediaStreamSummary),
+  audioStreams: Schema.Array(MediaStreamSummary),
   bytes: MediaByteCount,
   deleteAt: ImportTimestamp,
   durationSeconds: MediaDurationSeconds,

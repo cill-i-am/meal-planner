@@ -120,16 +120,8 @@ export const VisualEvidenceSemantics = Schema.Struct({
 );
 export type VisualEvidenceSemantics = typeof VisualEvidenceSemantics.Type;
 
-/** Pick one stable source frame for the native single-image vision request. */
-export const representativeVisualFrameIndex = (frameCount: number) =>
-  Math.floor(frameCount / 2);
-
-/**
- * Closed provider transport schema. Only text and confidence are authoritative.
- * Older model shapes may echo bounded metadata, but the adapter ignores it and
- * derives transport identity and aggregate outcome from trusted inputs.
- */
-export const VisualEvidenceProviderToolArguments = Schema.Struct({
+/** A slot belongs to the image at the same position in the request. */
+const VisualProviderFrameToolArguments = Schema.Struct({
   observations: Schema.Array(
     Schema.Struct({
       confidence: Schema.optionalKey(
@@ -139,14 +131,38 @@ export const VisualEvidenceProviderToolArguments = Schema.Struct({
     })
   ).pipe(Schema.check(Schema.isMaxLength(MaximumVisualObservations))),
 });
-
-export const VisualEvidenceProviderSemantics = Schema.Struct({
+const VisualProviderFrameSemantics = Schema.Struct({
   observations: Schema.Array(
     Schema.Struct({
       confidence: ProviderVisualConfidence,
       text: VisualEvidenceSemanticObservation.fields.text,
     })
   ).pipe(Schema.check(Schema.isMaxLength(MaximumVisualObservations))),
+});
+export const visualEvidenceProviderSchemas = (frameCount: number) => ({
+  schema: Schema.Struct({
+    frames: Schema.Array(VisualProviderFrameSemantics).pipe(
+      Schema.check(
+        Schema.isMinLength(frameCount),
+        Schema.isMaxLength(frameCount)
+      )
+    ),
+  }),
+  toolSchema: Schema.Struct({
+    frames: Schema.Array(VisualProviderFrameToolArguments).pipe(
+      Schema.check(
+        Schema.isMinLength(frameCount),
+        Schema.isMaxLength(frameCount)
+      )
+    ),
+  }),
+});
+
+type VisualProviderFrame = typeof VisualProviderFrameSemantics.Type;
+export const emptyVisualProviderSemantics = (frameCount: number) => ({
+  frames: Array.from({ length: frameCount }, (): VisualProviderFrame => ({
+    observations: [],
+  })),
 });
 
 const isJsonObject = (input: Schema.Json): input is Schema.JsonObject =>
@@ -181,9 +197,10 @@ const normalizeProviderConfidence = (
  * discarded; an unusable payload therefore becomes honest empty visual
  * evidence instead of acquiring authority or aborting transcript processing.
  */
-export const projectVisualProviderSemanticsInput = (
-  input: Schema.Json
-): typeof VisualEvidenceProviderSemantics.Type => {
+const projectVisualProviderFrame = (
+  input: Schema.Json,
+  maximumObservations: number
+): VisualProviderFrame => {
   if (!isJsonObject(input) || !Array.isArray(input["observations"])) {
     return { observations: [] };
   }
@@ -194,7 +211,7 @@ export const projectVisualProviderSemanticsInput = (
   }[] = [];
   for (const observation of input["observations"].slice(
     0,
-    MaximumVisualObservations
+    maximumObservations
   )) {
     if (!isJsonObject(observation)) {
       continue;
@@ -222,6 +239,27 @@ export const projectVisualProviderSemanticsInput = (
   }
 
   return { observations };
+};
+
+/** Preserve empty slots: missing or extra slots cannot shift frame attribution. */
+export const projectVisualProviderSemanticsInput = (
+  input: Schema.Json,
+  frameCount: number
+) => {
+  if (
+    !isJsonObject(input) ||
+    !Array.isArray(input["frames"]) ||
+    input["frames"].length !== frameCount
+  ) {
+    return emptyVisualProviderSemantics(frameCount);
+  }
+  let remaining = MaximumVisualObservations;
+  const frames = input["frames"].map((frame) => {
+    const projected = projectVisualProviderFrame(frame, remaining);
+    remaining -= projected.observations.length;
+    return projected;
+  });
+  return { frames };
 };
 
 /** Normalized result returned by any future OCR or vision adapter. */

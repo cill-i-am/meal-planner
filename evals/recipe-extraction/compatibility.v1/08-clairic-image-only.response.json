@@ -1,0 +1,60 @@
+{
+  "dispatchId": "recipe-clairic-image-only-v1",
+  "requestSha256": "34193b9752e482fba356f4d9eed86b12340068fb11007a3693a47b11a8fb06d5",
+  "status": 200,
+  "body": {
+    "result": {
+      "model": "clairic",
+      "answers": {
+        "title": {
+          "type": "text",
+          "p_null": 0.00021522502356674522,
+          "span": null,
+          "guess": "Carrot soup",
+          "confidence": 0.9782445936752486,
+          "value": "Carrot soup",
+          "spell_confidence": 0.9782445936752486,
+          "source": "image"
+        },
+        "ingredients": {
+          "type": "list",
+          "value": ["200 g carrots", "500 ml"],
+          "spans": [null, null],
+          "confidence": 1,
+          "source": "image"
+        },
+        "instructions": {
+          "type": "list",
+          "value": ["Chop carrots carrots. Sim for 15 minutes"],
+          "spans": [null],
+          "confidence": 1,
+          "source": "image"
+        },
+        "servings": {
+          "type": "text",
+          "p_null": 0.9999910593032837,
+          "span": null,
+          "guess": null,
+          "confidence": 1,
+          "value": null
+        }
+      },
+      "truncated": false,
+      "usage": {
+        "state_tokens": 0,
+        "image_tokens": 496,
+        "schema_tokens": 658,
+        "input_tokens": 2146,
+        "output_tokens": 0,
+        "passes": 3
+      },
+      "state_text": ""
+    },
+    "success": true,
+    "errors": [],
+    "messages": [],
+    "status": 200
+  },
+  "headers": {},
+  "latencyMs": 4120
+}

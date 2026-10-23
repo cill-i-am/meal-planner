@@ -13,7 +13,6 @@ import type {
 } from "./import-visual-evidence-extractor.js";
 import {
   MaximumVisualFrames,
-  representativeVisualFrameIndex,
   VisualEvidence,
 } from "./import-visual-evidence-extractor.js";
 import { ImportId, ImportTimestamp } from "./import.contracts.js";
@@ -57,7 +56,7 @@ export const VisualEvidenceManifestDocument = Schema.Struct({
     configuredAgeSeconds: Schema.Literal(EvidenceRetentionSeconds),
     policy: Schema.Literal("r2_bucket_object_age"),
   }),
-  schemaVersion: Schema.Literal(1),
+  schemaVersion: Schema.Literals([1, 2]),
   sourceEvidenceDeleteAt: ImportTimestamp,
   sourceMediaSha256: Sha256Hex,
   usage: VisualEvidence.fields.usage,
@@ -276,12 +275,17 @@ const verifiedManifestIdentity = (
 const verifiedManifestFrameContract = (
   document: VisualEvidenceManifestDocument
 ) => {
-  const submittedFrame =
-    document.frames[representativeVisualFrameIndex(document.frames.length)];
+  // Version 1 retained every sampled frame but submitted only the middle one.
+  // Preserve that accounting contract when recovering its persisted evidence.
+  const inputBytes =
+    document.schemaVersion === 1
+      ? document.frames[Math.floor(document.frames.length / 2)]?.byteLength
+      : document.frames.reduce((total, frame) => total + frame.byteLength, 0);
+  const inputFrames = document.schemaVersion === 1 ? 1 : document.frames.length;
   if (
-    submittedFrame !== undefined &&
-    document.usage.inputBytes === submittedFrame.byteLength &&
-    document.usage.inputFrames === 1 &&
+    inputBytes !== undefined &&
+    document.usage.inputBytes === inputBytes &&
+    document.usage.inputFrames === inputFrames &&
     observationsMatchFrames(document.observations, document.frames)
   ) {
     return Effect.void;
@@ -433,6 +437,7 @@ const putVerified = (bucket: AcquisitionBucketLike) =>
       ...manifest,
       frames: [firstFrame, ...remainingFrames],
     };
+    yield* verifiedManifestFrameContract(document);
     for (const [index, frame] of frames.entries()) {
       const reference = document.frames[index];
       if (reference === undefined) {
