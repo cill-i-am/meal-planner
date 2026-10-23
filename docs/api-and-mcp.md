@@ -20,7 +20,7 @@ Configure an MCP client with the MCP address and follow its OAuth connection flo
 
 Tokens are bound to their resource. An API token cannot be used at MCP, or vice versa. A current account session, current consent and current household membership are checked at use time. A client name shown at consent is supplied by that client and is not an endorsement.
 
-The transports support the official SDK's legacy negotiation and Effect's stateless `2026-07-28` protocol. The latter requires its native request metadata and headers; it is not a legacy initialize exchange with a different version string. Local tests exercise both protocols. Connecting the deployed endpoint from ChatGPT, Claude, Cursor and Durable Pi remains a release acceptance check.
+The official MCP server SDK handles both legacy negotiation and the stateless `2026-07-28` protocol. The latter requires its native request metadata and headers; it is not a legacy initialize exchange with a different version string. Local tests exercise both protocols. Connecting the deployed endpoint from ChatGPT, Claude, Cursor and Durable Pi remains a release acceptance check.
 
 Client ID Metadata Documents are disabled: the installed native provider requires a DNS-pinned transport for safe metadata fetching, which the Workers integration does not supply. Dynamic client registration is supported.
 
@@ -67,6 +67,69 @@ Use `recipe_import_intents_create` for one TikTok video URL, or `recipe_import_b
 When an import requires review, read its action, submit corrections, then explicitly confirm that version to publish it. An extracted draft is never a published recipe. Cancellation and status reads retain their existing durable semantics.
 
 The existing import feature accepts TikTok URLs. Binary video upload and publishing videos to TikTok are not existing capabilities and are not implied by this interface.
+
+### Tasks and elicitation
+
+Modern clients can negotiate the [Tasks extension](https://tasks.extensions.modelcontextprotocol.io/specification/2026-07-28/tasks) and [form elicitation](https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation). Support is scoped to recipe import preparation and publication review:
+
+| Operation | Negotiated behavior | Ordinary fallback |
+| --- | --- | --- |
+| `recipe_import_intents_create` | Returns a Task when the client advertises Tasks and the connection has read and write scopes | Returns the durable import intent |
+| `tasks/get` | Projects progress and the first terminal outcome from the existing import timeline | Read the import intent and timeline |
+| `tasks/cancel` | Requests existing domain cancellation while preparation is working; acknowledges a terminal Task without changing it | Cancel the import using its current version |
+| `tasks/update` | Validates the request and current access, then acknowledges unknown or already-satisfied input responses; preparation Tasks do not await input | Not needed |
+| `recipe_import_intents_confirm_action` | With read and write scopes, requests an explicit publish decision with the complete recipe and planning tags through form elicitation | Existing explicit, versioned confirm command |
+
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant MCP as Product API / MCP
+    participant Import as Recipe import feature
+    participant Workflow as Cloudflare workflow
+    participant User
+    Agent->>MCP: Create import (original idempotency key)
+    MCP->>Import: Existing create command
+    Import->>Workflow: Prepare recipe draft
+    MCP-->>Agent: Task locator
+    Agent->>MCP: tasks/get (also after reconnect)
+    MCP->>Import: Read current intent and durable timeline
+    MCP-->>Agent: Completed: draft ready, review action reference
+    Agent->>MCP: Confirm current review version
+    MCP->>Import: Prepare complete recipe review
+    MCP-->>User: Form elicitation: publish this recipe?
+    User->>Agent: Accept, decline or dismiss
+    Agent->>MCP: Resume with signed state and input response
+    MCP->>Import: On acceptance, existing versioned confirm command
+    MCP-->>Agent: Publication result or unchanged draft
+```
+
+A Task means **prepare a recipe draft**. It completes when the first review action becomes available, even though publication is still pending. Later edits, publication, cancellation of that draft or operator recovery do not rewrite the Task's terminal outcome. Read the import's current status before using a historical action reference. An extraction failure is a completed tool result with `isError`; a redirected import returns its canonical reference without automatically following it. Batch imports retain their existing admission semantics and do not pretend that admitting a batch means its recipes are ready.
+
+Task locators expire seven days after import admission. They are signed and bound to the account, OAuth client, family and import; they survive token refresh and reconnect by the same authorized client. Every access still checks current OAuth authority and family membership. Signing does not grant access. Retain the original import ID and mutation identity if a locator expires. Poll using `pollIntervalMs`; subscriptions and legacy experimental Tasks methods are not implemented. A cancellation acknowledgement is not a promise that an external provider has physically stopped.
+
+Publication uses the modern multiple-round-trip input flow. The response contains an `elicitation/create` form in `inputRequests.publish` and an opaque `requestState`. Resume the same tool call and original arguments with that state and `inputResponses.publish`. The state binds the exact action version and idempotency key, expires after ten minutes, and is checked against the current account and OAuth client. Only `accept` with `content.publish: true` submits the existing confirm command. Decline, dismiss and false leave the draft unchanged. Successful retries use the domain's original mutation receipt; stale versions require a fresh review. Elicitation is a client-mediated decision, not independent evidence of a human click.
+
+The preview contains the full structured recipe and planning tags. Incomplete, stale or oversized previews require the existing app review flow rather than implicit confirmation. This slice implements form mode only; URL elicitation and elicitation inside background Tasks are not implemented. Clients without form support or read permission keep the existing explicit confirmation flow. Tesco's separate MCP is unchanged.
+
+### Feature ownership and verification
+
+The recipe import feature owns preparation outcomes and publishable review previews in `imports/import-mcp.ts`. The product API feature owns protocol negotiation, signed interaction state and translation to its existing typed application commands. Existing domain handlers, durable timeline, mutation receipts and Cloudflare workflow remain the authority for state changes. No Task database or second workflow engine is introduced.
+
+The native MCP SDK owns protocol decoding and response framing. Effect owns request cancellation and application execution. One bounded WebCrypto signer serves the two interaction payloads: Task IDs need deterministic issuance with an absolute domain expiry, while the SDK request-state helper uses a fresh wall-clock-relative expiry on every issue. Purpose-separated schemas prevent a review continuation being used as a Task locator.
+
+Run the focused checks from the repository root:
+
+```sh
+pnpm --filter @meal-planner/api exec vitest run --project node \
+  src/features/imports/import-mcp.test.ts \
+  src/features/product-api/product-mcp-state.test.ts \
+  src/features/product-api/product-mcp-interactions.test.ts \
+  src/features/product-api/product-api.test.ts
+pnpm --filter @meal-planner/worker-tests exec vitest run \
+  ../../apps/api/src/features/product-api/product-api.integration.worker.test.ts
+```
+
+The interaction tests exercise the actual MCP HTTP transport against an in-memory application fixture, including stable terminal results, reconnect ownership, stale and forged continuations, acceptance replay and declined publication. They do not run extraction providers or establish production client interoperability. The native Worker integration suite checks the OAuth and MCP boundary with the real auth database and family handlers. Before rollout, test the selected agent client's capability negotiation, reconnect, review display, acceptance, decline and dismissal against an authenticated deployment using test data.
 
 ## Assistant and private interviews
 

@@ -431,6 +431,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
                 )
               );
             }),
+          mcpStateSecret: authSecret,
           rateLimit: (key) =>
             productRequestLimit.limit({ key }).pipe(
               Effect.provideService(RuntimeContext, runtimeContext),
