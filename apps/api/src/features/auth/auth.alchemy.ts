@@ -22,6 +22,7 @@ import type {
 import {
   DelegatedAccess,
   makeDelegatedAccessBoundary,
+  nativeDelegatedSession,
   runWithNativeDelegation,
 } from "./delegated-access.js";
 import type { DelegatedAccessBoundary } from "./delegated-access.js";
@@ -158,7 +159,7 @@ export const makeAlchemyMealPlannerAuth = (
                     native.api.resolveDelegatedAccess({ body: grant })
                   ).pipe(
                     Effect.map((current) => ({
-                      session: current.session,
+                      session: nativeDelegatedSession(current),
                       user: current.user,
                     }))
                   )

@@ -9,7 +9,7 @@ import {
   createAuthEndpoint,
   createAuthMiddleware,
 } from "better-auth/api";
-import { Context, Data, Effect, Option, Schema } from "effect";
+import { Context, Data, Effect, Option, Redacted, Schema } from "effect";
 
 import {
   OAuthLifecycleRequest,
@@ -60,7 +60,7 @@ const StoredSession = Schema.Struct({
   expiresAt: Schema.Date,
   id: Schema.String,
   ipAddress: Schema.optional(Schema.NullOr(Schema.String)),
-  token: Schema.String,
+  token: Schema.RedactedFromValue(Schema.String),
   updatedAt: Schema.Date,
   userAgent: Schema.optional(Schema.NullOr(Schema.String)),
   userId: UserId,
@@ -86,10 +86,16 @@ const DelegatedGrant = Schema.Struct({
   resource: Schema.String,
   scopes: Schema.Array(Schema.String),
   session: StoredSession,
-  token: Schema.String,
+  token: Schema.Redacted(Schema.String),
   user: StoredUser,
 });
 export type DelegatedGrant = typeof DelegatedGrant.Type;
+
+/** Unwrap only where Better Auth requires its native session representation. */
+export const nativeDelegatedSession = (grant: DelegatedGrant) => ({
+  ...grant.session,
+  token: Redacted.value(grant.session.token),
+});
 
 /** This capability exists only in a server Effect context, never in request headers. */
 export const DelegatedAccess = Context.Reference<DelegatedGrant | undefined>(
@@ -133,7 +139,7 @@ const DelegatedRequest = Schema.Struct({
   organizationId: Schema.optional(HouseholdOrganizationId),
   requiredScopes: Schema.Array(Schema.String),
   resource: Schema.String,
-  token: Schema.String,
+  token: Schema.Redacted(Schema.String),
 });
 const AccessTokenClaims = Schema.Struct({
   aud: Schema.Union([Schema.String, Schema.Array(Schema.String)]),
@@ -151,7 +157,9 @@ const resolveOAuthGrant = async (
   body: typeof DelegatedRequest.Type
 ): Promise<DelegatedGrant> => {
   const parsed = Schema.decodeUnknownOption(AccessTokenClaims)(
-    await getOAuthProviderApi(ctx, options).requireActiveAccessToken(body.token)
+    await getOAuthProviderApi(ctx, options).requireActiveAccessToken(
+      Redacted.value(body.token)
+    )
   );
   if (Option.isNone(parsed)) {
     throw invalidToken();
@@ -270,7 +278,10 @@ export const delegatedAccessPlugin = (options: OAuthOptions<string[]>) =>
             return {
               context: {
                 context: {
-                  session: { session: current.session, user: current.user },
+                  session: {
+                    session: nativeDelegatedSession(current),
+                    user: current.user,
+                  },
                 },
               },
             };
@@ -356,7 +367,7 @@ export const delegatedRequestInput = (
       organizationId,
       requiredScopes,
       resource,
-      token,
+      token: Redacted.make(token),
     };
   });
 
@@ -371,7 +382,7 @@ export interface DelegatedAccessBoundary {
 
 export const makeDelegatedAccessBoundary = (
   resolve: (body: {
-    readonly token: string;
+    readonly token: Redacted.Redacted<string>;
     readonly resource: string;
     readonly requiredScopes: readonly string[];
     readonly organizationId?: HouseholdOrganizationId | undefined;

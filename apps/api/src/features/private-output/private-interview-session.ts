@@ -177,21 +177,29 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
     });
   }
   beginConnection(untrusted: PrivateSessionBinding): Promise<string> {
-    return this.#beginOutput(decodeBinding(untrusted), "socket");
+    return this.#beginConnection(decodeBinding(untrusted));
   }
-  beginRequest(untrusted: PrivateSessionBinding): Promise<string> {
+  async beginRequest(untrusted: PrivateSessionBinding): Promise<string> {
     const binding = decodeBinding(untrusted);
+    const childName = await privateOutputKey(
+      "session",
+      binding.sessionReference
+    );
     this.#binding(binding);
-    const current = this.#socket.read();
-    if (current !== null && this.#socket.isRequestCurrent(current.generation)) {
-      return Promise.resolve(current.generation);
+    const current = this.#socket.readRequest();
+    if (
+      current !== null &&
+      !this.#socket.isRequestCurrent(current.generation)
+    ) {
+      this.#turns.interrupt("connection_lost", current.generation);
+      this.#detachDeliveries(current.generation);
     }
-    return this.#beginOutput(binding, "request");
+    return this.#socket.beginRequest(binding, {
+      childName,
+      targetKind: "session",
+    });
   }
-  async #beginOutput(
-    binding: PrivateSessionBinding,
-    mode: "socket" | "request"
-  ): Promise<string> {
+  async #beginConnection(binding: PrivateSessionBinding): Promise<string> {
     const childName = await privateOutputKey(
       "session",
       binding.sessionReference
@@ -199,10 +207,16 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
     this.#binding(binding);
     const previous = this.#socket.read();
     const ongoing = this.#reauthorization;
-    const previousGeneration =
-      this.#turns.pendingGeneration() ??
-      ongoing?.previousGeneration ??
-      previous?.generation;
+    const turnGeneration = this.#turns.pendingGeneration();
+    let previousGeneration =
+      ongoing?.previousGeneration ?? previous?.generation;
+    if (
+      turnGeneration !== undefined &&
+      (turnGeneration === previous?.generation ||
+        turnGeneration === ongoing?.previousGeneration)
+    ) {
+      previousGeneration = turnGeneration;
+    }
     const pending: PendingAuthorization | null =
       previousGeneration === undefined
         ? null
@@ -216,10 +230,10 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       this.#detachDeliveries(previous.generation);
     }
     try {
-      const target = { childName, targetKind: "session" as const };
-      const generation = await (mode === "request"
-        ? this.#socket.beginRequest(binding, target)
-        : this.#socket.begin(binding, target));
+      const generation = await this.#socket.begin(binding, {
+        childName,
+        targetKind: "session",
+      });
       if (pending !== null) {
         pending.generation = generation;
       }
@@ -254,17 +268,7 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
     })(untrusted);
     this.#binding(input.binding);
     this.#socket.authorizeRequest(input.generation, input.expiresAt);
-    const pending = this.#reauthorization;
-    this.#turns.reauthorize(
-      pending?.generation === input.generation
-        ? pending.previousGeneration
-        : input.generation,
-      input.generation
-    );
-    if (pending?.generation === input.generation) {
-      pending.ready.resolve(null);
-      this.#reauthorization = null;
-    }
+    this.#turns.reauthorize(input.generation, input.generation);
   }
   #assertRequest(binding: PrivateSessionBinding, generation: string): void {
     this.#binding(binding);
@@ -463,6 +467,15 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
     } finally {
       signal.removeEventListener("abort", abort);
     }
+  }
+  #turnAwaitingAuthorization(): boolean {
+    const pending = this.#reauthorization;
+    const generation = this.#turns.pendingGeneration();
+    return (
+      pending !== null &&
+      (generation === pending.previousGeneration ||
+        generation === pending.generation)
+    );
   }
   #deliver(
     response: globalThis.Response,
@@ -729,7 +742,7 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
           chat: {
             accept: async (result) => {
               while (
-                this.#reauthorization !== null &&
+                this.#turnAwaitingAuthorization() &&
                 !prepared.signal.aborted
               ) {
                 // Each replacement handshake depends on its predecessor; acceptance must recheck the newest one.

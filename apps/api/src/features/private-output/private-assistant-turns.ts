@@ -302,7 +302,15 @@ export class PrivateAssistantTurns<TRunResult = unknown> {
   }
   #armExpiry(turnId: string): void {
     this.#clearExpiry(turnId);
-    const lifecycle = this.#socket.read();
+    const turn = this.#database
+      .select()
+      .from(privateAssistantTurns)
+      .where(eq(privateAssistantTurns.id, turnId))
+      .get();
+    if (turn === undefined) {
+      return;
+    }
+    const lifecycle = this.#socket.read(turn.generation);
     if (lifecycle === null || lifecycle === undefined) {
       return;
     }

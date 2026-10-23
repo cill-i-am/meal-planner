@@ -30,15 +30,15 @@ export const parseAuthorizationRequest = (
 
 export const permissionDescriptions: Readonly<Record<string, string>> = {
   "meal-planner:account":
-    "Create households and manage household invitations and membership on your behalf.",
+    "Read your name, email address and whether your email is verified.",
   "meal-planner:assistant":
-    "Use Meal Planner’s assistant on your behalf, including conversations and recipe imports.",
+    "Read assistant conversations. With permission to make changes, send messages and answer proposed actions on your behalf.",
   "meal-planner:private":
-    "Read and change your own private interviews, answers and conversations.",
+    "Read your own private interviews and setup conversations. With permission to make changes, update your interviews and explicitly share profile answers.",
   "meal-planner:read":
     "Read your households, people, recipes, food preferences and meal plans.",
   "meal-planner:write":
-    "Add and change household people, recipes, food preferences and meal plans.",
+    "Create and change families, invite people by email, manage membership, change food profiles and meal plans, and import and publish reviewed recipes.",
   offline_access:
     "Keep this connection active between visits, until its access expires or is revoked.",
 };

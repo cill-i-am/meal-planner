@@ -77,13 +77,12 @@ it("serializes concurrent submissions and retains the exact confirmed request un
   );
   await waitFor(actor, (state) => state.matches("ready"));
   const first = dispatchConversationAction(actor, request());
-  const duplicate = expect(
-    dispatchConversationAction(actor, request("002"))
-  ).rejects.toThrow("Resolve the saved action");
+  expect(await dispatchConversationAction(actor, request("002"))).toEqual({
+    _tag: "NotAdmitted",
+  });
   await waitFor(actor, (state) => state.matches("sending"));
   await Effect.runPromise(Deferred.succeed(response, committed(request())));
-  expect(await first).toEqual(committed(request()));
-  await duplicate;
+  expect(await first).toEqual({ _tag: "Settled", state: committed(request()) });
   expect(sent).toEqual([request()]);
   expect(storage.getItem(storageKey)).toBe(JSON.stringify(request()));
   expect(actor.getSnapshot().matches("awaitingReceipt")).toBe(true);
@@ -118,16 +117,22 @@ it("recovers a lost response and retries the same bytes only after an explicit r
   const first = start(service);
   await waitFor(first, (state) => state.matches("ready"));
   const outcome = await dispatchConversationAction(first, action);
-  expect(outcome._tag).toBe("Unknown");
+  expect(outcome).toMatchObject({
+    _tag: "Settled",
+    state: { _tag: "Unknown" },
+  });
   expect(first.getSnapshot().matches("retained")).toBe(true);
   expect(storage.getItem(storageKey)).toBe(JSON.stringify(action));
   first.stop();
   const resumed = start(service);
   await waitFor(resumed, (state) => state.matches("retained"));
   expect(sent).toEqual([action]);
-  expect(await dispatchConversationAction(resumed, action, true)).toEqual(
-    committed(action)
-  );
+  expect(
+    await dispatchConversationAction(resumed, request("002"), true)
+  ).toEqual({
+    _tag: "Settled",
+    state: committed(action),
+  });
   expect(sent).toEqual([action, action]);
 });
 
@@ -168,14 +173,15 @@ it("interrupts an unmounted request while preserving evidence for recovery", asy
     )
   );
   await waitFor(actor, (state) => state.matches("ready"));
-  const outcome = expect(
-    dispatchConversationAction(actor, request())
-  ).rejects.toThrow();
+  const outcome = dispatchConversationAction(actor, request());
   await Effect.runPromise(Deferred.await(started));
   actor.stop();
   // stop requests interruption; the invocation's Effect scope owns finalization.
   expect(await Effect.runPromise(Deferred.await(released))).toBe(true);
-  await outcome;
+  expect(await outcome).toEqual({ _tag: "Cancelled" });
+  expect(await dispatchConversationAction(actor, request("002"))).toEqual({
+    _tag: "Cancelled",
+  });
   expect(storage.getItem(storageKey)).toBe(JSON.stringify(request()));
 });
 
@@ -198,9 +204,14 @@ it("blocks corrupt saved requests and failed storage before sending anything", a
     submit: () => Effect.die("must not submit"),
   });
   await waitFor(unavailable, (state) => state.matches("ready"));
-  await expect(
-    dispatchConversationAction(unavailable, request())
-  ).rejects.toThrow("not sent");
+  expect(await dispatchConversationAction(unavailable, request())).toEqual({
+    _tag: "Blocked",
+  });
+  expect(unavailable.getSnapshot().context.error).toContain("not sent");
+  expect(await dispatchConversationAction(unavailable, request("002"))).toEqual(
+    { _tag: "Blocked" }
+  );
+  expect(unavailable.getSnapshot().context.request).toEqual(request());
   expect(unavailable.getSnapshot().matches("blocked")).toBe(true);
 });
 

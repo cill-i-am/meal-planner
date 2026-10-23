@@ -289,6 +289,35 @@ describe("product HTTP and MCP with native OAuth credentials", () => {
     expect(unauthenticated.headers.get("www-authenticate")).toContain(
       `resource_metadata="${baseURL}/.well-known/oauth-protected-resource/mcp"`
     );
+    await Promise.all(
+      ["/v1/account", "/v1/families"].map(async (path) => {
+        const response = await fixture.fetch(new Request(`${baseURL}${path}`));
+        expect(response.status).toBe(401);
+        expect(response.headers.get("www-authenticate")).toContain(
+          `resource_metadata="${baseURL}/.well-known/oauth-protected-resource/v1"`
+        );
+      })
+    );
+    expect(fixture.dispatchCount()).toBe(0);
+    const browser = await fixture.createAccount();
+    const browserFamily = await fixture.createFamily(
+      browser.user.id,
+      "Browser family"
+    );
+    const families = await fixture.fetch(
+      new Request(`${baseURL}/v1/families`, {
+        headers: { cookie: browser.cookie },
+      })
+    );
+    expect(families.status).toBe(200);
+    expect(await families.json()).toMatchObject([{ id: browserFamily.id }]);
+    const account = await fixture.fetch(
+      new Request(`${baseURL}/v1/account`, {
+        headers: { cookie: browser.cookie },
+      })
+    );
+    expect(account.status).toBe(200);
+    expect(await account.json()).toMatchObject({ id: browser.user.id });
   });
 
   it("preserves the verified actor through captured dependencies and enforces exact HTTP scopes and audience", async () => {

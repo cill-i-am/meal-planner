@@ -228,25 +228,49 @@ export type ConversationActionActor = ActorRefFrom<
   ReturnType<typeof createConversationActionMachine>
 >;
 
+export type ConversationActionDispatch =
+  | { readonly _tag: "Settled"; readonly state: ConversationActionState }
+  | { readonly _tag: "NotAdmitted" }
+  | { readonly _tag: "Blocked" }
+  | { readonly _tag: "Cancelled" };
+
 /** XState admits the event synchronously, before a second browser click can enter. */
 export const dispatchConversationAction = async (
   actor: ConversationActionActor,
   action: ConversationAction,
   retry = false
-): Promise<ConversationActionState> => {
+): Promise<ConversationActionDispatch> => {
   const before = actor.getSnapshot();
+  if (before.status === "stopped") {
+    return { _tag: "Cancelled" };
+  }
+  if (before.matches("blocked")) {
+    return { _tag: "Blocked" };
+  }
   if (!(retry ? before.matches("retained") : before.matches("ready"))) {
-    throw new Error("Resolve the saved action before making another change.");
+    return { _tag: "NotAdmitted" };
   }
   actor.send(retry ? { type: "RETRY" } : { action, type: "SUBMIT" });
-  const settled = await waitFor(
-    actor,
-    (state) => !state.matches("retaining") && !state.matches("sending")
-  );
-  if (settled.matches("blocked") || settled.context.result === null) {
-    throw new Error(settled.context.error ?? "The action could not be sent.");
+  let settled;
+  try {
+    settled = await waitFor(
+      actor,
+      (state) => !state.matches("retaining") && !state.matches("sending")
+    );
+  } catch (error) {
+    // XState rejects waitFor when the owning React effect stops the actor.
+    if (actor.getSnapshot().status === "stopped") {
+      return { _tag: "Cancelled" };
+    }
+    throw error;
   }
-  return settled.context.result;
+  if (settled.matches("blocked")) {
+    return { _tag: "Blocked" };
+  }
+  if (settled.context.result === null) {
+    throw new Error("The action settled without a result.");
+  }
+  return { _tag: "Settled", state: settled.context.result };
 };
 
 export const sessionConversationActions = (

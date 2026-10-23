@@ -3,7 +3,7 @@ import { applyD1Migrations, env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { drizzle } from "drizzle-orm/d1";
-import { Effect, Schema } from "effect";
+import { Effect, Redacted, Schema } from "effect";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -330,6 +330,18 @@ describe("native OAuth delegated access", () => {
       headers: new Headers({ cookie: account.cookie }),
     });
     expect(session?.session.activeOrganizationId).toBe(browserActive.id);
+    const grant = await Effect.runPromise(
+      makeNativeAuthTestService(auth).withDelegatedAccess(
+        delegatedRequest(tokens.access_token),
+        resource,
+        readScopes,
+        DelegatedAccess
+      )
+    );
+    expect(Redacted.isRedacted(grant?.token)).toBe(true);
+    expect(Redacted.isRedacted(grant?.session.token)).toBe(true);
+    expect(JSON.stringify(grant)).not.toContain(tokens.access_token);
+    expect(JSON.stringify(grant)).not.toContain(session?.session.token);
     const missingSelection = await Effect.runPromise(
       resolveFamily(auth, delegatedRequest(tokens.access_token)).pipe(
         Effect.flip

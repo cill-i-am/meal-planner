@@ -156,14 +156,35 @@ it("shows the requested permissions, account and an honest client identity witho
   ).toBeInTheDocument();
   expect(screen.getByText("cook@example.com")).toBeInTheDocument();
   expect(
-    screen.getByText(/Read and change your own private/u)
+    screen.getByText(/Read your own private interviews/u)
   ).toBeInTheDocument();
   expect(screen.getByText(/Keep this connection active/u)).toBeInTheDocument();
   expect(
-    screen.queryByText(/Add and change household people/u)
+    screen.queryByText(/Create and change families/u)
   ).not.toBeInTheDocument();
   expect(
     screen.queryByRole("link", { name: /untrusted metadata/u })
+  ).not.toBeInTheDocument();
+});
+
+it("describes identity access and emailed invitations only for their requested scopes", async () => {
+  const query = signedQuery.replace(
+    "meal-planner%3Aread+meal-planner%3Aprivate+offline_access",
+    "meal-planner%3Aaccount+meal-planner%3Awrite"
+  );
+  await setup({ entry: `/oauth/consent${query}` });
+  expect(
+    await screen.findByText(/Read your name, email address/u)
+  ).toBeInTheDocument();
+  expect(screen.getByText(/invite people by email/u)).toBeInTheDocument();
+  expect(
+    screen.getByText(/import and publish reviewed recipes/u)
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByText(/Read your own private interviews/u)
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(/Read assistant conversations/u)
   ).not.toBeInTheDocument();
 });
 

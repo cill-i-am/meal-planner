@@ -21,6 +21,7 @@ import { Schema } from "effect";
 import { expect, test } from "./fixtures.js";
 import { AuthPage } from "./pages/auth-page.js";
 import { FamilyPage } from "./pages/family-page.js";
+import { PrivateReviewPage } from "./pages/private-review-page.js";
 
 const scopes =
   "meal-planner:read meal-planner:write meal-planner:private meal-planner:assistant";
@@ -91,6 +92,74 @@ const issueToken = async (client: APIRequestContext, baseURL: string) => {
     clientId,
   };
 };
+
+test("OAuth polling keeps an open browser private interview connected", async ({
+  page,
+  baseURL,
+}) => {
+  test.setTimeout(90_000);
+  if (baseURL === undefined) {
+    throw new Error("Expected local Worker URL.");
+  }
+  await new AuthPage(page).signUp(
+    "Concurrent private reviewer",
+    `private-poll-${crypto.randomUUID()}@example.test`
+  );
+  const owner = await issueToken(page.request, baseURL);
+  const family = new FamilyPage(page);
+  await family.create("Concurrent private family");
+  const familyId = new URL(page.url()).searchParams.get("familyId");
+  if (familyId === null) {
+    throw new Error("Expected created family ID.");
+  }
+  const headers = {
+    authorization: `Bearer ${owner.access_token}`,
+    "x-meal-planner-household": familyId,
+  };
+  const closedConnections: string[] = [];
+  let privateConnections = 0;
+  page.on("websocket", (socket) => {
+    if (new URL(socket.url()).pathname.startsWith("/v1/private-interviews/")) {
+      privateConnections += 1;
+      socket.on("close", () => closedConnections.push(socket.url()));
+    }
+  });
+  await family.confirm();
+  const review = new PrivateReviewPage(page);
+  await review.start();
+  expect(privateConnections).toBe(2);
+  const poll = async () => {
+    const list = await page.request.get("/v1/private-interviews", { headers });
+    expect(list.status(), await list.text()).toBe(200);
+    const directory = Schema.decodeUnknownSync(DirectoryFrame.members[2])(
+      await list.json()
+    );
+    expect(directory.reservations).toHaveLength(1);
+    const [reservation] = directory.reservations;
+    if (reservation === undefined) {
+      throw new Error("Expected the browser's private interview.");
+    }
+    const response = await page.request.get(
+      `/v1/private-interviews/${reservation.sessionReference}`,
+      { headers }
+    );
+    expect(response.status(), await response.text()).toBe(200);
+    return Schema.decodeUnknownSync(PrivateRequestSessionSnapshot)(
+      await response.json()
+    );
+  };
+  await poll();
+  await poll();
+  await poll();
+  await review.expectOpen();
+  await review.sendMessage("I like tomatoes.");
+  await review.expectProposal("Tomatoes");
+  const observed = await poll();
+  expect(observed.assistantTurn?.status).toBe("succeeded");
+  expect(observed.messages).toHaveLength(2);
+  expect(privateConnections).toBe(2);
+  expect(closedConnections).toEqual([]);
+});
 
 test("native OAuth agents submit and poll chat, confirm private cards, and keep bearer identity authoritative", async ({
   page,

@@ -1,4 +1,4 @@
-import { Context, Effect, Schema } from "effect";
+import { Context, Effect, Schema, flow } from "effect";
 
 import {
   CatalogueProductResults,
@@ -68,25 +68,22 @@ const defineTool = <
   ) => Effect.Effect<O["Type"], TescoSessionFailure>
 ) => ({
   ...definition,
-  execute: (
-    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Both transports enter through the selected tool's strict schema decoder below.
-    input: unknown
-  ): Effect.Effect<
-    Readonly<Record<string, Schema.Json>>,
-    Schema.SchemaError | TescoSessionFailure,
-    TescoMcpCapabilities
-  > =>
-    Effect.gen(function* executeTescoOperation() {
-      const service = yield* TescoMcpCapabilities;
-      const decoded = yield* Schema.decodeUnknownEffect(definition.input)(
-        input,
-        {
-          onExcessProperty: "error",
-        }
-      );
-      const result = yield* run(service, decoded);
-      return yield* Schema.encodeEffect(definition.output)(result);
-    }),
+  execute: flow(
+    Schema.decodeUnknownEffect(definition.input, { onExcessProperty: "error" }),
+    Effect.flatMap(
+      (
+        decoded
+      ): Effect.Effect<
+        Readonly<Record<string, Schema.Json>>,
+        Schema.SchemaError | TescoSessionFailure,
+        TescoMcpCapabilities
+      > =>
+        TescoMcpCapabilities.pipe(
+          Effect.flatMap((service) => run(service, decoded)),
+          Effect.flatMap(Schema.encodeEffect(definition.output))
+        )
+    )
+  ),
 });
 
 /** One registry owns both transports' discovery, decoding, invocation and output encoding. */

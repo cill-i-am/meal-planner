@@ -38,7 +38,10 @@ import {
   dispatchConversationAction,
   sessionConversationActions,
 } from "./conversation-action-machine.js";
-import type { ConversationActionActor } from "./conversation-action-machine.js";
+import type {
+  ConversationActionActor,
+  ConversationActionDispatch,
+} from "./conversation-action-machine.js";
 import {
   conversationChatEndpoint,
   conversationKey,
@@ -83,6 +86,22 @@ export interface AgentConversationController {
   readonly retryAction: () => Promise<ConversationActionState | null>;
   readonly confirmSetup: () => Promise<ConversationActionState | null>;
   readonly refresh: () => Promise<void>;
+}
+
+/** React action callbacks translate explicit dispatch outcomes for their existing error UI. */
+export class ConversationActionDispatchError extends Error {
+  readonly _tag = "ConversationActionDispatchError";
+  readonly reason: Exclude<ConversationActionDispatch["_tag"], "Settled">;
+
+  constructor(reason: Exclude<ConversationActionDispatch["_tag"], "Settled">) {
+    super(
+      reason === "Cancelled"
+        ? "The action was interrupted."
+        : "Resolve the saved action before making another change."
+    );
+    this.name = "ConversationActionDispatchError";
+    this.reason = reason;
+  }
 }
 
 const AgentConversationContext =
@@ -218,16 +237,20 @@ const ReadyConversation = ({
     async (
       action: ConversationAction,
       retry = false
-    ): Promise<ConversationActionState> => {
+    ): Promise<ConversationActionDispatch> => {
       if (actionActor === null) {
-        throw new Error("The conversation is not ready.");
+        return { _tag: "NotAdmitted" };
       }
       setActionError(null);
-      const result = await dispatchConversationAction(
+      const outcome = await dispatchConversationAction(
         actionActor,
         action,
         retry
       );
+      if (outcome._tag !== "Settled") {
+        return outcome;
+      }
+      const { state: result } = outcome;
       if (result._tag === "Committed" || result._tag === "Rejected") {
         try {
           await refresh();
@@ -254,27 +277,27 @@ const ReadyConversation = ({
           );
         }
       }
-      return result;
+      return outcome;
     },
     [accountId, actionActor, queryClient, refresh, scope, view.blocks]
   );
 
   const act = useCallback(
-    (
+    async (
       block: ConversationBlock,
       decision: "accept" | "dismiss",
       reviewedRoster?: ReviewedRoster | null,
       safetyConfirmation?: "I confirm this safety constraint change" | null
     ): Promise<ConversationActionState> => {
+      if (recoveryBlocked) {
+        throw new ConversationActionDispatchError("Blocked");
+      }
       if (
         !recoveryReady ||
-        recoveryBlocked ||
         pendingAction !== null ||
         block.status !== "proposed"
       ) {
-        throw new Error(
-          "Resolve the saved action before making another change."
-        );
+        throw new ConversationActionDispatchError("NotAdmitted");
       }
       if (
         decision === "accept" &&
@@ -310,7 +333,11 @@ const ReadyConversation = ({
               expectedRevision: block.revision,
             }
       );
-      return dispatchAction(action);
+      const outcome = await dispatchAction(action);
+      if (outcome._tag === "Settled") {
+        return outcome.state;
+      }
+      throw new ConversationActionDispatchError(outcome._tag);
     },
     [dispatchAction, pendingAction, recoveryBlocked, recoveryReady]
   );
@@ -366,12 +393,20 @@ const ReadyConversation = ({
         },
         safetyConfirmation: null,
       });
-      try {
-        return await dispatchAction(action);
-      } catch {
-        // Automatic setup confirmation can be interrupted by navigation. The
-        // machine keeps its saved command and exposes retention failures.
-        return null;
+      const outcome = await dispatchAction(action);
+      switch (outcome._tag) {
+        case "Settled": {
+          return outcome.state;
+        }
+        case "NotAdmitted":
+        case "Blocked":
+        case "Cancelled": {
+          // Another dispatch, a visible storage block, or navigation needs no automatic retry.
+          return null;
+        }
+        default: {
+          return outcome satisfies never;
+        }
       }
     }, [
       dispatchAction,
@@ -392,10 +427,20 @@ const ReadyConversation = ({
       await refresh();
       return actionState;
     }
-    try {
-      return await dispatchAction(pendingAction, true);
-    } catch {
-      return null;
+    const outcome = await dispatchAction(pendingAction, true);
+    switch (outcome._tag) {
+      case "Settled": {
+        return outcome.state;
+      }
+      case "NotAdmitted":
+      case "Blocked":
+      case "Cancelled": {
+        // Keep the saved request; the machine already owns any storage error.
+        return null;
+      }
+      default: {
+        return outcome satisfies never;
+      }
     }
   }, [actionState, dispatchAction, pendingAction, refresh]);
 
