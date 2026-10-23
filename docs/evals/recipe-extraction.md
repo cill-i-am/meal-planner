@@ -41,6 +41,35 @@ repeated evidence, explicit corrections, negation, optionality, conditions, long
 distraction, compound/word durations, explicit nutrition and non-recipe content.
 The visual fixtures are written observations; they do not test vision or OCR.
 
+### Retained source discovery
+
+On 23 October 2026 at 11:09:05 UTC, a user-authorized, read-only Cloudflare R2
+inventory located the Meal Planner import-evidence buckets for production, E2E
+and an older PR preview. Listing `imports/` in each returned HTTP 200,
+`success: true`, an empty object list and no continuation cursor. No source
+objects were read or copied. Physical bucket names and account identifiers are
+omitted from this public report.
+
+This establishes that those buckets supplied no retained captures at that time;
+it does not establish why they were empty. The existing seven-day evidence
+retention remains unchanged. Consequently, this investigation cannot expand to
+100–200 real-source examples or report real-video accuracy from historical data.
+The twenty synthetic cases and separate live synthetic compatibility probes
+remain labelled as such. A real-source comparison requires fresh, authorized
+captures with independently checked source facts and a separate holdout.
+
+To repeat the object lookup for an authorized Meal Planner evidence bucket:
+
+```sh
+curl --get "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/r2/buckets/$MEAL_PLANNER_EVIDENCE_BUCKET/objects" \
+  --data-urlencode 'prefix=imports/' --data-urlencode 'per_page=1000' \
+  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+```
+
+Follow any returned pagination cursor before claiming the listing is complete.
+Preserve existing access controls, redaction and retention when collecting fresh
+sources; an empty inventory does not justify extending private-data retention.
+
 Every strategy receives only `evidenceForCase(case)`. `allEvidence` is the
 acquisition oracle; `availableEvidenceIds` specifies what extraction receives.
 Neither `expected`, `witnesses`, nor unavailable source items may enter a provider
