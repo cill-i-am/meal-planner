@@ -94,10 +94,58 @@ the specific test client's consent through Meal Planner's native OAuth API and
 verify absence before clearing local credentials. Do not publish secrets or
 opaque continuation tokens with test evidence.
 
+## Production continuation after PR #309
+
+PR #309 deployed `9e23584e520cd6682971e12beca8933553f4ea47` through
+[production CI](https://github.com/cill-i-am/meal-planner/actions/runs/40121969878).
+All required checks passed; an existing recipe-evaluation test timeout passed on
+a single job retry. The same isolated account and OAuth client were used.
+
+Two fresh imports passed source resolution and media acquisition. One completed
+speech transcription. This verifies the startup repair against production.
+Neither reached a reviewable draft:
+
+- The first visual response lacked the required tool call. The safe diagnostic
+  was `forced_tool_missing`; settlement remained unknown. The accounting gate
+  marked that invocation's budget uncertain. No replacement call was dispatched.
+- The second import reported a speech `outcome_unknown`. Its diagnostic sequence
+  did not include a provider-dispatch event. This is not evidence of a completed
+  speech call or permission to retry an ambiguously settled invocation.
+
+Both imports exposed a second defect: terminal persistence returned a decoded
+checkpoint containing an Effect `DateTime`. Cloudflare rejected it with
+`DataCloneError`, leaving public progress active. The repair returns only the
+validated ownership ID needed by the next domain transition. A native Workflow
+regression reproduces the exact serialization error before the repair and proves
+successful checkpoint replay afterward, without repeating the persistence body.
+The household responses in this regression are scripted wire data, not live AI.
+
+Both initial create responses also returned `Import state is unavailable`; a
+same-key replay recovered the existing Task. The HTTP regression reproduces this
+when the workflow advances between the authorized intent and timeline reads.
+The adapter now rereads those snapshots at most twice when history is newer.
+It never repeats admission, provider calls or mutations. Exhausted inconsistency,
+malformed data and authorization failures still fail closed. Domain history
+validation remains unchanged.
+
+Reproduce the additional regressions:
+
+```sh
+pnpm --filter @meal-planner/api exec vitest run --project node \
+  src/features/product-api/product-mcp-interactions.test.ts \
+  src/features/imports/import-provider-terminal-authority.integration.test.ts
+pnpm --filter @meal-planner/api check
+```
+
 ## Remaining live verification
 
-The startup repair has not yet been exercised on a deployed revision. Successful
-draft preparation, elicitation preview/accept/decline/dismiss, stale-version
-rejection and publication replay remain unverified with this real client. No
-recipes were published during the initial hosted run. The two test imports are
-cancelled and the original client grant is revoked.
+The two follow-up repairs still require deployment and hosted verification.
+Successful draft preparation, elicitation preview/accept/decline/dismiss,
+stale-version rejection and publication replay remain unverified with this real
+client. Provider settlement must remain authoritative; do not reset accounting
+or invent a draft to make the protocol test pass. No recipes were published. All four test imports were cancelled; the restored
+client grant was revoked again, verified absent, and its local credentials cleared.
+
+This report distinguishes the deployed startup repair, locally reproduced
+follow-up fixes, and unfinished live elicitation checks. It is not a claim that
+the whole hosted journey works.
