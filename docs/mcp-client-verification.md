@@ -137,15 +137,71 @@ pnpm --filter @meal-planner/api exec vitest run --project node \
 pnpm --filter @meal-planner/api check
 ```
 
+## Production continuation after PR #310
+
+PR #310 deployed `fafa3f5833be187f24552e1e6938ede11851fa04` through
+[production CI](https://github.com/cill-i-am/meal-planner/actions/runs/40128194110).
+All 22 non-skipped jobs passed. Cloudflare reported API version
+`33c9ae1b-d2ca-4155-8668-953b92dbb5fb` active at 100%.
+
+A fresh isolated import returned a working Task on its first request. The same
+Task remained readable after the official client disconnected and reconnected.
+Source acquisition and speech completed, but the visual response again produced
+`forced_tool_missing`. Unlike the previous failures, the native terminal step
+persisted its ownership ID successfully and completed without serialization
+errors. The public intent became `failed`; Inspector completed the Task and
+received an `analysis_failed` tool result. A completed Task is not a successful
+recipe extraction.
+
+Both uncertain visual receipts were reconciled with explicit user approval,
+using the application's guarded two-statement transaction through authenticated
+Cloudflare administration. Each consumed its 100,000-microUSD reservation as a
+conservative internal charge. Actual provider costs remain unknown; no provider
+call was retried. After the second reconciliation the shared budget was open,
+reserved cost was zero, and settled accounting was 200,943 microUSD. This is
+ledger evidence, not an invoice. The first uncertainty had blocked the earlier
+second import before its speech provider could dispatch.
+
+### Further provider-boundary defect
+
+The live diagnostic did not record the response HTTP status. It therefore cannot
+distinguish an HTTP error from a successful response without a tool call. An
+offline regression through the **installed Alchemy adapter**, with only its raw
+Workers AI binding scripted, demonstrated:
+
+| Scripted response | Before | After local repair |
+| --- | --- | --- |
+| 429 JSON | `insufficient_evidence` | `throttled` |
+| 503/504 JSON | `insufficient_evidence` | `provider_unavailable` |
+| 503 plain text | Successful empty evidence | `provider_unavailable` |
+
+The repair rejects non-OK responses before reading their bodies or normalizing
+model content, and records only the numeric HTTP status alongside the existing
+safe event fields. It does not infer zero cost, change retry authority, or add a
+fallback. A saved successful Scout response still preserves all three frame
+observations through that same installed adapter. These are scripted boundary
+regressions, not new live model calls, and they do not prove which HTTP status
+caused the production failures.
+
+```sh
+pnpm --filter @meal-planner/api exec vitest run --project node \
+  src/features/imports/import-provider-http.test.ts \
+  src/features/imports/import-provider-visual.test.ts \
+  src/features/imports/import-observability.test.ts
+```
+
 ## Remaining live verification
 
-The two follow-up repairs still require deployment and hosted verification.
-Successful draft preparation, elicitation preview/accept/decline/dismiss,
-stale-version rejection and publication replay remain unverified with this real
-client. Provider settlement must remain authoritative; do not reset accounting
-or invent a draft to make the protocol test pass. No recipes were published. All four test imports were cancelled; the restored
-client grant was revoked again, verified absent, and its local credentials cleared.
+The HTTP boundary repair requires deployment and hosted verification. Successful
+draft preparation, elicitation preview/accept/decline/dismiss, stale-version
+rejection and publication replay remain unverified with this real client.
+Provider settlement must remain authoritative; do not invent a draft or bypass
+accounting to make the protocol test pass.
 
-This report distinguishes the deployed startup repair, locally reproduced
-follow-up fixes, and unfinished live elicitation checks. It is not a claim that
-the whole hosted journey works.
+No recipes were published. The first four test imports were cancelled; the fifth
+ended in a recorded failure. The restored client grant was revoked again,
+verified absent, and its local credentials cleared. The shared budget is open.
+
+This report distinguishes deployed protocol/workflow repairs, the locally
+reproduced HTTP-boundary defect, and unfinished live elicitation checks. It is
+not a claim that the whole hosted journey works.

@@ -41,6 +41,8 @@ const ProviderTimeout = "150 seconds";
 
 const ProviderTransportUnavailableMessage =
   "provider_transport_unavailable" as const;
+const ProviderHttpRejectedMessage = "provider_http_rejected" as const;
+const ProviderHttpThrottledMessage = "provider_http_throttled" as const;
 const ProviderNormalizationInvalidMessage =
   "provider_normalization_invalid" as const;
 const ProviderNormalizationBodyInvalidMessage =
@@ -247,7 +249,12 @@ export const providerFailureFromEvidence = (
       original._tag ?? reason._tag ?? evidence._tag ?? ""
     ).toLowerCase();
     const status = original.status ?? reason.status ?? evidence.status;
-    if (status === 429 || tag.includes("rate") || tag.includes("throttl")) {
+    if (
+      status === 429 ||
+      reason.description === ProviderHttpThrottledMessage ||
+      tag.includes("rate") ||
+      tag.includes("throttl")
+    ) {
       return reason.description === undefined
         ? { code: "throttled" }
         : { code: "throttled", description: reason.description };
@@ -617,12 +624,16 @@ type ProviderInvocationOutcome =
 class ProviderInvocationFailureError extends Error {
   readonly description:
     | typeof ProviderKnownZeroSetupFailureMessage
-    | typeof ProviderTransportUnavailableMessage;
+    | typeof ProviderTransportUnavailableMessage
+    | typeof ProviderHttpRejectedMessage
+    | typeof ProviderHttpThrottledMessage;
 
   constructor(
     description:
       | typeof ProviderKnownZeroSetupFailureMessage
       | typeof ProviderTransportUnavailableMessage
+      | typeof ProviderHttpRejectedMessage
+      | typeof ProviderHttpThrottledMessage
   ) {
     super(description);
     this.description = description;
@@ -1061,10 +1072,20 @@ const noLogWorkersAiClient = (
               emitImportObservabilityEvent({
                 correlationId,
                 event: "provider.response",
-                outcome: "received",
+                httpStatus: response.status,
+                outcome: response.ok ? "received" : "rejected",
                 providerStage,
               })
             );
+            if (!response.ok) {
+              // Alchemy preserves only Error.message. Carry a fixed marker,
+              // never an error body, and leave billing uncertainty unchanged.
+              throw new ProviderInvocationFailureError(
+                providerFailureFromStatus(response.status).code === "throttled"
+                  ? ProviderHttpThrottledMessage
+                  : ProviderHttpRejectedMessage
+              );
+            }
             return normalizeWorkersAiResponse(response);
           },
         }) as WorkersAiBinding
