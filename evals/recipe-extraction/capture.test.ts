@@ -50,6 +50,8 @@ it("retains the checked-in stopped comparison evidence fingerprints", () => {
   }
 });
 
+// Seven fresh CLI processes load extraction dependencies; the deadline includes
+// startup variance on CI as well as the receipt assertions.
 it("preserves reconciled and normal CLI unknown receipts without inventing provider response, latency, spend or external calls", () => {
   const receipt = readRun(fixture).outputs[0]?.transportReceipt;
   if (receipt === undefined) {
@@ -236,4 +238,4 @@ it("preserves reconciled and normal CLI unknown receipts without inventing provi
   } finally {
     rmSync(directory, { force: true, recursive: true });
   }
-}, 20_000);
+}, 60_000);

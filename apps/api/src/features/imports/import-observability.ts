@@ -136,6 +136,15 @@ export const ImportObservabilityEvent = Schema.Struct({
   decodeReason: Schema.optionalKey(ProviderDecodeReason),
   decodeStage: Schema.optionalKey(ProviderDecodeStage),
   event: ImportObservabilityEventName,
+  httpStatus: Schema.optionalKey(
+    Schema.Number.pipe(
+      Schema.check(
+        Schema.isInt(),
+        Schema.isGreaterThanOrEqualTo(100),
+        Schema.isLessThanOrEqualTo(599)
+      )
+    )
+  ),
   outcome: Schema.optionalKey(
     Schema.Literals([
       "accepted",
@@ -219,6 +228,9 @@ const eventAnnotations = (event: ImportObservabilityEvent) => {
   }
   if (event.decodeStage !== undefined) {
     annotations["decodeStage"] = event.decodeStage;
+  }
+  if (event.httpStatus !== undefined) {
+    annotations["httpStatus"] = event.httpStatus;
   }
   if (event.outcome !== undefined) {
     annotations["outcome"] = event.outcome;
