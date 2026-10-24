@@ -37,7 +37,7 @@ import {
 } from "../imports/import-provider-recovery.js";
 import { persistHouseholdProviderTerminalAuthority } from "../imports/import-provider-terminal-authority.js";
 import { makeInstalledVisualEvidenceExtractor } from "../imports/import-provider-visual.js";
-import { prepareImportSource } from "../imports/import-source-preparation.js";
+import { prepareImportWorkflowSource } from "../imports/import-source-preparation.workflow.js";
 import { extractVisualEvidenceForTranscribedImport } from "../imports/import-visual-evidence.js";
 import { makeRecipeImportWorkflowDispatcher } from "../imports/import-worker-request-layer.js";
 import { workerTestR2PutBody } from "../imports/import-worker-test-environment.js";
@@ -399,7 +399,6 @@ const runVisualResumeProof = (
       executionGeneration,
       householdDomain: terminalHousehold(environment),
       intentId,
-      mutationId: testMutationId,
       organizationId: command.admission.organizationId,
     };
     const dispatchId = `visual:${command.importId}:${generation}`;
@@ -606,7 +605,7 @@ const runImportSourcePreparationProof = (
         workflowIdentity: committed.workflowIdentity,
       })
     );
-    const preparation = prepareImportSource({
+    const preparation = prepareImportWorkflowSource({
       householdDomain,
       mutationId: testMutationId,
       resolveIdentity: makeTikTokCanonicalSourceIdentityResolver(() => {

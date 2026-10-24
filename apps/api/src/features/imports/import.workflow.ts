@@ -25,7 +25,6 @@ import {
 import { HouseholdDomainWorker } from "../households/household-domain-binding.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import type { HouseholdOrganizationId } from "../households/household.contract.js";
-import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
 import type { HouseholdRecipeImportLifecycleTransition } from "../households/recipe-import/household-recipe-import.contract.js";
 import type {
   ImportWorkflowIdentity,
@@ -51,7 +50,6 @@ import {
   makeR2VisualFrameSampler,
   persistDerivedProviderEvidence,
 } from "./import-derived-media.js";
-import { sha256Bytes } from "./import-digest.js";
 import { inspectHouseholdEvidenceReferences } from "./import-evidence-availability.js";
 import {
   makeHouseholdImportEvidenceCurrentRepository,
@@ -115,7 +113,7 @@ import {
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
 import { makeHouseholdRecipeDraftLifecycle } from "./import-recipe-lifecycle.household.js";
 import { readHouseholdProviderDispatchId } from "./import-recipe-recovery.household.js";
-import { prepareImportSource } from "./import-source-preparation.js";
+import { prepareImportWorkflowSource } from "./import-source-preparation.workflow.js";
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
 import {
@@ -127,6 +125,7 @@ import {
   PostAcquisitionJournalCheckpoint,
   postAcquisitionRestartOptions,
 } from "./import-workflow-journal.js";
+import { workflowMutationId } from "./import-workflow-mutation.js";
 import type { SourceCanonicalId, ImportId } from "./import.contracts.js";
 import { ImportTimestamp } from "./import.contracts.js";
 import {
@@ -464,13 +463,6 @@ const currentProviderAccountingTimestamp = () =>
     new Date().toISOString()
   );
 
-const workflowMutationId = (semanticKey: string) =>
-  sha256Bytes(
-    new TextEncoder().encode(
-      `household-recipe-import-workflow:v1:${semanticKey}`
-    )
-  ).pipe(Effect.map(Schema.decodeUnknownSync(HouseholdImportMutationId)));
-
 export const runHouseholdAcquisitionTask = (input: {
   readonly admission: {
     readonly actor: {
@@ -661,9 +653,8 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           organizationId,
         };
         const { identityResolution, resolvedIntent } =
-          yield* prepareImportSource({
+          yield* prepareImportWorkflowSource({
             householdDomain,
-            mutationId: workflowMutationId,
             resolveIdentity: (source) =>
               Cloudflare.Workflows.task(
                 "resolve-source-identity-v1",
