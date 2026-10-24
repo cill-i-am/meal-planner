@@ -170,6 +170,108 @@ const resume = (
 };
 
 describe("MCP import HTTP transport with schema-validated domain responses", () => {
+  it.each(["creation", "polling"])(
+    "keeps task %s available when preparation advances between reads",
+    async (operation) => {
+      const fixture = makeImportTransportFixture();
+      const dispatch = await Effect.runPromise(fixture.dispatch());
+      const existing =
+        operation === "polling" ? await createTask(fixture) : undefined;
+      let advanced = false;
+      const reply = await rpc(
+        fixture,
+        existing === undefined ? "tools/call" : "tasks/get",
+        existing === undefined
+          ? { arguments: createArguments, name: "recipe_import_intents_create" }
+          : { taskId: existing.taskId },
+        {
+          dispatchCall: (request, scopes) =>
+            dispatch.call(request, scopes).pipe(
+              Effect.tap(() => {
+                if (
+                  !advanced &&
+                  request.method === "GET" &&
+                  new URL(request.url).pathname ===
+                    `/v1/recipe-import-intents/${intentId}`
+                ) {
+                  advanced = true;
+                  fixture.ready();
+                }
+                return Effect.void;
+              })
+            ),
+        }
+      );
+      expect(reply.error).toBeUndefined();
+      const task =
+        existing === undefined
+          ? CreateTaskResultV2Schema.parse(reply.result)
+          : GetTaskResultV2Schema.parse(reply.result);
+      expect(task.status).toBe("completed");
+      expect(fixture.creationReceipts.size).toBe(1);
+      const settled = await readTask(fixture, task.taskId);
+      expect(settled.status).toBe("completed");
+    }
+  );
+
+  it("bounds rereads and rejects a persistently inconsistent task snapshot", async () => {
+    const fixture = makeImportTransportFixture();
+    const task = await createTask(fixture);
+    const dispatch = await Effect.runPromise(fixture.dispatch());
+    const path = `/v1/recipe-import-intents/${intentId}`;
+    const statusRequest = new Request(`https://ceird.app${path}`, {
+      headers: { "x-meal-planner-household": createArguments.familyId },
+    });
+    const stale = await Effect.runPromise(
+      dispatch.call(statusRequest, ["meal-planner:read"])
+    );
+    fixture.ready();
+    let reads = 0;
+    const reply = await rpc(
+      fixture,
+      "tasks/get",
+      { taskId: task.taskId },
+      {
+        dispatchCall: (request, scopes) => {
+          if (new URL(request.url).pathname === path) {
+            reads += 1;
+            return Effect.succeed(stale.clone());
+          }
+          return dispatch.call(request, scopes);
+        },
+      }
+    );
+    expect(reads).toBe(3);
+    expect(reply.error).toMatchObject({ code: -32_603 });
+    expect(fixture.creationReceipts.size).toBe(1);
+    expect(fixture.cancellations).toHaveLength(0);
+    expect(fixture.getPublications()).toBe(0);
+  });
+
+  it.each(["forbidden", "malformed"])(
+    "does not retry a %s preparation read",
+    async (failure) => {
+      const fixture = makeImportTransportFixture();
+      const task = await createTask(fixture);
+      let reads = 0;
+      const reply = await rpc(
+        fixture,
+        "tasks/get",
+        { taskId: task.taskId },
+        {
+          dispatchCall: () => {
+            reads += 1;
+            return Effect.succeed(
+              Response.json({}, { status: failure === "forbidden" ? 403 : 200 })
+            );
+          },
+        }
+      );
+      expect(reads).toBe(1);
+      expect(reply.error).toMatchObject({ code: -32_603 });
+    }
+  );
+
   it("waits for the dispatched operation's resource cleanup when the HTTP request is aborted", async () => {
     const fixture = makeImportTransportFixture();
     const admitted = Promise.withResolvers<null>();
