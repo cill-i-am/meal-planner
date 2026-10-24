@@ -137,11 +137,13 @@ import {
   HouseholdConfirmRecipeImportActionInput,
   HouseholdReadRecipeImportActionInput,
   HouseholdReadRecipeImportExecutionInput,
+  HouseholdReadRecipeImportSubmissionInput,
   HouseholdReadRecipeImportInput,
   HouseholdReadRecipeInput,
   HouseholdRecordRecipeImportDispatchInput,
   HouseholdRecordRecipeImportDispatchResult,
   HouseholdRecipeImportExecutionView,
+  HouseholdRecipeImportSubmissionView,
   HouseholdRecipeImportFailure,
   HouseholdRecipePage,
   HouseholdRecipePageInput,
@@ -2183,6 +2185,30 @@ export const makeHouseholdObjectRuntime = (
                 command
               );
             return yield* encodeRecipeImportResult(RecipeImportIntent, intent);
+          })
+        ),
+      readRecipeImportSubmission: (
+        untrustedInput: HouseholdReadRecipeImportSubmissionInput
+      ) =>
+        scoped(
+          Effect.gen(function* readHouseholdRecipeImportSubmission() {
+            const command = yield* Schema.decodeUnknownEffect(
+              HouseholdReadRecipeImportSubmissionInput,
+              { onExcessProperty: "error" }
+            )(untrustedInput).pipe(Effect.mapError(invalidInput));
+            yield* requireHouseholdCommandAdmission(
+              command.admission,
+              "read_recipe_import_submission"
+            );
+            const connection = yield* database;
+            const submission =
+              yield* makeHouseholdRecipeImportRepository(
+                connection
+              ).readSubmission(command);
+            return yield* encodeRecipeImportResult(
+              HouseholdRecipeImportSubmissionView,
+              submission
+            );
           })
         ),
       readRecipeImportExecution: (

@@ -181,6 +181,26 @@ export const HouseholdTransitionRecipeImportLifecycleInput = Schema.Struct({
 export type HouseholdTransitionRecipeImportLifecycleInput =
   typeof HouseholdTransitionRecipeImportLifecycleInput.Type;
 
+export const HouseholdReadRecipeImportSubmissionInput = Schema.Struct({
+  admission: HouseholdSystemAdmission,
+  expectedGeneration: PositiveSafeInteger,
+  intentId: RecipeImportIntentId,
+});
+export type HouseholdReadRecipeImportSubmissionInput =
+  typeof HouseholdReadRecipeImportSubmissionInput.Type;
+
+export const HouseholdRecipeImportSubmissionView = Schema.Struct({
+  submittedSourceUrl: Schema.String.pipe(
+    Schema.check(
+      Schema.isTrimmed(),
+      Schema.isNonEmpty(),
+      Schema.isMaxLength(2048)
+    )
+  ),
+});
+export type HouseholdRecipeImportSubmissionView =
+  typeof HouseholdRecipeImportSubmissionView.Type;
+
 export const HouseholdReadRecipeImportExecutionInput = Schema.Struct({
   admission: HouseholdSystemAdmission,
   expectedGeneration: PositiveSafeInteger,

@@ -1,7 +1,4 @@
-import {
-  CanonicalTikTokUrl,
-  RecipeImportIntentId,
-} from "@meal-planner/recipe-import-api";
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import {
@@ -28,7 +25,6 @@ import {
 import { HouseholdDomainWorker } from "../households/household-domain-binding.js";
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import type { HouseholdOrganizationId } from "../households/household.contract.js";
-import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
 import type { HouseholdRecipeImportLifecycleTransition } from "../households/recipe-import/household-recipe-import.contract.js";
 import type {
   ImportWorkflowIdentity,
@@ -54,7 +50,6 @@ import {
   makeR2VisualFrameSampler,
   persistDerivedProviderEvidence,
 } from "./import-derived-media.js";
-import { sha256Bytes } from "./import-digest.js";
 import { inspectHouseholdEvidenceReferences } from "./import-evidence-availability.js";
 import {
   makeHouseholdImportEvidenceCurrentRepository,
@@ -118,6 +113,7 @@ import {
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
 import { makeHouseholdRecipeDraftLifecycle } from "./import-recipe-lifecycle.household.js";
 import { readHouseholdProviderDispatchId } from "./import-recipe-recovery.household.js";
+import { prepareImportWorkflowSource } from "./import-source-preparation.workflow.js";
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
 import { extractVisualEvidenceForTranscribedImport } from "./import-visual-evidence.js";
 import {
@@ -129,8 +125,9 @@ import {
   PostAcquisitionJournalCheckpoint,
   postAcquisitionRestartOptions,
 } from "./import-workflow-journal.js";
+import { workflowMutationId } from "./import-workflow-mutation.js";
 import type { SourceCanonicalId, ImportId } from "./import.contracts.js";
-import { ImportTimestamp, SourceDescriptor } from "./import.contracts.js";
+import { ImportTimestamp } from "./import.contracts.js";
 import {
   workflowStartRefused,
   workflowStartUnavailable,
@@ -466,13 +463,6 @@ const currentProviderAccountingTimestamp = () =>
     new Date().toISOString()
   );
 
-const workflowMutationId = (semanticKey: string) =>
-  sha256Bytes(
-    new TextEncoder().encode(
-      `household-recipe-import-workflow:v1:${semanticKey}`
-    )
-  ).pipe(Effect.map(Schema.decodeUnknownSync(HouseholdImportMutationId)));
-
 export const runHouseholdAcquisitionTask = (input: {
   readonly admission: {
     readonly actor: {
@@ -662,44 +652,22 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
           },
           organizationId,
         };
-        const execution = yield* householdDomain
-          .readRecipeImportExecution({
-            admission,
-            expectedGeneration: executionGeneration,
-            intentId,
-          })
-          .pipe(Effect.orDie);
-        const source = yield* Schema.decodeUnknownEffect(SourceDescriptor, {
-          onExcessProperty: "error",
-        })({ kind: "tiktok", url: execution.submittedSourceUrl }).pipe(
-          Effect.orDie
-        );
-        const identityResolution = yield* Cloudflare.Workflows.task(
-          "resolve-source-identity-v1",
-          makeTikTokCanonicalSourceIdentityResolver(globalThis.fetch)
-            .resolve(source)
-            .pipe(Effect.orDie)
-        );
-        const sourceMutationId = yield* workflowMutationId(
-          `${intentId}:${executionGeneration}:resolve-source:${identityResolution.identity.canonicalId}`
-        );
-        const canonicalUrl = yield* Schema.decodeUnknownEffect(
-          CanonicalTikTokUrl
-        )(identityResolution.canonicalUrl).pipe(Effect.orDie);
-        const resolvedIntent = yield* householdDomain
-          .resolveRecipeImportSource({
-            admission,
-            canonicalSourceId: identityResolution.identity.canonicalId,
-            canonicalUrl,
-            expectedGeneration: executionGeneration,
-            intentId,
-            mutationId: sourceMutationId,
-            sourceKind:
-              identityResolution._tag === "VideoIdentity"
-                ? "video"
-                : "carousel",
-          })
-          .pipe(Effect.orDie);
+        const { identityResolution, resolvedIntent } =
+          yield* prepareImportWorkflowSource({
+            householdDomain,
+            resolveIdentity: (source) =>
+              Cloudflare.Workflows.task(
+                "resolve-source-identity-v1",
+                makeTikTokCanonicalSourceIdentityResolver(globalThis.fetch)
+                  .resolve(source)
+                  .pipe(Effect.orDie)
+              ),
+            submission: {
+              admission,
+              expectedGeneration: executionGeneration,
+              intentId,
+            },
+          }).pipe(Effect.orDie);
         if (resolvedIntent.status === "redirected") {
           return resolvedIntent;
         }

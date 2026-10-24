@@ -6789,6 +6789,49 @@ describe("household public API to private Durable Object boundary", () => {
     30_000
   );
 
+  it("starts source resolution from an unresolved admitted import", async () => {
+    const cookie = await signUp("Import Source Startup");
+    const organization = await createOrganization(
+      "Import Source Startup Household",
+      cookie
+    );
+    const worker = await getRuntime().getWorker("provider-recovery");
+    const response = await worker.fetch(
+      "https://provider-recovery.test/import-source-preparation",
+      {
+        body: JSON.stringify({
+          admission: {
+            actor: { _tag: "Member", actorId: "9".repeat(64) },
+            organizationId: organization.id,
+          },
+          sourceUrl:
+            "https://www.tiktok.com/@mealplanner/video/7000000000000000147",
+          trace: { correlationId: "00000000-0000-4000-8000-000000000147" },
+        }),
+        headers: {
+          "content-type": "application/json",
+          "x-test-import-source-preparation": "1",
+        },
+        method: "POST",
+      }
+    );
+    expect(response.status, await response.clone().text()).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      cancelledSubmission: { reason: "illegal_transition" },
+      identity: { canonicalId: "7000000000000000147", kind: "tiktok" },
+      intent: {
+        intentVersion: 2,
+        processing: { type: "acquiring_media" },
+        status: "processing",
+      },
+      originalTrace: { correlationId: "00000000-0000-4000-8000-000000000147" },
+      replayVersion: 2,
+      staleGeneration: { reason: "generation_conflict" },
+      unresolvedRecovery: { reason: "illegal_transition" },
+      wrongPurpose: { _tag: "HouseholdAuthorizationFailure" },
+    });
+  }, 30_000);
+
   it.each([
     { mode: "start_response_lost", suffix: "145" },
     { mode: "record_response_lost", suffix: "146" },

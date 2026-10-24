@@ -57,6 +57,7 @@ import {
 import {
   HouseholdRecipeImportFailure,
   HouseholdRecipeImportExecutionView,
+  HouseholdRecipeImportSubmissionView,
   HouseholdRecipePageCursor,
   householdRecipeMaximumEncodedBytes,
 } from "./household-recipe-import.contract.js";
@@ -68,6 +69,7 @@ import type {
   HouseholdConfirmRecipeImportActionInput,
   HouseholdReadRecipeImportActionInput,
   HouseholdReadRecipeImportExecutionInput,
+  HouseholdReadRecipeImportSubmissionInput,
   HouseholdReadRecipeImportInput,
   HouseholdReadRecipeInput,
   HouseholdRecipePageInput,
@@ -980,6 +982,22 @@ export const makeHouseholdRecipeImportRepository = (
         .pipe(mapTransaction);
     });
 
+  const readSubmission = (input: HouseholdReadRecipeImportSubmissionInput) =>
+    Effect.gen(function* readRecipeImportSubmission() {
+      yield* authorize(input.admission.organizationId);
+      const row = yield* requireIntentRow(database, input.intentId);
+      if (row.executionGeneration !== input.expectedGeneration) {
+        return yield* Effect.fail(failure("generation_conflict"));
+      }
+      const intent = yield* readIntentFromRow(row);
+      if (intent.status !== "processing") {
+        return yield* Effect.fail(failure("illegal_transition"));
+      }
+      return yield* decode(HouseholdRecipeImportSubmissionView, {
+        submittedSourceUrl: row.submittedSourceUrl,
+      });
+    });
+
   const readExecution = (input: HouseholdReadRecipeImportExecutionInput) =>
     Effect.gen(function* readRecipeImportExecution() {
       yield* authorize(input.admission.organizationId);
@@ -1573,6 +1591,7 @@ export const makeHouseholdRecipeImportRepository = (
     readIntent,
     readPlanningRecipe,
     readRecipe,
+    readSubmission,
     readTimeline,
     resolveSource,
     transitionLifecycle,

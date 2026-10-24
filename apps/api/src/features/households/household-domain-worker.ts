@@ -173,6 +173,7 @@ import type {
   HouseholdCommitRecipeImportDraftInput,
   HouseholdConfirmRecipeImportActionInput,
   HouseholdReadRecipeImportExecutionInput,
+  HouseholdReadRecipeImportSubmissionInput,
   HouseholdRecordRecipeImportDispatchInput,
   HouseholdRecipeImportFailure,
   HouseholdResolveRecipeImportSourceInput,
@@ -181,6 +182,7 @@ import type {
   HouseholdActiveRecipeImportActionResult as HouseholdActiveRecipeImportActionResultSchema,
   HouseholdRecordRecipeImportDispatchResult,
   HouseholdRecipeImportExecutionView,
+  HouseholdRecipeImportSubmissionView,
   HouseholdRecipePage,
 } from "./recipe-import/household-recipe-import.contract.js";
 import {
@@ -192,6 +194,7 @@ import {
   HouseholdReadRecipeImportActionInput as HouseholdReadRecipeImportActionInputSchema,
   HouseholdReadRecipeImportInput as HouseholdReadRecipeImportInputSchema,
   HouseholdReadRecipeImportExecutionInput as HouseholdReadRecipeImportExecutionInputSchema,
+  HouseholdReadRecipeImportSubmissionInput as HouseholdReadRecipeImportSubmissionInputSchema,
   HouseholdReadRecipeInput as HouseholdReadRecipeInputSchema,
   HouseholdRecordRecipeImportDispatchInput as HouseholdRecordRecipeImportDispatchInputSchema,
   HouseholdRecipePageInput as HouseholdRecipePageInputSchema,
@@ -517,6 +520,12 @@ export interface HouseholdDomainWorkerMethods {
     input: typeof HouseholdReadRecipeImportInputSchema.Type
   ) => Effect.Effect<
     typeof RecipeImportIntent.Encoded,
+    HouseholdRecipeImportDomainFailure
+  >;
+  readonly readRecipeImportSubmission: (
+    input: HouseholdReadRecipeImportSubmissionInput
+  ) => Effect.Effect<
+    typeof HouseholdRecipeImportSubmissionView.Encoded,
     HouseholdRecipeImportDomainFailure
   >;
   readonly readRecipeImportExecution: (
@@ -1095,6 +1104,15 @@ const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
         input,
         "read_recipe_import_execution",
         (household, command) => household.readRecipeImportExecution(command)
+      ),
+    readRecipeImportSubmission: (
+      input: HouseholdReadRecipeImportSubmissionInput
+    ) =>
+      route(
+        HouseholdReadRecipeImportSubmissionInputSchema,
+        input,
+        "read_recipe_import_submission",
+        (household, command) => household.readRecipeImportSubmission(command)
       ),
     readRecipeImportTimeline: (
       input: typeof HouseholdReadRecipeImportInputSchema.Type
