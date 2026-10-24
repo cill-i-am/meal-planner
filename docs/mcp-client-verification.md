@@ -143,7 +143,8 @@ The two follow-up repairs still require deployment and hosted verification.
 Successful draft preparation, elicitation preview/accept/decline/dismiss,
 stale-version rejection and publication replay remain unverified with this real
 client. Provider settlement must remain authoritative; do not reset accounting
-or invent a draft to make the protocol test pass. No recipes were published.
+or invent a draft to make the protocol test pass. No recipes were published. All four test imports were cancelled; the restored
+client grant was revoked again, verified absent, and its local credentials cleared.
 
 This report distinguishes the deployed startup repair, locally reproduced
 follow-up fixes, and unfinished live elicitation checks. It is not a claim that
