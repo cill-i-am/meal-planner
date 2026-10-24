@@ -26,11 +26,9 @@ import {
   decodeForcedToolResponseResult,
   structurallyEqualJson,
 } from "./import-forced-tool-response.js";
-import type {
-  ImportCorrelationId,
-  ImportObservabilityTraceStore,
-} from "./import-observability.js";
+import type { ImportCorrelationId } from "./import-observability.js";
 import {
+  ImportObservabilityTraceStore,
   ProviderDecodeReason,
   emitImportObservabilityEvent,
 } from "./import-observability.js";
@@ -1040,7 +1038,8 @@ export const normalizeWorkersAiResponse = (response: Response): Response => {
 const noLogWorkersAiClient = (
   client: WorkersAiGatewayClient,
   correlationId: ImportCorrelationId,
-  providerStage: "visual"
+  providerStage: "visual",
+  traceStore: ImportObservabilityTraceStore | undefined
 ): WorkersAiGatewayClient => ({
   ...client,
   raw: Effect.all([client.raw, client.id]).pipe(
@@ -1069,13 +1068,16 @@ const noLogWorkersAiClient = (
               throw new Error(ProviderTransportUnavailableMessage);
             }
             await Effect.runPromise(
-              emitImportObservabilityEvent({
-                correlationId,
-                event: "provider.response",
-                httpStatus: response.status,
-                outcome: response.ok ? "received" : "rejected",
-                providerStage,
-              })
+              emitImportObservabilityEvent(
+                {
+                  correlationId,
+                  event: "provider.response",
+                  httpStatus: response.status,
+                  outcome: response.ok ? "received" : "rejected",
+                  providerStage,
+                },
+                traceStore
+              )
             );
             if (!response.ok) {
               // Alchemy preserves only Error.message. Carry a fixed marker,
@@ -1100,6 +1102,9 @@ export const makeWorkersAiTransport = (
   Effect.gen(function* makeProviderTransport() {
     const ai = yield* client.raw;
     const gatewayId = yield* client.id;
+    const traceStore = Option.getOrUndefined(
+      yield* Effect.serviceOption(ImportObservabilityTraceStore)
+    );
     const runProviderRequest = async (
       providerStage: "recipe" | "speech" | "visual",
       invoke: () => Promise<Response>
@@ -1135,7 +1140,8 @@ export const makeWorkersAiTransport = (
     const languageModelClient: LanguageModelClient = noLogWorkersAiClient(
       client,
       correlationId,
-      "visual"
+      "visual",
+      traceStore
     );
     return {
       recipe: {

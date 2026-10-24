@@ -1,16 +1,19 @@
-import { Effect } from "effect";
-import { describe, expect, it, vi } from "vitest";
+import { Effect, Schema } from "effect";
+import { describe, expect, it } from "vitest";
 
 import { isProviderKnownZeroCostFailure } from "../provider-accounting/provider-accounting.js";
+import { AcquisitionGeneration } from "./import-media.model.js";
 import {
   correlationId,
   localDispatchGate,
+  makeRecordingTraceStore,
   runFactory,
 } from "./import-provider-adapters.test-fixture.js";
 import { makeWorkersAiTransport } from "./import-provider-kernel.js";
 import type { ProviderDispatchGate } from "./import-provider-kernel.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
 import { syntheticThreeFrameResponse } from "./import-provider-visual.scout.test-fixture.js";
+import { ImportId } from "./import.contracts.js";
 
 const request = {
   dispatchId: "visual:http-boundary:1",
@@ -22,8 +25,10 @@ const request = {
     timestampMilliseconds: index * 1000,
     width: 480,
   })),
-  generation: 1 as never,
-  importId: "http-boundary" as never,
+  generation: Schema.decodeUnknownSync(AcquisitionGeneration)(1),
+  importId: Schema.decodeUnknownSync(ImportId)(
+    "019b37f2-1a6e-7f3a-8a5a-7f0d8f6c2b1b"
+  ),
   sourceMediaSha256: "b".repeat(64),
 };
 
@@ -33,6 +38,7 @@ const makeAdapter = async (
   dispatch = localDispatchGate
 ) => {
   let invocations = 0;
+  const trace = makeRecordingTraceStore();
   const transport = await runFactory(
     makeWorkersAiTransport(
       {
@@ -45,16 +51,18 @@ const makeAdapter = async (
         }) as never,
       },
       correlationId
-    )
+    ),
+    trace.service
   );
   const adapter = await runFactory(
     makeInstalledVisualEvidenceExtractor({
       correlationId,
       dispatch,
       transport: transport.visual,
-    })
+    }),
+    trace.service
   );
-  return { adapter, invocations: () => invocations };
+  return { adapter, events: trace.events, invocations: () => invocations };
 };
 
 describe("visual provider HTTP boundary", () => {
@@ -66,7 +74,6 @@ describe("visual provider HTTP boundary", () => {
   ])(
     "rejects $status/$body before decoding model content",
     async ({ status, body, code }) => {
-      const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
       let knownZero = false;
       const dispatch: ProviderDispatchGate = {
         run: (input) =>
@@ -87,59 +94,47 @@ describe("visual provider HTTP boundary", () => {
               { status }
             )
           : new Response("provider-private-canary", { status });
-      const readBody = vi.spyOn(response, "json");
-      try {
-        const { adapter, invocations } = await makeAdapter(response, dispatch);
-        const exit = await Effect.runPromiseExit(adapter.extract(request));
-        expect(exit._tag).toBe("Failure");
-        expect(JSON.stringify(exit)).toContain(code);
-        expect(JSON.stringify(exit)).not.toContain("provider-private-canary");
-        expect(knownZero).toBe(false);
-        expect(invocations()).toBe(1);
-        expect(readBody).not.toHaveBeenCalled();
-        expect(log.mock.calls).toEqual([
-          [
-            {
-              correlationId,
-              event: "provider.response",
-              httpStatus: status,
-              outcome: "rejected",
-              providerStage: "visual",
-            },
-          ],
-        ]);
-      } finally {
-        log.mockRestore();
-        readBody.mockRestore();
-      }
+      const { adapter, events, invocations } = await makeAdapter(
+        response,
+        dispatch
+      );
+      const exit = await Effect.runPromiseExit(adapter.extract(request));
+      expect(exit._tag).toBe("Failure");
+      expect(JSON.stringify(exit)).toContain(code);
+      expect(JSON.stringify(exit)).not.toContain("provider-private-canary");
+      expect(knownZero).toBe(false);
+      expect(invocations()).toBe(1);
+      expect(response.bodyUsed).toBe(false);
+      expect(events).toEqual([
+        {
+          correlationId,
+          event: "provider.response",
+          httpStatus: status,
+          outcome: "rejected",
+          providerStage: "visual",
+        },
+      ]);
     }
   );
 
   it("preserves a successful response through the same installed transport", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
-    try {
-      const { adapter, invocations } = await makeAdapter(
-        Response.json(syntheticThreeFrameResponse)
-      );
-      const result = await Effect.runPromise(adapter.extract(request));
-      expect(result.observations.map(({ text }) => text)).toEqual([
-        "2 onions",
-        "Simmer 10 minutes",
-        "Serve with rice",
-      ]);
-      expect(result.cost.estimatedMicroUsd).toBe(650);
-      expect(invocations()).toBe(1);
-      expect(log.mock.calls).toContainEqual([
-        {
-          correlationId,
-          event: "provider.response",
-          httpStatus: 200,
-          outcome: "received",
-          providerStage: "visual",
-        },
-      ]);
-    } finally {
-      log.mockRestore();
-    }
+    const { adapter, events, invocations } = await makeAdapter(
+      Response.json(syntheticThreeFrameResponse)
+    );
+    const result = await Effect.runPromise(adapter.extract(request));
+    expect(result.observations.map(({ text }) => text)).toEqual([
+      "2 onions",
+      "Simmer 10 minutes",
+      "Serve with rice",
+    ]);
+    expect(result.cost.estimatedMicroUsd).toBe(650);
+    expect(invocations()).toBe(1);
+    expect(events).toContainEqual({
+      correlationId,
+      event: "provider.response",
+      httpStatus: 200,
+      outcome: "received",
+      providerStage: "visual",
+    });
   });
 });
