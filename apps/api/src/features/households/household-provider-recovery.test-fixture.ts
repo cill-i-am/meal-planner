@@ -67,7 +67,10 @@ import {
   ProviderAccountingResponse,
   makeD1ProviderAccountingService,
 } from "../provider-accounting/provider-accounting.service.js";
-import { HouseholdReadEvidenceStageResult } from "./evidence/household-evidence.contract.js";
+import {
+  HouseholdReadEvidenceStageResult,
+  HouseholdReadImportTerminalCheckpointResult,
+} from "./evidence/household-evidence.contract.js";
 import type { HouseholdDomainWorkerMethods } from "./household-domain-worker.js";
 import {
   HouseholdAdmitRecipeImportInput,
@@ -939,7 +942,25 @@ export default {
         )(await request.json());
         return Response.json(
           await Effect.runPromise(
-            runAmbiguousProviderAttempt(environment, command)
+            runAmbiguousProviderAttempt(environment, command).pipe(
+              Effect.flatMap((ownershipId) =>
+                terminalHousehold(environment).readImportTerminalCheckpoint({
+                  admission: command.admission,
+                  expectedGeneration: command.executionGeneration,
+                  intentId: command.intentId,
+                  ownershipId,
+                  stage: command.stage,
+                })
+              ),
+              Effect.flatMap(
+                Schema.decodeUnknownEffect(
+                  HouseholdReadImportTerminalCheckpointResult
+                )
+              ),
+              Effect.flatMap(
+                Schema.encodeEffect(HouseholdReadImportTerminalCheckpointResult)
+              )
+            )
           )
         );
       } catch (error) {

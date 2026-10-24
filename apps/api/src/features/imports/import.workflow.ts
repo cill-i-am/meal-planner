@@ -881,7 +881,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                   })
                 );
                 if (visual._tag === "Failed") {
-                  const terminal = yield* persistTerminal(
+                  const terminalOwnershipId = yield* persistTerminal(
                     visual,
                     acquisitionGeneration
                   );
@@ -889,7 +889,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     .fail(
                       visual.stage,
                       publicIntentFailureForProviderStage(visual.stage),
-                      terminal.ownershipId
+                      terminalOwnershipId
                     )
                     .pipe(Effect.orDie);
                   return visual;
@@ -918,7 +918,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                   })
                 );
                 if (recipe._tag === "Failed") {
-                  const terminal = yield* persistTerminal(
+                  const terminalOwnershipId = yield* persistTerminal(
                     recipe,
                     acquisitionGeneration
                   );
@@ -926,7 +926,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     .fail(
                       recipe.stage,
                       publicIntentFailureForProviderStage(recipe.stage),
-                      terminal.ownershipId
+                      terminalOwnershipId
                     )
                     .pipe(Effect.orDie);
                   return recipe;
@@ -1226,7 +1226,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
               return speech;
             }
             if (speech._tag === "Failed") {
-              const terminal = yield* persistTerminal(
+              const terminalOwnershipId = yield* persistTerminal(
                 speech,
                 outcome.generation
               );
@@ -1234,7 +1234,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 .fail(
                   "speech",
                   publicIntentFailureForProviderStage("speech"),
-                  terminal.ownershipId
+                  terminalOwnershipId
                 )
                 .pipe(Effect.orDie);
               return speech;
