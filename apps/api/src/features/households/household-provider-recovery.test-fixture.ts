@@ -399,6 +399,7 @@ const runVisualResumeProof = (
       executionGeneration,
       householdDomain: terminalHousehold(environment),
       intentId,
+      mutationId: testMutationId,
       organizationId: command.admission.organizationId,
     };
     const dispatchId = `visual:${command.importId}:${generation}`;
@@ -607,7 +608,6 @@ const runImportSourcePreparationProof = (
     );
     const preparation = prepareImportWorkflowSource({
       householdDomain,
-      mutationId: testMutationId,
       resolveIdentity: makeTikTokCanonicalSourceIdentityResolver(() => {
         throw new Error("Canonical source resolution must not fetch");
       }).resolve,
