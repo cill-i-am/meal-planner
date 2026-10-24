@@ -37,6 +37,7 @@ import {
 } from "../imports/import-provider-recovery.js";
 import { persistHouseholdProviderTerminalAuthority } from "../imports/import-provider-terminal-authority.js";
 import { makeInstalledVisualEvidenceExtractor } from "../imports/import-provider-visual.js";
+import { prepareImportSource } from "../imports/import-source-preparation.js";
 import { extractVisualEvidenceForTranscribedImport } from "../imports/import-visual-evidence.js";
 import { makeRecipeImportWorkflowDispatcher } from "../imports/import-worker-request-layer.js";
 import { workerTestR2PutBody } from "../imports/import-worker-test-environment.js";
@@ -51,6 +52,7 @@ import {
   SourceCanonicalId,
 } from "../imports/import.contracts.js";
 import { workflowStartUnavailable } from "../imports/import.errors.js";
+import { makeTikTokCanonicalSourceIdentityResolver } from "../imports/source-identity.tiktok.js";
 import {
   TranscriptEvidenceStore,
   TranscriptEvidenceStoreLive,
@@ -70,6 +72,8 @@ import type { HouseholdDomainWorkerMethods } from "./household-domain-worker.js"
 import {
   HouseholdAdmitRecipeImportInput,
   HouseholdAdmitRecipeImportResult,
+  HouseholdCancelRecipeImportInput,
+  HouseholdRecordRecipeImportDispatchInput,
   HouseholdImportMutationId,
   HouseholdRecipeImportExecutionView,
   HouseholdRecipeImportFailure,
@@ -103,6 +107,10 @@ const terminalHousehold = (environment: Environment) => {
       household
         .admitRecipeImport(input)
         .pipe(Effect.map((value) => structuredClone(value))),
+    cancelRecipeImport: (input) =>
+      household
+        .cancelRecipeImport(input)
+        .pipe(Effect.map((value) => structuredClone(value))),
     mutateEvidenceStage: (input) =>
       household
         .mutateEvidenceStage(input)
@@ -127,6 +135,10 @@ const terminalHousehold = (environment: Environment) => {
       household
         .readRecipeImportExecution(input)
         .pipe(Effect.map((value) => structuredClone(value))),
+    readRecipeImportSubmission: (input) =>
+      household
+        .readRecipeImportSubmission(input)
+        .pipe(Effect.map((value) => structuredClone(value))),
     readRecipeRecoveryAttempt: (input) =>
       household
         .readRecipeRecoveryAttempt(input)
@@ -146,12 +158,14 @@ const terminalHousehold = (environment: Environment) => {
   } satisfies Pick<
     HouseholdDomainWorkerMethods,
     | "admitRecipeImport"
+    | "cancelRecipeImport"
     | "mutateEvidenceStage"
     | "prepareRecipeRecovery"
     | "readEvidenceReferences"
     | "readEvidenceStage"
     | "readImportTerminalCheckpoint"
     | "readRecipeImportExecution"
+    | "readRecipeImportSubmission"
     | "readRecipeRecoveryAttempt"
     | "recordRecipeImportDispatch"
     | "resolveRecipeImportSource"
@@ -183,6 +197,12 @@ const VisualResumeCommand = Schema.Struct({
 const DispatchTraceDurabilityCommand = Schema.Struct({
   admission: HouseholdMemberAdmission,
   mode: Schema.Literals(["record_response_lost", "start_response_lost"]),
+  sourceUrl: Schema.String,
+  trace: ImportTraceContext,
+});
+
+const ImportSourcePreparationCommand = Schema.Struct({
+  admission: HouseholdMemberAdmission,
   sourceUrl: Schema.String,
   trace: ImportTraceContext,
 });
@@ -529,6 +549,100 @@ const runVisualResumeProof = (
     };
   });
 
+const runImportSourcePreparationProof = (
+  environment: Environment,
+  command: typeof ImportSourcePreparationCommand.Type
+) =>
+  Effect.gen(function* runRealImportStartup() {
+    const householdDomain = terminalHousehold(environment);
+    const committed = yield* householdDomain
+      .admitRecipeImport({
+        admission: command.admission,
+        idempotencyKey: Schema.decodeUnknownSync(
+          HouseholdAdmitRecipeImportInput.fields.idempotencyKey
+        )("source-preparation"),
+        source: { kind: "tiktok", url: command.sourceUrl },
+      })
+      .pipe(
+        Effect.flatMap(
+          Schema.decodeUnknownEffect(HouseholdAdmitRecipeImportResult)
+        )
+      );
+    const execution = {
+      admission: {
+        actor: {
+          _tag: "System" as const,
+          purpose: "recipe_import_lifecycle_commit" as const,
+        },
+        organizationId: command.admission.organizationId,
+      },
+      expectedGeneration: 1,
+      intentId: committed.intent.id,
+    };
+    const unresolvedRecovery = yield* householdDomain
+      .readRecipeImportExecution(execution)
+      .pipe(Effect.flip);
+    const staleGeneration = yield* householdDomain
+      .readRecipeImportSubmission({ ...execution, expectedGeneration: 2 })
+      .pipe(Effect.flip);
+    const wrongPurpose = yield* householdDomain
+      .readRecipeImportSubmission({
+        ...execution,
+        admission: {
+          ...execution.admission,
+          actor: { _tag: "System", purpose: "import_workflow_dispatch" },
+        },
+      })
+      .pipe(Effect.flip);
+    yield* householdDomain.recordRecipeImportDispatch(
+      Schema.decodeUnknownSync(HouseholdRecordRecipeImportDispatchInput)({
+        admission: {
+          ...execution.admission,
+          actor: { _tag: "System", purpose: "import_workflow_dispatch" },
+        },
+        dispatchId: committed.dispatchId,
+        originalTrace: command.trace,
+        outcome: "prepared",
+        workflowIdentity: committed.workflowIdentity,
+      })
+    );
+    const preparation = prepareImportSource({
+      householdDomain,
+      mutationId: testMutationId,
+      resolveIdentity: makeTikTokCanonicalSourceIdentityResolver(() => {
+        throw new Error("Canonical source resolution must not fetch");
+      }).resolve,
+      submission: execution,
+    });
+    const prepared = yield* preparation;
+    const replay = yield* preparation;
+    const resolvedExecution =
+      yield* householdDomain.readRecipeImportExecution(execution);
+    yield* householdDomain.cancelRecipeImport(
+      Schema.decodeUnknownSync(HouseholdCancelRecipeImportInput)({
+        admission: command.admission,
+        idempotencyKey: "source-preparation-cancel",
+        intentId: committed.intent.id,
+        request: {
+          expectedIntentVersion: prepared.resolvedIntent.intentVersion,
+        },
+      })
+    );
+    const cancelledSubmission = yield* householdDomain
+      .readRecipeImportSubmission(execution)
+      .pipe(Effect.flip);
+    return {
+      cancelledSubmission,
+      identity: prepared.identityResolution.identity,
+      intent: prepared.resolvedIntent,
+      originalTrace: resolvedExecution.originalTrace,
+      replayVersion: replay.resolvedIntent.intentVersion,
+      staleGeneration,
+      unresolvedRecovery,
+      wrongPurpose,
+    };
+  });
+
 const runDispatchTraceDurabilityProof = (
   environment: Environment,
   command: typeof DispatchTraceDurabilityCommand.Type
@@ -758,6 +872,20 @@ const runAmbiguousProviderAttempt = (
 
 export default {
   async fetch(request: Request, environment: Environment) {
+    if (request.headers.get("x-test-import-source-preparation") === "1") {
+      try {
+        const command = await Schema.decodeUnknownPromise(
+          ImportSourcePreparationCommand
+        )(await request.json());
+        return Response.json(
+          await Effect.runPromise(
+            runImportSourcePreparationProof(environment, command)
+          )
+        );
+      } catch (error) {
+        return Response.json({ error, rejected: true }, { status: 409 });
+      }
+    }
     if (request.headers.get("x-test-dispatch-trace-durability") === "1") {
       try {
         const command = await Schema.decodeUnknownPromise(
