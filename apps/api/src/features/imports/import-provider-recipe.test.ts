@@ -27,11 +27,26 @@ import {
 } from "./import-provider-adapters.test-fixture.js";
 import type { ProviderDispatchGate } from "./import-provider-kernel.js";
 import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
+import nativeRecipeCapture from "./import-provider-recipe.native-envelope.test-fixture.json" with { type: "json" };
 import { hasMinimumRecipeEvidence } from "./import-recipe-draft.js";
 import {
   RecipeCandidate,
   RecipeExtraction,
 } from "./import-recipe-extractor.js";
+
+// Captured native envelope and usage; both candidate representations below are
+// scripted replacements. This does not claim a live full-schema recipe success.
+const nativeRecipeEnvelope = () => ({
+  ...nativeRecipeCapture.nativeResponse,
+  choices: nativeRecipeCapture.nativeResponse.choices.map((choice) => ({
+    ...choice,
+    message: {
+      ...choice.message,
+      content: JSON.stringify(emptyRecipeProviderSelection),
+    },
+  })),
+  response: emptyRecipeProviderSelection,
+});
 
 describe("installed recipe provider adapter", () => {
   it("charges the exact published input and output rates", async () => {
@@ -89,21 +104,254 @@ describe("installed recipe provider adapter", () => {
     ).toBe(false);
   });
 
-  it("fails closed when strict recipe JSON mode adds transport metadata", async () => {
+  it("projects additive transport metadata without retaining it in extraction or traces", async () => {
     const { exit, trace } = await runRecipeTransportRoot({
       ...recipeJsonResponse(emptyRecipeProviderSelection),
       providerPrivateCanary: "must-not-escape",
     });
 
-    expect(exit._tag).toBe("Failure");
-    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(exit._tag).toBe("Success");
     expect(trace.events.at(-1)).toEqual({
       correlationId,
+      event: "provider.decode",
+      outcome: "succeeded",
+      providerStage: "recipe",
+    });
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+      "must-not-escape"
+    );
+  });
+
+  it("accepts captured native recipe metadata and meters its observed usage with a scripted candidate", async () => {
+    const captured = nativeRecipeEnvelope();
+    const { exit, trace } = await runRecipeTransportRoot({
+      ...captured,
+      providerPrivateCanary: "must-not-escape",
+      usage: {
+        ...captured.usage,
+        providerPrivateCanary: "must-not-escape",
+      },
+    });
+
+    expect(exit._tag).toBe("Success");
+    if (exit._tag !== "Success") {
+      return;
+    }
+    expect(exit.value.recipe).toEqual(emptyRecipeProviderSelection);
+    expect(exit.value.cost).toEqual({
+      certainty: "estimated",
+      currency: "USD",
+      estimatedMicroUsd: 56,
+    });
+    expect(exit.value.usage).toMatchObject({
+      inputTokens: 66,
+      modelCalls: 1,
+      outputTokens: 16,
+    });
+    expect(Schema.is(RecipeExtraction)(exit.value)).toBe(true);
+    const serialized = JSON.stringify({ exit, trace: trace.events });
+    for (const metadata of [
+      "must-not-escape",
+      "neurons",
+      "cached_tokens",
+      nativeRecipeCapture.nativeResponse.id,
+    ]) {
+      expect(serialized).not.toContain(metadata);
+    }
+  });
+
+  it("compares dual JSON representations by value rather than object key order", async () => {
+    const native = nativeRecipeEnvelope();
+    const reordered = Object.fromEntries(
+      Object.entries(emptyRecipeProviderSelection).toReversed()
+    );
+    const { exit } = await runRecipeTransportRoot({
+      ...native,
+      choices: native.choices.map((choice) => ({
+        ...choice,
+        message: { ...choice.message, content: JSON.stringify(reordered) },
+      })),
+    });
+
+    expect(exit._tag).toBe("Success");
+    if (exit._tag !== "Success") {
+      return;
+    }
+    expect(exit.value.recipe).toEqual(emptyRecipeProviderSelection);
+    expect(exit.value.cost.estimatedMicroUsd).toBe(56);
+  });
+
+  it("preserves legacy response-only envelopes while projecting additive usage metadata", async () => {
+    const { exit } = await runRecipeTransportRoot(
+      recipeJsonResponse(
+        emptyRecipeProviderSelection,
+        nativeRecipeCapture.nativeResponse.usage
+      )
+    );
+
+    expect(exit._tag).toBe("Success");
+    if (exit._tag !== "Success") {
+      return;
+    }
+    expect(exit.value.recipe).toEqual(emptyRecipeProviderSelection);
+    expect(exit.value.cost.estimatedMicroUsd).toBe(56);
+  });
+
+  it.each(["length", "model_length"] as const)(
+    "rejects a native recipe choice ending with %s",
+    async (finishReason) => {
+      const native = nativeRecipeEnvelope();
+      const { exit, trace } = await runRecipeTransportRoot({
+        ...native,
+        choices: native.choices.map((choice) => ({
+          ...choice,
+          finish_reason: finishReason,
+        })),
+      });
+      expect(exit._tag).toBe("Failure");
+      expect(JSON.stringify(exit)).toContain("malformed_response");
+      expect(trace.events.at(-1)).toMatchObject({
+        decodeReason: "json_mode_envelope_invalid",
+        decodeStage: "json_mode_envelope",
+        outcome: "malformed",
+      });
+    }
+  );
+
+  it.each([
+    ["refusal", { refusal: "must-not-escape" }],
+    ["malformed content", { content: "not JSON must-not-escape" }],
+    [
+      "conflicting content",
+      {
+        content: JSON.stringify({
+          ...emptyRecipeProviderSelection,
+          name: "must-not-escape",
+        }),
+      },
+    ],
+    [
+      "message tool calls",
+      {
+        tool_calls: [
+          {
+            function: {
+              arguments: JSON.stringify(emptyRecipeProviderSelection),
+              name: "must-not-escape",
+            },
+            type: "function",
+          },
+        ],
+      },
+    ],
+  ])("rejects native recipe %s", async (_label, message) => {
+    const native = nativeRecipeEnvelope();
+    const { exit, trace } = await runRecipeTransportRoot({
+      ...native,
+      choices: native.choices.map((choice) => ({
+        ...choice,
+        message: { ...choice.message, ...message },
+      })),
+    });
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+      "must-not-escape"
+    );
+  });
+
+  it.each([
+    ["top-level finish reason", { finish_reason: "length" }, {}],
+    ["top-level refusal", { refusal: "must-not-escape" }, {}],
+    [
+      "top-level function call",
+      { function_call: { arguments: "{}", name: "must-not-escape" } },
+      {},
+    ],
+    [
+      "message function call",
+      {},
+      { function_call: { arguments: "{}", name: "must-not-escape" } },
+    ],
+  ])("rejects native recipe %s controls", async (_label, envelope, message) => {
+    const native = nativeRecipeEnvelope();
+    const { exit, trace } = await runRecipeTransportRoot({
+      ...native,
+      ...envelope,
+      choices: native.choices.map((choice) => ({
+        ...choice,
+        message: { ...choice.message, ...message },
+      })),
+    });
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+      "must-not-escape"
+    );
+  });
+
+  it("rejects nonempty native recipe tool calls", async () => {
+    const { exit, trace } = await runRecipeTransportRoot({
+      ...nativeRecipeEnvelope(),
+      tool_calls: [
+        { arguments: emptyRecipeProviderSelection, name: "must-not-escape" },
+      ],
+    });
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
+      "must-not-escape"
+    );
+  });
+
+  it.each([
+    [
+      "string count",
+      { completion_tokens: 16, prompt_tokens: "66", total_tokens: 82 },
+    ],
+    [
+      "negative count",
+      { completion_tokens: -16, prompt_tokens: 66, total_tokens: 50 },
+    ],
+    ["missing input count", { completion_tokens: 16, total_tokens: 82 }],
+    ["missing output count", { prompt_tokens: 66, total_tokens: 82 }],
+    ["missing total count", { completion_tokens: 16, prompt_tokens: 66 }],
+  ])("rejects native recipe usage with %s", async (_label, usage) => {
+    const { exit, trace } = await runRecipeTransportRoot({
+      ...nativeRecipeEnvelope(),
+      usage,
+    });
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("malformed_response");
+    expect(trace.events.at(-1)).toMatchObject({
       decodeReason: "json_mode_envelope_invalid",
       decodeStage: "json_mode_envelope",
-      event: "provider.decode",
       outcome: "malformed",
-      providerStage: "recipe",
+    });
+  });
+
+  it("keeps the candidate strict when both native representations agree on an extra field", async () => {
+    const native = nativeRecipeEnvelope();
+    const invalidCandidate = {
+      ...emptyRecipeProviderSelection,
+      providerPrivateCanary: "must-not-escape",
+    };
+    const { exit, trace } = await runRecipeTransportRoot({
+      ...native,
+      choices: native.choices.map((choice) => ({
+        ...choice,
+        message: {
+          ...choice.message,
+          content: JSON.stringify(invalidCandidate),
+        },
+      })),
+      response: invalidCandidate,
+    });
+    expect(exit._tag).toBe("Failure");
+    expect(trace.events.at(-1)).toMatchObject({
+      decodeReason: "json_mode_schema_invalid",
+      decodeStage: "recipe_schema",
+      outcome: "malformed",
     });
     expect(JSON.stringify({ exit, trace: trace.events })).not.toContain(
       "must-not-escape"

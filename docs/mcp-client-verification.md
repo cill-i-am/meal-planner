@@ -190,18 +190,118 @@ pnpm --filter @meal-planner/api exec vitest run --project node \
   src/features/imports/import-observability.test.ts
 ```
 
+## Production continuation after PR #311
+
+On 25 October 2026, production was at
+`386ec7cd35e0113989220e3d2fe6b223f53e5a6d` after
+[production CI](https://github.com/cill-i-am/meal-planner/actions/runs/40133565639)
+passed all 22 non-skipped jobs. The previous visual failure was now observable
+as HTTP 499. That response alone does not establish which component cancelled
+the request or justify changing a timeout.
+
+The three retained frames from the isolated import were downloaded through the
+authenticated R2 dashboard and matched their original byte counts and SHA-256
+hashes. A separately accounted native visual probe returned HTTP 200 in 2,874 ms,
+with 7,890 input tokens, 59 output tokens and three empty observation arrays.
+Inspection found no recipe text in those frames. This is not exhaustive OCR
+accuracy evidence. The probe used an explicit 120-second gateway timeout; its
+quick success does not prove that override fixed the earlier failure.
+
+A fresh import through Inspector then completed source acquisition, speech and
+visual processing **with the unchanged production settings**. It returned a
+working Task on the first request. Recipe extraction failed with the safe
+`json_mode_envelope_invalid` diagnostic. Its terminal checkpoint persisted, the
+Task completed with `recipe_extraction_failed`, and the same terminal result
+survived disconnect/reconnect. The recipe receipt settled conservatively without
+poisoning the shared budget; no manual reconciliation or provider retry was
+needed for this import.
+
+### Native recipe response compatibility
+
+Two separate, capped native requests investigated the response envelope:
+
+| Request | Result | Measured usage and accounting |
+| --- | --- | --- |
+| Production request factory with authored placeholder evidence | HTTP 408 after 120,563 ms | Usage unknown; 100,000 microUSD retained as an uncertain reservation in its isolated diagnostic ledger |
+| Two-field synthetic tomato-toast schema, 256-token cap | HTTP 200 after 1,132 ms | 66 input / 16 output tokens; 56 microUSD token-priced estimate |
+
+The timeout was not retried. These requests are compatibility probes, not a
+recipe extraction quality benchmark. Neither creates a draft. Gateway request
+logging remained disabled and the normal gateway options were preserved.
+
+The successful response contained the native `response` object alongside an
+OpenAI-style `choices` array, completion metadata and `usage.neurons`. The JSON
+content in the single choice matched `response`; its finish reason was `stop`
+and its refusal was null. The adapter previously rejected these extra envelope
+and usage fields before recipe validation. The regression substitutes a valid
+scripted recipe in both copies of the captured synthetic envelope; it does not
+claim the provider generated that complete recipe.
+
+The adapter now projects provider metadata while validating completion controls,
+redundant content agreement and token counts. `response` remains the only recipe
+source. Truncation, refusal, unexpected tool calls, contradictory content,
+malformed usage and unknown recipe fields fail closed. Grounding, review,
+publication and accounting authority remain unchanged. The adapter version also
+changes so new extraction fingerprints and evaluation results identify the new
+parsing behavior; existing settled dispatches retain their replay authority.
+
+The native probe's exact model was
+`@cf/meta/llama-3.3-70b-instruct-fp8-fast`. Its user message was:
+
+```text
+Return the title and integer servings exactly as stated in this synthetic recipe. Synthetic recipe: Tomato toast. Serves 1. Toast bread and add tomato.
+```
+
+The request used temperature 0, `max_tokens: 256` and
+`response_format: { type: "json_schema", json_schema: ... }` with this schema:
+
+```json
+{
+  "type": "object",
+  "properties": { "title": { "type": "string" }, "servings": { "type": "integer" } },
+  "required": ["title", "servings"],
+  "additionalProperties": false
+}
+```
+
+Binding options were `returnRawResponse: true` and gateway
+`{ id: "meal-planner-recipe-import", collectLog: false, skipCache: true }`.
+The compact request-body SHA-256 was
+`37b2168c27e6af7010d03ab006255ce486a7231408e9d722aeae04d494fbee51`.
+The saved synthetic response fixture supplies the observed envelope; regression
+cases deliberately vary controls and replace content. Repeat paid probes only
+through the existing [accounted transport](../evals/recipe-extraction/accounted-transport.ts)
+with distinct dispatch identities and bounded reservations. Do not erase an
+uncertain receipt or present local fixture replay as a fresh provider result.
+
+The official [JSON mode documentation](https://developers.cloudflare.com/workers-ai/features/json-mode/)
+describes native structured `response` output. The
+[model documentation](https://developers.cloudflare.com/workers-ai/models/llama-3.3-70b-instruct-fp8-fast/)
+also documents transport usage and tool-call fields. Both were checked on
+25 October 2026; the saved native capture establishes the additional observed
+metadata, not a guarantee about every future provider response.
+
+Reproduce the adapter regression without provider calls:
+
+```sh
+pnpm --filter @meal-planner/api exec vitest run --project node \
+  src/features/imports/import-provider-recipe.test.ts
+pnpm evals:recipe:test
+```
+
 ## Remaining live verification
 
-The HTTP boundary repair requires deployment and hosted verification. Successful
-draft preparation, elicitation preview/accept/decline/dismiss, stale-version
-rejection and publication replay remain unverified with this real client.
-Provider settlement must remain authoritative; do not invent a draft or bypass
-accounting to make the protocol test pass.
+The recipe response repair still requires production deployment and hosted
+verification. Successful draft preparation, elicitation preview/accept/decline/
+dismiss, stale-version rejection and publication replay remain unverified with
+this real client. The compatibility probe demonstrates a parser defect but does
+not establish the exact payload of the failed production import, whose body was
+not retained. Provider settlement must remain authoritative; do not invent a
+draft or bypass accounting to make the protocol test pass.
 
-No recipes were published. The first four test imports were cancelled; the fifth
-ended in a recorded failure. The restored client grant was revoked again,
-verified absent, and its local credentials cleared. The shared budget is open.
-
-This report distinguishes deployed protocol/workflow repairs, the locally
-reproduced HTTP-boundary defect, and unfinished live elicitation checks. It is
-not a claim that the whole hosted journey works.
+No recipes have been published. The first four test imports were cancelled;
+the following three ended in recorded failures. The restored test grant was
+revoked and verified absent, local client credentials were cleared, and Inspector
+was disconnected. No production provider request is outstanding. This report distinguishes
+production protocol/workflow behavior, the reproduced response compatibility
+defect and unfinished live elicitation checks.
