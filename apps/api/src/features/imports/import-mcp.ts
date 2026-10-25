@@ -115,8 +115,10 @@ const projectPreparationEvent = (
 /**
  * Preparation ends at its first terminal event, including draft review. Later
  * publication, cancellation or operator recovery must not rewrite that outcome.
- * Read the intent and its complete timeline for the same household and import;
- * mismatched snapshots fail closed so the caller can reload them.
+ * Read the intent before its complete timeline for the same household and
+ * import. Append-only history may advance between reads and must cover the
+ * earlier intent version. Terminal outcomes come from that history; ongoing
+ * work retains the earlier intent unchanged, including its mutation version.
  */
 export const projectImportPreparation = (
   intent: RecipeImportIntent,
@@ -128,7 +130,7 @@ export const projectImportPreparation = (
   if (
     timeline.data[0]?.type !== "intent_admitted" ||
     timeline.data.some((event, index) => event.intentVersion !== index + 1) ||
-    timeline.data.length !== intent.intentVersion
+    timeline.data.length < intent.intentVersion
   ) {
     return { _tag: "Unavailable", reason: "inconsistent_history" };
   }

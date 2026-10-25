@@ -166,6 +166,39 @@ describe("recipe preparation projection", () => {
     });
   });
 
+  it("retains the earlier working intent and mutation version when history advances", () => {
+    const intent = Schema.decodeUnknownSync(RecipeImportIntent)({
+      ...commonIntent,
+      activity: { type: "working" },
+      processing: { startedAt: at, type: "extracting_recipe" },
+      status: "processing",
+    });
+    const timeline = timelineFrom(
+      {
+        at,
+        intentVersion: 3,
+        processing: { startedAt: at, type: "extracting_recipe" },
+        type: "processing_stage_changed",
+      },
+      {
+        at: "2026-10-23T12:01:00.000Z",
+        intentVersion: 4,
+        processing: {
+          startedAt: "2026-10-23T12:01:00.000Z",
+          type: "grounding_recipe",
+        },
+        type: "processing_stage_changed",
+      }
+    );
+    const result = projectImportPreparation(intent, timeline);
+    expect(result).toEqual({ _tag: "Working", intent });
+    if (result._tag !== "Working") {
+      throw new Error("Expected ongoing preparation");
+    }
+    expect(result.intent).toBe(intent);
+    expect(result.intent.intentVersion).toBe(3);
+  });
+
   it.each([
     {
       action: actionReference,
@@ -248,6 +281,16 @@ describe("recipe preparation projection", () => {
         isError,
         result: outcome,
       });
+      const earlier = Schema.decodeUnknownSync(RecipeImportIntent)({
+        ...commonIntent,
+        activity: { type: "working" },
+        intentVersion: 2,
+        processing: { startedAt: at, type: "extracting_recipe" },
+        status: "processing",
+      });
+      expect(projectImportPreparation(earlier, timeline)).toEqual(
+        projectImportPreparation(intent, timeline)
+      );
     }
   );
 
@@ -315,6 +358,14 @@ describe("recipe preparation projection", () => {
       ).toEqual(
         projectImportPreparation(ready, timelineFrom(reviewAvailableEvent))
       );
+      expect(
+        projectImportPreparation(
+          ready,
+          timelineFrom(reviewAvailableEvent, ...subsequentEvents)
+        )
+      ).toEqual(
+        projectImportPreparation(ready, timelineFrom(reviewAvailableEvent))
+      );
     }
   );
 
@@ -354,6 +405,16 @@ describe("recipe preparation projection", () => {
         })
       )
     ).toEqual(projectImportPreparation(failed, timelineFrom(failureEvent)));
+    expect(
+      projectImportPreparation(
+        failed,
+        timelineFrom(failureEvent, {
+          at: later,
+          intentVersion: 4,
+          type: "recovered",
+        })
+      )
+    ).toEqual(projectImportPreparation(failed, timelineFrom(failureEvent)));
   });
 
   it("fails closed when terminal history is absent", () => {
@@ -380,7 +441,7 @@ describe("recipe preparation projection", () => {
     ).toEqual({ _tag: "Unavailable", reason: "missing_history" });
   });
 
-  it("rejects incomplete, unordered and racing timeline snapshots", () => {
+  it("rejects behind, gapped, duplicate, unordered and missing-admission history", () => {
     const intent = Schema.decodeUnknownSync(RecipeImportIntent)({
       ...commonIntent,
       action: actionReference,
@@ -392,6 +453,20 @@ describe("recipe preparation projection", () => {
       timeline.data.toReversed(),
       timeline.data.slice(0, 2),
       [...timeline.data, ...timeline.data],
+      timelineFrom({ ...reviewAvailableEvent, intentVersion: 4 }).data,
+      Schema.decodeUnknownSync(RecipeImportTimeline)({
+        data: [
+          { at, intentVersion: 1, type: "recovered" },
+          {
+            at,
+            canonicalUrl: commonIntent.source.canonicalUrl,
+            intentVersion: 2,
+            type: "source_resolved",
+          },
+          reviewAvailableEvent,
+        ],
+        object: "list",
+      }).data,
     ]) {
       expect(
         projectImportPreparation(intent, { data, object: "list" })

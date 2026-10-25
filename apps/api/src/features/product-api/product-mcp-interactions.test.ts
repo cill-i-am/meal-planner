@@ -214,7 +214,54 @@ describe("MCP import HTTP transport with schema-validated domain responses", () 
     }
   );
 
-  it("bounds rereads and rejects a persistently inconsistent task snapshot", async () => {
+  it("keeps task polling available during three legitimate preparation transitions", async () => {
+    const fixture = makeImportTransportFixture();
+    const task = await createTask(fixture);
+    const dispatch = await Effect.runPromise(fixture.dispatch());
+    let progress = 0;
+    const pollWhileAdvancing = () =>
+      rpc(
+        fixture,
+        "tasks/get",
+        { taskId: task.taskId },
+        {
+          dispatchCall: (request, scopes) =>
+            dispatch.call(request, scopes).pipe(
+              Effect.tap(() => {
+                if (
+                  request.method === "GET" &&
+                  new URL(request.url).pathname ===
+                    `/v1/recipe-import-intents/${intentId}`
+                ) {
+                  fixture.advancePreparation(progress);
+                  progress += 1;
+                }
+                return Effect.void;
+              })
+            ),
+        }
+      );
+    const first = await pollWhileAdvancing();
+    const second = await pollWhileAdvancing();
+    const third = await pollWhileAdvancing();
+    // Each response was current when its independent read completed. Progress
+    // never requires a failed poll or another import creation to recover.
+    const later = await readTask(fixture, task.taskId);
+    expect(later.status).toBe("completed");
+    expect(fixture.creationReceipts.size).toBe(1);
+    expect([first.error, second.error, third.error]).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    expect(
+      [first, second, third].map(
+        ({ result }) => GetTaskResultV2Schema.parse(result).status
+      )
+    ).toEqual(["working", "working", "completed"]);
+  });
+
+  it("reads complete newer history once when the earlier intent remains unchanged", async () => {
     const fixture = makeImportTransportFixture();
     const task = await createTask(fixture);
     const dispatch = await Effect.runPromise(fixture.dispatch());
@@ -241,8 +288,11 @@ describe("MCP import HTTP transport with schema-validated domain responses", () 
         },
       }
     );
-    expect(reads).toBe(3);
-    expect(reply.error).toMatchObject({ code: -32_603 });
+    expect(reads).toBe(1);
+    expect(reply.error).toBeUndefined();
+    expect(GetTaskResultV2Schema.parse(reply.result)).toMatchObject({
+      status: "completed",
+    });
     expect(fixture.creationReceipts.size).toBe(1);
     expect(fixture.cancellations).toHaveLength(0);
     expect(fixture.getPublications()).toBe(0);
@@ -449,11 +499,30 @@ describe("MCP import HTTP transport with schema-validated domain responses", () 
     ).toBe(true);
   });
 
-  it("keeps the cancellation identity while reloading a version changed by concurrent progress", async () => {
+  it("keeps the earlier cancellation version when history advances and safely retries a conflict", async () => {
     const fixture = makeImportTransportFixture();
     const { taskId } = await createTask(fixture);
-    fixture.raceNextCancellation();
-    const conflicted = await rpc(fixture, "tasks/cancel", { taskId });
+    const dispatch = await Effect.runPromise(fixture.dispatch());
+    const conflicted = await rpc(
+      fixture,
+      "tasks/cancel",
+      { taskId },
+      {
+        dispatchCall: (request, scopes) =>
+          dispatch.call(request, scopes).pipe(
+            Effect.tap(() => {
+              if (
+                request.method === "GET" &&
+                new URL(request.url).pathname ===
+                  `/v1/recipe-import-intents/${intentId}`
+              ) {
+                fixture.advancePreparation(0);
+              }
+              return Effect.void;
+            })
+          ),
+      }
+    );
     expect(conflicted.error).toBeDefined();
     expect(await readTask(fixture, taskId)).toMatchObject({
       status: "working",
