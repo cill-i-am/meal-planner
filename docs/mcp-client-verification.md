@@ -289,10 +289,55 @@ pnpm --filter @meal-planner/api exec vitest run --project node \
 pnpm evals:recipe:test
 ```
 
+### Native recipe request compatibility
+
+A separately approved, one-call diagnostic reconstructed the isolated import's
+retained evidence through the production encoders. Its evidence fingerprint
+matched the original dispatch. With the original request factory, it returned
+HTTP 200 in 20,242 ms, using 990 input and 639 output tokens (1,730 microUSD
+tariff estimate). The response envelope was valid, but the recipe used a different
+structure: top-level `recipeYield` and `cookTime`, string instructions and
+incorrect ingredient shapes. Strict domain decoding rejected it. This is a new
+diagnostic response, not a recovered body from the failed production call.
+Private source text and provider output are not included in the repository.
+
+The native request already supplied the bare domain schema in `response_format`.
+The [official Cloudflare client](https://github.com/cloudflare/ai/blob/main/packages/workers-ai-provider/src/utils.ts)
+confirms that shape; substituting an OpenAI schema-name wrapper would be wrong.
+Cloudflare's [LangChain implementation](https://github.com/cloudflare/langchain-cloudflare/blob/main/libs/langchain-cloudflare/langchain_cloudflare/chat_models.py)
+also places the full schema in its Llama structured-output prompt. Neither source
+establishes guaranteed adherence to our nested recipe schema.
+
+Three controlled native calls then used one existing **synthetic development
+case**, holding the evidence, model, native schema and grounding fixed. The
+[complete captures and reproduction commands](../evals/recipe-extraction/schema-conditioning-20261025/README.md)
+preserve requests, responses, receipts, frozen hashes and field-level results:
+
+| Request | Strict candidate | Grounded result | Client time / tariff estimate |
+| --- | --- | --- | --- |
+| Original prompt | Invalid | No candidate | 5,677 ms / 467 microUSD |
+| Exact schema appended | Valid | Minimum draft passes; ingredient names duplicate amounts/preparation | 20,357 ms / 2,044 microUSD |
+| Schema plus ingredient-name instruction | Valid | Minimum draft passes; clean names; structured Roast temperature missing | 21,761 ms / 2,020 microUSD |
+
+The installed factory now emits the third request exactly. A regression confirms
+that the full schema reaches the prompt as well as `response_format`. The
+candidate schema, grounding, model, native options, accounting and explicit
+publication review are unchanged. The final request still preserves 200°C in the
+Roast instruction text, but its structured temperature is null. Grounding removes
+a temperature incorrectly attached to the Toss step. The unchanged oracle marks
+both valid candidates `usable: false`; minimum-draft eligibility is not complete
+field preservation. These are three adaptive calls on one development example,
+not a holdout or a population accuracy result. The additional prompt costs about
+3,400 input tokens in this example and did not improve latency.
+
+No product draft or publication was created by these diagnostics. A new bounded
+real-source validation request is prepared but has not been sent; the previous
+one-call authorization was consumed by the earlier diagnostic.
+
 ## Remaining live verification
 
-The recipe response repair still requires production deployment and hosted
-verification. Successful draft preparation, elicitation preview/accept/decline/
+The recipe request and response repair still requires production deployment and
+hosted verification. Successful draft preparation, elicitation preview/accept/decline/
 dismiss, stale-version rejection and publication replay remain unverified with
 this real client. The compatibility probe demonstrates a parser defect but does
 not establish the exact payload of the failed production import, whose body was

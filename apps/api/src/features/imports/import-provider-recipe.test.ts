@@ -633,6 +633,13 @@ describe("installed recipe provider adapter", () => {
       }).schema,
       type: "json_schema",
     });
+    expect(request?.messages[0]?.content).toContain(
+      JSON.stringify(
+        Schema.toJsonSchemaDocument(RecipeCandidate, {
+          onExcessProperty: "error",
+        }).schema
+      )
+    );
     expect(request?.response_format).toMatchObject({
       json_schema: expect.objectContaining({
         additionalProperties: false,

@@ -1,0 +1,423 @@
+{
+  "acceptanceSha256": "d47f83f507beddd49b8275c7b19c50e6052824f372646f61b9c3037cae2dd735",
+  "corpusSha256": "e3af1b51792b1bf83ab3b6e886f2e817a9a63d2ea530aae3168490ca926e6114",
+  "corpusVersion": "recipe-extraction-v1",
+  "descriptor": {
+    "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "provider": "cloudflare-workers-ai-native-binding",
+    "version": "535913df0339a9c5f597096f701545ed06381deb:synthetic-diagnostic:schema-prompt"
+  },
+  "execution": "live_provider",
+  "grounderRevision": "535913df0339a9c5f597096f701545ed06381deb",
+  "grounderSha256": "f8b418b1283760ea7cadaeb11668797e0ba3cae57b7323c6fb14d4df3591c010",
+  "outputs": [
+    {
+      "caseId": "caption-complete",
+      "evidenceSha256": "ceaec8e1d055252df28233e448f28227e378c5118e787ca674cedf9e2f4e4e41",
+      "failureCode": null,
+      "measurements": {
+        "costReservationMicroUsd": 100000,
+        "fallbackInvocations": 0,
+        "inputTokens": 3769,
+        "internalPasses": null,
+        "latencyMilliseconds": 20357,
+        "latencySource": "client_wall",
+        "outputTokens": 417,
+        "providerInvocations": 1,
+        "providerLatencyMilliseconds": null,
+        "providerSpendMicroUsd": {
+          "certainty": "estimated",
+          "value": 2044
+        }
+      },
+      "rawCandidate": {
+        "author": null,
+        "categories": [],
+        "cuisines": [],
+        "description": null,
+        "dietary": [],
+        "equipment": [],
+        "ingredients": [
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "500 g carrots, sliced",
+            "note": null,
+            "optional": null,
+            "original": "500 g carrots, sliced",
+            "preparation": "sliced",
+            "quantity": {
+              "max": null,
+              "unit": "g",
+              "value": 500
+            },
+            "size": null
+          },
+          {
+            "group": null,
+            "ingredientId": null,
+            "localName": null,
+            "name": "1 tbsp olive oil",
+            "note": null,
+            "optional": null,
+            "original": "1 tbsp olive oil",
+            "preparation": null,
+            "quantity": {
+              "max": null,
+              "unit": "tbsp",
+              "value": 1
+            },
+            "size": null
+          }
+        ],
+        "instructions": [
+          {
+            "duration": null,
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 1,
+            "techniques": [],
+            "temperature": {
+              "unit": "C",
+              "value": 200
+            },
+            "text": "Toss the sliced carrots with olive oil."
+          },
+          {
+            "duration": {
+              "seconds": 1500
+            },
+            "equipment": [],
+            "group": null,
+            "ingredients": [],
+            "step": 2,
+            "techniques": [],
+            "temperature": {
+              "unit": "C",
+              "value": 200
+            },
+            "text": "Roast at 200°C for 25 minutes."
+          }
+        ],
+        "language": null,
+        "media": [],
+        "name": "Roast carrots",
+        "notes": [],
+        "nutrition": null,
+        "servings": {
+          "max": null,
+          "original": "Serves 4",
+          "quantity": 4,
+          "unit": null
+        },
+        "sourceTags": [],
+        "times": {
+          "cook": {
+            "seconds": 1500
+          },
+          "inactive": null,
+          "prep": {
+            "seconds": 600
+          },
+          "total": {
+            "seconds": 2100
+          }
+        }
+      },
+      "rawProviderResponse": {
+        "id": "chatcmpl-480f960e-8dff-4df3-b85d-b25dd68917a6",
+        "object": "chat.completion",
+        "created": 1792918053,
+        "model": "@cf/meta/llama-3.3-70b-json",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"author\": null, \"categories\": [], \"cuisines\": [], \"description\": null, \"dietary\": [], \"equipment\": [], \"ingredients\": [{\"group\": null, \"ingredientId\": null, \"localName\": null, \"name\": \"500 g carrots, sliced\", \"note\": null, \"optional\": null, \"original\": \"500 g carrots, sliced\", \"preparation\": \"sliced\", \"quantity\": {\"max\": null, \"unit\": \"g\", \"value\": 500}, \"size\": null}, {\"group\": null, \"ingredientId\": null, \"localName\": null, \"name\": \"1 tbsp olive oil\", \"note\": null, \"optional\": null, \"original\": \"1 tbsp olive oil\", \"preparation\": null, \"quantity\": {\"max\": null, \"unit\": \"tbsp\", \"value\": 1}, \"size\": null}], \"instructions\": [{\"duration\": null, \"equipment\": [], \"group\": null, \"ingredients\": [], \"step\": 1, \"techniques\": [], \"temperature\": {\"unit\": \"C\", \"value\": 200}, \"text\": \"Toss the sliced carrots with olive oil.\"}, {\"duration\": {\"seconds\": 1500}, \"equipment\": [], \"group\": null, \"ingredients\": [], \"step\": 2, \"techniques\": [], \"temperature\": {\"unit\": \"C\", \"value\": 200}, \"text\": \"Roast at 200\\u00b0C for 25 minutes.\"}], \"language\": null, \"media\": [], \"name\": \"Roast carrots\", \"notes\": [], \"nutrition\": null, \"servings\": {\"max\": null, \"original\": \"Serves 4\", \"quantity\": 4, \"unit\": null}, \"sourceTags\": [], \"times\": {\"cook\": {\"seconds\": 1500}, \"inactive\": null, \"prep\": {\"seconds\": 600}, \"total\": {\"seconds\": 2100}}}",
+              "refusal": null,
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "reasoning": null
+            },
+            "logprobs": null,
+            "finish_reason": "stop",
+            "stop_reason": null,
+            "token_ids": null,
+            "routed_experts": null
+          }
+        ],
+        "service_tier": null,
+        "usage": {
+          "prompt_tokens": 3769,
+          "completion_tokens": 417,
+          "total_tokens": 4186,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "neurons": 185.91427612304688
+        },
+        "prompt_logprobs": null,
+        "prompt_token_ids": null,
+        "prompt_text": null,
+        "kv_transfer_params": null,
+        "ec_transfer_params": null,
+        "metrics": null,
+        "response": {
+          "author": null,
+          "categories": [],
+          "cuisines": [],
+          "description": null,
+          "dietary": [],
+          "equipment": [],
+          "ingredients": [
+            {
+              "group": null,
+              "ingredientId": null,
+              "localName": null,
+              "name": "500 g carrots, sliced",
+              "note": null,
+              "optional": null,
+              "original": "500 g carrots, sliced",
+              "preparation": "sliced",
+              "quantity": {
+                "max": null,
+                "unit": "g",
+                "value": 500
+              },
+              "size": null
+            },
+            {
+              "group": null,
+              "ingredientId": null,
+              "localName": null,
+              "name": "1 tbsp olive oil",
+              "note": null,
+              "optional": null,
+              "original": "1 tbsp olive oil",
+              "preparation": null,
+              "quantity": {
+                "max": null,
+                "unit": "tbsp",
+                "value": 1
+              },
+              "size": null
+            }
+          ],
+          "instructions": [
+            {
+              "duration": null,
+              "equipment": [],
+              "group": null,
+              "ingredients": [],
+              "step": 1,
+              "techniques": [],
+              "temperature": {
+                "unit": "C",
+                "value": 200
+              },
+              "text": "Toss the sliced carrots with olive oil."
+            },
+            {
+              "duration": {
+                "seconds": 1500
+              },
+              "equipment": [],
+              "group": null,
+              "ingredients": [],
+              "step": 2,
+              "techniques": [],
+              "temperature": {
+                "unit": "C",
+                "value": 200
+              },
+              "text": "Roast at 200°C for 25 minutes."
+            }
+          ],
+          "language": null,
+          "media": [],
+          "name": "Roast carrots",
+          "notes": [],
+          "nutrition": null,
+          "servings": {
+            "max": null,
+            "original": "Serves 4",
+            "quantity": 4,
+            "unit": null
+          },
+          "sourceTags": [],
+          "times": {
+            "cook": {
+              "seconds": 1500
+            },
+            "inactive": null,
+            "prep": {
+              "seconds": 600
+            },
+            "total": {
+              "seconds": 2100
+            }
+          }
+        },
+        "tool_calls": []
+      },
+      "requestIdentity": "request_sha256",
+      "status": "completed",
+      "transportReceipt": {
+        "body": {
+          "id": "chatcmpl-480f960e-8dff-4df3-b85d-b25dd68917a6",
+          "object": "chat.completion",
+          "created": 1792918053,
+          "model": "@cf/meta/llama-3.3-70b-json",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\"author\": null, \"categories\": [], \"cuisines\": [], \"description\": null, \"dietary\": [], \"equipment\": [], \"ingredients\": [{\"group\": null, \"ingredientId\": null, \"localName\": null, \"name\": \"500 g carrots, sliced\", \"note\": null, \"optional\": null, \"original\": \"500 g carrots, sliced\", \"preparation\": \"sliced\", \"quantity\": {\"max\": null, \"unit\": \"g\", \"value\": 500}, \"size\": null}, {\"group\": null, \"ingredientId\": null, \"localName\": null, \"name\": \"1 tbsp olive oil\", \"note\": null, \"optional\": null, \"original\": \"1 tbsp olive oil\", \"preparation\": null, \"quantity\": {\"max\": null, \"unit\": \"tbsp\", \"value\": 1}, \"size\": null}], \"instructions\": [{\"duration\": null, \"equipment\": [], \"group\": null, \"ingredients\": [], \"step\": 1, \"techniques\": [], \"temperature\": {\"unit\": \"C\", \"value\": 200}, \"text\": \"Toss the sliced carrots with olive oil.\"}, {\"duration\": {\"seconds\": 1500}, \"equipment\": [], \"group\": null, \"ingredients\": [], \"step\": 2, \"techniques\": [], \"temperature\": {\"unit\": \"C\", \"value\": 200}, \"text\": \"Roast at 200\\u00b0C for 25 minutes.\"}], \"language\": null, \"media\": [], \"name\": \"Roast carrots\", \"notes\": [], \"nutrition\": null, \"servings\": {\"max\": null, \"original\": \"Serves 4\", \"quantity\": 4, \"unit\": null}, \"sourceTags\": [], \"times\": {\"cook\": {\"seconds\": 1500}, \"inactive\": null, \"prep\": {\"seconds\": 600}, \"total\": {\"seconds\": 2100}}}",
+                "refusal": null,
+                "annotations": null,
+                "audio": null,
+                "function_call": null,
+                "reasoning": null
+              },
+              "logprobs": null,
+              "finish_reason": "stop",
+              "stop_reason": null,
+              "token_ids": null,
+              "routed_experts": null
+            }
+          ],
+          "service_tier": null,
+          "usage": {
+            "prompt_tokens": 3769,
+            "completion_tokens": 417,
+            "total_tokens": 4186,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "neurons": 185.91427612304688
+          },
+          "prompt_logprobs": null,
+          "prompt_token_ids": null,
+          "prompt_text": null,
+          "kv_transfer_params": null,
+          "ec_transfer_params": null,
+          "metrics": null,
+          "response": {
+            "author": null,
+            "categories": [],
+            "cuisines": [],
+            "description": null,
+            "dietary": [],
+            "equipment": [],
+            "ingredients": [
+              {
+                "group": null,
+                "ingredientId": null,
+                "localName": null,
+                "name": "500 g carrots, sliced",
+                "note": null,
+                "optional": null,
+                "original": "500 g carrots, sliced",
+                "preparation": "sliced",
+                "quantity": {
+                  "max": null,
+                  "unit": "g",
+                  "value": 500
+                },
+                "size": null
+              },
+              {
+                "group": null,
+                "ingredientId": null,
+                "localName": null,
+                "name": "1 tbsp olive oil",
+                "note": null,
+                "optional": null,
+                "original": "1 tbsp olive oil",
+                "preparation": null,
+                "quantity": {
+                  "max": null,
+                  "unit": "tbsp",
+                  "value": 1
+                },
+                "size": null
+              }
+            ],
+            "instructions": [
+              {
+                "duration": null,
+                "equipment": [],
+                "group": null,
+                "ingredients": [],
+                "step": 1,
+                "techniques": [],
+                "temperature": {
+                  "unit": "C",
+                  "value": 200
+                },
+                "text": "Toss the sliced carrots with olive oil."
+              },
+              {
+                "duration": {
+                  "seconds": 1500
+                },
+                "equipment": [],
+                "group": null,
+                "ingredients": [],
+                "step": 2,
+                "techniques": [],
+                "temperature": {
+                  "unit": "C",
+                  "value": 200
+                },
+                "text": "Roast at 200°C for 25 minutes."
+              }
+            ],
+            "language": null,
+            "media": [],
+            "name": "Roast carrots",
+            "notes": [],
+            "nutrition": null,
+            "servings": {
+              "max": null,
+              "original": "Serves 4",
+              "quantity": 4,
+              "unit": null
+            },
+            "sourceTags": [],
+            "times": {
+              "cook": {
+                "seconds": 1500
+              },
+              "inactive": null,
+              "prep": {
+                "seconds": 600
+              },
+              "total": {
+                "seconds": 2100
+              }
+            }
+          },
+          "tool_calls": []
+        },
+        "dispatchId": "recipe-prompt-pair-20261025-01:B",
+        "headers": {
+          "content-type": "application/json",
+          "cf-ray": "a4fff5064b9cea0e-LHR",
+          "cf-aig-log-id": "01a1723e-606f-71b4-a5cd-177f4aab874e"
+        },
+        "latencyMs": 20357,
+        "requestSha256": "a9fa4772abae0b0236910ea7072ea23c3df926998c52ec87cb2a2507efdd3de9",
+        "status": 200
+      }
+    }
+  ],
+  "runId": "recipe-prompt-pair-20261025-01:B",
+  "schemaVersion": 1,
+  "strategy": "schema-prompt"
+}

@@ -236,7 +236,16 @@ export const makeInstalledRecipeRequest = (
   request: RecipeEvidenceAssembly
 ): RecipeWorkersAiRequest => ({
   max_tokens: 16_384,
-  messages: [{ content: recipePromptText(request), role: "user" }],
+  messages: [
+    {
+      content: [
+        recipePromptText(request),
+        `Your output must satisfy this exact JSON Schema, including every required field and nested type. Return only a JSON object conforming to it:\n${JSON.stringify(recipeCandidateJsonSchema)}`,
+        "For each ingredient, name contains only the food name; original retains the complete evidence phrase, including its amount, unit and preparation.",
+      ].join("\n\n"),
+      role: "user",
+    },
+  ],
   response_format: {
     json_schema: recipeCandidateJsonSchema,
     type: "json_schema",

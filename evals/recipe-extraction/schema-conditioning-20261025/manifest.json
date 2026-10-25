@@ -1,0 +1,286 @@
+{
+  "schemaVersion": 1,
+  "capturedDate": "2026-10-25",
+  "sourceRevision": "535913df0339a9c5f597096f701545ed06381deb",
+  "provenance": {
+    "input": "authored synthetic caption-complete development case from recipe-extraction-v1",
+    "execution": "actual Workers AI native binding calls after existing native D1 accounting reservation",
+    "scope": "three adaptive synthetic compatibility diagnostics; no real source capture, holdout or final production verification",
+    "privacy": "Synthetic evidence only; no account identifier, credentials, private import07 text or diagnostic filesystem paths."
+  },
+  "corpus": {
+    "path": "../corpus.v1.json",
+    "caseId": "caption-complete",
+    "split": "dev",
+    "suppliedFacts": 21,
+    "measuredCasesPerRun": 1,
+    "unmeasuredDevCasesPerRun": 9,
+    "hashes": {
+      "evidenceSha256": "ceaec8e1d055252df28233e448f28227e378c5118e787ca674cedf9e2f4e4e41",
+      "corpusSha256": "e3af1b51792b1bf83ab3b6e886f2e817a9a63d2ea530aae3168490ca926e6114",
+      "acceptanceSha256": "d47f83f507beddd49b8275c7b19c50e6052824f372646f61b9c3037cae2dd735",
+      "grounderSha256": "f8b418b1283760ea7cadaeb11668797e0ba3cae57b7323c6fb14d4df3591c010",
+      "scorerSha256": "516efa94a87513e2614d3c824a65e74c62053899969c78e4828572636cf4e96a"
+    }
+  },
+  "transport": {
+    "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "temperature": 0,
+    "max_tokens": 16384,
+    "responseFormat": "json_schema with bare full domain schema",
+    "options": {
+      "gateway": {
+        "id": "meal-planner-recipe-import",
+        "collectLog": false,
+        "skipCache": true
+      },
+      "returnRawResponse": true
+    },
+    "applicationRetries": 0,
+    "providerInternalPasses": null,
+    "latencyMeaning": "client wall time from native AI.run invocation through response-body read; provider-reported latency unavailable"
+  },
+  "accounting": {
+    "inputMicroUsdPerToken": 0.293,
+    "outputMicroUsdPerToken": 2.253,
+    "rounding": "ceil(inputTokens * 0.293 + outputTokens * 2.253)",
+    "spendCertainty": "estimated published tariff, not invoice",
+    "AB": {
+      "maximumInvocations": 2,
+      "cumulativeReservationMicroUsd": 200000
+    },
+    "C": {
+      "maximumInvocations": 1,
+      "cumulativeReservationMicroUsd": 100000
+    }
+  },
+  "controlledSuffixes": {
+    "B": "\n\nYour output must satisfy this exact JSON Schema, including every required field and nested type. Return only a JSON object conforming to it:\n<JSON.stringify(original.response_format.json_schema)>",
+    "C": "\n\nFor each ingredient, name contains only the food name; original retains the complete evidence phrase, including its amount, unit and preparation."
+  },
+  "reviewerProvenance": {
+    "directSourceReview": "root agent plus independent recipe evaluation agent against the unchanged source witnesses; no claimed human reviewer attestation",
+    "oracleChanged": false
+  },
+  "experiments": [
+    {
+      "arm": "A",
+      "strategy": "original-prompt",
+      "dispatchId": "recipe-prompt-pair-20261025-01:A",
+      "runId": "recipe-prompt-pair-20261025-01",
+      "sourceRevision": "535913df0339a9c5f597096f701545ed06381deb",
+      "artifacts": {
+        "request": {
+          "file": "original-prompt.request.raw.txt",
+          "sha256": "5547e30389db105d1844571c8a0b548177cfd9357f16b98bac0aab6dd1a4ffa8"
+        },
+        "response": {
+          "file": "original-prompt.response.raw.txt",
+          "sha256": "cc8cd27ff79a02d9430d25152404a1573674b941015575d6dcccb3251c4c3628"
+        },
+        "receipt": {
+          "file": "original-prompt.receipt.raw.txt",
+          "sha256": "659f8d59ecd2649f0e6b21f75e5584f95d6bb3e8c4f3ee984ed8c7b982cafed0"
+        },
+        "run": {
+          "file": "original-prompt.run.json",
+          "sha256": "fdaa2ea5935e1a3226dc53f063d09debe77ff57dc04308c432990c84cbfa5f0e"
+        }
+      },
+      "requestInvocationSha256": "efca9422f7d00a28f320a5e8c50f1bd748b3bb946d9cf7839b81081f8552b96a",
+      "fingerprints": {
+        "bodySha256": "5547e30389db105d1844571c8a0b548177cfd9357f16b98bac0aab6dd1a4ffa8",
+        "optionsSha256": "2c5aca8dd58d68ca9ad66721ecc1ce66e8966b35d881d888bca7071148ce91c4",
+        "evidenceSha256": "ceaec8e1d055252df28233e448f28227e378c5118e787ca674cedf9e2f4e4e41",
+        "corpusSha256": "e3af1b51792b1bf83ab3b6e886f2e817a9a63d2ea530aae3168490ca926e6114",
+        "acceptanceSha256": "d47f83f507beddd49b8275c7b19c50e6052824f372646f61b9c3037cae2dd735",
+        "grounderSha256": "f8b418b1283760ea7cadaeb11668797e0ba3cae57b7323c6fb14d4df3591c010",
+        "scorerSha256": "516efa94a87513e2614d3c824a65e74c62053899969c78e4828572636cf4e96a"
+      },
+      "httpStatus": 200,
+      "providerInvocations": 1,
+      "reservationMicroUsd": 100000,
+      "measurements": {
+        "costReservationMicroUsd": 100000,
+        "fallbackInvocations": 0,
+        "inputTokens": 354,
+        "internalPasses": null,
+        "latencyMilliseconds": 5677,
+        "latencySource": "client_wall",
+        "outputTokens": 161,
+        "providerInvocations": 1,
+        "providerLatencyMilliseconds": null,
+        "providerSpendMicroUsd": {
+          "certainty": "estimated",
+          "value": 467
+        }
+      },
+      "assessment": {
+        "arm": "A",
+        "httpStatus": 200,
+        "httpSuccess": true,
+        "schemaSuccess": false,
+        "minimumDraftGate": null,
+        "rawMissingSourceFactCount": 21,
+        "rawUnmatchedOracleFactCount": 0,
+        "groundedMissingSourceFactCount": 21,
+        "groundedUnmatchedOracleFactCount": 0,
+        "groundedNumericAssociationErrorCount": 0,
+        "groundedQualifierLossCount": 0,
+        "groundedCorrectionOperations": 21,
+        "groundedUsable": false,
+        "pairedSampleLimit": "One synthetic development case; no population accuracy or promotion conclusion."
+      },
+      "accounting": {
+        "outcome": "settled_known",
+        "tariffEstimatedMicroUsd": 467
+      }
+    },
+    {
+      "arm": "B",
+      "strategy": "schema-prompt",
+      "dispatchId": "recipe-prompt-pair-20261025-01:B",
+      "runId": "recipe-prompt-pair-20261025-01",
+      "sourceRevision": "535913df0339a9c5f597096f701545ed06381deb",
+      "artifacts": {
+        "request": {
+          "file": "schema-prompt.request.raw.txt",
+          "sha256": "3cb99bfa55dba08e079484e4ee138c99521c2016d1b55e46cc1ddb003193cfc1"
+        },
+        "response": {
+          "file": "schema-prompt.response.raw.txt",
+          "sha256": "8c7059c204cf51042a4ffad3f327de7550bdcc7780583b09493c3c7e3ec701c1"
+        },
+        "receipt": {
+          "file": "schema-prompt.receipt.raw.txt",
+          "sha256": "32bea0487f92d60c8ace6038e4aefdb09b3b1ad8629d80e9ef4019dddb0c9897"
+        },
+        "run": {
+          "file": "schema-prompt.run.json",
+          "sha256": "3e6b774c1e5eca8d20ddbc2e92c7d80ef9a4d9f59d58e3e41badc90db685b1e1"
+        }
+      },
+      "requestInvocationSha256": "a9fa4772abae0b0236910ea7072ea23c3df926998c52ec87cb2a2507efdd3de9",
+      "fingerprints": {
+        "bodySha256": "3cb99bfa55dba08e079484e4ee138c99521c2016d1b55e46cc1ddb003193cfc1",
+        "optionsSha256": "2c5aca8dd58d68ca9ad66721ecc1ce66e8966b35d881d888bca7071148ce91c4",
+        "evidenceSha256": "ceaec8e1d055252df28233e448f28227e378c5118e787ca674cedf9e2f4e4e41",
+        "corpusSha256": "e3af1b51792b1bf83ab3b6e886f2e817a9a63d2ea530aae3168490ca926e6114",
+        "acceptanceSha256": "d47f83f507beddd49b8275c7b19c50e6052824f372646f61b9c3037cae2dd735",
+        "grounderSha256": "f8b418b1283760ea7cadaeb11668797e0ba3cae57b7323c6fb14d4df3591c010",
+        "scorerSha256": "516efa94a87513e2614d3c824a65e74c62053899969c78e4828572636cf4e96a"
+      },
+      "httpStatus": 200,
+      "providerInvocations": 1,
+      "reservationMicroUsd": 100000,
+      "measurements": {
+        "costReservationMicroUsd": 100000,
+        "fallbackInvocations": 0,
+        "inputTokens": 3769,
+        "internalPasses": null,
+        "latencyMilliseconds": 20357,
+        "latencySource": "client_wall",
+        "outputTokens": 417,
+        "providerInvocations": 1,
+        "providerLatencyMilliseconds": null,
+        "providerSpendMicroUsd": {
+          "certainty": "estimated",
+          "value": 2044
+        }
+      },
+      "assessment": {
+        "arm": "B",
+        "httpStatus": 200,
+        "httpSuccess": true,
+        "schemaSuccess": true,
+        "minimumDraftGate": true,
+        "rawMissingSourceFactCount": 10,
+        "rawUnmatchedOracleFactCount": 11,
+        "groundedMissingSourceFactCount": 9,
+        "groundedUnmatchedOracleFactCount": 9,
+        "groundedNumericAssociationErrorCount": 2,
+        "groundedQualifierLossCount": 0,
+        "groundedCorrectionOperations": 18,
+        "groundedUsable": false,
+        "pairedSampleLimit": "One synthetic development case; no population accuracy or promotion conclusion."
+      },
+      "accounting": {
+        "outcome": "settled_known",
+        "tariffEstimatedMicroUsd": 2044
+      }
+    },
+    {
+      "arm": "C",
+      "strategy": "schema-and-name-prompt",
+      "dispatchId": "recipe-ingredient-name-20261025-01",
+      "runId": "recipe-ingredient-name-20261025-01",
+      "sourceRevision": "535913df0339a9c5f597096f701545ed06381deb",
+      "artifacts": {
+        "request": {
+          "file": "schema-and-name-prompt.request.raw.txt",
+          "sha256": "6df74cf128e85cc61e00bbaab16e04d4ec0b03835c052752df045655ebcdb34c"
+        },
+        "response": {
+          "file": "schema-and-name-prompt.response.raw.txt",
+          "sha256": "dae67cf52791a152f13c9a37f20b70fb197c1e913c00e538d364ddbb7709c5d2"
+        },
+        "receipt": {
+          "file": "schema-and-name-prompt.receipt.raw.txt",
+          "sha256": "bf17d9bc148dd29619ef2f142e7b6f86bb1d0d25f9624543b808edc0e28e4488"
+        },
+        "run": {
+          "file": "schema-and-name-prompt.run.json",
+          "sha256": "df30c99618241458bfb7b26dd5291bda15c986233347858ddf595b2875db9644"
+        }
+      },
+      "requestInvocationSha256": "9112a83d27ca8ea2d59015fc765595c8ed18677c76c3223c25580814e8f8218a",
+      "fingerprints": {
+        "bodySha256": "6df74cf128e85cc61e00bbaab16e04d4ec0b03835c052752df045655ebcdb34c",
+        "optionsSha256": "2c5aca8dd58d68ca9ad66721ecc1ce66e8966b35d881d888bca7071148ce91c4",
+        "evidenceSha256": "ceaec8e1d055252df28233e448f28227e378c5118e787ca674cedf9e2f4e4e41",
+        "corpusSha256": "e3af1b51792b1bf83ab3b6e886f2e817a9a63d2ea530aae3168490ca926e6114",
+        "acceptanceSha256": "d47f83f507beddd49b8275c7b19c50e6052824f372646f61b9c3037cae2dd735",
+        "grounderSha256": "f8b418b1283760ea7cadaeb11668797e0ba3cae57b7323c6fb14d4df3591c010",
+        "scorerSha256": "516efa94a87513e2614d3c824a65e74c62053899969c78e4828572636cf4e96a"
+      },
+      "httpStatus": 200,
+      "providerInvocations": 1,
+      "reservationMicroUsd": 100000,
+      "measurements": {
+        "costReservationMicroUsd": 100000,
+        "fallbackInvocations": 0,
+        "inputTokens": 3795,
+        "internalPasses": null,
+        "latencyMilliseconds": 21761,
+        "latencySource": "client_wall",
+        "outputTokens": 403,
+        "providerInvocations": 1,
+        "providerLatencyMilliseconds": null,
+        "providerSpendMicroUsd": {
+          "certainty": "estimated",
+          "value": 2020
+        }
+      },
+      "assessment": {
+        "arm": "C",
+        "httpStatus": 200,
+        "httpSuccess": true,
+        "schemaSuccess": true,
+        "minimumDraftGate": true,
+        "rawMissingSourceFactCount": 3,
+        "rawUnmatchedOracleFactCount": 2,
+        "groundedMissingSourceFactCount": 2,
+        "groundedUnmatchedOracleFactCount": 0,
+        "groundedNumericAssociationErrorCount": 0,
+        "groundedQualifierLossCount": 0,
+        "groundedCorrectionOperations": 2,
+        "groundedUsable": false,
+        "pairedSampleLimit": "One synthetic development case; no population accuracy or promotion conclusion."
+      },
+      "accounting": {
+        "outcome": "settled_known",
+        "tariffEstimatedMicroUsd": 2020
+      }
+    }
+  ]
+}
