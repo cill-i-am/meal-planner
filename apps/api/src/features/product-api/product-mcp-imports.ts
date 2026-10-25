@@ -143,28 +143,21 @@ export const makeImportMcpInteraction = (options: {
         familyId: locator.familyId,
         path: { id: locator.intentId },
       };
-      // Status and history are separate authorized reads. A workflow may advance
-      // between them; reread at most twice without replaying any mutation.
-      for (let attempt = 0; ; attempt += 1) {
-        const response = yield* read("recipe_import_intents_get", args);
-        const intent = yield* Schema.decodeUnknownEffect(RecipeImportIntent)(
-          response.result
-        );
-        const history = yield* read("recipe_import_intents_timeline", args);
-        const timeline = yield* Schema.decodeUnknownEffect(
-          RecipeImportTimeline
-        )(history.result);
-        if (intent.id !== locator.intentId) {
-          return yield* Effect.fail(unavailableImport());
-        }
-        if (timeline.data.length > intent.intentVersion && attempt < 2) {
-          continue;
-        }
-        return {
-          projection: projectImportPreparation(intent, timeline),
-          retryAfter: response.retryAfter,
-        };
+      const response = yield* read("recipe_import_intents_get", args);
+      const intent = yield* Schema.decodeUnknownEffect(RecipeImportIntent)(
+        response.result
+      );
+      const history = yield* read("recipe_import_intents_timeline", args);
+      const timeline = yield* Schema.decodeUnknownEffect(RecipeImportTimeline)(
+        history.result
+      );
+      if (intent.id !== locator.intentId) {
+        return yield* Effect.fail(unavailableImport());
       }
+      return {
+        projection: projectImportPreparation(intent, timeline),
+        retryAfter: response.retryAfter,
+      };
     }).pipe(Effect.mapError(unavailableImport));
   const task = (
     taskId: string

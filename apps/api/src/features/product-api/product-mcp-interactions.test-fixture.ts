@@ -121,7 +121,6 @@ export const makeImportTransportFixture = () => {
   let publications = 0;
   let member = true;
   let loseCreateResponse = false;
-  let advanceBeforeCancellation = false;
   const intentResponse = (value = intent, status = 200) =>
     Response.json(Schema.encodeSync(RecipeImportIntent)(value), { status });
   const conflict = () =>
@@ -220,15 +219,6 @@ export const makeImportTransportFixture = () => {
         expectedIntentVersion: payload.expectedIntentVersion,
         key,
       });
-      if (advanceBeforeCancellation) {
-        advanceBeforeCancellation = false;
-        append({ canonicalUrl: sourceUrl, type: "source_resolved" });
-        transition({
-          activity: { type: "working" },
-          processing: { startedAt: at, type: "extracting_recipe" },
-          status: "processing",
-        });
-      }
       if (payload.expectedIntentVersion !== intent.intentVersion) {
         return conflict();
       }
@@ -240,6 +230,36 @@ export const makeImportTransportFixture = () => {
   };
 
   return {
+    advancePreparation: (step: number) => {
+      if (step === 0) {
+        append({ canonicalUrl: sourceUrl, type: "source_resolved" });
+        transition({
+          activity: { type: "working" },
+          processing: {
+            sourceKind: "video",
+            startedAt: at,
+            type: "acquiring_media",
+          },
+          status: "processing",
+        });
+      } else if (step === 1) {
+        const processing = {
+          speech: "not_started",
+          startedAt: at,
+          type: "analyzing_evidence",
+          visuals: "not_started",
+        };
+        append({ processing, type: "processing_stage_changed" });
+        transition({
+          activity: { type: "working" },
+          processing,
+          status: "processing",
+        });
+      } else if (step === 2) {
+        append({ action: actionReference, type: "action_available" });
+        transition({ action: actionReference, status: "requires_action" });
+      }
+    },
     cancelDomain: () => {
       append({ type: "intent_cancelled" });
       transition({ cancelledAt: at, status: "cancelled" });
@@ -298,9 +318,6 @@ export const makeImportTransportFixture = () => {
     getStatus: () => intent.status,
     loseNextCreateResponse: () => {
       loseCreateResponse = true;
-    },
-    raceNextCancellation: () => {
-      advanceBeforeCancellation = true;
     },
     ready: () => {
       append({ canonicalUrl: sourceUrl, type: "source_resolved" });
