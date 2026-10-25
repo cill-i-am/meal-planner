@@ -6,6 +6,7 @@ import {
   providerKnownZeroCostFailure,
 } from "../provider-accounting/provider-accounting.js";
 import { bytesToHex } from "./import-digest.js";
+import { structurallyEqualJson } from "./import-forced-tool-response.js";
 import type { ImportCorrelationId } from "./import-observability.js";
 import {
   ImportObservabilityTraceStore,
@@ -44,6 +45,9 @@ import { groundRecipeCandidate } from "./import-recipe-grounding.js";
 export { InstalledRecipeModel } from "./import-provider-kernel.js";
 
 const RecipeMaximumCostMicroUsd = 100_000;
+
+export const InstalledRecipeExtractorVersion =
+  "installed-workers-ai-json-object-v3";
 
 /** Cloudflare catalog rates, checked 2026-10-23 against the 2026-10-20 price table. */
 export const InstalledRecipeTokenPrices = {
@@ -189,17 +193,37 @@ const RecipeTransportUsage = Schema.Struct({
   ),
   total_tokens: RecipeTransportTokenCount,
 });
+// Provider metadata is extensible, but supplied completion controls must still
+// establish a completed JSON response without refusal or tool execution.
+const RecipeJsonModeCompletionControls = {
+  finish_reason: Schema.optionalKey(Schema.Literal("stop")),
+  function_call: Schema.optionalKey(Schema.Null),
+  refusal: Schema.optionalKey(Schema.Null),
+  tool_calls: Schema.optionalKey(Schema.NullOr(Schema.Tuple([]))),
+};
+const RecipeJsonModeChoice = Schema.Struct({
+  ...RecipeJsonModeCompletionControls,
+  message: Schema.Struct({
+    ...RecipeJsonModeCompletionControls,
+    content: Schema.fromJsonString(Schema.Json),
+    role: Schema.Literal("assistant"),
+  }),
+});
 const RecipeJsonModeTransportEnvelope = Schema.Struct({
+  ...RecipeJsonModeCompletionControls,
+  choices: Schema.optionalKey(
+    Schema.Array(RecipeJsonModeChoice).pipe(Schema.check(Schema.isMaxLength(1)))
+  ),
   response: Schema.Json,
   usage: Schema.optionalKey(Schema.Json),
 });
 const decodeRecipeTransportUsage = Schema.decodeUnknownOption(
   RecipeTransportUsage,
-  { onExcessProperty: "error" }
+  { onExcessProperty: "ignore" }
 );
 const decodeRecipeJsonModeTransportEnvelope = Schema.decodeUnknownResult(
   RecipeJsonModeTransportEnvelope,
-  { onExcessProperty: "error" }
+  { onExcessProperty: "ignore" }
 );
 
 const decodeRecipeCandidate = Schema.decodeUnknownResult(RecipeCandidate, {
@@ -212,11 +236,17 @@ export const makeInstalledRecipeRequest = (
   request: RecipeEvidenceAssembly
 ): RecipeWorkersAiRequest => ({
   max_tokens: 16_384,
-  messages: [{ content: recipePromptText(request), role: "user" }],
-  response_format: {
-    json_schema: recipeCandidateJsonSchema,
-    type: "json_schema",
-  },
+  messages: [
+    {
+      content: [
+        recipePromptText(request),
+        `Your output must satisfy this exact JSON Schema, including every required field and nested type. Return only a JSON object conforming to it:\n${JSON.stringify(recipeCandidateJsonSchema)}`,
+        "For each ingredient, name contains only the food name; original retains the complete evidence phrase, including its amount, unit and preparation.",
+      ].join("\n\n"),
+      role: "user",
+    },
+  ],
+  response_format: { type: "json_object" },
   temperature: 0,
 });
 
@@ -244,7 +274,16 @@ const decodeRecipeResponse = (
   };
 } => {
   const envelope = decodeRecipeJsonModeTransportEnvelope(raw);
-  if (envelope._tag === "Failure") {
+  if (
+    envelope._tag === "Failure" ||
+    envelope.success.choices?.some(
+      (choice) =>
+        !structurallyEqualJson(
+          choice.message.content,
+          envelope.success.response
+        )
+    )
+  ) {
     return {
       failure: {
         decodeReason: "json_mode_envelope_invalid",
@@ -416,7 +455,7 @@ export const makeInstalledRecipeExtractor = Effect.fn(
     descriptor: Schema.decodeUnknownSync(RecipeExtractorDescriptor)({
       model: input.transport.model,
       provider: ProviderName,
-      version: "installed-workers-ai-json-schema-v1",
+      version: InstalledRecipeExtractorVersion,
     }),
     extract: (request: RecipeEvidenceAssembly) =>
       input.dispatch

@@ -14,6 +14,7 @@ import {
   makeClairicRecipeRequest,
 } from "../../apps/api/src/features/imports/import-provider-clairic.js";
 import {
+  InstalledRecipeExtractorVersion,
   InstalledRecipeModel,
   InstalledRecipeTokenPrices,
   decodeInstalledRecipeResponse,
@@ -587,7 +588,7 @@ if (command === "prepare") {
       provider: "cloudflare-workers-ai",
       version:
         plan.strategy === "llama"
-          ? "installed-workers-ai-json-schema-v1"
+          ? InstalledRecipeExtractorVersion
           : experimentalClairicRecipeVersion("unicode-code-points"),
     },
     execution: "live_provider",

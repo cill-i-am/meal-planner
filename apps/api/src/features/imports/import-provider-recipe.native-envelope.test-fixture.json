@@ -1,0 +1,58 @@
+{
+  "provenance": {
+    "kind": "live_native_provider_on_authored_synthetic_minimal_schema",
+    "capturedOn": "2026-10-25",
+    "requestedModel": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "httpStatus": 200,
+    "rawResponseSha256": "979c181efdf6915376eee4b1b85d0c91faccf61e0bec51e89aa3c23b7c6fee66",
+    "requestBodySha256": "37b2168c27e6af7010d03ab006255ce486a7231408e9d722aeae04d494fbee51",
+    "purpose": "Native JSON envelope compatibility only; not a successful production-schema or real recipe extraction.",
+    "testTransformation": "Tests replace both nativeResponse.response and choices[0].message.content with emptyRecipeProviderSelection. The candidate is scripted; other envelope metadata and usage are captured."
+  },
+  "nativeResponse": {
+    "id": "chatcmpl-426aa94b-7497-45bc-9b07-8c67149364ac",
+    "object": "chat.completion",
+    "created": 1792916824,
+    "model": "@cf/meta/llama-3.3-70b-json",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "{\"title\": \"Tomato toast\", \"servings\": 1}",
+          "refusal": null,
+          "annotations": null,
+          "audio": null,
+          "function_call": null,
+          "reasoning": null
+        },
+        "logprobs": null,
+        "finish_reason": "stop",
+        "stop_reason": null,
+        "token_ids": null,
+        "routed_experts": null
+      }
+    ],
+    "service_tier": null,
+    "usage": {
+      "prompt_tokens": 66,
+      "completion_tokens": 16,
+      "total_tokens": 82,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "neurons": 5.036951541900635
+    },
+    "prompt_logprobs": null,
+    "prompt_token_ids": null,
+    "prompt_text": null,
+    "kv_transfer_params": null,
+    "ec_transfer_params": null,
+    "metrics": null,
+    "response": {
+      "title": "Tomato toast",
+      "servings": 1
+    },
+    "tool_calls": []
+  }
+}

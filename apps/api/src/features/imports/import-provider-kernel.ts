@@ -579,10 +579,7 @@ export const RecipeWorkersAiRequest = Schema.Struct({
   messages: Schema.Array(
     Schema.Struct({ content: Schema.String, role: Schema.Literal("user") })
   ),
-  response_format: Schema.Struct({
-    json_schema: Schema.Json,
-    type: Schema.Literal("json_schema"),
-  }),
+  response_format: Schema.Struct({ type: Schema.Literal("json_object") }),
   temperature: Schema.Number,
 });
 export type RecipeWorkersAiRequest = typeof RecipeWorkersAiRequest.Type;
