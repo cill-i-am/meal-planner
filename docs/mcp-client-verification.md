@@ -389,9 +389,9 @@ original evidence expiry, 1 November 2026 at 08:17:01 UTC. They are not publishe
 as a reusable public corpus. The public synthetic captures above remain historical
 schema-mode diagnostics and do not measure the final JSON-object strategy.
 
-## Remaining live verification
+## Status before PR #312 deployment
 
-The recipe request and response repair still requires production deployment and
+At that point, the recipe request and response repair still requires production deployment and
 hosted verification. Successful draft preparation, elicitation preview/accept/decline/
 dismiss, stale-version rejection and publication replay remain unverified with
 this real client. The compatibility probe demonstrates a parser defect but does
@@ -405,3 +405,90 @@ revoked and verified absent, local client credentials were cleared, and Inspecto
 was disconnected. No production provider request is outstanding. This report distinguishes
 production protocol/workflow behavior, the reproduced response compatibility
 defect and unfinished live elicitation checks.
+
+
+## Production continuation after PR #312
+
+On 25 October 2026, PR #312 deployed
+`1af267e4100c93ab29e03e868a8d16b9bc4954b5` through
+[production CI](https://github.com/cill-i-am/meal-planner/actions/runs/40182613124).
+All 22 non-skipped jobs passed; Cloudflare reported API version
+`5e162b8f-c215-49e6-89c9-d8446feb244e` active at 100%.
+
+The eighth isolated import reached a real reviewable draft in 82.427 seconds.
+Speech, visual and recipe calls each settled normally after one invocation. Their
+internal tariff estimates were 395, 2,181 and 4,411 microUSD respectively:
+**6,987 microUSD combined**. This excludes preprocessing and infrastructure costs,
+is not a provider invoice, and does not establish population latency or cost.
+The shared provider budget was open with zero reserved cost afterward.
+
+The production draft retained all six stated quantity/unit associations and seven
+caption method entries. Review added four ingredients already present in method
+text, refined the mushroom subtype from speech, and preserved a spoken timing
+variation in a note. Unspecified quantities remain unknown. The recipe domain
+stores scalar durations, so ranges remain in text instead of invented endpoints
+or midpoints. Planning tags were explicit isolated-test review choices, not
+source-grounded claims. The retained source expiry is 1 November 2026 at
+10:04:49 UTC; private captures do not extend it.
+
+### Authenticated client results
+
+Official Inspector 2.12.0 GUI and CLI used the same isolated account and registered
+OAuth client with protocol 2026-07-28. A fresh authorization of that same client
+was required during the session; silent refresh remains unverified.
+
+| Check | Observed result |
+| --- | --- |
+| Preparation | Working Task, then `completed` with `draft_ready` |
+| Reconnect | Same terminal result and completion timestamp |
+| Preview | Complete recipe and planning tags matched the current review |
+| Decline, cancel, accept with `publish: false` | Active review unchanged; no publication |
+| Stale consent | Another client edited the draft; accepting the old preview returned HTTP 409 `version_conflict` |
+| Fresh consent | GUI acceptance published the explicitly reviewed version |
+| Accepted continuation replay | Exact GUI request copied from Network and sent with a fresh JSON-RPC ID, same OAuth client and unchanged params; HTTP 200 with the identical success receipt |
+| Publication identity | Exactly one saved recipe; full recipe and tags matched the approved preview |
+| Preparation after publication | Original `draft_ready` result and completion timestamp remained unchanged |
+
+Inspector's CLI consumes its pending elicitation ID after responding. Repeating
+that local ID does not test server replay. The replay above preserved the actual
+`requestState`, `inputResponses`, tool arguments, metadata and protocol headers;
+credentials and opaque state were never included in repository evidence.
+These are observed Inspector and protocol results, not tests of ChatGPT, Claude,
+Cursor or Durable Pi.
+
+The isolated client grant was revoked and verified absent afterward. CLI
+credentials were cleared and the GUI disconnected. One intentionally published
+test recipe remains in the isolated family; existing families were unaffected.
+No production provider call remains outstanding.
+
+### Preparation history race
+
+Inspector briefly reported `Import state is unavailable` while the workflow was
+running. Reading the original Task recovered the successful draft; no duplicate
+import was started. The captured error is generic and does not establish whether
+that live request failed from concurrent progress, authorization, or another
+read failure. The complete retained timeline has eleven contiguous events.
+
+A deterministic HTTP regression reproduced that same error with valid workflow
+progress between all three status/timeline read pairs. The fix removes those
+transport retries. The imports feature now accepts complete, contiguous,
+admission-led history covering the earlier intent version and preserves its
+first terminal outcome. Missing, behind, duplicated and gapped history still
+fail closed. Ongoing work retains the earlier intent unchanged, including its
+cancellation version; a concurrent cancellation must still pass the domain's
+version guard. History never substitutes for current recipe review content or
+publication authority.
+
+```sh
+pnpm --filter @meal-planner/api exec vitest run --project node \
+  src/features/imports/import-mcp.test.ts \
+  src/features/product-api/product-mcp-interactions.test.ts
+pnpm check
+pnpm lint
+pnpm format:check
+pnpm docs:check
+```
+
+The 52 focused regressions, full type checks, lint and formatting passed. Both
+independent Standards and Spec reviews found no actionable issue. These local
+checks validate the history repair; they do not establish its deployment.
