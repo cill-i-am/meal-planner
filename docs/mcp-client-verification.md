@@ -319,8 +319,8 @@ preserve requests, responses, receipts, frozen hashes and field-level results:
 | Exact schema appended | Valid | Minimum draft passes; ingredient names duplicate amounts/preparation | 20,357 ms / 2,044 microUSD |
 | Schema plus ingredient-name instruction | Valid | Minimum draft passes; clean names; structured Roast temperature missing | 21,761 ms / 2,020 microUSD |
 
-The schema-conditioned diagnostic used the third request exactly. A regression confirms
-that the full schema reaches the prompt as well as `response_format`. The
+The schema-conditioned diagnostic used the third request exactly. At that stage, the captured
+requests sent the full schema in both the prompt and `response_format`. The
 candidate schema, grounding, model, native options, accounting and explicit
 publication review are unchanged. The final request still preserves 200°C in the
 Roast instruction text, but its structured temperature is null. Grounding removes
