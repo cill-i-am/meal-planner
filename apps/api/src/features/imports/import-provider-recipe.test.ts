@@ -580,7 +580,7 @@ describe("installed recipe provider adapter", () => {
     );
   });
 
-  it("requests strict recipe JSON mode and injects trusted transport usage", async () => {
+  it("requests schema-conditioned JSON object mode and injects trusted transport usage", async () => {
     const gateway = makeProviderTransports(
       recipeJsonResponse(emptyRecipeProviderSelection)
     );
@@ -627,12 +627,7 @@ describe("installed recipe provider adapter", () => {
     const [request] = gateway.recipeRequests;
     expect(request).not.toHaveProperty("tool_choice");
     expect(request).not.toHaveProperty("tools");
-    expect(request?.response_format).toEqual({
-      json_schema: Schema.toJsonSchemaDocument(RecipeCandidate, {
-        onExcessProperty: "error",
-      }).schema,
-      type: "json_schema",
-    });
+    expect(request?.response_format).toEqual({ type: "json_object" });
     expect(request?.messages[0]?.content).toContain(
       JSON.stringify(
         Schema.toJsonSchemaDocument(RecipeCandidate, {
@@ -640,13 +635,6 @@ describe("installed recipe provider adapter", () => {
         }).schema
       )
     );
-    expect(request?.response_format).toMatchObject({
-      json_schema: expect.objectContaining({
-        additionalProperties: false,
-        type: "object",
-      }),
-      type: "json_schema",
-    });
     const serializedRequest = JSON.stringify(request);
     expect(serializedRequest).toContain(
       "Select only recipe values supported by the supplied evidence"

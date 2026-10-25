@@ -47,7 +47,7 @@ export { InstalledRecipeModel } from "./import-provider-kernel.js";
 const RecipeMaximumCostMicroUsd = 100_000;
 
 export const InstalledRecipeExtractorVersion =
-  "installed-workers-ai-json-schema-v2";
+  "installed-workers-ai-json-object-v3";
 
 /** Cloudflare catalog rates, checked 2026-10-23 against the 2026-10-20 price table. */
 export const InstalledRecipeTokenPrices = {
@@ -246,10 +246,7 @@ export const makeInstalledRecipeRequest = (
       role: "user",
     },
   ],
-  response_format: {
-    json_schema: recipeCandidateJsonSchema,
-    type: "json_schema",
-  },
+  response_format: { type: "json_object" },
   temperature: 0,
 });
 

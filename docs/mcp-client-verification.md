@@ -319,7 +319,7 @@ preserve requests, responses, receipts, frozen hashes and field-level results:
 | Exact schema appended | Valid | Minimum draft passes; ingredient names duplicate amounts/preparation | 20,357 ms / 2,044 microUSD |
 | Schema plus ingredient-name instruction | Valid | Minimum draft passes; clean names; structured Roast temperature missing | 21,761 ms / 2,020 microUSD |
 
-The installed factory now emits the third request exactly. A regression confirms
+The schema-conditioned diagnostic used the third request exactly. A regression confirms
 that the full schema reaches the prompt as well as `response_format`. The
 candidate schema, grounding, model, native options, accounting and explicit
 publication review are unchanged. The final request still preserves 200°C in the
@@ -330,9 +330,64 @@ field preservation. These are three adaptive calls on one development example,
 not a holdout or a population accuracy result. The additional prompt costs about
 3,400 input tokens in this example and did not improve latency.
 
-No product draft or publication was created by these diagnostics. A new bounded
-real-source validation request is prepared but has not been sent; the previous
-one-call authorization was consumed by the earlier diagnostic.
+No product draft or publication was created by these diagnostics.
+
+### Controlled native response-format comparison
+
+Two separately approved requests applied the schema-conditioned prompt to the
+same retained real evidence. Both returned HTTP 408 (`AiError`, internal code
+3046, `Request timeout`) without a recipe or usage: 121,523 ms and 120,793 ms.
+Each retained its own uncertain 100,000-microUSD reservation in an isolated
+ledger. Neither receipt was reset and neither invocation was automatically
+retried. The two observations reproduce failure for this request; they do not
+identify a particular backend timer or establish a configurable inference limit.
+
+A third separately approved control changed **only** `response_format` to
+`{ type: "json_object" }`. The exact full-schema prompt, evidence, model,
+generation settings, native options, strict candidate decoder and grounding
+remained fixed. Cloudflare's [official Llama client](https://github.com/cloudflare/langchain-cloudflare/blob/main/libs/langchain-cloudflare/langchain_cloudflare/chat_models.py)
+uses JSON-object mode with a schema prompt; our control retained the existing
+user-message placement to isolate the format change. It returned HTTP 200 in
+36,886 ms, with 4,431 input and 1,382 output tokens: a 4,412-microUSD tariff
+estimate. Its receipt settled normally after one invocation. This is one
+successful compatibility observation, not proof that the format caused the
+previous timeouts or that the provider is generally reliable.
+
+Before inspecting the output, an independent review recorded the expected
+source facts. Both source inspection and a fresh decode/ground replay then found:
+
+- All six quantity–unit associations were correct; all seven caption method
+  entries and five cooking conditions survived.
+- Twelve of sixteen ingredient identities have ingredient rows. The remaining
+  four still appear in method text, requiring recipe editing for completeness.
+- Neither duration range became a structured duration. One remains verbatim in
+  instruction text; the speech-only range, ingredient subtype and some spoken
+  procedural detail are omitted.
+- No unsupported grounded facts were detected. Grounding removed one unsupported
+  author URL. Unspecified quantities, servings and aggregate times remain unset.
+
+The response passes strict decoding and the minimum-draft gate and is suitable
+for review/edit and protocol testing. It is not complete or ready for publication
+without review. Eleven unresolved fields are reported by the application; that
+count is not an oracle for omitted source facts. No production draft was created
+by the diagnostic.
+
+The installed factory now emits this measured JSON-object request, identified as
+`installed-workers-ai-json-object-v3`. A request-boundary regression failed
+before the change and passes afterward; the full strict recipe schema remains
+in the prompt and the same strict schema validates every returned candidate.
+Normal import, recovery and evaluation composition continue to share this
+factory. Model, timeout, grounding, accounting and publication authority are
+unchanged.
+
+The exact fixed schema-mode request body had SHA-256
+`7a2ebedba8e36cd685b1a67fcb02db0cc13c33e914e4eff4a959edbedc611102`;
+the JSON-object control had
+`fd66a979a6485c0112205bce11a7654e83718c3e3d65035f3b96e1c73910e8bf`.
+Private requests, native responses and receipts remain private and subject to the
+original evidence expiry, 1 November 2026 at 08:17:01 UTC. They are not published
+as a reusable public corpus. The public synthetic captures above remain historical
+schema-mode diagnostics and do not measure the final JSON-object strategy.
 
 ## Remaining live verification
 
