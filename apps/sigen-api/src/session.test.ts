@@ -206,6 +206,37 @@ describe("durable Sigen session", () => {
     }
   );
 
+  it("accepts a valid shorter-lived token when renewing a rejected access token", async () => {
+    const f = fixture();
+    let rejected = false;
+    const nextExpiry = Date.now() + 120_000;
+    const client = {
+      ...f.client,
+      refresh: () =>
+        Effect.sync(() => {
+          rejected = false;
+          return Redacted.make({
+            accessToken: "new-access",
+            expiresAt: nextExpiry,
+            refreshToken: "new-refresh",
+          });
+        }),
+      station: () =>
+        rejected
+          ? Effect.fail(failure("AuthenticationRequired"))
+          : Effect.succeed(sample),
+    };
+    const session = await run(makeSession(f.storage, key, client));
+    await run(session.enroll(enrollment));
+    rejected = true;
+    expect(await run(session.station(stationId))).toEqual(sample);
+    expect(await run(session.health)).toMatchObject({
+      accessTokenExpiresAt: nextExpiry,
+      state: "connected",
+    });
+    expect(f.alarm()).toBe(nextExpiry - 60_000);
+  });
+
   it("does not replay a consumed refresh after its rotated-token commit fails", async () => {
     const f = fixture();
     const storage = {

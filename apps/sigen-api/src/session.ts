@@ -150,7 +150,7 @@ export const makeSession = <R>(
           return yield* failure("AuthenticationRequired");
         }
         const newExpiry = Redacted.value(result.success).expiresAt;
-        if (newExpiry <= session.expiresAt) {
+        if (newExpiry <= (yield* Clock.currentTimeMillis)) {
           yield* clear(record);
           return yield* failure("AuthenticationRequired");
         }

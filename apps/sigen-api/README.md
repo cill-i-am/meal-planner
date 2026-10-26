@@ -23,6 +23,8 @@ The operator supplies a fresh username/password enrollment; the service performs
 
 The account object serializes enrollment, disconnect, renewal and reads. It commits rotated credentials and the next alarm in one storage transaction. Renewal is scheduled from the provider's `expires_in`, one minute early. A durable refreshing marker is written before provider I/O. After an interrupted or rejected rotation, the watchdog clears the session and reports `reauthentication_required` rather than reusing a possibly consumed refresh token. Reconnect through fresh enrollment.
 
+HTTP and MCP cancellation joins local tool cleanup. Alchemy's current native Durable Object RPC cannot transport the caller's cancellation signal into the object: cancellation ends the Worker-side wait, while an already dispatched provider read may continue until its 15-second timeout. The account object owns the session operation until it finishes.
+
 The last five renewal results contain only timestamps and outcome categories. Three synthetic alarm renewals in workerd are separate from the required three natural renewal cycles in Cloudflare. Hosted renewal is not yet verified.
 
 ## Approval policy for the control milestone

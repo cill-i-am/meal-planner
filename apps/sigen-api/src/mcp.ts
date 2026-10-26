@@ -5,15 +5,15 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { Effect } from "effect";
+import { Effect, FiberSet } from "effect";
 
 import type { SigenCapabilities } from "./contracts.js";
 import { jsonSchema, operations } from "./contracts.js";
 
-/** Stateless SDK 1.32.1 boundary matches the installed Executor client; application work stays in Effect. */
+/** Stateless SDK 1.32.1 boundary follows the existing Tesco transport; application work stays in Effect. */
 export const handleMcp = (request: Request) =>
   Effect.gen(function* serveMcp() {
-    const context = yield* Effect.context<SigenCapabilities>();
+    const runTool = yield* FiberSet.makeRuntimePromise<SigenCapabilities>();
     const owner = new AbortController();
     const server = new Server(
       { name: "Private mySigen", version: "0.1.0" },
@@ -51,7 +51,7 @@ export const handleMcp = (request: Request) =>
         operation === undefined
           ? Effect.fail(failure("InvalidInput"))
           : operation.execute(message.params.arguments ?? {});
-      return Effect.runPromiseWith(context)(
+      return runTool(
         result.pipe(
           Effect.map((value) => ({
             content: [{ text: JSON.stringify(value), type: "text" as const }],

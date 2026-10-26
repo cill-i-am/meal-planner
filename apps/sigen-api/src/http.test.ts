@@ -120,6 +120,41 @@ describe("authenticated HTTP and MCP parity", () => {
     expect(released).toBe(true);
   });
 
+  it("joins asynchronous MCP tool cleanup before ending an aborted request", async () => {
+    const controller = new AbortController();
+    let released = false;
+    const handler = makeHttpHandler({
+      ...options,
+      capabilities: {
+        ...options.capabilities,
+        health: Effect.acquireUseRelease(
+          Effect.sync(() => controller.abort()),
+          () => Effect.never,
+          () =>
+            Effect.sleep("30 millis").pipe(
+              Effect.andThen(
+                Effect.sync(() => {
+                  released = true;
+                })
+              )
+            )
+        ),
+      },
+    });
+    const input = new Request(
+      request("/mcp", owner, {
+        id: 1,
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: { arguments: {}, name: "connection_status" },
+      }),
+      { signal: controller.signal }
+    );
+    input.headers.set("accept", "application/json, text/event-stream");
+    await expect(run(handler(input))).rejects.toBeDefined();
+    expect(released).toBe(true);
+  });
+
   it("uses identical contracts for all four HTTP and actual SDK MCP calls", async () => {
     const handler = makeHttpHandler(options);
     const client = new Client({ name: "sigen-verification", version: "1" });
