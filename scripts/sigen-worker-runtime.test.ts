@@ -125,6 +125,21 @@ it(
               });
             }
             expect(request.headers.get("sg-pkg")).toBe("sigen_app");
+            if (url.pathname === "/device/sigen/station/energyflow") {
+              return Response.json({
+                code: 0,
+                data: {
+                  batteryPower: -0.2,
+                  batterySoc: 38.5,
+                  buySellPower: 0,
+                  dateCurrTimeStamp: "",
+                  loadPower: 0.6,
+                  onGrid: true,
+                  pvPower: 0.4,
+                  stationStatus: 1,
+                },
+              });
+            }
             if (url.pathname === "/device/energy-profile/solar/limit/12345") {
               return Response.json({
                 code: 0,
@@ -315,6 +330,21 @@ it(
       expect(await restored.json()).toMatchObject({
         state: "connected",
         successfulRenewals: 3,
+      });
+      const report = await fetch(
+        new URL("/admin/session", await runtime.ready),
+        { headers: { authorization: `Bearer ${operator}` } }
+      );
+      expect(report.status).toBe(200);
+      expect(await report.json()).toMatchObject({
+        renewals: Array.from({ length: 3 }, () => ({
+          trigger: "alarm",
+          verification: {
+            completedAt: expect.any(Number),
+            energyFlowFailure: null,
+            stationFailure: null,
+          },
+        })),
       });
     } finally {
       await client.close();

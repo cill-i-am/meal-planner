@@ -1,5 +1,11 @@
 /* eslint-disable no-await-in-loop -- Each rotation depends on the persisted credentials from the previous cycle. */
-import { Enrollment, Station, StationId, failure } from "@meal-planner/sigen";
+import {
+  EnergyFlow,
+  Enrollment,
+  Station,
+  StationId,
+  failure,
+} from "@meal-planner/sigen";
 import type { TokenBundle } from "@meal-planner/sigen";
 import type { SigenClient } from "@meal-planner/sigen/client";
 import { Effect, Redacted, Schema } from "effect";
@@ -34,6 +40,21 @@ const sample = Schema.decodeUnknownSync(Station)({
   stationId,
   timezone: "Europe/Dublin",
 });
+const flow = Schema.decodeUnknownSync(EnergyFlow)({
+  batteryPowerConvention: "positive_charge_negative_discharge",
+  batteryPowerW: 100,
+  batterySocPercent: 50,
+  fetchedAt: 1,
+  freshness: "unknown",
+  gridPowerConvention: "provider_sign_unverified",
+  gridPowerW: 200,
+  loadPowerW: 1100,
+  onGrid: true,
+  providerStatus: 1,
+  providerTimestamp: null,
+  solarPowerW: 1000,
+  stationId,
+});
 const run = <A, E>(program: Effect.Effect<A, E>) =>
   Effect.runPromise(program.pipe(Effect.scoped));
 
@@ -61,7 +82,7 @@ const fixture = () => {
     batterySettings: () => Effect.fail(failure("UnsupportedCapability")),
     deviceInfo: () => Effect.fail(failure("UnsupportedCapability")),
     deviceValues: () => Effect.fail(failure("UnsupportedCapability")),
-    energyFlow: () => Effect.fail(failure("UnsupportedCapability")),
+    energyFlow: () => Effect.succeed(flow),
     energyHistory: () => Effect.fail(failure("UnsupportedCapability")),
     forecast: () => Effect.fail(failure("UnsupportedCapability")),
     gateway: () => Effect.fail(failure("UnsupportedCapability")),
@@ -164,7 +185,158 @@ describe("durable Sigen session", () => {
     const restored = await f.make();
     const report = await run(restored.report);
     expect(report.renewals).toHaveLength(3);
+    expect(report.renewals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          trigger: "alarm",
+          verification: {
+            completedAt: expect.any(Number),
+            energyFlowFailure: null,
+            stationFailure: null,
+          },
+        }),
+      ])
+    );
   });
+  it("keeps renewed tokens and records a temporary verification failure", async () => {
+    const f = fixture();
+    const client = {
+      ...f.client,
+      energyFlow: (_id: StationId, token: Redacted.Redacted<string>) =>
+        Effect.gen(function* unavailableTelemetry() {
+          expect(f.record().session.phase).toBe("ready");
+          expect(Redacted.value(token)).toBe("synthetic-access-1");
+          return yield* failure("UpstreamUnavailable", 503);
+        }),
+    };
+    const session = await run(makeSession(f.storage, key, client));
+    await run(session.enroll(enrollment));
+    f.expire();
+    await run(session.onAlarm);
+    const report = await run(session.report);
+    expect(report.renewals[0]).toMatchObject({
+      result: "renewed",
+      verification: {
+        energyFlowFailure: "UpstreamUnavailable",
+        stationFailure: null,
+      },
+    });
+    const health = await run(session.health);
+    expect(health.state).toBe("connected");
+    expect(f.alarm()).toBeGreaterThan(Date.now());
+    const restored = await f.make();
+    await run(restored.onAlarm);
+    expect(f.count()).toBe(1);
+  });
+  it("clears credentials rejected by the post-renewal read without rotating again", async () => {
+    const f = fixture();
+    const session = await run(
+      makeSession(f.storage, key, {
+        ...f.client,
+        energyFlow: () => Effect.fail(failure("AuthenticationRequired")),
+      })
+    );
+    await run(session.enroll(enrollment));
+    f.expire();
+    await run(session.onAlarm);
+    const report = await run(session.report);
+    expect(report.renewals[0]).toMatchObject({
+      verification: { energyFlowFailure: "AuthenticationRequired" },
+    });
+    const health = await run(session.health);
+    expect(health.state).toBe("reauthentication_required");
+    expect(f.alarm()).toBeNull();
+    await run(session.onAlarm);
+    expect(f.count()).toBe(1);
+  });
+  it("retains committed tokens if saving read evidence fails", async () => {
+    const f = fixture();
+    const session = await run(
+      makeSession(
+        {
+          ...f.storage,
+          write: (record: SessionRecord, alarmAt: number | null) =>
+            record.renewals.some(
+              (renewal) => renewal.verification !== undefined
+            )
+              ? Effect.fail(failure("StorageUnavailable"))
+              : f.storage.write(record, alarmAt),
+        },
+        key,
+        f.client
+      )
+    );
+    await run(session.enroll(enrollment));
+    f.expire();
+    expect(await run(session.onAlarm.pipe(Effect.result))).toMatchObject({
+      _tag: "Failure",
+      failure: { reason: "StorageUnavailable" },
+    });
+    expect(f.record().session.phase).toBe("ready");
+    expect(f.record().renewals[0]?.verification).toBeUndefined();
+    const restored = await f.make();
+    await run(restored.onAlarm);
+    expect(f.count()).toBe(1);
+    expect(f.record().renewals[0]?.verification).toMatchObject({
+      energyFlowFailure: null,
+      stationFailure: null,
+    });
+    expect(await run(restored.station(stationId))).toEqual(sample);
+  });
+  it.each([30_000, 3_600_000])(
+    "resumes rejected read verification after its evidence write fails, lifetime=%s",
+    async (lifetime) => {
+      const f = fixture();
+      let failWrite = true;
+      let probes = 0;
+      const storage = {
+        ...f.storage,
+        write: (record: SessionRecord, alarmAt: number | null) =>
+          record.renewals.some(
+            (renewal) => renewal.verification !== undefined
+          ) && failWrite
+            ? Effect.fail(failure("StorageUnavailable"))
+            : f.storage.write(record, alarmAt),
+      };
+      const client = {
+        ...f.client,
+        energyFlow: () =>
+          Effect.suspend(() => {
+            probes += 1;
+            return Effect.fail(failure("AuthenticationRequired"));
+          }),
+        refresh: (token: Redacted.Redacted<string>) =>
+          f.client.refresh(token).pipe(
+            Effect.map((bundle) =>
+              Redacted.make({
+                ...Redacted.value(bundle),
+                expiresAt: Date.now() + lifetime,
+              })
+            )
+          ),
+      };
+      const session = await run(makeSession(storage, key, client));
+      await run(session.enroll(enrollment));
+      f.expire();
+      expect(await run(session.onAlarm.pipe(Effect.result))).toMatchObject({
+        _tag: "Failure",
+        failure: { reason: "StorageUnavailable" },
+      });
+      expect(f.record().session.phase).toBe("ready");
+      expect(f.alarm()).toBeLessThanOrEqual(Date.now() + 60_000);
+      failWrite = false;
+      const restarted = await run(makeSession(storage, key, client));
+      await run(restarted.onAlarm);
+      expect(probes).toBe(2);
+      expect(f.count()).toBe(1);
+      expect(f.record().session.phase).toBe("reauthentication_required");
+      expect(f.alarm()).toBeNull();
+      expect(f.record().renewals[0]?.verification).toMatchObject({
+        energyFlowFailure: "AuthenticationRequired",
+        stationFailure: null,
+      });
+    }
+  );
   it("does not replay a refresh after interrupted rotation", async () => {
     const f = fixture();
     const initial = await f.make();

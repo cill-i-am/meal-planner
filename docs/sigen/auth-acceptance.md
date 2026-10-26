@@ -10,7 +10,7 @@ rate limiter and credentials are independent of Meal Planner and Tesco.
 - A fresh account login enrolled the explicitly selected station. Password input used a hidden local terminal prompt; the operator file contains only the service origin, operator credential and station ID. The service persists only encrypted access/refresh tokens.
 - The same Effect client successfully authenticated and read station, energy flow and operating mode from the local Mac.
 - Hosted enrollment initially failed with upstream HTTP 403. Adding the explicit `meal-planner-sigen/0.1.0` User-Agent was the only provider-request change before successful hosted enrollment. This establishes the observed compatibility fix; it does not establish a general hosting/IP prohibition or the provider's internal rejection rule.
-- The real MCP SDK initialized against the deployed endpoint, discovered all four tools and successfully called each. All four HTTP routes also returned HTTP 200; station identity matched the enrolled selection. Executor installation/acceptance is still pending.
+- The real MCP SDK initialized against the deployed endpoint, discovered all four tools and successfully called each. All four HTTP routes also returned HTTP 200; station identity matched the enrolled selection. Executor app deployment is complete; secure account connection and actual tool acceptance are pending.
 - The reloaded mySigen UI agreed on 20% SOC, Sigen AI mode and on-grid status. Household load changed between samples. Empty provider timestamps remain `null`, with freshness explicitly unknown.
 
 No physical settings were changed. Once/always approval grants and physical
@@ -26,8 +26,13 @@ returned expiry.
 
 The service records its last five renewal outcomes and cumulative successful
 renewal count. At initial acceptance the count is **0**. Synthetic workerd alarm
-cycles do not establish real provider renewal. After each natural renewal, check
-sanitized operator status and a successful station/telemetry read.
+cycles do not establish real provider renewal. After each refresh, the service
+automatically reads station metadata and energy flow with the newly persisted
+access token. The operator report records the trigger, completion time and
+sanitized failure reasons (null on success). Missing verification means unproven,
+not success. Transient read failures retain the rotated credentials; rejected
+credentials require reconnection. A pending verification has its own durable watchdog; restart resumes only the
+reads with the saved access token. Check all three natural cycles in this report.
 
 An unchanged-code forced redeployment preserved the same Durable Object namespace,
 connection, access-token expiry and successful reads.
@@ -42,7 +47,7 @@ checks have evidence.
 
 ## Local checks
 
-81 focused client/service tests pass, including HTTP/application failures,
+86 focused client/service tests pass, including HTTP/application failures,
 shorter-lived refreshed tokens, interrupted rotation, authorization and MCP
 cleanup. The native workerd test also passes: actual Alchemy bundle, real SDK,
 sanitized HTTP rejection through native RPC, encrypted enrollment, three

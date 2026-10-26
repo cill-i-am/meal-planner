@@ -1,5 +1,6 @@
 import {
   ConnectionStatus,
+  FailureReason,
   StationId,
   Timestamp,
   failure,
@@ -22,6 +23,14 @@ const Renewal = Schema.Struct({
   previousExpiry: Timestamp,
   result: Schema.Literals(["renewed", "reauthentication_required"]),
   startedAt: Timestamp,
+  trigger: Schema.optionalKey(Schema.Literals(["alarm", "read"])),
+  verification: Schema.optionalKey(
+    Schema.Struct({
+      completedAt: Timestamp,
+      energyFlowFailure: Schema.NullOr(FailureReason),
+      stationFailure: Schema.NullOr(FailureReason),
+    })
+  ),
 });
 export const SessionReport = Schema.Struct({
   health: ConnectionStatus,
@@ -96,7 +105,8 @@ export const makeSession = <R>(
     const persist = (
       record: SessionRecord,
       session: { stationId: StationId; connectionId: string },
-      tokens: Redacted.Redacted<TokenBundle>
+      tokens: Redacted.Redacted<TokenBundle>,
+      alarmAt = Redacted.value(tokens).expiresAt - RefreshMarginMs
     ) =>
       Effect.gen(function* persistTokens() {
         const value = Redacted.value(tokens);
@@ -113,10 +123,52 @@ export const makeSession = <R>(
               secret,
             },
           },
-          value.expiresAt - RefreshMarginMs
+          alarmAt
         );
       });
-    const refresh = (record: SessionRecord) =>
+    const verifyRenewal = (
+      stationId: StationId,
+      tokens: Redacted.Redacted<TokenBundle>
+    ) =>
+      Effect.gen(function* verifyRenewedReads() {
+        const token = Redacted.make(Redacted.value(tokens).accessToken);
+        const [station, energyFlow] = yield* Effect.all(
+          [
+            client.station(stationId, token).pipe(Effect.result),
+            client.energyFlow(stationId, token).pipe(Effect.result),
+          ],
+          { concurrency: 2 }
+        );
+        const verification = {
+          completedAt: yield* Clock.currentTimeMillis,
+          energyFlowFailure:
+            energyFlow._tag === "Failure" ? energyFlow.failure.reason : null,
+          stationFailure:
+            station._tag === "Failure" ? station.failure.reason : null,
+        };
+        const record = yield* storage.read;
+        const revoked =
+          verification.stationFailure === "AuthenticationRequired" ||
+          verification.energyFlowFailure === "AuthenticationRequired";
+        yield* storage.write(
+          {
+            ...record,
+            renewals: record.renewals.map((renewal, index) =>
+              index === record.renewals.length - 1
+                ? { ...renewal, verification }
+                : renewal
+            ),
+            session: revoked
+              ? { phase: "reauthentication_required" }
+              : record.session,
+          },
+          revoked ? null : Redacted.value(tokens).expiresAt - RefreshMarginMs
+        );
+        if (revoked) {
+          return yield* failure("AuthenticationRequired");
+        }
+      });
+    const refresh = (record: SessionRecord, trigger: "alarm" | "read") =>
       Effect.gen(function* rotateSession() {
         const { session } = record;
         if (session.phase !== "ready") {
@@ -144,6 +196,7 @@ export const makeSession = <R>(
                   previousExpiry: session.expiresAt,
                   result: "reauthentication_required" as const,
                   startedAt,
+                  trigger,
                 },
               ].slice(-5),
               session: { phase: "reauthentication_required" },
@@ -167,13 +220,20 @@ export const makeSession = <R>(
                 previousExpiry: session.expiresAt,
                 result: "renewed" as const,
                 startedAt,
+                trigger,
               },
             ].slice(-5),
             successfulRenewals: record.successfulRenewals + 1,
           },
           session,
-          result.success
+          result.success,
+          Math.min(
+            startedAt + 60_000,
+            startedAt + Math.floor((newExpiry - startedAt) / 2)
+          )
         );
+        // Tokens and their next alarm are already durable before these read-only probes.
+        yield* verifyRenewal(session.stationId, result.success);
         return result.success;
       });
     const tokensFor = (stationId: StationId) =>
@@ -193,7 +253,7 @@ export const makeSession = <R>(
         const now = yield* Clock.currentTimeMillis;
         const renewed = session.expiresAt - RefreshMarginMs <= now;
         const tokens = renewed
-          ? yield* refresh(record)
+          ? yield* refresh(record, "read")
           : yield* decryptTokens(session.secret);
         return { renewed, tokens };
       });
@@ -216,7 +276,7 @@ export const makeSession = <R>(
                       yield* clear(yield* storage.read);
                       return yield* failure("AuthenticationRequired");
                     }
-                    const renewed = yield* refresh(yield* storage.read);
+                    const renewed = yield* refresh(yield* storage.read, "read");
                     return yield* invoke(renewed).pipe(
                       Effect.tapError((readError) =>
                         readError.reason === "AuthenticationRequired"
@@ -298,19 +358,34 @@ export const makeSession = <R>(
           if (record.session.phase !== "ready") {
             return;
           }
+          const now = yield* Clock.currentTimeMillis;
+          const renewal = record.renewals.at(-1);
+          if (
+            now < record.session.expiresAt &&
+            renewal?.trigger !== undefined &&
+            renewal.result === "renewed" &&
+            renewal.newExpiry === record.session.expiresAt &&
+            renewal.verification === undefined
+          ) {
+            yield* verifyRenewal(
+              record.session.stationId,
+              yield* decryptTokens(record.session.secret)
+            );
+            return;
+          }
           const due = record.session.expiresAt - RefreshMarginMs;
-          if ((yield* Clock.currentTimeMillis) < due) {
+          if (now < due) {
             yield* storage.write(record, due);
             return;
           }
-          yield* refresh(record).pipe(
-            Effect.catchTag("SigenFailure", (error) =>
-              error.reason === "AuthenticationRequired"
-                ? Effect.void
-                : Effect.fail(error)
-            )
-          );
-        })
+          yield* refresh(record, "alarm");
+        }).pipe(
+          Effect.catchTag("SigenFailure", (failureValue) =>
+            failureValue.reason === "AuthenticationRequired"
+              ? Effect.void
+              : Effect.fail(failureValue)
+          )
+        )
       ),
       operatingMode: (id: StationId) =>
         read(id, (token) => client.operatingMode(id, token)),

@@ -45,7 +45,7 @@ The app and direct reads confirmed:
 
 ## Verification
 
-81 focused tests cover parsing, units, calendar bounds, Dublin daylight-saving
+86 focused tests cover parsing, units, calendar bounds, Dublin daylight-saving
 transitions, cross-midnight schedules, explicit unknown/no-data values, station
 and equipment isolation, pagination, auth rotation and HTTP/MCP parity. The
 native test bundles the actual Alchemy Worker and exercises SDK calls, encrypted

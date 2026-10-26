@@ -26,7 +26,6 @@ This independent Cloudflare service implements core and settings reads from the 
 | `get_energy_history` | `{stationId,date,period}` | station-local day/week/month/year; power W or energy Wh, totals and flows |
 | `get_forecast` | `{stationId,date,period}` | day/week/month forecast, with explicit no-data availability |
 
-
 The same registry and Effect schemas define `POST /v1/<operation>`, remote `POST /mcp`, and authenticated `GET /openapi.json`. HTTP request bodies reject unknown fields and are limited to 64 KiB. Provider bodies are limited to 512 KiB; requests time out after 15 seconds. Both HTTP status and application codes must succeed. Provider messages, bodies, credentials and parser errors are never included in public failures. HTTP failures may include the numeric upstream HTTP status for diagnosis. Browser origins are refused.
 
 All operations require the dedicated owner bearer credential, whose SHA-256 verifier is deployed. Operator credentials are separate and cannot call agent tools. `/admin/session` supports POST enrollment, GET sanitized renewal reporting, and DELETE disconnect. Those routes require the operator credential. Neither credential is a Meal Planner OAuth token.
@@ -112,3 +111,7 @@ pnpm exec vitest run packages/sigen/src apps/sigen-api/src scripts/sigen-worker-
 The native test builds the actual Alchemy entry with the installed bundler, runs it in workerd, exercises real SDK discovery/calls and encrypted enrollment RPC, waits for three real alarms using synthetic provider expiries, then restarts the local runtime against the same SQLite storage. No cloud resources or real Sigen credentials are used by that test.
 
 The installed SDK 1.32.1 stateless Web Standard transport matches the current Tesco/Executor compatibility boundary. Cloudflare's current [handler documentation](https://developers.cloudflare.com/agents/model-context-protocol/apis/handler-api/) recommends the SDK-v2 `createMcpHandler`; adopting it is deferred until tested with the actual target client. No `McpAgent` or Northbound integration is introduced.
+
+## Executor connection
+
+The [Executor app](../../integrations/executor/sigen/README.md) is deployed with a personal credential requirement. Account linking and real Executor tool-call acceptance remain pending. Renewal reports now include automatic station and telemetry checks after rotation; absent checks are not evidence of success.
