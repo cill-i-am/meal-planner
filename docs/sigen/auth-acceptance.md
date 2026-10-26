@@ -41,6 +41,11 @@ The user approved continuing read-endpoint implementation during the natural
 renewal checks. The expanded surface and its evidence are tracked in [read acceptance](read-acceptance.md).
 
 Outstanding: three natural renewal cycles and provider-revoked credentials/reconnection.
+
+The 26 October 23:24 UTC control/tariff deployment preserved the existing session
+and the 27 October 03:18:02 UTC expiry. Executor verified `connected`, zero renewals
+and `disabled_pending_acceptance` after deployment. No forced rotation or fresh
+enrollment was used; the scheduled natural-renewal checks remain unchanged.
 Actual Executor account connection and all 19 read operations passed on 26 October
 2026. Do not mark the authentication milestone complete until the remaining
 checks have evidence.

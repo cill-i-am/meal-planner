@@ -72,3 +72,35 @@ battery/grid/PV settings, mode and schedule reads, device/gateway readings, four
 history series, seven current-day forecast series and ten historical alarms.
 All 19 returned successful MCP results through the actual target client. No
 physical settings changed. Natural renewal and control acceptance remain separate.
+
+## Tariffs and command approvals, 26 October 2026, 23:24–23:27 UTC
+
+Deployed code through `4f137bba` to the same Worker and Durable Object. The
+existing encrypted session, expiry and renewal count were preserved. Executor
+was updated in place to deployment `dpl_eb9e0498-69ab-41d9-ba09-bd0a02b91c8a`;
+the connected account remained usable without reconnecting or renaming it.
+
+Both new reads passed through Executor. `get_tariffs` returned the tax/fee
+configuration with fee units explicitly unverified. `get_prediction_plan`
+returned 15 actual/plan/price series and 4,804 points. The registry now has 27
+operations, including command preparation, approval, execution and inspection.
+
+Prepared an unchanged solar-limit proposal and verified that `approve_command`
+paused at Executor's real confirmation boundary, displaying current and proposed
+values and the `once` choice. Cancelled that exact pending request. Subsequent
+inspection confirmed the command was still `prepared` and the grant list was
+empty. No approval was granted and no physical command was executed. Both once
+and always modes, revocation and the disable switch are covered by local tests;
+the native Worker test persists an always grant across restart and proves that
+physical dispatch remains blocked when disabled.
+
+102 focused tests, the native Worker integration test, both package type checks,
+Executor adapter type checking, scoped lint/format and documentation checks pass.
+The two-axis review caught and fixed expiry during provider validation,
+effective-versus-owner limit verification and loss of command receipts during
+reenrollment. Regression tests verify each fix, including read-only reconciliation
+after timeout and reconnection. Both review axes are clear after corrections.
+
+The remaining discovery/implementation backlog is explicit in
+[coverage](coverage.md). Natural provider renewals, revoked-token reconnection and
+live physical control acceptance remain outstanding. Controls are still disabled.
