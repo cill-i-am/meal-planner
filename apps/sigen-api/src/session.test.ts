@@ -82,12 +82,14 @@ const fixture = () => {
     batterySettings: () => Effect.fail(failure("UnsupportedCapability")),
     deviceInfo: () => Effect.fail(failure("UnsupportedCapability")),
     deviceValues: () => Effect.fail(failure("UnsupportedCapability")),
+    dispatchControl: () => Effect.fail(failure("UnsupportedCapability")),
     energyFlow: () => Effect.succeed(flow),
     energyHistory: () => Effect.fail(failure("UnsupportedCapability")),
     forecast: () => Effect.fail(failure("UnsupportedCapability")),
     gateway: () => Effect.fail(failure("UnsupportedCapability")),
     gridDevices: () => Effect.fail(failure("UnsupportedCapability")),
     gridSettings: () => Effect.fail(failure("UnsupportedCapability")),
+    inspectControl: () => Effect.fail(failure("UnsupportedCapability")),
     login: () => Effect.sync(tokens),
     manualOverride: () => Effect.fail(failure("UnsupportedCapability")),
     operatingMode: () =>
@@ -99,6 +101,7 @@ const fixture = () => {
       }),
     operatingModes: () => Effect.fail(failure("UnsupportedCapability")),
     peakShavingSchedule: () => Effect.fail(failure("UnsupportedCapability")),
+    predictionPlan: () => Effect.fail(failure("UnsupportedCapability")),
     refresh: () =>
       Effect.suspend(() => {
         count += 1;
@@ -109,7 +112,9 @@ const fixture = () => {
     solarSettings: () => Effect.fail(failure("UnsupportedCapability")),
     station: () => Effect.succeed(sample),
     stationStatus: () => Effect.fail(failure("UnsupportedCapability")),
+    tariffs: () => Effect.fail(failure("UnsupportedCapability")),
     topology: () => Effect.fail(failure("UnsupportedCapability")),
+    validateControl: () => Effect.fail(failure("UnsupportedCapability")),
   };
   return {
     alarm: () => alarm,

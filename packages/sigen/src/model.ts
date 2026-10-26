@@ -107,7 +107,7 @@ export type Enrollment = typeof Enrollment.Type;
 
 export const ConnectionStatus = Schema.Struct({
   accessTokenExpiresAt: Schema.NullOr(Timestamp),
-  controls: Schema.Literal("disabled_pending_acceptance"),
+  controls: Schema.Literals(["disabled_pending_acceptance", "enabled"]),
   state: Schema.Literals([
     "disconnected",
     "connected",

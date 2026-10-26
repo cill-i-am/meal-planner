@@ -1,7 +1,7 @@
 import { accountRouter, defineApp, toolAnnotations, withApprovals } from "apps";
 import { mcpRouter } from "apps/mcp";
-import { always } from "apps/operations/approval";
 
+import { sigenApproval } from "./approval.js";
 import { sigen, sigenMcpUrl } from "./provider.js";
 
 export default defineApp(
@@ -18,8 +18,8 @@ export default defineApp(
             signal: ctx.signal,
             url: sigenMcpUrl,
           }),
-          (tool) =>
-            toolAnnotations(tool)?.readOnlyHint === true ? undefined : always()
+          (tool, name) =>
+            sigenApproval(name, toolAnnotations(tool)?.readOnlyHint)
         ),
       { signal: ctx.signal }
     ),

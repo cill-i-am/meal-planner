@@ -1,6 +1,6 @@
 # Private mySigen API and MCP
 
-This independent Cloudflare service implements core and settings reads from the [coverage plan](../../docs/sigen/coverage.md). Tariffs, custom-profile details, smart loads, charger adapters and controls remain incomplete. The package in `packages/sigen` contains the reusable Effect 4 private EU client; this app owns encrypted sessions, HTTP/MCP and the account Durable Object. `sigen.alchemy.ts` deploys only this service. It does not share credentials or product authentication with Meal Planner or Tesco.
+This independent Cloudflare service implements core and settings reads from the [coverage plan](../../docs/sigen/coverage.md). Tariff/AI-plan reads and eight typed setting controls are implemented. Custom-profile details, smart loads, charger adapters and remaining control families are incomplete. The package in `packages/sigen` contains the reusable Effect 4 private EU client; this app owns encrypted sessions, HTTP/MCP and the account Durable Object. `sigen.alchemy.ts` deploys only this service. It does not share credentials or product authentication with Meal Planner or Tesco.
 
 ## Current surface
 
@@ -25,6 +25,14 @@ This independent Cloudflare service implements core and settings reads from the 
 | `list_alarms` | `{stationId,state,page,pageSize,startAt?,endAt?}` | one active/history page; history requires inclusive UTC milliseconds, maximum 31 days |
 | `get_energy_history` | `{stationId,date,period}` | station-local day/week/month/year; power W or energy Wh, totals and flows |
 | `get_forecast` | `{stationId,date,period}` | day/week/month forecast, with explicit no-data availability |
+| `get_tariffs` | `{stationId}` | tax/fee configuration and price coefficients; provider fee units explicitly unverified |
+| `get_prediction_plan` | `{stationId}` | distinct actual load, AI-plan and price series, UTC timestamps, W/percent/currency per kWh |
+| `prepare_command` | `{stationId,commandId,change}` | immutable five-minute review and current approval state |
+| `approve_command` | `{stationId,commandId,change,current,reviewFingerprint,mode}` | approve once or save an always-approve grant |
+| `execute_command` | `{stationId,commandId}` | dispatch once or reconcile an existing attempt through reads |
+| `get_command` | `{stationId,commandId}` | saved review and command receipt |
+| `list_approval_grants` | `{stationId}` | remembered operation permissions |
+| `revoke_approval_grant` | `{stationId,grantId}` | remaining grants |
 
 The same registry and Effect schemas define `POST /v1/<operation>`, remote `POST /mcp`, and authenticated `GET /openapi.json`. HTTP request bodies reject unknown fields and are limited to 64 KiB. Provider bodies are limited to 512 KiB; requests time out after 15 seconds. Both HTTP status and application codes must succeed. Provider messages, bodies, credentials and parser errors are never included in public failures. HTTP failures may include the numeric upstream HTTP status for diagnosis. Browser origins are refused.
 
@@ -48,16 +56,17 @@ Read acceptance is recorded in [read verification](../../docs/sigen/read-accepta
 
 The last five renewal results contain only timestamps and outcome categories. Three synthetic alarm renewals in workerd are separate from the required three natural renewal cycles in Cloudflare. Hosted enrollment and initial reads are verified; natural renewal is not yet verified. See the [acceptance record](../../docs/sigen/auth-acceptance.md).
 
-## Approval policy for the control milestone
+## Approve once and always approve
 
-The user's correction supersedes the original plan's mandatory fresh approval for every physical change. Support **approve once** and **always approve**:
+The owner service credential can prepare, approve and execute commands through HTTP or MCP. Executor requires confirmation on `approve_command`, whose input includes the exact current settings, proposed values and `once`/`always` choice. Preparation, execution of a saved approval, and revocation do not add a second Executor prompt. Unknown tools require confirmation even if remote metadata calls them read-only.
 
-- Once authorizes the complete immutable command review, target and parameters.
-- Always saves a revocable permission for the selected operation and station/device, so an agent can execute future matching commands without repeated prompts.
-- Permissions still enforce supported parameters and hardware capabilities. Changed relevant state requires a fresh command preparation. No ambiguous mutation is automatically replayed, even under an always-approve permission.
-- The eventual HTTP and MCP command surface must enforce the same policy, with explicit grant inspection/revocation and durable one-use command identities.
+`prepare_command` accepts a fresh UUID and one typed change: backup reserve, battery charge/discharge power limits, solar power limit, battery export, grid import/export limits, connection current, or operating mode. Grid limit commands enable the specified finite owner limit and enforce known installer ceilings. Operating modes must be among verified mode codes and currently available to the account; custom profile selection requires a listed profile. Missing hardware fails explicitly.
 
-Approval grants, physical commands and their review UI are not implemented in this read milestone. `controls: disabled_pending_acceptance` is an explicit capability state, not an unsupported `approved: true` workaround.
+Preparation saves the complete normalized settings and proposed values for five minutes. Copy `change`, `current` and `reviewFingerprint` exactly into approval. Once approves that command. Always permits future validated parameters for the same operation and station, until revoked; it is not limited to today's values. Fresh preparation still rechecks state. Revoking a grant also invalidates queued commands that use it. Reenrollment creates a new connection identity, invalidating prior commands and grants.
+
+Execution rechecks current settings and validation under the session lock, then saves a dispatch marker before the single provider mutation. Duplicate command IDs return the saved record; altered inputs conflict. Interrupted, timed-out and ambiguous attempts are never resent. Repeated execution reconciles only through reads. `verified` means the desired settings were observed, not proof that this request caused them. Provider rejection, acceptance, verification and unknown outcome remain distinct.
+
+`SIGEN_CONTROLS_ENABLED` defaults to `false`. Preparation, approvals and inspection work while physical dispatch is disabled. The same switch covers HTTP and MCP. The eight adapters are fixture-tested, not live-control-verified. Enabling dispatch and any live test require a reviewed, explicit procedure including restoration. The durable command book refuses new preparations after 256 saved records; it never silently deletes replay protection. Operational archival is a future extension.
 
 ## Deployment
 
@@ -66,6 +75,7 @@ Create independent random 32-byte owner and operator bearer credentials. Keep th
 - `SIGEN_OWNER_TOKEN_SHA256`: SHA-256 of the owner credential.
 - `SIGEN_OPERATOR_TOKEN_SHA256`: SHA-256 of the separate operator credential.
 - `SIGEN_SESSION_ENCRYPTION_KEY`: 32 random bytes as 64 lowercase hexadecimal digits.
+- `SIGEN_CONTROLS_ENABLED`: optional boolean, default `false`; changing it does not change equipment.
 
 The encryption key must remain stable across restarts and redeployments. Back it up securely. Rotate owner/operator verifiers independently. Key replacement requires a disconnect and new enrollment; it cannot decrypt existing state.
 
@@ -96,9 +106,9 @@ Delete the temporary operator file after acceptance. The raw operator credential
 2. Wait for three natural renewal cycles. Record each prior/new expiry, sanitized report and a successful station/telemetry read. Do not force refresh or reuse the browser chain during this check.
 3. Redeploy unchanged code and verify credentials, next renewal and reads survive.
 4. Verify revoked credentials produce `reauthentication_required`, then reconnect.
-5. Continue implementing read coverage while the natural renewal checks run, as requested by the user. Physical controls and grants remain a later stage with explicit acceptance.
+5. Continue implementing read coverage while the natural renewal checks run, as requested by the user. Control implementation and approval tests also proceed while renewal checks run; live physical tests still require explicit acceptance.
 
-There is no provider control route in this read milestone. Disconnect disables cloud access; it does not alter physical settings. Software rollback likewise does not restore inverter/battery configuration.
+Physical dispatch is disabled in the deployed acceptance configuration. Disconnect disables cloud access; it does not alter physical settings. Software rollback likewise does not restore inverter/battery configuration.
 
 ## Local verification
 

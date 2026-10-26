@@ -83,7 +83,8 @@ const connectionState = (phase: SessionRecord["session"]["phase"]) => {
 export const makeSession = <R>(
   storage: SessionStorage<R>,
   encryptionKey: Redacted.Redacted<string>,
-  client: SigenClient
+  client: SigenClient,
+  controlsEnabled = false
 ) =>
   Effect.gen(function* constructSession() {
     const lock = yield* Semaphore.make(1);
@@ -296,7 +297,7 @@ export const makeSession = <R>(
         return Schema.decodeUnknownEffect(ConnectionStatus)({
           accessTokenExpiresAt:
             "expiresAt" in session ? session.expiresAt : null,
-          controls: "disabled_pending_acceptance",
+          controls: controlsEnabled ? "enabled" : "disabled_pending_acceptance",
           state: connectionState(session.phase),
           stationId: "stationId" in session ? session.stationId : null,
           successfulRenewals: record.successfulRenewals,
@@ -393,6 +394,8 @@ export const makeSession = <R>(
         read(id, (token) => client.operatingModes(id, token)),
       peakShavingSchedule: (id: StationId) =>
         read(id, (token) => client.peakShavingSchedule(id, token)),
+      predictionPlan: (id: StationId) =>
+        read(id, (token) => client.predictionPlan(id, token)),
       report: lock.withPermits(1)(
         Effect.gen(function* reportSession() {
           return {
@@ -407,7 +410,30 @@ export const makeSession = <R>(
         read(id, (token) => client.station(id, token)),
       stationStatus: (input: StationId) =>
         read(input, (token) => client.stationStatus(input, token)),
+      tariffs: (id: StationId) =>
+        read(id, (token) => client.tariffs(id, token)),
       topology: (input: StationId) =>
         read(input, (token) => client.topology(input, token)),
+      // Commands share the refresh/disconnect lock, but never use the read retry path.
+      withConnection: <A, E, R2>(
+        stationId: StationId,
+        operation: (
+          token: Redacted.Redacted<string>,
+          connectionId: string
+        ) => Effect.Effect<A, E, R2>
+      ) =>
+        lock.withPermits(1)(
+          Effect.gen(function* useConnection() {
+            const credentials = yield* tokensFor(stationId);
+            const record = yield* storage.read;
+            if (record.session.phase !== "ready") {
+              return yield* failure("AuthenticationRequired");
+            }
+            return yield* operation(
+              Redacted.make(Redacted.value(credentials.tokens).accessToken),
+              record.session.connectionId
+            );
+          })
+        ),
     };
   });

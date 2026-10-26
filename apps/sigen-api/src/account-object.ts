@@ -1,6 +1,12 @@
 import { SigenFailure, StationId, failure } from "@meal-planner/sigen";
 import { AlarmInput } from "@meal-planner/sigen/alarms";
 import { makeSigenClient } from "@meal-planner/sigen/client";
+import {
+  ApproveCommandInput,
+  CommandInput,
+  PrepareCommandInput,
+  RevokeApprovalInput,
+} from "@meal-planner/sigen/controls";
 import { DeviceInput } from "@meal-planner/sigen/equipment";
 import { HistoryInput, ForecastInput } from "@meal-planner/sigen/history";
 import type { RuntimeContext } from "alchemy";
@@ -8,6 +14,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import { Config, Effect, Layer, Redacted, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
 
+import { CommandBook, makeCommands } from "./commands.js";
 import { SessionRecord, emptySession, makeSession } from "./session.js";
 import type { SessionStorage } from "./session.js";
 import type { EncryptedSecret } from "./vault.js";
@@ -19,6 +26,10 @@ const runtime = Effect.gen(function* constructAccountObject() {
     "SIGEN_SESSION_ENCRYPTION_KEY"
   ).pipe(Effect.orDie);
   const client = yield* makeSigenClient;
+  const controlsEnabled = yield* Config.Boolean("SIGEN_CONTROLS_ENABLED").pipe(
+    Config.withDefault(false),
+    Effect.orDie
+  );
   return Effect.gen(function* initializeAccount() {
     const storage: SessionStorage<RuntimeContext> = {
       read: state.storage.get<unknown>("sigen-session-v1").pipe(
@@ -41,7 +52,31 @@ const runtime = Effect.gen(function* constructAccountObject() {
           )
           .pipe(Effect.mapError(() => failure("StorageUnavailable"))),
     };
-    const session = yield* makeSession(storage, encryptionKey, client);
+    const session = yield* makeSession(
+      storage,
+      encryptionKey,
+      client,
+      controlsEnabled
+    );
+    const commands = makeCommands<RuntimeContext>(
+      {
+        read: state.storage.get<unknown>("sigen-commands-v1").pipe(
+          Effect.flatMap((value) =>
+            value === undefined
+              ? Effect.succeed(null)
+              : Schema.decodeUnknownEffect(CommandBook)(value)
+          ),
+          Effect.mapError(() => failure("StorageUnavailable"))
+        ),
+        write: (book) =>
+          state.storage
+            .put("sigen-commands-v1", book)
+            .pipe(Effect.mapError(() => failure("StorageUnavailable"))),
+      },
+      { run: session.withConnection },
+      client,
+      controlsEnabled
+    );
     const vault = makeVault(encryptionKey);
     const inputCall = <S extends Schema.Top, A>(
       schema: S,
@@ -57,6 +92,10 @@ const runtime = Effect.gen(function* constructAccountObject() {
       alarm: () => session.onAlarm.pipe(Effect.scoped),
       alarms: (input: typeof AlarmInput.Type) =>
         inputCall(AlarmInput, input, session.alarms),
+      approvalGrants: (id: StationId) =>
+        inputCall(StationId, id, commands.approvalGrants),
+      approveCommand: (input: typeof ApproveCommandInput.Type) =>
+        inputCall(ApproveCommandInput, input, commands.approveCommand),
       batterySettings: (id: StationId) =>
         inputCall(StationId, id, session.batterySettings),
       deviceInfo: (input: typeof DeviceInput.Type) =>
@@ -78,10 +117,14 @@ const runtime = Effect.gen(function* constructAccountObject() {
           }
           return yield* session.enroll(Redacted.make(value.value));
         }).pipe(Effect.scoped),
+      executeCommand: (input: typeof CommandInput.Type) =>
+        inputCall(CommandInput, input, commands.executeCommand),
       forecast: (input: typeof ForecastInput.Type) =>
         inputCall(ForecastInput, input, session.forecast),
       gateway: (input: StationId) =>
         inputCall(StationId, input, session.gateway),
+      getCommand: (input: typeof CommandInput.Type) =>
+        inputCall(CommandInput, input, commands.getCommand),
       gridDevices: (input: StationId) =>
         inputCall(StationId, input, session.gridDevices),
       gridSettings: (id: StationId) =>
@@ -95,12 +138,19 @@ const runtime = Effect.gen(function* constructAccountObject() {
         inputCall(StationId, id, session.operatingModes),
       peakShavingSchedule: (id: StationId) =>
         inputCall(StationId, id, session.peakShavingSchedule),
+      predictionPlan: (id: StationId) =>
+        inputCall(StationId, id, session.predictionPlan),
+      prepareCommand: (input: typeof PrepareCommandInput.Type) =>
+        inputCall(PrepareCommandInput, input, commands.prepareCommand),
       report: () => session.report,
+      revokeApproval: (input: typeof RevokeApprovalInput.Type) =>
+        inputCall(RevokeApprovalInput, input, commands.revokeApproval),
       solarSettings: (id: StationId) =>
         inputCall(StationId, id, session.solarSettings),
       station: (id: StationId) => inputCall(StationId, id, session.station),
       stationStatus: (input: StationId) =>
         inputCall(StationId, input, session.stationStatus),
+      tariffs: (id: StationId) => inputCall(StationId, id, session.tariffs),
       topology: (input: StationId) =>
         inputCall(StationId, input, session.topology),
     };

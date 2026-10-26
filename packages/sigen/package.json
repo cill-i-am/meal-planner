@@ -8,7 +8,9 @@
     "./settings": "./src/settings.ts",
     "./equipment": "./src/equipment.ts",
     "./alarms": "./src/alarms.ts",
-    "./history": "./src/history.ts"
+    "./history": "./src/history.ts",
+    "./controls": "./src/controls.ts",
+    "./tariffs": "./src/tariffs.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

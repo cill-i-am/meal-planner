@@ -147,3 +147,23 @@ The supplied plan's fresh-human-approval-for-every-command policy was superseded
 by the user: support approve once and a revocable always-approve permission for
 an operation and station/device. This does not remove parameter validation,
 one-use command IDs, state conflict detection or ambiguous-outcome reconciliation.
+
+## Control and tariff implementation update
+
+The shared registry now contains 27 operations: 21 provider/connection reads and six command/approval operations. These additions have fixture and local runtime coverage; hosted verification is recorded separately.
+
+| Operation | Method/path | Schema | Permissions/hardware | Side effects | Evidence | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| `get_tariffs` | GET `/electricity-price/api/tax-and-fee/{id}` and `/prediction/aipv/elecPrice/get/priceCost?stationId=…` | `Tariffs` | enrolled owner station | none | browser observations plus pinned MIT reference | implemented, fixture-tested; fee units remain unverified |
+| `get_prediction_plan` | GET `/prediction/predictData/get/predictData/{id}` | `PredictionPlan` | enrolled owner station | none | browser observation plus pinned MIT reference | implemented, fixture-tested; actual, plan and price series distinguished |
+| `set_backup_reserve` | PUT `/device/setting/backup/reserve` | `ControlChange` | battery | changes reserve percent | pinned MIT client/app-derived payload | implemented, fixture-tested; not live-control-verified |
+| `set_battery_power_limits` | PUT `/device/energy-profile/battery/limit` | `ControlChange` | battery | changes charge/discharge limits | pinned MIT client/app-derived payload | implemented, fixture-tested; not live-control-verified |
+| `set_solar_power_limit` | PUT `/device/energy-profile/solar/limit` | `ControlChange` | solar | changes PV limit | pinned MIT client/app-derived payload | implemented, fixture-tested; not live-control-verified |
+| `set_battery_export` | PUT `/device/energy-profile/battery/export/limitation` | `ControlChange` | battery, installer permission | changes owner export permission | pinned MIT client | implemented, fixture-tested; not live-control-verified |
+| `set_grid_export_limit`, `set_grid_import_limit` | PUT `/device/energy-profile/grid/limitation/{export,import}` | `ControlChange` | known installer ceiling | enables finite owner limit | pinned MIT client | implemented, fixture-tested; not live-control-verified |
+| `set_grid_connection_current` | PUT `/device/energy-profile/parallel/off/grid` | `ControlChange` | known installer ceiling | enables current limit in amperes | pinned MIT client | implemented, fixture-tested; not live-control-verified |
+| `set_operating_mode` | PUT `/device/energy-profile/mode` | `ControlChange` | currently available verified mode/profile | changes operating strategy | pinned MIT client plus live mode list | implemented, fixture-tested; not live-control-verified |
+
+The named setting changes are variants of `prepare_command`, not direct-write tools. HTTP and MCP use the same saved review, once/always approval, revocation, dispatch and readback service. All provider dispatch remains disabled by default. Setting writes do not use the read retry path. Reenrollment invalidates remembered permissions.
+
+Still unfinished: station enumeration, profile details and schedule replacement, remaining tariff/fee semantics, manual override and SOC-threshold writes, smart loads, AC/DC/V2X adapters, device administration, caching and shared upstream budgets. Missing charger hardware remains an observed capability limitation, not an implementation claim. The discovery matrix above remains the broader backlog; this update supersedes its older implementation status for these specific operations.

@@ -5,9 +5,10 @@ import path from "node:path";
 import { setTimeout } from "node:timers/promises";
 
 import { NodeServices } from "@effect/platform-node";
+import { Command } from "../packages/sigen/src/controls.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Context, Effect } from "effect";
+import { Context, Effect, Schema } from "effect";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 import { expect, it } from "vitest";
 
@@ -210,7 +211,7 @@ it(
       // @ts-expect-error SDK 1.32.1's sessionId getter disagrees with Transport under exactOptionalPropertyTypes.
       await client.connect(transport);
       const listed = await client.listTools();
-      expect(listed.tools).toHaveLength(19);
+      expect(listed.tools).toHaveLength(27);
       const initial = await client.callTool({
         arguments: {},
         name: "connection_status",
@@ -313,6 +314,44 @@ it(
         availability: "no_data",
         series: [],
       });
+      const commandId = "cc049ab9-7a31-4143-b238-7a132a04c98f";
+      const preparedResult = await client.callTool({
+        arguments: {
+          change: {
+            limit: { kind: "limited", watts: 2000 },
+            operation: "set_solar_power_limit",
+          },
+          commandId,
+          stationId: "12345",
+        },
+        name: "prepare_command",
+      });
+      const prepared = Schema.decodeUnknownSync(Command)(
+        preparedResult.structuredContent
+      );
+      expect(prepared.phase.status).toBe("prepared");
+      const approval = await client.callTool({
+        arguments: {
+          change: prepared.review.change,
+          commandId,
+          current: prepared.review.current,
+          mode: "always",
+          reviewFingerprint: prepared.review.reviewFingerprint,
+          stationId: "12345",
+        },
+        name: "approve_command",
+      });
+      expect(approval.structuredContent).toMatchObject({
+        phase: { approval: { kind: "grant" }, status: "approved" },
+      });
+      const disabled = await client.callTool({
+        arguments: { commandId, stationId: "12345" },
+        name: "execute_command",
+      });
+      expect(disabled.isError).toBe(true);
+      expect(disabled.content).toMatchObject([
+        { text: "UnsupportedCapability" },
+      ]);
       await client.close();
       await runtime.dispose();
       runtime = makeRuntime();
@@ -330,6 +369,20 @@ it(
       expect(await restored.json()).toMatchObject({
         state: "connected",
         successfulRenewals: 3,
+      });
+      const restoredCommand = await fetch(
+        new URL("/v1/get_command", await runtime.ready),
+        {
+          body: JSON.stringify({ commandId, stationId: "12345" }),
+          headers: {
+            authorization: `Bearer ${owner}`,
+            "content-type": "application/json",
+          },
+          method: "POST",
+        }
+      );
+      expect(await restoredCommand.json()).toMatchObject({
+        phase: { approval: { kind: "grant" }, status: "approved" },
       });
       const report = await fetch(
         new URL("/admin/session", await runtime.ready),

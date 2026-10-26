@@ -80,6 +80,10 @@ const errorStatus = (reason: SigenFailure["reason"]) => {
     case "PermissionDenied": {
       return 403;
     }
+    case "ApprovalRequired":
+    case "Conflict": {
+      return 409;
+    }
     case "RateLimited": {
       return 429;
     }

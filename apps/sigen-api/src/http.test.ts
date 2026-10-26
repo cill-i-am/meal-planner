@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 
 import { SerialNumber, StationId, failure } from "@meal-planner/sigen";
+import { Command } from "@meal-planner/sigen/controls";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Effect, Redacted, Schema } from "effect";
@@ -17,6 +18,31 @@ const hash = (value: string) =>
   Redacted.make(createHash("sha256").update(value).digest("hex"));
 const id = Schema.decodeUnknownSync(StationId)("12345");
 const serialNumber = Schema.decodeUnknownSync(SerialNumber)("AIO-1");
+const command = Schema.decodeUnknownSync(Command)({
+  phase: { status: "prepared" },
+  review: {
+    change: {
+      limit: { kind: "limited", watts: 2000 },
+      operation: "set_solar_power_limit",
+    },
+    commandId: "3eae3bc8-a13e-4b37-a2ab-77bd565d598a",
+    current: {
+      kind: "solar",
+      settings: {
+        fetchedAt: 1,
+        powerLimit: { kind: "unlimited" },
+        stationId: id,
+      },
+    },
+    expiresAt: 300_001,
+    preparedAt: 1,
+    reviewFingerprint: "a".repeat(64),
+    stationId: id,
+  },
+});
+const tax = {
+  taxSettings: { enableNegativePriceTax: false, fixedTaxRate: 0, taxMode: 0 },
+};
 const status = {
   accessTokenExpiresAt: 123_456,
   controls: "disabled_pending_acceptance" as const,
@@ -37,6 +63,8 @@ const options: HttpOptions = {
         stationId: input.stationId,
         total: 0,
       }),
+    approvalGrants: () => Effect.succeed({ grants: [] }),
+    approveCommand: () => Effect.succeed(command),
     batterySettings: (stationId) =>
       Effect.succeed({
         backupReservePercent: 20,
@@ -104,6 +132,7 @@ const options: HttpOptions = {
         timezone: "Europe/Dublin",
         totals: [],
       }),
+    executeCommand: () => Effect.succeed(command),
     forecast: (input) =>
       Effect.succeed({
         availability: "no_data",
@@ -129,6 +158,7 @@ const options: HttpOptions = {
         softwareVersion: "1",
         stationId,
       }),
+    getCommand: () => Effect.succeed(command),
     gridDevices: (stationId) =>
       Effect.succeed({ devices: [], fetchedAt: 123, stationId }),
     gridSettings: (stationId) =>
@@ -188,6 +218,17 @@ const options: HttpOptions = {
         stationId,
         timezone: "Europe/Dublin",
       }),
+    predictionPlan: () =>
+      Effect.succeed({
+        currencySymbol: "€",
+        fetchedAt: 1,
+        providerNowLocal: "2026-10-26 12:00",
+        series: [],
+        stationId: id,
+        timezone: "Europe/Dublin",
+      }),
+    prepareCommand: () => Effect.succeed(command),
+    revokeApproval: () => Effect.succeed({ grants: [] }),
     solarSettings: (stationId) =>
       Effect.succeed({
         fetchedAt: 123,
@@ -219,6 +260,23 @@ const options: HttpOptions = {
         providerNetworkType: 1,
         providerStatus: 1,
         stationId,
+      }),
+    tariffs: () =>
+      Effect.succeed({
+        buy: tax,
+        currencySymbol: "€",
+        fetchedAt: 1,
+        priceModel: {
+          buyCoefficient: 1,
+          buyCost: 0,
+          buyTaxAndFee: tax,
+          sellCoefficient: 1,
+          sellCost: 0,
+          sellTaxAndFee: tax,
+        },
+        providerFeeUnits: "unverified",
+        sell: tax,
+        stationId: id,
       }),
     topology: (stationId) =>
       Effect.succeed({
@@ -335,6 +393,29 @@ describe("authenticated HTTP and MCP parity", () => {
       );
       for (const op of operations) {
         const inputForOperation = () => {
+          if (op.name === "prepare_command") {
+            return {
+              change: command.review.change,
+              commandId: command.review.commandId,
+              stationId: id,
+            };
+          }
+          if (op.name === "approve_command") {
+            return {
+              change: command.review.change,
+              commandId: command.review.commandId,
+              current: command.review.current,
+              mode: "once",
+              reviewFingerprint: command.review.reviewFingerprint,
+              stationId: id,
+            };
+          }
+          if (["get_command", "execute_command"].includes(op.name)) {
+            return { commandId: command.review.commandId, stationId: id };
+          }
+          if (op.name === "revoke_approval_grant") {
+            return { grantId: command.review.commandId, stationId: id };
+          }
           if (op.name === "connection_status") {
             return {};
           }

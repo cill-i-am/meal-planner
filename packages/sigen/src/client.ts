@@ -9,6 +9,7 @@ import {
 } from "effect/http";
 
 import { makeAlarmsClient } from "./alarms-client.js";
+import { makeControlsClient } from "./controls-client.js";
 import { makeEquipmentClient } from "./equipment-client.js";
 import { makeHistoryClient } from "./history-client.js";
 import type { Enrollment, StationId } from "./model.js";
@@ -21,6 +22,7 @@ import {
   failure,
 } from "./model.js";
 import { makeSettingsClient } from "./settings-client.js";
+import { makeTariffsClient } from "./tariffs-client.js";
 
 // Protocol constants from solidfox/sigenergy-cloud (MIT). See THIRD_PARTY_NOTICES.md.
 const Origin = "https://api-eu.sigencloud.com";
@@ -110,7 +112,7 @@ export const transformPassword = (password: Redacted.Redacted<string>) =>
 export const makeSigenClient = Effect.gen(function* makeSigenClient() {
   const http = yield* HttpClient.HttpClient;
   const request = (
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "PUT",
     path: string,
     headers: Readonly<Record<string, string>>,
     body?: HttpBody.HttpBody
@@ -202,7 +204,18 @@ export const makeSigenClient = Effect.gen(function* makeSigenClient() {
     }).pipe(Effect.flatMap(unwrap));
 
   return {
+    ...makeControlsClient(read, (path, body, accessToken) =>
+      request(
+        "PUT",
+        path,
+        {
+          authorization: `Bearer ${Redacted.value(accessToken)}`,
+        },
+        HttpBody.text(JSON.stringify(body), "application/json")
+      ).pipe(Effect.flatMap(unwrap), Effect.asVoid)
+    ),
     ...makeSettingsClient(read),
+    ...makeTariffsClient(read),
     ...makeEquipmentClient(read),
     ...makeAlarmsClient(read),
     ...makeHistoryClient(read),
