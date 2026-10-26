@@ -1,0 +1,86 @@
+import { RuntimeContext } from "alchemy";
+import * as Cloudflare from "alchemy/Cloudflare";
+import { Config, Effect, Redacted } from "effect";
+import { HttpServerRequest, HttpServerResponse } from "effect/http";
+
+import SigenAccountObjectLive, {
+  SigenAccountObject,
+} from "./account-object.js";
+import { makeHttpHandler } from "./http.js";
+import { makeVault } from "./vault.js";
+
+export default class SigenApi extends Cloudflare.Worker<SigenApi>()(
+  "SigenApi",
+  {
+    compatibility: { date: "2026-10-19", flags: ["nodejs_compat"] },
+    main: import.meta.url,
+    name: "sigen-api",
+    // Automatic request logging could retain credentials. Add only sanitized operation metrics after acceptance.
+    observability: { enabled: false },
+    workersDev: true,
+  },
+  Effect.gen(function* constructSigenWorker() {
+    const accounts = yield* SigenAccountObject;
+    const ownerHash = yield* Config.Redacted("SIGEN_OWNER_TOKEN_SHA256");
+    const operatorHash = yield* Config.Redacted("SIGEN_OPERATOR_TOKEN_SHA256");
+    const encryptionKey = yield* Config.Redacted(
+      "SIGEN_SESSION_ENCRYPTION_KEY"
+    );
+    for (const value of [ownerHash, operatorHash, encryptionKey]) {
+      if (!/^[a-f0-9]{64}$/u.test(Redacted.value(value))) {
+        return yield* Effect.die("Invalid Sigen secret configuration");
+      }
+    }
+    if (Redacted.value(ownerHash) === Redacted.value(operatorHash)) {
+      return yield* Effect.die(
+        "Sigen owner and operator credentials must differ"
+      );
+    }
+    const vault = makeVault(encryptionKey);
+    const limiter = yield* Cloudflare.Workers.RateLimit("SIGEN_OWNER_LIMIT", {
+      namespaceId: 61_804,
+      simple: { limit: 30, period: 60 },
+    });
+    return {
+      fetch: Effect.gen(function* handleSigenRequest() {
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        if (!(request.source instanceof Request)) {
+          return yield* Effect.die("Expected a native Request");
+        }
+        const context = yield* RuntimeContext;
+        const bind = <A, E>(program: Effect.Effect<A, E, RuntimeContext>) =>
+          program.pipe(Effect.provideService(RuntimeContext, context));
+        const account = accounts.getByName("private-owner");
+        const handler = makeHttpHandler({
+          capabilities: {
+            energyFlow: (id) => bind(account.energyFlow(id)),
+            health: bind(account.health()),
+            operatingMode: (id) => bind(account.operatingMode(id)),
+            station: (id) => bind(account.station(id)),
+          },
+          disconnect: bind(account.disconnect()),
+          enroll: (input) =>
+            vault
+              .encrypt(
+                Redacted.make({
+                  kind: "enrollment",
+                  value: Redacted.value(input),
+                })
+              )
+              .pipe(Effect.flatMap((secret) => bind(account.enroll(secret)))),
+          operatorHash,
+          ownerHash,
+          rateLimit: bind(limiter.limit({ key: "private-owner" })).pipe(
+            Effect.map((result) => result.success),
+            Effect.orElseSucceed(() => false)
+          ),
+          report: bind(account.report()),
+        });
+        return HttpServerResponse.fromWeb(yield* handler(request.source));
+      }),
+    };
+  }).pipe(
+    Effect.provide(Cloudflare.Workers.RateLimitBinding),
+    Effect.provide(SigenAccountObjectLive)
+  )
+) {}

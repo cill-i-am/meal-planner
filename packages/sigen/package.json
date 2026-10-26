@@ -1,0 +1,22 @@
+{
+  "name": "@meal-planner/sigen",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/model.ts",
+    "./client": "./src/client.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "effect": "4.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}
