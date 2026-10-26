@@ -11,7 +11,7 @@ This independent Cloudflare service is the authentication milestone of the [cove
 | `get_energy_flow` | `{stationId}` | watts, SOC, provider/fetch timestamps and freshness |
 | `get_operating_mode` | `{stationId}` | provider mode/profile IDs, preserving unfamiliar modes |
 
-The same registry and Effect schemas define `POST /v1/<operation>`, remote `POST /mcp`, and authenticated `GET /openapi.json`. HTTP request bodies reject unknown fields and are limited to 64 KiB. Provider bodies are limited to 512 KiB; requests time out after 15 seconds. Both HTTP status and application codes must succeed. Provider messages, bodies, credentials and parser errors are never included in public failures. Browser origins are refused.
+The same registry and Effect schemas define `POST /v1/<operation>`, remote `POST /mcp`, and authenticated `GET /openapi.json`. HTTP request bodies reject unknown fields and are limited to 64 KiB. Provider bodies are limited to 512 KiB; requests time out after 15 seconds. Both HTTP status and application codes must succeed. Provider messages, bodies, credentials and parser errors are never included in public failures. HTTP failures may include the numeric upstream HTTP status for diagnosis. Browser origins are refused.
 
 All operations require the dedicated owner bearer credential, whose SHA-256 verifier is deployed. Operator credentials are separate and cannot call agent tools. `/admin/session` supports POST enrollment, GET sanitized renewal reporting, and DELETE disconnect. Those routes require the operator credential. Neither credential is a Meal Planner OAuth token.
 
@@ -25,7 +25,7 @@ The account object serializes enrollment, disconnect, renewal and reads. It comm
 
 HTTP and MCP cancellation joins local tool cleanup. Alchemy's current native Durable Object RPC cannot transport the caller's cancellation signal into the object: cancellation ends the Worker-side wait, while an already dispatched provider read may continue until its 15-second timeout. The account object owns the session operation until it finishes.
 
-The last five renewal results contain only timestamps and outcome categories. Three synthetic alarm renewals in workerd are separate from the required three natural renewal cycles in Cloudflare. Hosted renewal is not yet verified.
+The last five renewal results contain only timestamps and outcome categories. Three synthetic alarm renewals in workerd are separate from the required three natural renewal cycles in Cloudflare. Hosted enrollment and initial reads are verified; natural renewal is not yet verified. See the [acceptance record](../../docs/sigen/auth-acceptance.md).
 
 ## Approval policy for the control milestone
 
@@ -49,13 +49,15 @@ Create independent random 32-byte owner and operator bearer credentials. Keep th
 The encryption key must remain stable across restarts and redeployments. Back it up securely. Rotate owner/operator verifiers independently. Key replacement requires a disconnect and new enrollment; it cannot decrypt existing state.
 
 ```sh
-pnpm exec alchemy plan sigen.alchemy.ts --stage prod --profile <profile> --env-file .dev.vars.sigen
-pnpm exec alchemy deploy sigen.alchemy.ts --stage prod --profile <profile> --env-file .dev.vars.sigen
+pnpm exec alchemy plan --config sigen.alchemy.ts --stage prod --profile <profile> --env-file .dev.vars.sigen
+pnpm exec alchemy deploy --config sigen.alchemy.ts --stage prod --profile <profile> --env-file .dev.vars.sigen
 ```
 
-The stack is `SigenApi`, Worker `sigen-api`, SQLite object `SigenAccountObject`, account object `private-owner`, and limiter namespace 61804. Plan can bootstrap Cloudflare state infrastructure; use the authorized account/profile. No Sigen Worker has been deployed as part of the local implementation checks.
+The stack is `SigenApi`, Worker `sigen-api`, SQLite object `SigenAccountObject`, account object `private-owner`, and limiter namespace 61804. Plan can bootstrap Cloudflare state infrastructure; use the authorized account/profile. The initial service is deployed at `https://sigen-api.barroncillian.workers.dev`; deployment and acceptance evidence is recorded separately from local checks.
 
-For enrollment, create a mode-0600 file containing `origin` (the exact HTTPS workers.dev origin returned by deployment), `operatorToken`, and `enrollment: {username,password,stationId}`. Never put these values in command-line arguments, chat or tracked files. The operator helper removes the enrollment payload from the file before attempting submission. An uncertain enrollment must be checked with `status`; it must not be automatically retried.
+The client sends an explicit `meal-planner-sigen/0.1.0` User-Agent on provider requests. In live acceptance, adding this honest identifier changed hosted enrollment from an upstream HTTP 403 to success.
+
+For enrollment, create a mode-0600 file containing `origin` (the exact HTTPS workers.dev origin returned by deployment), `operatorToken`, and `stationId`. The file contains no mySigen username or password. The operator helper asks for both interactively in the local terminal; password input is hidden. Credentials are held in process memory for the single HTTPS enrollment request and are never written to disk by the helper. Do not put credentials in command-line arguments, chat or tracked files. An uncertain enrollment must be checked with `status`; it must not be automatically retried.
 
 ```sh
 node --import tsx scripts/sigen-session.ts /absolute/path/to/protected.json enroll
@@ -65,13 +67,13 @@ node --import tsx scripts/sigen-session.ts /absolute/path/to/protected.json disc
 
 Delete the temporary operator file after acceptance. The raw operator credential should have a separately secured recovery copy.
 
-## Acceptance before expanding coverage
+## Authentication acceptance alongside read coverage
 
 1. Enroll a separate session on the deployed Worker. Read station and energy flow through the actual HTTP/MCP client and compare against mySigen.
 2. Wait for three natural renewal cycles. Record each prior/new expiry, sanitized report and a successful station/telemetry read. Do not force refresh or reuse the browser chain during this check.
 3. Redeploy unchanged code and verify credentials, next renewal and reads survive.
 4. Verify revoked credentials produce `reauthentication_required`, then reconnect.
-5. Continue the matrix: station enumeration, history/timezones/DST, alarms, topology, settings, tariffs, schedules, smart loads, chargers and controls.
+5. Continue implementing read coverage while the natural renewal checks run, as requested by the user. Physical controls and grants remain a later stage with explicit acceptance.
 
 There is no provider control route in this milestone. Disconnect disables cloud access; it does not alter physical settings. Software rollback likewise does not restore inverter/battery configuration.
 

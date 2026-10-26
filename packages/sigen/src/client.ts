@@ -114,20 +114,23 @@ export const makeSigenClient = Effect.gen(function* makeSigenClient() {
     Effect.gen(function* sendRequest() {
       const response = yield* http
         .execute(
-          HttpClientRequest.make(method)(`${Origin}${path}`, { body, headers })
+          HttpClientRequest.make(method)(`${Origin}${path}`, {
+            body,
+            headers: { ...headers, "user-agent": "meal-planner-sigen/0.1.0" },
+          })
         )
         .pipe(Effect.mapError(() => failure("UpstreamUnavailable")));
       if (response.status === 401) {
-        return yield* failure("AuthenticationRequired");
+        return yield* failure("AuthenticationRequired", response.status);
       }
       if (response.status === 403) {
-        return yield* failure("PermissionDenied");
+        return yield* failure("PermissionDenied", response.status);
       }
       if (response.status === 429) {
-        return yield* failure("RateLimited");
+        return yield* failure("RateLimited", response.status);
       }
       if (response.status < 200 || response.status >= 300) {
-        return yield* failure("UpstreamUnavailable");
+        return yield* failure("UpstreamUnavailable", response.status);
       }
       const payload = yield* response.json.pipe(
         Effect.mapError(() => failure("SchemaMismatch"))

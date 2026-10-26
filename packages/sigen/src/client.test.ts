@@ -159,6 +159,26 @@ describe("private EU client", () => {
     expect(JSON.stringify(result)).not.toContain("SECRET");
   });
 
+  it("retains the HTTP rejection status without provider bodies or headers", async () => {
+    const result = await run(
+      Effect.gen(function* forbiddenRead() {
+        return yield* (yield* makeSigenClient)
+          .station(stationId, token)
+          .pipe(Effect.result);
+      }),
+      () =>
+        new Response("SECRET provider body", {
+          headers: { "x-diagnostic": "SECRET header" },
+          status: 403,
+        })
+    );
+    expect(result).toMatchObject({
+      _tag: "Failure",
+      failure: { reason: "PermissionDenied", upstreamHttpStatus: 403 },
+    });
+    expect(JSON.stringify(result)).not.toContain("SECRET");
+  });
+
   it.each([
     {},
     { code: 0, data: { ...flow, batterySoc: "38.5" } },
@@ -195,6 +215,9 @@ describe("private EU client", () => {
             "https://api-eu.sigencloud.com/auth/oauth/token"
           );
           expect(init?.method).toBe("POST");
+          expect(new Headers(init?.headers).get("user-agent")).toBe(
+            "meal-planner-sigen/0.1.0"
+          );
           const data = {
             access_token: "new-access",
             expires_in: 3600,

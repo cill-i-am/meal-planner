@@ -89,7 +89,12 @@ const errorStatus = (reason: SigenFailure["reason"]) => {
   }
 };
 const jsonError = (error: SigenFailure) =>
-  Effect.succeed(json({ error: error.reason }, errorStatus(error.reason)));
+  Effect.succeed(
+    json(
+      { error: error.reason, upstreamHttpStatus: error.upstreamHttpStatus },
+      errorStatus(error.reason)
+    )
+  );
 
 const whenAborted = (signal: AbortSignal) =>
   Effect.callback<never>((resume) => {

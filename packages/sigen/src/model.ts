@@ -32,9 +32,12 @@ export const FailureReason = Schema.Literals([
 ]);
 export class SigenFailure extends Data.TaggedError("SigenFailure")<{
   readonly reason: typeof FailureReason.Type;
+  readonly upstreamHttpStatus?: number | undefined;
 }> {}
-export const failure = (reason: SigenFailure["reason"]) =>
-  new SigenFailure({ reason });
+export const failure = (
+  reason: SigenFailure["reason"],
+  upstreamHttpStatus?: number
+) => new SigenFailure({ reason, upstreamHttpStatus });
 
 const Capability = Schema.Literals(["available", "unavailable", "unknown"]);
 export const Station = Schema.Struct({

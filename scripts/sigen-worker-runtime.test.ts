@@ -85,6 +85,11 @@ it(
             expect(url.origin).toBe("https://api-eu.sigencloud.com");
             if (url.pathname === "/auth/oauth/token") {
               const form = new URLSearchParams(await request.text());
+              if (form.get("username") === "rejected@example.invalid") {
+                return new Response("SECRET provider rejection", {
+                  status: 403,
+                });
+              }
               if (form.get("grant_type") === "refresh_token") {
                 expect(form.get("refresh_token")).toBe(`refresh-${renewals}`);
                 renewals += 1;
@@ -150,6 +155,23 @@ it(
       });
       expect(initial.structuredContent).toMatchObject({
         state: "disconnected",
+      });
+      const rejected = await fetch(new URL("/admin/session", url), {
+        body: JSON.stringify({
+          password: "fixture-password",
+          stationId: "12345",
+          username: "rejected@example.invalid",
+        }),
+        headers: {
+          authorization: `Bearer ${operator}`,
+          "content-type": "application/json",
+        },
+        method: "POST",
+      });
+      expect(rejected.status).toBe(403);
+      expect(await rejected.json()).toEqual({
+        error: "PermissionDenied",
+        upstreamHttpStatus: 403,
       });
       const enrolled = await fetch(new URL("/admin/session", url), {
         body: JSON.stringify({
