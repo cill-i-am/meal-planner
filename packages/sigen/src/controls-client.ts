@@ -1,4 +1,4 @@
-import { Effect, Schema, absurd } from "effect";
+import { Clock, Effect, Schema, absurd } from "effect";
 import type { Redacted } from "effect";
 
 import type {
@@ -117,11 +117,13 @@ export const makeControlsClient = (
             )
           ),
           Effect.flatMap((value) =>
-            decodeProvider(OperatingMode)({
-              fetchedAt: 0,
-              profileId: value.currentProfileId,
-              providerMode: value.currentMode,
-              stationId,
+            Effect.gen(function* readModeSnapshot() {
+              return yield* decodeProvider(OperatingMode)({
+                fetchedAt: yield* Clock.currentTimeMillis,
+                profileId: value.currentProfileId,
+                providerMode: value.currentMode,
+                stationId,
+              });
             })
           ),
           Effect.map((value) => ({ kind: "mode", settings: value }))
@@ -172,14 +174,10 @@ export const makeControlsClient = (
       if (change.operation === "set_operating_mode") {
         const modes = yield* settings.operatingModes(stationId, token);
         const allowed =
-          change.providerMode === 9
-            ? modes.customProfiles.some(
-                (profile) => profile.profileId === change.profileId
-              )
-            : change.profileId === -1 &&
-              modes.modes.some(
-                (mode) => mode.providerMode === String(change.providerMode)
-              );
+          change.profileId === -1 &&
+          modes.modes.some(
+            (mode) => mode.providerMode === String(change.providerMode)
+          );
         if (!allowed) {
           return yield* failure("UnsupportedCapability");
         }

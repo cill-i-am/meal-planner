@@ -64,7 +64,22 @@ export const makeCommands = <R>(
       Effect.map((book): CommandBook =>
         book?.connectionId === connectionId
           ? book
-          : { commands: [], connectionId, grants: [] }
+          : {
+              commands: (book?.commands ?? []).map((command): Command =>
+                command.phase.status === "prepared" ||
+                command.phase.status === "approved"
+                  ? {
+                      ...command,
+                      phase: {
+                        reason: "AuthenticationRequired",
+                        status: "rejected",
+                      },
+                    }
+                  : command
+              ),
+              connectionId,
+              grants: [],
+            }
       )
     );
   const find = (book: CommandBook, input: typeof CommandInput.Type) => {
@@ -257,6 +272,12 @@ export const makeCommands = <R>(
             });
           }
           const attemptedAt = yield* Clock.currentTimeMillis;
+          if (command.review.expiresAt <= attemptedAt) {
+            return yield* save(book, {
+              ...command,
+              phase: { reason: "Conflict", status: "rejected" },
+            });
+          }
           yield* save(book, {
             ...command,
             phase: { attemptedAt, status: "dispatching" },

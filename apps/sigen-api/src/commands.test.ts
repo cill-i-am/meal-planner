@@ -3,6 +3,7 @@ import { StationId, failure } from "@meal-planner/sigen";
 import { ControlChange, ControlSnapshot } from "@meal-planner/sigen/controls";
 import type { Command } from "@meal-planner/sigen/controls";
 import { Effect, Redacted, Schema, Semaphore } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it, vi } from "vitest";
 
 import { makeCommands } from "./commands.js";
@@ -162,9 +163,9 @@ describe("durable physical commands", () => {
     expect(await run(f.service.approvalGrants(stationId))).toEqual({
       grants: [],
     });
-    expect(
-      await run(f.service.getCommand(identity(first)).pipe(Effect.result))
-    ).toMatchObject({ failure: { reason: "InvalidInput" } });
+    expect(await run(f.service.getCommand(identity(first)))).toMatchObject({
+      phase: { reason: "AuthenticationRequired", status: "rejected" },
+    });
     expect(f.dispatch).not.toHaveBeenCalled();
   });
   it("rejects expired and conflicting commands before submission, without treating changing fetch time as a conflict", async () => {
@@ -193,6 +194,22 @@ describe("durable physical commands", () => {
     );
     expect(f.dispatch).not.toHaveBeenCalled();
   });
+  it("rechecks expiry after provider validation immediately before dispatch", async () => {
+    const f = await fixture();
+    const prepared = await f.prepare();
+    await run(f.service.approveCommand(approvedInput(prepared)));
+    f.client.validateControl = () =>
+      TestClock.setTime(prepared.review.expiresAt + 1);
+    await run(
+      Effect.gen(function* expiresDuringValidation() {
+        yield* TestClock.setTime(prepared.review.preparedAt);
+        expect(
+          yield* f.service.executeCommand(identity(prepared))
+        ).toMatchObject({ phase: { reason: "Conflict", status: "rejected" } });
+        expect(f.dispatch).not.toHaveBeenCalled();
+      }).pipe(Effect.provide(TestClock.layer()))
+    );
+  });
   it("never retries a possibly submitted write and reconciles after a lost response", async () => {
     const f = await fixture();
     const prepared = await f.prepare();
@@ -205,6 +222,32 @@ describe("durable physical commands", () => {
     ).toMatchObject({ phase: { status: "outcome_unknown" } });
     expect(
       await run(f.make().executeCommand(identity(prepared)))
+    ).toMatchObject({ phase: { status: "outcome_unknown" } });
+    f.setSnapshot(2000);
+    expect(
+      await run(f.make().executeCommand(identity(prepared)))
+    ).toMatchObject({ phase: { status: "verified" } });
+    expect(f.dispatch).toHaveBeenCalledTimes(1);
+  });
+  it("retains ambiguous receipts and one-use IDs through reenrollment while discarding permissions", async () => {
+    const f = await fixture();
+    const prepared = await f.prepare();
+    await run(f.service.approveCommand(approvedInput(prepared, "always")));
+    f.dispatch.mockImplementation(() =>
+      Effect.fail(failure("UpstreamUnavailable"))
+    );
+    await run(f.service.executeCommand(identity(prepared)));
+    f.reconnect();
+    expect(await run(f.service.approvalGrants(stationId))).toEqual({
+      grants: [],
+    });
+    expect(await run(f.service.getCommand(identity(prepared)))).toMatchObject({
+      phase: { status: "outcome_unknown" },
+    });
+    const another = await f.prepare();
+    expect(another.phase.status).toBe("prepared");
+    expect(
+      await run(f.service.prepareCommand({ change, ...identity(prepared) }))
     ).toMatchObject({ phase: { status: "outcome_unknown" } });
     f.setSnapshot(2000);
     expect(

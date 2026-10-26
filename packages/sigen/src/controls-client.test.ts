@@ -166,6 +166,25 @@ describe("typed physical control adapters", () => {
     ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
     expect(
       controlMatches({ operation: "set_grid_export_limit", watts: 5000 }, grid)
+    ).toBe(false);
+    const owned = Schema.decodeUnknownSync(ControlSnapshot)({
+      ...grid,
+      settings: {
+        ...grid.settings,
+        exportPower: {
+          ...grid.settings.exportPower,
+          owner: { kind: "limited", watts: 5000 },
+        },
+      },
+    });
+    expect(
+      controlMatches({ operation: "set_grid_export_limit", watts: 5000 }, owned)
+    ).toBe(true);
+    expect(
+      controlMatches(
+        { amperes: 32, operation: "set_grid_connection_current" },
+        grid
+      )
     ).toBe(true);
     expect(
       controlMatches({ operation: "set_grid_export_limit", watts: 2500 }, grid)

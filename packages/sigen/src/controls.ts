@@ -58,7 +58,7 @@ export const ControlChange = Schema.Union([
   Schema.Struct({
     operation: Schema.Literal("set_operating_mode"),
     profileId: Schema.Int.check(Schema.isGreaterThanOrEqualTo(-1)),
-    providerMode: Schema.Literals([0, 1, 2, 5, 7, 9]),
+    providerMode: Schema.Literals([0, 1, 5]),
   }),
 ]);
 export type ControlChange = typeof ControlChange.Type;
@@ -183,7 +183,25 @@ const matchesGridPower = (
       : snapshot.settings.importPower;
   return (
     power.enabled &&
-    matchesPower(power.effective, { kind: "limited", watts: change.watts })
+    matchesPower(power.effective, { kind: "limited", watts: change.watts }) &&
+    matchesPower(power.owner, { kind: "limited", watts: change.watts })
+  );
+};
+
+const matchesGridCurrent = (amperes: number, snapshot: ControlSnapshot) => {
+  if (snapshot.kind !== "grid") {
+    return false;
+  }
+  const { connectionCurrent } = snapshot.settings;
+  // The app clears the owner value when it equals the installer ceiling (pinned client.py272).
+  const ownerMatches =
+    connectionCurrent.ownerAmps === amperes ||
+    (connectionCurrent.ownerAmps === null &&
+      connectionCurrent.installerAmps === amperes);
+  return (
+    connectionCurrent.enabled &&
+    connectionCurrent.effectiveAmps === amperes &&
+    ownerMatches
   );
 };
 
@@ -223,11 +241,7 @@ export const controlMatches = (
       return matchesGridPower(change, snapshot);
     }
     case "set_grid_connection_current": {
-      return (
-        snapshot.kind === "grid" &&
-        snapshot.settings.connectionCurrent.enabled &&
-        snapshot.settings.connectionCurrent.effectiveAmps === change.amperes
-      );
+      return matchesGridCurrent(change.amperes, snapshot);
     }
     case "set_operating_mode": {
       return (

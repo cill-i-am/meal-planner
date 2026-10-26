@@ -162,7 +162,7 @@ The shared registry now contains 27 operations: 21 provider/connection reads and
 | `set_battery_export` | PUT `/device/energy-profile/battery/export/limitation` | `ControlChange` | battery, installer permission | changes owner export permission | pinned MIT client | implemented, fixture-tested; not live-control-verified |
 | `set_grid_export_limit`, `set_grid_import_limit` | PUT `/device/energy-profile/grid/limitation/{export,import}` | `ControlChange` | known installer ceiling | enables finite owner limit | pinned MIT client | implemented, fixture-tested; not live-control-verified |
 | `set_grid_connection_current` | PUT `/device/energy-profile/parallel/off/grid` | `ControlChange` | known installer ceiling | enables current limit in amperes | pinned MIT client | implemented, fixture-tested; not live-control-verified |
-| `set_operating_mode` | PUT `/device/energy-profile/mode` | `ControlChange` | currently available verified mode/profile | changes operating strategy | pinned MIT client plus live mode list | implemented, fixture-tested; not live-control-verified |
+| `set_operating_mode` | PUT `/device/energy-profile/mode` | `ControlChange` | currently available mode 0, 1 or 5 | changes operating strategy | pinned MIT client plus live mode list | implemented, fixture-tested; not live-control-verified |
 
 The named setting changes are variants of `prepare_command`, not direct-write tools. HTTP and MCP use the same saved review, once/always approval, revocation, dispatch and readback service. All provider dispatch remains disabled by default. Setting writes do not use the read retry path. Reenrollment invalidates remembered permissions.
 
