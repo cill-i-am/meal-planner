@@ -8,11 +8,80 @@ import {
   failure,
 } from "@meal-planner/sigen";
 import type { SigenFailure, StationId } from "@meal-planner/sigen";
+import { AlarmInput, Alarms } from "@meal-planner/sigen/alarms";
+import {
+  DeviceInput,
+  DeviceInfo,
+  DeviceValues,
+  Gateway,
+  GridDevices,
+  StationStatus,
+  Topology,
+} from "@meal-planner/sigen/equipment";
+import {
+  EnergyHistory,
+  Forecast,
+  HistoryInput,
+  ForecastInput,
+} from "@meal-planner/sigen/history";
+import {
+  BatterySettings,
+  GridSettings,
+  SolarSettings,
+  OperatingModes,
+  PeakShavingSchedule,
+  ManualOverride,
+} from "@meal-planner/sigen/settings";
 import { Context, Effect, Schema, flow } from "effect";
 
 export class SigenCapabilities extends Context.Service<
   SigenCapabilities,
   {
+    readonly batterySettings: (
+      id: StationId
+    ) => Effect.Effect<typeof BatterySettings.Type, SigenFailure>;
+    readonly gridSettings: (
+      id: StationId
+    ) => Effect.Effect<typeof GridSettings.Type, SigenFailure>;
+    readonly solarSettings: (
+      id: StationId
+    ) => Effect.Effect<typeof SolarSettings.Type, SigenFailure>;
+    readonly operatingModes: (
+      id: StationId
+    ) => Effect.Effect<typeof OperatingModes.Type, SigenFailure>;
+    readonly peakShavingSchedule: (
+      id: StationId
+    ) => Effect.Effect<typeof PeakShavingSchedule.Type, SigenFailure>;
+    readonly manualOverride: (
+      id: StationId
+    ) => Effect.Effect<typeof ManualOverride.Type, SigenFailure>;
+    readonly topology: (
+      input: StationId
+    ) => Effect.Effect<typeof Topology.Type, SigenFailure>;
+    readonly stationStatus: (
+      input: StationId
+    ) => Effect.Effect<typeof StationStatus.Type, SigenFailure>;
+    readonly gateway: (
+      input: StationId
+    ) => Effect.Effect<typeof Gateway.Type, SigenFailure>;
+    readonly gridDevices: (
+      input: StationId
+    ) => Effect.Effect<typeof GridDevices.Type, SigenFailure>;
+    readonly deviceInfo: (
+      input: typeof DeviceInput.Type
+    ) => Effect.Effect<typeof DeviceInfo.Type, SigenFailure>;
+    readonly deviceValues: (
+      input: typeof DeviceInput.Type
+    ) => Effect.Effect<typeof DeviceValues.Type, SigenFailure>;
+    readonly alarms: (
+      input: typeof AlarmInput.Type
+    ) => Effect.Effect<typeof Alarms.Type, SigenFailure>;
+    readonly energyHistory: (
+      input: typeof HistoryInput.Type
+    ) => Effect.Effect<typeof EnergyHistory.Type, SigenFailure>;
+    readonly forecast: (
+      input: typeof ForecastInput.Type
+    ) => Effect.Effect<typeof Forecast.Type, SigenFailure>;
     readonly health: Effect.Effect<typeof ConnectionStatus.Type, SigenFailure>;
     readonly station: (
       id: StationId
@@ -95,6 +164,129 @@ export const operations = [
     OperatingMode,
     (input) =>
       SigenCapabilities.use((service) => service.operatingMode(input.stationId))
+  ),
+  operation(
+    "get_battery_settings",
+    "Read battery reserves, SOC thresholds, power limits and export permission. Unset and unlimited limits are distinct.",
+    StationInput,
+    BatterySettings,
+    (input) =>
+      SigenCapabilities.use((service) =>
+        service.batterySettings(input.stationId)
+      )
+  ),
+  operation(
+    "get_grid_settings",
+    "Read import/export power limits in watts and grid connection limits in amperes.",
+    StationInput,
+    GridSettings,
+    (input) =>
+      SigenCapabilities.use((service) => service.gridSettings(input.stationId))
+  ),
+  operation(
+    "get_solar_settings",
+    "Read the solar power limit, including unset and unlimited states.",
+    StationInput,
+    SolarSettings,
+    (input) =>
+      SigenCapabilities.use((service) => service.solarSettings(input.stationId))
+  ),
+  operation(
+    "list_operating_modes",
+    "List provider operating modes and custom profile identifiers, preserving unfamiliar values.",
+    StationInput,
+    OperatingModes,
+    (input) =>
+      SigenCapabilities.use((service) =>
+        service.operatingModes(input.stationId)
+      )
+  ),
+  operation(
+    "get_peak_shaving_schedule",
+    "Read peak-shaving slots in provider local time, retaining provider day codes and cross-midnight intervals.",
+    StationInput,
+    PeakShavingSchedule,
+    (input) =>
+      SigenCapabilities.use((service) =>
+        service.peakShavingSchedule(input.stationId)
+      )
+  ),
+  operation(
+    "get_manual_override",
+    "Read temporary manual-control state and battery display. The enabled flag determines whether the override is active.",
+    StationInput,
+    ManualOverride,
+    (input) =>
+      SigenCapabilities.use((service) =>
+        service.manualOverride(input.stationId)
+      )
+  ),
+  operation(
+    "get_topology",
+    "Read the enrolled station equipment tree, preserving unknown device and status codes.",
+    StationInput,
+    Topology,
+    (input) =>
+      SigenCapabilities.use((service) => service.topology(input.stationId))
+  ),
+  operation(
+    "get_station_status",
+    "Read station and device communication status.",
+    StationInput,
+    StationStatus,
+    (input) =>
+      SigenCapabilities.use((service) => service.stationStatus(input.stationId))
+  ),
+  operation(
+    "get_gateway",
+    "Read gateway electrical display parameters and units. Requires gateway hardware.",
+    StationInput,
+    Gateway,
+    (input) =>
+      SigenCapabilities.use((service) => service.gateway(input.stationId))
+  ),
+  operation(
+    "list_grid_devices",
+    "List the station grid connection point devices.",
+    StationInput,
+    GridDevices,
+    (input) =>
+      SigenCapabilities.use((service) => service.gridDevices(input.stationId))
+  ),
+  operation(
+    "get_device_info",
+    "Read static and real-time display parameters for a serial verified against station topology. Provider display labels are not stable metric identifiers.",
+    DeviceInput,
+    DeviceInfo,
+    (input) => SigenCapabilities.use((service) => service.deviceInfo(input))
+  ),
+  operation(
+    "get_device_values",
+    "Read AIO child-device values. Inverter power is watts, battery state is percent; unknown device types remain uninterpreted.",
+    DeviceInput,
+    DeviceValues,
+    (input) => SigenCapabilities.use((service) => service.deviceValues(input))
+  ),
+  operation(
+    "list_alarms",
+    "Read one page of active or historical alarms. Historical ranges use inclusive UTC milliseconds and span at most 31 days. Severity codes are preserved.",
+    AlarmInput,
+    Alarms,
+    (input) => SigenCapabilities.use((service) => service.alarms(input))
+  ),
+  operation(
+    "get_energy_history",
+    "Read power samples for a day or energy by day/month for a week, month or year. Dates use the station timezone. UTC candidate lists preserve DST ambiguity; missing samples are not filled.",
+    HistoryInput,
+    EnergyHistory,
+    (input) => SigenCapabilities.use((service) => service.energyHistory(input))
+  ),
+  operation(
+    "get_forecast",
+    "Read provider forecast series for a day, week or month. Keep SOC percentages, power and energy units distinct; unknown series remain uninterpreted.",
+    ForecastInput,
+    Forecast,
+    (input) => SigenCapabilities.use((service) => service.forecast(input))
   ),
 ];
 

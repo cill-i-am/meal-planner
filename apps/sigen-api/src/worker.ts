@@ -53,10 +53,25 @@ export default class SigenApi extends Cloudflare.Worker<SigenApi>()(
         const account = accounts.getByName("private-owner");
         const handler = makeHttpHandler({
           capabilities: {
+            alarms: (input) => bind(account.alarms(input)),
+            batterySettings: (id) => bind(account.batterySettings(id)),
+            deviceInfo: (input) => bind(account.deviceInfo(input)),
+            deviceValues: (input) => bind(account.deviceValues(input)),
             energyFlow: (id) => bind(account.energyFlow(id)),
+            energyHistory: (input) => bind(account.energyHistory(input)),
+            forecast: (input) => bind(account.forecast(input)),
+            gateway: (input) => bind(account.gateway(input)),
+            gridDevices: (input) => bind(account.gridDevices(input)),
+            gridSettings: (id) => bind(account.gridSettings(id)),
             health: bind(account.health()),
+            manualOverride: (id) => bind(account.manualOverride(id)),
             operatingMode: (id) => bind(account.operatingMode(id)),
+            operatingModes: (id) => bind(account.operatingModes(id)),
+            peakShavingSchedule: (id) => bind(account.peakShavingSchedule(id)),
+            solarSettings: (id) => bind(account.solarSettings(id)),
             station: (id) => bind(account.station(id)),
+            stationStatus: (input) => bind(account.stationStatus(input)),
+            topology: (input) => bind(account.topology(input)),
           },
           disconnect: bind(account.disconnect()),
           enroll: (input) =>

@@ -8,6 +8,9 @@ import {
   HttpIncomingMessage,
 } from "effect/http";
 
+import { makeAlarmsClient } from "./alarms-client.js";
+import { makeEquipmentClient } from "./equipment-client.js";
+import { makeHistoryClient } from "./history-client.js";
 import type { Enrollment, StationId } from "./model.js";
 import {
   EnergyFlow,
@@ -17,6 +20,7 @@ import {
   TokenBundle,
   failure,
 } from "./model.js";
+import { makeSettingsClient } from "./settings-client.js";
 
 // Protocol constants from solidfox/sigenergy-cloud (MIT). See THIRD_PARTY_NOTICES.md.
 const Origin = "https://api-eu.sigencloud.com";
@@ -116,7 +120,12 @@ export const makeSigenClient = Effect.gen(function* makeSigenClient() {
         .execute(
           HttpClientRequest.make(method)(`${Origin}${path}`, {
             body,
-            headers: { ...headers, "user-agent": "meal-planner-sigen/0.1.0" },
+            headers: {
+              ...headers,
+              lang: "en_US",
+              "sg-pkg": "sigen_app",
+              "user-agent": "meal-planner-sigen/0.1.0",
+            },
           })
         )
         .pipe(Effect.mapError(() => failure("UpstreamUnavailable")));
@@ -193,6 +202,10 @@ export const makeSigenClient = Effect.gen(function* makeSigenClient() {
     }).pipe(Effect.flatMap(unwrap));
 
   return {
+    ...makeSettingsClient(read),
+    ...makeEquipmentClient(read),
+    ...makeAlarmsClient(read),
+    ...makeHistoryClient(read),
     energyFlow: (id: StationId, accessToken: Redacted.Redacted<string>) =>
       Effect.gen(function* energyFlow() {
         const data = yield* read(

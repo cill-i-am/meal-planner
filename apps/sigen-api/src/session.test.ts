@@ -57,8 +57,18 @@ const fixture = () => {
       }),
   };
   const client: SigenClient = {
+    alarms: () => Effect.fail(failure("UnsupportedCapability")),
+    batterySettings: () => Effect.fail(failure("UnsupportedCapability")),
+    deviceInfo: () => Effect.fail(failure("UnsupportedCapability")),
+    deviceValues: () => Effect.fail(failure("UnsupportedCapability")),
     energyFlow: () => Effect.fail(failure("UnsupportedCapability")),
+    energyHistory: () => Effect.fail(failure("UnsupportedCapability")),
+    forecast: () => Effect.fail(failure("UnsupportedCapability")),
+    gateway: () => Effect.fail(failure("UnsupportedCapability")),
+    gridDevices: () => Effect.fail(failure("UnsupportedCapability")),
+    gridSettings: () => Effect.fail(failure("UnsupportedCapability")),
     login: () => Effect.sync(tokens),
+    manualOverride: () => Effect.fail(failure("UnsupportedCapability")),
     operatingMode: () =>
       Effect.succeed({
         fetchedAt: 1,
@@ -66,6 +76,8 @@ const fixture = () => {
         providerMode: 1,
         stationId,
       }),
+    operatingModes: () => Effect.fail(failure("UnsupportedCapability")),
+    peakShavingSchedule: () => Effect.fail(failure("UnsupportedCapability")),
     refresh: () =>
       Effect.suspend(() => {
         count += 1;
@@ -73,7 +85,10 @@ const fixture = () => {
           ? Effect.fail(failure("AuthenticationRequired"))
           : Effect.succeed(tokens());
       }),
+    solarSettings: () => Effect.fail(failure("UnsupportedCapability")),
     station: () => Effect.succeed(sample),
+    stationStatus: () => Effect.fail(failure("UnsupportedCapability")),
+    topology: () => Effect.fail(failure("UnsupportedCapability")),
   };
   return {
     alarm: () => alarm,

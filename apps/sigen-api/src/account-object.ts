@@ -1,5 +1,8 @@
 import { SigenFailure, StationId, failure } from "@meal-planner/sigen";
+import { AlarmInput } from "@meal-planner/sigen/alarms";
 import { makeSigenClient } from "@meal-planner/sigen/client";
+import { DeviceInput } from "@meal-planner/sigen/equipment";
+import { HistoryInput, ForecastInput } from "@meal-planner/sigen/history";
 import type { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { Config, Effect, Layer, Redacted, Schema } from "effect";
@@ -40,19 +43,31 @@ const runtime = Effect.gen(function* constructAccountObject() {
     };
     const session = yield* makeSession(storage, encryptionKey, client);
     const vault = makeVault(encryptionKey);
-    const stationCall = <A>(
-      input: StationId,
-      call: (id: StationId) => Effect.Effect<A, SigenFailure, RuntimeContext>
+    const inputCall = <S extends Schema.Top, A>(
+      schema: S,
+      input: S["Type"],
+      call: (id: S["Type"]) => Effect.Effect<A, SigenFailure, RuntimeContext>
     ) =>
-      Schema.decodeUnknownEffect(StationId)(input).pipe(
+      Schema.decodeUnknownEffect(schema)(input).pipe(
         Effect.mapError(() => failure("InvalidInput")),
         Effect.flatMap(call),
         Effect.scoped
       );
     return {
       alarm: () => session.onAlarm.pipe(Effect.scoped),
+      alarms: (input: typeof AlarmInput.Type) =>
+        inputCall(AlarmInput, input, session.alarms),
+      batterySettings: (id: StationId) =>
+        inputCall(StationId, id, session.batterySettings),
+      deviceInfo: (input: typeof DeviceInput.Type) =>
+        inputCall(DeviceInput, input, session.deviceInfo),
+      deviceValues: (input: typeof DeviceInput.Type) =>
+        inputCall(DeviceInput, input, session.deviceValues),
       disconnect: () => session.disconnect,
-      energyFlow: (id: StationId) => stationCall(id, session.energyFlow),
+      energyFlow: (id: StationId) =>
+        inputCall(StationId, id, session.energyFlow),
+      energyHistory: (input: typeof HistoryInput.Type) =>
+        inputCall(HistoryInput, input, session.energyHistory),
       enroll: (input: EncryptedSecret) =>
         Effect.gen(function* enrollAccount() {
           const secret = yield* vault.decrypt(input);
@@ -63,10 +78,31 @@ const runtime = Effect.gen(function* constructAccountObject() {
           }
           return yield* session.enroll(Redacted.make(value.value));
         }).pipe(Effect.scoped),
+      forecast: (input: typeof ForecastInput.Type) =>
+        inputCall(ForecastInput, input, session.forecast),
+      gateway: (input: StationId) =>
+        inputCall(StationId, input, session.gateway),
+      gridDevices: (input: StationId) =>
+        inputCall(StationId, input, session.gridDevices),
+      gridSettings: (id: StationId) =>
+        inputCall(StationId, id, session.gridSettings),
       health: () => session.health,
-      operatingMode: (id: StationId) => stationCall(id, session.operatingMode),
+      manualOverride: (id: StationId) =>
+        inputCall(StationId, id, session.manualOverride),
+      operatingMode: (id: StationId) =>
+        inputCall(StationId, id, session.operatingMode),
+      operatingModes: (id: StationId) =>
+        inputCall(StationId, id, session.operatingModes),
+      peakShavingSchedule: (id: StationId) =>
+        inputCall(StationId, id, session.peakShavingSchedule),
       report: () => session.report,
-      station: (id: StationId) => stationCall(id, session.station),
+      solarSettings: (id: StationId) =>
+        inputCall(StationId, id, session.solarSettings),
+      station: (id: StationId) => inputCall(StationId, id, session.station),
+      stationStatus: (input: StationId) =>
+        inputCall(StationId, input, session.stationStatus),
+      topology: (input: StationId) =>
+        inputCall(StationId, input, session.topology),
     };
   });
 }).pipe(

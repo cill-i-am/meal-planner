@@ -4,7 +4,11 @@
   "type": "module",
   "exports": {
     ".": "./src/model.ts",
-    "./client": "./src/client.ts"
+    "./client": "./src/client.ts",
+    "./settings": "./src/settings.ts",
+    "./equipment": "./src/equipment.ts",
+    "./alarms": "./src/alarms.ts",
+    "./history": "./src/history.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

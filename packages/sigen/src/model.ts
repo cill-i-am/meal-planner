@@ -7,6 +7,7 @@ export type StationId = typeof StationId.Type;
 export const SerialNumber = Schema.String.check(
   Schema.isPattern(/^[A-Za-z0-9-]{1,64}$/u)
 ).pipe(Schema.brand("SigenSerialNumber"));
+export type SerialNumber = typeof SerialNumber.Type;
 export const Percent = Schema.Finite.check(
   Schema.isBetween({ maximum: 100, minimum: 0 })
 );

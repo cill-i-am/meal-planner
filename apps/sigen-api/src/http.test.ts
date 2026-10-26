@@ -1,7 +1,7 @@
 /* eslint-disable no-await-in-loop -- Exercise successive calls on the same MCP session and admission policy. */
 import { createHash } from "node:crypto";
 
-import { StationId, failure } from "@meal-planner/sigen";
+import { SerialNumber, StationId, failure } from "@meal-planner/sigen";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Effect, Redacted, Schema } from "effect";
@@ -16,6 +16,7 @@ const operator = "b".repeat(64);
 const hash = (value: string) =>
   Redacted.make(createHash("sha256").update(value).digest("hex"));
 const id = Schema.decodeUnknownSync(StationId)("12345");
+const serialNumber = Schema.decodeUnknownSync(SerialNumber)("AIO-1");
 const status = {
   accessTokenExpiresAt: 123_456,
   controls: "disabled_pending_acceptance" as const,
@@ -25,6 +26,55 @@ const status = {
 };
 const options: HttpOptions = {
   capabilities: {
+    alarms: (input) =>
+      Effect.succeed({
+        fetchedAt: 123,
+        page: input.page,
+        pageSize: input.pageSize,
+        pages: 0,
+        records: [],
+        state: input.state,
+        stationId: input.stationId,
+        total: 0,
+      }),
+    batterySettings: (stationId) =>
+      Effect.succeed({
+        backupReservePercent: 20,
+        backupSocPercent: 20,
+        chargeLimit: { kind: "unlimited" },
+        chargeSocPercent: 100,
+        dischargeLimit: { kind: "unlimited" },
+        dischargeSocPercent: 20,
+        export: {
+          effectiveEnabled: false,
+          installerEnabled: null,
+          ownerEnabled: null,
+        },
+        fetchedAt: 123,
+        ja12SocPercent: 0,
+        peakShavingSocPercent: null,
+        providerOperationMode: 1,
+        stationId,
+      }),
+    deviceInfo: (input) =>
+      Effect.succeed({
+        ...input,
+        fetchedAt: 123,
+        freshness: "unknown",
+        parameters: [],
+        providerDeviceType: 2,
+        providerRunStatus: 1,
+        providerTimestamp: null,
+        softwareVersion: "1",
+        staticParameters: [],
+      }),
+    deviceValues: (input) =>
+      Effect.succeed({
+        aioSerialNumber: input.serialNumber,
+        fetchedAt: 123,
+        readings: [],
+        stationId: input.stationId,
+      }),
     energyFlow: (stationId) =>
       Effect.succeed({
         batteryPowerConvention: "positive_charge_negative_discharge",
@@ -41,12 +91,107 @@ const options: HttpOptions = {
         solarPowerW: 400,
         stationId,
       }),
+    energyHistory: (input) =>
+      Effect.succeed({
+        endDate: input.date,
+        fetchedAt: 123,
+        flows: [],
+        period: input.period,
+        providerSignConvention: "provider_series",
+        series: [],
+        startDate: input.date,
+        stationId: input.stationId,
+        timezone: "Europe/Dublin",
+        totals: [],
+      }),
+    forecast: (input) =>
+      Effect.succeed({
+        availability: "no_data",
+        endDate: input.date,
+        estimatedDate: "",
+        fetchedAt: 123,
+        period: input.period,
+        providerStatus: 0,
+        series: [],
+        startDate: input.date,
+        stationId: input.stationId,
+        timezone: "Europe/Dublin",
+      }),
+    gateway: (stationId) =>
+      Effect.succeed({
+        fetchedAt: 123,
+        generator: [],
+        grid: [],
+        inverter: [],
+        model: "Fixture gateway",
+        providerCommunicationStatus: 2,
+        serialNumber,
+        softwareVersion: "1",
+        stationId,
+      }),
+    gridDevices: (stationId) =>
+      Effect.succeed({ devices: [], fetchedAt: 123, stationId }),
+    gridSettings: (stationId) =>
+      Effect.succeed({
+        connectionCurrent: {
+          effectiveAmps: null,
+          enabled: false,
+          installerAmps: null,
+          ownerAmps: null,
+        },
+        exportPower: {
+          effective: { kind: "unset" },
+          enabled: false,
+          installer: { kind: "unset" },
+          owner: { kind: "unset" },
+        },
+        fetchedAt: 123,
+        importPower: {
+          effective: { kind: "unset" },
+          enabled: false,
+          installer: { kind: "unset" },
+          owner: { kind: "unset" },
+        },
+        stationId,
+      }),
     health: Effect.succeed(status),
+    manualOverride: (stationId) =>
+      Effect.succeed({
+        batteryPowerW: 0,
+        batterySocPercent: 20,
+        enabled: false,
+        fetchedAt: 123,
+        providerEndTime: null,
+        providerMode: null,
+        stationId,
+      }),
     operatingMode: (stationId) =>
       Effect.succeed({
         fetchedAt: 123,
         profileId: -1,
         providerMode: 999,
+        stationId,
+      }),
+    operatingModes: (stationId) =>
+      Effect.succeed({
+        customProfiles: [],
+        fetchedAt: 123,
+        modes: [{ label: "Sigen AI", providerMode: "1" }],
+        stationId,
+      }),
+    peakShavingSchedule: (stationId) =>
+      Effect.succeed({
+        fetchedAt: 123,
+        providerControlMode: 0,
+        reserveSocPercent: 0,
+        slots: [],
+        stationId,
+        timezone: "Europe/Dublin",
+      }),
+    solarSettings: (stationId) =>
+      Effect.succeed({
+        fetchedAt: 123,
+        powerLimit: { kind: "unlimited" },
         stationId,
       }),
     station: (stationId) =>
@@ -65,6 +210,22 @@ const options: HttpOptions = {
         solarCapacityKw: 5.7,
         stationId,
         timezone: "Europe/Dublin",
+      }),
+    stationStatus: (stationId) =>
+      Effect.succeed({
+        devices: [],
+        fetchedAt: 123,
+        onGrid: true,
+        providerNetworkType: 1,
+        providerStatus: 1,
+        stationId,
+      }),
+    topology: (stationId) =>
+      Effect.succeed({
+        devices: [],
+        fetchedAt: 123,
+        providerStationStatus: 1,
+        stationId,
       }),
   },
   disconnect: Effect.void,
@@ -173,7 +334,22 @@ describe("authenticated HTTP and MCP parity", () => {
         operations.map((op) => op.name)
       );
       for (const op of operations) {
-        const input = op.name === "connection_status" ? {} : { stationId: id };
+        const inputForOperation = () => {
+          if (op.name === "connection_status") {
+            return {};
+          }
+          if (["get_energy_history", "get_forecast"].includes(op.name)) {
+            return { date: "2026-10-25", period: "day", stationId: id };
+          }
+          if (op.name === "list_alarms") {
+            return { page: 1, pageSize: 10, state: "active", stationId: id };
+          }
+          if (["get_device_info", "get_device_values"].includes(op.name)) {
+            return { serialNumber, stationId: id };
+          }
+          return { stationId: id };
+        };
+        const input = inputForOperation();
         const http = await run(
           handler(request(`/v1/${op.name}`, owner, input))
         );

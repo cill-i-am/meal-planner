@@ -9,7 +9,10 @@ import type {
   SigenFailure,
   TokenBundle,
 } from "@meal-planner/sigen";
+import type { AlarmInput } from "@meal-planner/sigen/alarms";
 import type { SigenClient } from "@meal-planner/sigen/client";
+import type { DeviceInput } from "@meal-planner/sigen/equipment";
+import type { HistoryInput, ForecastInput } from "@meal-planner/sigen/history";
 import { Clock, Effect, Redacted, Schema, Semaphore } from "effect";
 
 import { EncryptedSecret, makeVault } from "./vault.js";
@@ -241,9 +244,19 @@ export const makeSession = <R>(
       })
     );
     return {
+      alarms: (input: AlarmInput) =>
+        read(input.stationId, (token) => client.alarms(input, token)),
+      batterySettings: (id: StationId) =>
+        read(id, (token) => client.batterySettings(id, token)),
+      deviceInfo: (input: DeviceInput) =>
+        read(input.stationId, (token) => client.deviceInfo(input, token)),
+      deviceValues: (input: DeviceInput) =>
+        read(input.stationId, (token) => client.deviceValues(input, token)),
       disconnect: lock.withPermits(1)(storage.write(emptySession, null)),
       energyFlow: (id: StationId) =>
         read(id, (token) => client.energyFlow(id, token)),
+      energyHistory: (input: HistoryInput) =>
+        read(input.stationId, (token) => client.energyHistory(input, token)),
       enroll: (input: Redacted.Redacted<Enrollment>) =>
         lock.withPermits(1)(
           Effect.gen(function* enrollSession() {
@@ -264,7 +277,17 @@ export const makeSession = <R>(
             return yield* health;
           })
         ),
+      forecast: (input: ForecastInput) =>
+        read(input.stationId, (token) => client.forecast(input, token)),
+      gateway: (input: StationId) =>
+        read(input, (token) => client.gateway(input, token)),
+      gridDevices: (input: StationId) =>
+        read(input, (token) => client.gridDevices(input, token)),
+      gridSettings: (id: StationId) =>
+        read(id, (token) => client.gridSettings(id, token)),
       health: lock.withPermits(1)(health),
+      manualOverride: (id: StationId) =>
+        read(id, (token) => client.manualOverride(id, token)),
       onAlarm: lock.withPermits(1)(
         Effect.gen(function* handleRenewalAlarm() {
           const record = yield* storage.read;
@@ -291,6 +314,10 @@ export const makeSession = <R>(
       ),
       operatingMode: (id: StationId) =>
         read(id, (token) => client.operatingMode(id, token)),
+      operatingModes: (id: StationId) =>
+        read(id, (token) => client.operatingModes(id, token)),
+      peakShavingSchedule: (id: StationId) =>
+        read(id, (token) => client.peakShavingSchedule(id, token)),
       report: lock.withPermits(1)(
         Effect.gen(function* reportSession() {
           return {
@@ -299,7 +326,13 @@ export const makeSession = <R>(
           };
         })
       ),
+      solarSettings: (id: StationId) =>
+        read(id, (token) => client.solarSettings(id, token)),
       station: (id: StationId) =>
         read(id, (token) => client.station(id, token)),
+      stationStatus: (input: StationId) =>
+        read(input, (token) => client.stationStatus(input, token)),
+      topology: (input: StationId) =>
+        read(input, (token) => client.topology(input, token)),
     };
   });

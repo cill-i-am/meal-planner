@@ -124,6 +124,53 @@ it(
                 },
               });
             }
+            expect(request.headers.get("sg-pkg")).toBe("sigen_app");
+            if (url.pathname === "/device/energy-profile/solar/limit/12345") {
+              return Response.json({
+                code: 0,
+                data: { powerLimit: "4294967.295" },
+              });
+            }
+            if (url.pathname === "/alarm/history/page") {
+              return Response.json({
+                code: 0,
+                data: { current: 1, pages: 0, records: [], size: 10, total: 0 },
+              });
+            }
+            if (
+              url.pathname ===
+              "/data-process/sigen/station/statistics/v1/energy"
+            ) {
+              return Response.json({
+                code: 0,
+                data: {
+                  chartData: {
+                    dataSeries: [
+                      {
+                        id: "GRID",
+                        points: [{ time: "20261025 01:30", value: 1 }],
+                      },
+                    ],
+                    unit: "kW",
+                  },
+                  sankeyData: { links: [] },
+                  stationCards: [],
+                },
+              });
+            }
+            if (
+              url.pathname ===
+              "/data-process/sigen/station/ai/all/prediction/v1"
+            ) {
+              return Response.json({
+                code: 0,
+                data: {
+                  chartData: { dataSeries: [], unit: "" },
+                  estimatedDate: "",
+                  status: 0,
+                },
+              });
+            }
             throw new Error("Unexpected provider request");
           },
           port: 0,
@@ -148,7 +195,7 @@ it(
       // @ts-expect-error SDK 1.32.1's sessionId getter disagrees with Transport under exactOptionalPropertyTypes.
       await client.connect(transport);
       const listed = await client.listTools();
-      expect(listed.tools).toHaveLength(4);
+      expect(listed.tools).toHaveLength(19);
       const initial = await client.callTool({
         arguments: {},
         name: "connection_status",
@@ -201,6 +248,55 @@ it(
       });
       expect(station.structuredContent).toMatchObject({
         name: "Fixture station",
+      });
+      const solar = await client.callTool({
+        arguments: { stationId: "12345" },
+        name: "get_solar_settings",
+      });
+      expect(solar.structuredContent).toMatchObject({
+        powerLimit: { kind: "unlimited" },
+      });
+      const history = await client.callTool({
+        arguments: { date: "2026-10-25", period: "day", stationId: "12345" },
+        name: "get_energy_history",
+      });
+      expect(history.structuredContent).toMatchObject({
+        series: [
+          {
+            samples: [
+              {
+                utcCandidates: [1_792_888_200_000, 1_792_891_800_000],
+                value: 1000,
+              },
+            ],
+            unit: "W",
+          },
+        ],
+        timezone: "Europe/Dublin",
+      });
+      const alarms = await client.callTool({
+        arguments: {
+          endAt: 1_792_972_799_000,
+          page: 1,
+          pageSize: 10,
+          startAt: 1_792_886_400_000,
+          state: "history",
+          stationId: "12345",
+        },
+        name: "list_alarms",
+      });
+      expect(alarms.structuredContent).toMatchObject({
+        records: [],
+        state: "history",
+        total: 0,
+      });
+      const forecast = await client.callTool({
+        arguments: { date: "2026-10-25", period: "day", stationId: "12345" },
+        name: "get_forecast",
+      });
+      expect(forecast.structuredContent).toMatchObject({
+        availability: "no_data",
+        series: [],
       });
       await client.close();
       await runtime.dispose();

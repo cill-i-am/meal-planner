@@ -33,7 +33,7 @@ An unchanged-code forced redeployment preserved the same Durable Object namespac
 connection, access-token expiry and successful reads.
 
 The user approved continuing read-endpoint implementation during the natural
-renewal checks.
+renewal checks. The expanded surface and its evidence are tracked in [read acceptance](read-acceptance.md).
 
 Outstanding: three natural renewal cycles, provider-revoked
 credentials/reconnection, and actual target-client
@@ -42,7 +42,7 @@ checks have evidence.
 
 ## Local checks
 
-36 focused client/service tests pass, including HTTP/application failures,
+81 focused client/service tests pass, including HTTP/application failures,
 shorter-lived refreshed tokens, interrupted rotation, authorization and MCP
 cleanup. The native workerd test also passes: actual Alchemy bundle, real SDK,
 sanitized HTTP rejection through native RPC, encrypted enrollment, three
