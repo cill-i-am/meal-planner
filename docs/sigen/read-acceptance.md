@@ -56,4 +56,19 @@ misattribution, unknown history unit assumptions, absent schedule timezone and
 subsecond alarm-range inversion. Regression tests exercise these failures.
 
 This proof is separate from three natural provider renewals, provider revocation
-and reconnection, actual Executor integration, and any live control acceptance.
+and reconnection, and any live control acceptance.
+
+## Actual Executor acceptance on 26 October 2026
+
+After the user completed the secure personal-account connection, Executor
+discovered and successfully called all 19 operations between 22:00 and 22:06 UTC.
+This replay used Executor's account router and opaque credential handles; no
+service credential or Sigen password was passed through tool arguments. The
+calls were spaced into small batches within the existing service request limit.
+
+Connection status was `connected`, with zero natural renewals and the original
+03:18:02 UTC expiry on 27 October. The replay verified four topology devices,
+battery/grid/PV settings, mode and schedule reads, device/gateway readings, four
+history series, seven current-day forecast series and ten historical alarms.
+All 19 returned successful MCP results through the actual target client. No
+physical settings changed. Natural renewal and control acceptance remain separate.

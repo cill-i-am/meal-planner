@@ -114,4 +114,4 @@ The installed SDK 1.32.1 stateless Web Standard transport matches the current Te
 
 ## Executor connection
 
-The [Executor app](../../integrations/executor/sigen/README.md) is deployed with a personal credential requirement. Account linking and real Executor tool-call acceptance remain pending. Renewal reports now include automatic station and telemetry checks after rotation; absent checks are not evidence of success.
+The [Executor app](../../integrations/executor/sigen/README.md) is deployed with a personal credential requirement. The user linked the account securely, and all 19 operations passed through Executor on 26 October 2026. Renewal reports now include automatic station and telemetry checks after rotation; absent checks are not evidence of success.

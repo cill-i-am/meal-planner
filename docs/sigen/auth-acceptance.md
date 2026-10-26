@@ -10,7 +10,7 @@ rate limiter and credentials are independent of Meal Planner and Tesco.
 - A fresh account login enrolled the explicitly selected station. Password input used a hidden local terminal prompt; the operator file contains only the service origin, operator credential and station ID. The service persists only encrypted access/refresh tokens.
 - The same Effect client successfully authenticated and read station, energy flow and operating mode from the local Mac.
 - Hosted enrollment initially failed with upstream HTTP 403. Adding the explicit `meal-planner-sigen/0.1.0` User-Agent was the only provider-request change before successful hosted enrollment. This establishes the observed compatibility fix; it does not establish a general hosting/IP prohibition or the provider's internal rejection rule.
-- The real MCP SDK initialized against the deployed endpoint, discovered all four tools and successfully called each. All four HTTP routes also returned HTTP 200; station identity matched the enrolled selection. Executor app deployment is complete; secure account connection and actual tool acceptance are pending.
+- The real MCP SDK initialized against the deployed endpoint, discovered all four tools and successfully called each. All four HTTP routes also returned HTTP 200; station identity matched the enrolled selection. The later Executor replay verified the expanded 19-tool surface through the user-connected account; see [read acceptance](read-acceptance.md).
 - The reloaded mySigen UI agreed on 20% SOC, Sigen AI mode and on-grid status. Household load changed between samples. Empty provider timestamps remain `null`, with freshness explicitly unknown.
 
 No physical settings were changed. Once/always approval grants and physical
@@ -40,9 +40,9 @@ connection, access-token expiry and successful reads.
 The user approved continuing read-endpoint implementation during the natural
 renewal checks. The expanded surface and its evidence are tracked in [read acceptance](read-acceptance.md).
 
-Outstanding: three natural renewal cycles, provider-revoked
-credentials/reconnection, and actual target-client
-integration. Do not mark the authentication milestone complete until those
+Outstanding: three natural renewal cycles and provider-revoked credentials/reconnection.
+Actual Executor account connection and all 19 read operations passed on 26 October
+2026. Do not mark the authentication milestone complete until the remaining
 checks have evidence.
 
 ## Local checks
@@ -52,3 +52,12 @@ shorter-lived refreshed tokens, interrupted rotation, authorization and MCP
 cleanup. The native workerd test also passes: actual Alchemy bundle, real SDK,
 sanitized HTTP rejection through native RPC, encrypted enrollment, three
 synthetic scheduled renewals and persistence across local runtime restart.
+
+## Scheduled follow-up
+
+The user approved checks at 03:25 and 15:25 Europe/Dublin until three consecutive
+natural renewals have successful station and energy-flow evidence. The thread
+automation `verify-sigen-token-renewals` is active, with its first scheduled check
+on 27 October 2026 at 03:25. It updates this record and reports only completion or
+a problem requiring action, then pauses after the acceptance target is met. It
+does not force expiry, re-enroll the account or change physical settings.
