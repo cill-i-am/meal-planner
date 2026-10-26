@@ -167,6 +167,9 @@ describe("typed physical control adapters", () => {
     expect(
       controlMatches({ operation: "set_grid_export_limit", watts: 5000 }, grid)
     ).toBe(false);
+    if (grid.kind !== "grid") {
+      throw new Error("Expected grid fixture");
+    }
     const owned = Schema.decodeUnknownSync(ControlSnapshot)({
       ...grid,
       settings: {
