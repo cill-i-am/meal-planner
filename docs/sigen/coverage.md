@@ -194,7 +194,7 @@ The registry contains 33 operations: 27 provider/connection reads and six comman
 
 | Operation | Provider request | Contract and proof |
 | --- | --- | --- |
-| `get_backup_history` | GET `/data-process/station/backup-history?stationId=…&current=…&size=…` plus station metadata | App-observed page: nine events and 481 total seconds. Exposes pagination, provider event count, local timestamps to the second, UTC candidates and seconds. Does not infer mains outages from off-grid operation. |
+| `get_backup_history` | GET `/data-process/station/backup-history?stationId=…&current=…&size=…` plus station metadata | App-observed page: nine events and 481 total seconds. Exposes pagination, full-history event counts, local timestamps to the second, UTC candidates, durations and `pageDurationSeconds`. The provider duration summary covers only the returned page. Does not infer mains outages from off-grid operation. |
 | `get_energy_saving_settings` | GET `/device/owner/station/save-energy-mode/{stationId}` | App-observed `offGridEnable` boolean and string codes `onGridMode`, `offGridMode`, `value`. Preserves the codes without inferring dormancy or power state. The response may omit station identity with an explicit null; a present identity must match. |
 
 Both reads pass the enrolled-station gate. Backup timestamps use the verified station timezone; DST gaps retain no UTC candidate and overlaps retain both. Invalid dates, durations and pagination fail closed. Hosted acceptance is recorded separately in [read acceptance](read-acceptance.md).

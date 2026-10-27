@@ -91,12 +91,12 @@ const options: HttpOptions = {
       Effect.succeed({
         ...input,
         fetchedAt: 123,
+        pageDurationSeconds: 0,
         pages: 0,
         records: [],
         reportedEventCount: 0,
         timezone: "Europe/Dublin",
         total: 0,
-        totalDurationSeconds: 0,
       }),
     batterySettings: (stationId) =>
       Effect.succeed({

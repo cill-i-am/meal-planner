@@ -196,7 +196,7 @@ const operation = <
 export const operations = [
   operation(
     "get_backup_history",
-    "Read paginated off-grid operation history and provider totals in seconds. Event times retain the station timezone and all possible UTC instants across DST. These events do not by themselves prove a mains outage.",
+    "Read paginated off-grid operation history with durations and the current page duration in seconds. The total event count spans all pages. Event times retain the station timezone and all possible UTC instants across DST. These events do not by themselves prove a mains outage.",
     BackupHistoryInput,
     BackupHistory,
     (input) => SigenCapabilities.use((service) => service.backupHistory(input))

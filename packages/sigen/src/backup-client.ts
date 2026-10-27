@@ -26,14 +26,14 @@ const Response = Schema.Struct({
     pages: BackupHistory.fields.pages,
     records: Schema.Array(
       Schema.Struct({
-        offGridDuration: BackupHistory.fields.totalDurationSeconds,
+        offGridDuration: BackupHistory.fields.pageDurationSeconds,
         offGridTime: ProviderLocalTime,
       })
     ).check(Schema.isMaxLength(100)),
     size: BackupHistory.fields.pageSize,
     total: BackupHistory.fields.total,
   }),
-  totalTime: BackupHistory.fields.totalDurationSeconds,
+  totalTime: BackupHistory.fields.pageDurationSeconds,
 });
 
 export const makeBackupClient = (read: ProviderRead) => ({
@@ -70,6 +70,7 @@ export const makeBackupClient = (read: ProviderRead) => ({
       return yield* decodeProvider(BackupHistory)({
         fetchedAt: yield* Clock.currentTimeMillis,
         page: page.current,
+        pageDurationSeconds: data.totalTime,
         pageSize: page.size,
         pages: page.pages,
         records: page.records.map((record) => {
@@ -84,7 +85,6 @@ export const makeBackupClient = (read: ProviderRead) => ({
         stationId: input.stationId,
         timezone: DateTime.zoneToString(zone),
         total: page.total,
-        totalDurationSeconds: data.totalTime,
       });
     }),
 });

@@ -14,6 +14,7 @@ export type BackupHistoryInput = typeof BackupHistoryInput.Type;
 export const BackupHistory = Schema.Struct({
   fetchedAt: Timestamp,
   page: BackupHistoryInput.fields.page,
+  pageDurationSeconds: Count,
   pageSize: BackupHistoryInput.fields.pageSize,
   pages: Count,
   records: Schema.Array(
@@ -29,5 +30,4 @@ export const BackupHistory = Schema.Struct({
   stationId: StationId,
   timezone: Schema.String,
   total: Count,
-  totalDurationSeconds: Count,
 });

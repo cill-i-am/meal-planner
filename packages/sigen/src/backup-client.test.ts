@@ -53,6 +53,7 @@ describe("backup history", () => {
     );
     expect(result).toMatchObject({
       page: 1,
+      pageDurationSeconds: 97,
       pageSize: 10,
       pages: 1,
       records: [
@@ -78,17 +79,17 @@ describe("backup history", () => {
       reportedEventCount: 3,
       timezone: "Europe/Dublin",
       total: 3,
-      totalDurationSeconds: 97,
     });
     expect(f.requests.toSorted()).toEqual([
       "/data-process/station/backup-history?current=1&size=10&stationId=12345",
       "/device/owner/station/home?stationId=12345",
     ]);
   });
-  it("accepts empty later pages and preserves provider totals", async () => {
+  it("accepts empty later pages and preserves full-history event counts", async () => {
     const f = fixture({
       ...response,
       backupHistoryDetailVOIpage: { ...page, current: 2, records: [] },
+      totalTime: 0,
     });
     expect(
       await Effect.runPromise(
@@ -96,9 +97,35 @@ describe("backup history", () => {
       )
     ).toMatchObject({
       page: 2,
+      pageDurationSeconds: 0,
       records: [],
       total: 3,
-      totalDurationSeconds: 97,
+    });
+  });
+  it("distinguishes current-page duration from full-history event counts", async () => {
+    const f = fixture({
+      ...response,
+      backupHistoryDetailVOIpage: {
+        ...page,
+        current: 2,
+        pages: 3,
+        records: [page.records[1]],
+        size: 1,
+      },
+      totalTime: 0,
+    });
+    expect(
+      await Effect.runPromise(
+        f.client.backupHistory({ ...input, page: 2, pageSize: 1 }, token)
+      )
+    ).toMatchObject({
+      page: 2,
+      pageDurationSeconds: 0,
+      pageSize: 1,
+      pages: 3,
+      records: [{ durationSeconds: 0 }],
+      reportedEventCount: 3,
+      total: 3,
     });
   });
   it("accepts an empty history", async () => {
@@ -109,7 +136,7 @@ describe("backup history", () => {
     });
     expect(
       await Effect.runPromise(f.client.backupHistory(input, token))
-    ).toMatchObject({ records: [], total: 0, totalDurationSeconds: 0 });
+    ).toMatchObject({ pageDurationSeconds: 0, records: [], total: 0 });
   });
   it.each([
     { ...page, current: 2, records: [page.records[0]] },

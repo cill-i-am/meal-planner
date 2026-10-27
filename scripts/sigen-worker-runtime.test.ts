@@ -326,13 +326,13 @@ it(
         name: "get_backup_history",
       });
       expect(backup.structuredContent).toMatchObject({
+        pageDurationSeconds: 18,
         records: [
           {
             offGridLocalTime: "2026-10-25T01:30:13",
             offGridUtcCandidates: [1_792_888_213_000, 1_792_891_813_000],
           },
         ],
-        totalDurationSeconds: 18,
       });
       const saving = await client.callTool({
         arguments: { stationId: "12345" },
