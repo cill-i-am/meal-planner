@@ -150,7 +150,7 @@ one-use command IDs, state conflict detection or ambiguous-outcome reconciliatio
 
 ## Control and tariff implementation update
 
-The shared registry now contains 27 operations: 21 provider/connection reads and six command/approval operations. These additions have fixture and local runtime coverage; hosted verification is recorded separately.
+The shared registry now contains 30 operations: 24 provider/connection reads and six command/approval operations. These additions have fixture and local runtime coverage; hosted verification is recorded separately.
 
 | Operation | Method/path | Schema | Permissions/hardware | Side effects | Evidence | Status |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -166,4 +166,21 @@ The shared registry now contains 27 operations: 21 provider/connection reads and
 
 The named setting changes are variants of `prepare_command`, not direct-write tools. HTTP and MCP use the same saved review, once/always approval, revocation, dispatch and readback service. All provider dispatch remains disabled by default. Setting writes do not use the read retry path. Reenrollment invalidates remembered permissions.
 
-Still unfinished: station enumeration, profile details and schedule replacement, remaining tariff/fee semantics, manual override and SOC-threshold writes, smart loads, AC/DC/V2X adapters, device administration, caching and shared upstream budgets. Missing charger hardware remains an observed capability limitation, not an implementation claim. The discovery matrix above remains the broader backlog; this update supersedes its older implementation status for these specific operations.
+Still unfinished: station enumeration, profile details and schedule replacement, remaining tariff/fee semantics, starting manual overrides, smart loads, AC/DC/V2X adapters, device administration, caching and shared upstream budgets. Missing charger hardware remains an observed capability limitation, not an implementation claim. The discovery matrix above remains the broader backlog; this update supersedes its older implementation status for these specific operations.
+
+## 27 October extension
+
+The registry contains 30 operations and eleven typed control variants. The following additions have fixture coverage; hosted evidence is recorded separately in [read acceptance](read-acceptance.md).
+
+| Operation | Provider route | Behavior and limits |
+| --- | --- | --- |
+| `list_aio_devices` | GET `/device/aio/by/station` | Every serial must belong to the enrolled station topology; duplicates fail. |
+| `get_aio_power_status` | GET `/device/sigenMate/getPowerOnOffStatus`, `/device/aio/on-off-state` | Requires an AIO member; keeps both strict boolean observations, including disagreement. |
+| `get_station_income` | GET `/data-process/sigen/station/statistics/income` | Browser-observed day query with `fulfill=false`; preserves provider totals, negative/missing income, calculated values, currency and local-time ambiguity. Other periods remain unverified. |
+| `set_battery_soc_thresholds` | PUT `/device/energy-profile/battery/level` | Four reviewed integer percentages; refuses unset current thresholds and thresholds above the charge ceiling. The separate `ja12SOC` field is not written. |
+| `set_peak_shaving_schedule` | POST `/device/dischargesetting/peak/shaving` | Complete reviewed list with watts converted to kW. Preserves timezone, provider day codes and every time window; permits enabled state, reserve and power edits only. |
+| `stop_manual_override` | PUT `/device/energy-profile/instant/manunal` | Sends the pinned disable payload. Readback uses authoritative state and does not depend on optional display telemetry. |
+
+The new controls use the existing once/always grants and revocation. All physical adapters remain unverified on live equipment and dispatch remains disabled. This account has an unset peak-shaving SOC threshold, so the four-threshold command correctly refuses it. Empty schedules do not prove populated schedule semantics.
+
+Additional app-observed leads: station-consumption statistics, AI personalization rules and the EMS-upgrade support flag. Consumption samples were null and personalization rules empty; these observations are discovery evidence only, not normalized read contracts or write authority.

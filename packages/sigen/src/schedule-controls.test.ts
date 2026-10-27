@@ -81,6 +81,24 @@ const fixture = (overrides: Readonly<Record<string, unknown>> = {}) => {
   return { client, writes };
 };
 describe("SOC, peak-shaving and manual-stop controls", () => {
+  it.each([undefined, { batteryPower: "malformed" }])(
+    "confirms a stopped override independently of unavailable or malformed display telemetry",
+    async (display) => {
+      const { client } = fixture({
+        "/device/energy-profile/instant/manunal/12345": {
+          enable: false,
+          endTime: "",
+          mode: "",
+        },
+        "/device/energy-profile/instant/manunal/display/12345": display,
+      });
+      const stop = { operation: "stop_manual_override" } as const;
+      const current = await Effect.runPromise(
+        client.inspectControl(stationId, stop, token)
+      );
+      expect(controlMatches(stop, current)).toBe(true);
+    }
+  );
   it("rejects contradictory, fractional and out-of-range SOC settings", () => {
     expect(Schema.is(ControlChange)(levels)).toBe(true);
     for (const invalid of [

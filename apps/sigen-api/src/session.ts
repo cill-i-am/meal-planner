@@ -13,7 +13,11 @@ import type {
 import type { AlarmInput } from "@meal-planner/sigen/alarms";
 import type { SigenClient } from "@meal-planner/sigen/client";
 import type { DeviceInput } from "@meal-planner/sigen/equipment";
-import type { HistoryInput, ForecastInput } from "@meal-planner/sigen/history";
+import type {
+  HistoryInput,
+  ForecastInput,
+  IncomeInput,
+} from "@meal-planner/sigen/history";
 import { Clock, Effect, Redacted, Schema, Semaphore } from "effect";
 
 import { EncryptedSecret, makeVault } from "./vault.js";
@@ -412,6 +416,8 @@ export const makeSession = <R>(
         read(id, (token) => client.solarSettings(id, token)),
       station: (id: StationId) =>
         read(id, (token) => client.station(id, token)),
+      stationIncome: (input: IncomeInput) =>
+        read(input.stationId, (token) => client.stationIncome(input, token)),
       stationStatus: (input: StationId) =>
         read(input, (token) => client.stationStatus(input, token)),
       tariffs: (id: StationId) =>

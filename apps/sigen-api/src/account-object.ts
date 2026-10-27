@@ -8,7 +8,11 @@ import {
   RevokeApprovalInput,
 } from "@meal-planner/sigen/controls";
 import { DeviceInput } from "@meal-planner/sigen/equipment";
-import { HistoryInput, ForecastInput } from "@meal-planner/sigen/history";
+import {
+  HistoryInput,
+  ForecastInput,
+  IncomeInput,
+} from "@meal-planner/sigen/history";
 import type { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { Config, Effect, Layer, Redacted, Schema } from "effect";
@@ -152,6 +156,8 @@ const runtime = Effect.gen(function* constructAccountObject() {
       solarSettings: (id: StationId) =>
         inputCall(StationId, id, session.solarSettings),
       station: (id: StationId) => inputCall(StationId, id, session.station),
+      stationIncome: (input: typeof IncomeInput.Type) =>
+        inputCall(IncomeInput, input, session.stationIncome),
       stationStatus: (input: StationId) =>
         inputCall(StationId, input, session.stationStatus),
       tariffs: (id: StationId) => inputCall(StationId, id, session.tariffs),

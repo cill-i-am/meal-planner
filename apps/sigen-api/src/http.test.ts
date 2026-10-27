@@ -261,6 +261,18 @@ const options: HttpOptions = {
         stationId,
         timezone: "Europe/Dublin",
       }),
+    stationIncome: (input) =>
+      Effect.succeed({
+        ...input,
+        currencySymbol: "€",
+        fetchedAt: 123,
+        providerAverage: 0,
+        providerMaximum: 0,
+        providerMinimum: 0,
+        providerTotal: 0,
+        samples: [],
+        timezone: "Europe/Dublin",
+      }),
     stationStatus: (stationId) =>
       Effect.succeed({
         devices: [],
@@ -430,6 +442,9 @@ describe("authenticated HTTP and MCP parity", () => {
           }
           if (["get_energy_history", "get_forecast"].includes(op.name)) {
             return { date: "2026-10-25", period: "day", stationId: id };
+          }
+          if (op.name === "get_station_income") {
+            return { date: "2026-10-25", stationId: id };
           }
           if (op.name === "list_alarms") {
             return { page: 1, pageSize: 10, state: "active", stationId: id };

@@ -43,6 +43,36 @@ const gridPower = (value: typeof PowerResponse.Type) => ({
   owner: powerLimit(value.maxLimitationOwner),
 });
 
+/** Manual control confirmation depends on configuration, not optional live display telemetry. */
+export const readManualOverrideState = (
+  read: ProviderRead,
+  id: StationId,
+  token: Redacted.Redacted<string>
+) =>
+  Effect.gen(function* manualOverrideState() {
+    const state = yield* read(
+      `/device/energy-profile/instant/manunal/${encodeURIComponent(id)}`,
+      token
+    ).pipe(
+      Effect.flatMap(
+        decodeProvider(
+          Schema.Struct({
+            enable: Schema.Boolean,
+            endTime: Schema.NullOr(Schema.String),
+            mode: Schema.NullOr(Schema.String),
+          })
+        )
+      )
+    );
+    return {
+      enabled: state.enable,
+      fetchedAt: yield* Clock.currentTimeMillis,
+      providerEndTime: state.endTime === "" ? null : state.endTime,
+      providerMode: state.mode === "" ? null : state.mode,
+      stationId: id,
+    };
+  });
+
 export const makeSettingsClient = (read: ProviderRead) => {
   const stationPath = (prefix: string, id: StationId) =>
     `${prefix}/${encodeURIComponent(id)}`;
@@ -174,16 +204,7 @@ export const makeSettingsClient = (read: ProviderRead) => {
       Effect.gen(function* readManualOverride() {
         const [state, display] = yield* Effect.all(
           [
-            get(
-              "/device/energy-profile/instant/manunal",
-              id,
-              token,
-              Schema.Struct({
-                enable: Schema.Boolean,
-                endTime: Schema.NullOr(Schema.String),
-                mode: Schema.NullOr(Schema.String),
-              })
-            ),
+            readManualOverrideState(read, id, token),
             get(
               "/device/energy-profile/instant/manunal/display",
               id,
@@ -197,14 +218,10 @@ export const makeSettingsClient = (read: ProviderRead) => {
           { concurrency: 2 }
         );
         return yield* decodeProvider(ManualOverride)({
+          ...state,
           batteryPowerW:
             display.batteryPower === null ? null : display.batteryPower * 1000,
           batterySocPercent: display.batterySoc,
-          enabled: state.enable,
-          fetchedAt: yield* Clock.currentTimeMillis,
-          providerEndTime: state.endTime === "" ? null : state.endTime,
-          providerMode: state.mode === "" ? null : state.mode,
-          stationId: id,
         });
       }),
     operatingModes: (id: StationId, token: Redacted.Redacted<string>) =>

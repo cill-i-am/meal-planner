@@ -22,6 +22,7 @@ const reads = new Set([
   "list_alarms",
   "get_energy_history",
   "get_forecast",
+  "get_station_income",
   "get_tariffs",
   "get_prediction_plan",
   "get_command",

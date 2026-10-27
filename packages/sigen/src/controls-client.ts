@@ -10,7 +10,10 @@ import { OperatingMode, failure } from "./model.js";
 import type { SigenFailure, StationId } from "./model.js";
 import { decodeProvider } from "./provider-read.js";
 import type { ProviderRead } from "./provider-read.js";
-import { makeSettingsClient } from "./settings-client.js";
+import {
+  makeSettingsClient,
+  readManualOverrideState,
+} from "./settings-client.js";
 
 export type ProviderWrite = (
   method: "PUT" | "POST",
@@ -164,16 +167,10 @@ export const makeControlsClient = (
           );
       }
       case "stop_manual_override": {
-        return settings.manualOverride(stationId, token).pipe(
+        return readManualOverrideState(read, stationId, token).pipe(
           Effect.map((value) => ({
             kind: "manual",
-            settings: {
-              enabled: value.enabled,
-              fetchedAt: value.fetchedAt,
-              providerEndTime: value.providerEndTime,
-              providerMode: value.providerMode,
-              stationId: value.stationId,
-            },
+            settings: value,
           }))
         );
       }

@@ -113,6 +113,7 @@ const fixture = () => {
       }),
     solarSettings: () => Effect.fail(failure("UnsupportedCapability")),
     station: () => Effect.succeed(sample),
+    stationIncome: () => Effect.fail(failure("UnsupportedCapability")),
     stationStatus: () => Effect.fail(failure("UnsupportedCapability")),
     tariffs: () => Effect.fail(failure("UnsupportedCapability")),
     topology: () => Effect.fail(failure("UnsupportedCapability")),

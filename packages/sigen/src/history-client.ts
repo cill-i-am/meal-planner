@@ -5,10 +5,11 @@ import {
   EnergyHistory,
   Forecast,
   LocalDate,
+  StationIncome,
   historyPeriod,
   localSampleTime,
 } from "./history.js";
-import type { ForecastInput, HistoryInput } from "./history.js";
+import type { ForecastInput, HistoryInput, IncomeInput } from "./history.js";
 import { failure } from "./model.js";
 import { decodeProvider, readStationTimezone } from "./provider-read.js";
 import type { ProviderRead } from "./provider-read.js";
@@ -32,6 +33,20 @@ const Series = Schema.Array(
 const Chart = Schema.Struct({
   dataSeries: Series,
   unit: Schema.Literals(["kW", "kWh"]),
+});
+const IncomeResponse = Schema.Struct({
+  avgIncome: Schema.Finite,
+  incomeList: Schema.Array(
+    Schema.Struct({
+      calculateIncome: Schema.NullOr(Schema.Finite),
+      income: Schema.NullOr(Schema.Finite),
+      time: SampleTime,
+    })
+  ).check(Schema.isMaxLength(2000)),
+  stationId: Schema.Number,
+  theLeast: Schema.Finite,
+  theMost: Schema.Finite,
+  totalIncome: Schema.Finite,
 });
 const HistoryResponse = Schema.Struct({
   chartData: Chart,
@@ -194,6 +209,70 @@ export const makeHistoryClient = (read: ProviderRead) => {
           providerStatus: data.status,
           series: chart(data.chartData, zone, true),
           startDate: period.startDate,
+          stationId: input.stationId,
+          timezone: DateTime.zoneToString(zone),
+        });
+      }),
+    stationIncome: (input: IncomeInput, token: Redacted.Redacted<string>) =>
+      Effect.gen(function* readStationIncome() {
+        const date = input.date.replaceAll("-", "");
+        const query = new URLSearchParams({
+          dateFlag: "1",
+          endDate: date,
+          fulfill: "false",
+          startDate: date,
+          stationId: input.stationId,
+        });
+        const [data, station] = yield* Effect.all(
+          [
+            read(
+              `/data-process/sigen/station/statistics/income?${query}`,
+              token
+            ).pipe(Effect.flatMap(decodeProvider(IncomeResponse))),
+            read(
+              `/device/owner/station/home?stationId=${input.stationId}`,
+              token
+            ).pipe(
+              Effect.flatMap(
+                decodeProvider(
+                  Schema.Struct({
+                    currencyCode: Schema.String,
+                    stationId: Schema.Number,
+                    timeZoneName: Schema.String,
+                  })
+                )
+              )
+            ),
+          ],
+          { concurrency: 2 }
+        );
+        if (
+          String(data.stationId) !== input.stationId ||
+          String(station.stationId) !== input.stationId
+        ) {
+          return yield* failure("PermissionDenied");
+        }
+        if (
+          data.incomeList.some((sample) => sample.time.slice(0, 8) !== date)
+        ) {
+          return yield* failure("SchemaMismatch");
+        }
+        const zone = yield* DateTime.zoneMakeNamedEffect(
+          station.timeZoneName
+        ).pipe(Effect.mapError(() => failure("SchemaMismatch")));
+        return yield* decodeProvider(StationIncome)({
+          currencySymbol: station.currencyCode,
+          date: input.date,
+          fetchedAt: yield* Clock.currentTimeMillis,
+          providerAverage: data.avgIncome,
+          providerMaximum: data.theMost,
+          providerMinimum: data.theLeast,
+          providerTotal: data.totalIncome,
+          samples: data.incomeList.map((sample) => ({
+            ...localSampleTime(sample.time, zone),
+            calculatedIncome: sample.calculateIncome,
+            income: sample.income,
+          })),
           stationId: input.stationId,
           timezone: DateTime.zoneToString(zone),
         });

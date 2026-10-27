@@ -24,12 +24,36 @@ export const ForecastInput = Schema.Struct({
   stationId: StationId,
 });
 export type ForecastInput = typeof ForecastInput.Type;
+export const IncomeInput = Schema.Struct({
+  date: LocalDate,
+  stationId: StationId,
+});
+export type IncomeInput = typeof IncomeInput.Type;
 
 export const LocalSample = Schema.Struct({
   localTime: Schema.String,
   // A repeated wall-clock minute has two possible instants; a DST gap has none.
   utcCandidates: Schema.Array(Timestamp).check(Schema.isMaxLength(2)),
   value: Schema.NullOr(Schema.Finite),
+});
+export const StationIncome = Schema.Struct({
+  currencySymbol: Schema.String,
+  date: LocalDate,
+  fetchedAt: Timestamp,
+  providerAverage: Schema.Finite,
+  providerMaximum: Schema.Finite,
+  providerMinimum: Schema.Finite,
+  providerTotal: Schema.Finite,
+  samples: Schema.Array(
+    Schema.Struct({
+      calculatedIncome: Schema.NullOr(Schema.Finite),
+      income: Schema.NullOr(Schema.Finite),
+      localTime: LocalSample.fields.localTime,
+      utcCandidates: LocalSample.fields.utcCandidates,
+    })
+  ).check(Schema.isMaxLength(2000)),
+  stationId: StationId,
+  timezone: Schema.String,
 });
 const ChartSeries = Schema.Struct({
   providerSeries: Schema.String,

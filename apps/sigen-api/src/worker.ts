@@ -79,6 +79,7 @@ export default class SigenApi extends Cloudflare.Worker<SigenApi>()(
             revokeApproval: (input) => bind(account.revokeApproval(input)),
             solarSettings: (id) => bind(account.solarSettings(id)),
             station: (id) => bind(account.station(id)),
+            stationIncome: (input) => bind(account.stationIncome(input)),
             stationStatus: (input) => bind(account.stationStatus(input)),
             tariffs: (id) => bind(account.tariffs(id)),
             topology: (input) => bind(account.topology(input)),

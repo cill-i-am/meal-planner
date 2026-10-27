@@ -1,6 +1,6 @@
 # Private mySigen API and MCP
 
-This independent Cloudflare service implements core and settings reads from the [coverage plan](../../docs/sigen/coverage.md). Tariff/AI-plan reads and eight typed setting controls are implemented. Custom-profile details, smart loads, charger adapters and remaining control families are incomplete. The package in `packages/sigen` contains the reusable Effect 4 private EU client; this app owns encrypted sessions, HTTP/MCP and the account Durable Object. `sigen.alchemy.ts` deploys only this service. It does not share credentials or product authentication with Meal Planner or Tesco.
+This independent Cloudflare service implements core and settings reads from the [coverage plan](../../docs/sigen/coverage.md). Tariff/AI-plan reads and eleven typed setting controls are implemented. Custom-profile details, smart loads, charger adapters and remaining control families are incomplete. The package in `packages/sigen` contains the reusable Effect 4 private EU client; this app owns encrypted sessions, HTTP/MCP and the account Durable Object. `sigen.alchemy.ts` deploys only this service. It does not share credentials or product authentication with Meal Planner or Tesco.
 
 ## Current surface
 
@@ -54,19 +54,23 @@ HTTP and MCP cancellation joins local tool cleanup. Alchemy's current native Dur
 
 Read acceptance is recorded in [read verification](../../docs/sigen/read-acceptance.md).
 
-The last five renewal results contain only timestamps and outcome categories. Three synthetic alarm renewals in workerd are separate from the required three natural renewal cycles in Cloudflare. Hosted enrollment and initial reads are verified; natural renewal is not yet verified. See the [acceptance record](../../docs/sigen/auth-acceptance.md).
+The last five renewal results contain only timestamps and outcome categories. Three synthetic alarm renewals in workerd are separate from the required three natural renewal cycles in Cloudflare. Hosted enrollment and initial reads are verified; two natural renewal cycles are verified; the third is pending. See the [acceptance record](../../docs/sigen/auth-acceptance.md).
 
 ## Approve once and always approve
 
 The owner service credential can prepare, approve and execute commands through HTTP or MCP. Executor requires confirmation on `approve_command`, whose input includes the exact current settings, proposed values and `once`/`always` choice. Preparation, execution of a saved approval, and revocation do not add a second Executor prompt. Unknown tools require confirmation even if remote metadata calls them read-only.
 
-`prepare_command` accepts a fresh UUID and one typed change: backup reserve, battery charge/discharge power limits, solar power limit, battery export, grid import/export limits, connection current, or operating mode. Grid limit commands enable the specified finite owner limit and enforce known installer ceilings. Operating-mode writes currently support maximum self-powered (0), Sigen AI (1) and fully fed to grid (5), and must also be currently available to the account. TOU, custom profiles and Remote EMS remain read-only until their complete settings can be reviewed and conflict-checked. Missing hardware fails explicitly.
+`prepare_command` accepts a fresh UUID and one typed change: backup reserve, battery charge/discharge power limits, solar power limit, battery export, grid import/export limits, connection current, operating mode, four SOC thresholds, an existing peak-shaving schedule, or stopping a manual override. Grid limit commands enable the specified finite owner limit and enforce known installer ceilings. Operating-mode writes currently support maximum self-powered (0), Sigen AI (1) and fully fed to grid (5), and must also be currently available to the account. TOU, custom profiles and Remote EMS remain read-only until their complete settings can be reviewed and conflict-checked. Missing hardware fails explicitly.
+
+SOC-threshold changes require all four current values to be known. Peak-shaving edits preserve the current timezone, day codes and time windows; only enabled state, reserve and per-window power may change. Manual-stop confirmation reads the authoritative enabled state independently of live battery telemetry. Starting an override and creating or moving schedule windows remain unimplemented.
+
+Daily income reads retain provider-reported totals, signed income and calculated income separately, in the station currency. These values are not independently verified bill settlements; missing samples and ambiguous local times remain explicit. AIO reads check serial membership and keep the two provider power-state observations separate.
 
 Preparation saves the complete normalized settings and proposed values for five minutes. Copy `change`, `current` and `reviewFingerprint` exactly into approval. Once approves that command. Always permits future validated parameters for the same operation and station, until revoked; it is not limited to today's values. Fresh preparation still rechecks state. Revoking a grant also invalidates queued commands that use it. Reenrollment creates a new connection identity, invalidating unused approvals and grants. Saved command IDs and attempt receipts survive so uncertain outcomes can be reconciled when the same station is connected again.
 
 Execution rechecks current settings and validation under the session lock, then saves a dispatch marker before the single provider mutation. Duplicate command IDs return the saved record; altered inputs conflict. Interrupted, timed-out and ambiguous attempts are never resent. Repeated execution reconciles only through reads. `verified` means the desired settings were observed, not proof that this request caused them. Provider rejection, acceptance, verification and unknown outcome remain distinct.
 
-`SIGEN_CONTROLS_ENABLED` defaults to `false`. Preparation, approvals and inspection work while physical dispatch is disabled. The same switch covers HTTP and MCP. The eight adapters are fixture-tested, not live-control-verified. Enabling dispatch and any live test require a reviewed, explicit procedure including restoration. The durable command book refuses new preparations after 256 saved records; it never silently deletes replay protection. Operational archival is a future extension.
+`SIGEN_CONTROLS_ENABLED` defaults to `false`. Preparation, approvals and inspection work while physical dispatch is disabled. The same switch covers HTTP and MCP. The eleven adapters are fixture-tested, not live-control-verified. Enabling dispatch and any live test require a reviewed, explicit procedure including restoration. The durable command book refuses new preparations after 256 saved records; it never silently deletes replay protection. Operational archival is a future extension.
 
 ## Deployment
 

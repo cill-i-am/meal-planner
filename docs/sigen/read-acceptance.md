@@ -104,3 +104,11 @@ after timeout and reconnection. Both review axes are clear after corrections.
 The remaining discovery/implementation backlog is explicit in
 [coverage](coverage.md). Natural provider renewals, revoked-token reconnection and
 live physical control acceptance remain outstanding. Controls are still disabled.
+
+## 27 October local extension checks
+
+The registry now exposes 30 operations and eleven typed setting controls. New reads cover AIO inventory, two distinct AIO power-status observations, and browser-observed daily income. New commands cover four SOC thresholds, preserved-window peak-shaving changes and stopping a manual override.
+
+113 focused tests pass. The native Worker test additionally proves that a saved always-approve grant survives runtime restart, repeated execution sends only one synthetic provider write, revocation blocks a queued command, and a fresh once approval permits that command. These are synthetic controls, not live equipment acceptance.
+
+The spec review found that manual-stop confirmation unnecessarily required display telemetry. Its state-only reader now succeeds when display telemetry is unavailable or malformed; regression tests cover both failures. Station income tests preserve signed/calculated/missing values, provider totals and DST ambiguity, and reject another station, wrong dates, malformed values and invalid timezones.

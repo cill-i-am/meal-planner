@@ -13,8 +13,8 @@ rate limiter and credentials are independent of Meal Planner and Tesco.
 - The real MCP SDK initialized against the deployed endpoint, discovered all four tools and successfully called each. All four HTTP routes also returned HTTP 200; station identity matched the enrolled selection. The later Executor replay verified the expanded 19-tool surface through the user-connected account; see [read acceptance](read-acceptance.md).
 - The reloaded mySigen UI agreed on 20% SOC, Sigen AI mode and on-grid status. Household load changed between samples. Empty provider timestamps remain `null`, with freshness explicitly unknown.
 
-No physical settings were changed. Once/always approval grants and physical
-commands remain unimplemented; controls report `disabled_pending_acceptance`.
+No physical settings were changed. Once/always approval grants and eleven physical command variants are implemented
+and fixture-tested; live dispatch remains disabled. Controls report `disabled_pending_acceptance`.
 
 ## Renewal evidence still required
 
@@ -40,7 +40,8 @@ connection, access-token expiry and successful reads.
 The user approved continuing read-endpoint implementation during the natural
 renewal checks. The expanded surface and its evidence are tracked in [read acceptance](read-acceptance.md).
 
-Outstanding: three natural renewal cycles and provider-revoked credentials/reconnection.
+Outstanding: completion of three consecutive natural renewal cycles and
+provider-revoked credentials/reconnection; progress is recorded below.
 
 The 26 October 23:24 UTC control/tariff deployment preserved the existing session
 and the 27 October 03:18:02 UTC expiry. Executor verified `connected`, zero renewals
@@ -50,9 +51,33 @@ Actual Executor account connection and all 19 read operations passed on 26 Octob
 2026. Do not mark the authentication milestone complete until the remaining
 checks have evidence.
 
+### Natural renewal observations
+
+The protected operator status was checked on **27 October 2026 at 03:25:45 UTC**
+and again at **15:52:57 UTC**. The latest check reported `connected`, **2**
+successful renewals and controls still `disabled_pending_acceptance`.
+**Two of the three required consecutive natural cycles are verified.**
+
+| Cycle | Trigger / result | Previous expiry (UTC) | Renewal started (UTC) | New expiry (UTC) | Read verification completed (UTC) | Station failure | Energy-flow failure |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `alarm` / `renewed` | 27 Oct 03:18:02.378 | 27 Oct 03:17:02.616 | 27 Oct 15:17:01.616 | 27 Oct 03:17:03.404 | `null` | `null` |
+| 2 | `alarm` / `renewed` | 27 Oct 15:17:01.616 | 27 Oct 15:16:01.894 | 28 Oct 03:16:00.894 | 27 Oct 15:16:02.454 | `null` | `null` |
+
+The first previous expiry matches the enrollment and post-deployment observations;
+the second matches the first cycle's returned expiry exactly. The alarms started
+59.762 and 59.722 seconds before their respective expiries, consistent with the
+one-minute renewal margin. Both reads completed successfully after each renewal.
+This is real hosted provider evidence, separate from the synthetic workerd tests;
+the checks did not force expiry, re-enroll or change physical settings.
+
+The next natural alarm is expected around **28 October 2026 at 03:15:00 UTC**,
+based on the returned expiry. One further consecutive successful natural cycle
+and the separate provider-revocation/reconnection checks remain pending. Endpoint
+coverage and live control acceptance remain separate work.
+
 ## Local checks
 
-86 focused client/service tests pass, including HTTP/application failures,
+113 focused client/service/Executor-policy tests pass, including HTTP/application failures,
 shorter-lived refreshed tokens, interrupted rotation, authorization and MCP
 cleanup. The native workerd test also passes: actual Alchemy bundle, real SDK,
 sanitized HTTP rejection through native RPC, encrypted enrollment, three

@@ -29,6 +29,8 @@ import {
   Topology,
 } from "@meal-planner/sigen/equipment";
 import {
+  IncomeInput,
+  StationIncome,
   EnergyHistory,
   Forecast,
   HistoryInput,
@@ -117,6 +119,9 @@ export class SigenCapabilities extends Context.Service<
     readonly alarms: (
       input: typeof AlarmInput.Type
     ) => Effect.Effect<typeof Alarms.Type, SigenFailure>;
+    readonly stationIncome: (
+      input: typeof IncomeInput.Type
+    ) => Effect.Effect<typeof StationIncome.Type, SigenFailure>;
     readonly energyHistory: (
       input: typeof HistoryInput.Type
     ) => Effect.Effect<typeof EnergyHistory.Type, SigenFailure>;
@@ -177,6 +182,13 @@ const operation = <
 });
 
 export const operations = [
+  operation(
+    "get_station_income",
+    "Read provider-reported daily energy value in the station currency. Retains signed income, calculated income and provider totals separately; these are not verified bill settlements. Dates use the station timezone, missing samples stay missing and repeated DST minutes retain both UTC candidates.",
+    IncomeInput,
+    StationIncome,
+    (input) => SigenCapabilities.use((service) => service.stationIncome(input))
+  ),
   operation(
     "list_aio_devices",
     "List SigenStor AIO serials verified against the enrolled station topology.",
