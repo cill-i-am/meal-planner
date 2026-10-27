@@ -2,7 +2,7 @@
 
 This is an incomplete discovery baseline, not a comprehensive-coverage claim.
 Hosted enrollment and initial reads have passed. The remaining acceptance
-gates, including three natural renewals, are tracked in the [authentication record](auth-acceptance.md). No live control was tested or enabled.
+gates, including three natural renewals, are tracked in the [authentication record](auth-acceptance.md). Backup reserve passed a bounded live once/always/revocation test on 27 October; dispatch is disabled again. Other control variants remain unverified on live equipment.
 
 ## Verified during browser exploration on 26 October 2026
 
@@ -156,7 +156,7 @@ The shared registry now contains 31 operations: 25 provider/connection reads and
 | --- | --- | --- | --- | --- | --- | --- |
 | `get_tariffs` | GET `/electricity-price/api/tax-and-fee/{id}` and `/prediction/aipv/elecPrice/get/priceCost?stationId=…` | `Tariffs` | enrolled owner station | none | browser observations plus pinned MIT reference | implemented, fixture-tested; fee units remain unverified |
 | `get_prediction_plan` | GET `/prediction/predictData/get/predictData/{id}` | `PredictionPlan` | enrolled owner station | none | browser observation plus pinned MIT reference | implemented, fixture-tested; actual, plan and price series distinguished |
-| `set_backup_reserve` | PUT `/device/setting/backup/reserve` | `ControlChange` | battery | changes reserve percent | pinned MIT client/app-derived payload | implemented, fixture-tested; not live-control-verified |
+| `set_backup_reserve` | PUT `/device/setting/backup/reserve` | `ControlChange` | battery | changes reserve percent | pinned MIT client/app-derived payload plus authorized live test | implemented; live 20% → 21% → 20% write/readback and once/always/revocation verified |
 | `set_battery_power_limits` | PUT `/device/energy-profile/battery/limit` | `ControlChange` | battery | changes charge/discharge limits | pinned MIT client/app-derived payload | implemented, fixture-tested; not live-control-verified |
 | `set_solar_power_limit` | PUT `/device/energy-profile/solar/limit` | `ControlChange` | solar | changes PV limit | pinned MIT client/app-derived payload | implemented, fixture-tested; not live-control-verified |
 | `set_battery_export` | PUT `/device/energy-profile/battery/export/limitation` | `ControlChange` | battery, installer permission | changes owner export permission | pinned MIT client | implemented, fixture-tested; not live-control-verified |
@@ -181,7 +181,7 @@ The registry contains 31 operations and eleven typed control variants. The follo
 | `set_peak_shaving_schedule` | POST `/device/dischargesetting/peak/shaving` | Complete reviewed list with watts converted to kW. Preserves timezone, provider day codes and every time window; permits enabled state, reserve and power edits only. |
 | `stop_manual_override` | PUT `/device/energy-profile/instant/manunal` | Sends the pinned disable payload. Readback uses authoritative state and does not depend on optional display telemetry. |
 
-The new controls use the existing once/always grants and revocation. All physical adapters remain unverified on live equipment and dispatch remains disabled. This account has an unset peak-shaving SOC threshold, so the four-threshold command correctly refuses it. Empty schedules do not prove populated schedule semantics.
+The new controls use the existing once/always grants and revocation. Backup reserve has live write/readback and once/always/revocation acceptance; the other physical adapters remain unverified on live equipment. Dispatch is disabled again. This account has an unset peak-shaving SOC threshold, so the four-threshold command correctly refuses it. Empty schedules do not prove populated schedule semantics.
 
 Additional app-observed leads: station-consumption statistics, AI personalization rules and the EMS-upgrade support flag. Consumption samples were null and personalization rules empty; these observations are discovery evidence only, not normalized read contracts or write authority.
 

@@ -13,7 +13,7 @@ rate limiter and credentials are independent of Meal Planner and Tesco.
 - The real MCP SDK initialized against the deployed endpoint, discovered all four tools and successfully called each. All four HTTP routes also returned HTTP 200; station identity matched the enrolled selection. The later Executor replay verified the expanded 19-tool surface through the user-connected account; see [read acceptance](read-acceptance.md).
 - The reloaded mySigen UI agreed on 20% SOC, Sigen AI mode and on-grid status. Household load changed between samples. Empty provider timestamps remain `null`, with freshness explicitly unknown.
 
-No physical settings were changed. Once/always approval grants and eleven physical command variants are implemented
+No physical settings were changed during the initial authentication checks. The later authorized backup-reserve test is recorded in [read acceptance](read-acceptance.md). Once/always approval grants and eleven physical command variants are implemented
 and fixture-tested; live dispatch remains disabled. Controls report `disabled_pending_acceptance`.
 
 ## Renewal evidence still required

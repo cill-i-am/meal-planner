@@ -122,8 +122,25 @@ Worker code through `a8d5fb4b` and Executor source `61523f0a4aafcfaa149e8e381a3f
 - Preparing a manual-stop command returned a saved `prepared` review with `enabled: false`. No approval or execution followed. Preparing SOC thresholds returned `UnsupportedCapability` because the current peak-shaving threshold is unset.
 - A peak-shaving preparation hit the edge HTTP 429 limit. After the cooldown, `get_command` returned `InvalidInput` for that ID; no saved command was observed. The preparation was not replayed and is not counted as hosted acceptance. Executor initialization/discovery also consumes edge requests, so verification calls need spacing beyond the visible tool count.
 
-The subsequent current-profile automation read brings the registry to 31 operations. Its fixture tests preserve inactive groups, unknown provider codes and cross-midnight windows and unset/zero/unlimited limits, and reject malformed or oversized data. 119 focused tests, both package type checks and the native Worker integration test pass; both review axes are clear. Live physical control acceptance still awaits the user's bounded-test decision.
+The subsequent current-profile automation read brings the registry to 31 operations. Its fixture tests preserve inactive groups, unknown provider codes and cross-midnight windows and unset/zero/unlimited limits, and reject malformed or oversized data. 119 focused tests, both package type checks and the native Worker integration test pass; both review axes are clear. At that point, live physical control acceptance awaited the user's bounded-test decision; the completed reserve test is recorded below.
 
 At **17:57 UTC**, code through `1aad74f2` and Executor deployment `dpl_85d4cfb2-2333-4af1-a901-7839723083fa` (source `18b2b7f8991925d6dddb8f64d4786849952a7780`) passed the actual `get_automation_settings` call. It matched the browser-observed Sigen AI profile: battery and grid automation disabled, one battery group with two windows, one grid group with one window, and station timezone `Europe/London`. The existing account remained connected with two renewals and the same 28 October 03:16:00.894 UTC expiry. Controls remained disabled.
 
-The user has been asked to authorize a bounded live control test: backup reserve 20% → 21% → 20%, exercising once and always approval, then revoking the test grant. No answer or physical test has been recorded. Before dispatch, re-read the current reserve and verify it is still 20%; an unexpected value changes the reviewed procedure. After any uncertain result, reconcile through reads before proceeding. Never replay a physical write.
+The user explicitly approved the bounded backup-reserve test: 20% → 21% → 20%, exercising once and always approval, then revoking the test grant. The current reserve was re-read as 20% before temporary dispatch was enabled. Any unexpected state or uncertain result would require read-only reconciliation rather than replaying a write.
+
+## Live reserve and approval acceptance, 27 October 2026, 18:57–19:01 UTC
+
+The same deployed code (`1aad74f2`) was used throughout. Only the dispatch configuration was temporarily enabled, then returned to disabled. No credentials, enrollment, renewal timing or physical settings outside backup reserve were changed. The user's explicit test approval covered both Executor approval continuations.
+
+| Step | Live evidence |
+| --- | --- |
+| Initial state | Connected, reserve 20%, Sigen AI mode, no saved grants; dispatch initially disabled. |
+| Approve once | The exact saved 20% → 21% review reached Executor confirmation and was accepted under the user's test authorization. One execution at 18:58:28.057 returned `verified`; readback confirmed 21% at 18:58:28.764. |
+| Always approve and restore | A fresh 21% → 20% review was approved with `always`. Execution at 18:59:55.650 returned `verified`; readback confirmed 20% at 18:59:56.300. |
+| Remembered permission | A fresh unchanged 20% review was automatically `approved` using the saved operation/station grant, without another approval call. It was not dispatched while authorized. |
+| Revoke | Revocation returned zero remaining grants. Attempting the queued review while dispatch was still enabled returned `ApprovalRequired`, demonstrating that the revoked grant could no longer authorize execution. |
+| Final state after redeployment | At 19:01 UTC, Executor confirmed reserve 20%, Sigen AI mode, zero grants, dispatch `disabled_pending_acceptance`, and both original `verified` receipts still readable. The connection retained two natural renewals and expiry 28 October 03:16:00.894 UTC. |
+
+The reserve was observed at 21% for about 88 seconds before restoration. The test confirms live backup-reserve writes/readback, once approval, reusable approval and revocation through Executor. It does not establish live acceptance of the other ten control variants, full endpoint coverage, revoked-provider-token reconnection, or the third natural renewal.
+
+Full required CI passed at `bbc3ba5c` before this evidence-only documentation update. The 119 focused tests and native Worker tests remain the code verification baseline; this test required no implementation changes.
