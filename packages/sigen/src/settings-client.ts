@@ -6,6 +6,7 @@ import type { StationId } from "./model.js";
 import { decodeProvider, readStationTimezone } from "./provider-read.js";
 import type { ProviderRead } from "./provider-read.js";
 import {
+  AutomationSettings,
   BatterySettings,
   GridSettings,
   ManualOverride,
@@ -24,6 +25,58 @@ const PowerResponse = Schema.Struct({
   maxLimitation: DecimalSetting,
   maxLimitationInstaller: DecimalSetting,
   maxLimitationOwner: DecimalSetting,
+});
+const AutomationGroupResponse = {
+  activeStatus: Schema.Int,
+  itemVOList: Schema.Array(
+    Schema.Struct({
+      endTime: Schema.String,
+      startTime: Schema.String,
+      whichDay: Schema.String,
+    })
+  ).check(Schema.isMaxLength(64)),
+  name: Schema.String,
+  priorityList: Schema.Array(Schema.String).check(Schema.isMaxLength(32)),
+  winMode: Schema.Int,
+};
+const AutomationResponse = Schema.Struct({
+  activeStatus: Schema.Int,
+  batteryAutomationGroupVOList: Schema.Array(
+    Schema.Struct({
+      ...AutomationGroupResponse,
+      b2GMaxDischargePower: DecimalSetting,
+      chargeCutOffSoc: DecimalSetting,
+      dischargeCutOffSoc: DecimalSetting,
+      g2BMaxChargePower: DecimalSetting,
+      maxChargePower: DecimalSetting,
+      maxDischargePower: DecimalSetting,
+    })
+  ).check(Schema.isMaxLength(64)),
+  batteryGlobalActive: Schema.Boolean,
+  gridAutomationGroupVOList: Schema.Array(
+    Schema.Struct({
+      ...AutomationGroupResponse,
+      maxBuyPower: DecimalSetting,
+      maxSellPower: DecimalSetting,
+    })
+  ).check(Schema.isMaxLength(64)),
+  gridGlobalActive: Schema.Boolean,
+  name: Schema.String,
+  profileId: Schema.NullOr(Schema.Int),
+});
+type ProviderAutomationGroup = Schema.Struct.Type<
+  typeof AutomationGroupResponse
+>;
+const automationGroup = (group: ProviderAutomationGroup) => ({
+  name: group.name,
+  providerActiveStatus: group.activeStatus,
+  providerMode: group.winMode,
+  sourcePriority: group.priorityList,
+  windows: group.itemVOList.map((window) => ({
+    endTime: window.endTime,
+    providerDays: window.whichDay,
+    startTime: window.startTime,
+  })),
 });
 const decimal = (value: string) => (value === "" ? null : Number(value));
 const powerLimit = (value: string): PowerLimit => {
@@ -86,6 +139,45 @@ export const makeSettingsClient = (read: ProviderRead) => {
       Effect.flatMap(decodeProvider(schema))
     );
   return {
+    automationSettings: (id: StationId, token: Redacted.Redacted<string>) =>
+      Effect.gen(function* readAutomationSettings() {
+        const [data, zone] = yield* Effect.all(
+          [
+            get(
+              "/device/energy-profile/setting",
+              id,
+              token,
+              AutomationResponse
+            ),
+            readStationTimezone(read, id, token),
+          ],
+          { concurrency: 2 }
+        );
+        return yield* decodeProvider(AutomationSettings)({
+          batteryEnabled: data.batteryGlobalActive,
+          batteryGroups: data.batteryAutomationGroupVOList.map((group) => ({
+            ...automationGroup(group),
+            chargeCutoffPercent: decimal(group.chargeCutOffSoc),
+            chargeLimit: powerLimit(group.maxChargePower),
+            dischargeCutoffPercent: decimal(group.dischargeCutOffSoc),
+            dischargeLimit: powerLimit(group.maxDischargePower),
+            gridChargeLimit: powerLimit(group.g2BMaxChargePower),
+            gridExportLimit: powerLimit(group.b2GMaxDischargePower),
+          })),
+          fetchedAt: yield* Clock.currentTimeMillis,
+          gridEnabled: data.gridGlobalActive,
+          gridGroups: data.gridAutomationGroupVOList.map((group) => ({
+            ...automationGroup(group),
+            exportLimit: powerLimit(group.maxSellPower),
+            importLimit: powerLimit(group.maxBuyPower),
+          })),
+          profileName: data.name,
+          providerActiveStatus: data.activeStatus,
+          providerProfileId: data.profileId,
+          stationId: id,
+          timezone: DateTime.zoneToString(zone),
+        });
+      }),
     batterySettings: (id: StationId, token: Redacted.Redacted<string>) =>
       Effect.gen(function* readBatterySettings() {
         const [levels, power, reserve, exporting] = yield* Effect.all(

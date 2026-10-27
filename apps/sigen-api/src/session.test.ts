@@ -81,6 +81,7 @@ const fixture = () => {
     aioDevices: () => Effect.fail(failure("UnsupportedCapability")),
     aioPowerStatus: () => Effect.fail(failure("UnsupportedCapability")),
     alarms: () => Effect.fail(failure("UnsupportedCapability")),
+    automationSettings: () => Effect.fail(failure("UnsupportedCapability")),
     batterySettings: () => Effect.fail(failure("UnsupportedCapability")),
     deviceInfo: () => Effect.fail(failure("UnsupportedCapability")),
     deviceValues: () => Effect.fail(failure("UnsupportedCapability")),

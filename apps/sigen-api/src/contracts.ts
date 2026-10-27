@@ -37,6 +37,7 @@ import {
   ForecastInput,
 } from "@meal-planner/sigen/history";
 import {
+  AutomationSettings,
   BatterySettings,
   GridSettings,
   SolarSettings,
@@ -80,6 +81,9 @@ export class SigenCapabilities extends Context.Service<
     readonly revokeApproval: (
       input: typeof RevokeApprovalInput.Type
     ) => Effect.Effect<typeof ApprovalGrants.Type, SigenFailure>;
+    readonly automationSettings: (
+      id: StationId
+    ) => Effect.Effect<typeof AutomationSettings.Type, SigenFailure>;
     readonly batterySettings: (
       id: StationId
     ) => Effect.Effect<typeof BatterySettings.Type, SigenFailure>;
@@ -182,6 +186,16 @@ const operation = <
 });
 
 export const operations = [
+  operation(
+    "get_automation_settings",
+    "Read the current station profile battery/grid automation groups, watt limits, SOC cutoffs and local-time windows. Preserve provider mode/status/day/source codes; configured inactive groups are not active policies. This does not enumerate or edit custom profiles.",
+    StationInput,
+    AutomationSettings,
+    (input) =>
+      SigenCapabilities.use((service) =>
+        service.automationSettings(input.stationId)
+      )
+  ),
   operation(
     "get_station_income",
     "Read provider-reported daily energy value in the station currency. Retains signed income, calculated income and provider totals separately; these are not verified bill settlements. Dates use the station timezone, missing samples stay missing and repeated DST minutes retain both UTC candidates.",

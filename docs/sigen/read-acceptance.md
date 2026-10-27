@@ -112,3 +112,14 @@ The registry now exposes 30 operations and eleven typed setting controls. New re
 113 focused tests pass. The native Worker test additionally proves that a saved always-approve grant survives runtime restart, repeated execution sends only one synthetic provider write, revocation blocks a queued command, and a fresh once approval permits that command. These are synthetic controls, not live equipment acceptance.
 
 The spec review found that manual-stop confirmation unnecessarily required display telemetry. Its state-only reader now succeeds when display telemetry is unavailable or malformed; regression tests cover both failures. Station income tests preserve signed/calculated/missing values, provider totals and DST ambiguity, and reject another station, wrong dates, malformed values and invalid timezones.
+
+## Hosted extension acceptance, 27 October 2026, 17:47–17:52 UTC
+
+Worker code through `a8d5fb4b` and Executor source `61523f0a4aafcfaa149e8e381a3f2962aa4368f6` were deployed. Executor deployment `dpl_bd5a2a52-26c4-465f-9439-c5ce213691ca` retained the same personal account/provider. Connection status remained connected with two natural renewals, expiry 28 October 03:16:00.894 UTC and physical dispatch disabled.
+
+- AIO inventory returned one topology-verified AIO. Its two power-status observations disagreed (`powerOn: true`, `onOffState: false`); the service preserved both instead of claiming a single physical on/off state.
+- Daily income returned 35 samples, nine negative income samples, provider total €0.12 and provider timezone `Europe/London`. The earlier browser observation was €0.07; these were different live observation times, not simultaneous equality evidence.
+- Preparing a manual-stop command returned a saved `prepared` review with `enabled: false`. No approval or execution followed. Preparing SOC thresholds returned `UnsupportedCapability` because the current peak-shaving threshold is unset.
+- A peak-shaving preparation hit the edge HTTP 429 limit. After the cooldown, `get_command` returned `InvalidInput` for that ID; no saved command was observed. The preparation was not replayed and is not counted as hosted acceptance. Executor initialization/discovery also consumes edge requests, so verification calls need spacing beyond the visible tool count.
+
+The subsequent current-profile automation read brings the registry to 31 operations. Its fixture tests preserve inactive groups, unknown provider codes, duplicate/cross-midnight windows and unset/zero/unlimited limits, and reject malformed or oversized data. 119 focused tests, both package type checks and the native Worker integration test pass; both review axes are clear. Live physical control acceptance still awaits the user's bounded-test decision.

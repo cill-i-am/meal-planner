@@ -8,6 +8,7 @@ const reads = new Set([
   "get_energy_flow",
   "get_operating_mode",
   "get_battery_settings",
+  "get_automation_settings",
   "get_grid_settings",
   "get_solar_settings",
   "list_operating_modes",

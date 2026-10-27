@@ -74,6 +74,19 @@ const options: HttpOptions = {
       }),
     approvalGrants: () => Effect.succeed({ grants: [] }),
     approveCommand: () => Effect.succeed(command),
+    automationSettings: (stationId) =>
+      Effect.succeed({
+        batteryEnabled: false,
+        batteryGroups: [],
+        fetchedAt: 123,
+        gridEnabled: false,
+        gridGroups: [],
+        profileName: "Fixture",
+        providerActiveStatus: 0,
+        providerProfileId: null,
+        stationId,
+        timezone: "Europe/Dublin",
+      }),
     batterySettings: (stationId) =>
       Effect.succeed({
         backupReservePercent: 20,

@@ -1,6 +1,6 @@
 # Private mySigen API and MCP
 
-This independent Cloudflare service implements core and settings reads from the [coverage plan](../../docs/sigen/coverage.md). Tariff/AI-plan reads and eleven typed setting controls are implemented. Custom-profile details, smart loads, charger adapters and remaining control families are incomplete. The package in `packages/sigen` contains the reusable Effect 4 private EU client; this app owns encrypted sessions, HTTP/MCP and the account Durable Object. `sigen.alchemy.ts` deploys only this service. It does not share credentials or product authentication with Meal Planner or Tesco.
+This independent Cloudflare service implements core and settings reads from the [coverage plan](../../docs/sigen/coverage.md). Tariff/AI-plan, daily income, AIO power-state and current-profile automation reads and eleven typed setting controls are implemented. Custom-profile details, smart loads, charger adapters and remaining control families are incomplete. The package in `packages/sigen` contains the reusable Effect 4 private EU client; this app owns encrypted sessions, HTTP/MCP and the account Durable Object. `sigen.alchemy.ts` deploys only this service. It does not share credentials or product authentication with Meal Planner or Tesco.
 
 ## Current surface
 
@@ -63,6 +63,8 @@ The owner service credential can prepare, approve and execute commands through H
 `prepare_command` accepts a fresh UUID and one typed change: backup reserve, battery charge/discharge power limits, solar power limit, battery export, grid import/export limits, connection current, operating mode, four SOC thresholds, an existing peak-shaving schedule, or stopping a manual override. Grid limit commands enable the specified finite owner limit and enforce known installer ceilings. Operating-mode writes currently support maximum self-powered (0), Sigen AI (1) and fully fed to grid (5), and must also be currently available to the account. TOU, custom profiles and Remote EMS remain read-only until their complete settings can be reviewed and conflict-checked. Missing hardware fails explicitly.
 
 SOC-threshold changes require all four current values to be known. Peak-shaving edits preserve the current timezone, day codes and time windows; only enabled state, reserve and per-window power may change. Manual-stop confirmation reads the authoritative enabled state independently of live battery telemetry. Starting an override and creating or moving schedule windows remain unimplemented.
+
+Current-profile automation reads preserve inactive groups, provider mode/status/source/day codes and duplicate time windows; they do not enumerate all custom profiles.
 
 Daily income reads retain provider-reported totals, signed income and calculated income separately, in the station currency. These values are not independently verified bill settlements; missing samples and ambiguous local times remain explicit. AIO reads check serial membership and keep the two provider power-state observations separate.
 

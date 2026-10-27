@@ -150,7 +150,7 @@ one-use command IDs, state conflict detection or ambiguous-outcome reconciliatio
 
 ## Control and tariff implementation update
 
-The shared registry now contains 30 operations: 24 provider/connection reads and six command/approval operations. These additions have fixture and local runtime coverage; hosted verification is recorded separately.
+The shared registry now contains 31 operations: 25 provider/connection reads and six command/approval operations. These additions have fixture and local runtime coverage; hosted verification is recorded separately.
 
 | Operation | Method/path | Schema | Permissions/hardware | Side effects | Evidence | Status |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -166,11 +166,11 @@ The shared registry now contains 30 operations: 24 provider/connection reads and
 
 The named setting changes are variants of `prepare_command`, not direct-write tools. HTTP and MCP use the same saved review, once/always approval, revocation, dispatch and readback service. All provider dispatch remains disabled by default. Setting writes do not use the read retry path. Reenrollment invalidates remembered permissions.
 
-Still unfinished: station enumeration, profile details and schedule replacement, remaining tariff/fee semantics, starting manual overrides, smart loads, AC/DC/V2X adapters, device administration, caching and shared upstream budgets. Missing charger hardware remains an observed capability limitation, not an implementation claim. The discovery matrix above remains the broader backlog; this update supersedes its older implementation status for these specific operations.
+Still unfinished: station enumeration, additional custom-profile details and schedule replacement, remaining tariff/fee semantics, starting manual overrides, smart loads, AC/DC/V2X adapters, device administration, caching and shared upstream budgets. Missing charger hardware remains an observed capability limitation, not an implementation claim. The discovery matrix above remains the broader backlog; this update supersedes its older implementation status for these specific operations.
 
 ## 27 October extension
 
-The registry contains 30 operations and eleven typed control variants. The following additions have fixture coverage; hosted evidence is recorded separately in [read acceptance](read-acceptance.md).
+The registry contains 31 operations and eleven typed control variants. The following additions have fixture coverage; hosted evidence is recorded separately in [read acceptance](read-acceptance.md).
 
 | Operation | Provider route | Behavior and limits |
 | --- | --- | --- |
@@ -184,3 +184,5 @@ The registry contains 30 operations and eleven typed control variants. The follo
 The new controls use the existing once/always grants and revocation. All physical adapters remain unverified on live equipment and dispatch remains disabled. This account has an unset peak-shaving SOC threshold, so the four-threshold command correctly refuses it. Empty schedules do not prove populated schedule semantics.
 
 Additional app-observed leads: station-consumption statistics, AI personalization rules and the EMS-upgrade support flag. Consumption samples were null and personalization rules empty; these observations are discovery evidence only, not normalized read contracts or write authority.
+
+`get_automation_settings` now reads the current station profile's battery and grid automation groups from GET `/device/energy-profile/setting/{stationId}`. It preserves inactive groups, unfamiliar status/mode/source/day codes, duplicate windows and full local-time intervals; power limits use watts with separate unset/unlimited states. The timezone is verified against station metadata. This covers current-profile groups only, not arbitrary custom profiles or schedule replacement.

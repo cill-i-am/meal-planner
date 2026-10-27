@@ -104,6 +104,8 @@ const runtime = Effect.gen(function* constructAccountObject() {
         inputCall(StationId, id, commands.approvalGrants),
       approveCommand: (input: typeof ApproveCommandInput.Type) =>
         inputCall(ApproveCommandInput, input, commands.approveCommand),
+      automationSettings: (id: StationId) =>
+        inputCall(StationId, id, session.automationSettings),
       batterySettings: (id: StationId) =>
         inputCall(StationId, id, session.batterySettings),
       deviceInfo: (input: typeof DeviceInput.Type) =>
