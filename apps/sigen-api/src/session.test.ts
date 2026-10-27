@@ -82,12 +82,14 @@ const fixture = () => {
     aioPowerStatus: () => Effect.fail(failure("UnsupportedCapability")),
     alarms: () => Effect.fail(failure("UnsupportedCapability")),
     automationSettings: () => Effect.fail(failure("UnsupportedCapability")),
+    backupHistory: () => Effect.fail(failure("UnsupportedCapability")),
     batterySettings: () => Effect.fail(failure("UnsupportedCapability")),
     deviceInfo: () => Effect.fail(failure("UnsupportedCapability")),
     deviceValues: () => Effect.fail(failure("UnsupportedCapability")),
     dispatchControl: () => Effect.fail(failure("UnsupportedCapability")),
     energyFlow: () => Effect.succeed(flow),
     energyHistory: () => Effect.fail(failure("UnsupportedCapability")),
+    energySavingSettings: () => Effect.fail(failure("UnsupportedCapability")),
     forecast: () => Effect.fail(failure("UnsupportedCapability")),
     gateway: () => Effect.fail(failure("UnsupportedCapability")),
     gridDevices: () => Effect.fail(failure("UnsupportedCapability")),
@@ -465,6 +467,17 @@ describe("durable Sigen session", () => {
       _tag: "Failure",
       failure: { reason: "PermissionDenied" },
     });
+    for (const read of [
+      session
+        .backupHistory({ page: 1, pageSize: 10, stationId: otherStation })
+        .pipe(Effect.asVoid),
+      session.energySavingSettings(otherStation).pipe(Effect.asVoid),
+    ]) {
+      expect(await run(read.pipe(Effect.result))).toMatchObject({
+        _tag: "Failure",
+        failure: { reason: "PermissionDenied" },
+      });
+    }
     expect(f.count()).toBe(0);
   });
   it("does not rotate on an early alarm and disconnect removes the alarm", async () => {

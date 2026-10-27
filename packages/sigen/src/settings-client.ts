@@ -8,6 +8,7 @@ import type { ProviderRead } from "./provider-read.js";
 import {
   AutomationSettings,
   BatterySettings,
+  EnergySavingSettings,
   GridSettings,
   ManualOverride,
   OperatingModes,
@@ -246,6 +247,32 @@ export const makeSettingsClient = (read: ProviderRead) => {
             levels.ja12SOC === undefined ? null : decimal(levels.ja12SOC),
           peakShavingSocPercent: decimal(levels.peakShavingSOC),
           providerOperationMode: reserve.operationMode,
+          stationId: id,
+        });
+      }),
+    energySavingSettings: (id: StationId, token: Redacted.Redacted<string>) =>
+      Effect.gen(function* readEnergySavingSettings() {
+        const data = yield* get(
+          "/device/owner/station/save-energy-mode",
+          id,
+          token,
+          Schema.Struct({
+            offGridEnable: Schema.Boolean,
+            offGridMode: EnergySavingSettings.fields.providerOffGridMode,
+            onGridMode: EnergySavingSettings.fields.providerOnGridMode,
+            stationId: Schema.NullOr(Schema.Int),
+            value: EnergySavingSettings.fields.providerValue,
+          })
+        );
+        if (data.stationId !== null && String(data.stationId) !== id) {
+          return yield* failure("PermissionDenied");
+        }
+        return yield* decodeProvider(EnergySavingSettings)({
+          fetchedAt: yield* Clock.currentTimeMillis,
+          offGridEnabled: data.offGridEnable,
+          providerOffGridMode: data.offGridMode,
+          providerOnGridMode: data.onGridMode,
+          providerValue: data.value,
           stationId: id,
         });
       }),

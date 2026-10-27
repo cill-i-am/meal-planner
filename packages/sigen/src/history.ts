@@ -131,28 +131,34 @@ export const historyPeriod = (input: Pick<HistoryInput, "date" | "period">) => {
   };
 };
 
-export const localSampleTime = (
-  providerTime: string,
+/** Resolve a validated station-local timestamp with second precision, retaining DST gaps and overlaps. */
+export const localTimeCandidates = (
+  localTime: string,
   timeZone: DateTime.TimeZone.Named
 ) => {
-  const localTime = `${providerTime.slice(0, 4)}-${providerTime.slice(4, 6)}-${providerTime.slice(6, 8)}T${providerTime.slice(9)}`;
   const candidates = (["earlier", "later"] as const).flatMap(
     (disambiguation) => {
-      const parsed = DateTime.makeZoned(`${localTime}:00Z`, {
+      const parsed = DateTime.makeZoned(`${localTime}Z`, {
         adjustForTimeZone: true,
         disambiguation,
         timeZone,
       });
       return Option.isSome(parsed) &&
-        DateTime.formatIsoZoned(parsed.value).slice(0, 16) === localTime
+        DateTime.formatIsoZoned(parsed.value).slice(0, 19) === localTime
         ? [DateTime.toEpochMillis(parsed.value)]
         : [];
     }
   );
+  return [...new Set(candidates)].toSorted((left, right) => left - right);
+};
+
+export const localSampleTime = (
+  providerTime: string,
+  timeZone: DateTime.TimeZone.Named
+) => {
+  const localTime = `${providerTime.slice(0, 4)}-${providerTime.slice(4, 6)}-${providerTime.slice(6, 8)}T${providerTime.slice(9)}`;
   return {
     localTime,
-    utcCandidates: [...new Set(candidates)].toSorted(
-      (left, right) => left - right
-    ),
+    utcCandidates: localTimeCandidates(`${localTime}:00`, timeZone),
   };
 };

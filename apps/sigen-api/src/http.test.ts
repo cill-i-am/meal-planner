@@ -87,6 +87,17 @@ const options: HttpOptions = {
         stationId,
         timezone: "Europe/Dublin",
       }),
+    backupHistory: (input) =>
+      Effect.succeed({
+        ...input,
+        fetchedAt: 123,
+        pages: 0,
+        records: [],
+        reportedEventCount: 0,
+        timezone: "Europe/Dublin",
+        total: 0,
+        totalDurationSeconds: 0,
+      }),
     batterySettings: (stationId) =>
       Effect.succeed({
         backupReservePercent: 20,
@@ -153,6 +164,15 @@ const options: HttpOptions = {
         stationId: input.stationId,
         timezone: "Europe/Dublin",
         totals: [],
+      }),
+    energySavingSettings: (stationId) =>
+      Effect.succeed({
+        fetchedAt: 123,
+        offGridEnabled: true,
+        providerOffGridMode: "0",
+        providerOnGridMode: "1",
+        providerValue: "65535",
+        stationId,
       }),
     executeCommand: () => Effect.succeed(command),
     forecast: (input) =>
@@ -458,6 +478,9 @@ describe("authenticated HTTP and MCP parity", () => {
           }
           if (op.name === "get_station_income") {
             return { date: "2026-10-25", stationId: id };
+          }
+          if (op.name === "get_backup_history") {
+            return { page: 1, pageSize: 10, stationId: id };
           }
           if (op.name === "list_alarms") {
             return { page: 1, pageSize: 10, state: "active", stationId: id };

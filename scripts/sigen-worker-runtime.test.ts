@@ -161,6 +161,41 @@ it(
               physicalWrites += 1;
               return Response.json({ code: 0, data: null });
             }
+            if (url.pathname === "/data-process/station/backup-history") {
+              return Response.json({
+                code: 0,
+                data: {
+                  backupDetailNum: 1,
+                  backupHistoryDetailVOIpage: {
+                    current: 1,
+                    pages: 1,
+                    records: [
+                      {
+                        offGridDuration: 18,
+                        offGridTime: "2026-10-25 01:30:13",
+                      },
+                    ],
+                    size: 10,
+                    total: 1,
+                  },
+                  totalTime: 18,
+                },
+              });
+            }
+            if (
+              url.pathname === "/device/owner/station/save-energy-mode/12345"
+            ) {
+              return Response.json({
+                code: 0,
+                data: {
+                  offGridEnable: true,
+                  offGridMode: "0",
+                  onGridMode: "1",
+                  stationId: null,
+                  value: "65535",
+                },
+              });
+            }
             if (url.pathname === "/alarm/history/page") {
               return Response.json({
                 code: 0,
@@ -225,7 +260,7 @@ it(
       // @ts-expect-error SDK 1.32.1's sessionId getter disagrees with Transport under exactOptionalPropertyTypes.
       await client.connect(transport);
       const listed = await client.listTools();
-      expect(listed.tools).toHaveLength(31);
+      expect(listed.tools).toHaveLength(33);
       const initial = await client.callTool({
         arguments: {},
         name: "connection_status",
@@ -285,6 +320,29 @@ it(
       });
       expect(solar.structuredContent).toMatchObject({
         powerLimit: { kind: "unlimited" },
+      });
+      const backup = await client.callTool({
+        arguments: { page: 1, pageSize: 10, stationId: "12345" },
+        name: "get_backup_history",
+      });
+      expect(backup.structuredContent).toMatchObject({
+        records: [
+          {
+            offGridLocalTime: "2026-10-25T01:30:13",
+            offGridUtcCandidates: [1_792_888_213_000, 1_792_891_813_000],
+          },
+        ],
+        totalDurationSeconds: 18,
+      });
+      const saving = await client.callTool({
+        arguments: { stationId: "12345" },
+        name: "get_energy_saving_settings",
+      });
+      expect(saving.structuredContent).toMatchObject({
+        offGridEnabled: true,
+        providerOffGridMode: "0",
+        providerOnGridMode: "1",
+        providerValue: "65535",
       });
       const history = await client.callTool({
         arguments: { date: "2026-10-25", period: "day", stationId: "12345" },

@@ -9,6 +9,7 @@ import {
 } from "@meal-planner/sigen";
 import type { SigenFailure, StationId } from "@meal-planner/sigen";
 import { AlarmInput, Alarms } from "@meal-planner/sigen/alarms";
+import { BackupHistory, BackupHistoryInput } from "@meal-planner/sigen/backup";
 import {
   ApprovalGrants,
   ApproveCommandInput,
@@ -37,6 +38,7 @@ import {
   ForecastInput,
 } from "@meal-planner/sigen/history";
 import {
+  EnergySavingSettings,
   AutomationSettings,
   BatterySettings,
   GridSettings,
@@ -51,6 +53,12 @@ import { Context, Effect, Schema, flow } from "effect";
 export class SigenCapabilities extends Context.Service<
   SigenCapabilities,
   {
+    readonly backupHistory: (
+      input: typeof BackupHistoryInput.Type
+    ) => Effect.Effect<typeof BackupHistory.Type, SigenFailure>;
+    readonly energySavingSettings: (
+      id: StationId
+    ) => Effect.Effect<typeof EnergySavingSettings.Type, SigenFailure>;
     readonly aioDevices: (
       id: StationId
     ) => Effect.Effect<typeof AioDevices.Type, SigenFailure>;
@@ -186,6 +194,23 @@ const operation = <
 });
 
 export const operations = [
+  operation(
+    "get_backup_history",
+    "Read paginated off-grid operation history and provider totals in seconds. Event times retain the station timezone and all possible UTC instants across DST. These events do not by themselves prove a mains outage.",
+    BackupHistoryInput,
+    BackupHistory,
+    (input) => SigenCapabilities.use((service) => service.backupHistory(input))
+  ),
+  operation(
+    "get_energy_saving_settings",
+    "Read station energy-saving settings, preserving on-grid/off-grid provider mode codes and the provider value without guessing their meaning. This does not change battery dormancy.",
+    StationInput,
+    EnergySavingSettings,
+    (input) =>
+      SigenCapabilities.use((service) =>
+        service.energySavingSettings(input.stationId)
+      )
+  ),
   operation(
     "get_automation_settings",
     "Read the current station profile battery/grid automation groups, watt limits, SOC cutoffs and local-time windows. Preserve provider mode/status/day/source codes; configured inactive groups are not active policies. This does not enumerate or edit custom profiles.",

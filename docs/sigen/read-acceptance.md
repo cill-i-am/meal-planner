@@ -144,3 +144,10 @@ The same deployed code (`1aad74f2`) was used throughout. Only the dispatch confi
 The reserve was observed at 21% for about 88 seconds before restoration. The test confirms live backup-reserve writes/readback, once approval, reusable approval and revocation through Executor. It does not establish live acceptance of the other ten control variants, full endpoint coverage, revoked-provider-token reconnection, or the third natural renewal.
 
 Full required CI passed at `bbc3ba5c` before this evidence-only documentation update. The 119 focused tests and native Worker tests remain the code verification baseline; this test required no implementation changes.
+
+
+## Backup history and energy-saving reads (27 October 2026)
+
+The owner app's Backup History showed nine events totaling 8 minutes 1 second. Its response reports `totalTime: 481`, `backupDetailNum: 9`, and a paginated list of local timestamps with seconds and durations. The energy-saving read returned on-grid code `1`, off-grid code `0`, value `65535`, and `offGridEnable: true`; code meanings are not inferred. Navigation only was used; no physical setting changed.
+
+The registry now has 33 operations. All 150 focused tests and the native Worker/MCP test pass, including second-precision DST overlaps/gaps, zero durations, pagination bounds/mismatch, malformed provider data, and station isolation. The native test calls both new reads through real MCP, encrypted RPC and the account Durable Object. Hosted verification of these two additions is pending deployment.

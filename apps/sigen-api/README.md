@@ -1,6 +1,6 @@
 # Private mySigen API and MCP
 
-This independent Cloudflare service implements core and settings reads from the [coverage plan](../../docs/sigen/coverage.md). Tariff/AI-plan, daily income, AIO power-state and current-profile automation reads and eleven typed setting controls are implemented. Custom-profile details, smart loads, charger adapters and remaining control families are incomplete. The package in `packages/sigen` contains the reusable Effect 4 private EU client; this app owns encrypted sessions, HTTP/MCP and the account Durable Object. `sigen.alchemy.ts` deploys only this service. It does not share credentials or product authentication with Meal Planner or Tesco.
+This independent Cloudflare service implements core and settings reads from the [coverage plan](../../docs/sigen/coverage.md). Tariff/AI-plan, daily income, AIO power-state and current-profile automation, backup history and energy-saving reads and eleven typed setting controls are implemented. Custom-profile details, smart loads, charger adapters and remaining control families are incomplete. The package in `packages/sigen` contains the reusable Effect 4 private EU client; this app owns encrypted sessions, HTTP/MCP and the account Durable Object. `sigen.alchemy.ts` deploys only this service. It does not share credentials or product authentication with Meal Planner or Tesco.
 
 ## Current surface
 
@@ -10,6 +10,8 @@ This independent Cloudflare service implements core and settings reads from the 
 | `get_station` | `{stationId}` | selected station metadata and explicit equipment capabilities |
 | `get_energy_flow` | `{stationId}` | watts, SOC, provider/fetch timestamps and freshness |
 | `get_operating_mode` | `{stationId}` | provider mode/profile IDs, preserving unfamiliar modes |
+| `get_backup_history` | `{stationId,page,pageSize}` | off-grid events, second-precision local timestamps with UTC candidates, durations in seconds and provider totals; page 1–1000, size 1–100 |
+| `get_energy_saving_settings` | `{stationId}` | off-grid enable flag and uninterpreted provider mode/value codes |
 | `get_battery_settings` | `{stationId}` | reserve/SOC thresholds, power limits and export permission |
 | `get_grid_settings` | `{stationId}` | import/export watts and connection-current amperes |
 | `get_solar_settings` | `{stationId}` | solar power limit, including unlimited/unset |

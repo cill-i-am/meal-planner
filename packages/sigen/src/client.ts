@@ -9,6 +9,7 @@ import {
 } from "effect/http";
 
 import { makeAlarmsClient } from "./alarms-client.js";
+import { makeBackupClient } from "./backup-client.js";
 import { makeControlsClient } from "./controls-client.js";
 import { makeEquipmentClient } from "./equipment-client.js";
 import { makeHistoryClient } from "./history-client.js";
@@ -218,6 +219,7 @@ export const makeSigenClient = Effect.gen(function* makeSigenClient() {
     ...makeTariffsClient(read),
     ...makeEquipmentClient(read),
     ...makeAlarmsClient(read),
+    ...makeBackupClient(read),
     ...makeHistoryClient(read),
     energyFlow: (id: StationId, accessToken: Redacted.Redacted<string>) =>
       Effect.gen(function* energyFlow() {

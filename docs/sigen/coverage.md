@@ -186,3 +186,17 @@ The new controls use the existing once/always grants and revocation. Backup rese
 Additional app-observed leads: station-consumption statistics, AI personalization rules and the EMS-upgrade support flag. Consumption samples were null and personalization rules empty; these observations are discovery evidence only, not normalized read contracts or write authority.
 
 `get_automation_settings` now reads the current station profile's battery and grid automation groups from GET `/device/energy-profile/setting/{stationId}`. It preserves inactive groups, unfamiliar status/mode/source/day codes, duplicate windows and full local-time intervals; power limits use watts with separate unset/unlimited states. The timezone is verified against station metadata. This covers current-profile groups only, not arbitrary custom profiles or schedule replacement.
+
+
+## Backup history and energy saving (27 October 2026)
+
+The registry contains 33 operations: 27 provider/connection reads and six command/approval operations. The eleven control variants are unchanged.
+
+| Operation | Provider request | Contract and proof |
+| --- | --- | --- |
+| `get_backup_history` | GET `/data-process/station/backup-history?stationId=…&current=…&size=…` plus station metadata | App-observed page: nine events and 481 total seconds. Exposes pagination, provider event count, local timestamps to the second, UTC candidates and seconds. Does not infer mains outages from off-grid operation. |
+| `get_energy_saving_settings` | GET `/device/owner/station/save-energy-mode/{stationId}` | App-observed `offGridEnable` boolean and string codes `onGridMode`, `offGridMode`, `value`. Preserves the codes without inferring dormancy or power state. The response may omit station identity with an explicit null; a present identity must match. |
+
+Both reads pass the enrolled-station gate. Backup timestamps use the verified station timezone; DST gaps retain no UTC candidate and overlaps retain both. Invalid dates, durations and pagination fail closed. Hosted acceptance is recorded separately in [read acceptance](read-acceptance.md).
+
+Additional discovery: GET `/device/dischargesetting/packPreheating/new/{stationId}` returned an empty `packPreheatingVOList`, switch 0, null preheating mode/enables/auto-mode validity, and `isIndustry: false`. The app showed preheating scheduling off. Populated scheduling semantics remain unverified; no switch was changed and no preheating API was exposed.

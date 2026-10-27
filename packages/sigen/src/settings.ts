@@ -4,6 +4,14 @@ import { Percent, StationId, Timestamp } from "./model.js";
 
 const NonNegative = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
 const Snapshot = { fetchedAt: Timestamp, stationId: StationId };
+const EnergySavingCode = Schema.String.check(Schema.isPattern(/^\d{1,16}$/u));
+export const EnergySavingSettings = Schema.Struct({
+  ...Snapshot,
+  offGridEnabled: Schema.Boolean,
+  providerOffGridMode: EnergySavingCode,
+  providerOnGridMode: EnergySavingCode,
+  providerValue: EnergySavingCode,
+});
 export const PowerLimit = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("unset") }),
   Schema.Struct({ kind: Schema.Literal("unlimited") }),

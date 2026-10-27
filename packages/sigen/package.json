@@ -10,7 +10,8 @@
     "./alarms": "./src/alarms.ts",
     "./history": "./src/history.ts",
     "./controls": "./src/controls.ts",
-    "./tariffs": "./src/tariffs.ts"
+    "./tariffs": "./src/tariffs.ts",
+    "./backup": "./src/backup.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

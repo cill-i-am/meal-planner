@@ -94,6 +94,50 @@ const fixture = (overrides: Readonly<Record<string, unknown>> = {}) => {
 const run = Effect.runPromise;
 
 describe("owner settings reads", () => {
+  it("preserves energy-saving provider codes and permits the observed null station identity", async () => {
+    const { client, paths } = fixture({
+      "/device/owner/station/save-energy-mode": {
+        offGridEnable: false,
+        offGridMode: "0",
+        onGridMode: "987",
+        stationId: null,
+        value: "65535",
+      },
+    });
+    expect(await run(client.energySavingSettings(id, token))).toMatchObject({
+      offGridEnabled: false,
+      providerOffGridMode: "0",
+      providerOnGridMode: "987",
+      providerValue: "65535",
+      stationId: id,
+    });
+    expect(paths).toEqual(["/device/owner/station/save-energy-mode/12345"]);
+  });
+  it.each([
+    [{ stationId: 67_890 }, "PermissionDenied"],
+    [{ stationId: "12345" }, "SchemaMismatch"],
+    [{ onGridMode: 1 }, "SchemaMismatch"],
+    [{ offGridEnable: "true" }, "SchemaMismatch"],
+    [{ value: "" }, "SchemaMismatch"],
+  ])(
+    "fails closed on mismatched or malformed energy-saving settings",
+    async (overrides, reason) => {
+      const { client } = fixture({
+        "/device/owner/station/save-energy-mode": {
+          offGridEnable: true,
+          offGridMode: "0",
+          onGridMode: "1",
+          stationId: null,
+          value: "65535",
+          ...overrides,
+        },
+      });
+      expect(
+        await run(client.energySavingSettings(id, token).pipe(Effect.result))
+      ).toMatchObject({ _tag: "Failure", failure: { reason } });
+    }
+  );
+
   it("preserves unset, zero, unlimited and finite limits and unfamiliar modes", async () => {
     const { client, paths } = fixture();
     expect(await run(client.batterySettings(id, token))).toMatchObject({

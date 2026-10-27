@@ -1,5 +1,6 @@
 import { SigenFailure, StationId, failure } from "@meal-planner/sigen";
 import { AlarmInput } from "@meal-planner/sigen/alarms";
+import { BackupHistoryInput } from "@meal-planner/sigen/backup";
 import { makeSigenClient } from "@meal-planner/sigen/client";
 import {
   ApproveCommandInput,
@@ -106,6 +107,8 @@ const runtime = Effect.gen(function* constructAccountObject() {
         inputCall(ApproveCommandInput, input, commands.approveCommand),
       automationSettings: (id: StationId) =>
         inputCall(StationId, id, session.automationSettings),
+      backupHistory: (input: typeof BackupHistoryInput.Type) =>
+        inputCall(BackupHistoryInput, input, session.backupHistory),
       batterySettings: (id: StationId) =>
         inputCall(StationId, id, session.batterySettings),
       deviceInfo: (input: typeof DeviceInput.Type) =>
@@ -117,6 +120,8 @@ const runtime = Effect.gen(function* constructAccountObject() {
         inputCall(StationId, id, session.energyFlow),
       energyHistory: (input: typeof HistoryInput.Type) =>
         inputCall(HistoryInput, input, session.energyHistory),
+      energySavingSettings: (id: StationId) =>
+        inputCall(StationId, id, session.energySavingSettings),
       enroll: (input: EncryptedSecret) =>
         Effect.gen(function* enrollAccount() {
           const secret = yield* vault.decrypt(input);
