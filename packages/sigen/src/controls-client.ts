@@ -13,12 +13,81 @@ import type { ProviderRead } from "./provider-read.js";
 import { makeSettingsClient } from "./settings-client.js";
 
 export type ProviderWrite = (
+  method: "PUT" | "POST",
   path: string,
   body: Readonly<Record<string, Schema.Json>>,
   token: Redacted.Redacted<string>
 ) => Effect.Effect<void, SigenFailure>;
 const powerString = (limit: typeof WritablePowerLimit.Type) =>
   limit.kind === "unlimited" ? "4294967.295" : String(limit.watts / 1000);
+
+const validatePeakSchedule = (
+  change: Extract<ControlChange, { operation: "set_peak_shaving_schedule" }>,
+  snapshot: ControlSnapshot
+): SigenFailure | null => {
+  if (snapshot.kind !== "peak_shaving") {
+    return failure("SchemaMismatch");
+  }
+  const value = snapshot.settings;
+  if (value.providerControlMode !== 0 && value.providerControlMode !== 1) {
+    return failure("UnsupportedCapability");
+  }
+  if (change.enabled && change.slots.length === 0) {
+    return failure("InvalidInput");
+  }
+  // Do not reinterpret unverified provider day codes or replace windows hidden from the review.
+  const preserved =
+    change.timezone === value.timezone &&
+    change.slots.length === value.slots.length &&
+    change.slots.every((slot, index) => {
+      const current = value.slots[index];
+      return (
+        current !== undefined &&
+        slot.providerDays === current.providerDays &&
+        slot.startTime === current.startTime &&
+        slot.endTime === current.endTime
+      );
+    });
+  return preserved ? null : failure("UnsupportedCapability");
+};
+
+const validateSocSnapshot = (
+  snapshot: ControlSnapshot
+): SigenFailure | null => {
+  if (snapshot.kind !== "battery") {
+    return failure("SchemaMismatch");
+  }
+  const value = snapshot.settings;
+  return value.chargeSocPercent === null ||
+    value.dischargeSocPercent === null ||
+    value.backupSocPercent === null ||
+    value.peakShavingSocPercent === null
+    ? failure("UnsupportedCapability")
+    : null;
+};
+
+const validateGridPower = (
+  change: Extract<
+    ControlChange,
+    { operation: "set_grid_export_limit" | "set_grid_import_limit" }
+  >,
+  snapshot: ControlSnapshot
+): SigenFailure | null => {
+  if (snapshot.kind !== "grid") {
+    return failure("SchemaMismatch");
+  }
+  const ceiling = (
+    change.operation === "set_grid_export_limit"
+      ? snapshot.settings.exportPower
+      : snapshot.settings.importPower
+  ).installer;
+  if (ceiling.kind === "unset") {
+    return failure("UnsupportedCapability");
+  }
+  return ceiling.kind === "limited" && change.watts > ceiling.watts
+    ? failure("InvalidInput")
+    : null;
+};
 
 const validateOwnerLimits = (
   change: ControlChange,
@@ -27,21 +96,9 @@ const validateOwnerLimits = (
   switch (change.operation) {
     case "set_grid_export_limit":
     case "set_grid_import_limit": {
-      if (snapshot.kind !== "grid") {
-        return failure("SchemaMismatch");
-      }
-      const ceiling = (
-        change.operation === "set_grid_export_limit"
-          ? snapshot.settings.exportPower
-          : snapshot.settings.importPower
-      ).installer;
-      if (ceiling.kind === "unset") {
-        return failure("UnsupportedCapability");
-      }
-      return ceiling.kind === "limited" && change.watts > ceiling.watts
-        ? failure("InvalidInput")
-        : null;
+      return validateGridPower(change, snapshot);
     }
+
     case "set_grid_connection_current": {
       if (snapshot.kind !== "grid") {
         return failure("SchemaMismatch");
@@ -52,6 +109,12 @@ const validateOwnerLimits = (
       }
       return change.amperes > ceiling ? failure("InvalidInput") : null;
     }
+    case "set_battery_soc_thresholds": {
+      return validateSocSnapshot(snapshot);
+    }
+    case "set_peak_shaving_schedule": {
+      return validatePeakSchedule(change, snapshot);
+    }
     case "set_battery_export": {
       if (snapshot.kind !== "battery") {
         return failure("SchemaMismatch");
@@ -61,6 +124,7 @@ const validateOwnerLimits = (
         ? failure("PermissionDenied")
         : null;
     }
+    case "stop_manual_override":
     case "set_backup_reserve":
     case "set_battery_power_limits":
     case "set_solar_power_limit":
@@ -84,12 +148,34 @@ export const makeControlsClient = (
     token: Redacted.Redacted<string>
   ): Effect.Effect<ControlSnapshot, SigenFailure> => {
     switch (change.operation) {
+      case "set_battery_soc_thresholds":
       case "set_backup_reserve":
       case "set_battery_power_limits":
       case "set_battery_export": {
         return settings
           .batterySettings(stationId, token)
           .pipe(Effect.map((value) => ({ kind: "battery", settings: value })));
+      }
+      case "set_peak_shaving_schedule": {
+        return settings
+          .peakShavingSchedule(stationId, token)
+          .pipe(
+            Effect.map((value) => ({ kind: "peak_shaving", settings: value }))
+          );
+      }
+      case "stop_manual_override": {
+        return settings.manualOverride(stationId, token).pipe(
+          Effect.map((value) => ({
+            kind: "manual",
+            settings: {
+              enabled: value.enabled,
+              fetchedAt: value.fetchedAt,
+              providerEndTime: value.providerEndTime,
+              providerMode: value.providerMode,
+              stationId: value.stationId,
+            },
+          }))
+        );
       }
       case "set_solar_power_limit": {
         return settings
@@ -159,7 +245,9 @@ export const makeControlsClient = (
         return yield* failure("PermissionDenied");
       }
       if (
-        snapshot.kind === "battery" &&
+        (snapshot.kind === "battery" ||
+          snapshot.kind === "peak_shaving" ||
+          snapshot.kind === "manual") &&
         (equipment.batteryCapacity === null || equipment.batteryCapacity <= 0)
       ) {
         return yield* failure("UnsupportedCapability");
@@ -190,8 +278,49 @@ export const makeControlsClient = (
   ) => {
     const id = { stationId: Number(stationId) };
     switch (change.operation) {
+      case "set_battery_soc_thresholds": {
+        return write(
+          "PUT",
+          "/device/energy-profile/battery/level",
+          {
+            ...id,
+            backupSOC: String(change.backupSocPercent),
+            chargeSOC: String(change.chargeSocPercent),
+            dischargeSOC: String(change.dischargeSocPercent),
+            peakShavingSOC: String(change.peakShavingSocPercent),
+          },
+          token
+        );
+      }
+      case "set_peak_shaving_schedule": {
+        return write(
+          "POST",
+          "/device/dischargesetting/peak/shaving",
+          {
+            ...id,
+            controlMode: change.enabled ? 1 : 0,
+            settingList: change.slots.map((slot) => ({
+              endTime: slot.endTime,
+              peakPower: slot.peakPowerW / 1000,
+              startTime: slot.startTime,
+              whichDay: slot.providerDays,
+            })),
+            shavingSOC: change.reserveSocPercent,
+          },
+          token
+        );
+      }
+      case "stop_manual_override": {
+        return write(
+          "PUT",
+          "/device/energy-profile/instant/manunal",
+          { ...id, duration: "", enable: false, mode: "", powerLimitation: "" },
+          token
+        );
+      }
       case "set_backup_reserve": {
         return write(
+          "PUT",
           "/device/setting/backup/reserve",
           { ...id, backupReserve: change.reservePercent },
           token
@@ -199,6 +328,7 @@ export const makeControlsClient = (
       }
       case "set_battery_power_limits": {
         return write(
+          "PUT",
           "/device/energy-profile/battery/limit",
           {
             ...id,
@@ -210,6 +340,7 @@ export const makeControlsClient = (
       }
       case "set_solar_power_limit": {
         return write(
+          "PUT",
           "/device/energy-profile/solar/limit",
           { ...id, powerLimit: powerString(change.limit) },
           token
@@ -217,6 +348,7 @@ export const makeControlsClient = (
       }
       case "set_battery_export": {
         return write(
+          "PUT",
           "/device/energy-profile/battery/export/limitation",
           { ...id, installerSetEnable: null, ownerSetEnable: change.enabled },
           token
@@ -225,6 +357,7 @@ export const makeControlsClient = (
       case "set_grid_export_limit":
       case "set_grid_import_limit": {
         return write(
+          "PUT",
           `/device/energy-profile/grid/limitation/${change.operation === "set_grid_export_limit" ? "export" : "import"}`,
           {
             ...id,
@@ -237,6 +370,7 @@ export const makeControlsClient = (
       }
       case "set_grid_connection_current": {
         return write(
+          "PUT",
           "/device/energy-profile/parallel/off/grid",
           {
             ...id,
@@ -249,6 +383,7 @@ export const makeControlsClient = (
       }
       case "set_operating_mode": {
         return write(
+          "PUT",
           "/device/energy-profile/mode",
           {
             ...id,

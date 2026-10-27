@@ -7,7 +7,14 @@ import {
   StationId,
   Timestamp,
 } from "./model.js";
-import { BatterySettings, GridSettings, SolarSettings } from "./settings.js";
+import {
+  BatterySettings,
+  GridSettings,
+  ManualOverride,
+  PeakShavingSchedule,
+  PeakShavingSlot,
+  SolarSettings,
+} from "./settings.js";
 
 const WholePercent = Percent.check(Schema.isInt());
 export const WritablePowerLimit = Schema.Union([
@@ -23,6 +30,31 @@ const Watts = Schema.Int.check(
   Schema.isBetween({ maximum: 4_294_967_294, minimum: 0 })
 );
 export const ControlChange = Schema.Union([
+  Schema.Struct({
+    backupSocPercent: WholePercent,
+    chargeSocPercent: WholePercent,
+    dischargeSocPercent: WholePercent,
+    operation: Schema.Literal("set_battery_soc_thresholds"),
+    peakShavingSocPercent: WholePercent,
+  }).check(
+    Schema.makeFilter(
+      (value) =>
+        value.dischargeSocPercent <= value.chargeSocPercent &&
+        value.backupSocPercent <= value.chargeSocPercent &&
+        value.peakShavingSocPercent <= value.chargeSocPercent
+    )
+  ),
+  Schema.Struct({
+    enabled: Schema.Boolean,
+    operation: Schema.Literal("set_peak_shaving_schedule"),
+    reserveSocPercent: WholePercent,
+    // Existing day/time windows are reviewed in full and preserved until their day-code semantics are verified.
+    slots: Schema.Array(
+      Schema.Struct({ ...PeakShavingSlot.fields, peakPowerW: Watts })
+    ).check(Schema.isMaxLength(64)),
+    timezone: PeakShavingSchedule.fields.timezone,
+  }),
+  Schema.Struct({ operation: Schema.Literal("stop_manual_override") }),
   Schema.Struct({
     operation: Schema.Literal("set_backup_reserve"),
     reservePercent: WholePercent,
@@ -67,6 +99,20 @@ export const ControlSnapshot = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("grid"), settings: GridSettings }),
   Schema.Struct({ kind: Schema.Literal("solar"), settings: SolarSettings }),
   Schema.Struct({ kind: Schema.Literal("mode"), settings: OperatingMode }),
+  Schema.Struct({
+    kind: Schema.Literal("peak_shaving"),
+    settings: PeakShavingSchedule,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("manual"),
+    settings: Schema.Struct({
+      enabled: ManualOverride.fields.enabled,
+      fetchedAt: Timestamp,
+      providerEndTime: ManualOverride.fields.providerEndTime,
+      providerMode: ManualOverride.fields.providerMode,
+      stationId: StationId,
+    }),
+  }),
 ]);
 export type ControlSnapshot = typeof ControlSnapshot.Type;
 export const CommandId = Schema.String.check(Schema.isUUID());
@@ -97,6 +143,9 @@ export const ApprovalScope = Schema.Struct({
     "set_grid_import_limit",
     "set_grid_connection_current",
     "set_operating_mode",
+    "set_battery_soc_thresholds",
+    "set_peak_shaving_schedule",
+    "stop_manual_override",
   ]),
   stationId: StationId,
 });
@@ -205,11 +254,54 @@ const matchesGridCurrent = (amperes: number, snapshot: ControlSnapshot) => {
   );
 };
 
+const matchesSoc = (
+  change: Extract<ControlChange, { operation: "set_battery_soc_thresholds" }>,
+  snapshot: ControlSnapshot
+) =>
+  snapshot.kind === "battery" &&
+  snapshot.settings.chargeSocPercent === change.chargeSocPercent &&
+  snapshot.settings.dischargeSocPercent === change.dischargeSocPercent &&
+  snapshot.settings.backupSocPercent === change.backupSocPercent &&
+  snapshot.settings.peakShavingSocPercent === change.peakShavingSocPercent;
+const matchesPeakSchedule = (
+  change: Extract<ControlChange, { operation: "set_peak_shaving_schedule" }>,
+  snapshot: ControlSnapshot
+) =>
+  snapshot.kind === "peak_shaving" &&
+  snapshot.settings.providerControlMode === (change.enabled ? 1 : 0) &&
+  snapshot.settings.reserveSocPercent === change.reserveSocPercent &&
+  snapshot.settings.timezone === change.timezone &&
+  snapshot.settings.slots.length === change.slots.length &&
+  snapshot.settings.slots.every((slot, index) => {
+    const expected = change.slots[index];
+    return (
+      expected !== undefined &&
+      slot.providerDays === expected.providerDays &&
+      slot.startTime === expected.startTime &&
+      slot.endTime === expected.endTime &&
+      Math.abs(slot.peakPowerW - expected.peakPowerW) < 0.001
+    );
+  });
+
+const matchesBatteryExport = (enabled: boolean, snapshot: ControlSnapshot) =>
+  snapshot.kind === "battery" &&
+  snapshot.settings.export.effectiveEnabled === enabled &&
+  snapshot.settings.export.ownerEnabled === enabled;
+
 export const controlMatches = (
   change: ControlChange,
   snapshot: ControlSnapshot
 ): boolean => {
   switch (change.operation) {
+    case "set_battery_soc_thresholds": {
+      return matchesSoc(change, snapshot);
+    }
+    case "set_peak_shaving_schedule": {
+      return matchesPeakSchedule(change, snapshot);
+    }
+    case "stop_manual_override": {
+      return snapshot.kind === "manual" && !snapshot.settings.enabled;
+    }
     case "set_backup_reserve": {
       return (
         snapshot.kind === "battery" &&
@@ -224,12 +316,9 @@ export const controlMatches = (
       );
     }
     case "set_battery_export": {
-      return (
-        snapshot.kind === "battery" &&
-        snapshot.settings.export.effectiveEnabled === change.enabled &&
-        snapshot.settings.export.ownerEnabled === change.enabled
-      );
+      return matchesBatteryExport(change.enabled, snapshot);
     }
+
     case "set_solar_power_limit": {
       return (
         snapshot.kind === "solar" &&

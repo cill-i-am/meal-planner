@@ -82,6 +82,57 @@ const fixture = (overrides: Readonly<Record<string, unknown>> = {}) => {
 };
 const run = Effect.runPromise;
 describe("station-scoped equipment", () => {
+  it("checks AIO membership and retains disagreeing power-status observations", async () => {
+    const { client, paths } = fixture({
+      "/device/aio/by/station": ["AIO-1"],
+      "/device/aio/on-off-state": false,
+      "/device/sigenMate/getPowerOnOffStatus": true,
+    });
+    expect(await run(client.aioDevices(stationId, token))).toMatchObject({
+      serialNumbers: ["AIO-1"],
+    });
+    expect(
+      await run(
+        client.aioPowerStatus(
+          { serialNumber: serial("AIO-1"), stationId },
+          token
+        )
+      )
+    ).toMatchObject({ onOffState: false, powerOn: true });
+    const count = paths.length;
+    expect(
+      await run(
+        client
+          .aioPowerStatus({ serialNumber: serial("OTHER"), stationId }, token)
+          .pipe(Effect.result)
+      )
+    ).toMatchObject({ failure: { reason: "PermissionDenied" } });
+    expect(paths.slice(count)).toEqual([
+      "/device/devicetreepanel/topology?stationId=12345",
+    ]);
+  });
+  it("rejects foreign or duplicate AIO serials and truthy unrecognized power responses", async () => {
+    await Promise.all(
+      [["FOREIGN"], ["AIO-1", "AIO-1"]].map(async (value) => {
+        const { client } = fixture({ "/device/aio/by/station": value });
+        const result = await run(
+          client.aioDevices(stationId, token).pipe(Effect.result)
+        );
+        expect(result._tag).toBe("Failure");
+      })
+    );
+    const { client } = fixture({
+      "/device/aio/on-off-state": false,
+      "/device/sigenMate/getPowerOnOffStatus": "false",
+    });
+    expect(
+      await run(
+        client
+          .aioPowerStatus({ serialNumber: serial("AIO-1"), stationId }, token)
+          .pipe(Effect.result)
+      )
+    ).toMatchObject({ failure: { reason: "SchemaMismatch" } });
+  });
   it("rejects oversized child arrays before expansion", async () => {
     const { client } = fixture({
       "/device/devicetreepanel/topology": {

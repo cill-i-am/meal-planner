@@ -9,6 +9,7 @@ const stationId = Schema.decodeUnknownSync(StationId)("12345");
 const token = Redacted.make("synthetic-access");
 const fixture = () => {
   const writes: {
+    method: "PUT" | "POST";
     path: string;
     body: Readonly<Record<string, Schema.Json>>;
   }[] = [];
@@ -22,9 +23,9 @@ const fixture = () => {
             }
           : { batteryCapacity: 8.1, hasSolar: true, stationId: 12_345 }
       ),
-    (path, body) =>
+    (method, path, body) =>
       Effect.sync(() => {
-        writes.push({ body, path });
+        writes.push({ body, method, path });
       })
   );
   return { client, writes };
@@ -105,6 +106,7 @@ describe("typed physical control adapters", () => {
           maxLimitationOwner: "2.5",
           stationId: 12_345,
         },
+        method: "PUT",
         path: "/device/energy-profile/grid/limitation/export",
       },
       {
@@ -114,6 +116,7 @@ describe("typed physical control adapters", () => {
           ownerSetLimitation: "16.1",
           stationId: 12_345,
         },
+        method: "PUT",
         path: "/device/energy-profile/parallel/off/grid",
       },
       {
@@ -122,6 +125,7 @@ describe("typed physical control adapters", () => {
           batteryMaxDischargingPower: "1.234",
           stationId: 12_345,
         },
+        method: "PUT",
         path: "/device/energy-profile/battery/limit",
       },
     ]);

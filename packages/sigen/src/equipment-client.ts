@@ -2,6 +2,8 @@ import { Clock, Effect, Schema } from "effect";
 import type { Redacted } from "effect";
 
 import {
+  AioDevices,
+  AioPowerStatus,
   DeviceInfo,
   DeviceValues,
   Gateway,
@@ -128,6 +130,71 @@ export const makeEquipmentClient = (read: ProviderRead) => {
       return { device, inventory };
     });
   return {
+    aioDevices: (id: StationId, token: Redacted.Redacted<string>) =>
+      Effect.gen(function* readAioDevices() {
+        const inventory = yield* topology(id, token);
+        const serialNumbers = yield* get(
+          `/device/aio/by/station?stationId=${id}`,
+          token,
+          AioDevices.fields.serialNumbers
+        );
+        if (new Set(serialNumbers).size !== serialNumbers.length) {
+          return yield* failure("SchemaMismatch");
+        }
+        if (
+          serialNumbers.some(
+            (serial) =>
+              !inventory.devices.some(
+                (device) =>
+                  device.serialNumber === serial &&
+                  device.providerDeviceType === 2
+              )
+          )
+        ) {
+          return yield* failure("PermissionDenied");
+        }
+        return {
+          fetchedAt: yield* Clock.currentTimeMillis,
+          serialNumbers,
+          stationId: id,
+        };
+      }),
+    aioPowerStatus: (input: DeviceInput, token: Redacted.Redacted<string>) =>
+      Effect.gen(function* readAioPowerStatus() {
+        const { device } = yield* member(input, token);
+        if (device.providerDeviceType !== 2) {
+          return yield* failure("UnsupportedCapability");
+        }
+        const query = new URLSearchParams({
+          deviceSnCode: input.serialNumber,
+          stationId: input.stationId,
+        });
+        const stateQuery = new URLSearchParams({
+          snCode: input.serialNumber,
+          stationId: input.stationId,
+        });
+        const [powerOn, onOffState] = yield* Effect.all(
+          [
+            get(
+              `/device/sigenMate/getPowerOnOffStatus?${query}`,
+              token,
+              Schema.Boolean
+            ),
+            get(
+              `/device/aio/on-off-state?${stateQuery}`,
+              token,
+              Schema.Boolean
+            ),
+          ],
+          { concurrency: 2 }
+        );
+        return yield* decodeProvider(AioPowerStatus)({
+          ...input,
+          fetchedAt: yield* Clock.currentTimeMillis,
+          onOffState,
+          powerOn,
+        });
+      }),
     deviceInfo: (input: DeviceInput, token: Redacted.Redacted<string>) =>
       Effect.gen(function* readDeviceInfo() {
         const { device } = yield* member(input, token);

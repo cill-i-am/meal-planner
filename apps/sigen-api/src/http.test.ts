@@ -52,6 +52,15 @@ const status = {
 };
 const options: HttpOptions = {
   capabilities: {
+    aioDevices: (stationId) =>
+      Effect.succeed({ fetchedAt: 123, serialNumbers: [], stationId }),
+    aioPowerStatus: (input) =>
+      Effect.succeed({
+        ...input,
+        fetchedAt: 123,
+        onOffState: false,
+        powerOn: true,
+      }),
     alarms: (input) =>
       Effect.succeed({
         fetchedAt: 123,
@@ -425,7 +434,13 @@ describe("authenticated HTTP and MCP parity", () => {
           if (op.name === "list_alarms") {
             return { page: 1, pageSize: 10, state: "active", stationId: id };
           }
-          if (["get_device_info", "get_device_values"].includes(op.name)) {
+          if (
+            [
+              "get_device_info",
+              "get_device_values",
+              "get_aio_power_status",
+            ].includes(op.name)
+          ) {
             return { serialNumber, stationId: id };
           }
           return { stationId: id };

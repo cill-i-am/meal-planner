@@ -51,7 +51,9 @@ it(
     );
     const persistence = await mkdtemp(path.join(tmpdir(), "sigen-runtime-"));
     let renewals = 0;
-    const makeRuntime = () =>
+    let solarPowerLimit = "4294967.295";
+    let physicalWrites = 0;
+    const makeRuntime = (controlsEnabled = false) =>
       new Miniflare(
         convertV4MiniflareOptions({
           bindings: {
@@ -60,6 +62,7 @@ it(
             ALCHEMY_STACK_NAME: "SigenApi",
             ALCHEMY_STAGE: "prod",
             ALCHEMY_WORKER_NAME: "sigen-api",
+            SIGEN_CONTROLS_ENABLED: secret(String(controlsEnabled)),
             SIGEN_OPERATOR_TOKEN_SHA256: secret(hash(operator)),
             SIGEN_OWNER_TOKEN_SHA256: secret(hash(owner)),
             SIGEN_SESSION_ENCRYPTION_KEY: secret("c".repeat(64)),
@@ -144,8 +147,19 @@ it(
             if (url.pathname === "/device/energy-profile/solar/limit/12345") {
               return Response.json({
                 code: 0,
-                data: { powerLimit: "4294967.295" },
+                data: { powerLimit: solarPowerLimit },
               });
+            }
+            if (
+              url.pathname === "/device/energy-profile/solar/limit" &&
+              request.method === "PUT"
+            ) {
+              const body = Schema.decodeUnknownSync(
+                Schema.Struct({ powerLimit: Schema.String })
+              )(await request.json());
+              solarPowerLimit = body.powerLimit;
+              physicalWrites += 1;
+              return Response.json({ code: 0, data: null });
             }
             if (url.pathname === "/alarm/history/page") {
               return Response.json({
@@ -211,7 +225,7 @@ it(
       // @ts-expect-error SDK 1.32.1's sessionId getter disagrees with Transport under exactOptionalPropertyTypes.
       await client.connect(transport);
       const listed = await client.listTools();
-      expect(listed.tools).toHaveLength(27);
+      expect(listed.tools).toHaveLength(29);
       const initial = await client.callTool({
         arguments: {},
         name: "connection_status",
@@ -354,7 +368,7 @@ it(
       ]);
       await client.close();
       await runtime.dispose();
-      runtime = makeRuntime();
+      runtime = makeRuntime(true);
       const restored = await fetch(
         new URL("/v1/connection_status", await runtime.ready),
         {
@@ -384,6 +398,74 @@ it(
       expect(await restoredCommand.json()).toMatchObject({
         phase: { approval: { kind: "grant" }, status: "approved" },
       });
+      const postCommand = async (name: string, input: object) => {
+        const response = await fetch(
+          new URL(`/v1/${name}`, await runtime.ready),
+          {
+            body: JSON.stringify(input),
+            headers: {
+              authorization: `Bearer ${owner}`,
+              "content-type": "application/json",
+            },
+            method: "POST",
+          }
+        );
+        return { body: await response.json(), status: response.status };
+      };
+      const commandIdentity = { commandId, stationId: "12345" };
+      const executed = await postCommand("execute_command", commandIdentity);
+      expect(executed.body).toMatchObject({ phase: { status: "verified" } });
+      const repeated = await postCommand("execute_command", commandIdentity);
+      expect(repeated.body).toMatchObject({ phase: { status: "verified" } });
+      expect(physicalWrites).toBe(1);
+      const nextId = "0b1b8134-73fc-4ba9-8cb0-fd07dc20ea02";
+      const nextResult = await postCommand("prepare_command", {
+        change: {
+          limit: { kind: "limited", watts: 1500 },
+          operation: "set_solar_power_limit",
+        },
+        commandId: nextId,
+        stationId: "12345",
+      });
+      const next = Schema.decodeUnknownSync(Command)(nextResult.body);
+      expect(next.phase.status).toBe("approved");
+      if (
+        next.phase.status !== "approved" ||
+        next.phase.approval.kind !== "grant"
+      ) {
+        throw new Error("Expected persistent grant");
+      }
+      await postCommand("revoke_approval_grant", {
+        grantId: next.phase.approval.grantId,
+        stationId: "12345",
+      });
+      expect(
+        await postCommand("execute_command", {
+          commandId: nextId,
+          stationId: "12345",
+        })
+      ).toMatchObject({ body: { error: "ApprovalRequired" }, status: 409 });
+      expect(physicalWrites).toBe(1);
+      await postCommand("approve_command", {
+        change: next.review.change,
+        commandId: nextId,
+        current: next.review.current,
+        mode: "once",
+        reviewFingerprint: next.review.reviewFingerprint,
+        stationId: "12345",
+      });
+      const onceExecuted = await postCommand("execute_command", {
+        commandId: nextId,
+        stationId: "12345",
+      });
+      expect(onceExecuted.body).toMatchObject({
+        phase: { status: "verified" },
+      });
+      expect(physicalWrites).toBe(2);
+      const permissions = await postCommand("list_approval_grants", {
+        stationId: "12345",
+      });
+      expect(permissions.body).toEqual({ grants: [] });
       const report = await fetch(
         new URL("/admin/session", await runtime.ready),
         { headers: { authorization: `Bearer ${operator}` } }

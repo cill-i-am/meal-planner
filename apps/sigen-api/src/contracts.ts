@@ -18,6 +18,8 @@ import {
   RevokeApprovalInput,
 } from "@meal-planner/sigen/controls";
 import {
+  AioDevices,
+  AioPowerStatus,
   DeviceInput,
   DeviceInfo,
   DeviceValues,
@@ -46,6 +48,12 @@ import { Context, Effect, Schema, flow } from "effect";
 export class SigenCapabilities extends Context.Service<
   SigenCapabilities,
   {
+    readonly aioDevices: (
+      id: StationId
+    ) => Effect.Effect<typeof AioDevices.Type, SigenFailure>;
+    readonly aioPowerStatus: (
+      input: typeof DeviceInput.Type
+    ) => Effect.Effect<typeof AioPowerStatus.Type, SigenFailure>;
     readonly tariffs: (
       id: StationId
     ) => Effect.Effect<typeof Tariffs.Type, SigenFailure>;
@@ -169,6 +177,21 @@ const operation = <
 });
 
 export const operations = [
+  operation(
+    "list_aio_devices",
+    "List SigenStor AIO serials verified against the enrolled station topology.",
+    StationInput,
+    AioDevices,
+    (input) =>
+      SigenCapabilities.use((service) => service.aioDevices(input.stationId))
+  ),
+  operation(
+    "get_aio_power_status",
+    "Read both AIO power-status observations for a topology-verified serial. Disagreement remains explicit; this does not switch or restart equipment.",
+    DeviceInput,
+    AioPowerStatus,
+    (input) => SigenCapabilities.use((service) => service.aioPowerStatus(input))
+  ),
   operation(
     "get_tariffs",
     "Read buy/sell tax and fee settings and derived price coefficients. Provider fee units remain unverified; do not treat them as major currency amounts.",

@@ -62,19 +62,18 @@ export const OperatingModes = Schema.Struct({
 const TimeOfDay = Schema.String.check(
   Schema.isPattern(/^(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)$/u)
 );
+export const PeakShavingSlot = Schema.Struct({
+  endTime: TimeOfDay,
+  peakPowerW: NonNegative,
+  providerDays: Schema.String,
+  startTime: TimeOfDay,
+});
 export const PeakShavingSchedule = Schema.Struct({
   ...Snapshot,
   // Preserve unknown control modes instead of interpreting them as disabled.
   providerControlMode: Schema.Number,
   reserveSocPercent: Percent,
-  slots: Schema.Array(
-    Schema.Struct({
-      endTime: TimeOfDay,
-      peakPowerW: NonNegative,
-      providerDays: Schema.String,
-      startTime: TimeOfDay,
-    })
-  ),
+  slots: Schema.Array(PeakShavingSlot).check(Schema.isMaxLength(64)),
   timezone: Schema.String,
 });
 export const ManualOverride = Schema.Struct({

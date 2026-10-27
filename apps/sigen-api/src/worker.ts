@@ -53,6 +53,8 @@ export default class SigenApi extends Cloudflare.Worker<SigenApi>()(
         const account = accounts.getByName("private-owner");
         const handler = makeHttpHandler({
           capabilities: {
+            aioDevices: (id) => bind(account.aioDevices(id)),
+            aioPowerStatus: (input) => bind(account.aioPowerStatus(input)),
             alarms: (input) => bind(account.alarms(input)),
             approvalGrants: (id) => bind(account.approvalGrants(id)),
             approveCommand: (input) => bind(account.approveCommand(input)),

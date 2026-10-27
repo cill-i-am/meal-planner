@@ -8,6 +8,17 @@ export const DeviceInput = Schema.Struct({
 });
 export type DeviceInput = typeof DeviceInput.Type;
 const Snapshot = { fetchedAt: Timestamp, stationId: StationId };
+export const AioDevices = Schema.Struct({
+  ...Snapshot,
+  serialNumbers: Schema.Array(SerialNumber).check(Schema.isMaxLength(256)),
+});
+export const AioPowerStatus = Schema.Struct({
+  ...Snapshot,
+  // These are separate provider observations; disagreement is not coerced into a single truth.
+  onOffState: Schema.Boolean,
+  powerOn: Schema.Boolean,
+  serialNumber: SerialNumber,
+});
 export const Device = Schema.Struct({
   model: Schema.String,
   name: Schema.String,

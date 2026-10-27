@@ -204,9 +204,9 @@ export const makeSigenClient = Effect.gen(function* makeSigenClient() {
     }).pipe(Effect.flatMap(unwrap));
 
   return {
-    ...makeControlsClient(read, (path, body, accessToken) =>
+    ...makeControlsClient(read, (method, path, body, accessToken) =>
       request(
-        "PUT",
+        method,
         path,
         {
           authorization: `Bearer ${Redacted.value(accessToken)}`,

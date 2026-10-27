@@ -89,6 +89,10 @@ const runtime = Effect.gen(function* constructAccountObject() {
         Effect.scoped
       );
     return {
+      aioDevices: (id: StationId) =>
+        inputCall(StationId, id, session.aioDevices),
+      aioPowerStatus: (input: typeof DeviceInput.Type) =>
+        inputCall(DeviceInput, input, session.aioPowerStatus),
       alarm: () => session.onAlarm.pipe(Effect.scoped),
       alarms: (input: typeof AlarmInput.Type) =>
         inputCall(AlarmInput, input, session.alarms),

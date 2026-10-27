@@ -305,6 +305,10 @@ export const makeSession = <R>(
       })
     );
     return {
+      aioDevices: (id: StationId) =>
+        read(id, (token) => client.aioDevices(id, token)),
+      aioPowerStatus: (input: DeviceInput) =>
+        read(input.stationId, (token) => client.aioPowerStatus(input, token)),
       alarms: (input: AlarmInput) =>
         read(input.stationId, (token) => client.alarms(input, token)),
       batterySettings: (id: StationId) =>
