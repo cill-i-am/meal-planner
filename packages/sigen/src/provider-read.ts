@@ -20,7 +20,8 @@ export const ProviderLocalTimestamp = Schema.String.check(
 /** Internal adapter port; it is never exposed through HTTP or MCP. */
 export type ProviderRead = (
   path: string,
-  token: Redacted.Redacted<string>
+  token: Redacted.Redacted<string>,
+  appVersion?: "4.1.0"
 ) => Effect.Effect<unknown, SigenFailure>;
 export const decodeProvider = <S extends Schema.Top>(schema: S) =>
   flow(

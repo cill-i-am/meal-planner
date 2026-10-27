@@ -24,6 +24,7 @@ import {
   failure,
 } from "./model.js";
 import { makeProfileClient } from "./profile-client.js";
+import type { ProviderRead } from "./provider-read.js";
 import { makeSettingsClient } from "./settings-client.js";
 import { makeTariffsClient } from "./tariffs-client.js";
 
@@ -200,11 +201,17 @@ export const makeSigenClient = Effect.gen(function* makeSigenClient() {
         refreshToken: parsed.refresh_token,
       });
     });
-  const read = (path: string, accessToken: Redacted.Redacted<string>) =>
-    request("GET", path, {
+  const read: ProviderRead = (path, accessToken, appVersion) => {
+    const headers: Record<string, string> = {
       authorization: `Bearer ${Redacted.value(accessToken)}`,
       "content-type": "application/json",
-    }).pipe(Effect.flatMap(unwrap));
+    };
+    if (appVersion !== undefined) {
+      headers["sg-app-version"] = appVersion;
+      headers["sg-v"] = appVersion;
+    }
+    return request("GET", path, headers).pipe(Effect.flatMap(unwrap));
+  };
 
   return {
     ...makeControlsClient(read, (method, path, body, accessToken) =>

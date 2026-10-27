@@ -129,6 +129,10 @@ it(
               });
             }
             expect(request.headers.get("sg-pkg")).toBe("sigen_app");
+            if (url.pathname !== "/data-process/station/backup-event") {
+              expect(request.headers.has("sg-app-version")).toBe(false);
+              expect(request.headers.has("sg-v")).toBe(false);
+            }
             if (url.pathname === "/device/sigen/station/energyflow") {
               return Response.json({
                 code: 0,
@@ -198,6 +202,8 @@ it(
               });
             }
             if (url.pathname === "/data-process/station/backup-event") {
+              expect(request.headers.get("sg-app-version")).toBe("4.1.0");
+              expect(request.headers.get("sg-v")).toBe("4.1.0");
               return Response.json({
                 code: 0,
                 data: {

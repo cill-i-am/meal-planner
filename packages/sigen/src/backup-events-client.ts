@@ -55,9 +55,12 @@ export const makeBackupEventsClient = (read: ProviderRead) => ({
       });
       const [data, zone] = yield* Effect.all(
         [
-          read(`/data-process/station/backup-event?${query}`, token).pipe(
-            Effect.flatMap(decodeProvider(Response))
-          ),
+          // The app sends both version headers for this diagnostic payload.
+          read(
+            `/data-process/station/backup-event?${query}`,
+            token,
+            "4.1.0"
+          ).pipe(Effect.flatMap(decodeProvider(Response))),
           readStationTimezone(read, input.stationId, token),
         ],
         { concurrency: 2 }
