@@ -112,6 +112,31 @@ describe("backup history", () => {
     ).toMatchObject({ records: [], total: 0, totalDurationSeconds: 0 });
   });
   it.each([
+    { ...page, current: 2, records: [page.records[0]] },
+    {
+      ...page,
+      current: 2,
+      pages: 2,
+      records: page.records.slice(0, 2),
+      total: 11,
+    },
+  ])(
+    "rejects records exceeding the remaining total on later pages",
+    async (invalid) => {
+      const f = fixture({ ...response, backupHistoryDetailVOIpage: invalid });
+      expect(
+        await Effect.runPromise(
+          f.client
+            .backupHistory({ ...input, page: 2 }, token)
+            .pipe(Effect.result)
+        )
+      ).toMatchObject({
+        _tag: "Failure",
+        failure: { reason: "SchemaMismatch" },
+      });
+    }
+  );
+  it.each([
     { ...page, current: 2 },
     { ...page, size: 20 },
     { ...page, pages: 2 },

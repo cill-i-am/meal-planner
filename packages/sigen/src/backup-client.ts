@@ -61,7 +61,8 @@ export const makeBackupClient = (read: ProviderRead) => ({
         page.current !== input.page ||
         page.size !== input.pageSize ||
         page.records.length > input.pageSize ||
-        page.records.length > page.total ||
+        page.records.length >
+          Math.max(0, page.total - (page.current - 1) * page.size) ||
         page.pages !== Math.ceil(page.total / page.size)
       ) {
         return yield* failure("SchemaMismatch");
