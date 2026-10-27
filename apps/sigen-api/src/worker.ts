@@ -59,10 +59,14 @@ export default class SigenApi extends Cloudflare.Worker<SigenApi>()(
             approvalGrants: (id) => bind(account.approvalGrants(id)),
             approveCommand: (input) => bind(account.approveCommand(input)),
             automationSettings: (id) => bind(account.automationSettings(id)),
+            backupEvents: (input) => bind(account.backupEvents(input)),
             backupHistory: (input) => bind(account.backupHistory(input)),
+            batteryDischargePriority: (id) =>
+              bind(account.batteryDischargePriority(id)),
             batterySettings: (id) => bind(account.batterySettings(id)),
             deviceInfo: (input) => bind(account.deviceInfo(input)),
             deviceValues: (input) => bind(account.deviceValues(input)),
+            energyCapabilities: (id) => bind(account.energyCapabilities(id)),
             energyFlow: (id) => bind(account.energyFlow(id)),
             energyHistory: (input) => bind(account.energyHistory(input)),
             energySavingSettings: (id) =>

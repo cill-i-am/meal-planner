@@ -87,6 +87,17 @@ const options: HttpOptions = {
         stationId,
         timezone: "Europe/Dublin",
       }),
+    backupEvents: (input) =>
+      Effect.succeed({
+        ...input,
+        fetchedAt: 123,
+        pageSize: 10,
+        pages: 0,
+        providerModelType: 0,
+        records: [],
+        timezone: "Europe/Dublin",
+        total: 0,
+      }),
     backupHistory: (input) =>
       Effect.succeed({
         ...input,
@@ -97,6 +108,12 @@ const options: HttpOptions = {
         reportedEventCount: 0,
         timezone: "Europe/Dublin",
         total: 0,
+      }),
+    batteryDischargePriority: (stationId) =>
+      Effect.succeed({
+        fetchedAt: 123,
+        providerSources: ["pv", "grid"],
+        stationId,
       }),
     batterySettings: (stationId) =>
       Effect.succeed({
@@ -135,6 +152,29 @@ const options: HttpOptions = {
         fetchedAt: 123,
         readings: [],
         stationId: input.stationId,
+      }),
+    energyCapabilities: (stationId) =>
+      Effect.succeed({
+        batterySourceOptions: ["pv", "grid"],
+        emsUpgradeSupported: true,
+        fetchedAt: 123,
+        gridSourceOptions: ["pv", "battery"],
+        providerFeatures: {
+          hasBackupSetting: true,
+          hasBatteryAutomation: false,
+          hasBatteryPriority: false,
+          hasBatterySetting: true,
+          hasEVACSetting: false,
+          hasEVDCSetting: false,
+          hasGridAutomation: false,
+          hasGridPriority: false,
+          hasPVPriority: true,
+          isIndustry: false,
+          support: true,
+          supportFreePowerOptimization: false,
+          supportZeroFeedInControl: false,
+        },
+        stationId,
       }),
     energyFlow: (stationId) =>
       Effect.succeed({
@@ -478,6 +518,14 @@ describe("authenticated HTTP and MCP parity", () => {
           }
           if (op.name === "get_station_income") {
             return { date: "2026-10-25", stationId: id };
+          }
+          if (op.name === "list_backup_events") {
+            return {
+              endDate: "2026-10-31",
+              page: 1,
+              startDate: "2026-10-01",
+              stationId: id,
+            };
           }
           if (op.name === "get_backup_history") {
             return { page: 1, pageSize: 10, stationId: id };

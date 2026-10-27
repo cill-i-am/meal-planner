@@ -11,7 +11,8 @@
     "./history": "./src/history.ts",
     "./controls": "./src/controls.ts",
     "./tariffs": "./src/tariffs.ts",
-    "./backup": "./src/backup.ts"
+    "./backup": "./src/backup.ts",
+    "./profile": "./src/profile.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

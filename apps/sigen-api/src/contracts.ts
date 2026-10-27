@@ -9,7 +9,12 @@ import {
 } from "@meal-planner/sigen";
 import type { SigenFailure, StationId } from "@meal-planner/sigen";
 import { AlarmInput, Alarms } from "@meal-planner/sigen/alarms";
-import { BackupHistory, BackupHistoryInput } from "@meal-planner/sigen/backup";
+import {
+  BackupEvents,
+  BackupEventsInput,
+  BackupHistory,
+  BackupHistoryInput,
+} from "@meal-planner/sigen/backup";
 import {
   ApprovalGrants,
   ApproveCommandInput,
@@ -38,6 +43,10 @@ import {
   ForecastInput,
 } from "@meal-planner/sigen/history";
 import {
+  BatteryDischargePriority,
+  EnergyCapabilities,
+} from "@meal-planner/sigen/profile";
+import {
   EnergySavingSettings,
   AutomationSettings,
   BatterySettings,
@@ -53,6 +62,15 @@ import { Context, Effect, Schema, flow } from "effect";
 export class SigenCapabilities extends Context.Service<
   SigenCapabilities,
   {
+    readonly backupEvents: (
+      input: typeof BackupEventsInput.Type
+    ) => Effect.Effect<typeof BackupEvents.Type, SigenFailure>;
+    readonly batteryDischargePriority: (
+      id: StationId
+    ) => Effect.Effect<typeof BatteryDischargePriority.Type, SigenFailure>;
+    readonly energyCapabilities: (
+      id: StationId
+    ) => Effect.Effect<typeof EnergyCapabilities.Type, SigenFailure>;
     readonly backupHistory: (
       input: typeof BackupHistoryInput.Type
     ) => Effect.Effect<typeof BackupHistory.Type, SigenFailure>;
@@ -194,6 +212,33 @@ const operation = <
 });
 
 export const operations = [
+  operation(
+    "list_backup_events",
+    "Read one ten-event page from the Backup Event Center using inclusive station-local dates spanning at most 31 days. Preserves duplicate events, provider type/reason codes and original measurement labels/values without inferring outage causes. Second-precision timestamps retain all DST candidates. Unverified multi-phase or extra-device details return UnsupportedCapability.",
+    BackupEventsInput,
+    BackupEvents,
+    (input) => SigenCapabilities.use((service) => service.backupEvents(input))
+  ),
+  operation(
+    "get_energy_capabilities",
+    "Read the app-reported energy-profile feature flags, battery/grid source options and EMS upgrade support. Availability flags do not authorize changes or imply configured automations are active; false stays false.",
+    StationInput,
+    EnergyCapabilities,
+    (input) =>
+      SigenCapabilities.use((service) =>
+        service.energyCapabilities(input.stationId)
+      )
+  ),
+  operation(
+    "get_battery_discharge_priority",
+    "Read the provider's battery-discharge priority list in its original order. Source codes are preserved, including unfamiliar values; this does not change priorities or infer the current power flow.",
+    StationInput,
+    BatteryDischargePriority,
+    (input) =>
+      SigenCapabilities.use((service) =>
+        service.batteryDischargePriority(input.stationId)
+      )
+  ),
   operation(
     "get_backup_history",
     "Read paginated off-grid operation history with durations and the current page duration in seconds. The total event count spans all pages. Event times retain the station timezone and all possible UTC instants across DST. These events do not by themselves prove a mains outage.",

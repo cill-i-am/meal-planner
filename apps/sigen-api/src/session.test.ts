@@ -1,4 +1,3 @@
-/* eslint-disable no-await-in-loop -- Each rotation depends on the persisted credentials from the previous cycle. */
 import {
   EnergyFlow,
   Enrollment,
@@ -7,6 +6,8 @@ import {
   failure,
 } from "@meal-planner/sigen";
 import type { TokenBundle } from "@meal-planner/sigen";
+/* eslint-disable no-await-in-loop -- Each rotation depends on the persisted credentials from the previous cycle. */
+import { BackupEventsInput } from "@meal-planner/sigen/backup";
 import type { SigenClient } from "@meal-planner/sigen/client";
 import { Effect, Redacted, Schema } from "effect";
 import { describe, expect, it } from "vitest";
@@ -82,11 +83,15 @@ const fixture = () => {
     aioPowerStatus: () => Effect.fail(failure("UnsupportedCapability")),
     alarms: () => Effect.fail(failure("UnsupportedCapability")),
     automationSettings: () => Effect.fail(failure("UnsupportedCapability")),
+    backupEvents: () => Effect.fail(failure("UnsupportedCapability")),
     backupHistory: () => Effect.fail(failure("UnsupportedCapability")),
+    batteryDischargePriority: () =>
+      Effect.fail(failure("UnsupportedCapability")),
     batterySettings: () => Effect.fail(failure("UnsupportedCapability")),
     deviceInfo: () => Effect.fail(failure("UnsupportedCapability")),
     deviceValues: () => Effect.fail(failure("UnsupportedCapability")),
     dispatchControl: () => Effect.fail(failure("UnsupportedCapability")),
+    energyCapabilities: () => Effect.fail(failure("UnsupportedCapability")),
     energyFlow: () => Effect.succeed(flow),
     energyHistory: () => Effect.fail(failure("UnsupportedCapability")),
     energySavingSettings: () => Effect.fail(failure("UnsupportedCapability")),
@@ -472,6 +477,18 @@ describe("durable Sigen session", () => {
         .backupHistory({ page: 1, pageSize: 10, stationId: otherStation })
         .pipe(Effect.asVoid),
       session.energySavingSettings(otherStation).pipe(Effect.asVoid),
+      session
+        .backupEvents(
+          Schema.decodeUnknownSync(BackupEventsInput)({
+            endDate: "2026-10-31",
+            page: 1,
+            startDate: "2026-10-01",
+            stationId: otherStation,
+          })
+        )
+        .pipe(Effect.asVoid),
+      session.energyCapabilities(otherStation).pipe(Effect.asVoid),
+      session.batteryDischargePriority(otherStation).pipe(Effect.asVoid),
     ]) {
       expect(await run(read.pipe(Effect.result))).toMatchObject({
         _tag: "Failure",

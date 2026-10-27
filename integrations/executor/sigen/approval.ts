@@ -1,6 +1,9 @@
 import { always, never } from "apps/operations/approval";
 
 const reads = new Set([
+  "list_backup_events",
+  "get_energy_capabilities",
+  "get_battery_discharge_priority",
   "get_backup_history",
   "get_energy_saving_settings",
   "list_aio_devices",

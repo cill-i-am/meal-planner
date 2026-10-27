@@ -10,6 +10,9 @@ This independent Cloudflare service implements core and settings reads from the 
 | `get_station` | `{stationId}` | selected station metadata and explicit equipment capabilities |
 | `get_energy_flow` | `{stationId}` | watts, SOC, provider/fetch timestamps and freshness |
 | `get_operating_mode` | `{stationId}` | provider mode/profile IDs, preserving unfamiliar modes |
+| `list_backup_events` | `{stationId,startDate,endDate,page}` | fixed ten-event pages; inclusive local dates spanning ≤31 days; diagnostic display values, provider codes and second-precision UTC candidates |
+| `get_energy_capabilities` | `{stationId}` | app-reported profile feature flags, source options and EMS-upgrade support; does not authorize or perform upgrades |
+| `get_battery_discharge_priority` | `{stationId}` | ordered provider source codes; no priority changes or power-flow inference |
 | `get_backup_history` | `{stationId,page,pageSize}` | off-grid events, second-precision local timestamps with UTC candidates, durations and page duration in seconds, full-history event counts; page 1–1000, size 1–100 |
 | `get_energy_saving_settings` | `{stationId}` | off-grid enable flag and uninterpreted provider mode/value codes |
 | `get_battery_settings` | `{stationId}` | reserve/SOC thresholds, power limits and export permission |

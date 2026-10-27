@@ -1,24 +1,17 @@
-import { Clock, DateTime, Effect, Option, Schema } from "effect";
+import { Clock, DateTime, Effect, Schema } from "effect";
 import type { Redacted } from "effect";
 
 import { BackupHistory } from "./backup.js";
 import type { BackupHistoryInput } from "./backup.js";
 import { localTimeCandidates } from "./history.js";
 import { failure } from "./model.js";
-import { decodeProvider, readStationTimezone } from "./provider-read.js";
+import {
+  ProviderLocalTimestamp,
+  decodeProvider,
+  readStationTimezone,
+} from "./provider-read.js";
 import type { ProviderRead } from "./provider-read.js";
 
-const ProviderLocalTime = Schema.String.check(
-  Schema.isPattern(/^20\d{2}-\d{2}-\d{2} [0-2]\d:[0-5]\d:[0-5]\d$/u),
-  Schema.makeFilter((value) => {
-    const local = value.replace(" ", "T");
-    const parsed = DateTime.make(`${local}Z`);
-    return (
-      Option.isSome(parsed) &&
-      DateTime.formatIso(parsed.value).slice(0, 19) === local
-    );
-  })
-);
 const Response = Schema.Struct({
   backupDetailNum: BackupHistory.fields.reportedEventCount,
   backupHistoryDetailVOIpage: Schema.Struct({
@@ -27,7 +20,7 @@ const Response = Schema.Struct({
     records: Schema.Array(
       Schema.Struct({
         offGridDuration: BackupHistory.fields.pageDurationSeconds,
-        offGridTime: ProviderLocalTime,
+        offGridTime: ProviderLocalTimestamp,
       })
     ).check(Schema.isMaxLength(100)),
     size: BackupHistory.fields.pageSize,

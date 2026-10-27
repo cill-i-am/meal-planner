@@ -1,8 +1,21 @@
 import type { Redacted } from "effect";
-import { DateTime, Effect, Schema, flow } from "effect";
+import { DateTime, Effect, Option, Schema, flow } from "effect";
 
 import { failure } from "./model.js";
 import type { SigenFailure, StationId } from "./model.js";
+
+/** Shared by the app's backup duration history and diagnostic event feed. */
+export const ProviderLocalTimestamp = Schema.String.check(
+  Schema.isPattern(/^20\d{2}-\d{2}-\d{2} [0-2]\d:[0-5]\d:[0-5]\d$/u),
+  Schema.makeFilter((value) => {
+    const local = value.replace(" ", "T");
+    const parsed = DateTime.make(`${local}Z`);
+    return (
+      Option.isSome(parsed) &&
+      DateTime.formatIso(parsed.value).slice(0, 19) === local
+    );
+  })
+);
 
 /** Internal adapter port; it is never exposed through HTTP or MCP. */
 export type ProviderRead = (

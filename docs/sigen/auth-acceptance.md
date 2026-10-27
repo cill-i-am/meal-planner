@@ -77,7 +77,7 @@ coverage and live control acceptance remain separate work.
 
 ## Local checks
 
-153 focused client/service/Executor-policy tests pass, including HTTP/application failures,
+191 focused client/service/Executor-policy tests pass, including HTTP/application failures,
 shorter-lived refreshed tokens, interrupted rotation, authorization and MCP
 cleanup. The native workerd test also passes: actual Alchemy bundle, real SDK,
 sanitized HTTP rejection through native RPC, encrypted enrollment, three

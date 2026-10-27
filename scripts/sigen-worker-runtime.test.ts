@@ -161,6 +161,71 @@ it(
               physicalWrites += 1;
               return Response.json({ code: 0, data: null });
             }
+            if (url.pathname === "/device/energy-profile/support/12345") {
+              return Response.json({
+                code: 0,
+                data: {
+                  batteryPriorityItem: ["pv", "grid"],
+                  gridPriorityItem: ["pv", "battery"],
+                  hasBackupSetting: true,
+                  hasBatteryAutomation: false,
+                  hasBatteryPriority: false,
+                  hasBatterySetting: true,
+                  hasEVACSetting: false,
+                  hasEVDCSetting: false,
+                  hasGridAutomation: false,
+                  hasGridPriority: false,
+                  hasPVPriority: true,
+                  isIndustry: false,
+                  support: true,
+                  supportFreePowerOptimization: false,
+                  supportZeroFeedInControl: false,
+                },
+              });
+            }
+            if (
+              url.pathname === "/device/energy-profile/support/upgradeEms/12345"
+            ) {
+              return Response.json({ code: 0, data: true });
+            }
+            if (
+              url.pathname ===
+              "/device/energy-profile/battery/discharge/priority/12345"
+            ) {
+              return Response.json({
+                code: 0,
+                data: { priority: ["pv", "grid"] },
+              });
+            }
+            if (url.pathname === "/data-process/station/backup-event") {
+              return Response.json({
+                code: 0,
+                data: {
+                  backupHistoryDetailVOIpage: {
+                    current: 1,
+                    pages: 1,
+                    records: [
+                      {
+                        backupType: 1,
+                        extraDeviceInfoList: [],
+                        phaseInfoVOList: [],
+                        reasonType: 17,
+                        signalPhaseInfoVOList: [
+                          { paramKey: "Voltage", paramValue: "235.05 v" },
+                        ],
+                        time: "2026-10-25 01:30:13",
+                      },
+                    ],
+                    size: 10,
+                    total: 1,
+                  },
+                  endTime: "2026-10-25",
+                  filterItems: [],
+                  modelTypeCode: 0,
+                  startTime: "2026-10-25",
+                },
+              });
+            }
             if (url.pathname === "/data-process/station/backup-history") {
               return Response.json({
                 code: 0,
@@ -242,7 +307,9 @@ it(
           ratelimits: {
             SIGEN_OWNER_LIMIT: {
               namespace_id: "61804",
-              simple: { limit: 30, period: 60 },
+              // This protocol suite exceeds a production minute's request budget. Admission denial
+              // is covered in http.test.ts; the deployed Worker remains at 30 requests per minute.
+              simple: { limit: 100, period: 60 },
             },
           },
           resourcePersistencePath: persistence,
@@ -260,7 +327,7 @@ it(
       // @ts-expect-error SDK 1.32.1's sessionId getter disagrees with Transport under exactOptionalPropertyTypes.
       await client.connect(transport);
       const listed = await client.listTools();
-      expect(listed.tools).toHaveLength(33);
+      expect(listed.tools).toHaveLength(36);
       const initial = await client.callTool({
         arguments: {},
         name: "connection_status",
@@ -320,6 +387,44 @@ it(
       });
       expect(solar.structuredContent).toMatchObject({
         powerLimit: { kind: "unlimited" },
+      });
+      const capabilities = await client.callTool({
+        arguments: { stationId: "12345" },
+        name: "get_energy_capabilities",
+      });
+      expect(capabilities.structuredContent).toMatchObject({
+        emsUpgradeSupported: true,
+        providerFeatures: {
+          hasBatteryAutomation: false,
+          hasBatterySetting: true,
+          hasEVACSetting: false,
+        },
+      });
+      const priority = await client.callTool({
+        arguments: { stationId: "12345" },
+        name: "get_battery_discharge_priority",
+      });
+      expect(priority.structuredContent).toMatchObject({
+        providerSources: ["pv", "grid"],
+      });
+      const events = await client.callTool({
+        arguments: {
+          endDate: "2026-10-25",
+          page: 1,
+          startDate: "2026-10-25",
+          stationId: "12345",
+        },
+        name: "list_backup_events",
+      });
+      expect(events.structuredContent).toMatchObject({
+        records: [
+          {
+            measurements: [{ label: "Voltage", value: "235.05 v" }],
+            providerReasonType: 17,
+            utcCandidates: [1_792_888_213_000, 1_792_891_813_000],
+          },
+        ],
+        total: 1,
       });
       const backup = await client.callTool({
         arguments: { page: 1, pageSize: 10, stationId: "12345" },

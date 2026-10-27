@@ -200,3 +200,18 @@ The registry contains 33 operations: 27 provider/connection reads and six comman
 Both reads pass the enrolled-station gate. Backup timestamps use the verified station timezone; DST gaps retain no UTC candidate and overlaps retain both. Invalid dates, durations and pagination fail closed. Hosted acceptance is recorded separately in [read acceptance](read-acceptance.md).
 
 Additional discovery: GET `/device/dischargesetting/packPreheating/new/{stationId}` returned an empty `packPreheatingVOList`, switch 0, null preheating mode/enables/auto-mode validity, and `isIndustry: false`. The app showed preheating scheduling off. Populated scheduling semantics remain unverified; no switch was changed and no preheating API was exposed.
+
+
+## Energy-profile capabilities and backup diagnostics (27 October 2026)
+
+The registry contains 36 operations: 30 provider/connection reads and six command/approval operations. The eleven control variants are unchanged.
+
+| Operation | Provider request | Contract and scope |
+| --- | --- | --- |
+| `get_energy_capabilities` | GET `/device/energy-profile/support/{stationId}` and `/device/energy-profile/support/upgradeEms/{stationId}` | Preserves all 13 observed strict boolean feature flags, battery/grid source-option codes, and the separate EMS-support boolean. Flags are app-reported capabilities, not permission grants, active policies, or an upgrade action. |
+| `get_battery_discharge_priority` | GET `/device/energy-profile/battery/discharge/priority/{stationId}` | Preserves ordered source codes, including unfamiliar values and repeats. The app's Battery Discharging Priority screen showed Solar then GRID, matching `pv`, `grid`. No priorities were changed. |
+| `list_backup_events` | GET `/data-process/station/backup-event?current=…&stationId=…&startTime=…&endTime=…&filterItems=` plus station metadata | Fixed page size 10; inclusive station-local dates with end minus start ≤31 days; empty filters only. Preserves duplicate records, model/type/reason codes, second-precision local time with DST candidates, and original diagnostic labels/values. |
+
+The event feed is distinct from backup-duration history and alarm history. The browser returned seven records in its default date range, each with four display measurements (voltage, frequency, active power and reactive power). The app labelled the observed backup/reason codes as Off Grid / Other. These snapshots do not establish an outage cause. Populated multi-phase or extra-device detail remains unverified and returns `UnsupportedCapability`; the adapter does not silently drop those details. Date and pagination response mismatches fail closed.
+
+Solar-priority discovery additionally confirmed three current-profile entries and the app's distinction between its battery priority and sources excluded from ordering under third-party algorithm control. Grouped priorities and smart-load metadata remain unverified and are not exposed by this increment. Hosted evidence for the three new reads is tracked in [read acceptance](read-acceptance.md).

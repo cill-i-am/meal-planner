@@ -11,7 +11,10 @@ import type {
   TokenBundle,
 } from "@meal-planner/sigen";
 import type { AlarmInput } from "@meal-planner/sigen/alarms";
-import type { BackupHistoryInput } from "@meal-planner/sigen/backup";
+import type {
+  BackupEventsInput,
+  BackupHistoryInput,
+} from "@meal-planner/sigen/backup";
 import type { SigenClient } from "@meal-planner/sigen/client";
 import type { DeviceInput } from "@meal-planner/sigen/equipment";
 import type {
@@ -318,8 +321,12 @@ export const makeSession = <R>(
         read(input.stationId, (token) => client.alarms(input, token)),
       automationSettings: (id: StationId) =>
         read(id, (token) => client.automationSettings(id, token)),
+      backupEvents: (input: BackupEventsInput) =>
+        read(input.stationId, (token) => client.backupEvents(input, token)),
       backupHistory: (input: BackupHistoryInput) =>
         read(input.stationId, (token) => client.backupHistory(input, token)),
+      batteryDischargePriority: (id: StationId) =>
+        read(id, (token) => client.batteryDischargePriority(id, token)),
       batterySettings: (id: StationId) =>
         read(id, (token) => client.batterySettings(id, token)),
       deviceInfo: (input: DeviceInput) =>
@@ -327,6 +334,8 @@ export const makeSession = <R>(
       deviceValues: (input: DeviceInput) =>
         read(input.stationId, (token) => client.deviceValues(input, token)),
       disconnect: lock.withPermits(1)(storage.write(emptySession, null)),
+      energyCapabilities: (id: StationId) =>
+        read(id, (token) => client.energyCapabilities(id, token)),
       energyFlow: (id: StationId) =>
         read(id, (token) => client.energyFlow(id, token)),
       energyHistory: (input: HistoryInput) =>
