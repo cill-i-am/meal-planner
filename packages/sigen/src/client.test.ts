@@ -1,12 +1,17 @@
 /* eslint-disable no-await-in-loop -- Each body is consumed once by a fresh scoped transport. */
 import { createCipheriv } from "node:crypto";
 
-import { Effect, Layer, Redacted, Schema } from "effect";
+import { Effect, Fiber, Layer, Redacted, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
 import type { HttpClient } from "effect/http/HttpClient";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
-import { makeSigenClient, transformPassword } from "./client.js";
+import {
+  makeSigenClient,
+  makeSigenClientWithBudget,
+  transformPassword,
+} from "./client.js";
 import { Enrollment, StationId } from "./model.js";
 
 const stationId = Schema.decodeUnknownSync(StationId)("12345");
@@ -56,6 +61,31 @@ const run = <A, E>(
   );
 
 describe("private EU client", () => {
+  it("marks an admission timeout as not sent before touching the provider", async () => {
+    let sent = 0;
+    const result = await run(
+      Effect.gen(function* admissionTimeout() {
+        const client = yield* makeSigenClientWithBudget({
+          beforeRequest: Effect.sleep("60 seconds"),
+          rateLimited: () => Effect.void,
+        });
+        const pending = yield* client
+          .refresh(token)
+          .pipe(Effect.result, Effect.forkChild);
+        yield* TestClock.adjust("15 seconds");
+        return yield* Fiber.join(pending);
+      }).pipe(Effect.provide(TestClock.layer())),
+      () => {
+        sent += 1;
+        return Response.json({});
+      }
+    );
+    expect(result).toMatchObject({
+      failure: { reason: "UpstreamUnavailable", requestNotSent: true },
+    });
+    expect(sent).toBe(0);
+  });
+
   it("uses the app password transformation without treating it as storage encryption", async () => {
     const cipher = createCipheriv(
       "aes-128-cbc",

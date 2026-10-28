@@ -22,6 +22,8 @@ import type {
   ForecastInput,
   IncomeInput,
 } from "@meal-planner/sigen/history";
+import type { SmartLoadInput } from "@meal-planner/sigen/loads";
+import type { EnergyProfileInput } from "@meal-planner/sigen/profile";
 import { Clock, Effect, Redacted, Schema, Semaphore } from "effect";
 
 import { EncryptedSecret, makeVault } from "./vault.js";
@@ -195,6 +197,13 @@ export const makeSession = <R>(
           .refresh(Redacted.make(Redacted.value(tokens).refreshToken))
           .pipe(Effect.result);
         if (result._tag === "Failure") {
+          if (result.failure.requestNotSent === true) {
+            yield* storage.write(
+              record,
+              (yield* Clock.currentTimeMillis) + 60_000
+            );
+            return yield* result.failure;
+          }
           yield* storage.write(
             {
               ...record,
@@ -340,6 +349,8 @@ export const makeSession = <R>(
         read(id, (token) => client.energyFlow(id, token)),
       energyHistory: (input: HistoryInput) =>
         read(input.stationId, (token) => client.energyHistory(input, token)),
+      energyProfile: (input: typeof EnergyProfileInput.Type) =>
+        read(input.stationId, (token) => client.energyProfile(input, token)),
       energySavingSettings: (id: StationId) =>
         read(id, (token) => client.energySavingSettings(id, token)),
       enroll: (input: Redacted.Redacted<Enrollment>) =>
@@ -371,6 +382,8 @@ export const makeSession = <R>(
       gridSettings: (id: StationId) =>
         read(id, (token) => client.gridSettings(id, token)),
       health: lock.withPermits(1)(health),
+      loadCapabilities: (id: StationId) =>
+        read(id, (token) => client.loadCapabilities(id, token)),
       manualOverride: (id: StationId) =>
         read(id, (token) => client.manualOverride(id, token)),
       onAlarm: lock.withPermits(1)(
@@ -420,6 +433,10 @@ export const makeSession = <R>(
         read(id, (token) => client.peakShavingSchedule(id, token)),
       predictionPlan: (id: StationId) =>
         read(id, (token) => client.predictionPlan(id, token)),
+      preheatingSettings: (id: StationId) =>
+        read(id, (token) => client.preheatingSettings(id, token)),
+      profileTemplates: (id: StationId) =>
+        read(id, (token) => client.profileTemplates(id, token)),
       report: lock.withPermits(1)(
         Effect.gen(function* reportSession() {
           return {
@@ -428,16 +445,30 @@ export const makeSession = <R>(
           };
         })
       ),
+      smartLoad: (input: typeof SmartLoadInput.Type) =>
+        read(input.stationId, (token) => client.smartLoad(input, token)),
+      smartLoads: (id: StationId) =>
+        read(id, (token) => client.smartLoads(id, token)),
+      solarPriority: (id: StationId) =>
+        read(id, (token) => client.solarPriority(id, token)),
       solarSettings: (id: StationId) =>
         read(id, (token) => client.solarSettings(id, token)),
       station: (id: StationId) =>
         read(id, (token) => client.station(id, token)),
+      stationCapabilities: (id: StationId) =>
+        read(id, (token) => client.stationCapabilities(id, token)),
       stationIncome: (input: IncomeInput) =>
         read(input.stationId, (token) => client.stationIncome(input, token)),
       stationStatus: (input: StationId) =>
         read(input, (token) => client.stationStatus(input, token)),
+      stations: (id: StationId) =>
+        read(id, (token) => client.stations(id, token)),
+      systemCards: (id: StationId) =>
+        read(id, (token) => client.systemCards(id, token)),
       tariffs: (id: StationId) =>
         read(id, (token) => client.tariffs(id, token)),
+      thirdPartyDevices: (id: StationId) =>
+        read(id, (token) => client.thirdPartyDevices(id, token)),
       topology: (input: StationId) =>
         read(input, (token) => client.topology(input, token)),
       // Commands share the refresh/disconnect lock, but never use the read retry path.

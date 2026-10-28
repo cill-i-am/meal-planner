@@ -47,7 +47,7 @@ const fixture = (overrides: Readonly<Record<string, unknown>> = {}) => {
   const writes: {
     method: string;
     path: string;
-    body: Readonly<Record<string, Schema.Json>>;
+    body: Readonly<Record<string, Schema.Json>> | null;
   }[] = [];
   const data: Readonly<Record<string, unknown>> = {
     "/device/energy-profile/instant/manunal/12345": {

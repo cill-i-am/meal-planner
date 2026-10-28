@@ -3,6 +3,13 @@ import type { Redacted } from "effect";
 
 import { Percent, failure } from "./model.js";
 import type { StationId } from "./model.js";
+import {
+  AutomationResponse,
+  DecimalSetting,
+  automationValues,
+  decimal,
+  powerLimit,
+} from "./profile-data.js";
 import { decodeProvider, readStationTimezone } from "./provider-read.js";
 import type { ProviderRead } from "./provider-read.js";
 import {
@@ -15,81 +22,13 @@ import {
   PeakShavingSchedule,
   SolarSettings,
 } from "./settings.js";
-import type { PowerLimit } from "./settings.js";
 
-// Empty decimal settings are unset, never zero. This boundary rejects coercions such as hexadecimal and Infinity.
-const DecimalSetting = Schema.String.check(
-  Schema.isPattern(/^(?:\d+(?:\.\d+)?)?$/u)
-);
 const PowerResponse = Schema.Struct({
   enable: Schema.Boolean,
   maxLimitation: DecimalSetting,
   maxLimitationInstaller: DecimalSetting,
   maxLimitationOwner: DecimalSetting,
 });
-const AutomationGroupResponse = {
-  activeStatus: Schema.Int,
-  itemVOList: Schema.Array(
-    Schema.Struct({
-      endTime: Schema.String,
-      startTime: Schema.String,
-      whichDay: Schema.String,
-    })
-  ).check(Schema.isMaxLength(64)),
-  name: Schema.String,
-  priorityList: Schema.Array(Schema.String).check(Schema.isMaxLength(32)),
-  winMode: Schema.Int,
-};
-const AutomationResponse = Schema.Struct({
-  activeStatus: Schema.Int,
-  batteryAutomationGroupVOList: Schema.Array(
-    Schema.Struct({
-      ...AutomationGroupResponse,
-      b2GMaxDischargePower: DecimalSetting,
-      chargeCutOffSoc: DecimalSetting,
-      dischargeCutOffSoc: DecimalSetting,
-      g2BMaxChargePower: DecimalSetting,
-      maxChargePower: DecimalSetting,
-      maxDischargePower: DecimalSetting,
-    })
-  ).check(Schema.isMaxLength(64)),
-  batteryGlobalActive: Schema.Boolean,
-  gridAutomationGroupVOList: Schema.Array(
-    Schema.Struct({
-      ...AutomationGroupResponse,
-      maxBuyPower: DecimalSetting,
-      maxSellPower: DecimalSetting,
-    })
-  ).check(Schema.isMaxLength(64)),
-  gridGlobalActive: Schema.Boolean,
-  name: Schema.String,
-  profileId: Schema.NullOr(Schema.Int),
-});
-type ProviderAutomationGroup = Schema.Struct.Type<
-  typeof AutomationGroupResponse
->;
-const automationGroup = (group: ProviderAutomationGroup) => ({
-  name: group.name,
-  providerActiveStatus: group.activeStatus,
-  providerMode: group.winMode,
-  sourcePriority: group.priorityList,
-  windows: group.itemVOList.map((window) => ({
-    endTime: window.endTime,
-    providerDays: window.whichDay,
-    startTime: window.startTime,
-  })),
-});
-const decimal = (value: string) => (value === "" ? null : Number(value));
-const powerLimit = (value: string): PowerLimit => {
-  const number = decimal(value);
-  if (number === null) {
-    return { kind: "unset" };
-  }
-  if (number === 4_294_967.295) {
-    return { kind: "unlimited" };
-  }
-  return { kind: "limited", watts: number * 1000 };
-};
 const gridPower = (value: typeof PowerResponse.Type) => ({
   effective: powerLimit(value.maxLimitation),
   enabled: value.enable,
@@ -155,26 +94,8 @@ export const makeSettingsClient = (read: ProviderRead) => {
           { concurrency: 2 }
         );
         return yield* decodeProvider(AutomationSettings)({
-          batteryEnabled: data.batteryGlobalActive,
-          batteryGroups: data.batteryAutomationGroupVOList.map((group) => ({
-            ...automationGroup(group),
-            chargeCutoffPercent: decimal(group.chargeCutOffSoc),
-            chargeLimit: powerLimit(group.maxChargePower),
-            dischargeCutoffPercent: decimal(group.dischargeCutOffSoc),
-            dischargeLimit: powerLimit(group.maxDischargePower),
-            gridChargeLimit: powerLimit(group.g2BMaxChargePower),
-            gridExportLimit: powerLimit(group.b2GMaxDischargePower),
-          })),
+          ...automationValues(data),
           fetchedAt: yield* Clock.currentTimeMillis,
-          gridEnabled: data.gridGlobalActive,
-          gridGroups: data.gridAutomationGroupVOList.map((group) => ({
-            ...automationGroup(group),
-            exportLimit: powerLimit(group.maxSellPower),
-            importLimit: powerLimit(group.maxBuyPower),
-          })),
-          profileName: data.name,
-          providerActiveStatus: data.activeStatus,
-          providerProfileId: data.profileId,
           stationId: id,
           timezone: DateTime.zoneToString(zone),
         });

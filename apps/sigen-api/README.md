@@ -1,12 +1,24 @@
 # Private mySigen API and MCP
 
-This independent Cloudflare service implements core and settings reads from the [coverage plan](../../docs/sigen/coverage.md). Tariff/AI-plan, daily income, AIO power-state and current-profile automation, backup history and energy-saving reads and eleven typed setting controls are implemented. Custom-profile details, smart loads, charger adapters and remaining control families are incomplete. The package in `packages/sigen` contains the reusable Effect 4 private EU client; this app owns encrypted sessions, HTTP/MCP and the account Durable Object. `sigen.alchemy.ts` deploys only this service. It does not share credentials or product authentication with Meal Planner or Tesco.
+This independent Cloudflare service exposes 47 HTTP/MCP operations and 15 typed setting-change families from the [coverage matrix](../../docs/sigen/coverage.md). It includes station/profile/template inspection, equipment and smart-load summaries, preheating, diagnostics, history and approval controls. Charger/V2X adapters, profile CRUD and several schedule/settings write families remain incomplete; the matrix lists the evidence needed. `packages/sigen` contains the reusable Effect 4 EU private client; this app owns encrypted sessions and the account Durable Object. `sigen.alchemy.ts` deploys only this service, with independent credentials.
 
 ## Current surface
 
 | Operation | Input | Result |
 | --- | --- | --- |
 | `connection_status` | `{}` | connection state, selected station, access expiry, successful renewal count |
+| `list_stations` | `{stationId}` | owner station inventory; only the enrolled station remains authorized |
+| `get_station_capabilities` | `{stationId}` | hardware/backup capability flags |
+| `list_profile_templates` | `{stationId}` | provider templates and mode/profile identity |
+| `get_energy_profile` | `{stationId,target}` | current, custom or template profile; target is `{kind:"current"}`, `{kind:"custom",profileId}`, or `{kind:"template",profileId,providerMode}` |
+| `get_solar_priority` | `{stationId}` | ordered entries with bounded group paths and provider codes |
+| `list_smart_loads` | `{stationId}` | configured load inventory |
+| `get_smart_load` | `{stationId,loadPath}` | identity-checked switch/mode state summary, excluding schedules |
+| `get_load_capabilities` | `{stationId}` | port support versus installed equipment |
+| `get_system_cards`, `list_third_party_devices` | `{stationId}` | display cards, explicit placeholders and telemetry availability |
+| `get_preheating_settings` | `{stationId}` | raw provider configuration; slot units/day semantics unverified |
+| `list_aio_devices`, `get_aio_power_status` | `{stationId}` / `{stationId,serialNumber}` | topology-verified AIO inventory and separate power observations |
+| `get_automation_settings`, `get_station_income` | `{stationId}` / `{stationId,date}` | current automation groups / daily income |
 | `get_station` | `{stationId}` | selected station metadata and explicit equipment capabilities |
 | `get_energy_flow` | `{stationId}` | watts, SOC, provider/fetch timestamps and freshness |
 | `get_operating_mode` | `{stationId}` | provider mode/profile IDs, preserving unfamiliar modes |
@@ -43,41 +55,41 @@ The same registry and Effect schemas define `POST /v1/<operation>`, remote `POST
 
 All operations require the dedicated owner bearer credential, whose SHA-256 verifier is deployed. Operator credentials are separate and cannot call agent tools. `/admin/session` supports POST enrollment, GET sanitized renewal reporting, and DELETE disconnect. Those routes require the operator credential. Neither credential is a Meal Planner OAuth token.
 
-This first private deployment binds one account and one explicitly selected station. A mismatched station is refused before provider access. A returned default station that differs from the requested station is also refused. Station enumeration and additional account mappings remain unfinished.
+This first private deployment binds one account and one explicitly selected station. A mismatched station is refused before provider access. A returned default station that differs from the requested station is also refused. Station enumeration is implemented; additional account/station authorization mappings remain unfinished.
 
 History dates are calendar dates in the provider station timezone. Weeks begin Monday; month/year ranges use inclusive calendar boundaries. Day charts contain power, longer periods contain energy. Missing samples are not filled. Repeated DST minutes retain both UTC candidates; nonexistent local minutes retain none. Unknown series retain raw values with unknown units. Provider chart signs are preserved, and differ from live battery-flow signs. Empty forecasts return `availability: no_data`.
 
-Display labels are not stable metric keys. Empty settings are unset; the provider power sentinel `4294967.295` kW is unlimited. An inactive override stays inactive even if it retains a historical mode/end time. Hardware and station membership are verified before requesting device details. No cache or shared upstream request budget is implemented yet; the existing edge admission limit remains 30 requests per minute, and composite reads use at most two simultaneous provider calls.
+Display labels are not stable metric keys. Empty settings are unset; the provider power sentinel `4294967.295` kW is unlimited. An inactive override stays inactive even if it retains a historical mode/end time. Hardware and station membership are verified before requesting device details. The Durable Object persists a shared 30-provider-request rolling-minute budget with 400 ms minimum spacing across auth, reads and controls. Reservations survive restart/interruption; provider 429 responses honor Retry-After with at least a minute cooldown. The separate edge admission limit remains 30 calls/minute. No cache is implemented.
 
 ## Enrollment and renewal
 
 The operator supplies a fresh username/password enrollment; the service performs the app-compatible password transformation and OAuth password grant. The password and its transformed value are never persisted. Enrollment is encrypted before native Worker-to-object RPC. Only AES-GCM encrypted access/refresh tokens survive in storage, under a dedicated stable secret. Existing browser refresh-token chains are not borrowed.
 
-The account object serializes enrollment, disconnect, renewal and reads. It commits rotated credentials and the next alarm in one storage transaction. Renewal is scheduled from the provider's `expires_in`, one minute early. A durable refreshing marker is written before provider I/O. After an interrupted or rejected rotation, the watchdog clears the session and reports `reauthentication_required` rather than reusing a possibly consumed refresh token. Reconnect through fresh enrollment.
+The account object serializes enrollment, disconnect, renewal and reads. It commits rotated credentials and the next alarm in one storage transaction. Renewal is scheduled from the provider's `expires_in`, one minute early. A durable refreshing marker is written before provider I/O. A locally rejected request that never reached transport restores the valid session and schedules another attempt. After an interrupted or rejected dispatched rotation, the watchdog clears the session and reports `reauthentication_required` rather than reusing a possibly consumed refresh token. Reconnect through fresh enrollment.
 
 HTTP and MCP cancellation joins local tool cleanup. Alchemy's current native Durable Object RPC cannot transport the caller's cancellation signal into the object: cancellation ends the Worker-side wait, while an already dispatched provider read may continue until its 15-second timeout. The account object owns the session operation until it finishes.
 
 Read acceptance is recorded in [read verification](../../docs/sigen/read-acceptance.md).
 
-The last five renewal results contain only timestamps and outcome categories. Three synthetic alarm renewals in workerd are separate from the required three natural renewal cycles in Cloudflare. Hosted enrollment and initial reads are verified; two natural renewal cycles are verified; the third is pending. See the [acceptance record](../../docs/sigen/auth-acceptance.md).
+The last five renewal results contain only timestamps and outcome categories. Three synthetic alarm renewals in workerd are separate from the required three natural renewal cycles in Cloudflare. Hosted enrollment and initial reads are verified; all three required natural renewal cycles are verified. See the [acceptance record](../../docs/sigen/auth-acceptance.md).
 
 ## Approve once and always approve
 
-The owner service credential can prepare, approve and execute commands through HTTP or MCP. Executor requires confirmation on `approve_command`, whose input includes the exact current settings, proposed values and `once`/`always` choice. Preparation, execution of a saved approval, and revocation do not add a second Executor prompt. Unknown tools require confirmation even if remote metadata calls them read-only.
+The owner service credential can prepare, approve and execute commands through HTTP or MCP. Executor asks for confirmation on `approve_command` with the immutable before/after values and once/always choice. The [control matrix](../../docs/sigen/coverage.md#approval-and-control-surface) lists all 15 change families and exact constraints.
 
-`prepare_command` accepts a fresh UUID and one typed change: backup reserve, battery charge/discharge power limits, solar power limit, battery export, grid import/export limits, connection current, operating mode, four SOC thresholds, an existing peak-shaving schedule, or stopping a manual override. Grid limit commands enable the specified finite owner limit and enforce known installer ceilings. Operating-mode writes currently support maximum self-powered (0), Sigen AI (1) and fully fed to grid (5), and must also be currently available to the account. TOU, custom profiles and Remote EMS remain read-only until their complete settings can be reviewed and conflict-checked. Missing hardware fails explicitly.
+Operating-mode changes support currently available 0/1/5 and enumerated custom mode 9. Custom-profile configuration is included in the review and conflict fingerprint; TOU/Remote EMS modes remain excluded. Solar priority writes require exact known flat membership and preserve excluded-source priorities. Battery priority writes require supported source permutations. Smart-load switching requires current identity and manual mode; its grant binds the load key and path.
 
-SOC-threshold changes require all four current values to be known. Peak-shaving edits preserve the current timezone, day codes and time windows; only enabled state, reserve and per-window power may change. Manual-stop confirmation reads the authoritative enabled state independently of live battery telemetry. Starting an override and creating or moving schedule windows remain unimplemented.
+SOC changes require all four current values. Peak-shaving edits preserve timezone, day codes and existing windows. Manual stop has authoritative enabled-state readback. Manual start accepts charge/discharge/hold/self-consumption and 30–120 minutes, but its read API omits requested duration/power: an accepted start remains `outcome_unknown`, never falsely verified or automatically replayed.
 
-Current-profile automation reads preserve inactive groups, provider mode/status/source/day codes and duplicate time windows; they do not enumerate all custom profiles.
+Profile reads cover current, enumerated custom and template configuration. They do not implement profile creation/deletion or arbitrary schedule replacement.
 
 Daily income reads retain provider-reported totals, signed income and calculated income separately, in the station currency. These values are not independently verified bill settlements; missing samples and ambiguous local times remain explicit. AIO reads check serial membership and keep the two provider power-state observations separate.
 
-Preparation saves the complete normalized settings and proposed values for five minutes. Copy `change`, `current` and `reviewFingerprint` exactly into approval. Once approves that command. Always permits future validated parameters for the same operation and station, until revoked; it is not limited to today's values. Fresh preparation still rechecks state. Revoking a grant also invalidates queued commands that use it. Reenrollment creates a new connection identity, invalidating unused approvals and grants. Saved command IDs and attempt receipts survive so uncertain outcomes can be reconciled when the same station is connected again.
+Preparation saves the complete normalized settings and proposed values for five minutes. Copy `change`, `current` and `reviewFingerprint` exactly into approval. Once approves that command. Always permits future validated parameters for the same operation and station/device, until revoked; it is not limited to today's values. Fresh preparation still rechecks state. Revoking a grant also invalidates queued commands that use it. Reenrollment creates a new connection identity, invalidating unused approvals and grants. Saved command IDs and attempt receipts survive so uncertain outcomes can be reconciled when the same station is connected again.
 
 Execution rechecks current settings and validation under the session lock, then saves a dispatch marker before the single provider mutation. Duplicate command IDs return the saved record; altered inputs conflict. Interrupted, timed-out and ambiguous attempts are never resent. Repeated execution reconciles only through reads. `verified` means the desired settings were observed, not proof that this request caused them. Provider rejection, acceptance, verification and unknown outcome remain distinct.
 
-`SIGEN_CONTROLS_ENABLED` defaults to `false`. Preparation, approvals and inspection work while physical dispatch is disabled. The same switch covers HTTP and MCP. All eleven adapters are fixture-tested. Backup reserve additionally passed a user-authorized live 20% → 21% → 20% test through Executor, including once/always approval and revocation; the other ten variants are not live-control-verified. Enabling dispatch and any live test require a reviewed, explicit procedure including restoration. The durable command book refuses new preparations after 256 saved records; it never silently deletes replay protection. Operational archival is a future extension.
+`SIGEN_CONTROLS_ENABLED` defaults to `false`. Preparation, approvals and inspection work while physical dispatch is disabled. The same switch covers HTTP and MCP. All 15 control families are fixture-tested. Backup reserve additionally passed a user-authorized live 20% → 21% → 20% test through Executor, including once/always approval and revocation; the other 14 families are not live-control-verified. Enabling dispatch and any live test require a reviewed, explicit procedure including restoration. The durable command book refuses new preparations after 256 saved records; it never silently deletes replay protection. Operational archival is a future extension.
 
 ## Deployment
 

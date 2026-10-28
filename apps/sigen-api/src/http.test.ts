@@ -8,6 +8,12 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { Effect, Redacted, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { remainingResponses } from "../../../packages/sigen/src/__fixtures__/remaining.js";
+import { makeEnergyProfileClient } from "../../../packages/sigen/src/energy-profile-client.js";
+import { makeLoadsClient } from "../../../packages/sigen/src/loads-client.js";
+import { makePreheatingClient } from "../../../packages/sigen/src/preheating-client.js";
+import { makeStationsClient } from "../../../packages/sigen/src/stations-client.js";
+import { makeThirdPartyClient } from "../../../packages/sigen/src/third-party-client.js";
 import { operations } from "./contracts.js";
 import { makeHttpHandler } from "./http.js";
 import type { HttpOptions } from "./http.js";
@@ -49,6 +55,17 @@ const status = {
   state: "connected" as const,
   stationId: id,
   successfulRenewals: 2,
+};
+const remainingRead = (path: string) =>
+  Effect.succeed(
+    remainingResponses[new URL(path, "https://fixture.invalid").pathname]
+  );
+const remainingClient = {
+  ...makeEnergyProfileClient(remainingRead),
+  ...makeLoadsClient(remainingRead),
+  ...makeThirdPartyClient(remainingRead),
+  ...makeStationsClient(remainingRead),
+  ...makePreheatingClient(remainingRead),
 };
 const options: HttpOptions = {
   capabilities: {
@@ -205,6 +222,10 @@ const options: HttpOptions = {
         timezone: "Europe/Dublin",
         totals: [],
       }),
+    energyProfile: (input) =>
+      remainingClient
+        .energyProfile(input, Redacted.make("fixture"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
     energySavingSettings: (stationId) =>
       Effect.succeed({
         fetchedAt: 123,
@@ -267,6 +288,10 @@ const options: HttpOptions = {
         stationId,
       }),
     health: Effect.succeed(status),
+    loadCapabilities: (input) =>
+      remainingClient
+        .loadCapabilities(input, Redacted.make("fixture"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
     manualOverride: (stationId) =>
       Effect.succeed({
         batteryPowerW: 0,
@@ -309,8 +334,28 @@ const options: HttpOptions = {
         stationId: id,
         timezone: "Europe/Dublin",
       }),
+    preheatingSettings: (input) =>
+      remainingClient
+        .preheatingSettings(input, Redacted.make("fixture"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
     prepareCommand: () => Effect.succeed(command),
+    profileTemplates: (input) =>
+      remainingClient
+        .profileTemplates(input, Redacted.make("fixture"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
     revokeApproval: () => Effect.succeed({ grants: [] }),
+    smartLoad: (input) =>
+      remainingClient
+        .smartLoad(input, Redacted.make("fixture"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
+    smartLoads: (input) =>
+      remainingClient
+        .smartLoads(input, Redacted.make("fixture"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
+    solarPriority: (input) =>
+      remainingClient
+        .solarPriority(input, Redacted.make("fixture"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
     solarSettings: (stationId) =>
       Effect.succeed({
         fetchedAt: 123,
@@ -334,6 +379,10 @@ const options: HttpOptions = {
         stationId,
         timezone: "Europe/Dublin",
       }),
+    stationCapabilities: (input) =>
+      remainingClient
+        .stationCapabilities(input, Redacted.make("fixture"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
     stationIncome: (input) =>
       Effect.succeed({
         ...input,
@@ -355,6 +404,14 @@ const options: HttpOptions = {
         providerStatus: 1,
         stationId,
       }),
+    stations: (input) =>
+      remainingClient
+        .stations(input, Redacted.make("fixture"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
+    systemCards: (input) =>
+      remainingClient
+        .systemCards(input, Redacted.make("fixture"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
     tariffs: () =>
       Effect.succeed({
         buy: tax,
@@ -372,6 +429,10 @@ const options: HttpOptions = {
         sell: tax,
         stationId: id,
       }),
+    thirdPartyDevices: (input) =>
+      remainingClient
+        .thirdPartyDevices(input, Redacted.make("fixture"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
     topology: (stationId) =>
       Effect.succeed({
         devices: [],
@@ -468,7 +529,7 @@ describe("authenticated HTTP and MCP parity", () => {
     expect(released).toBe(true);
   });
 
-  it("uses identical contracts for all four HTTP and actual SDK MCP calls", async () => {
+  it("uses identical contracts for all HTTP and actual SDK MCP calls", async () => {
     const handler = makeHttpHandler(options);
     const client = new Client({ name: "sigen-verification", version: "1" });
     const transport = new StreamableHTTPClientTransport(
@@ -487,6 +548,12 @@ describe("authenticated HTTP and MCP parity", () => {
       );
       for (const op of operations) {
         const inputForOperation = () => {
+          if (op.name === "get_energy_profile") {
+            return { stationId: id, target: { kind: "current" } };
+          }
+          if (op.name === "get_smart_load") {
+            return { loadPath: 1, stationId: id };
+          }
           if (op.name === "prepare_command") {
             return {
               change: command.review.change,

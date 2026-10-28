@@ -1,6 +1,7 @@
 import {
   EnergyFlow,
   Enrollment,
+  SigenFailure,
   Station,
   StationId,
   failure,
@@ -94,12 +95,14 @@ const fixture = () => {
     energyCapabilities: () => Effect.fail(failure("UnsupportedCapability")),
     energyFlow: () => Effect.succeed(flow),
     energyHistory: () => Effect.fail(failure("UnsupportedCapability")),
+    energyProfile: () => Effect.fail(failure("UnsupportedCapability")),
     energySavingSettings: () => Effect.fail(failure("UnsupportedCapability")),
     forecast: () => Effect.fail(failure("UnsupportedCapability")),
     gateway: () => Effect.fail(failure("UnsupportedCapability")),
     gridDevices: () => Effect.fail(failure("UnsupportedCapability")),
     gridSettings: () => Effect.fail(failure("UnsupportedCapability")),
     inspectControl: () => Effect.fail(failure("UnsupportedCapability")),
+    loadCapabilities: () => Effect.fail(failure("UnsupportedCapability")),
     login: () => Effect.sync(tokens),
     manualOverride: () => Effect.fail(failure("UnsupportedCapability")),
     operatingMode: () =>
@@ -112,6 +115,8 @@ const fixture = () => {
     operatingModes: () => Effect.fail(failure("UnsupportedCapability")),
     peakShavingSchedule: () => Effect.fail(failure("UnsupportedCapability")),
     predictionPlan: () => Effect.fail(failure("UnsupportedCapability")),
+    preheatingSettings: () => Effect.fail(failure("UnsupportedCapability")),
+    profileTemplates: () => Effect.fail(failure("UnsupportedCapability")),
     refresh: () =>
       Effect.suspend(() => {
         count += 1;
@@ -119,11 +124,18 @@ const fixture = () => {
           ? Effect.fail(failure("AuthenticationRequired"))
           : Effect.succeed(tokens());
       }),
+    smartLoad: () => Effect.fail(failure("UnsupportedCapability")),
+    smartLoads: () => Effect.fail(failure("UnsupportedCapability")),
+    solarPriority: () => Effect.fail(failure("UnsupportedCapability")),
     solarSettings: () => Effect.fail(failure("UnsupportedCapability")),
     station: () => Effect.succeed(sample),
+    stationCapabilities: () => Effect.fail(failure("UnsupportedCapability")),
     stationIncome: () => Effect.fail(failure("UnsupportedCapability")),
     stationStatus: () => Effect.fail(failure("UnsupportedCapability")),
+    stations: () => Effect.fail(failure("UnsupportedCapability")),
+    systemCards: () => Effect.fail(failure("UnsupportedCapability")),
     tariffs: () => Effect.fail(failure("UnsupportedCapability")),
+    thirdPartyDevices: () => Effect.fail(failure("UnsupportedCapability")),
     topology: () => Effect.fail(failure("UnsupportedCapability")),
     validateControl: () => Effect.fail(failure("UnsupportedCapability")),
   };
@@ -353,6 +365,35 @@ describe("durable Sigen session", () => {
       });
     }
   );
+  it("preserves credentials and reschedules renewal when the account budget rejects before dispatch", async () => {
+    const f = fixture();
+    let deny = true;
+    const client = {
+      ...f.client,
+      refresh: (token: Redacted.Redacted<string>) =>
+        deny
+          ? Effect.fail(
+              new SigenFailure({ reason: "RateLimited", requestNotSent: true })
+            )
+          : f.client.refresh(token),
+    };
+    const session = await run(makeSession(f.storage, key, client));
+    await run(session.enroll(enrollment));
+    f.expire();
+    const secret = f.record().session;
+    expect(await run(session.onAlarm.pipe(Effect.result))).toMatchObject({
+      failure: { reason: "RateLimited" },
+    });
+    expect(f.record().session).toEqual(secret);
+    expect(f.record().renewals).toEqual([]);
+    expect(f.count()).toBe(0);
+    expect(f.alarm()).toBeGreaterThan(Date.now());
+    deny = false;
+    await run(session.onAlarm);
+    expect(f.record().session.phase).toBe("ready");
+    expect(f.record().successfulRenewals).toBe(1);
+    expect(f.count()).toBe(1);
+  });
   it("does not replay a refresh after interrupted rotation", async () => {
     const f = fixture();
     const initial = await f.make();
@@ -489,6 +530,21 @@ describe("durable Sigen session", () => {
         .pipe(Effect.asVoid),
       session.energyCapabilities(otherStation).pipe(Effect.asVoid),
       session.batteryDischargePriority(otherStation).pipe(Effect.asVoid),
+      session.thirdPartyDevices(otherStation).pipe(Effect.asVoid),
+      session.stations(otherStation).pipe(Effect.asVoid),
+      session.stationCapabilities(otherStation).pipe(Effect.asVoid),
+      session.profileTemplates(otherStation).pipe(Effect.asVoid),
+      session
+        .energyProfile({ stationId: otherStation, target: { kind: "current" } })
+        .pipe(Effect.asVoid),
+      session.solarPriority(otherStation).pipe(Effect.asVoid),
+      session.smartLoads(otherStation).pipe(Effect.asVoid),
+      session
+        .smartLoad({ loadPath: 1, stationId: otherStation })
+        .pipe(Effect.asVoid),
+      session.loadCapabilities(otherStation).pipe(Effect.asVoid),
+      session.systemCards(otherStation).pipe(Effect.asVoid),
+      session.preheatingSettings(otherStation).pipe(Effect.asVoid),
     ]) {
       expect(await run(read.pipe(Effect.result))).toMatchObject({
         _tag: "Failure",

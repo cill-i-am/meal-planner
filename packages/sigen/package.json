@@ -12,7 +12,12 @@
     "./controls": "./src/controls.ts",
     "./tariffs": "./src/tariffs.ts",
     "./backup": "./src/backup.ts",
-    "./profile": "./src/profile.ts"
+    "./profile": "./src/profile.ts",
+    "./stations": "./src/stations.ts",
+    "./loads": "./src/loads.ts",
+    "./preheating": "./src/preheating.ts",
+    "./request-budget": "./src/request-budget.ts",
+    "./third-party": "./src/third-party.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

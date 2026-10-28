@@ -1,217 +1,99 @@
-# Private mySigen coverage
+# Sigen private API coverage
 
-This is an incomplete discovery baseline, not a comprehensive-coverage claim.
-Hosted enrollment and initial reads have passed. The remaining acceptance
-gates, including three natural renewals, are tracked in the [authentication record](auth-acceptance.md). Backup reserve passed a bounded live once/always/revocation test on 27 October; dispatch is disabled again. Other control variants remain unverified on live equipment.
+Current implementation: **47 HTTP/MCP operations**, comprising 41 provider/connection reads and six command/approval operations. Commands accept **15 typed setting-change families**. This is the current coverage record; dated acceptance history lives in [read acceptance](read-acceptance.md). Three real token renewals passed; see [authentication acceptance](auth-acceptance.md). The broader private API is not fully covered.
 
-## Verified during browser exploration on 26 October 2026
+The independent EU private client uses the owner account and enrolled station. Station enumeration does not authorize reads or controls for other stations. Unknown codes remain read data; they never become write permissions. Provider messages and credentials are excluded from errors. No Northbound API is used.
 
-The signed-in EU owner app was version 4.1.0 (release `cdn-eu-b147-2a9ceaaa1ca0`).
-Observed station timezone was `Europe/London`; it must be preserved, not replaced
-with the caller's timezone. The station reports no AC or DC charger. That is an
-account capability observation, not proof that charger APIs are implemented.
+## Implemented read surface
 
-| Operation | Method/path | Schema | Permission/hardware | Side effects | Evidence | Implementation / verification |
-| --- | --- | --- | --- | --- | --- | --- |
-| `connection_status` | local | `ConnectionStatus` | dedicated owner | none | implementation | implemented; fixture and hosted SDK tested |
-| `get_station` | GET `/device/owner/station/home?stationId=…` | `StationResponse` → `Station` | enrolled owner station | none | app requests with and without stationId | implemented; browser observed; fixture, local client and hosted HTTP/MCP reads verified |
-| `get_energy_flow` | GET `/device/sigen/station/energyflow?id=…` | `FlowResponse` → `EnergyFlow` | enrolled owner station | none | authenticated browser read, compared to UI | implemented; browser read verified; fixture, local client and hosted MCP read verified |
-| `get_operating_mode` | GET `/device/energy-profile/mode/current/{stationId}` | `ModeResponse` → `OperatingMode` | enrolled owner station | none | app request | implemented; browser observed; fixture, local client and hosted HTTP/MCP reads verified |
-| async energy flow | GET `/device/sigen/station/energyflow/async` | unknown | owner station | request may request refresh | authenticated browser probe | excluded from initial adapter: HTTP 200 with application code 1000 |
-| live energy flow | WebSocket `/websocket/ws/ef` | abbreviated fields | owner station | subscription | app frames | discovered; polling HTTP alternative works |
-| notifications | WebSocket `/websocket/ws/info` | JSON-RPC subscriptions | owner account/station | subscription | app frames | discovered; schema/permission verification pending |
-| `get_topology` | GET `/device/devicetreepanel/topology?stationId=…` | node tree, station status | owner station | none | app request/response | implemented; fixture and hosted MCP verified |
-| `get_device_values` | GET `/device/devicetreepanel/liveValue` | serial/type/value/timestamp | station + AIO serial, refreshFlag | read/refresh | app request/response | implemented; fixture and hosted MCP verified |
-| `get_device_info` | GET `/device/sigen/device/{static,dynamic}/info` | parameter groups | station + deviceType + serial | none | app request/response | implemented; fixture and hosted MCP verified |
-| `get_gateway` | GET `/device/gateway/{stationId}` | voltage/current/frequency display groups | gateway in station topology | none | app request/response | implemented; fixture and hosted MCP verified |
-| `get_station_status` | GET `/device/sigen/station/statusInfo?id=…` | station/device status lists | owner station | none | app request/response | implemented; fixture and hosted MCP verified |
-| `list_alarms (active)` | GET `/device/alarm/page?current=1&size=10&stationId=…` | records,total,current,size,pages | owner station | none | app request/response | implemented; active and historical endpoints are distinct; fixture and hosted reads verified |
-| `get_forecast` | GET `/data-process/sigen/station/ai/all/prediction/v1` | chartData series/points | station, dateFlag,startDate,endDate | none | app request/response | implemented; day/week/month dates verified; empty historical and populated current-day forecasts hosted verified |
-| `list_grid_devices` | GET `/device/station/grid-connection-point/support-devices` | device list | owner station | none | app request | implemented; fixture and hosted MCP verified |
-| system cards | GET `/device/system/device/home/card` | empty array observed | station, showThirdPartyInv | none | app request/response | discovered; schema/permission verification pending |
-| third-party devices | GET `/device/tp-device/manage/card/{static,dynamic}-info` | pending | owner station | none | app requests | discovered; schema/permission verification pending |
-| other devices | GET `/device/sigen/device/device/sigenOther` | pending | owner station | none | app request | discovered; schema/permission verification pending |
-| system device condition | GET `/device/system/device/condition/{stationId}` | pending | owner station | none | app request | discovered; schema/permission verification pending |
-| micro inverter summary | GET `/device/device-micro-pcs/energy/baseinfo` | pending | micro inverter | none | app request | discovered; schema/permission verification pending |
-| inactive storage license | GET `/device/stor-license/inactive/stor` | pending | storage | none | app request | discovered; schema/permission verification pending |
-| energy history / consumption | GET `/data-process/sigen/station/statistics/{energy,station-consumption}` | unverified | owner station | read per exploration | supplied reference notes | legacy paths excluded in favor of the app-observed v1 energy endpoint; no Northbound dependency |
-| `list_alarms` (history) | GET `/alarm/history/page` | `Alarms` | owner station; page 1–1000, size 1–100, range ≤31 days | none | History tab; inclusive UTC epoch seconds | implemented; fixture and hosted MCP verified |
-| `get_energy_history` | GET `/data-process/sigen/station/statistics/v1/energy` | `EnergyHistory` | owner station; one calendar period | none | Day/Week/Month/Year app screens | implemented; fixture and hosted day/month verified |
-| `get_battery_settings` | GET `/device/energy-profile/battery/{level,limit,export/limitation}/{stationId}` and `/device/setting/backup/reserve/{stationId}` | `BatterySettings` | owner station | none | authenticated owner reads | implemented; fixture and hosted HTTP/MCP verified |
-| `get_grid_settings` | GET `/device/energy-profile/grid/limitation/{export,import}/{stationId}` and `/device/energy-profile/parallel/off/grid/{stationId}` | `GridSettings` | owner station | none | authenticated owner reads | implemented; fixture and hosted MCP verified |
-| `get_solar_settings` | GET `/device/energy-profile/solar/limit/{stationId}` | `SolarSettings` | owner station | none | authenticated owner read | implemented; fixture and hosted MCP verified |
-| `list_operating_modes` | GET `/device/energy-profile/mode/all/{stationId}` | `OperatingModes` | owner station | none | authenticated owner read | implemented; custom list empty live, populated synthetic fixture; hosted MCP verified |
-| `get_peak_shaving_schedule` | GET `/device/dischargesetting/peak/shaving/{stationId}` | `PeakShavingSchedule` | owner station | none | authenticated owner read | implemented; slots empty live, populated cross-midnight fixture; hosted MCP verified |
-| `get_manual_override` | GET `/device/energy-profile/instant/manunal/{stationId}` and `/display/{stationId}` | `ManualOverride` | owner station | none | authenticated owner reads | implemented; inactive live, old end time retained; hosted MCP verified |
+All rows have schema and fixture tests and share HTTP/MCP contracts. Hosted and actual Executor proof are recorded separately in [read acceptance](read-acceptance.md); an empty hardware list proves absence on this account, not populated-device acceptance.
 
-The current app uses WebSockets for live flow. The synchronous HTTP response
-returned an empty `dateCurrTimeStamp`. This is represented as `null` with unknown
-freshness. Battery power was negative while the app displayed Discharging; kW is
-converted to W. Grid sign direction remains explicitly unverified. Unknown mode
-and status values remain numerical read data, not permitted control values.
-
-## Read semantics verified in this expansion
-
-See [read acceptance](read-acceptance.md) for the exact hosted proof. Dynamic equipment reads require `sg-pkg: sigen_app`; without it the provider returns application code 1000. `lang: en_US` stabilizes display labels without turning them into metric IDs. Topology membership is rechecked for device reads, including the requested AIO subtree. The tree is bounded before expansion.
-
-The app's v1 history endpoint replaces the older reference paths. `dateFlag` 1/2/3/4 means day/week/month/year; calendar dates are inclusive and weeks start Monday. Day series use kW, longer periods kWh; the adapter returns W/Wh. Cards and Sankey links represent kWh. Only verified series IDs receive unit conversion. DST duplicates and missing samples remain explicit. Active alarms use `/device/alarm/page`; history uses `/alarm/history/page` with inclusive epoch seconds, converted to UTC milliseconds publicly. Unsafe numeric provider alarm IDs are omitted. No alarm cause or remediation text is treated as instructions.
-
-The tariff/fee and legacy prediction endpoints were read successfully. Tax settings were zero/default and fee/schedule arrays empty; richer populated schemas remain unverified and unadapted. The legacy prediction response mixes actuals and plans and includes price series; the exposed forecast uses the app's current chart endpoint instead.
-
-## Pinned reference catalogue
-
-Protocol reference: [solidfox/sigenergy-cloud at 99c744a](https://github.com/solidfox/sigenergy-cloud/tree/99c744aa4b07f53836e7b2d76c1165701e4d52c1), MIT.
-Rows below are reference discoveries, not live API claims. Schema, permission and
-hardware confirmation must precede exposure. The user approved expanding read
-coverage while natural renewal checks run. Control implementation and live control
-acceptance remain separate from these read-only discoveries.
-
-| Name | Method/path | Schema | Permissions | Hardware | Side effects | Source | Status / exclusion reason |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `refresh_station` | GET `/device/owner/station/home` | normalized read schema | owner station | station / indicated device | read | pinned reference | implemented through `get_station`; fixture and hosted read verified |
-| `energy_flow` | GET `/device/sigen/station/energyflow/async` | pending | owner permission unverified | station / indicated device | read | pinned reference | discovered; schema/permission verification pending |
-| `energy_flow` | GET `/device/sigen/station/energyflow` | normalized read schema | owner station | station / indicated device | read | pinned reference | implemented through `get_energy_flow`; fixture and hosted read verified |
-| `prediction_data` | GET `/prediction/predictData/get/predictData/{stationId}` | pending | owner permission unverified | station / indicated device | read | pinned reference | discovered; schema/permission verification pending |
-| `electricity_tax_and_fee` | GET `/electricity-price/api/tax-and-fee/{stationId}` | pending | owner permission unverified | station / indicated device | read | pinned reference | discovered; schema/permission verification pending |
-| `set_electricity_tax_and_fee` | POST `/electricity-price/api/tax-and-fee` | pending | owner permission unverified | station / indicated device | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `electricity_price_cost` | GET `/prediction/aipv/elecPrice/get/priceCost` | pending | owner permission unverified | station / indicated device | read | pinned reference | discovered; schema/permission verification pending |
-| `available_operational_modes` | GET `/device/energy-profile/mode/all/{stationId}` | normalized read schema | owner station | station / indicated device | read | pinned reference | implemented through `list_operating_modes`; fixture and hosted read verified |
-| `current_operational_mode` | GET `/device/energy-profile/mode/current/{stationId}` | normalized read schema | owner station | station / indicated device | read | pinned reference | implemented through `get_operating_mode`; fixture and hosted read verified |
-| `set_operational_mode` | PUT `/device/energy-profile/mode` | pending | owner permission unverified | station / indicated device | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `battery_levels` | GET `/device/energy-profile/battery/level/{stationId}` | normalized read schema | owner station | station / indicated device | read | pinned reference | implemented through `get_battery_settings`; fixture and hosted read verified |
-| `set_battery_levels` | PUT `/device/energy-profile/battery/level` | pending | owner permission unverified | station / indicated device | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `grid_export_limit` | GET `/device/energy-profile/grid/limitation/export/{stationId}` | normalized read schema | owner station | station / indicated device | read | pinned reference | implemented through `get_grid_settings`; fixture and hosted read verified |
-| `grid_import_limit` | GET `/device/energy-profile/grid/limitation/import/{stationId}` | normalized read schema | owner station | station / indicated device | read | pinned reference | implemented through `get_grid_settings`; fixture and hosted read verified |
-| `grid_connection_limit` | GET `/device/energy-profile/parallel/off/grid/{stationId}` | normalized read schema | owner station | station / indicated device | read | pinned reference | implemented through `get_grid_settings`; fixture and hosted read verified |
-| `set_grid_connection_limit` | PUT `/device/energy-profile/parallel/off/grid` | pending | owner permission unverified | station / indicated device | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `battery_power_limit` | GET `/device/energy-profile/battery/limit/{stationId}` | normalized read schema | owner station | station / indicated device | read | pinned reference | implemented through `get_battery_settings`; fixture and hosted read verified |
-| `set_battery_power_limit` | PUT `/device/energy-profile/battery/limit` | pending | owner permission unverified | station / indicated device | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `solar_power_limit` | GET `/device/energy-profile/solar/limit/{stationId}` | normalized read schema | owner station | station / indicated device | read | pinned reference | implemented through `get_solar_settings`; fixture and hosted read verified |
-| `set_solar_power_limit` | PUT `/device/energy-profile/solar/limit` | pending | owner permission unverified | station / indicated device | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `backup_reserve` | GET `/device/setting/backup/reserve/{stationId}` | normalized read schema | owner station | station / indicated device | read | pinned reference | implemented through `get_battery_settings`; fixture and hosted read verified |
-| `set_backup_reserve` | PUT `/device/setting/backup/reserve` | pending | owner permission unverified | station / indicated device | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `gateway_info` | GET `/device/gateway/{stationId}` | normalized read schema | owner station | station / indicated device | read | pinned reference | implemented through `get_gateway`; fixture and hosted read verified |
-| `grid_connection_point_devices` | GET `/device/station/grid-connection-point/support-devices` | normalized read schema | owner station | station / indicated device | read | pinned reference | implemented through `list_grid_devices`; fixture and hosted read verified |
-| `battery_export_limitation` | GET `/device/energy-profile/battery/export/limitation/{stationId}` | normalized read schema | owner station | station / indicated device | read | pinned reference | implemented through `get_battery_settings`; fixture and hosted read verified |
-| `set_battery_export_limitation` | PUT `/device/energy-profile/battery/export/limitation` | pending | owner permission unverified | station / indicated device | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `peak_shaving_schedule` | GET `/device/dischargesetting/peak/shaving/{stationId}` | pending | owner permission unverified | station / indicated device | read | pinned reference | discovered; schema/permission verification pending |
-| `set_peak_shaving_schedule` | POST `/device/dischargesetting/peak/shaving` | pending | owner permission unverified | station / indicated device | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `instant_manual_control` | GET `/device/energy-profile/instant/manunal/{stationId}` | pending | owner permission unverified | station / indicated device | read | pinned reference | discovered; schema/permission verification pending |
-| `instant_manual_display` | GET `/device/energy-profile/instant/manunal/display/{stationId}` | pending | owner permission unverified | station / indicated device | read | pinned reference | discovered; schema/permission verification pending |
-| `set_instant_manual_control` | PUT `/device/energy-profile/instant/manunal` | pending | owner permission unverified | station / indicated device | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `disable_instant_manual_control` | PUT `/device/energy-profile/instant/manunal` | pending | owner permission unverified | station / indicated device | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `dc_charge_mode_soc_range` | GET `/device/charge/mode/soc/range` | pending | owner permission unverified | DC charger | read | pinned reference | discovered; schema/permission verification pending |
-| `dc_charge_mode` | GET `/device/charge/mode/dc` | pending | owner permission unverified | DC charger | read | pinned reference | discovered; schema/permission verification pending |
-| `set_dc_charge_mode` | POST `/device/charge/mode/dc` | pending | owner permission unverified | DC charger | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `dc_charge_setting` | GET `/device/dcevse/charge/setting` | pending | owner permission unverified | DC charger | read | pinned reference | discovered; schema/permission verification pending |
-| `set_dc_charge_setting` | POST `/device/dcevse/charge/setting` | pending | owner permission unverified | DC charger | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `set_dc_charge_enabled` | PUT `/device/dcevse/charge/start` | pending | owner permission unverified | DC charger | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `station_is_charging` | POST `/device/charge/check/charge` | pending | owner permission unverified | station / indicated device | read (charging status) | pinned reference | discovered; schema/permission verification pending |
-| `dc_status` | GET `/device/dcevse/status` | pending | owner permission unverified | DC charger | read | pinned reference | discovered; schema/permission verification pending |
-| `dc_plug_status` | GET `/device/dcevse/plug/status` | pending | owner permission unverified | DC charger | read | pinned reference | discovered; schema/permission verification pending |
-| `dc_charge_realtime` | GET `/device/dcevse/charge/realtime` | pending | owner permission unverified | DC charger | read | pinned reference | discovered; schema/permission verification pending |
-| `dc_discharge_realtime` | GET `/device/dcevse/discharge/realtime` | pending | owner permission unverified | DC charger | read | pinned reference | discovered; schema/permission verification pending |
-| `dc_energy_totals` | GET `/data-process/dcevse/energy` | pending | owner permission unverified | DC charger | read | pinned reference | discovered; schema/permission verification pending |
-| `dc_lifetime_totals` | GET `/data-process/dcevse/total/{stationId}/{serialNumber}` | pending | owner permission unverified | DC charger | read | pinned reference | discovered; schema/permission verification pending |
-| `dc_ocpp_status` | GET `/device/dcevse/ocpp/status` | pending | owner permission unverified | DC charger | read | pinned reference | discovered; schema/permission verification pending |
-| `dc_session_records` | GET `/data-process/dcevse/record/page` | pending | owner permission unverified | DC charger | read | pinned reference | discovered; schema/permission verification pending |
-| `v2x_discharge_info` | GET `/device/station-v2x/discharge/info` | pending | owner permission unverified | DC charger | read | pinned reference | discovered; schema/permission verification pending |
-| `v2x_discharge_settings` | GET `/device/station-v2x/select` | pending | owner permission unverified | DC charger | read | pinned reference | discovered; schema/permission verification pending |
-| `set_v2x_discharge_enabled` | POST `/device/station-v2x/open-close` | pending | owner permission unverified | DC charger | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `start_v2x_discharge` | POST `/device/station-v2x/start/discharge` | pending | owner permission unverified | DC charger | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `stop_v2x_discharge` | POST `/device/station-v2x/stop/discharge` | pending | owner permission unverified | DC charger | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `active_alarms` | GET `/device/alarm/page` | pending | owner permission unverified | station / indicated device | read | pinned reference | discovered; schema/permission verification pending |
-| `aio_serials` | GET `/device/aio/by/station` | pending | owner permission unverified | station / indicated device | read | pinned reference | discovered; schema/permission verification pending |
-| `device_topology` | GET `/device/devicetreepanel/topology` | pending | owner permission unverified | station / indicated device | read | pinned reference | discovered; schema/permission verification pending |
-| `get_aio_power_on` | GET `/device/sigenMate/getPowerOnOffStatus` | pending | owner permission unverified | station / indicated device | read | pinned reference | discovered; schema/permission verification pending |
-| `get_aio_on_off_state` | GET `/device/aio/on-off-state` | pending | owner permission unverified | station / indicated device | read | pinned reference | discovered; schema/permission verification pending |
-| `toggle_aio_power` | POST `/device/aio/on-off` | pending | owner permission unverified | station / indicated device | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `set_aio_power` | POST `/device/aio/on-off` | pending | owner permission unverified | station / indicated device | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-| `restart_aio` | POST `/device/aio/on-off` | pending | owner permission unverified | station / indicated device | changes settings/device | pinned reference | discovered; schema/permission verification pending |
-
-## Remaining discovery
-
-Station enumeration must be distinguished from the selected/default station.
-Historical alarm pagination and calendar history periods are now implemented.
-Inspect station selection, custom profile details, schedule replacement semantics, tariffs/fees,
-smart loads, AC charging, DC/V2X and device administration while natural renewal checks continue. Do not infer owner access from installer endpoint names. Hardware
-missing from this account needs explicit unsupported/unknown states and synthetic
-fixtures, not a live-verified label.
-
-Other supplied leads remain unadapted: `@paulczar/sigen-api-mcp` 0.1.2, PyPI `sigen`
-(license/version inspection required), and GerardBrowne/sig-data at
-`618618a7e9a5f9b8f4dfde77f298a48446b34069` (discovery only; reuse permission not
-established). Its Northbound history must not enter this private client.
-
-The supplied plan's fresh-human-approval-for-every-command policy was superseded
-by the user: support approve once and a revocable always-approve permission for
-an operation and station/device. This does not remove parameter validation,
-one-use command IDs, state conflict detection or ambiguous-outcome reconciliation.
-
-## Control and tariff implementation update
-
-The shared registry now contains 31 operations: 25 provider/connection reads and six command/approval operations. These additions have fixture and local runtime coverage; hosted verification is recorded separately.
-
-| Operation | Method/path | Schema | Permissions/hardware | Side effects | Evidence | Status |
-| --- | --- | --- | --- | --- | --- | --- |
-| `get_tariffs` | GET `/electricity-price/api/tax-and-fee/{id}` and `/prediction/aipv/elecPrice/get/priceCost?stationId=…` | `Tariffs` | enrolled owner station | none | browser observations plus pinned MIT reference | implemented, fixture-tested; fee units remain unverified |
-| `get_prediction_plan` | GET `/prediction/predictData/get/predictData/{id}` | `PredictionPlan` | enrolled owner station | none | browser observation plus pinned MIT reference | implemented, fixture-tested; actual, plan and price series distinguished |
-| `set_backup_reserve` | PUT `/device/setting/backup/reserve` | `ControlChange` | battery | changes reserve percent | pinned MIT client/app-derived payload plus authorized live test | implemented; live 20% → 21% → 20% write/readback and once/always/revocation verified |
-| `set_battery_power_limits` | PUT `/device/energy-profile/battery/limit` | `ControlChange` | battery | changes charge/discharge limits | pinned MIT client/app-derived payload | implemented, fixture-tested; not live-control-verified |
-| `set_solar_power_limit` | PUT `/device/energy-profile/solar/limit` | `ControlChange` | solar | changes PV limit | pinned MIT client/app-derived payload | implemented, fixture-tested; not live-control-verified |
-| `set_battery_export` | PUT `/device/energy-profile/battery/export/limitation` | `ControlChange` | battery, installer permission | changes owner export permission | pinned MIT client | implemented, fixture-tested; not live-control-verified |
-| `set_grid_export_limit`, `set_grid_import_limit` | PUT `/device/energy-profile/grid/limitation/{export,import}` | `ControlChange` | known installer ceiling | enables finite owner limit | pinned MIT client | implemented, fixture-tested; not live-control-verified |
-| `set_grid_connection_current` | PUT `/device/energy-profile/parallel/off/grid` | `ControlChange` | known installer ceiling | enables current limit in amperes | pinned MIT client | implemented, fixture-tested; not live-control-verified |
-| `set_operating_mode` | PUT `/device/energy-profile/mode` | `ControlChange` | currently available mode 0, 1 or 5 | changes operating strategy | pinned MIT client plus live mode list | implemented, fixture-tested; not live-control-verified |
-
-The named setting changes are variants of `prepare_command`, not direct-write tools. HTTP and MCP use the same saved review, once/always approval, revocation, dispatch and readback service. All provider dispatch remains disabled by default. Setting writes do not use the read retry path. Reenrollment invalidates remembered permissions.
-
-Still unfinished: station enumeration, additional custom-profile details and schedule replacement, remaining tariff/fee semantics, starting manual overrides, smart loads, AC/DC/V2X adapters, device administration, caching and shared upstream budgets. Missing charger hardware remains an observed capability limitation, not an implementation claim. The discovery matrix above remains the broader backlog; this update supersedes its older implementation status for these specific operations.
-
-## 27 October extension
-
-The registry contains 31 operations and eleven typed control variants. The following additions have fixture coverage; hosted evidence is recorded separately in [read acceptance](read-acceptance.md).
-
-| Operation | Provider route | Behavior and limits |
+| Operations | Provider route(s) | Contract and limits |
 | --- | --- | --- |
-| `list_aio_devices` | GET `/device/aio/by/station` | Every serial must belong to the enrolled station topology; duplicates fail. |
-| `get_aio_power_status` | GET `/device/sigenMate/getPowerOnOffStatus`, `/device/aio/on-off-state` | Requires an AIO member; keeps both strict boolean observations, including disagreement. |
-| `get_station_income` | GET `/data-process/sigen/station/statistics/income` | Browser-observed day query with `fulfill=false`; preserves provider totals, negative/missing income, calculated values, currency and local-time ambiguity. Other periods remain unverified. |
-| `set_battery_soc_thresholds` | PUT `/device/energy-profile/battery/level` | Four reviewed integer percentages; refuses unset current thresholds and thresholds above the charge ceiling. The separate `ja12SOC` field is not written. |
-| `set_peak_shaving_schedule` | POST `/device/dischargesetting/peak/shaving` | Complete reviewed list with watts converted to kW. Preserves timezone, provider day codes and every time window; permits enabled state, reserve and power edits only. |
-| `stop_manual_override` | PUT `/device/energy-profile/instant/manunal` | Sends the pinned disable payload. Readback uses authoritative state and does not depend on optional display telemetry. |
+| `connection_status` | Stored account state | Connection, expiry, renewals and dispatch state; no provider request. |
+| `list_stations` | GET `/device/owner/station/list` | Bounded complete owner list, unique identities, enrolled membership; capacities W/Wh. Does not change enrolled station. |
+| `get_station` | GET `/device/owner/station/home` | Requested/default identity must match. Metadata and explicit equipment flags. |
+| `get_station_capabilities` | GET `/device/sigen/station/baseInfoByUser`, `/device/station/backup/{id}`, `/device/station/backup/power-shed/{id}` | Strict capability booleans; `providerHasEv` is not interpreted as a specific charger type. |
+| `get_energy_flow` | GET `/device/sigen/station/energyflow` | W, SOC, nullable provider timestamp and unknown freshness. Battery sign observed; grid direction unverified. |
+| `get_operating_mode`, `list_operating_modes` | GET `/device/energy-profile/mode/{current,all}/{id}` | Current and available provider modes plus custom profile IDs. |
+| `list_profile_templates` | GET `/device/energy-profile/mode/all/template/{id}` | Template descriptions and provider mode/profile identity. No activation. |
+| `get_energy_profile` | GET `/device/energy-profile/setting/{id}` or `/setting/info/{id}?profileId=…&mode=…` | Current or enumerated custom/template profile: automation groups, SOC, limits, priorities, peak shaving and preheating. Positive profile IDs must match; template sentinels cannot return unrelated positive IDs. Timezone comes from identity-checked station metadata. |
+| `get_automation_settings` | GET `/device/energy-profile/setting/{id}` | Current battery/grid groups, including inactive/duplicate windows and unknown day/mode/source codes. |
+| `get_energy_capabilities` | GET `/device/energy-profile/support/{id}`, `/support/upgradeEms/{id}` | Feature flags, source options, separate EMS support boolean. No upgrade action. |
+| `get_battery_discharge_priority` | GET `/device/energy-profile/battery/discharge/priority/{id}` | Ordered provider source codes, preserving unfamiliar values/repeats. |
+| `get_solar_priority` | GET `/device/energy-profile/setting/{id}` | Current profile priority tree flattened with bounded group paths; unknown codes preserved. Legacy dedicated GET returned `{}`. |
+| `get_battery_settings` | GET battery level/limit/export limitation and backup reserve | SOC, W limits, installer/owner permissions, explicit unset/unlimited states. |
+| `get_grid_settings` | GET grid import/export limitation and parallel/off/grid | W limits and connection current A; preserves installer ceiling. |
+| `get_solar_settings` | GET `/device/energy-profile/solar/limit/{id}` | W, unlimited or unset. |
+| `get_peak_shaving_schedule` | GET `/device/dischargesetting/peak/shaving/{id}` | Station-local windows, provider day codes, W and timezone. |
+| `get_manual_override` | GET `/device/energy-profile/instant/manunal/{id}`, `/display/{id}` | Active state, provider mode and end time; inactive historical values do not imply activity. |
+| `get_preheating_settings` | GET `/device/dischargesetting/packPreheating/new/{id}` | Bounded typed slots and nullable capability fields. Provider time, power, duration and day values remain uninterpreted because units/day semantics are unverified. |
+| `get_topology`, `get_station_status` | GET station topology and status | Bounded equipment hierarchy and communication codes. |
+| `get_gateway`, `list_grid_devices`, `get_device_info`, `get_device_values` | GET gateway/grid/static/dynamic equipment routes | Topology membership is rechecked; AIO subtree cannot include siblings. Display labels are not stable metric IDs. |
+| `list_aio_devices`, `get_aio_power_status` | GET `/device/aio/by/station`, `/device/sigenMate/getPowerOnOffStatus`, `/device/aio/on-off-state` | Serial membership and two separate boolean power observations, including disagreement. |
+| `list_smart_loads`, `get_smart_load` | GET `/device/tp-device/smart-loads/list`, `/device/tp-device/smart-loads` | Station/path/key validation; identity, manual switch, run mode and controllability. Detail is a state summary, not schedule/history coverage. Missing configured load is `UnsupportedCapability`. |
+| `get_load_capabilities` | GET `/device/system/device/condition/{id}` | Distinguishes supported load/generator ports from installed generator. |
+| `get_system_cards` | GET `/device/system/device/home/card?stationId=…&showThirdPartyInv=false` | Bounded app display values and codes; no inferred metric units. |
+| `list_third_party_devices` | GET `/device/tp-device/manage/card/static-info`, `/device/tp-device/manage/card/dynamic-info` | Identity-matched static/dynamic cards; duplicates/orphans rejected. Explicit placeholder and telemetry availability; generator placeholder does not imply installed equipment. |
+| `list_alarms` | GET `/device/alarm/page`, `/alarm/history/page` | Active/history pagination; inclusive UTC-second provider filters, public milliseconds, maximum 31 days. Unsafe numeric IDs omitted. |
+| `get_energy_history` | App v1 history charts | Day/week/month/year calendar ranges in station timezone; W/Wh conversion only for verified series. Missing values and DST ambiguity preserved. |
+| `get_forecast` | App forecast chart | Day/week/month, explicit `no_data`; populated unknown units fail closed. |
+| `get_prediction_plan` | GET `/prediction/predictData/get/predictData/{id}` | Distinct actual/plan/price series; W, percent and currency/kWh. |
+| `get_tariffs` | GET `/electricity-price/api/tax-and-fee/{id}`, `/prediction/aipv/elecPrice/get/priceCost` | Tax/fee and coefficients; richer populated fee semantics and units remain unverified. |
+| `get_station_income` | GET `/data-process/sigen/station/statistics/income` | Observed daily query only; signed/missing provider and calculated income, currency, local-time ambiguity. Not a bill settlement. |
+| `get_backup_history` | GET `/data-process/station/backup-history` | Paginated off-grid durations, full-history counts, **page** duration seconds, local timestamps and UTC candidates. Not an outage-cause inference. |
+| `list_backup_events` | GET `/data-process/station/backup-event` | Fixed page size 10, inclusive local date span ≤31 days, original display diagnostics. App 4.1.0 version headers preserve all four observed measurements. Populated multi-phase/extra-device details explicitly unsupported. |
 
-The new controls use the existing once/always grants and revocation. Backup reserve has live write/readback and once/always/revocation acceptance; the other physical adapters remain unverified on live equipment. Dispatch is disabled again. This account has an unset peak-shaving SOC threshold, so the four-threshold command correctly refuses it. Empty schedules do not prove populated schedule semantics.
+## Approval and control surface
 
-Additional app-observed leads: station-consumption statistics, AI personalization rules and the EMS-upgrade support flag. Consumption samples were null and personalization rules empty; these observations are discovery evidence only, not normalized read contracts or write authority.
+`prepare_command`, `approve_command`, `execute_command`, `get_command`, `list_approval_grants` and `revoke_approval_grant` share the durable command service. The owner/agent credential may approve **once** or **always**. Always grants permit future validated parameters for the same operation and station; smart-load grants also bind both load key and path. Revocation invalidates queued commands using the grant. Reenrollment invalidates old grants, while retaining attempt receipts.
 
-`get_automation_settings` now reads the current station profile's battery and grid automation groups from GET `/device/energy-profile/setting/{stationId}`. It preserves inactive groups, unfamiliar status/mode/source/day codes, duplicate windows and full local-time intervals; power limits use watts with separate unset/unlimited states. The timezone is verified against station metadata. This covers current-profile groups only, not arbitrary custom profiles or schedule replacement.
+Every command has an immutable five-minute review, a fresh current-state comparison, and a durable marker before one mutation. Changed inputs conflict. Ambiguous outcomes are reconciled by reads and never replayed. Physical dispatch remains disabled. The earlier explicitly authorized backup-reserve test is the only live write acceptance; all other commands have synthetic adapter/approval coverage.
 
-
-## Backup history and energy saving (27 October 2026)
-
-The registry contains 33 operations: 27 provider/connection reads and six command/approval operations. The eleven control variants are unchanged.
-
-| Operation | Provider request | Contract and proof |
+| Change family | Provider write | Validation / verification limit |
 | --- | --- | --- |
-| `get_backup_history` | GET `/data-process/station/backup-history?stationId=…&current=…&size=…` plus station metadata | App-observed page: nine events and 481 total seconds. Exposes pagination, full-history event counts, local timestamps to the second, UTC candidates, durations and `pageDurationSeconds`. The provider duration summary covers only the returned page. Does not infer mains outages from off-grid operation. |
-| `get_energy_saving_settings` | GET `/device/owner/station/save-energy-mode/{stationId}` | App-observed `offGridEnable` boolean and string codes `onGridMode`, `offGridMode`, `value`. Preserves the codes without inferring dormancy or power state. The response may omit station identity with an explicit null; a present identity must match. |
+| `set_backup_reserve` | PUT `/device/setting/backup/reserve` | Battery reserve percent; live 20→21→20, once/always/revocation verified. |
+| `set_battery_power_limits` | PUT `/device/energy-profile/battery/limit` | W converted to provider kW, limited/unlimited. |
+| `set_battery_export` | PUT `/device/energy-profile/battery/export/limitation` | Respects installer permission. |
+| `set_solar_power_limit` | PUT `/device/energy-profile/solar/limit` | Solar capability, finite W or unlimited. |
+| `set_grid_export_limit`, `set_grid_import_limit` | PUT `/device/energy-profile/grid/limitation/{export,import}` | Finite owner limits within known installer ceiling. |
+| `set_grid_connection_current` | PUT `/device/energy-profile/parallel/off/grid` | Amperes within known installer ceiling. |
+| `set_operating_mode` | PUT `/device/energy-profile/mode` | Available modes 0/1/5; mode 9 only for an enumerated custom profile with its complete adapted configuration in review and conflict fingerprint. Modes 2/7 are excluded pending reviewed TOU/Remote EMS settings. |
+| `set_battery_soc_thresholds` | PUT `/device/energy-profile/battery/level` | All four current thresholds known, validated integers under charge ceiling. Separate `ja12SOC` untouched. |
+| `set_peak_shaving_schedule` | POST `/device/dischargesetting/peak/shaving` | Existing day/time windows and timezone preserved; edits enabled state, reserve and power only. |
+| `stop_manual_override` | PUT `/device/energy-profile/instant/manunal` | Disabled readback from authoritative state, independent of display telemetry. |
+| `start_manual_override` | PUT `/device/energy-profile/instant/manunal` | Charge/discharge/hold/self-consumption; duration 30–120 minutes. Read API omits requested duration/power, so provider acceptance remains `outcome_unknown`, never falsely verified or resent. |
+| `set_battery_discharge_priority` | PUT `/device/energy-profile/battery/discharge/priority` | Feature flag and supported source options; exact permutation of current known `pv`/`grid` sources. |
+| `set_solar_priority` | PUT `/device/energy-profile/solar/priority` | Flat known source identities only, exact complete membership and priority multiset; grouped/smart-load/unknown codes refused. Excluded status-2 rows retain priority. |
+| `set_smart_load_switch` | PATCH `/device/tp-device/smart-loads/control-mode/manual/switch` | Query parameters, null body. Current station/path/key membership, controllable flag, manual run mode 1 and known switch value required. |
 
-Both reads pass the enrolled-station gate. Backup timestamps use the verified station timezone; DST gaps retain no UTC candidate and overlaps retain both. Invalid dates, durations and pagination fail closed. Hosted acceptance is recorded separately in [read acceptance](read-acceptance.md).
+## Request budget and renewal
 
-Additional discovery: GET `/device/dischargesetting/packPreheating/new/{stationId}` returned an empty `packPreheatingVOList`, switch 0, null preheating mode/enables/auto-mode validity, and `isIndustry: false`. The app showed preheating scheduling off. Populated scheduling semantics remain unverified; no switch was changed and no preheating API was exposed.
+The account Durable Object persists one 30-request rolling-minute budget across authentication, reads and controls, with 400 ms minimum spacing. Reservations are saved before waiting and survive interruption/restart. Provider 429 backoff honors valid `Retry-After` seconds/date with a minimum one-minute cooldown. Budget/storage rejection before transport preserves valid renewal credentials and schedules another attempt; ambiguous dispatched renewal still requires reconnection. The separate edge admission limit remains 30 calls/minute. Caching is not implemented; each provider-backed read is fresh.
 
+## Explicit remaining exclusions and evidence needed
 
-## Energy-profile capabilities and backup diagnostics (27 October 2026)
+These are unfinished or unsupported families, not hidden aliases or successful empty implementations.
 
-The registry contains 36 operations: 30 provider/connection reads and six command/approval operations. The eleven control variants are unchanged.
-
-| Operation | Provider request | Contract and scope |
+| Family | Discovery | Required before exposure |
 | --- | --- | --- |
-| `get_energy_capabilities` | GET `/device/energy-profile/support/{stationId}` and `/device/energy-profile/support/upgradeEms/{stationId}` | Preserves all 13 observed strict boolean feature flags, battery/grid source-option codes, and the separate EMS-support boolean. Flags are app-reported capabilities, not permission grants, active policies, or an upgrade action. |
-| `get_battery_discharge_priority` | GET `/device/energy-profile/battery/discharge/priority/{stationId}` | Preserves ordered source codes, including unfamiliar values and repeats. The app's Battery Discharging Priority screen showed Solar then GRID, matching `pv`, `grid`. No priorities were changed. |
-| `list_backup_events` | GET `/data-process/station/backup-event?current=…&stationId=…&startTime=…&endTime=…&filterItems=` plus station metadata | Fixed page size 10; inclusive station-local dates with end minus start ≤31 days; empty filters only. Preserves duplicate records, model/type/reason codes, second-precision local time with DST candidates, and original diagnostic labels/values. |
+| Custom profile create/update/delete; TOU/Remote EMS activation | App `/setting/new`, `/setting`, `/setting/active`, profile delete routes and serialization observed | Complete create/replace/delete semantics, reviewed ancillary settings and conflict/reconciliation contract. Current/custom/template reads and custom activation are implemented above. |
+| Battery/grid automation replacement and new/moved peak-shaving windows | App group/time-window serializers observed | Verified day codes, overlap/timezone semantics, replacement behavior and readback. Existing-window peak-shaving edits only. |
+| Preheating and energy-saving writes | App `packPreheat/set/new` and `save-energy-mode` DTOs observed | Verified power/time/day/mode units and supported-value constraints. Raw reads do not establish write semantics. |
+| Smart-load schedules, mode changes and consumption history | App control-mode, schedule and load-consumption paths observed | A configured smart load plus populated schedule/history responses; review full mode-dependent settings. Manual switching adapter remains synthetic-only. |
+| Station consumption breakdown | `/data-process/sigen/station/statistics/station-consumption` | Earlier null samples, current read HTTP 500, and no validated populated response. Do not claim normalized coverage. |
+| AC charging | PyPI `sigen` 3.0.3 current/mode and more-setting protocol leads | No AC charger on account. Verify serial membership, populated schema, current/phase ceilings and settings before controls. |
+| DC charging / V2X | Pinned reference and app route leads | No DC equipment; schema, membership, direction, limits and consent not verified. |
+| Microinverters and inactive storage licensing | App `/device/microenergy/baseinfo`, `/device/stor-license/inactive/stor` returned empty arrays | Populated identity/unit schemas before typed adapters. No licensing mutation. |
+| AIO power toggle/restart and administration | POST `/device/aio/on-off` reference | Conflicting boolean read observations and ambiguous toggle/restart semantics; idempotency and reliable reconciliation required. Installer/account administration is outside current owner controls. |
+| Tariff/fee writes and richer fee rows | Pinned tax/fee POST and current default/empty reads | Populated units, currency/tax meaning and provider replacement behavior. |
+| Legacy async flow, raw prediction aliases | Reference endpoints | Current synchronous flow and typed prediction/forecast APIs cover the verified use cases. No redundant untyped proxy. |
+| Multiple enrolled stations/accounts, cache, command-book archival | Service architecture | Explicit authorization mapping, cache freshness/invalidation and replay-safe archival design. Current command book caps at 256 records. |
+| Provider revocation/reconnection acceptance | Recovery implementation and synthetic tests | Separate intentional revocation procedure; never disturb the healthy natural-renewal chain merely to label the project complete. |
 
-The event feed is distinct from backup-duration history and alarm history. The browser returned seven records in its default date range, each with four display measurements (voltage, frequency, active power and reactive power). The hosted adapter matches all four after sending the app-observed `sg-app-version: 4.1.0` and `sg-v: 4.1.0` headers on this endpoint; without them, the observed response contained only voltage and frequency. The app labelled the observed backup/reason codes as Off Grid / Other. These snapshots do not establish an outage cause. Populated multi-phase or extra-device detail remains unverified and returns `UnsupportedCapability`; the adapter does not silently drop those details. Date and pagination response mismatches fail closed.
+## Provenance
 
-Solar-priority discovery additionally confirmed three current-profile entries and the app's distinction between its battery priority and sources excluded from ordering under third-party algorithm control. Grouped priorities and smart-load metadata remain unverified and are not exposed by this increment. Hosted evidence for the three new reads is tracked in [read acceptance](read-acceptance.md).
+- Private EU mySigen app **4.1.0**, release `cdn-eu-b147-2a9ceaaa1ca0`; read-only navigation, observed requests and public client serializers. No private account payloads committed.
+- [solidfox/sigenergy-cloud](https://github.com/solidfox/sigenergy-cloud/tree/99c744aa4b07f53836e7b2d76c1165701e4d52c1), pinned MIT reference, independently implemented TypeScript; see [notice](../../packages/sigen/THIRD_PARTY_NOTICES.md).
+- `@paulczar/sigen-api-mcp` 0.1.2 (MIT declared) and [PyPI sigen 3.0.3](https://pypi.org/project/sigen/3.0.3/) (MIT file inspected) supplied additional protocol leads, not copied implementation or live acceptance.
+- GerardBrowne/sig-data `618618a7e9a5f9b8f4dfde77f298a48446b34069` is discovery-only, with reuse permission unestablished. Its Northbound history does not enter this client.

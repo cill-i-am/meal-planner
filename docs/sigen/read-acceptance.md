@@ -1,16 +1,8 @@
 # Sigen read acceptance
 
-## Scope
+## Current scope
 
-The shared registry now exposes 19 read operations through HTTP and MCP. This
-expansion covers station metadata, live flow, current/available modes, battery,
-grid and PV settings, manual-override state, peak shaving, topology, device and
-gateway measurements, grid equipment, alarms, energy history and forecasts.
-
-Tariffs, complete custom-profile/schedule details, station enumeration, smart
-loads, chargers/V2X, shared caching/request budgets and physical controls remain
-unfinished. The [coverage matrix](coverage.md) tracks these separately. No
-physical setting was changed during discovery or verification.
+The registry exposes 47 HTTP/MCP operations and 15 typed control families. See the [current coverage matrix](coverage.md) for implemented contracts and explicit exclusions. The dated sections below are historical evidence, not current inventory counts. Three required real renewals are verified in [authentication acceptance](auth-acceptance.md); physical dispatch remains disabled after the separate authorized reserve test.
 
 ## Hosted evidence on 26 October 2026
 
@@ -172,3 +164,28 @@ The app sends `sg-app-version: 4.1.0` and `sg-v: 4.1.0`. Applying both headers o
 Direct authenticated HTTP calls also returned 200 for all three new operations. For backup diagnostics, page 2 returned zero records while retaining total 7 and pages 1. An inclusive single-day query for 11 October returned all seven snapshots with four measurements each; 12 October returned an empty page with total 0 and pages 0. Repeated timestamps/reasons remain separate records, not a claim of seven distinct outages.
 
 The connection stayed healthy with two natural renewals and the same expiry, **28 October 03:16:00.894 UTC**. Physical dispatch remained disabled throughout. No enrollment, credential, grant or physical setting changed.
+
+## Profile, load and control expansion, 28 October 2026
+
+The registry now has **47 operations** (41 provider/connection reads plus six command/approval operations) and **15 typed control families**. The [coverage matrix](coverage.md) is consolidated into current implemented contracts and explicit exclusions; its older contradictory inventory appendices were removed. Three real natural renewals passed separately. This increment did not change equipment, enroll again, revoke credentials or grant approvals.
+
+229 focused tests, both package type checks, package build, Executor type checking, scoped lint/format, complexity and documentation checks pass. The native Worker test exercises encrypted RPC, persisted credentials/grants, synthetic alarm renewal and once/always/revocation under the real production request budget; it waits for the rolling window instead of weakening that budget. Both review axes are clear after fixes for local-admission timeout classification, duplicate solar membership, Retry-After and custom-profile configuration verification.
+
+A custom-mode review now includes the selected profile settings in its fingerprint. A changed profile with the same ID conflicts before dispatch; readback cannot mark it verified if configuration differs from the saved review. Only the top-level activation marker may change during activation. Missing review data fails verification. Smart-load grants bind both key and path, and automatic/unknown load modes refuse manual switching. Unsupported solar sources/groups are refused; excluded entries cannot change priority. Manual-start acknowledgements remain `outcome_unknown` because the read endpoint cannot confirm duration and power.
+
+The account-wide persisted provider budget allows 30 requests per rolling minute with 400 ms spacing. Provider cooldown honors Retry-After. A pre-transport rejection or admission timeout preserves the valid session rather than discarding credentials. Synthetic regression tests distinguish zero transport calls from uncertain provider outcomes.
+
+The independent Worker was updated at **14:55 UTC**, retaining its Durable Object and credentials. An initial capability read exposed a query mismatch: ordinary stations require `id` and `appVersion=4.1.0`; PPC uses `stationId`. The correction was fixture-tested and deployed at **14:58 UTC**. Corrected HTTP station enumeration/capabilities returned 200 at **15:00–15:01 UTC**. The HTTP verification script's initial empty station-list input was invalid; the supported input is `{stationId}` and the corrected call passed.
+
+Executor was updated in place to deployment `dpl_a89812d7-4ebe-45a5-a4c3-ab9732d6db23`, source `23c3b9e29cf9123afeeebabf75da692ca19ffc24`, preserving all four source files and the existing personal account. It discovers all 47 tools. A rapid replay reached the existing **edge** request limit; only completed calls were counted. Small read-only batches after the limit reset were used for final acceptance.
+
+Confirmed through HTTP and the actual Executor account:
+
+- Station inventory contains one enrolled station. Backup is supported; AC charger and provider EV flags are false. Four profile templates are available.
+- The current profile has one battery group, one grid group and three solar-priority entries. Template 200 has three battery groups, one grid group and three priorities. No profile was created or activated.
+- Solar priority contains three flat entries, preserving provider order/status.
+- No configured smart loads and no system cards. Load capabilities distinguish supported generator/load ports from `generatorInstalled: false`.
+
+At **15:05 UTC**, the final Executor batch also confirmed preheating has no slots, switch 0 and null automatic-mode capability; third-party inventory contains one explicit generator placeholder. Both HTTP and Executor return `UnsupportedCapability` for a missing smart load before detail access. Populated smart loads, preheating schedules and real custom-profile activation remain synthetic-only; empty inventory is not hardware acceptance.
+
+The connection remains `connected`, with **three** successful natural renewals, expiry **28 October 15:15:00.102 UTC**, and dispatch `disabled_pending_acceptance`. No credentials or private station identifiers are included here.

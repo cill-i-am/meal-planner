@@ -9,6 +9,7 @@ import type {
 } from "@meal-planner/sigen/controls";
 import {
   ApprovalGrant,
+  approvalScope,
   Command,
   controlMatches,
   snapshotConfiguration,
@@ -105,7 +106,10 @@ export const makeCommands = <R>(
     book.grants.find(
       (grant) =>
         grant.scope.stationId === command.review.stationId &&
-        grant.scope.operation === command.review.change.operation
+        JSON.stringify(grant.scope) ===
+          JSON.stringify(
+            approvalScope(command.review.stationId, command.review.change)
+          )
     );
   const reconcile = (
     book: CommandBook,
@@ -129,7 +133,11 @@ export const makeCommands = <R>(
       }
       return yield* save(book, {
         ...command,
-        phase: controlMatches(command.review.change, result.success)
+        phase: controlMatches(
+          command.review.change,
+          result.success,
+          command.review.current
+        )
           ? {
               attemptedAt,
               observed: result.success,
@@ -181,10 +189,7 @@ export const makeCommands = <R>(
           const grant = activeGrant(book, command) ?? {
             createdAt: now,
             grantId: crypto.randomUUID(),
-            scope: {
-              operation: command.review.change.operation,
-              stationId: input.stationId,
-            },
+            scope: approvalScope(input.stationId, command.review.change),
           };
           const grants = [
             ...book.grants.filter((item) => item.grantId !== grant.grantId),

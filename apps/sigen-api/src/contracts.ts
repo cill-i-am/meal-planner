@@ -43,8 +43,20 @@ import {
   ForecastInput,
 } from "@meal-planner/sigen/history";
 import {
+  LoadCapabilities,
+  SmartLoadInput,
+  SmartLoadState,
+  SmartLoads,
+  SystemCards,
+} from "@meal-planner/sigen/loads";
+import { PreheatingSettings } from "@meal-planner/sigen/preheating";
+import {
   BatteryDischargePriority,
   EnergyCapabilities,
+  EnergyProfile,
+  EnergyProfileInput,
+  ProfileTemplates,
+  SolarPriority,
 } from "@meal-planner/sigen/profile";
 import {
   EnergySavingSettings,
@@ -56,12 +68,47 @@ import {
   PeakShavingSchedule,
   ManualOverride,
 } from "@meal-planner/sigen/settings";
+import { StationCapabilities, Stations } from "@meal-planner/sigen/stations";
 import { Tariffs, PredictionPlan } from "@meal-planner/sigen/tariffs";
+import { ThirdPartyDevices } from "@meal-planner/sigen/third-party";
 import { Context, Effect, Schema, flow } from "effect";
 
 export class SigenCapabilities extends Context.Service<
   SigenCapabilities,
   {
+    readonly stations: (
+      id: StationId
+    ) => Effect.Effect<typeof Stations.Type, SigenFailure>;
+    readonly stationCapabilities: (
+      id: StationId
+    ) => Effect.Effect<typeof StationCapabilities.Type, SigenFailure>;
+    readonly profileTemplates: (
+      id: StationId
+    ) => Effect.Effect<typeof ProfileTemplates.Type, SigenFailure>;
+    readonly energyProfile: (
+      input: typeof EnergyProfileInput.Type
+    ) => Effect.Effect<typeof EnergyProfile.Type, SigenFailure>;
+    readonly solarPriority: (
+      id: StationId
+    ) => Effect.Effect<typeof SolarPriority.Type, SigenFailure>;
+    readonly smartLoads: (
+      id: StationId
+    ) => Effect.Effect<typeof SmartLoads.Type, SigenFailure>;
+    readonly smartLoad: (
+      input: typeof SmartLoadInput.Type
+    ) => Effect.Effect<typeof SmartLoadState.Type, SigenFailure>;
+    readonly loadCapabilities: (
+      id: StationId
+    ) => Effect.Effect<typeof LoadCapabilities.Type, SigenFailure>;
+    readonly systemCards: (
+      id: StationId
+    ) => Effect.Effect<typeof SystemCards.Type, SigenFailure>;
+    readonly preheatingSettings: (
+      id: StationId
+    ) => Effect.Effect<typeof PreheatingSettings.Type, SigenFailure>;
+    readonly thirdPartyDevices: (
+      id: StationId
+    ) => Effect.Effect<typeof ThirdPartyDevices.Type, SigenFailure>;
     readonly backupEvents: (
       input: typeof BackupEventsInput.Type
     ) => Effect.Effect<typeof BackupEvents.Type, SigenFailure>;
@@ -213,6 +260,102 @@ const operation = <
 
 export const operations = [
   operation(
+    "list_third_party_devices",
+    "Read third-party device cards with explicit placeholders and missing telemetry. A generator placeholder is not installed equipment. Account/contact fields and serials are omitted.",
+    StationInput,
+    ThirdPartyDevices,
+    (input) =>
+      SigenCapabilities.use((service) =>
+        service.thirdPartyDevices(input.stationId)
+      )
+  ),
+  operation(
+    "get_preheating_settings",
+    "Read battery preheating configuration, preserving provider values and null capability fields. Schedule units and day codes remain unverified; this does not change preheating.",
+    StationInput,
+    PreheatingSettings,
+    (input) =>
+      SigenCapabilities.use((service) =>
+        service.preheatingSettings(input.stationId)
+      )
+  ),
+  operation(
+    "get_system_cards",
+    "Read app system-device cards, preserving display values and provider codes without inferring metric units.",
+    StationInput,
+    SystemCards,
+    (input) =>
+      SigenCapabilities.use((service) => service.systemCards(input.stationId))
+  ),
+  operation(
+    "get_load_capabilities",
+    "Read smart-load and generator-port capabilities, distinguishing a supported port from installed equipment.",
+    StationInput,
+    LoadCapabilities,
+    (input) =>
+      SigenCapabilities.use((service) =>
+        service.loadCapabilities(input.stationId)
+      )
+  ),
+  operation(
+    "get_smart_load",
+    "Read smart-load identity, manual switch and run mode after verifying station membership. This summary does not expose schedules. Unknown provider codes remain explicit.",
+    SmartLoadInput,
+    SmartLoadState,
+    (input) => SigenCapabilities.use((service) => service.smartLoad(input))
+  ),
+  operation(
+    "list_smart_loads",
+    "List smart loads belonging to the enrolled station. An empty list means no configured loads, not proof of working smart-load controls.",
+    StationInput,
+    SmartLoads,
+    (input) =>
+      SigenCapabilities.use((service) => service.smartLoads(input.stationId))
+  ),
+  operation(
+    "get_solar_priority",
+    "Read solar priorities from the current profile. Preserve group nesting, provider order and unknown status/type codes.",
+    StationInput,
+    SolarPriority,
+    (input) =>
+      SigenCapabilities.use((service) => service.solarPriority(input.stationId))
+  ),
+  operation(
+    "get_energy_profile",
+    "Read the current profile or a membership-verified custom profile/template, with automation groups, limits and priority order. No settings are changed.",
+    EnergyProfileInput,
+    EnergyProfile,
+    (input) => SigenCapabilities.use((service) => service.energyProfile(input))
+  ),
+  operation(
+    "list_profile_templates",
+    "List provider energy profile templates and their mode/profile identifiers without creating or activating them.",
+    StationInput,
+    ProfileTemplates,
+    (input) =>
+      SigenCapabilities.use((service) =>
+        service.profileTemplates(input.stationId)
+      )
+  ),
+  operation(
+    "get_station_capabilities",
+    "Read owner station capability flags and backup support. The provider EV flag is preserved without inferring a DC charger; get_station reports DC serial availability.",
+    StationInput,
+    StationCapabilities,
+    (input) =>
+      SigenCapabilities.use((service) =>
+        service.stationCapabilities(input.stationId)
+      )
+  ),
+  operation(
+    "list_stations",
+    "List accessible owner stations and mark the enrolled station. Enumeration does not enroll or authorize another station.",
+    StationInput,
+    Stations,
+    (input) =>
+      SigenCapabilities.use((service) => service.stations(input.stationId))
+  ),
+  operation(
     "list_backup_events",
     "Read one ten-event page from the Backup Event Center using inclusive station-local dates spanning at most 31 days. Preserves duplicate events, provider type/reason codes and original measurement labels/values without inferring outage causes. Second-precision timestamps retain all DST candidates. Unverified multi-phase or extra-device details return UnsupportedCapability.",
     BackupEventsInput,
@@ -308,7 +451,7 @@ export const operations = [
   ),
   operation(
     "prepare_command",
-    "Prepare an immutable five-minute review without changing equipment. Use a fresh UUID commandId; repeated IDs return the saved command, altered inputs conflict. An existing always-approve grant authorizes this operation and station.",
+    "Prepare an immutable five-minute review without changing equipment. Use a fresh UUID commandId; repeated IDs return the saved command, altered inputs conflict. An existing always-approve grant authorizes this operation and station/device.",
     PrepareCommandInput,
     Command,
     (input) =>
@@ -317,7 +460,7 @@ export const operations = [
   ),
   operation(
     "approve_command",
-    "Approve the exact saved review: once for this command, or always for this operation and station until revoked. Copy change, current and reviewFingerprint exactly from prepare_command. Always approval permits future parameters within the same validated operation; it is not limited to today's values. Does not dispatch equipment changes.",
+    "Approve the exact saved review: once for this command, or always for this operation and station/device until revoked. Copy change, current and reviewFingerprint exactly from prepare_command. Always approval permits future parameters within the same validated operation; it is not limited to today's values. Smart-load grants bind both load key and path. Does not dispatch equipment changes.",
     ApproveCommandInput,
     Command,
     (input) =>

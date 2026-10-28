@@ -13,16 +13,16 @@ rate limiter and credentials are independent of Meal Planner and Tesco.
 - The real MCP SDK initialized against the deployed endpoint, discovered all four tools and successfully called each. All four HTTP routes also returned HTTP 200; station identity matched the enrolled selection. The later Executor replay verified the expanded 19-tool surface through the user-connected account; see [read acceptance](read-acceptance.md).
 - The reloaded mySigen UI agreed on 20% SOC, Sigen AI mode and on-grid status. Household load changed between samples. Empty provider timestamps remain `null`, with freshness explicitly unknown.
 
-No physical settings were changed during the initial authentication checks. The later authorized backup-reserve test is recorded in [read acceptance](read-acceptance.md). Once/always approval grants and eleven physical command variants are implemented
+No physical settings were changed during the initial authentication checks. The later authorized backup-reserve test is recorded in [read acceptance](read-acceptance.md). Once/always approval grants and 15 physical command families are implemented
 and fixture-tested; live dispatch remains disabled. Controls report `disabled_pending_acceptance`.
 
-## Renewal evidence still required
+## Natural renewal acceptance
 
 The provider issued approximately 12-hour tokens (`expires_in` 43199 seconds).
-The enrolled token expires at **27 October 2026, 03:18:02 UTC**; the first renewal
-alarm is due about one minute earlier. Dublin is on UTC on this date. Three
-natural cycles will take approximately 36 hours, with timing determined by each
-returned expiry.
+The original enrolled token expired at **27 October 2026, 03:18:02 UTC**; the
+first renewal alarm was due about one minute earlier. Dublin is on UTC on this
+date. The three required natural cycles are now verified below, with timing
+determined by each returned expiry.
 
 The service records its last five renewal outcomes and cumulative successful
 renewal count. At initial acceptance the count is **0**. Synthetic workerd alarm
@@ -40,8 +40,8 @@ connection, access-token expiry and successful reads.
 The user approved continuing read-endpoint implementation during the natural
 renewal checks. The expanded surface and its evidence are tracked in [read acceptance](read-acceptance.md).
 
-Outstanding: completion of three consecutive natural renewal cycles and
-provider-revoked credentials/reconnection; progress is recorded below.
+Three consecutive natural renewal cycles are verified. The separate
+provider-revoked credentials/reconnection check remains outstanding.
 
 The 26 October 23:24 UTC control/tariff deployment preserved the existing session
 and the 27 October 03:18:02 UTC expiry. Executor verified `connected`, zero renewals
@@ -53,27 +53,32 @@ checks have evidence.
 
 ### Natural renewal observations
 
-The protected operator status was checked on **27 October 2026 at 03:25:45 UTC**
-and again at **15:52:57 UTC**. The latest check reported `connected`, **2**
-successful renewals and controls still `disabled_pending_acceptance`.
-**Two of the three required consecutive natural cycles are verified.**
+The protected operator status was checked on **27 October 2026 at 03:25:45 UTC**,
+again at **15:52:57 UTC**, and on **28 October 2026 at 03:24:42.660 UTC**. The
+latest check reported `connected`, **3** successful renewals and controls still
+`disabled_pending_acceptance`.
+**All three required consecutive natural cycles are verified.**
 
 | Cycle | Trigger / result | Previous expiry (UTC) | Renewal started (UTC) | New expiry (UTC) | Read verification completed (UTC) | Station failure | Energy-flow failure |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | `alarm` / `renewed` | 27 Oct 03:18:02.378 | 27 Oct 03:17:02.616 | 27 Oct 15:17:01.616 | 27 Oct 03:17:03.404 | `null` | `null` |
 | 2 | `alarm` / `renewed` | 27 Oct 15:17:01.616 | 27 Oct 15:16:01.894 | 28 Oct 03:16:00.894 | 27 Oct 15:16:02.454 | `null` | `null` |
+| 3 | `alarm` / `renewed` | 28 Oct 03:16:00.894 | 28 Oct 03:15:01.102 | 28 Oct 15:15:00.102 | 28 Oct 03:15:01.884 | `null` | `null` |
 
 The first previous expiry matches the enrollment and post-deployment observations;
-the second matches the first cycle's returned expiry exactly. The alarms started
-59.762 and 59.722 seconds before their respective expiries, consistent with the
-one-minute renewal margin. Both reads completed successfully after each renewal.
+the second and third each match the preceding cycle's returned expiry exactly.
+The alarms started 59.762, 59.722 and 59.792 seconds before their respective
+expiries, consistent with the one-minute renewal margin. All three have a recorded
+completion time after renewal and null station and energy-flow failures.
 This is real hosted provider evidence, separate from the synthetic workerd tests;
 the checks did not force expiry, re-enroll or change physical settings.
 
-The next natural alarm is expected around **28 October 2026 at 03:15:00 UTC**,
-based on the returned expiry. One further consecutive successful natural cycle
-and the separate provider-revocation/reconnection checks remain pending. Endpoint
-coverage and live control acceptance remain separate work.
+The current access token expires at **28 October 2026 at 15:15:00.102 UTC**.
+The Durable Object continues its normal renewal alarms. The separate
+provider-revocation/reconnection check remains pending; endpoint coverage and
+live control acceptance remain separate work. This completes the three-cycle
+renewal acceptance target, not the full API/MCP project or all authentication
+acceptance checks.
 
 ## Local checks
 
@@ -86,8 +91,9 @@ synthetic scheduled renewals and persistence across local runtime restart.
 ## Scheduled follow-up
 
 The user approved checks at 03:25 and 15:25 Europe/Dublin until three consecutive
-natural renewals have successful station and energy-flow evidence. The thread
-automation `verify-sigen-token-renewals` is active, with its first scheduled check
-on 27 October 2026 at 03:25. It updates this record and reports only completion or
-a problem requiring action, then pauses after the acceptance target is met. It
-does not force expiry, re-enroll the account or change physical settings.
+natural renewals had successful station and energy-flow evidence. After the
+third cycle was verified on 28 October, the thread automation
+`verify-sigen-token-renewals` was deleted because its acceptance target was met.
+This stops scheduled observation only; the service's automatic token renewal
+continues. The checks did not force expiry, re-enroll the account or change
+physical settings.

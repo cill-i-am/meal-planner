@@ -135,6 +135,46 @@ describe("durable physical commands", () => {
       )
     ).toMatchObject({ failure: { reason: "Conflict" } });
   });
+  it("scopes smart-load always approval to both stable key and path and revokes queued permissions", async () => {
+    const f = await fixture();
+    const prepare = (loadKey: string, loadPath: number) =>
+      run(
+        f.service.prepareCommand({
+          change: {
+            enabled: true,
+            loadKey,
+            loadPath,
+            operation: "set_smart_load_switch",
+          },
+          commandId: crypto.randomUUID(),
+          stationId,
+        })
+      );
+    const first = await prepare("load-a", 1);
+    await run(f.service.approveCommand(approvedInput(first, "always")));
+    const same = await prepare("load-a", 1);
+    expect(same.phase.status).toBe("approved");
+    const otherKey = await prepare("load-b", 1);
+    expect(otherKey.phase.status).toBe("prepared");
+    const otherPath = await prepare("load-a", 2);
+    expect(otherPath.phase.status).toBe("prepared");
+    const { grants } = await run(f.service.approvalGrants(stationId));
+    const [grant] = grants;
+    if (grant === undefined) {
+      throw new Error("Expected grant");
+    }
+    expect(grant.scope).toEqual({
+      loadKey: "load-a",
+      loadPath: 1,
+      operation: "set_smart_load_switch",
+      stationId,
+    });
+    await run(f.service.revokeApproval({ grantId: grant.grantId, stationId }));
+    expect(
+      await run(f.service.executeCommand(identity(same)).pipe(Effect.result))
+    ).toMatchObject({ failure: { reason: "ApprovalRequired" } });
+    expect(f.dispatch).not.toHaveBeenCalled();
+  });
   it("remembers only the chosen operation and station, revokes queued grant approvals, and clears grants across reenrollment", async () => {
     const f = await fixture();
     const first = await f.prepare();

@@ -22,7 +22,7 @@ const secret = (value: string) => JSON.stringify({ _tag: "Redacted", value });
 
 it(
   "runs the actual Sigen bundle, encrypted RPC and three scheduled renewals in workerd",
-  { timeout: 60_000 },
+  { timeout: 120_000 },
   async () => {
     const bundler = await Effect.runPromise(
       WorkerBundle.pipe(Effect.provide(NodeServices.layer))
@@ -333,7 +333,7 @@ it(
       // @ts-expect-error SDK 1.32.1's sessionId getter disagrees with Transport under exactOptionalPropertyTypes.
       await client.connect(transport);
       const listed = await client.listTools();
-      expect(listed.tools).toHaveLength(36);
+      expect(listed.tools).toHaveLength(47);
       const initial = await client.callTool({
         arguments: {},
         name: "connection_status",
@@ -581,6 +581,9 @@ it(
         );
         return { body: await response.json(), status: response.status };
       };
+      // Real provider-budget reservations persist across the runtime restart.
+      // Let the rolling window expire before the synthetic write/readback sequence.
+      await setTimeout(60_000);
       const commandIdentity = { commandId, stationId: "12345" };
       const executed = await postCommand("execute_command", commandIdentity);
       expect(executed.body).toMatchObject({ phase: { status: "verified" } });

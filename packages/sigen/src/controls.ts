@@ -1,5 +1,6 @@
 import { Schema, absurd } from "effect";
 
+import { LoadKey, LoadPath, SmartLoadState } from "./loads.js";
 import {
   FailureReason,
   OperatingMode,
@@ -7,6 +8,11 @@ import {
   StationId,
   Timestamp,
 } from "./model.js";
+import {
+  BatteryDischargePriority,
+  EnergyProfile,
+  SolarPriority,
+} from "./profile.js";
 import {
   BatterySettings,
   GridSettings,
@@ -16,6 +22,12 @@ import {
   SolarSettings,
 } from "./settings.js";
 
+export const SolarPriorityChange = Schema.Struct({
+  providerDeviceType: Schema.NullOr(Schema.Int),
+  providerLoadType: Schema.Int,
+  providerPriority: Schema.Int,
+  smartLoadPath: Schema.NullOr(LoadPath),
+});
 const WholePercent = Percent.check(Schema.isInt());
 export const WritablePowerLimit = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("unlimited") }),
@@ -30,6 +42,42 @@ const Watts = Schema.Int.check(
   Schema.isBetween({ maximum: 4_294_967_294, minimum: 0 })
 );
 export const ControlChange = Schema.Union([
+  Schema.Struct({
+    enabled: Schema.Boolean,
+    loadKey: LoadKey,
+    loadPath: LoadPath,
+    operation: Schema.Literal("set_smart_load_switch"),
+  }),
+  Schema.Struct({
+    operation: Schema.Literal("set_battery_discharge_priority"),
+    sources: Schema.Array(Schema.Literals(["pv", "grid"])).check(
+      Schema.isMinLength(2),
+      Schema.isMaxLength(2),
+      Schema.makeFilter((s) => new Set(s).size === s.length)
+    ),
+  }),
+  Schema.Struct({
+    entries: Schema.Array(SolarPriorityChange).check(
+      Schema.isMinLength(1),
+      Schema.isMaxLength(64)
+    ),
+    operation: Schema.Literal("set_solar_priority"),
+  }),
+  Schema.Struct({
+    durationMinutes: Schema.Int.check(
+      Schema.isBetween({ maximum: 120, minimum: 30 })
+    ),
+    limit: WritablePowerLimit,
+    mode: Schema.Literals(["charge", "discharge"]),
+    operation: Schema.Literal("start_manual_override"),
+  }),
+  Schema.Struct({
+    durationMinutes: Schema.Int.check(
+      Schema.isBetween({ maximum: 120, minimum: 30 })
+    ),
+    mode: Schema.Literals(["hold", "self_consumption"]),
+    operation: Schema.Literal("start_manual_override"),
+  }),
   Schema.Struct({
     backupSocPercent: WholePercent,
     chargeSocPercent: WholePercent,
@@ -90,15 +138,37 @@ export const ControlChange = Schema.Union([
   Schema.Struct({
     operation: Schema.Literal("set_operating_mode"),
     profileId: Schema.Int.check(Schema.isGreaterThanOrEqualTo(-1)),
-    providerMode: Schema.Literals([0, 1, 5]),
+    providerMode: Schema.Literals([0, 1, 5, 9]),
   }),
 ]);
 export type ControlChange = typeof ControlChange.Type;
+const { fetchedAt: _profileFetchedAt, ...ProfileConfigurationFields } =
+  EnergyProfile.fields;
 export const ControlSnapshot = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("smart_load"),
+    settings: SmartLoadState,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("battery_priority"),
+    settings: BatteryDischargePriority,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("solar_priority"),
+    settings: SolarPriority,
+  }),
   Schema.Struct({ kind: Schema.Literal("battery"), settings: BatterySettings }),
   Schema.Struct({ kind: Schema.Literal("grid"), settings: GridSettings }),
   Schema.Struct({ kind: Schema.Literal("solar"), settings: SolarSettings }),
-  Schema.Struct({ kind: Schema.Literal("mode"), settings: OperatingMode }),
+  Schema.Struct({
+    kind: Schema.Literal("mode"),
+    settings: Schema.Struct({
+      ...OperatingMode.fields,
+      selectedProfile: Schema.optionalKey(
+        Schema.Struct(ProfileConfigurationFields)
+      ),
+    }),
+  }),
   Schema.Struct({
     kind: Schema.Literal("peak_shaving"),
     settings: PeakShavingSchedule,
@@ -133,22 +203,45 @@ export const ApproveCommandInput = Schema.Struct({
   mode: Schema.Literals(["once", "always"]),
   reviewFingerprint: Fingerprint,
 });
-export const ApprovalScope = Schema.Struct({
-  operation: Schema.Literals([
-    "set_backup_reserve",
-    "set_battery_power_limits",
-    "set_solar_power_limit",
-    "set_battery_export",
-    "set_grid_export_limit",
-    "set_grid_import_limit",
-    "set_grid_connection_current",
-    "set_operating_mode",
-    "set_battery_soc_thresholds",
-    "set_peak_shaving_schedule",
-    "stop_manual_override",
-  ]),
+export const ApprovalScope = Schema.Union([
+  Schema.Struct({
+    loadKey: LoadKey,
+    loadPath: LoadPath,
+    operation: Schema.Literal("set_smart_load_switch"),
+    stationId: StationId,
+  }),
+  Schema.Struct({
+    operation: Schema.Literals([
+      "set_backup_reserve",
+      "set_battery_power_limits",
+      "set_solar_power_limit",
+      "set_battery_export",
+      "set_grid_export_limit",
+      "set_grid_import_limit",
+      "set_grid_connection_current",
+      "set_operating_mode",
+      "set_battery_soc_thresholds",
+      "set_peak_shaving_schedule",
+      "stop_manual_override",
+      "start_manual_override",
+      "set_battery_discharge_priority",
+      "set_solar_priority",
+    ]),
+    stationId: StationId,
+  }),
+]);
+export const approvalScope = (
   stationId: StationId,
-});
+  change: ControlChange
+): typeof ApprovalScope.Type =>
+  change.operation === "set_smart_load_switch"
+    ? {
+        loadKey: change.loadKey,
+        loadPath: change.loadPath,
+        operation: change.operation,
+        stationId,
+      }
+    : { operation: change.operation, stationId };
 export const ApprovalGrant = Schema.Struct({
   createdAt: Timestamp,
   grantId: CommandId,
@@ -288,11 +381,103 @@ const matchesBatteryExport = (enabled: boolean, snapshot: ControlSnapshot) =>
   snapshot.settings.export.effectiveEnabled === enabled &&
   snapshot.settings.export.ownerEnabled === enabled;
 
+const matchesSmartLoad = (
+  change: Extract<ControlChange, { operation: "set_smart_load_switch" }>,
+  snapshot: ControlSnapshot
+) =>
+  snapshot.kind === "smart_load" &&
+  snapshot.settings.load.key === change.loadKey &&
+  snapshot.settings.load.path === change.loadPath &&
+  snapshot.settings.load.providerManualSwitch === (change.enabled ? 1 : 0);
+const matchesBatteryPriority = (
+  change: Extract<
+    ControlChange,
+    { operation: "set_battery_discharge_priority" }
+  >,
+  snapshot: ControlSnapshot
+) =>
+  snapshot.kind === "battery_priority" &&
+  JSON.stringify(snapshot.settings.providerSources) ===
+    JSON.stringify(change.sources);
+const matchesSolarPriority = (
+  change: Extract<ControlChange, { operation: "set_solar_priority" }>,
+  snapshot: ControlSnapshot
+) =>
+  snapshot.kind === "solar_priority" &&
+  snapshot.settings.entries.length === change.entries.length &&
+  change.entries.every((expected) =>
+    snapshot.settings.entries.some(
+      (actual) =>
+        !actual.group &&
+        actual.groupPath.length === 1 &&
+        actual.providerLoadType === expected.providerLoadType &&
+        actual.providerDeviceType === expected.providerDeviceType &&
+        actual.smartLoadPath === expected.smartLoadPath &&
+        actual.providerPriority === expected.providerPriority
+    )
+  );
+const matchesBatteryPower = (
+  change: Extract<ControlChange, { operation: "set_battery_power_limits" }>,
+  snapshot: ControlSnapshot
+) =>
+  snapshot.kind === "battery" &&
+  matchesPower(snapshot.settings.chargeLimit, change.charge) &&
+  matchesPower(snapshot.settings.dischargeLimit, change.discharge);
+
+const matchesReserve = (
+  change: Extract<ControlChange, { operation: "set_backup_reserve" }>,
+  snapshot: ControlSnapshot
+) =>
+  snapshot.kind === "battery" &&
+  snapshot.settings.backupReservePercent === change.reservePercent;
+const matchesOperatingMode = (
+  change: Extract<ControlChange, { operation: "set_operating_mode" }>,
+  snapshot: ControlSnapshot,
+  reviewed: ControlSnapshot | undefined
+): boolean => {
+  if (
+    snapshot.kind !== "mode" ||
+    snapshot.settings.providerMode !== change.providerMode ||
+    snapshot.settings.profileId !== change.profileId
+  ) {
+    return false;
+  }
+  if (change.providerMode !== 9) {
+    return true;
+  }
+  if (
+    reviewed?.kind !== "mode" ||
+    reviewed.settings.selectedProfile === undefined ||
+    snapshot.settings.selectedProfile === undefined
+  ) {
+    return false;
+  }
+  // Activating a profile can change its top-level active marker; its settings must still match the approved configuration.
+  const { providerActiveStatus: _beforeActive, ...before } =
+    reviewed.settings.selectedProfile;
+  const { providerActiveStatus: _afterActive, ...after } =
+    snapshot.settings.selectedProfile;
+  return JSON.stringify(before) === JSON.stringify(after);
+};
 export const controlMatches = (
   change: ControlChange,
-  snapshot: ControlSnapshot
+  snapshot: ControlSnapshot,
+  reviewed?: ControlSnapshot
 ): boolean => {
   switch (change.operation) {
+    case "start_manual_override": {
+      // The read endpoint omits the accepted duration and power limit. Acknowledgement alone is not full verification.
+      return false;
+    }
+    case "set_smart_load_switch": {
+      return matchesSmartLoad(change, snapshot);
+    }
+    case "set_battery_discharge_priority": {
+      return matchesBatteryPriority(change, snapshot);
+    }
+    case "set_solar_priority": {
+      return matchesSolarPriority(change, snapshot);
+    }
     case "set_battery_soc_thresholds": {
       return matchesSoc(change, snapshot);
     }
@@ -303,17 +488,10 @@ export const controlMatches = (
       return snapshot.kind === "manual" && !snapshot.settings.enabled;
     }
     case "set_backup_reserve": {
-      return (
-        snapshot.kind === "battery" &&
-        snapshot.settings.backupReservePercent === change.reservePercent
-      );
+      return matchesReserve(change, snapshot);
     }
     case "set_battery_power_limits": {
-      return (
-        snapshot.kind === "battery" &&
-        matchesPower(snapshot.settings.chargeLimit, change.charge) &&
-        matchesPower(snapshot.settings.dischargeLimit, change.discharge)
-      );
+      return matchesBatteryPower(change, snapshot);
     }
     case "set_battery_export": {
       return matchesBatteryExport(change.enabled, snapshot);
@@ -333,11 +511,7 @@ export const controlMatches = (
       return matchesGridCurrent(change.amperes, snapshot);
     }
     case "set_operating_mode": {
-      return (
-        snapshot.kind === "mode" &&
-        snapshot.settings.providerMode === change.providerMode &&
-        snapshot.settings.profileId === change.profileId
-      );
+      return matchesOperatingMode(change, snapshot, reviewed);
     }
     default: {
       return absurd<never>(change);

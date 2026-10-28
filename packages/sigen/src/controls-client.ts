@@ -6,8 +6,11 @@ import type {
   ControlSnapshot,
   WritablePowerLimit,
 } from "./controls.js";
+import { makeEnergyProfileClient } from "./energy-profile-client.js";
+import { makeLoadsClient } from "./loads-client.js";
 import { OperatingMode, failure } from "./model.js";
 import type { SigenFailure, StationId } from "./model.js";
+import { makeProfileClient } from "./profile-client.js";
 import { decodeProvider } from "./provider-read.js";
 import type { ProviderRead } from "./provider-read.js";
 import {
@@ -16,9 +19,9 @@ import {
 } from "./settings-client.js";
 
 export type ProviderWrite = (
-  method: "PUT" | "POST",
+  method: "PUT" | "POST" | "PATCH",
   path: string,
-  body: Readonly<Record<string, Schema.Json>>,
+  body: Readonly<Record<string, Schema.Json>> | null,
   token: Redacted.Redacted<string>
 ) => Effect.Effect<void, SigenFailure>;
 const powerString = (limit: typeof WritablePowerLimit.Type) =>
@@ -92,6 +95,107 @@ const validateGridPower = (
     : null;
 };
 
+const validateGridCurrent = (
+  change: Extract<ControlChange, { operation: "set_grid_connection_current" }>,
+  snapshot: ControlSnapshot
+): SigenFailure | null => {
+  if (snapshot.kind !== "grid") {
+    return failure("SchemaMismatch");
+  }
+  const ceiling = snapshot.settings.connectionCurrent.installerAmps;
+  if (ceiling === null) {
+    return failure("UnsupportedCapability");
+  }
+  return change.amperes > ceiling ? failure("InvalidInput") : null;
+};
+const validateSmartLoad = (
+  change: Extract<ControlChange, { operation: "set_smart_load_switch" }>,
+  snapshot: ControlSnapshot
+): SigenFailure | null => {
+  if (snapshot.kind !== "smart_load") {
+    return failure("SchemaMismatch");
+  }
+  const { load } = snapshot.settings;
+  if (load.key !== change.loadKey || load.path !== change.loadPath) {
+    return failure("PermissionDenied");
+  }
+  return load.controllable === true &&
+    load.providerRunMode === 1 &&
+    (load.providerManualSwitch === 0 || load.providerManualSwitch === 1)
+    ? null
+    : failure("UnsupportedCapability");
+};
+const validateBatteryPriority = (
+  change: Extract<
+    ControlChange,
+    { operation: "set_battery_discharge_priority" }
+  >,
+  snapshot: ControlSnapshot
+): SigenFailure | null => {
+  if (snapshot.kind !== "battery_priority") {
+    return failure("SchemaMismatch");
+  }
+  return JSON.stringify([...snapshot.settings.providerSources].toSorted()) ===
+    JSON.stringify([...change.sources].toSorted())
+    ? null
+    : failure("UnsupportedCapability");
+};
+const validateSolarPriority = (
+  change: Extract<ControlChange, { operation: "set_solar_priority" }>,
+  snapshot: ControlSnapshot
+): SigenFailure | null => {
+  if (snapshot.kind !== "solar_priority") {
+    return failure("SchemaMismatch");
+  }
+  const current = snapshot.settings.entries;
+  const key = (entry: (typeof change.entries)[number]) =>
+    JSON.stringify([
+      entry.providerLoadType,
+      entry.providerDeviceType,
+      entry.smartLoadPath,
+    ]);
+  if (current.some((entry) => entry.group || entry.groupPath.length !== 1)) {
+    return failure("UnsupportedCapability");
+  }
+  if (
+    current.some(
+      (entry) =>
+        ![0, 2].includes(entry.providerStatus) ||
+        ![1, 3, 4].includes(entry.providerLoadType) ||
+        ![null, 4].includes(entry.providerDeviceType) ||
+        entry.smartLoadPath !== null
+    )
+  ) {
+    return failure("UnsupportedCapability");
+  }
+  if (
+    current.some(
+      (entry) =>
+        entry.providerStatus !== 0 &&
+        change.entries.find((value) => key(value) === key(entry))
+          ?.providerPriority !== entry.providerPriority
+    )
+  ) {
+    return failure("UnsupportedCapability");
+  }
+  const keys = change.entries.map(key);
+  const sameKeys =
+    current.length === keys.length &&
+    new Set(current.map(key)).size === current.length &&
+    new Set(keys).size === keys.length &&
+    current.every((entry) => keys.includes(key(entry)));
+  const priorities = change.entries
+    .map((entry) => entry.providerPriority)
+    .toSorted((a, b) => a - b);
+  return sameKeys &&
+    JSON.stringify(priorities) ===
+      JSON.stringify(
+        current.map((entry) => entry.providerPriority).toSorted((a, b) => a - b)
+      )
+    ? null
+    : failure("InvalidInput");
+};
+
 const validateOwnerLimits = (
   change: ControlChange,
   snapshot: ControlSnapshot
@@ -103,14 +207,7 @@ const validateOwnerLimits = (
     }
 
     case "set_grid_connection_current": {
-      if (snapshot.kind !== "grid") {
-        return failure("SchemaMismatch");
-      }
-      const ceiling = snapshot.settings.connectionCurrent.installerAmps;
-      if (ceiling === null) {
-        return failure("UnsupportedCapability");
-      }
-      return change.amperes > ceiling ? failure("InvalidInput") : null;
+      return validateGridCurrent(change, snapshot);
     }
     case "set_battery_soc_thresholds": {
       return validateSocSnapshot(snapshot);
@@ -127,6 +224,16 @@ const validateOwnerLimits = (
         ? failure("PermissionDenied")
         : null;
     }
+    case "set_smart_load_switch": {
+      return validateSmartLoad(change, snapshot);
+    }
+    case "set_battery_discharge_priority": {
+      return validateBatteryPriority(change, snapshot);
+    }
+    case "set_solar_priority": {
+      return validateSolarPriority(change, snapshot);
+    }
+    case "start_manual_override":
     case "stop_manual_override":
     case "set_backup_reserve":
     case "set_battery_power_limits":
@@ -145,12 +252,37 @@ export const makeControlsClient = (
   write: ProviderWrite
 ) => {
   const settings = makeSettingsClient(read);
+  const loads = makeLoadsClient(read);
+  const profiles = makeProfileClient(read);
+  const energyProfiles = makeEnergyProfileClient(read);
   const inspectControl = (
     stationId: StationId,
     change: ControlChange,
     token: Redacted.Redacted<string>
   ): Effect.Effect<ControlSnapshot, SigenFailure> => {
     switch (change.operation) {
+      case "set_smart_load_switch": {
+        return loads
+          .smartLoad({ loadPath: change.loadPath, stationId }, token)
+          .pipe(
+            Effect.map((value) => ({ kind: "smart_load", settings: value }))
+          );
+      }
+      case "set_battery_discharge_priority": {
+        return profiles.batteryDischargePriority(stationId, token).pipe(
+          Effect.map((value) => ({
+            kind: "battery_priority",
+            settings: value,
+          }))
+        );
+      }
+      case "set_solar_priority": {
+        return energyProfiles
+          .solarPriority(stationId, token)
+          .pipe(
+            Effect.map((value) => ({ kind: "solar_priority", settings: value }))
+          );
+      }
       case "set_battery_soc_thresholds":
       case "set_backup_reserve":
       case "set_battery_power_limits":
@@ -166,6 +298,7 @@ export const makeControlsClient = (
             Effect.map((value) => ({ kind: "peak_shaving", settings: value }))
           );
       }
+      case "start_manual_override":
       case "stop_manual_override": {
         return readManualOverrideState(read, stationId, token).pipe(
           Effect.map((value) => ({
@@ -201,12 +334,24 @@ export const makeControlsClient = (
           ),
           Effect.flatMap((value) =>
             Effect.gen(function* readModeSnapshot() {
-              return yield* decodeProvider(OperatingMode)({
+              const mode = yield* decodeProvider(OperatingMode)({
                 fetchedAt: yield* Clock.currentTimeMillis,
                 profileId: value.currentProfileId,
                 providerMode: value.currentMode,
                 stationId,
               });
+              if (change.providerMode !== 9) {
+                return mode;
+              }
+              const { fetchedAt: _fetchedAt, ...selectedProfile } =
+                yield* energyProfiles.energyProfile(
+                  {
+                    stationId,
+                    target: { kind: "custom", profileId: change.profileId },
+                  },
+                  token
+                );
+              return { ...mode, selectedProfile };
             })
           ),
           Effect.map((value) => ({ kind: "mode", settings: value }))
@@ -242,27 +387,57 @@ export const makeControlsClient = (
         return yield* failure("PermissionDenied");
       }
       if (
-        (snapshot.kind === "battery" ||
-          snapshot.kind === "peak_shaving" ||
-          snapshot.kind === "manual") &&
+        ["battery", "peak_shaving", "manual", "battery_priority"].includes(
+          snapshot.kind
+        ) &&
         (equipment.batteryCapacity === null || equipment.batteryCapacity <= 0)
       ) {
         return yield* failure("UnsupportedCapability");
       }
-      if (snapshot.kind === "solar" && !equipment.hasSolar) {
+      if (
+        (snapshot.kind === "solar" || snapshot.kind === "solar_priority") &&
+        !equipment.hasSolar
+      ) {
         return yield* failure("UnsupportedCapability");
       }
       const invalid = validateOwnerLimits(change, snapshot);
       if (invalid !== null) {
         return yield* invalid;
       }
+      if (change.operation === "set_battery_discharge_priority") {
+        const capabilities = yield* profiles.energyCapabilities(
+          stationId,
+          token
+        );
+        if (
+          !capabilities.providerFeatures.hasBatteryPriority ||
+          change.sources.some(
+            (source) => !capabilities.batterySourceOptions.includes(source)
+          )
+        ) {
+          return yield* failure("UnsupportedCapability");
+        }
+      }
+      if (change.operation === "set_solar_priority") {
+        const capabilities = yield* profiles.energyCapabilities(
+          stationId,
+          token
+        );
+        if (!capabilities.providerFeatures.hasPVPriority) {
+          return yield* failure("UnsupportedCapability");
+        }
+      }
       if (change.operation === "set_operating_mode") {
         const modes = yield* settings.operatingModes(stationId, token);
         const allowed =
-          change.profileId === -1 &&
-          modes.modes.some(
-            (mode) => mode.providerMode === String(change.providerMode)
-          );
+          change.providerMode === 9
+            ? modes.customProfiles.some(
+                (profile) => profile.profileId === change.profileId
+              )
+            : change.profileId === -1 &&
+              modes.modes.some(
+                (mode) => mode.providerMode === String(change.providerMode)
+              );
         if (!allowed) {
           return yield* failure("UnsupportedCapability");
         }
@@ -275,6 +450,58 @@ export const makeControlsClient = (
   ) => {
     const id = { stationId: Number(stationId) };
     switch (change.operation) {
+      case "set_smart_load_switch": {
+        return write(
+          "PATCH",
+          `/device/tp-device/smart-loads/control-mode/manual/switch?stationId=${stationId}&loadPath=${change.loadPath}&manualSwitch=${change.enabled ? 1 : 0}`,
+          null,
+          token
+        );
+      }
+      case "set_battery_discharge_priority": {
+        return write(
+          "PUT",
+          "/device/energy-profile/battery/discharge/priority",
+          { ...id, priority: [...change.sources] },
+          token
+        );
+      }
+      case "set_solar_priority": {
+        return write(
+          "PUT",
+          "/device/energy-profile/solar/priority",
+          {
+            ...id,
+            loadsPvPriorityList: change.entries.map((entry) => ({
+              loadsType: entry.providerLoadType,
+              priority: entry.providerPriority,
+              sgDeviceType: entry.providerDeviceType,
+              smartLoadsPath: entry.smartLoadPath,
+            })),
+          },
+          token
+        );
+      }
+      case "start_manual_override": {
+        const modes = {
+          charge: "0",
+          discharge: "1",
+          hold: "2",
+          self_consumption: "3",
+        };
+        return write(
+          "PUT",
+          "/device/energy-profile/instant/manunal",
+          {
+            ...id,
+            duration: String(change.durationMinutes),
+            enable: true,
+            mode: modes[change.mode],
+            powerLimitation: "limit" in change ? powerString(change.limit) : "",
+          },
+          token
+        );
+      }
       case "set_battery_soc_thresholds": {
         return write(
           "PUT",

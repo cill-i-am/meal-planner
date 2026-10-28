@@ -4,7 +4,7 @@ import {
   BackupEventsInput,
   BackupHistoryInput,
 } from "@meal-planner/sigen/backup";
-import { makeSigenClient } from "@meal-planner/sigen/client";
+import { makeSigenClientWithBudget } from "@meal-planner/sigen/client";
 import {
   ApproveCommandInput,
   CommandInput,
@@ -17,10 +17,17 @@ import {
   ForecastInput,
   IncomeInput,
 } from "@meal-planner/sigen/history";
+import { SmartLoadInput } from "@meal-planner/sigen/loads";
+import { EnergyProfileInput } from "@meal-planner/sigen/profile";
+import {
+  RequestBudgetState,
+  emptyRequestBudget,
+  makeRequestBudget,
+} from "@meal-planner/sigen/request-budget";
 import type { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { Config, Effect, Layer, Redacted, Schema } from "effect";
-import { FetchHttpClient } from "effect/http";
+import { FetchHttpClient, HttpClient } from "effect/http";
 
 import { CommandBook, makeCommands } from "./commands.js";
 import { SessionRecord, emptySession, makeSession } from "./session.js";
@@ -33,12 +40,33 @@ const runtime = Effect.gen(function* constructAccountObject() {
   const encryptionKey = yield* Config.Redacted(
     "SIGEN_SESSION_ENCRYPTION_KEY"
   ).pipe(Effect.orDie);
-  const client = yield* makeSigenClient;
+  const http = yield* HttpClient.HttpClient;
   const controlsEnabled = yield* Config.Boolean("SIGEN_CONTROLS_ENABLED").pipe(
     Config.withDefault(false),
     Effect.orDie
   );
   return Effect.gen(function* initializeAccount() {
+    const context = yield* Effect.context<RuntimeContext>();
+    const budget = yield* makeRequestBudget({
+      read: state.storage.get<unknown>("sigen-request-budget-v1").pipe(
+        Effect.flatMap((value) =>
+          value === undefined
+            ? Effect.succeed(emptyRequestBudget)
+            : Schema.decodeUnknownEffect(RequestBudgetState)(value)
+        ),
+        Effect.mapError(() => failure("StorageUnavailable")),
+        Effect.provide(context)
+      ),
+      write: (value) =>
+        state.storage.put("sigen-request-budget-v1", value).pipe(
+          Effect.mapError(() => failure("StorageUnavailable")),
+          Effect.provide(context)
+        ),
+    });
+    const client = yield* makeSigenClientWithBudget(budget).pipe(
+      Effect.provideService(HttpClient.HttpClient, http)
+    );
+
     const storage: SessionStorage<RuntimeContext> = {
       read: state.storage.get<unknown>("sigen-session-v1").pipe(
         Effect.flatMap((value) =>
@@ -129,6 +157,8 @@ const runtime = Effect.gen(function* constructAccountObject() {
         inputCall(StationId, id, session.energyFlow),
       energyHistory: (input: typeof HistoryInput.Type) =>
         inputCall(HistoryInput, input, session.energyHistory),
+      energyProfile: (input: typeof EnergyProfileInput.Type) =>
+        inputCall(EnergyProfileInput, input, session.energyProfile),
       energySavingSettings: (id: StationId) =>
         inputCall(StationId, id, session.energySavingSettings),
       enroll: (input: EncryptedSecret) =>
@@ -154,6 +184,8 @@ const runtime = Effect.gen(function* constructAccountObject() {
       gridSettings: (id: StationId) =>
         inputCall(StationId, id, session.gridSettings),
       health: () => session.health,
+      loadCapabilities: (id: StationId) =>
+        inputCall(StationId, id, session.loadCapabilities),
       manualOverride: (id: StationId) =>
         inputCall(StationId, id, session.manualOverride),
       operatingMode: (id: StationId) =>
@@ -164,19 +196,36 @@ const runtime = Effect.gen(function* constructAccountObject() {
         inputCall(StationId, id, session.peakShavingSchedule),
       predictionPlan: (id: StationId) =>
         inputCall(StationId, id, session.predictionPlan),
+      preheatingSettings: (id: StationId) =>
+        inputCall(StationId, id, session.preheatingSettings),
       prepareCommand: (input: typeof PrepareCommandInput.Type) =>
         inputCall(PrepareCommandInput, input, commands.prepareCommand),
+      profileTemplates: (id: StationId) =>
+        inputCall(StationId, id, session.profileTemplates),
       report: () => session.report,
       revokeApproval: (input: typeof RevokeApprovalInput.Type) =>
         inputCall(RevokeApprovalInput, input, commands.revokeApproval),
+      smartLoad: (input: typeof SmartLoadInput.Type) =>
+        inputCall(SmartLoadInput, input, session.smartLoad),
+      smartLoads: (id: StationId) =>
+        inputCall(StationId, id, session.smartLoads),
+      solarPriority: (id: StationId) =>
+        inputCall(StationId, id, session.solarPriority),
       solarSettings: (id: StationId) =>
         inputCall(StationId, id, session.solarSettings),
       station: (id: StationId) => inputCall(StationId, id, session.station),
+      stationCapabilities: (id: StationId) =>
+        inputCall(StationId, id, session.stationCapabilities),
       stationIncome: (input: typeof IncomeInput.Type) =>
         inputCall(IncomeInput, input, session.stationIncome),
       stationStatus: (input: StationId) =>
         inputCall(StationId, input, session.stationStatus),
+      stations: (id: StationId) => inputCall(StationId, id, session.stations),
+      systemCards: (id: StationId) =>
+        inputCall(StationId, id, session.systemCards),
       tariffs: (id: StationId) => inputCall(StationId, id, session.tariffs),
+      thirdPartyDevices: (id: StationId) =>
+        inputCall(StationId, id, session.thirdPartyDevices),
       topology: (input: StationId) =>
         inputCall(StationId, input, session.topology),
     };

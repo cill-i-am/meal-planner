@@ -1,6 +1,17 @@
 import { always, never } from "apps/operations/approval";
 
 const reads = new Set([
+  "list_third_party_devices",
+  "get_preheating_settings",
+  "get_system_cards",
+  "get_load_capabilities",
+  "get_smart_load",
+  "list_smart_loads",
+  "get_solar_priority",
+  "get_energy_profile",
+  "list_profile_templates",
+  "get_station_capabilities",
+  "list_stations",
   "list_backup_events",
   "get_energy_capabilities",
   "get_battery_discharge_priority",

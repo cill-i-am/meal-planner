@@ -34,6 +34,7 @@ export const FailureReason = Schema.Literals([
 export class SigenFailure extends Data.TaggedError("SigenFailure")<{
   readonly reason: typeof FailureReason.Type;
   readonly upstreamHttpStatus?: number | undefined;
+  readonly requestNotSent?: true;
 }> {}
 export const failure = (
   reason: SigenFailure["reason"],
