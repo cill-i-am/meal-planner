@@ -17,8 +17,8 @@ export const PreheatingResponse = Schema.Struct({
   packPreheatingSwitch: Schema.Int,
   packPreheatingVOList: Schema.Array(
     Schema.Struct({
-      chargingPower: Value,
-      dischargePower: Value,
+      chargingPower: Schema.NullOr(Value),
+      dischargePower: Schema.NullOr(Value),
       duration: Value,
       periodConfig: Schema.Array(Schema.Int).check(Schema.isMaxLength(7)),
       startTime: Value,

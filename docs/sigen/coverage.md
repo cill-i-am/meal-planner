@@ -1,6 +1,6 @@
 # Sigen private API coverage
 
-Current implementation: **47 HTTP/MCP operations**, comprising 41 provider/connection reads and six command/approval operations. Commands accept **15 typed setting-change families**. This is the current coverage record; dated acceptance history lives in [read acceptance](read-acceptance.md). Three real token renewals passed; see [authentication acceptance](auth-acceptance.md). The broader private API is not fully covered.
+Current implementation: **47 HTTP/MCP operations**, comprising 41 provider/connection reads and six command/approval operations. Commands accept **21 typed setting-change families**. This is the current coverage record; dated acceptance history lives in [read acceptance](read-acceptance.md). Three real token renewals passed; see [authentication acceptance](auth-acceptance.md). The broader private API is not fully covered.
 
 The independent EU private client uses the owner account and enrolled station. Station enumeration does not authorize reads or controls for other stations. Unknown codes remain read data; they never become write permissions. Provider messages and credentials are excluded from errors. No Northbound API is used.
 
@@ -46,7 +46,7 @@ All rows have schema and fixture tests and share HTTP/MCP contracts. Hosted and 
 
 ## Approval and control surface
 
-`prepare_command`, `approve_command`, `execute_command`, `get_command`, `list_approval_grants` and `revoke_approval_grant` share the durable command service. The owner/agent credential may approve **once** or **always**. Always grants permit future validated parameters for the same operation and station; smart-load grants also bind both load key and path. Revocation invalidates queued commands using the grant. Reenrollment invalidates old grants, while retaining attempt receipts.
+`prepare_command`, `approve_command`, `execute_command`, `get_command`, `list_approval_grants` and `revoke_approval_grant` share the durable command service. The owner/agent credential may approve **once** or **always**. Always grants permit future validated parameters for the same operation and station; smart-load grants also bind both load key and path; profile update/delete grants bind the profile ID. Revocation invalidates queued commands using the grant. Reenrollment invalidates old grants, while retaining attempt receipts.
 
 Every command has an immutable five-minute review, a fresh current-state comparison, and a durable marker before one mutation. Changed inputs conflict. Ambiguous outcomes are reconciled by reads and never replayed. Physical dispatch remains disabled. The earlier explicitly authorized backup-reserve test is the only live write acceptance; all other commands have synthetic adapter/approval coverage.
 
@@ -60,12 +60,20 @@ Every command has an immutable five-minute review, a fresh current-state compari
 | `set_grid_connection_current` | PUT `/device/energy-profile/parallel/off/grid` | Amperes within known installer ceiling. |
 | `set_operating_mode` | PUT `/device/energy-profile/mode` | Available modes 0/1/5; mode 9 only for an enumerated custom profile with its complete adapted configuration in review and conflict fingerprint. Modes 2/7 are excluded pending reviewed TOU/Remote EMS settings. |
 | `set_battery_soc_thresholds` | PUT `/device/energy-profile/battery/level` | All four current thresholds known, validated integers under charge ceiling. Separate `ja12SOC` untouched. |
-| `set_peak_shaving_schedule` | POST `/device/dischargesetting/peak/shaving` | Existing day/time windows and timezone preserved; edits enabled state, reserve and power only. |
+| `set_peak_shaving_schedule` | POST `/device/dischargesetting/peak/shaving` | Full replacement with unique weekday codes 1–7, ordered local times and no overlaps. Station timezone must match. Previously reviewed opaque/overnight windows may only be retained unchanged. |
 | `stop_manual_override` | PUT `/device/energy-profile/instant/manunal` | Disabled readback from authoritative state, independent of display telemetry. |
 | `start_manual_override` | PUT `/device/energy-profile/instant/manunal` | Charge/discharge/hold/self-consumption; duration 30–120 minutes. Read API omits requested duration/power, so provider acceptance remains `outcome_unknown`, never falsely verified or resent. |
 | `set_battery_discharge_priority` | PUT `/device/energy-profile/battery/discharge/priority` | Feature flag and supported source options; exact permutation of current known `pv`/`grid` sources. |
 | `set_solar_priority` | PUT `/device/energy-profile/solar/priority` | Flat known source identities only, exact complete membership and priority multiset; grouped/smart-load/unknown codes refused. Excluded status-2 rows retain priority. |
 | `set_smart_load_switch` | PATCH `/device/tp-device/smart-loads/control-mode/manual/switch` | Query parameters, null body. Current station/path/key membership, controllable flag, manual run mode 1 and known switch value required. |
+| `create_energy_profile` | POST `/device/energy-profile/setting/new` | Creates from an enumerated template, retains template ID in the app request, forces inactive status, never activates. Unique name and complete known configuration required. Readback must find one new ID with the expected complete profile and unchanged current mode. |
+| `update_energy_profile` | PUT `/device/energy-profile/setting` | Name, description and optional complete automation replacement for an enumerated custom profile. Full reviewed settings are preserved, unknown ancillary codes refused, concurrent edits conflict. |
+| `delete_energy_profile` | DELETE `/device/energy-profile/setting/{station}/{profile}` | Exact profile-scoped approval; current mode and active marker must both prove inactivity. Successful absence readback, unchanged current mode and no retries after uncertainty. |
+| `replace_automation_schedule` | PUT `/device/energy-profile/setting` | Full battery/grid replacement on current profile; feature flags, source options, mode-specific neutral values, weekdays, overlaps and station timezone checked. Other profile settings preserved. |
+| `set_preheating_schedule` | PUT `/device/dischargesetting/packPreheat/set/new/{station}` | Residential only; up to four nonoverlapping windows, ISO weekdays, local minute start/duration; industrial mode/power fields remain null. |
+| `set_energy_saving_settings` | PUT `/device/owner/station/save-energy-mode` | App performance/deep-saving codes or explicit preservation of reviewed modes, supported off-grid mode changes, threshold 0–65534 W or explicit system-default sentinel 65535; preserves threshold outside deep-saving mode. |
+
+See [profile and schedule contracts](profile-schedules.md) for semantics, limits and protocol evidence.
 
 ## Request budget and renewal
 
@@ -77,9 +85,8 @@ These are unfinished or unsupported families, not hidden aliases or successful e
 
 | Family | Discovery | Required before exposure |
 | --- | --- | --- |
-| Custom profile create/update/delete; TOU/Remote EMS activation | App `/setting/new`, `/setting`, `/setting/active`, profile delete routes and serialization observed | Complete create/replace/delete semantics, reviewed ancillary settings and conflict/reconciliation contract. Current/custom/template reads and custom activation are implemented above. |
-| Battery/grid automation replacement and new/moved peak-shaving windows | App group/time-window serializers observed | Verified day codes, overlap/timezone semantics, replacement behavior and readback. Existing-window peak-shaving edits only. |
-| Preheating and energy-saving writes | App `packPreheat/set/new` and `save-energy-mode` DTOs observed | Verified power/time/day/mode units and supported-value constraints. Raw reads do not establish write semantics. |
+| Profile parameter editing beyond name/description/automation; TOU/Remote EMS activation | Full profile serializers observed | Other profile parameters are preserved, not editable through profile CRUD. Individual current-setting commands remain available. Activation modes 2/7 need complete reviewed TOU/Remote EMS settings. |
+| Industrial/grouped/unknown-code profile and preheating writes | App residential and industrial DTOs differ | Residential known-code profiles only; industrial preheating mode/power capabilities and grouped priority editing remain unverified. |
 | Smart-load schedules, mode changes and consumption history | App control-mode, schedule and load-consumption paths observed | A configured smart load plus populated schedule/history responses; review full mode-dependent settings. Manual switching adapter remains synthetic-only. |
 | Station consumption breakdown | `/data-process/sigen/station/statistics/station-consumption` | Earlier null samples, current read HTTP 500, and no validated populated response. Do not claim normalized coverage. |
 | AC charging | PyPI `sigen` 3.0.3 current/mode and more-setting protocol leads | No AC charger on account. Verify serial membership, populated schema, current/phase ceilings and settings before controls. |

@@ -2,7 +2,7 @@
 
 ## Current scope
 
-The registry exposes 47 HTTP/MCP operations and 15 typed control families. See the [current coverage matrix](coverage.md) for implemented contracts and explicit exclusions. The dated sections below are historical evidence, not current inventory counts. Three required real renewals are verified in [authentication acceptance](auth-acceptance.md); physical dispatch remains disabled after the separate authorized reserve test.
+The registry exposes 47 HTTP/MCP operations and 21 typed control families. See the [current coverage matrix](coverage.md) for implemented contracts and explicit exclusions. The dated sections below are historical evidence, not current inventory counts. Three required real renewals are verified in [authentication acceptance](auth-acceptance.md); physical dispatch remains disabled after the separate authorized reserve test.
 
 ## Hosted evidence on 26 October 2026
 
@@ -189,3 +189,14 @@ Confirmed through HTTP and the actual Executor account:
 At **15:05 UTC**, the final Executor batch also confirmed preheating has no slots, switch 0 and null automatic-mode capability; third-party inventory contains one explicit generator placeholder. Both HTTP and Executor return `UnsupportedCapability` for a missing smart load before detail access. Populated smart loads, preheating schedules and real custom-profile activation remain synthetic-only; empty inventory is not hardware acceptance.
 
 The connection remains `connected`, with **three** successful natural renewals, expiry **28 October 15:15:00.102 UTC**, and dispatch `disabled_pending_acceptance`. No credentials or private station identifiers are included here.
+
+
+## Profile CRUD and schedule/settings writes, 31 October 2026
+
+The service retains 47 HTTP/MCP operations and now accepts **21 typed command families**. This increment adds template-based inactive profile creation, custom-profile metadata/automation updates and inactive-profile deletion; complete battery/grid automation replacement; residential preheating schedules; and energy-saving settings. Peak-shaving now permits new validated windows. All commands use the existing once/always approval, revocation, conflict and single-dispatch lifecycle. Profile update/delete grants bind the profile ID. See [profile and schedule contracts](profile-schedules.md) for input semantics and remaining limits.
+
+**254 focused tests** and the native Worker test pass, together with package/app type checks, package build, scoped lint/format, complexity and documentation checks. The native test was rerun after the final code changes and passed in 80.64 seconds. Both independent review axes are clear. Regression coverage includes full-profile preservation, populated automation readback, integer-W/kW round trips, key-order-independent comparisons, inactive-profile deletion, new-ID creation evidence, lost-response reconciliation without a second write, profile-scoped grants, revocation and disabled dispatch.
+
+The final independent deployment completed at **12:59:27 UTC**, preserving the existing Durable Object, connection and credentials. HTTP preparation returned `prepared` with the expected review type for `create_energy_profile`, `set_preheating_schedule` and `set_energy_saving_settings`. The live template exposed residential preheating mode 1: the adapter now follows the app's null write serializer for this industrial-only selector and checks only the documented inactive equivalence on readback. Saving settings support explicit preservation of the observed on-grid 1/off-grid 0 codes. No profile was created, updated or deleted, and no setting was changed.
+
+Executor discovered the expanded command union after its catalog cache refreshed; its existing account successfully prepared a preheating command and reported `connected`, **nine** successful natural renewals and `disabled_pending_acceptance`. No new account, credential, source deployment or approval was needed. Preparation evidence is not live write acceptance. These new writes remain synthetic-only while the global dispatch switch stays off.

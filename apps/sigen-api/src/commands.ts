@@ -288,7 +288,12 @@ export const makeCommands = <R>(
             phase: { attemptedAt, status: "dispatching" },
           });
           const result = yield* client
-            .dispatchControl(input.stationId, command.review.change, token)
+            .dispatchControl(
+              input.stationId,
+              command.review.change,
+              token,
+              current
+            )
             .pipe(Effect.result);
           if (result._tag === "Failure") {
             const { reason } = result.failure;

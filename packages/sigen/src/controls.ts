@@ -9,10 +9,22 @@ import {
   Timestamp,
 } from "./model.js";
 import {
+  ProfileChange,
+  ProfileControlSnapshot,
+  profileControlMatches,
+  isProfileChange,
+} from "./profile-controls.js";
+import {
   BatteryDischargePriority,
   EnergyProfile,
   SolarPriority,
 } from "./profile.js";
+import {
+  ScheduledSettingsChange,
+  ScheduledSettingsSnapshot,
+  scheduledSettingsMatch,
+  isScheduledSettingsChange,
+} from "./scheduled-settings-controls.js";
 import {
   BatterySettings,
   GridSettings,
@@ -42,6 +54,8 @@ const Watts = Schema.Int.check(
   Schema.isBetween({ maximum: 4_294_967_294, minimum: 0 })
 );
 export const ControlChange = Schema.Union([
+  ProfileChange,
+  ScheduledSettingsChange,
   Schema.Struct({
     enabled: Schema.Boolean,
     loadKey: LoadKey,
@@ -96,7 +110,8 @@ export const ControlChange = Schema.Union([
     enabled: Schema.Boolean,
     operation: Schema.Literal("set_peak_shaving_schedule"),
     reserveSocPercent: WholePercent,
-    // Existing day/time windows are reviewed in full and preserved until their day-code semantics are verified.
+    // Existing persisted commands may contain opaque or overnight provider windows.
+    // New windows are checked against the verified schedule contract before dispatch.
     slots: Schema.Array(
       Schema.Struct({ ...PeakShavingSlot.fields, peakPowerW: Watts })
     ).check(Schema.isMaxLength(64)),
@@ -145,6 +160,8 @@ export type ControlChange = typeof ControlChange.Type;
 const { fetchedAt: _profileFetchedAt, ...ProfileConfigurationFields } =
   EnergyProfile.fields;
 export const ControlSnapshot = Schema.Union([
+  ProfileControlSnapshot,
+  ScheduledSettingsSnapshot,
   Schema.Struct({
     kind: Schema.Literal("smart_load"),
     settings: SmartLoadState,
@@ -205,6 +222,14 @@ export const ApproveCommandInput = Schema.Struct({
 });
 export const ApprovalScope = Schema.Union([
   Schema.Struct({
+    operation: Schema.Literals([
+      "update_energy_profile",
+      "delete_energy_profile",
+    ]),
+    profileId: Schema.Int.check(Schema.isGreaterThan(0)),
+    stationId: StationId,
+  }),
+  Schema.Struct({
     loadKey: LoadKey,
     loadPath: LoadPath,
     operation: Schema.Literal("set_smart_load_switch"),
@@ -212,6 +237,10 @@ export const ApprovalScope = Schema.Union([
   }),
   Schema.Struct({
     operation: Schema.Literals([
+      "set_preheating_schedule",
+      "set_energy_saving_settings",
+      "create_energy_profile",
+      "replace_automation_schedule",
       "set_backup_reserve",
       "set_battery_power_limits",
       "set_solar_power_limit",
@@ -233,15 +262,27 @@ export const ApprovalScope = Schema.Union([
 export const approvalScope = (
   stationId: StationId,
   change: ControlChange
-): typeof ApprovalScope.Type =>
-  change.operation === "set_smart_load_switch"
-    ? {
-        loadKey: change.loadKey,
-        loadPath: change.loadPath,
-        operation: change.operation,
-        stationId,
-      }
-    : { operation: change.operation, stationId };
+): typeof ApprovalScope.Type => {
+  if (
+    change.operation === "update_energy_profile" ||
+    change.operation === "delete_energy_profile"
+  ) {
+    return {
+      operation: change.operation,
+      profileId: change.profileId,
+      stationId,
+    };
+  }
+  if (change.operation === "set_smart_load_switch") {
+    return {
+      loadKey: change.loadKey,
+      loadPath: change.loadPath,
+      operation: change.operation,
+      stationId,
+    };
+  }
+  return { operation: change.operation, stationId };
+};
 export const ApprovalGrant = Schema.Struct({
   createdAt: Timestamp,
   grantId: CommandId,
@@ -459,8 +500,11 @@ const matchesOperatingMode = (
     snapshot.settings.selectedProfile;
   return JSON.stringify(before) === JSON.stringify(after);
 };
-export const controlMatches = (
-  change: ControlChange,
+const matchesExistingControl = (
+  change: Exclude<
+    ControlChange,
+    typeof ProfileChange.Type | typeof ScheduledSettingsChange.Type
+  >,
   snapshot: ControlSnapshot,
   reviewed?: ControlSnapshot
 ): boolean => {
@@ -517,4 +561,34 @@ export const controlMatches = (
       return absurd<never>(change);
     }
   }
+};
+
+export const controlMatches = (
+  change: ControlChange,
+  snapshot: ControlSnapshot,
+  reviewed?: ControlSnapshot
+): boolean => {
+  if (isScheduledSettingsChange(change)) {
+    return (
+      (snapshot.kind === "preheating" || snapshot.kind === "energy_saving") &&
+      scheduledSettingsMatch(
+        change,
+        snapshot,
+        reviewed?.kind === "preheating" || reviewed?.kind === "energy_saving"
+          ? reviewed
+          : undefined
+      )
+    );
+  }
+  if (isProfileChange(change)) {
+    return (
+      snapshot.kind === "profile" &&
+      profileControlMatches(
+        change,
+        snapshot,
+        reviewed?.kind === "profile" ? reviewed : undefined
+      )
+    );
+  }
+  return matchesExistingControl(change, snapshot, reviewed);
 };

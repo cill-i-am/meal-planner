@@ -11,15 +11,24 @@ import { makeLoadsClient } from "./loads-client.js";
 import { OperatingMode, failure } from "./model.js";
 import type { SigenFailure, StationId } from "./model.js";
 import { makeProfileClient } from "./profile-client.js";
+import { makeProfileControlsClient } from "./profile-controls-client.js";
+import type { ProfileChange } from "./profile-controls.js";
+import { isProfileChange } from "./profile-controls.js";
 import { decodeProvider } from "./provider-read.js";
 import type { ProviderRead } from "./provider-read.js";
+import type { ScheduledSettingsChange } from "./scheduled-settings-controls.js";
+import {
+  makeScheduledSettingsControls,
+  isScheduledSettingsChange,
+} from "./scheduled-settings-controls.js";
+import { ScheduleWindow, nonOverlappingWindows } from "./schedules.js";
 import {
   makeSettingsClient,
   readManualOverrideState,
 } from "./settings-client.js";
 
 export type ProviderWrite = (
-  method: "PUT" | "POST" | "PATCH",
+  method: "PUT" | "POST" | "PATCH" | "DELETE",
   path: string,
   body: Readonly<Record<string, Schema.Json>> | null,
   token: Redacted.Redacted<string>
@@ -41,20 +50,25 @@ const validatePeakSchedule = (
   if (change.enabled && change.slots.length === 0) {
     return failure("InvalidInput");
   }
-  // Do not reinterpret unverified provider day codes or replace windows hidden from the review.
+  if (change.timezone !== value.timezone) {
+    return failure("InvalidInput");
+  }
   const preserved =
-    change.timezone === value.timezone &&
     change.slots.length === value.slots.length &&
     change.slots.every((slot, index) => {
-      const current = value.slots[index];
+      const old = value.slots[index];
       return (
-        current !== undefined &&
-        slot.providerDays === current.providerDays &&
-        slot.startTime === current.startTime &&
-        slot.endTime === current.endTime
+        old !== undefined &&
+        slot.startTime === old.startTime &&
+        slot.endTime === old.endTime &&
+        slot.providerDays === old.providerDays
       );
     });
-  return preserved ? null : failure("UnsupportedCapability");
+  return preserved ||
+    (change.slots.every(Schema.is(ScheduleWindow)) &&
+      nonOverlappingWindows(change.slots))
+    ? null
+    : failure("UnsupportedCapability");
 };
 
 const validateSocSnapshot = (
@@ -196,8 +210,8 @@ const validateSolarPriority = (
     : failure("InvalidInput");
 };
 
-const validateOwnerLimits = (
-  change: ControlChange,
+const validateExistingOwnerLimits = (
+  change: Exclude<ControlChange, ProfileChange | ScheduledSettingsChange>,
   snapshot: ControlSnapshot
 ): SigenFailure | null => {
   switch (change.operation) {
@@ -247,10 +261,21 @@ const validateOwnerLimits = (
   }
 };
 
+const validateOwnerLimits = (
+  change: ControlChange,
+  snapshot: ControlSnapshot
+): SigenFailure | null => {
+  if (isProfileChange(change) || isScheduledSettingsChange(change)) {
+    return null;
+  }
+  return validateExistingOwnerLimits(change, snapshot);
+};
 export const makeControlsClient = (
   read: ProviderRead,
   write: ProviderWrite
 ) => {
+  const scheduledSettings = makeScheduledSettingsControls(read, write);
+  const profileControls = makeProfileControlsClient(read, write);
   const settings = makeSettingsClient(read);
   const loads = makeLoadsClient(read);
   const profiles = makeProfileClient(read);
@@ -260,6 +285,12 @@ export const makeControlsClient = (
     change: ControlChange,
     token: Redacted.Redacted<string>
   ): Effect.Effect<ControlSnapshot, SigenFailure> => {
+    if (isProfileChange(change)) {
+      return profileControls.inspect(stationId, change, token);
+    }
+    if (isScheduledSettingsChange(change)) {
+      return scheduledSettings.inspect(stationId, change, token);
+    }
     switch (change.operation) {
       case "set_smart_load_switch": {
         return loads
@@ -362,6 +393,24 @@ export const makeControlsClient = (
       }
     }
   };
+  const validateExtendedControl = (
+    stationId: StationId,
+    change: ControlChange,
+    snapshot: ControlSnapshot,
+    token: Redacted.Redacted<string>
+  ) => {
+    if (isProfileChange(change)) {
+      return snapshot.kind === "profile"
+        ? profileControls.validate(stationId, change, snapshot, token)
+        : failure("SchemaMismatch");
+    }
+    if (isScheduledSettingsChange(change)) {
+      return snapshot.kind === "preheating" || snapshot.kind === "energy_saving"
+        ? scheduledSettings.validate(change, snapshot)
+        : failure("SchemaMismatch");
+    }
+    return Effect.void;
+  };
   const validateControl = (
     stationId: StationId,
     change: ControlChange,
@@ -387,9 +436,13 @@ export const makeControlsClient = (
         return yield* failure("PermissionDenied");
       }
       if (
-        ["battery", "peak_shaving", "manual", "battery_priority"].includes(
-          snapshot.kind
-        ) &&
+        [
+          "battery",
+          "peak_shaving",
+          "manual",
+          "battery_priority",
+          "preheating",
+        ].includes(snapshot.kind) &&
         (equipment.batteryCapacity === null || equipment.batteryCapacity <= 0)
       ) {
         return yield* failure("UnsupportedCapability");
@@ -400,6 +453,7 @@ export const makeControlsClient = (
       ) {
         return yield* failure("UnsupportedCapability");
       }
+      yield* validateExtendedControl(stationId, change, snapshot, token);
       const invalid = validateOwnerLimits(change, snapshot);
       if (invalid !== null) {
         return yield* invalid;
@@ -443,9 +497,9 @@ export const makeControlsClient = (
         }
       }
     });
-  const dispatchControl = (
+  const dispatchExistingControl = (
     stationId: StationId,
-    change: ControlChange,
+    change: Exclude<ControlChange, ProfileChange | ScheduledSettingsChange>,
     token: Redacted.Redacted<string>
   ) => {
     const id = { stationId: Number(stationId) };
@@ -621,6 +675,29 @@ export const makeControlsClient = (
         return absurd<never>(change);
       }
     }
+  };
+  const dispatchControl = (
+    stationId: StationId,
+    change: ControlChange,
+    token: Redacted.Redacted<string>,
+    reviewed?: ControlSnapshot
+  ) => {
+    if (isProfileChange(change)) {
+      return reviewed?.kind === "profile"
+        ? profileControls.dispatch(stationId, change, reviewed, token)
+        : failure("SchemaMismatch");
+    }
+    if (isScheduledSettingsChange(change)) {
+      return scheduledSettings.dispatch(
+        stationId,
+        change,
+        token,
+        reviewed?.kind === "preheating" || reviewed?.kind === "energy_saving"
+          ? reviewed
+          : undefined
+      );
+    }
+    return dispatchExistingControl(stationId, change, token);
   };
   return { dispatchControl, inspectControl, validateControl };
 };

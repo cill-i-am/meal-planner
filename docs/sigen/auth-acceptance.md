@@ -13,7 +13,7 @@ rate limiter and credentials are independent of Meal Planner and Tesco.
 - The real MCP SDK initialized against the deployed endpoint, discovered all four tools and successfully called each. All four HTTP routes also returned HTTP 200; station identity matched the enrolled selection. The later Executor replay verified the expanded 19-tool surface through the user-connected account; see [read acceptance](read-acceptance.md).
 - The reloaded mySigen UI agreed on 20% SOC, Sigen AI mode and on-grid status. Household load changed between samples. Empty provider timestamps remain `null`, with freshness explicitly unknown.
 
-No physical settings were changed during the initial authentication checks. The later authorized backup-reserve test is recorded in [read acceptance](read-acceptance.md). Once/always approval grants and 15 physical command families are implemented
+No physical settings were changed during the initial authentication checks. The later authorized backup-reserve test is recorded in [read acceptance](read-acceptance.md). Once/always approval grants and 21 command families are implemented
 and fixture-tested; live dispatch remains disabled. Controls report `disabled_pending_acceptance`.
 
 ## Natural renewal acceptance
@@ -97,3 +97,10 @@ third cycle was verified on 28 October, the thread automation
 This stops scheduled observation only; the service's automatic token renewal
 continues. The checks did not force expiry, re-enroll the account or change
 physical settings.
+
+
+## Healthy follow-up, 31 October 2026
+
+Protected operator status and post-deployment HTTP/Executor status report `connected`, **nine** successful natural renewals and dispatch `disabled_pending_acceptance`. The last five retained renewal records all have `alarm`/`renewed`, completion timestamps and null station/energy-flow failures. Their previous/new expiry values form an uninterrupted chain. The latest renewal began at **31 October 03:08:56.980 UTC**, before the previous **03:09:56.698 UTC** expiry, and read verification completed at **03:08:57.970 UTC**. Its new expiry is **31 October 15:08:55.980 UTC**. No forced renewal, re-enrollment or credential rotation was used.
+
+This extends the healthy-session evidence beyond the three-cycle acceptance target; the intentional provider-revocation/reconnection check remains pending. Current implementation and test counts are recorded in [read acceptance](read-acceptance.md).

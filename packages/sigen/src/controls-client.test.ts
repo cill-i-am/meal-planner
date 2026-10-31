@@ -9,7 +9,7 @@ const stationId = Schema.decodeUnknownSync(StationId)("12345");
 const token = Redacted.make("synthetic-access");
 const fixture = () => {
   const writes: {
-    method: "PUT" | "POST" | "PATCH";
+    method: "PUT" | "POST" | "PATCH" | "DELETE";
     path: string;
     body: Readonly<Record<string, Schema.Json>> | null;
   }[] = [];

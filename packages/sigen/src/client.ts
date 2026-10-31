@@ -125,7 +125,7 @@ export const makeSigenClientWithBudget = (budget: RequestBudget) =>
   Effect.gen(function* makeSigenClient() {
     const http = yield* HttpClient.HttpClient;
     const request = (
-      method: "GET" | "POST" | "PUT" | "PATCH",
+      method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
       path: string,
       headers: Readonly<Record<string, string>>,
       body?: HttpBody.HttpBody
