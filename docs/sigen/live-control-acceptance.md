@@ -1,6 +1,6 @@
 # Live control acceptance, 31 October 2026
 
-Five operations are now enabled: `create_energy_profile`, `update_energy_profile`, `delete_energy_profile`, `set_preheating_schedule` and `set_energy_saving_settings`. Every execution still needs approve-once or a matching revocable always-approve grant. `set_peak_shaving_schedule` did not pass populated readback and remains disabled. All other operations remain disabled by the explicit operation list.
+Five operations are now enabled: `create_energy_profile`, `update_energy_profile`, `delete_energy_profile`, `set_preheating_schedule` and `set_energy_saving_settings`. Every execution still needs approve-once or a matching revocable always-approve grant. `set_peak_shaving_schedule` remains disabled: the later [enabled test](peak-shaving.md) passed storage and switch-off but retained an inactive preset instead of restoring the original empty state. All other operations remain disabled by the explicit operation list.
 
 The user explicitly approved creating/editing/deleting one inactive profile, saving and restoring disabled preheating/peak schedules, writing back unchanged saving settings, removing test grants and leaving accepted operations enabled. This record distinguishes provider storage/readback from physical execution. Protected baseline and restoration snapshots are local, gitignored and mode 0600; credentials and station identifiers are omitted here.
 
@@ -48,3 +48,7 @@ A separate restoration command (`a548bd02-2ef3-4fc4-bd0b-18f36646aef7`) verified
 **263 focused tests** pass, including null/blank readback and negative unexpected-power cases through the real client interfaces. Package/app type checks, package build, scoped lint/format, complexity and documentation checks pass. The final native Worker/MCP test passed in **80.46 seconds**, exercising the actual bundle, encrypted RPC, durable session/command state and synthetic renewals. Both targeted independent review axes were clear. CI and broader endpoint evidence are tracked in [read acceptance](read-acceptance.md).
 
 A tenth natural renewal occurred during these tests: alarm **15:07:55.981**, previous expiry **15:08:55.980**, new expiry **1 November 03:07:54.981**, station/energy-flow verification completed **15:07:57.070** with both failures null. The last five retained records have successful reads and an intact expiry chain. No expiry was forced and no credentials were rotated manually.
+
+## Peak-shaving follow-up
+
+The separately authorized enabled-window test later on 31 October confirmed schedule storage and switch-off. Sigen retained the inactive Monday 01:00–01:15, 2500 W, 20% preset; exact empty restoration did not pass. The earlier 15:08 restoration evidence above remains historical evidence of that earlier state. The later full audit found only the retained peak preset differed, and peak API dispatch was disabled again. See [the follow-up record](peak-shaving.md) for receipts, corrected disable semantics and the remaining acceptance decision.

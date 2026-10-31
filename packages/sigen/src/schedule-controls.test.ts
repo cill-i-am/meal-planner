@@ -13,7 +13,7 @@ import { StationId, failure } from "./model.js";
 const stationId = Schema.decodeUnknownSync(StationId)("12345");
 const token = Redacted.make("synthetic");
 const slot = {
-  endTime: "05:30",
+  endTime: "24:00",
   peakPowerW: 2500,
   providerDays: "1,7",
   startTime: "23:00",
@@ -90,8 +90,10 @@ describe("SOC, peak-shaving and manual-stop controls", () => {
   it.each([
     { reserveSocPercent: 0, slots: [slot] },
     { reserveSocPercent: 20, slots: [] },
+    { reserveSocPercent: 0, slots: [] },
+    { reserveSocPercent: 20, slots: [{ ...slot, peakPowerW: 3000 }] },
   ])(
-    "refuses disabled peak-shaving data the app would clear: %j",
+    "refuses to pretend disabling peak shaving changes its retained preset: %j",
     async (patch) => {
       const f = fixture();
       // Keep historical reviews readable even when they are no longer valid new requests.
@@ -110,15 +112,13 @@ describe("SOC, peak-shaving and manual-stop controls", () => {
       expect(f.writes).toHaveLength(0);
     }
   );
-  it("disables peak shaving with the app's explicit empty schedule and zero reserve", async () => {
+  it("uses the app's zero/empty disable payload but verifies the retained preset", async () => {
     const f = fixture({
       "/device/energy-profile/battery/level/12345": undefined,
     });
     const disabled = Schema.decodeUnknownSync(ControlChange)({
       ...change,
       enabled: false,
-      reserveSocPercent: 0,
-      slots: [],
     });
     await Effect.runPromise(
       f.client.validateControl(stationId, disabled, schedule, token)
@@ -138,7 +138,69 @@ describe("SOC, peak-shaving and manual-stop controls", () => {
         path: "/device/dischargesetting/peak/shaving",
       },
     ]);
+    if (
+      schedule.kind !== "peak_shaving" ||
+      disabled.operation !== "set_peak_shaving_schedule"
+    ) {
+      throw new Error("Expected peak-shaving snapshot");
+    }
+    const stopped = {
+      ...schedule,
+      settings: { ...schedule.settings, providerControlMode: 0 },
+    };
+    expect(controlMatches(disabled, stopped)).toBe(true);
+    // The earlier zero/empty restoration request must remain unverified, not be reinterpreted.
+    expect(
+      controlMatches({ ...disabled, reserveSocPercent: 0, slots: [] }, stopped)
+    ).toBe(false);
+    expect(
+      controlMatches(disabled, {
+        ...stopped,
+        settings: {
+          ...stopped.settings,
+          slots: [{ ...slot, peakPowerW: 3000 }],
+        },
+      })
+    ).toBe(false);
   });
+  it.each([
+    { slots: Array.from({ length: 13 }, () => slot) },
+    { slots: [{ ...slot, endTime: "05:30" }] },
+    { slots: [{ ...slot, providerDays: "future" }] },
+    { slots: [{ ...slot, endTime: slot.startTime }] },
+  ])(
+    "keeps unsupported presets readable and disableable but refuses enabling them: %j",
+    async ({ slots }) => {
+      const f = fixture();
+      if (schedule.kind !== "peak_shaving") {
+        throw new Error("Expected peak-shaving snapshot");
+      }
+      const current = {
+        ...schedule,
+        settings: { ...schedule.settings, slots },
+      };
+      const active = Schema.decodeUnknownSync(ControlChange)({
+        ...change,
+        slots,
+      });
+      const disabled = Schema.decodeUnknownSync(ControlChange)({
+        ...change,
+        enabled: false,
+        slots,
+      });
+      expect(
+        await Effect.runPromise(
+          f.client
+            .validateControl(stationId, active, current, token)
+            .pipe(Effect.result)
+        )
+      ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
+      await Effect.runPromise(
+        f.client.validateControl(stationId, disabled, current, token)
+      );
+      expect(f.writes).toHaveLength(0);
+    }
+  );
   it.each([
     {
       backupSOC: "30",
@@ -269,7 +331,7 @@ describe("SOC, peak-shaving and manual-stop controls", () => {
           controlMode: 1,
           settingList: [
             {
-              endTime: "05:30",
+              endTime: "24:00",
               peakPower: 2.5,
               startTime: "23:00",
               whichDay: "1,7",
@@ -305,7 +367,7 @@ describe("SOC, peak-shaving and manual-stop controls", () => {
       },
     ]);
   });
-  it("permits limit edits while rejecting unverified window, timezone and mode changes", async () => {
+  it("permits limit edits while rejecting unsupported windows, timezone and mode", async () => {
     const { client } = fixture();
     await Effect.runPromise(
       client.validateControl(stationId, change, schedule, token)
@@ -313,8 +375,8 @@ describe("SOC, peak-shaving and manual-stop controls", () => {
     await Promise.all(
       [
         { timezone: "UTC" },
-        { slots: [{ ...slot, startTime: "22:00" }] },
-        { slots: [{ ...slot, providerDays: "2" }] },
+        { slots: [{ ...slot, endTime: "05:30" }] },
+        { slots: [{ ...slot, providerDays: "future" }] },
         { slots: [] },
       ].map(async (patch) => {
         const input = Schema.decodeUnknownSync(ControlChange)({

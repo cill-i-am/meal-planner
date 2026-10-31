@@ -1,6 +1,6 @@
 # Profile CRUD and schedule/settings writes
 
-These operations use `prepare_command` → `approve_command` (`once` or `always`) → `execute_command`. They add six control families to the existing 47 HTTP/MCP operations. The authorized [live acceptance](live-control-acceptance.md) enabled profile create/update/delete, preheating and energy saving. Peak shaving failed populated readback and remains disabled; current-profile automation also remains disabled. The acceptance record distinguishes metadata CRUD, disabled schedule storage and unchanged settings from physical execution.
+These operations use `prepare_command` → `approve_command` (`once` or `always`) → `execute_command`. They add six control families to the existing 47 HTTP/MCP operations. The authorized [live acceptance](live-control-acceptance.md) enabled profile create/update/delete, preheating and energy saving. Peak shaving passed enabled storage and switch-off, but retained its inactive preset instead of restoring empty state; its API dispatch remains disabled pending acceptance of that difference; current-profile automation also remains disabled. The acceptance record distinguishes metadata CRUD, disabled schedule storage and unchanged settings from physical execution.
 
 ## Profile lifecycle
 
@@ -19,7 +19,7 @@ Full-profile writes support known residential settings and flat known priority e
 All new windows use the station's returned timezone, local `HH:mm` times, and `providerDays` containing unique comma-separated weekdays: Monday `1` through Sunday `7`. End time `24:00` is allowed. Start must precede end; split an overnight period into separate day windows. No overlapping windows are accepted, including across automation groups. These are recurring wall-clock schedules; the provider applies local daylight-saving behavior, not a fixed UTC offset.
 
 - `replace_automation_schedule` replaces battery and grid groups on the current profile. `update_energy_profile.edits.automation` replaces them on a custom profile. Other profile settings remain intact. Available feature flags and source options are required. Battery modes `0/1/3/6` and grid modes `0/1/2` use the app's neutral defaults for fields inactive in each mode. Unsupported codes fail validation.
-- `set_peak_shaving_schedule` now accepts new and moved verified windows. It replaces the full schedule, enabled state, reserve and limits. For compatibility, an older opaque or overnight day/time configuration may be retained exactly while editing its existing power values; it cannot be rearranged under that exception.
+- `set_peak_shaving_schedule` replaces the full preset when enabling, with 1–12 valid windows and live reserve-bound checks. Disabling preserves the current reserve and slots, which must appear unchanged in the reviewed request. Existing unsupported presets can be read and preserved when disabling but cannot bypass enabled-write validation.
 - `set_preheating_schedule` replaces up to four residential heating windows. Provider start and duration are minutes. Residential requests send null charging/discharging power and industrial mode/switch fields. Unused powers may read back as null or blank. Industrial schedules remain excluded.
 
 Power is supplied in watts and translated to the provider's kW representation. Unlimited power uses the provider's sentinel; it is never silently converted to zero.
@@ -45,4 +45,4 @@ Live acceptance and its exclusions are recorded in [live control acceptance](liv
 
 ## Peak-shaving disabled-state correction
 
-Disabling peak shaving clears its windows and reserve, matching the app. New requests must use `enabled:false`, `slots:[]`, `reserveSocPercent:0`; disabled populated drafts are not supported. Enabled schedules check live battery SOC bounds and permit up to twelve new windows. The earlier disabled populated test remains unverified; a brief future-window enabled test requires separate approval. See [the source evidence and bounded test](peak-shaving.md).
+Disabling peak shaving changes only its switch and retains the saved reserve and windows. The app sends zero/empty fields, but these do not erase the preset. The client now reviews and verifies the retained fields explicitly; historical clearing requests remain unverified. The authorized live test saved the enabled Monday window and switched it off again, but did not restore the original empty preset. See [source evidence, receipts and the remaining acceptance decision](peak-shaving.md).

@@ -28,6 +28,7 @@ import {
   readManualOverrideState,
 } from "./settings-client.js";
 import type { BatterySocSettings } from "./settings.js";
+import { samePeakShavingPreset } from "./settings.js";
 
 export type ProviderWrite = (
   method: "PUT" | "POST" | "PATCH" | "DELETE",
@@ -37,6 +38,20 @@ export type ProviderWrite = (
 ) => Effect.Effect<void, SigenFailure>;
 const powerString = (limit: typeof WritablePowerLimit.Type) =>
   limit.kind === "unlimited" ? "4294967.295" : String(limit.watts / 1000);
+const peakShavingBody = (
+  change: Extract<ControlChange, { operation: "set_peak_shaving_schedule" }>
+) => ({
+  controlMode: change.enabled ? 1 : 0,
+  settingList: change.enabled
+    ? change.slots.map((slot) => ({
+        endTime: slot.endTime,
+        peakPower: slot.peakPowerW / 1000,
+        startTime: slot.startTime,
+        whichDay: slot.providerDays,
+      }))
+    : [],
+  shavingSOC: change.enabled ? change.reserveSocPercent : 0,
+});
 
 const validatePeakReserve = (
   reserveSocPercent: number,
@@ -73,27 +88,15 @@ const validatePeakSchedule = (
   if (change.timezone !== value.timezone) {
     return failure("InvalidInput");
   }
-  // The app's disabled branch explicitly clears both reserve and tasks.
+  // The app sends zero/empty fields when disabling, but the provider retains its preset.
   if (!change.enabled) {
-    return change.slots.length === 0 && change.reserveSocPercent === 0
+    return samePeakShavingPreset(change, value)
       ? null
       : failure("InvalidInput");
   }
-  const preserved =
-    change.slots.length === value.slots.length &&
-    change.slots.every((slot, index) => {
-      const old = value.slots[index];
-      return (
-        old !== undefined &&
-        slot.startTime === old.startTime &&
-        slot.endTime === old.endTime &&
-        slot.providerDays === old.providerDays
-      );
-    });
-  return preserved ||
-    (change.slots.length <= 12 &&
-      change.slots.every(Schema.is(ScheduleWindow)) &&
-      nonOverlappingWindows(change.slots))
+  return change.slots.length <= 12 &&
+    change.slots.every(Schema.is(ScheduleWindow)) &&
+    nonOverlappingWindows(change.slots)
     ? null
     : failure("UnsupportedCapability");
 };
@@ -609,14 +612,7 @@ export const makeControlsClient = (
           "/device/dischargesetting/peak/shaving",
           {
             ...id,
-            controlMode: change.enabled ? 1 : 0,
-            settingList: change.slots.map((slot) => ({
-              endTime: slot.endTime,
-              peakPower: slot.peakPowerW / 1000,
-              startTime: slot.startTime,
-              whichDay: slot.providerDays,
-            })),
-            shavingSOC: change.reserveSocPercent,
+            ...peakShavingBody(change),
           },
           token
         );

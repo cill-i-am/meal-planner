@@ -133,6 +133,27 @@ export const PeakShavingSchedule = Schema.Struct({
   slots: Schema.Array(PeakShavingSlot).check(Schema.isMaxLength(64)),
   timezone: Schema.String,
 });
+type PeakShavingPreset = Pick<
+  typeof PeakShavingSchedule.Type,
+  "reserveSocPercent" | "slots"
+>;
+/** Disabling changes only the switch; provider readback retains this preset. */
+export const samePeakShavingPreset = (
+  expected: PeakShavingPreset,
+  observed: PeakShavingPreset
+): boolean =>
+  expected.reserveSocPercent === observed.reserveSocPercent &&
+  expected.slots.length === observed.slots.length &&
+  expected.slots.every((slot, index) => {
+    const actual = observed.slots[index];
+    return (
+      actual !== undefined &&
+      slot.providerDays === actual.providerDays &&
+      slot.startTime === actual.startTime &&
+      slot.endTime === actual.endTime &&
+      Math.abs(slot.peakPowerW - actual.peakPowerW) < 0.001
+    );
+  });
 export const ManualOverride = Schema.Struct({
   ...Snapshot,
   batteryPowerW: Schema.NullOr(Schema.Finite),

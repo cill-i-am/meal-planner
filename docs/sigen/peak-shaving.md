@@ -1,44 +1,49 @@
 # Peak-shaving correction and acceptance
 
-## Why the disabled test failed
+Peak shaving is **off**. Its API dispatch is also disabled pending acceptance of the retained inactive preset described below. The enabled save passed, but the approved empty-baseline restoration did not: Sigen keeps its last reserve and windows when switched off. All other baseline settings and grants match.
 
-The 31 October disabled populated-schedule test requested a state the owner app never saves. In `main.dart_43.baa9a2b9.js`, the peak-shaving screen's `ir()` save branch constructs `tP(stationId, 0, 0, [])` whenever control mode is zero. Disabling clears both the windows and peak-shaving reserve. The enabled branch serializes the entered windows and reserve. The observed POST path and DTO field names already match our client.
+## Observed provider behavior
 
-The earlier command remains `outcome_unknown`, and its independent readback stayed empty. This proves the requested populated schedule was not verified; it does not reveal the provider's internal rejection reason. The app branch establishes that a disabled populated-schedule test is not a valid acceptance condition. The baseline was restored and remains mode 0, reserve 0, no windows.
+The 31 October initial disabled populated-schedule test remained `outcome_unknown`, with independent readback still empty. The app's `ir()` disabled branch sends `tP(stationId, 0, 0, [])`. That is a wire payload, not evidence that stored windows and reserve are cleared. The earlier interpretation that disabling clears them was disproved by the enabled live test.
+
+The underlying app control path, `clN()`, writes only the switch register when control mode is zero. Its enabled branch separately writes the tasks, task count and reserve. This matches cloud readback: disabling retains the previously saved preset. No clear/delete operation was found in the inspected peak-shaving app paths. Do not invent a clearing request, replay an uncertain command, or reinterpret an old clear request as successful.
 
 ## Enforced contract
 
-- `enabled:false` requires `slots:[]` and `reserveSocPercent:0`. It explicitly clears the schedule; it does not preserve a disabled draft. Invalid combinations fail during preparation before any provider mutation.
-- An enabled schedule requires at least one window. New windows have unique weekday codes 1–7, ordered local times, no overlaps and at most twelve entries. Previously reviewed opaque/overnight windows retain the existing preservation-only rule.
-- Enabled reserve must be at least both the current discharge cutoff and backup SOC, and at most the current charge cutoff. Unknown required bounds refuse the write. These limits are read during preparation and again immediately before execution. Disabling does not depend on the SOC endpoint being available.
-- The persisted command schema remains unchanged, so historical reviews and uncertain receipts are still readable. The stricter rules apply to new preparations and unattempted execution; already attempted commands remain read-only reconciliation.
+- `enabled:false` must include the current `slots` and `reserveSocPercent` unchanged. The immutable review therefore shows the preset that will remain. Dispatch sends the app's canonical mode 0, reserve 0, empty-list payload; verification requires mode 0 **and the reviewed retained preset**. Attempts to clear or edit a preset while disabling fail during preparation.
+- Every enabled schedule requires one to twelve valid windows: unique weekday codes 1–7, ordered local times and no overlaps. Existing opaque, overnight or excessive presets remain readable and may be preserved when disabling; they cannot bypass enabled-write validation.
+- Enabled reserve must be at least both current discharge cutoff and backup SOC, and at most current charge cutoff. Unknown required bounds refuse the write. These limits are read during preparation and again immediately before execution. Disabling does not depend on the SOC endpoint being available.
+- Station timezone must match. Power is exposed in watts and serialized in kW.
+- Historical reviews remain readable. An old request to clear the preset still fails readback against a retained preset. Attempted commands remain read-only reconciliation and are never resent.
 
-A shared SOC reader uses only `/device/energy-profile/battery/level/{station}` for the enabled reserve check. It also supplies the existing complete battery-settings read, preserving nullable values, percentage validation and output field order. Peak-shaving validation does not fetch unrelated power/export settings.
+The shared SOC reader uses only `/device/energy-profile/battery/level/{station}` for reserve checks. It also supplies the complete battery-settings read, preserving nullable values and percentage validation without fetching unrelated settings for peak-shaving validation.
 
 ## Primary app evidence
 
-The previously captured owner-app bundle contains the relevant code:
-
 | Source | Evidence |
 | --- | --- |
-| `main.dart_43.baa9a2b9.js`, `ir()` | Disabled save writes control mode 0, reserve 0 and an empty task list. Enabled save uses the form values. |
-| Same file, `aId()` | Reserve cannot exceed charge SOC or be below backup/discharge SOC. |
-| Same file, `bIc()` | Refuses adding a thirteenth window. |
-| `main.dart.d390de04.js`, `tP.E()` / `pU.E()` | `stationId`, `controlMode`, `shavingSOC`, `settingList`; each task contains `whichDay`, `startTime`, `endTime`, `peakPower`. |
-| Same file, `ldT()` | Maps the reserve-bound fields to charge, discharge and backup SOC. |
+| `main.dart_43.baa9a2b9.js`, `ir()` | Disabled request carries control mode 0, reserve 0 and an empty task list. Enabled request uses form values. This does not establish erasure of stored fields. |
+| Same file, `aId()` / `bIc()` | Reserve bounds use charge, backup and discharge SOC; adding a thirteenth window is refused. |
+| `main.dart.d390de04.js`, `tP.E()` / `pU.E()` | DTO fields are `stationId`, `controlMode`, `shavingSOC`, `settingList`; tasks contain `whichDay`, `startTime`, `endTime`, `peakPower`. |
+| Same file, `ldT()` | Maps charge, discharge and backup SOC. |
+| Same file, `clN()` | Disabled local-control branch writes only switch register 11577. Enabled branch requires 1–12 valid tasks and separately writes task count 11579, reserve 2942 and the switch. |
 
 SHA-256: `main.dart_43.baa9a2b9.js` = `4817629feaf5c23f09e9c1ed0cb87ab0742accbed138aa043d2f300ce54cfce5`; `main.dart.d390de04.js` = `12af3891429bf8448dc15c5cae36740131005e00160e05c442f5e28d11c83e10`.
 
-## Live test prepared for separate approval
+## Authorized live test, 31 October 2026
 
-The prior approval covered disabled schedules only. A populated save now requires a brief enabled test. The concrete proposed change is one weekly Monday **01:00–01:15** window, **2500 W**, **20% peak-shaving reserve**, using the station's returned `Europe/London` timezone. Fresh battery limits observed on 31 October were discharge 20%, backup 20%, charge 100%.
+The user approved briefly enabling one weekly Monday **01:00–01:15** window at **2500 W** with **20% peak-shaving reserve**, then immediately restoring disabled/empty/0%. The station returned `Europe/London`; the Saturday test was outside the window. Fresh SOC bounds were discharge 20%, backup 20%, charge 100%. Protected baseline snapshots at **15:41:18.337** and **15:46:51.810 UTC** matched across operating mode, profile inventory, full current profile, preheating, peak shaving, saving settings, battery settings and grants.
 
-Before execution, confirm that the test is outside that window and all baseline values still match. Save and independently verify the enabled schedule, then immediately disable it with reserve 0 and no windows. Compare the complete final mode/profile, battery, schedules, saving settings and grant inventory against the protected baseline. Do not wait for the scheduled window or claim proof of physical peak-shaving performance. Keep peak-shaving dispatch disabled until this bounded test is authorized; keep it enabled afterward only if the populated save and restoration are verified.
+| Step | Command | Evidence (UTC) |
+| --- | --- | --- |
+| Enable populated schedule, approve once | `b2aa058d-3659-46eb-a505-d948667fa0d4` | Attempted **15:49:41.434**; receipt verified **15:49:42.548**. Independent read at **15:50:03.561** confirmed mode 1, reserve 20%, Monday 01:00–01:15, 2500 W. |
+| Disable and request empty/0% restoration, approve once | `cf428cac-0d7c-4ab6-be03-a3a79bd1c4c6` | Attempted **15:50:24.994**; receipt remains `outcome_unknown`. Independent read at **15:50:38.052** confirmed mode 0, but reserve 20% and the window remained. The command was not replayed. |
+| Independent full comparison | Read only | Snapshot at **15:53:53.388** differs only at `profile.peakShaving.reserveSocPercent`, `profile.peakShaving.slots`, `peak.reserveSocPercent`, `peak.slots`. Everything else matches, including Sigen AI mode, battery reserve 20%, other schedules and zero grants. |
 
-The test remains pending. The original failed receipt must not be replayed; use a fresh command and immutable once approval for each bounded change.
+The saved window is inactive. This establishes enabled schedule storage and switch-off, not physical peak-shaving performance during a scheduled window. Exact empty/0% restoration was **not** achieved. The API operation was disabled again at **15:54:20.945 UTC**, leaving the existing five accepted operations enabled. The user must accept the retained inactive preset before treating this changed restoration condition as accepted and enabling peak-shaving dispatch permanently.
 
-## Verification before enabled acceptance
+## Verification
 
-Code `c17f694a` passed **276 focused tests**, package/app type checks, package build, scoped lint/format, complexity and documentation checks. The native Worker/MCP test passed in **82.22 seconds**, and both independent review axes were clear. The deployed fix completed at **31 October 15:41:08.754 UTC**, retaining the five accepted operations and leaving peak-shaving dispatch disabled.
+The earlier correction `c17f694a` passed 276 focused tests and native Worker/MCP verification, but incorrectly inferred preset clearing from the wire payload. Its preflight rejected disabled populated requests and reserve below the live minimum; the preflight enabled command expired without execution. Those historical results do not prove the revised retained-preset contract.
 
-Actual Executor preparation rejected both the historical disabled populated shape and an enabled window with reserve below the live 20% minimum, each with `InvalidInput`. A fresh command for the proposed enabled Monday window, 2500 W and 20% reserve returned `prepared` after live validation. It has not been approved or executed. The protected restoration snapshot at **15:41:18.337 UTC** records Sigen AI mode, reserve 20%, empty disabled schedules and zero grants. The connection remains healthy with ten natural renewals.
+The retained-preset correction adds positive disabled-preset verification, negative clearing/editing requests, historical-clear mismatch protection and enabled-write rejection for unsupported preserved windows. All **282 focused tests** pass, alongside package/app type checks, package build, scoped lint/format, complexity and documentation checks. Native Worker/MCP verification passed in **80.06 seconds**. Both independent review axes are clear; the spec review additionally required all enabled requests to validate preserved windows, which is covered by regressions. Hosted verification is recorded below after deployment.

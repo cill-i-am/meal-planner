@@ -31,6 +31,7 @@ import {
   ManualOverride,
   PeakShavingSchedule,
   PeakShavingSlot,
+  samePeakShavingPreset,
   SolarSettings,
 } from "./settings.js";
 
@@ -403,19 +404,8 @@ const matchesPeakSchedule = (
 ) =>
   snapshot.kind === "peak_shaving" &&
   snapshot.settings.providerControlMode === (change.enabled ? 1 : 0) &&
-  snapshot.settings.reserveSocPercent === change.reserveSocPercent &&
   snapshot.settings.timezone === change.timezone &&
-  snapshot.settings.slots.length === change.slots.length &&
-  snapshot.settings.slots.every((slot, index) => {
-    const expected = change.slots[index];
-    return (
-      expected !== undefined &&
-      slot.providerDays === expected.providerDays &&
-      slot.startTime === expected.startTime &&
-      slot.endTime === expected.endTime &&
-      Math.abs(slot.peakPowerW - expected.peakPowerW) < 0.001
-    );
-  });
+  samePeakShavingPreset(change, snapshot.settings);
 
 const matchesBatteryExport = (enabled: boolean, snapshot: ControlSnapshot) =>
   snapshot.kind === "battery" &&
