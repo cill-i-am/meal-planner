@@ -14,7 +14,7 @@ rate limiter and credentials are independent of Meal Planner and Tesco.
 - The reloaded mySigen UI agreed on 20% SOC, Sigen AI mode and on-grid status. Household load changed between samples. Empty provider timestamps remain `null`, with freshness explicitly unknown.
 
 No physical settings were changed during the initial authentication checks. The later authorized backup-reserve test is recorded in [read acceptance](read-acceptance.md). Once/always approval grants and 21 command families are implemented
-and fixture-tested; live dispatch remains disabled. Controls report `disabled_pending_acceptance`.
+and fixture-tested. Current operation-level deployment and live evidence are recorded in [live control acceptance](live-control-acceptance.md).
 
 ## Natural renewal acceptance
 
@@ -104,3 +104,7 @@ physical settings.
 Protected operator status and post-deployment HTTP/Executor status report `connected`, **nine** successful natural renewals and dispatch `disabled_pending_acceptance`. The last five retained renewal records all have `alarm`/`renewed`, completion timestamps and null station/energy-flow failures. Their previous/new expiry values form an uninterrupted chain. The latest renewal began at **31 October 03:08:56.980 UTC**, before the previous **03:09:56.698 UTC** expiry, and read verification completed at **03:08:57.970 UTC**. Its new expiry is **31 October 15:08:55.980 UTC**. No forced renewal, re-enrollment or credential rotation was used.
 
 This extends the healthy-session evidence beyond the three-cycle acceptance target; the intentional provider-revocation/reconnection check remains pending. Current implementation and test counts are recorded in [read acceptance](read-acceptance.md).
+
+## Live-control follow-up, 31 October afternoon
+
+After the bounded control tests and final deployment, protected operator status reported `connected` and **ten** successful natural renewals. The latest alarm began at **15:07:55.981 UTC**, before the previous **15:08:55.980 UTC** expiry. New expiry is **1 November 03:07:54.981 UTC**; verification completed at **15:07:57.070 UTC**, with both station and energy-flow failures null. All five retained observations have completed successful reads and an intact previous/new expiry chain. No manual rotation, re-enrollment or forced expiry was used. Five approved operation families are now enabled; their acceptance and limits are separate from authentication and recorded in [live control acceptance](live-control-acceptance.md).

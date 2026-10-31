@@ -27,7 +27,7 @@ All rows have schema and fixture tests and share HTTP/MCP contracts. Hosted and 
 | `get_solar_settings` | GET `/device/energy-profile/solar/limit/{id}` | W, unlimited or unset. |
 | `get_peak_shaving_schedule` | GET `/device/dischargesetting/peak/shaving/{id}` | Station-local windows, provider day codes, W and timezone. |
 | `get_manual_override` | GET `/device/energy-profile/instant/manunal/{id}`, `/display/{id}` | Active state, provider mode and end time; inactive historical values do not imply activity. |
-| `get_preheating_settings` | GET `/device/dischargesetting/packPreheating/new/{id}` | Bounded typed slots and nullable capability fields. Provider time, power, duration and day values remain uninterpreted because units/day semantics are unverified. |
+| `get_preheating_settings` | GET `/device/dischargesetting/packPreheating/new/{id}` | Bounded typed slots and nullable capability fields. Raw provider values are preserved. Residential start/duration use minutes and weekdays 1–7; unused power readback may be null or blank. Industrial variants remain uninterpreted. |
 | `get_topology`, `get_station_status` | GET station topology and status | Bounded equipment hierarchy and communication codes. |
 | `get_gateway`, `list_grid_devices`, `get_device_info`, `get_device_values` | GET gateway/grid/static/dynamic equipment routes | Topology membership is rechecked; AIO subtree cannot include siblings. Display labels are not stable metric IDs. |
 | `list_aio_devices`, `get_aio_power_status` | GET `/device/aio/by/station`, `/device/sigenMate/getPowerOnOffStatus`, `/device/aio/on-off-state` | Serial membership and two separate boolean power observations, including disagreement. |
@@ -48,7 +48,7 @@ All rows have schema and fixture tests and share HTTP/MCP contracts. Hosted and 
 
 `prepare_command`, `approve_command`, `execute_command`, `get_command`, `list_approval_grants` and `revoke_approval_grant` share the durable command service. The owner/agent credential may approve **once** or **always**. Always grants permit future validated parameters for the same operation and station; smart-load grants also bind both load key and path; profile update/delete grants bind the profile ID. Revocation invalidates queued commands using the grant. Reenrollment invalidates old grants, while retaining attempt receipts.
 
-Every command has an immutable five-minute review, a fresh current-state comparison, and a durable marker before one mutation. Changed inputs conflict. Ambiguous outcomes are reconciled by reads and never replayed. Physical dispatch remains disabled. The earlier explicitly authorized backup-reserve test is the only live write acceptance; all other commands have synthetic adapter/approval coverage.
+Every command has an immutable five-minute review, a fresh current-state comparison, and a durable marker before one mutation. Changed inputs conflict. Ambiguous outcomes are reconciled by reads and never replayed. Production dispatch is enabled only for profile create/update/delete, preheating and energy saving after the [bounded live acceptance](live-control-acceptance.md). Peak-shaving populated readback did not pass and its dispatch remains disabled; all other operations are also disabled. The earlier authorized backup-reserve test and the new acceptance record describe the narrower live evidence; synthetic tests are separate.
 
 | Change family | Provider write | Validation / verification limit |
 | --- | --- | --- |

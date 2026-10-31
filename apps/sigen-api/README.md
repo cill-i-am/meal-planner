@@ -136,7 +136,7 @@ Delete the temporary operator file after acceptance. The raw operator credential
 4. Verify revoked credentials produce `reauthentication_required`, then reconnect.
 5. Continue implementing read coverage while the natural renewal checks run, as requested by the user. Control implementation and approval tests also proceed while renewal checks run; live physical tests still require explicit acceptance.
 
-Physical dispatch is disabled in the deployed acceptance configuration. Disconnect disables cloud access; it does not alter physical settings. Software rollback likewise does not restore inverter/battery configuration.
+The deployed operation list enables profile create/update/delete, preheating and energy saving following [bounded live acceptance](../../docs/sigen/live-control-acceptance.md). Peak shaving remains disabled after an unconfirmed populated readback; all other operations are excluded. Approve-once or a matching revocable always grant is still required. Disconnect disables cloud access; it does not alter physical settings. Software rollback likewise does not restore inverter/battery configuration.
 
 ## Local verification
 

@@ -2,7 +2,7 @@
 
 ## Current scope
 
-The registry exposes 47 HTTP/MCP operations and 21 typed control families. See the [current coverage matrix](coverage.md) for implemented contracts and explicit exclusions. The dated sections below are historical evidence, not current inventory counts. Three required real renewals are verified in [authentication acceptance](auth-acceptance.md); physical dispatch remains disabled after the separate authorized reserve test.
+The registry exposes 47 HTTP/MCP operations and 21 typed control families. See the [current coverage matrix](coverage.md) for implemented contracts and explicit exclusions. The dated sections below are historical evidence, not current inventory counts. Three required real renewals are verified in [authentication acceptance](auth-acceptance.md); the current five-operation deployment and narrower live evidence are recorded in [live control acceptance](live-control-acceptance.md).
 
 ## Hosted evidence on 26 October 2026
 
@@ -200,3 +200,11 @@ The service retains 47 HTTP/MCP operations and now accepts **21 typed command fa
 The final independent deployment completed at **12:59:27 UTC**, preserving the existing Durable Object, connection and credentials. HTTP preparation returned `prepared` with the expected review type for `create_energy_profile`, `set_preheating_schedule` and `set_energy_saving_settings`. The live template exposed residential preheating mode 1: the adapter now follows the app's null write serializer for this industrial-only selector and checks only the documented inactive equivalence on readback. Saving settings support explicit preservation of the observed on-grid 1/off-grid 0 codes. No profile was created, updated or deleted, and no setting was changed.
 
 Executor discovered the expanded command union after its catalog cache refreshed; its existing account successfully prepared a preheating command and reported `connected`, **nine** successful natural renewals and `disabled_pending_acceptance`. No new account, credential, source deployment or approval was needed. Preparation evidence is not live write acceptance. These new writes remain synthetic-only while the global dispatch switch stays off.
+
+## Bounded live write acceptance (31 October 2026)
+
+Actual Executor calls verified inactive profile creation, metadata updates with once/temporary always approval, repeated-execute receipt reuse, remembered approval, revocation blocking a queued edit, and deletion. Disabled preheating storage/restoration and unchanged energy-saving writeback also passed. Peak-shaving populated readback stayed empty and returned `outcome_unknown`; its dispatch remains disabled. Provider capability flags refused automation edits. The full evidence, command receipts, correction for null-to-blank residential powers and limitations are in [live control acceptance](live-control-acceptance.md).
+
+Final deployment of `fcf993d3` completed at **15:08:13.497 UTC** with only profile create/update/delete, preheating and energy-saving operations enabled. Executor independently confirmed that exact list. The full restoration audit matched all eight baseline sections, including active mode/profile, complete battery/settings values, empty schedules and no grants. The disposable profile is gone. Ten natural renewals now have successful evidence.
+
+**263 focused tests**, the native Worker/MCP test (**80.46 seconds**), package/app types, package build, scoped lint/format, complexity and documentation checks pass. Both independent review axes are clear. Full CI passed on gate commit `6f1109d2` ([run 41210044448](https://github.com/cill-i-am/meal-planner/actions/runs/41210044448)); final-fix CI is recorded when complete.

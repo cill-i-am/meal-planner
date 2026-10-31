@@ -1,6 +1,6 @@
 # Profile CRUD and schedule/settings writes
 
-These operations use `prepare_command` → `approve_command` (`once` or `always`) → `execute_command`. They add six control families to the existing 47 HTTP/MCP operations. Production dispatch stays disabled until a separately authorized live acceptance test. No new physical setting or provider profile was changed during implementation.
+These operations use `prepare_command` → `approve_command` (`once` or `always`) → `execute_command`. They add six control families to the existing 47 HTTP/MCP operations. The authorized [live acceptance](live-control-acceptance.md) enabled profile create/update/delete, preheating and energy saving. Peak shaving failed populated readback and remains disabled; current-profile automation also remains disabled. The acceptance record distinguishes metadata CRUD, disabled schedule storage and unchanged settings from physical execution.
 
 ## Profile lifecycle
 
@@ -10,7 +10,7 @@ These operations use `prepare_command` → `approve_command` (`once` or `always`
 
 Create approval is scoped to the station and create operation. Update/delete approval also binds the profile ID. An always-update grant does not authorize deleting that profile or editing another one. All grants remain revocable.
 
-Creation verification requires a unique matching name, a new profile ID absent from the reviewed inventory, the complete expected configuration, inactive status and unchanged current operating mode. Updates compare complete configurations independent of JSON property order and sub-microwatt floating point noise. Residential profiles follow the app serializer: the industrial-only preheating selector is written as null; observed template value 1 and null are equivalent only for this inactive selector. Unknown selectors remain unsupported. Deletes require a successful inventory read showing absence. Read errors never mean absence. Missing or ambiguous evidence remains `outcome_unknown`; a second execute reconciles by reads instead of resending the mutation.
+Creation verification requires a unique matching name, a new profile ID absent from the reviewed inventory, the complete expected configuration, inactive status and unchanged current operating mode. Updates compare complete configurations independent of JSON property order and sub-microwatt floating point noise. Residential profiles follow the app serializer: the industrial-only preheating selector is written as null; observed template value 1 and null are equivalent only for this inactive selector. Populated residential schedules may return blank unused powers after null was submitted; only null/blank are equivalent. Zero, whitespace and nonempty power values remain unsupported. Unknown selectors remain unsupported. Deletes require a successful inventory read showing absence. Read errors never mean absence. Missing or ambiguous evidence remains `outcome_unknown`; a second execute reconciles by reads instead of resending the mutation.
 
 Full-profile writes support known residential settings and flat known priority entries. Unknown control codes, industrial profiles, grouped priorities and unsupported copied preheating slots are refused before approval. Read APIs continue to preserve unfamiliar codes.
 
@@ -20,7 +20,7 @@ All new windows use the station's returned timezone, local `HH:mm` times, and `p
 
 - `replace_automation_schedule` replaces battery and grid groups on the current profile. `update_energy_profile.edits.automation` replaces them on a custom profile. Other profile settings remain intact. Available feature flags and source options are required. Battery modes `0/1/3/6` and grid modes `0/1/2` use the app's neutral defaults for fields inactive in each mode. Unsupported codes fail validation.
 - `set_peak_shaving_schedule` now accepts new and moved verified windows. It replaces the full schedule, enabled state, reserve and limits. For compatibility, an older opaque or overnight day/time configuration may be retained exactly while editing its existing power values; it cannot be rearranged under that exception.
-- `set_preheating_schedule` replaces up to four residential heating windows. Provider start and duration are minutes. Residential charging/discharging power and industrial mode/switch fields are null. Industrial schedules remain excluded.
+- `set_preheating_schedule` replaces up to four residential heating windows. Provider start and duration are minutes. Residential requests send null charging/discharging power and industrial mode/switch fields. Unused powers may read back as null or blank. Industrial schedules remain excluded.
 
 Power is supplied in watts and translated to the provider's kW representation. Unlimited power uses the provider's sentinel; it is never silently converted to zero.
 
@@ -41,4 +41,4 @@ The public EU app remained version 4.1.0, release `cdn-eu-b147-2a9ceaaa1ca0`, on
 | `main.dart_30.14f827aa.js`, `main.dart_48.4eb360ce.js`, `main.dart_55.74ed9052.js` | Energy-saving mode values, capability gating, threshold handling and app request `offGridEnable:false` (a capability field, not an exposed switch). |
 | `main.dart.js_321.part.aa2e4e98.js` | English label `Load Threshold(W)` and numeric range 0–65535 establish the threshold unit. |
 
-Provider acceptance of these new writes remains unverified while dispatch is disabled. Synthetic tests cover exact requests, complete readback, conflicts, unknown codes, capability refusal, once/always scoping, revocation, restart and lost-response no-replay behavior. Hosted evidence is recorded in [read acceptance](read-acceptance.md).
+Live acceptance and its exclusions are recorded in [live control acceptance](live-control-acceptance.md). Synthetic tests cover exact requests, complete readback, conflicts, unknown codes, capability refusal, once/always scoping, revocation, restart and lost-response no-replay behavior. Hosted evidence is recorded in [read acceptance](read-acceptance.md).
