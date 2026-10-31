@@ -15,6 +15,7 @@ import type { ProviderRead } from "./provider-read.js";
 import {
   AutomationSettings,
   BatterySettings,
+  BatterySocSettings,
   EnergySavingSettings,
   GridSettings,
   ManualOverride,
@@ -35,6 +36,39 @@ const gridPower = (value: typeof PowerResponse.Type) => ({
   installer: powerLimit(value.maxLimitationInstaller),
   owner: powerLimit(value.maxLimitationOwner),
 });
+
+/** SOC limits are also checked before enabling peak shaving; no power/export reads are needed. */
+export const readBatterySocSettings = (
+  read: ProviderRead,
+  id: StationId,
+  token: Redacted.Redacted<string>
+) =>
+  Effect.gen(function* readSocSettings() {
+    const levels = yield* read(
+      `/device/energy-profile/battery/level/${encodeURIComponent(id)}`,
+      token
+    ).pipe(
+      Effect.flatMap(
+        decodeProvider(
+          Schema.Struct({
+            backupSOC: DecimalSetting,
+            chargeSOC: DecimalSetting,
+            dischargeSOC: DecimalSetting,
+            ja12SOC: Schema.optionalKey(DecimalSetting),
+            peakShavingSOC: DecimalSetting,
+          })
+        )
+      )
+    );
+    return yield* decodeProvider(BatterySocSettings)({
+      backupSocPercent: decimal(levels.backupSOC),
+      chargeSocPercent: decimal(levels.chargeSOC),
+      dischargeSocPercent: decimal(levels.dischargeSOC),
+      ja12SocPercent:
+        levels.ja12SOC === undefined ? null : decimal(levels.ja12SOC),
+      peakShavingSocPercent: decimal(levels.peakShavingSOC),
+    });
+  });
 
 /** Manual control confirmation depends on configuration, not optional live display telemetry. */
 export const readManualOverrideState = (
@@ -104,18 +138,7 @@ export const makeSettingsClient = (read: ProviderRead) => {
       Effect.gen(function* readBatterySettings() {
         const [levels, power, reserve, exporting] = yield* Effect.all(
           [
-            get(
-              "/device/energy-profile/battery/level",
-              id,
-              token,
-              Schema.Struct({
-                backupSOC: DecimalSetting,
-                chargeSOC: DecimalSetting,
-                dischargeSOC: DecimalSetting,
-                ja12SOC: Schema.optionalKey(DecimalSetting),
-                peakShavingSOC: DecimalSetting,
-              })
-            ),
+            readBatterySocSettings(read, id, token),
             get(
               "/device/energy-profile/battery/limit",
               id,
@@ -152,21 +175,16 @@ export const makeSettingsClient = (read: ProviderRead) => {
           return yield* failure("PermissionDenied");
         }
         return yield* decodeProvider(BatterySettings)({
+          ...levels,
           backupReservePercent: reserve.backupReserve,
-          backupSocPercent: decimal(levels.backupSOC),
           chargeLimit: powerLimit(power.batteryMaxChargingPower),
-          chargeSocPercent: decimal(levels.chargeSOC),
           dischargeLimit: powerLimit(power.batteryMaxDischargingPower),
-          dischargeSocPercent: decimal(levels.dischargeSOC),
           export: {
             effectiveEnabled: exporting.currentEnable,
             installerEnabled: exporting.installerSetEnable,
             ownerEnabled: exporting.ownerSetEnable,
           },
           fetchedAt: yield* Clock.currentTimeMillis,
-          ja12SocPercent:
-            levels.ja12SOC === undefined ? null : decimal(levels.ja12SOC),
-          peakShavingSocPercent: decimal(levels.peakShavingSOC),
           providerOperationMode: reserve.operationMode,
           stationId: id,
         });

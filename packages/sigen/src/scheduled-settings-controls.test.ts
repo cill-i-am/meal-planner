@@ -66,6 +66,12 @@ const fixture = (overrides: Record<string, unknown> = {}) => {
       settingList: [],
       shavingSOC: 0,
     },
+    "/device/energy-profile/battery/level/12345": {
+      backupSOC: "20",
+      chargeSOC: "100",
+      dischargeSOC: "10",
+      peakShavingSOC: "0",
+    },
     "/device/energy-profile/mode/current/12345": {
       currentMode: 1,
       currentProfileId: -1,
@@ -381,6 +387,30 @@ describe("complete schedule replacements and settings writes", () => {
       ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
     }
   });
+  it.each([12, 13])(
+    "limits new peak-shaving windows to the app's twelve slots: %s",
+    async (count) => {
+      const f = fixture();
+      const change = parse({
+        enabled: true,
+        operation: "set_peak_shaving_schedule",
+        reserveSocPercent: 20,
+        slots: Array.from({ length: count }, (_, index) => ({
+          endTime: `${String(index + 1).padStart(2, "0")}:00`,
+          peakPowerW: 2500,
+          providerDays: "1",
+          startTime: `${String(index).padStart(2, "0")}:00`,
+        })),
+        timezone: "Europe/London",
+      });
+      const result = await Effect.runPromise(
+        f.client
+          .validateControl(id, change, await f.inspect(change), token)
+          .pipe(Effect.result)
+      );
+      expect(result._tag).toBe(count === 12 ? "Success" : "Failure");
+    }
+  );
   it("preserves observed saving modes explicitly, needs the review for dispatch, and checks preservation on readback", async () => {
     const raw = {
       offGridEnable: true,

@@ -19,21 +19,28 @@ export const PowerLimit = Schema.Union([
 ]);
 export type PowerLimit = typeof PowerLimit.Type;
 
+export const BatterySocSettings = Schema.Struct({
+  backupSocPercent: Schema.NullOr(Percent),
+  chargeSocPercent: Schema.NullOr(Percent),
+  dischargeSocPercent: Schema.NullOr(Percent),
+  ja12SocPercent: Schema.NullOr(Percent),
+  peakShavingSocPercent: Schema.NullOr(Percent),
+});
 export const BatterySettings = Schema.Struct({
   ...Snapshot,
   backupReservePercent: Percent,
-  backupSocPercent: Schema.NullOr(Percent),
+  backupSocPercent: BatterySocSettings.fields.backupSocPercent,
   chargeLimit: PowerLimit,
-  chargeSocPercent: Schema.NullOr(Percent),
+  chargeSocPercent: BatterySocSettings.fields.chargeSocPercent,
   dischargeLimit: PowerLimit,
-  dischargeSocPercent: Schema.NullOr(Percent),
+  dischargeSocPercent: BatterySocSettings.fields.dischargeSocPercent,
   export: Schema.Struct({
     effectiveEnabled: Schema.Boolean,
     installerEnabled: Schema.NullOr(Schema.Boolean),
     ownerEnabled: Schema.NullOr(Schema.Boolean),
   }),
-  ja12SocPercent: Schema.NullOr(Percent),
-  peakShavingSocPercent: Schema.NullOr(Percent),
+  ja12SocPercent: BatterySocSettings.fields.ja12SocPercent,
+  peakShavingSocPercent: BatterySocSettings.fields.peakShavingSocPercent,
   providerOperationMode: Schema.Number,
 });
 const GridPowerLimit = Schema.Struct({

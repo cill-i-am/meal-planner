@@ -42,3 +42,7 @@ The public EU app remained version 4.1.0, release `cdn-eu-b147-2a9ceaaa1ca0`, on
 | `main.dart.js_321.part.aa2e4e98.js` | English label `Load Threshold(W)` and numeric range 0–65535 establish the threshold unit. |
 
 Live acceptance and its exclusions are recorded in [live control acceptance](live-control-acceptance.md). Synthetic tests cover exact requests, complete readback, conflicts, unknown codes, capability refusal, once/always scoping, revocation, restart and lost-response no-replay behavior. Hosted evidence is recorded in [read acceptance](read-acceptance.md).
+
+## Peak-shaving disabled-state correction
+
+Disabling peak shaving clears its windows and reserve, matching the app. New requests must use `enabled:false`, `slots:[]`, `reserveSocPercent:0`; disabled populated drafts are not supported. Enabled schedules check live battery SOC bounds and permit up to twelve new windows. The earlier disabled populated test remains unverified; a brief future-window enabled test requires separate approval. See [the source evidence and bounded test](peak-shaving.md).

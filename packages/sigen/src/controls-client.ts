@@ -24,8 +24,10 @@ import {
 import { ScheduleWindow, nonOverlappingWindows } from "./schedules.js";
 import {
   makeSettingsClient,
+  readBatterySocSettings,
   readManualOverrideState,
 } from "./settings-client.js";
+import type { BatterySocSettings } from "./settings.js";
 
 export type ProviderWrite = (
   method: "PUT" | "POST" | "PATCH" | "DELETE",
@@ -35,6 +37,24 @@ export type ProviderWrite = (
 ) => Effect.Effect<void, SigenFailure>;
 const powerString = (limit: typeof WritablePowerLimit.Type) =>
   limit.kind === "unlimited" ? "4294967.295" : String(limit.watts / 1000);
+
+const validatePeakReserve = (
+  reserveSocPercent: number,
+  levels: typeof BatterySocSettings.Type
+): Effect.Effect<void, SigenFailure> => {
+  const { backupSocPercent, chargeSocPercent, dischargeSocPercent } = levels;
+  if (
+    backupSocPercent === null ||
+    chargeSocPercent === null ||
+    dischargeSocPercent === null
+  ) {
+    return failure("UnsupportedCapability");
+  }
+  return reserveSocPercent < Math.max(backupSocPercent, dischargeSocPercent) ||
+    reserveSocPercent > chargeSocPercent
+    ? failure("InvalidInput")
+    : Effect.void;
+};
 
 const validatePeakSchedule = (
   change: Extract<ControlChange, { operation: "set_peak_shaving_schedule" }>,
@@ -53,6 +73,12 @@ const validatePeakSchedule = (
   if (change.timezone !== value.timezone) {
     return failure("InvalidInput");
   }
+  // The app's disabled branch explicitly clears both reserve and tasks.
+  if (!change.enabled) {
+    return change.slots.length === 0 && change.reserveSocPercent === 0
+      ? null
+      : failure("InvalidInput");
+  }
   const preserved =
     change.slots.length === value.slots.length &&
     change.slots.every((slot, index) => {
@@ -65,7 +91,8 @@ const validatePeakSchedule = (
       );
     });
   return preserved ||
-    (change.slots.every(Schema.is(ScheduleWindow)) &&
+    (change.slots.length <= 12 &&
+      change.slots.every(Schema.is(ScheduleWindow)) &&
       nonOverlappingWindows(change.slots))
     ? null
     : failure("UnsupportedCapability");
@@ -457,6 +484,12 @@ export const makeControlsClient = (
       const invalid = validateOwnerLimits(change, snapshot);
       if (invalid !== null) {
         return yield* invalid;
+      }
+      if (change.operation === "set_peak_shaving_schedule" && change.enabled) {
+        yield* validatePeakReserve(
+          change.reserveSocPercent,
+          yield* readBatterySocSettings(read, stationId, token)
+        );
       }
       if (change.operation === "set_battery_discharge_priority") {
         const capabilities = yield* profiles.energyCapabilities(

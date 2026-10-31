@@ -50,6 +50,12 @@ const fixture = (overrides: Readonly<Record<string, unknown>> = {}) => {
     body: Readonly<Record<string, Schema.Json>> | null;
   }[] = [];
   const data: Readonly<Record<string, unknown>> = {
+    "/device/energy-profile/battery/level/12345": {
+      backupSOC: "20",
+      chargeSOC: "100",
+      dischargeSOC: "10",
+      peakShavingSOC: "0",
+    },
     "/device/energy-profile/instant/manunal/12345": {
       enable: true,
       endTime: "1793200000000",
@@ -81,6 +87,142 @@ const fixture = (overrides: Readonly<Record<string, unknown>> = {}) => {
   return { client, writes };
 };
 describe("SOC, peak-shaving and manual-stop controls", () => {
+  it.each([
+    { reserveSocPercent: 0, slots: [slot] },
+    { reserveSocPercent: 20, slots: [] },
+  ])(
+    "refuses disabled peak-shaving data the app would clear: %j",
+    async (patch) => {
+      const f = fixture();
+      // Keep historical reviews readable even when they are no longer valid new requests.
+      const disabled = Schema.decodeUnknownSync(ControlChange)({
+        ...change,
+        ...patch,
+        enabled: false,
+      });
+      expect(
+        await Effect.runPromise(
+          f.client
+            .validateControl(stationId, disabled, schedule, token)
+            .pipe(Effect.result)
+        )
+      ).toMatchObject({ failure: { reason: "InvalidInput" } });
+      expect(f.writes).toHaveLength(0);
+    }
+  );
+  it("disables peak shaving with the app's explicit empty schedule and zero reserve", async () => {
+    const f = fixture({
+      "/device/energy-profile/battery/level/12345": undefined,
+    });
+    const disabled = Schema.decodeUnknownSync(ControlChange)({
+      ...change,
+      enabled: false,
+      reserveSocPercent: 0,
+      slots: [],
+    });
+    await Effect.runPromise(
+      f.client.validateControl(stationId, disabled, schedule, token)
+    );
+    await Effect.runPromise(
+      f.client.dispatchControl(stationId, disabled, token)
+    );
+    expect(f.writes).toEqual([
+      {
+        body: {
+          controlMode: 0,
+          settingList: [],
+          shavingSOC: 0,
+          stationId: 12_345,
+        },
+        method: "POST",
+        path: "/device/dischargesetting/peak/shaving",
+      },
+    ]);
+  });
+  it.each([
+    {
+      backupSOC: "30",
+      chargeSOC: "100",
+      dischargeSOC: "10",
+      reason: "InvalidInput",
+    },
+    {
+      backupSOC: "10",
+      chargeSOC: "100",
+      dischargeSOC: "30",
+      reason: "InvalidInput",
+    },
+    {
+      backupSOC: "10",
+      chargeSOC: "15",
+      dischargeSOC: "10",
+      reason: "InvalidInput",
+    },
+    {
+      backupSOC: "",
+      chargeSOC: "100",
+      dischargeSOC: "10",
+      reason: "UnsupportedCapability",
+    },
+    {
+      backupSOC: "10",
+      chargeSOC: "",
+      dischargeSOC: "10",
+      reason: "UnsupportedCapability",
+    },
+    {
+      backupSOC: "10",
+      chargeSOC: "100",
+      dischargeSOC: "",
+      reason: "UnsupportedCapability",
+    },
+    {
+      backupSOC: "10",
+      chargeSOC: "101",
+      dischargeSOC: "10",
+      reason: "SchemaMismatch",
+    },
+  ])(
+    "checks live reserve bounds before enabled peak shaving: %j",
+    async ({ reason, ...socLevels }) => {
+      const f = fixture({
+        "/device/energy-profile/battery/level/12345": {
+          ...socLevels,
+          peakShavingSOC: "0",
+        },
+      });
+      expect(
+        await Effect.runPromise(
+          f.client
+            .validateControl(stationId, change, schedule, token)
+            .pipe(Effect.result)
+        )
+      ).toMatchObject({ failure: { reason } });
+      expect(f.writes).toHaveLength(0);
+    }
+  );
+  it("rechecks changed battery reserve limits immediately before a later execution", async () => {
+    const socLevels = {
+      backupSOC: "20",
+      chargeSOC: "100",
+      dischargeSOC: "10",
+      peakShavingSOC: "0",
+    };
+    const f = fixture({
+      "/device/energy-profile/battery/level/12345": socLevels,
+    });
+    await Effect.runPromise(
+      f.client.validateControl(stationId, change, schedule, token)
+    );
+    socLevels.backupSOC = "30";
+    expect(
+      await Effect.runPromise(
+        f.client
+          .validateControl(stationId, change, schedule, token)
+          .pipe(Effect.result)
+      )
+    ).toMatchObject({ failure: { reason: "InvalidInput" } });
+  });
   it.each([undefined, { batteryPower: "malformed" }])(
     "confirms a stopped override independently of unavailable or malformed display telemetry",
     async (display) => {
