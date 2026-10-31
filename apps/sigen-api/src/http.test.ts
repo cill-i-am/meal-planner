@@ -52,6 +52,7 @@ const tax = {
 const status = {
   accessTokenExpiresAt: 123_456,
   controls: "disabled_pending_acceptance" as const,
+  enabledOperations: [],
   state: "connected" as const,
   stationId: id,
   successfulRenewals: 2,

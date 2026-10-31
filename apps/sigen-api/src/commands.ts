@@ -1,5 +1,9 @@
 import { failure } from "@meal-planner/sigen";
-import type { SigenFailure, StationId } from "@meal-planner/sigen";
+import type {
+  ControlOperation,
+  SigenFailure,
+  StationId,
+} from "@meal-planner/sigen";
 import type { SigenClient } from "@meal-planner/sigen/client";
 import type {
   ApproveCommandInput,
@@ -58,7 +62,7 @@ export const makeCommands = <R>(
     SigenClient,
     "inspectControl" | "validateControl" | "dispatchControl"
   >,
-  enabled: boolean
+  enabledOperations: readonly ControlOperation[]
 ) => {
   const bookFor = (connectionId: string) =>
     storage.read.pipe(
@@ -240,7 +244,7 @@ export const makeCommands = <R>(
               return absurd<never>(command.phase);
             }
           }
-          if (!enabled) {
+          if (!enabledOperations.includes(command.review.change.operation)) {
             return yield* failure("UnsupportedCapability");
           }
           if (command.review.expiresAt <= (yield* Clock.currentTimeMillis)) {

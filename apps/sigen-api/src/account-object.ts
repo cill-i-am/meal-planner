@@ -1,4 +1,9 @@
-import { SigenFailure, StationId, failure } from "@meal-planner/sigen";
+import {
+  EnabledOperations,
+  SigenFailure,
+  StationId,
+  failure,
+} from "@meal-planner/sigen";
 import { AlarmInput } from "@meal-planner/sigen/alarms";
 import {
   BackupEventsInput,
@@ -45,6 +50,20 @@ const runtime = Effect.gen(function* constructAccountObject() {
     Config.withDefault(false),
     Effect.orDie
   );
+  const configuredOperations = yield* Config.String(
+    "SIGEN_ENABLED_OPERATIONS"
+  ).pipe(
+    Config.withDefault(""),
+    Effect.flatMap((value) =>
+      Schema.decodeUnknownEffect(EnabledOperations)(
+        value === ""
+          ? []
+          : value.split(",").map((operation) => operation.trim())
+      )
+    ),
+    Effect.orDie
+  );
+  const enabledOperations = controlsEnabled ? configuredOperations : [];
   return Effect.gen(function* initializeAccount() {
     const context = yield* Effect.context<RuntimeContext>();
     const budget = yield* makeRequestBudget({
@@ -92,7 +111,7 @@ const runtime = Effect.gen(function* constructAccountObject() {
       storage,
       encryptionKey,
       client,
-      controlsEnabled
+      enabledOperations
     );
     const commands = makeCommands<RuntimeContext>(
       {
@@ -111,7 +130,7 @@ const runtime = Effect.gen(function* constructAccountObject() {
       },
       { run: session.withConnection },
       client,
-      controlsEnabled
+      enabledOperations
     );
     const vault = makeVault(encryptionKey);
     const inputCall = <S extends Schema.Top, A>(

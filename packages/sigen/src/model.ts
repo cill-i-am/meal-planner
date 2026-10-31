@@ -106,9 +106,41 @@ export const Enrollment = Schema.Struct({
 });
 export type Enrollment = typeof Enrollment.Type;
 
+export const ControlOperation = Schema.Literals([
+  "create_energy_profile",
+  "update_energy_profile",
+  "delete_energy_profile",
+  "replace_automation_schedule",
+  "set_preheating_schedule",
+  "set_energy_saving_settings",
+  "set_smart_load_switch",
+  "set_battery_discharge_priority",
+  "set_solar_priority",
+  "start_manual_override",
+  "stop_manual_override",
+  "set_battery_soc_thresholds",
+  "set_peak_shaving_schedule",
+  "set_backup_reserve",
+  "set_battery_power_limits",
+  "set_solar_power_limit",
+  "set_battery_export",
+  "set_grid_export_limit",
+  "set_grid_import_limit",
+  "set_grid_connection_current",
+  "set_operating_mode",
+]);
+export type ControlOperation = typeof ControlOperation.Type;
+export const EnabledOperations = Schema.Array(ControlOperation).check(
+  Schema.isMaxLength(ControlOperation.literals.length),
+  Schema.makeFilter(
+    (operations) => new Set(operations).size === operations.length
+  )
+);
+
 export const ConnectionStatus = Schema.Struct({
   accessTokenExpiresAt: Schema.NullOr(Timestamp),
   controls: Schema.Literals(["disabled_pending_acceptance", "enabled"]),
+  enabledOperations: EnabledOperations,
   state: Schema.Literals([
     "disconnected",
     "connected",

@@ -1,10 +1,15 @@
 import type { SigenFailure } from "@meal-planner/sigen";
-import { StationId, failure } from "@meal-planner/sigen";
+import {
+  ControlOperation,
+  EnabledOperations,
+  StationId,
+  failure,
+} from "@meal-planner/sigen";
 import { ControlChange, ControlSnapshot } from "@meal-planner/sigen/controls";
 import type { Command } from "@meal-planner/sigen/controls";
 import { Effect, Redacted, Schema, Semaphore } from "effect";
 import { TestClock } from "effect/testing";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import { makeCommands } from "./commands.js";
 import type { CommandBook, CommandConnection } from "./commands.js";
@@ -68,7 +73,11 @@ const fixture = async (enabled = true) => {
     inspectControl: () => Effect.sync(() => snapshot),
     validateControl: () => Effect.void,
   };
-  const make = () => makeCommands(storage, connection, client, enabled);
+  const make = (
+    operations: readonly ControlOperation[] = enabled
+      ? ControlOperation.literals
+      : []
+  ) => makeCommands(storage, connection, client, operations);
   const service = make();
   return {
     book: () => book,
@@ -97,6 +106,37 @@ const fixture = async (enabled = true) => {
 };
 
 describe("durable physical commands", () => {
+  it("requires explicit operation enablement even for an approved command and preserves existing receipts", async () => {
+    const f = await fixture();
+    const command = await f.prepare();
+    await run(f.service.approveCommand(approvedInput(command, "once")));
+    const restricted = f.make(["set_backup_reserve"]);
+    expect(
+      await run(
+        restricted.executeCommand(identity(command)).pipe(Effect.result)
+      )
+    ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
+    expect(f.dispatch).not.toHaveBeenCalled();
+    expect(
+      await run(f.service.executeCommand(identity(command)))
+    ).toMatchObject({ phase: { status: "verified" } });
+    expect(
+      await run(restricted.executeCommand(identity(command)))
+    ).toMatchObject({ phase: { status: "verified" } });
+    expect(f.dispatch).toHaveBeenCalledTimes(1);
+  });
+  it("validates operation configuration without enabling unknown or duplicate entries", () => {
+    expectTypeOf<ControlOperation>().toEqualTypeOf<
+      ControlChange["operation"]
+    >();
+    expect(Schema.is(EnabledOperations)([])).toBe(true);
+    expect(Schema.is(EnabledOperations)(["set_backup_reserve"])).toBe(true);
+    expect(
+      Schema.is(EnabledOperations)(["set_backup_reserve", "set_backup_reserve"])
+    ).toBe(false);
+    expect(Schema.is(EnabledOperations)(["set_backup_reserv"])).toBe(false);
+  });
+
   it("requires approval, binds its displayed values, survives reconstruction, and dispatches once under concurrency", async () => {
     const f = await fixture();
     const prepared = await f.prepare();

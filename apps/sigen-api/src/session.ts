@@ -6,6 +6,7 @@ import {
   failure,
 } from "@meal-planner/sigen";
 import type {
+  ControlOperation,
   Enrollment,
   SigenFailure,
   TokenBundle,
@@ -94,7 +95,7 @@ export const makeSession = <R>(
   storage: SessionStorage<R>,
   encryptionKey: Redacted.Redacted<string>,
   client: SigenClient,
-  controlsEnabled = false
+  enabledOperations: readonly ControlOperation[] = []
 ) =>
   Effect.gen(function* constructSession() {
     const lock = yield* Semaphore.make(1);
@@ -314,7 +315,11 @@ export const makeSession = <R>(
         return Schema.decodeUnknownEffect(ConnectionStatus)({
           accessTokenExpiresAt:
             "expiresAt" in session ? session.expiresAt : null,
-          controls: controlsEnabled ? "enabled" : "disabled_pending_acceptance",
+          controls:
+            enabledOperations.length > 0
+              ? "enabled"
+              : "disabled_pending_acceptance",
+          enabledOperations,
           state: connectionState(session.phase),
           stationId: "stationId" in session ? session.stationId : null,
           successfulRenewals: record.successfulRenewals,

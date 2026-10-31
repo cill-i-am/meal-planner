@@ -8,7 +8,11 @@ import {
 import { makeControlsClient } from "../../../packages/sigen/src/controls-client.js";
 import { ControlChange } from "../../../packages/sigen/src/controls.js";
 import type { Command } from "../../../packages/sigen/src/controls.js";
-import { StationId, failure } from "../../../packages/sigen/src/model.js";
+import {
+  ControlOperation,
+  StationId,
+  failure,
+} from "../../../packages/sigen/src/model.js";
 import { makeCommands } from "./commands.js";
 import type { CommandBook } from "./commands.js";
 
@@ -110,7 +114,7 @@ const fixture = async () => {
           ),
       },
       client,
-      enabled
+      enabled ? ControlOperation.literals : []
     );
   const service = make();
   return {

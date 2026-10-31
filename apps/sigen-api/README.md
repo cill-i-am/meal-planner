@@ -1,6 +1,6 @@
 # Private mySigen API and MCP
 
-This independent Cloudflare service exposes 47 HTTP/MCP operations and 15 typed setting-change families from the [coverage matrix](../../docs/sigen/coverage.md). It includes station/profile/template inspection, equipment and smart-load summaries, preheating, diagnostics, history and approval controls. Charger/V2X adapters, profile CRUD and several schedule/settings write families remain incomplete; the matrix lists the evidence needed. `packages/sigen` contains the reusable Effect 4 EU private client; this app owns encrypted sessions and the account Durable Object. `sigen.alchemy.ts` deploys only this service, with independent credentials.
+This independent Cloudflare service exposes 47 HTTP/MCP operations and 21 typed setting-change families from the [coverage matrix](../../docs/sigen/coverage.md). It includes station/profile/template inspection, equipment and smart-load summaries, preheating, diagnostics, history and approval controls. Charger/V2X adapters, industrial/grouped profiles and further schedule/settings families remain incomplete; the matrix lists the evidence needed. `packages/sigen` contains the reusable Effect 4 EU private client; this app owns encrypted sessions and the account Durable Object. `sigen.alchemy.ts` deploys only this service, with independent credentials.
 
 ## Current surface
 
@@ -16,7 +16,7 @@ This independent Cloudflare service exposes 47 HTTP/MCP operations and 15 typed 
 | `get_smart_load` | `{stationId,loadPath}` | identity-checked switch/mode state summary, excluding schedules |
 | `get_load_capabilities` | `{stationId}` | port support versus installed equipment |
 | `get_system_cards`, `list_third_party_devices` | `{stationId}` | display cards, explicit placeholders and telemetry availability |
-| `get_preheating_settings` | `{stationId}` | raw provider configuration; slot units/day semantics unverified |
+| `get_preheating_settings` | `{stationId}` | raw provider configuration; provider values preserved; residential slot units are minutes and weekdays 1–7 |
 | `list_aio_devices`, `get_aio_power_status` | `{stationId}` / `{stationId,serialNumber}` | topology-verified AIO inventory and separate power observations |
 | `get_automation_settings`, `get_station_income` | `{stationId}` / `{stationId,date}` | current automation groups / daily income |
 | `get_station` | `{stationId}` | selected station metadata and explicit equipment capabilities |
@@ -75,21 +75,25 @@ The last five renewal results contain only timestamps and outcome categories. Th
 
 ## Approve once and always approve
 
-The owner service credential can prepare, approve and execute commands through HTTP or MCP. Executor asks for confirmation on `approve_command` with the immutable before/after values and once/always choice. The [control matrix](../../docs/sigen/coverage.md#approval-and-control-surface) lists all 15 change families and exact constraints.
+The owner service credential can prepare, approve and execute commands through HTTP or MCP. Executor asks for confirmation on `approve_command` with the immutable before/after values and once/always choice. The [control matrix](../../docs/sigen/coverage.md#approval-and-control-surface) lists all 21 change families and exact constraints.
 
 Operating-mode changes support currently available 0/1/5 and enumerated custom mode 9. Custom-profile configuration is included in the review and conflict fingerprint; TOU/Remote EMS modes remain excluded. Solar priority writes require exact known flat membership and preserve excluded-source priorities. Battery priority writes require supported source permutations. Smart-load switching requires current identity and manual mode; its grant binds the load key and path.
 
-SOC changes require all four current values. Peak-shaving edits preserve timezone, day codes and existing windows. Manual stop has authoritative enabled-state readback. Manual start accepts charge/discharge/hold/self-consumption and 30–120 minutes, but its read API omits requested duration/power: an accepted start remains `outcome_unknown`, never falsely verified or automatically replayed.
+SOC changes require all four current values. Peak-shaving edits validate new windows, weekday codes, overlap and station timezone. Legacy opaque windows may only be retained unchanged. Manual stop has authoritative enabled-state readback. Manual start accepts charge/discharge/hold/self-consumption and 30–120 minutes, but its read API omits requested duration/power: an accepted start remains `outcome_unknown`, never falsely verified or automatically replayed.
 
-Profile reads cover current, enumerated custom and template configuration. They do not implement profile creation/deletion or arbitrary schedule replacement.
+Profile reads cover current, enumerated custom and template configuration. Commands support inactive template creation, custom metadata/automation edits, inactive deletion and bounded schedule replacement; see the [profile contracts](../../docs/sigen/profile-schedules.md).
 
 Daily income reads retain provider-reported totals, signed income and calculated income separately, in the station currency. These values are not independently verified bill settlements; missing samples and ambiguous local times remain explicit. AIO reads check serial membership and keep the two provider power-state observations separate.
 
-Preparation saves the complete normalized settings and proposed values for five minutes. Copy `change`, `current` and `reviewFingerprint` exactly into approval. Once approves that command. Always permits future validated parameters for the same operation and station/device, until revoked; it is not limited to today's values. Fresh preparation still rechecks state. Revoking a grant also invalidates queued commands that use it. Reenrollment creates a new connection identity, invalidating unused approvals and grants. Saved command IDs and attempt receipts survive so uncertain outcomes can be reconciled when the same station is connected again.
+Preparation saves the complete normalized settings and proposed values for five minutes. Copy `change`, `current` and `reviewFingerprint` exactly into approval. Once approves that command. Always permits future validated parameters for the same operation and station/device/profile, until revoked; it is not limited to today's values. Fresh preparation still rechecks state. Revoking a grant also invalidates queued commands that use it. Reenrollment creates a new connection identity, invalidating unused approvals and grants. Saved command IDs and attempt receipts survive so uncertain outcomes can be reconciled when the same station is connected again.
 
 Execution rechecks current settings and validation under the session lock, then saves a dispatch marker before the single provider mutation. Duplicate command IDs return the saved record; altered inputs conflict. Interrupted, timed-out and ambiguous attempts are never resent. Repeated execution reconciles only through reads. `verified` means the desired settings were observed, not proof that this request caused them. Provider rejection, acceptance, verification and unknown outcome remain distinct.
 
-`SIGEN_CONTROLS_ENABLED` defaults to `false`. Preparation, approvals and inspection work while physical dispatch is disabled. The same switch covers HTTP and MCP. All 15 control families are fixture-tested. Backup reserve additionally passed a user-authorized live 20% → 21% → 20% test through Executor, including once/always approval and revocation; the other 14 families are not live-control-verified. Enabling dispatch and any live test require a reviewed, explicit procedure including restoration. The durable command book refuses new preparations after 256 saved records; it never silently deletes replay protection. Operational archival is a future extension.
+`SIGEN_CONTROLS_ENABLED` defaults to `false`. Dispatch also requires the operation to appear in `SIGEN_ENABLED_OPERATIONS`, a comma-separated list of exact operation names that defaults to empty. Unknown or duplicate entries fail configuration validation. Connection status reports the effective `enabledOperations`; a false master switch produces an empty list. Preparation, approval, inspection and read-only reconciliation remain available for disabled operations. The same policy covers HTTP and MCP.
+
+All 21 families are fixture-tested. Backup reserve passed the earlier authorized live 20% → 21% → 20% test through Executor. Current live acceptance and its exact limits are recorded in [the acceptance procedure](../../docs/sigen/live-control-acceptance.md). Enabling a family does not bypass once/always approval, five-minute review expiry, fresh conflict checks or single-dispatch receipts. Only tested families should be configured for production.
+
+The durable command book refuses new preparations after 256 saved records; it never silently deletes replay protection. Operational archival is a future extension.
 
 ## Deployment
 
@@ -98,7 +102,8 @@ Create independent random 32-byte owner and operator bearer credentials. Keep th
 - `SIGEN_OWNER_TOKEN_SHA256`: SHA-256 of the owner credential.
 - `SIGEN_OPERATOR_TOKEN_SHA256`: SHA-256 of the separate operator credential.
 - `SIGEN_SESSION_ENCRYPTION_KEY`: 32 random bytes as 64 lowercase hexadecimal digits.
-- `SIGEN_CONTROLS_ENABLED`: optional boolean, default `false`; changing it does not change equipment.
+- `SIGEN_CONTROLS_ENABLED`: master dispatch boolean, default `false`; changing it does not itself change equipment.
+- `SIGEN_ENABLED_OPERATIONS`: exact comma-separated operation names permitted to dispatch when the master switch is true; default empty.
 
 The encryption key must remain stable across restarts and redeployments. Back it up securely. Rotate owner/operator verifiers independently. Key replacement requires a disconnect and new enrollment; it cannot decrypt existing state.
 

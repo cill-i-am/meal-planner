@@ -63,6 +63,7 @@ it(
             ALCHEMY_STAGE: "prod",
             ALCHEMY_WORKER_NAME: "sigen-api",
             SIGEN_CONTROLS_ENABLED: secret(String(controlsEnabled)),
+            SIGEN_ENABLED_OPERATIONS: secret("set_solar_power_limit"),
             SIGEN_OPERATOR_TOKEN_SHA256: secret(hash(operator)),
             SIGEN_OWNER_TOKEN_SHA256: secret(hash(owner)),
             SIGEN_SESSION_ENCRYPTION_KEY: secret("c".repeat(64)),
@@ -339,6 +340,8 @@ it(
         name: "connection_status",
       });
       expect(initial.structuredContent).toMatchObject({
+        controls: "disabled_pending_acceptance",
+        enabledOperations: [],
         state: "disconnected",
       });
       const rejected = await fetch(new URL("/admin/session", url), {
@@ -550,6 +553,8 @@ it(
         }
       );
       expect(await restored.json()).toMatchObject({
+        controls: "enabled",
+        enabledOperations: ["set_solar_power_limit"],
         state: "connected",
         successfulRenewals: 3,
       });
