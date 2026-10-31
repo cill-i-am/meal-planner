@@ -1,6 +1,6 @@
 # Peak-shaving correction and acceptance
 
-Peak shaving is **off**. Its API dispatch is also disabled pending acceptance of the retained inactive preset described below. The enabled save passed, but the approved empty-baseline restoration did not: Sigen keeps its last reserve and windows when switched off. All other baseline settings and grants match.
+Peak shaving is **off**. Its API operation is **enabled behind once/always approval controls** after the user explicitly accepted the retained inactive preset. Enabled schedule storage and switch-off passed; exact empty-baseline restoration did not, because Sigen keeps its last reserve and windows when switched off. The accepted inactive preset is Monday 01:00–01:15, 2500 W, 20% reserve. All other baseline settings and grants match.
 
 ## Observed provider behavior
 
@@ -40,7 +40,7 @@ The user approved briefly enabling one weekly Monday **01:00–01:15** window at
 | Disable and request empty/0% restoration, approve once | `cf428cac-0d7c-4ab6-be03-a3a79bd1c4c6` | Attempted **15:50:24.994**; receipt remains `outcome_unknown`. Independent read at **15:50:38.052** confirmed mode 0, but reserve 20% and the window remained. The command was not replayed. |
 | Independent full comparison | Read only | Snapshot at **15:53:53.388** differs only at `profile.peakShaving.reserveSocPercent`, `profile.peakShaving.slots`, `peak.reserveSocPercent`, `peak.slots`. Everything else matches, including Sigen AI mode, battery reserve 20%, other schedules and zero grants. |
 
-The saved window is inactive. This establishes enabled schedule storage and switch-off, not physical peak-shaving performance during a scheduled window. Exact empty/0% restoration was **not** achieved. The API operation was disabled again at **15:54:20.945 UTC**, leaving the existing five accepted operations enabled. The user must accept the retained inactive preset before treating this changed restoration condition as accepted and enabling peak-shaving dispatch permanently.
+The saved window is inactive. This establishes enabled schedule storage and switch-off, not physical peak-shaving performance during a scheduled window. Exact empty/0% restoration was **not** achieved. The API operation was disabled again at **15:54:20.945 UTC**, leaving the existing five accepted operations enabled. The user subsequently explicitly accepted the inactive preset and authorized enabling API writes. That acceptance changes the restoration condition; it does not turn the original empty-restoration receipt into a success.
 
 ## Verification
 
@@ -48,4 +48,10 @@ The earlier correction `c17f694a` passed 276 focused tests and native Worker/MCP
 
 The retained-preset correction adds positive disabled-preset verification, negative clearing/editing requests, historical-clear mismatch protection and enabled-write rejection for unsupported preserved windows. All **282 focused tests** pass, alongside package/app type checks, package build, scoped lint/format, complexity and documentation checks. Native Worker/MCP verification passed in **80.06 seconds**. Both independent review axes are clear; the spec review additionally required all enabled requests to validate preserved windows, which is covered by regressions. Code `a5f7cc19` was deployed at **16:04:50.220 UTC**, retaining the five accepted operations and excluding peak shaving. Actual Executor readback at **16:05:15.321 UTC** confirmed mode 0 with the retained Monday preset. Preparation of a disabled request preserving that preset (`3ce32c4a-28a3-4a55-9db7-825a74524e51`) succeeded; preparation of a disabled zero/empty request (`016aebfb-01e8-4a29-95ee-71459edf7780`) failed. Neither was approved or executed. The earlier restoration receipt remained `outcome_unknown`. No additional provider mutation was sent.
 
-Full CI for the earlier preflight revision `d9b1f9cb` passed ([run 41216420110](https://github.com/cill-i-am/meal-planner/actions/runs/41216420110)). Full CI for the retained-preset correction is pending. The user has been asked whether to accept the inactive preset and enable the API operation; no acceptance of that difference is recorded yet.
+Full CI for the earlier preflight revision `d9b1f9cb` passed ([run 41216420110](https://github.com/cill-i-am/meal-planner/actions/runs/41216420110)). On the retained-preset revision `396eadcf`, Sigen, package, native Worker, API, browser and Quality jobs passed; full [CI run 41218058804](https://github.com/cill-i-am/meal-planner/actions/runs/41218058804) is still pending its media-container jobs. The later acceptance and deployment are recorded below.
+
+## Accepted retained preset and production enablement
+
+On 31 October the user answered **“Accept inactive preset and enable API writes”**, accepting the disclosed difference from the original empty-preset restoration requirement. The protected production operation list now includes `set_peak_shaving_schedule` alongside the five previously accepted operations. Approval controls, immutable reviews, fresh validation and read-only reconciliation remain unchanged. No always grant was created by this enablement.
+
+Deployment completed at **16:20:18.396 UTC**, preserving the same account Durable Object, connection and credentials. Actual Executor `connection_status` confirmed all six operations and `connected`. Independent readback at **16:20:33.232 UTC** confirmed mode 0 with the accepted Monday 01:00–01:15, 2500 W, 20% preset. The grant inventory was empty, and the original empty-restoration receipt remained `outcome_unknown`. No provider write was sent during API enablement, and the preset was not reactivated.

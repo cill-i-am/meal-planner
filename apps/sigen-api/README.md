@@ -79,7 +79,7 @@ The owner service credential can prepare, approve and execute commands through H
 
 Operating-mode changes support currently available 0/1/5 and enumerated custom mode 9. Custom-profile configuration is included in the review and conflict fingerprint; TOU/Remote EMS modes remain excluded. Solar priority writes require exact known flat membership and preserve excluded-source priorities. Battery priority writes require supported source permutations. Smart-load switching requires current identity and manual mode; its grant binds the load key and path.
 
-SOC changes require all four current values. Peak-shaving edits validate new windows, weekday codes, overlap and station timezone. Legacy opaque windows may only be retained unchanged. Manual stop has authoritative enabled-state readback. Manual start accepts charge/discharge/hold/self-consumption and 30–120 minutes, but its read API omits requested duration/power: an accepted start remains `outcome_unknown`, never falsely verified or automatically replayed.
+SOC changes require all four current values. Every enabled peak-shaving request validates 1–12 windows, weekday codes, overlap, station timezone and live reserve bounds. Disabling preserves the reviewed current reserve and slots; unsupported presets may be retained only when disabling. Manual stop has authoritative enabled-state readback. Manual start accepts charge/discharge/hold/self-consumption and 30–120 minutes, but its read API omits requested duration/power: an accepted start remains `outcome_unknown`, never falsely verified or automatically replayed.
 
 Profile reads cover current, enumerated custom and template configuration. Commands support inactive template creation, custom metadata/automation edits, inactive deletion and bounded schedule replacement; see the [profile contracts](../../docs/sigen/profile-schedules.md).
 
@@ -136,7 +136,7 @@ Delete the temporary operator file after acceptance. The raw operator credential
 4. Verify revoked credentials produce `reauthentication_required`, then reconnect.
 5. Continue implementing read coverage while the natural renewal checks run, as requested by the user. Control implementation and approval tests also proceed while renewal checks run; live physical tests still require explicit acceptance.
 
-The deployed operation list enables profile create/update/delete, preheating and energy saving following [bounded live acceptance](../../docs/sigen/live-control-acceptance.md). Peak shaving remains disabled after an unconfirmed populated readback; all other operations are excluded. Approve-once or a matching revocable always grant is still required. Disconnect disables cloud access; it does not alter physical settings. Software rollback likewise does not restore inverter/battery configuration.
+The deployed operation list enables profile create/update/delete, preheating, energy saving and peak shaving following [bounded live acceptance](../../docs/sigen/live-control-acceptance.md). Peak shaving remains physically off with an explicitly accepted inactive preset; enabling the API operation does not activate it. All other operations are excluded. Approve-once or a matching revocable always grant is still required. Disconnect disables cloud access; it does not alter physical settings. Software rollback likewise does not restore inverter/battery configuration.
 
 ## Local verification
 

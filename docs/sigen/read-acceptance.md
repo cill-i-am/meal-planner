@@ -2,7 +2,7 @@
 
 ## Current scope
 
-The registry exposes 47 HTTP/MCP operations and 21 typed control families. See the [current coverage matrix](coverage.md) for implemented contracts and explicit exclusions. The dated sections below are historical evidence, not current inventory counts. Three required real renewals are verified in [authentication acceptance](auth-acceptance.md); the current five-operation deployment and narrower live evidence are recorded in [live control acceptance](live-control-acceptance.md).
+The registry exposes 47 HTTP/MCP operations and 21 typed control families. See the [current coverage matrix](coverage.md) for implemented contracts and explicit exclusions. The dated sections below are historical evidence, not current inventory counts. Three required real renewals are verified in [authentication acceptance](auth-acceptance.md); the current six-operation deployment and narrower live evidence are recorded in [live control acceptance](live-control-acceptance.md).
 
 ## Hosted evidence on 26 October 2026
 
@@ -208,3 +208,9 @@ Actual Executor calls verified inactive profile creation, metadata updates with 
 Final deployment of `fcf993d3` completed at **15:08:13.497 UTC** with only profile create/update/delete, preheating and energy-saving operations enabled. Executor independently confirmed that exact list. The full restoration audit matched all eight baseline sections, including active mode/profile, complete battery/settings values, empty schedules and no grants. The disposable profile is gone. Ten natural renewals now have successful evidence.
 
 **263 focused tests**, the native Worker/MCP test (**80.46 seconds**), package/app types, package build, scoped lint/format, complexity and documentation checks pass. Both independent review axes are clear. Full CI passed on gate commit `6f1109d2` ([run 41210044448](https://github.com/cill-i-am/meal-planner/actions/runs/41210044448)); final-fix CI is recorded when complete.
+
+## Peak-shaving acceptance and enablement (31 October 2026)
+
+The separately approved enabled test verified Monday 01:00–01:15, 2500 W, 20% reserve and then switched peak shaving off. Sigen retained that preset, so the original empty-restoration command remains `outcome_unknown`. After the user explicitly accepted the inactive preset, production deployment at **16:20:18.396 UTC** enabled `set_peak_shaving_schedule` alongside the five earlier accepted operations. Executor confirmed the six-operation list, mode 0, the unchanged accepted preset and zero grants. API enablement did not send a provider write. Exact receipts and evidence limits are in [peak-shaving acceptance](peak-shaving.md).
+
+The corrected implementation passed 282 focused tests, native Worker/MCP verification (80.06 seconds), package/app type checks, package build, scoped lint/format, complexity and documentation checks, with both review axes clear. Physical performance during a peak window remains untested. Historical empty-restoration receipts were neither rewritten nor replayed.

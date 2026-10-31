@@ -1,6 +1,6 @@
 # Profile CRUD and schedule/settings writes
 
-These operations use `prepare_command` → `approve_command` (`once` or `always`) → `execute_command`. They add six control families to the existing 47 HTTP/MCP operations. The authorized [live acceptance](live-control-acceptance.md) enabled profile create/update/delete, preheating and energy saving. Peak shaving passed enabled storage and switch-off, but retained its inactive preset instead of restoring empty state; its API dispatch remains disabled pending acceptance of that difference; current-profile automation also remains disabled. The acceptance record distinguishes metadata CRUD, disabled schedule storage and unchanged settings from physical execution.
+These operations use `prepare_command` → `approve_command` (`once` or `always`) → `execute_command`. They add six control families to the existing 47 HTTP/MCP operations. The authorized [live acceptance](live-control-acceptance.md) enabled profile create/update/delete, preheating, energy saving and peak shaving. Peak shaving passed enabled storage and switch-off; the user accepted its retained inactive preset after exact empty restoration did not pass. Current-profile automation remains disabled. The acceptance record distinguishes metadata CRUD, disabled schedule storage and unchanged settings from physical execution.
 
 ## Profile lifecycle
 
@@ -45,4 +45,4 @@ Live acceptance and its exclusions are recorded in [live control acceptance](liv
 
 ## Peak-shaving disabled-state correction
 
-Disabling peak shaving changes only its switch and retains the saved reserve and windows. The app sends zero/empty fields, but these do not erase the preset. The client now reviews and verifies the retained fields explicitly; historical clearing requests remain unverified. The authorized live test saved the enabled Monday window and switched it off again, but did not restore the original empty preset. See [source evidence, receipts and the remaining acceptance decision](peak-shaving.md).
+Disabling peak shaving changes only its switch and retains the saved reserve and windows. The app sends zero/empty fields, but these do not erase the preset. The client now reviews and verifies the retained fields explicitly; historical clearing requests remain unverified. The authorized live test saved the enabled Monday window and switched it off again, but did not restore the original empty preset. The user accepted the retained inactive preset and authorized enabling its API operation behind approval controls. See [source evidence, receipts and production acceptance](peak-shaving.md).
