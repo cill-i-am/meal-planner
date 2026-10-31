@@ -36,3 +36,9 @@ The prior approval covered disabled schedules only. A populated save now require
 Before execution, confirm that the test is outside that window and all baseline values still match. Save and independently verify the enabled schedule, then immediately disable it with reserve 0 and no windows. Compare the complete final mode/profile, battery, schedules, saving settings and grant inventory against the protected baseline. Do not wait for the scheduled window or claim proof of physical peak-shaving performance. Keep peak-shaving dispatch disabled until this bounded test is authorized; keep it enabled afterward only if the populated save and restoration are verified.
 
 The test remains pending. The original failed receipt must not be replayed; use a fresh command and immutable once approval for each bounded change.
+
+## Verification before enabled acceptance
+
+Code `c17f694a` passed **276 focused tests**, package/app type checks, package build, scoped lint/format, complexity and documentation checks. The native Worker/MCP test passed in **82.22 seconds**, and both independent review axes were clear. The deployed fix completed at **31 October 15:41:08.754 UTC**, retaining the five accepted operations and leaving peak-shaving dispatch disabled.
+
+Actual Executor preparation rejected both the historical disabled populated shape and an enabled window with reserve below the live 20% minimum, each with `InvalidInput`. A fresh command for the proposed enabled Monday window, 2500 W and 20% reserve returned `prepared` after live validation. It has not been approved or executed. The protected restoration snapshot at **15:41:18.337 UTC** records Sigen AI mode, reserve 20%, empty disabled schedules and zero grants. The connection remains healthy with ten natural renewals.
