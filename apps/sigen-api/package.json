@@ -1,0 +1,21 @@
+{
+  "name": "@meal-planner/sigen-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@meal-planner/sigen": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "alchemy": "2.0.0-beta.83",
+    "effect": "4.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}

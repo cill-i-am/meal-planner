@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "noEmit": true, "types": ["node", "vitest/globals"] },
+  "include": [
+    "src/**/*.ts",
+    "../../sigen.alchemy.ts",
+    "../../scripts/sigen-session.ts",
+    "../../scripts/sigen-worker-runtime.test.ts"
+  ]
+}
