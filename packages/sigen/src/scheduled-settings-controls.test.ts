@@ -148,58 +148,80 @@ describe("complete schedule replacements and settings writes", () => {
       f.client.validateControl(id, change, await f.inspect(change), token)
     );
   });
-  it("writes residential preheating as minutes and weekday numbers and confirms populated null-power readback", async () => {
-    const f = fixture();
-    const current = await f.inspect(preheat);
-    await Effect.runPromise(
-      f.client.validateControl(id, preheat, current, token)
-    );
-    await Effect.runPromise(f.client.dispatchControl(id, preheat, token));
-    expect(f.writes[0]?.slice(0, 3)).toEqual([
-      "PUT",
-      "/device/dischargesetting/packPreheat/set/new/12345",
-      {
-        packPreheatingDTOList: [
+  it.each([null, ""])(
+    "confirms populated residential readback with unused power %j",
+    async (power) => {
+      const f = fixture();
+      const current = await f.inspect(preheat);
+      await Effect.runPromise(
+        f.client.validateControl(id, preheat, current, token)
+      );
+      await Effect.runPromise(f.client.dispatchControl(id, preheat, token));
+      expect(f.writes[0]?.slice(0, 3)).toEqual([
+        "PUT",
+        "/device/dischargesetting/packPreheat/set/new/12345",
+        {
+          packPreheatingDTOList: [
+            {
+              chargingPower: null,
+              dischargePower: null,
+              duration: 90,
+              periodConfig: [1, 2, 3, 4, 5],
+              startTime: 60,
+            },
+          ],
+          packPreheatingSwitch: 1,
+          preHeatingEnablesSwitch: null,
+          preheatingMode: null,
+        },
+      ]);
+      expect(controlMatches(preheat, current)).toBe(false);
+      f.data["/device/dischargesetting/packPreheating/new/12345"] = {
+        ...preheating,
+        packPreheatingSwitch: 1,
+        packPreheatingVOList: [
           {
-            chargingPower: null,
-            dischargePower: null,
+            chargingPower: power,
+            dischargePower: power,
             duration: 90,
             periodConfig: [1, 2, 3, 4, 5],
-            startTime: 60,
+            startTime: "60",
           },
         ],
-        packPreheatingSwitch: 1,
-        preHeatingEnablesSwitch: null,
-        preheatingMode: null,
-      },
-    ]);
-    expect(controlMatches(preheat, current)).toBe(false);
-    f.data["/device/dischargesetting/packPreheating/new/12345"] = {
-      ...preheating,
-      packPreheatingSwitch: 1,
-      packPreheatingVOList: [
-        {
-          chargingPower: null,
-          dischargePower: null,
-          duration: 90,
-          periodConfig: [1, 2, 3, 4, 5],
-          startTime: "60",
-        },
-      ],
-    };
-    expect(controlMatches(preheat, await f.inspect(preheat))).toBe(true);
-    f.data["/device/dischargesetting/packPreheating/new/12345"] = {
-      ...preheating,
-      isIndustry: true,
-    };
-    expect(
-      await Effect.runPromise(
-        f.client
-          .validateControl(id, preheat, await f.inspect(preheat), token)
-          .pipe(Effect.result)
-      )
-    ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
-  });
+      };
+      expect(controlMatches(preheat, await f.inspect(preheat))).toBe(true);
+      for (const unexpected of [0, "0", " ", "3.5"]) {
+        for (const field of ["chargingPower", "dischargePower"]) {
+          f.data["/device/dischargesetting/packPreheating/new/12345"] = {
+            ...preheating,
+            packPreheatingSwitch: 1,
+            packPreheatingVOList: [
+              {
+                chargingPower: power,
+                dischargePower: power,
+                duration: 90,
+                periodConfig: [1, 2, 3, 4, 5],
+                startTime: "60",
+                [field]: unexpected,
+              },
+            ],
+          };
+          expect(controlMatches(preheat, await f.inspect(preheat))).toBe(false);
+        }
+      }
+      f.data["/device/dischargesetting/packPreheating/new/12345"] = {
+        ...preheating,
+        isIndustry: true,
+      };
+      expect(
+        await Effect.runPromise(
+          f.client
+            .validateControl(id, preheat, await f.inspect(preheat), token)
+            .pipe(Effect.result)
+        )
+      ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
+    }
+  );
   it("rejects invalid weekdays, duplicates, overlaps, overnight ambiguity and too many heating slots", () => {
     for (const windows of [
       [{ ...window, providerDays: "0" }],

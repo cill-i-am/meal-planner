@@ -74,6 +74,88 @@ const fixture = (overrides: Record<string, unknown> = {}) => {
 };
 
 describe("reviewed energy profile lifecycle", () => {
+  it.each([null, "", 0, "0", " ", "3.5"])(
+    "preserves residential heating on profile edits only for unused power %j",
+    async (power) => {
+      const populated = {
+        ...profile,
+        name: "Existing",
+        packPreheatingInfoVO: {
+          ...profile.packPreheatingInfoVO,
+          packPreheatingVOList: [
+            {
+              chargingPower: power,
+              dischargePower: power,
+              duration: 15,
+              periodConfig: [1],
+              startTime: 60,
+            },
+          ],
+        },
+        profileId: 201,
+      };
+      const f = fixture({ custom: populated });
+      const before = await f.inspect(update);
+      const valid = power === null || power === "";
+      if (!valid) {
+        expect(
+          await Effect.runPromise(
+            f.client
+              .validateControl(id, update, before, token)
+              .pipe(Effect.result)
+          )
+        ).toMatchObject({
+          failure: { reason: "UnsupportedCapability" },
+        });
+        expect(f.writes).toHaveLength(0);
+        return;
+      }
+      await Effect.runPromise(
+        f.client.validateControl(id, update, before, token)
+      );
+      await Effect.runPromise(
+        f.client.dispatchControl(id, update, token, before)
+      );
+      expect(f.writes[0]?.[2]).toMatchObject({
+        packPreheatingInfoVO: {
+          packPreheatingVOList: [
+            {
+              chargingPower: null,
+              dischargePower: null,
+              duration: 15,
+              periodConfig: [1],
+              startTime: 60,
+            },
+          ],
+        },
+      });
+      await Promise.all(
+        [null, "", 0, "0", " ", "3.5"].map(async (readPower) => {
+          const observed = fixture({
+            custom: {
+              ...populated,
+              name: "Renamed",
+              note: "Revised",
+              packPreheatingInfoVO: {
+                ...populated.packPreheatingInfoVO,
+                packPreheatingVOList:
+                  populated.packPreheatingInfoVO.packPreheatingVOList.map(
+                    (slot) => ({
+                      ...slot,
+                      chargingPower: readPower,
+                      dischargePower: readPower,
+                    })
+                  ),
+              },
+            },
+          });
+          expect(
+            controlMatches(update, await observed.inspect(update), before)
+          ).toBe(readPower === null || readPower === "");
+        })
+      );
+    }
+  );
   it.each([
     { activeStatus: 99 },
     {

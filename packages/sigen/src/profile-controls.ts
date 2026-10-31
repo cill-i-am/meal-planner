@@ -1,6 +1,7 @@
 import { Schema, absurd } from "effect";
 
 import { OperatingMode, Percent, StationId, Timestamp } from "./model.js";
+import { isUnusedResidentialPreheatingPower } from "./preheating.js";
 import { EnergyProfile, ProfileId } from "./profile.js";
 import { ScheduleWindow, nonOverlappingWindows } from "./schedules.js";
 import type { PowerLimit } from "./settings.js";
@@ -242,10 +243,28 @@ const configuration = (value: ProfileConfiguration) => {
   } = value;
   return canonicalProfileValue({
     ...rest,
-    // The residential app writes null for this industrial-only selector. Templates may return 1.
+    // Residential templates return mode 1; populated schedules return blank unused powers.
     preheating:
-      !value.industrial && [null, 1].includes(value.preheating.providerMode)
-        ? { ...value.preheating, providerMode: null }
+      !value.industrial &&
+      !value.preheating.industrial &&
+      [null, 1].includes(value.preheating.providerMode)
+        ? {
+            ...value.preheating,
+            providerMode: null,
+            slots: value.preheating.slots.map((slot) => ({
+              ...slot,
+              providerChargingPower: isUnusedResidentialPreheatingPower(
+                slot.providerChargingPower
+              )
+                ? null
+                : slot.providerChargingPower,
+              providerDischargePower: isUnusedResidentialPreheatingPower(
+                slot.providerDischargePower
+              )
+                ? null
+                : slot.providerDischargePower,
+            })),
+          }
         : value.preheating,
   });
 };

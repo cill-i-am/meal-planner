@@ -5,7 +5,10 @@ import type { ProviderWrite } from "./controls-client.js";
 import { failure } from "./model.js";
 import type { SigenFailure, StationId } from "./model.js";
 import { makePreheatingClient } from "./preheating-client.js";
-import { PreheatingSettings } from "./preheating.js";
+import {
+  PreheatingSettings,
+  isUnusedResidentialPreheatingPower,
+} from "./preheating.js";
 import { readStationTimezone } from "./provider-read.js";
 import type { ProviderRead } from "./provider-read.js";
 import { ScheduleWindow, nonOverlappingWindows } from "./schedules.js";
@@ -120,8 +123,8 @@ export const scheduledSettingsMatch = (
       const expected = change.windows[index];
       return (
         expected !== undefined &&
-        slot.providerChargingPower === null &&
-        slot.providerDischargePower === null &&
+        isUnusedResidentialPreheatingPower(slot.providerChargingPower) &&
+        isUnusedResidentialPreheatingPower(slot.providerDischargePower) &&
         Number(slot.providerStartTime) === minutes(expected.startTime) &&
         Number(slot.providerDuration) ===
           minutes(expected.endTime) - minutes(expected.startTime) &&

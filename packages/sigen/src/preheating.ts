@@ -2,8 +2,7 @@ import { Schema } from "effect";
 
 import { StationId, Timestamp } from "./model.js";
 
-// Units and day-code semantics are not established by an empty live schedule.
-// Keep the provider values explicit instead of assigning guessed units.
+// Keep raw provider values readable, including unfamiliar industrial variants.
 const ProviderValue = Schema.Union([
   Schema.Finite,
   Schema.String.check(Schema.isMaxLength(64)),
@@ -31,6 +30,10 @@ export const PreheatingSettings = Schema.Struct({
 });
 
 // Residential app schedules use minutes since local midnight and ISO weekdays.
+// Live residential readback replaces the null power fields sent by the app with blanks.
+export const isUnusedResidentialPreheatingPower = (
+  value: (typeof PreheatingConfiguration.Type.slots)[number]["providerChargingPower"]
+): boolean => value === null || value === "";
 const MinuteValue = Schema.Union([
   Schema.Int.check(Schema.isBetween({ maximum: 1440, minimum: 0 })),
   Schema.String.check(
@@ -48,8 +51,8 @@ const validResidentialSlot = (
   slot.providerPeriods.length > 0 &&
   new Set(slot.providerPeriods).size === slot.providerPeriods.length &&
   slot.providerPeriods.every((day) => day >= 1 && day <= 7) &&
-  slot.providerChargingPower === null &&
-  slot.providerDischargePower === null;
+  isUnusedResidentialPreheatingPower(slot.providerChargingPower) &&
+  isUnusedResidentialPreheatingPower(slot.providerDischargePower);
 export const writableResidentialPreheating = (
   value: typeof PreheatingConfiguration.Type
 ): boolean =>
