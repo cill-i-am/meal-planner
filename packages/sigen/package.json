@@ -1,0 +1,35 @@
+{
+  "name": "@meal-planner/sigen",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/model.ts",
+    "./client": "./src/client.ts",
+    "./settings": "./src/settings.ts",
+    "./equipment": "./src/equipment.ts",
+    "./alarms": "./src/alarms.ts",
+    "./history": "./src/history.ts",
+    "./controls": "./src/controls.ts",
+    "./tariffs": "./src/tariffs.ts",
+    "./backup": "./src/backup.ts",
+    "./profile": "./src/profile.ts",
+    "./stations": "./src/stations.ts",
+    "./loads": "./src/loads.ts",
+    "./preheating": "./src/preheating.ts",
+    "./request-budget": "./src/request-budget.ts",
+    "./third-party": "./src/third-party.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "effect": "4.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}

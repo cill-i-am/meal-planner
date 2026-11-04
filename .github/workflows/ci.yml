@@ -127,6 +127,9 @@ jobs:
           - name: packages
             command: pnpm --recursive --filter './packages/**' test
             browser: false
+          - name: sigen-api
+            command: pnpm --filter @meal-planner/sigen-api test
+            browser: false
           - name: recipe-extraction
             command: pnpm evals:recipe:test
             browser: false
