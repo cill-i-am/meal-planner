@@ -138,6 +138,11 @@ describe("durable smart-load mode approvals", () => {
       phase: { status: "verified" },
     });
     const next = await f.prepare(mode("manual"));
+    f.data["/device/tp-device/smart-loads"] = {
+      ...smartLoad,
+      manualSwitch: 1,
+      runMode: 0,
+    };
     f.data["/device/tp-device/smart-loads/control-mode"] = {
       ...loadControl,
       controlMode: 0,
@@ -151,6 +156,7 @@ describe("durable smart-load mode approvals", () => {
       ...loadControl,
       controlMode: 0,
     };
+    f.data["/device/tp-device/smart-loads"] = { ...smartLoad, runMode: 0 };
     const queued = await f.prepare(mode("manual"));
     const grants = await run(f.service.approvalGrants(id));
     const [grant] = grants.grants;

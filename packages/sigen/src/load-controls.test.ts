@@ -222,6 +222,29 @@ describe("smart-load settings controls", () => {
       expect(f.writes).toHaveLength(0);
     }
   );
+  it.each([null, 99, 1])(
+    "refuses unknown or contradictory manual switch setting %j",
+    async (manualModeSwitch) => {
+      const f = fixture({
+        "/device/tp-device/smart-loads/control-mode": {
+          ...loadControl,
+          manualModeSwitch,
+        },
+      });
+      const change = parse({
+        mode: "manual",
+        operation: "set_smart_load_mode",
+      });
+      expect(
+        await Effect.runPromise(
+          f.client
+            .validateControl(id, change, await f.inspect(change), token)
+            .pipe(Effect.result)
+        )
+      ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
+      expect(f.writes).toHaveLength(0);
+    }
+  );
   it("binds each approval to operation, load path and stable key", () => {
     expect(approvalScope(id, automatic)).toEqual({
       loadKey: "synthetic-load",

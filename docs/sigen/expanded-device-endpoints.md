@@ -26,7 +26,7 @@ Each operation has a distinct profile-scoped approval and dispatch gate. The pro
 
 ## Smart-load controls
 
-`set_smart_load_mode` reviews the load identity, on-grid schedules/PV parameters, off-grid settings and timezone before changing only manual/automatic mode. Known mode values must agree between detail and control settings. Activating automatic mode requires complete known schedule settings, including SOC bounds for battery-only rows and nonnegative finite starting/rated power for solar-only rows; the raw read surface remains broader than writable controls. Verification requires both mode observations and unchanged saved settings.
+`set_smart_load_mode` reviews the load identity, on-grid schedules/PV parameters, off-grid settings and timezone before changing only manual/automatic mode. Known mode and manual-switch values must agree between detail and control settings. Activating automatic mode requires complete known schedule settings, including SOC bounds for battery-only rows and nonnegative finite starting/rated power for solar-only rows; the raw read surface remains broader than writable controls. Verification requires both mode observations and unchanged saved settings.
 
 `set_smart_load_off_grid_control` accepts keep-connected, disconnect, or SOC hysteresis with connect-above-disconnect integer thresholds. SOC control requires known backup/charge bounds and thresholds inside them. Read-only bounds are never written. Non-SOC modes omit inactive thresholds; their retention is not promised. Verification confirms the requested mode/thresholds, unchanged on-grid settings and unchanged battery bounds.
 

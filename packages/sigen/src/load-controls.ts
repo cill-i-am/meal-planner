@@ -154,6 +154,7 @@ export const loadControlMatches = (
   if (
     value.load.key !== change.loadKey ||
     value.load.path !== change.loadPath ||
+    value.load.providerManualSwitch !== before.load.providerManualSwitch ||
     value.stationId !== before.stationId ||
     value.timezone !== before.timezone
   ) {
@@ -172,7 +173,6 @@ export const loadControlMatches = (
   }
   return (
     value.load.providerRunMode === before.load.providerRunMode &&
-    value.load.providerManualSwitch === before.load.providerManualSwitch &&
     value.offGrid.offGridControlMode === offGridCode(change) &&
     value.offGrid.backupSoc === before.offGrid.backupSoc &&
     value.offGrid.chargeStopSoc === before.offGrid.chargeStopSoc &&
@@ -212,6 +212,8 @@ export const makeLoadControls = (read: ProviderRead, write: ProviderWrite) => {
       state.load.controllable !== true ||
       ![0, 1].includes(state.load.providerRunMode ?? -1) ||
       state.load.providerRunMode !== state.onGrid.controlMode ||
+      ![0, 1].includes(state.onGrid.manualModeSwitch ?? -1) ||
+      state.load.providerManualSwitch !== state.onGrid.manualModeSwitch ||
       ![0, 1, 2].includes(state.offGrid.offGridControlMode ?? -1)
     ) {
       return failure("UnsupportedCapability");
