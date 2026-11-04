@@ -1,6 +1,6 @@
 # Private mySigen API and MCP
 
-This independent Cloudflare service exposes 47 HTTP/MCP operations and 21 typed setting-change families from the [coverage matrix](../../docs/sigen/coverage.md). It includes station/profile/template inspection, equipment and smart-load summaries, preheating, diagnostics, history and approval controls. Charger/V2X adapters, industrial/grouped profiles and further schedule/settings families remain incomplete; the matrix lists the evidence needed. `packages/sigen` contains the reusable Effect 4 EU private client; this app owns encrypted sessions and the account Durable Object. `sigen.alchemy.ts` deploys only this service, with independent credentials.
+This independent Cloudflare service exposes 47 HTTP/MCP operations and 22 typed setting-change families from the [coverage matrix](../../docs/sigen/coverage.md). It includes station/profile/template inspection, equipment and smart-load summaries, preheating, diagnostics, history and approval controls. Charger/V2X adapters, industrial/grouped profiles and further schedule/settings families remain incomplete; the matrix lists the evidence needed. `packages/sigen` contains the reusable Effect 4 EU private client; this app owns encrypted sessions and the account Durable Object. `sigen.alchemy.ts` deploys only this service, with independent credentials.
 
 ## Current surface
 
@@ -75,11 +75,13 @@ The last five renewal results contain only timestamps and outcome categories. Th
 
 ## Approve once and always approve
 
-The owner service credential can prepare, approve and execute commands through HTTP or MCP. Executor asks for confirmation on `approve_command` with the immutable before/after values and once/always choice. The [control matrix](../../docs/sigen/coverage.md#approval-and-control-surface) lists all 21 change families and exact constraints.
+The owner service credential can prepare, approve and execute commands through HTTP or MCP. Executor asks for confirmation on `approve_command` with the immutable before/after values and once/always choice. The [control matrix](../../docs/sigen/coverage.md#approval-and-control-surface) lists all 22 change families and exact constraints.
 
 Operating-mode changes support currently available 0/1/5 and enumerated custom mode 9. Custom-profile configuration is included in the review and conflict fingerprint; TOU/Remote EMS modes remain excluded. Solar priority writes require exact known flat membership and preserve excluded-source priorities. Battery priority writes require supported source permutations. Smart-load switching requires current identity and manual mode; its grant binds the load key and path.
 
 SOC changes require all four current values. Every enabled peak-shaving request validates 1–12 windows, weekday codes, overlap, station timezone and live reserve bounds. Disabling preserves the reviewed current reserve and slots; unsupported presets may be retained only when disabling. Manual stop has authoritative enabled-state readback. Manual start accepts charge/discharge/hold/self-consumption and 30–120 minutes, but its read API omits requested duration/power: an accepted start remains `outcome_unknown`, never falsely verified or automatically replayed.
+
+Saved inactive profile SOC, battery/grid/solar parameters use `set_energy_profile_parameters`, with separate profile-scoped approval and production dispatch disabled pending live acceptance; see [the parameter contract](../../docs/sigen/profile-parameters.md).
 
 Profile reads cover current, enumerated custom and template configuration. Commands support inactive template creation, custom metadata/automation edits, inactive deletion and bounded schedule replacement; see the [profile contracts](../../docs/sigen/profile-schedules.md).
 
@@ -91,7 +93,7 @@ Execution rechecks current settings and validation under the session lock, then 
 
 `SIGEN_CONTROLS_ENABLED` defaults to `false`. Dispatch also requires the operation to appear in `SIGEN_ENABLED_OPERATIONS`, a comma-separated list of exact operation names that defaults to empty. Unknown or duplicate entries fail configuration validation. Connection status reports the effective `enabledOperations`; a false master switch produces an empty list. Preparation, approval, inspection and read-only reconciliation remain available for disabled operations. The same policy covers HTTP and MCP.
 
-All 21 families are fixture-tested. Backup reserve passed the earlier authorized live 20% → 21% → 20% test through Executor. Current live acceptance and its exact limits are recorded in [the acceptance procedure](../../docs/sigen/live-control-acceptance.md). Enabling a family does not bypass once/always approval, five-minute review expiry, fresh conflict checks or single-dispatch receipts. Only tested families should be configured for production.
+All 22 families are fixture-tested. Backup reserve passed the earlier authorized live 20% → 21% → 20% test through Executor. Current live acceptance and its exact limits are recorded in [the acceptance procedure](../../docs/sigen/live-control-acceptance.md). Enabling a family does not bypass once/always approval, five-minute review expiry, fresh conflict checks or single-dispatch receipts. Only tested families should be configured for production.
 
 The durable command book refuses new preparations after 256 saved records; it never silently deletes replay protection. Operational archival is a future extension.
 

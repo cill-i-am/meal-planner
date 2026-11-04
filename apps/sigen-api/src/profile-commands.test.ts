@@ -13,6 +13,7 @@ import {
   StationId,
   failure,
 } from "../../../packages/sigen/src/model.js";
+import { EnergyProfileFeatures } from "../../../packages/sigen/src/profile.js";
 import { makeCommands } from "./commands.js";
 import type { CommandBook } from "./commands.js";
 
@@ -51,6 +52,24 @@ const fixture = async () => {
     (path) =>
       Effect.sync(() => {
         const url = new URL(path, "https://fixture.invalid");
+        if (url.pathname === "/device/energy-profile/support/12345") {
+          return {
+            ...Object.fromEntries(
+              Object.keys(EnergyProfileFeatures.fields).map((key) => [
+                key,
+                true,
+              ])
+            ),
+            batteryPriorityItem: ["pv", "grid"],
+            gridPriorityItem: ["pv", "battery"],
+            isIndustry: false,
+          };
+        }
+        if (
+          url.pathname === "/device/energy-profile/support/upgradeEms/12345"
+        ) {
+          return false;
+        }
         if (url.pathname.includes("/mode/current/")) {
           return { currentMode: 1, currentProfileId: -1 };
         }
@@ -98,7 +117,10 @@ const fixture = async () => {
         }
       })
   );
-  const make = (enabled = true) =>
+  const make = (
+    enabled = true,
+    operations: readonly ControlOperation[] = ControlOperation.literals
+  ) =>
     makeCommands(
       {
         read: Effect.sync(() => book),
@@ -114,7 +136,7 @@ const fixture = async () => {
           ),
       },
       client,
-      enabled ? ControlOperation.literals : []
+      enabled ? operations : []
     );
   const service = make();
   return {
@@ -220,5 +242,88 @@ describe("durable profile approval journeys", () => {
       )
     ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
     expect(f.writes).toHaveLength(0);
+  });
+});
+
+describe("durable profile parameter approvals", () => {
+  const parameterEdit = (profileId: number) =>
+    Schema.decodeUnknownSync(ControlChange)({
+      operation: "set_energy_profile_parameters",
+      parameters: { solarLimit: { kind: "limited", watts: 4000 } },
+      profileId,
+    });
+  it("keeps metadata grants separate, enforces the operation gate and persists parameter grants by profile", async () => {
+    const f = await fixture();
+    f.custom.set(201, { ...profile, name: "One", profileId: 201 });
+    f.custom.set(202, { ...profile, name: "Two", profileId: 202 });
+    const metadata = await f.prepare(edit(201));
+    await run(f.service.approveCommand(approve(metadata, "always")));
+    const parameters = await f.prepare(parameterEdit(201));
+    expect(
+      await run(
+        f.service.executeCommand(identity(parameters)).pipe(Effect.result)
+      )
+    ).toMatchObject({ failure: { reason: "ApprovalRequired" } });
+    await run(f.service.approveCommand(approve(parameters, "always")));
+    expect(
+      await run(
+        f
+          .make(true, ["update_energy_profile"])
+          .executeCommand(identity(parameters))
+          .pipe(Effect.result)
+      )
+    ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
+    expect(f.writes).toHaveLength(0);
+    expect(
+      await run(f.make().executeCommand(identity(parameters)))
+    ).toMatchObject({ phase: { status: "verified" } });
+    expect(
+      await run(f.make().executeCommand(identity(parameters)))
+    ).toMatchObject({ phase: { status: "verified" } });
+    expect(f.writes).toHaveLength(1);
+    const other = await f.prepare(parameterEdit(202));
+    expect(
+      await run(f.make().executeCommand(identity(other)).pipe(Effect.result))
+    ).toMatchObject({ failure: { reason: "ApprovalRequired" } });
+    const next = await f.prepare(parameterEdit(201));
+    const grants = await run(f.service.approvalGrants(id));
+    const grant = grants.grants.find(
+      (g) => g.scope.operation === "set_energy_profile_parameters"
+    );
+    if (!grant) {
+      throw new Error("Missing parameter grant");
+    }
+    await run(
+      f.service.revokeApproval({ grantId: grant.grantId, stationId: id })
+    );
+    expect(
+      await run(f.make().executeCommand(identity(next)).pipe(Effect.result))
+    ).toMatchObject({ failure: { reason: "ApprovalRequired" } });
+  });
+  it("requires a fresh review after profile changes and does not replay ambiguous writes", async () => {
+    const f = await fixture();
+    f.custom.set(201, { ...profile, name: "One", profileId: 201 });
+    const first = await f.prepare(parameterEdit(201));
+    await run(f.service.approveCommand(approve(first, "once")));
+    f.custom.set(201, {
+      ...profile,
+      name: "One",
+      note: "Concurrent edit",
+      profileId: 201,
+    });
+    expect(await run(f.service.executeCommand(identity(first)))).toMatchObject({
+      phase: { reason: "Conflict", status: "rejected" },
+    });
+    expect(f.writes).toHaveLength(0);
+    const fresh = await f.prepare(parameterEdit(201));
+    await run(f.service.approveCommand(approve(fresh, "once")));
+    f.loseResponse();
+    expect(await run(f.service.executeCommand(identity(fresh)))).toMatchObject({
+      phase: { status: "outcome_unknown" },
+    });
+    expect(await run(f.make().executeCommand(identity(fresh)))).toMatchObject({
+      phase: { status: "verified" },
+    });
+    expect(f.writes).toHaveLength(1);
   });
 });

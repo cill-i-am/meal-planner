@@ -107,6 +107,7 @@ export const Enrollment = Schema.Struct({
 export type Enrollment = typeof Enrollment.Type;
 
 export const ControlOperation = Schema.Literals([
+  "set_energy_profile_parameters",
   "create_energy_profile",
   "update_energy_profile",
   "delete_energy_profile",

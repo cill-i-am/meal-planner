@@ -46,6 +46,7 @@ const fixture = (overrides: Record<string, unknown> = {}) => {
       ),
       batteryPriorityItem: ["pv", "grid"],
       gridPriorityItem: ["pv", "battery"],
+      isIndustry: false,
     },
     "/device/energy-profile/support/upgradeEms/12345": false,
     ...overrides,
@@ -493,5 +494,297 @@ describe("reviewed energy profile lifecycle", () => {
     ]) {
       expect(Schema.is(ControlChange)(invalid)).toBe(false);
     }
+  });
+});
+
+const parameterChange = (parameters: Record<string, Schema.Json>) =>
+  parse({
+    operation: "set_energy_profile_parameters",
+    parameters,
+    profileId: 201,
+  });
+const limited = (watts: number) => ({ kind: "limited", watts });
+const gridResponses = (ceiling = "6") => ({
+  "/device/energy-profile/grid/limitation/export/12345": {
+    enable: true,
+    maxLimitation: "5",
+    maxLimitationInstaller: ceiling,
+    maxLimitationOwner: "5",
+  },
+  "/device/energy-profile/grid/limitation/import/12345": {
+    enable: true,
+    maxLimitation: "5",
+    maxLimitationInstaller: ceiling,
+    maxLimitationOwner: "5",
+  },
+  "/device/energy-profile/parallel/off/grid/12345": {
+    currentLimitation: "25",
+    enable: true,
+    installerSetLimitation: "32",
+    ownerSetLimitation: "25",
+  },
+});
+
+describe("inactive profile parameters", () => {
+  it("serializes selected parameters, preserves everything else and verifies the full readback", async () => {
+    const change = parameterChange({
+      batteryPower: { charge: limited(1001), discharge: { kind: "unlimited" } },
+      batterySoc: {
+        backupSocPercent: 30,
+        chargeSocPercent: 90,
+        dischargeSocPercent: 25,
+      },
+      gridExport: { enabled: true, limit: limited(4000) },
+      gridImport: { enabled: false, limit: limited(5000) },
+      solarLimit: limited(5500),
+    });
+    const f = fixture(gridResponses());
+    const before = await f.inspect(change);
+    await Effect.runPromise(
+      f.client.validateControl(id, change, before, token)
+    );
+    await Effect.runPromise(
+      f.client.dispatchControl(id, change, token, before)
+    );
+    const body = f.writes[0]?.[2];
+    expect(f.writes).toHaveLength(1);
+    expect(f.writes[0]?.slice(0, 2)).toEqual([
+      "PUT",
+      "/device/energy-profile/setting",
+    ]);
+    expect(body).toMatchObject({
+      activeStatus: 0,
+      backupSOC: "30",
+      batteryAutomationGroupVOList: [],
+      batteryDischargePriority: ["pv", "grid"],
+      batteryMaxChargingPower: "1.001",
+      batteryMaxDischargingPower: "4294967.295",
+      chargeSOC: "90",
+      dischargeSOC: "25",
+      exportLimitation: true,
+      gridAutomationGroupVOList: [],
+      importLimitation: false,
+      maxExportLimitation: "4",
+      maxImportLimitation: "5",
+      name: "Existing",
+      peakShavingVO: profile.peakShavingVO,
+      powerLimit: "5.5",
+      profileId: 201,
+    });
+    f.data["custom"] = { ...profile, ...body, pvPriority: profile.pvPriority };
+    expect(controlMatches(change, await f.inspect(change), before)).toBe(true);
+    f.data["custom"] = {
+      ...profile,
+      ...body,
+      note: "Unexpected provider edit",
+      pvPriority: profile.pvPriority,
+    };
+    expect(controlMatches(change, await f.inspect(change), before)).toBe(false);
+  });
+  it.each([
+    {},
+    {
+      batterySoc: {
+        backupSocPercent: 20,
+        chargeSocPercent: 50,
+        dischargeSocPercent: 60,
+      },
+    },
+    {
+      batterySoc: {
+        backupSocPercent: 60,
+        chargeSocPercent: 50,
+        dischargeSocPercent: 20,
+      },
+    },
+    {
+      batterySoc: {
+        backupSocPercent: 20.5,
+        chargeSocPercent: 100,
+        dischargeSocPercent: 20,
+      },
+    },
+    { solarLimit: { kind: "unset" } },
+    { solarLimit: limited(-1) },
+    { solarLimit: limited(4_294_967_295) },
+    { batteryPower: { charge: limited(1000) } },
+    { gridExport: { enabled: true } },
+  ])("rejects invalid parameter requests: %j", (parameters) => {
+    expect(() => parameterChange(parameters)).toThrow();
+  });
+  it.each([
+    { custom: { ...profile, activeStatus: 1, profileId: 201 } },
+    {
+      "/device/energy-profile/mode/current/12345": {
+        currentMode: 9,
+        currentProfileId: 201,
+      },
+    },
+  ])(
+    "refuses active profiles using both independent activation signals",
+    async (overrides) => {
+      const f = fixture(overrides);
+      const change = parameterChange({ solarLimit: limited(2000) });
+      expect(
+        await Effect.runPromise(
+          f.client
+            .validateControl(id, change, await f.inspect(change), token)
+            .pipe(Effect.result)
+        )
+      ).toMatchObject({ failure: { reason: "Conflict" } });
+      expect(f.writes).toHaveLength(0);
+    }
+  );
+  it.each(["support", "hasBatterySetting", "hasBackupSetting"])(
+    "requires capability %s",
+    async (feature) => {
+      const f = fixture();
+      const change = parameterChange({
+        batterySoc: {
+          backupSocPercent: 20,
+          chargeSocPercent: 90,
+          dischargeSocPercent: 20,
+        },
+      });
+      f.data["/device/energy-profile/support/12345"] = {
+        ...Object.fromEntries(
+          Object.keys(EnergyProfileFeatures.fields).map((key) => [key, true])
+        ),
+        [feature]: false,
+        batteryPriorityItem: ["pv", "grid"],
+        gridPriorityItem: ["pv", "battery"],
+        isIndustry: false,
+      };
+      expect(
+        await Effect.runPromise(
+          f.client
+            .validateControl(id, change, await f.inspect(change), token)
+            .pipe(Effect.result)
+        )
+      ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
+    }
+  );
+  it.each(["", "3"])(
+    "refuses unknown or exceeded installer ceilings %s",
+    async (ceiling) => {
+      const f = fixture(gridResponses(ceiling));
+      const change = parameterChange({
+        gridExport: { enabled: true, limit: limited(4000) },
+      });
+      expect(
+        await Effect.runPromise(
+          f.client
+            .validateControl(id, change, await f.inspect(change), token)
+            .pipe(Effect.result)
+        )
+      ).toMatchObject({
+        failure: {
+          reason: ceiling === "" ? "UnsupportedCapability" : "InvalidInput",
+        },
+      });
+    }
+  );
+  it.each([1001, 1002])(
+    "handles conversion noise at an exact installer ceiling for %i W",
+    async (watts) => {
+      const f = fixture(gridResponses("1.001"));
+      const change = parameterChange({
+        gridExport: { enabled: true, limit: limited(watts) },
+      });
+      const before = await f.inspect(change);
+      const result = await Effect.runPromise(
+        f.client.validateControl(id, change, before, token).pipe(Effect.result)
+      );
+      if (watts === 1001) {
+        expect(result).toMatchObject({ _tag: "Success" });
+      } else {
+        expect(result).toMatchObject({ failure: { reason: "InvalidInput" } });
+      }
+      expect(f.writes).toHaveLength(0);
+    }
+  );
+  it("rechecks installer ceilings before execution and rejects unlimited above a finite ceiling", async () => {
+    const f = fixture(gridResponses());
+    const change = parameterChange({
+      gridImport: { enabled: true, limit: limited(5000) },
+    });
+    const before = await f.inspect(change);
+    await Effect.runPromise(
+      f.client.validateControl(id, change, before, token)
+    );
+    Object.assign(f.data, gridResponses("4"));
+    expect(
+      await Effect.runPromise(
+        f.client.validateControl(id, change, before, token).pipe(Effect.result)
+      )
+    ).toMatchObject({ failure: { reason: "InvalidInput" } });
+    const unlimited = parameterChange({
+      gridImport: { enabled: false, limit: { kind: "unlimited" } },
+    });
+    expect(
+      await Effect.runPromise(
+        f.client
+          .validateControl(id, unlimited, before, token)
+          .pipe(Effect.result)
+      )
+    ).toMatchObject({ failure: { reason: "InvalidInput" } });
+  });
+  it("rejects SOC changes that invalidate a preserved enabled peak-shaving reserve", async () => {
+    const f = fixture({
+      custom: {
+        ...profile,
+        peakShavingVO: {
+          controlMode: 1,
+          settingList: [
+            {
+              endTime: "02:00",
+              peakPower: 2.5,
+              startTime: "01:00",
+              whichDay: "1",
+            },
+          ],
+          shavingSOC: 30,
+        },
+        profileId: 201,
+      },
+    });
+    await Promise.all(
+      [
+        { backupSocPercent: 20, chargeSocPercent: 25, dischargeSocPercent: 20 },
+        { backupSocPercent: 20, chargeSocPercent: 90, dischargeSocPercent: 35 },
+      ].map(async (soc) => {
+        const change = parameterChange({ batterySoc: soc });
+        expect(
+          await Effect.runPromise(
+            f.client
+              .validateControl(id, change, await f.inspect(change), token)
+              .pipe(Effect.result)
+          )
+        ).toMatchObject({ failure: { reason: "InvalidInput" } });
+      })
+    );
+  });
+  it("rejects solar parameters without solar and scopes approval to the new operation and profile", async () => {
+    const f = fixture({
+      "/device/owner/station/home": {
+        batteryCapacity: 8,
+        hasSolar: false,
+        stationId: 12_345,
+        timeZoneName: "Europe/London",
+      },
+    });
+    const change = parameterChange({ solarLimit: limited(2000) });
+    expect(
+      await Effect.runPromise(
+        f.client
+          .validateControl(id, change, await f.inspect(change), token)
+          .pipe(Effect.result)
+      )
+    ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
+    expect(approvalScope(id, change)).toEqual({
+      operation: "set_energy_profile_parameters",
+      profileId: 201,
+      stationId: id,
+    });
   });
 });

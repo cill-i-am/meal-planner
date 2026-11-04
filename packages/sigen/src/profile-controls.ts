@@ -2,8 +2,13 @@ import { Schema, absurd } from "effect";
 
 import { OperatingMode, Percent, StationId, Timestamp } from "./model.js";
 import { isUnusedResidentialPreheatingPower } from "./preheating.js";
+import {
+  ProfileParameters,
+  applyProfileParameters,
+} from "./profile-parameters.js";
 import { EnergyProfile, ProfileId } from "./profile.js";
 import { ScheduleWindow, nonOverlappingWindows } from "./schedules.js";
+import { WritablePowerLimit } from "./settings.js";
 import type { PowerLimit } from "./settings.js";
 
 const Name = Schema.String.check(
@@ -14,15 +19,6 @@ const Name = Schema.String.check(
 );
 const Description = Schema.String.check(Schema.isMaxLength(500));
 const Id = Schema.Int.check(Schema.isGreaterThan(0));
-const Limit = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("unlimited") }),
-  Schema.Struct({
-    kind: Schema.Literal("limited"),
-    watts: Schema.Int.check(
-      Schema.isBetween({ maximum: 4_294_967_294, minimum: 0 })
-    ),
-  }),
-]);
 const Group = {
   name: Name,
   providerActiveStatus: Schema.Literals([0, 1]),
@@ -40,11 +36,11 @@ const Group = {
 const BatteryGroup = Schema.Struct({
   ...Group,
   chargeCutoffPercent: Percent.check(Schema.isInt()),
-  chargeLimit: Limit,
+  chargeLimit: WritablePowerLimit,
   dischargeCutoffPercent: Percent.check(Schema.isInt()),
-  dischargeLimit: Limit,
-  gridChargeLimit: Limit,
-  gridExportLimit: Limit,
+  dischargeLimit: WritablePowerLimit,
+  gridChargeLimit: WritablePowerLimit,
+  gridExportLimit: WritablePowerLimit,
   providerMode: Schema.Literals([0, 1, 3, 6]),
 }).check(
   Schema.makeFilter((group) => {
@@ -95,8 +91,8 @@ const BatteryGroup = Schema.Struct({
 );
 const GridGroup = Schema.Struct({
   ...Group,
-  exportLimit: Limit,
-  importLimit: Limit,
+  exportLimit: WritablePowerLimit,
+  importLimit: WritablePowerLimit,
   providerMode: Schema.Literals([0, 1, 2]),
 }).check(
   Schema.makeFilter(
@@ -129,6 +125,11 @@ const Edits = Schema.Struct({
 }).check(Schema.makeFilter((value) => Object.keys(value).length > 0));
 export const ProfileChange = Schema.Union([
   Schema.Struct({
+    operation: Schema.Literal("set_energy_profile_parameters"),
+    parameters: ProfileParameters,
+    profileId: Id,
+  }),
+  Schema.Struct({
     description: Description,
     name: Name,
     operation: Schema.Literal("create_energy_profile"),
@@ -156,6 +157,7 @@ export type ProfileChange = typeof ProfileChange.Type;
 export const isProfileChange = (change: {
   readonly operation: string;
 }): change is ProfileChange =>
+  change.operation === "set_energy_profile_parameters" ||
   change.operation === "create_energy_profile" ||
   change.operation === "update_energy_profile" ||
   change.operation === "delete_energy_profile" ||
@@ -192,6 +194,9 @@ export const proposedProfile = (
   change: ProfileChange,
   current: ProfileConfiguration
 ): ProfileConfiguration => {
+  if (change.operation === "set_energy_profile_parameters") {
+    return applyProfileParameters(current, change.parameters);
+  }
   if (change.operation === "create_energy_profile") {
     return {
       ...current,

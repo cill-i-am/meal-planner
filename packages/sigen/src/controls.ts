@@ -26,6 +26,7 @@ import {
   isScheduledSettingsChange,
 } from "./scheduled-settings-controls.js";
 import {
+  WritablePowerLimit,
   BatterySettings,
   GridSettings,
   ManualOverride,
@@ -42,15 +43,7 @@ export const SolarPriorityChange = Schema.Struct({
   smartLoadPath: Schema.NullOr(LoadPath),
 });
 const WholePercent = Percent.check(Schema.isInt());
-export const WritablePowerLimit = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("unlimited") }),
-  Schema.Struct({
-    kind: Schema.Literal("limited"),
-    watts: Schema.Int.check(
-      Schema.isBetween({ maximum: 4_294_967_294, minimum: 0 })
-    ),
-  }),
-]);
+export { WritablePowerLimit } from "./settings.js";
 const Watts = Schema.Int.check(
   Schema.isBetween({ maximum: 4_294_967_294, minimum: 0 })
 );
@@ -225,6 +218,7 @@ export const ApprovalScope = Schema.Union([
   Schema.Struct({
     operation: Schema.Literals([
       "update_energy_profile",
+      "set_energy_profile_parameters",
       "delete_energy_profile",
     ]),
     profileId: Schema.Int.check(Schema.isGreaterThan(0)),
@@ -265,6 +259,7 @@ export const approvalScope = (
   change: ControlChange
 ): typeof ApprovalScope.Type => {
   if (
+    change.operation === "set_energy_profile_parameters" ||
     change.operation === "update_energy_profile" ||
     change.operation === "delete_energy_profile"
   ) {

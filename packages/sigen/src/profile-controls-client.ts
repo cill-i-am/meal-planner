@@ -17,6 +17,7 @@ import type {
   ProfileChange,
   ProfileConfiguration,
 } from "./profile-controls.js";
+import { validateProfileParameters } from "./profile-parameters.js";
 import { decodeProvider } from "./provider-read.js";
 import type { ProviderRead } from "./provider-read.js";
 import { ScheduleWindow, nonOverlappingWindows } from "./schedules.js";
@@ -135,50 +136,12 @@ export const makeProfileControlsClient = (
         },
       });
     });
-  const validate = (
-    stationId: StationId,
+  const validateAutomation = (
     change: ProfileChange,
-    snapshot: ProfileControlSnapshot,
+    base: ProfileConfiguration,
     token: Redacted.Redacted<string>
   ) =>
-    Effect.gen(function* validateProfileCommand() {
-      const state = snapshot.settings;
-      if (change.operation === "delete_energy_profile") {
-        if (state.selected === null) {
-          return yield* failure("InvalidInput");
-        }
-        if (
-          state.currentMode.profileId === change.profileId ||
-          state.selected.providerActiveStatus !== 0
-        ) {
-          return yield* failure("Conflict");
-        }
-        return;
-      }
-      const base =
-        change.operation === "create_energy_profile"
-          ? state.source
-          : state.selected;
-      if (base === null) {
-        return yield* failure("InvalidInput");
-      }
-      if (!serializableProfile(base)) {
-        return yield* failure("UnsupportedCapability");
-      }
-      const proposed = proposedProfile(change, base);
-      if (
-        state.profiles.some(
-          (profile) =>
-            profile.name === proposed.profileName &&
-            (change.operation === "create_energy_profile" ||
-              profile.profileId !== base.providerProfileId)
-        )
-      ) {
-        return yield* failure("Conflict");
-      }
-      if (proposed.timezone !== base.timezone) {
-        return yield* failure("InvalidInput");
-      }
+    Effect.gen(function* validateProfileAutomation() {
       const replacement =
         change.operation === "replace_automation_schedule"
           ? change.replacement
@@ -191,7 +154,7 @@ export const makeProfileControlsClient = (
         return;
       }
       const capabilities = yield* makeProfileClient(read).energyCapabilities(
-        stationId,
+        base.stationId,
         token
       );
       const features = capabilities.providerFeatures;
@@ -224,6 +187,66 @@ export const makeProfileControlsClient = (
       ) {
         return yield* failure("UnsupportedCapability");
       }
+    });
+  const validate = (
+    _stationId: StationId,
+    change: ProfileChange,
+    snapshot: ProfileControlSnapshot,
+    token: Redacted.Redacted<string>
+  ) =>
+    Effect.gen(function* validateProfileCommand() {
+      const state = snapshot.settings;
+      if (change.operation === "delete_energy_profile") {
+        if (state.selected === null) {
+          return yield* failure("InvalidInput");
+        }
+        if (
+          state.currentMode.profileId === change.profileId ||
+          state.selected.providerActiveStatus !== 0
+        ) {
+          return yield* failure("Conflict");
+        }
+        return;
+      }
+      const base =
+        change.operation === "create_energy_profile"
+          ? state.source
+          : state.selected;
+      if (base === null) {
+        return yield* failure("InvalidInput");
+      }
+      if (!serializableProfile(base)) {
+        return yield* failure("UnsupportedCapability");
+      }
+      if (change.operation === "set_energy_profile_parameters") {
+        if (
+          base.providerActiveStatus !== 0 ||
+          state.currentMode.profileId === change.profileId
+        ) {
+          return yield* failure("Conflict");
+        }
+        return yield* validateProfileParameters(
+          read,
+          change.parameters,
+          base,
+          token
+        );
+      }
+      const proposed = proposedProfile(change, base);
+      if (
+        state.profiles.some(
+          (profile) =>
+            profile.name === proposed.profileName &&
+            (change.operation === "create_energy_profile" ||
+              profile.profileId !== base.providerProfileId)
+        )
+      ) {
+        return yield* failure("Conflict");
+      }
+      if (proposed.timezone !== base.timezone) {
+        return yield* failure("InvalidInput");
+      }
+      yield* validateAutomation(change, base, token);
     });
   const dispatch = (
     stationId: StationId,

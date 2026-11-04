@@ -2,7 +2,7 @@
 
 ## Current scope
 
-The registry exposes 47 HTTP/MCP operations and 21 typed control families. See the [current coverage matrix](coverage.md) for implemented contracts and explicit exclusions. The dated sections below are historical evidence, not current inventory counts. Three required real renewals are verified in [authentication acceptance](auth-acceptance.md); the current six-operation deployment and narrower live evidence are recorded in [live control acceptance](live-control-acceptance.md).
+The registry exposes 47 HTTP/MCP operations and 22 typed control families. See the [current coverage matrix](coverage.md) for implemented contracts and explicit exclusions. The dated sections below are historical evidence, not current inventory counts. Three required real renewals are verified in [authentication acceptance](auth-acceptance.md); the current six-operation deployment and narrower live evidence are recorded in [live control acceptance](live-control-acceptance.md).
 
 ## Hosted evidence on 26 October 2026
 

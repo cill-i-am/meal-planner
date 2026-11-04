@@ -5,7 +5,7 @@ These operations use `prepare_command` → `approve_command` (`once` or `always`
 ## Profile lifecycle
 
 - **Create:** select a source returned by `list_profile_templates`, supply name and description, and review the complete template in `current.settings.source`. Creation makes an inactive profile. Activation remains a separate command. The request retains the template ID, as the app does.
-- **Update:** select an existing custom profile and supply `edits.name`, `edits.description`, and/or `edits.automation`. The complete profile participates in the review and conflict fingerprint. Other settings are preserved; arbitrary JSON and endpoint paths are not accepted. Additional per-profile parameter editing remains outside this increment.
+- **Update:** select an existing custom profile and supply `edits.name`, `edits.description`, and/or `edits.automation`. The complete profile participates in the review and conflict fingerprint. Other settings are preserved; arbitrary JSON and endpoint paths are not accepted. Inactive profile SOC, battery/grid/solar parameters use the separate [parameter operation](profile-parameters.md); its approvals do not reuse metadata grants.
 - **Delete:** select an existing custom profile. The current-mode response and the profile's active marker must both show that it is inactive. Always approval is bound to this profile ID and the delete operation.
 
 Create approval is scoped to the station and create operation. Update/delete approval also binds the profile ID. An always-update grant does not authorize deleting that profile or editing another one. All grants remain revocable.

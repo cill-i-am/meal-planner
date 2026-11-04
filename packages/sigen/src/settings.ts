@@ -12,6 +12,16 @@ export const EnergySavingSettings = Schema.Struct({
   providerOnGridMode: EnergySavingCode,
   providerValue: EnergySavingCode,
 });
+export const WritablePowerLimit = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("unlimited") }),
+  Schema.Struct({
+    kind: Schema.Literal("limited"),
+    watts: Schema.Int.check(
+      Schema.isBetween({ maximum: 4_294_967_294, minimum: 0 })
+    ),
+  }),
+]);
+
 export const PowerLimit = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("unset") }),
   Schema.Struct({ kind: Schema.Literal("unlimited") }),
