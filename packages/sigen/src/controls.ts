@@ -1,5 +1,11 @@
 import { Schema, absurd } from "effect";
 
+import {
+  LoadControlChange,
+  LoadControlSnapshot,
+  isLoadControlChange,
+  loadControlMatches,
+} from "./load-controls.js";
 import { LoadKey, LoadPath, SmartLoadState } from "./loads.js";
 import {
   FailureReason,
@@ -48,6 +54,7 @@ const Watts = Schema.Int.check(
   Schema.isBetween({ maximum: 4_294_967_294, minimum: 0 })
 );
 export const ControlChange = Schema.Union([
+  LoadControlChange,
   ProfileChange,
   ScheduledSettingsChange,
   Schema.Struct({
@@ -154,6 +161,7 @@ export type ControlChange = typeof ControlChange.Type;
 const { fetchedAt: _profileFetchedAt, ...ProfileConfigurationFields } =
   EnergyProfile.fields;
 export const ControlSnapshot = Schema.Union([
+  LoadControlSnapshot,
   ProfileControlSnapshot,
   ScheduledSettingsSnapshot,
   Schema.Struct({
@@ -219,6 +227,8 @@ export const ApprovalScope = Schema.Union([
     operation: Schema.Literals([
       "update_energy_profile",
       "set_energy_profile_parameters",
+      "set_energy_profile_priorities",
+      "set_energy_profile_schedules",
       "delete_energy_profile",
     ]),
     profileId: Schema.Int.check(Schema.isGreaterThan(0)),
@@ -227,7 +237,11 @@ export const ApprovalScope = Schema.Union([
   Schema.Struct({
     loadKey: LoadKey,
     loadPath: LoadPath,
-    operation: Schema.Literal("set_smart_load_switch"),
+    operation: Schema.Literals([
+      "set_smart_load_switch",
+      "set_smart_load_mode",
+      "set_smart_load_off_grid_control",
+    ]),
     stationId: StationId,
   }),
   Schema.Struct({
@@ -260,6 +274,8 @@ export const approvalScope = (
 ): typeof ApprovalScope.Type => {
   if (
     change.operation === "set_energy_profile_parameters" ||
+    change.operation === "set_energy_profile_priorities" ||
+    change.operation === "set_energy_profile_schedules" ||
     change.operation === "update_energy_profile" ||
     change.operation === "delete_energy_profile"
   ) {
@@ -269,7 +285,10 @@ export const approvalScope = (
       stationId,
     };
   }
-  if (change.operation === "set_smart_load_switch") {
+  if (
+    change.operation === "set_smart_load_switch" ||
+    isLoadControlChange(change)
+  ) {
     return {
       loadKey: change.loadKey,
       loadPath: change.loadPath,
@@ -488,7 +507,9 @@ const matchesOperatingMode = (
 const matchesExistingControl = (
   change: Exclude<
     ControlChange,
-    typeof ProfileChange.Type | typeof ScheduledSettingsChange.Type
+    | typeof ProfileChange.Type
+    | typeof ScheduledSettingsChange.Type
+    | LoadControlChange
   >,
   snapshot: ControlSnapshot,
   reviewed?: ControlSnapshot
@@ -553,6 +574,16 @@ export const controlMatches = (
   snapshot: ControlSnapshot,
   reviewed?: ControlSnapshot
 ): boolean => {
+  if (isLoadControlChange(change)) {
+    return (
+      snapshot.kind === "smart_load_settings" &&
+      loadControlMatches(
+        change,
+        snapshot,
+        reviewed?.kind === "smart_load_settings" ? reviewed : undefined
+      )
+    );
+  }
   if (isScheduledSettingsChange(change)) {
     return (
       (snapshot.kind === "preheating" || snapshot.kind === "energy_saving") &&

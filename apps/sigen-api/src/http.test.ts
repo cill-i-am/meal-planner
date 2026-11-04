@@ -8,8 +8,12 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { Effect, Redacted, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { expandedResponses } from "../../../packages/sigen/src/__fixtures__/expanded.js";
 import { remainingResponses } from "../../../packages/sigen/src/__fixtures__/remaining.js";
+import { makeChargingClient } from "../../../packages/sigen/src/charging-client.js";
+import { makeConsumptionClient } from "../../../packages/sigen/src/consumption-client.js";
 import { makeEnergyProfileClient } from "../../../packages/sigen/src/energy-profile-client.js";
+import { makeLoadSettingsClient } from "../../../packages/sigen/src/load-settings-client.js";
 import { makeLoadsClient } from "../../../packages/sigen/src/loads-client.js";
 import { makePreheatingClient } from "../../../packages/sigen/src/preheating-client.js";
 import { makeStationsClient } from "../../../packages/sigen/src/stations-client.js";
@@ -59,9 +63,13 @@ const status = {
 };
 const remainingRead = (path: string) =>
   Effect.succeed(
-    remainingResponses[new URL(path, "https://fixture.invalid").pathname]
+    expandedResponses[new URL(path, "https://fixture.invalid").pathname] ??
+      remainingResponses[new URL(path, "https://fixture.invalid").pathname]
   );
 const remainingClient = {
+  ...makeChargingClient(remainingRead),
+  ...makeLoadSettingsClient(remainingRead),
+  ...makeConsumptionClient(remainingRead),
   ...makeEnergyProfileClient(remainingRead),
   ...makeLoadsClient(remainingRead),
   ...makeThirdPartyClient(remainingRead),
@@ -70,6 +78,14 @@ const remainingClient = {
 };
 const options: HttpOptions = {
   capabilities: {
+    acChargerCurrent: (input) =>
+      remainingClient
+        .acChargerCurrent(input, Redacted.make("fixture-token"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
+    acChargerSettings: (input) =>
+      remainingClient
+        .acChargerSettings(input, Redacted.make("fixture"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
     aioDevices: (stationId) =>
       Effect.succeed({ fetchedAt: 123, serialNumbers: [], stationId }),
     aioPowerStatus: (input) =>
@@ -152,6 +168,22 @@ const options: HttpOptions = {
         providerOperationMode: 1,
         stationId,
       }),
+    chargerSchedules: (input) =>
+      remainingClient
+        .chargerSchedules(input, Redacted.make("fixture"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
+    chargerStatus: (input) =>
+      remainingClient
+        .chargerStatus(input, Redacted.make("fixture-token"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
+    chargers: (input) =>
+      remainingClient
+        .chargers(input, Redacted.make("fixture-token"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
+    dcChargerSettings: (input) =>
+      remainingClient
+        .dcChargerSettings(input, Redacted.make("fixture-token"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
     deviceInfo: (input) =>
       Effect.succeed({
         ...input,
@@ -349,6 +381,14 @@ const options: HttpOptions = {
       remainingClient
         .smartLoad(input, Redacted.make("fixture"))
         .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
+    smartLoadConsumption: (input) =>
+      remainingClient
+        .smartLoadConsumption(input, Redacted.make("fixture-token"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
+    smartLoadControlSettings: (input) =>
+      remainingClient
+        .smartLoadControlSettings(input, Redacted.make("fixture-token"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
     smartLoads: (input) =>
       remainingClient
         .smartLoads(input, Redacted.make("fixture"))
@@ -383,6 +423,10 @@ const options: HttpOptions = {
     stationCapabilities: (input) =>
       remainingClient
         .stationCapabilities(input, Redacted.make("fixture"))
+        .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
+    stationConsumption: (input) =>
+      remainingClient
+        .stationConsumption(input, Redacted.make("fixture-token"))
         .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
     stationIncome: (input) =>
       Effect.succeed({
@@ -552,8 +596,36 @@ describe("authenticated HTTP and MCP parity", () => {
           if (op.name === "get_energy_profile") {
             return { stationId: id, target: { kind: "current" } };
           }
-          if (op.name === "get_smart_load") {
+          if (
+            ["get_smart_load", "get_smart_load_control_settings"].includes(
+              op.name
+            )
+          ) {
             return { loadPath: 1, stationId: id };
+          }
+          if (
+            [
+              "get_charger_status",
+              "get_ac_charger_settings",
+              "get_charger_schedules",
+              "get_ac_charger_current",
+              "get_dc_charger_settings",
+            ].includes(op.name)
+          ) {
+            const dc = op.name === "get_dc_charger_settings";
+            return {
+              kind: dc ? "dc" : "ac",
+              serialNumber: dc ? "DC-1" : "AC-1",
+              stationId: id,
+            };
+          }
+          if (op.name === "get_smart_load_consumption") {
+            return {
+              date: "2026-10-25",
+              loadPath: 1,
+              period: "day",
+              stationId: id,
+            };
           }
           if (op.name === "prepare_command") {
             return {
@@ -581,7 +653,13 @@ describe("authenticated HTTP and MCP parity", () => {
           if (op.name === "connection_status") {
             return {};
           }
-          if (["get_energy_history", "get_forecast"].includes(op.name)) {
+          if (
+            [
+              "get_energy_history",
+              "get_forecast",
+              "get_station_consumption",
+            ].includes(op.name)
+          ) {
             return { date: "2026-10-25", period: "day", stationId: id };
           }
           if (op.name === "get_station_income") {

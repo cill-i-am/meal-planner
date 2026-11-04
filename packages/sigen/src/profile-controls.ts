@@ -3,6 +3,12 @@ import { Schema, absurd } from "effect";
 import { OperatingMode, Percent, StationId, Timestamp } from "./model.js";
 import { isUnusedResidentialPreheatingPower } from "./preheating.js";
 import {
+  ProfilePriorities,
+  ProfileSchedules,
+  applyProfilePriorities,
+  applyProfileSchedules,
+} from "./profile-extras.js";
+import {
   ProfileParameters,
   applyProfileParameters,
 } from "./profile-parameters.js";
@@ -125,6 +131,16 @@ const Edits = Schema.Struct({
 }).check(Schema.makeFilter((value) => Object.keys(value).length > 0));
 export const ProfileChange = Schema.Union([
   Schema.Struct({
+    operation: Schema.Literal("set_energy_profile_priorities"),
+    priorities: ProfilePriorities,
+    profileId: Id,
+  }),
+  Schema.Struct({
+    operation: Schema.Literal("set_energy_profile_schedules"),
+    profileId: Id,
+    schedules: ProfileSchedules,
+  }),
+  Schema.Struct({
     operation: Schema.Literal("set_energy_profile_parameters"),
     parameters: ProfileParameters,
     profileId: Id,
@@ -157,6 +173,8 @@ export type ProfileChange = typeof ProfileChange.Type;
 export const isProfileChange = (change: {
   readonly operation: string;
 }): change is ProfileChange =>
+  change.operation === "set_energy_profile_priorities" ||
+  change.operation === "set_energy_profile_schedules" ||
   change.operation === "set_energy_profile_parameters" ||
   change.operation === "create_energy_profile" ||
   change.operation === "update_energy_profile" ||
@@ -194,6 +212,12 @@ export const proposedProfile = (
   change: ProfileChange,
   current: ProfileConfiguration
 ): ProfileConfiguration => {
+  if (change.operation === "set_energy_profile_priorities") {
+    return applyProfilePriorities(current, change.priorities);
+  }
+  if (change.operation === "set_energy_profile_schedules") {
+    return applyProfileSchedules(current, change.schedules);
+  }
   if (change.operation === "set_energy_profile_parameters") {
     return applyProfileParameters(current, change.parameters);
   }

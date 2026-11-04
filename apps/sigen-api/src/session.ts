@@ -16,6 +16,7 @@ import type {
   BackupEventsInput,
   BackupHistoryInput,
 } from "@meal-planner/sigen/backup";
+import type { ChargerInput } from "@meal-planner/sigen/charging";
 import type { SigenClient } from "@meal-planner/sigen/client";
 import type { DeviceInput } from "@meal-planner/sigen/equipment";
 import type {
@@ -23,6 +24,7 @@ import type {
   ForecastInput,
   IncomeInput,
 } from "@meal-planner/sigen/history";
+import type { SmartLoadHistoryInput } from "@meal-planner/sigen/load-settings";
 import type { SmartLoadInput } from "@meal-planner/sigen/loads";
 import type { EnergyProfileInput } from "@meal-planner/sigen/profile";
 import { Clock, Effect, Redacted, Schema, Semaphore } from "effect";
@@ -327,6 +329,12 @@ export const makeSession = <R>(
       })
     );
     return {
+      acChargerCurrent: (input: typeof ChargerInput.Type) =>
+        read(input.stationId, (token) => client.acChargerCurrent(input, token)),
+      acChargerSettings: (input: typeof ChargerInput.Type) =>
+        read(input.stationId, (token) =>
+          client.acChargerSettings(input, token)
+        ),
       aioDevices: (id: StationId) =>
         read(id, (token) => client.aioDevices(id, token)),
       aioPowerStatus: (input: DeviceInput) =>
@@ -343,6 +351,16 @@ export const makeSession = <R>(
         read(id, (token) => client.batteryDischargePriority(id, token)),
       batterySettings: (id: StationId) =>
         read(id, (token) => client.batterySettings(id, token)),
+      chargerSchedules: (input: typeof ChargerInput.Type) =>
+        read(input.stationId, (token) => client.chargerSchedules(input, token)),
+      chargerStatus: (input: typeof ChargerInput.Type) =>
+        read(input.stationId, (token) => client.chargerStatus(input, token)),
+      chargers: (input: StationId) =>
+        read(input, (token) => client.chargers(input, token)),
+      dcChargerSettings: (input: typeof ChargerInput.Type) =>
+        read(input.stationId, (token) =>
+          client.dcChargerSettings(input, token)
+        ),
       deviceInfo: (input: DeviceInput) =>
         read(input.stationId, (token) => client.deviceInfo(input, token)),
       deviceValues: (input: DeviceInput) =>
@@ -452,6 +470,14 @@ export const makeSession = <R>(
       ),
       smartLoad: (input: typeof SmartLoadInput.Type) =>
         read(input.stationId, (token) => client.smartLoad(input, token)),
+      smartLoadConsumption: (input: typeof SmartLoadHistoryInput.Type) =>
+        read(input.stationId, (token) =>
+          client.smartLoadConsumption(input, token)
+        ),
+      smartLoadControlSettings: (input: typeof SmartLoadInput.Type) =>
+        read(input.stationId, (token) =>
+          client.smartLoadControlSettings(input, token)
+        ),
       smartLoads: (id: StationId) =>
         read(id, (token) => client.smartLoads(id, token)),
       solarPriority: (id: StationId) =>
@@ -462,6 +488,10 @@ export const makeSession = <R>(
         read(id, (token) => client.station(id, token)),
       stationCapabilities: (id: StationId) =>
         read(id, (token) => client.stationCapabilities(id, token)),
+      stationConsumption: (input: typeof HistoryInput.Type) =>
+        read(input.stationId, (token) =>
+          client.stationConsumption(input, token)
+        ),
       stationIncome: (input: IncomeInput) =>
         read(input.stationId, (token) => client.stationIncome(input, token)),
       stationStatus: (input: StationId) =>

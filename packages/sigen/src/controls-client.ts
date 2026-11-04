@@ -7,6 +7,8 @@ import type {
   WritablePowerLimit,
 } from "./controls.js";
 import { makeEnergyProfileClient } from "./energy-profile-client.js";
+import { makeLoadControls, isLoadControlChange } from "./load-controls.js";
+import type { LoadControlChange } from "./load-controls.js";
 import { makeLoadsClient } from "./loads-client.js";
 import { OperatingMode, failure } from "./model.js";
 import type { SigenFailure, StationId } from "./model.js";
@@ -241,7 +243,10 @@ const validateSolarPriority = (
 };
 
 const validateExistingOwnerLimits = (
-  change: Exclude<ControlChange, ProfileChange | ScheduledSettingsChange>,
+  change: Exclude<
+    ControlChange,
+    ProfileChange | ScheduledSettingsChange | LoadControlChange
+  >,
   snapshot: ControlSnapshot
 ): SigenFailure | null => {
   switch (change.operation) {
@@ -295,7 +300,11 @@ const validateOwnerLimits = (
   change: ControlChange,
   snapshot: ControlSnapshot
 ): SigenFailure | null => {
-  if (isProfileChange(change) || isScheduledSettingsChange(change)) {
+  if (
+    isProfileChange(change) ||
+    isScheduledSettingsChange(change) ||
+    isLoadControlChange(change)
+  ) {
     return null;
   }
   return validateExistingOwnerLimits(change, snapshot);
@@ -308,6 +317,7 @@ export const makeControlsClient = (
   const profileControls = makeProfileControlsClient(read, write);
   const settings = makeSettingsClient(read);
   const loads = makeLoadsClient(read);
+  const loadControls = makeLoadControls(read, write);
   const profiles = makeProfileClient(read);
   const energyProfiles = makeEnergyProfileClient(read);
   const inspectControl = (
@@ -315,6 +325,9 @@ export const makeControlsClient = (
     change: ControlChange,
     token: Redacted.Redacted<string>
   ): Effect.Effect<ControlSnapshot, SigenFailure> => {
+    if (isLoadControlChange(change)) {
+      return loadControls.inspect(stationId, change, token);
+    }
     if (isProfileChange(change)) {
       return profileControls.inspect(stationId, change, token);
     }
@@ -429,6 +442,11 @@ export const makeControlsClient = (
     snapshot: ControlSnapshot,
     token: Redacted.Redacted<string>
   ) => {
+    if (isLoadControlChange(change)) {
+      return snapshot.kind === "smart_load_settings"
+        ? loadControls.validate(change, snapshot)
+        : failure("SchemaMismatch");
+    }
     if (isProfileChange(change)) {
       return snapshot.kind === "profile"
         ? profileControls.validate(stationId, change, snapshot, token)
@@ -535,7 +553,10 @@ export const makeControlsClient = (
     });
   const dispatchExistingControl = (
     stationId: StationId,
-    change: Exclude<ControlChange, ProfileChange | ScheduledSettingsChange>,
+    change: Exclude<
+      ControlChange,
+      ProfileChange | ScheduledSettingsChange | LoadControlChange
+    >,
     token: Redacted.Redacted<string>
   ) => {
     const id = { stationId: Number(stationId) };
@@ -543,7 +564,7 @@ export const makeControlsClient = (
       case "set_smart_load_switch": {
         return write(
           "PATCH",
-          `/device/tp-device/smart-loads/control-mode/manual/switch?stationId=${stationId}&loadPath=${change.loadPath}&manualSwitch=${change.enabled ? 1 : 0}`,
+          `/third-party-device/tp-device/smart-loads/control-mode/manual/switch?stationId=${stationId}&loadPath=${change.loadPath}&manualSwitch=${change.enabled ? 1 : 0}`,
           null,
           token
         );
@@ -711,6 +732,9 @@ export const makeControlsClient = (
     token: Redacted.Redacted<string>,
     reviewed?: ControlSnapshot
   ) => {
+    if (isLoadControlChange(change)) {
+      return loadControls.dispatch(stationId, change, token);
+    }
     if (isProfileChange(change)) {
       return reviewed?.kind === "profile"
         ? profileControls.dispatch(stationId, change, reviewed, token)

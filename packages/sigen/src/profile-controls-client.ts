@@ -17,6 +17,7 @@ import type {
   ProfileChange,
   ProfileConfiguration,
 } from "./profile-controls.js";
+import { validateProfileExtras } from "./profile-extras.js";
 import { validateProfileParameters } from "./profile-parameters.js";
 import { decodeProvider } from "./provider-read.js";
 import type { ProviderRead } from "./provider-read.js";
@@ -218,12 +219,29 @@ export const makeProfileControlsClient = (
       if (!serializableProfile(base)) {
         return yield* failure("UnsupportedCapability");
       }
-      if (change.operation === "set_energy_profile_parameters") {
+      if (
+        change.operation === "set_energy_profile_parameters" ||
+        change.operation === "set_energy_profile_priorities" ||
+        change.operation === "set_energy_profile_schedules"
+      ) {
         if (
           base.providerActiveStatus !== 0 ||
           state.currentMode.profileId === change.profileId
         ) {
           return yield* failure("Conflict");
+        }
+        if (change.operation !== "set_energy_profile_parameters") {
+          return yield* validateProfileExtras(
+            read,
+            base,
+            token,
+            change.operation === "set_energy_profile_priorities"
+              ? change.priorities
+              : undefined,
+            change.operation === "set_energy_profile_schedules"
+              ? change.schedules
+              : undefined
+          );
         }
         return yield* validateProfileParameters(
           read,

@@ -108,6 +108,8 @@ export type Enrollment = typeof Enrollment.Type;
 
 export const ControlOperation = Schema.Literals([
   "set_energy_profile_parameters",
+  "set_energy_profile_priorities",
+  "set_energy_profile_schedules",
   "create_energy_profile",
   "update_energy_profile",
   "delete_energy_profile",
@@ -115,6 +117,8 @@ export const ControlOperation = Schema.Literals([
   "set_preheating_schedule",
   "set_energy_saving_settings",
   "set_smart_load_switch",
+  "set_smart_load_mode",
+  "set_smart_load_off_grid_control",
   "set_battery_discharge_priority",
   "set_solar_priority",
   "start_manual_override",

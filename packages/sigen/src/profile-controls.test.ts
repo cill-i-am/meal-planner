@@ -788,3 +788,210 @@ describe("inactive profile parameters", () => {
     });
   });
 });
+
+const prioritiesChange = (priorities: Record<string, Schema.Json>) =>
+  parse({
+    operation: "set_energy_profile_priorities",
+    priorities,
+    profileId: 201,
+  });
+const schedulesChange = (schedules: Record<string, Schema.Json>) =>
+  parse({
+    operation: "set_energy_profile_schedules",
+    profileId: 201,
+    schedules,
+  });
+const window = { endTime: "01:15", providerDays: "1", startTime: "01:00" };
+
+describe("inactive profile priorities and schedules", () => {
+  it("preserves unrelated profile settings and verifies battery priority changes", async () => {
+    const f = fixture();
+    const change = prioritiesChange({
+      batteryDischargeSources: ["grid", "pv"],
+    });
+    const before = await f.inspect(change);
+    await Effect.runPromise(
+      f.client.validateControl(id, change, before, token)
+    );
+    await Effect.runPromise(
+      f.client.dispatchControl(id, change, token, before)
+    );
+    const body = f.writes[0]?.[2];
+    expect(body).toMatchObject({
+      batteryDischargePriority: ["grid", "pv"],
+      chargeSOC: "100",
+      name: "Existing",
+      peakShavingVO: profile.peakShavingVO,
+    });
+    f.data["custom"] = { ...profile, ...body, pvPriority: profile.pvPriority };
+    expect(controlMatches(change, await f.inspect(change), before)).toBe(true);
+    f.data["custom"] = {
+      ...profile,
+      ...body,
+      dischargeSOC: "21",
+      pvPriority: profile.pvPriority,
+    };
+    expect(controlMatches(change, await f.inspect(change), before)).toBe(false);
+  });
+  it("stores residential peak and preheating windows without activating the custom profile", async () => {
+    const f = fixture();
+    const change = schedulesChange({
+      peakShaving: {
+        enabled: true,
+        reserveSocPercent: 25,
+        slots: [{ ...window, peakPowerW: 2500 }],
+      },
+      preheating: { enabled: true, windows: [window] },
+      timezone: "Europe/London",
+    });
+    const before = await f.inspect(change);
+    await Effect.runPromise(
+      f.client.validateControl(id, change, before, token)
+    );
+    await Effect.runPromise(
+      f.client.dispatchControl(id, change, token, before)
+    );
+    const body = f.writes[0]?.[2];
+    expect(body).toMatchObject({
+      activeStatus: 0,
+      packPreheatingInfoVO: {
+        packPreheatingSwitch: 1,
+        packPreheatingVOList: [
+          {
+            chargingPower: null,
+            dischargePower: null,
+            duration: 15,
+            periodConfig: [1],
+            startTime: 60,
+          },
+        ],
+        preheatingMode: null,
+      },
+      peakShavingVO: {
+        controlMode: 1,
+        settingList: [
+          {
+            endTime: "01:15",
+            peakPower: 2.5,
+            startTime: "01:00",
+            whichDay: "1",
+          },
+        ],
+        shavingSOC: 25,
+      },
+      profileId: 201,
+    });
+    f.data["custom"] = { ...profile, ...body, pvPriority: profile.pvPriority };
+    expect(controlMatches(change, await f.inspect(change), before)).toBe(true);
+  });
+  it.each([
+    { timezone: "Europe/London" },
+    { preheating: { enabled: true, windows: [] }, timezone: "Europe/London" },
+    {
+      preheating: { enabled: true, windows: [{ ...window, endTime: "00:15" }] },
+      timezone: "Europe/London",
+    },
+    {
+      preheating: { enabled: true, windows: [window, window] },
+      timezone: "Europe/London",
+    },
+    {
+      peakShaving: {
+        enabled: true,
+        reserveSocPercent: 20,
+        slots: [{ ...window, peakPowerW: 2500, providerDays: "8" }],
+      },
+      timezone: "Europe/London",
+    },
+  ])("rejects malformed or overlapping schedules %j", (schedules) => {
+    expect(() => schedulesChange(schedules)).toThrow();
+  });
+  it.each([
+    { preheating: { enabled: false, windows: [] }, timezone: "Europe/Dublin" },
+    {
+      peakShaving: {
+        enabled: true,
+        reserveSocPercent: 19,
+        slots: [{ ...window, peakPowerW: 2500 }],
+      },
+      timezone: "Europe/London",
+    },
+  ])(
+    "rejects the wrong timezone or an unsafe reserve %j",
+    async (schedules) => {
+      const f = fixture();
+      const change = schedulesChange(schedules);
+      expect(
+        await Effect.runPromise(
+          f.client
+            .validateControl(id, change, await f.inspect(change), token)
+            .pipe(Effect.result)
+        )
+      ).toMatchObject({ failure: { reason: "InvalidInput" } });
+      expect(f.writes).toHaveLength(0);
+    }
+  );
+  it.each(["set_energy_profile_priorities", "set_energy_profile_schedules"])(
+    "requires inactive identity and binds approvals separately for %s",
+    async (operation) => {
+      const change =
+        operation === "set_energy_profile_priorities"
+          ? prioritiesChange({ batteryDischargeSources: ["grid", "pv"] })
+          : schedulesChange({
+              preheating: { enabled: false, windows: [] },
+              timezone: "Europe/London",
+            });
+      expect(approvalScope(id, change)).toEqual({
+        operation,
+        profileId: 201,
+        stationId: id,
+      });
+      await Promise.all(
+        [
+          { custom: { ...profile, activeStatus: 1, profileId: 201 } },
+          {
+            "/device/energy-profile/mode/current/12345": {
+              currentMode: 9,
+              currentProfileId: 201,
+            },
+          },
+        ].map(async (overrides) => {
+          const f = fixture(overrides);
+          expect(
+            await Effect.runPromise(
+              f.client
+                .validateControl(id, change, await f.inspect(change), token)
+                .pipe(Effect.result)
+            )
+          ).toMatchObject({ failure: { reason: "Conflict" } });
+          expect(f.writes).toHaveLength(0);
+        })
+      );
+    }
+  );
+  it("refuses invented solar priorities, duplicates and grouped entries", async () => {
+    const entry = {
+      providerDeviceType: 4,
+      providerLoadType: 1,
+      providerPriority: 1,
+      smartLoadPath: null,
+    };
+    await Promise.all(
+      [
+        [{ ...entry, providerPriority: 2 }],
+        [entry, entry],
+        [{ ...entry, providerLoadType: 3 }],
+      ].map(async (solarPriority) => {
+        const f = fixture();
+        const change = prioritiesChange({ solarPriority });
+        expect(
+          await Effect.runPromise(
+            f.client
+              .validateControl(id, change, await f.inspect(change), token)
+              .pipe(Effect.result)
+          )
+        ).toMatchObject({ failure: { reason: "InvalidInput" } });
+      })
+    );
+  });
+});

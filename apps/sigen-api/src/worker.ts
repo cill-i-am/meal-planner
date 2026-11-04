@@ -53,6 +53,9 @@ export default class SigenApi extends Cloudflare.Worker<SigenApi>()(
         const account = accounts.getByName("private-owner");
         const handler = makeHttpHandler({
           capabilities: {
+            acChargerCurrent: (input) => bind(account.acChargerCurrent(input)),
+            acChargerSettings: (input) =>
+              bind(account.acChargerSettings(input)),
             aioDevices: (id) => bind(account.aioDevices(id)),
             aioPowerStatus: (input) => bind(account.aioPowerStatus(input)),
             alarms: (input) => bind(account.alarms(input)),
@@ -64,6 +67,11 @@ export default class SigenApi extends Cloudflare.Worker<SigenApi>()(
             batteryDischargePriority: (id) =>
               bind(account.batteryDischargePriority(id)),
             batterySettings: (id) => bind(account.batterySettings(id)),
+            chargerSchedules: (input) => bind(account.chargerSchedules(input)),
+            chargerStatus: (input) => bind(account.chargerStatus(input)),
+            chargers: (input) => bind(account.chargers(input)),
+            dcChargerSettings: (input) =>
+              bind(account.dcChargerSettings(input)),
             deviceInfo: (input) => bind(account.deviceInfo(input)),
             deviceValues: (input) => bind(account.deviceValues(input)),
             energyCapabilities: (id) => bind(account.energyCapabilities(id)),
@@ -90,11 +98,17 @@ export default class SigenApi extends Cloudflare.Worker<SigenApi>()(
             profileTemplates: (id) => bind(account.profileTemplates(id)),
             revokeApproval: (input) => bind(account.revokeApproval(input)),
             smartLoad: (input) => bind(account.smartLoad(input)),
+            smartLoadConsumption: (input) =>
+              bind(account.smartLoadConsumption(input)),
+            smartLoadControlSettings: (input) =>
+              bind(account.smartLoadControlSettings(input)),
             smartLoads: (id) => bind(account.smartLoads(id)),
             solarPriority: (id) => bind(account.solarPriority(id)),
             solarSettings: (id) => bind(account.solarSettings(id)),
             station: (id) => bind(account.station(id)),
             stationCapabilities: (id) => bind(account.stationCapabilities(id)),
+            stationConsumption: (input) =>
+              bind(account.stationConsumption(input)),
             stationIncome: (input) => bind(account.stationIncome(input)),
             stationStatus: (input) => bind(account.stationStatus(input)),
             stations: (id) => bind(account.stations(id)),

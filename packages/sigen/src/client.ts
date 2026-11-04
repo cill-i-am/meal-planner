@@ -11,10 +11,13 @@ import {
 import { makeAlarmsClient } from "./alarms-client.js";
 import { makeBackupClient } from "./backup-client.js";
 import { makeBackupEventsClient } from "./backup-events-client.js";
+import { makeChargingClient } from "./charging-client.js";
+import { makeConsumptionClient } from "./consumption-client.js";
 import { makeControlsClient } from "./controls-client.js";
 import { makeEnergyProfileClient } from "./energy-profile-client.js";
 import { makeEquipmentClient } from "./equipment-client.js";
 import { makeHistoryClient } from "./history-client.js";
+import { makeLoadSettingsClient } from "./load-settings-client.js";
 import { makeLoadsClient } from "./loads-client.js";
 import type { Enrollment, StationId } from "./model.js";
 import {
@@ -257,6 +260,9 @@ export const makeSigenClientWithBudget = (budget: RequestBudget) =>
       ...makeProfileClient(read),
       ...makeThirdPartyClient(read),
       ...makePreheatingClient(read),
+      ...makeChargingClient(read),
+      ...makeConsumptionClient(read),
+      ...makeLoadSettingsClient(read),
       ...makeLoadsClient(read),
       ...makeStationsClient(read),
       ...makeEnergyProfileClient(read),

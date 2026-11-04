@@ -327,3 +327,58 @@ describe("durable profile parameter approvals", () => {
     expect(f.writes).toHaveLength(1);
   });
 });
+
+describe("separate approval and dispatch gates for profile extras", () => {
+  const priorityChange = Schema.decodeUnknownSync(ControlChange)({
+    operation: "set_energy_profile_priorities",
+    priorities: { batteryDischargeSources: ["grid", "pv"] },
+    profileId: 201,
+  });
+  const scheduleChange = Schema.decodeUnknownSync(ControlChange)({
+    operation: "set_energy_profile_schedules",
+    profileId: 201,
+    schedules: {
+      preheating: {
+        enabled: true,
+        windows: [{ endTime: "01:15", providerDays: "1", startTime: "01:00" }],
+      },
+      timezone: "Europe/London",
+    },
+  });
+  it.each([priorityChange, scheduleChange])(
+    "requires its own approval, observes its dispatch gate and verifies a single write for $operation",
+    async (change) => {
+      const f = await fixture();
+      f.custom.set(201, { ...profile, name: "One", profileId: 201 });
+      const old = await f.prepare(edit(201));
+      await run(f.service.approveCommand(approve(old, "always")));
+      const prepared = await f.prepare(change);
+      expect(
+        await run(
+          f.service.executeCommand(identity(prepared)).pipe(Effect.result)
+        )
+      ).toMatchObject({ failure: { reason: "ApprovalRequired" } });
+      await run(f.service.approveCommand(approve(prepared, "once")));
+      expect(
+        await run(
+          f
+            .make(true, ["update_energy_profile"])
+            .executeCommand(identity(prepared))
+            .pipe(Effect.result)
+        )
+      ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
+      expect(f.writes).toHaveLength(0);
+      expect(
+        await run(f.make().executeCommand(identity(prepared)))
+      ).toMatchObject({ phase: { status: "verified" } });
+      expect(
+        await run(f.make().executeCommand(identity(prepared)))
+      ).toMatchObject({ phase: { status: "verified" } });
+      expect(f.writes).toHaveLength(1);
+      const next = await f.prepare(change);
+      expect(
+        await run(f.service.executeCommand(identity(next)).pipe(Effect.result))
+      ).toMatchObject({ failure: { reason: "ApprovalRequired" } });
+    }
+  );
+});
