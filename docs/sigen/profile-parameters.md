@@ -37,3 +37,7 @@ Priority editing, embedded peak/preheating replacement, active-profile parameter
 Local verification passed **306 focused tests**, package/app type checks, package build, scoped lint/format, complexity and documentation checks. The native Worker/MCP test passed in **84.62 seconds**. Independent spec and standards reviews are clear after fixing an exact-installer-ceiling rounding issue: 1001 W is accepted at a 1.001 kW ceiling, while 1002 W is rejected. The ceiling comparison permits only sub-microwatt conversion noise.
 
 The live inventory currently contains no custom profiles. Positive hosted parameter preparation and provider write acceptance therefore require a separately authorized disposable inactive profile; no profile was created merely to complete this implementation check.
+
+## Hosted verification, 4 November 2026
+
+Code `d0a0ee32` deployed at **11:44:40.037 UTC**, preserving the account Durable Object and connection. Authenticated MCP discovery returned 47 tools and advertised the new operation with all five parameter groups. Connection status confirmed exactly the existing six enabled operations; parameter dispatch remained excluded. HTTP preparation against a nonexistent custom profile returned `400 InvalidInput`, confirming membership refusal through the deployed boundary. This is negative preparation and discovery evidence, not positive provider write acceptance. Executor's cached input catalogue had not yet refreshed when first checked.
