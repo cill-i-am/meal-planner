@@ -214,3 +214,21 @@ Final deployment of `fcf993d3` completed at **15:08:13.497 UTC** with only profi
 The separately approved enabled test verified Monday 01:00–01:15, 2500 W, 20% reserve and then switched peak shaving off. Sigen retained that preset, so the original empty-restoration command remains `outcome_unknown`. After the user explicitly accepted the inactive preset, production deployment at **16:20:18.396 UTC** enabled `set_peak_shaving_schedule` alongside the five earlier accepted operations. Executor confirmed the six-operation list, mode 0, the unchanged accepted preset and zero grants. API enablement did not send a provider write. Exact receipts and evidence limits are in [peak-shaving acceptance](peak-shaving.md).
 
 The corrected implementation passed 282 focused tests, native Worker/MCP verification (80.06 seconds), package/app type checks, package build, scoped lint/format, complexity and documentation checks, with both review axes clear. Physical performance during a peak window remains untested. Historical empty-restoration receipts were neither rewritten nor replayed.
+
+## Expanded profile and device endpoints, 4 November 2026
+
+The current registry has **56 HTTP/MCP operations and 26 typed control families**. This pass adds nine reads covering station/load consumption, smart-load settings, charger inventory/status/current/electrical settings and schedule summaries, plus inactive-profile priority/schedule editing and smart-load mode/off-grid controls. [Expanded contracts](expanded-device-endpoints.md) distinguish implemented raw readings from unverified units, hardware-specific behavior and remaining write exclusions.
+
+**365 focused tests across 27 files** pass, including actual SDK HTTP/MCP parity for all 56 operations. Package/app/infrastructure type checks, package build, scoped lint/format, complexity and documentation checks pass. The native Worker/MCP persistence and discovery test passed in 80.56 seconds; subsequent review fixes are covered by the focused suite. Both independent review axes are clear. Regressions cover membership before device access, null/zero/unset distinctions, malformed map keys, inactive profile guards, separate approval scopes, lost-response reconciliation without replay, mode-specific automatic-load requirements, off-grid mode preservation, and numeric/string residential preheating readback.
+
+Worker source **`63e840da`** deployed at **13:00:15 UTC**, preserving the existing Durable Object. Exactly the same six accepted operations remain enabled: profile create/update/delete, preheating, energy saving and peak shaving. Every newly introduced write remains disabled. No physical setting, grant, enrollment or credential changed during this verification.
+
+Authenticated direct MCP discovery at **13:01:42 UTC** returned all 56 operations and the five new command variants added across this PR. HTTP checks established:
+
+- `list_chargers` returned 200 with known empty AC and DC inventories.
+- `get_station_consumption` returned 200 with **13 populated sample entries**, using the explicit `provider_unit_unverified` contract. This supersedes the earlier HTTP 500 observation for availability, not the remaining unit/time-resolution uncertainty.
+- All seven hardware-specific reads returned `UnsupportedCapability` for absent load/charger inputs, before downstream device access. This is negative-path acceptance, not populated-equipment verification.
+
+Executor source **`77c88c6cff4ff877e57afbf56293fb329639392d`** deployed at **13:01:35 UTC** as **`dpl_5e29a315-ddf4-4ac0-a099-bed34f835eca`**, preserving all four source files and the existing connection. Its catalogue exposes the new read tools and expanded command schemas. At **13:02:49 UTC**, the actual account returned the same known-empty charger inventory and 13 station-consumption samples. Follow-up calls confirmed `UnsupportedCapability` for absent smart-load settings and charger status.
+
+The connection remained `connected` with **17 reported successful renewals** and precisely the six accepted enabled operations. This status count is not a new audit of all renewal-cycle evidence; the three-cycle acceptance record remains separate. New physical writes and populated smart-load/charger behavior are not live accepted.
