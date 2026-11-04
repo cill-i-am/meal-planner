@@ -884,6 +884,50 @@ describe("inactive profile priorities and schedules", () => {
     f.data["custom"] = { ...profile, ...body, pvPriority: profile.pvPriority };
     expect(controlMatches(change, await f.inspect(change), before)).toBe(true);
   });
+  it("accepts equivalent residential minute strings but refuses malformed minute values", async () => {
+    const change = schedulesChange({
+      preheating: { enabled: true, windows: [window] },
+      timezone: "Europe/London",
+    });
+    const f = fixture();
+    const before = await f.inspect(change);
+    await Effect.runPromise(
+      f.client.dispatchControl(id, change, token, before)
+    );
+    const body = f.writes[0]?.[2];
+    const heating = {
+      ...profile.packPreheatingInfoVO,
+      packPreheatingSwitch: 1,
+      packPreheatingVOList: [
+        {
+          chargingPower: null,
+          dischargePower: null,
+          duration: "15",
+          periodConfig: [1],
+          startTime: "60",
+        },
+      ],
+    };
+    f.data["custom"] = {
+      ...profile,
+      ...body,
+      packPreheatingInfoVO: heating,
+      pvPriority: profile.pvPriority,
+    };
+    expect(controlMatches(change, await f.inspect(change), before)).toBe(true);
+    f.data["custom"] = {
+      ...profile,
+      ...body,
+      packPreheatingInfoVO: {
+        ...heating,
+        packPreheatingVOList: [
+          { ...heating.packPreheatingVOList[0], startTime: " 60" },
+        ],
+      },
+      pvPriority: profile.pvPriority,
+    };
+    expect(controlMatches(change, await f.inspect(change), before)).toBe(false);
+  });
   it.each([
     { timezone: "Europe/London" },
     { preheating: { enabled: true, windows: [] }, timezone: "Europe/London" },
@@ -993,5 +1037,84 @@ describe("inactive profile priorities and schedules", () => {
         ).toMatchObject({ failure: { reason: "InvalidInput" } });
       })
     );
+  });
+});
+
+describe("saved solar priority membership", () => {
+  const rows = [
+    { ...profile.pvPriority[0], loadsType: 1, priority: 1 },
+    { ...profile.pvPriority[0], loadsType: 3, priority: 2 },
+    { ...profile.pvPriority[0], loadsType: 4, priority: 3, status: 2 },
+  ];
+  const change = prioritiesChange({
+    solarPriority: [
+      {
+        providerDeviceType: 4,
+        providerLoadType: 1,
+        providerPriority: 2,
+        smartLoadPath: null,
+      },
+      {
+        providerDeviceType: 4,
+        providerLoadType: 3,
+        providerPriority: 1,
+        smartLoadPath: null,
+      },
+      {
+        providerDeviceType: 4,
+        providerLoadType: 4,
+        providerPriority: 3,
+        smartLoadPath: null,
+      },
+    ],
+  });
+  it("changes only known priorities while preserving excluded rows and complete readback", async () => {
+    const f = fixture({
+      custom: { ...profile, profileId: 201, pvPriority: rows },
+    });
+    const before = await f.inspect(change);
+    await Effect.runPromise(
+      f.client.validateControl(id, change, before, token)
+    );
+    await Effect.runPromise(
+      f.client.dispatchControl(id, change, token, before)
+    );
+    expect(f.writes[0]?.[2]).toMatchObject({
+      pvPriority: [
+        { loadsType: 1, priority: 2, sgDeviceType: 4, smartLoadsPath: null },
+        { loadsType: 3, priority: 1, sgDeviceType: 4, smartLoadsPath: null },
+        { loadsType: 4, priority: 3, sgDeviceType: 4, smartLoadsPath: null },
+      ],
+    });
+    f.data["custom"] = {
+      ...profile,
+      profileId: 201,
+      pvPriority: rows.map((row) => ({
+        ...row,
+        priority:
+          new Map([
+            [1, 2],
+            [3, 1],
+            [4, 3],
+          ]).get(row.loadsType) ?? row.priority,
+      })),
+    };
+    expect(controlMatches(change, await f.inspect(change), before)).toBe(true);
+  });
+  it.each(
+    [
+      rows.map((row) => ({ ...row, status: 2 })),
+      rows.map((row) => ({ ...row, isGroup: true })),
+      rows.map((row) => ({ ...row, status: 99 })),
+    ].map((pvPriority) => ({ pvPriority }))
+  )("refuses excluded/grouped/unknown row changes", async ({ pvPriority }) => {
+    const f = fixture({ custom: { ...profile, profileId: 201, pvPriority } });
+    expect(
+      await Effect.runPromise(
+        f.client
+          .validateControl(id, change, await f.inspect(change), token)
+          .pipe(Effect.result)
+      )
+    ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
   });
 });

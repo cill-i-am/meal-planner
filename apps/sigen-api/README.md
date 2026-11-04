@@ -1,6 +1,6 @@
 # Private mySigen API and MCP
 
-This independent Cloudflare service exposes 47 HTTP/MCP operations and 22 typed setting-change families from the [coverage matrix](../../docs/sigen/coverage.md). It includes station/profile/template inspection, equipment and smart-load summaries, preheating, diagnostics, history and approval controls. Charger/V2X adapters, industrial/grouped profiles and further schedule/settings families remain incomplete; the matrix lists the evidence needed. `packages/sigen` contains the reusable Effect 4 EU private client; this app owns encrypted sessions and the account Durable Object. `sigen.alchemy.ts` deploys only this service, with independent credentials.
+This independent Cloudflare service exposes 56 HTTP/MCP operations and 26 typed setting-change families from the [coverage matrix](../../docs/sigen/coverage.md). It includes station/profile/template inspection, equipment and smart-load summaries, preheating, diagnostics, history and approval controls. Charger reads and smart-load mode/off-grid controls are implemented; charger/V2X writes, industrial/grouped profiles and smart-load on-grid schedule replacement remain incomplete; the matrix lists the evidence needed. `packages/sigen` contains the reusable Effect 4 EU private client; this app owns encrypted sessions and the account Durable Object. `sigen.alchemy.ts` deploys only this service, with independent credentials.
 
 ## Current surface
 

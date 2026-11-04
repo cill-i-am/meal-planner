@@ -77,6 +77,34 @@ const daysKnown = (days: readonly number[] | null) =>
   days.length > 0 &&
   new Set(days).size === days.length &&
   days.every((day) => day >= 1 && day <= 7);
+const knownPower = (value: number | string | null) =>
+  value !== null &&
+  /^\d+(?:\.\d+)?$/u.test(String(value)) &&
+  Number.isFinite(Number(value));
+const knownModeSettings = (
+  row: NonNullable<
+    NonNullable<
+      typeof SmartLoadControlSettings.Type.onGrid.autoModeParams
+    >["touPointParamsList"]
+  >[number],
+  automatic: NonNullable<
+    typeof SmartLoadControlSettings.Type.onGrid.autoModeParams
+  >
+) => {
+  if (Number(row.consumptionMode) === 2) {
+    return (
+      row.socMode !== null &&
+      percent(row.socMode.socLowerLimit) !== null &&
+      percent(row.socMode.socUpperLimit) !== null &&
+      Number(row.socMode.socLowerLimit) < Number(row.socMode.socUpperLimit)
+    );
+  }
+  if (Number(row.consumptionMode) === 1) {
+    const pv = automatic.pvExcessParams;
+    return pv !== null && knownPower(pv.ratePower) && knownPower(pv.startPower);
+  }
+  return true;
+};
 /** Activation accepts only complete known schedule settings, even for disabled rows. */
 const knownAutomaticSettings = (
   settings: typeof SmartLoadControlSettings.Type.onGrid
@@ -102,11 +130,7 @@ const knownAutomaticSettings = (
       integerIn(row.startTime, 0, 1439) &&
       integerIn(row.duration, 1, 1440) &&
       daysKnown(row.periodConfig) &&
-      (row.socMode === null ||
-        (percent(row.socMode.socLowerLimit) !== null &&
-          percent(row.socMode.socUpperLimit) !== null &&
-          Number(row.socMode.socLowerLimit) <
-            Number(row.socMode.socUpperLimit)))
+      knownModeSettings(row, automatic)
   );
   const validReady = ready.every(
     (row) =>
@@ -147,6 +171,8 @@ export const loadControlMatches = (
     );
   }
   return (
+    value.load.providerRunMode === before.load.providerRunMode &&
+    value.load.providerManualSwitch === before.load.providerManualSwitch &&
     value.offGrid.offGridControlMode === offGridCode(change) &&
     value.offGrid.backupSoc === before.offGrid.backupSoc &&
     value.offGrid.chargeStopSoc === before.offGrid.chargeStopSoc &&

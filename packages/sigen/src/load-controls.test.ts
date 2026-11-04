@@ -97,6 +97,12 @@ describe("smart-load settings controls", () => {
     ]);
     expect(controlMatches(soc, await f.inspect(soc), before)).toBe(true);
   });
+  it("does not verify an off-grid change if the detailed load mode also changed", async () => {
+    const f = fixture();
+    const before = await f.inspect(soc);
+    f.data["/device/tp-device/smart-loads"] = { ...smartLoad, runMode: 0 };
+    expect(controlMatches(soc, await f.inspect(soc), before)).toBe(false);
+  });
   it.each([
     ["keep_connected", 0],
     ["disconnect", 2],
@@ -174,6 +180,45 @@ describe("smart-load settings controls", () => {
             .pipe(Effect.result)
         )
       ).toMatchObject({ failure: { reason } });
+      expect(f.writes).toHaveLength(0);
+    }
+  );
+  it.each([
+    {
+      ...loadControl.autoModeParams,
+      touPointParamsList: [
+        {
+          ...loadControl.autoModeParams.touPointParamsList[0],
+          consumptionMode: 2,
+          socMode: null,
+        },
+      ],
+    },
+    { ...loadControl.autoModeParams, pvExcessParams: null },
+    {
+      ...loadControl.autoModeParams,
+      pvExcessParams: { minRunTime: null, ratePower: "unknown", startPower: 2 },
+    },
+    {
+      ...loadControl.autoModeParams,
+      pvExcessParams: { minRunTime: null, ratePower: 2, startPower: -1 },
+    },
+  ])(
+    "does not activate automatic mode with incomplete battery or solar-only settings",
+    async (autoModeParams) => {
+      const f = fixture({
+        "/device/tp-device/smart-loads/control-mode": {
+          ...loadControl,
+          autoModeParams,
+        },
+      });
+      expect(
+        await Effect.runPromise(
+          f.client
+            .validateControl(id, automatic, await f.inspect(automatic), token)
+            .pipe(Effect.result)
+        )
+      ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
       expect(f.writes).toHaveLength(0);
     }
   );

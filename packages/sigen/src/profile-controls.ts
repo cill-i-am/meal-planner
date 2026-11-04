@@ -1,7 +1,10 @@
 import { Schema, absurd } from "effect";
 
 import { OperatingMode, Percent, StationId, Timestamp } from "./model.js";
-import { isUnusedResidentialPreheatingPower } from "./preheating.js";
+import {
+  isUnusedResidentialPreheatingPower,
+  writableResidentialPreheating,
+} from "./preheating.js";
 import {
   ProfilePriorities,
   ProfileSchedules,
@@ -264,6 +267,8 @@ export const profileSettingsEqual = (
   right: Schema.Json
 ): boolean => canonicalProfileValue(left) === canonicalProfileValue(right);
 const configuration = (value: ProfileConfiguration) => {
+  const normalizeMinutes =
+    !value.industrial && writableResidentialPreheating(value.preheating);
   const {
     target: _target,
     providerProfileId: _id,
@@ -292,6 +297,12 @@ const configuration = (value: ProfileConfiguration) => {
               )
                 ? null
                 : slot.providerDischargePower,
+              providerDuration: normalizeMinutes
+                ? Number(slot.providerDuration)
+                : slot.providerDuration,
+              providerStartTime: normalizeMinutes
+                ? Number(slot.providerStartTime)
+                : slot.providerStartTime,
             })),
           }
         : value.preheating,

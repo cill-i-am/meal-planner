@@ -3,7 +3,7 @@ import { remainingResponses, smartLoad } from "./remaining.js";
 
 export const loadControl = {
   autoModeParams: {
-    pvExcessParams: { minRunTime: 10, ratePower: 2000, startPower: 1500 },
+    pvExcessParams: { minRunTime: 10, ratePower: 2, startPower: 1.5 },
     smartSavePointParamsList: [],
     touPointParamsList: [
       {
