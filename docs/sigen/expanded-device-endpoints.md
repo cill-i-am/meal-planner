@@ -32,7 +32,15 @@ Each operation has a distinct profile-scoped approval and dispatch gate. The pro
 
 Both use separate operation/load-key/load-path approval scopes. Preparation and dispatch recheck capability and configuration. Unknown results are reconciled without replay. The older manual-switch adapter now uses the current app's `third-party-device` route; its request remains PATCH with query parameters and no body. All three smart-load write families remain disabled pending hardware acceptance.
 
-On-grid schedule replacement is still excluded: the request serializer alone does not establish ready-by versus TOU precedence, PV minimum-runtime units or all mode-specific constraints. There is no raw write proxy.
+### On-grid schedule replacement
+
+`set_smart_load_schedule` takes a load key and path plus `schedule` with `timezone`, `timed`, `readyBy` and `solar`. It replaces both saved lists in one POST. Add, edit or remove rows by supplying the full desired lists. Each row carries an `enabled` flag. Two empty lists clear the schedule in manual mode. Clearing or disabling every row in automatic mode first requires a separately approved switch to manual mode.
+
+Timed rows use station-local `HH:mm` and weekday codes `1` through `7`. Choose `system` or `solar_only` with an explicit `batteryBoost` flag, or `battery_only` with ordered SOC bounds. Ready-by rows supply `endTime` and `durationMinutes`. The write contract accepts up to five timed rows and three ready-by rows. Overnight windows, overlapping timed rows and any shared weekday between ready-by and timed rows are excluded. Each weekday can have one ready-by rule. These limits avoid relying on unverified provider precedence, even for currently disabled rows.
+
+Solar-only rows share `solar.startingPowerW` and `solar.ratedPowerW`. The adapter converts W to the app's kW fields and preserves the reviewed raw `minRunTime`, whose unit remains unverified. A replacement without solar-only rows uses `solar: null` and clears the saved schedule's solar parameters, as the app does. The save endpoint uses minute offsets and separate enable codes for the two row types. The pinned bundle's `nL3` near line 85463, `A.t0`/`A.ul`/`A.anB` near lines 410125–410187, and save UI near lines 535015–535158 and 535575–535620 show the request shape, mode separation, limits and ready-by fields.
+
+Approve once binds the exact saved review. Always approve is revocable and binds the schedule operation, station, load key and load path. Each new command still checks identity, timezone and configuration drift. The adapter requires a positive provider acknowledgement before treating the POST as accepted. Verification reads back both lists and the solar settings and checks the previous mode, switch and off-grid settings. An ambiguous response is reconciled by readback without resending the POST. Production dispatch requires live acceptance on a configured smart load.
 
 ## Read boundaries
 

@@ -36,7 +36,8 @@ export type ProviderWrite = (
   method: "PUT" | "POST" | "PATCH" | "DELETE",
   path: string,
   body: Readonly<Record<string, Schema.Json>> | null,
-  token: Redacted.Redacted<string>
+  token: Redacted.Redacted<string>,
+  acknowledgement?: "boolean_true"
 ) => Effect.Effect<void, SigenFailure>;
 const powerString = (limit: typeof WritablePowerLimit.Type) =>
   limit.kind === "unlimited" ? "4294967.295" : String(limit.watts / 1000);
@@ -733,7 +734,12 @@ export const makeControlsClient = (
     reviewed?: ControlSnapshot
   ) => {
     if (isLoadControlChange(change)) {
-      return loadControls.dispatch(stationId, change, token);
+      return loadControls.dispatch(
+        stationId,
+        change,
+        token,
+        reviewed?.kind === "smart_load_settings" ? reviewed : undefined
+      );
     }
     if (isProfileChange(change)) {
       return reviewed?.kind === "profile"

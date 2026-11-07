@@ -11,6 +11,7 @@ import {
   controlMatches,
   snapshotConfiguration,
 } from "./controls.js";
+import { LoadSchedule } from "./load-schedule.js";
 import { StationId } from "./model.js";
 
 const id = Schema.decodeUnknownSync(StationId)("12345");
@@ -264,5 +265,174 @@ describe("smart-load settings controls", () => {
         operation: "set_smart_load_off_grid_control",
       })
     ).toThrow();
+  });
+});
+
+const loadSchedule = Schema.decodeUnknownSync(LoadSchedule)({
+  readyBy: [
+    { durationMinutes: 45, enabled: true, endTime: "07:30", providerDays: "6" },
+  ],
+  solar: { ratedPowerW: 2050, startingPowerW: 1525 },
+  timed: [
+    {
+      consumption: { batteryBoost: true, mode: "solar_only" },
+      enabled: true,
+      endTime: "14:00",
+      providerDays: "1,3",
+      startTime: "12:00",
+    },
+    {
+      consumption: {
+        lowerSocPercent: 20.5,
+        mode: "battery_only",
+        upperSocPercent: 80.5,
+      },
+      enabled: false,
+      endTime: "24:00",
+      providerDays: "5",
+      startTime: "23:00",
+    },
+  ],
+  timezone: "Europe/London",
+});
+const scheduleChange = (schedule = loadSchedule) =>
+  parse({ operation: "set_smart_load_schedule", schedule });
+const solarRow = {
+  autoCharge: 1,
+  consumptionMode: 1,
+  duration: 120,
+  periodConfig: [1, 3],
+  socMode: { socLowerLimit: 15, socUpperLimit: 50 },
+  startTime: "720",
+  touEnable: 1,
+};
+const batteryRow = {
+  autoCharge: 0,
+  consumptionMode: 2,
+  duration: 60,
+  periodConfig: [5],
+  socMode: { socLowerLimit: 20.5, socUpperLimit: 80.5 },
+  startTime: "1380",
+  touEnable: 0,
+};
+const readyRow = {
+  duration: "45",
+  endTime: "450",
+  periodConfig: [6],
+  smartSaveEnable: 1,
+};
+
+describe("smart-load schedule replacement", () => {
+  it("sends the complete reviewed schedule in one POST and reconciles provider readback", async () => {
+    const f = fixture();
+    const change = scheduleChange();
+    const before = await f.inspect(change);
+    await Effect.runPromise(
+      f.client.validateControl(id, change, before, token)
+    );
+    await Effect.runPromise(
+      f.client.dispatchControl(id, change, token, before)
+    );
+    expect(f.writes).toHaveLength(1);
+    expect(f.writes[0]?.slice(0, 3)).toEqual([
+      "POST",
+      "/device/tp-device/smart-loads/control-mode/auto/on-grid",
+      {
+        loadPath: 1,
+        pvExcessParams: { minRunTime: 10, ratePower: 2.05, startPower: 1.525 },
+        schedule: {
+          smartSavePointParamsList: [readyRow],
+          touPointParamsList: [solarRow, batteryRow],
+        },
+        stationId: 12_345,
+      },
+    ]);
+    expect(f.writes[0]?.[4]).toBe("boolean_true");
+    const path = "/device/tp-device/smart-loads/control-mode";
+    const saved = {
+      ...loadControl,
+      autoModeParams: {
+        pvExcessParams: {
+          minRunTime: 10,
+          ratePower: "2.050",
+          startPower: 1.525,
+        },
+        smartSavePointParamsList: [{ ...readyRow, duration: 45 }],
+        touPointParamsList: [
+          batteryRow,
+          { ...solarRow, periodConfig: [3, 1], startTime: 720 },
+        ],
+      },
+    };
+    f.data[path] = saved;
+    expect(controlMatches(change, await f.inspect(change), before)).toBe(true);
+    f.data[path] = { ...saved, controlMode: 0 };
+    expect(controlMatches(change, await f.inspect(change), before)).toBe(false);
+    f.data[path] = {
+      ...saved,
+      autoModeParams: {
+        ...saved.autoModeParams,
+        touPointParamsList: [batteryRow, { ...solarRow, touEnable: 0 }],
+      },
+    };
+    expect(controlMatches(change, await f.inspect(change), before)).toBe(false);
+  });
+
+  it("clears both lists in manual mode and requires an explicit mode change before clearing in automatic mode", async () => {
+    const change = scheduleChange({
+      ...loadSchedule,
+      readyBy: [],
+      solar: null,
+      timed: [],
+    });
+    const f = fixture();
+    const before = await f.inspect(change);
+    await Effect.runPromise(
+      f.client.validateControl(id, change, before, token)
+    );
+    await Effect.runPromise(
+      f.client.dispatchControl(id, change, token, before)
+    );
+    expect(f.writes[0]?.[2]).toMatchObject({
+      pvExcessParams: null,
+      schedule: { smartSavePointParamsList: [], touPointParamsList: [] },
+    });
+    const active = fixture({
+      "/device/tp-device/smart-loads": { ...smartLoad, runMode: 0 },
+      "/device/tp-device/smart-loads/control-mode": {
+        ...loadControl,
+        controlMode: 0,
+      },
+    });
+    expect(
+      await Effect.runPromise(
+        active.client
+          .validateControl(id, change, await active.inspect(change), token)
+          .pipe(Effect.result)
+      )
+    ).toMatchObject({ failure: { reason: "InvalidInput" } });
+  });
+
+  it("rejects an overlapping timed slot, a ready-by day shared with a timed slot, or missing solar settings", () => {
+    const [solar] = loadSchedule.timed;
+    for (const schedule of [
+      { ...loadSchedule, timed: [solar, solar] },
+      {
+        ...loadSchedule,
+        readyBy: [
+          {
+            durationMinutes: 45,
+            enabled: true,
+            endTime: "07:30",
+            providerDays: "1",
+          },
+        ],
+      },
+      { ...loadSchedule, solar: null },
+    ]) {
+      expect(() =>
+        parse({ operation: "set_smart_load_schedule", schedule })
+      ).toThrow();
+    }
   });
 });

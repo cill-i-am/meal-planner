@@ -2,6 +2,11 @@ import { Effect, Schema } from "effect";
 import type { Redacted } from "effect";
 
 import type { ProviderWrite } from "./controls-client.js";
+import {
+  LoadSchedule,
+  loadScheduleMatches,
+  providerLoadSchedule,
+} from "./load-schedule.js";
 import { makeLoadSettingsClient } from "./load-settings-client.js";
 import { SmartLoadControlSettings } from "./load-settings.js";
 import { LoadKey, LoadPath } from "./loads.js";
@@ -22,6 +27,11 @@ const SocControl = Schema.Struct({
 export const LoadControlChange = Schema.Union([
   Schema.Struct({
     ...Identity,
+    operation: Schema.Literal("set_smart_load_schedule"),
+    schedule: LoadSchedule,
+  }),
+  Schema.Struct({
+    ...Identity,
     mode: Schema.Literals(["manual", "automatic"]),
     operation: Schema.Literal("set_smart_load_mode"),
   }),
@@ -40,6 +50,7 @@ export type LoadControlChange = typeof LoadControlChange.Type;
 export const isLoadControlChange = (change: {
   operation: string;
 }): change is LoadControlChange =>
+  change.operation === "set_smart_load_schedule" ||
   change.operation === "set_smart_load_mode" ||
   change.operation === "set_smart_load_off_grid_control";
 const { fetchedAt: _fetchedAt, ...Settings } = SmartLoadControlSettings.fields;
@@ -141,6 +152,31 @@ const knownAutomaticSettings = (
   );
   return validTou && validReady;
 };
+type LoadSettings = typeof SmartLoadControlSettings.Type;
+const loadCanBeControlled = (state: LoadSettings) =>
+  state.load.controllable === true &&
+  [0, 1].includes(state.load.providerRunMode ?? -1) &&
+  state.load.providerRunMode === state.onGrid.controlMode &&
+  [0, 1].includes(state.onGrid.manualModeSwitch ?? -1) &&
+  state.load.providerManualSwitch === state.onGrid.manualModeSwitch &&
+  [0, 1, 2].includes(state.offGrid.offGridControlMode ?? -1);
+
+const sameControlMode = (value: LoadSettings, before: LoadSettings) =>
+  value.load.providerRunMode === before.load.providerRunMode &&
+  value.onGrid.controlMode === before.onGrid.controlMode &&
+  value.onGrid.manualModeSwitch === before.onGrid.manualModeSwitch;
+
+const matchesReviewedLoad = (
+  change: LoadControlChange,
+  value: LoadSettings,
+  before: LoadSettings
+) =>
+  value.load.key === change.loadKey &&
+  value.load.path === change.loadPath &&
+  value.load.providerManualSwitch === before.load.providerManualSwitch &&
+  value.stationId === before.stationId &&
+  value.timezone === before.timezone;
+
 export const loadControlMatches = (
   change: LoadControlChange,
   observed: LoadControlSnapshot,
@@ -151,13 +187,7 @@ export const loadControlMatches = (
   }
   const value = observed.settings;
   const before = reviewed.settings;
-  if (
-    value.load.key !== change.loadKey ||
-    value.load.path !== change.loadPath ||
-    value.load.providerManualSwitch !== before.load.providerManualSwitch ||
-    value.stationId !== before.stationId ||
-    value.timezone !== before.timezone
-  ) {
+  if (!matchesReviewedLoad(change, value, before)) {
     return false;
   }
   if (change.operation === "set_smart_load_mode") {
@@ -169,6 +199,17 @@ export const loadControlMatches = (
       JSON.stringify(value.onGrid.autoModeParams) ===
         JSON.stringify(before.onGrid.autoModeParams) &&
       JSON.stringify(value.offGrid) === JSON.stringify(before.offGrid)
+    );
+  }
+  if (change.operation === "set_smart_load_schedule") {
+    return (
+      sameControlMode(value, before) &&
+      JSON.stringify(value.offGrid) === JSON.stringify(before.offGrid) &&
+      loadScheduleMatches(
+        change.schedule,
+        value.onGrid.autoModeParams,
+        before.onGrid.autoModeParams
+      )
     );
   }
   return (
@@ -208,20 +249,25 @@ export const makeLoadControls = (read: ProviderRead, write: ProviderWrite) => {
     ) {
       return failure("PermissionDenied");
     }
-    if (
-      state.load.controllable !== true ||
-      ![0, 1].includes(state.load.providerRunMode ?? -1) ||
-      state.load.providerRunMode !== state.onGrid.controlMode ||
-      ![0, 1].includes(state.onGrid.manualModeSwitch ?? -1) ||
-      state.load.providerManualSwitch !== state.onGrid.manualModeSwitch ||
-      ![0, 1, 2].includes(state.offGrid.offGridControlMode ?? -1)
-    ) {
+    if (!loadCanBeControlled(state)) {
       return failure("UnsupportedCapability");
     }
     if (change.operation === "set_smart_load_mode") {
       return change.mode === "automatic" &&
         !knownAutomaticSettings(state.onGrid)
         ? failure("UnsupportedCapability")
+        : Effect.void;
+    }
+    if (change.operation === "set_smart_load_schedule") {
+      if (change.schedule.timezone !== state.timezone) {
+        return failure("InvalidInput");
+      }
+      const hasEnabledRows =
+        change.schedule.timed.some((row) => row.enabled) ||
+        change.schedule.readyBy.some((row) => row.enabled);
+      // The app prompts for a switch to manual mode when clearing an active schedule.
+      return state.onGrid.controlMode === 0 && !hasEnabledRows
+        ? failure("InvalidInput")
         : Effect.void;
     }
     if (change.control.mode === "soc") {
@@ -242,7 +288,8 @@ export const makeLoadControls = (read: ProviderRead, write: ProviderWrite) => {
   const dispatch = (
     stationId: StationId,
     change: LoadControlChange,
-    token: Redacted.Redacted<string>
+    token: Redacted.Redacted<string>,
+    reviewed?: LoadControlSnapshot
   ) => {
     if (change.operation === "set_smart_load_mode") {
       return write(
@@ -250,6 +297,28 @@ export const makeLoadControls = (read: ProviderRead, write: ProviderWrite) => {
         `/device/tp-device/smart-loads/control-mode?stationId=${stationId}&loadPath=${change.loadPath}&controlMode=${change.mode === "manual" ? 1 : 0}`,
         null,
         token
+      );
+    }
+    if (change.operation === "set_smart_load_schedule") {
+      if (
+        reviewed?.settings.stationId !== stationId ||
+        !Number.isSafeInteger(Number(stationId))
+      ) {
+        return failure("SchemaMismatch");
+      }
+      return write(
+        "POST",
+        "/device/tp-device/smart-loads/control-mode/auto/on-grid",
+        {
+          loadPath: change.loadPath,
+          stationId: Number(stationId),
+          ...providerLoadSchedule(
+            change.schedule,
+            reviewed.settings.onGrid.autoModeParams
+          ),
+        },
+        token,
+        "boolean_true"
       );
     }
     const base = {

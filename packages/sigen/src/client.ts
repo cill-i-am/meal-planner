@@ -96,6 +96,7 @@ const parse = <S extends Schema.Top>(schema: S) =>
     Schema.decodeUnknownEffect(schema),
     Effect.mapError(() => failure("SchemaMismatch"))
   );
+const parseTrueAcknowledgement = parse(Schema.Literal(true));
 const dcCapability = (serials: readonly string[] | null) => {
   if (serials === null) {
     return "unknown";
@@ -239,17 +240,27 @@ export const makeSigenClientWithBudget = (budget: RequestBudget) =>
     };
 
     return {
-      ...makeControlsClient(read, (method, path, body, accessToken) =>
-        request(
-          method,
-          path,
-          {
-            authorization: `Bearer ${Redacted.value(accessToken)}`,
-          },
-          body === null
-            ? undefined
-            : HttpBody.text(JSON.stringify(body), "application/json")
-        ).pipe(Effect.flatMap(unwrap), Effect.asVoid)
+      ...makeControlsClient(
+        read,
+        (method, path, body, accessToken, acknowledgement) =>
+          request(
+            method,
+            path,
+            {
+              authorization: `Bearer ${Redacted.value(accessToken)}`,
+            },
+            body === null
+              ? undefined
+              : HttpBody.text(JSON.stringify(body), "application/json")
+          ).pipe(
+            Effect.flatMap(unwrap),
+            Effect.flatMap((data) =>
+              acknowledgement === "boolean_true"
+                ? parseTrueAcknowledgement(data)
+                : Effect.void
+            ),
+            Effect.asVoid
+          )
       ),
       ...makeSettingsClient(read),
       ...makeTariffsClient(read),

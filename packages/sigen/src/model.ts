@@ -119,6 +119,7 @@ export const ControlOperation = Schema.Literals([
   "set_smart_load_switch",
   "set_smart_load_mode",
   "set_smart_load_off_grid_control",
+  "set_smart_load_schedule",
   "set_battery_discharge_priority",
   "set_solar_priority",
   "start_manual_override",

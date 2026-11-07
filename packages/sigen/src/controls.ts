@@ -241,6 +241,7 @@ export const ApprovalScope = Schema.Union([
       "set_smart_load_switch",
       "set_smart_load_mode",
       "set_smart_load_off_grid_control",
+      "set_smart_load_schedule",
     ]),
     stationId: StationId,
   }),

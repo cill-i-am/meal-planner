@@ -568,7 +568,7 @@ export const operations = [
   ),
   operation(
     "prepare_command",
-    "Prepare an immutable five-minute review without changing equipment. Use a fresh UUID commandId; repeated IDs return the saved command, altered inputs conflict. An existing always-approve grant authorizes this operation and station/device.",
+    "Prepare an immutable five-minute review without changing equipment. Use a fresh UUID commandId; repeated IDs return the saved command, altered inputs conflict. An existing always-approve grant authorizes this operation and station/device. set_smart_load_schedule replaces both saved schedule lists for one load. Review the complete replacement, including removed rows and solar settings.",
     PrepareCommandInput,
     Command,
     (input) =>
