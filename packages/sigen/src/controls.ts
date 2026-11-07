@@ -15,6 +15,7 @@ import {
   Timestamp,
 } from "./model.js";
 import {
+  ActiveProfileTarget,
   ProfileChange,
   ProfileControlSnapshot,
   profileControlMatches,
@@ -41,6 +42,11 @@ import {
   samePeakShavingPreset,
   SolarSettings,
 } from "./settings.js";
+import {
+  TimeOfUseChange,
+  TimeOfUseSnapshot,
+  timeOfUseMatches,
+} from "./time-of-use.js";
 
 export const SolarPriorityChange = Schema.Struct({
   providerDeviceType: Schema.NullOr(Schema.Int),
@@ -57,6 +63,7 @@ export const ControlChange = Schema.Union([
   LoadControlChange,
   ProfileChange,
   ScheduledSettingsChange,
+  TimeOfUseChange,
   Schema.Struct({
     enabled: Schema.Boolean,
     loadKey: LoadKey,
@@ -164,6 +171,7 @@ export const ControlSnapshot = Schema.Union([
   LoadControlSnapshot,
   ProfileControlSnapshot,
   ScheduledSettingsSnapshot,
+  TimeOfUseSnapshot,
   Schema.Struct({
     kind: Schema.Literal("smart_load"),
     settings: SmartLoadState,
@@ -224,6 +232,11 @@ export const ApproveCommandInput = Schema.Struct({
 });
 export const ApprovalScope = Schema.Union([
   Schema.Struct({
+    operation: Schema.Literal("set_active_energy_profile_parameters"),
+    stationId: StationId,
+    target: ActiveProfileTarget,
+  }),
+  Schema.Struct({
     operation: Schema.Literals([
       "update_energy_profile",
       "set_energy_profile_parameters",
@@ -259,6 +272,7 @@ export const ApprovalScope = Schema.Union([
       "set_grid_import_limit",
       "set_grid_connection_current",
       "set_operating_mode",
+      "activate_time_of_use_mode",
       "set_battery_soc_thresholds",
       "set_peak_shaving_schedule",
       "stop_manual_override",
@@ -273,6 +287,9 @@ export const approvalScope = (
   stationId: StationId,
   change: ControlChange
 ): typeof ApprovalScope.Type => {
+  if (change.operation === "set_active_energy_profile_parameters") {
+    return { operation: change.operation, stationId, target: change.target };
+  }
   if (
     change.operation === "set_energy_profile_parameters" ||
     change.operation === "set_energy_profile_priorities" ||
@@ -511,6 +528,7 @@ const matchesExistingControl = (
     | typeof ProfileChange.Type
     | typeof ScheduledSettingsChange.Type
     | LoadControlChange
+    | TimeOfUseChange
   >,
   snapshot: ControlSnapshot,
   reviewed?: ControlSnapshot
@@ -575,6 +593,15 @@ export const controlMatches = (
   snapshot: ControlSnapshot,
   reviewed?: ControlSnapshot
 ): boolean => {
+  if (change.operation === "activate_time_of_use_mode") {
+    return (
+      snapshot.kind === "time_of_use" &&
+      timeOfUseMatches(
+        snapshot,
+        reviewed?.kind === "time_of_use" ? reviewed : undefined
+      )
+    );
+  }
   if (isLoadControlChange(change)) {
     return (
       snapshot.kind === "smart_load_settings" &&

@@ -478,6 +478,14 @@ const options: HttpOptions = {
       remainingClient
         .thirdPartyDevices(input, Redacted.make("fixture"))
         .pipe(Effect.map((value) => ({ ...value, fetchedAt: 123 }))),
+    timeOfUseSettings: (stationId) =>
+      Effect.succeed({
+        configuration: { currType: 0 },
+        fetchedAt: 123,
+        slots: [],
+        stationId,
+        timezone: "Europe/Dublin",
+      }),
     topology: (stationId) =>
       Effect.succeed({
         devices: [],

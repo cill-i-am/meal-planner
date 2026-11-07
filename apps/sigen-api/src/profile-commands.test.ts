@@ -45,6 +45,18 @@ const approve = (command: Command, mode: "once" | "always") => ({
 const fixture = async () => {
   let book: CommandBook | null = null;
   let loseResponse = false;
+  let currentMode = 1;
+  let active: Record<string, unknown> = { ...profile, profileId: null };
+  let touRows = [
+    {
+      currType: 1,
+      dischargeType: 0,
+      endTime: "04:00",
+      startTime: "01:00",
+      stationId: 12_345,
+      whichDay: "1,2,3,4,5,6,7",
+    },
+  ];
   const custom = new Map<number, Record<string, unknown>>();
   const writes: string[] = [];
   const lock = await run(Semaphore.make(1));
@@ -71,11 +83,11 @@ const fixture = async () => {
           return false;
         }
         if (url.pathname.includes("/mode/current/")) {
-          return { currentMode: 1, currentProfileId: -1 };
+          return { currentMode, currentProfileId: -1 };
         }
         if (url.pathname === "/device/energy-profile/mode/all/12345") {
           return {
-            defaultWorkingModes: [],
+            defaultWorkingModes: [{ label: "TOU", value: "2" }],
             energyProfileItems: [...custom].map(([profileId, entry]) => ({
               name: entry["name"],
               profileId,
@@ -89,6 +101,15 @@ const fixture = async () => {
         ) {
           return custom.get(Number(url.searchParams.get("profileId")));
         }
+        if (url.pathname === "/device/energy-profile/setting/12345") {
+          return active;
+        }
+        if (url.pathname === "/device/setting/tou/12345") {
+          return { currType: 1 };
+        }
+        if (url.pathname === "/device/dischargesetting/12345") {
+          return touRows;
+        }
         return remainingResponses[url.pathname];
       }),
     (method, path, body) =>
@@ -96,6 +117,10 @@ const fixture = async () => {
         writes.push(`${method} ${path}`);
         if (method === "DELETE") {
           custom.delete(Number(path.split("/").at(-1)));
+        } else if (path === "/device/energy-profile/mode") {
+          currentMode = 2;
+        } else if (body?.["profileId"] === null) {
+          active = { ...active, ...body, pvPriority: profile.pvPriority };
         } else {
           const input = yield* Schema.decodeUnknownEffect(
             Schema.Struct({
@@ -140,6 +165,9 @@ const fixture = async () => {
     );
   const service = make();
   return {
+    changeTouStart: (startTime: string) => {
+      touRows = touRows.map((row) => ({ ...row, startTime }));
+    },
     custom,
     loseResponse: () => {
       loseResponse = true;
@@ -154,6 +182,9 @@ const fixture = async () => {
         })
       ),
     service,
+    setMode: (mode: number) => {
+      currentMode = mode;
+    },
     writes,
   };
 };
@@ -381,4 +412,64 @@ describe("separate approval and dispatch gates for profile extras", () => {
       ).toMatchObject({ failure: { reason: "ApprovalRequired" } });
     }
   );
+});
+
+const activeParameters = (providerMode: 0 | 1, watts = 4500) =>
+  Schema.decodeUnknownSync(ControlChange)({
+    operation: "set_active_energy_profile_parameters",
+    parameters: { solarLimit: { kind: "limited", watts } },
+    target: { kind: "built_in", providerMode },
+  });
+const activateTou = Schema.decodeUnknownSync(ControlChange)({
+  operation: "activate_time_of_use_mode",
+});
+
+describe("active energy setting approvals", () => {
+  it("binds a reusable edit grant to the selected built-in mode", async () => {
+    const f = await fixture();
+    const first = await f.prepare(activeParameters(1));
+    await run(f.service.approveCommand(approve(first, "always")));
+    expect(await run(f.service.executeCommand(identity(first)))).toMatchObject({
+      phase: { status: "verified" },
+    });
+    const sameTarget = await f.prepare(activeParameters(1, 4000));
+    expect(
+      await run(f.service.executeCommand(identity(sameTarget)))
+    ).toMatchObject({ phase: { status: "verified" } });
+    const activation = await f.prepare(activateTou);
+    expect(
+      await run(
+        f.service.executeCommand(identity(activation)).pipe(Effect.result)
+      )
+    ).toMatchObject({ failure: { reason: "ApprovalRequired" } });
+    f.setMode(0);
+    const otherTarget = await f.prepare(activeParameters(0));
+    expect(
+      await run(
+        f.service.executeCommand(identity(otherTarget)).pipe(Effect.result)
+      )
+    ).toMatchObject({ failure: { reason: "ApprovalRequired" } });
+    expect(f.writes).toHaveLength(2);
+  });
+
+  it("blocks TOU activation after timetable drift and reconciles one lost acknowledgement", async () => {
+    const f = await fixture();
+    const outdated = await f.prepare(activateTou);
+    await run(f.service.approveCommand(approve(outdated, "once")));
+    f.changeTouStart("02:00");
+    expect(
+      await run(f.service.executeCommand(identity(outdated)))
+    ).toMatchObject({ phase: { reason: "Conflict", status: "rejected" } });
+    expect(f.writes).toHaveLength(0);
+    const prepared = await f.prepare(activateTou);
+    await run(f.service.approveCommand(approve(prepared, "once")));
+    f.loseResponse();
+    expect(
+      await run(f.service.executeCommand(identity(prepared)))
+    ).toMatchObject({ phase: { status: "outcome_unknown" } });
+    expect(
+      await run(f.make().executeCommand(identity(prepared)))
+    ).toMatchObject({ phase: { status: "verified" } });
+    expect(f.writes).toEqual(["PUT /device/energy-profile/mode"]);
+  });
 });

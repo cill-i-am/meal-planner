@@ -265,6 +265,8 @@ const runtime = Effect.gen(function* constructAccountObject() {
       tariffs: (id: StationId) => inputCall(StationId, id, session.tariffs),
       thirdPartyDevices: (id: StationId) =>
         inputCall(StationId, id, session.thirdPartyDevices),
+      timeOfUseSettings: (id: StationId) =>
+        inputCall(StationId, id, session.timeOfUseSettings),
       topology: (input: StationId) =>
         inputCall(StationId, input, session.topology),
     };

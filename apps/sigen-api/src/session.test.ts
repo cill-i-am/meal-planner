@@ -146,6 +146,7 @@ const fixture = () => {
     systemCards: () => Effect.fail(failure("UnsupportedCapability")),
     tariffs: () => Effect.fail(failure("UnsupportedCapability")),
     thirdPartyDevices: () => Effect.fail(failure("UnsupportedCapability")),
+    timeOfUseSettings: () => Effect.fail(failure("UnsupportedCapability")),
     topology: () => Effect.fail(failure("UnsupportedCapability")),
     validateControl: () => Effect.fail(failure("UnsupportedCapability")),
   };

@@ -31,6 +31,8 @@ import {
 } from "./settings-client.js";
 import type { BatterySocSettings } from "./settings.js";
 import { samePeakShavingPreset } from "./settings.js";
+import { makeTimeOfUseControls } from "./time-of-use.js";
+import type { TimeOfUseChange } from "./time-of-use.js";
 
 export type ProviderWrite = (
   method: "PUT" | "POST" | "PATCH" | "DELETE",
@@ -246,7 +248,10 @@ const validateSolarPriority = (
 const validateExistingOwnerLimits = (
   change: Exclude<
     ControlChange,
-    ProfileChange | ScheduledSettingsChange | LoadControlChange
+    | ProfileChange
+    | ScheduledSettingsChange
+    | LoadControlChange
+    | TimeOfUseChange
   >,
   snapshot: ControlSnapshot
 ): SigenFailure | null => {
@@ -304,7 +309,8 @@ const validateOwnerLimits = (
   if (
     isProfileChange(change) ||
     isScheduledSettingsChange(change) ||
-    isLoadControlChange(change)
+    isLoadControlChange(change) ||
+    change.operation === "activate_time_of_use_mode"
   ) {
     return null;
   }
@@ -314,6 +320,7 @@ export const makeControlsClient = (
   read: ProviderRead,
   write: ProviderWrite
 ) => {
+  const timeOfUse = makeTimeOfUseControls(read, write);
   const scheduledSettings = makeScheduledSettingsControls(read, write);
   const profileControls = makeProfileControlsClient(read, write);
   const settings = makeSettingsClient(read);
@@ -326,6 +333,9 @@ export const makeControlsClient = (
     change: ControlChange,
     token: Redacted.Redacted<string>
   ): Effect.Effect<ControlSnapshot, SigenFailure> => {
+    if (change.operation === "activate_time_of_use_mode") {
+      return timeOfUse.inspect(stationId, token);
+    }
     if (isLoadControlChange(change)) {
       return loadControls.inspect(stationId, change, token);
     }
@@ -443,6 +453,12 @@ export const makeControlsClient = (
     snapshot: ControlSnapshot,
     token: Redacted.Redacted<string>
   ) => {
+    if (change.operation === "activate_time_of_use_mode") {
+      return snapshot.kind === "time_of_use" &&
+        snapshot.settings.stationId === stationId
+        ? timeOfUse.validate(snapshot, token)
+        : failure("SchemaMismatch");
+    }
     if (isLoadControlChange(change)) {
       return snapshot.kind === "smart_load_settings"
         ? loadControls.validate(change, snapshot)
@@ -491,6 +507,7 @@ export const makeControlsClient = (
           "manual",
           "battery_priority",
           "preheating",
+          "time_of_use",
         ].includes(snapshot.kind) &&
         (equipment.batteryCapacity === null || equipment.batteryCapacity <= 0)
       ) {
@@ -556,7 +573,10 @@ export const makeControlsClient = (
     stationId: StationId,
     change: Exclude<
       ControlChange,
-      ProfileChange | ScheduledSettingsChange | LoadControlChange
+      | ProfileChange
+      | ScheduledSettingsChange
+      | LoadControlChange
+      | TimeOfUseChange
     >,
     token: Redacted.Redacted<string>
   ) => {
@@ -733,6 +753,13 @@ export const makeControlsClient = (
     token: Redacted.Redacted<string>,
     reviewed?: ControlSnapshot
   ) => {
+    if (change.operation === "activate_time_of_use_mode") {
+      return timeOfUse.dispatch(
+        stationId,
+        token,
+        reviewed?.kind === "time_of_use" ? reviewed : undefined
+      );
+    }
     if (isLoadControlChange(change)) {
       return loadControls.dispatch(
         stationId,

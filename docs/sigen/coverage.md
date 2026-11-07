@@ -1,6 +1,6 @@
 # Sigen private API coverage
 
-Current implementation: **56 HTTP/MCP operations**, comprising 50 provider/connection reads and six command/approval operations. Commands accept **27 typed setting-change families**. This is the current coverage record; dated acceptance history lives in [read acceptance](read-acceptance.md). Three real token renewals passed; see [authentication acceptance](auth-acceptance.md). The broader private API is not fully covered.
+Current implementation: **57 HTTP/MCP operations**, comprising 51 provider/connection reads and six command/approval operations. Commands accept **29 typed setting-change families**. This is the current coverage record; dated acceptance history lives in [read acceptance](read-acceptance.md). Three real token renewals passed; see [authentication acceptance](auth-acceptance.md). The broader private API is not fully covered.
 
 The independent EU private client uses the owner account and enrolled station. Station enumeration does not authorize reads or controls for other stations. Unknown codes remain read data; they never become write permissions. Provider messages and credentials are excluded from errors. No Northbound API is used.
 
@@ -16,6 +16,7 @@ All rows have schema and fixture tests and share HTTP/MCP contracts. Hosted and 
 | `get_station_capabilities` | GET `/device/sigen/station/baseInfoByUser`, `/device/station/backup/{id}`, `/device/station/backup/power-shed/{id}` | Strict capability booleans; `providerHasEv` is not interpreted as a specific charger type. |
 | `get_energy_flow` | GET `/device/sigen/station/energyflow` | W, SOC, nullable provider timestamp and unknown freshness. Battery sign observed; grid direction unverified. |
 | `get_operating_mode`, `list_operating_modes` | GET `/device/energy-profile/mode/{current,all}/{id}` | Current and available provider modes plus custom profile IDs. |
+| `get_time_of_use_settings` | GET `/device/setting/tou/{id}`, `/device/dischargesetting/{id}` | Station-local saved timetable and raw provider settings. Null and empty timetables remain distinct. |
 | `list_profile_templates` | GET `/device/energy-profile/mode/all/template/{id}` | Template descriptions and provider mode/profile identity. No activation. |
 | `get_energy_profile` | GET `/device/energy-profile/setting/{id}` or `/setting/info/{id}?profileId=…&mode=…` | Current or enumerated custom/template profile: automation groups, SOC, limits, priorities, peak shaving and preheating. Positive profile IDs must match; template sentinels cannot return unrelated positive IDs. Timezone comes from identity-checked station metadata. |
 | `get_automation_settings` | GET `/device/energy-profile/setting/{id}` | Current battery/grid groups, including inactive/duplicate windows and unknown day/mode/source codes. |
@@ -64,7 +65,9 @@ Every command has an immutable five-minute review, a fresh current-state compari
 | `set_solar_power_limit` | PUT `/device/energy-profile/solar/limit` | Solar capability, finite W or unlimited. |
 | `set_grid_export_limit`, `set_grid_import_limit` | PUT `/device/energy-profile/grid/limitation/{export,import}` | Finite owner limits within known installer ceiling. |
 | `set_grid_connection_current` | PUT `/device/energy-profile/parallel/off/grid` | Amperes within known installer ceiling. |
-| `set_operating_mode` | PUT `/device/energy-profile/mode` | Available modes 0/1/5; mode 9 only for an enumerated custom profile with its complete adapted configuration in review and conflict fingerprint. Modes 2/7 are excluded pending reviewed TOU/Remote EMS settings. |
+| `set_operating_mode` | PUT `/device/energy-profile/mode` | Available modes 0/1/5; mode 9 only for an enumerated custom profile with its complete adapted configuration in review and conflict fingerprint. TOU mode 2 has its own schedule-reviewed command. Remote EMS mode 7 remains excluded. |
+| `activate_time_of_use_mode` | PUT `/device/energy-profile/mode` | Reviews and verifies the saved manual timetable and mode 2 with profile ID -1. Separate station-scoped approval and dispatch gate. |
+| `set_active_energy_profile_parameters` | PUT `/device/energy-profile/setting` | Edits reviewed battery, grid and solar parameter groups on the current residential built-in or custom profile. Grants bind the mode or custom profile ID. Separate dispatch gate. |
 | `set_battery_soc_thresholds` | PUT `/device/energy-profile/battery/level` | All four current thresholds known, validated integers under charge ceiling. Separate `ja12SOC` untouched. |
 | `set_peak_shaving_schedule` | POST `/device/dischargesetting/peak/shaving` | Disabling preserves the reviewed current reserve and slots; requests to clear or edit them while disabling are refused. Enabled reserve is checked against live charge/discharge/backup SOC limits. Every enabled request requires 1–12 valid windows, unique weekdays 1–7, ordered local times and no overlaps. Station timezone must match. Unsupported presets remain readable and may be preserved only when disabling. See [peak-shaving correction](peak-shaving.md). |
 | `stop_manual_override` | PUT `/device/energy-profile/instant/manunal` | Disabled readback from authoritative state, independent of display telemetry. |
@@ -84,7 +87,7 @@ Every command has an immutable five-minute review, a fresh current-state compari
 | `set_preheating_schedule` | PUT `/device/dischargesetting/packPreheat/set/new/{station}` | Residential only; up to four nonoverlapping windows, ISO weekdays, local minute start/duration; industrial mode/power fields remain null. |
 | `set_energy_saving_settings` | PUT `/device/owner/station/save-energy-mode` | App performance/deep-saving codes or explicit preservation of reviewed modes, supported off-grid mode changes, threshold 0–65534 W or explicit system-default sentinel 65535; preserves threshold outside deep-saving mode. |
 
-See [profile and schedule contracts](profile-schedules.md) for semantics, limits and protocol evidence.
+See [profile and schedule contracts](profile-schedules.md) and [active profile and TOU controls](active-profile-and-tou.md) for semantics, limits and protocol evidence.
 
 ## Request budget and renewal
 
@@ -96,7 +99,7 @@ These are unfinished or unsupported families, not hidden aliases or successful e
 
 | Family | Discovery | Required before exposure |
 | --- | --- | --- |
-| Remaining profile parameters; TOU/Remote EMS activation | Full profile serializers observed | Inactive SOC/power/grid/solar parameters now have a separately gated command. Inactive profile priority editing and embedded peak/preheating replacement now have separately gated commands. Active-profile parameter edits remain excluded. Individual current-setting commands remain available. Activation modes 2/7 need complete reviewed TOU/Remote EMS settings. |
+| TOU timetable editing, tariff-generated TOU and Remote EMS | The manual TOU save serializer is separate from the mode switch | The activation command accepts a saved manual timetable. Saving timetables through this API, activating tariff-generated TOU and switching to Remote EMS need separate contracts and provider acceptance. |
 | Industrial/grouped/unknown-code profile and preheating writes | App residential and industrial DTOs differ | Residential known-code profiles only; industrial preheating mode/power capabilities and grouped priority editing remain unverified. |
 | Advanced on-grid schedule combinations and PV runtime editing | Public app saves timed and ready-by rows together but does not establish their execution precedence | Mixed rules on the same day and overnight windows require provider evidence. The schedule command carries forward the provider's raw PV minimum runtime when solar-only rows remain. Populated hardware acceptance is still required. |
 | Normalized station/load consumption | Typed raw breakdown/history adapters implemented from public DTOs | Provider time resolution and energy units need populated live evidence before normalization. Earlier station-consumption HTTP 500 does not justify invented empty data. |

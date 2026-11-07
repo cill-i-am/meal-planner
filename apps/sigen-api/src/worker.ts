@@ -115,6 +115,7 @@ export default class SigenApi extends Cloudflare.Worker<SigenApi>()(
             systemCards: (id) => bind(account.systemCards(id)),
             tariffs: (id) => bind(account.tariffs(id)),
             thirdPartyDevices: (id) => bind(account.thirdPartyDevices(id)),
+            timeOfUseSettings: (id) => bind(account.timeOfUseSettings(id)),
             topology: (input) => bind(account.topology(input)),
           },
           disconnect: bind(account.disconnect()),

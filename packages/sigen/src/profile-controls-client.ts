@@ -12,6 +12,7 @@ import {
   proposedProfile,
   profileBody,
   profileSettingsEqual,
+  matchesActiveProfile,
 } from "./profile-controls.js";
 import type {
   ProfileChange,
@@ -24,6 +25,11 @@ import type { ProviderRead } from "./provider-read.js";
 import { ScheduleWindow, nonOverlappingWindows } from "./schedules.js";
 import { makeSettingsClient } from "./settings-client.js";
 
+const ModeResponse = Schema.Struct({
+  currentMode: Schema.Number,
+  currentProfileId: Schema.Number,
+  followPpcMode: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+});
 const withoutTime = ({
   fetchedAt: _fetchedAt,
   ...profile
@@ -78,19 +84,11 @@ export const makeProfileControlsClient = (
   ) =>
     Effect.gen(function* inspectProfileCommand() {
       const inventory = yield* settings.operatingModes(stationId, token);
-      const currentMode = yield* read(
+      const readMode = read(
         `/device/energy-profile/mode/current/${stationId}`,
         token
-      ).pipe(
-        Effect.flatMap(
-          decodeProvider(
-            Schema.Struct({
-              currentMode: Schema.Number,
-              currentProfileId: Schema.Number,
-            })
-          )
-        )
-      );
+      ).pipe(Effect.flatMap(decodeProvider(ModeResponse)));
+      const currentMode = yield* readMode;
       const readProfile = (
         target: Parameters<typeof energy.energyProfile>[0]["target"]
       ) =>
@@ -109,6 +107,19 @@ export const makeProfileControlsClient = (
             kind: "custom",
             profileId: matches[0].profileId,
           });
+        }
+      } else if (change.operation === "set_active_energy_profile_parameters") {
+        selected = yield* readProfile({ kind: "current" });
+        const after = yield* readMode;
+        if (
+          after.currentMode !== currentMode.currentMode ||
+          after.currentProfileId !== currentMode.currentProfileId ||
+          after.followPpcMode !== currentMode.followPpcMode
+        ) {
+          return yield* failure("Conflict");
+        }
+        if (after.followPpcMode === true) {
+          return yield* failure("UnsupportedCapability");
         }
       } else if (change.operation === "replace_automation_schedule") {
         selected = yield* readProfile({ kind: "current" });
@@ -219,6 +230,17 @@ export const makeProfileControlsClient = (
       if (!serializableProfile(base)) {
         return yield* failure("UnsupportedCapability");
       }
+      if (change.operation === "set_active_energy_profile_parameters") {
+        if (!matchesActiveProfile(change.target, state)) {
+          return yield* failure("Conflict");
+        }
+        return yield* validateProfileParameters(
+          read,
+          change.parameters,
+          base,
+          token
+        );
+      }
       if (
         change.operation === "set_energy_profile_parameters" ||
         change.operation === "set_energy_profile_priorities" ||
@@ -286,6 +308,14 @@ export const makeProfileControlsClient = (
         : snapshot.settings.selected;
     if (base === null) {
       return failure("SchemaMismatch");
+    }
+    if (
+      change.operation === "set_active_energy_profile_parameters" &&
+      (!matchesActiveProfile(change.target, snapshot.settings) ||
+        snapshot.settings.stationId !== stationId ||
+        !Number.isSafeInteger(Number(stationId)))
+    ) {
+      return failure("Conflict");
     }
     return write(
       change.operation === "create_energy_profile" ? "POST" : "PUT",

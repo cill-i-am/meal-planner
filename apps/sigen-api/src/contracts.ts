@@ -86,6 +86,7 @@ import {
 import { StationCapabilities, Stations } from "@meal-planner/sigen/stations";
 import { Tariffs, PredictionPlan } from "@meal-planner/sigen/tariffs";
 import { ThirdPartyDevices } from "@meal-planner/sigen/third-party";
+import { TimeOfUseSettings } from "@meal-planner/sigen/time-of-use";
 import { Context, Effect, Schema, flow } from "effect";
 
 export class SigenCapabilities extends Context.Service<
@@ -172,6 +173,9 @@ export class SigenCapabilities extends Context.Service<
     readonly aioPowerStatus: (
       input: typeof DeviceInput.Type
     ) => Effect.Effect<typeof AioPowerStatus.Type, SigenFailure>;
+    readonly timeOfUseSettings: (
+      id: StationId
+    ) => Effect.Effect<typeof TimeOfUseSettings.Type, SigenFailure>;
     readonly tariffs: (
       id: StationId
     ) => Effect.Effect<typeof Tariffs.Type, SigenFailure>;
@@ -547,6 +551,16 @@ export const operations = [
     DeviceInput,
     AioPowerStatus,
     (input) => SigenCapabilities.use((service) => service.aioPowerStatus(input))
+  ),
+  operation(
+    "get_time_of_use_settings",
+    "Read the station-local saved battery time-of-use timetable and configuration codes. Power fields retain provider values. The activation command supports nonoverlapping manual timetables.",
+    StationInput,
+    TimeOfUseSettings,
+    (input) =>
+      SigenCapabilities.use((service) =>
+        service.timeOfUseSettings(input.stationId)
+      )
   ),
   operation(
     "get_tariffs",

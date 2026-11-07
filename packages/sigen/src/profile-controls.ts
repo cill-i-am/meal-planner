@@ -132,7 +132,20 @@ const Edits = Schema.Struct({
   description: Schema.optionalKey(Description),
   name: Schema.optionalKey(Name),
 }).check(Schema.makeFilter((value) => Object.keys(value).length > 0));
+export const ActiveProfileTarget = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("built_in"),
+    providerMode: Schema.Literals([0, 1, 5]),
+  }),
+  Schema.Struct({ kind: Schema.Literal("custom"), profileId: Id }),
+]);
+export const ActiveProfileChange = Schema.Struct({
+  operation: Schema.Literal("set_active_energy_profile_parameters"),
+  parameters: ProfileParameters,
+  target: ActiveProfileTarget,
+});
 export const ProfileChange = Schema.Union([
+  ActiveProfileChange,
   Schema.Struct({
     operation: Schema.Literal("set_energy_profile_priorities"),
     priorities: ProfilePriorities,
@@ -176,6 +189,7 @@ export type ProfileChange = typeof ProfileChange.Type;
 export const isProfileChange = (change: {
   readonly operation: string;
 }): change is ProfileChange =>
+  change.operation === "set_active_energy_profile_parameters" ||
   change.operation === "set_energy_profile_priorities" ||
   change.operation === "set_energy_profile_schedules" ||
   change.operation === "set_energy_profile_parameters" ||
@@ -221,7 +235,10 @@ export const proposedProfile = (
   if (change.operation === "set_energy_profile_schedules") {
     return applyProfileSchedules(current, change.schedules);
   }
-  if (change.operation === "set_energy_profile_parameters") {
+  if (
+    change.operation === "set_energy_profile_parameters" ||
+    change.operation === "set_active_energy_profile_parameters"
+  ) {
     return applyProfileParameters(current, change.parameters);
   }
   if (change.operation === "create_energy_profile") {
@@ -309,6 +326,30 @@ const configuration = (value: ProfileConfiguration) => {
   });
 };
 
+export const matchesActiveProfile = (
+  target: typeof ActiveProfileTarget.Type,
+  state: ProfileControlSnapshot["settings"]
+) => {
+  const { currentMode, selected } = state;
+  if (selected === null || selected.target.kind !== "current") {
+    return false;
+  }
+  if (target.kind === "built_in") {
+    return (
+      currentMode.providerMode === target.providerMode &&
+      currentMode.profileId === -1 &&
+      selected.providerProfileId === null
+    );
+  }
+  return (
+    currentMode.providerMode === 9 &&
+    currentMode.profileId === target.profileId &&
+    selected.providerProfileId === target.profileId &&
+    selected.providerActiveStatus === 1 &&
+    state.profiles.some((profile) => profile.profileId === target.profileId)
+  );
+};
+
 export const profileControlMatches = (
   change: ProfileChange,
   observed: ProfileControlSnapshot,
@@ -343,6 +384,13 @@ export const profileControlMatches = (
     before.profiles.some(
       (profile) => profile.profileId === after.selected?.providerProfileId
     )
+  ) {
+    return false;
+  }
+  if (
+    change.operation === "set_active_energy_profile_parameters" &&
+    (!matchesActiveProfile(change.target, before) ||
+      !matchesActiveProfile(change.target, after))
   ) {
     return false;
   }

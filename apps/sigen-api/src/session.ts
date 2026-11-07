@@ -504,6 +504,8 @@ export const makeSession = <R>(
         read(id, (token) => client.tariffs(id, token)),
       thirdPartyDevices: (id: StationId) =>
         read(id, (token) => client.thirdPartyDevices(id, token)),
+      timeOfUseSettings: (id: StationId) =>
+        read(id, (token) => client.timeOfUseSettings(id, token)),
       topology: (input: StationId) =>
         read(input, (token) => client.topology(input, token)),
       // Commands share the refresh/disconnect lock, but never use the read retry path.

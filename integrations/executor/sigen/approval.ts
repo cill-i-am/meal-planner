@@ -34,6 +34,7 @@ const reads = new Set([
   "get_station",
   "get_energy_flow",
   "get_operating_mode",
+  "get_time_of_use_settings",
   "get_battery_settings",
   "get_automation_settings",
   "get_grid_settings",

@@ -38,6 +38,7 @@ import { makeSettingsClient } from "./settings-client.js";
 import { makeStationsClient } from "./stations-client.js";
 import { makeTariffsClient } from "./tariffs-client.js";
 import { makeThirdPartyClient } from "./third-party-client.js";
+import { makeTimeOfUseClient } from "./time-of-use.js";
 
 // Protocol constants from solidfox/sigenergy-cloud (MIT). See THIRD_PARTY_NOTICES.md.
 const Origin = "https://api-eu.sigencloud.com";
@@ -264,6 +265,7 @@ export const makeSigenClientWithBudget = (budget: RequestBudget) =>
       ),
       ...makeSettingsClient(read),
       ...makeTariffsClient(read),
+      ...makeTimeOfUseClient(read),
       ...makeEquipmentClient(read),
       ...makeAlarmsClient(read),
       ...makeBackupClient(read),

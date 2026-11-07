@@ -19,7 +19,8 @@
     "./request-budget": "./src/request-budget.ts",
     "./third-party": "./src/third-party.ts",
     "./charging": "./src/charging.ts",
-    "./load-settings": "./src/load-settings.ts"
+    "./load-settings": "./src/load-settings.ts",
+    "./time-of-use": "./src/time-of-use.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
