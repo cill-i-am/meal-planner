@@ -300,7 +300,7 @@ const scheduleChange = (schedule = loadSchedule) =>
 const solarRow = {
   autoCharge: 1,
   consumptionMode: 1,
-  duration: 120,
+  duration: "120",
   periodConfig: [1, 3],
   socMode: { socLowerLimit: 15, socUpperLimit: 50 },
   startTime: "720",
@@ -309,7 +309,7 @@ const solarRow = {
 const batteryRow = {
   autoCharge: 0,
   consumptionMode: 2,
-  duration: 60,
+  duration: "60",
   periodConfig: [5],
   socMode: { socLowerLimit: 20.5, socUpperLimit: 80.5 },
   startTime: "1380",
@@ -360,7 +360,7 @@ describe("smart-load schedule replacement", () => {
         smartSavePointParamsList: [{ ...readyRow, duration: 45 }],
         touPointParamsList: [
           batteryRow,
-          { ...solarRow, periodConfig: [3, 1], startTime: 720 },
+          { ...solarRow, duration: 120, periodConfig: [3, 1], startTime: 720 },
         ],
       },
     };

@@ -82,7 +82,7 @@ const timedRow = (row: typeof TimedWindow.Type) => {
     consumptionMode: { battery_only: 2, solar_only: 1, system: 0 }[
       consumption.mode
     ],
-    duration: minutes(row.endTime) - start,
+    duration: String(minutes(row.endTime) - start),
     periodConfig: row.providerDays.split(",").map(Number),
     socMode: battery
       ? {
@@ -155,7 +155,7 @@ const sameTimed = (
 ) =>
   decimal(observed.autoCharge) === expected.autoCharge &&
   decimal(observed.consumptionMode) === expected.consumptionMode &&
-  decimal(observed.duration) === expected.duration &&
+  decimal(observed.duration) === Number(expected.duration) &&
   decimal(observed.startTime) === Number(expected.startTime) &&
   decimal(observed.touEnable) === expected.touEnable &&
   sameDays(observed.periodConfig, expected.periodConfig) &&
