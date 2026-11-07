@@ -323,7 +323,10 @@ export const makeProfileControlsClient = (
         ? "/device/energy-profile/setting/new"
         : "/device/energy-profile/setting",
       profileBody(proposedProfile(change, base)),
-      token
+      token,
+      change.operation === "set_active_energy_profile_parameters"
+        ? "boolean_true"
+        : undefined
     );
   };
   return { dispatch, inspect, validate };

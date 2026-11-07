@@ -482,7 +482,9 @@ const options: HttpOptions = {
       Effect.succeed({
         configuration: { currType: 0 },
         fetchedAt: 123,
+        powerUnit: "kW",
         slots: [],
+        socUnit: "percent",
         stationId,
         timezone: "Europe/Dublin",
       }),

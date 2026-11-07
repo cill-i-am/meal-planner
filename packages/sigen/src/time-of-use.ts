@@ -9,7 +9,13 @@ import type { ProviderRead } from "./provider-read.js";
 import { ScheduleWindow, nonOverlappingWindows } from "./schedules.js";
 import { makeSettingsClient } from "./settings-client.js";
 
-const Limit = Schema.optionalKey(Schema.NullOr(Schema.Finite));
+const Limit = Schema.optionalKey(
+  Schema.NullOr(
+    Schema.Union([Schema.Finite, Schema.String.check(Schema.isMaxLength(64))])
+  )
+).annotate({
+  description: "A provider limit. Null or missing uses the equipment default.",
+});
 const Slot = Schema.Struct({
   currType: Schema.Int,
   dischargeType: Schema.Int,
@@ -39,7 +45,9 @@ const ProviderSlots = Schema.NullOr(
 export const TimeOfUseSettings = Schema.Struct({
   configuration: Configuration,
   fetchedAt: Timestamp,
+  powerUnit: Schema.Literal("kW"),
   slots: Slots,
+  socUnit: Schema.Literal("percent"),
   stationId: StationId,
   timezone: Schema.String,
 });
@@ -79,13 +87,19 @@ export const makeTimeOfUseClient = (read: ProviderRead) => ({
       return yield* decodeProvider(TimeOfUseSettings)({
         configuration,
         fetchedAt: yield* Clock.currentTimeMillis,
+        powerUnit: "kW",
         slots: rows?.map(({ stationId: _stationId, ...row }) => row) ?? null,
+        socUnit: "percent",
         stationId,
         timezone: DateTime.zoneToString(zone),
       });
     }),
 });
 
+const knownLimit = (value: typeof Limit.Type | undefined, max: number) =>
+  value === null ||
+  value === undefined ||
+  (/^\d+(?:\.\d+)?$/u.test(String(value)) && Number(value) <= max);
 const knownLimits = (row: typeof Slot.Type) => {
   const powers = [
     row.maxBuyPower,
@@ -97,20 +111,16 @@ const knownLimits = (row: typeof Slot.Type) => {
   ];
   const thresholds = [row.gridChargeCutOffSoc, row.gridDischargeCutOffSoc];
   return (
-    powers.every(
-      (value) => value === null || value === undefined || value >= 0
-    ) &&
-    thresholds.every(
-      (value) =>
-        value === null || value === undefined || (value >= 0 && value <= 100)
-    )
+    powers.every((value) => knownLimit(value, 1_000_000)) &&
+    thresholds.every((value) => knownLimit(value, 100))
   );
 };
 const knownManualSchedule = (settings: typeof TimeOfUseSettings.Type) => {
   if (
     settings.configuration.currType !== 1 ||
     settings.slots === null ||
-    settings.slots.length === 0
+    settings.slots.length === 0 ||
+    settings.slots.length > 24
   ) {
     return false;
   }

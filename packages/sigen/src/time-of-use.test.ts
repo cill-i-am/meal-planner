@@ -18,7 +18,7 @@ const row = {
   currType: 1,
   dischargeType: 0,
   endTime: "04:00",
-  gridChargeCutOffSoc: 85,
+  gridChargeCutOffSoc: "85",
   maxBuyPower: 3,
   startTime: "01:00",
   stationId: 12_345,
@@ -68,7 +68,11 @@ describe("reviewed time-of-use activation", () => {
     expect(before).toMatchObject({
       kind: "time_of_use",
       settings: {
-        slots: [{ maxBuyPower: 3, startTime: "01:00" }],
+        powerUnit: "kW",
+        slots: [
+          { gridChargeCutOffSoc: "85", maxBuyPower: 3, startTime: "01:00" },
+        ],
+        socUnit: "percent",
         timezone: "Europe/London",
       },
     });
@@ -97,9 +101,18 @@ describe("reviewed time-of-use activation", () => {
   it.each([
     { [slotsPath]: [] },
     { [slotsPath]: null },
+    {
+      [slotsPath]: Array.from({ length: 25 }, (_, minute) => ({
+        ...row,
+        endTime: `01:${String(minute + 1).padStart(2, "0")}`,
+        startTime: `01:${String(minute).padStart(2, "0")}`,
+      })),
+    },
     { [slotsPath]: [row, row] },
     { [slotsPath]: [{ ...row, dischargeType: 99 }] },
     { [slotsPath]: [{ ...row, gridChargeCutOffSoc: 150 }] },
+    { [slotsPath]: [{ ...row, maxBuyPower: "unknown" }] },
+    { [slotsPath]: [{ ...row, maxBuyPower: 1_000_001 }] },
     { [configurationPath]: { currType: 2 } },
     {
       [modePath]: { currentMode: 1, currentProfileId: -1, followPpcMode: true },

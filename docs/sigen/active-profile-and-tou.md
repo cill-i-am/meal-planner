@@ -10,7 +10,7 @@ A built-in edit requires the matching operating mode, the default profile sentin
 
 ## Time of use
 
-`get_time_of_use_settings` reads the saved timetable, the station timezone and provider configuration. Power fields retain provider values. `activate_time_of_use_mode` requires the station to advertise mode 2 and have a nonempty, nonoverlapping manual timetable with known slot modes and valid limits. An empty timetable can be configured in mySigen. The write sends a mode switch with `profileId: -1` and `fromPlatform: 1`. The saved timetable is part of the immutable review and must still match after activation. A reusable activation grant applies only to this operation and station.
+`get_time_of_use_settings` reads the saved timetable, the station timezone and provider configuration. Limits retain provider values in kW and percent. mySigen displays null and omitted limits as equipment defaults. `activate_time_of_use_mode` requires the station to advertise mode 2 and have a nonempty, nonoverlapping manual timetable with known slot modes and valid limits. An empty timetable can be configured in mySigen. The write sends a mode switch with `profileId: -1` and `fromPlatform: 1`. The saved timetable is part of the immutable review and must still match after activation. A reusable activation grant applies only to this operation and station.
 
 The adapter currently covers residential manual TOU activation. Timetable editing, tariff-generated TOU and Remote EMS are separate contracts.
 

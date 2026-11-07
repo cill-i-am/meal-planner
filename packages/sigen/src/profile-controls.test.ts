@@ -1177,6 +1177,7 @@ describe("active profile parameters", () => {
         powerLimit: "4.5",
         profileId,
       });
+      expect(f.writes[0]?.[4]).toBe("boolean_true");
       f.data[path] = { ...active, ...body, pvPriority: active.pvPriority };
       expect(controlMatches(change, await f.inspect(change), before)).toBe(
         true
