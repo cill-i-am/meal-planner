@@ -29,7 +29,7 @@ const configurationPath = "/device/setting/tou/12345";
 const modePath = "/device/energy-profile/mode/current/12345";
 const fixture = (overrides: Record<string, unknown> = {}) => {
   const writes: Parameters<ProviderWrite>[] = [];
-  const data = {
+  const data: Record<string, unknown> = {
     ...remainingResponses,
     "/device/energy-profile/mode/all/12345": {
       defaultWorkingModes: [{ label: "TOU", value: "2" }],
@@ -48,7 +48,7 @@ const fixture = (overrides: Record<string, unknown> = {}) => {
     [modePath]: { currentMode: 1, currentProfileId: -1 },
     [slotsPath]: [row],
     ...overrides,
-  } satisfies Record<string, unknown>;
+  };
   const read = (path: string) =>
     Effect.succeed(data[new URL(path, "https://fixture.invalid").pathname]);
   const client = makeControlsClient(read, (...args) =>
