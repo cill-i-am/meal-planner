@@ -1,0 +1,128 @@
+/** Synthetic public-app protocol examples; no populated hardware has been accepted live. */
+import { remainingResponses, smartLoad } from "./remaining.js";
+
+export const loadControl = {
+  autoModeParams: {
+    pvExcessParams: { minRunTime: 10, ratePower: 2, startPower: 1.5 },
+    smartSavePointParamsList: [],
+    touPointParamsList: [
+      {
+        autoCharge: 0,
+        consumptionMode: 1,
+        duration: 15,
+        periodConfig: [1],
+        socMode: { socLowerLimit: 20, socUpperLimit: 80 },
+        startTime: 60,
+        touEnable: 1,
+      },
+    ],
+  },
+  controlMode: 1,
+  manualModeSwitch: 0,
+};
+export const expandedResponses: Record<string, unknown> = {
+  ...remainingResponses,
+  "/data-process/sigen/station/statistics/load-consumption": {
+    consumptionDetailList: [
+      { dataTime: "01:00", loadConsumption: 0 },
+      { dataTime: "01:15", loadConsumption: null },
+    ],
+    lifetimeConsumption: 4,
+    monthConsumption: null,
+    stationId: 12_345,
+    todayConsumption: 0,
+    totalConsumption: 2,
+  },
+  "/data-process/sigen/station/statistics/station-consumption": {
+    baseLoadConsumption: 0,
+    consumptionDetailList: [
+      {
+        baseLoadConsumption: -1,
+        dataTime: "01:00",
+        otherLoadConsumptionList: { "20001": 2 },
+      },
+    ],
+    otherLoadConsumptionList: { "20001": null },
+    stationId: 12_345,
+  },
+  "/device/acevse/charge/read/current": {
+    dlmStatus: 0,
+    lastSetCurrent: -1,
+    maxCurrent: 32,
+  },
+  "/device/acevse/more-setting/12345": {
+    chargingOutputCurrent: 16,
+    dlmStatus: 0,
+    homeCircuitBreaker: 32,
+    isSupportThreePhase: true,
+    meterPhase: 1,
+    offGridCharge: 0,
+    phaseAutoSwitch: 0,
+    phaseType: 1,
+    pileCircuitBreaker: 32,
+    runStatus: 1,
+  },
+  "/device/acevse/plug/status": true,
+  "/device/acevse/schedule/list/12345": [
+    {
+      chargeMode: 2,
+      cutoffSocFromPack: 20,
+      enableFromGrid: true,
+      enableFromPack: 0,
+      endTime: "02:00",
+      frequency: 1,
+      id: 3,
+      isNextDay: true,
+      maxPowerFromGrid: 7,
+      name: "Overnight",
+      open: 1,
+      settingMode: 0,
+      startTime: "23:00",
+      time: null,
+      whichDay: "1,2,3,4,5",
+    },
+  ],
+  "/device/charge/mode/ac": {
+    chargeMode: 1,
+    cutoffSocFromPack: 20,
+    enableFromGrid: true,
+    enableFromPack: false,
+    socLowerLimit: null,
+    socUpperLimit: null,
+  },
+  "/device/charge/mode/dc": {
+    chargeMode: 3,
+    cutoffSocFromPack: 20,
+    enableFromGrid: false,
+    enableFromPack: true,
+    socLowerLimit: 20,
+    socUpperLimit: 80,
+  },
+  "/device/dcevse/charge/setting": {
+    allowedChargePower: 12,
+    ratedPower: 25,
+    vehicleChargingCutoffSoc: 80,
+    vehicleDischargeCutoffSoc: 20,
+  },
+  "/device/dcevse/plug/status": false,
+  "/device/dcevse/schedule/list/12345": [],
+  "/device/owner/station/home": {
+    acSnList: ["AC-1"],
+    batteryCapacity: 8.1,
+    dcSnList: ["DC-1"],
+    hasSolar: true,
+    stationId: 12_345,
+    timeZoneName: "Europe/London",
+  },
+  "/device/tp-device/smart-loads": { ...smartLoad, smartLoadId: 20_001 },
+  "/device/tp-device/smart-loads/control-mode": loadControl,
+  "/third-party-device/tp-device/smart-loads/control-mode/auto/off-grid": {
+    backupSoc: 20,
+    chargeStopSoc: 100,
+    loadOffGridSocEnable: null,
+    loadPath: 1,
+    offGridControlMode: 1,
+    socInThreshold: 60,
+    socOutThreshold: 40,
+  },
+};

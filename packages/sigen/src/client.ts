@@ -11,10 +11,13 @@ import {
 import { makeAlarmsClient } from "./alarms-client.js";
 import { makeBackupClient } from "./backup-client.js";
 import { makeBackupEventsClient } from "./backup-events-client.js";
+import { makeChargingClient } from "./charging-client.js";
+import { makeConsumptionClient } from "./consumption-client.js";
 import { makeControlsClient } from "./controls-client.js";
 import { makeEnergyProfileClient } from "./energy-profile-client.js";
 import { makeEquipmentClient } from "./equipment-client.js";
 import { makeHistoryClient } from "./history-client.js";
+import { makeLoadSettingsClient } from "./load-settings-client.js";
 import { makeLoadsClient } from "./loads-client.js";
 import type { Enrollment, StationId } from "./model.js";
 import {
@@ -35,6 +38,7 @@ import { makeSettingsClient } from "./settings-client.js";
 import { makeStationsClient } from "./stations-client.js";
 import { makeTariffsClient } from "./tariffs-client.js";
 import { makeThirdPartyClient } from "./third-party-client.js";
+import { makeTimeOfUseClient } from "./time-of-use.js";
 
 // Protocol constants from solidfox/sigenergy-cloud (MIT). See THIRD_PARTY_NOTICES.md.
 const Origin = "https://api-eu.sigencloud.com";
@@ -93,6 +97,7 @@ const parse = <S extends Schema.Top>(schema: S) =>
     Schema.decodeUnknownEffect(schema),
     Effect.mapError(() => failure("SchemaMismatch"))
   );
+const parseTrueAcknowledgement = parse(Schema.Literal(true));
 const dcCapability = (serials: readonly string[] | null) => {
   if (serials === null) {
     return "unknown";
@@ -236,20 +241,31 @@ export const makeSigenClientWithBudget = (budget: RequestBudget) =>
     };
 
     return {
-      ...makeControlsClient(read, (method, path, body, accessToken) =>
-        request(
-          method,
-          path,
-          {
-            authorization: `Bearer ${Redacted.value(accessToken)}`,
-          },
-          body === null
-            ? undefined
-            : HttpBody.text(JSON.stringify(body), "application/json")
-        ).pipe(Effect.flatMap(unwrap), Effect.asVoid)
+      ...makeControlsClient(
+        read,
+        (method, path, body, accessToken, acknowledgement) =>
+          request(
+            method,
+            path,
+            {
+              authorization: `Bearer ${Redacted.value(accessToken)}`,
+            },
+            body === null
+              ? undefined
+              : HttpBody.text(JSON.stringify(body), "application/json")
+          ).pipe(
+            Effect.flatMap(unwrap),
+            Effect.flatMap((data) =>
+              acknowledgement === "boolean_true"
+                ? parseTrueAcknowledgement(data)
+                : Effect.void
+            ),
+            Effect.asVoid
+          )
       ),
       ...makeSettingsClient(read),
       ...makeTariffsClient(read),
+      ...makeTimeOfUseClient(read),
       ...makeEquipmentClient(read),
       ...makeAlarmsClient(read),
       ...makeBackupClient(read),
@@ -257,6 +273,9 @@ export const makeSigenClientWithBudget = (budget: RequestBudget) =>
       ...makeProfileClient(read),
       ...makeThirdPartyClient(read),
       ...makePreheatingClient(read),
+      ...makeChargingClient(read),
+      ...makeConsumptionClient(read),
+      ...makeLoadSettingsClient(read),
       ...makeLoadsClient(read),
       ...makeStationsClient(read),
       ...makeEnergyProfileClient(read),

@@ -80,6 +80,8 @@ const fixture = () => {
       }),
   };
   const client: SigenClient = {
+    acChargerCurrent: () => Effect.fail(failure("UnsupportedCapability")),
+    acChargerSettings: () => Effect.fail(failure("UnsupportedCapability")),
     aioDevices: () => Effect.fail(failure("UnsupportedCapability")),
     aioPowerStatus: () => Effect.fail(failure("UnsupportedCapability")),
     alarms: () => Effect.fail(failure("UnsupportedCapability")),
@@ -89,6 +91,10 @@ const fixture = () => {
     batteryDischargePriority: () =>
       Effect.fail(failure("UnsupportedCapability")),
     batterySettings: () => Effect.fail(failure("UnsupportedCapability")),
+    chargerSchedules: () => Effect.fail(failure("UnsupportedCapability")),
+    chargerStatus: () => Effect.fail(failure("UnsupportedCapability")),
+    chargers: () => Effect.fail(failure("UnsupportedCapability")),
+    dcChargerSettings: () => Effect.fail(failure("UnsupportedCapability")),
     deviceInfo: () => Effect.fail(failure("UnsupportedCapability")),
     deviceValues: () => Effect.fail(failure("UnsupportedCapability")),
     dispatchControl: () => Effect.fail(failure("UnsupportedCapability")),
@@ -125,17 +131,22 @@ const fixture = () => {
           : Effect.succeed(tokens());
       }),
     smartLoad: () => Effect.fail(failure("UnsupportedCapability")),
+    smartLoadConsumption: () => Effect.fail(failure("UnsupportedCapability")),
+    smartLoadControlSettings: () =>
+      Effect.fail(failure("UnsupportedCapability")),
     smartLoads: () => Effect.fail(failure("UnsupportedCapability")),
     solarPriority: () => Effect.fail(failure("UnsupportedCapability")),
     solarSettings: () => Effect.fail(failure("UnsupportedCapability")),
     station: () => Effect.succeed(sample),
     stationCapabilities: () => Effect.fail(failure("UnsupportedCapability")),
+    stationConsumption: () => Effect.fail(failure("UnsupportedCapability")),
     stationIncome: () => Effect.fail(failure("UnsupportedCapability")),
     stationStatus: () => Effect.fail(failure("UnsupportedCapability")),
     stations: () => Effect.fail(failure("UnsupportedCapability")),
     systemCards: () => Effect.fail(failure("UnsupportedCapability")),
     tariffs: () => Effect.fail(failure("UnsupportedCapability")),
     thirdPartyDevices: () => Effect.fail(failure("UnsupportedCapability")),
+    timeOfUseSettings: () => Effect.fail(failure("UnsupportedCapability")),
     topology: () => Effect.fail(failure("UnsupportedCapability")),
     validateControl: () => Effect.fail(failure("UnsupportedCapability")),
   };

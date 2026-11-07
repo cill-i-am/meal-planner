@@ -16,6 +16,7 @@ export default defineApp(
             cache: ctx.cache,
             headers: account.headers(),
             signal: ctx.signal,
+            staleFor: "5 minutes",
             url: sigenMcpUrl,
           }),
           (tool, name) =>

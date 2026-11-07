@@ -12,16 +12,24 @@ import {
   proposedProfile,
   profileBody,
   profileSettingsEqual,
+  matchesActiveProfile,
 } from "./profile-controls.js";
 import type {
   ProfileChange,
   ProfileConfiguration,
 } from "./profile-controls.js";
+import { validateProfileExtras } from "./profile-extras.js";
+import { validateProfileParameters } from "./profile-parameters.js";
 import { decodeProvider } from "./provider-read.js";
 import type { ProviderRead } from "./provider-read.js";
 import { ScheduleWindow, nonOverlappingWindows } from "./schedules.js";
 import { makeSettingsClient } from "./settings-client.js";
 
+const ModeResponse = Schema.Struct({
+  currentMode: Schema.Number,
+  currentProfileId: Schema.Number,
+  followPpcMode: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+});
 const withoutTime = ({
   fetchedAt: _fetchedAt,
   ...profile
@@ -76,19 +84,11 @@ export const makeProfileControlsClient = (
   ) =>
     Effect.gen(function* inspectProfileCommand() {
       const inventory = yield* settings.operatingModes(stationId, token);
-      const currentMode = yield* read(
+      const readMode = read(
         `/device/energy-profile/mode/current/${stationId}`,
         token
-      ).pipe(
-        Effect.flatMap(
-          decodeProvider(
-            Schema.Struct({
-              currentMode: Schema.Number,
-              currentProfileId: Schema.Number,
-            })
-          )
-        )
-      );
+      ).pipe(Effect.flatMap(decodeProvider(ModeResponse)));
+      const currentMode = yield* readMode;
       const readProfile = (
         target: Parameters<typeof energy.energyProfile>[0]["target"]
       ) =>
@@ -107,6 +107,19 @@ export const makeProfileControlsClient = (
             kind: "custom",
             profileId: matches[0].profileId,
           });
+        }
+      } else if (change.operation === "set_active_energy_profile_parameters") {
+        selected = yield* readProfile({ kind: "current" });
+        const after = yield* readMode;
+        if (
+          after.currentMode !== currentMode.currentMode ||
+          after.currentProfileId !== currentMode.currentProfileId ||
+          after.followPpcMode !== currentMode.followPpcMode
+        ) {
+          return yield* failure("Conflict");
+        }
+        if (after.followPpcMode === true) {
+          return yield* failure("UnsupportedCapability");
         }
       } else if (change.operation === "replace_automation_schedule") {
         selected = yield* readProfile({ kind: "current" });
@@ -135,50 +148,12 @@ export const makeProfileControlsClient = (
         },
       });
     });
-  const validate = (
-    stationId: StationId,
+  const validateAutomation = (
     change: ProfileChange,
-    snapshot: ProfileControlSnapshot,
+    base: ProfileConfiguration,
     token: Redacted.Redacted<string>
   ) =>
-    Effect.gen(function* validateProfileCommand() {
-      const state = snapshot.settings;
-      if (change.operation === "delete_energy_profile") {
-        if (state.selected === null) {
-          return yield* failure("InvalidInput");
-        }
-        if (
-          state.currentMode.profileId === change.profileId ||
-          state.selected.providerActiveStatus !== 0
-        ) {
-          return yield* failure("Conflict");
-        }
-        return;
-      }
-      const base =
-        change.operation === "create_energy_profile"
-          ? state.source
-          : state.selected;
-      if (base === null) {
-        return yield* failure("InvalidInput");
-      }
-      if (!serializableProfile(base)) {
-        return yield* failure("UnsupportedCapability");
-      }
-      const proposed = proposedProfile(change, base);
-      if (
-        state.profiles.some(
-          (profile) =>
-            profile.name === proposed.profileName &&
-            (change.operation === "create_energy_profile" ||
-              profile.profileId !== base.providerProfileId)
-        )
-      ) {
-        return yield* failure("Conflict");
-      }
-      if (proposed.timezone !== base.timezone) {
-        return yield* failure("InvalidInput");
-      }
+    Effect.gen(function* validateProfileAutomation() {
       const replacement =
         change.operation === "replace_automation_schedule"
           ? change.replacement
@@ -191,7 +166,7 @@ export const makeProfileControlsClient = (
         return;
       }
       const capabilities = yield* makeProfileClient(read).energyCapabilities(
-        stationId,
+        base.stationId,
         token
       );
       const features = capabilities.providerFeatures;
@@ -225,6 +200,94 @@ export const makeProfileControlsClient = (
         return yield* failure("UnsupportedCapability");
       }
     });
+  const validate = (
+    _stationId: StationId,
+    change: ProfileChange,
+    snapshot: ProfileControlSnapshot,
+    token: Redacted.Redacted<string>
+  ) =>
+    Effect.gen(function* validateProfileCommand() {
+      const state = snapshot.settings;
+      if (change.operation === "delete_energy_profile") {
+        if (state.selected === null) {
+          return yield* failure("InvalidInput");
+        }
+        if (
+          state.currentMode.profileId === change.profileId ||
+          state.selected.providerActiveStatus !== 0
+        ) {
+          return yield* failure("Conflict");
+        }
+        return;
+      }
+      const base =
+        change.operation === "create_energy_profile"
+          ? state.source
+          : state.selected;
+      if (base === null) {
+        return yield* failure("InvalidInput");
+      }
+      if (!serializableProfile(base)) {
+        return yield* failure("UnsupportedCapability");
+      }
+      if (change.operation === "set_active_energy_profile_parameters") {
+        if (!matchesActiveProfile(change.target, state)) {
+          return yield* failure("Conflict");
+        }
+        return yield* validateProfileParameters(
+          read,
+          change.parameters,
+          base,
+          token
+        );
+      }
+      if (
+        change.operation === "set_energy_profile_parameters" ||
+        change.operation === "set_energy_profile_priorities" ||
+        change.operation === "set_energy_profile_schedules"
+      ) {
+        if (
+          base.providerActiveStatus !== 0 ||
+          state.currentMode.profileId === change.profileId
+        ) {
+          return yield* failure("Conflict");
+        }
+        if (change.operation !== "set_energy_profile_parameters") {
+          return yield* validateProfileExtras(
+            read,
+            base,
+            token,
+            change.operation === "set_energy_profile_priorities"
+              ? change.priorities
+              : undefined,
+            change.operation === "set_energy_profile_schedules"
+              ? change.schedules
+              : undefined
+          );
+        }
+        return yield* validateProfileParameters(
+          read,
+          change.parameters,
+          base,
+          token
+        );
+      }
+      const proposed = proposedProfile(change, base);
+      if (
+        state.profiles.some(
+          (profile) =>
+            profile.name === proposed.profileName &&
+            (change.operation === "create_energy_profile" ||
+              profile.profileId !== base.providerProfileId)
+        )
+      ) {
+        return yield* failure("Conflict");
+      }
+      if (proposed.timezone !== base.timezone) {
+        return yield* failure("InvalidInput");
+      }
+      yield* validateAutomation(change, base, token);
+    });
   const dispatch = (
     stationId: StationId,
     change: ProfileChange,
@@ -246,13 +309,24 @@ export const makeProfileControlsClient = (
     if (base === null) {
       return failure("SchemaMismatch");
     }
+    if (
+      change.operation === "set_active_energy_profile_parameters" &&
+      (!matchesActiveProfile(change.target, snapshot.settings) ||
+        snapshot.settings.stationId !== stationId ||
+        !Number.isSafeInteger(Number(stationId)))
+    ) {
+      return failure("Conflict");
+    }
     return write(
       change.operation === "create_energy_profile" ? "POST" : "PUT",
       change.operation === "create_energy_profile"
         ? "/device/energy-profile/setting/new"
         : "/device/energy-profile/setting",
       profileBody(proposedProfile(change, base)),
-      token
+      token,
+      change.operation === "set_active_energy_profile_parameters"
+        ? "boolean_true"
+        : undefined
     );
   };
   return { dispatch, inspect, validate };
