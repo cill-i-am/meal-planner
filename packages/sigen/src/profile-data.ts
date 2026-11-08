@@ -2,6 +2,29 @@ import { Schema } from "effect";
 
 import type { PowerLimit } from "./settings.js";
 
+// Canonical JSON projection of an already decoded configuration, not input validation.
+/* eslint-disable anti-slop/no-runtime-typeof */
+export const canonicalProfileValue = (value: Schema.Json) =>
+  // Provider kW round trips can introduce sub-microwatt floating point noise (1001 W -> 1.001 kW).
+  JSON.stringify(value, (_key, item: Schema.Json) => {
+    if (typeof item === "number") {
+      return Number(item.toFixed(6));
+    }
+    if (item !== null && typeof item === "object" && !Array.isArray(item)) {
+      return Object.fromEntries(
+        Object.entries(item).toSorted(([left], [right]) =>
+          left.localeCompare(right)
+        )
+      );
+    }
+    return item;
+  });
+/* eslint-enable anti-slop/no-runtime-typeof */
+export const profileSettingsEqual = (
+  left: Schema.Json,
+  right: Schema.Json
+): boolean => canonicalProfileValue(left) === canonicalProfileValue(right);
+
 // Empty decimal settings are unset, never zero. This boundary rejects coercions such as hexadecimal and Infinity.
 export const DecimalSetting = Schema.String.check(
   Schema.isPattern(/^(?:\d+(?:\.\d+)?)?$/u)

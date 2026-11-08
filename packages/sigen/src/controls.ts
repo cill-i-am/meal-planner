@@ -1,6 +1,10 @@
 import { Schema, absurd } from "effect";
 
 import {
+  ActiveProfileLimitScope,
+  SigenAiTarget,
+} from "./active-profile-limits.js";
+import {
   LoadControlChange,
   LoadControlSnapshot,
   isLoadControlChange,
@@ -232,6 +236,12 @@ export const ApproveCommandInput = Schema.Struct({
 });
 export const ApprovalScope = Schema.Union([
   Schema.Struct({
+    operation: Schema.Literal("set_active_energy_profile_limits"),
+    setting: ActiveProfileLimitScope,
+    stationId: StationId,
+    target: SigenAiTarget,
+  }),
+  Schema.Struct({
     operation: Schema.Literal("set_active_energy_profile_parameters"),
     stationId: StationId,
     target: ActiveProfileTarget,
@@ -287,6 +297,18 @@ export const approvalScope = (
   stationId: StationId,
   change: ControlChange
 ): typeof ApprovalScope.Type => {
+  if (change.operation === "set_active_energy_profile_limits") {
+    const { setting } = change;
+    return {
+      operation: change.operation,
+      setting:
+        setting.kind === "grid_power"
+          ? `grid_${setting.direction}`
+          : setting.kind,
+      stationId,
+      target: change.target,
+    };
+  }
   if (change.operation === "set_active_energy_profile_parameters") {
     return { operation: change.operation, stationId, target: change.target };
   }

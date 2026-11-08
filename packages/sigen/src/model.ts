@@ -109,6 +109,7 @@ export type Enrollment = typeof Enrollment.Type;
 export const ControlOperation = Schema.Literals([
   "set_energy_profile_parameters",
   "set_active_energy_profile_parameters",
+  "set_active_energy_profile_limits",
   "activate_time_of_use_mode",
   "set_energy_profile_priorities",
   "set_energy_profile_schedules",

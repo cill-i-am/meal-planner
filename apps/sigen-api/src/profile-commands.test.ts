@@ -7,7 +7,10 @@ import {
 } from "../../../packages/sigen/src/__fixtures__/remaining.js";
 import { makeControlsClient } from "../../../packages/sigen/src/controls-client.js";
 import { ControlChange } from "../../../packages/sigen/src/controls.js";
-import type { Command } from "../../../packages/sigen/src/controls.js";
+import type {
+  Command,
+  WritablePowerLimit,
+} from "../../../packages/sigen/src/controls.js";
 import {
   ControlOperation,
   StationId,
@@ -47,6 +50,7 @@ const fixture = async () => {
   let loseResponse = false;
   let currentMode = 1;
   let backupReserve = 20;
+  let solarLimit = "4294967.295";
   let active: Record<string, unknown> = { ...profile, profileId: null };
   let touRows = [
     {
@@ -112,6 +116,9 @@ const fixture = async () => {
             stationId: 12_345,
           };
         }
+        if (url.pathname === "/device/energy-profile/solar/limit/12345") {
+          return { powerLimit: solarLimit };
+        }
         if (url.pathname === "/device/setting/tou/12345") {
           return { currType: 1 };
         }
@@ -130,6 +137,10 @@ const fixture = async () => {
         } else if (path === "/device/setting/backup/reserve") {
           backupReserve = yield* Schema.decodeUnknownEffect(Schema.Number)(
             body?.["backupReserve"]
+          ).pipe(Effect.mapError(() => failure("SchemaMismatch")));
+        } else if (path === "/device/energy-profile/solar/limit") {
+          solarLimit = yield* Schema.decodeUnknownEffect(Schema.String)(
+            body?.["powerLimit"]
           ).pipe(Effect.mapError(() => failure("SchemaMismatch")));
         } else if (body?.["profileId"] === null) {
           active = { ...active, ...body, pvPriority: profile.pvPriority };
@@ -443,6 +454,43 @@ const activateTou = Schema.decodeUnknownSync(ControlChange)({
 });
 
 describe("active energy setting approvals", () => {
+  it("keeps reserve grants separate from active limit dispatch and remembers only the approved limit", async () => {
+    const f = await fixture();
+    const reserve = await f.prepare(activeParameters(21));
+    await run(f.service.approveCommand(approve(reserve, "always")));
+    const solar = (limit: typeof WritablePowerLimit.Type) =>
+      Schema.decodeUnknownSync(ControlChange)({
+        operation: "set_active_energy_profile_limits",
+        setting: { kind: "solar_power", limit },
+        target: { kind: "built_in", providerMode: 1 },
+      });
+    const first = await f.prepare(solar({ kind: "limited", watts: 4500 }));
+    expect(first.phase.status).toBe("prepared");
+    await run(f.service.approveCommand(approve(first, "always")));
+    expect(
+      await run(
+        f
+          .make(true, ["set_active_energy_profile_parameters"])
+          .executeCommand(identity(first))
+          .pipe(Effect.result)
+      )
+    ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
+    expect(await run(f.service.executeCommand(identity(first)))).toMatchObject({
+      phase: { status: "verified" },
+    });
+    const restore = await f.prepare(solar({ kind: "unlimited" }));
+    expect(restore.phase.status).toBe("approved");
+    expect(
+      await run(f.service.executeCommand(identity(restore)))
+    ).toMatchObject({
+      phase: { status: "verified" },
+    });
+    expect(f.writes).toEqual([
+      "PUT /device/energy-profile/solar/limit",
+      "PUT /device/energy-profile/solar/limit",
+    ]);
+  });
+
   it("reuses a reserve grant for restoration and refuses another mode or operation", async () => {
     const f = await fixture();
     const first = await f.prepare(activeParameters(21));

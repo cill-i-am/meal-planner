@@ -1,6 +1,15 @@
 import { Clock, Effect, Schema } from "effect";
 import type { Redacted } from "effect";
 
+import {
+  dispatchActiveLimit,
+  readActiveLimit,
+  validateActiveLimit,
+} from "./active-profile-limits.js";
+import type {
+  ActiveLimitState,
+  ActiveProfileLimitsChange,
+} from "./active-profile-limits.js";
 import type { ProviderWrite } from "./controls-client.js";
 import { makeEnergyProfileClient } from "./energy-profile-client.js";
 import { failure } from "./model.js";
@@ -13,6 +22,7 @@ import {
   profileBody,
   profileSettingsEqual,
   activeBackupReserve,
+  isActiveSigenAi,
 } from "./profile-controls.js";
 import type {
   ProfileChange,
@@ -88,7 +98,8 @@ export const makeProfileControlsClient = (
   ) =>
     Effect.gen(function* inspectProfileCommand() {
       const active =
-        change.operation === "set_active_energy_profile_parameters";
+        change.operation === "set_active_energy_profile_parameters" ||
+        change.operation === "set_active_energy_profile_limits";
       const profiles = active
         ? []
         : (yield* settings.operatingModes(stationId, token)).customProfiles;
@@ -106,6 +117,7 @@ export const makeProfileControlsClient = (
       let source: ProfileConfiguration | null = null;
       let selected: ProfileConfiguration | null = null;
       let activeBackupReservePercent: number | undefined;
+      let activeLimit: ActiveLimitState | undefined;
       if (change.operation === "create_energy_profile") {
         source = yield* readProfile(change.source);
         const matches = profiles.filter(
@@ -119,20 +131,31 @@ export const makeProfileControlsClient = (
         }
       } else if (active) {
         selected = yield* readProfile({ kind: "current" });
-        const reserve = yield* readBackupReserve(read, stationId, token);
+        const reserve =
+          change.operation === "set_active_energy_profile_parameters"
+            ? yield* readBackupReserve(read, stationId, token)
+            : undefined;
+        if (change.operation === "set_active_energy_profile_limits") {
+          activeLimit = yield* readActiveLimit(
+            settings,
+            stationId,
+            change.setting,
+            token
+          );
+        }
         const after = yield* readMode;
         if (
           after.currentMode !== currentMode.currentMode ||
           after.currentProfileId !== currentMode.currentProfileId ||
           after.followPpcMode !== currentMode.followPpcMode ||
-          reserve.operationMode !== after.currentMode
+          (reserve !== undefined && reserve.operationMode !== after.currentMode)
         ) {
           return yield* failure("Conflict");
         }
         if (after.followPpcMode === true) {
           return yield* failure("UnsupportedCapability");
         }
-        activeBackupReservePercent = reserve.backupReserve;
+        activeBackupReservePercent = reserve?.backupReserve;
       } else if (change.operation === "replace_automation_schedule") {
         selected = yield* readProfile({ kind: "current" });
       } else if (
@@ -154,12 +177,16 @@ export const makeProfileControlsClient = (
         source,
         stationId,
       };
+      const withReserve =
+        activeBackupReservePercent === undefined
+          ? state
+          : { ...state, activeBackupReservePercent };
       return yield* decodeProvider(ProfileControlSnapshot)({
         kind: "profile",
         settings:
-          activeBackupReservePercent === undefined
-            ? state
-            : { ...state, activeBackupReservePercent },
+          activeLimit === undefined
+            ? withReserve
+            : { ...withReserve, activeLimit },
       });
     });
   const validateAutomation = (
@@ -214,9 +241,33 @@ export const makeProfileControlsClient = (
         return yield* failure("UnsupportedCapability");
       }
     });
-  const validate = (
-    _stationId: StationId,
-    change: ProfileChange,
+  const validateActiveProfileLimit = (
+    change: typeof ActiveProfileLimitsChange.Type,
+    state: ProfileControlSnapshot["settings"],
+    token: Redacted.Redacted<string>
+  ) =>
+    Effect.gen(function* validateSigenAiLimit() {
+      if (!isActiveSigenAi(state)) {
+        return yield* failure("UnsupportedCapability");
+      }
+      const { selected, activeLimit } = state;
+      yield* validateActiveLimit(change.setting, activeLimit, selected);
+      const { providerFeatures } = yield* makeProfileClient(
+        read
+      ).energyCapabilities(selected.stationId, token);
+      if (
+        !providerFeatures.support ||
+        providerFeatures.isIndustry ||
+        (activeLimit.kind === "battery" &&
+          !providerFeatures.hasBatterySetting) ||
+        (change.setting.kind === "battery_soc" &&
+          !providerFeatures.hasBackupSetting)
+      ) {
+        return yield* failure("UnsupportedCapability");
+      }
+    });
+  const validateOtherProfile = (
+    change: Exclude<ProfileChange, typeof ActiveProfileLimitsChange.Type>,
     snapshot: ProfileControlSnapshot,
     token: Redacted.Redacted<string>
   ) =>
@@ -302,12 +353,35 @@ export const makeProfileControlsClient = (
       }
       yield* validateAutomation(change, base, token);
     });
+  const validate = (
+    _stationId: StationId,
+    change: ProfileChange,
+    snapshot: ProfileControlSnapshot,
+    token: Redacted.Redacted<string>
+  ) =>
+    change.operation === "set_active_energy_profile_limits"
+      ? validateActiveProfileLimit(change, snapshot.settings, token)
+      : validateOtherProfile(change, snapshot, token);
   const dispatch = (
     stationId: StationId,
     change: ProfileChange,
     snapshot: ProfileControlSnapshot,
     token: Redacted.Redacted<string>
   ) => {
+    if (change.operation === "set_active_energy_profile_limits") {
+      const state = snapshot.settings;
+      return isActiveSigenAi(state) &&
+        state.stationId === stationId &&
+        Number.isSafeInteger(Number(stationId))
+        ? dispatchActiveLimit(
+            write,
+            change.setting,
+            state.activeLimit,
+            state.selected,
+            token
+          )
+        : failure("UnsupportedCapability");
+    }
     if (change.operation === "set_active_energy_profile_parameters") {
       const reserve = activeBackupReserve(change, snapshot.settings);
       return reserve !== null &&
