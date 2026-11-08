@@ -1,6 +1,17 @@
 import { always, never } from "apps/operations/approval";
 
 const reads = new Set([
+  "get_ac_charger_settings",
+  "get_charger_schedules",
+
+  "get_smart_load_control_settings",
+  "get_smart_load_consumption",
+  "get_station_consumption",
+  "list_chargers",
+  "get_charger_status",
+  "get_ac_charger_current",
+  "get_dc_charger_settings",
+
   "list_third_party_devices",
   "get_preheating_settings",
   "get_system_cards",
@@ -23,6 +34,7 @@ const reads = new Set([
   "get_station",
   "get_energy_flow",
   "get_operating_mode",
+  "get_time_of_use_settings",
   "get_battery_settings",
   "get_automation_settings",
   "get_grid_settings",

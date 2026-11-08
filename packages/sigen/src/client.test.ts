@@ -7,11 +7,13 @@ import type { HttpClient } from "effect/http/HttpClient";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
+import { expandedResponses } from "./__fixtures__/expanded.js";
 import {
   makeSigenClient,
   makeSigenClientWithBudget,
   transformPassword,
 } from "./client.js";
+import { ControlChange } from "./controls.js";
 import { Enrollment, StationId } from "./model.js";
 
 const stationId = Schema.decodeUnknownSync(StationId)("12345");
@@ -101,6 +103,41 @@ describe("private EU client", () => {
     );
     expect(Redacted.value(actual)).toBe(expected);
     expect(String(actual)).not.toContain(expected);
+  });
+
+  it("treats a false schedule acknowledgement as unconfirmed", async () => {
+    const change = Schema.decodeUnknownSync(ControlChange)({
+      loadKey: "synthetic-load",
+      loadPath: 1,
+      operation: "set_smart_load_schedule",
+      schedule: {
+        readyBy: [],
+        solar: null,
+        timed: [],
+        timezone: "Europe/London",
+      },
+    });
+    const methods: string[] = [];
+    const result = await run(
+      Effect.gen(function* dispatchSchedule() {
+        const client = yield* makeSigenClient;
+        const reviewed = yield* client.inspectControl(stationId, change, token);
+        return yield* client
+          .dispatchControl(stationId, change, token, reviewed)
+          .pipe(Effect.result);
+      }),
+      (input, init) => {
+        const method = init?.method ?? "GET";
+        methods.push(method);
+        const { pathname } = new URL(String(input));
+        return Response.json({
+          code: 0,
+          data: method === "POST" ? false : expandedResponses[pathname],
+        });
+      }
+    );
+    expect(result).toMatchObject({ failure: { reason: "SchemaMismatch" } });
+    expect(methods.filter((method) => method !== "GET")).toEqual(["POST"]);
   });
 
   it("uses an explicit station, normalizes capabilities and strips unrelated account data", async () => {

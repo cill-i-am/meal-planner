@@ -12,16 +12,28 @@ import {
   proposedProfile,
   profileBody,
   profileSettingsEqual,
+  activeBackupReserve,
 } from "./profile-controls.js";
 import type {
   ProfileChange,
   ProfileConfiguration,
 } from "./profile-controls.js";
+import { validateProfileExtras } from "./profile-extras.js";
+import { validateProfileParameters } from "./profile-parameters.js";
 import { decodeProvider } from "./provider-read.js";
 import type { ProviderRead } from "./provider-read.js";
 import { ScheduleWindow, nonOverlappingWindows } from "./schedules.js";
-import { makeSettingsClient } from "./settings-client.js";
+import {
+  makeSettingsClient,
+  readBackupReserve,
+  writeBackupReserve,
+} from "./settings-client.js";
 
+const ModeResponse = Schema.Struct({
+  currentMode: Schema.Number,
+  currentProfileId: Schema.Number,
+  followPpcMode: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+});
 const withoutTime = ({
   fetchedAt: _fetchedAt,
   ...profile
@@ -75,20 +87,16 @@ export const makeProfileControlsClient = (
     token: Redacted.Redacted<string>
   ) =>
     Effect.gen(function* inspectProfileCommand() {
-      const inventory = yield* settings.operatingModes(stationId, token);
-      const currentMode = yield* read(
+      const active =
+        change.operation === "set_active_energy_profile_parameters";
+      const profiles = active
+        ? []
+        : (yield* settings.operatingModes(stationId, token)).customProfiles;
+      const readMode = read(
         `/device/energy-profile/mode/current/${stationId}`,
         token
-      ).pipe(
-        Effect.flatMap(
-          decodeProvider(
-            Schema.Struct({
-              currentMode: Schema.Number,
-              currentProfileId: Schema.Number,
-            })
-          )
-        )
-      );
+      ).pipe(Effect.flatMap(decodeProvider(ModeResponse)));
+      const currentMode = yield* readMode;
       const readProfile = (
         target: Parameters<typeof energy.energyProfile>[0]["target"]
       ) =>
@@ -97,9 +105,10 @@ export const makeProfileControlsClient = (
           .pipe(Effect.map(withoutTime));
       let source: ProfileConfiguration | null = null;
       let selected: ProfileConfiguration | null = null;
+      let activeBackupReservePercent: number | undefined;
       if (change.operation === "create_energy_profile") {
         source = yield* readProfile(change.source);
-        const matches = inventory.customProfiles.filter(
+        const matches = profiles.filter(
           (profile) => profile.name === change.name
         );
         if (matches.length === 1 && matches[0] !== undefined) {
@@ -108,77 +117,57 @@ export const makeProfileControlsClient = (
             profileId: matches[0].profileId,
           });
         }
+      } else if (active) {
+        selected = yield* readProfile({ kind: "current" });
+        const reserve = yield* readBackupReserve(read, stationId, token);
+        const after = yield* readMode;
+        if (
+          after.currentMode !== currentMode.currentMode ||
+          after.currentProfileId !== currentMode.currentProfileId ||
+          after.followPpcMode !== currentMode.followPpcMode ||
+          reserve.operationMode !== after.currentMode
+        ) {
+          return yield* failure("Conflict");
+        }
+        if (after.followPpcMode === true) {
+          return yield* failure("UnsupportedCapability");
+        }
+        activeBackupReservePercent = reserve.backupReserve;
       } else if (change.operation === "replace_automation_schedule") {
         selected = yield* readProfile({ kind: "current" });
       } else if (
-        inventory.customProfiles.some(
-          (profile) => profile.profileId === change.profileId
-        )
+        profiles.some((profile) => profile.profileId === change.profileId)
       ) {
         selected = yield* readProfile({
           kind: "custom",
           profileId: change.profileId,
         });
       }
+      const state = {
+        currentMode: {
+          profileId: currentMode.currentProfileId,
+          providerMode: currentMode.currentMode,
+        },
+        fetchedAt: yield* Clock.currentTimeMillis,
+        profiles,
+        selected,
+        source,
+        stationId,
+      };
       return yield* decodeProvider(ProfileControlSnapshot)({
         kind: "profile",
-        settings: {
-          currentMode: {
-            profileId: currentMode.currentProfileId,
-            providerMode: currentMode.currentMode,
-          },
-          fetchedAt: yield* Clock.currentTimeMillis,
-          profiles: inventory.customProfiles,
-          selected,
-          source,
-          stationId,
-        },
+        settings:
+          activeBackupReservePercent === undefined
+            ? state
+            : { ...state, activeBackupReservePercent },
       });
     });
-  const validate = (
-    stationId: StationId,
+  const validateAutomation = (
     change: ProfileChange,
-    snapshot: ProfileControlSnapshot,
+    base: ProfileConfiguration,
     token: Redacted.Redacted<string>
   ) =>
-    Effect.gen(function* validateProfileCommand() {
-      const state = snapshot.settings;
-      if (change.operation === "delete_energy_profile") {
-        if (state.selected === null) {
-          return yield* failure("InvalidInput");
-        }
-        if (
-          state.currentMode.profileId === change.profileId ||
-          state.selected.providerActiveStatus !== 0
-        ) {
-          return yield* failure("Conflict");
-        }
-        return;
-      }
-      const base =
-        change.operation === "create_energy_profile"
-          ? state.source
-          : state.selected;
-      if (base === null) {
-        return yield* failure("InvalidInput");
-      }
-      if (!serializableProfile(base)) {
-        return yield* failure("UnsupportedCapability");
-      }
-      const proposed = proposedProfile(change, base);
-      if (
-        state.profiles.some(
-          (profile) =>
-            profile.name === proposed.profileName &&
-            (change.operation === "create_energy_profile" ||
-              profile.profileId !== base.providerProfileId)
-        )
-      ) {
-        return yield* failure("Conflict");
-      }
-      if (proposed.timezone !== base.timezone) {
-        return yield* failure("InvalidInput");
-      }
+    Effect.gen(function* validateProfileAutomation() {
       const replacement =
         change.operation === "replace_automation_schedule"
           ? change.replacement
@@ -191,7 +180,7 @@ export const makeProfileControlsClient = (
         return;
       }
       const capabilities = yield* makeProfileClient(read).energyCapabilities(
-        stationId,
+        base.stationId,
         token
       );
       const features = capabilities.providerFeatures;
@@ -225,12 +214,109 @@ export const makeProfileControlsClient = (
         return yield* failure("UnsupportedCapability");
       }
     });
+  const validate = (
+    _stationId: StationId,
+    change: ProfileChange,
+    snapshot: ProfileControlSnapshot,
+    token: Redacted.Redacted<string>
+  ) =>
+    Effect.gen(function* validateProfileCommand() {
+      const state = snapshot.settings;
+      if (change.operation === "delete_energy_profile") {
+        if (state.selected === null) {
+          return yield* failure("InvalidInput");
+        }
+        if (
+          state.currentMode.profileId === change.profileId ||
+          state.selected.providerActiveStatus !== 0
+        ) {
+          return yield* failure("Conflict");
+        }
+        return;
+      }
+      const base =
+        change.operation === "create_energy_profile"
+          ? state.source
+          : state.selected;
+      if (base === null) {
+        return yield* failure("InvalidInput");
+      }
+      if (change.operation === "set_active_energy_profile_parameters") {
+        if (activeBackupReserve(change, state) === null) {
+          return yield* failure("UnsupportedCapability");
+        }
+        return yield* validateProfileParameters(
+          read,
+          change.parameters,
+          base,
+          token
+        );
+      }
+      if (!serializableProfile(base)) {
+        return yield* failure("UnsupportedCapability");
+      }
+      if (
+        change.operation === "set_energy_profile_parameters" ||
+        change.operation === "set_energy_profile_priorities" ||
+        change.operation === "set_energy_profile_schedules"
+      ) {
+        if (
+          base.providerActiveStatus !== 0 ||
+          state.currentMode.profileId === change.profileId
+        ) {
+          return yield* failure("Conflict");
+        }
+        if (change.operation !== "set_energy_profile_parameters") {
+          return yield* validateProfileExtras(
+            read,
+            base,
+            token,
+            change.operation === "set_energy_profile_priorities"
+              ? change.priorities
+              : undefined,
+            change.operation === "set_energy_profile_schedules"
+              ? change.schedules
+              : undefined
+          );
+        }
+        return yield* validateProfileParameters(
+          read,
+          change.parameters,
+          base,
+          token
+        );
+      }
+      const proposed = proposedProfile(change, base);
+      if (
+        state.profiles.some(
+          (profile) =>
+            profile.name === proposed.profileName &&
+            (change.operation === "create_energy_profile" ||
+              profile.profileId !== base.providerProfileId)
+        )
+      ) {
+        return yield* failure("Conflict");
+      }
+      if (proposed.timezone !== base.timezone) {
+        return yield* failure("InvalidInput");
+      }
+      yield* validateAutomation(change, base, token);
+    });
   const dispatch = (
     stationId: StationId,
     change: ProfileChange,
     snapshot: ProfileControlSnapshot,
     token: Redacted.Redacted<string>
   ) => {
+    if (change.operation === "set_active_energy_profile_parameters") {
+      const reserve = activeBackupReserve(change, snapshot.settings);
+      return reserve !== null &&
+        snapshot.settings.stationId === stationId &&
+        snapshot.settings.selected?.stationId === stationId &&
+        Number.isSafeInteger(Number(stationId))
+        ? writeBackupReserve(write, stationId, reserve, token)
+        : failure("UnsupportedCapability");
+    }
     if (change.operation === "delete_energy_profile") {
       return write(
         "DELETE",

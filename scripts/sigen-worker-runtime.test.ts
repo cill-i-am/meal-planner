@@ -334,7 +334,7 @@ it(
       // @ts-expect-error SDK 1.32.1's sessionId getter disagrees with Transport under exactOptionalPropertyTypes.
       await client.connect(transport);
       const listed = await client.listTools();
-      expect(listed.tools).toHaveLength(47);
+      expect(listed.tools).toHaveLength(57);
       const initial = await client.callTool({
         arguments: {},
         name: "connection_status",

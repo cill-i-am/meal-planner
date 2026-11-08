@@ -1,5 +1,11 @@
 import { Schema, absurd } from "effect";
 
+import {
+  LoadControlChange,
+  LoadControlSnapshot,
+  isLoadControlChange,
+  loadControlMatches,
+} from "./load-controls.js";
 import { LoadKey, LoadPath, SmartLoadState } from "./loads.js";
 import {
   FailureReason,
@@ -9,6 +15,7 @@ import {
   Timestamp,
 } from "./model.js";
 import {
+  ActiveProfileTarget,
   ProfileChange,
   ProfileControlSnapshot,
   profileControlMatches,
@@ -26,6 +33,7 @@ import {
   isScheduledSettingsChange,
 } from "./scheduled-settings-controls.js";
 import {
+  WritablePowerLimit,
   BatterySettings,
   GridSettings,
   ManualOverride,
@@ -34,6 +42,11 @@ import {
   samePeakShavingPreset,
   SolarSettings,
 } from "./settings.js";
+import {
+  TimeOfUseChange,
+  TimeOfUseSnapshot,
+  timeOfUseMatches,
+} from "./time-of-use.js";
 
 export const SolarPriorityChange = Schema.Struct({
   providerDeviceType: Schema.NullOr(Schema.Int),
@@ -42,21 +55,15 @@ export const SolarPriorityChange = Schema.Struct({
   smartLoadPath: Schema.NullOr(LoadPath),
 });
 const WholePercent = Percent.check(Schema.isInt());
-export const WritablePowerLimit = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("unlimited") }),
-  Schema.Struct({
-    kind: Schema.Literal("limited"),
-    watts: Schema.Int.check(
-      Schema.isBetween({ maximum: 4_294_967_294, minimum: 0 })
-    ),
-  }),
-]);
+export { WritablePowerLimit } from "./settings.js";
 const Watts = Schema.Int.check(
   Schema.isBetween({ maximum: 4_294_967_294, minimum: 0 })
 );
 export const ControlChange = Schema.Union([
+  LoadControlChange,
   ProfileChange,
   ScheduledSettingsChange,
+  TimeOfUseChange,
   Schema.Struct({
     enabled: Schema.Boolean,
     loadKey: LoadKey,
@@ -161,8 +168,10 @@ export type ControlChange = typeof ControlChange.Type;
 const { fetchedAt: _profileFetchedAt, ...ProfileConfigurationFields } =
   EnergyProfile.fields;
 export const ControlSnapshot = Schema.Union([
+  LoadControlSnapshot,
   ProfileControlSnapshot,
   ScheduledSettingsSnapshot,
+  TimeOfUseSnapshot,
   Schema.Struct({
     kind: Schema.Literal("smart_load"),
     settings: SmartLoadState,
@@ -223,8 +232,16 @@ export const ApproveCommandInput = Schema.Struct({
 });
 export const ApprovalScope = Schema.Union([
   Schema.Struct({
+    operation: Schema.Literal("set_active_energy_profile_parameters"),
+    stationId: StationId,
+    target: ActiveProfileTarget,
+  }),
+  Schema.Struct({
     operation: Schema.Literals([
       "update_energy_profile",
+      "set_energy_profile_parameters",
+      "set_energy_profile_priorities",
+      "set_energy_profile_schedules",
       "delete_energy_profile",
     ]),
     profileId: Schema.Int.check(Schema.isGreaterThan(0)),
@@ -233,7 +250,12 @@ export const ApprovalScope = Schema.Union([
   Schema.Struct({
     loadKey: LoadKey,
     loadPath: LoadPath,
-    operation: Schema.Literal("set_smart_load_switch"),
+    operation: Schema.Literals([
+      "set_smart_load_switch",
+      "set_smart_load_mode",
+      "set_smart_load_off_grid_control",
+      "set_smart_load_schedule",
+    ]),
     stationId: StationId,
   }),
   Schema.Struct({
@@ -250,6 +272,7 @@ export const ApprovalScope = Schema.Union([
       "set_grid_import_limit",
       "set_grid_connection_current",
       "set_operating_mode",
+      "activate_time_of_use_mode",
       "set_battery_soc_thresholds",
       "set_peak_shaving_schedule",
       "stop_manual_override",
@@ -264,7 +287,13 @@ export const approvalScope = (
   stationId: StationId,
   change: ControlChange
 ): typeof ApprovalScope.Type => {
+  if (change.operation === "set_active_energy_profile_parameters") {
+    return { operation: change.operation, stationId, target: change.target };
+  }
   if (
+    change.operation === "set_energy_profile_parameters" ||
+    change.operation === "set_energy_profile_priorities" ||
+    change.operation === "set_energy_profile_schedules" ||
     change.operation === "update_energy_profile" ||
     change.operation === "delete_energy_profile"
   ) {
@@ -274,7 +303,10 @@ export const approvalScope = (
       stationId,
     };
   }
-  if (change.operation === "set_smart_load_switch") {
+  if (
+    change.operation === "set_smart_load_switch" ||
+    isLoadControlChange(change)
+  ) {
     return {
       loadKey: change.loadKey,
       loadPath: change.loadPath,
@@ -493,7 +525,10 @@ const matchesOperatingMode = (
 const matchesExistingControl = (
   change: Exclude<
     ControlChange,
-    typeof ProfileChange.Type | typeof ScheduledSettingsChange.Type
+    | typeof ProfileChange.Type
+    | typeof ScheduledSettingsChange.Type
+    | LoadControlChange
+    | TimeOfUseChange
   >,
   snapshot: ControlSnapshot,
   reviewed?: ControlSnapshot
@@ -558,6 +593,25 @@ export const controlMatches = (
   snapshot: ControlSnapshot,
   reviewed?: ControlSnapshot
 ): boolean => {
+  if (change.operation === "activate_time_of_use_mode") {
+    return (
+      snapshot.kind === "time_of_use" &&
+      timeOfUseMatches(
+        snapshot,
+        reviewed?.kind === "time_of_use" ? reviewed : undefined
+      )
+    );
+  }
+  if (isLoadControlChange(change)) {
+    return (
+      snapshot.kind === "smart_load_settings" &&
+      loadControlMatches(
+        change,
+        snapshot,
+        reviewed?.kind === "smart_load_settings" ? reviewed : undefined
+      )
+    );
+  }
   if (isScheduledSettingsChange(change)) {
     return (
       (snapshot.kind === "preheating" || snapshot.kind === "energy_saving") &&

@@ -1,9 +1,23 @@
 import { Schema, absurd } from "effect";
 
 import { OperatingMode, Percent, StationId, Timestamp } from "./model.js";
-import { isUnusedResidentialPreheatingPower } from "./preheating.js";
+import {
+  isUnusedResidentialPreheatingPower,
+  writableResidentialPreheating,
+} from "./preheating.js";
+import {
+  ProfilePriorities,
+  ProfileSchedules,
+  applyProfilePriorities,
+  applyProfileSchedules,
+} from "./profile-extras.js";
+import {
+  ProfileParameters,
+  applyProfileParameters,
+} from "./profile-parameters.js";
 import { EnergyProfile, ProfileId } from "./profile.js";
 import { ScheduleWindow, nonOverlappingWindows } from "./schedules.js";
+import { WritablePowerLimit } from "./settings.js";
 import type { PowerLimit } from "./settings.js";
 
 const Name = Schema.String.check(
@@ -14,15 +28,6 @@ const Name = Schema.String.check(
 );
 const Description = Schema.String.check(Schema.isMaxLength(500));
 const Id = Schema.Int.check(Schema.isGreaterThan(0));
-const Limit = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("unlimited") }),
-  Schema.Struct({
-    kind: Schema.Literal("limited"),
-    watts: Schema.Int.check(
-      Schema.isBetween({ maximum: 4_294_967_294, minimum: 0 })
-    ),
-  }),
-]);
 const Group = {
   name: Name,
   providerActiveStatus: Schema.Literals([0, 1]),
@@ -40,11 +45,11 @@ const Group = {
 const BatteryGroup = Schema.Struct({
   ...Group,
   chargeCutoffPercent: Percent.check(Schema.isInt()),
-  chargeLimit: Limit,
+  chargeLimit: WritablePowerLimit,
   dischargeCutoffPercent: Percent.check(Schema.isInt()),
-  dischargeLimit: Limit,
-  gridChargeLimit: Limit,
-  gridExportLimit: Limit,
+  dischargeLimit: WritablePowerLimit,
+  gridChargeLimit: WritablePowerLimit,
+  gridExportLimit: WritablePowerLimit,
   providerMode: Schema.Literals([0, 1, 3, 6]),
 }).check(
   Schema.makeFilter((group) => {
@@ -95,8 +100,8 @@ const BatteryGroup = Schema.Struct({
 );
 const GridGroup = Schema.Struct({
   ...Group,
-  exportLimit: Limit,
-  importLimit: Limit,
+  exportLimit: WritablePowerLimit,
+  importLimit: WritablePowerLimit,
   providerMode: Schema.Literals([0, 1, 2]),
 }).check(
   Schema.makeFilter(
@@ -127,7 +132,38 @@ const Edits = Schema.Struct({
   description: Schema.optionalKey(Description),
   name: Schema.optionalKey(Name),
 }).check(Schema.makeFilter((value) => Object.keys(value).length > 0));
+export const ActiveProfileTarget = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("built_in"),
+    providerMode: Schema.Literals([0, 1, 5]),
+  }),
+  Schema.Struct({ kind: Schema.Literal("custom"), profileId: Id }),
+]);
+export const ActiveProfileChange = Schema.Struct({
+  operation: Schema.Literal("set_active_energy_profile_parameters"),
+  parameters: ProfileParameters,
+  target: ActiveProfileTarget,
+}).annotate({
+  description:
+    "Set only the backup reserve of the current Sigen AI profile (built_in mode 1). Send batterySoc with unchanged charge and discharge thresholds. Other active edits are unsupported.",
+});
 export const ProfileChange = Schema.Union([
+  ActiveProfileChange,
+  Schema.Struct({
+    operation: Schema.Literal("set_energy_profile_priorities"),
+    priorities: ProfilePriorities,
+    profileId: Id,
+  }),
+  Schema.Struct({
+    operation: Schema.Literal("set_energy_profile_schedules"),
+    profileId: Id,
+    schedules: ProfileSchedules,
+  }),
+  Schema.Struct({
+    operation: Schema.Literal("set_energy_profile_parameters"),
+    parameters: ProfileParameters,
+    profileId: Id,
+  }),
   Schema.Struct({
     description: Description,
     name: Name,
@@ -156,6 +192,10 @@ export type ProfileChange = typeof ProfileChange.Type;
 export const isProfileChange = (change: {
   readonly operation: string;
 }): change is ProfileChange =>
+  change.operation === "set_active_energy_profile_parameters" ||
+  change.operation === "set_energy_profile_priorities" ||
+  change.operation === "set_energy_profile_schedules" ||
+  change.operation === "set_energy_profile_parameters" ||
   change.operation === "create_energy_profile" ||
   change.operation === "update_energy_profile" ||
   change.operation === "delete_energy_profile" ||
@@ -166,6 +206,7 @@ export type ProfileConfiguration = typeof ProfileConfiguration.Type;
 export const ProfileControlSnapshot = Schema.Struct({
   kind: Schema.Literal("profile"),
   settings: Schema.Struct({
+    activeBackupReservePercent: Schema.optionalKey(Percent),
     currentMode: Schema.Struct({
       profileId: OperatingMode.fields.profileId,
       providerMode: OperatingMode.fields.providerMode,
@@ -192,6 +233,18 @@ export const proposedProfile = (
   change: ProfileChange,
   current: ProfileConfiguration
 ): ProfileConfiguration => {
+  if (change.operation === "set_energy_profile_priorities") {
+    return applyProfilePriorities(current, change.priorities);
+  }
+  if (change.operation === "set_energy_profile_schedules") {
+    return applyProfileSchedules(current, change.schedules);
+  }
+  if (
+    change.operation === "set_energy_profile_parameters" ||
+    change.operation === "set_active_energy_profile_parameters"
+  ) {
+    return applyProfileParameters(current, change.parameters);
+  }
   if (change.operation === "create_energy_profile") {
     return {
       ...current,
@@ -235,6 +288,8 @@ export const profileSettingsEqual = (
   right: Schema.Json
 ): boolean => canonicalProfileValue(left) === canonicalProfileValue(right);
 const configuration = (value: ProfileConfiguration) => {
+  const normalizeMinutes =
+    !value.industrial && writableResidentialPreheating(value.preheating);
   const {
     target: _target,
     providerProfileId: _id,
@@ -263,10 +318,45 @@ const configuration = (value: ProfileConfiguration) => {
               )
                 ? null
                 : slot.providerDischargePower,
+              providerDuration: normalizeMinutes
+                ? Number(slot.providerDuration)
+                : slot.providerDuration,
+              providerStartTime: normalizeMinutes
+                ? Number(slot.providerStartTime)
+                : slot.providerStartTime,
             })),
           }
         : value.preheating,
   });
+};
+
+export const activeBackupReserve = (
+  change: typeof ActiveProfileChange.Type,
+  state: ProfileControlSnapshot["settings"]
+): number | null => {
+  const { currentMode, selected } = state;
+  const { parameters, target } = change;
+  const soc = parameters.batterySoc;
+  if (
+    target.kind !== "built_in" ||
+    target.providerMode !== 1 ||
+    currentMode.providerMode !== 1 ||
+    currentMode.profileId !== -1 ||
+    state.activeBackupReservePercent === undefined ||
+    selected === null ||
+    selected.target.kind !== "current" ||
+    selected.providerProfileId !== null ||
+    selected.industrial ||
+    ![0, 1].includes(selected.peakShaving.providerControlMode) ||
+    soc === undefined ||
+    Object.keys(parameters).length !== 1 ||
+    soc.chargeSocPercent !== selected.chargeSocPercent ||
+    soc.dischargeSocPercent !== selected.dischargeSocPercent ||
+    soc.backupSocPercent < soc.dischargeSocPercent
+  ) {
+    return null;
+  }
+  return soc.backupSocPercent;
 };
 
 export const profileControlMatches = (
@@ -305,6 +395,21 @@ export const profileControlMatches = (
     )
   ) {
     return false;
+  }
+  if (change.operation === "set_active_energy_profile_parameters") {
+    const reserve = activeBackupReserve(change, before);
+    const { backupSocPercent, ...otherSettings } = after.selected;
+    return (
+      reserve !== null &&
+      after.stationId === before.stationId &&
+      after.activeBackupReservePercent === reserve &&
+      (backupSocPercent === reserve ||
+        backupSocPercent === source.backupSocPercent) &&
+      profileSettingsEqual(
+        { ...otherSettings, backupSocPercent: source.backupSocPercent },
+        source
+      )
+    );
   }
   const expected = proposedProfile(change, source);
   return (

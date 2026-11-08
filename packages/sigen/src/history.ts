@@ -18,6 +18,35 @@ export const HistoryInput = Schema.Struct({
   stationId: StationId,
 });
 export type HistoryInput = typeof HistoryInput.Type;
+const LoadConsumptionValues = Schema.NullOr(
+  Schema.Array(
+    Schema.Struct({
+      providerLoadId: Schema.String.check(Schema.isPattern(/^\d{1,19}$/u)),
+      value: Schema.NullOr(Schema.Finite),
+    })
+  ).check(Schema.isMaxLength(128))
+);
+export const StationConsumption = Schema.Struct({
+  ...HistoryInput.fields,
+  baseLoad: Schema.NullOr(Schema.Finite),
+  endDate: LocalDate,
+  fetchedAt: Timestamp,
+  otherLoads: LoadConsumptionValues,
+  samples: Schema.NullOr(
+    Schema.Array(
+      Schema.Struct({
+        baseLoad: Schema.NullOr(Schema.Finite),
+        otherLoads: LoadConsumptionValues,
+        providerTime: Schema.NullOr(
+          Schema.String.check(Schema.isMaxLength(64))
+        ),
+      })
+    ).check(Schema.isMaxLength(2000))
+  ),
+  startDate: LocalDate,
+  timezone: Schema.String,
+  unit: Schema.Literal("provider_unit_unverified"),
+});
 export const ForecastInput = Schema.Struct({
   date: LocalDate,
   period: Schema.Literals(["day", "week", "month"]),

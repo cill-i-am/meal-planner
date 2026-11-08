@@ -66,7 +66,7 @@ describe("expanded reviewed controls", () => {
     await Effect.runPromise(f.client.dispatchControl(id, change, token));
     expect(f.writes[0]?.slice(0, 3)).toEqual([
       "PATCH",
-      "/device/tp-device/smart-loads/control-mode/manual/switch?stationId=12345&loadPath=1&manualSwitch=1",
+      "/third-party-device/tp-device/smart-loads/control-mode/manual/switch?stationId=12345&loadPath=1&manualSwitch=1",
       null,
     ]);
     expect(controlMatches(change, current)).toBe(false);

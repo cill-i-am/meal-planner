@@ -9,6 +9,7 @@ import {
   BackupEventsInput,
   BackupHistoryInput,
 } from "@meal-planner/sigen/backup";
+import { ChargerInput } from "@meal-planner/sigen/charging";
 import { makeSigenClientWithBudget } from "@meal-planner/sigen/client";
 import {
   ApproveCommandInput,
@@ -22,6 +23,7 @@ import {
   ForecastInput,
   IncomeInput,
 } from "@meal-planner/sigen/history";
+import { SmartLoadHistoryInput } from "@meal-planner/sigen/load-settings";
 import { SmartLoadInput } from "@meal-planner/sigen/loads";
 import { EnergyProfileInput } from "@meal-planner/sigen/profile";
 import {
@@ -144,6 +146,10 @@ const runtime = Effect.gen(function* constructAccountObject() {
         Effect.scoped
       );
     return {
+      acChargerCurrent: (input: typeof ChargerInput.Type) =>
+        inputCall(ChargerInput, input, session.acChargerCurrent),
+      acChargerSettings: (input: typeof ChargerInput.Type) =>
+        inputCall(ChargerInput, input, session.acChargerSettings),
       aioDevices: (id: StationId) =>
         inputCall(StationId, id, session.aioDevices),
       aioPowerStatus: (input: typeof DeviceInput.Type) =>
@@ -165,6 +171,14 @@ const runtime = Effect.gen(function* constructAccountObject() {
         inputCall(StationId, id, session.batteryDischargePriority),
       batterySettings: (id: StationId) =>
         inputCall(StationId, id, session.batterySettings),
+      chargerSchedules: (input: typeof ChargerInput.Type) =>
+        inputCall(ChargerInput, input, session.chargerSchedules),
+      chargerStatus: (input: typeof ChargerInput.Type) =>
+        inputCall(ChargerInput, input, session.chargerStatus),
+      chargers: (input: StationId) =>
+        inputCall(StationId, input, session.chargers),
+      dcChargerSettings: (input: typeof ChargerInput.Type) =>
+        inputCall(ChargerInput, input, session.dcChargerSettings),
       deviceInfo: (input: typeof DeviceInput.Type) =>
         inputCall(DeviceInput, input, session.deviceInfo),
       deviceValues: (input: typeof DeviceInput.Type) =>
@@ -226,6 +240,10 @@ const runtime = Effect.gen(function* constructAccountObject() {
         inputCall(RevokeApprovalInput, input, commands.revokeApproval),
       smartLoad: (input: typeof SmartLoadInput.Type) =>
         inputCall(SmartLoadInput, input, session.smartLoad),
+      smartLoadConsumption: (input: typeof SmartLoadHistoryInput.Type) =>
+        inputCall(SmartLoadHistoryInput, input, session.smartLoadConsumption),
+      smartLoadControlSettings: (input: typeof SmartLoadInput.Type) =>
+        inputCall(SmartLoadInput, input, session.smartLoadControlSettings),
       smartLoads: (id: StationId) =>
         inputCall(StationId, id, session.smartLoads),
       solarPriority: (id: StationId) =>
@@ -235,6 +253,8 @@ const runtime = Effect.gen(function* constructAccountObject() {
       station: (id: StationId) => inputCall(StationId, id, session.station),
       stationCapabilities: (id: StationId) =>
         inputCall(StationId, id, session.stationCapabilities),
+      stationConsumption: (input: typeof HistoryInput.Type) =>
+        inputCall(HistoryInput, input, session.stationConsumption),
       stationIncome: (input: typeof IncomeInput.Type) =>
         inputCall(IncomeInput, input, session.stationIncome),
       stationStatus: (input: StationId) =>
@@ -245,6 +265,8 @@ const runtime = Effect.gen(function* constructAccountObject() {
       tariffs: (id: StationId) => inputCall(StationId, id, session.tariffs),
       thirdPartyDevices: (id: StationId) =>
         inputCall(StationId, id, session.thirdPartyDevices),
+      timeOfUseSettings: (id: StationId) =>
+        inputCall(StationId, id, session.timeOfUseSettings),
       topology: (input: StationId) =>
         inputCall(StationId, input, session.topology),
     };

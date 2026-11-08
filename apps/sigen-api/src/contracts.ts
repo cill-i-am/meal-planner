@@ -16,6 +16,15 @@ import {
   BackupHistoryInput,
 } from "@meal-planner/sigen/backup";
 import {
+  ChargerInput,
+  ChargerStatus,
+  Chargers,
+  AcChargerCurrent,
+  AcChargerSettings,
+  ChargerSchedules,
+  DcChargerSettings,
+} from "@meal-planner/sigen/charging";
+import {
   ApprovalGrants,
   ApproveCommandInput,
   Command,
@@ -35,6 +44,7 @@ import {
   Topology,
 } from "@meal-planner/sigen/equipment";
 import {
+  StationConsumption,
   IncomeInput,
   StationIncome,
   EnergyHistory,
@@ -42,6 +52,11 @@ import {
   HistoryInput,
   ForecastInput,
 } from "@meal-planner/sigen/history";
+import {
+  SmartLoadHistoryInput,
+  SmartLoadControlSettings,
+  SmartLoadConsumption,
+} from "@meal-planner/sigen/load-settings";
 import {
   LoadCapabilities,
   SmartLoadInput,
@@ -71,11 +86,39 @@ import {
 import { StationCapabilities, Stations } from "@meal-planner/sigen/stations";
 import { Tariffs, PredictionPlan } from "@meal-planner/sigen/tariffs";
 import { ThirdPartyDevices } from "@meal-planner/sigen/third-party";
+import { TimeOfUseSettings } from "@meal-planner/sigen/time-of-use";
 import { Context, Effect, Schema, flow } from "effect";
 
 export class SigenCapabilities extends Context.Service<
   SigenCapabilities,
   {
+    readonly smartLoadControlSettings: (
+      input: typeof SmartLoadInput.Type
+    ) => Effect.Effect<typeof SmartLoadControlSettings.Type, SigenFailure>;
+    readonly smartLoadConsumption: (
+      input: typeof SmartLoadHistoryInput.Type
+    ) => Effect.Effect<typeof SmartLoadConsumption.Type, SigenFailure>;
+    readonly stationConsumption: (
+      input: typeof HistoryInput.Type
+    ) => Effect.Effect<typeof StationConsumption.Type, SigenFailure>;
+    readonly chargers: (
+      input: StationId
+    ) => Effect.Effect<typeof Chargers.Type, SigenFailure>;
+    readonly chargerStatus: (
+      input: typeof ChargerInput.Type
+    ) => Effect.Effect<typeof ChargerStatus.Type, SigenFailure>;
+    readonly acChargerCurrent: (
+      input: typeof ChargerInput.Type
+    ) => Effect.Effect<typeof AcChargerCurrent.Type, SigenFailure>;
+    readonly dcChargerSettings: (
+      input: typeof ChargerInput.Type
+    ) => Effect.Effect<typeof DcChargerSettings.Type, SigenFailure>;
+    readonly acChargerSettings: (
+      input: typeof ChargerInput.Type
+    ) => Effect.Effect<typeof AcChargerSettings.Type, SigenFailure>;
+    readonly chargerSchedules: (
+      input: typeof ChargerInput.Type
+    ) => Effect.Effect<typeof ChargerSchedules.Type, SigenFailure>;
     readonly stations: (
       id: StationId
     ) => Effect.Effect<typeof Stations.Type, SigenFailure>;
@@ -130,6 +173,9 @@ export class SigenCapabilities extends Context.Service<
     readonly aioPowerStatus: (
       input: typeof DeviceInput.Type
     ) => Effect.Effect<typeof AioPowerStatus.Type, SigenFailure>;
+    readonly timeOfUseSettings: (
+      id: StationId
+    ) => Effect.Effect<typeof TimeOfUseSettings.Type, SigenFailure>;
     readonly tariffs: (
       id: StationId
     ) => Effect.Effect<typeof Tariffs.Type, SigenFailure>;
@@ -259,6 +305,81 @@ const operation = <
 });
 
 export const operations = [
+  operation(
+    "get_ac_charger_settings",
+    "Read AC charger electrical settings and provider phase/load-management codes after membership checks. Installer changes and option labels are not exposed.",
+    ChargerInput,
+    AcChargerSettings,
+    (input) =>
+      SigenCapabilities.use((service) => service.acChargerSettings(input))
+  ),
+  operation(
+    "get_charger_schedules",
+    "Read AC/DC charging schedule summaries in station timezone after membership checks. Thermal region details are omitted; raw day, mode and power values are not instructions for writes.",
+    ChargerInput,
+    ChargerSchedules,
+    (input) =>
+      SigenCapabilities.use((service) => service.chargerSchedules(input))
+  ),
+
+  operation(
+    "get_smart_load_control_settings",
+    "Read smart-load on-grid and off-grid settings after station membership checks. Unknown provider codes and numeric representations remain explicit; this does not change settings.",
+    SmartLoadInput,
+    SmartLoadControlSettings,
+    (input) =>
+      SigenCapabilities.use((service) =>
+        service.smartLoadControlSettings(input)
+      )
+  ),
+  operation(
+    "get_smart_load_consumption",
+    "Read smart-load consumption history for a station-local period after verifying load membership. Values and time labels retain provider units and format, which are unverified.",
+    SmartLoadHistoryInput,
+    SmartLoadConsumption,
+    (input) =>
+      SigenCapabilities.use((service) => service.smartLoadConsumption(input))
+  ),
+  operation(
+    "get_station_consumption",
+    "Read station consumption split between base load and individual loads. Missing readings stay null; provider units and time labels remain unverified.",
+    HistoryInput,
+    StationConsumption,
+    (input) =>
+      SigenCapabilities.use((service) => service.stationConsumption(input))
+  ),
+  operation(
+    "list_chargers",
+    "List AC and DC charger serials belonging to the enrolled station, distinguishing unavailable inventory from a known empty list.",
+    StationInput,
+    Chargers,
+    (input) =>
+      SigenCapabilities.use((service) => service.chargers(input.stationId))
+  ),
+  operation(
+    "get_charger_status",
+    "Read plug status and charging-mode settings for a membership-verified AC or DC charger. Unknown mode codes remain explicit.",
+    ChargerInput,
+    ChargerStatus,
+    (input) => SigenCapabilities.use((service) => service.chargerStatus(input))
+  ),
+  operation(
+    "get_ac_charger_current",
+    "Read AC charger current limits and provider load-management status after verifying charger membership. An unset current remains explicit.",
+    ChargerInput,
+    AcChargerCurrent,
+    (input) =>
+      SigenCapabilities.use((service) => service.acChargerCurrent(input))
+  ),
+  operation(
+    "get_dc_charger_settings",
+    "Read DC charger battery cutoffs and raw power limits after verifying charger membership. Power units remain unverified.",
+    ChargerInput,
+    DcChargerSettings,
+    (input) =>
+      SigenCapabilities.use((service) => service.dcChargerSettings(input))
+  ),
+
   operation(
     "list_third_party_devices",
     "Read third-party device cards with explicit placeholders and missing telemetry. A generator placeholder is not installed equipment. Account/contact fields and serials are omitted.",
@@ -432,6 +553,16 @@ export const operations = [
     (input) => SigenCapabilities.use((service) => service.aioPowerStatus(input))
   ),
   operation(
+    "get_time_of_use_settings",
+    "Read the station-local saved battery time-of-use timetable and configuration codes. Power fields retain provider values. The activation command supports nonoverlapping manual timetables.",
+    StationInput,
+    TimeOfUseSettings,
+    (input) =>
+      SigenCapabilities.use((service) =>
+        service.timeOfUseSettings(input.stationId)
+      )
+  ),
+  operation(
     "get_tariffs",
     "Read buy/sell tax and fee settings and derived price coefficients. Provider fee units remain unverified; do not treat them as major currency amounts.",
     StationInput,
@@ -451,7 +582,7 @@ export const operations = [
   ),
   operation(
     "prepare_command",
-    "Prepare an immutable five-minute review without changing equipment. Use a fresh UUID commandId; repeated IDs return the saved command, altered inputs conflict. An existing always-approve grant authorizes this operation and station/device.",
+    "Prepare an immutable five-minute review without changing equipment. Use a fresh UUID commandId; repeated IDs return the saved command, altered inputs conflict. An existing always-approve grant authorizes this operation and station/device. set_smart_load_schedule replaces both saved schedule lists for one load. Review the complete replacement, including removed rows and solar settings.",
     PrepareCommandInput,
     Command,
     (input) =>
