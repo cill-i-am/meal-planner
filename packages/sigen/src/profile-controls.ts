@@ -143,6 +143,9 @@ export const ActiveProfileChange = Schema.Struct({
   operation: Schema.Literal("set_active_energy_profile_parameters"),
   parameters: ProfileParameters,
   target: ActiveProfileTarget,
+}).annotate({
+  description:
+    "Set only the backup reserve of the current Sigen AI profile (built_in mode 1). Send batterySoc with unchanged charge and discharge thresholds. Other active edits are unsupported.",
 });
 export const ProfileChange = Schema.Union([
   ActiveProfileChange,
@@ -203,6 +206,7 @@ export type ProfileConfiguration = typeof ProfileConfiguration.Type;
 export const ProfileControlSnapshot = Schema.Struct({
   kind: Schema.Literal("profile"),
   settings: Schema.Struct({
+    activeBackupReservePercent: Schema.optionalKey(Percent),
     currentMode: Schema.Struct({
       profileId: OperatingMode.fields.profileId,
       providerMode: OperatingMode.fields.providerMode,
@@ -326,28 +330,33 @@ const configuration = (value: ProfileConfiguration) => {
   });
 };
 
-export const matchesActiveProfile = (
-  target: typeof ActiveProfileTarget.Type,
+export const activeBackupReserve = (
+  change: typeof ActiveProfileChange.Type,
   state: ProfileControlSnapshot["settings"]
-) => {
+): number | null => {
   const { currentMode, selected } = state;
-  if (selected === null || selected.target.kind !== "current") {
-    return false;
+  const { parameters, target } = change;
+  const soc = parameters.batterySoc;
+  if (
+    target.kind !== "built_in" ||
+    target.providerMode !== 1 ||
+    currentMode.providerMode !== 1 ||
+    currentMode.profileId !== -1 ||
+    state.activeBackupReservePercent === undefined ||
+    selected === null ||
+    selected.target.kind !== "current" ||
+    selected.providerProfileId !== null ||
+    selected.industrial ||
+    ![0, 1].includes(selected.peakShaving.providerControlMode) ||
+    soc === undefined ||
+    Object.keys(parameters).length !== 1 ||
+    soc.chargeSocPercent !== selected.chargeSocPercent ||
+    soc.dischargeSocPercent !== selected.dischargeSocPercent ||
+    soc.backupSocPercent < soc.dischargeSocPercent
+  ) {
+    return null;
   }
-  if (target.kind === "built_in") {
-    return (
-      currentMode.providerMode === target.providerMode &&
-      currentMode.profileId === -1 &&
-      selected.providerProfileId === null
-    );
-  }
-  return (
-    currentMode.providerMode === 9 &&
-    currentMode.profileId === target.profileId &&
-    selected.providerProfileId === target.profileId &&
-    selected.providerActiveStatus === 1 &&
-    state.profiles.some((profile) => profile.profileId === target.profileId)
-  );
+  return soc.backupSocPercent;
 };
 
 export const profileControlMatches = (
@@ -387,12 +396,20 @@ export const profileControlMatches = (
   ) {
     return false;
   }
-  if (
-    change.operation === "set_active_energy_profile_parameters" &&
-    (!matchesActiveProfile(change.target, before) ||
-      !matchesActiveProfile(change.target, after))
-  ) {
-    return false;
+  if (change.operation === "set_active_energy_profile_parameters") {
+    const reserve = activeBackupReserve(change, before);
+    const { backupSocPercent, ...otherSettings } = after.selected;
+    return (
+      reserve !== null &&
+      after.stationId === before.stationId &&
+      after.activeBackupReservePercent === reserve &&
+      (backupSocPercent === reserve ||
+        backupSocPercent === source.backupSocPercent) &&
+      profileSettingsEqual(
+        { ...otherSettings, backupSocPercent: source.backupSocPercent },
+        source
+      )
+    );
   }
   const expected = proposedProfile(change, source);
   return (

@@ -28,6 +28,7 @@ import {
   makeSettingsClient,
   readBatterySocSettings,
   readManualOverrideState,
+  writeBackupReserve,
 } from "./settings-client.js";
 import type { BatterySocSettings } from "./settings.js";
 import { samePeakShavingPreset } from "./settings.js";
@@ -43,6 +44,16 @@ export type ProviderWrite = (
 ) => Effect.Effect<void, SigenFailure>;
 const powerString = (limit: typeof WritablePowerLimit.Type) =>
   limit.kind === "unlimited" ? "4294967.295" : String(limit.watts / 1000);
+const requiresBattery = (change: ControlChange, snapshot: ControlSnapshot) =>
+  change.operation === "set_active_energy_profile_parameters" ||
+  [
+    "battery",
+    "peak_shaving",
+    "manual",
+    "battery_priority",
+    "preheating",
+    "time_of_use",
+  ].includes(snapshot.kind);
 const peakShavingBody = (
   change: Extract<ControlChange, { operation: "set_peak_shaving_schedule" }>
 ) => ({
@@ -501,14 +512,7 @@ export const makeControlsClient = (
         return yield* failure("PermissionDenied");
       }
       if (
-        [
-          "battery",
-          "peak_shaving",
-          "manual",
-          "battery_priority",
-          "preheating",
-          "time_of_use",
-        ].includes(snapshot.kind) &&
+        requiresBattery(change, snapshot) &&
         (equipment.batteryCapacity === null || equipment.batteryCapacity <= 0)
       ) {
         return yield* failure("UnsupportedCapability");
@@ -668,10 +672,10 @@ export const makeControlsClient = (
         );
       }
       case "set_backup_reserve": {
-        return write(
-          "PUT",
-          "/device/setting/backup/reserve",
-          { ...id, backupReserve: change.reservePercent },
+        return writeBackupReserve(
+          write,
+          stationId,
+          change.reservePercent,
           token
         );
       }

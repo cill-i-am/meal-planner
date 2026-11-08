@@ -12,7 +12,7 @@ import {
   proposedProfile,
   profileBody,
   profileSettingsEqual,
-  matchesActiveProfile,
+  activeBackupReserve,
 } from "./profile-controls.js";
 import type {
   ProfileChange,
@@ -23,7 +23,11 @@ import { validateProfileParameters } from "./profile-parameters.js";
 import { decodeProvider } from "./provider-read.js";
 import type { ProviderRead } from "./provider-read.js";
 import { ScheduleWindow, nonOverlappingWindows } from "./schedules.js";
-import { makeSettingsClient } from "./settings-client.js";
+import {
+  makeSettingsClient,
+  readBackupReserve,
+  writeBackupReserve,
+} from "./settings-client.js";
 
 const ModeResponse = Schema.Struct({
   currentMode: Schema.Number,
@@ -83,7 +87,11 @@ export const makeProfileControlsClient = (
     token: Redacted.Redacted<string>
   ) =>
     Effect.gen(function* inspectProfileCommand() {
-      const inventory = yield* settings.operatingModes(stationId, token);
+      const active =
+        change.operation === "set_active_energy_profile_parameters";
+      const profiles = active
+        ? []
+        : (yield* settings.operatingModes(stationId, token)).customProfiles;
       const readMode = read(
         `/device/energy-profile/mode/current/${stationId}`,
         token
@@ -97,9 +105,10 @@ export const makeProfileControlsClient = (
           .pipe(Effect.map(withoutTime));
       let source: ProfileConfiguration | null = null;
       let selected: ProfileConfiguration | null = null;
+      let activeBackupReservePercent: number | undefined;
       if (change.operation === "create_energy_profile") {
         source = yield* readProfile(change.source);
-        const matches = inventory.customProfiles.filter(
+        const matches = profiles.filter(
           (profile) => profile.name === change.name
         );
         if (matches.length === 1 && matches[0] !== undefined) {
@@ -108,44 +117,49 @@ export const makeProfileControlsClient = (
             profileId: matches[0].profileId,
           });
         }
-      } else if (change.operation === "set_active_energy_profile_parameters") {
+      } else if (active) {
         selected = yield* readProfile({ kind: "current" });
+        const reserve = yield* readBackupReserve(read, stationId, token);
         const after = yield* readMode;
         if (
           after.currentMode !== currentMode.currentMode ||
           after.currentProfileId !== currentMode.currentProfileId ||
-          after.followPpcMode !== currentMode.followPpcMode
+          after.followPpcMode !== currentMode.followPpcMode ||
+          reserve.operationMode !== after.currentMode
         ) {
           return yield* failure("Conflict");
         }
         if (after.followPpcMode === true) {
           return yield* failure("UnsupportedCapability");
         }
+        activeBackupReservePercent = reserve.backupReserve;
       } else if (change.operation === "replace_automation_schedule") {
         selected = yield* readProfile({ kind: "current" });
       } else if (
-        inventory.customProfiles.some(
-          (profile) => profile.profileId === change.profileId
-        )
+        profiles.some((profile) => profile.profileId === change.profileId)
       ) {
         selected = yield* readProfile({
           kind: "custom",
           profileId: change.profileId,
         });
       }
+      const state = {
+        currentMode: {
+          profileId: currentMode.currentProfileId,
+          providerMode: currentMode.currentMode,
+        },
+        fetchedAt: yield* Clock.currentTimeMillis,
+        profiles,
+        selected,
+        source,
+        stationId,
+      };
       return yield* decodeProvider(ProfileControlSnapshot)({
         kind: "profile",
-        settings: {
-          currentMode: {
-            profileId: currentMode.currentProfileId,
-            providerMode: currentMode.currentMode,
-          },
-          fetchedAt: yield* Clock.currentTimeMillis,
-          profiles: inventory.customProfiles,
-          selected,
-          source,
-          stationId,
-        },
+        settings:
+          activeBackupReservePercent === undefined
+            ? state
+            : { ...state, activeBackupReservePercent },
       });
     });
   const validateAutomation = (
@@ -227,12 +241,9 @@ export const makeProfileControlsClient = (
       if (base === null) {
         return yield* failure("InvalidInput");
       }
-      if (!serializableProfile(base)) {
-        return yield* failure("UnsupportedCapability");
-      }
       if (change.operation === "set_active_energy_profile_parameters") {
-        if (!matchesActiveProfile(change.target, state)) {
-          return yield* failure("Conflict");
+        if (activeBackupReserve(change, state) === null) {
+          return yield* failure("UnsupportedCapability");
         }
         return yield* validateProfileParameters(
           read,
@@ -240,6 +251,9 @@ export const makeProfileControlsClient = (
           base,
           token
         );
+      }
+      if (!serializableProfile(base)) {
+        return yield* failure("UnsupportedCapability");
       }
       if (
         change.operation === "set_energy_profile_parameters" ||
@@ -294,6 +308,15 @@ export const makeProfileControlsClient = (
     snapshot: ProfileControlSnapshot,
     token: Redacted.Redacted<string>
   ) => {
+    if (change.operation === "set_active_energy_profile_parameters") {
+      const reserve = activeBackupReserve(change, snapshot.settings);
+      return reserve !== null &&
+        snapshot.settings.stationId === stationId &&
+        snapshot.settings.selected?.stationId === stationId &&
+        Number.isSafeInteger(Number(stationId))
+        ? writeBackupReserve(write, stationId, reserve, token)
+        : failure("UnsupportedCapability");
+    }
     if (change.operation === "delete_energy_profile") {
       return write(
         "DELETE",
@@ -309,24 +332,13 @@ export const makeProfileControlsClient = (
     if (base === null) {
       return failure("SchemaMismatch");
     }
-    if (
-      change.operation === "set_active_energy_profile_parameters" &&
-      (!matchesActiveProfile(change.target, snapshot.settings) ||
-        snapshot.settings.stationId !== stationId ||
-        !Number.isSafeInteger(Number(stationId)))
-    ) {
-      return failure("Conflict");
-    }
     return write(
       change.operation === "create_energy_profile" ? "POST" : "PUT",
       change.operation === "create_energy_profile"
         ? "/device/energy-profile/setting/new"
         : "/device/energy-profile/setting",
       profileBody(proposedProfile(change, base)),
-      token,
-      change.operation === "set_active_energy_profile_parameters"
-        ? "boolean_true"
-        : undefined
+      token
     );
   };
   return { dispatch, inspect, validate };

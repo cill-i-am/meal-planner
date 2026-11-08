@@ -1,6 +1,7 @@
 import { Clock, DateTime, Effect, Schema } from "effect";
 import type { Redacted } from "effect";
 
+import type { ProviderWrite } from "./controls-client.js";
 import { Percent, failure } from "./model.js";
 import type { StationId } from "./model.js";
 import {
@@ -36,6 +37,38 @@ const gridPower = (value: typeof PowerResponse.Type) => ({
   installer: powerLimit(value.maxLimitationInstaller),
   owner: powerLimit(value.maxLimitationOwner),
 });
+
+const backupReservePath = "/device/setting/backup/reserve";
+const BackupReserveResponse = Schema.Struct({
+  backupReserve: Percent,
+  operationMode: Schema.Number,
+  stationId: Schema.Number,
+});
+export const readBackupReserve = (
+  read: ProviderRead,
+  id: StationId,
+  token: Redacted.Redacted<string>
+) =>
+  read(`${backupReservePath}/${encodeURIComponent(id)}`, token).pipe(
+    Effect.flatMap(decodeProvider(BackupReserveResponse)),
+    Effect.flatMap((reserve) =>
+      String(reserve.stationId) === id
+        ? Effect.succeed(reserve)
+        : failure("PermissionDenied")
+    )
+  );
+export const writeBackupReserve = (
+  write: ProviderWrite,
+  id: StationId,
+  reserve: number,
+  token: Redacted.Redacted<string>
+) =>
+  write(
+    "PUT",
+    backupReservePath,
+    { backupReserve: reserve, stationId: Number(id) },
+    token
+  );
 
 /** SOC limits are also checked before enabling peak shaving; no power/export reads are needed. */
 export const readBatterySocSettings = (
@@ -148,16 +181,7 @@ export const makeSettingsClient = (read: ProviderRead) => {
                 batteryMaxDischargingPower: DecimalSetting,
               })
             ),
-            get(
-              "/device/setting/backup/reserve",
-              id,
-              token,
-              Schema.Struct({
-                backupReserve: Percent,
-                operationMode: Schema.Number,
-                stationId: Schema.Number,
-              })
-            ),
+            readBackupReserve(read, id, token),
             get(
               "/device/energy-profile/battery/export/limitation",
               id,
@@ -171,9 +195,6 @@ export const makeSettingsClient = (read: ProviderRead) => {
           ],
           { concurrency: 2 }
         );
-        if (String(reserve.stationId) !== id) {
-          return yield* failure("PermissionDenied");
-        }
         return yield* decodeProvider(BatterySettings)({
           ...levels,
           backupReservePercent: reserve.backupReserve,

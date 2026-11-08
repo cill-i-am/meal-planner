@@ -1119,96 +1119,111 @@ describe("saved solar priority membership", () => {
   });
 });
 
-const editActive = (target: Schema.Json) =>
+const activeTarget = { kind: "built_in", providerMode: 1 } as const;
+const reserveSoc = {
+  backupSocPercent: 21,
+  chargeSocPercent: 100,
+  dischargeSocPercent: 20,
+};
+const reserveParameters = { batterySoc: reserveSoc };
+const editActive = (
+  parameters: Schema.Json = reserveParameters,
+  target: Schema.Json = activeTarget
+) =>
   parse({
     operation: "set_active_energy_profile_parameters",
-    parameters: { solarLimit: limited(4500) },
+    parameters,
     target,
   });
 
-describe("active profile parameters", () => {
-  it.each([
-    {
-      activeStatus: 0,
-      profileId: null,
-      providerMode: 1,
-      target: { kind: "built_in", providerMode: 1 },
-    },
-    {
-      activeStatus: 1,
-      profileId: 201,
-      providerMode: 9,
-      target: { kind: "custom", profileId: 201 },
-    },
-  ])(
-    "edits the current residential target while preserving identity and omitted settings",
-    async ({ activeStatus, profileId, providerMode, target }) => {
-      const path = "/device/energy-profile/setting/12345";
-      const active = { ...profile, activeStatus, profileId };
-      const f = fixture({
-        "/device/energy-profile/mode/current/12345": {
-          currentMode: providerMode,
-          currentProfileId: profileId ?? -1,
-        },
-        [path]: active,
-      });
-      const change = editActive(target);
-      const before = await f.inspect(change);
-      await Effect.runPromise(
-        f.client.validateControl(id, change, before, token)
-      );
-      expect(approvalScope(id, change)).toEqual({
-        operation: "set_active_energy_profile_parameters",
-        stationId: id,
-        target,
-      });
-      await Effect.runPromise(
-        f.client.dispatchControl(id, change, token, before)
-      );
-      expect(f.writes).toHaveLength(1);
-      expect(f.writes[0]?.slice(0, 2)).toEqual([
-        "PUT",
-        "/device/energy-profile/setting",
-      ]);
-      const body = f.writes[0]?.[2];
-      expect(body).toMatchObject({
-        activeStatus,
-        name: active.name,
-        powerLimit: "4.5",
-        profileId,
-      });
-      expect(f.writes[0]?.[4]).toBe("boolean_true");
-      f.data[path] = { ...active, ...body, pvPriority: active.pvPriority };
-      expect(controlMatches(change, await f.inspect(change), before)).toBe(
-        true
-      );
-      f.data[path] = {
-        ...active,
-        ...body,
-        profileId: 202,
-        pvPriority: active.pvPriority,
-      };
-      expect(controlMatches(change, await f.inspect(change), before)).toBe(
-        false
-      );
-    }
-  );
+const activeProfilePath = "/device/energy-profile/setting/12345";
+const reservePath = "/device/setting/backup/reserve";
+const reserveState = { backupReserve: 20, operationMode: 1, stationId: 12_345 };
+const activeProfile = { ...profile, profileId: null };
+const activeFixture = () =>
+  fixture({
+    [activeProfilePath]: activeProfile,
+    [`${reservePath}/12345`]: reserveState,
+  });
+
+describe("active profile reserve", () => {
+  it("uses only the dedicated reserve write and verifies the full profile", async () => {
+    const f = activeFixture();
+    const change = editActive();
+    const before = await f.inspect(change);
+    await Effect.runPromise(
+      f.client.validateControl(id, change, before, token)
+    );
+    expect(approvalScope(id, change)).toEqual({
+      operation: "set_active_energy_profile_parameters",
+      stationId: id,
+      target: activeTarget,
+    });
+    await Effect.runPromise(
+      f.client.dispatchControl(id, change, token, before)
+    );
+    expect(f.writes.map((args) => args.slice(0, 3))).toEqual([
+      ["PUT", reservePath, { backupReserve: 21, stationId: 12_345 }],
+    ]);
+
+    f.data[`${reservePath}/12345`] = { ...reserveState, backupReserve: 21 };
+    expect(controlMatches(change, await f.inspect(change), before)).toBe(true);
+    f.data[activeProfilePath] = { ...activeProfile, backupSOC: "21" };
+    expect(controlMatches(change, await f.inspect(change), before)).toBe(true);
+
+    f.data[activeProfilePath] = {
+      ...activeProfile,
+      pvPriority: profile.pvPriority.map((entry) => ({
+        ...entry,
+        priority: 2,
+      })),
+    };
+    expect(controlMatches(change, await f.inspect(change), before)).toBe(false);
+  });
 
   it.each([
-    { kind: "built_in", providerMode: 0 },
-    { kind: "custom", profileId: 201 },
-  ])("refuses a target that is not active: $kind", async (target) => {
-    const f = fixture({
-      "/device/energy-profile/setting/12345": { ...profile, profileId: null },
-    });
-    const change = editActive(target);
-    const snapshot = await f.inspect(change);
-    expect(
-      await Effect.runPromise(
+    editActive({ solarLimit: limited(4500) }),
+    editActive({ batterySoc: reserveSoc, solarLimit: limited(4500) }),
+    editActive({ batterySoc: { ...reserveSoc, chargeSocPercent: 99 } }),
+    editActive({ batterySoc: { ...reserveSoc, dischargeSocPercent: 19 } }),
+    editActive(
+      { batterySoc: reserveSoc },
+      { kind: "built_in", providerMode: 0 }
+    ),
+    editActive({ batterySoc: reserveSoc }, { kind: "custom", profileId: 201 }),
+  ])(
+    "refuses unaccepted active edits at both validation and dispatch",
+    async (change) => {
+      const f = activeFixture();
+      const snapshot = await f.inspect(change);
+      const result = await Effect.runPromise(
         f.client
           .validateControl(id, change, snapshot, token)
           .pipe(Effect.result)
-      )
-    ).toMatchObject({ failure: { reason: "Conflict" } });
+      );
+      expect(result).toMatchObject({
+        failure: { reason: "UnsupportedCapability" },
+      });
+      expect(
+        await Effect.runPromise(
+          f.client
+            .dispatchControl(id, change, token, snapshot)
+            .pipe(Effect.result)
+        )
+      ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
+      expect(f.writes).toHaveLength(0);
+    }
+  );
+
+  it("refuses a reserve read for a different station or operating mode", async () => {
+    const f = activeFixture();
+    f.data[`${reservePath}/12345`] = { ...reserveState, stationId: 12_346 };
+    await expect(f.inspect(editActive())).rejects.toMatchObject({
+      reason: "PermissionDenied",
+    });
+    f.data[`${reservePath}/12345`] = { ...reserveState, operationMode: 0 };
+    await expect(f.inspect(editActive())).rejects.toMatchObject({
+      reason: "Conflict",
+    });
   });
 });

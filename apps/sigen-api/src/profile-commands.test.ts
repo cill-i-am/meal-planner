@@ -46,6 +46,7 @@ const fixture = async () => {
   let book: CommandBook | null = null;
   let loseResponse = false;
   let currentMode = 1;
+  let backupReserve = 20;
   let active: Record<string, unknown> = { ...profile, profileId: null };
   let touRows = [
     {
@@ -104,6 +105,13 @@ const fixture = async () => {
         if (url.pathname === "/device/energy-profile/setting/12345") {
           return active;
         }
+        if (url.pathname === "/device/setting/backup/reserve/12345") {
+          return {
+            backupReserve,
+            operationMode: currentMode,
+            stationId: 12_345,
+          };
+        }
         if (url.pathname === "/device/setting/tou/12345") {
           return { currType: 1 };
         }
@@ -119,6 +127,10 @@ const fixture = async () => {
           custom.delete(Number(path.split("/").at(-1)));
         } else if (path === "/device/energy-profile/mode") {
           currentMode = 2;
+        } else if (path === "/device/setting/backup/reserve") {
+          backupReserve = yield* Schema.decodeUnknownEffect(Schema.Number)(
+            body?.["backupReserve"]
+          ).pipe(Effect.mapError(() => failure("SchemaMismatch")));
         } else if (body?.["profileId"] === null) {
           active = { ...active, ...body, pvPriority: profile.pvPriority };
         } else {
@@ -414,25 +426,31 @@ describe("separate approval and dispatch gates for profile extras", () => {
   );
 });
 
-const activeParameters = (providerMode: 0 | 1, watts = 4500) =>
+const activeParameters = (backupSocPercent: number) =>
   Schema.decodeUnknownSync(ControlChange)({
     operation: "set_active_energy_profile_parameters",
-    parameters: { solarLimit: { kind: "limited", watts } },
-    target: { kind: "built_in", providerMode },
+    parameters: {
+      batterySoc: {
+        backupSocPercent,
+        chargeSocPercent: 100,
+        dischargeSocPercent: 20,
+      },
+    },
+    target: { kind: "built_in", providerMode: 1 },
   });
 const activateTou = Schema.decodeUnknownSync(ControlChange)({
   operation: "activate_time_of_use_mode",
 });
 
 describe("active energy setting approvals", () => {
-  it("binds a reusable edit grant to the selected built-in mode", async () => {
+  it("reuses a reserve grant for restoration and refuses another mode or operation", async () => {
     const f = await fixture();
-    const first = await f.prepare(activeParameters(1));
+    const first = await f.prepare(activeParameters(21));
     await run(f.service.approveCommand(approve(first, "always")));
     expect(await run(f.service.executeCommand(identity(first)))).toMatchObject({
       phase: { status: "verified" },
     });
-    const sameTarget = await f.prepare(activeParameters(1, 4000));
+    const sameTarget = await f.prepare(activeParameters(20));
     expect(
       await run(f.service.executeCommand(identity(sameTarget)))
     ).toMatchObject({ phase: { status: "verified" } });
@@ -443,13 +461,13 @@ describe("active energy setting approvals", () => {
       )
     ).toMatchObject({ failure: { reason: "ApprovalRequired" } });
     f.setMode(0);
-    const otherTarget = await f.prepare(activeParameters(0));
-    expect(
-      await run(
-        f.service.executeCommand(identity(otherTarget)).pipe(Effect.result)
-      )
-    ).toMatchObject({ failure: { reason: "ApprovalRequired" } });
-    expect(f.writes).toHaveLength(2);
+    await expect(f.prepare(activeParameters(21))).rejects.toMatchObject({
+      reason: "UnsupportedCapability",
+    });
+    expect(f.writes).toEqual([
+      "PUT /device/setting/backup/reserve",
+      "PUT /device/setting/backup/reserve",
+    ]);
   });
 
   it("blocks TOU activation after timetable drift and reconciles one lost acknowledgement", async () => {

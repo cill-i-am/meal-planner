@@ -4,9 +4,17 @@ Both commands use `prepare_command`, `approve_command` with `once` or `always`, 
 
 ## Active profile parameters
 
-`set_active_energy_profile_parameters` accepts the same typed battery SOC, battery power, grid import/export and solar groups as [saved profile parameters](profile-parameters.md). Omitted groups and ancillary settings are carried forward from the current profile. The target is either `{kind:"built_in",providerMode:0|1|5}` or `{kind:"custom",profileId:…}`.
+`set_active_energy_profile_parameters` changes the backup reserve for the current Sigen AI profile. Supply target `{kind:"built_in",providerMode:1}` and a single `batterySoc` group with the requested `backupSocPercent` and the profile’s existing charge and discharge thresholds. Other active edits and modes return `UnsupportedCapability`. The service still reads older saved review formats. The [inactive profile contract](profile-parameters.md) is separate.
 
-A built-in edit requires the matching operating mode, the default profile sentinel in the mode response and a null profile ID in the current settings. The provider receives a full settings PUT for that default profile. Built-in modes can share station settings. A custom edit requires mode 9, a listed profile ID and a matching active ID and marker in the current settings. The client checks the mode before and after reading settings. The full edited profile and its active identity must match on readback. This command has a separate approval scope for each built-in mode or custom profile ID.
+The provider receives only the numeric station ID and backup reserve in a dedicated PUT to `/device/setting/backup/reserve`. The review includes the station's reserve and full active profile. The client verifies station identity and matching Sigen AI mode before and after reading. Verification requires the requested value at the dedicated read route, the same operating mode and exact equality of the remaining profile fields, including every solar-priority value and its order. The full profile’s reserve field can either reflect the dedicated value or retain its reviewed value. The approval scope remains bound to the operation, station and active Sigen AI target.
+
+### Live acceptance on 8 November 2026
+
+The user approved a temporary edit of the active Sigen AI profile’s backup reserve from 20% to 21%, followed by restoration to 20% and revocation of the test grant. The battery reported 100% before the test. Executor saved the temporary, mode-scoped always approval and made one dispatch attempt at **07:59:07 UTC**. The command returned `outcome_unknown` with `CommandOutcomeUnknown`.
+
+The restoration review read 20% at **07:59:13 UTC**, and later independent reads confirmed 20% in both the active profile and the station’s backup-reserve setting. No restoration write was needed for the reserve. The complete comparison, excluding fetch timestamps, found one other difference. The excluded solar-priority entry with load type 3 and status 2 retained its position and exclusion status, but its stored priority changed from 4 to 2. The other profile fields, operating mode and battery settings matched the baseline. The existing typed priority command refuses edits to excluded entries, so the previous rank was not restored.
+
+The uncertain write was never replayed. Executor confirmed zero grants and the original six enabled operations after the production allowlist was restored at **08:00:26 UTC**. The pinned app uses a dedicated route for backup reserve near lines 91323–91333 and 779370–779384, and sends null solar priorities when saving unrelated automation near 639958–639982.
 
 ## Time of use
 
