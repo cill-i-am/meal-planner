@@ -138,7 +138,7 @@ Delete the temporary operator file after acceptance. The raw operator credential
 4. Verify revoked credentials produce `reauthentication_required`, then reconnect.
 5. Continue implementing read coverage while the natural renewal checks run, as requested by the user. Control implementation and approval tests also proceed while renewal checks run; live physical tests still require explicit acceptance.
 
-The deployed operation list enables profile create/update/delete, preheating, energy saving and peak shaving following [bounded live acceptance](../../docs/sigen/live-control-acceptance.md). Peak shaving remains physically off with an explicitly accepted inactive preset; enabling the API operation does not activate it. All other operations are excluded. Approve-once or a matching revocable always grant is still required. Disconnect disables cloud access; it does not alter physical settings. Software rollback likewise does not restore inverter/battery configuration.
+The deployed operation list enables profile create/update/delete, preheating, energy saving and peak shaving following [bounded live acceptance](../../docs/sigen/live-control-acceptance.md). The [active Sigen AI reserve edit](../../docs/sigen/active-profile-and-tou.md) is also enabled after both directions passed live readback with identical solar priorities. Peak shaving remains physically off with its accepted inactive preset. Dispatch requires approve-once or a matching revocable always grant. Disconnect disables cloud access. Restoring an earlier deployment leaves equipment settings as stored by mySigen.
 
 ## Local verification
 

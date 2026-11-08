@@ -4,7 +4,6 @@ import type { Redacted } from "effect";
 import { Percent, failure } from "./model.js";
 import { makeProfileClient } from "./profile-client.js";
 import type { ProfileConfiguration } from "./profile-controls.js";
-import { decodeProvider } from "./provider-read.js";
 import type { ProviderRead } from "./provider-read.js";
 import { makeSettingsClient } from "./settings-client.js";
 import { WritablePowerLimit } from "./settings.js";
@@ -106,27 +105,6 @@ export const validateProfileParameters = (
           Math.max(soc.backupSocPercent, soc.dischargeSocPercent))
     ) {
       return yield* failure("InvalidInput");
-    }
-    if (parameters.solarLimit !== undefined) {
-      const station = yield* read(
-        `/device/owner/station/home?stationId=${profile.stationId}`,
-        token
-      ).pipe(
-        Effect.flatMap(
-          decodeProvider(
-            Schema.Struct({
-              hasSolar: Schema.Boolean,
-              stationId: Schema.Number,
-            })
-          )
-        )
-      );
-      if (String(station.stationId) !== profile.stationId) {
-        return yield* failure("PermissionDenied");
-      }
-      if (!station.hasSolar) {
-        return yield* failure("UnsupportedCapability");
-      }
     }
     if (
       parameters.gridExport !== undefined ||

@@ -29,6 +29,7 @@ const update = parse({
 });
 const remove = parse({ operation: "delete_energy_profile", profileId: 201 });
 const fixture = (overrides: Record<string, unknown> = {}) => {
+  const reads: string[] = [];
   const writes: Parameters<ProviderWrite>[] = [];
   const data: Record<string, unknown> = {
     ...remainingResponses,
@@ -54,6 +55,7 @@ const fixture = (overrides: Record<string, unknown> = {}) => {
   const client = makeControlsClient(
     (path) => {
       const url = new URL(path, "https://fixture.invalid");
+      reads.push(url.pathname);
       if (
         url.pathname === "/device/energy-profile/setting/info/12345" &&
         url.searchParams.get("profileId") === "201"
@@ -71,7 +73,7 @@ const fixture = (overrides: Record<string, unknown> = {}) => {
   );
   const inspect = (change = create) =>
     Effect.runPromise(client.inspectControl(id, change, token));
-  return { client, data, inspect, writes };
+  return { client, data, inspect, reads, writes };
 };
 
 describe("reviewed energy profile lifecycle", () => {
@@ -540,9 +542,15 @@ describe("inactive profile parameters", () => {
     });
     const f = fixture(gridResponses());
     const before = await f.inspect(change);
+    const validationStart = f.reads.length;
     await Effect.runPromise(
       f.client.validateControl(id, change, before, token)
     );
+    expect(
+      f.reads
+        .slice(validationStart)
+        .filter((path) => path === "/device/owner/station/home")
+    ).toHaveLength(1);
     await Effect.runPromise(
       f.client.dispatchControl(id, change, token, before)
     );

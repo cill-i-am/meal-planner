@@ -16,6 +16,8 @@ The restoration review read 20% at **07:59:13 UTC**, and later independent reads
 
 The uncertain write was never replayed. Executor confirmed zero grants and the original six enabled operations after the production allowlist was restored at **08:00:26 UTC**. The pinned app uses a dedicated route for backup reserve near lines 91323–91333 and 779370–779384, and sends null solar priorities when saving unrelated automation near 639958–639982.
 
+The dedicated-route retest on `ef092932` verified **21% at 08:15:35.719 UTC** and **20% at 08:16:43.605 UTC**. Both Executor receipts matched the complete solar-priority list and order from the retest baseline. Independent final reads matched the complete active profile, battery settings and operating mode, excluding fetch timestamps. The temporary Sigen AI grant was revoked, leaving zero grants. Production and the protected deployment configuration now enable the reserve-only active-profile command alongside the six earlier operations.
+
 ## Time of use
 
 `get_time_of_use_settings` reads the saved timetable, the station timezone and provider configuration. Limits retain provider values in kW and percent. mySigen displays null and omitted limits as equipment defaults. `activate_time_of_use_mode` requires the station to advertise mode 2 and have a nonempty, nonoverlapping manual timetable with known slot modes and valid limits. An empty timetable can be configured in mySigen. The write sends a mode switch with `profileId: -1` and `fromPlatform: 1`. The saved timetable is part of the immutable review and must still match after activation. A reusable activation grant applies only to this operation and station.

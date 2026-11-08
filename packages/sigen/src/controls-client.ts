@@ -54,6 +54,11 @@ const requiresBattery = (change: ControlChange, snapshot: ControlSnapshot) =>
     "preheating",
     "time_of_use",
   ].includes(snapshot.kind);
+const requiresSolar = (change: ControlChange, snapshot: ControlSnapshot) =>
+  snapshot.kind === "solar" ||
+  snapshot.kind === "solar_priority" ||
+  (change.operation === "set_energy_profile_parameters" &&
+    change.parameters.solarLimit !== undefined);
 const peakShavingBody = (
   change: Extract<ControlChange, { operation: "set_peak_shaving_schedule" }>
 ) => ({
@@ -517,10 +522,7 @@ export const makeControlsClient = (
       ) {
         return yield* failure("UnsupportedCapability");
       }
-      if (
-        (snapshot.kind === "solar" || snapshot.kind === "solar_priority") &&
-        !equipment.hasSolar
-      ) {
+      if (requiresSolar(change, snapshot) && !equipment.hasSolar) {
         return yield* failure("UnsupportedCapability");
       }
       yield* validateExtendedControl(stationId, change, snapshot, token);
