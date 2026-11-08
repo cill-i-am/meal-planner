@@ -1235,3 +1235,193 @@ describe("active profile reserve", () => {
     });
   });
 });
+
+const activeLimit = (setting: Schema.Json) =>
+  parse({
+    operation: "set_active_energy_profile_limits",
+    setting,
+    target: activeTarget,
+  });
+const solarReadPath = "/device/energy-profile/solar/limit/12345";
+const batteryPowerReadPath = "/device/energy-profile/battery/limit/12345";
+const batterySocReadPath = "/device/energy-profile/battery/level/12345";
+const gridImportReadPath =
+  "/device/energy-profile/grid/limitation/import/12345";
+const batterySoc = {
+  backupSOC: "20",
+  chargeSOC: "100",
+  dischargeSOC: "20",
+  peakShavingSOC: "",
+};
+const excludedSolarPriority = profile.pvPriority.map((entry) => ({
+  ...entry,
+  priority: 4,
+  status: 2,
+}));
+const activeProfileWithExcludedPriority = {
+  ...activeProfile,
+  pvPriority: excludedSolarPriority,
+};
+const activeLimitsFixture = (extra = {}) =>
+  fixture({
+    ...gridResponses(),
+    [activeProfilePath]: activeProfileWithExcludedPriority,
+    [`${reservePath}/12345`]: reserveState,
+    [solarReadPath]: { powerLimit: "4294967.295" },
+    [batteryPowerReadPath]: {
+      batteryMaxChargingPower: "4294967.295",
+      batteryMaxDischargingPower: "3.5",
+    },
+    [batterySocReadPath]: batterySoc,
+    "/device/energy-profile/battery/export/limitation/12345": {
+      currentEnable: false,
+      installerSetEnable: true,
+      ownerSetEnable: false,
+    },
+    ...extra,
+  });
+
+describe("dedicated active profile limits", () => {
+  it.each([
+    {
+      body: { powerLimit: "5.5" },
+      readPath: solarReadPath,
+      readback: { powerLimit: "5.5" },
+      setting: { kind: "solar_power", limit: limited(5500) },
+    },
+    {
+      body: {
+        batteryMaxChargingPower: "1.001",
+        batteryMaxDischargingPower: "3.5",
+      },
+      readPath: batteryPowerReadPath,
+      readback: {
+        batteryMaxChargingPower: "1.001",
+        batteryMaxDischargingPower: "3.5",
+      },
+      setting: {
+        charge: limited(1001),
+        discharge: limited(3500),
+        kind: "battery_power",
+      },
+    },
+    {
+      body: {
+        backupSOC: "20",
+        chargeSOC: "95",
+        dischargeSOC: "19",
+        peakShavingSOC: null,
+      },
+      readPath: batterySocReadPath,
+      readback: {
+        ...batterySoc,
+        chargeSOC: "95",
+        dischargeSOC: "19",
+        peakShavingSOC: null,
+      },
+      setting: {
+        chargeSocPercent: 95,
+        dischargeSocPercent: 19,
+        kind: "battery_soc",
+      },
+    },
+    {
+      body: {
+        enable: true,
+        maxLimitationInstaller: null,
+        maxLimitationOwner: "4",
+      },
+      readPath: gridImportReadPath,
+      readback: {
+        enable: true,
+        maxLimitation: "4",
+        maxLimitationInstaller: "6",
+        maxLimitationOwner: "4",
+      },
+      setting: { direction: "import", kind: "grid_power", watts: 4000 },
+    },
+  ])(
+    "writes only the $setting.kind fields and requires both readbacks",
+    async ({ setting, readPath, readback, body }) => {
+      const change = activeLimit(setting);
+      const f = activeLimitsFixture();
+      const before = await f.inspect(change);
+      await Effect.runPromise(
+        f.client.validateControl(id, change, before, token)
+      );
+      await Effect.runPromise(
+        f.client.dispatchControl(id, change, token, before)
+      );
+      expect(f.writes.map((args) => args.slice(0, 3))).toEqual([
+        [
+          "PUT",
+          readPath.replace(/\/12345$/u, ""),
+          { ...body, stationId: 12_345 },
+        ],
+      ]);
+      expect(controlMatches(change, await f.inspect(change), before)).toBe(
+        false
+      );
+      f.data[readPath] = readback;
+      expect(controlMatches(change, await f.inspect(change), before)).toBe(
+        true
+      );
+      f.data[activeProfilePath] = {
+        ...activeProfileWithExcludedPriority,
+        pvPriority: excludedSolarPriority.map((entry) => ({
+          ...entry,
+          priority: 2,
+        })),
+      };
+      expect(controlMatches(change, await f.inspect(change), before)).toBe(
+        false
+      );
+    }
+  );
+
+  it("refuses a grid limit without a verified ceiling and an active-profile change in another mode", async () => {
+    const f = activeLimitsFixture(gridResponses(""));
+    const change = activeLimit({
+      direction: "import",
+      kind: "grid_power",
+      watts: 4000,
+    });
+    const invalid = async () =>
+      Effect.runPromise(
+        f.client
+          .validateControl(id, change, await f.inspect(change), token)
+          .pipe(Effect.result)
+      );
+    expect(await invalid()).toMatchObject({
+      failure: { reason: "UnsupportedCapability" },
+    });
+    f.data[gridImportReadPath] = gridResponses()[gridImportReadPath];
+    f.data["/device/energy-profile/mode/current/12345"] = {
+      currentMode: 0,
+      currentProfileId: -1,
+    };
+    expect(await invalid()).toMatchObject({
+      failure: { reason: "UnsupportedCapability" },
+    });
+    expect(f.writes).toHaveLength(0);
+  });
+
+  it("uses separate grants for the two grid directions", () => {
+    const importChange = activeLimit({
+      direction: "import",
+      kind: "grid_power",
+      watts: 4000,
+    });
+    const exportChange = activeLimit({
+      direction: "export",
+      kind: "grid_power",
+      watts: 4000,
+    });
+    expect(approvalScope(id, importChange)).toMatchObject({
+      setting: "grid_import",
+    });
+    expect(approvalScope(id, exportChange)).toMatchObject({
+      setting: "grid_export",
+    });
+  });
+});

@@ -1,12 +1,15 @@
 import { Clock, Effect, Schema, absurd } from "effect";
 import type { Redacted } from "effect";
 
-import type {
-  ControlChange,
-  ControlSnapshot,
-  WritablePowerLimit,
-} from "./controls.js";
+import type { ControlChange, ControlSnapshot } from "./controls.js";
 import { makeEnergyProfileClient } from "./energy-profile-client.js";
+import {
+  powerString,
+  writeBatteryPower,
+  writeBatteryThresholds,
+  writeGridPower,
+  writeSolarPower,
+} from "./limit-writes.js";
 import { makeLoadControls, isLoadControlChange } from "./load-controls.js";
 import type { LoadControlChange } from "./load-controls.js";
 import { makeLoadsClient } from "./loads-client.js";
@@ -42,10 +45,11 @@ export type ProviderWrite = (
   token: Redacted.Redacted<string>,
   acknowledgement?: "boolean_true"
 ) => Effect.Effect<void, SigenFailure>;
-const powerString = (limit: typeof WritablePowerLimit.Type) =>
-  limit.kind === "unlimited" ? "4294967.295" : String(limit.watts / 1000);
 const requiresBattery = (change: ControlChange, snapshot: ControlSnapshot) =>
   change.operation === "set_active_energy_profile_parameters" ||
+  (change.operation === "set_active_energy_profile_limits" &&
+    (change.setting.kind === "battery_power" ||
+      change.setting.kind === "battery_soc")) ||
   [
     "battery",
     "peak_shaving",
@@ -57,6 +61,8 @@ const requiresBattery = (change: ControlChange, snapshot: ControlSnapshot) =>
 const requiresSolar = (change: ControlChange, snapshot: ControlSnapshot) =>
   snapshot.kind === "solar" ||
   snapshot.kind === "solar_priority" ||
+  (change.operation === "set_active_energy_profile_limits" &&
+    change.setting.kind === "solar_power") ||
   (change.operation === "set_energy_profile_parameters" &&
     change.parameters.solarLimit !== undefined);
 const peakShavingBody = (
@@ -641,18 +647,7 @@ export const makeControlsClient = (
         );
       }
       case "set_battery_soc_thresholds": {
-        return write(
-          "PUT",
-          "/device/energy-profile/battery/level",
-          {
-            ...id,
-            backupSOC: String(change.backupSocPercent),
-            chargeSOC: String(change.chargeSocPercent),
-            dischargeSOC: String(change.dischargeSocPercent),
-            peakShavingSOC: String(change.peakShavingSocPercent),
-          },
-          token
-        );
+        return writeBatteryThresholds(write, stationId, change, token);
       }
       case "set_peak_shaving_schedule": {
         return write(
@@ -682,24 +677,10 @@ export const makeControlsClient = (
         );
       }
       case "set_battery_power_limits": {
-        return write(
-          "PUT",
-          "/device/energy-profile/battery/limit",
-          {
-            ...id,
-            batteryMaxChargingPower: powerString(change.charge),
-            batteryMaxDischargingPower: powerString(change.discharge),
-          },
-          token
-        );
+        return writeBatteryPower(write, stationId, change, token);
       }
       case "set_solar_power_limit": {
-        return write(
-          "PUT",
-          "/device/energy-profile/solar/limit",
-          { ...id, powerLimit: powerString(change.limit) },
-          token
-        );
+        return writeSolarPower(write, stationId, change.limit, token);
       }
       case "set_battery_export": {
         return write(
@@ -711,15 +692,11 @@ export const makeControlsClient = (
       }
       case "set_grid_export_limit":
       case "set_grid_import_limit": {
-        return write(
-          "PUT",
-          `/device/energy-profile/grid/limitation/${change.operation === "set_grid_export_limit" ? "export" : "import"}`,
-          {
-            ...id,
-            enable: true,
-            maxLimitationInstaller: null,
-            maxLimitationOwner: String(change.watts / 1000),
-          },
+        return writeGridPower(
+          write,
+          stationId,
+          change.operation === "set_grid_export_limit" ? "export" : "import",
+          change.watts,
           token
         );
       }

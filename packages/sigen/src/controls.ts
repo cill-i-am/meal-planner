@@ -1,6 +1,10 @@
 import { Schema, absurd } from "effect";
 
 import {
+  SigenAiTarget,
+  activeProfileLimitScope,
+} from "./active-profile-limits.js";
+import {
   LoadControlChange,
   LoadControlSnapshot,
   isLoadControlChange,
@@ -8,6 +12,7 @@ import {
 } from "./load-controls.js";
 import { LoadKey, LoadPath, SmartLoadState } from "./loads.js";
 import {
+  ActiveProfileLimitScope,
   FailureReason,
   OperatingMode,
   Percent,
@@ -56,6 +61,7 @@ export const SolarPriorityChange = Schema.Struct({
 });
 const WholePercent = Percent.check(Schema.isInt());
 export { WritablePowerLimit } from "./settings.js";
+export { activeProfileLimitScope } from "./active-profile-limits.js";
 const Watts = Schema.Int.check(
   Schema.isBetween({ maximum: 4_294_967_294, minimum: 0 })
 );
@@ -232,6 +238,12 @@ export const ApproveCommandInput = Schema.Struct({
 });
 export const ApprovalScope = Schema.Union([
   Schema.Struct({
+    operation: Schema.Literal("set_active_energy_profile_limits"),
+    setting: ActiveProfileLimitScope,
+    stationId: StationId,
+    target: SigenAiTarget,
+  }),
+  Schema.Struct({
     operation: Schema.Literal("set_active_energy_profile_parameters"),
     stationId: StationId,
     target: ActiveProfileTarget,
@@ -287,6 +299,14 @@ export const approvalScope = (
   stationId: StationId,
   change: ControlChange
 ): typeof ApprovalScope.Type => {
+  if (change.operation === "set_active_energy_profile_limits") {
+    return {
+      operation: change.operation,
+      setting: activeProfileLimitScope(change.setting),
+      stationId,
+      target: change.target,
+    };
+  }
   if (change.operation === "set_active_energy_profile_parameters") {
     return { operation: change.operation, stationId, target: change.target };
   }

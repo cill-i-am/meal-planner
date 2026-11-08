@@ -1,6 +1,6 @@
 # Private mySigen API and MCP
 
-This independent Cloudflare service exposes 57 HTTP/MCP operations and 29 typed setting-change families from the [coverage matrix](../../docs/sigen/coverage.md). It includes station/profile/template inspection, equipment and smart-load summaries, preheating, diagnostics, history and approval controls. Coverage includes charger reads and smart-load mode, off-grid and schedule controls. The matrix lists the evidence needed for charger and V2X writes, industrial and grouped profiles, and advanced smart-load schedule combinations. `packages/sigen` contains the reusable Effect 4 EU private client; this app owns encrypted sessions and the account Durable Object. `sigen.alchemy.ts` deploys only this service, with independent credentials.
+This independent Cloudflare service exposes 57 HTTP/MCP operations and 30 typed setting-change families from the [coverage matrix](../../docs/sigen/coverage.md). It includes station/profile/template inspection, equipment and smart-load summaries, preheating, diagnostics, history and approval controls. Coverage includes charger reads and smart-load mode, off-grid and schedule controls. The matrix lists the evidence needed for charger and V2X writes, industrial and grouped profiles, and advanced smart-load schedule combinations. `packages/sigen` contains the reusable Effect 4 EU private client; this app owns encrypted sessions and the account Durable Object. `sigen.alchemy.ts` deploys only this service, with independent credentials.
 
 ## Current surface
 
@@ -93,6 +93,8 @@ Execution rechecks current settings and validation under the session lock, then 
 
 `SIGEN_CONTROLS_ENABLED` defaults to `false`. Dispatch also requires the operation to appear in `SIGEN_ENABLED_OPERATIONS`, a comma-separated list of exact operation names that defaults to empty. Unknown or duplicate entries fail configuration validation. Connection status reports the effective `enabledOperations`; a false master switch produces an empty list. Preparation, approval, inspection and read-only reconciliation remain available for disabled operations. The same policy covers HTTP and MCP.
 
+Active profile limit dispatch additionally requires the setting group in `SIGEN_ENABLED_ACTIVE_PROFILE_LIMITS`. Connection status reports the effective `enabledActiveProfileLimits` when any group is enabled.
+
 All 22 families are fixture-tested. Backup reserve passed the earlier authorized live 20% → 21% → 20% test through Executor. Current live acceptance and its exact limits are recorded in [the acceptance procedure](../../docs/sigen/live-control-acceptance.md). Enabling a family does not bypass once/always approval, five-minute review expiry, fresh conflict checks or single-dispatch receipts. Only tested families should be configured for production.
 
 The durable command book refuses new preparations after 256 saved records; it never silently deletes replay protection. Operational archival is a future extension.
@@ -106,6 +108,7 @@ Create independent random 32-byte owner and operator bearer credentials. Keep th
 - `SIGEN_SESSION_ENCRYPTION_KEY`: 32 random bytes as 64 lowercase hexadecimal digits.
 - `SIGEN_CONTROLS_ENABLED`: master dispatch boolean, default `false`; changing it does not itself change equipment.
 - `SIGEN_ENABLED_OPERATIONS`: exact comma-separated operation names permitted to dispatch when the master switch is true; default empty.
+- `SIGEN_ENABLED_ACTIVE_PROFILE_LIMITS`: exact comma-separated setting groups permitted under `set_active_energy_profile_limits`. Valid groups are `battery_power`, `battery_soc`, `solar_power`, `grid_import`, and `grid_export`. The default is empty.
 
 The encryption key must remain stable across restarts and redeployments. Back it up securely. Rotate owner/operator verifiers independently. Key replacement requires a disconnect and new enrollment; it cannot decrypt existing state.
 

@@ -1,10 +1,16 @@
 import { Schema, absurd } from "effect";
 
+import {
+  ActiveLimitState,
+  ActiveProfileLimitsChange,
+  activeLimitMatches,
+} from "./active-profile-limits.js";
 import { OperatingMode, Percent, StationId, Timestamp } from "./model.js";
 import {
   isUnusedResidentialPreheatingPower,
   writableResidentialPreheating,
 } from "./preheating.js";
+import { canonicalProfileValue, profileSettingsEqual } from "./profile-data.js";
 import {
   ProfilePriorities,
   ProfileSchedules,
@@ -19,6 +25,8 @@ import { EnergyProfile, ProfileId } from "./profile.js";
 import { ScheduleWindow, nonOverlappingWindows } from "./schedules.js";
 import { WritablePowerLimit } from "./settings.js";
 import type { PowerLimit } from "./settings.js";
+
+export { profileSettingsEqual } from "./profile-data.js";
 
 const Name = Schema.String.check(
   Schema.isMinLength(1),
@@ -149,6 +157,7 @@ export const ActiveProfileChange = Schema.Struct({
 });
 export const ProfileChange = Schema.Union([
   ActiveProfileChange,
+  ActiveProfileLimitsChange,
   Schema.Struct({
     operation: Schema.Literal("set_energy_profile_priorities"),
     priorities: ProfilePriorities,
@@ -193,6 +202,7 @@ export const isProfileChange = (change: {
   readonly operation: string;
 }): change is ProfileChange =>
   change.operation === "set_active_energy_profile_parameters" ||
+  change.operation === "set_active_energy_profile_limits" ||
   change.operation === "set_energy_profile_priorities" ||
   change.operation === "set_energy_profile_schedules" ||
   change.operation === "set_energy_profile_parameters" ||
@@ -207,6 +217,7 @@ export const ProfileControlSnapshot = Schema.Struct({
   kind: Schema.Literal("profile"),
   settings: Schema.Struct({
     activeBackupReservePercent: Schema.optionalKey(Percent),
+    activeLimit: Schema.optionalKey(ActiveLimitState),
     currentMode: Schema.Struct({
       profileId: OperatingMode.fields.profileId,
       providerMode: OperatingMode.fields.providerMode,
@@ -265,28 +276,6 @@ export const proposedProfile = (
     ? { ...current, ...change.replacement }
     : current;
 };
-// Canonical JSON projection of an already decoded configuration, not input validation.
-/* eslint-disable anti-slop/no-runtime-typeof */
-const canonicalProfileValue = (value: Schema.Json) =>
-  // Provider kW round trips can introduce sub-microwatt floating point noise (1001 W -> 1.001 kW).
-  JSON.stringify(value, (_key, item: Schema.Json) => {
-    if (typeof item === "number") {
-      return Number(item.toFixed(6));
-    }
-    if (item !== null && typeof item === "object" && !Array.isArray(item)) {
-      return Object.fromEntries(
-        Object.entries(item).toSorted(([left], [right]) =>
-          left.localeCompare(right)
-        )
-      );
-    }
-    return item;
-  });
-/* eslint-enable anti-slop/no-runtime-typeof */
-export const profileSettingsEqual = (
-  left: Schema.Json,
-  right: Schema.Json
-): boolean => canonicalProfileValue(left) === canonicalProfileValue(right);
 const configuration = (value: ProfileConfiguration) => {
   const normalizeMinutes =
     !value.industrial && writableResidentialPreheating(value.preheating);
@@ -359,6 +348,39 @@ export const activeBackupReserve = (
   return soc.backupSocPercent;
 };
 
+type ProfileControlSettings = ProfileControlSnapshot["settings"];
+export const isActiveSigenAi = (
+  state: ProfileControlSettings
+): state is ProfileControlSettings & {
+  selected: ProfileConfiguration;
+  activeLimit: ActiveLimitState;
+} =>
+  state.currentMode.providerMode === 1 &&
+  state.currentMode.profileId === -1 &&
+  state.selected?.target.kind === "current" &&
+  state.selected.providerProfileId === null &&
+  !state.selected.industrial &&
+  state.selected.stationId === state.stationId &&
+  state.activeLimit?.value.stationId === state.stationId &&
+  (state.activeLimit.kind !== "battery" ||
+    state.activeLimit.value.providerOperationMode === 1);
+
+const activeProfileLimitsMatch = (
+  change: typeof ActiveProfileLimitsChange.Type,
+  before: ProfileControlSettings,
+  after: ProfileControlSettings
+) =>
+  before.stationId === after.stationId &&
+  isActiveSigenAi(before) &&
+  isActiveSigenAi(after) &&
+  activeLimitMatches(
+    change.setting,
+    before.activeLimit,
+    after.activeLimit,
+    before.selected,
+    after.selected
+  );
+
 export const profileControlMatches = (
   change: ProfileChange,
   observed: ProfileControlSnapshot,
@@ -369,6 +391,9 @@ export const profileControlMatches = (
   }
   const after = observed.settings;
   const before = reviewed.settings;
+  if (change.operation === "set_active_energy_profile_limits") {
+    return activeProfileLimitsMatch(change, before, after);
+  }
   if (
     JSON.stringify(after.currentMode) !== JSON.stringify(before.currentMode)
   ) {

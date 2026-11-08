@@ -88,7 +88,7 @@ export const readBatterySocSettings = (
             chargeSOC: DecimalSetting,
             dischargeSOC: DecimalSetting,
             ja12SOC: Schema.optionalKey(DecimalSetting),
-            peakShavingSOC: DecimalSetting,
+            peakShavingSOC: Schema.NullOr(DecimalSetting),
           })
         )
       )
@@ -99,7 +99,8 @@ export const readBatterySocSettings = (
       dischargeSocPercent: decimal(levels.dischargeSOC),
       ja12SocPercent:
         levels.ja12SOC === undefined ? null : decimal(levels.ja12SOC),
-      peakShavingSocPercent: decimal(levels.peakShavingSOC),
+      peakShavingSocPercent:
+        levels.peakShavingSOC === null ? null : decimal(levels.peakShavingSOC),
     });
   });
 

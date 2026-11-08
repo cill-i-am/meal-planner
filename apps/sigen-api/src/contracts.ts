@@ -591,7 +591,7 @@ export const operations = [
   ),
   operation(
     "approve_command",
-    "Approve the exact saved review: once for this command, or always for this operation and station/device until revoked. Copy change, current and reviewFingerprint exactly from prepare_command. Always approval permits future parameters within the same validated operation; it is not limited to today's values. Smart-load grants bind both load key and path; profile update/delete grants bind profileId. Does not dispatch equipment changes.",
+    "Approve the exact saved review: once for this command, or always for this operation and station/device until revoked. Copy change, current and reviewFingerprint exactly from prepare_command. Always approval permits future parameters within the same validated scope. Smart-load grants bind both load key and path. Profile update/delete grants bind profileId. Active Sigen AI limit grants bind the limit group, with separate import and export grants. Does not dispatch equipment changes.",
     ApproveCommandInput,
     Command,
     (input) =>
