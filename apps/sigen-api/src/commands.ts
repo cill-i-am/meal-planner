@@ -1,5 +1,6 @@
 import { failure } from "@meal-planner/sigen";
 import type {
+  ActiveProfileLimitScope,
   ControlOperation,
   SigenFailure,
   StationId,
@@ -13,6 +14,7 @@ import type {
 } from "@meal-planner/sigen/controls";
 import {
   ApprovalGrant,
+  activeProfileLimitScope,
   approvalScope,
   Command,
   controlMatches,
@@ -62,8 +64,15 @@ export const makeCommands = <R>(
     SigenClient,
     "inspectControl" | "validateControl" | "dispatchControl"
   >,
-  enabledOperations: readonly ControlOperation[]
+  enabledOperations: readonly ControlOperation[],
+  enabledActiveProfileLimits: readonly ActiveProfileLimitScope[] = []
 ) => {
+  const canDispatch = (change: Command["review"]["change"]) =>
+    enabledOperations.includes(change.operation) &&
+    (change.operation !== "set_active_energy_profile_limits" ||
+      enabledActiveProfileLimits.includes(
+        activeProfileLimitScope(change.setting)
+      ));
   const bookFor = (connectionId: string) =>
     storage.read.pipe(
       Effect.map((book): CommandBook =>
@@ -244,7 +253,7 @@ export const makeCommands = <R>(
               return absurd<never>(command.phase);
             }
           }
-          if (!enabledOperations.includes(command.review.change.operation)) {
+          if (!canDispatch(command.review.change)) {
             return yield* failure("UnsupportedCapability");
           }
           if (command.review.expiresAt <= (yield* Clock.currentTimeMillis)) {

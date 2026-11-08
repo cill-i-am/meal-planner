@@ -6,6 +6,7 @@ import {
   failure,
 } from "@meal-planner/sigen";
 import type {
+  ActiveProfileLimitScope,
   ControlOperation,
   Enrollment,
   SigenFailure,
@@ -97,7 +98,8 @@ export const makeSession = <R>(
   storage: SessionStorage<R>,
   encryptionKey: Redacted.Redacted<string>,
   client: SigenClient,
-  enabledOperations: readonly ControlOperation[] = []
+  enabledOperations: readonly ControlOperation[] = [],
+  enabledActiveProfileLimits: readonly ActiveProfileLimitScope[] = []
 ) =>
   Effect.gen(function* constructSession() {
     const lock = yield* Semaphore.make(1);
@@ -314,7 +316,7 @@ export const makeSession = <R>(
     const health = storage.read.pipe(
       Effect.flatMap((record) => {
         const { session } = record;
-        return Schema.decodeUnknownEffect(ConnectionStatus)({
+        const status = {
           accessTokenExpiresAt:
             "expiresAt" in session ? session.expiresAt : null,
           controls:
@@ -325,7 +327,12 @@ export const makeSession = <R>(
           state: connectionState(session.phase),
           stationId: "stationId" in session ? session.stationId : null,
           successfulRenewals: record.successfulRenewals,
-        }).pipe(Effect.mapError(() => failure("StorageUnavailable")));
+        };
+        return Schema.decodeUnknownEffect(ConnectionStatus)(
+          enabledActiveProfileLimits.length === 0
+            ? status
+            : { ...status, enabledActiveProfileLimits }
+        ).pipe(Effect.mapError(() => failure("StorageUnavailable")));
       })
     );
     return {

@@ -145,10 +145,25 @@ export const EnabledOperations = Schema.Array(ControlOperation).check(
     (operations) => new Set(operations).size === operations.length
   )
 );
+export const ActiveProfileLimitScope = Schema.Literals([
+  "battery_power",
+  "battery_soc",
+  "grid_export",
+  "grid_import",
+  "solar_power",
+]);
+export type ActiveProfileLimitScope = typeof ActiveProfileLimitScope.Type;
+export const EnabledActiveProfileLimits = Schema.Array(
+  ActiveProfileLimitScope
+).check(
+  Schema.isMaxLength(ActiveProfileLimitScope.literals.length),
+  Schema.makeFilter((scopes) => new Set(scopes).size === scopes.length)
+);
 
 export const ConnectionStatus = Schema.Struct({
   accessTokenExpiresAt: Schema.NullOr(Timestamp),
   controls: Schema.Literals(["disabled_pending_acceptance", "enabled"]),
+  enabledActiveProfileLimits: Schema.optionalKey(EnabledActiveProfileLimits),
   enabledOperations: EnabledOperations,
   state: Schema.Literals([
     "disconnected",

@@ -1,4 +1,5 @@
 import {
+  EnabledActiveProfileLimits,
   EnabledOperations,
   SigenFailure,
   StationId,
@@ -65,7 +66,29 @@ const runtime = Effect.gen(function* constructAccountObject() {
     ),
     Effect.orDie
   );
-  const enabledOperations = controlsEnabled ? configuredOperations : [];
+  const configuredActiveProfileLimits = yield* Config.String(
+    "SIGEN_ENABLED_ACTIVE_PROFILE_LIMITS"
+  ).pipe(
+    Config.withDefault(""),
+    Effect.flatMap((value) =>
+      Schema.decodeUnknownEffect(EnabledActiveProfileLimits)(
+        value === "" ? [] : value.split(",").map((scope) => scope.trim())
+      )
+    ),
+    Effect.orDie
+  );
+  const enabledActiveProfileLimits =
+    controlsEnabled &&
+    configuredOperations.includes("set_active_energy_profile_limits")
+      ? configuredActiveProfileLimits
+      : [];
+  const enabledOperations = controlsEnabled
+    ? configuredOperations.filter(
+        (operation) =>
+          operation !== "set_active_energy_profile_limits" ||
+          enabledActiveProfileLimits.length > 0
+      )
+    : [];
   return Effect.gen(function* initializeAccount() {
     const context = yield* Effect.context<RuntimeContext>();
     const budget = yield* makeRequestBudget({
@@ -113,7 +136,8 @@ const runtime = Effect.gen(function* constructAccountObject() {
       storage,
       encryptionKey,
       client,
-      enabledOperations
+      enabledOperations,
+      enabledActiveProfileLimits
     );
     const commands = makeCommands<RuntimeContext>(
       {
@@ -132,7 +156,8 @@ const runtime = Effect.gen(function* constructAccountObject() {
       },
       { run: session.withConnection },
       client,
-      enabledOperations
+      enabledOperations,
+      enabledActiveProfileLimits
     );
     const vault = makeVault(encryptionKey);
     const inputCall = <S extends Schema.Top, A>(

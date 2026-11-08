@@ -30,6 +30,7 @@ import type {
 } from "./profile-controls.js";
 import { validateProfileExtras } from "./profile-extras.js";
 import { validateProfileParameters } from "./profile-parameters.js";
+import { EnergyProfileFeatures } from "./profile.js";
 import { decodeProvider } from "./provider-read.js";
 import type { ProviderRead } from "./provider-read.js";
 import { ScheduleWindow, nonOverlappingWindows } from "./schedules.js";
@@ -252,9 +253,10 @@ export const makeProfileControlsClient = (
       }
       const { selected, activeLimit } = state;
       yield* validateActiveLimit(change.setting, activeLimit, selected);
-      const { providerFeatures } = yield* makeProfileClient(
-        read
-      ).energyCapabilities(selected.stationId, token);
+      const providerFeatures = yield* read(
+        `/device/energy-profile/support/${selected.stationId}`,
+        token
+      ).pipe(Effect.flatMap(decodeProvider(EnergyProfileFeatures)));
       if (
         !providerFeatures.support ||
         providerFeatures.isIndustry ||

@@ -9,7 +9,11 @@ import {
   writeSolarPower,
 } from "./limit-writes.js";
 import { Percent, failure } from "./model.js";
-import type { SigenFailure, StationId } from "./model.js";
+import type {
+  ActiveProfileLimitScope,
+  SigenFailure,
+  StationId,
+} from "./model.js";
 import type { ProfileConfiguration } from "./profile-controls.js";
 import { profileSettingsEqual } from "./profile-data.js";
 import type { makeSettingsClient } from "./settings-client.js";
@@ -25,13 +29,6 @@ const Watts = Schema.Int.check(
   Schema.isBetween({ maximum: 4_294_967_294, minimum: 0 })
 );
 const GridDirection = Schema.Literals(["import", "export"]);
-export const ActiveProfileLimitScope = Schema.Literals([
-  "battery_power",
-  "battery_soc",
-  "grid_export",
-  "grid_import",
-  "solar_power",
-]);
 export const SigenAiTarget = Schema.Struct({
   kind: Schema.Literal("built_in"),
   providerMode: Schema.Literal(1),
@@ -69,6 +66,10 @@ export const ActiveProfileLimitsChange = Schema.Struct({
     "Change one limit group on the active residential Sigen AI profile. Uses a dedicated write and verifies the full profile, including solar priorities.",
 });
 type Setting = typeof ActiveProfileLimitsChange.Type.setting;
+export const activeProfileLimitScope = (
+  setting: Setting
+): ActiveProfileLimitScope =>
+  setting.kind === "grid_power" ? `grid_${setting.direction}` : setting.kind;
 
 const { fetchedAt: _batteryTime, ...batteryFields } = BatterySettings.fields;
 const { fetchedAt: _gridTime, ...gridFields } = GridSettings.fields;

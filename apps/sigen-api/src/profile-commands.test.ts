@@ -16,6 +16,7 @@ import {
   StationId,
   failure,
 } from "../../../packages/sigen/src/model.js";
+import type { ActiveProfileLimitScope } from "../../../packages/sigen/src/model.js";
 import { EnergyProfileFeatures } from "../../../packages/sigen/src/profile.js";
 import { makeCommands } from "./commands.js";
 import type { CommandBook } from "./commands.js";
@@ -167,7 +168,8 @@ const fixture = async () => {
   );
   const make = (
     enabled = true,
-    operations: readonly ControlOperation[] = ControlOperation.literals
+    operations: readonly ControlOperation[] = ControlOperation.literals,
+    limitScopes: readonly ActiveProfileLimitScope[] = ["solar_power"]
   ) =>
     makeCommands(
       {
@@ -184,7 +186,8 @@ const fixture = async () => {
           ),
       },
       client,
-      enabled ? operations : []
+      enabled ? operations : [],
+      enabled ? limitScopes : []
     );
   const service = make();
   return {
@@ -295,6 +298,7 @@ describe("durable profile approval journeys", () => {
         f.make(false).executeCommand(identity(disabled)).pipe(Effect.result)
       )
     ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
+
     expect(f.writes).toHaveLength(0);
   });
 });
@@ -471,6 +475,14 @@ describe("active energy setting approvals", () => {
       await run(
         f
           .make(true, ["set_active_energy_profile_parameters"])
+          .executeCommand(identity(first))
+          .pipe(Effect.result)
+      )
+    ).toMatchObject({ failure: { reason: "UnsupportedCapability" } });
+    expect(
+      await run(
+        f
+          .make(true, ["set_active_energy_profile_limits"], ["battery_power"])
           .executeCommand(identity(first))
           .pipe(Effect.result)
       )

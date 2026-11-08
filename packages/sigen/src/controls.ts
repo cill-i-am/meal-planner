@@ -1,8 +1,8 @@
 import { Schema, absurd } from "effect";
 
 import {
-  ActiveProfileLimitScope,
   SigenAiTarget,
+  activeProfileLimitScope,
 } from "./active-profile-limits.js";
 import {
   LoadControlChange,
@@ -12,6 +12,7 @@ import {
 } from "./load-controls.js";
 import { LoadKey, LoadPath, SmartLoadState } from "./loads.js";
 import {
+  ActiveProfileLimitScope,
   FailureReason,
   OperatingMode,
   Percent,
@@ -60,6 +61,7 @@ export const SolarPriorityChange = Schema.Struct({
 });
 const WholePercent = Percent.check(Schema.isInt());
 export { WritablePowerLimit } from "./settings.js";
+export { activeProfileLimitScope } from "./active-profile-limits.js";
 const Watts = Schema.Int.check(
   Schema.isBetween({ maximum: 4_294_967_294, minimum: 0 })
 );
@@ -298,13 +300,9 @@ export const approvalScope = (
   change: ControlChange
 ): typeof ApprovalScope.Type => {
   if (change.operation === "set_active_energy_profile_limits") {
-    const { setting } = change;
     return {
       operation: change.operation,
-      setting:
-        setting.kind === "grid_power"
-          ? `grid_${setting.direction}`
-          : setting.kind,
+      setting: activeProfileLimitScope(change.setting),
       stationId,
       target: change.target,
     };
