@@ -112,7 +112,7 @@ jobs:
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     container:
-      image: ${{ matrix.browser && 'mcr.microsoft.com/playwright:v1.64.1-noble' || '' }}
+      image: ${{ matrix.browser && 'mcr.microsoft.com/playwright:v1.65.1-noble' || '' }}
       options: --init --ipc=host
     timeout-minutes: 15
     strategy:
@@ -224,7 +224,7 @@ jobs:
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      image: mcr.microsoft.com/playwright:v1.65.1-noble
       options: --init --ipc=host
     timeout-minutes: 10
     strategy:
