@@ -169,7 +169,7 @@ export const makeMealPlannerAuthConfiguration = ({
     // The CLI inspects this same configuration using SQLite without running endpoints.
     // Production mutations require D1's atomic batch capability.
     if (!(database instanceof DrizzleD1Database)) {
-      throw new Error("Authentication mutations require a D1 database.");
+      throw new TypeError("Authentication mutations require a D1 database.");
     }
     return database;
   };

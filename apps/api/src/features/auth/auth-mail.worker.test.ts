@@ -45,7 +45,6 @@ const senderAddress = Schema.decodeUnknownSync(EmailAddress)(
 const runtimeContext: BaseRuntimeContext = {
   Type: "test",
   env: {},
-  // eslint-disable-next-line unicorn/no-useless-undefined -- Alchemy uses undefined for an absent binding.
   get: () => Effect.succeed(undefined),
   id: "auth-mail-test",
   set: (id) => Effect.succeed(id),

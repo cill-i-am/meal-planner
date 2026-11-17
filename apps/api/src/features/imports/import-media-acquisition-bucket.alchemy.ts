@@ -99,10 +99,8 @@ export const adaptAcquisitionBucket = (
             value.pipe(Stream.interruptWhen(Deferred.await(cancelled)))
           )
             .pipeTo(fixed.writable, { signal: abort.signal })
-            .then(
-              () => ({ ok: true as const }),
-              () => ({ ok: false as const })
-            );
+            .then(() => ({ ok: true as const }))
+            .catch(() => ({ ok: false as const }));
           return { abort, body: fixed.readable, cancelled, producer };
         }),
         ({ body, producer }) =>

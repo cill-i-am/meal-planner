@@ -33,9 +33,7 @@ const baseURL = "https://meal-planner.test";
 const testRuntimeContext = RuntimeContext.of({
   Type: "AuthAlchemyTestRuntimeContext",
   env: {},
-  get: <T>() =>
-    // eslint-disable-next-line unicorn/no-useless-undefined -- Alchemy represents an absent runtime binding with undefined.
-    Effect.succeed<T | undefined>(undefined),
+  get: <T>() => Effect.succeed<T | undefined>(undefined),
   id: "auth-alchemy-test",
   set: (id) => Effect.succeed(id),
 });

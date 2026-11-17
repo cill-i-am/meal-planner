@@ -141,7 +141,6 @@ import { AcquisitionFinalizationResult } from "./import.repository.js";
 import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
 
 export const AcquisitionTaskStepConfig = {
-  // eslint-disable-next-line sort-keys -- Reviewer-frozen platform retry fields stay in exact documented order.
   retries: { limit: 3, delay: "2 seconds", backoff: "exponential" },
   timeout: "17 minutes",
 } as const;

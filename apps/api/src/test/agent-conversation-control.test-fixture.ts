@@ -48,6 +48,7 @@ export class AgentConversation extends ProductionAgentConversation {
         aiGatewayLogId: null,
         aiSearch: unexpectedBindingMethod,
         autorag: unexpectedBindingMethod,
+        websearch: unexpectedBindingMethod,
         gateway: unexpectedBindingMethod,
         models: unexpectedBindingMethod,
         run: ((model: string, body: SyntheticConversationRequest) => {

@@ -150,7 +150,7 @@ describe("browser household people operations", () => {
         );
       } catch (error) {
         if (!(error instanceof Error)) {
-          throw new Error("Expected a query error", { cause: error });
+          throw new TypeError("Expected a query error", { cause: error });
         }
         expect(householdPeopleFailureCode(error)).toBe(code);
         queries.clear();

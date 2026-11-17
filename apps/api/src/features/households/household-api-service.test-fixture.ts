@@ -141,9 +141,7 @@ const baseURL = "https://meal-planner.test";
 const testRuntimeContext = RuntimeContext.of({
   Type: "HouseholdApiTestRuntimeContext",
   env: {},
-  get: <T>() =>
-    // eslint-disable-next-line unicorn/no-useless-undefined -- The test context models an absent Alchemy binding.
-    Effect.succeed<T | undefined>(undefined),
+  get: <T>() => Effect.succeed<T | undefined>(undefined),
   id: "household-api-test",
   set: (id) => Effect.succeed(id),
 });

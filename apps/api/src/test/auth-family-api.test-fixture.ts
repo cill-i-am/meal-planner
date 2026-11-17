@@ -65,7 +65,6 @@ export { AgentConversation } from "./agent-conversation-control.test-fixture.js"
 const context = RuntimeContext.of({
   Type: "AuthFamilyE2E",
   env: {},
-  // oxlint-disable-next-line unicorn/no-useless-undefined -- Effect.succeed requires its value argument.
   get: <T>() => Effect.succeed<T | undefined>(undefined),
   id: "auth-family-e2e",
   set: (id) => Effect.succeed(id),

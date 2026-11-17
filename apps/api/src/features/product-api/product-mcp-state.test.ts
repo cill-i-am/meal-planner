@@ -78,7 +78,6 @@ describe("MCP import state", () => {
       Effect.gen(function* stableTaskIdentity() {
         const first = yield* makeState();
         const second = yield* makeProductMcpState({
-          // eslint-disable-next-line sort-keys -- Input property order must not alter signed identity.
           owner: { userId: owner.userId, clientId: owner.clientId },
           secret,
         });
@@ -86,11 +85,9 @@ describe("MCP import state", () => {
         yield* TestClock.adjust("1 day");
         expect(
           yield* second.issueTask({
-            /* eslint-disable sort-keys -- Input property order must not alter signed identity. */
             intentId: locator.intentId,
             familyId: locator.familyId,
             createdAt: locator.createdAt,
-            /* eslint-enable sort-keys */
           })
         ).toBe(token);
         expect(yield* second.readTask(token)).toEqual(locator);

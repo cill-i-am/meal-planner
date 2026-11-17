@@ -106,7 +106,6 @@ const connect = async (fetch: typeof globalThis.fetch) => {
     version: "1.0.0",
   });
   await client.connect(
-    // @ts-expect-error SDK 1.32.1's concrete transport includes undefined in sessionId; its Transport interface omits it under exactOptionalPropertyTypes.
     new StreamableHTTPClientTransport(new URL("https://tesco.test/mcp"), {
       fetch,
       requestInit: { headers: { authorization: `Bearer ${executorToken}` } },

@@ -23,7 +23,6 @@ import {
 } from "../features/family/index.js";
 import { SetupProvider } from "../features/onboarding/index.js";
 
-// eslint-disable-next-line sort-keys -- TanStack Router infers loader types from preceding search and dependency options.
 export const Route = createFileRoute("/setup")({
   loaderDeps: ({ search }) => ({ familyId: search.familyId }),
   validateSearch: (

@@ -331,7 +331,7 @@ it(
       const transport = new StreamableHTTPClientTransport(url, {
         requestInit: { headers: { authorization: `Bearer ${owner}` } },
       });
-      // @ts-expect-error SDK 1.32.1's sessionId getter disagrees with Transport under exactOptionalPropertyTypes.
+
       await client.connect(transport);
       const listed = await client.listTools();
       expect(listed.tools).toHaveLength(57);

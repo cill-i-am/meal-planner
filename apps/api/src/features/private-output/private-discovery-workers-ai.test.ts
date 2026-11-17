@@ -171,6 +171,7 @@ const fixture = (
       aiGatewayLogId: null,
       aiSearch: unsupportedBindingMethod,
       autorag: unsupportedBindingMethod,
+      websearch: unsupportedBindingMethod,
       gateway: unsupportedBindingMethod,
       models: unsupportedBindingMethod,
       // SAFETY: The complete binding fixture records only the raw-response overload used by the published adapter.

@@ -40,10 +40,8 @@ describe("native fixed-length upload cancellation", () => {
       .pipeTo(fixed.writable, {
         signal: abort.signal,
       })
-      .then(
-        () => "closed" as const,
-        () => "aborted" as const
-      );
+      .then(() => "closed" as const)
+      .catch(() => "aborted" as const);
 
     try {
       await delay(50);
@@ -84,10 +82,8 @@ describe("native fixed-length upload cancellation", () => {
       .pipeTo(fixed.writable, {
         signal: abort.signal,
       })
-      .then(
-        () => "closed" as const,
-        () => "aborted" as const
-      );
+      .then(() => "closed" as const)
+      .catch(() => "aborted" as const);
     await delay(50);
     expect(finalized).toBe(false);
     abort.abort();

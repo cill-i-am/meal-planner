@@ -30,11 +30,24 @@ minimumReleaseAgeExclude:
   - "@distilled.cloud/stripe@1.0.0-rc.15"
   - "@distilled.cloud/zerossl@1.0.0-rc.15"
   - alchemy@2.0.0-beta.83
-  - "@cloudflare/vitest-plugin@1.4.4"
-  - wrangler@4.151.1
-  - "@cloudflare/workers-types@5.20261016.1"
+  - "@cloudflare/vitest-plugin@1.4.4 || 1.8.4"
+  - wrangler@4.151.1 || 4.164.0
+  - "@cloudflare/workers-types@5.20261016.1 || 5.20261117.1"
   - cloudflare-drizzle-tracing@1.2.0
+  - "@cloudflare/workerd-darwin-64@1.20261117.1"
+  - "@cloudflare/workerd-darwin-arm64@1.20261117.1"
+  - "@cloudflare/workerd-linux-64@1.20261117.1"
+  - "@cloudflare/workerd-linux-arm64@1.20261117.1"
+  - "@cloudflare/workerd-windows-64@1.20261117.1"
+  - "@tanstack/query-core@5.108.0"
+  - "@tanstack/react-query@5.108.0"
+  - lucide-react@1.74.0
+  - miniflare@5.20261117.0-beta
+  - openai@7.58.0
+  - react-email@6.11.16
+  - workerd@1.20261117.1
+  - "@tanstack/ai-cloudflare@1.2.1"
+  - "@tanstack/ai@1.5.0"
 patchedDependencies:
   alchemy@2.0.0-beta.83: patches/alchemy@2.0.0-beta.83.patch
   cloudflare-drizzle-tracing@1.2.0: patches/cloudflare-drizzle-tracing@1.2.0.patch
-  "@tanstack/ai@0.69.0": patches/@tanstack__ai@0.69.0.patch

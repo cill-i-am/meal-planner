@@ -154,7 +154,6 @@ const HouseholdObjectTestRuntime = Effect.gen(
         ),
         Effect.scoped
       );
-    // eslint-disable-next-line sort-keys -- Fixture RPC follows the production runtime surface, then corruption-only probes.
     return Effect.succeed({
       ...household,
       corruptImportWorkflowDispatchState: (

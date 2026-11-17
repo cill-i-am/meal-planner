@@ -173,7 +173,6 @@ export const FamilyStoreLive = (database: DrizzleD1Database) =>
                     .insert(member)
                     .select(
                       database
-                        // eslint-disable-next-line sort-keys -- Drizzle INSERT SELECT must match the generated member column order.
                         .select({
                           id: sql<string>`${`${id}-owner`}`.as("id"),
                           organizationId: organization.id,

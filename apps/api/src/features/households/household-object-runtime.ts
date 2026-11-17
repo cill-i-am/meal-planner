@@ -211,7 +211,6 @@ export const makeHouseholdObjectRuntime = (
         identity: identityGenerator,
       });
 
-    // eslint-disable-next-line sort-keys -- RPC methods follow the household capability lifecycle.
     return Effect.succeed({
       associateAdultInvitation: (
         untrustedInput: HouseholdAssociateAdultInvitationInput

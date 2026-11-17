@@ -2393,10 +2393,9 @@ describe("native adaptive assistant attempts through the production model adapte
     const session = await harness.binding();
     const connection = await harness.open(session);
     const attempt = await harness.startTurn(connection);
-    const running = attempt.finished.then(
-      () => "finished",
-      () => "runtime-stopped"
-    );
+    const running = attempt.finished
+      .then(() => "finished")
+      .catch(() => "runtime-stopped");
     await expect.poll(() => harness.calls.length).toBe(1);
     const dispatched = await audit(session);
     expect(dispatched[0]?.status).toBe("running");

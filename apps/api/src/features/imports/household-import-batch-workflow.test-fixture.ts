@@ -94,7 +94,6 @@ interface TestEnvironment {
 const testRuntimeContext = RuntimeContext.of({
   Type: "HouseholdBatchWorkflowTestRuntimeContext",
   env: {},
-  // eslint-disable-next-line unicorn/no-useless-undefined -- The native test runtime models a missing deployment context explicitly.
   get: <T>() => Effect.succeed<T | undefined>(undefined),
   id: "household-batch-workflow-test",
   set: (id) => Effect.succeed(id),

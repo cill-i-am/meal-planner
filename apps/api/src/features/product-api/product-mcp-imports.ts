@@ -233,7 +233,9 @@ export const makeImportMcpInteraction = (options: {
       return {
         createdAt: current.createdAt,
         lastUpdatedAt: current.lastUpdatedAt,
-        pollIntervalMs: current.pollIntervalMs,
+        ...(current.pollIntervalMs !== undefined && {
+          pollIntervalMs: current.pollIntervalMs,
+        }),
         resultType: "task",
         status: current.status,
         taskId,

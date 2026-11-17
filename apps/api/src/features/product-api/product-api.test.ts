@@ -1,6 +1,5 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { Effect, Redacted } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -150,25 +149,7 @@ describe("MCP transport", () => {
       }
     );
     try {
-      // The stateless client needs only the standard Transport callbacks. Its
-      // optional SDK session getter is deliberately absent from this transport.
-      // The SDK requires write-only transport callback setters, not EventTarget listeners.
-      /* eslint-disable accessor-pairs, unicorn/prefer-add-event-listener -- Native SDK Transport callback projection. */
-      await client.connect({
-        close: () => transport.close(),
-        set onclose(handler: NonNullable<Transport["onclose"]>) {
-          transport.onclose = handler;
-        },
-        set onerror(handler: NonNullable<Transport["onerror"]>) {
-          transport.onerror = handler;
-        },
-        set onmessage(handler: NonNullable<Transport["onmessage"]>) {
-          transport.onmessage = handler;
-        },
-        send: (message, options) => transport.send(message, options),
-        start: () => transport.start(),
-      });
-      /* eslint-enable accessor-pairs, unicorn/prefer-add-event-listener */
+      await client.connect(transport);
       const tools = await client.listTools();
       expect(tools.tools.some(({ name }) => name === "families_list")).toBe(
         true
