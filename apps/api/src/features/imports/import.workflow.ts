@@ -1323,7 +1323,9 @@ const isNativeWorkflowPreStartRefusal = (cause: Cause.Cause<unknown>) => {
   const defect = Result.getOrUndefined(Cause.findDefect(cause));
   return (
     defect instanceof Error &&
-    defect.message === nativeWorkflowPreStartRefusalMessage
+    (defect.message === nativeWorkflowPreStartRefusalMessage ||
+      defect.message ===
+        `WorkflowError: ${nativeWorkflowPreStartRefusalMessage}`)
   );
 };
 
