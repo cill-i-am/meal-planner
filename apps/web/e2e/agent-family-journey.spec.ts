@@ -148,7 +148,7 @@ test("keeps setup input blocked until the completed reply's canonical roster arr
     const confirmation = await confirmationResponse;
     expect(confirmation.ok()).toBe(true);
     const metadata = Schema.decodeUnknownSync(ConversationChatMetadata)(
-      confirmation.request().postDataJSON().data
+      confirmation.request().postDataJSON().forwardedProps
     );
     expect(metadata.expectedVersion).toBe(refreshed.version);
     expect(metadata.displayedRoster).toEqual({
