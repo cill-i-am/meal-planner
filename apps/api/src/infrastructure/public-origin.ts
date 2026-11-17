@@ -1,3 +1,5 @@
+import { deployedWebsiteHostname, websiteDevPort } from "./website-address.js";
+
 /** OAuth issuer/audiences come from deployment configuration, never request Host. */
 export const configuredPublicOrigin = (input: {
   readonly configured: string;
@@ -6,14 +8,13 @@ export const configuredPublicOrigin = (input: {
 }): string => {
   let origin = input.configured;
   if (origin === "") {
+    const hostname = deployedWebsiteHostname(input.dev, input.stage);
     if (input.dev) {
-      origin = "http://localhost:4399";
-    } else if (input.stage === "prod") {
-      origin = "https://ceird.app";
-    } else if (input.stage === "e2e") {
-      origin = "https://e2e.ceird.app";
+      origin = `http://localhost:${websiteDevPort}`;
+    } else if (hostname) {
+      origin = `https://${hostname}`;
     } else {
-      // Arbitrary previews retain cookie auth but cannot issue OAuth grants.
+      // Preview stages require an explicit OAuth issuer.
       return "";
     }
   }
