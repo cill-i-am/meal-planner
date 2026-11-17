@@ -1,3 +1,5 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
+import * as Drizzle from "@alchemy.run/drizzle/Cloudflare";
 import {
   PersonProfile,
   InterviewProfileOutcome,
@@ -25,8 +27,6 @@ import {
   RecipeImportTimeline,
   SucceededRecipeImportIntent,
 } from "@meal-planner/recipe-import-api";
-import * as Cloudflare from "alchemy/Cloudflare";
-import * as Drizzle from "alchemy/Drizzle/Cloudflare";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Clock, Effect, Option, Schema } from "effect";
 

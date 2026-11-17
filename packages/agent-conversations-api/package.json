@@ -14,7 +14,7 @@
     "@meal-planner/families": "workspace:*",
     "@meal-planner/household-api": "workspace:*",
     "@meal-planner/recipe-import-api": "workspace:*",
-    "effect": "4.0.5"
+    "effect": "4.1.4"
   },
   "devDependencies": {
     "typescript": "7.0.2",

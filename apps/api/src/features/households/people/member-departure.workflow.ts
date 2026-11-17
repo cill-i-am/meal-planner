@@ -1,10 +1,10 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import {
   HouseholdMemberDepartureOperation,
   UserId,
 } from "@meal-planner/household-api";
 import type { HouseholdOrganizationId } from "@meal-planner/household-api";
 import type { RuntimeContext } from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";

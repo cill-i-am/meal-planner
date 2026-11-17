@@ -1,7 +1,7 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import { BrowserTelemetryPath } from "@meal-planner/browser-observability-api";
 import { EmailAddress } from "@meal-planner/household-api";
 import { AlchemyContext, RuntimeContext, Stage } from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
 import { instrumentDrizzle } from "cloudflare-drizzle-tracing";
 import { drizzle } from "drizzle-orm/d1";
 import { ByteSize, Config, Layer, Logger, Schema, Stream } from "effect";

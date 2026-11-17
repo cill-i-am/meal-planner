@@ -3,11 +3,11 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
+import { applyMigrations } from "@alchemy.run/sql/Migrations";
+import type { SqlExecutor } from "@alchemy.run/sql/Migrations";
+import { listSqlFiles } from "@alchemy.run/sql/SqlFile";
 import { NodeServices } from "@effect/platform-node";
 import { readD1Migrations } from "@meal-planner/worker-tests";
-import { applyMigrations } from "alchemy/SQL/Migrations/index";
-import type { SqlExecutor } from "alchemy/SQL/Migrations/index";
-import { listSqlFiles } from "alchemy/SQL/SqlFile";
 import { Effect, Schema } from "effect";
 import { Miniflare } from "miniflare";
 import { expect, it } from "vitest";
@@ -67,8 +67,10 @@ const withAppliedBaseline = async (
 ) => {
   // Alchemy's Cloudflare wildcard export maps to barrels; this executor is internal.
   const { makeD1MigrationExecutor } = (await import(
-    new URL("ApplyMigrations.js", import.meta.resolve("alchemy/Cloudflare/D1"))
-      .href
+    new URL(
+      "ApplyMigrations.js",
+      import.meta.resolve("@alchemy.run/cloudflare/D1")
+    ).href
   )) as {
     readonly makeD1MigrationExecutor: (
       execute: (sql: string) => Effect.Effect<{

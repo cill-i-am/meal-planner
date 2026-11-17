@@ -1,4 +1,4 @@
-import * as Cloudflare from "alchemy/Cloudflare";
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Output from "alchemy/Output";
 import type { BaseRuntimeContext } from "alchemy/RuntimeContext";
 import { Self } from "alchemy/Self";

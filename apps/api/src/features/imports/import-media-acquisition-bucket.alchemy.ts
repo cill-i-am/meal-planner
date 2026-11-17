@@ -1,4 +1,4 @@
-import type * as Cloudflare from "alchemy/Cloudflare";
+import type * as Cloudflare from "@alchemy.run/cloudflare";
 import { RuntimeContext } from "alchemy/RuntimeContext";
 import type { BaseRuntimeContext } from "alchemy/RuntimeContext";
 import { Deferred, Effect, Stream } from "effect";

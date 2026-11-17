@@ -1,7 +1,7 @@
+import { makeLanguageModel as makeAlchemyLanguageModel } from "@alchemy.run/cloudflare/AI";
+import type { LanguageModelClient } from "@alchemy.run/cloudflare/AI";
+import { WorkflowStepContext } from "@alchemy.run/cloudflare/Workflows";
 import type { RuntimeContext } from "alchemy";
-import { makeLanguageModel as makeAlchemyLanguageModel } from "alchemy/Cloudflare/AI";
-import type { LanguageModelClient } from "alchemy/Cloudflare/AI";
-import { WorkflowStepContext } from "alchemy/Cloudflare/Workflows";
 import { Effect, Option, Predicate, Schema } from "effect";
 import type { LanguageModel, Prompt } from "effect/ai";
 import { Tool, Toolkit } from "effect/ai";

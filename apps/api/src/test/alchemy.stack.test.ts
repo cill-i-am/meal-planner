@@ -1,14 +1,13 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
+import * as Cloudflare from "@alchemy.run/cloudflare";
+import * as Test from "@alchemy.run/test/Vitest";
 import { BrowserObservabilityApi } from "@meal-planner/browser-observability-api";
 import {
   CreateFamily,
   makeFamilyApiClientLayer,
   FamilyApiClient,
 } from "@meal-planner/families";
-import * as Alchemy from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
-import * as Test from "alchemy/Test/Vitest";
 import { createAuthClient } from "better-auth/client";
 import { Effect, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
@@ -38,7 +37,6 @@ const { test, beforeAll, afterAll, deploy, destroy } = Test.make({
   dev: true,
   providers: Cloudflare.providers(),
   stage,
-  state: Alchemy.localState(),
 });
 const stack = beforeAll(deploy(Stack), { timeout: 1_200_000 });
 afterAll(destroy(Stack), { timeout: 120_000 });

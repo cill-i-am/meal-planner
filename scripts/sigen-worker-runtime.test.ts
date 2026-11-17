@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout } from "node:timers/promises";
 
+import { WorkerBundle } from "@alchemy.run/cloudflare/Workers/Sources/Rolldown";
 import { NodeServices } from "@effect/platform-node";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -11,7 +12,6 @@ import { Context, Effect, Schema } from "effect";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 import { expect, it } from "vitest";
 
-import { WorkerBundle } from "../node_modules/alchemy/lib/Cloudflare/Workers/Sources/Rolldown.js";
 import { Command } from "../packages/sigen/src/controls.js";
 
 const owner = "a".repeat(64);

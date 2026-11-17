@@ -1,4 +1,4 @@
-import * as Cloudflare from "alchemy/Cloudflare";
+import * as Cloudflare from "@alchemy.run/cloudflare";
 
 import type { HouseholdDomainWorkerMethods } from "./household-domain-worker.js";
 

@@ -1,4 +1,4 @@
-import type { SqlMigrationSnapshot } from "alchemy/Cloudflare/Workers";
+import type { SqlMigrationSnapshot } from "@alchemy.run/cloudflare/Workers";
 
 // The native fixture bundler captures these through Alchemy's SQL directory reader.
 declare const __MEAL_PLANNER_TEST_SQL_MIGRATIONS__: Readonly<

@@ -1,3 +1,5 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
+import { makeWorkflowBridge } from "@alchemy.run/cloudflare/Workflows";
 import { FamilyServiceLive } from "@meal-planner/families/application";
 import {
   HouseholdMemberDepartureOperation,
@@ -13,8 +15,6 @@ import type {
   SucceededRecipeImportIntent,
 } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
-import { makeWorkflowBridge } from "alchemy/Cloudflare/Workflows";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";

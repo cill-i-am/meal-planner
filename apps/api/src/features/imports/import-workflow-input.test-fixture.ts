@@ -2,7 +2,7 @@ import {
   WorkflowEvent,
   makeWorkflowBridge,
   task,
-} from "alchemy/Cloudflare/Workflows";
+} from "@alchemy.run/cloudflare/Workflows";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import { Effect, Schema } from "effect";
 

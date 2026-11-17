@@ -1,14 +1,14 @@
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
-import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   applyAlchemyFormat,
   inlineSqlParams,
   MigrationError,
   readMigrationRecords,
-} from "alchemy/SQL/Migrations/index";
-import type { SqlExecutor } from "alchemy/SQL/Migrations/index";
+} from "@alchemy.run/sql/Migrations";
+import type { SqlExecutor } from "@alchemy.run/sql/Migrations";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Effect } from "effect";
 import { expect, it } from "vitest";
 

@@ -1,4 +1,4 @@
-import * as Cloudflare from "alchemy/Cloudflare";
+import * as Cloudflare from "@alchemy.run/cloudflare";
 
 /** Better Auth identity and organization storage, isolated from domain data. */
 export const MealPlannerAuthDatabase = Cloudflare.D1.Database(

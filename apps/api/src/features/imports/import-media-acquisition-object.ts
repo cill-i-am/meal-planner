@@ -1,4 +1,4 @@
-import * as Cloudflare from "alchemy/Cloudflare";
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import type { RuntimeContext } from "alchemy/RuntimeContext";
 import { Effect, Schema } from "effect";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";

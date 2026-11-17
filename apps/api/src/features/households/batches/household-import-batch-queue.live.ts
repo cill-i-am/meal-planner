@@ -1,4 +1,4 @@
-import * as Cloudflare from "alchemy/Cloudflare";
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import { Effect, Layer } from "effect";
 
 import { HouseholdImportBatchQueue } from "../../../infrastructure/household-import-batch-queue.js";

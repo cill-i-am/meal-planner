@@ -1,4 +1,4 @@
-import * as Cloudflare from "alchemy/Cloudflare";
+import * as Cloudflare from "@alchemy.run/cloudflare";
 
 /** Transport for immutable household/batch/item/generation envelopes only. */
 export const HouseholdImportBatchQueue = Cloudflare.Queues.Queue(

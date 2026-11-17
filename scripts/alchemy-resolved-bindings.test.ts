@@ -1,8 +1,8 @@
+import { scratchStack, toEffect } from "@alchemy.run/test/Core";
 import { Resource } from "alchemy";
 import type { Resource as AlchemyResource } from "alchemy";
 import * as Provider from "alchemy/Provider";
 import * as State from "alchemy/State";
-import { scratchStack, toEffect } from "alchemy/Test/Core";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";

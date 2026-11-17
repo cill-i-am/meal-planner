@@ -4,7 +4,7 @@ const productionHostname = "ceird.app";
 
 export const deployedWebsiteHostname = (dev: boolean, stage: string) => {
   if (dev) {
-    return;
+    return null;
   }
   if (stage === "prod") {
     return productionHostname;
@@ -12,4 +12,5 @@ export const deployedWebsiteHostname = (dev: boolean, stage: string) => {
   if (stage === "e2e") {
     return `e2e.${productionHostname}`;
   }
+  return null;
 };

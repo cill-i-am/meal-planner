@@ -1,3 +1,3 @@
-declare const migrations: import("alchemy/Drizzle/Cloudflare").DurableObjectMigrations;
+declare const migrations: import("@alchemy.run/drizzle/Cloudflare").DurableObjectMigrations;
 
 export default migrations;

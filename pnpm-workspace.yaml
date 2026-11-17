@@ -9,31 +9,10 @@ allowBuilds:
   sharp: false
   workerd: true
 minimumReleaseAgeExclude:
-  - "@alchemy.run/better-auth@2.0.0-beta.83"
-  - "@alchemy.run/cloudflare-runtime@2.0.0-beta.83"
-  - "@alchemy.run/floci@2.0.0-beta.83"
-  - "@alchemy.run/node-utils@2.0.0-beta.83"
-  - "@distilled.cloud/acme@1.0.0-rc.15"
-  - "@distilled.cloud/aws@1.0.0-rc.15"
-  - "@distilled.cloud/axiom@1.0.0-rc.15"
-  - "@distilled.cloud/cloudflare@1.0.0-rc.15"
-  - "@distilled.cloud/core@1.0.0-rc.15"
-  - "@distilled.cloud/doppler@1.0.0-rc.15"
-  - "@distilled.cloud/fly-io@1.0.0-rc.15"
-  - "@distilled.cloud/gcp@1.0.0-rc.15"
-  - "@distilled.cloud/hetzner@1.0.0-rc.15"
-  - "@distilled.cloud/infisical@1.0.0-rc.15"
-  - "@distilled.cloud/neon@1.0.0-rc.15"
-  - "@distilled.cloud/planetscale@1.0.0-rc.15"
-  - "@distilled.cloud/prisma@1.0.0-rc.15"
-  - "@distilled.cloud/railway@1.0.0-rc.15"
-  - "@distilled.cloud/stripe@1.0.0-rc.15"
-  - "@distilled.cloud/zerossl@1.0.0-rc.15"
-  - alchemy@2.0.0-beta.83
-  - "@cloudflare/vitest-plugin@1.4.4 || 1.8.4"
-  - wrangler@4.151.1 || 4.164.0
-  - "@cloudflare/workers-types@5.20261016.1 || 5.20261117.1"
-  - cloudflare-drizzle-tracing@1.2.0
+  - "@cloudflare/vitest-plugin@1.8.4"
+  - "wrangler@4.164.0"
+  - "@cloudflare/workers-types@5.20261117.1"
+  - "cloudflare-drizzle-tracing@1.2.0"
   - "@cloudflare/workerd-darwin-64@1.20261117.1"
   - "@cloudflare/workerd-darwin-arm64@1.20261117.1"
   - "@cloudflare/workerd-linux-64@1.20261117.1"
@@ -41,13 +20,17 @@ minimumReleaseAgeExclude:
   - "@cloudflare/workerd-windows-64@1.20261117.1"
   - "@tanstack/query-core@5.108.0"
   - "@tanstack/react-query@5.108.0"
-  - lucide-react@1.74.0
-  - miniflare@5.20261117.0-beta
-  - openai@7.58.0
-  - react-email@6.11.16
-  - workerd@1.20261117.1
+  - "lucide-react@1.74.0"
+  - "miniflare@5.20261117.0-beta"
+  - "openai@7.58.0"
+  - "react-email@6.11.16"
+  - "workerd@1.20261117.1"
   - "@tanstack/ai-cloudflare@1.2.1"
   - "@tanstack/ai@1.5.0"
+# Alchemy uses service identities across packages. Resolve its optional WebSocket
+# peer consistently in the application, stack, and test runner.
+overrides:
+  "alchemy>ws": "8.23.0"
 patchedDependencies:
-  alchemy@2.0.0-beta.83: patches/alchemy@2.0.0-beta.83.patch
+  "@alchemy.run/cloudflare@2.0.0-beta.87": patches/@alchemy.run__cloudflare@2.0.0-beta.87.patch
   cloudflare-drizzle-tracing@1.2.0: patches/cloudflare-drizzle-tracing@1.2.0.patch

@@ -13,10 +13,10 @@
   },
   "dependencies": {
     "@meal-planner/household-api": "workspace:*",
-    "effect": "4.0.5"
+    "effect": "4.1.4"
   },
   "devDependencies": {
-    "@effect/vitest": "4.0.5",
+    "@effect/vitest": "4.1.4",
     "typescript": "7.0.2",
     "vitest": "5.1.0"
   }

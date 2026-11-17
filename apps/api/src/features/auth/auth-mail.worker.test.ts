@@ -1,10 +1,10 @@
+import type * as Cloudflare from "@alchemy.run/cloudflare";
 import {
   EmailAddress,
   HouseholdOrganizationId,
   InvitationId,
   UserId,
 } from "@meal-planner/household-api";
-import type * as Cloudflare from "alchemy/Cloudflare";
 import type { BaseRuntimeContext } from "alchemy/RuntimeContext";
 import { applyD1Migrations, env } from "cloudflare:test";
 import type { AnyD1Database } from "drizzle-orm/d1";

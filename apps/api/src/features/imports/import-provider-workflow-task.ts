@@ -1,4 +1,4 @@
-import { WorkflowStepContext, task } from "alchemy/Cloudflare/Workflows";
+import { WorkflowStepContext, task } from "@alchemy.run/cloudflare/Workflows";
 import { Effect } from "effect";
 
 import type { ImportTraceContext } from "./import-observability.js";

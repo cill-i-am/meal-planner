@@ -25,7 +25,7 @@ interface WorkerMetadataHashModule {
 }
 
 const loadWorkerMetadataHash = async () => {
-  const cloudflareEntry = import.meta.resolve("alchemy/Cloudflare");
+  const cloudflareEntry = import.meta.resolve("@alchemy.run/cloudflare");
   const providerUrl = new URL("Workers/WorkerProvider.js", cloudflareEntry);
   const provider = (await import(providerUrl.href)) as WorkerMetadataHashModule;
 

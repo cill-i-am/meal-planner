@@ -1,3 +1,5 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
+import * as Drizzle from "@alchemy.run/drizzle/Cloudflare";
 import {
   AssociateAdultInvitationPayload,
   BootstrapHouseholdCreatorPayload,
@@ -34,8 +36,6 @@ import {
   recipeInstructionFromText,
 } from "@meal-planner/recipe-domain";
 import { Recipe } from "@meal-planner/recipe-import-api";
-import * as Cloudflare from "alchemy/Cloudflare";
-import * as Drizzle from "alchemy/Drizzle/Cloudflare";
 import { DurableObject } from "cloudflare:workers";
 import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Option, Schema } from "effect";
