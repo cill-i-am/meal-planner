@@ -439,7 +439,7 @@ const streamDiscovery = (
     onAbort: () => settleFailure(failed("outcome_unknown")),
     onAfterToolCall: (_ctx, info) => {
       if (!info.ok) {
-        rejected ??= failed("invalid_output", "output_schema");
+        rejected ??= failed("invalid_output", "tool_call");
       }
     },
     onBeforeToolCall: (_ctx, info) => {
@@ -474,7 +474,7 @@ const streamDiscovery = (
           onExcessProperty: "error",
         })(value);
       } catch {
-        return reject(failed("invalid_output", "output_schema"));
+        return reject(failed("invalid_output", "tool_call"));
       }
     },
     onChunk: (_ctx, chunk) => {
@@ -510,7 +510,11 @@ const streamDiscovery = (
         if (toolCallId === undefined) {
           return reject(failed("invalid_output", "tool_call"));
         }
-        // The SDK defers this until the tool phase and atomic application acceptance succeed.
+        // The adapter and agent loop each report completion. Only the terminal
+        // event after the accepted tool result may reach the participant.
+        if (!emittedReply) {
+          return null;
+        }
         return {
           outcome: { type: "success" },
           runId: input.chat.runId,
