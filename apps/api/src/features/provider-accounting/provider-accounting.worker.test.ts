@@ -1506,13 +1506,13 @@ describe("provider accounting", () => {
 
   it.each([
     {
-      finalizer: Effect.die(new Error("simulated post-dispatch defect")),
+      secondaryCause: Cause.die(new Error("simulated post-dispatch defect")),
       label: "defect",
     },
-    { finalizer: Effect.interrupt, label: "interruption" },
+    { secondaryCause: Cause.interrupt(), label: "interruption" },
   ])(
     "poisons a known-zero marker combined with a $label",
-    async ({ finalizer, label }) => {
+    async ({ secondaryCause, label }) => {
       const repository = makeD1ProviderAccountingRepository(
         makeProviderAccountingDatabase(testEnv.ProviderAccountingDatabase)
       );
@@ -1524,11 +1524,14 @@ describe("provider accounting", () => {
 
       const exit = await Effect.runPromiseExit(
         runAccountedProviderDispatch({
-          invoke: Effect.fail(
-            providerKnownZeroCostFailure({
-              code: "provider_unavailable",
-            })
-          ).pipe(Effect.ensuring(finalizer)),
+          invoke: Effect.failCause(
+            Cause.combine(
+              Cause.fail(
+                providerKnownZeroCostFailure({ code: "provider_unavailable" })
+              ),
+              secondaryCause
+            )
+          ),
           repository,
           reservation: first,
         })

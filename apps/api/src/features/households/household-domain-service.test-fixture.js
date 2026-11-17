@@ -1,4 +1,7 @@
-import { makeDurableObjectBridge, makeWorkerBridge } from "@alchemy.run/cloudflare";
+import {
+  makeDurableObjectBridge,
+  makeWorkerBridge,
+} from "@alchemy.run/cloudflare";
 import { withSqlMigrations } from "@alchemy.run/cloudflare/Bridge";
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 

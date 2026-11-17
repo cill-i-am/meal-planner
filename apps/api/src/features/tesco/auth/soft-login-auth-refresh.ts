@@ -13,8 +13,8 @@ import {
   TescoSoftLoginUnavailable,
 } from "./auth.errors.js";
 import type { TescoSoftLoginRefreshError } from "./auth.errors.js";
-import { TescoAuthCookieHeaderValue } from './auth.model.js';
-import type { TescoAuthCookieHeader } from './auth.model.js';
+import { TescoAuthCookieHeaderValue } from "./auth.model.js";
+import type { TescoAuthCookieHeader } from "./auth.model.js";
 import { authorizationFromDiscoverHtml } from "./soft-login-discover.js";
 
 const SoftLoginMaxRedirects = 10;
