@@ -108,8 +108,8 @@ once, then compose explicit `form.AppField` elements inside shadcn `FieldGroup`.
 Keep the schema, fields and actions visible in each form. Do not select an entire
 screen's structure with a boolean mode or a field-name loop.
 
-The [shared form components](../../../../apps/web/src/components/forms/form.tsx) show
-this pattern for text and password fields. Their [login and signup compositions](../../../../apps/web/src/features/auth/auth-screens.tsx)
+The [shared form components](https://github.com/cill-i-am/meal-planner/blob/386ec7cd/apps/web/src/components/forms/form.tsx) show
+this pattern for text and password fields. Their [login and signup compositions](https://github.com/cill-i-am/meal-planner/blob/386ec7cd/apps/web/src/features/auth/auth-screens.tsx)
 share field behavior while keeping separate draft shapes and validation schemas.
 Use `InputGroupInput`, `InputGroupAddon` and `InputGroupButton` for a password
 visibility control. Let component variants and semantic theme tokens own styling.
@@ -140,8 +140,8 @@ Do not retry mutations unless the command has an explicit idempotency strategy.
 
 Feature hooks own mutation execution, retained requests, result classification,
 and cache invalidation. Screens own local drafts, form composition, and navigation.
-Use the [family creation hook](../../../../apps/web/src/features/family/family-creation.ts)
-and [setup mutation hooks](../../../../apps/web/src/features/family/setup-mutations.ts)
+Use the [family creation hook](https://github.com/cill-i-am/meal-planner/blob/386ec7cd/apps/web/src/features/family/family-creation.ts)
+and [setup mutation hooks](https://github.com/cill-i-am/meal-planner/blob/386ec7cd/apps/web/src/features/family/setup-mutations.ts)
 as the reference. Share schemas, parsers, and field behavior where their meaning
 matches; keep each screen's fields and actions explicit.
 

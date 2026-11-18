@@ -2,7 +2,6 @@ import { randomBytes, randomUUID } from "node:crypto";
 
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Test from "@alchemy.run/test/Vitest";
-import { BrowserObservabilityApi } from "@meal-planner/browser-observability-api";
 import {
   CreateFamily,
   makeFamilyApiClientLayer,
@@ -10,8 +9,6 @@ import {
 } from "@meal-planner/families";
 import { createAuthClient } from "better-auth/client";
 import { Effect, Schema } from "effect";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
-import { HttpApiClient } from "effect/http-api";
 import { afterAll as restoreAfterAll, expect, vi } from "vitest";
 
 import Stack from "../../../../alchemy.run.js";
@@ -45,13 +42,13 @@ test(
   "boots the production graph locally with migrations, routing and native bindings",
   Effect.gen(function* checkNativeStack() {
     const output = yield* stack;
-    if (!output.apiUrl || !output.websiteUrl) {
+    if (!output.apiUrl || !output.gatewayUrl) {
       return yield* Effect.die("Local stack did not expose its URLs");
     }
     expect(new URL(output.apiUrl).hostname).toMatch(
       /^(?:localhost|127\.0\.0\.1)$/u
     );
-    expect(new URL(output.websiteUrl).hostname).toMatch(
+    expect(new URL(output.gatewayUrl).hostname).toMatch(
       /^(?:localhost|127\.0\.0\.1)$/u
     );
     const response = yield* Test.getWhenReady(`${output.apiUrl}/health`);
@@ -70,7 +67,7 @@ test(
       authorization_servers: ["http://localhost:4399/api/auth"],
       resource: "http://localhost:4399/v1",
     });
-    const page = yield* Test.getWhenReady(`${output.websiteUrl}/signup`);
+    const page = yield* Test.getWhenReady(`${output.gatewayUrl}/signup`);
     expect(page.status).toBe(200);
     expect(yield* page.text).toContain("<!DOCTYPE html>");
   }),
@@ -80,17 +77,17 @@ test(
 );
 
 test(
-  "creates and reads a household through the native Website, auth D1 and Durable Object",
+  "creates and reads a household through the public gateway, auth D1 and Durable Object",
   Effect.gen(function* createNativeHousehold() {
-    const { websiteUrl } = yield* stack;
-    if (!websiteUrl) {
-      return yield* Effect.die("Local Website URL is absent");
+    const { gatewayUrl } = yield* stack;
+    if (!gatewayUrl) {
+      return yield* Effect.die("Local gateway URL is absent");
     }
     let cookie = "";
     const auth = createAuthClient({
-      baseURL: websiteUrl,
+      baseURL: gatewayUrl,
       fetchOptions: {
-        headers: { origin: websiteUrl },
+        headers: { origin: gatewayUrl },
         onResponse: ({ response }) => {
           cookie = response.headers
             .getSetCookie()
@@ -127,8 +124,8 @@ test(
     }).pipe(
       Effect.provide(
         makeFamilyApiClientLayer({
-          baseUrl: websiteUrl,
-          headers: { cookie, origin: websiteUrl },
+          baseUrl: gatewayUrl,
+          headers: { cookie, origin: gatewayUrl },
         })
       )
     );
@@ -136,56 +133,3 @@ test(
 );
 
 restoreAfterAll(() => vi.unstubAllEnvs());
-
-test(
-  "accepts typed browser reports through the Website and rejects cross-origin reports",
-  Effect.gen(function* checkBrowserTelemetry() {
-    const { websiteUrl } = yield* stack;
-    if (!websiteUrl) {
-      return yield* Effect.die("Local Website URL is absent");
-    }
-    const client = yield* HttpApiClient.make(BrowserObservabilityApi, {
-      baseUrl: websiteUrl,
-      transformClient: (transport) =>
-        transport.pipe(
-          HttpClient.mapRequest(
-            HttpClientRequest.setHeader("origin", websiteUrl)
-          )
-        ),
-    });
-    const result = yield* client.browserEvents.record({
-      payload: {
-        event: {
-          area: "recipes",
-          durationMs: 42,
-          kind: "api",
-          method: "POST",
-          operation: "recipe-import-intents",
-          outcome: "success",
-          requestId: randomUUID(),
-          status: 201,
-        },
-      },
-      responseMode: "response-only",
-    });
-    expect(result.status).toBe(204);
-    expect(result.headers["x-request-id"]).toBeDefined();
-    const http = yield* HttpClient.HttpClient;
-    const rejected = yield* http.post(`${websiteUrl}/v1/browser-events`, {
-      headers: { origin: "https://other.test" },
-    });
-    expect(rejected.status).toBe(403);
-    const statuses: number[] = [];
-    for (let index = 0; index < 60; index += 1) {
-      const reported = yield* client.browserEvents.record({
-        payload: { event: { area: "home", durationMs: 1, kind: "navigation" } },
-        responseMode: "response-only",
-      });
-      statuses.push(reported.status);
-    }
-    expect(statuses.slice(0, 59)).toEqual(
-      Array.from({ length: 59 }, () => 204)
-    );
-    expect(statuses[59]).toBe(429);
-  }).pipe(Effect.provide(FetchHttpClient.layer))
-);

@@ -26,7 +26,7 @@ password. Creating an invitation or reset record does not prove an email was sen
 
 Use [the form guide](build-a-form.md) and
 [parsing standards](../../coding-standards/references/BOUNDARIES_AND_PARSING.md). Start with the
-[profile form](../../../../apps/web/src/features/household-profiles/profile-fact-form.tsx),
+[profile form](https://github.com/cill-i-am/meal-planner/blob/386ec7cd/apps/web/src/features/household-profiles/profile-fact-form.tsx),
 [profile API types](../../../../packages/household-api/src/profiles.ts) and their tests.
 Check submissions, converted values, expired consent, uncertain save results,
 keyboard use and error messages for the flow you change. Form validity must not

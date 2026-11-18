@@ -106,7 +106,7 @@ const secret = "local-boundary-test-secret-at-least-32-characters";
 const temporaryDirectories: string[] = [];
 let runtime: Miniflare | undefined;
 let persistenceDirectory = "";
-let websiteManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
+let gatewayManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
 let apiManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
 let domainManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
 let providerRecoveryManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
@@ -189,8 +189,8 @@ const makeRuntime = (privateAuditLogs?: string[]) =>
           compatibilityDate,
           compatibilityFlags,
           env: { MEAL_PLANNER_API: { type: "worker", worker: "api" } },
-          manifest: websiteManifest,
-          name: "website",
+          manifest: gatewayManifest,
+          name: "gateway",
         },
       },
       {
@@ -373,16 +373,14 @@ beforeAll(async () => {
   );
   persistenceDirectory = `${temporaryDirectory}/runtime-storage`;
   [
-    websiteManifest,
+    gatewayManifest,
     apiManifest,
     domainManifest,
     providerRecoveryManifest,
     batchQueueManifest,
   ] = await Promise.all([
     bundleWorkerFixture(
-      fileURLToPath(
-        new URL("household-website-service.test-fixture.js", import.meta.url)
-      ),
+      fileURLToPath(new URL("../../public-gateway/worker.ts", import.meta.url)),
       temporaryDirectory
     ),
     bundleWorkerFixture(

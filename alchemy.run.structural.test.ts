@@ -193,36 +193,12 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
     ).toEqual([]);
   });
 
-  it("keeps authentication same-origin through the Website service binding", () => {
+  it("keeps authentication same-origin through the gateway service binding", () => {
     const stackSource = readRepoFile("./alchemy.run.ts");
     const apiWorkerSource = readRepoFile("./apps/api/src/worker.ts");
 
-    expect(stackSource).toContain(
-      'Cloudflare.Website.Vite("MealPlannerWebsite"'
-    );
-    const workerRoutes =
-      stackSource.match(/runWorkerFirst:\s*\[(?<routes>[^\]]*)\]/u)?.groups?.[
-        "routes"
-      ] ?? "";
-    expect(
-      [...workerRoutes.matchAll(/"(?<route>[^"]+)"/gu)].map(
-        (match) => match.groups?.["route"]
-      )
-    ).toEqual(["/api/auth/*", "/v1/*", "/mcp", "/.well-known/oauth-*"]);
-    expect(stackSource).toContain("MEAL_PLANNER_API: api,");
-    expect(stackSource).toContain(
-      'BROWSER_ANALYTICS_TOKEN: browserAnalytics?.siteToken ?? ""'
-    );
-    expect(stackSource).toContain("host: hostname");
-    expect(stackSource).not.toContain("WEB_ANALYTICS_HOST");
-    expect(stackSource).toContain("...websiteSource");
-    const websiteSource = readRepoFile("./apps/web/website-source.ts");
-    expect(websiteSource).toContain('main: "src/worker.ts"');
-    expect(websiteSource).toContain('"../../packages/*/src/**"');
-    expect(websiteSource).toContain("lockfile: true");
-    expect(readRepoFile("./apps/web/scripts/build-worker.ts")).toContain(
-      "...websiteSource"
-    );
+    expect(stackSource).toContain('Cloudflare.Worker("MealPlannerWebsite"');
+    expect(stackSource).toContain("MEAL_PLANNER_API: api");
     expect(apiWorkerSource).toContain("auth.fetchHttpEffect(webRequest)");
     expect(apiWorkerSource).toContain('Config.Redacted("BETTER_AUTH_SECRET")');
   });

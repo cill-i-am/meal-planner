@@ -99,14 +99,6 @@ export default defineConfig({
         "promise/prefer-await-to-callbacks": "off",
       },
     },
-    {
-      files: ["apps/web/**/*.test.ts", "apps/web/**/*.test.tsx"],
-      rules: {
-        // Async operation stubs intentionally satisfy the browser/server boundary.
-        "promise/avoid-new": "off",
-        "require-await": "off",
-      },
-    },
   ],
   rules: {
     "anti-slop/no-conditional-empty-object-spread": "error",
