@@ -1,17 +1,17 @@
 import {
+  WorkflowEvent,
+  makeWorkflowBridge,
+  task,
+  waitForEvent,
+} from "@alchemy.run/cloudflare/Workflows";
+import type { WorkflowInstanceRestartOptions } from "@alchemy.run/cloudflare/Workflows";
+import {
   emptyRecipeDetails,
   recipeIngredientFromText,
   recipeInstructionFromText,
 } from "@meal-planner/recipe-domain";
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
-import {
-  WorkflowEvent,
-  makeWorkflowBridge,
-  task,
-  waitForEvent,
-} from "alchemy/Cloudflare/Workflows";
-import type { WorkflowInstanceRestartOptions } from "alchemy/Cloudflare/Workflows";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Schema } from "effect";
@@ -146,9 +146,7 @@ const decodeRunId = Schema.decodeUnknownSync(ProviderAccountingRunId);
 const testRuntimeContext = RuntimeContext.of({
   Type: "TestRuntimeContext",
   env: {},
-  get: <T>() =>
-    // eslint-disable-next-line unicorn/no-useless-undefined -- The Alchemy runtime contract explicitly represents a missing binding with undefined.
-    Effect.succeed<T | undefined>(undefined),
+  get: <T>() => Effect.succeed<T | undefined>(undefined),
   id: "installed-provider-workflow-test",
   set: (id) => Effect.succeed(id),
 });

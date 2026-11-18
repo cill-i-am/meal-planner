@@ -170,8 +170,7 @@ try {
   const transport = new StreamableHTTPClientTransport(url, {
     requestInit: { headers: { authorization: `Bearer ${executorToken}` } },
   });
-  // SDK 1.32.1's concrete getter includes undefined; its Transport interface omits it.
-  // @ts-expect-error -- Upstream exactOptionalPropertyTypes mismatch.
+
   await client.connect(transport);
   const listed = await client.listTools();
   assert.deepEqual(listed.tools.map((tool) => tool.name).toSorted(), [

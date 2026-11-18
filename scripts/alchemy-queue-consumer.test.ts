@@ -1,16 +1,16 @@
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
-import { RuntimeContext } from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
-import { CloudflareEnvironment } from "alchemy/Cloudflare";
+import * as Cloudflare from "@alchemy.run/cloudflare";
+import { CloudflareEnvironment } from "@alchemy.run/cloudflare";
 import {
   consumeQueueMessages,
   Consumer,
   ConsumerProviderLive,
   EventSourceLive,
-} from "alchemy/Cloudflare/Queues";
-import type { ConsumerSettings } from "alchemy/Cloudflare/Queues";
+} from "@alchemy.run/cloudflare/Queues";
+import type { ConsumerSettings } from "@alchemy.run/cloudflare/Queues";
+import { RuntimeContext } from "alchemy";
 import * as Output from "alchemy/Output";
 import type * as Plan from "alchemy/Plan";
 import * as State from "alchemy/State";
@@ -143,7 +143,7 @@ const desiredSettingsWithProviderDefaults: ConsumerSettings = {
 };
 
 const loadQueueModules = async (): Promise<LoadedQueueModules> => {
-  const cloudflareEntry = import.meta.resolve("alchemy/Cloudflare");
+  const cloudflareEntry = import.meta.resolve("@alchemy.run/cloudflare");
   const consumerUrl = new URL("Queues/Consumer.js", cloudflareEntry);
   const requireFromAlchemy = createRequire(consumerUrl);
   const credentialsUrl = pathToFileURL(
@@ -161,11 +161,8 @@ const loadQueueModules = async (): Promise<LoadedQueueModules> => {
   return { credentialsModule, queuesModule };
 };
 
-const loadTestCore = (): Promise<TestCoreModule> => {
-  const stackEntry = import.meta.resolve("alchemy/Stack");
-  const coreUrl = new URL("Test/Core.js", stackEntry);
-  return import(coreUrl.href) as Promise<TestCoreModule>;
-};
+const loadTestCore = (): Promise<TestCoreModule> =>
+  import(import.meta.resolve("@alchemy.run/test/Core"));
 
 const decodeRequestBody = (body: HttpBody.HttpBody): QueueRequestBody => {
   if (body._tag !== "Uint8Array") {

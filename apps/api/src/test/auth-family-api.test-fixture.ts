@@ -1,6 +1,6 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import { HouseholdOrganizationId } from "@meal-planner/household-api";
 import { RuntimeContext } from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
@@ -65,7 +65,6 @@ export { AgentConversation } from "./agent-conversation-control.test-fixture.js"
 const context = RuntimeContext.of({
   Type: "AuthFamilyE2E",
   env: {},
-  // oxlint-disable-next-line unicorn/no-useless-undefined -- Effect.succeed requires its value argument.
   get: <T>() => Effect.succeed<T | undefined>(undefined),
   id: "auth-family-e2e",
   set: (id) => Effect.succeed(id),

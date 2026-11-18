@@ -1,5 +1,8 @@
-import { makeDurableObjectBridge, makeWorkerBridge } from "alchemy/Cloudflare";
-import { withSqlMigrations } from "alchemy/Cloudflare/Bridge";
+import {
+  makeDurableObjectBridge,
+  makeWorkerBridge,
+} from "@alchemy.run/cloudflare";
+import { withSqlMigrations } from "@alchemy.run/cloudflare/Bridge";
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 
 import { householdSqlMigrations } from "../../test/household-sql-migrations.test-fixture.js";

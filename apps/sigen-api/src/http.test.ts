@@ -595,7 +595,6 @@ describe("authenticated HTTP and MCP parity", () => {
       }
     );
     try {
-      // @ts-expect-error SDK 1.32.1's concrete transport includes undefined in sessionId; Transport omits it under exactOptionalPropertyTypes.
       await client.connect(transport);
       const tools = await client.listTools();
       expect(tools.tools.map((tool) => tool.name)).toEqual(

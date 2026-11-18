@@ -194,7 +194,7 @@ describe("private application callbacks for native chat", () => {
     }
     expect(rejected).toBeInstanceOf(PrivateDiscoveryFailure);
     if (!(rejected instanceof PrivateDiscoveryFailure)) {
-      throw new Error("Expected schema failure");
+      throw new TypeError("Expected schema failure");
     }
     await prepared.fail(rejected);
     expect(fixture.retained()).toMatchObject({

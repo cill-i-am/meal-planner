@@ -1,3 +1,5 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
+import * as Drizzle from "@alchemy.run/drizzle/Cloudflare";
 import {
   PersonProfile,
   InterviewProfileOutcome,
@@ -25,8 +27,6 @@ import {
   RecipeImportTimeline,
   SucceededRecipeImportIntent,
 } from "@meal-planner/recipe-import-api";
-import * as Cloudflare from "alchemy/Cloudflare";
-import * as Drizzle from "alchemy/Drizzle/Cloudflare";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Clock, Effect, Option, Schema } from "effect";
 
@@ -211,7 +211,6 @@ export const makeHouseholdObjectRuntime = (
         identity: identityGenerator,
       });
 
-    // eslint-disable-next-line sort-keys -- RPC methods follow the household capability lifecycle.
     return Effect.succeed({
       associateAdultInvitation: (
         untrustedInput: HouseholdAssociateAdultInvitationInput

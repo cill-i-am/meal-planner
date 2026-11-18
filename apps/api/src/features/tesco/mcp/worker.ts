@@ -1,5 +1,5 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import { RuntimeContext } from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
 import { Config, Effect } from "effect";
 import { HttpServerRequest } from "effect/http";
 

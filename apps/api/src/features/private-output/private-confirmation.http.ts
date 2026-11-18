@@ -50,11 +50,8 @@ const RequestGuardLive = Layer.succeed(
       }
       return yield* httpEffect;
     }).pipe(
-      // eslint-disable-next-line promise/prefer-await-to-then, promise/prefer-await-to-callbacks -- Effect catches typed schema failures without creating a Promise bridge.
-      Effect.catch((error) =>
-        HttpApiError.HttpApiSchemaError.is(error)
-          ? Effect.fail(PrivateConfirmationForbidden.make({}))
-          : Effect.fail(error)
+      Effect.catchIf(HttpApiError.HttpApiSchemaError.is, () =>
+        Effect.fail(PrivateConfirmationForbidden.make({}))
       ),
       Effect.catchCauseIf(
         (cause) => Cause.hasDies(cause) && !Cause.hasInterrupts(cause),

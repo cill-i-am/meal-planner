@@ -1,11 +1,10 @@
-import { Effect, Layer, Option, Ref } from "effect";
-import { Headers, HttpClient } from "effect/http";
+import { Clock, Effect, Layer, Option, Redacted, Ref, Schema } from "effect";
+import { Cookies, Headers, HttpClient } from "effect/http";
 
 import type { TescoSoftLoginConfig } from "../tesco.config.js";
 import {
-  cookieHeaderFromCookies,
   cookiesFromHeader,
-  oauthExpiryFromCookies,
+  oauthExpiryFromCookieHeader,
 } from "./auth-cookies.js";
 import { TescoAuthRefresh } from "./auth-refresh.port.js";
 import {
@@ -14,6 +13,7 @@ import {
   TescoSoftLoginUnavailable,
 } from "./auth.errors.js";
 import type { TescoSoftLoginRefreshError } from "./auth.errors.js";
+import { TescoAuthCookieHeaderValue } from "./auth.model.js";
 import type { TescoAuthCookieHeader } from "./auth.model.js";
 import { authorizationFromDiscoverHtml } from "./soft-login-discover.js";
 
@@ -32,7 +32,14 @@ export const makeTescoSoftLoginAuthRefreshLive = (
           const initialCookies = yield* cookiesFromHeader(cookieHeader).pipe(
             Effect.mapError(() => new TescoCredentialsRejected())
           );
-          const cookieRef = yield* Ref.make(initialCookies);
+          const cookieRef = yield* Ref.make(
+            Cookies.mergeIntoArray(
+              [],
+              config.signInUrl.origin,
+              initialCookies,
+              yield* Clock.currentTimeMillis
+            )
+          );
           const refreshClient = client.pipe(
             HttpClient.withCookiesRef(cookieRef)
           );
@@ -96,13 +103,20 @@ export const makeTescoSoftLoginAuthRefreshLive = (
             SoftLoginMaxRedirects
           );
           const authorization = yield* authorizationFromDiscoverHtml(html);
-          const refreshedCookies = yield* Ref.get(cookieRef);
-          const refreshedCookieHeader = yield* cookieHeaderFromCookies(
-            refreshedCookies
-          ).pipe(Effect.mapError(() => new TescoSoftLoginResponseInvalid()));
-          const expiry = yield* oauthExpiryFromCookies(refreshedCookies).pipe(
+          const header = Cookies.toRequestCookieHeader(
+            yield* Ref.get(cookieRef),
+            config.refreshFromUrl.href,
+            yield* Clock.currentTimeMillis
+          );
+          const refreshedCookieHeader = yield* Schema.decodeUnknownEffect(
+            TescoAuthCookieHeaderValue
+          )(header).pipe(
+            Effect.map(Redacted.make),
             Effect.mapError(() => new TescoSoftLoginResponseInvalid())
           );
+          const expiry = yield* oauthExpiryFromCookieHeader(
+            refreshedCookieHeader
+          ).pipe(Effect.mapError(() => new TescoSoftLoginResponseInvalid()));
 
           return {
             accessTokenExpiresAt: expiry.accessTokenExpiresAt,

@@ -3,8 +3,8 @@ import { rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node";
-import * as Cloudflare from "alchemy/Cloudflare";
 import { Effect, Layer, Stream } from "effect";
 import * as HttpServer from "effect/http/HttpServer";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";

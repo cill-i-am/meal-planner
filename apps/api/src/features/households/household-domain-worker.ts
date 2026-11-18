@@ -1,3 +1,4 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import type {
   HouseholdProfileRejected,
   PersonProfile,
@@ -19,7 +20,6 @@ import type {
   SucceededRecipeImportIntent,
 } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
 import { Effect, Schema } from "effect";
 
 import { workerObservability } from "../../infrastructure/worker-observability.js";

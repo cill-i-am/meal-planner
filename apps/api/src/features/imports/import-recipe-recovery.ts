@@ -1,4 +1,4 @@
-import type * as Cloudflare from "alchemy/Cloudflare";
+import type * as Cloudflare from "@alchemy.run/cloudflare";
 import { Cause, Data, Effect, Schedule, Schema } from "effect";
 import { flow } from "effect/Function";
 

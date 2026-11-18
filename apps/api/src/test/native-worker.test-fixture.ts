@@ -1,6 +1,11 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  makeSourceContext,
+  resolveSource,
+} from "@alchemy.run/cloudflare/Workers";
+import { readMigrationRecords } from "@alchemy.run/sql/Migrations";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   Artifacts,
@@ -8,8 +13,6 @@ import {
   makeScopedArtifacts,
 } from "alchemy/Artifacts";
 import type * as Bundle from "alchemy/Bundle";
-import { makeSourceContext, resolveSource } from "alchemy/Cloudflare/Workers";
-import { readMigrationRecords } from "alchemy/SQL/Migrations/index";
 import { Effect, Schema } from "effect";
 import type { MiniflareWorkerConfig } from "miniflare";
 

@@ -57,7 +57,6 @@ const recipeImportReview = (
   },
 });
 
-/* eslint-disable no-use-before-define -- The cumulative tracer is grouped with its person fixture; runtime helpers are initialized before tests execute. */
 describe("household person registry on real Durable Object SQLite", () => {
   it("renames a person once and rejects stale or changed retries", async () => {
     const scope = {
@@ -599,7 +598,7 @@ describe("household person registry on real Durable Object SQLite", () => {
     });
   });
 });
-/* eslint-enable no-use-before-define */
+
 const fixturePath = fileURLToPath(
   new URL("household-object-host.test-fixture.ts", import.meta.url)
 );

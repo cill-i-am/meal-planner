@@ -143,7 +143,7 @@ const decodeImportBody = (body: HttpBody.HttpBody): D1ImportBody =>
   decodeRequestBody(body) as unknown as D1ImportBody;
 
 const loadAlchemyD1Modules = async (): Promise<LoadedAlchemyD1Modules> => {
-  const cloudflareEntry = import.meta.resolve("alchemy/Cloudflare");
+  const cloudflareEntry = import.meta.resolve("@alchemy.run/cloudflare");
   const applyMigrationsUrl = new URL("D1/ApplyMigrations.js", cloudflareEntry);
   const requireFromAlchemy = createRequire(applyMigrationsUrl);
   const credentialsUrl = pathToFileURL(
@@ -155,7 +155,7 @@ const loadAlchemyD1Modules = async (): Promise<LoadedAlchemyD1Modules> => {
       import(applyMigrationsUrl.href) as Promise<ApplyMigrationsModule>,
       import(credentialsUrl.href) as Promise<CredentialsModule>,
       import(
-        new URL("../SQL/Migrations/AlchemyFormat.js", cloudflareEntry).href
+        import.meta.resolve("@alchemy.run/sql/Migrations/AlchemyFormat")
       ) as Promise<AlchemyFormatModule>,
     ]);
 

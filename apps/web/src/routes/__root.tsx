@@ -28,7 +28,6 @@ const BrowserObservability = () => {
 };
 
 const RootDocument = () => {
-  // eslint-disable-next-line no-use-before-define -- TanStack invokes this component after Route initialization.
   const { browserAnalyticsToken } = Route.useLoaderData();
   return (
     <html lang="en">

@@ -1,10 +1,9 @@
+import { WorkerBundle } from "@alchemy.run/cloudflare/Workers/Sources/Rolldown";
 import { NodeServices } from "@effect/platform-node";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import { parseSync } from "oxc-parser";
 import { describe, expect, it } from "vitest";
-
-import { WorkerBundle } from "../node_modules/alchemy/lib/Cloudflare/Workers/Sources/Rolldown.js";
 
 describe("API Worker bundle", () => {
   it(

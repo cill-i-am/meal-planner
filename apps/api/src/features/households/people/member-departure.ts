@@ -1,9 +1,9 @@
+import type * as Cloudflare from "@alchemy.run/cloudflare";
 import {
   HouseholdAssociationVersion,
   HouseholdMemberDepartureOperationId,
   HouseholdOrganizationId,
 } from "@meal-planner/household-api";
-import type * as Cloudflare from "alchemy/Cloudflare";
 import { Cause, Data, Effect, Schema } from "effect";
 
 import { HouseholdDigest } from "../shared-kernel/authority-services.js";

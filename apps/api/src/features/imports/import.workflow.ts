@@ -1,6 +1,6 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
 import {
   Cause,
   Context,
@@ -141,7 +141,6 @@ import { AcquisitionFinalizationResult } from "./import.repository.js";
 import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
 
 export const AcquisitionTaskStepConfig = {
-  // eslint-disable-next-line sort-keys -- Reviewer-frozen platform retry fields stay in exact documented order.
   retries: { limit: 3, delay: "2 seconds", backoff: "exponential" },
   timeout: "17 minutes",
 } as const;
@@ -1324,7 +1323,9 @@ const isNativeWorkflowPreStartRefusal = (cause: Cause.Cause<unknown>) => {
   const defect = Result.getOrUndefined(Cause.findDefect(cause));
   return (
     defect instanceof Error &&
-    defect.message === nativeWorkflowPreStartRefusalMessage
+    (defect.message === nativeWorkflowPreStartRefusalMessage ||
+      defect.message ===
+        `WorkflowError: ${nativeWorkflowPreStartRefusalMessage}`)
   );
 };
 

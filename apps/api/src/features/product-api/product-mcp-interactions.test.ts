@@ -351,10 +351,9 @@ describe("MCP import HTTP transport with schema-validated domain responses", () 
           ),
         signal: owner.signal,
       }
-    ).then(
-      () => finalized,
-      () => finalized
-    );
+    )
+      .then(() => finalized)
+      .catch(() => finalized);
     await admitted.promise;
     owner.abort();
     const finalizedBeforeCompletion = await completed;

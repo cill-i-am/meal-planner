@@ -17,7 +17,6 @@ const authorizationSearch = createIsomorphicFn()
   .server(() => new URL(getRequest().url).search);
 
 const ConsentRoute = () => {
-  // eslint-disable-next-line no-use-before-define -- TanStack invokes this component after Route initialization.
   const { authorizationRequest } = Route.useRouteContext();
   return <OAuthConsentPage request={authorizationRequest} />;
 };

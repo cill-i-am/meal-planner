@@ -1,4 +1,4 @@
-import { WorkflowStepContext } from "alchemy/Cloudflare/Workflows";
+import { WorkflowStepContext } from "@alchemy.run/cloudflare/Workflows";
 import { Effect, Schema } from "effect";
 import { describe, expect, it, vi } from "vitest";
 

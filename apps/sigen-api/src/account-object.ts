@@ -1,3 +1,4 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import {
   EnabledActiveProfileLimits,
   EnabledOperations,
@@ -33,7 +34,6 @@ import {
   makeRequestBudget,
 } from "@meal-planner/sigen/request-budget";
 import type { RuntimeContext } from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
 import { Config, Effect, Layer, Redacted, Schema } from "effect";
 import { FetchHttpClient, HttpClient } from "effect/http";
 

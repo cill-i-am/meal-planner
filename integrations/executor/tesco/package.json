@@ -4,7 +4,7 @@
   "description": "Private Irish Tesco shopping through Cloudflare, with an approval-gated handoff to Tesco payment.",
   "type": "module",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.32.1",
-    "apps": "0.0.1-beta.95"
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "apps": "0.0.1-beta.141"
   }
 }

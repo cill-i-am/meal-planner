@@ -7,7 +7,6 @@ import {
 import { UserId } from "@meal-planner/household-api";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { applyD1Migrations, env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
@@ -64,7 +63,6 @@ const makeFixture = (
   );
   // Capture dependencies before authorization, including the absent reference.
   // The production dispatcher restores the verified grant inside this context.
-  // eslint-disable-next-line unicorn/no-useless-undefined -- The captured context must explicitly contain an absent grant to prove restoration wins.
   const capturedDependencies = Context.make(DelegatedAccess, undefined);
   let calls = 0;
   const dispatch = (request: Request) =>
@@ -178,26 +176,7 @@ const connect = async (fixture: Fixture, token: string, cookie?: string) => {
       requestInit: { headers },
     }
   );
-  await client.connect({
-    close: () => transport.close(),
-    // eslint-disable-next-line accessor-pairs -- The MCP SDK assigns transport callbacks; this adapter only forwards those assignments.
-    set onclose(handler: NonNullable<Transport["onclose"]>) {
-      // eslint-disable-next-line unicorn/prefer-add-event-listener -- The SDK transport exposes callback properties, not EventTarget listeners.
-      transport.onclose = handler;
-    },
-    // eslint-disable-next-line accessor-pairs -- The MCP SDK assigns transport callbacks; this adapter only forwards those assignments.
-    set onerror(handler: NonNullable<Transport["onerror"]>) {
-      // eslint-disable-next-line unicorn/prefer-add-event-listener -- The SDK transport exposes callback properties, not EventTarget listeners.
-      transport.onerror = handler;
-    },
-    // eslint-disable-next-line accessor-pairs -- The MCP SDK assigns transport callbacks; this adapter only forwards those assignments.
-    set onmessage(handler: NonNullable<Transport["onmessage"]>) {
-      // eslint-disable-next-line unicorn/prefer-add-event-listener -- The SDK transport exposes callback properties, not EventTarget listeners.
-      transport.onmessage = handler;
-    },
-    send: (message, options) => transport.send(message, options),
-    start: () => transport.start(),
-  });
+  await client.connect(transport);
   return client;
 };
 

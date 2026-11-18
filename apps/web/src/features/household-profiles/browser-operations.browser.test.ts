@@ -121,7 +121,7 @@ it.each([
       );
     } catch (error) {
       if (!(error instanceof Error)) {
-        throw new Error("Expected query failure", { cause: error });
+        throw new TypeError("Expected query failure", { cause: error });
       }
       expect(profileOperationFailure(error)?.code).toBe(code);
       expect(isAmbiguousProfileError(error)).toBe(uncertain);

@@ -1,4 +1,4 @@
-import type { WorkerProps } from "alchemy/Cloudflare/Workers";
+import type { WorkerProps } from "@alchemy.run/cloudflare/Workers";
 
 /** Full native request and binding visibility; Effect hosts also provide Telemetry. */
 export const workerObservability = {

@@ -1,0 +1,1235 @@
+diff --git a/lib/D1/ApplyMigrations.d.ts b/lib/D1/ApplyMigrations.d.ts
+index 01a3ebe..ee54ab0 100644
+--- a/lib/D1/ApplyMigrations.d.ts
++++ b/lib/D1/ApplyMigrations.d.ts
+@@ -27,4 +27,12 @@ export type D1SqlExecutor<E = unknown, R = never> = (sql: string) => Effect.Effe
+  * behavior).
+  */
+ export declare const makeD1MigrationExecutor: <E>(raw: D1SqlExecutor<E>) => SqlExecutor;
+-//# sourceMappingURL=ApplyMigrations.d.ts.map
+\ No newline at end of file
++//# sourceMappingURL=ApplyMigrations.d.ts.map
++export declare const makeCloudD1MigrationExecutor: (options: {
++  accountId: string;
++  databaseId: string;
++}) => Effect.Effect<
++  SqlExecutor,
++  never,
++  import("@distilled.cloud/cloudflare/d1").CloudflareOpContext
++>;
+\ No newline at end of file
+diff --git a/lib/D1/ApplyMigrations.js b/lib/D1/ApplyMigrations.js
+index 9d40778..237ab28 100644
+--- a/lib/D1/ApplyMigrations.js
++++ b/lib/D1/ApplyMigrations.js
+@@ -1,6 +1,8 @@
+ import { inlineSqlParams, MigrationError } from "@alchemy.run/sql/Migrations";
+ import * as Retry from "@distilled.cloud/cloudflare/Retry";
+ import { isTransientError } from "@distilled.cloud/core/category";
++import * as d1 from "@distilled.cloud/cloudflare/d1";
++import { importD1Database } from "./ImportDatabase.js";
+ import * as Effect from "effect/Effect";
+ /**
+  * Adapt a raw D1 executor into the registry's {@link SqlExecutor} contract
+@@ -30,4 +32,21 @@ export const makeD1MigrationExecutor = (raw) => ({
+         transient: isTransientError(cause),
+     }))),
+ });
+-//# sourceMappingURL=ApplyMigrations.js.map
+\ No newline at end of file
++/** Preserve compound SQL and commit each migration with its ledger atomically. */
++export const makeCloudD1MigrationExecutor = (options) => Effect.gen(function* () {
++    const queryDb = yield* d1.queryDatabase;
++    const services = yield* Effect.context();
++    const executor = makeD1MigrationExecutor((sql) => queryDb({ ...options, sql }));
++    return {
++        ...executor,
++        batch: (statements) => importD1Database({
++            ...options,
++            sqlData: statements
++                .map((statement) => statement.trim())
++                .filter((statement) => statement.length > 0)
++                .map((statement) => (statement.endsWith(";") ? statement : `${statement};`))
++                .join("\n"),
++        }).pipe(Effect.provideContext(services), Effect.asVoid, Effect.mapError((cause) => new MigrationError({ message: "D1 migration import failed", cause }))),
++    };
++});
++//# sourceMappingURL=ApplyMigrations.js.map
+diff --git a/lib/D1/Database.js b/lib/D1/Database.js
+index 827c7d4..347ffbc 100644
+--- a/lib/D1/Database.js
++++ b/lib/D1/Database.js
+@@ -9,14 +9,13 @@ import * as Provider from "alchemy/Provider";
+ import { isResourceOfType, Resource } from "alchemy/Resource";
+ import { recordsEqual } from "alchemy/Util/equal";
+ import * as Effect from "effect/Effect";
+-import * as HttpClient from "effect/http/HttpClient";
+ import * as Layer from "effect/Layer";
+ import * as Option from "effect/Option";
+ import * as Stream from "effect/Stream";
+ import { CloudflareEnvironment } from "../CloudflareEnvironment.js";
+ import { localAccountId } from "../LocalAccount.js";
+ import { generateLocalId, LOCAL_PROVIDERS_URL, localRuntimeServices } from "../LocalRuntime.js";
+-import { makeD1MigrationExecutor } from "./ApplyMigrations.js";
++import { makeCloudD1MigrationExecutor, makeD1MigrationExecutor } from "./ApplyMigrations.js";
+ import { cloneDatabase } from "./CloneDatabase.js";
+ import { importD1Database } from "./ImportDatabase.js";
+ import { localD1IsEmpty, withLocalD1Executor, withLocalD1Query } from "./LocalD1Gateway.js";
+@@ -396,8 +395,7 @@ export const ProviderLive = () => Provider.succeed(Database, {
+                 input: migrationsInput,
+                 stamped: stampedOf(output),
+                 withExecutor: (apply) => Effect.gen(function* () {
+-                    const queryDb = yield* d1.queryDatabase;
+-                    yield* apply(makeD1MigrationExecutor((sql) => queryDb({ accountId: acct, databaseId, sql })));
++                    yield* apply(yield* makeCloudD1MigrationExecutor({ accountId: acct, databaseId }));
+                 }),
+             })
+             : undefined;
+@@ -580,4 +578,4 @@ const resolveCloneSource = (source, accountId) => Effect.gen(function* () {
+     }
+     return yield* Effect.die("Invalid clone source: must provide databaseId or name");
+ });
+-//# sourceMappingURL=Database.js.map
+\ No newline at end of file
++//# sourceMappingURL=Database.js.map
+diff --git a/lib/Queues/Consumer.d.ts b/lib/Queues/Consumer.d.ts
+index 407fb70..ed56970 100644
+--- a/lib/Queues/Consumer.d.ts
++++ b/lib/Queues/Consumer.d.ts
+@@ -35,6 +35,7 @@ export type ConsumerProps = {
+      * dead-letter queue its own consumer.
+      */
+     deadLetterQueue?: string;
++    deadLetterQueueId?: string;
+     /**
+      * Consumer settings.
+      */
+diff --git a/lib/Queues/Consumer.js b/lib/Queues/Consumer.js
+index 742c953..7bf2eb1 100644
+--- a/lib/Queues/Consumer.js
++++ b/lib/Queues/Consumer.js
+@@ -146,6 +146,22 @@ const findWorkerConsumer = (acct, queueId) => queues.listConsumers.items({ accou
+ // consumer yet" — the caller falls through to createConsumer, which
+ // retries QueueNotFound until the queue propagates.
+ Effect.catchTag("QueueNotFound", () => Effect.undefined));
++const observeWorkerConsumer = Effect.fn(function* (options) {
++    if (isLiveId(options.consumerId)) {
++        const fetched = yield* queues
++            .getConsumer({
++            accountId: options.accountId,
++            queueId: options.queueId,
++            consumerId: options.consumerId,
++        })
++            .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.succeed(undefined)));
++        const observed = fetched ? toObserved(fetched) : undefined;
++        if (observed) {
++            return observed;
++        }
++    }
++    return yield* findWorkerConsumer(options.accountId, options.queueId);
++});
+ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+     // The `consumerId` is not marked as stable because if you start in dev mode, the ID will change on first deploy.
+     stables: ["accountId"],
+@@ -185,13 +201,13 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+         Effect.catchTag(["QueueNotFound", "InvalidRoute"], () => Effect.succeed([]))), { concurrency: 10 });
+         return rows.flat();
+     }),
+-    diff: Effect.fn(function* ({ olds, news, output }) {
++    diff: Effect.fn(function* ({ news, output }) {
+         const { accountId } = yield* yield* CloudflareEnvironment;
+         if (!isResolved(news))
+             return undefined;
+-        // If either contain `dev:` IDs, we need to update to live ones.
+-        // The live resource doesn't exist yet, so there's no need to replace even when we otherwise would.
+-        if (!isLiveId(output?.queueId) || !isLiveId(output?.consumerId)) {
++        // A dev queue does not exist in the live account, so there is
++        // nothing physical to observe yet.
++        if (!isLiveId(output?.queueId)) {
+             return { action: "update" };
+         }
+         if ((output?.accountId ?? accountId) !== accountId) {
+@@ -202,6 +218,19 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+         if (output?.queueId && news.queueId !== output.queueId) {
+             return { action: "replace", deleteFirst: true };
+         }
++        // Stable resources are diffed directly from persisted state by
++        // Plan.make; provider.read is not called on that path. Observe the
++        // physical consumer here so out-of-band DLQ/settings drift cannot be
++        // hidden by optimistic cached props. This is read-only and remains
++        // Consumer-scoped.
++        const observed = yield* observeWorkerConsumer({
++            accountId,
++            queueId: output.queueId,
++            consumerId: output.consumerId,
++        });
++        if (!observed || !isLiveId(output.consumerId) || observed.consumerId !== output.consumerId) {
++            return { action: "update" };
++        }
+         // Settings / DLQ / script drift is an update. We DON'T
+         // escalate scriptName changes to `replace` because the
+         // engine resolves cross-resource Output<string> refs (a
+@@ -213,13 +242,14 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+         // we detect script drift and rebuild the consumer in
+         // place (Cloudflare's PUT silently ignores `script_name`
+         // changes, so reconcile does delete-then-create).
+-        if (JSON.stringify(olds.settings ?? {}) !== JSON.stringify(news.settings ?? {}) ||
+-            (olds.deadLetterQueue ?? undefined) !== (news.deadLetterQueue ?? undefined) ||
+-            (output?.scriptName !== undefined && news.scriptName !== output.scriptName)) {
++        if (JSON.stringify(normalizeConsumerSettings(observed.settings)) !==
++            JSON.stringify(normalizeConsumerSettings(news.settings)) ||
++            observed.deadLetterQueue !== (news.deadLetterQueue ?? undefined) ||
++            (observed.scriptName !== undefined && news.scriptName !== observed.scriptName)) {
+             return { action: "update" };
+         }
+     }),
+-    reconcile: Effect.fn(function* ({ news, output }) {
++    reconcile: Effect.fn(function* ({ news, olds, output }) {
+         const { accountId } = yield* yield* CloudflareEnvironment;
+         const acct = output?.accountId ?? accountId;
+         // Only use `output.queueId` if it's a live ID (i.e. no `dev:` prefix).
+@@ -259,7 +289,7 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+         if (!observed) {
+             observed = yield* findWorkerConsumer(acct, queueId);
+         }
+-        // Owned consumer pointing at a different script: rebuild
++        // Owned consumer pointing at a different scriptName: rebuild
+         // it in place. Cloudflare's PUT consumer silently ignores
+         // `script_name` changes on existing consumers (the live
+         // record stays pinned to the original worker), and the
+@@ -395,19 +425,84 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+             while: (e) => e._tag === "QueueHandlerMissing",
+             schedule: queueHandlerReadinessSchedule,
+         }));
+-        yield* queues.getConsumer({ accountId: acct, queueId, consumerId }).pipe(Effect.flatMap((fetched) => toObserved(fetched)?.scriptName === news.scriptName
+-            ? Effect.void
+-            : Effect.fail(new ConsumerScriptUnbound({ scriptName: news.scriptName }))), Effect.catchTag("ConsumerNotFound", () => Effect.fail(new ConsumerScriptUnbound({ scriptName: news.scriptName }))), Effect.retry({
++        let converged = yield* queues.getConsumer({ accountId: acct, queueId, consumerId }).pipe(Effect.flatMap((fetched) => {
++            const observed = toObserved(fetched);
++            return observed?.scriptName === news.scriptName
++                ? Effect.succeed(observed)
++                : Effect.fail(new ConsumerScriptUnbound({ scriptName: news.scriptName }));
++        }), Effect.catchTag("ConsumerNotFound", () => Effect.fail(new ConsumerScriptUnbound({ scriptName: news.scriptName }))), Effect.retry({
+             while: (e) => e._tag === "ConsumerScriptUnbound",
+             schedule: queueHandlerReadinessSchedule,
+         }));
++        const desiredDeadLetterQueue = news.deadLetterQueue ?? undefined;
++        const deadLetterQueueIdentityUnchanged = isLiveId(olds?.deadLetterQueueId) &&
++            isLiveId(news.deadLetterQueueId) &&
++            olds?.deadLetterQueueId === news.deadLetterQueueId;
++        const settingsConverged = JSON.stringify(normalizeConsumerSettings(converged.settings)) ===
++            JSON.stringify(normalizeConsumerSettings(news.settings));
++        const canReplaceForMissingDeadLetterQueue = deadLetterQueueIdentityUnchanged &&
++            owned &&
++            observed?.consumerId === consumerId &&
++            output?.consumerId === consumerId &&
++            observed.scriptName === news.scriptName &&
++            observed.deadLetterQueue === undefined &&
++            JSON.stringify(normalizeConsumerSettings(observed.settings)) ===
++                JSON.stringify(normalizeConsumerSettings(news.settings)) &&
++            desiredDeadLetterQueue !== undefined &&
++            converged.consumerId === consumerId &&
++            converged.scriptName === news.scriptName &&
++            converged.deadLetterQueue === undefined &&
++            settingsConverged;
++        if (canReplaceForMissingDeadLetterQueue) {
++            yield* verifyConsumerReplacementSafety({
++                accountId: acct,
++                consumerId,
++                deadLetterQueueId: news.deadLetterQueueId,
++                deadLetterQueueName: desiredDeadLetterQueue,
++                queueId,
++                scriptName: news.scriptName,
++                settings: news.settings,
++            });
++            yield* queues.deleteConsumer({
++                accountId: acct,
++                queueId,
++                consumerId,
++            });
++            yield* waitForConsumerDeletion(acct, queueId, consumerId);
++            const replacement = yield* queues.createConsumer({
++                accountId: acct,
++                queueId,
++                scriptName: news.scriptName,
++                type: "worker",
++                deadLetterQueue: desiredDeadLetterQueue,
++                settings: news.settings,
++            });
++            const replacementConsumerId = replacement.consumerId;
++            if (!isLiveId(replacementConsumerId) || replacementConsumerId === consumerId) {
++                return yield* Effect.fail("ConsumerReplacementUnconverged");
++            }
++            converged = yield* readConvergedConsumer({
++                accountId: acct,
++                consumerId: replacementConsumerId,
++                queueId,
++                scriptName: news.scriptName,
++            });
++            consumerId = replacementConsumerId;
++        }
++        if (converged.consumerId !== consumerId ||
++            converged.scriptName !== news.scriptName ||
++            converged.deadLetterQueue !== desiredDeadLetterQueue ||
++            JSON.stringify(normalizeConsumerSettings(converged.settings)) !==
++                JSON.stringify(normalizeConsumerSettings(news.settings))) {
++            return yield* Effect.fail("ConsumerUnconverged");
++        }
+         return {
+-            consumerId,
++            consumerId: converged.consumerId,
+             queueId,
+-            scriptName: news.scriptName,
++            scriptName: converged.scriptName,
+             accountId: acct,
+-            deadLetterQueue: news.deadLetterQueue,
+-            settings: news.settings,
++            deadLetterQueue: converged.deadLetterQueue,
++            settings: converged.settings,
+         };
+     }),
+     delete: Effect.fn(function* ({ output }) {
+@@ -445,15 +540,16 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+                 queueId: output.queueId,
+                 consumerId: output.consumerId,
+             })
+-                .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.undefined));
+-            if (fetched) {
++                .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.succeed(undefined)));
++            const observed = fetched ? toObserved(fetched) : undefined;
++            if (observed) {
+                 return {
+-                    consumerId: fetched.consumerId,
++                    consumerId: observed.consumerId,
+                     queueId: output.queueId,
+                     scriptName: toObserved(fetched)?.scriptName ?? output.scriptName,
+                     accountId: output.accountId,
+-                    deadLetterQueue: output.deadLetterQueue,
+-                    settings: output.settings,
++                    deadLetterQueue: observed.deadLetterQueue,
++                    settings: observed.settings,
+                 };
+             }
+         }
+@@ -469,8 +565,8 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+                     queueId: output.queueId,
+                     scriptName: match.scriptName ?? output.scriptName,
+                     accountId: output.accountId,
+-                    deadLetterQueue: output.deadLetterQueue,
+-                    settings: output.settings,
++                    deadLetterQueue: match.deadLetterQueue,
++                    settings: match.settings,
+                 };
+             }
+         }
+@@ -478,8 +574,96 @@ export const ConsumerProviderLive = () => Provider.succeed(Consumer, {
+     }),
+ });
+ const toObserved = (c) => c.consumerId && c.type === "worker"
+-    ? { consumerId: c.consumerId, scriptName: c.scriptName ?? undefined }
++    ? {
++        consumerId: c.consumerId,
++        deadLetterQueue: c.deadLetterQueue ?? undefined,
++        scriptName: c.scriptName ?? undefined,
++        settings: c.settings
++            ? {
++                batchSize: c.settings.batchSize ?? undefined,
++                maxConcurrency: c.settings.maxConcurrency ?? undefined,
++                maxRetries: c.settings.maxRetries ?? undefined,
++                maxWaitTimeMs: c.settings.maxWaitTimeMs ?? undefined,
++                retryDelay: c.settings.retryDelay ?? undefined,
++            }
++            : undefined,
++    }
+     : undefined;
++const normalizeConsumerSettings = (settings) => ({
++    batchSize: settings?.batchSize ?? 10,
++    maxConcurrency: settings?.maxConcurrency,
++    maxRetries: settings?.maxRetries ?? 3,
++    maxWaitTimeMs: settings?.maxWaitTimeMs ?? 5000,
++    retryDelay: settings?.retryDelay ?? 0,
++});
++const replacementUnsafe = (reason) => Effect.fail({
++    _tag: "ConsumerReplacementUnsafe",
++    reason,
++});
++const verifyConsumerReplacementSafety = Effect.fn(function* (options) {
++    if (!isLiveId(options.deadLetterQueueId)) {
++        return yield* replacementUnsafe("dead-letter-queue-id-missing");
++    }
++    const sourceQueue = yield* queues.getQueue({
++        accountId: options.accountId,
++        queueId: options.queueId,
++    });
++    const workerConsumers = (sourceQueue.consumers ?? []).flatMap((consumer) => {
++        const observed = toObserved(consumer);
++        return observed ? [observed] : [];
++    });
++    if (sourceQueue.queueId !== options.queueId ||
++        sourceQueue.producersTotalCount !== 0 ||
++        (sourceQueue.producers?.length ?? 0) !== 0 ||
++        sourceQueue.consumersTotalCount !== 1 ||
++        workerConsumers.length !== 1 ||
++        workerConsumers[0]?.consumerId !== options.consumerId ||
++        workerConsumers[0]?.scriptName !== options.scriptName ||
++        workerConsumers[0]?.deadLetterQueue !== undefined ||
++        JSON.stringify(normalizeConsumerSettings(workerConsumers[0]?.settings)) !==
++            JSON.stringify(normalizeConsumerSettings(options.settings))) {
++        return yield* replacementUnsafe("source-queue-ownership-or-activity");
++    }
++    const sourceMetrics = yield* queues.getMetricsQueue({
++        accountId: options.accountId,
++        queueId: options.queueId,
++    });
++    if (sourceMetrics.backlogCount !== 0 || sourceMetrics.backlogBytes !== 0) {
++        return yield* replacementUnsafe("source-queue-backlog");
++    }
++    const deadLetterQueue = yield* queues.getQueue({
++        accountId: options.accountId,
++        queueId: options.deadLetterQueueId,
++    });
++    if (deadLetterQueue.queueId !== options.deadLetterQueueId ||
++        deadLetterQueue.queueName !== options.deadLetterQueueName ||
++        deadLetterQueue.producersTotalCount !== 0 ||
++        (deadLetterQueue.producers?.length ?? 0) !== 0 ||
++        deadLetterQueue.consumersTotalCount !== 0 ||
++        (deadLetterQueue.consumers?.length ?? 0) !== 0) {
++        return yield* replacementUnsafe("dead-letter-queue-identity-or-activity");
++    }
++    const deadLetterMetrics = yield* queues.getMetricsQueue({
++        accountId: options.accountId,
++        queueId: options.deadLetterQueueId,
++    });
++    if (deadLetterMetrics.backlogCount !== 0 || deadLetterMetrics.backlogBytes !== 0) {
++        return yield* replacementUnsafe("dead-letter-queue-backlog");
++    }
++});
++const waitForConsumerDeletion = (accountId, queueId, consumerId) => queues.getConsumer({ accountId, queueId, consumerId }).pipe(Effect.flatMap(() => Effect.fail("ConsumerStillAttached")), Effect.catchTag("ConsumerNotFound", () => Effect.void), Effect.retry({
++    while: (error) => error === "ConsumerStillAttached",
++    schedule: queueHandlerReadinessSchedule,
++}));
++const readConvergedConsumer = (options) => queues.getConsumer(options).pipe(Effect.flatMap((fetched) => {
++    const observed = toObserved(fetched);
++    return observed?.scriptName === options.scriptName
++        ? Effect.succeed(observed)
++        : Effect.fail("ScriptUnbound");
++}), Effect.catchTag("ConsumerNotFound", () => Effect.fail("ScriptUnbound")), Effect.retry({
++    while: (error) => error === "ScriptUnbound",
++    schedule: queueHandlerReadinessSchedule,
++}));
+ // ~60s budget — Worker reconcile uploads typically land in 2–10s,
+ // but a fresh container/asset deploy can stretch that.
+ const queueHandlerReadinessSchedule = Schedule.max([
+@@ -624,4 +808,4 @@ export const ConsumerProvider = () => ProviderLayer.dual(Consumer, {
+     local: () => ConsumerProviderLocal().pipe(Layer.provide(localRuntimeServices())),
+     live: () => ConsumerProviderLive(),
+ });
+-//# sourceMappingURL=Consumer.js.map
+\ No newline at end of file
++//# sourceMappingURL=Consumer.js.map
+diff --git a/lib/Queues/EventSource.d.ts b/lib/Queues/EventSource.d.ts
+index 3b64e1a..e4184e1 100644
+--- a/lib/Queues/EventSource.d.ts
++++ b/lib/Queues/EventSource.d.ts
+@@ -1,3 +1,4 @@
++import type { Input } from "alchemy/Input";
+ import type * as cf from "@cloudflare/workers-types";
+ import * as Context from "effect/Context";
+ import * as Duration from "effect/Duration";
+@@ -38,7 +39,8 @@ export interface MessagesProps {
+      * `consumeQueueMessages` on the dead-letter queue as well to log,
+      * persist, or alert on what arrives.
+      */
+-    deadLetterQueue?: string | Queue;
++    deadLetterQueue?: Input<string> | Queue;
++    deadLetterQueueId?: Input<string>;
+ }
+ /**
+  * Convert a {@link MessagesProps} (with `Duration.Input` time fields)
+diff --git a/lib/Queues/EventSource.js b/lib/Queues/EventSource.js
+index 76ca8a9..f396da7 100644
+--- a/lib/Queues/EventSource.js
++++ b/lib/Queues/EventSource.js
+@@ -3,7 +3,6 @@ import { RuntimeContext } from "alchemy/RuntimeContext";
+ import * as DurationUtil from "alchemy/Util/Duration";
+ import * as Cause from "effect/Cause";
+ import * as Context from "effect/Context";
+-import * as Duration from "effect/Duration";
+ import * as Effect from "effect/Effect";
+ import * as Layer from "effect/Layer";
+ import * as Stream from "effect/Stream";
+@@ -67,9 +66,8 @@ export const EventSourceLive = Layer.effect(EventSource, Effect.gen(function* ()
+                 queueId: queue.queueId,
+                 scriptName: host.workerName,
+                 settings: toConsumerSettings(props),
+-                deadLetterQueue: typeof props.deadLetterQueue === "string"
+-                    ? props.deadLetterQueue
+-                    : props.deadLetterQueue?.queueName,
++                deadLetterQueue: typeof props.deadLetterQueue === "object" && props.deadLetterQueue !== null && "queueName" in props.deadLetterQueue ? props.deadLetterQueue.queueName : props.deadLetterQueue,
++                deadLetterQueueId: props.deadLetterQueueId,
+             }));
+         }
+         // Resolve the runtime context per-call rather than at layer
+@@ -107,4 +105,4 @@ export const EventSourceLive = Layer.effect(EventSource, Effect.gen(function* ()
+         });
+     });
+ }));
+-//# sourceMappingURL=EventSource.js.map
+\ No newline at end of file
++//# sourceMappingURL=EventSource.js.map
+diff --git a/lib/Workers/Sources/Rolldown.d.ts b/lib/Workers/Sources/Rolldown.d.ts
+index 986e338..b7f404b 100644
+--- a/lib/Workers/Sources/Rolldown.d.ts
++++ b/lib/Workers/Sources/Rolldown.d.ts
+@@ -6,7 +6,9 @@ import type { SourceProvider } from "../Source.ts";
+ import type { WorkerProps } from "../Worker.ts";
+ import type { WorkerExport } from "../WorkerRuntimeContext.ts";
+ import type { ModuleRule } from "./Prebuilt.ts";
+-export type { WorkerBuildOptions } from "alchemy/Workers/Workerd/Bundle";
++export interface WorkerBuildOptions extends Shared.WorkerBuildOptions {
++    nativeExports?: readonly string[];
++}
+ export interface WorkerBundleOptions extends Omit<Shared.WorkerBundleOptions, "entry"> {
+     entry: {
+         kind: "external";
+@@ -14,6 +16,7 @@ export interface WorkerBundleOptions extends Omit<Shared.WorkerBundleOptions, "e
+         kind: "effect";
+         exports: Record<string, WorkerExport>;
+     };
++    extraOptions: WorkerBuildOptions | undefined;
+     rules?: readonly ModuleRule[] | undefined;
+ }
+ /**
+diff --git a/lib/Workers/Sources/Rolldown.js b/lib/Workers/Sources/Rolldown.js
+index d474452..9cfaf08 100644
+--- a/lib/Workers/Sources/Rolldown.js
++++ b/lib/Workers/Sources/Rolldown.js
+@@ -128,7 +128,7 @@ export const WorkerBundle = Shared.makeWorkerBundle({
+     // binding — only actually bundling a Worker does (#562).
+     loadCompatPlugins: () => import("@alchemy.run/cloudflare-runtime/rolldown").then((module) => module.default),
+     virtualEntry: (options) => options.entry.kind === "effect"
+-        ? makeEffectVirtualEntry(options.entry.exports, options.stack)
++        ? makeEffectVirtualEntry(options.entry.exports, options.stack, options.extraOptions?.nativeExports)
+         : undefined,
+     moduleRules: (options, main) => realGlobs(options.rules).pipe(Effect.map((rules) => toModuleRules(main, rules))),
+     mapError: withRulesHint,
+@@ -140,7 +140,7 @@ export const WorkerBundle = Shared.makeWorkerBundle({
+ const exportClass = (name, base, local) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)
+     ? `export class ${name} extends ${base} {}`
+     : `const ${local} = class extends ${base} {};\nexport { ${local} as ${JSON.stringify(name)} };`;
+-export const makeEffectVirtualEntry = (exports, stack) => {
++export const makeEffectVirtualEntry = (exports, stack, nativeExports = []) => {
+     const doClasses = [];
+     const wfClasses = [];
+     const migrations = {};
+@@ -155,6 +155,11 @@ export const makeEffectVirtualEntry = (exports, stack) => {
+             migrations[className] = entry.snapshot;
+         }
+     }
++    for (const name of nativeExports) {
++        if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) || Object.hasOwn(exports, name)) {
++            throw new Error(`Invalid or duplicate native Worker export: ${name}`);
++        }
++    }
+     const hasMigrations = Object.keys(migrations).length > 0;
+     const hasDoClasses = doClasses.length > 0;
+     const hasWfClasses = wfClasses.length > 0;
+@@ -176,6 +181,7 @@ const meta = {
+ };
+ 
+ export default makeWorkerBridge(WorkerEntrypoint, meta);
++${nativeExports.length > 0 ? `export { ${nativeExports.join(", ")} } from ${JSON.stringify(importPath)};` : ""}
+ 
+ // export class proxy stubs for Durable Objects and Workflows
+ ${[
+@@ -224,4 +230,4 @@ export const makeRolldownSource = (options) => {
+         }),
+     });
+ };
+-//# sourceMappingURL=Rolldown.js.map
+\ No newline at end of file
++//# sourceMappingURL=Rolldown.js.map
+diff --git a/lib/Workers/WorkerProvider.js b/lib/Workers/WorkerProvider.js
+index 453afee..85d7105 100644
+--- a/lib/Workers/WorkerProvider.js
++++ b/lib/Workers/WorkerProvider.js
+@@ -8,7 +8,6 @@ import { dotAlchemyDirectory } from "alchemy/AlchemyContext";
+ import { havePropsChanged, isResolved, stripEffects } from "alchemy/Diff";
+ import * as ProviderLayer from "alchemy/Local/ProviderLayer";
+ import * as Provider from "alchemy/Provider";
+-import {} from "alchemy/Resource";
+ import { isRedactedMarker } from "alchemy/RuntimeContext";
+ import { Stack } from "alchemy/Stack";
+ import { cachedFunction } from "alchemy/Util/cached-function";
+@@ -886,7 +885,8 @@ const workerAssetConfigForHash = (assets) => {
+  * the bundle/vite/asset-content hashes, so a change to e.g. a compatibility
+  * flag or observability config planned as a noop and silently never deployed.
+  */
+-const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, selfUrl, }) => resolveMetadataHashValue({
++/** @internal exported for provider-path regression testing. */
++export const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, selfUrl, }) => resolveMetadataHashValue({
+     accountId,
+     selfUrl,
+     stack: { name: stack.name, stage: stack.stage },
+@@ -897,9 +897,10 @@ const resolveWorkerMetadataHash = ({ props, bindings, accountId, stack, selfUrl,
+     // materialized as different attribute projections between reconcile and a
+     // later plan; hashing props.env as well would turn those irrelevant shape
+     // differences into perpetual updates.
+-    bindings: bindings.map((binding) => ({ sid: binding.sid, data: binding.data })),
++    bindings: bindings.flatMap((binding) => binding.data.bindings ?? []),
++    containers: Array.from(new Set(bindings.flatMap((binding) => (binding.data.containers ?? []).map((container) => container.className)))).sort(),
+     assets: workerAssetConfigForHash(props.assets),
+-    cache: props.cache,
++    cache: props.cache ?? getCacheBinding(bindings),
+     entrypoints: props.entrypoints,
+     limits: props.limits,
+     logpush: props.logpush,
+@@ -3681,7 +3682,9 @@ export const LiveWorkerProvider = () => Provider.effect(Worker, Effect.gen(funct
+             // form against the stripped stored props and re-plans an update
+             // forever (#874).
+             const news = stripEffects(desired);
+-            if (!isResolved(news))
++            // Plan invokes diff before and after binding Outputs resolve. Hash
++            // only the final binding shape used by reconcile.
++            if (!isResolved(news) || !isResolved(newBindings))
+                 return undefined;
+             if ((output?.accountId ?? accountId) !== accountId) {
+                 return { action: "replace" };
+@@ -5071,4 +5074,4 @@ const validateWorkerTags = (scriptName, tags, alchemyTagCount) => Effect.gen(fun
+         }
+     }
+ });
+-//# sourceMappingURL=WorkerProvider.js.map
+\ No newline at end of file
++//# sourceMappingURL=WorkerProvider.js.map
+diff --git a/src/D1/ApplyMigrations.ts b/src/D1/ApplyMigrations.ts
+index bc3e940..9cb042a 100644
+--- a/src/D1/ApplyMigrations.ts
++++ b/src/D1/ApplyMigrations.ts
+@@ -1,6 +1,8 @@
+ import { inlineSqlParams, MigrationError, type SqlExecutor } from "@alchemy.run/sql/Migrations";
+ import * as Retry from "@distilled.cloud/cloudflare/Retry";
+ import { isTransientError } from "@distilled.cloud/core/category";
++import * as d1 from "@distilled.cloud/cloudflare/d1";
++import { importD1Database } from "./ImportDatabase.ts";
+ import * as Effect from "effect/Effect";
+ 
+ /**
+@@ -69,3 +71,32 @@ export const makeD1MigrationExecutor = <E>(raw: D1SqlExecutor<E>): SqlExecutor =
+       ),
+     ),
+ });
++
++/** Preserve compound SQL and commit each migration with its ledger atomically. */
++export const makeCloudD1MigrationExecutor = (options: {
++  accountId: string;
++  databaseId: string;
++}): Effect.Effect<SqlExecutor, never, d1.CloudflareOpContext> =>
++  Effect.gen(function* () {
++    const queryDb = yield* d1.queryDatabase;
++    const services = yield* Effect.context<Effect.Services<ReturnType<typeof importD1Database>>>();
++    const executor = makeD1MigrationExecutor((sql) => queryDb({ ...options, sql }));
++    return {
++      ...executor,
++      batch: (statements: ReadonlyArray<string>) =>
++        importD1Database({
++          ...options,
++          sqlData: statements
++            .map((statement) => statement.trim())
++            .filter((statement) => statement.length > 0)
++            .map((statement) => (statement.endsWith(";") ? statement : `${statement};`))
++            .join("\n"),
++        }).pipe(
++          Effect.provideContext(services),
++          Effect.asVoid,
++          Effect.mapError(
++            (cause) => new MigrationError({ message: "D1 migration import failed", cause }),
++          ),
++        ),
++    } satisfies SqlExecutor;
++  });
+diff --git a/src/D1/Database.ts b/src/D1/Database.ts
+index 9dee86a..20b8a78 100644
+--- a/src/D1/Database.ts
++++ b/src/D1/Database.ts
+@@ -25,7 +25,7 @@ import { CloudflareEnvironment } from "../CloudflareEnvironment.ts";
+ import { localAccountId } from "../LocalAccount.ts";
+ import { generateLocalId, LOCAL_PROVIDERS_URL, localRuntimeServices } from "../LocalRuntime.ts";
+ import type { Providers } from "../Providers.ts";
+-import { makeD1MigrationExecutor } from "./ApplyMigrations.ts";
++import { makeCloudD1MigrationExecutor, makeD1MigrationExecutor } from "./ApplyMigrations.ts";
+ import { cloneDatabase } from "./CloneDatabase.ts";
+ import { importD1Database } from "./ImportDatabase.ts";
+ import { localD1IsEmpty, withLocalD1Executor, withLocalD1Query } from "./LocalD1Gateway.ts";
+@@ -595,10 +595,7 @@ export const ProviderLive = () =>
+             stamped: stampedOf(output),
+             withExecutor: (apply) =>
+               Effect.gen(function* () {
+-                const queryDb = yield* d1.queryDatabase;
+-                yield* apply(
+-                  makeD1MigrationExecutor((sql) => queryDb({ accountId: acct, databaseId, sql })),
+-                );
++                yield* apply(yield* makeCloudD1MigrationExecutor({ accountId: acct, databaseId }));
+               }),
+           })
+         : undefined;
+diff --git a/src/Queues/Consumer.ts b/src/Queues/Consumer.ts
+index b3d2026..94a8d5d 100644
+--- a/src/Queues/Consumer.ts
++++ b/src/Queues/Consumer.ts
+@@ -51,6 +51,14 @@ export type ConsumerProps = {
+    * dead-letter queue its own consumer.
+    */
+   deadLetterQueue?: string;
++  /**
++   * Physical ID of the dead letter queue.
++   *
++   * Required for the guarded delete-and-recreate compatibility fallback when
++   * Cloudflare accepts an update but omits the requested dead letter queue on
++   * readback.
++   */
++  deadLetterQueueId?: string;
+   /**
+    * Consumer settings.
+    */
+@@ -269,6 +277,27 @@ const findWorkerConsumer = (acct: string, queueId: string) =>
+     Effect.catchTag("QueueNotFound", () => Effect.undefined),
+   );
+ 
++const observeWorkerConsumer = Effect.fn(function* (options: {
++  accountId: string;
++  queueId: string;
++  consumerId?: string;
++}) {
++  if (isLiveId(options.consumerId)) {
++    const fetched = yield* queues
++      .getConsumer({
++        accountId: options.accountId,
++        queueId: options.queueId,
++        consumerId: options.consumerId,
++      })
++      .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.succeed(undefined)));
++    const observed = fetched ? toObserved(fetched) : undefined;
++    if (observed) {
++      return observed;
++    }
++  }
++  return yield* findWorkerConsumer(options.accountId, options.queueId);
++});
++
+ export const ConsumerProviderLive = () =>
+   Provider.succeed(Consumer, {
+     // The `consumerId` is not marked as stable because if you start in dev mode, the ID will change on first deploy.
+@@ -329,12 +358,12 @@ export const ConsumerProviderLive = () =>
+       );
+       return rows.flat();
+     }),
+-    diff: Effect.fn(function* ({ olds, news, output }) {
++    diff: Effect.fn(function* ({ news, output }) {
+       const { accountId } = yield* yield* CloudflareEnvironment;
+       if (!isResolved(news)) return undefined;
+-      // If either contain `dev:` IDs, we need to update to live ones.
+-      // The live resource doesn't exist yet, so there's no need to replace even when we otherwise would.
+-      if (!isLiveId(output?.queueId) || !isLiveId(output?.consumerId)) {
++      // A dev queue does not exist in the live account, so there is
++      // nothing physical to observe yet.
++      if (!isLiveId(output?.queueId)) {
+         return { action: "update" };
+       }
+       if ((output?.accountId ?? accountId) !== accountId) {
+@@ -345,6 +374,19 @@ export const ConsumerProviderLive = () =>
+       if (output?.queueId && news.queueId !== output.queueId) {
+         return { action: "replace", deleteFirst: true } as const;
+       }
++      // Stable resources are diffed directly from persisted state by
++      // Plan.make; provider.read is not called on that path. Observe the
++      // physical consumer here so out-of-band DLQ/settings drift cannot be
++      // hidden by optimistic cached props. This is read-only and remains
++      // Consumer-scoped.
++      const observed = yield* observeWorkerConsumer({
++        accountId,
++        queueId: output.queueId,
++        consumerId: output.consumerId,
++      });
++      if (!observed || !isLiveId(output.consumerId) || observed.consumerId !== output.consumerId) {
++        return { action: "update" };
++      }
+       // Settings / DLQ / script drift is an update. We DON'T
+       // escalate scriptName changes to `replace` because the
+       // engine resolves cross-resource Output<string> refs (a
+@@ -357,14 +399,15 @@ export const ConsumerProviderLive = () =>
+       // place (Cloudflare's PUT silently ignores `script_name`
+       // changes, so reconcile does delete-then-create).
+       if (
+-        JSON.stringify(olds.settings ?? {}) !== JSON.stringify(news.settings ?? {}) ||
+-        (olds.deadLetterQueue ?? undefined) !== (news.deadLetterQueue ?? undefined) ||
+-        (output?.scriptName !== undefined && news.scriptName !== output.scriptName)
++        JSON.stringify(normalizeConsumerSettings(observed.settings)) !==
++          JSON.stringify(normalizeConsumerSettings(news.settings)) ||
++        observed.deadLetterQueue !== (news.deadLetterQueue ?? undefined) ||
++        (observed.scriptName !== undefined && news.scriptName !== observed.scriptName)
+       ) {
+         return { action: "update" } as const;
+       }
+     }),
+-    reconcile: Effect.fn(function* ({ news, output }) {
++    reconcile: Effect.fn(function* ({ news, olds, output }) {
+       const { accountId } = yield* yield* CloudflareEnvironment;
+       const acct = output?.accountId ?? accountId;
+       // Only use `output.queueId` if it's a live ID (i.e. no `dev:` prefix).
+@@ -412,7 +455,7 @@ export const ConsumerProviderLive = () =>
+         observed = yield* findWorkerConsumer(acct, queueId);
+       }
+ 
+-      // Owned consumer pointing at a different script: rebuild
++      // Owned consumer pointing at a different scriptName: rebuild
+       // it in place. Cloudflare's PUT consumer silently ignores
+       // `script_name` changes on existing consumers (the live
+       // record stays pinned to the original worker), and the
+@@ -574,28 +617,100 @@ export const ConsumerProviderLive = () =>
+           }),
+         );
+ 
+-      yield* queues.getConsumer({ accountId: acct, queueId, consumerId }).pipe(
+-        Effect.flatMap((fetched) =>
+-          toObserved(fetched)?.scriptName === news.scriptName
+-            ? Effect.void
+-            : Effect.fail(new ConsumerScriptUnbound({ scriptName: news.scriptName })),
+-        ),
+-        Effect.catchTag("ConsumerNotFound", () =>
+-          Effect.fail(new ConsumerScriptUnbound({ scriptName: news.scriptName })),
+-        ),
++      let converged = yield* queues.getConsumer({ accountId: acct, queueId, consumerId }).pipe(
++        Effect.flatMap((fetched) => {
++          const observed = toObserved(fetched);
++          return observed?.scriptName === news.scriptName
++            ? Effect.succeed(observed)
++            : Effect.fail(new ConsumerScriptUnbound({ scriptName: news.scriptName }));
++        }),
++        Effect.catchTag("ConsumerNotFound", () => Effect.fail(new ConsumerScriptUnbound({ scriptName: news.scriptName }))),
+         Effect.retry({
+           while: (e) => e._tag === "ConsumerScriptUnbound",
+           schedule: queueHandlerReadinessSchedule,
+         }),
+       );
+ 
++      const desiredDeadLetterQueue = news.deadLetterQueue ?? undefined;
++      const deadLetterQueueIdentityUnchanged =
++        isLiveId(olds?.deadLetterQueueId) &&
++        isLiveId(news.deadLetterQueueId) &&
++        olds?.deadLetterQueueId === news.deadLetterQueueId;
++      const settingsConverged =
++        JSON.stringify(normalizeConsumerSettings(converged.settings)) ===
++        JSON.stringify(normalizeConsumerSettings(news.settings));
++      const canReplaceForMissingDeadLetterQueue =
++        deadLetterQueueIdentityUnchanged &&
++        owned &&
++        observed?.consumerId === consumerId &&
++        output?.consumerId === consumerId &&
++        observed.scriptName === news.scriptName &&
++        observed.deadLetterQueue === undefined &&
++        JSON.stringify(normalizeConsumerSettings(observed.settings)) ===
++          JSON.stringify(normalizeConsumerSettings(news.settings)) &&
++        desiredDeadLetterQueue !== undefined &&
++        converged.consumerId === consumerId &&
++        converged.scriptName === news.scriptName &&
++        converged.deadLetterQueue === undefined &&
++        settingsConverged;
++
++      if (canReplaceForMissingDeadLetterQueue) {
++        yield* verifyConsumerReplacementSafety({
++          accountId: acct,
++          consumerId,
++          deadLetterQueueId: news.deadLetterQueueId,
++          deadLetterQueueName: desiredDeadLetterQueue,
++          queueId,
++          scriptName: news.scriptName,
++          settings: news.settings,
++        });
++
++        yield* queues.deleteConsumer({
++          accountId: acct,
++          queueId,
++          consumerId,
++        });
++        yield* waitForConsumerDeletion(acct, queueId, consumerId);
++
++        const replacement = yield* queues.createConsumer({
++          accountId: acct,
++          queueId,
++          scriptName: news.scriptName,
++          type: "worker",
++          deadLetterQueue: desiredDeadLetterQueue,
++          settings: news.settings,
++        });
++        const replacementConsumerId = replacement.consumerId;
++        if (!isLiveId(replacementConsumerId) || replacementConsumerId === consumerId) {
++          return yield* Effect.fail("ConsumerReplacementUnconverged" as const);
++        }
++
++        converged = yield* readConvergedConsumer({
++          accountId: acct,
++          consumerId: replacementConsumerId,
++          queueId,
++          scriptName: news.scriptName,
++        });
++        consumerId = replacementConsumerId;
++      }
++
++      if (
++        converged.consumerId !== consumerId ||
++        converged.scriptName !== news.scriptName ||
++        converged.deadLetterQueue !== desiredDeadLetterQueue ||
++        JSON.stringify(normalizeConsumerSettings(converged.settings)) !==
++          JSON.stringify(normalizeConsumerSettings(news.settings))
++      ) {
++        return yield* Effect.fail("ConsumerUnconverged" as const);
++      }
++
+       return {
+-        consumerId,
++        consumerId: converged.consumerId,
+         queueId,
+-        scriptName: news.scriptName!,
++        scriptName: converged.scriptName,
+         accountId: acct,
+-        deadLetterQueue: news.deadLetterQueue,
+-        settings: news.settings,
++        deadLetterQueue: converged.deadLetterQueue,
++        settings: converged.settings,
+       };
+     }),
+     delete: Effect.fn(function* ({ output }) {
+@@ -639,15 +754,16 @@ export const ConsumerProviderLive = () =>
+             queueId: output.queueId,
+             consumerId: output.consumerId,
+           })
+-          .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.undefined));
+-        if (fetched) {
++          .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.succeed(undefined)));
++        const observed = fetched ? toObserved(fetched) : undefined;
++        if (observed) {
+           return {
+-            consumerId: fetched.consumerId!,
++            consumerId: observed.consumerId,
+             queueId: output.queueId,
+             scriptName: toObserved(fetched)?.scriptName ?? output.scriptName,
+             accountId: output.accountId,
+-            deadLetterQueue: output.deadLetterQueue,
+-            settings: output.settings,
++            deadLetterQueue: observed.deadLetterQueue,
++            settings: observed.settings,
+           };
+         }
+       }
+@@ -663,8 +779,8 @@ export const ConsumerProviderLive = () =>
+             queueId: output.queueId,
+             scriptName: match.scriptName ?? output.scriptName,
+             accountId: output.accountId,
+-            deadLetterQueue: output.deadLetterQueue,
+-            settings: output.settings,
++            deadLetterQueue: match.deadLetterQueue,
++            settings: match.settings,
+           };
+         }
+       }
+@@ -672,17 +788,158 @@ export const ConsumerProviderLive = () =>
+     }),
+   });
+ 
+-type ObservedConsumer = { consumerId: string; scriptName: string | undefined };
++type ObservedConsumer = {
++  deadLetterQueue: string | undefined;
++  consumerId: string;
++  settings: ConsumerSettings | undefined;
++  scriptName: string | undefined;
++};
+ 
+ const toObserved = (c: {
++  deadLetterQueue?: string | null;
+   consumerId?: string | null;
++  settings?: {
++    batchSize?: number | null;
++    maxConcurrency?: number | null;
++    maxRetries?: number | null;
++    maxWaitTimeMs?: number | null;
++    retryDelay?: number | null;
++  } | null;
+   scriptName?: string | null;
+   type?: "worker" | "http_pull" | null;
+ }): ObservedConsumer | undefined =>
+   c.consumerId && c.type === "worker"
+-    ? { consumerId: c.consumerId, scriptName: c.scriptName ?? undefined }
++    ? {
++        consumerId: c.consumerId,
++        deadLetterQueue: c.deadLetterQueue ?? undefined,
++        scriptName: c.scriptName ?? undefined,
++        settings: c.settings
++          ? {
++              batchSize: c.settings.batchSize ?? undefined,
++              maxConcurrency: c.settings.maxConcurrency ?? undefined,
++              maxRetries: c.settings.maxRetries ?? undefined,
++              maxWaitTimeMs: c.settings.maxWaitTimeMs ?? undefined,
++              retryDelay: c.settings.retryDelay ?? undefined,
++            }
++          : undefined,
++      }
+     : undefined;
+ 
++const normalizeConsumerSettings = (
++  settings: ConsumerSettings | undefined,
++): Required<Pick<ConsumerSettings, "batchSize" | "maxRetries" | "maxWaitTimeMs">> &
++  Pick<ConsumerSettings, "maxConcurrency" | "retryDelay"> => ({
++  batchSize: settings?.batchSize ?? 10,
++  maxConcurrency: settings?.maxConcurrency,
++  maxRetries: settings?.maxRetries ?? 3,
++  maxWaitTimeMs: settings?.maxWaitTimeMs ?? 5000,
++  retryDelay: settings?.retryDelay ?? 0,
++});
++
++const replacementUnsafe = (reason: string) =>
++  Effect.fail({
++    _tag: "ConsumerReplacementUnsafe",
++    reason,
++  } as const);
++
++const verifyConsumerReplacementSafety = Effect.fn(function* (options: {
++  accountId: string;
++  consumerId: string;
++  deadLetterQueueId?: string;
++  deadLetterQueueName: string;
++  queueId: string;
++  scriptName: string;
++  settings?: ConsumerSettings;
++}) {
++  if (!isLiveId(options.deadLetterQueueId)) {
++    return yield* replacementUnsafe("dead-letter-queue-id-missing");
++  }
++
++  const sourceQueue = yield* queues.getQueue({
++    accountId: options.accountId,
++    queueId: options.queueId,
++  });
++  const workerConsumers = (sourceQueue.consumers ?? []).flatMap((consumer) => {
++    const observed = toObserved(consumer);
++    return observed ? [observed] : [];
++  });
++  if (
++    sourceQueue.queueId !== options.queueId ||
++    sourceQueue.producersTotalCount !== 0 ||
++    (sourceQueue.producers?.length ?? 0) !== 0 ||
++    sourceQueue.consumersTotalCount !== 1 ||
++    workerConsumers.length !== 1 ||
++    workerConsumers[0]?.consumerId !== options.consumerId ||
++    workerConsumers[0]?.scriptName !== options.scriptName ||
++    workerConsumers[0]?.deadLetterQueue !== undefined ||
++    JSON.stringify(normalizeConsumerSettings(workerConsumers[0]?.settings)) !==
++      JSON.stringify(normalizeConsumerSettings(options.settings))
++  ) {
++    return yield* replacementUnsafe("source-queue-ownership-or-activity");
++  }
++
++  const sourceMetrics = yield* queues.getMetricsQueue({
++    accountId: options.accountId,
++    queueId: options.queueId,
++  });
++  if (sourceMetrics.backlogCount !== 0 || sourceMetrics.backlogBytes !== 0) {
++    return yield* replacementUnsafe("source-queue-backlog");
++  }
++
++  const deadLetterQueue = yield* queues.getQueue({
++    accountId: options.accountId,
++    queueId: options.deadLetterQueueId,
++  });
++  if (
++    deadLetterQueue.queueId !== options.deadLetterQueueId ||
++    deadLetterQueue.queueName !== options.deadLetterQueueName ||
++    deadLetterQueue.producersTotalCount !== 0 ||
++    (deadLetterQueue.producers?.length ?? 0) !== 0 ||
++    deadLetterQueue.consumersTotalCount !== 0 ||
++    (deadLetterQueue.consumers?.length ?? 0) !== 0
++  ) {
++    return yield* replacementUnsafe("dead-letter-queue-identity-or-activity");
++  }
++
++  const deadLetterMetrics = yield* queues.getMetricsQueue({
++    accountId: options.accountId,
++    queueId: options.deadLetterQueueId,
++  });
++  if (deadLetterMetrics.backlogCount !== 0 || deadLetterMetrics.backlogBytes !== 0) {
++    return yield* replacementUnsafe("dead-letter-queue-backlog");
++  }
++});
++
++const waitForConsumerDeletion = (accountId: string, queueId: string, consumerId: string) =>
++  queues.getConsumer({ accountId, queueId, consumerId }).pipe(
++    Effect.flatMap(() => Effect.fail("ConsumerStillAttached" as const)),
++    Effect.catchTag("ConsumerNotFound", () => Effect.void),
++    Effect.retry({
++      while: (error) => error === "ConsumerStillAttached",
++      schedule: queueHandlerReadinessSchedule,
++    }),
++  );
++
++const readConvergedConsumer = (options: {
++  accountId: string;
++  consumerId: string;
++  queueId: string;
++  scriptName: string;
++}) =>
++  queues.getConsumer(options).pipe(
++    Effect.flatMap((fetched) => {
++      const observed = toObserved(fetched);
++      return observed?.scriptName === options.scriptName
++        ? Effect.succeed(observed)
++        : Effect.fail("ScriptUnbound" as const);
++    }),
++    Effect.catchTag("ConsumerNotFound", () => Effect.fail("ScriptUnbound" as const)),
++    Effect.retry({
++      while: (error) => error === "ScriptUnbound",
++      schedule: queueHandlerReadinessSchedule,
++    }),
++  );
++
+ // ~60s budget — Worker reconcile uploads typically land in 2–10s,
+ // but a fresh container/asset deploy can stretch that.
+ const queueHandlerReadinessSchedule = Schedule.max([
+diff --git a/src/Queues/EventSource.ts b/src/Queues/EventSource.ts
+index 13898c8..7907903 100644
+--- a/src/Queues/EventSource.ts
++++ b/src/Queues/EventSource.ts
+@@ -9,6 +9,7 @@ import * as Duration from "effect/Duration";
+ import * as Effect from "effect/Effect";
+ import * as Layer from "effect/Layer";
+ import * as Stream from "effect/Stream";
++import type { Input } from "alchemy/Input";
+ import { isWorkerEvent, Worker } from "../Workers/Worker.ts";
+ import { Consumer } from "./Consumer.ts";
+ import type { Queue } from "./Queue.ts";
+@@ -45,7 +46,8 @@ export interface MessagesProps {
+    * `consumeQueueMessages` on the dead-letter queue as well to log,
+    * persist, or alert on what arrives.
+    */
+-  deadLetterQueue?: string | Queue;
++  deadLetterQueue?: Input<string> | Queue;
++  deadLetterQueueId?: Input<string>;
+ }
+ 
+ /**
+@@ -247,10 +249,8 @@ export const EventSourceLive = Layer.effect(
+             queueId: queue.queueId,
+             scriptName: host.workerName,
+             settings: toConsumerSettings(props),
+-            deadLetterQueue:
+-              typeof props.deadLetterQueue === "string"
+-                ? props.deadLetterQueue
+-                : props.deadLetterQueue?.queueName,
++            deadLetterQueue: typeof props.deadLetterQueue === "object" && props.deadLetterQueue !== null && "queueName" in props.deadLetterQueue ? props.deadLetterQueue.queueName : props.deadLetterQueue,
++            deadLetterQueueId: props.deadLetterQueueId,
+           }),
+         );
+       }
+diff --git a/src/Workers/Sources/Rolldown.ts b/src/Workers/Sources/Rolldown.ts
+index c4afc45..880e478 100644
+--- a/src/Workers/Sources/Rolldown.ts
++++ b/src/Workers/Sources/Rolldown.ts
+@@ -16,7 +16,9 @@ import type { WorkerExport } from "../WorkerRuntimeContext.ts";
+ import type { ModuleRule } from "./Prebuilt.ts";
+ import { bundleSource } from "./shared.ts";
+ 
+-export type { WorkerBuildOptions } from "alchemy/Workers/Workerd/Bundle";
++export interface WorkerBuildOptions extends Shared.WorkerBuildOptions {
++  nativeExports?: readonly string[];
++}
+ 
+ export interface WorkerBundleOptions extends Omit<Shared.WorkerBundleOptions, "entry"> {
+   entry:
+@@ -27,6 +29,7 @@ export interface WorkerBundleOptions extends Omit<Shared.WorkerBundleOptions, "e
+         kind: "effect";
+         exports: Record<string, WorkerExport>;
+       };
++  extraOptions: WorkerBuildOptions | undefined;
+   rules?: readonly ModuleRule[] | undefined;
+ }
+ 
+@@ -171,7 +174,7 @@ export const WorkerBundle = Shared.makeWorkerBundle<WorkerBundleOptions, Additio
+     import("@alchemy.run/cloudflare-runtime/rolldown").then((module) => module.default),
+   virtualEntry: (options) =>
+     options.entry.kind === "effect"
+-      ? makeEffectVirtualEntry(options.entry.exports, options.stack)
++      ? makeEffectVirtualEntry(options.entry.exports, options.stack, options.extraOptions?.nativeExports)
+       : undefined,
+   moduleRules: (options, main) =>
+     realGlobs(options.rules).pipe(Effect.map((rules) => toModuleRules(main, rules))),
+@@ -190,6 +193,7 @@ const exportClass = (name: string, base: string, local: string) =>
+ export const makeEffectVirtualEntry = (
+   exports: Record<string, WorkerExport>,
+   stack: { name: string; stage: string },
++  nativeExports: readonly string[] = [],
+ ) => {
+   const doClasses: string[] = [];
+   const wfClasses: string[] = [];
+@@ -203,6 +207,11 @@ export const makeEffectVirtualEntry = (
+       migrations[className] = entry.snapshot;
+     }
+   }
++  for (const name of nativeExports) {
++    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) || Object.hasOwn(exports, name)) {
++      throw new Error(`Invalid or duplicate native Worker export: ${name}`);
++    }
++  }
+   const hasMigrations = Object.keys(migrations).length > 0;
+   const hasDoClasses = doClasses.length > 0;
+   const hasWfClasses = wfClasses.length > 0;
+@@ -224,6 +233,7 @@ const meta = {
+ };
+ 
+ export default makeWorkerBridge(WorkerEntrypoint, meta);
++${nativeExports.length > 0 ? `export { ${nativeExports.join(", ")} } from ${JSON.stringify(importPath)};` : ""}
+ 
+ // export class proxy stubs for Durable Objects and Workflows
+ ${[
+diff --git a/src/Workers/WorkerProvider.ts b/src/Workers/WorkerProvider.ts
+index 18a9264..e9cc37b 100644
+--- a/src/Workers/WorkerProvider.ts
++++ b/src/Workers/WorkerProvider.ts
+@@ -1207,7 +1207,8 @@ const workerAssetConfigForHash = (assets: WorkerProps["assets"]) => {
+  * the bundle/vite/asset-content hashes, so a change to e.g. a compatibility
+  * flag or observability config planned as a noop and silently never deployed.
+  */
+-const resolveWorkerMetadataHash = ({
++/** @internal exported for provider-path regression testing. */
++export const resolveWorkerMetadataHash = ({
+   props,
+   bindings,
+   accountId,
+@@ -1225,9 +1226,16 @@ const resolveWorkerMetadataHash = ({
+     // materialized as different attribute projections between reconcile and a
+     // later plan; hashing props.env as well would turn those irrelevant shape
+     // differences into perpetual updates.
+-    bindings: bindings.map((binding) => ({ sid: binding.sid, data: binding.data })),
++    bindings: bindings.flatMap((binding) => binding.data.bindings ?? []),
++    containers: Array.from(
++      new Set(
++        bindings.flatMap((binding) =>
++          (binding.data.containers ?? []).map((container) => container.className),
++        ),
++      ),
++    ).sort(),
+     assets: workerAssetConfigForHash(props.assets),
+-    cache: props.cache,
++    cache: props.cache ?? getCacheBinding(bindings),
+     entrypoints: props.entrypoints,
+     limits: props.limits,
+     logpush: props.logpush,
+@@ -4735,7 +4743,9 @@ export const LiveWorkerProvider = () =>
+           // form against the stripped stored props and re-plans an update
+           // forever (#874).
+           const news = stripEffects(desired);
+-          if (!isResolved(news)) return undefined;
++          // Plan invokes diff before and after binding Outputs resolve. Hash
++          // only the final binding shape used by reconcile.
++          if (!isResolved(news) || !isResolved(newBindings)) return undefined;
+           if ((output?.accountId ?? accountId) !== accountId) {
+             return { action: "replace" };
+           }

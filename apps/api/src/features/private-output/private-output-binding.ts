@@ -1,6 +1,6 @@
 // eslint-disable-next-line @typescript-eslint/triple-slash-reference -- This ambient native module has no JavaScript import; include it in every production compiler program.
 /// <reference path="./private-output-runtime.d.ts" />
-import * as Cloudflare from "alchemy/Cloudflare";
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import { Effect } from "effect";
 
 import { AgentProvider } from "../../infrastructure/agent-provider.js";

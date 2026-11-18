@@ -171,6 +171,7 @@ const fixture = (
       aiGatewayLogId: null,
       aiSearch: unsupportedBindingMethod,
       autorag: unsupportedBindingMethod,
+      websearch: unsupportedBindingMethod,
       gateway: unsupportedBindingMethod,
       models: unsupportedBindingMethod,
       // SAFETY: The complete binding fixture records only the raw-response overload used by the published adapter.
@@ -564,10 +565,10 @@ describe("private discovery native TanStack provider", () => {
     );
     expect(result.chunks.map((chunk) => chunk.type)).toEqual([
       "RUN_STARTED",
-      "RUN_FINISHED",
       "TEXT_MESSAGE_START",
       "TEXT_MESSAGE_CONTENT",
       "TEXT_MESSAGE_END",
+      "RUN_FINISHED",
     ]);
     expect(JSON.stringify(result.chunks)).not.toContain(privateReasoning);
     expect(JSON.stringify(result.chunks)).not.toContain(
@@ -824,12 +825,13 @@ describe("private discovery native TanStack provider", () => {
     await expect.poll(() => test.dispose.mock.calls.length).toBe(1);
     expectRejected(test, "outcome_unknown");
     expect(test.fail).toHaveBeenCalledOnce();
-    controller.enqueue(
-      new TextEncoder().encode(
-        kimiEvent(kimiChunk([kimiChoice({}, "tool_calls")]))
+    expect(() =>
+      controller.enqueue(
+        new TextEncoder().encode(
+          kimiEvent(kimiChunk([kimiChoice({}, "tool_calls")]))
+        )
       )
-    );
-    controller.close();
+    ).toThrow(TypeError);
     await running;
     expectRejected(test, "outcome_unknown");
     expect(test.run).toHaveBeenCalledOnce();

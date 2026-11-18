@@ -1,6 +1,6 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
+import * as GitHub from "@alchemy.run/github";
 import * as Alchemy from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
-import * as GitHub from "alchemy/GitHub";
 import * as Output from "alchemy/Output";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -16,35 +16,48 @@ import {
 } from "./apps/api/src/infrastructure/import-provider-gateway.js";
 import { MealPlannerAuthDatabase } from "./apps/api/src/infrastructure/meal-planner-auth-database.js";
 import { ProviderAccountingDatabase } from "./apps/api/src/infrastructure/provider-accounting-database.js";
+import {
+  deployedWebsiteHostname,
+  websiteDevPort,
+} from "./apps/api/src/infrastructure/website-address.js";
 import { workerObservability } from "./apps/api/src/infrastructure/worker-observability.js";
 import MealPlannerApi from "./apps/api/src/worker.js";
-import { productionWebsiteHostname } from "./apps/web/website-domain.js";
 import { websiteSource } from "./apps/web/website-source.js";
 
-const websiteDomainConfiguration = (dev: boolean, stage: string) =>
-  Effect.gen(function* WebsiteDomainConfiguration() {
-    if (dev || (stage !== "prod" && stage !== "e2e")) {
-      return;
-    }
-    const zoneId = yield* Config.String("CEIRD_ZONE_ID");
-    if (stage === "e2e") {
+const stageDomain = (dev: boolean, stage: string) =>
+  Effect.gen(function* ConfigureStageDomain() {
+    const hostname = deployedWebsiteHostname(dev, stage);
+    if (!hostname) {
       return {
-        domain: { name: "e2e.ceird.app", zoneId },
-        workersDev: { enabled: false, previewsEnabled: false },
+        websiteDomain: {},
+        emailSending: undefined,
+        browserAnalytics: undefined,
       };
     }
-    return { domain: { name: productionWebsiteHostname, zoneId } };
-  });
-
-const stageEmailSending = (dev: boolean, stage: string) =>
-  Effect.gen(function* StageEmailSending() {
-    if (dev || (stage !== "prod" && stage !== "e2e")) {
-      return;
-    }
-    return yield* Cloudflare.Email.SendingSubdomain("MealPlannerMail", {
-      name: stage === "e2e" ? "mail.e2e.ceird.app" : "mail.ceird.app",
-      zoneId: yield* Config.String("CEIRD_ZONE_ID"),
-    });
+    const zoneId = yield* Config.String("CEIRD_ZONE_ID");
+    const emailSending = yield* Cloudflare.Email.SendingSubdomain(
+      "MealPlannerMail",
+      {
+        name: `mail.${hostname}`,
+        zoneId,
+      }
+    );
+    const browserAnalytics =
+      stage === "prod"
+        ? yield* Cloudflare.Rum.Site("MealPlannerWebAnalytics", {
+            host: hostname,
+          })
+        : undefined;
+    return {
+      emailSending,
+      browserAnalytics,
+      websiteDomain: {
+        domain: { name: hostname, zoneId },
+        ...(stage === "e2e" && {
+          workersDev: { enabled: false, previewsEnabled: false },
+        }),
+      },
+    };
   });
 
 export default Alchemy.Stack(
@@ -68,15 +81,9 @@ export default Alchemy.Stack(
     const importProviderGateway = dev
       ? undefined
       : yield* ImportProviderGateway;
-    const emailSending = yield* stageEmailSending(dev, stage);
-    const browserAnalytics =
-      stage === "prod" && !dev
-        ? yield* Cloudflare.Rum.Site("MealPlannerWebAnalytics", {
-            host: productionWebsiteHostname,
-          })
-        : undefined;
+    const { browserAnalytics, emailSending, websiteDomain } =
+      yield* stageDomain(dev, stage);
     const api = yield* MealPlannerApi;
-    const websiteDomainProps = yield* websiteDomainConfiguration(dev, stage);
     const website = yield* Cloudflare.Website.Vite("MealPlannerWebsite", {
       assets: {
         runWorkerFirst: [
@@ -86,12 +93,12 @@ export default Alchemy.Stack(
           "/.well-known/oauth-*",
         ],
       },
-      dev: { port: 4399 },
+      dev: { port: websiteDevPort },
       env: {
         BROWSER_ANALYTICS_TOKEN: browserAnalytics?.siteToken ?? "",
         MEAL_PLANNER_API: api,
       },
-      ...websiteDomainProps,
+      ...websiteDomain,
       ...websiteSource,
       ...workerObservability,
       rootDir: "./apps/web",

@@ -1379,13 +1379,12 @@ it("hydrates the sole server transcript and sends native chat input using the cu
   );
   const body = JSON.parse(String(init?.body));
   expect(body).toMatchObject({
-    data: { expectedVersion: 7 },
     forwardedProps: { expectedVersion: 7 },
     threadId: reference,
     tools: [],
   });
   expect(body.runId).toMatch(/^run-[0-9]+-[a-z0-9]*$/u);
-  expect(body.data).not.toHaveProperty("mutationId");
+  expect(body.forwardedProps).not.toHaveProperty("mutationId");
   expect(body.messages.at(-1)).toMatchObject({
     content: "I avoid peanuts.",
     role: "user",

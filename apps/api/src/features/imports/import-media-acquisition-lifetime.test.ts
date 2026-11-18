@@ -1,4 +1,4 @@
-import * as Cloudflare from "alchemy/Cloudflare";
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import { RuntimeContext } from "alchemy/RuntimeContext";
 import { Deferred, Effect, Exit, Fiber, Scope, Stream } from "effect";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";

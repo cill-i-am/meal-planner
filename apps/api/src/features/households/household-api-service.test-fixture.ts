@@ -1,3 +1,5 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
+import { makeWorkflowBridge } from "@alchemy.run/cloudflare/Workflows";
 import { FamilyServiceLive } from "@meal-planner/families/application";
 import {
   HouseholdMemberDepartureOperation,
@@ -13,8 +15,6 @@ import type {
   SucceededRecipeImportIntent,
 } from "@meal-planner/recipe-import-api";
 import { RuntimeContext } from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
-import { makeWorkflowBridge } from "alchemy/Cloudflare/Workflows";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
 import type { AnyD1Database } from "drizzle-orm/d1";
@@ -141,9 +141,7 @@ const baseURL = "https://meal-planner.test";
 const testRuntimeContext = RuntimeContext.of({
   Type: "HouseholdApiTestRuntimeContext",
   env: {},
-  get: <T>() =>
-    // eslint-disable-next-line unicorn/no-useless-undefined -- The test context models an absent Alchemy binding.
-    Effect.succeed<T | undefined>(undefined),
+  get: <T>() => Effect.succeed<T | undefined>(undefined),
   id: "household-api-test",
   set: (id) => Effect.succeed(id),
 });

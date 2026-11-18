@@ -1,3 +1,7 @@
+import type {
+  WorkflowInstanceEvent,
+  WorkflowInstanceRestartOptions,
+} from "@alchemy.run/cloudflare/Workflows";
 import {
   makeRecipeContent,
   recipeIngredientFromText,
@@ -7,10 +11,6 @@ import {
   RecipeImportActionId,
   RecipeImportIntentId,
 } from "@meal-planner/recipe-import-api";
-import type {
-  WorkflowInstanceEvent,
-  WorkflowInstanceRestartOptions,
-} from "alchemy/Cloudflare/Workflows";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 

@@ -1065,7 +1065,7 @@ describe("native R2 generation commit", () => {
 
       await vi.advanceTimersByTimeAsync(MaximumR2OperationMilliseconds - 1);
       let settled = false;
-      void result.then(() => {
+      void result.finally(() => {
         settled = true;
       });
       await Promise.resolve();
@@ -1354,7 +1354,7 @@ describe("native R2 generation commit", () => {
     await cleanupStarted.promise;
     await vi.advanceTimersByTimeAsync(4999);
     let settled = false;
-    void result.then(() => {
+    void result.finally(() => {
       settled = true;
     });
     await Promise.resolve();

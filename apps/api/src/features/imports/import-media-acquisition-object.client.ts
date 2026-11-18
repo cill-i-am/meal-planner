@@ -1,7 +1,7 @@
 import type {
   ContainerError,
   ContainerStartError,
-} from "alchemy/Cloudflare/Containers";
+} from "@alchemy.run/cloudflare/Containers";
 import type { RpcCallError, RpcDecodeError } from "alchemy/Rpc";
 import { Effect, Option, Schema, Scope, Stream } from "effect";
 import type { HttpServerError } from "effect/http/HttpServerError";

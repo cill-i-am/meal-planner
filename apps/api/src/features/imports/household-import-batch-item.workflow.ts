@@ -1,6 +1,6 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import type { RecipeImportBatch } from "@meal-planner/recipe-import-api";
 import type { RuntimeContext } from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
 import { Cause, Effect, Option, Schema } from "effect";
 
 import type {

@@ -57,6 +57,7 @@ export class PrivateInterviewSession extends ProductionSession {
         aiGatewayLogId: null,
         aiSearch: unexpectedBindingMethod,
         autorag: unexpectedBindingMethod,
+        websearch: unexpectedBindingMethod,
         gateway: unexpectedBindingMethod,
         models: unexpectedBindingMethod,
         // Native Ai.run is overloaded across every provider model. This test adapter replaces only its external transport.

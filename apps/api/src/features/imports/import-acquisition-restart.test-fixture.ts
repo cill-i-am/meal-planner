@@ -1,11 +1,11 @@
-import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
-import * as Cloudflare from "alchemy/Cloudflare";
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import {
   WorkflowEvent,
   makeWorkflowBridge,
   task,
-} from "alchemy/Cloudflare/Workflows";
-import type { WorkflowInstanceRestartOptions } from "alchemy/Cloudflare/Workflows";
+} from "@alchemy.run/cloudflare/Workflows";
+import type { WorkflowInstanceRestartOptions } from "@alchemy.run/cloudflare/Workflows";
+import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import { Effect, Schema, Stream } from "effect";
 

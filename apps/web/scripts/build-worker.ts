@@ -2,13 +2,16 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { serialize } from "node:v8";
 
+import {
+  makeSourceContext,
+  resolveSource,
+} from "@alchemy.run/cloudflare/Workers";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   Artifacts,
   makeScopedArtifacts,
   createArtifactStore,
 } from "alchemy/Artifacts";
-import { makeSourceContext, resolveSource } from "alchemy/Cloudflare/Workers";
 import { Effect } from "effect";
 
 import { workerObservability } from "../../api/src/infrastructure/worker-observability.js";

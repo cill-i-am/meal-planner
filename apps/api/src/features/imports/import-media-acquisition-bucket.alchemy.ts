@@ -1,4 +1,4 @@
-import type * as Cloudflare from "alchemy/Cloudflare";
+import type * as Cloudflare from "@alchemy.run/cloudflare";
 import { RuntimeContext } from "alchemy/RuntimeContext";
 import type { BaseRuntimeContext } from "alchemy/RuntimeContext";
 import { Deferred, Effect, Stream } from "effect";
@@ -99,10 +99,8 @@ export const adaptAcquisitionBucket = (
             value.pipe(Stream.interruptWhen(Deferred.await(cancelled)))
           )
             .pipeTo(fixed.writable, { signal: abort.signal })
-            .then(
-              () => ({ ok: true as const }),
-              () => ({ ok: false as const })
-            );
+            .then(() => ({ ok: true as const }))
+            .catch(() => ({ ok: false as const }));
           return { abort, body: fixed.readable, cancelled, producer };
         }),
         ({ body, producer }) =>

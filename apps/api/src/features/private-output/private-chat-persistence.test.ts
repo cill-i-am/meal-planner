@@ -337,6 +337,7 @@ describe("private chat canonical SQLite persistence", () => {
           aiGatewayLogId: null,
           aiSearch: unexpectedBindingMethod,
           autorag: unexpectedBindingMethod,
+          websearch: unexpectedBindingMethod,
           gateway: unexpectedBindingMethod,
           models: unexpectedBindingMethod,
           // SAFETY: The inert binding implements only the native raw-response overload used by this maintained adapter.

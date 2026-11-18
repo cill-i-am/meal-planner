@@ -1,10 +1,10 @@
+import type * as Cloudflare from "@alchemy.run/cloudflare";
 import {
   EmailAddress,
   HouseholdOrganizationId,
   InvitationId,
   UserId,
 } from "@meal-planner/household-api";
-import type * as Cloudflare from "alchemy/Cloudflare";
 import type { BaseRuntimeContext } from "alchemy/RuntimeContext";
 import { applyD1Migrations, env } from "cloudflare:test";
 import type { AnyD1Database } from "drizzle-orm/d1";
@@ -45,7 +45,6 @@ const senderAddress = Schema.decodeUnknownSync(EmailAddress)(
 const runtimeContext: BaseRuntimeContext = {
   Type: "test",
   env: {},
-  // eslint-disable-next-line unicorn/no-useless-undefined -- Alchemy uses undefined for an absent binding.
   get: () => Effect.succeed(undefined),
   id: "auth-mail-test",
   set: (id) => Effect.succeed(id),
