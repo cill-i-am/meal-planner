@@ -1,6 +1,6 @@
 # Meal Planner API and MCP
 
-The public API and MCP use the application's existing domain handlers. They share validation, household permissions, mutation receipts, version checks, durable imports and review gates. The browser continues to use those handlers too.
+Agents such as Durable Pi use MCP or the HTTP API to manage meals. Both interfaces use the same domain handlers for household permissions, version checks, durable imports and plan approval. The public gateway serves account access and OAuth consent forms during connection.
 
 ## Connect
 
@@ -133,7 +133,7 @@ The interaction tests exercise the actual MCP HTTP transport against an in-memor
 
 ## Assistant and private interviews
 
-Assistant turn operations accept a stable turn ID and return the persisted conversation state. Read the existing conversation endpoint to follow progress. Private interview APIs expose the same participant commands, message/card pagination, turn cancellation and confirmation continuation as the browser. They use server-owned request registration and current privacy authority, without exposing socket generation metadata to callers.
+Assistant turn operations accept a stable turn ID and return the persisted conversation state. Read the existing conversation endpoint to follow progress. Private interview APIs expose participant commands, message and card pagination, turn cancellation and confirmation continuation. They use server-owned request registration and current privacy authority, without exposing socket generation metadata to callers.
 
 Private interview transcripts remain private to their participant. Accepting a profile card follows the existing explicit sharing and safety checks. Shared family food profiles and private interview history are distinct resources.
 
@@ -151,7 +151,7 @@ Apply the generated OAuth auth-database migration through the existing Alchemy d
 
 Rollout checks are:
 
-- Run repository quality, native Worker, browser and stack gates on the final revision.
+- Run repository quality, native Worker and stack checks on the final revision.
 - Complete signup/signin, consent Allow and Deny, refresh, disconnect and reconnect through the public origin.
 - Connect each intended agent client; list families, read a family and perform one reversible mutation using its original retry identity.
 - Check denied scopes, a second user's family, and private interview ownership.

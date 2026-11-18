@@ -6,6 +6,7 @@ import { drizzle } from "drizzle-orm/d1";
 import { Effect, Redacted, Schema } from "effect";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import gateway from "../../public-gateway/worker.js";
 import {
   privateOutputKey,
   PrivateOutputUnavailable,
@@ -249,6 +250,68 @@ describe("native OAuth delegated access", () => {
   );
   beforeEach(async () => {
     await database().delete(authSchema.rateLimit);
+  });
+
+  it("connects an agent through the public login and consent forms", async () => {
+    const auth = makeAuth();
+    const account = await createAccount(auth);
+    const clientId = await registerClient(auth);
+    const verifier = "public-gateway-login-test-code-verifier-with-entropy";
+    const digest = new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))
+    );
+    const query = new URLSearchParams({
+      client_id: clientId,
+      code_challenge: btoa(String.fromCodePoint(...digest))
+        .replaceAll("+", "-")
+        .replaceAll("/", "_")
+        .replaceAll("=", ""),
+      code_challenge_method: "S256",
+      redirect_uri: redirectUri,
+      resource,
+      response_type: "code",
+      scope: requestedScope,
+      state: "gateway-test",
+    });
+    const dispatch = (request: Request) =>
+      gateway.fetch(request, { MEAL_PLANNER_API: auth });
+    const start = await dispatch(
+      new Request(`${baseURL}/api/auth/oauth2/authorize?${query}`)
+    );
+    const login = new URL(start.headers.get("location") ?? "", baseURL);
+    expect(login.pathname).toBe("/login");
+    const submit = (url: URL, fields: Record<string, string>, cookie = "") =>
+      new Request(url, {
+        body: new URLSearchParams(fields),
+        headers: { cookie, origin: baseURL },
+        method: "POST",
+      });
+    const signed = await dispatch(
+      submit(login, {
+        email: account.email,
+        password: "local-worker-password-only",
+      })
+    );
+    expect(signed.status, await signed.clone().text()).toBe(303);
+    const cookie = signed.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+    expect(cookie).not.toBe("");
+    const review = new URL(signed.headers.get("location") ?? "", baseURL);
+    expect(review.pathname).toBe("/oauth/consent");
+    const page = await dispatch(new Request(review, { headers: { cookie } }));
+    expect(await page.text()).toContain("Delegation worker fixture");
+    const approved = await dispatch(
+      submit(review, { choice: "allow", user: account.userId }, cookie)
+    );
+    expect(approved.status, await approved.clone().text()).toBe(303);
+    const callback = new URL(approved.headers.get("location") ?? "", baseURL);
+    expect(callback.origin + callback.pathname).toBe(redirectUri);
+    expect(callback.searchParams.get("state")).toBe("gateway-test");
+    const tokens = await exchange(auth, {
+      clientId,
+      code: callback.searchParams.get("code") ?? "",
+      verifier,
+    });
+    expect(tokens.status, await tokens.clone().text()).toBe(200);
   });
 
   it("registers a public client, requires consent and S256, and exchanges a code only once", async () => {

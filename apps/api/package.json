@@ -22,7 +22,6 @@
     "@better-auth/oauth-provider": "1.7.25",
     "@effect/platform-node": "4.1.4",
     "@meal-planner/agent-conversations-api": "workspace:*",
-    "@meal-planner/browser-observability-api": "workspace:*",
     "@meal-planner/families": "workspace:*",
     "@meal-planner/household-api": "workspace:*",
     "@meal-planner/invitations": "workspace:*",

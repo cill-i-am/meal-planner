@@ -22,7 +22,6 @@ import {
 } from "./apps/api/src/infrastructure/website-address.js";
 import { workerObservability } from "./apps/api/src/infrastructure/worker-observability.js";
 import MealPlannerApi from "./apps/api/src/worker.js";
-import { websiteSource } from "./apps/web/website-source.js";
 
 const stageDomain = (dev: boolean, stage: string) =>
   Effect.gen(function* ConfigureStageDomain() {
@@ -31,7 +30,6 @@ const stageDomain = (dev: boolean, stage: string) =>
       return {
         websiteDomain: {},
         emailSending: undefined,
-        browserAnalytics: undefined,
       };
     }
     const zoneId = yield* Config.String("CEIRD_ZONE_ID");
@@ -42,15 +40,8 @@ const stageDomain = (dev: boolean, stage: string) =>
         zoneId,
       }
     );
-    const browserAnalytics =
-      stage === "prod"
-        ? yield* Cloudflare.Rum.Site("MealPlannerWebAnalytics", {
-            host: hostname,
-          })
-        : undefined;
     return {
       emailSending,
-      browserAnalytics,
       websiteDomain: {
         domain: { name: hostname, zoneId },
         ...(stage === "e2e" && {
@@ -81,27 +72,14 @@ export default Alchemy.Stack(
     const importProviderGateway = dev
       ? undefined
       : yield* ImportProviderGateway;
-    const { browserAnalytics, emailSending, websiteDomain } =
-      yield* stageDomain(dev, stage);
+    const { emailSending, websiteDomain } = yield* stageDomain(dev, stage);
     const api = yield* MealPlannerApi;
-    const website = yield* Cloudflare.Website.Vite("MealPlannerWebsite", {
-      assets: {
-        runWorkerFirst: [
-          "/api/auth/*",
-          "/v1/*",
-          "/mcp",
-          "/.well-known/oauth-*",
-        ],
-      },
-      dev: { port: websiteDevPort },
-      env: {
-        BROWSER_ANALYTICS_TOKEN: browserAnalytics?.siteToken ?? "",
-        MEAL_PLANNER_API: api,
-      },
+    const gateway = yield* Cloudflare.Worker("MealPlannerWebsite", {
       ...websiteDomain,
-      ...websiteSource,
       ...workerObservability,
-      rootDir: "./apps/web",
+      dev: { port: websiteDevPort },
+      env: { MEAL_PLANNER_API: api },
+      main: "./apps/api/src/public-gateway/worker.ts",
     });
 
     if (!dev) {
@@ -109,7 +87,7 @@ export default Alchemy.Stack(
       if (github?.pr) {
         yield* GitHub.Comment("PreviewComment", {
           allowDelete: true,
-          body: Output.interpolate`Preview: ${website.url}
+          body: Output.interpolate`API preview: ${gateway.url}/v1/openapi.json
 
 Commit: ${github.sha}`,
           issueNumber: github.pr,
@@ -131,9 +109,8 @@ Commit: ${github.sha}`,
       importProviderGatewayId:
         importProviderGateway?.gatewayId ?? ImportProviderGatewayId,
       providerAccountingDatabaseName: providerAccountingDatabase.databaseName,
-      webAnalyticsSiteId: browserAnalytics?.siteTag ?? null,
-      websiteUrl: website.url,
-      websiteWorkerName: website.workerName,
+      gatewayUrl: gateway.url,
+      gatewayWorkerName: gateway.workerName,
     };
   }).pipe(
     Effect.provide(

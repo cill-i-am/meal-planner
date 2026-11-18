@@ -5,8 +5,6 @@ import { fileURLToPath } from "node:url";
 import { parseSync } from "oxc-parser";
 import { describe, expect, it } from "vitest";
 
-import { readOwnedSources } from "./owned-source-files.js";
-
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const domainRoot = path.join(repositoryRoot, "packages/recipe-domain/src");
 const runtimeSpecifiers = (file: string, source: string) => {
@@ -70,25 +68,5 @@ describe("recipe feature ownership", () => {
     for (const file of graph.keys()) {
       visit(file, []);
     }
-  });
-
-  it("keeps app consumers on the browser feature's public API", () => {
-    const violations = readOwnedSources(repositoryRoot)
-      .filter(
-        ({ file }) =>
-          file.startsWith("apps/web/src/") &&
-          !file.includes("/features/recipe-import/") &&
-          !file.includes(".test.")
-      )
-      .flatMap(({ file, source }) =>
-        runtimeSpecifiers(file, source)
-          .filter(
-            (specifier) =>
-              specifier.includes("/features/recipe-import/") &&
-              !specifier.endsWith("/recipe-import/index.js")
-          )
-          .map((specifier) => `${file}: ${specifier}`)
-      );
-    expect(violations).toEqual([]);
   });
 });

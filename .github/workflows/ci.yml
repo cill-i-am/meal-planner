@@ -40,13 +40,6 @@ jobs:
               - '.github/workflows/**'
               - 'alchemy.run.ts'
               - 'apps/api/**'
-              - 'apps/web/package.json'
-              - 'apps/web/tsconfig*.json'
-              - 'apps/web/vite.config.ts'
-              - 'apps/web/website-*.ts'
-              - 'apps/web/scripts/**'
-              - 'apps/web/src/worker.ts'
-              - 'apps/web/src/features/api-client/**'
               - 'packages/**'
               - 'patches/**'
               - 'scripts/**'
@@ -111,9 +104,6 @@ jobs:
     name: Tests (${{ matrix.name }})
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
-    container:
-      image: ${{ matrix.browser && 'mcr.microsoft.com/playwright:v1.65.1-noble' || '' }}
-      options: --init --ipc=host
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -121,43 +111,28 @@ jobs:
         include:
           - name: infrastructure
             command: pnpm exec vitest run --config vitest.alchemy.config.ts
-            browser: false
           - name: packages
             command: pnpm --recursive --filter './packages/**' test
-            browser: false
           - name: sigen-api
             command: pnpm --filter @meal-planner/sigen-api test
-            browser: false
           - name: recipe-extraction
             command: pnpm evals:recipe:test
-            browser: false
           - name: api-1-of-7
             command: pnpm --filter @meal-planner/api test --shard=1/7
-            browser: false
           - name: api-2-of-7
             command: pnpm --filter @meal-planner/api test --shard=2/7
-            browser: false
           - name: api-3-of-7
             command: pnpm --filter @meal-planner/api test --shard=3/7
-            browser: false
           - name: api-4-of-7
             command: pnpm --filter @meal-planner/api test --shard=4/7
-            browser: false
           - name: api-5-of-7
             command: pnpm --filter @meal-planner/api test --shard=5/7
-            browser: false
           - name: api-6-of-7
             command: pnpm --filter @meal-planner/api test --shard=6/7
-            browser: false
           - name: api-7-of-7
             command: pnpm --filter @meal-planner/api test --shard=7/7
-            browser: false
-          - name: frontend
-            command: pnpm --filter @meal-planner/web test
-            browser: true
           - name: native-workers
             command: pnpm --filter @meal-planner/worker-tests test
-            browser: false
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -173,14 +148,6 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Run tests
         run: ${{ matrix.command }}
-      - name: Retain frontend failure evidence
-        if: failure() && matrix.browser
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: frontend-test-failures-${{ matrix.name }}
-          path: apps/web/.vitest-attachments
-          retention-days: 3
-
   media-container:
     name: Media container (${{ matrix.suite }})
     needs: changes
@@ -219,63 +186,16 @@ jobs:
           path: .alchemy/log
           retention-days: 3
 
-  auth-family-e2e:
-    name: Browser journeys (${{ matrix.project }}, ${{ matrix.shard }}/2)
-    if: github.event.action != 'closed'
-    runs-on: ubuntu-latest
-    container:
-      image: mcr.microsoft.com/playwright:v1.65.1-noble
-      options: --init --ipc=host
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        project: [chromium, mobile-webkit]
-        shard: [1, 2]
-        include:
-          - project: chromium
-            browser: chromium
-          - project: mobile-webkit
-            browser: webkit
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 26.12.0
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Test application journeys against local Workers
-        run: pnpm --filter @meal-planner/web test:e2e --project=${{ matrix.project }} --shard=${{ matrix.shard }}/2 --workers=1
-
-      - name: Retain browser failure traces
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: auth-family-browser-traces-${{ matrix.project }}-${{ matrix.shard }}
-          path: apps/web/test-results
-          retention-days: 3
-
   required-checks:
     name: Required checks
-    needs: [changes, quality, tests, media-container, auth-family-e2e]
+    needs: [changes, quality, tests, media-container]
     if: always() && github.event.action != 'closed'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Require successful verification
         env:
-          REQUIRED_SUCCEEDED: ${{ needs.changes.result == 'success' && needs.quality.result == 'success' && needs.tests.result == 'success' && needs.auth-family-e2e.result == 'success' }}
+          REQUIRED_SUCCEEDED: ${{ needs.changes.result == 'success' && needs.quality.result == 'success' && needs.tests.result == 'success' }}
           MEDIA_SUCCEEDED: ${{ needs.media-container.result == 'success' || (needs.changes.outputs.containers == 'false' && needs.media-container.result == 'skipped') }}
         run: test "$REQUIRED_SUCCEEDED" = true && test "$MEDIA_SUCCEEDED" = true
 

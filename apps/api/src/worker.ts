@@ -1,12 +1,10 @@
 import * as Cloudflare from "@alchemy.run/cloudflare";
-import { BrowserTelemetryPath } from "@meal-planner/browser-observability-api";
 import { EmailAddress } from "@meal-planner/household-api";
 import { AlchemyContext, RuntimeContext, Stage } from "alchemy";
 import { instrumentDrizzle } from "cloudflare-drizzle-tracing";
 import { drizzle } from "drizzle-orm/d1";
-import { ByteSize, Config, Layer, Logger, Schema, Stream } from "effect";
+import { Config, Layer, Logger, Schema, Stream } from "effect";
 import * as Effect from "effect/Effect";
-import * as HttpIncomingMessage from "effect/http/HttpIncomingMessage";
 import * as HttpRouter from "effect/http/HttpRouter";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
@@ -67,7 +65,6 @@ import { ImportSystemAuthorizationConfig } from "./features/imports/import.auth.
 import ImportAcquisitionWorkflow, {
   makeImportWorkflowStarter,
 } from "./features/imports/import.workflow.js";
-import { BrowserEventsHttpLayer } from "./features/observability/browser-events.http.js";
 import { makePrivateConfirmationHttpLayer } from "./features/private-output/private-confirmation.http.js";
 import {
   PrivateOutputApiBinding,
@@ -210,13 +207,6 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
           ).pipe(Effect.asVoid)
         )
     );
-    const browserEventLimit = yield* Cloudflare.Workers.RateLimit(
-      "BROWSER_EVENT_LIMIT",
-      {
-        namespaceId: 1002,
-        simple: { limit: 60, period: 60 },
-      }
-    );
     const productRequestLimit = yield* Cloudflare.Workers.RateLimit(
       "PRODUCT_REQUEST_LIMIT",
       { namespaceId: 1003, simple: { limit: 120, period: 60 } }
@@ -228,30 +218,6 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
         const webRequest = request.source;
         if (!(webRequest instanceof Request)) {
           return yield* Effect.die("Expected a Web Request source.");
-        }
-        if (new URL(webRequest.url).pathname === BrowserTelemetryPath) {
-          if (
-            webRequest.headers.get("origin") !== new URL(webRequest.url).origin
-          ) {
-            return HttpServerResponse.empty({ status: 403 });
-          }
-          const { success } = yield* browserEventLimit
-            .limit({
-              key: webRequest.headers.get("cf-connecting-ip") ?? "local",
-            })
-            .pipe(Effect.orElseSucceed(() => ({ success: false })));
-          if (!success) {
-            return HttpServerResponse.empty({ status: 429 });
-          }
-          const handler = yield* HttpRouter.toHttpEffect(
-            BrowserEventsHttpLayer
-          );
-          return yield* handler.pipe(
-            Effect.provideService(
-              HttpIncomingMessage.MaxBodySize,
-              ByteSize.kibibytes(4)
-            )
-          );
         }
         const providerAccountingDatabase =
           yield* providerAccountingQueryDatabase.raw;

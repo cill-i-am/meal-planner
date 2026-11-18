@@ -30,66 +30,11 @@ const imports = (file: string) => {
   );
 };
 const owner = (file: string) =>
-  /apps\/(?:web|api)\/src\/features\/(?<feature>[^/]+)\//u.exec(file)?.groups?.[
+  /apps\/api\/src\/features\/(?<feature>[^/]+)\//u.exec(file)?.groups?.[
     "feature"
   ];
 const target = (file: string, specifier: string) =>
   path.normalize(path.join(path.dirname(file), specifier));
-
-it("consumes the reference frontend slices only through their public APIs", () => {
-  const slices = new Set([
-    "api-client",
-    "auth",
-    "family",
-    "household-people",
-    "household-profiles",
-    "households",
-    "recipe-import",
-    "onboarding",
-    "invitations",
-    "request-recovery",
-  ]);
-  const violations: string[] = [];
-  for (const file of sources("apps/web/src")) {
-    for (const specifier of imports(file)) {
-      if (
-        /^@meal-planner\/(?:families|invitations)\/application$/u.test(
-          specifier
-        )
-      ) {
-        violations.push(
-          `${file} imports server application capabilities: ${specifier}`
-        );
-      }
-    }
-    for (const specifier of imports(file).filter((value) =>
-      value.startsWith(".")
-    )) {
-      const destination = target(file, specifier);
-      const feature = owner(destination);
-      if (
-        feature &&
-        slices.has(feature) &&
-        owner(file) !== feature &&
-        path.basename(destination) !== "index.js" &&
-        !(
-          feature === "api-client" &&
-          file === "apps/web/src/router.tsx" &&
-          path.basename(destination) === "start-runtime.js"
-        )
-      ) {
-        violations.push(`${file} imports private ${destination}`);
-      }
-      if (
-        ["auth", "family", "request-recovery"].includes(owner(file) ?? "") &&
-        ["onboarding", "invitations"].includes(feature ?? "")
-      ) {
-        violations.push(`${file} depends on a caller feature: ${destination}`);
-      }
-    }
-  }
-  expect(violations).toEqual([]);
-});
 
 it("keeps family and invitation application packages independent of their hosts", () => {
   const violations: string[] = [];
