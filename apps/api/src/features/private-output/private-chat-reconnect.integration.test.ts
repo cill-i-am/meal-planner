@@ -2,13 +2,13 @@ import { Response as LocalResponse } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { emptyPrivateDiscoveryContinuityUpdates } from "./private-discovery-continuity.js";
-import { encodeKimiCompletion } from "./private-discovery-kimi-stream.test-fixtures.js";
+import { encodeKimiCompletion } from "./private-discovery-kimi-stream.fixture.js";
 import {
   makePrivateOutputHarness,
   nativeMessageText,
   syntheticPrivateDiscoveryConfiguration,
-} from "./private-output-native.test-fixture.js";
-import type { PrivateNativeConnection } from "./private-output-native.test-fixture.js";
+} from "./private-output-native.fixture.js";
+import type { PrivateNativeConnection } from "./private-output-native.fixture.js";
 import type { PrivateSessionBinding } from "./private-output.contract.js";
 
 const harness = makePrivateOutputHarness();
@@ -193,7 +193,8 @@ describe("native private chat reconnect authorization", () => {
       const binding = await harness.binding();
       connection = await harness.open(binding);
       const attempt = await harness.startTurn(connection);
-      await expect.poll(() => harness.calls.length).toBe(1);
+      await harness.calls.waitForCount(1);
+      expect(harness.calls).toHaveLength(1);
       expect(await keepAliveReferences(binding)).toBe(1);
       await expect
         .poll(
@@ -212,7 +213,7 @@ describe("native private chat reconnect authorization", () => {
           references: 0,
           status: "interrupted",
         });
-      // The application is terminal and released while Workers AI is still awaiting this fixture's response.
+
       expect(await harness.hydrate(connection)).toMatchObject({
         activeRun: null,
         messages: [{ role: "user" }],
@@ -285,7 +286,8 @@ describe("native private chat reconnect authorization", () => {
       const original = await harness.open(binding);
       const dispatchedAt = Date.now();
       const attempt = await harness.startTurn(original);
-      await expect.poll(() => harness.calls.length).toBe(1);
+      await harness.calls.waitForCount(1);
+      expect(harness.calls).toHaveLength(1);
       const pendingGeneration = await beginPending(binding);
       expect(await lifecycle(binding)).toMatchObject({
         generation: pendingGeneration,
@@ -299,7 +301,7 @@ describe("native private chat reconnect authorization", () => {
         })
       );
       await consumed.promise;
-      // The full valid tool reaches the native transport while B is pending, before the actual deadline.
+
       expect(Date.now() - dispatchedAt).toBeLessThan(timeoutMs);
       const waiting = await harness.turns(binding);
       expect(waiting).toMatchObject([
@@ -374,7 +376,8 @@ describe("native private chat reconnect authorization", () => {
     const binding = await harness.binding();
     const original = await harness.open(binding);
     const attempt = await harness.startTurn(original);
-    await expect.poll(() => harness.calls.length).toBe(1);
+    await harness.calls.waitForCount(1);
+    expect(harness.calls).toHaveLength(1);
     original.socket.close();
     const detached = await attempt.finished;
     expect(detached).not.toContain(proposalText);
@@ -406,8 +409,9 @@ describe("native private chat reconnect authorization", () => {
     const binding = await harness.binding();
     const active = await harness.open(binding);
     const attempt = await harness.startTurn(active);
-    await expect.poll(() => harness.calls.length).toBe(1);
-    // The actual production begin call retires A; withholding authorize keeps B pending.
+    await harness.calls.waitForCount(1);
+    expect(harness.calls).toHaveLength(1);
+
     const pendingGeneration = await beginPending(binding);
     expect(await lifecycle(binding)).toMatchObject({
       generation: pendingGeneration,
@@ -464,7 +468,8 @@ describe("native private chat reconnect authorization", () => {
       const binding = await harness.binding();
       const original = await harness.open(binding);
       const attempt = await harness.startTurn(original);
-      await expect.poll(() => harness.calls.length).toBe(1);
+      await harness.calls.waitForCount(1);
+      expect(harness.calls).toHaveLength(1);
       let retiredGeneration = original.generation;
       if (state === "pending") {
         retiredGeneration = await beginPending(binding);

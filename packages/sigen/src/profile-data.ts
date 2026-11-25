@@ -2,10 +2,8 @@ import { Schema } from "effect";
 
 import type { PowerLimit } from "./settings.js";
 
-// Canonical JSON projection of an already decoded configuration, not input validation.
 /* eslint-disable anti-slop/no-runtime-typeof */
 export const canonicalProfileValue = (value: Schema.Json) =>
-  // Provider kW round trips can introduce sub-microwatt floating point noise (1001 W -> 1.001 kW).
   JSON.stringify(value, (_key, item: Schema.Json) => {
     if (typeof item === "number") {
       return Number(item.toFixed(6));
@@ -20,12 +18,12 @@ export const canonicalProfileValue = (value: Schema.Json) =>
     return item;
   });
 /* eslint-enable anti-slop/no-runtime-typeof */
-export const profileSettingsEqual = (
-  left: Schema.Json,
-  right: Schema.Json
-): boolean => canonicalProfileValue(left) === canonicalProfileValue(right);
+export const profileSettingsEqual = (left: Schema.Json, right: Schema.Json) => {
+  const checkedResult: boolean =
+    canonicalProfileValue(left) === canonicalProfileValue(right);
+  return checkedResult;
+};
 
-// Empty decimal settings are unset, never zero. This boundary rejects coercions such as hexadecimal and Infinity.
 export const DecimalSetting = Schema.String.check(
   Schema.isPattern(/^(?:\d+(?:\.\d+)?)?$/u)
 );
@@ -82,15 +80,20 @@ export const automationGroup = (group: ProviderAutomationGroup) => ({
   })),
 });
 export const decimal = (value: string) => (value === "" ? null : Number(value));
-export const powerLimit = (value: string): PowerLimit => {
+export const powerLimit = (value: string) => {
   const number = decimal(value);
   if (number === null) {
-    return { kind: "unset" };
+    const checkedResult: PowerLimit = { kind: "unset" };
+    return checkedResult;
   }
   if (number === 4_294_967.295) {
-    return { kind: "unlimited" };
+    const checkedResult: PowerLimit = { kind: "unlimited" };
+    return checkedResult;
   }
-  return { kind: "limited", watts: number * 1000 };
+  {
+    const checkedResult: PowerLimit = { kind: "limited", watts: number * 1000 };
+    return checkedResult;
+  }
 };
 
 export const automationValues = (data: typeof AutomationResponse.Type) => ({

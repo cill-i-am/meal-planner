@@ -6,8 +6,8 @@ import type { CloudflareBindingConfig } from "@tanstack/ai-cloudflare";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { responsesToolSse } from "../../test/cloudflare-responses.test-fixture.js";
-import { encodeKimiCompletion } from "../private-output/private-discovery-kimi-stream.test-fixtures.js";
+import { responsesToolSse } from "../../test/cloudflare-responses.fixture.js";
+import { encodeKimiCompletion } from "../private-output/private-discovery-kimi-stream.fixture.js";
 import { projectConversationModelContext } from "./conversation-model-context.js";
 import {
   ConversationModelFailure,
@@ -258,7 +258,6 @@ describe("conversation model transport", () => {
     let thrown: unknown;
     try {
       for await (const _chunk of stream) {
-        // The SDK invokes the tool callback only when its stream is consumed.
       }
     } catch (error) {
       thrown = error;
@@ -477,7 +476,6 @@ describe("conversation model transport", () => {
       threadId: "thread-shared-responses-local-test",
     });
     for await (const _chunk of stream) {
-      // The SDK invokes the tool callback only when its stream is consumed.
     }
     expect(accepted).toBe(1);
     expect(strict).toBe(false);

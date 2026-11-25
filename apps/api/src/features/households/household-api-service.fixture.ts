@@ -749,7 +749,7 @@ export default {
             verifyInvitationRecipient:
               yield* makeHouseholdInvitationRecipientVerifier(householdDomain),
           });
-          // Low-level household tests intentionally start with an organization before creator bootstrap.
+
           if (
             new URL(request.url).pathname === "/api/auth/__test/organization" &&
             request.method === "POST"

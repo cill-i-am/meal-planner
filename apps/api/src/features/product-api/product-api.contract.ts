@@ -56,7 +56,6 @@ interface OperationPolicy {
   readonly extraScopes?: readonly ProductScope[];
 }
 
-/** Deliberate allowlist: adding a route never silently grants it to agents. */
 const policies = {
   "account.read": {
     description:

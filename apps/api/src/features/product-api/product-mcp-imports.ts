@@ -97,10 +97,13 @@ const unavailableImport = () =>
     -32_603,
     "Import state is unavailable. Keep the original request identity and read its status before retrying."
   );
-const messageResult = (message: string, isError = false): CallToolResult => ({
-  content: [{ text: message, type: "text" }],
-  isError,
-});
+const messageResult = (message: string, isError = false) => {
+  const checkedResult: CallToolResult = {
+    content: [{ text: message, type: "text" }],
+    isError,
+  };
+  return checkedResult;
+};
 const supportsForm = (context: ServerContext) => {
   const capabilities = Schema.decodeUnknownOption(FormCapabilities)(
     context.mcpReq.envelope
@@ -159,55 +162,57 @@ export const makeImportMcpInteraction = (options: {
         retryAfter: response.retryAfter,
       };
     }).pipe(Effect.mapError(unavailableImport));
-  const task = (
-    taskId: string
-  ): Effect.Effect<GetTaskResultV2, ProtocolError> =>
-    Effect.gen(function* getImportTask() {
-      const locator = yield* dispatch.state
-        .readTask(taskId)
-        .pipe(Effect.mapError(invalidInteraction));
-      const { projection, retryAfter } = yield* readPreparation(locator);
-      const common = {
-        createdAt: new Date(locator.createdAt).toISOString(),
-        resultType: "complete" as const,
-        taskId,
-        ttlMs: ProductMcpTaskLifetimeMs,
-      };
-      return yield* Match.value(projection).pipe(
-        Match.tagsExhaustive({
-          Cancelled: ({ completedAt }) =>
-            Effect.succeed<GetTaskResultV2>({
-              ...common,
-              lastUpdatedAt: DateTime.formatIso(completedAt),
-              status: "cancelled",
-            }),
-          Completed: ({ completedAt, isError, result }) =>
-            Effect.succeed<GetTaskResultV2>({
-              ...common,
-              lastUpdatedAt: DateTime.formatIso(completedAt),
-              result: {
-                content: [{ text: JSON.stringify(result), type: "text" }],
-                isError,
-                structuredContent: result,
-              },
-              status: "completed",
-            }),
-          Unavailable: () => Effect.fail(unavailableImport()),
-          Working: ({ intent }) =>
-            Effect.succeed<GetTaskResultV2>({
-              ...common,
-              lastUpdatedAt: DateTime.formatIso(intent.updatedAt),
-              pollIntervalMs: pollInterval(retryAfter),
-              status: "working",
-              statusMessage: "Preparing a recipe draft.",
-            }),
-        })
-      );
-    });
-  const create = (
-    input: Schema.Json
-  ): Effect.Effect<CallToolResult | CreateTaskResultV2, ProtocolError> =>
-    Effect.gen(function* createImportTask() {
+  const task = (taskId: string) => {
+    const checkedResult: Effect.Effect<GetTaskResultV2, ProtocolError> =
+      Effect.gen(function* getImportTask() {
+        const locator = yield* dispatch.state
+          .readTask(taskId)
+          .pipe(Effect.mapError(invalidInteraction));
+        const { projection, retryAfter } = yield* readPreparation(locator);
+        const common = {
+          createdAt: new Date(locator.createdAt).toISOString(),
+          resultType: "complete" as const,
+          taskId,
+          ttlMs: ProductMcpTaskLifetimeMs,
+        };
+        return yield* Match.value(projection).pipe(
+          Match.tagsExhaustive({
+            Cancelled: ({ completedAt }) =>
+              Effect.succeed<GetTaskResultV2>({
+                ...common,
+                lastUpdatedAt: DateTime.formatIso(completedAt),
+                status: "cancelled",
+              }),
+            Completed: ({ completedAt, isError, result }) =>
+              Effect.succeed<GetTaskResultV2>({
+                ...common,
+                lastUpdatedAt: DateTime.formatIso(completedAt),
+                result: {
+                  content: [{ text: JSON.stringify(result), type: "text" }],
+                  isError,
+                  structuredContent: result,
+                },
+                status: "completed",
+              }),
+            Unavailable: () => Effect.fail(unavailableImport()),
+            Working: ({ intent }) =>
+              Effect.succeed<GetTaskResultV2>({
+                ...common,
+                lastUpdatedAt: DateTime.formatIso(intent.updatedAt),
+                pollIntervalMs: pollInterval(retryAfter),
+                status: "working",
+                statusMessage: "Preparing a recipe draft.",
+              }),
+          })
+        );
+      });
+    return checkedResult;
+  };
+  const create = (input: Schema.Json) => {
+    const checkedResult: Effect.Effect<
+      CallToolResult | CreateTaskResultV2,
+      ProtocolError
+    > = Effect.gen(function* createImportTask() {
       const args = yield* Schema.decodeUnknownEffect(CreateArguments)(
         input,
         strict
@@ -242,11 +247,13 @@ export const makeImportMcpInteraction = (options: {
         ttlMs: current.ttlMs,
       };
     });
-  const review = (
-    input: Schema.Json,
-    context: ServerContext
-  ): Effect.Effect<CallToolResult | InputRequiredResult, ProtocolError> =>
-    Effect.gen(function* reviewImportPublication() {
+    return checkedResult;
+  };
+  const review = (input: Schema.Json, context: ServerContext) => {
+    const checkedResult: Effect.Effect<
+      CallToolResult | InputRequiredResult,
+      ProtocolError
+    > = Effect.gen(function* reviewImportPublication() {
       const args = yield* Schema.decodeUnknownEffect(ConfirmArguments)(
         input,
         strict
@@ -279,7 +286,6 @@ export const makeImportMcpInteraction = (options: {
           strict
         ).pipe(Effect.mapError(invalidInteraction));
         if (publish.action === "accept" && publish.content.publish) {
-          // The domain mutation receipt owns accepted replay and exact-version conflicts.
           return yield* call("recipe_import_intents_confirm_action", input);
         }
         yield* read("recipe_import_intents_get", {
@@ -341,15 +347,10 @@ export const makeImportMcpInteraction = (options: {
         requestState: state,
       });
     });
+    return checkedResult;
+  };
   return {
-    call: (
-      name: string,
-      input: Schema.Json,
-      context: ServerContext
-    ): Effect.Effect<
-      CallToolResult | InputRequiredResult | CreateTaskResultV2,
-      ProtocolError
-    > => {
+    call: (name: string, input: Schema.Json, context: ServerContext) => {
       const continuing =
         context.mcpReq.requestState<unknown>() !== undefined ||
         context.mcpReq.inputResponses !== undefined ||
@@ -360,61 +361,80 @@ export const makeImportMcpInteraction = (options: {
           (supportsForm(context) &&
             dispatch.permits(["meal-planner:read", "meal-planner:write"])))
       ) {
-        return review(input, context);
+        const checkedResult: Effect.Effect<
+          CallToolResult | InputRequiredResult | CreateTaskResultV2,
+          ProtocolError
+        > = review(input, context);
+        return checkedResult;
       }
       if (continuing) {
-        return Effect.fail(invalidInteraction());
+        const checkedResult: Effect.Effect<
+          CallToolResult | InputRequiredResult | CreateTaskResultV2,
+          ProtocolError
+        > = Effect.fail(invalidInteraction());
+        return checkedResult;
       }
       if (
         name === "recipe_import_intents_create" &&
         hasTaskClientCapabilityV2({ _meta: context.mcpReq.envelope }) &&
         dispatch.permits(["meal-planner:read", "meal-planner:write"])
       ) {
-        return create(input);
+        const checkedResult: Effect.Effect<
+          CallToolResult | InputRequiredResult | CreateTaskResultV2,
+          ProtocolError
+        > = create(input);
+        return checkedResult;
       }
-      return call(name, input);
+      {
+        const checkedResult: Effect.Effect<
+          CallToolResult | InputRequiredResult | CreateTaskResultV2,
+          ProtocolError
+        > = call(name, input);
+        return checkedResult;
+      }
     },
-    cancel: (
-      taskId: string
-    ): Effect.Effect<CancelTaskResultV2, ProtocolError> =>
-      Effect.gen(function* cancelImportTask() {
-        const locator = yield* dispatch.state
-          .readTask(taskId)
-          .pipe(Effect.mapError(invalidInteraction));
-        const { projection } = yield* readPreparation(locator);
-        if (projection._tag === "Unavailable") {
-          return yield* Effect.fail(unavailableImport());
-        }
-        if (projection._tag === "Working") {
-          const result = yield* call("recipe_import_intents_cancel", {
-            familyId: locator.familyId,
-            headers: {
-              "idempotency-key": `mcp-task-cancel:${locator.intentId}`,
-            },
-            input: { expectedIntentVersion: projection.intent.intentVersion },
-            path: { id: locator.intentId },
-          });
-          if (result.isError) {
+    cancel: (taskId: string) => {
+      const checkedResult: Effect.Effect<CancelTaskResultV2, ProtocolError> =
+        Effect.gen(function* cancelImportTask() {
+          const locator = yield* dispatch.state
+            .readTask(taskId)
+            .pipe(Effect.mapError(invalidInteraction));
+          const { projection } = yield* readPreparation(locator);
+          if (projection._tag === "Unavailable") {
             return yield* Effect.fail(unavailableImport());
           }
-        }
-        return { resultType: "complete" };
-      }),
-    get: task,
-    update: (
-      taskId: string,
-      _inputResponses: InputResponsesV2
-    ): Effect.Effect<UpdateTaskResultV2, ProtocolError> =>
-      Effect.gen(function* acknowledgeImportTaskUpdate() {
-        const locator = yield* dispatch.state
-          .readTask(taskId)
-          .pipe(Effect.mapError(invalidInteraction));
-        // Preparation tasks never await input; unknown and satisfied responses are no-ops.
-        yield* read("recipe_import_intents_get", {
-          familyId: locator.familyId,
-          path: { id: locator.intentId },
+          if (projection._tag === "Working") {
+            const result = yield* call("recipe_import_intents_cancel", {
+              familyId: locator.familyId,
+              headers: {
+                "idempotency-key": `mcp-task-cancel:${locator.intentId}`,
+              },
+              input: { expectedIntentVersion: projection.intent.intentVersion },
+              path: { id: locator.intentId },
+            });
+            if (result.isError) {
+              return yield* Effect.fail(unavailableImport());
+            }
+          }
+          return { resultType: "complete" };
         });
-        return { resultType: "complete" };
-      }),
+      return checkedResult;
+    },
+    get: task,
+    update: (taskId: string, _inputResponses: InputResponsesV2) => {
+      const checkedResult: Effect.Effect<UpdateTaskResultV2, ProtocolError> =
+        Effect.gen(function* acknowledgeImportTaskUpdate() {
+          const locator = yield* dispatch.state
+            .readTask(taskId)
+            .pipe(Effect.mapError(invalidInteraction));
+
+          yield* read("recipe_import_intents_get", {
+            familyId: locator.familyId,
+            path: { id: locator.intentId },
+          });
+          return { resultType: "complete" };
+        });
+      return checkedResult;
+    },
   };
 };

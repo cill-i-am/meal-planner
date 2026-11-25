@@ -64,7 +64,7 @@ const BatteryGroup = Schema.Struct({
     if (group.dischargeCutoffPercent > group.chargeCutoffPercent) {
       return false;
     }
-    // App bkH(): inactive fields have neutral defaults; do not accept conflicting mode instructions.
+
     switch (group.providerMode) {
       case 0: {
         return (
@@ -243,38 +243,56 @@ export type ProfileControlSnapshot = typeof ProfileControlSnapshot.Type;
 export const proposedProfile = (
   change: ProfileChange,
   current: ProfileConfiguration
-): ProfileConfiguration => {
+) => {
   if (change.operation === "set_energy_profile_priorities") {
-    return applyProfilePriorities(current, change.priorities);
+    const checkedResult: ProfileConfiguration = applyProfilePriorities(
+      current,
+      change.priorities
+    );
+    return checkedResult;
   }
   if (change.operation === "set_energy_profile_schedules") {
-    return applyProfileSchedules(current, change.schedules);
+    const checkedResult: ProfileConfiguration = applyProfileSchedules(
+      current,
+      change.schedules
+    );
+    return checkedResult;
   }
   if (
     change.operation === "set_energy_profile_parameters" ||
     change.operation === "set_active_energy_profile_parameters"
   ) {
-    return applyProfileParameters(current, change.parameters);
+    const checkedResult: ProfileConfiguration = applyProfileParameters(
+      current,
+      change.parameters
+    );
+    return checkedResult;
   }
   if (change.operation === "create_energy_profile") {
-    return {
+    const checkedResult: ProfileConfiguration = {
       ...current,
       description: change.description,
       profileName: change.name,
       providerActiveStatus: 0,
     };
+    return checkedResult;
   }
   if (change.operation === "update_energy_profile") {
-    return {
+    const checkedResult: ProfileConfiguration = {
       ...current,
       ...change.edits.automation,
       description: change.edits.description ?? current.description,
       profileName: change.edits.name ?? current.profileName,
     };
+    return checkedResult;
   }
-  return change.operation === "replace_automation_schedule"
-    ? { ...current, ...change.replacement }
-    : current;
+  {
+    const checkedResult: ProfileConfiguration =
+      change.operation === "replace_automation_schedule"
+        ? { ...current, ...change.replacement }
+        : current;
+    return checkedResult;
+  }
 };
 const configuration = (value: ProfileConfiguration) => {
   const normalizeMinutes =
@@ -287,7 +305,7 @@ const configuration = (value: ProfileConfiguration) => {
   } = value;
   return canonicalProfileValue({
     ...rest,
-    // Residential templates return mode 1; populated schedules return blank unused powers.
+
     preheating:
       !value.industrial &&
       !value.preheating.industrial &&
@@ -322,7 +340,7 @@ const configuration = (value: ProfileConfiguration) => {
 export const activeBackupReserve = (
   change: typeof ActiveProfileChange.Type,
   state: ProfileControlSnapshot["settings"]
-): number | null => {
+) => {
   const { currentMode, selected } = state;
   const { parameters, target } = change;
   const soc = parameters.batterySoc;
@@ -343,9 +361,13 @@ export const activeBackupReserve = (
     soc.dischargeSocPercent !== selected.dischargeSocPercent ||
     soc.backupSocPercent < soc.dischargeSocPercent
   ) {
-    return null;
+    const checkedResult: number | null = null;
+    return checkedResult;
   }
-  return soc.backupSocPercent;
+  {
+    const checkedResult: number | null = soc.backupSocPercent;
+    return checkedResult;
+  }
 };
 
 type ProfileControlSettings = ProfileControlSnapshot["settings"];
@@ -385,33 +407,41 @@ export const profileControlMatches = (
   change: ProfileChange,
   observed: ProfileControlSnapshot,
   reviewed: ProfileControlSnapshot | undefined
-): boolean => {
+) => {
   if (reviewed === undefined) {
-    return false;
+    const checkedResult = false;
+    return checkedResult;
   }
   const after = observed.settings;
   const before = reviewed.settings;
   if (change.operation === "set_active_energy_profile_limits") {
-    return activeProfileLimitsMatch(change, before, after);
+    const checkedResult: boolean = activeProfileLimitsMatch(
+      change,
+      before,
+      after
+    );
+    return checkedResult;
   }
   if (
     JSON.stringify(after.currentMode) !== JSON.stringify(before.currentMode)
   ) {
-    return false;
+    const checkedResult = false;
+    return checkedResult;
   }
   if (change.operation === "delete_energy_profile") {
-    return (
+    const checkedResult: boolean =
       before.selected !== null &&
       after.selected === null &&
-      !after.profiles.some((profile) => profile.profileId === change.profileId)
-    );
+      !after.profiles.some((profile) => profile.profileId === change.profileId);
+    return checkedResult;
   }
   const source =
     change.operation === "create_energy_profile"
       ? before.source
       : before.selected;
   if (source === null || after.selected === null) {
-    return false;
+    const checkedResult = false;
+    return checkedResult;
   }
   if (
     change.operation === "create_energy_profile" &&
@@ -419,37 +449,45 @@ export const profileControlMatches = (
       (profile) => profile.profileId === after.selected?.providerProfileId
     )
   ) {
-    return false;
+    const checkedResult = false;
+    return checkedResult;
   }
   if (change.operation === "set_active_energy_profile_parameters") {
     const reserve = activeBackupReserve(change, before);
     const { backupSocPercent, ...otherSettings } = after.selected;
-    return (
-      reserve !== null &&
-      after.stationId === before.stationId &&
-      after.activeBackupReservePercent === reserve &&
-      (backupSocPercent === reserve ||
-        backupSocPercent === source.backupSocPercent) &&
-      profileSettingsEqual(
-        { ...otherSettings, backupSocPercent: source.backupSocPercent },
-        source
-      )
-    );
+    {
+      const checkedResult: boolean =
+        reserve !== null &&
+        after.stationId === before.stationId &&
+        after.activeBackupReservePercent === reserve &&
+        (backupSocPercent === reserve ||
+          backupSocPercent === source.backupSocPercent) &&
+        profileSettingsEqual(
+          { ...otherSettings, backupSocPercent: source.backupSocPercent },
+          source
+        );
+      return checkedResult;
+    }
   }
   const expected = proposedProfile(change, source);
-  return (
-    after.selected.providerActiveStatus === expected.providerActiveStatus &&
-    configuration(after.selected) === configuration(expected)
-  );
+  {
+    const checkedResult: boolean =
+      after.selected.providerActiveStatus === expected.providerActiveStatus &&
+      configuration(after.selected) === configuration(expected);
+    return checkedResult;
+  }
 };
 
-export const providerPower = (limit: typeof PowerLimit.Type): string => {
+export const providerPower = (limit: typeof PowerLimit.Type) => {
   if (limit.kind === "unset") {
-    return "";
+    const checkedResult = "";
+    return checkedResult;
   }
-  return limit.kind === "unlimited"
-    ? "4294967.295"
-    : String(limit.watts / 1000);
+  {
+    const checkedResult: string =
+      limit.kind === "unlimited" ? "4294967.295" : String(limit.watts / 1000);
+    return checkedResult;
+  }
 };
 const percent = (value: number | null) => (value === null ? "" : String(value));
 const windowBody = (window: {
@@ -461,76 +499,79 @@ const windowBody = (window: {
   startTime: window.startTime,
   whichDay: window.providerDays,
 });
-// Exactly the app's profile E() serializer. No caller-supplied paths or arbitrary JSON.
-export const profileBody = (
-  profile: ProfileConfiguration
-): Readonly<Record<string, Schema.Json>> => ({
-  activeStatus: profile.providerActiveStatus,
-  backupSOC: percent(profile.backupSocPercent),
-  batteryAutomationGroupVOList: profile.batteryGroups.map((group) => ({
-    activeStatus: group.providerActiveStatus,
-    b2GMaxDischargePower: providerPower(group.gridExportLimit),
-    chargeCutOffSoc: percent(group.chargeCutoffPercent),
-    dischargeCutOffSoc: percent(group.dischargeCutoffPercent),
-    g2BMaxChargePower: providerPower(group.gridChargeLimit),
-    itemVOList: group.windows.map(windowBody),
-    maxChargePower: providerPower(group.chargeLimit),
-    maxDischargePower: providerPower(group.dischargeLimit),
-    name: group.name,
-    priorityList: [...group.sourcePriority],
-    winMode: group.providerMode,
-  })),
-  batteryDischargePriority: [...profile.batteryDischargeSources],
-  batteryGlobalActive: profile.batteryEnabled,
-  batteryMaxChargingPower: providerPower(profile.batteryChargeLimit),
-  batteryMaxDischargingPower: providerPower(profile.batteryDischargeLimit),
-  chargeSOC: percent(profile.chargeSocPercent),
-  dischargeSOC: percent(profile.dischargeSocPercent),
-  exportLimitation: profile.gridExportEnabled,
-  gridAutomationGroupVOList: profile.gridGroups.map((group) => ({
-    activeStatus: group.providerActiveStatus,
-    itemVOList: group.windows.map(windowBody),
-    maxBuyPower: providerPower(group.importLimit),
-    maxSellPower: providerPower(group.exportLimit),
-    name: group.name,
-    priorityList: [...group.sourcePriority],
-    winMode: group.providerMode,
-  })),
-  gridGlobalActive: profile.gridEnabled,
-  importLimitation: profile.gridImportEnabled,
-  maxExportLimitation: providerPower(profile.gridExportLimit),
-  maxImportLimitation: providerPower(profile.gridImportLimit),
-  name: profile.profileName,
-  note: profile.description,
-  packPreheatingInfoVO: {
-    isAutoModeValid: profile.preheating.automaticModeValid,
-    isIndustry: profile.industrial,
-    packPreheatingSwitch: profile.preheating.providerSwitch,
-    packPreheatingVOList: profile.preheating.slots.map((slot) => ({
-      chargingPower: profile.industrial ? slot.providerChargingPower : null,
-      dischargePower: profile.industrial ? slot.providerDischargePower : null,
-      duration: slot.providerDuration,
-      periodConfig: [...slot.providerPeriods],
-      startTime: slot.providerStartTime,
+
+export const profileBody = (profile: ProfileConfiguration) => {
+  const checkedResult: Readonly<Record<string, Schema.Json>> = {
+    activeStatus: profile.providerActiveStatus,
+    backupSOC: percent(profile.backupSocPercent),
+    batteryAutomationGroupVOList: profile.batteryGroups.map((group) => ({
+      activeStatus: group.providerActiveStatus,
+      b2GMaxDischargePower: providerPower(group.gridExportLimit),
+      chargeCutOffSoc: percent(group.chargeCutoffPercent),
+      dischargeCutOffSoc: percent(group.dischargeCutoffPercent),
+      g2BMaxChargePower: providerPower(group.gridChargeLimit),
+      itemVOList: group.windows.map(windowBody),
+      maxChargePower: providerPower(group.chargeLimit),
+      maxDischargePower: providerPower(group.dischargeLimit),
+      name: group.name,
+      priorityList: [...group.sourcePriority],
+      winMode: group.providerMode,
     })),
-    preHeatingEnablesSwitch: profile.preheating.providerEnableSwitch,
-    preheatingMode: profile.industrial ? profile.preheating.providerMode : null,
-  },
-  peakShavingVO: {
-    controlMode: profile.peakShaving.providerControlMode,
-    settingList: profile.peakShaving.slots.map((slot) => ({
-      ...windowBody(slot),
-      peakPower: slot.peakPowerW / 1000,
+    batteryDischargePriority: [...profile.batteryDischargeSources],
+    batteryGlobalActive: profile.batteryEnabled,
+    batteryMaxChargingPower: providerPower(profile.batteryChargeLimit),
+    batteryMaxDischargingPower: providerPower(profile.batteryDischargeLimit),
+    chargeSOC: percent(profile.chargeSocPercent),
+    dischargeSOC: percent(profile.dischargeSocPercent),
+    exportLimitation: profile.gridExportEnabled,
+    gridAutomationGroupVOList: profile.gridGroups.map((group) => ({
+      activeStatus: group.providerActiveStatus,
+      itemVOList: group.windows.map(windowBody),
+      maxBuyPower: providerPower(group.importLimit),
+      maxSellPower: providerPower(group.exportLimit),
+      name: group.name,
+      priorityList: [...group.sourcePriority],
+      winMode: group.providerMode,
     })),
-    shavingSOC: profile.peakShaving.reserveSocPercent,
-  },
-  powerLimit: providerPower(profile.solarLimit),
-  profileId: profile.providerProfileId,
-  pvPriority: profile.solarPriority.map((entry) => ({
-    loadsType: entry.providerLoadType,
-    priority: entry.providerPriority,
-    sgDeviceType: entry.providerDeviceType,
-    smartLoadsPath: entry.smartLoadPath,
-  })),
-  stationId: Number(profile.stationId),
-});
+    gridGlobalActive: profile.gridEnabled,
+    importLimitation: profile.gridImportEnabled,
+    maxExportLimitation: providerPower(profile.gridExportLimit),
+    maxImportLimitation: providerPower(profile.gridImportLimit),
+    name: profile.profileName,
+    note: profile.description,
+    packPreheatingInfoVO: {
+      isAutoModeValid: profile.preheating.automaticModeValid,
+      isIndustry: profile.industrial,
+      packPreheatingSwitch: profile.preheating.providerSwitch,
+      packPreheatingVOList: profile.preheating.slots.map((slot) => ({
+        chargingPower: profile.industrial ? slot.providerChargingPower : null,
+        dischargePower: profile.industrial ? slot.providerDischargePower : null,
+        duration: slot.providerDuration,
+        periodConfig: [...slot.providerPeriods],
+        startTime: slot.providerStartTime,
+      })),
+      preHeatingEnablesSwitch: profile.preheating.providerEnableSwitch,
+      preheatingMode: profile.industrial
+        ? profile.preheating.providerMode
+        : null,
+    },
+    peakShavingVO: {
+      controlMode: profile.peakShaving.providerControlMode,
+      settingList: profile.peakShaving.slots.map((slot) => ({
+        ...windowBody(slot),
+        peakPower: slot.peakPowerW / 1000,
+      })),
+      shavingSOC: profile.peakShaving.reserveSocPercent,
+    },
+    powerLimit: providerPower(profile.solarLimit),
+    profileId: profile.providerProfileId,
+    pvPriority: profile.solarPriority.map((entry) => ({
+      loadsType: entry.providerLoadType,
+      priority: entry.providerPriority,
+      sgDeviceType: entry.providerDeviceType,
+      smartLoadsPath: entry.smartLoadPath,
+    })),
+    stationId: Number(profile.stationId),
+  };
+  return checkedResult;
+};

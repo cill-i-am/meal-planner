@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 
 import { readOwnedSources } from "./owned-source-files.js";
 
-// Reviewed vendor boundary exceptions for the installed Alchemy pin.
 const vendorContractExceptions = [
   {
     file: "apps/api/src/features/imports/import-provider-kernel.ts",
@@ -20,11 +19,11 @@ const vendorContractExceptions = [
     id: "ASU003",
   },
   {
-    file: "apps/api/src/features/imports/import-workflow-input.test-fixture.ts",
+    file: "apps/api/src/features/imports/import-workflow-input.fixture.ts",
     id: "ASU004",
   },
   {
-    file: "apps/api/src/features/imports/import-provider-workflow-task.test-fixture.ts",
+    file: "apps/api/src/features/imports/import-provider-workflow-task.fixture.ts",
     id: "ASU005",
   },
   {
@@ -52,7 +51,7 @@ const oxlintDisable = ["oxlint", "disable"].join("-");
 const ruleName = ["anti-slop", "no-unknown-parameters"].join("/");
 const suppression = `${oxlintDisable}-next-line ${ruleName}`;
 
-const suppressionLines = (source: string): readonly number[] => {
+const suppressionLines = (source: string) => {
   const commentPattern = /\/\/[^\n]*|\/\*[\s\S]*?\*\//gu;
   const locations: number[] = [];
 
@@ -66,7 +65,10 @@ const suppressionLines = (source: string): readonly number[] => {
     locations.push(source.slice(0, matchIndex).split("\n").length);
   }
 
-  return locations;
+  {
+    const checkedResult: readonly number[] = locations;
+    return checkedResult;
+  }
 };
 
 const suppressionLocations = ownedSources.flatMap(({ file, source }) =>

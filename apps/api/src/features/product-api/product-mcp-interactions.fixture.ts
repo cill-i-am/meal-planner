@@ -126,7 +126,7 @@ export const makeImportTransportFixture = () => {
   const conflict = () =>
     Response.json({ code: "version_conflict" }, { status: 409 });
 
-  const route = async (request: Request): Promise<Response> => {
+  const route = async (request: Request) => {
     const path = new URL(request.url).pathname;
     const operation = `${request.method} ${path}`;
     const key = request.headers.get("idempotency-key");
@@ -135,7 +135,9 @@ export const makeImportTransportFixture = () => {
       !member ||
       request.headers.get("x-meal-planner-household") !== familyId
     ) {
-      return Response.json({ code: "forbidden" }, { status: 403 });
+      const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+        Response.json({ code: "forbidden" }, { status: 403 });
+      return checkedResult;
     }
     if (operation === "POST /v1/recipe-import-intents") {
       Schema.decodeUnknownSync(
@@ -143,17 +145,25 @@ export const makeImportTransportFixture = () => {
         strict
       )(await request.json());
       if (key === null) {
-        return Response.json({}, { status: 400 });
+        const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+          Response.json({}, { status: 400 });
+        return checkedResult;
       }
       creationReceipts.add(key);
       if (loseCreateResponse) {
         loseCreateResponse = false;
         throw new Error("Fixture lost the response after durable admission");
       }
-      return intentResponse(intent, 201);
+      {
+        const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+          intentResponse(intent, 201);
+        return checkedResult;
+      }
     }
     if (operation === `GET ${intentPath}`) {
-      return intentResponse();
+      const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+        intentResponse();
+      return checkedResult;
     }
     if (operation === `GET ${intentPath}/timeline`) {
       const timeline = Schema.decodeUnknownSync(
@@ -163,13 +173,23 @@ export const makeImportTransportFixture = () => {
         data: events,
         object: "list",
       });
-      return Response.json(Schema.encodeSync(RecipeImportTimeline)(timeline));
+      {
+        const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+          Response.json(Schema.encodeSync(RecipeImportTimeline)(timeline));
+        return checkedResult;
+      }
     }
     if (operation === `GET ${actionPath}`) {
       if (intent.status === "cancelled") {
-        return Response.json({ code: "action_not_found" }, { status: 404 });
+        const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+          Response.json({ code: "action_not_found" }, { status: 404 });
+        return checkedResult;
       }
-      return Response.json(Schema.encodeSync(RecipeImportAction)(action));
+      {
+        const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+          Response.json(Schema.encodeSync(RecipeImportAction)(action));
+        return checkedResult;
+      }
     }
     if (operation === `POST ${actionPath}/confirm`) {
       const payload = Schema.decodeUnknownSync(
@@ -177,17 +197,23 @@ export const makeImportTransportFixture = () => {
         strict
       )(await request.json());
       if (key === null) {
-        return Response.json({}, { status: 400 });
+        const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+          Response.json({}, { status: 400 });
+        return checkedResult;
       }
       const previous = receipts.get(key);
       if (previous !== undefined) {
-        return intentResponse(previous);
+        const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+          intentResponse(previous);
+        return checkedResult;
       }
       if (
         payload.expectedActionVersion !== action.actionVersion ||
         action.status !== "active"
       ) {
-        return conflict();
+        const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+          conflict();
+        return checkedResult;
       }
       publications += 1;
       append({ recipeId, type: "intent_succeeded" });
@@ -205,7 +231,11 @@ export const makeImportTransportFixture = () => {
         status: "completed",
       });
       receipts.set(key, intent);
-      return intentResponse();
+      {
+        const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+          intentResponse();
+        return checkedResult;
+      }
     }
     if (operation === `POST ${intentPath}/cancel`) {
       const payload = Schema.decodeUnknownSync(
@@ -213,20 +243,32 @@ export const makeImportTransportFixture = () => {
         strict
       )(await request.json());
       if (key === null) {
-        return Response.json({}, { status: 400 });
+        const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+          Response.json({}, { status: 400 });
+        return checkedResult;
       }
       cancellations.push({
         expectedIntentVersion: payload.expectedIntentVersion,
         key,
       });
       if (payload.expectedIntentVersion !== intent.intentVersion) {
-        return conflict();
+        const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+          conflict();
+        return checkedResult;
       }
       append({ type: "intent_cancelled" });
       transition({ cancelledAt: at, status: "cancelled" });
-      return intentResponse();
+      {
+        const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+          intentResponse();
+        return checkedResult;
+      }
     }
-    return Response.json({ code: "not_found" }, { status: 404 });
+    {
+      const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+        Response.json({ code: "not_found" }, { status: 404 });
+      return checkedResult;
+    }
   };
 
   return {
@@ -280,28 +322,31 @@ export const makeImportTransportFixture = () => {
         owner?: { clientId: string; userId: string };
         scopes?: readonly ProductScope[];
       } = {}
-    ): Effect.Effect<ProductMcpDispatch> =>
-      makeProductMcpState({
-        owner: options.owner ?? {
-          clientId: "transport-client",
-          userId: "transport-user",
-        },
-        secret: Redacted.make(
-          "transport-only-secret-with-more-than-32-characters"
-        ),
-      }).pipe(
-        Effect.map((state) => ({
-          call: (request: Request) => Effect.promise(() => route(request)),
-          permits: (scopes: readonly ProductScope[]) =>
-            scopes.every((scope) =>
-              (
-                options.scopes ?? ["meal-planner:read", "meal-planner:write"]
-              ).includes(scope)
-            ),
-          state,
-        })),
-        Effect.orDie
-      ),
+    ) => {
+      const checkedResult: Effect.Effect<ProductMcpDispatch> =
+        makeProductMcpState({
+          owner: options.owner ?? {
+            clientId: "transport-client",
+            userId: "transport-user",
+          },
+          secret: Redacted.make(
+            "transport-only-secret-with-more-than-32-characters"
+          ),
+        }).pipe(
+          Effect.map((state) => ({
+            call: (request: Request) => Effect.promise(() => route(request)),
+            permits: (scopes: readonly ProductScope[]) =>
+              scopes.every((scope) =>
+                (
+                  options.scopes ?? ["meal-planner:read", "meal-planner:write"]
+                ).includes(scope)
+              ),
+            state,
+          })),
+          Effect.orDie
+        );
+      return checkedResult;
+    },
     fail: () => {
       append({ code: "analysis_failed", type: "intent_failed" });
       transition({

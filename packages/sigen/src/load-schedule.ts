@@ -59,7 +59,7 @@ export const LoadSchedule = Schema.Struct({
     const readyDays = schedule.readyBy.flatMap((row) =>
       row.providerDays.split(",")
     );
-    // Keep ready-by independent of timed rows until the provider's precedence is known.
+
     return (
       new Set(readyDays).size === readyDays.length &&
       schedule.timed.every((row) =>
@@ -118,7 +118,6 @@ export const providerLoadSchedule = (
   },
 });
 
-// Provider readback uses both numbers and decimal strings. Null and malformed values never compare as zero.
 const decimal = (value: string | number | null) =>
   value !== null && /^\d+(?:\.\d+)?$/u.test(String(value))
     ? Number(value)
@@ -198,7 +197,7 @@ export const loadScheduleMatches = (
     observed;
   const expected = providerLoadSchedule(schedule, before);
   const { smartSavePointParamsList, touPointParamsList } = expected.schedule;
-  // Row order is immaterial in this contract because validated rows cannot overlap.
+
   return (
     timed.length === touPointParamsList.length &&
     ready.length === smartSavePointParamsList.length &&

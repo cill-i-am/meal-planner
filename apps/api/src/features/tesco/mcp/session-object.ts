@@ -52,7 +52,6 @@ const catalogueFailure = (failure: TescoCatalogueError) =>
         : "upstream",
   });
 
-/** Alchemy owns the Effect runtime; this object alone owns session persistence, serialization and alarms. */
 const TescoSessionRuntime = Effect.gen(function* constructSessionObject() {
   const state = yield* Cloudflare.DurableObjectState;
   const encryptionSecret = yield* Config.Redacted(

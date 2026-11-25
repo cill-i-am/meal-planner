@@ -6,16 +6,16 @@ import {
 } from "./import-clairic-evidence.js";
 import type { RecipeEvidenceItem } from "./import-recipe-extractor.js";
 
-const item = (
-  value: string,
-  evidenceId = "transcript"
-): RecipeEvidenceItem => ({
-  artifactReference: "private:transcript",
-  evidenceId,
-  kind: "transcript",
-  origin: "creator_provided",
-  value,
-});
+const item = (value: string, evidenceId = "transcript") => {
+  const checkedResult: RecipeEvidenceItem = {
+    artifactReference: "private:transcript",
+    evidenceId,
+    kind: "transcript",
+    origin: "creator_provided",
+    value,
+  };
+  return checkedResult;
+};
 
 describe("Clairic evidence offsets", () => {
   it.each([

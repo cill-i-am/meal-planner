@@ -31,17 +31,20 @@ const caseNamed = (id: string) => {
   }
   return item;
 };
-const outputFor = (id: string): PersistedExtractionOutput => {
+const outputFor = (id: string) => {
   const item = caseNamed(id);
-  return {
-    caseId: id,
-    evidenceSha256: evidenceSha256(item),
-    failureCode: null,
-    measurements: unavailableMeasurements,
-    rawCandidate: Schema.encodeSync(Schema.Json)(item.expected),
-    rawProviderResponse: null,
-    status: "completed",
-  };
+  {
+    const checkedResult: PersistedExtractionOutput = {
+      caseId: id,
+      evidenceSha256: evidenceSha256(item),
+      failureCode: null,
+      measurements: unavailableMeasurements,
+      rawCandidate: Schema.encodeSync(Schema.Json)(item.expected),
+      rawProviderResponse: null,
+      status: "completed",
+    };
+    return checkedResult;
+  }
 };
 const runWith = (outputs: readonly PersistedExtractionOutput[]) =>
   Schema.decodeUnknownSync(PersistedExtractionRun)({

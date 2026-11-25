@@ -56,11 +56,12 @@ const fixture = async (enabled = true) => {
           : Effect.fail(failure("PermissionDenied"))
       ),
   };
-  const dispatch = vi.fn((): Effect.Effect<void, SigenFailure> =>
-    Effect.sync(() => {
+  const dispatch = vi.fn(() => {
+    const checkedResult: Effect.Effect<void, SigenFailure> = Effect.sync(() => {
       snapshot = solar(2000);
-    })
-  );
+    });
+    return checkedResult;
+  });
   const storage = {
     read: Effect.sync(() => book),
     write: (value: CommandBook) =>

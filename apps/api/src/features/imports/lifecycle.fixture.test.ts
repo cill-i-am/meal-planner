@@ -2,15 +2,15 @@ import { Effect, Schema } from "effect";
 import { expect, it } from "vitest";
 
 import {
-  MediaProbeOutput,
-  validateMediaProbe,
-} from "../../features/imports/import-media-validation.js";
-import { ProductionMediaLimits } from "../../features/imports/import-media.model.js";
-import {
   LifecycleFixtureByteCount,
   LifecycleFixtureDurationSeconds,
   lifecycleFixtureProbe,
-} from "./fixture.js";
+} from "../../test/import-media-lifecycle/lifecycle.fixture.js";
+import {
+  MediaProbeOutput,
+  validateMediaProbe,
+} from "./import-media-validation.js";
+import { ProductionMediaLimits } from "./import-media.model.js";
 
 it("the lifecycle fixture source probe passes the real preparation validation contract", async () => {
   const probe = Schema.decodeUnknownSync(MediaProbeOutput)(

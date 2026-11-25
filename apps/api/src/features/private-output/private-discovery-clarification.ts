@@ -71,12 +71,10 @@ type ProfileFacts = readonly {
   readonly id: typeof ProfileFactId.Type;
   readonly value: ProfileFactValue;
 }[];
-const isSafety = (
-  request: typeof Request.Type,
-  facts: ProfileFacts
-): boolean => {
+const isSafety = (request: typeof Request.Type, facts: ProfileFacts) => {
   if (request._tag === "ProfileTarget") {
-    return false;
+    const checkedResult = false;
+    return checkedResult;
   }
   const fact =
     request.factId === null
@@ -87,11 +85,13 @@ const isSafety = (
       stage: "clarification_target",
     });
   }
-  return (
-    request._tag === "SafetyMeaning" ||
-    request._tag === "SafetyHandling" ||
-    (fact !== undefined && fact.value._tag !== "FoodPreference")
-  );
+  {
+    const checkedResult: boolean =
+      request._tag === "SafetyMeaning" ||
+      request._tag === "SafetyHandling" ||
+      (fact !== undefined && fact.value._tag !== "FoodPreference");
+    return checkedResult;
+  }
 };
 const requireRevisit = (
   required: boolean,
@@ -114,7 +114,7 @@ const applyClarificationUpdate = (
   participant: PrivateDiscoveryEvidenceMessage,
   facts: ProfileFacts,
   coverage: PrivateDiscoveryCoverage
-): PrivateDiscoveryClarification => {
+) => {
   let next = previous;
   if (update !== null) {
     assertCurrentParticipantEvidence(update.evidence, participant);
@@ -168,7 +168,10 @@ const applyClarificationUpdate = (
       }
     }
   }
-  return next;
+  {
+    const checkedResult: PrivateDiscoveryClarification = next;
+    return checkedResult;
+  }
 };
 
 /** Closed clarification intents cannot select an arbitrary question or reopen a refused safety topic. */
@@ -179,7 +182,7 @@ export const applyPrivateDiscoveryClarification = (
   facts: ProfileFacts,
   coverage: PrivateDiscoveryCoverage,
   safetyDeclinedThisTurn: boolean
-): PrivateDiscoveryClarification => {
+) => {
   const pendingTarget =
     current._tag === "Pending" && current.request._tag !== "ProfileTarget"
       ? current.request.factId
@@ -204,37 +207,51 @@ export const applyPrivateDiscoveryClarification = (
     isSafety(next.request, facts) &&
     !(update?._tag === "Request" && update.safetyRevisit !== null)
   ) {
-    return {
+    const checkedResult: PrivateDiscoveryClarification = {
       ...next,
       _tag: "Declined",
       evidence: coverage.foodRestrictions.evidence,
     };
+    return checkedResult;
   }
-  return next;
+  {
+    const checkedResult: PrivateDiscoveryClarification = next;
+    return checkedResult;
+  }
 };
 
 /** Every visible clarification question comes from this finite application policy. */
 export const privateDiscoveryClarificationQuestion = (
   state: PrivateDiscoveryClarification
-): string | null => {
+) => {
   if (state._tag !== "Pending") {
-    return null;
+    const checkedResult: string | null = null;
+    return checkedResult;
   }
   switch (state.request._tag) {
     case "ProfileTarget": {
-      return "Does that describe your own food needs, or someone else's?";
+      const checkedResult: string | null =
+        "Does that describe your own food needs, or someone else's?";
+      return checkedResult;
     }
     case "ProfileEffect": {
-      return "Do you want to add this to your profile, replace an existing fact, or remove a fact?";
+      const checkedResult: string | null =
+        "Do you want to add this to your profile, replace an existing fact, or remove a fact?";
+      return checkedResult;
     }
     case "SafetyMeaning": {
-      return "Is that a preference, or a restriction your meals need to follow?";
+      const checkedResult: string | null =
+        "Is that a preference, or a restriction your meals need to follow?";
+      return checkedResult;
     }
     case "SafetyHandling": {
-      return "Should meals exclude that food, or do they need a particular adaptation?";
+      const checkedResult: string | null =
+        "Should meals exclude that food, or do they need a particular adaptation?";
+      return checkedResult;
     }
     default: {
-      return state.request satisfies never;
+      const checkedResult: string | null = state.request satisfies never;
+      return checkedResult;
     }
   }
 };

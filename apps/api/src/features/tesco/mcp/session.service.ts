@@ -161,7 +161,7 @@ export const makeTescoSessionService = <R>(
           phase,
           refreshTokenExpiresAt: expiry.RefreshToken,
         };
-        // A crash while rotating is ambiguous. The watchdog clears it instead of replaying a refresh token.
+
         yield* storage.write(
           {
             ...withRenewal(previous, attempt),
@@ -201,17 +201,20 @@ export const makeTescoSessionService = <R>(
         const attempt = (
           result: TescoRenewalAttempt["result"],
           finishedAt: number
-        ): TescoRenewalAttempt => ({
-          accessTokenExpiresAt,
-          failure: result === "renewed" ? null : failure,
-          finishedAt,
-          previousAccessTokenExpiresAt: initial.accessTokenExpiresAt,
-          refreshCookieChanged,
-          result,
-          startedAt,
-          steps,
-          tokenChanged,
-        });
+        ) => {
+          const checkedResult: TescoRenewalAttempt = {
+            accessTokenExpiresAt,
+            failure: result === "renewed" ? null : failure,
+            finishedAt,
+            previousAccessTokenExpiresAt: initial.accessTokenExpiresAt,
+            refreshCookieChanged,
+            result,
+            startedAt,
+            steps,
+            tokenChanged,
+          };
+          return checkedResult;
+        };
         const rotate = Effect.gen(function* rotate() {
           let url = new URL(
             "https://www.tesco.ie/account/login/en-IE?from=https%3A%2F%2Fwww.tesco.ie%2Fshop%2Fen-IE&prompt=none"
@@ -256,7 +259,7 @@ export const makeTescoSessionService = <R>(
               status: response.status,
             });
             failure = "response";
-            // Renewal uses headers only. Empty redirect bodies are valid; release any body reader promptly.
+
             yield* response.stream.pipe(
               Stream.take(1),
               Stream.runDrain,
@@ -317,7 +320,7 @@ export const makeTescoSessionService = <R>(
               );
               return { credentials: updated, session };
             }
-            // Cookie updates are committed before another redirect can consume the rotated state.
+
             yield* persist(updated, "refreshing", initial.lastRefreshedAt);
             if (response.status < 300 || response.status >= 400) {
               failure = "rejected";
@@ -408,7 +411,7 @@ export const makeTescoSessionService = <R>(
           ) {
             return yield* invalidInput();
           }
-          // Verify the bearer, without refreshing it, before replacing any working connection.
+
           const response = yield* client
             .post("https://xapi.tesco.com/", {
               body: HttpBody.jsonUnsafe({
@@ -470,11 +473,7 @@ export const makeTescoSessionService = <R>(
           }
           return (yield* refresh(record.session)).credentials;
         }),
-      health: Effect.gen(function* health(): Effect.fn.Return<
-        TescoConnectionHealth,
-        TescoSessionFailure,
-        R
-      > {
+      health: Effect.gen(function* health() {
         const record = yield* storage.read;
         const { session } = record;
         const now = yield* Clock.currentTimeMillis;

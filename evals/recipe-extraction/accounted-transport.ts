@@ -108,14 +108,16 @@ const io = <A>(operation: (signal: AbortSignal) => Promise<A>, code: string) =>
         resume(Effect.fail(new EvaluationTransportError({ code })));
       }
     })();
-    // Interruption aborts the signal, then joins native I/O that cannot be
-    // cancelled (including rename) before the accounting finalizer runs.
+
     return Effect.promise(() => completed);
   });
 
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
-const parseJson = (value: string): unknown => JSON.parse(value);
+const parseJson = (value: string) => {
+  const checkedResult: unknown = JSON.parse(value);
+  return checkedResult;
+};
 
 export const evaluationBridgePaths = (
   rootDirectory: string,
@@ -156,7 +158,7 @@ const migrate = async (database: EvaluationDatabase) => {
       }
       continue;
     }
-    // These are the repository's real Drizzle statements, including complete trigger bodies.
+
     const statements = sql
       .split("--> statement-breakpoint")
       .map((statement) => statement.trim())
@@ -199,8 +201,7 @@ const installEvaluationLimits = async (
   ) {
     throw new EvaluationTransportError({ code: "persisted_limits_mismatch" });
   }
-  // The production ledger has a fixed $10 cap. This local trigger adds a stricter
-  // cumulative reservation cap: settling cheaply never replenishes evaluation authority.
+
   await database
     .prepare(`CREATE TRIGGER IF NOT EXISTS evaluation_reservation_limit
     BEFORE INSERT ON provider_accounting_dispatches
@@ -289,16 +290,13 @@ export const createAccountedEvaluationTransport = async (
     recursive: true,
   });
   const lockPath = path.join(rootDirectory, "transport.lock");
-  // A crash leaves this lock and the invoking ledger entry intact. Recovery must
-  // inspect the original dispatch; starting a fresh invocation is not a retry.
+
   const lock = await open(lockPath, "wx", 0o600);
   const scope = Scope.makeUnsafe();
   let runtime: Miniflare | undefined;
   let closing: Promise<void> | null = null;
   const closeResources = async () => {
     try {
-      // Owned fibers join outstanding publication before unknown-cost settlement,
-      // so neither request files nor ledger writes can outlive this runtime.
       await Effect.runPromise(Scope.close(scope, Exit.void));
       await runtime?.dispose();
     } finally {
@@ -393,7 +391,6 @@ export const createAccountedEvaluationTransport = async (
         };
         return yield* runAccountedProviderDispatch({
           invoke: io(async (signal) => {
-            // Publication happens only after the production ledger claims invocation.
             await requestFiles.writeFile(
               `${files.request}.tmp`,
               JSON.stringify(
@@ -412,8 +409,7 @@ export const createAccountedEvaluationTransport = async (
               { flag: "wx", mode: 0o600, signal }
             );
             signal.throwIfAborted();
-            // Node rename has no AbortSignal support. The I/O boundary joins it
-            // on interruption before settling unknown or releasing the lock.
+
             await requestFiles.rename(`${files.request}.tmp`, files.request);
             signal.throwIfAborted();
             const response = await waitForResponse(
@@ -607,9 +603,6 @@ const runCliChild = async () => {
 };
 
 const runCli = async () => {
-  // Miniflare exits synchronously on OS signals. A native detached child keeps
-  // its workerd process outside the launcher's signal group and receives graceful
-  // interruption over IPC. Losing the parent also interrupts and settles safely.
   const child = fork(
     import.meta.filename,
     [CliChildMode, ...process.argv.slice(2)],

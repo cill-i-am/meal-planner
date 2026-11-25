@@ -10,8 +10,8 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { workerObservability } from "../../infrastructure/worker-observability.js";
-import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import { bundleWorkerFixture } from "../test/native-worker.fixture.js";
+import { workerObservability } from "./worker-observability.js";
 
 interface ProviderWorkflowInput {
   readonly failureCode?: string;
@@ -36,11 +36,14 @@ interface ProviderWorkflowInput {
 const { date: compatibilityDate, flags: compatibilityFlags } =
   workerObservability.compatibility;
 const fixturePath = fileURLToPath(
-  new URL("import-provider-workflow-task.test-fixture.ts", import.meta.url)
+  new URL(
+    "../features/imports/import-provider-workflow-task.fixture.ts",
+    import.meta.url
+  )
 );
 const householdDomainFixturePath = fileURLToPath(
   new URL(
-    "../households/household-domain-service.test-fixture.js",
+    "../features/households/household-domain-service.fixture.js",
     import.meta.url
   )
 );
@@ -74,7 +77,7 @@ const applyMigrations = async () => {
   const database = await runtime.getD1Database("ProviderAccountingDatabase");
   const migrations = await readDrizzleD1Migrations(
     fileURLToPath(
-      new URL("../../../provider-accounting-migrations", import.meta.url)
+      new URL("../../provider-accounting-migrations", import.meta.url)
     )
   );
   await database
@@ -88,7 +91,7 @@ const applyMigrations = async () => {
     .run();
   const applyRemaining = async (
     remaining: readonly (typeof migrations)[number][]
-  ): Promise<void> => {
+  ) => {
     const [migration, ...rest] = remaining;
     if (migration === undefined) {
       return;
@@ -849,7 +852,7 @@ describe("provider workflow task retry exhaustion", () => {
     expect(await readNumber(instanceId, "provider-calls-recovery-2")).toBe(1);
     expect(await readNumber(instanceId, "recipe-draft-completions")).toBe(1);
     expect(await readNumber(instanceId, "recovery-review-commits")).toBe(1);
-  }, 15_000);
+  });
 
   it("leaves a transient Household attempt-read failure retryable and resumes the same native recovery", async () => {
     const importId = randomUUID();

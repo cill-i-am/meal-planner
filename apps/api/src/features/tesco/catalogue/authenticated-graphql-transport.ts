@@ -11,10 +11,7 @@ import {
   TescoAuthenticatedRequestUnavailable,
   TescoAuthenticatedResponseInvalid,
 } from "./authenticated-graphql-transport.port.js";
-import type {
-  AuthenticatedGraphQlRead,
-  TescoAuthenticatedGraphQlTransportError,
-} from "./authenticated-graphql-transport.port.js";
+import type { AuthenticatedGraphQlRead } from "./authenticated-graphql-transport.port.js";
 import { TescoGraphQlErrorResponse } from "./xapi.protocol.js";
 
 type AttemptResult =
@@ -28,7 +25,7 @@ const TescoGraphQlStatus = Schema.Struct({
 const mangoHeaders = (
   config: TescoCatalogueConfig,
   authorization: TescoAuthorization
-): Record<string, string> => {
+) => {
   const headers: Record<string, string> = {
     accept: "application/json",
     "accept-language": config.locale,
@@ -48,11 +45,16 @@ const mangoHeaders = (
     headers["release-branch"] = config.releaseBranch;
   }
 
-  return headers;
+  {
+    const checkedResult: Record<string, string> = headers;
+    return checkedResult;
+  }
 };
 
-const isUnavailableStatus = (status: number): boolean =>
-  status === 429 || status >= 500;
+const isUnavailableStatus = (status: number) => {
+  const checkedResult: boolean = status === 429 || status >= 500;
+  return checkedResult;
+};
 
 /** Live Tesco GraphQL transport with operation-specific replay policy. */
 export const makeTescoAuthenticatedGraphQlTransportLive = (
@@ -68,12 +70,7 @@ export const makeTescoAuthenticatedGraphQlTransportLive = (
         function* executeOnce(
           operation: AuthenticatedGraphQlRead,
           authorization: TescoAuthorization
-        ): Effect.fn.Return<
-          AttemptResult,
-          | TescoAuthenticatedRequestUnavailable
-          | TescoAuthenticatedRequestRejected
-          | TescoAuthenticatedResponseInvalid
-        > {
+        ) {
           const httpRequest = HttpClientRequest.post(config.mangoUrl, {
             body: HttpBody.jsonUnsafe({
               operationName: operation.read.operationName,
@@ -92,7 +89,7 @@ export const makeTescoAuthenticatedGraphQlTransportLive = (
           );
 
           if (response.status === 401) {
-            return { _tag: "Unauthorized" };
+            return { _tag: "Unauthorized" } satisfies AttemptResult;
           }
           if (isUnavailableStatus(response.status)) {
             return yield* new TescoAuthenticatedRequestUnavailable({
@@ -124,8 +121,6 @@ export const makeTescoAuthenticatedGraphQlTransportLive = (
             )
           );
 
-          // Mango may report an authentication/upstream failure inside HTTP 200,
-          // including partial data. Apply the same policy before any projection.
           const envelope = yield* Schema.decodeUnknownEffect(
             TescoGraphQlStatus
           )(json).pipe(
@@ -138,7 +133,7 @@ export const makeTescoAuthenticatedGraphQlTransportLive = (
           );
           const status = envelope.status ?? response.status;
           if (status === 401) {
-            return { _tag: "Unauthorized" };
+            return { _tag: "Unauthorized" } satisfies AttemptResult;
           }
           if (isUnavailableStatus(status)) {
             return yield* new TescoAuthenticatedRequestUnavailable({
@@ -161,17 +156,12 @@ export const makeTescoAuthenticatedGraphQlTransportLive = (
             });
           }
 
-          return { _tag: "Success", json };
+          return { _tag: "Success", json } satisfies AttemptResult;
         }
       );
 
       const execute = Effect.fn("TescoGraphQlTransport.execute")(
-        function* execute(
-          operation: AuthenticatedGraphQlRead
-        ): Effect.fn.Return<
-          Schema.Json,
-          TescoAuthenticatedGraphQlTransportError
-        > {
+        function* execute(operation: AuthenticatedGraphQlRead) {
           const authorization = yield* authSession.authorization;
           const firstAttempt = yield* executeOnce(operation, authorization);
           if (firstAttempt._tag === "Success") {

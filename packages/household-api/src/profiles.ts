@@ -141,23 +141,31 @@ export const ProfileCommand = Schema.Union([
 export type ProfileCommand = typeof ProfileCommand.Type;
 
 /** Recover persisted intent; old authority labels never establish present authority. */
-export const profileCommandFromRecord = (
-  command: RecordedProfileCommand
-): ProfileCommand => {
+export const profileCommandFromRecord = (command: RecordedProfileCommand) => {
   switch (command._tag) {
     case "AddConfirmedProfileFact":
     case "AddProvisionalProfileFact": {
-      return { _tag: "AddProfileFact", fact: command.fact };
+      const checkedResult: ProfileCommand = {
+        _tag: "AddProfileFact",
+        fact: command.fact,
+      };
+      return checkedResult;
     }
     case "ConfirmProfileFact": {
-      return { _tag: command._tag, factId: command.factId };
+      const checkedResult: ProfileCommand = {
+        _tag: command._tag,
+        factId: command.factId,
+      };
+      return checkedResult;
     }
     case "ConfirmHardConstraintReduction": {
-      return command;
+      const checkedResult: ProfileCommand = command;
+      return checkedResult;
     }
     case "ReplaceOrdinaryProfileFact":
     case "RemoveOrdinaryProfileFact": {
-      return command;
+      const checkedResult: ProfileCommand = command;
+      return checkedResult;
     }
     default: {
       throw new Error(
@@ -187,17 +195,24 @@ export type MutatePersonProfilePayload = typeof MutatePersonProfilePayload.Type;
 export const readStoredProfilePayload = (
   // eslint-disable-next-line anti-slop/no-unknown-parameters -- This persistence parser decodes both stored formats before recovery can invoke the profile writer.
   input: unknown
-): MutatePersonProfilePayload => {
+) => {
   const current = Schema.decodeUnknownOption(MutatePersonProfilePayload, {
     onExcessProperty: "error",
   })(input);
   if (Option.isSome(current)) {
-    return current.value;
+    const checkedResult: MutatePersonProfilePayload = current.value;
+    return checkedResult;
   }
   const recorded = Schema.decodeUnknownSync(RecordedPersonProfilePayload, {
     onExcessProperty: "error",
   })(input);
-  return { ...recorded, command: profileCommandFromRecord(recorded.command) };
+  {
+    const checkedResult: MutatePersonProfilePayload = {
+      ...recorded,
+      command: profileCommandFromRecord(recorded.command),
+    };
+    return checkedResult;
+  }
 };
 
 /** Each version is also its immutable audit record; there is no second writer. */

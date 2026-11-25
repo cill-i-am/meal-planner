@@ -1,6 +1,5 @@
 import { Schema } from "effect";
 
-// App 4.1.0 weekday picker: Monday=1 ... Sunday=7. End 24:00 is midnight at the end of that day.
 export const ScheduleDays = Schema.String.check(
   Schema.isPattern(/^[1-7](?:,[1-7])*$/u),
   Schema.makeFilter(
@@ -19,10 +18,8 @@ export const ScheduleWindow = Schema.Struct({
 export type ScheduleWindow = typeof ScheduleWindow.Type;
 
 /** Reject overlaps across all groups, including disabled groups; a later enable cannot introduce a collision. */
-export const nonOverlappingWindows = (
-  windows: readonly ScheduleWindow[]
-): boolean =>
-  windows.every((window, index) =>
+export const nonOverlappingWindows = (windows: readonly ScheduleWindow[]) => {
+  const checkedResult: boolean = windows.every((window, index) =>
     windows
       .slice(index + 1)
       .every(
@@ -34,3 +31,5 @@ export const nonOverlappingWindows = (
           other.endTime <= window.startTime
       )
   );
+  return checkedResult;
+};

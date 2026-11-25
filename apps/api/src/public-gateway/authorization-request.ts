@@ -5,9 +5,7 @@ export interface AuthorizationRequest {
 }
 
 /** The provider validates the signature; this parser only reads display fields. */
-export const parseAuthorizationRequest = (
-  search: string
-): AuthorizationRequest | null => {
+export const parseAuthorizationRequest = (search: string) => {
   const params = new URLSearchParams(search);
   const clientId = params.get("client_id");
   const scope = params.get("scope");
@@ -19,13 +17,19 @@ export const parseAuthorizationRequest = (
       (name) => params.getAll(name).length !== 1
     )
   ) {
-    return null;
+    const checkedResult: AuthorizationRequest | null = null;
+    return checkedResult;
   }
-  return {
-    clientId,
-    oauthQuery: search,
-    scopes: [...new Set(scope.split(" ").filter((value) => value.length > 0))],
-  };
+  {
+    const checkedResult: AuthorizationRequest | null = {
+      clientId,
+      oauthQuery: search,
+      scopes: [
+        ...new Set(scope.split(" ").filter((value) => value.length > 0)),
+      ],
+    };
+    return checkedResult;
+  }
 };
 
 export const permissionDescriptions: Readonly<Record<string, string>> = {

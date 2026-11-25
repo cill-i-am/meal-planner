@@ -77,7 +77,6 @@ export const makeAcquisitionLifetime = Effect.fn("ImportMedia.makeLifetime")(
       Effect.gen(function* closeArtifactReader() {
         const reader = yield* mutex.withPermit(
           Effect.gen(function* reader() {
-            // Persist even an early close: a delayed fetch cannot admit this token later.
             yield* Effect.promise(() =>
               state.raw.storage.put(`closedReader:${readerId}`, true)
             );
@@ -136,8 +135,7 @@ export const makeAcquisitionLifetime = Effect.fn("ImportMedia.makeLifetime")(
                   yield* Deferred.succeed(readerCancelled, true);
                   yield* Deferred.await(setupDone);
                   yield* Scope.close(scope, Exit.void);
-                  // Scope.close can observe a concurrent close without joining it.
-                  // Active pulls still own their source cancellation finalizers.
+
                   yield* Effect.forEach([...pulls], Deferred.await, {
                     concurrency: "unbounded",
                     discard: true,
@@ -166,8 +164,7 @@ export const makeAcquisitionLifetime = Effect.fn("ImportMedia.makeLifetime")(
               if (response.body._tag !== "Stream") {
                 return response;
               }
-              // Own the source scope independently of downstream demand. Native DO
-              // response cancellation does not reliably close a paused body producer.
+
               const pull = yield* Stream.toPull(response.body.stream).pipe(
                 Effect.provideService(Scope.Scope, reader.scope)
               );
@@ -236,8 +233,7 @@ export const makeAcquisitionLifetime = Effect.fn("ImportMedia.makeLifetime")(
       }
       yield* retire;
       yield* Deferred.succeed(stopped, true);
-      // Terminal expiry cannot wait forever on a native reader cancellation.
-      // Wait on a detached join so timeout does not itself await stuck finalizers.
+
       const closing = yield* Effect.forEach([...readers.keys()], closeReader, {
         concurrency: "unbounded",
         discard: true,

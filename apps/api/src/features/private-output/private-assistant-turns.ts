@@ -61,13 +61,15 @@ type CardProposal = Pick<
   "change" | "expectedProfileVersion" | "reviewedFact"
 >;
 const active = inArray(privateAssistantTurns.status, ["queued", "running"]);
-const publicTurn = (turn: StoredTurn): AssistantTurn =>
-  Schema.decodeUnknownSync(AssistantTurn)({
+const publicTurn = (turn: StoredTurn) => {
+  const checkedResult: AssistantTurn = Schema.decodeUnknownSync(AssistantTurn)({
     failure: turn.failure,
     id: turn.id,
     sourceMessageId: turn.sourceMessageId,
     status: turn.status,
   });
+  return checkedResult;
+};
 const invalidOutput = (stage: PrivateDiscoveryInvalidOutputStage) =>
   new PrivateDiscoveryFailure({
     provenance: null,
@@ -75,34 +77,45 @@ const invalidOutput = (stage: PrivateDiscoveryInvalidOutputStage) =>
     stage,
     usage: null,
   });
-const factKey = (value: ProfileFactValue): string => {
+const factKey = (value: ProfileFactValue) => {
   if (value._tag === "NoKnownHardConstraints") {
-    return value._tag;
+    const checkedResult: string = value._tag;
+    return checkedResult;
   }
   const label = value.label.toLocaleLowerCase("en").replaceAll(/\s+/gu, " ");
-  return value._tag === "FoodPreference"
-    ? `${value._tag}:${value.targetKind}:${label}`
-    : `${value._tag}:${value.category}:${label}`;
+  {
+    const checkedResult: string =
+      value._tag === "FoodPreference"
+        ? `${value._tag}:${value.targetKind}:${label}`
+        : `${value._tag}:${value.category}:${label}`;
+    return checkedResult;
+  }
 };
-const proposalKey = (change: ProfileCardChange): string =>
-  change._tag === "AddConfirmedProfileFact"
-    ? `add:${factKey(change.fact)}`
-    : `target:${change.factId}`;
+const proposalKey = (change: ProfileCardChange) => {
+  const checkedResult: string =
+    change._tag === "AddConfirmedProfileFact"
+      ? `add:${factKey(change.fact)}`
+      : `target:${change.factId}`;
+  return checkedResult;
+};
 const reviewProposal = (
   intent: DiscoveryProfileCardChange,
   profile: PrivateDiscoveryProfile
-): CardProposal => {
+) => {
   if (intent._tag === "AddFact") {
     if (
       profile.facts.some((fact) => factKey(fact.value) === factKey(intent.fact))
     ) {
       throw invalidOutput("proposal_duplicate");
     }
-    return {
-      change: { _tag: "AddConfirmedProfileFact", fact: intent.fact },
-      expectedProfileVersion: profile.version,
-      reviewedFact: null,
-    };
+    {
+      const checkedResult: CardProposal = {
+        change: { _tag: "AddConfirmedProfileFact", fact: intent.fact },
+        expectedProfileVersion: profile.version,
+        reviewedFact: null,
+      };
+      return checkedResult;
+    }
   }
   const before = profile.facts.find((fact) => fact.id === intent.factId);
   if (before === undefined) {
@@ -151,22 +164,27 @@ const reviewProposal = (
       break;
     }
     default: {
-      return intent satisfies never;
+      const checkedResult: CardProposal = intent satisfies never;
+      return checkedResult;
     }
   }
-  return {
-    change,
-    expectedProfileVersion: profile.version,
-    reviewedFact: before.value,
-  };
+  {
+    const checkedResult: CardProposal = {
+      change,
+      expectedProfileVersion: profile.version,
+      reviewedFact: before.value,
+    };
+    return checkedResult;
+  }
 };
 export const reviewPrivateDiscoveryProposals = (
   output: SubmitDiscoveryTurn,
   context: PrivateDiscoveryContext,
   storedCards: readonly ProfileCard[]
-): readonly PrivateDiscoveryReviewedProposal[] => {
+) => {
   if (output.intent._tag === "Stop") {
-    return [];
+    const checkedResult: readonly PrivateDiscoveryReviewedProposal[] = [];
+    return checkedResult;
   }
   const seen = new Set(
     storedCards
@@ -174,37 +192,41 @@ export const reviewPrivateDiscoveryProposals = (
       .map((card) => proposalKey(card.change))
   );
   const revised = new Set<string>();
-  return output.intent.proposals.map((action) => {
-    let card: ProfileCard | null = null;
-    if (action._tag === "ReviseProposedProfileCard") {
-      const observed = context.cards.find(
-        (candidate) => candidate.id === action.cardId
-      );
-      const current = storedCards.find(
-        (candidate) => candidate.id === action.cardId
-      );
-      if (
-        observed?.status !== "proposed" ||
-        current?.status !== "proposed" ||
-        current.revision !== observed.revision
-      ) {
-        throw invalidOutput("proposal_revision_target");
-      }
-      if (revised.has(action.cardId)) {
-        throw invalidOutput("proposal_duplicate");
-      }
-      revised.add(action.cardId);
-      card = current;
-      seen.delete(proposalKey(current.change));
-    }
-    const proposal = reviewProposal(action.change, context.profile);
-    const key = proposalKey(proposal.change);
-    if (seen.has(key)) {
-      throw invalidOutput("proposal_duplicate");
-    }
-    seen.add(key);
-    return { card, proposal };
-  });
+  {
+    const checkedResult: readonly PrivateDiscoveryReviewedProposal[] =
+      output.intent.proposals.map((action) => {
+        let card: ProfileCard | null = null;
+        if (action._tag === "ReviseProposedProfileCard") {
+          const observed = context.cards.find(
+            (candidate) => candidate.id === action.cardId
+          );
+          const current = storedCards.find(
+            (candidate) => candidate.id === action.cardId
+          );
+          if (
+            observed?.status !== "proposed" ||
+            current?.status !== "proposed" ||
+            current.revision !== observed.revision
+          ) {
+            throw invalidOutput("proposal_revision_target");
+          }
+          if (revised.has(action.cardId)) {
+            throw invalidOutput("proposal_duplicate");
+          }
+          revised.add(action.cardId);
+          card = current;
+          seen.delete(proposalKey(current.change));
+        }
+        const proposal = reviewProposal(action.change, context.profile);
+        const key = proposalKey(proposal.change);
+        if (seen.has(key)) {
+          throw invalidOutput("proposal_duplicate");
+        }
+        seen.add(key);
+        return { card, proposal };
+      });
+    return checkedResult;
+  }
 };
 
 /** Owns durable model attempts and their local abort lifetime; never exposed as a native RPC target. */
@@ -228,41 +250,54 @@ export class PrivateAssistantTurns<TRunResult = unknown> {
     this.#socket = socket;
     this.#chat = new PrivateChatPersistence(database);
   }
-  latest(): AssistantTurn | null {
+  latest() {
     const row = this.#database
       .select()
       .from(privateAssistantTurns)
       .orderBy(desc(privateAssistantTurns.ordinal))
       .get();
-    return row === undefined ? null : publicTurn(row);
+    {
+      const checkedResult: AssistantTurn | null =
+        row === undefined ? null : publicTurn(row);
+      return checkedResult;
+    }
   }
-  pending(): AssistantTurn | undefined {
+  pending() {
     const row = this.#database
       .select()
       .from(privateAssistantTurns)
       .where(active)
       .get();
-    return row === undefined ? undefined : publicTurn(row);
+    {
+      const checkedResult: AssistantTurn | undefined =
+        row === undefined ? undefined : publicTurn(row);
+      return checkedResult;
+    }
   }
-  pendingGeneration(): string | undefined {
-    return this.#database
+  pendingGeneration() {
+    const checkedResult: string | undefined = this.#database
       .select({ generation: privateAssistantTurns.generation })
       .from(privateAssistantTurns)
       .where(active)
       .get()?.generation;
+    return checkedResult;
   }
-  queue(input: QueuedTurn): AssistantTurn {
+  queue(input: QueuedTurn) {
     const row = this.#database
       .insert(privateAssistantTurns)
       .values({ ...input, createdAt: Date.now(), status: "queued" })
       .returning()
       .get();
-    return publicTurn(row);
+    {
+      const checkedResult: AssistantTurn = publicTurn(row);
+      return checkedResult;
+    }
   }
-  canCancel(turnId: string): boolean {
-    return this.pending()?.id === turnId;
+  canCancel(turnId: string) {
+    const checkedResult: boolean = this.pending()?.id === turnId;
+    return checkedResult;
   }
-  cancel(turnId: string): AssistantTurn {
+  cancel(turnId: string) {
     const row = this.#database
       .update(privateAssistantTurns)
       .set({ completedAt: Date.now(), failure: null, status: "cancelled" })
@@ -278,9 +313,12 @@ export class PrivateAssistantTurns<TRunResult = unknown> {
     resources?.controller.abort(RUN_CANCEL_REASON);
     resources?.release();
     this.#clearExpiry(turnId);
-    return publicTurn(row);
+    {
+      const checkedResult: AssistantTurn = publicTurn(row);
+      return checkedResult;
+    }
   }
-  reauthorize(previousGeneration: string, generation: string): void {
+  reauthorize(previousGeneration: string, generation: string) {
     const rebound = this.#database
       .update(privateAssistantTurns)
       .set({ generation })
@@ -293,14 +331,14 @@ export class PrivateAssistantTurns<TRunResult = unknown> {
       this.#armExpiry(turn.id);
     }
   }
-  #clearExpiry(turnId: string): void {
+  #clearExpiry(turnId: string) {
     const timer = this.#expiryTimers.get(turnId);
     if (timer !== undefined) {
       clearTimeout(timer);
       this.#expiryTimers.delete(turnId);
     }
   }
-  #armExpiry(turnId: string): void {
+  #armExpiry(turnId: string) {
     this.#clearExpiry(turnId);
     const turn = this.#database
       .select()
@@ -325,7 +363,7 @@ export class PrivateAssistantTurns<TRunResult = unknown> {
   interrupt(
     failure: "connection_lost" | "runtime_restarted",
     generation?: string
-  ): void {
+  ) {
     const interrupted = this.#database
       .update(privateAssistantTurns)
       .set({ completedAt: Date.now(), failure, status: "interrupted" })
@@ -343,25 +381,25 @@ export class PrivateAssistantTurns<TRunResult = unknown> {
       this.#clearExpiry(turn.id);
     }
   }
-  #eligible(turn: StoredTurn, status: "queued" | "running"): boolean {
+  #eligible(turn: StoredTurn, status: "queued" | "running") {
     const current = this.#database
       .select()
       .from(privateAssistantTurns)
       .where(eq(privateAssistantTurns.id, turn.id))
       .get();
     const session = this.#database.select().from(privateSessionBinding).get();
-    return (
-      current?.status === status &&
-      this.#socket.isCurrent(current.generation) &&
-      session?.status === "open" &&
-      session.version === turn.expectedSessionVersion &&
-      this.#database.select().from(privatePendingConfirmation).get() ===
-        undefined
-    );
+    {
+      const checkedResult: boolean =
+        current?.status === status &&
+        this.#socket.isCurrent(current.generation) &&
+        session?.status === "open" &&
+        session.version === turn.expectedSessionVersion &&
+        this.#database.select().from(privatePendingConfirmation).get() ===
+          undefined;
+      return checkedResult;
+    }
   }
-  #context(
-    profile: (typeof RunAssistantTurn.Type)["profile"]
-  ): PrivateDiscoveryContext {
+  #context(profile: (typeof RunAssistantTurn.Type)["profile"]) {
     const messages = this.#chat
       .history()
       .slice(-PRIVATE_DISCOVERY_MESSAGE_LIMIT)
@@ -435,9 +473,14 @@ export class PrivateAssistantTurns<TRunResult = unknown> {
         usage: null,
       });
     }
-    return Schema.decodeUnknownSync(PrivateDiscoveryContext)(context);
+    {
+      const checkedResult: PrivateDiscoveryContext = Schema.decodeUnknownSync(
+        PrivateDiscoveryContext
+      )(context);
+      return checkedResult;
+    }
   }
-  #notify(turn: StoredTurn): void {
+  #notify(turn: StoredTurn) {
     const session = this.#database.select().from(privateSessionBinding).get();
     if (session === undefined) {
       return;
@@ -460,7 +503,7 @@ export class PrivateAssistantTurns<TRunResult = unknown> {
   #recordMeasurements(
     turn: StoredTurn,
     measurements: Pick<PrivateDiscoveryFailure, "provenance" | "usage">
-  ): void {
+  ) {
     const current = this.#database
       .select()
       .from(privateAssistantTurns)
@@ -500,46 +543,50 @@ export class PrivateAssistantTurns<TRunResult = unknown> {
     turn: StoredTurn,
     expectedStatus: "queued" | "running",
     failure: PrivateDiscoveryFailure
-  ): Effect.Effect<void> {
-    return Effect.gen({ self: this }, function* recordPrivateFailure() {
-      const row = this.#database.transaction(() => {
-        const current = this.#database
-          .select()
-          .from(privateAssistantTurns)
-          .where(eq(privateAssistantTurns.id, turn.id))
-          .get();
-        // Failure metadata may settle after a delivery generation detached.
-        if (current?.status !== expectedStatus) {
-          return;
-        }
-        this.#recordMeasurements(turn, failure);
-        return this.#database
-          .update(privateAssistantTurns)
-          .set({
-            completedAt: Date.now(),
-            failure: failure.reason,
-            status:
-              failure.reason === "outcome_unknown" ? "interrupted" : "failed",
-          })
-          .where(eq(privateAssistantTurns.id, turn.id))
-          .returning()
-          .get();
-      });
-      if (row !== undefined) {
-        this.#notify(row);
-        if (failure.reason === "invalid_output" && failure.stage !== null) {
-          yield* Effect.logWarning("private_discovery.invalid_output").pipe(
-            Effect.annotateLogs({ stage: failure.stage })
-          );
+  ) {
+    const checkedResult: Effect.Effect<void> = Effect.gen(
+      { self: this },
+      function* recordPrivateFailure() {
+        const row = this.#database.transaction(() => {
+          const current = this.#database
+            .select()
+            .from(privateAssistantTurns)
+            .where(eq(privateAssistantTurns.id, turn.id))
+            .get();
+
+          if (current?.status !== expectedStatus) {
+            return;
+          }
+          this.#recordMeasurements(turn, failure);
+          return this.#database
+            .update(privateAssistantTurns)
+            .set({
+              completedAt: Date.now(),
+              failure: failure.reason,
+              status:
+                failure.reason === "outcome_unknown" ? "interrupted" : "failed",
+            })
+            .where(eq(privateAssistantTurns.id, turn.id))
+            .returning()
+            .get();
+        });
+        if (row !== undefined) {
+          this.#notify(row);
+          if (failure.reason === "invalid_output" && failure.stage !== null) {
+            yield* Effect.logWarning("private_discovery.invalid_output").pipe(
+              Effect.annotateLogs({ stage: failure.stage })
+            );
+          }
         }
       }
-    });
+    );
+    return checkedResult;
   }
   #succeed(
     turn: StoredTurn,
     result: PrivateDiscoveryResult,
     context: PrivateDiscoveryContext
-  ): PrivateChatReply {
+  ) {
     let reply: PrivateChatReply | undefined;
     const row = this.#database.transaction(() => {
       if (!this.#eligible(turn, "running")) {
@@ -661,7 +708,10 @@ export class PrivateAssistantTurns<TRunResult = unknown> {
     if (reply === undefined) {
       throw new PrivateOutputUnavailable({ reason: "output_disabled" });
     }
-    return reply;
+    {
+      const checkedResult: PrivateChatReply = reply;
+      return checkedResult;
+    }
   }
   /** Application callbacks for the library-owned chat run; this class does not iterate a model. */
   async prepare(input: typeof RunAssistantTurn.Type) {
@@ -721,12 +771,19 @@ export class PrivateAssistantTurns<TRunResult = unknown> {
     };
     return {
       abortController: controller,
-      accept: (result: PrivateDiscoveryResult): PrivateChatReply => {
+      accept: (result: PrivateDiscoveryResult) => {
         if (!claimed || controller.signal.aborted) {
           throw new PrivateOutputUnavailable({ reason: "output_disabled" });
         }
         this.#recordMeasurements(turn, result);
-        return this.#succeed(turn, result, context);
+        {
+          const checkedResult: PrivateChatReply = this.#succeed(
+            turn,
+            result,
+            context
+          );
+          return checkedResult;
+        }
       },
       beforeDispatch,
       context,

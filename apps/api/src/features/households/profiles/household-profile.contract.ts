@@ -33,8 +33,7 @@ export type HouseholdMutatePersonProfileInput =
 
 export const HouseholdMutateInterviewProfileInput = Schema.Struct({
   admission: HouseholdPeopleMemberAdmission,
-  // The repository admits only the linked adult's own interview profile. Its
-  // common command resolver derives standing; explicit safety intent stays typed.
+
   payload: MutatePersonProfilePayload,
   personId: HouseholdPersonId,
 });

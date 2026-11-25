@@ -4,8 +4,13 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-const readRepoFile = (path: string): string =>
-  readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf-8");
+const readRepoFile = (path: string) => {
+  const checkedResult: string = readFileSync(
+    fileURLToPath(new URL(path, import.meta.url)),
+    "utf-8"
+  );
+  return checkedResult;
+};
 
 describe("Alchemy source structure (no provider lifecycle or runtime proof)", () => {
   it("loads the deployment graph in Node without evaluating Worker-only modules", () => {
@@ -19,7 +24,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       }
     );
     expect(result.status, result.stderr).toBe(0);
-  }, 20_000);
+  });
 
   it("disables provider request logging and retention", () => {
     const source = readRepoFile(

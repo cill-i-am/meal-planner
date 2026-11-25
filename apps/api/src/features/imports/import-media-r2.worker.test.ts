@@ -68,7 +68,7 @@ const canonicalId = Schema.decodeUnknownSync(SourceCanonicalId)(
 const retryableR2Failure = (stage: "store" | "verify") =>
   new RetryableAcquisitionError({ reason: "container_rpc", stage });
 
-const r2Object = (object: WorkerTestR2Object): R2ObjectLike => {
+const r2Object = (object: WorkerTestR2Object) => {
   let projected: R2ObjectLike = {
     checksums: object.checksums,
     size: object.size,
@@ -79,61 +79,73 @@ const r2Object = (object: WorkerTestR2Object): R2ObjectLike => {
   if (object.httpMetadata !== undefined) {
     projected = { ...projected, httpMetadata: object.httpMetadata };
   }
-  return projected;
+  {
+    const checkedResult: R2ObjectLike = projected;
+    return checkedResult;
+  }
 };
 
-const r2ObjectBody = (object: WorkerTestR2ObjectBody): R2ObjectBodyLike => ({
-  ...r2Object(object),
-  arrayBuffer: () =>
-    Effect.tryPromise({
-      catch: () => retryableR2Failure("verify"),
-      try: () => object.arrayBuffer(),
-    }),
-  text: () =>
-    Effect.tryPromise({
-      catch: () => retryableR2Failure("verify"),
-      try: () => object.text(),
-    }),
-});
+const r2ObjectBody = (object: WorkerTestR2ObjectBody) => {
+  const checkedResult: R2ObjectBodyLike = {
+    ...r2Object(object),
+    arrayBuffer: () =>
+      Effect.tryPromise({
+        catch: () => retryableR2Failure("verify"),
+        try: () => object.arrayBuffer(),
+      }),
+    text: () =>
+      Effect.tryPromise({
+        catch: () => retryableR2Failure("verify"),
+        try: () => object.text(),
+      }),
+  };
+  return checkedResult;
+};
 
-const bucket = (): AcquisitionBucketLike => ({
-  get: (key) =>
-    Effect.tryPromise({
-      catch: () => retryableR2Failure("verify"),
-      try: () => testEnv.ImportEvidenceBucket.get(key),
-    }).pipe(
-      Effect.map((object) => (object === null ? null : r2ObjectBody(object)))
-    ),
-  head: (key) =>
-    Effect.tryPromise({
-      catch: () => retryableR2Failure("verify"),
-      try: () => testEnv.ImportEvidenceBucket.head(key),
-    }).pipe(
-      Effect.map((object) => (object === null ? null : r2Object(object)))
-    ),
-  put: (key, value, options) =>
-    Effect.gen(function* putR2Object() {
-      const body = yield* workerTestR2PutBody(value, options.contentLength);
-      return yield* Effect.tryPromise({
-        catch: () => retryableR2Failure("store"),
-        try: () => testEnv.ImportEvidenceBucket.put(key, body, options),
-      });
-    }).pipe(
-      Effect.map((object) => (object === null ? null : r2Object(object)))
-    ),
-});
+const bucket = () => {
+  const checkedResult: AcquisitionBucketLike = {
+    get: (key) =>
+      Effect.tryPromise({
+        catch: () => retryableR2Failure("verify"),
+        try: () => testEnv.ImportEvidenceBucket.get(key),
+      }).pipe(
+        Effect.map((object) => (object === null ? null : r2ObjectBody(object)))
+      ),
+    head: (key) =>
+      Effect.tryPromise({
+        catch: () => retryableR2Failure("verify"),
+        try: () => testEnv.ImportEvidenceBucket.head(key),
+      }).pipe(
+        Effect.map((object) => (object === null ? null : r2Object(object)))
+      ),
+    put: (key, value, options) =>
+      Effect.gen(function* putR2Object() {
+        const body = yield* workerTestR2PutBody(value, options.contentLength);
+        return yield* Effect.tryPromise({
+          catch: () => retryableR2Failure("store"),
+          try: () => testEnv.ImportEvidenceBucket.put(key, body, options),
+        });
+      }).pipe(
+        Effect.map((object) => (object === null ? null : r2Object(object)))
+      ),
+  };
+  return checkedResult;
+};
 
-const consumingBucket = (): AcquisitionBucketLike => ({
-  get: () => Effect.fail(retryableR2Failure("verify")),
-  head: () => Effect.fail(retryableR2Failure("verify")),
-  put: (_key, value) =>
-    ArrayBuffer.isView(value)
-      ? Effect.fail(retryableR2Failure("store"))
-      : Stream.runDrain(value).pipe(
-          Effect.mapError(() => retryableR2Failure("store")),
-          Effect.as(null)
-        ),
-});
+const consumingBucket = () => {
+  const checkedResult: AcquisitionBucketLike = {
+    get: () => Effect.fail(retryableR2Failure("verify")),
+    head: () => Effect.fail(retryableR2Failure("verify")),
+    put: (_key, value) =>
+      ArrayBuffer.isView(value)
+        ? Effect.fail(retryableR2Failure("store"))
+        : Stream.runDrain(value).pipe(
+            Effect.mapError(() => retryableR2Failure("store")),
+            Effect.as(null)
+          ),
+  };
+  return checkedResult;
+};
 
 const rejectAfterStartingStream = (value: AcquisitionPutValue) =>
   ArrayBuffer.isView(value)

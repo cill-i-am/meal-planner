@@ -281,22 +281,20 @@ const operation = <
   execute: flow(
     Schema.decodeUnknownEffect(input, { onExcessProperty: "error" }),
     Effect.mapError(() => failure("InvalidInput")),
-    Effect.flatMap(
-      (
-        value
-      ): Effect.Effect<
+    Effect.flatMap((value) => {
+      const checkedResult: Effect.Effect<
         Readonly<Record<string, Schema.Json>>,
         SigenFailure,
         SigenCapabilities
-      > =>
-        run(value).pipe(
-          Effect.flatMap((result) =>
-            Schema.encodeUnknownEffect(output)(result).pipe(
-              Effect.mapError(() => failure("SchemaMismatch"))
-            )
+      > = run(value).pipe(
+        Effect.flatMap((result) =>
+          Schema.encodeUnknownEffect(output)(result).pipe(
+            Effect.mapError(() => failure("SchemaMismatch"))
           )
         )
-    )
+      );
+      return checkedResult;
+    })
   ),
   input,
   name,

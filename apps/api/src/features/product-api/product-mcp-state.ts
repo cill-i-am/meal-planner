@@ -142,146 +142,149 @@ const checkReviewTime = (continuation: ProductMcpReviewContinuation) =>
 export const makeProductMcpState = (options: {
   readonly owner: { readonly clientId: string; readonly userId: string };
   readonly secret: Redacted.Redacted<string>;
-}): Effect.Effect<ProductMcpState, ProductMcpStateError> =>
-  Effect.gen(function* makeImportMcpState() {
-    const owner = yield* decodeOwner(options.owner).pipe(
-      Effect.mapError(invalid)
-    );
-    if (Redacted.value(options.secret).length < 32) {
-      return yield* Effect.fail(unavailable());
-    }
-    const key = yield* Effect.tryPromise({
-      catch: unavailable,
-      try: () =>
-        crypto.subtle.importKey(
-          "raw",
-          new TextEncoder().encode(Redacted.value(options.secret)),
-          algorithm,
-          false,
-          ["sign", "verify"]
-        ),
-    });
-    const sign = (payload: string) => {
-      const encoded = Base64Url.encode(payload);
-      return Effect.tryPromise({
-        catch: unavailable,
-        try: () => crypto.subtle.sign(algorithm, key, signedBytes(encoded)),
-      }).pipe(
-        Effect.map(
-          (signature) =>
-            `${encoded}.${Base64Url.encode(new Uint8Array(signature))}`
-        ),
-        Effect.flatMap(decodeSignedState),
-        Effect.mapError((failure) =>
-          failure._tag === "SchemaError" ? invalid() : failure
-        )
+}) => {
+  const checkedResult: Effect.Effect<ProductMcpState, ProductMcpStateError> =
+    Effect.gen(function* makeImportMcpState() {
+      const owner = yield* decodeOwner(options.owner).pipe(
+        Effect.mapError(invalid)
       );
-    };
-    const verifiedPayload = (token: string) =>
-      Effect.gen(function* verifyMcpState() {
-        const value = yield* decodeSignedState(token).pipe(
-          Effect.mapError(invalid)
-        );
-        const [payload, signature] = value.split(".");
-        if (payload === undefined || signature === undefined) {
-          return yield* Effect.fail(invalid());
-        }
-        const signatureBytes = Base64Url.decode(signature);
-        const payloadBytes = Base64Url.decode(payload);
-        if (
-          Result.isFailure(signatureBytes) ||
-          Result.isFailure(payloadBytes) ||
-          Base64Url.encode(signatureBytes.success) !== signature ||
-          Base64Url.encode(payloadBytes.success) !== payload
-        ) {
-          return yield* Effect.fail(invalid());
-        }
-        const verified = yield* Effect.tryPromise({
-          catch: unavailable,
-          try: () =>
-            crypto.subtle.verify(
-              algorithm,
-              key,
-              new Uint8Array(signatureBytes.success),
-              signedBytes(payload)
-            ),
-        });
-        if (!verified) {
-          return yield* Effect.fail(invalid());
-        }
-        return yield* Effect.try({
-          catch: invalid,
-          try: () =>
-            new TextDecoder("utf-8", { fatal: true }).decode(
-              payloadBytes.success
-            ),
-        });
+      if (Redacted.value(options.secret).length < 32) {
+        return yield* Effect.fail(unavailable());
+      }
+      const key = yield* Effect.tryPromise({
+        catch: unavailable,
+        try: () =>
+          crypto.subtle.importKey(
+            "raw",
+            new TextEncoder().encode(Redacted.value(options.secret)),
+            algorithm,
+            false,
+            ["sign", "verify"]
+          ),
       });
-    const checkOwner = (supplied: typeof Owner.Type) =>
-      supplied.userId === owner.userId && supplied.clientId === owner.clientId
-        ? Effect.void
-        : Effect.fail(invalid());
-    return {
-      issueReview: (input) =>
-        Effect.gen(function* issueReviewContinuation() {
-          const continuation = yield* decodeReview(input).pipe(
+      const sign = (payload: string) => {
+        const encoded = Base64Url.encode(payload);
+        return Effect.tryPromise({
+          catch: unavailable,
+          try: () => crypto.subtle.sign(algorithm, key, signedBytes(encoded)),
+        }).pipe(
+          Effect.map(
+            (signature) =>
+              `${encoded}.${Base64Url.encode(new Uint8Array(signature))}`
+          ),
+          Effect.flatMap(decodeSignedState),
+          Effect.mapError((failure) =>
+            failure._tag === "SchemaError" ? invalid() : failure
+          )
+        );
+      };
+      const verifiedPayload = (token: string) =>
+        Effect.gen(function* verifyMcpState() {
+          const value = yield* decodeSignedState(token).pipe(
             Effect.mapError(invalid)
           );
-          yield* checkReviewTime(continuation);
-          return yield* sign(
-            JSON.stringify({
-              continuation: {
-                actionId: continuation.actionId,
-                actionVersion: continuation.actionVersion,
-                expiresAt: continuation.expiresAt,
-                familyId: continuation.familyId,
-                idempotencyKey: continuation.idempotencyKey,
-                intentId: continuation.intentId,
-              },
-              owner,
-              purpose: "recipe-import-review",
-              version: 1,
-            })
-          );
-        }),
-      issueTask: (input) =>
-        Effect.gen(function* issueTaskLocator() {
-          const locator = yield* decodeTask(input).pipe(
-            Effect.mapError(invalid)
-          );
-          yield* checkTaskTime(locator);
-          return yield* sign(
-            JSON.stringify({
-              locator: {
-                createdAt: locator.createdAt,
-                familyId: locator.familyId,
-                intentId: locator.intentId,
-              },
-              owner,
-              purpose: "recipe-import-task",
-              version: 1,
-            })
-          );
-        }),
-      readReview: (token) =>
-        Effect.gen(function* readReviewContinuation() {
-          const payload = yield* verifiedPayload(token);
-          const envelope = yield* decodeReviewEnvelope(payload).pipe(
-            Effect.mapError(invalid)
-          );
-          yield* checkOwner(envelope.owner);
-          yield* checkReviewTime(envelope.continuation);
-          return envelope.continuation;
-        }),
-      readTask: (token) =>
-        Effect.gen(function* readTaskLocator() {
-          const payload = yield* verifiedPayload(token);
-          const envelope = yield* decodeTaskEnvelope(payload).pipe(
-            Effect.mapError(invalid)
-          );
-          yield* checkOwner(envelope.owner);
-          yield* checkTaskTime(envelope.locator);
-          return envelope.locator;
-        }),
-    };
-  });
+          const [payload, signature] = value.split(".");
+          if (payload === undefined || signature === undefined) {
+            return yield* Effect.fail(invalid());
+          }
+          const signatureBytes = Base64Url.decode(signature);
+          const payloadBytes = Base64Url.decode(payload);
+          if (
+            Result.isFailure(signatureBytes) ||
+            Result.isFailure(payloadBytes) ||
+            Base64Url.encode(signatureBytes.success) !== signature ||
+            Base64Url.encode(payloadBytes.success) !== payload
+          ) {
+            return yield* Effect.fail(invalid());
+          }
+          const verified = yield* Effect.tryPromise({
+            catch: unavailable,
+            try: () =>
+              crypto.subtle.verify(
+                algorithm,
+                key,
+                new Uint8Array(signatureBytes.success),
+                signedBytes(payload)
+              ),
+          });
+          if (!verified) {
+            return yield* Effect.fail(invalid());
+          }
+          return yield* Effect.try({
+            catch: invalid,
+            try: () =>
+              new TextDecoder("utf-8", { fatal: true }).decode(
+                payloadBytes.success
+              ),
+          });
+        });
+      const checkOwner = (supplied: typeof Owner.Type) =>
+        supplied.userId === owner.userId && supplied.clientId === owner.clientId
+          ? Effect.void
+          : Effect.fail(invalid());
+      return {
+        issueReview: (input) =>
+          Effect.gen(function* issueReviewContinuation() {
+            const continuation = yield* decodeReview(input).pipe(
+              Effect.mapError(invalid)
+            );
+            yield* checkReviewTime(continuation);
+            return yield* sign(
+              JSON.stringify({
+                continuation: {
+                  actionId: continuation.actionId,
+                  actionVersion: continuation.actionVersion,
+                  expiresAt: continuation.expiresAt,
+                  familyId: continuation.familyId,
+                  idempotencyKey: continuation.idempotencyKey,
+                  intentId: continuation.intentId,
+                },
+                owner,
+                purpose: "recipe-import-review",
+                version: 1,
+              })
+            );
+          }),
+        issueTask: (input) =>
+          Effect.gen(function* issueTaskLocator() {
+            const locator = yield* decodeTask(input).pipe(
+              Effect.mapError(invalid)
+            );
+            yield* checkTaskTime(locator);
+            return yield* sign(
+              JSON.stringify({
+                locator: {
+                  createdAt: locator.createdAt,
+                  familyId: locator.familyId,
+                  intentId: locator.intentId,
+                },
+                owner,
+                purpose: "recipe-import-task",
+                version: 1,
+              })
+            );
+          }),
+        readReview: (token) =>
+          Effect.gen(function* readReviewContinuation() {
+            const payload = yield* verifiedPayload(token);
+            const envelope = yield* decodeReviewEnvelope(payload).pipe(
+              Effect.mapError(invalid)
+            );
+            yield* checkOwner(envelope.owner);
+            yield* checkReviewTime(envelope.continuation);
+            return envelope.continuation;
+          }),
+        readTask: (token) =>
+          Effect.gen(function* readTaskLocator() {
+            const payload = yield* verifiedPayload(token);
+            const envelope = yield* decodeTaskEnvelope(payload).pipe(
+              Effect.mapError(invalid)
+            );
+            yield* checkOwner(envelope.owner);
+            yield* checkTaskTime(envelope.locator);
+            return envelope.locator;
+          }),
+      };
+    });
+  return checkedResult;
+};

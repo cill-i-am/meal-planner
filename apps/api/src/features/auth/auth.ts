@@ -126,8 +126,6 @@ export const makeMealPlannerAuthConfiguration = ({
   const oauthLifecycleAccount = new AsyncLocalStorage<UserId>();
   const oauthOptions = mealPlannerOAuthOptions(baseURL, delegatedAccessEnabled);
   oauthOptions.postLogin = {
-    // Native login and session-cookie hooks can resume OAuth internally. Defer
-    // those responses to explicit consent, whose request owns the account claim.
     // eslint-disable-next-line unicorn/no-useless-undefined -- Native undefined retains user/client consent ownership without adding a reference dimension.
     consentReferenceId: () => undefined,
     page: "/oauth/consent",
@@ -166,8 +164,6 @@ export const makeMealPlannerAuthConfiguration = ({
     }
   };
   const authDatabase = () => {
-    // The CLI inspects this same configuration using SQLite without running endpoints.
-    // Production mutations require D1's atomic batch capability.
     if (!(database instanceof DrizzleD1Database)) {
       throw new TypeError("Authentication mutations require a D1 database.");
     }
@@ -209,7 +205,7 @@ export const makeMealPlannerAuthConfiguration = ({
     ],
     emailAndPassword,
     hooks: {
-      before: createAuthMiddleware((ctx): Promise<unknown> => {
+      before: createAuthMiddleware((ctx) => {
         let field: "email" | "newEmail" | undefined;
         if (ctx.path === "/change-email") {
           field = "newEmail";
@@ -217,7 +213,8 @@ export const makeMealPlannerAuthConfiguration = ({
           field = "email";
         }
         if (field === undefined) {
-          return Promise.resolve();
+          const checkedResult: Promise<unknown> = Promise.resolve();
+          return checkedResult;
         }
         const email = parseOptionalEmailAddress(ctx.body?.[field]);
         if (Option.isNone(email)) {
@@ -226,9 +223,12 @@ export const makeMealPlannerAuthConfiguration = ({
             message: "Enter a valid email address.",
           });
         }
-        return Promise.resolve({
-          context: { body: { ...ctx.body, [field]: email.value } },
-        });
+        {
+          const checkedResult: Promise<unknown> = Promise.resolve({
+            context: { body: { ...ctx.body, [field]: email.value } },
+          });
+          return checkedResult;
+        }
       }),
     },
     plugins: [
@@ -254,15 +254,20 @@ export const makeMealPlannerAuthConfiguration = ({
   return {
     configuration,
     delegatedAccessEnabled,
-    guard: <A>(operation: () => Promise<A>): Promise<A> =>
-      failures.run({ failure: undefined }, async () => {
-        const result = await operation();
-        const failure = failures.getStore()?.failure;
-        if (failure !== undefined) {
-          throw failure;
+    guard: <A>(operation: () => Promise<A>) => {
+      const checkedResult: Promise<A> = failures.run(
+        { failure: undefined },
+        async () => {
+          const result = await operation();
+          const failure = failures.getStore()?.failure;
+          if (failure !== undefined) {
+            throw failure;
+          }
+          return result;
         }
-        return result;
-      }),
+      );
+      return checkedResult;
+    },
     invitationIdentity,
     oauthLifecycle: ((input, canonical) =>
       guardedFence(input, () =>
@@ -280,7 +285,7 @@ export const fetchGuardedMealPlannerAuth = async (
   auth: AuthCore,
   security: MealPlannerAuthSecurity,
   request: Request
-): Promise<Response> => {
+) => {
   try {
     const { pathname } = new URL(request.url);
     if (
@@ -288,32 +293,38 @@ export const fetchGuardedMealPlannerAuth = async (
       (pathname.includes("/.well-known/") ||
         pathname.startsWith("/api/auth/oauth2/"))
     ) {
-      return Response.json(
-        {
-          error: "temporarily_unavailable",
-          message:
-            "OAuth requires a configured public origin for this deployment.",
-        },
-        { status: 503 }
-      );
+      const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+        Response.json(
+          {
+            error: "temporarily_unavailable",
+            message:
+              "OAuth requires a configured public origin for this deployment.",
+          },
+          { status: 503 }
+        );
+      return checkedResult;
     }
     const expectedUserId = request.headers.get("x-meal-planner-user");
     if (expectedUserId !== null) {
       const session = await auth.api.getSession({ headers: request.headers });
       if (session?.user.id !== expectedUserId) {
-        return Response.json(
-          {
-            code: "ACCOUNT_CHANGED",
-            message: "Your account changed. Reload to continue.",
-          },
-          { status: 401 }
-        );
+        const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+          Response.json(
+            {
+              code: "ACCOUNT_CHANGED",
+              message: "Your account changed. Reload to continue.",
+            },
+            { status: 401 }
+          );
+        return checkedResult;
       }
     }
     const path = pathname.slice("/api/auth".length);
     const execute = () => security.guard(() => auth.fetch(request));
     if (!oauthLifecyclePaths.has(path)) {
-      return await execute();
+      const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+        await execute();
+      return checkedResult;
     }
     let parameters: Record<string, string> = {};
     if (path === "/oauth2/token" || path === "/oauth2/revoke") {
@@ -334,7 +345,9 @@ export const fetchGuardedMealPlannerAuth = async (
           )
         );
       } else {
-        return Response.json({ error: "invalid_request" }, { status: 400 });
+        const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+          Response.json({ error: "invalid_request" }, { status: 400 });
+        return checkedResult;
       }
     }
     const accountId = await auth.api.resolveOAuthLifecycleAccount({
@@ -342,40 +355,49 @@ export const fetchGuardedMealPlannerAuth = async (
       headers: request.headers,
     });
     if (accountId === null) {
-      return await execute();
+      const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+        await execute();
+      return checkedResult;
     }
-    // One durable account intent spans native consume/CAS, token creation and
-    // response. Concurrent refresh/disconnect cannot cross that native gap.
-    return await security.oauthLifecycle(
-      {
-        accountId,
-        intentKey: await privateOutputKey("oauth-lifecycle", accountId),
-      },
-      async () => {
-        const response = await execute();
-        if (response.status >= 500) {
-          // Preserve the unresolved claim: a failed database response can have
-          // committed, so allowing another grant mutation would be unsafe.
-          throw new PrivateOutputUnavailable({ reason: "mutation_pending" });
-        }
-        return response;
-      }
-    );
+
+    {
+      const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+        await security.oauthLifecycle(
+          {
+            accountId,
+            intentKey: await privateOutputKey("oauth-lifecycle", accountId),
+          },
+          async () => {
+            const response = await execute();
+            if (response.status >= 500) {
+              throw new PrivateOutputUnavailable({
+                reason: "mutation_pending",
+              });
+            }
+            return response;
+          }
+        );
+      return checkedResult;
+    }
   } catch (error) {
     if (error instanceof APIError && error.statusCode < 500) {
-      return Response.json(error.body, {
-        headers: { "cache-control": "no-store" },
-        status: error.statusCode,
-      });
+      const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+        Response.json(error.body, {
+          headers: { "cache-control": "no-store" },
+          status: error.statusCode,
+        });
+      return checkedResult;
     }
-    return new Response(null, { status: 503 });
+    {
+      const checkedResult: Awaited<Promise<Response>> | Promise<Response> =
+        new Response(null, { status: 503 });
+      return checkedResult;
+    }
   }
 };
 
 /** Preserve the native Better Auth control plane for CLI schema generation and tests. */
-export const makeMealPlannerAuth = (
-  options: MealPlannerAuthOptions
-): MealPlannerAuth => {
+export const makeMealPlannerAuth = (options: MealPlannerAuthOptions) => {
   const security = makeMealPlannerAuthConfiguration(options);
   const { configuration, guard, invitationIdentity } = security;
   const auth = betterAuth<MealPlannerAuthConfiguration>(configuration);
@@ -385,7 +407,7 @@ export const makeMealPlannerAuth = (
     ...auth,
     api: {
       ...auth.api,
-      // Better Auth catches sign-out deletion errors; never report successful revocation after a failed fence.
+
       signOut: new Proxy(auth.api.signOut, {
         apply: (
           target,
@@ -397,17 +419,19 @@ export const makeMealPlannerAuth = (
     fetch,
     handler: fetch,
   };
-  return {
-    ...guarded,
-    // Only the server's retained household command may choose an invitation ID.
-    // The native organization hook supplies it without redefining the core schema field.
-    createHouseholdInvitation: ({
-      invitationId,
-      ...request
-    }: HouseholdInvitationRequest) =>
-      invitationIdentity.run(invitationId, () =>
-        auth.api.createInvitation(request)
-      ),
-    delegatedAccessEnabled: security.delegatedAccessEnabled,
-  };
+  {
+    const checkedResult: MealPlannerAuth = {
+      ...guarded,
+
+      createHouseholdInvitation: ({
+        invitationId,
+        ...request
+      }: HouseholdInvitationRequest) =>
+        invitationIdentity.run(invitationId, () =>
+          auth.api.createInvitation(request)
+        ),
+      delegatedAccessEnabled: security.delegatedAccessEnabled,
+    };
+    return checkedResult;
+  }
 };

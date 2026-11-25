@@ -25,34 +25,32 @@ export const delegatedScopes = [
 ] as const;
 
 /** Native provider owns all code, PKCE, refresh, token and consent persistence. */
-export const mealPlannerOAuthOptions = (
-  baseURL: string,
-  enabled = true
-): OAuthOptions<string[]> => ({
-  accessTokenExpiresIn: 15 * 60,
-  allowClientKeyRotation: false,
-  allowDynamicClientRegistration: enabled,
-  allowPublicClientPrelogin: enabled,
-  allowUnauthenticatedClientRegistration: enabled,
-  // Registration and owner inspection are public product capabilities. Client
-  // mutations can revoke many accounts through cascades, so keep that provider
-  // control plane disabled until it has an all-account output fence.
-  clientPrivileges: ({ action }) =>
-    action === "create" || action === "read" || action === "list",
-  clientRegistrationDefaultApplicationType: "infer",
-  clientRegistrationDefaultResources: enabled
-    ? [`${baseURL}/v1`, `${baseURL}/mcp`]
-    : [],
-  clientRegistrationDefaultScopes: [...delegatedScopes, "offline_access"],
-  clientRegistrationRequirePKCE: true,
-  consentPage: "/oauth/consent",
-  disableJwtPlugin: true,
-  grantTypes: ["authorization_code", "refresh_token"],
-  loginPage: "/login",
-  resourcePrivileges: () => false,
-  resources: enabled ? [`${baseURL}/v1`, `${baseURL}/mcp`] : [],
-  scopes: [...delegatedScopes, "offline_access"],
-});
+export const mealPlannerOAuthOptions = (baseURL: string, enabled = true) => {
+  const checkedResult: OAuthOptions<string[]> = {
+    accessTokenExpiresIn: 15 * 60,
+    allowClientKeyRotation: false,
+    allowDynamicClientRegistration: enabled,
+    allowPublicClientPrelogin: enabled,
+    allowUnauthenticatedClientRegistration: enabled,
+
+    clientPrivileges: ({ action }) =>
+      action === "create" || action === "read" || action === "list",
+    clientRegistrationDefaultApplicationType: "infer",
+    clientRegistrationDefaultResources: enabled
+      ? [`${baseURL}/v1`, `${baseURL}/mcp`]
+      : [],
+    clientRegistrationDefaultScopes: [...delegatedScopes, "offline_access"],
+    clientRegistrationRequirePKCE: true,
+    consentPage: "/oauth/consent",
+    disableJwtPlugin: true,
+    grantTypes: ["authorization_code", "refresh_token"],
+    loginPage: "/login",
+    resourcePrivileges: () => false,
+    resources: enabled ? [`${baseURL}/v1`, `${baseURL}/mcp`] : [],
+    scopes: [...delegatedScopes, "offline_access"],
+  };
+  return checkedResult;
+};
 
 const StoredSession = Schema.Struct({
   activeOrganizationId: Schema.optional(Schema.NullOr(HouseholdOrganizationId)),
@@ -106,8 +104,6 @@ export const DelegatedAccess = Context.Reference<DelegatedGrant | undefined>(
   }
 );
 
-// Better Auth owns a Promise callback boundary. The service restores only the
-// verified grant while invoking a native API; simultaneous callers stay isolated.
 const nativeDelegation = new AsyncLocalStorage<DelegatedGrant>();
 export const currentNativeDelegation = () => nativeDelegation.getStore();
 export const runWithNativeDelegation = <A>(
@@ -155,7 +151,7 @@ const resolveOAuthGrant = async (
   ctx: Parameters<typeof getOAuthProviderApi>[0],
   options: OAuthOptions<string[]>,
   body: typeof DelegatedRequest.Type
-): Promise<DelegatedGrant> => {
+) => {
   const parsed = Schema.decodeUnknownOption(AccessTokenClaims)(
     await getOAuthProviderApi(ctx, options).requireActiveAccessToken(
       Redacted.value(body.token)
@@ -182,8 +178,7 @@ const resolveOAuthGrant = async (
       message: "This connection has not been granted the required access.",
     });
   }
-  // Native consent deletion stops future authorization prompts but does not
-  // itself delete issued access tokens. Require the current grant as well.
+
   const consents = Schema.decodeUnknownSync(Schema.Array(StoredConsent))(
     await ctx.context.adapter.findMany({
       model: "oauthConsent",
@@ -240,7 +235,12 @@ const resolveOAuthGrant = async (
     token: body.token,
     user,
   };
-  return grant;
+  {
+    const checkedResult:
+      | Awaited<Promise<DelegatedGrant>>
+      | Promise<DelegatedGrant> = grant;
+    return checkedResult;
+  }
 };
 
 /** A server-only bridge validates the provider token before the application receives authority. */
@@ -387,37 +387,42 @@ export const makeDelegatedAccessBoundary = (
     readonly requiredScopes: readonly string[];
     readonly organizationId?: HouseholdOrganizationId | undefined;
   }) => Effect.Effect<DelegatedGrant, { readonly statusCode: number }>
-): DelegatedAccessBoundary => ({
-  withDelegatedAccess: (request, resource, requiredScopes, operation) =>
-    Effect.gen(function* authorizeDelegatedOperation() {
-      const body = yield* delegatedRequestInput(
-        request,
-        resource,
-        requiredScopes
-      );
-      const grant = yield* resolve(body).pipe(
-        Effect.mapError((error) =>
-          delegatedAccessFailure(resource, requiredScopes, error)
-        ),
-        Effect.catchDefect(() =>
-          Effect.fail(
-            delegatedAccessFailure(resource, requiredScopes, {
-              statusCode: 503,
-            })
-          )
-        )
-      );
-      const expectedUser = request.headers.get("x-meal-planner-user");
-      if (expectedUser !== null && expectedUser !== grant.user.id) {
-        return yield* Effect.fail(
-          delegatedAccessFailure(resource, requiredScopes, { statusCode: 401 })
+) => {
+  const checkedResult: DelegatedAccessBoundary = {
+    withDelegatedAccess: (request, resource, requiredScopes, operation) =>
+      Effect.gen(function* authorizeDelegatedOperation() {
+        const body = yield* delegatedRequestInput(
+          request,
+          resource,
+          requiredScopes
         );
-      }
-      return yield* operation.pipe(
-        Effect.provideService(DelegatedAccess, grant)
-      );
-    }),
-});
+        const grant = yield* resolve(body).pipe(
+          Effect.mapError((error) =>
+            delegatedAccessFailure(resource, requiredScopes, error)
+          ),
+          Effect.catchDefect(() =>
+            Effect.fail(
+              delegatedAccessFailure(resource, requiredScopes, {
+                statusCode: 503,
+              })
+            )
+          )
+        );
+        const expectedUser = request.headers.get("x-meal-planner-user");
+        if (expectedUser !== null && expectedUser !== grant.user.id) {
+          return yield* Effect.fail(
+            delegatedAccessFailure(resource, requiredScopes, {
+              statusCode: 401,
+            })
+          );
+        }
+        return yield* operation.pipe(
+          Effect.provideService(DelegatedAccess, grant)
+        );
+      }),
+  };
+  return checkedResult;
+};
 
 export const protectedResourceMetadata = (
   baseURL: string,

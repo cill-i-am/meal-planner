@@ -33,9 +33,14 @@ export const renderEmail = async ({
   readonly element: ReactElement;
   readonly subject: string;
   readonly to: EmailAddress;
-}): Promise<OutboundEmail> => {
+}) => {
   const html = await render(element);
-  return { html, subject, text: toPlainText(html), to };
+  {
+    const checkedResult:
+      | Awaited<Promise<OutboundEmail>>
+      | Promise<OutboundEmail> = { html, subject, text: toPlainText(html), to };
+    return checkedResult;
+  }
 };
 
 /** Cloudflare binding adapter; provider diagnostics never include mail content. */
@@ -46,23 +51,29 @@ export const makeCloudflareEmailSender =
     enabled: boolean,
     senderAddress: EmailAddress
   ) =>
-  (mail: OutboundEmail): Promise<void> => {
+  (mail: OutboundEmail) => {
     if (!enabled) {
-      return Effect.runPromise(Effect.fail(new EmailDeliveryUnavailable({})));
+      const checkedResult: Promise<void> = Effect.runPromise(
+        Effect.fail(new EmailDeliveryUnavailable({}))
+      );
+      return checkedResult;
     }
-    return Effect.runPromise(
-      client
-        .send({
-          from: { email: senderAddress, name: "Meal Planner" },
-          html: mail.html,
-          subject: mail.subject,
-          text: mail.text,
-          to: mail.to,
-        })
-        .pipe(
-          Effect.asVoid,
-          Effect.mapError(() => new EmailDeliveryUnavailable({})),
-          Effect.provideService(RuntimeContext, runtimeContext)
-        )
-    );
+    {
+      const checkedResult: Promise<void> = Effect.runPromise(
+        client
+          .send({
+            from: { email: senderAddress, name: "Meal Planner" },
+            html: mail.html,
+            subject: mail.subject,
+            text: mail.text,
+            to: mail.to,
+          })
+          .pipe(
+            Effect.asVoid,
+            Effect.mapError(() => new EmailDeliveryUnavailable({})),
+            Effect.provideService(RuntimeContext, runtimeContext)
+          )
+      );
+      return checkedResult;
+    }
   };

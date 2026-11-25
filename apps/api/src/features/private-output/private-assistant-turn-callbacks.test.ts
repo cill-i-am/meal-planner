@@ -46,30 +46,33 @@ const provenance: PrivateDiscoveryResult["provenance"] = {
   provider: "cloudflare-workers-ai",
   toolVersion: "synthetic",
 };
-const result = (): PrivateDiscoveryResult => ({
-  output: {
-    intent: {
-      _tag: "Continue",
-      proposals: [
-        {
-          _tag: "ProposeProfileCard",
-          change: {
-            _tag: "AddFact",
-            fact: {
-              _tag: "FoodPreference",
-              label: "tomatoes",
-              sentiment: "like",
-              targetKind: "ingredient",
+const result = () => {
+  const checkedResult: PrivateDiscoveryResult = {
+    output: {
+      intent: {
+        _tag: "Continue",
+        proposals: [
+          {
+            _tag: "ProposeProfileCard",
+            change: {
+              _tag: "AddFact",
+              fact: {
+                _tag: "FoodPreference",
+                label: "tomatoes",
+                sentiment: "like",
+                targetKind: "ingredient",
+              },
             },
           },
-        },
-      ],
-      updates: emptyPrivateDiscoveryContinuityUpdates(),
+        ],
+        updates: emptyPrivateDiscoveryContinuityUpdates(),
+      },
     },
-  },
-  provenance,
-  usage: { estimatedCostUsd: null, inputTokens: null, outputTokens: null },
-});
+    provenance,
+    usage: { estimatedCostUsd: null, inputTokens: null, outputTokens: null },
+  };
+  return checkedResult;
+};
 const setup = () => {
   const sqlite = new DatabaseSync(":memory:");
   databases.push(sqlite);

@@ -184,17 +184,21 @@ const refsFor = (
   importId: ImportId,
   generation: AcquisitionGeneration,
   frames: readonly VisualFrameArtifact[]
-): readonly VisualFrameReference[] =>
-  frames.map((frame, frameIndex) => ({
-    byteLength: frame.bytes.byteLength,
-    frameIndex,
-    height: frame.height,
-    key: visualFrameObjectKey(importId, generation, frameIndex),
-    mimeType: frame.mimeType,
-    sha256: Schema.decodeUnknownSync(Sha256Hex)(frame.sha256),
-    timestampMilliseconds: frame.timestampMilliseconds,
-    width: frame.width,
-  }));
+) => {
+  const checkedResult: readonly VisualFrameReference[] = frames.map(
+    (frame, frameIndex) => ({
+      byteLength: frame.bytes.byteLength,
+      frameIndex,
+      height: frame.height,
+      key: visualFrameObjectKey(importId, generation, frameIndex),
+      mimeType: frame.mimeType,
+      sha256: Schema.decodeUnknownSync(Sha256Hex)(frame.sha256),
+      timestampMilliseconds: frame.timestampMilliseconds,
+      width: frame.width,
+    })
+  );
+  return checkedResult;
+};
 const frameMetadata = (
   document: Pick<
     VisualEvidenceManifestDocument,
@@ -275,8 +279,6 @@ const verifiedManifestIdentity = (
 const verifiedManifestFrameContract = (
   document: VisualEvidenceManifestDocument
 ) => {
-  // Version 1 retained every sampled frame but submitted only the middle one.
-  // Preserve that accounting contract when recovering its persisted evidence.
   const inputBytes =
     document.schemaVersion === 1
       ? document.frames[Math.floor(document.frames.length / 2)]?.byteLength

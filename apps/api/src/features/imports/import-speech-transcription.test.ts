@@ -40,7 +40,7 @@ import {
   statuses,
   transcriptKey,
   unavailableSpeech,
-} from "./transcript-evidence.test-fixture.js";
+} from "./transcript-evidence.fixture.js";
 import {
   VisualEvidenceStore,
   VisualEvidenceStoreLive,
@@ -57,23 +57,26 @@ const pipelineFixture = (
     const completed: CompletedTranscriptEvidence[] = [];
     const failures: string[] = [];
     const calls: string[] = [];
-    const repository = (resume = false): SpeechTranscriptionRepository => ({
-      claim: () =>
-        Effect.succeed({
-          _tag: resume ? "ResumeDispatch" : "DispatchClaimed",
-          dispatchId,
-          startedAt: now,
-        }),
-      complete: (evidence) =>
-        Effect.sync(() => {
-          completed.push(evidence);
-          return evidence;
-        }),
-      fail: ({ failureCode }) =>
-        Effect.sync(() => {
-          failures.push(failureCode);
-        }),
-    });
+    const repository = (resume = false) => {
+      const checkedResult: SpeechTranscriptionRepository = {
+        claim: () =>
+          Effect.succeed({
+            _tag: resume ? "ResumeDispatch" : "DispatchClaimed",
+            dispatchId,
+            startedAt: now,
+          }),
+        complete: (evidence) =>
+          Effect.sync(() => {
+            completed.push(evidence);
+            return evidence;
+          }),
+        fail: ({ failureCode }) =>
+          Effect.sync(() => {
+            failures.push(failureCode);
+          }),
+      };
+      return checkedResult;
+    };
     const speechTranscriber: SpeechTranscriber = {
       transcribe: () =>
         Effect.sync(() => {

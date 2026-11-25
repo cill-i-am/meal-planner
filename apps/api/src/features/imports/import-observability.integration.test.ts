@@ -20,7 +20,7 @@ import {
   makeImportTraceContext,
   observeImportWorkflowStart,
 } from "./import-observability.js";
-import { makeVisualTransport } from "./import-provider-adapters.test-fixture.js";
+import { makeVisualTransport } from "./import-provider-adapters.fixture.js";
 import { makeProviderDispatchGate } from "./import-provider-kernel.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
 import { ImportId } from "./import.contracts.js";
@@ -214,7 +214,7 @@ describe("speech recovery workflow restart reconciliation", () => {
 
 describe("opaque import correlation continuity", () => {
   it("traverses queue, workflow, installed transport, budget and settlement without diverging on reconciliation", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const log = vi.spyOn(console, "log");
     const spans: Tracer.NativeSpan[] = [];
     const tracer = Tracer.make({
       span: (options) => {
@@ -382,7 +382,7 @@ describe("opaque import correlation continuity", () => {
   });
 
   it("fails closed and redacted when unapproved context reaches observability", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const log = vi.spyOn(console, "log");
     const events: ImportObservabilityEvent[] = [];
     const spans: Tracer.NativeSpan[] = [];
     const tracer = Tracer.make({

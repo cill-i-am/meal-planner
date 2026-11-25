@@ -27,22 +27,23 @@ export const PreheatingResponse = Schema.Struct({
   preHeatingEnablesSwitch: Schema.NullOr(Schema.Int),
   preheatingMode: Schema.NullOr(Schema.Int),
 });
-export const preheatingValues = (
-  data: typeof PreheatingResponse.Type
-): typeof PreheatingConfiguration.Type => ({
-  automaticModeValid: data.isAutoModeValid,
-  industrial: data.isIndustry,
-  providerEnableSwitch: data.preHeatingEnablesSwitch,
-  providerMode: data.preheatingMode,
-  providerSwitch: data.packPreheatingSwitch,
-  slots: data.packPreheatingVOList.map((slot) => ({
-    providerChargingPower: slot.chargingPower,
-    providerDischargePower: slot.dischargePower,
-    providerDuration: slot.duration,
-    providerPeriods: slot.periodConfig,
-    providerStartTime: slot.startTime,
-  })),
-});
+export const preheatingValues = (data: typeof PreheatingResponse.Type) => {
+  const checkedResult: typeof PreheatingConfiguration.Type = {
+    automaticModeValid: data.isAutoModeValid,
+    industrial: data.isIndustry,
+    providerEnableSwitch: data.preHeatingEnablesSwitch,
+    providerMode: data.preheatingMode,
+    providerSwitch: data.packPreheatingSwitch,
+    slots: data.packPreheatingVOList.map((slot) => ({
+      providerChargingPower: slot.chargingPower,
+      providerDischargePower: slot.dischargePower,
+      providerDuration: slot.duration,
+      providerPeriods: slot.periodConfig,
+      providerStartTime: slot.startTime,
+    })),
+  };
+  return checkedResult;
+};
 export const makePreheatingClient = (read: ProviderRead) => ({
   preheatingSettings: (id: StationId, token: Redacted.Redacted<string>) =>
     Effect.gen(function* readPreheating() {

@@ -23,8 +23,10 @@ import {
   TescoSuggestionsEndpoint,
 } from "./xapi.protocol.js";
 
-const isUnavailableStatus = (status: number): boolean =>
-  status === 429 || status >= 500;
+const isUnavailableStatus = (status: number) => {
+  const checkedResult: boolean = status === 429 || status >= 500;
+  return checkedResult;
+};
 
 const mapTransportError = (
   error: TescoAuthenticatedGraphQlTransportError,

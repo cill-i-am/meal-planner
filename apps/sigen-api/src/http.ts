@@ -58,7 +58,12 @@ export const readJson = (request: Request) =>
     }
     return yield* Effect.try({
       catch: () => failure("InvalidInput"),
-      try: (): unknown => JSON.parse(new TextDecoder().decode(bytes)),
+      try: () => {
+        const checkedResult: unknown = JSON.parse(
+          new TextDecoder().decode(bytes)
+        );
+        return checkedResult;
+      },
     });
   });
 export interface HttpOptions {

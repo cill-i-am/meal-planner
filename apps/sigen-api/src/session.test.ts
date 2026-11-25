@@ -65,12 +65,14 @@ const fixture = () => {
   let alarm: number | null = null;
   let count = 0;
   let revoked = false;
-  const tokens = (): Redacted.Redacted<TokenBundle> =>
-    Redacted.make({
+  const tokens = () => {
+    const checkedResult: Redacted.Redacted<TokenBundle> = Redacted.make({
       accessToken: `synthetic-access-${count}`,
       expiresAt: Date.now() + (count + 1) * 3_600_000,
       refreshToken: `synthetic-refresh-${count}`,
     });
+    return checkedResult;
+  };
   const storage = {
     read: Effect.sync(() => Schema.decodeUnknownSync(SessionRecord)(record)),
     write: (value: SessionRecord, at: number | null) =>

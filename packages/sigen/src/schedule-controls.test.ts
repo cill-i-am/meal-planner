@@ -96,7 +96,7 @@ describe("SOC, peak-shaving and manual-stop controls", () => {
     "refuses to pretend disabling peak shaving changes its retained preset: %j",
     async (patch) => {
       const f = fixture();
-      // Keep historical reviews readable even when they are no longer valid new requests.
+
       const disabled = Schema.decodeUnknownSync(ControlChange)({
         ...change,
         ...patch,
@@ -149,7 +149,7 @@ describe("SOC, peak-shaving and manual-stop controls", () => {
       settings: { ...schedule.settings, providerControlMode: 0 },
     };
     expect(controlMatches(disabled, stopped)).toBe(true);
-    // The earlier zero/empty restoration request must remain unverified, not be reinterpreted.
+
     expect(
       controlMatches({ ...disabled, reserveSocPercent: 0, slots: [] }, stopped)
     ).toBe(false);

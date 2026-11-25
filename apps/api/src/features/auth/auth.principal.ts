@@ -37,14 +37,18 @@ export const AuthPrincipalResolver = Context.Service<AuthPrincipalResolver>(
   "meal-planner/AuthPrincipalResolver"
 );
 
-const sha256 = async (value: string): Promise<string> => {
+const sha256 = async (value: string) => {
   const digest = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(value)
   );
-  return Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
+  {
+    const checkedResult: Awaited<Promise<string>> | Promise<string> =
+      Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, "0")
+      ).join("");
+    return checkedResult;
+  }
 };
 
 const AuthenticatedOrganization = Schema.Struct({
@@ -138,7 +142,7 @@ export const resolveAuthenticatedOrganization = (options: {
         ? error
         : new AuthPrincipalResolutionError({ reason: "invalid_session" })
     ),
-    // Alchemy exposes non-APIError provider failures as defects. Fail closed at admission.
+
     Effect.catchDefect(() =>
       Effect.fail(
         new AuthPrincipalResolutionError({ reason: "invalid_session" })
@@ -171,17 +175,23 @@ export const resolveAuthPrincipal = (options: {
 
 export const makeAuthPrincipalResolver = (options: {
   readonly auth: MealPlannerAuthService;
-}): AuthPrincipalResolver => ({
-  resolve: (headers) => resolveAuthPrincipal({ headers, ...options }),
-});
+}) => {
+  const checkedResult: AuthPrincipalResolver = {
+    resolve: (headers) => resolveAuthPrincipal({ headers, ...options }),
+  };
+  return checkedResult;
+};
 
 export const makeAuthenticatedOrganizationResolver = (options: {
   readonly auth: MealPlannerAuthService;
-}): AuthenticatedOrganizationResolver => ({
-  resolve: (headers, organizationId) =>
-    resolveAuthenticatedOrganization({
-      headers,
-      ...options,
-      organizationId,
-    }),
-});
+}) => {
+  const checkedResult: AuthenticatedOrganizationResolver = {
+    resolve: (headers, organizationId) =>
+      resolveAuthenticatedOrganization({
+        headers,
+        ...options,
+        organizationId,
+      }),
+  };
+  return checkedResult;
+};

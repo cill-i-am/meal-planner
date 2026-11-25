@@ -75,26 +75,30 @@ export const makeCommands = <R>(
       ));
   const bookFor = (connectionId: string) =>
     storage.read.pipe(
-      Effect.map((book): CommandBook =>
-        book?.connectionId === connectionId
-          ? book
-          : {
-              commands: (book?.commands ?? []).map((command): Command =>
-                command.phase.status === "prepared" ||
-                command.phase.status === "approved"
-                  ? {
-                      ...command,
-                      phase: {
-                        reason: "AuthenticationRequired",
-                        status: "rejected",
-                      },
-                    }
-                  : command
-              ),
-              connectionId,
-              grants: [],
-            }
-      )
+      Effect.map((book) => {
+        const checkedResult: CommandBook =
+          book?.connectionId === connectionId
+            ? book
+            : {
+                commands: (book?.commands ?? []).map((command) => {
+                  const nestedResult: Command =
+                    command.phase.status === "prepared" ||
+                    command.phase.status === "approved"
+                      ? {
+                          ...command,
+                          phase: {
+                            reason: "AuthenticationRequired",
+                            status: "rejected",
+                          },
+                        }
+                      : command;
+                  return nestedResult;
+                }),
+                connectionId,
+                grants: [],
+              };
+        return checkedResult;
+      })
     );
   const find = (book: CommandBook, input: typeof CommandInput.Type) => {
     const command = book.commands.find(

@@ -142,7 +142,7 @@ const desiredSettingsWithProviderDefaults: ConsumerSettings = {
   maxRetries: 3,
 };
 
-const loadQueueModules = async (): Promise<LoadedQueueModules> => {
+const loadQueueModules = async () => {
   const cloudflareEntry = import.meta.resolve("@alchemy.run/cloudflare");
   const consumerUrl = new URL("Queues/Consumer.js", cloudflareEntry);
   const requireFromAlchemy = createRequire(consumerUrl);
@@ -158,97 +158,123 @@ const loadQueueModules = async (): Promise<LoadedQueueModules> => {
     import(queuesUrl.href) as Promise<QueuesModule>,
   ]);
 
-  return { credentialsModule, queuesModule };
+  {
+    const checkedResult:
+      | Awaited<Promise<LoadedQueueModules>>
+      | Promise<LoadedQueueModules> = { credentialsModule, queuesModule };
+    return checkedResult;
+  }
 };
 
-const loadTestCore = (): Promise<TestCoreModule> =>
-  import(import.meta.resolve("@alchemy.run/test/Core"));
+const loadTestCore = () => {
+  const checkedResult: Promise<TestCoreModule> = import(
+    import.meta.resolve("@alchemy.run/test/Core")
+  );
+  return checkedResult;
+};
 
-const decodeRequestBody = (body: HttpBody.HttpBody): QueueRequestBody => {
+const decodeRequestBody = (body: HttpBody.HttpBody) => {
   if (body._tag !== "Uint8Array") {
     throw new TypeError(`Expected a JSON request body, received ${body._tag}`);
   }
-  return JSON.parse(new TextDecoder().decode(body.body)) as QueueRequestBody;
+  {
+    const checkedResult: QueueRequestBody = JSON.parse(
+      new TextDecoder().decode(body.body)
+    ) as QueueRequestBody;
+    return checkedResult;
+  }
 };
 
 const cloudflareResponse = (
   request: Parameters<typeof HttpClientResponse.fromWeb>[0],
   result: Schema.Json
-): HttpClientResponse.HttpClientResponse =>
-  HttpClientResponse.fromWeb(
-    request,
-    Response.json({ errors: [], messages: [], result, success: true })
-  );
+) => {
+  const checkedResult: HttpClientResponse.HttpClientResponse =
+    HttpClientResponse.fromWeb(
+      request,
+      Response.json({ errors: [], messages: [], result, success: true })
+    );
+  return checkedResult;
+};
 
 const cloudflareErrorResponse = (
   request: Parameters<typeof HttpClientResponse.fromWeb>[0],
   code: number,
   message: string,
   status = 400
-): HttpClientResponse.HttpClientResponse =>
-  HttpClientResponse.fromWeb(
-    request,
-    Response.json(
-      {
-        errors: [{ code, message }],
-        messages: [],
-        result: null,
-        success: false,
-      },
-      { status }
-    )
-  );
+) => {
+  const checkedResult: HttpClientResponse.HttpClientResponse =
+    HttpClientResponse.fromWeb(
+      request,
+      Response.json(
+        {
+          errors: [{ code, message }],
+          messages: [],
+          result: null,
+          success: false,
+        },
+        { status }
+      )
+    );
+  return checkedResult;
+};
 
 const provideQueueServices = <A, R>(
   modules: LoadedQueueModules,
   client: HttpClient.HttpClient,
   effect: Effect.Effect<A, unknown, R>
-): Effect.Effect<A, unknown> => {
+) => {
   const credentials = modules.credentialsModule.apiTokenCredentials({
     apiBaseUrl: "https://cloudflare.invalid/client/v4",
     apiToken: Redacted.make("local-test-placeholder"),
   });
 
-  return effect.pipe(
-    Effect.provideService(HttpClient.HttpClient, client),
-    Effect.provideService(
-      modules.credentialsModule.Credentials,
-      Effect.succeed(credentials)
-    ),
-    Effect.provideService(
-      CloudflareEnvironment,
-      Effect.succeed({
-        accountId,
-        apiToken: Redacted.make("local-test-placeholder"),
-        source: { type: "env" },
-        type: "apiToken",
-      })
-    )
-  ) as Effect.Effect<A, unknown>;
+  {
+    const checkedResult: Effect.Effect<A, unknown> = effect.pipe(
+      Effect.provideService(HttpClient.HttpClient, client),
+      Effect.provideService(
+        modules.credentialsModule.Credentials,
+        Effect.succeed(credentials)
+      ),
+      Effect.provideService(
+        CloudflareEnvironment,
+        Effect.succeed({
+          accountId,
+          apiToken: Redacted.make("local-test-placeholder"),
+          source: { type: "env" },
+          type: "apiToken",
+        })
+      )
+    ) as Effect.Effect<A, unknown>;
+    return checkedResult;
+  }
 };
 
 const makePersistedConsumer = (
   attr: State.CreatedResourceState["attr"],
   settings: ConsumerSettings = desiredSettings
-): State.CreatedResourceState => ({
-  attr,
-  bindings: [],
-  downstream: [],
-  fqn: logicalId,
-  instanceId,
-  logicalId,
-  namespace: undefined,
-  props: {
-    deadLetterQueue,
-    deadLetterQueueId,
-    queueId,
-    scriptName,
-    settings,
-  },
-  providerVersion: 0,
-  resourceType: Consumer.Type,
-  status: "created",
-});
+) => {
+  const checkedResult: State.CreatedResourceState = {
+    attr,
+    bindings: [],
+    downstream: [],
+    fqn: logicalId,
+    instanceId,
+    logicalId,
+    namespace: undefined,
+    props: {
+      deadLetterQueue,
+      deadLetterQueueId,
+      queueId,
+      scriptName,
+      settings,
+    },
+    providerVersion: 0,
+    resourceType: Consumer.Type,
+    status: "created",
+  };
+  return checkedResult;
+};
 
 const runStablePlan = async (
   client: HttpClient.HttpClient,
@@ -570,12 +596,7 @@ const unexpectedQueueRequest = (
     new TypeError(`Unexpected queue test request: ${request.method} ${path}`)
   );
 
-const makeReplacementClient = (
-  scenario?: ReplacementScenario
-): {
-  readonly client: HttpClient.HttpClient;
-  readonly operations: string[];
-} => {
+const makeReplacementClient = (scenario?: ReplacementScenario) => {
   const options = scenario ?? {};
   let deleted = false;
   const operations: string[] = [];
@@ -773,7 +794,13 @@ const makeReplacementClient = (
     }
   });
 
-  return { client, operations };
+  {
+    const checkedResult: {
+      readonly client: HttpClient.HttpClient;
+      readonly operations: string[];
+    } = { client, operations };
+    return checkedResult;
+  }
 };
 
 const expectPersistedUpdatingState = (

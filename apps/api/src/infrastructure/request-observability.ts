@@ -28,7 +28,7 @@ export const observeHttpRequest = <E, R>(
     const span = yield* Effect.currentSpan.pipe(Effect.option);
     const requestId = crypto.randomUUID();
     const { pathname } = new URL(request.url, "http://worker.internal");
-    // Auth reset tokens can occupy path segments, not just query strings.
+
     const path = pathname.startsWith("/api/auth/")
       ? pathname.split("/").slice(0, 4).join("/")
       : pathname;

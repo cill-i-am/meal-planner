@@ -56,37 +56,63 @@ export interface CarouselProcessingUnavailable {
 
 export type SourceIdentityError = InvalidSource | SourceIdentityUnavailable;
 
-export const invalidImportRequest = (): InvalidImportRequest => ({
-  _tag: "InvalidImportRequest",
-});
+export const invalidImportRequest = () => {
+  const checkedResult: InvalidImportRequest = {
+    _tag: "InvalidImportRequest",
+  };
+  return checkedResult;
+};
 
-export const invalidSource = (): InvalidSource => ({ _tag: "InvalidSource" });
+export const invalidSource = () => {
+  const checkedResult: InvalidSource = { _tag: "InvalidSource" };
+  return checkedResult;
+};
 
-export const sourceIdentityUnavailable = (): SourceIdentityUnavailable => ({
-  _tag: "SourceIdentityUnavailable",
-});
+export const sourceIdentityUnavailable = () => {
+  const checkedResult: SourceIdentityUnavailable = {
+    _tag: "SourceIdentityUnavailable",
+  };
+  return checkedResult;
+};
 
-export const unauthorizedImportCaller = (): UnauthorizedImportCaller => ({
-  _tag: "UnauthorizedImportCaller",
-});
+export const unauthorizedImportCaller = () => {
+  const checkedResult: UnauthorizedImportCaller = {
+    _tag: "UnauthorizedImportCaller",
+  };
+  return checkedResult;
+};
 
-export const importPersistenceUnavailable =
-  (): ImportPersistenceUnavailable => ({
+export const importPersistenceUnavailable = () => {
+  const checkedResult: ImportPersistenceUnavailable = {
     _tag: "ImportPersistenceUnavailable",
-  });
+  };
+  return checkedResult;
+};
 
-export const importPersistenceCorrupt = (): ImportPersistenceCorrupt => ({
-  _tag: "ImportPersistenceCorrupt",
-});
+export const importPersistenceCorrupt = () => {
+  const checkedResult: ImportPersistenceCorrupt = {
+    _tag: "ImportPersistenceCorrupt",
+  };
+  return checkedResult;
+};
 
-export const workflowStartUnavailable = (): WorkflowStartUnavailable => ({
-  _tag: "WorkflowStartUnavailable",
-});
+export const workflowStartUnavailable = () => {
+  const checkedResult: WorkflowStartUnavailable = {
+    _tag: "WorkflowStartUnavailable",
+  };
+  return checkedResult;
+};
 
-export const workflowStartRefused = (): WorkflowStartRefused => ({
-  _tag: "WorkflowStartRefused",
-});
+export const workflowStartRefused = () => {
+  const checkedResult: WorkflowStartRefused = {
+    _tag: "WorkflowStartRefused",
+  };
+  return checkedResult;
+};
 
-export const importTransitionRejected = (): ImportTransitionRejected => ({
-  _tag: "ImportTransitionRejected",
-});
+export const importTransitionRejected = () => {
+  const checkedResult: ImportTransitionRejected = {
+    _tag: "ImportTransitionRejected",
+  };
+  return checkedResult;
+};

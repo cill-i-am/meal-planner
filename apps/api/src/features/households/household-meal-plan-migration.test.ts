@@ -25,8 +25,10 @@ const migrate = (database: DatabaseSync, names: readonly string[]) => {
   }
 };
 
-const rows = <T>(database: DatabaseSync, query: string): T[] =>
-  database.prepare(query).all() as T[];
+const rows = <T>(database: DatabaseSync, query: string) => {
+  const checkedResult: T[] = database.prepare(query).all() as T[];
+  return checkedResult;
+};
 
 const oldPlanJson = JSON.stringify({
   _tag: "Approved",

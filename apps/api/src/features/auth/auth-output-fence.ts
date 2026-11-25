@@ -81,8 +81,8 @@ export const fenceAuthAdapter = (
     readonly userId: UserId;
     readonly clientId: string;
   }) => Promise<void>
-): DBAdapter => {
-  const wrap = (source: DBTransactionAdapter): DBTransactionAdapter => {
+) => {
+  const wrap = (source: DBTransactionAdapter) => {
     const fenceDelegatedMutation = async <A>(
       input: AuthMutation,
       action: string,
@@ -109,9 +109,6 @@ export const fenceAuthAdapter = (
       );
       let guarded = async () => {
         if (input.model === "oauthConsent" && action.startsWith("delete")) {
-          // Native consent deletion leaves issued credentials behind. Delete
-          // this user's client grant under the same fence so re-consent cannot
-          // revive those credentials. The native provider still owns issuance.
           await Promise.all(
             rows.map(async (row) => {
               if (
@@ -147,9 +144,14 @@ export const fenceAuthAdapter = (
       action: string,
       absent: A,
       canonical: () => Promise<A>
-    ): Promise<A> => {
+    ) => {
       if (delegatedModel(input.model)) {
-        return fenceDelegatedMutation(input, action, canonical);
+        const checkedResult: A | Promise<A> = fenceDelegatedMutation(
+          input,
+          action,
+          canonical
+        );
+        return checkedResult;
       }
       if (!protectedModel(input.model)) {
         if (
@@ -158,7 +160,10 @@ export const fenceAuthAdapter = (
         ) {
           throw unsupported();
         }
-        return canonical();
+        {
+          const checkedResult: A | Promise<A> = canonical();
+          return checkedResult;
+        }
       }
       const selected = selector(input.model, input.where);
       if (input.update !== undefined) {
@@ -195,7 +200,8 @@ export const fenceAuthAdapter = (
           ? parseUserId(selected.value)
           : await readAccount();
       if (accountId === null) {
-        return absent;
+        const checkedResult: A | Promise<A> = absent;
+        return checkedResult;
       }
       const intent = isSessionRefresh(input, action, selected)
         ? { kind: "session-refresh", token: selected.value }
@@ -205,84 +211,96 @@ export const fenceAuthAdapter = (
             update: input.update,
             where: input.where,
           };
-      // A retry recomputes refresh dates; the retained pre-dispatch operation still has one dispatch claim.
+
       const intentKey = await privateOutputKey(
         "auth-mutation",
         JSON.stringify(intent)
       );
-      return fence({ accountId, intentKey }, async () => {
-        // Unique token/member selectors cannot silently move to another account across the fence.
-        if (selected.field !== "userId") {
-          const currentAccount = await readAccount();
-          if (currentAccount === null) {
-            return absent;
+      {
+        const checkedResult: A | Promise<A> = fence(
+          { accountId, intentKey },
+          async () => {
+            if (selected.field !== "userId") {
+              const currentAccount = await readAccount();
+              if (currentAccount === null) {
+                return absent;
+              }
+              if (currentAccount !== accountId) {
+                throw unsupported();
+              }
+            }
+            return canonical();
           }
-          if (currentAccount !== accountId) {
+        );
+        return checkedResult;
+      }
+    };
+    {
+      const checkedResult: DBTransactionAdapter = {
+        ...source,
+        consumeOne: (input) => {
+          if (protectedModel(input.model)) {
             throw unsupported();
           }
-        }
-        return canonical();
-      });
-    };
-    return {
-      ...source,
-      consumeOne: (input) => {
-        if (protectedModel(input.model)) {
-          throw unsupported();
-        }
-        return delegatedModel(input.model)
-          ? fenceDelegatedMutation(input, "consumeOne", () =>
-              source.consumeOne(input)
-            )
-          : source.consumeOne(input);
-      },
-      delete: (input) =>
-        mutate(input, "delete", undefined, () => source.delete(input)),
-      deleteMany: (input) =>
-        mutate(input, "deleteMany", 0, () => source.deleteMany(input)),
-      incrementOne: (input) => {
-        if (protectedModel(input.model)) {
-          throw unsupported();
-        }
-        return delegatedModel(input.model)
-          ? fenceDelegatedMutation(
-              { ...input, update: { ...input.set, ...input.increment } },
-              "incrementOne",
-              () => source.incrementOne(input)
-            )
-          : source.incrementOne(input);
-      },
-      update: <T>(input: Parameters<DBTransactionAdapter["update"]>[0]) => {
-        const delegated = currentNativeDelegation();
-        if (
-          delegated !== undefined &&
-          input.model === "session" &&
-          "activeOrganizationId" in input.update
-        ) {
-          // Organization endpoints may select/clear the browser's active family.
-          // Delegated family context is request-local, so retain that session row.
+          return delegatedModel(input.model)
+            ? fenceDelegatedMutation(input, "consumeOne", () =>
+                source.consumeOne(input)
+              )
+            : source.consumeOne(input);
+        },
+        delete: (input) =>
+          mutate(input, "delete", undefined, () => source.delete(input)),
+        deleteMany: (input) =>
+          mutate(input, "deleteMany", 0, () => source.deleteMany(input)),
+        incrementOne: (input) => {
+          if (protectedModel(input.model)) {
+            throw unsupported();
+          }
+          return delegatedModel(input.model)
+            ? fenceDelegatedMutation(
+                { ...input, update: { ...input.set, ...input.increment } },
+                "incrementOne",
+                () => source.incrementOne(input)
+              )
+            : source.incrementOne(input);
+        },
+        update: <T>(input: Parameters<DBTransactionAdapter["update"]>[0]) => {
+          const delegated = currentNativeDelegation();
           if (
-            Object.keys(input.update).some(
-              (field) =>
-                field !== "activeOrganizationId" && field !== "updatedAt"
-            )
+            delegated !== undefined &&
+            input.model === "session" &&
+            "activeOrganizationId" in input.update
           ) {
-            throw unsupported();
+            if (
+              Object.keys(input.update).some(
+                (field) =>
+                  field !== "activeOrganizationId" && field !== "updatedAt"
+              )
+            ) {
+              throw unsupported();
+            }
+            return source.findOne<T>({
+              model: input.model,
+              where: input.where,
+            });
           }
-          return source.findOne<T>({ model: input.model, where: input.where });
-        }
-        return mutate(input, "update", null, () => source.update<T>(input));
-      },
-      updateMany: (input) =>
-        mutate(input, "updateMany", 0, () => source.updateMany(input)),
+          return mutate(input, "update", null, () => source.update<T>(input));
+        },
+        updateMany: (input) =>
+          mutate(input, "updateMany", 0, () => source.updateMany(input)),
+      };
+      return checkedResult;
+    }
+  };
+  {
+    const checkedResult: DBAdapter = {
+      ...wrap(adapter),
+
+      // eslint-disable-next-line promise/prefer-await-to-callbacks -- Better Auth exposes a transaction callback API.
+      transaction: (callback) =>
+        // eslint-disable-next-line promise/prefer-await-to-callbacks -- The adapter callback receives its transaction-scoped public adapter.
+        adapter.transaction((transaction) => callback(wrap(transaction))),
     };
-  };
-  return {
-    ...wrap(adapter),
-    // The configured D1 adapter has transactions disabled; each statement commits before the fence settles.
-    // eslint-disable-next-line promise/prefer-await-to-callbacks -- Better Auth exposes a transaction callback API.
-    transaction: (callback) =>
-      // eslint-disable-next-line promise/prefer-await-to-callbacks -- The adapter callback receives its transaction-scoped public adapter.
-      adapter.transaction((transaction) => callback(wrap(transaction))),
-  };
+    return checkedResult;
+  }
 };

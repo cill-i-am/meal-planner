@@ -314,8 +314,7 @@ it(
           ratelimits: {
             SIGEN_OWNER_LIMIT: {
               namespace_id: "61804",
-              // This protocol suite exceeds a production minute's request budget. Admission denial
-              // is covered in http.test.ts; the deployed Worker remains at 30 requests per minute.
+
               simple: { limit: 100, period: 60 },
             },
           },
@@ -586,8 +585,7 @@ it(
         );
         return { body: await response.json(), status: response.status };
       };
-      // Real provider-budget reservations persist across the runtime restart.
-      // Let the rolling window expire before the synthetic write/readback sequence.
+
       await setTimeout(60_000);
       const commandIdentity = { commandId, stationId: "12345" };
       const executed = await postCommand("execute_command", commandIdentity);

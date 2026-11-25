@@ -192,7 +192,7 @@ export const makeMemberDepartureWorkflowPorts = (options: {
   readonly authDatabase: Effect.Effect<AnyD1Database, never, RuntimeContext>;
   readonly household: MemberDepartureHouseholdPort;
   readonly input: typeof MemberDepartureWorkflowInput.Type;
-}): MemberDepartureWorkflowPorts => {
+}) => {
   const admission = makeSystemAdmission(options.input.organizationId);
   const readState = () =>
     Schema.decodeUnknownEffect(HouseholdReadMemberDepartureSystemInput, {
@@ -206,95 +206,98 @@ export const makeMemberDepartureWorkflowPorts = (options: {
       ),
       Effect.flatMap(decodeSystemState)
     );
-  return {
-    confirmAccessRevoked: (state) =>
-      Schema.decodeUnknownEffect(HouseholdConfirmMemberAccessRevokedInput, {
-        onExcessProperty: "error",
-      })({
-        admission,
-        expectedOperationVersion: state.operation.version,
-        operationId: options.input.operationId,
-      }).pipe(
-        Effect.flatMap((command) =>
-          options.household.confirmMemberAccessRevoked(command)
-        ),
-        Effect.flatMap(decodeOperation),
-        Effect.orDie
-      ),
-    finalize: (operation) =>
-      Schema.decodeUnknownEffect(HouseholdFinalizeMemberDepartureInput, {
-        onExcessProperty: "error",
-      })({
-        admission,
-        expectedOperationVersion: operation.version,
-        operationId: options.input.operationId,
-      }).pipe(
-        Effect.flatMap((command) =>
-          options.household.finalizeMemberDeparture(command)
-        ),
-        Effect.flatMap(decodeOperation),
-        Effect.orDie
-      ),
-    markRepairRequired: (state, phase) =>
-      Schema.decodeUnknownEffect(
-        HouseholdMarkMemberDepartureRepairRequiredInput,
-        { onExcessProperty: "error" }
-      )({
-        admission,
-        expectedOperationVersion: state.operation.version,
-        operationId: options.input.operationId,
-        phase,
-      }).pipe(
-        Effect.flatMap((command) =>
-          options.household.markMemberDepartureRepairRequired(command)
-        ),
-        Effect.flatMap(decodeOperation),
-        Effect.orDie
-      ),
-    observeMembership: (state) =>
-      Effect.gen(function* inspectMembership() {
-        const database = drizzle(yield* options.authDatabase);
-        const members = yield* Effect.tryPromise({
-          catch: (cause) => ({
-            _tag: "MembershipReadUnavailable" as const,
-            cause,
-          }),
-          try: () =>
-            database
-              .select({ userId: authSchema.member.userId })
-              .from(authSchema.member)
-              .where(
-                eq(
-                  authSchema.member.organizationId,
-                  options.input.organizationId
-                )
-              ),
-        });
-        const userIds = yield* decodeMemberUserIds(
-          members.map(({ userId }) => userId)
-        );
-        const linkageSubjects = yield* Effect.all(
-          userIds.map((userId) =>
-            deriveHouseholdPersonLinkageSubject(
-              options.input.organizationId,
-              userId
-            )
-          )
-        );
-        return {
-          _tag: "Observed" as const,
-          present: linkageSubjects.some(
-            (subject) => subject === state.targetLinkageSubject
+  {
+    const checkedResult: MemberDepartureWorkflowPorts = {
+      confirmAccessRevoked: (state) =>
+        Schema.decodeUnknownEffect(HouseholdConfirmMemberAccessRevokedInput, {
+          onExcessProperty: "error",
+        })({
+          admission,
+          expectedOperationVersion: state.operation.version,
+          operationId: options.input.operationId,
+        }).pipe(
+          Effect.flatMap((command) =>
+            options.household.confirmMemberAccessRevoked(command)
           ),
-        };
-      }).pipe(
-        Effect.matchEffect({
-          onFailure: () => Effect.succeed({ _tag: "Unavailable" as const }),
-          onSuccess: Effect.succeed,
-        })
-      ),
-    readState: () => readState().pipe(Effect.orDie),
-  };
+          Effect.flatMap(decodeOperation),
+          Effect.orDie
+        ),
+      finalize: (operation) =>
+        Schema.decodeUnknownEffect(HouseholdFinalizeMemberDepartureInput, {
+          onExcessProperty: "error",
+        })({
+          admission,
+          expectedOperationVersion: operation.version,
+          operationId: options.input.operationId,
+        }).pipe(
+          Effect.flatMap((command) =>
+            options.household.finalizeMemberDeparture(command)
+          ),
+          Effect.flatMap(decodeOperation),
+          Effect.orDie
+        ),
+      markRepairRequired: (state, phase) =>
+        Schema.decodeUnknownEffect(
+          HouseholdMarkMemberDepartureRepairRequiredInput,
+          { onExcessProperty: "error" }
+        )({
+          admission,
+          expectedOperationVersion: state.operation.version,
+          operationId: options.input.operationId,
+          phase,
+        }).pipe(
+          Effect.flatMap((command) =>
+            options.household.markMemberDepartureRepairRequired(command)
+          ),
+          Effect.flatMap(decodeOperation),
+          Effect.orDie
+        ),
+      observeMembership: (state) =>
+        Effect.gen(function* inspectMembership() {
+          const database = drizzle(yield* options.authDatabase);
+          const members = yield* Effect.tryPromise({
+            catch: (cause) => ({
+              _tag: "MembershipReadUnavailable" as const,
+              cause,
+            }),
+            try: () =>
+              database
+                .select({ userId: authSchema.member.userId })
+                .from(authSchema.member)
+                .where(
+                  eq(
+                    authSchema.member.organizationId,
+                    options.input.organizationId
+                  )
+                ),
+          });
+          const userIds = yield* decodeMemberUserIds(
+            members.map(({ userId }) => userId)
+          );
+          const linkageSubjects = yield* Effect.all(
+            userIds.map((userId) =>
+              deriveHouseholdPersonLinkageSubject(
+                options.input.organizationId,
+                userId
+              )
+            )
+          );
+          return {
+            _tag: "Observed" as const,
+            present: linkageSubjects.some(
+              (subject) => subject === state.targetLinkageSubject
+            ),
+          };
+        }).pipe(
+          Effect.matchEffect({
+            onFailure: () => Effect.succeed({ _tag: "Unavailable" as const }),
+            onSuccess: Effect.succeed,
+          })
+        ),
+      readState: () => readState().pipe(Effect.orDie),
+    };
+    return checkedResult;
+  }
 };
 
 /** Native Workflow host for one membership revocation and Household finalization. */

@@ -16,7 +16,6 @@ import { ReleasedConfirmation } from "./private-confirmation.contract.js";
 import type { PrivateOutputApiPort } from "./private-output-binding.js";
 import { resolvePrivateOutputAuthority } from "./private-output.authority.js";
 
-/** Read at most one chunk; never accept a caller-supplied profile command. */
 const hasEmptyBody = (request: Request) =>
   Effect.tryPromise({
     catch: () => PrivateConfirmationUnavailable.make({}),

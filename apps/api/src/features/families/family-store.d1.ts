@@ -199,7 +199,7 @@ export const FamilyStoreLive = (database: DrizzleD1Database) =>
                     .onConflictDoNothing(),
                 ])
               );
-            // The unique slug index arbitrates concurrent families with the same name.
+
             yield* insert(base).pipe(
               Effect.catch((error) =>
                 Effect.gen(function* chooseAvailableSlug() {

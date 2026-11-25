@@ -3,7 +3,7 @@ import { Schema } from "effect";
 import { Response as LocalResponse } from "miniflare";
 
 import { ConversationModelContext } from "../features/agent-conversations/conversation.contract.js";
-import { encodeKimiCompletion } from "../features/private-output/private-discovery-kimi-stream.test-fixtures.js";
+import { encodeKimiCompletion } from "../features/private-output/private-discovery-kimi-stream.fixture.js";
 
 export const agentConversationModelConfiguration = JSON.stringify({
   gatewayId: "synthetic-agent-conversation-local-only",
@@ -192,10 +192,7 @@ interface FixtureOutput {
   readonly setupConfirmation?: { readonly _tag: "ConfirmDisplayedRoster" };
 }
 
-const setupFixtureOutput = (
-  context: Context,
-  phrase: string
-): FixtureOutput => {
+const setupFixtureOutput = (context: Context, phrase: string) => {
   let output: FixtureOutput;
   if (phrase === "Set up my family") {
     const creatorName = context.setupAccountDisplayName;
@@ -292,7 +289,10 @@ const setupFixtureOutput = (
   } else {
     throw new Error("Unexpected synthetic setup phrase");
   }
-  return output;
+  {
+    const checkedResult: FixtureOutput = output;
+    return checkedResult;
+  }
 };
 
 export const agentConversationModelResponse = async (

@@ -146,7 +146,7 @@ const unavailable = () => new HouseholdPeopleControlPlaneUnavailable();
 export const makeHouseholdPeopleControlPlane = (options: {
   readonly auth: MealPlannerAuthService;
   readonly database: DrizzleD1Database;
-}): HouseholdPeopleControlPlane => {
+}) => {
   const findInvitation = (input: {
     readonly invitationId: InvitationId;
     readonly organizationId: HouseholdOrganizationId;
@@ -219,141 +219,144 @@ export const makeHouseholdPeopleControlPlane = (options: {
       )
     );
 
-  return {
-    cancelInvitation: (input) =>
-      Effect.gen(function* cancelInvitation() {
-        const invitation = yield* findInvitation(input);
-        if (
-          invitation.householdPersonId !== input.personId ||
-          invitation.status === "accepted"
-        ) {
-          return yield* Effect.fail(
-            HouseholdPersonAssociationConflict.make({})
-          );
-        }
-        yield* options.auth.api
-          .cancelInvitation({
-            body: {
-              invitationId: input.invitationId,
-              mutationId: input.mutationId,
-            },
-            headers: input.headers,
-          })
-          .pipe(
-            Effect.mapError((error) =>
-              error.body?.code === "INVITATION_CANCELLATION_CONFLICT"
-                ? HouseholdPersonAssociationConflict.make({})
-                : unavailable()
-            ),
-            Effect.catchDefect(() => Effect.fail(unavailable()))
-          );
-      }),
-    createInvitation: (input) =>
-      options.auth
-        .createHouseholdInvitation({
-          body: {
-            email: input.email,
-            householdPersonId: input.personId,
-            organizationId: input.organizationId,
-            role: "member",
-          },
-          headers: input.headers,
-          invitationId: input.invitationId,
-        })
-        .pipe(
-          Effect.mapError(invitationFailure),
-          Effect.catchDefect(() => Effect.fail(unavailable())),
-          Effect.map((invitation) => ({
-            email: invitation.email,
-            householdPersonId: invitation.householdPersonId ?? null,
-            id: invitation.id,
-            inviterId: invitation.inviterId,
-            status: invitation.status,
-          })),
-          Effect.flatMap((invitation) =>
-            decodeInvitation(invitation).pipe(Effect.mapError(unavailable))
-          ),
-          Effect.catchTag("HouseholdInvitationRejected", (rejection) =>
-            findInvitation(input).pipe(
-              Effect.catchTag("HouseholdPeopleControlPlaneNotFound", () =>
-                Effect.fail(rejection)
-              )
-            )
-          )
-        ),
-    getInvitation: findInvitation,
-    getMember: findMember,
-    listInvitationStates: (organizationId) =>
-      Effect.tryPromise({
-        catch: unavailable,
-        try: () =>
-          options.database
-            .select({
-              expiresAt: authSchema.invitation.expiresAt,
-              id: authSchema.invitation.id,
-              status: authSchema.invitation.status,
-            })
-            .from(authSchema.invitation)
-            .where(eq(authSchema.invitation.organizationId, organizationId)),
-      }).pipe(
-        Effect.flatMap((states) =>
-          decodeInvitationStates(states).pipe(Effect.mapError(unavailable))
-        )
-      ),
-    listMemberUserIds: (organizationId) =>
-      Effect.tryPromise({
-        catch: unavailable,
-        try: () =>
-          options.database
-            .select({ userId: authSchema.member.userId })
-            .from(authSchema.member)
-            .where(eq(authSchema.member.organizationId, organizationId)),
-      }).pipe(
-        Effect.flatMap((members) =>
-          decodeMemberUserIds(members.map(({ userId }) => userId)).pipe(
-            Effect.mapError(unavailable)
-          )
-        )
-      ),
-    listMembers: (organizationId) =>
-      Effect.tryPromise({
-        catch: unavailable,
-        try: () =>
-          options.database
-            .select({
-              id: authSchema.member.id,
-              role: authSchema.member.role,
-              userId: authSchema.member.userId,
-            })
-            .from(authSchema.member)
-            .where(eq(authSchema.member.organizationId, organizationId)),
-      }).pipe(
-        Effect.flatMap((members) =>
-          Schema.decodeUnknownEffect(
-            Schema.Array(HouseholdControlPlaneMemberSchema)
-          )(members).pipe(Effect.mapError(unavailable))
-        )
-      ),
-    removeMember: (input) =>
-      (input.self
-        ? options.auth.api
-            .leaveOrganization({
-              body: { organizationId: input.organizationId },
-              headers: input.headers,
-            })
-            .pipe(Effect.asVoid)
-        : options.auth.api
-            .removeMember({
+  {
+    const checkedResult: HouseholdPeopleControlPlane = {
+      cancelInvitation: (input) =>
+        Effect.gen(function* cancelInvitation() {
+          const invitation = yield* findInvitation(input);
+          if (
+            invitation.householdPersonId !== input.personId ||
+            invitation.status === "accepted"
+          ) {
+            return yield* Effect.fail(
+              HouseholdPersonAssociationConflict.make({})
+            );
+          }
+          yield* options.auth.api
+            .cancelInvitation({
               body: {
-                memberIdOrEmail: input.memberId,
-                organizationId: input.organizationId,
+                invitationId: input.invitationId,
+                mutationId: input.mutationId,
               },
               headers: input.headers,
             })
-            .pipe(Effect.asVoid)
-      ).pipe(
-        Effect.mapError(unavailable),
-        Effect.catchDefect(() => Effect.fail(unavailable()))
-      ),
-  };
+            .pipe(
+              Effect.mapError((error) =>
+                error.body?.code === "INVITATION_CANCELLATION_CONFLICT"
+                  ? HouseholdPersonAssociationConflict.make({})
+                  : unavailable()
+              ),
+              Effect.catchDefect(() => Effect.fail(unavailable()))
+            );
+        }),
+      createInvitation: (input) =>
+        options.auth
+          .createHouseholdInvitation({
+            body: {
+              email: input.email,
+              householdPersonId: input.personId,
+              organizationId: input.organizationId,
+              role: "member",
+            },
+            headers: input.headers,
+            invitationId: input.invitationId,
+          })
+          .pipe(
+            Effect.mapError(invitationFailure),
+            Effect.catchDefect(() => Effect.fail(unavailable())),
+            Effect.map((invitation) => ({
+              email: invitation.email,
+              householdPersonId: invitation.householdPersonId ?? null,
+              id: invitation.id,
+              inviterId: invitation.inviterId,
+              status: invitation.status,
+            })),
+            Effect.flatMap((invitation) =>
+              decodeInvitation(invitation).pipe(Effect.mapError(unavailable))
+            ),
+            Effect.catchTag("HouseholdInvitationRejected", (rejection) =>
+              findInvitation(input).pipe(
+                Effect.catchTag("HouseholdPeopleControlPlaneNotFound", () =>
+                  Effect.fail(rejection)
+                )
+              )
+            )
+          ),
+      getInvitation: findInvitation,
+      getMember: findMember,
+      listInvitationStates: (organizationId) =>
+        Effect.tryPromise({
+          catch: unavailable,
+          try: () =>
+            options.database
+              .select({
+                expiresAt: authSchema.invitation.expiresAt,
+                id: authSchema.invitation.id,
+                status: authSchema.invitation.status,
+              })
+              .from(authSchema.invitation)
+              .where(eq(authSchema.invitation.organizationId, organizationId)),
+        }).pipe(
+          Effect.flatMap((states) =>
+            decodeInvitationStates(states).pipe(Effect.mapError(unavailable))
+          )
+        ),
+      listMemberUserIds: (organizationId) =>
+        Effect.tryPromise({
+          catch: unavailable,
+          try: () =>
+            options.database
+              .select({ userId: authSchema.member.userId })
+              .from(authSchema.member)
+              .where(eq(authSchema.member.organizationId, organizationId)),
+        }).pipe(
+          Effect.flatMap((members) =>
+            decodeMemberUserIds(members.map(({ userId }) => userId)).pipe(
+              Effect.mapError(unavailable)
+            )
+          )
+        ),
+      listMembers: (organizationId) =>
+        Effect.tryPromise({
+          catch: unavailable,
+          try: () =>
+            options.database
+              .select({
+                id: authSchema.member.id,
+                role: authSchema.member.role,
+                userId: authSchema.member.userId,
+              })
+              .from(authSchema.member)
+              .where(eq(authSchema.member.organizationId, organizationId)),
+        }).pipe(
+          Effect.flatMap((members) =>
+            Schema.decodeUnknownEffect(
+              Schema.Array(HouseholdControlPlaneMemberSchema)
+            )(members).pipe(Effect.mapError(unavailable))
+          )
+        ),
+      removeMember: (input) =>
+        (input.self
+          ? options.auth.api
+              .leaveOrganization({
+                body: { organizationId: input.organizationId },
+                headers: input.headers,
+              })
+              .pipe(Effect.asVoid)
+          : options.auth.api
+              .removeMember({
+                body: {
+                  memberIdOrEmail: input.memberId,
+                  organizationId: input.organizationId,
+                },
+                headers: input.headers,
+              })
+              .pipe(Effect.asVoid)
+        ).pipe(
+          Effect.mapError(unavailable),
+          Effect.catchDefect(() => Effect.fail(unavailable()))
+        ),
+    };
+    return checkedResult;
+  }
 };

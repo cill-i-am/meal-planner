@@ -58,7 +58,6 @@ export const PrivateDiscoveryContinuityNote = Schema.Struct({
 const continuityBytes = (continuity: typeof ContinuityState.Type) =>
   new TextEncoder().encode(JSON.stringify(continuity)).byteLength;
 
-/** Bounded private continuity, with no household authority. */
 const PrivateDiscoveryNotes = Schema.Array(PrivateDiscoveryContinuityNote).pipe(
   Schema.check(
     Schema.isMaxLength(PRIVATE_DISCOVERY_CONTINUITY_NOTE_LIMIT),
@@ -96,20 +95,24 @@ export const PrivateDiscoveryContinuityUpdates = Schema.Struct({
     Schema.check(Schema.isMaxLength(PRIVATE_DISCOVERY_CONTINUITY_UPDATE_LIMIT))
   ),
 });
-export const emptyPrivateDiscoveryContinuity =
-  (): PrivateDiscoveryContinuity => ({
+export const emptyPrivateDiscoveryContinuity = () => {
+  const checkedResult: PrivateDiscoveryContinuity = {
     clarification: { _tag: "None" },
     coverage: emptyPrivateDiscoveryCoverage(),
     mealFallbackNeeds: [],
     notes: [],
-  });
-export const emptyPrivateDiscoveryContinuityUpdates =
-  (): typeof PrivateDiscoveryContinuityUpdates.Type => ({
+  };
+  return checkedResult;
+};
+export const emptyPrivateDiscoveryContinuityUpdates = () => {
+  const checkedResult: typeof PrivateDiscoveryContinuityUpdates.Type = {
     clarification: null,
     coverage: emptyPrivateDiscoveryCoverageUpdates(),
     mealFallbackNeeds: { declarations: [], updates: [] },
     notes: [],
-  });
+  };
+  return checkedResult;
+};
 export const PrivateDiscoveryReply = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("Continue") }),
   Schema.Struct({
@@ -165,7 +168,7 @@ interface DiscoveryPolicy {
 const selectDiscoveryQuestion = (
   continuity: PrivateDiscoveryContinuity,
   policy: DiscoveryPolicy
-): PrivateDiscoveryReplyDecision => {
+) => {
   const fallbackQuestion = selectMealFallbackQuestion(
     continuity.mealFallbackNeeds
   );
@@ -212,7 +215,10 @@ const selectDiscoveryQuestion = (
     decision = { _tag: "Review" };
   }
 
-  return decision;
+  {
+    const checkedResult: PrivateDiscoveryReplyDecision = decision;
+    return checkedResult;
+  }
 };
 
 /** Complete updates add or replace by key; omitted notes retain their order. */
@@ -223,11 +229,7 @@ export const applyPrivateDiscoveryContinuation = (
   participant: PrivateDiscoveryEvidenceMessage,
   proposals: readonly PrivateDiscoveryReviewedProposal[],
   policy: DiscoveryPolicy
-): {
-  readonly continuity: PrivateDiscoveryContinuity;
-  readonly decision: PrivateDiscoveryReplyDecision;
-  readonly message: string;
-} => {
+) => {
   if (updates.notes.length > PRIVATE_DISCOVERY_CONTINUITY_UPDATE_LIMIT) {
     throw new PrivateDiscoveryContinuationFailure({
       stage: "continuity_updates",
@@ -248,16 +250,23 @@ export const applyPrivateDiscoveryContinuation = (
         stage: "reply_decision",
       });
     }
-    return {
-      continuity: current,
-      decision: { _tag: "Stop" },
-      message: renderPrivateDiscoveryMessage(
-        current,
-        current,
-        { _tag: "Stop" },
-        proposals
-      ),
-    };
+    {
+      const checkedResult: {
+        readonly continuity: PrivateDiscoveryContinuity;
+        readonly decision: PrivateDiscoveryReplyDecision;
+        readonly message: string;
+      } = {
+        continuity: current,
+        decision: { _tag: "Stop" },
+        message: renderPrivateDiscoveryMessage(
+          current,
+          current,
+          { _tag: "Stop" },
+          proposals
+        ),
+      };
+      return checkedResult;
+    }
   }
   const notes = new Map(current.notes.map((note) => [note.key, note]));
   const changed = new Set<string>();
@@ -310,5 +319,12 @@ export const applyPrivateDiscoveryContinuation = (
   if (message.length > PRIVATE_DISCOVERY_REPLY_LENGTH) {
     throw new PrivateDiscoveryContinuationFailure({ stage: "reply_limit" });
   }
-  return { continuity, decision, message };
+  {
+    const checkedResult: {
+      readonly continuity: PrivateDiscoveryContinuity;
+      readonly decision: PrivateDiscoveryReplyDecision;
+      readonly message: string;
+    } = { continuity, decision, message };
+    return checkedResult;
+  }
 };

@@ -347,7 +347,7 @@ describe("complete schedule replacements and settings writes", () => {
           pvPriority: Schema.Unknown,
         })
       )(original);
-      // The provider returns display metadata in addition to the submitted editable fields.
+
       f.data["/device/energy-profile/setting/12345"] = {
         ...write?.[2],
         ...originalProfile,

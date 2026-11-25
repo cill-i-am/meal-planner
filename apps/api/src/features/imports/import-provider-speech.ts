@@ -221,18 +221,20 @@ const SpeechProviderResponseKeys: ReadonlySet<string> = new Set([
 const omitAllowlistedNullMetadata = (
   record: Schema.JsonObject,
   allowlist: ReadonlySet<string>
-): Schema.JsonObject =>
-  Object.fromEntries(
+) => {
+  const checkedResult: Schema.JsonObject = Object.fromEntries(
     Object.entries(record).filter(
       ([key, value]) => value !== null || !allowlist.has(key)
     )
   );
+  return checkedResult;
+};
 
 const projectDocumentedSpeechResponse = (
   record: Schema.JsonObject,
   allowlist: ReadonlySet<string>
-): Schema.JsonObject =>
-  Object.fromEntries(
+) => {
+  const checkedResult: Schema.JsonObject = Object.fromEntries(
     [...allowlist].flatMap((key) => {
       const value = record[key];
       return Object.hasOwn(record, key) && value !== undefined
@@ -240,11 +242,11 @@ const projectDocumentedSpeechResponse = (
         : [];
     })
   );
+  return checkedResult;
+};
 
-const normalizeModelSpecificSpeechProviderWord = (
-  raw: Schema.Json
-): Schema.Json =>
-  isUnknownRecord(raw)
+const normalizeModelSpecificSpeechProviderWord = (raw: Schema.Json) => {
+  const checkedResult: Schema.Json = isUnknownRecord(raw)
     ? omitAllowlistedNullMetadata(
         projectDocumentedSpeechResponse(
           raw,
@@ -253,12 +255,13 @@ const normalizeModelSpecificSpeechProviderWord = (
         ModelSpecificSpeechWordOptionalMetadataKeys
       )
     : raw;
+  return checkedResult;
+};
 
-const normalizeModelSpecificSpeechProviderSegment = (
-  raw: Schema.Json
-): Schema.Json => {
+const normalizeModelSpecificSpeechProviderSegment = (raw: Schema.Json) => {
   if (!isUnknownRecord(raw)) {
-    return raw;
+    const checkedResult: Schema.Json = raw;
+    return checkedResult;
   }
   const normalized = omitAllowlistedNullMetadata(
     projectDocumentedSpeechResponse(
@@ -267,19 +270,22 @@ const normalizeModelSpecificSpeechProviderSegment = (
     ),
     ModelSpecificSpeechSegmentNullableMetadataKeys
   );
-  return Array.isArray(normalized["words"])
-    ? {
-        ...normalized,
-        words: normalized["words"].map(
-          normalizeModelSpecificSpeechProviderWord
-        ),
-      }
-    : normalized;
+  {
+    const checkedResult: Schema.Json = Array.isArray(normalized["words"])
+      ? {
+          ...normalized,
+          words: normalized["words"].map(
+            normalizeModelSpecificSpeechProviderWord
+          ),
+        }
+      : normalized;
+    return checkedResult;
+  }
 };
 
 const normalizeModelSpecificSpeechProviderResponse = (
   raw: Schema.JsonObject
-): Schema.JsonObject => {
+) => {
   const normalized = omitAllowlistedNullMetadata(
     raw,
     ModelSpecificSpeechResponseOptionalMetadataKeys
@@ -303,7 +309,10 @@ const normalizeModelSpecificSpeechProviderResponse = (
   if (segments !== undefined) {
     response = { ...response, segments };
   }
-  return response;
+  {
+    const checkedResult: Schema.JsonObject = response;
+    return checkedResult;
+  }
 };
 
 const decodeGenericSpeechResponse = Schema.decodeUnknownOption(
@@ -330,7 +339,12 @@ interface SpeechEnvelopeClassification {
 const hasUnsupportedProperty = (
   record: Schema.JsonObject,
   allowlist: ReadonlySet<string>
-): boolean => Object.keys(record).some((key) => !allowlist.has(key));
+) => {
+  const checkedResult: boolean = Object.keys(record).some(
+    (key) => !allowlist.has(key)
+  );
+  return checkedResult;
+};
 
 const SpeechUnknownMetadataMaximumTraversalDepth = 64;
 const SpeechUnknownMetadataMaximumTraversalNodes = 16_384;
@@ -340,38 +354,46 @@ interface SpeechUnknownMetadataTraversal {
   readonly visitedContainers: WeakSet<object>;
 }
 
-const makeSpeechUnknownMetadataTraversal =
-  (): SpeechUnknownMetadataTraversal => ({
+const makeSpeechUnknownMetadataTraversal = () => {
+  const checkedResult: SpeechUnknownMetadataTraversal = {
     discoveredNodes: 0,
     visitedContainers: new WeakSet<object>(),
-  });
+  };
+  return checkedResult;
+};
 
 const unknownSpeechMetadataRequiresRejection = (
   values: Iterable<Schema.Json>,
   traversal: SpeechUnknownMetadataTraversal
-): boolean => {
+) => {
   const pending: { readonly depth: number; readonly value: Schema.Json }[] = [];
-  const enqueue = (value: Schema.Json, depth: number): boolean => {
+  const enqueue = (value: Schema.Json, depth: number) => {
     traversal.discoveredNodes += 1;
     if (
       traversal.discoveredNodes > SpeechUnknownMetadataMaximumTraversalNodes ||
       depth > SpeechUnknownMetadataMaximumTraversalDepth
     ) {
-      return false;
+      const checkedResult = false;
+      return checkedResult;
     }
     if (Predicate.isObjectOrArray(value)) {
       if (traversal.visitedContainers.has(value)) {
-        return false;
+        const checkedResult = false;
+        return checkedResult;
       }
       traversal.visitedContainers.add(value);
     }
     pending.push({ depth, value });
-    return true;
+    {
+      const checkedResult = true;
+      return checkedResult;
+    }
   };
 
   for (const value of values) {
     if (!enqueue(value, 0)) {
-      return true;
+      const checkedResult = true;
+      return checkedResult;
     }
   }
 
@@ -382,11 +404,13 @@ const unknownSpeechMetadataRequiresRejection = (
     }
     if (isUnknownRecord(current.value)) {
       if (Object.hasOwn(current.value, "text")) {
-        return true;
+        const checkedResult = true;
+        return checkedResult;
       }
       for (const value of Object.values(current.value)) {
         if (!enqueue(value, current.depth + 1)) {
-          return true;
+          const checkedResult = true;
+          return checkedResult;
         }
       }
       continue;
@@ -394,25 +418,32 @@ const unknownSpeechMetadataRequiresRejection = (
     if (Array.isArray(current.value)) {
       for (const value of current.value) {
         if (!enqueue(value, current.depth + 1)) {
-          return true;
+          const checkedResult = true;
+          return checkedResult;
         }
       }
     }
   }
 
-  return false;
+  {
+    const checkedResult = false;
+    return checkedResult;
+  }
 };
 
-const hasAmbiguousSpeechWrapper = (raw: Schema.JsonObject): boolean =>
-  Object.hasOwn(raw, "errors") ||
-  Object.hasOwn(raw, "messages") ||
-  Object.hasOwn(raw, "result") ||
-  Object.hasOwn(raw, "success");
+const hasAmbiguousSpeechWrapper = (raw: Schema.JsonObject) => {
+  const checkedResult: boolean =
+    Object.hasOwn(raw, "errors") ||
+    Object.hasOwn(raw, "messages") ||
+    Object.hasOwn(raw, "result") ||
+    Object.hasOwn(raw, "success");
+  return checkedResult;
+};
 
 const unknownSpeechMetadataValues = function* unknownSpeechMetadataValues(
   raw: Schema.JsonObject,
   allowlist: ReadonlySet<string>
-): Generator<Schema.Json> {
+) {
   for (const key of Object.keys(raw)) {
     const value = raw[key];
     if (!allowlist.has(key) && value !== undefined) {
@@ -425,89 +456,105 @@ const unknownSpeechContainerMetadataRequiresRejection = (
   raw: Schema.JsonObject,
   allowlist: ReadonlySet<string>,
   traversal: SpeechUnknownMetadataTraversal
-): boolean =>
-  (!allowlist.has("text") && Object.hasOwn(raw, "text")) ||
-  unknownSpeechMetadataRequiresRejection(
-    unknownSpeechMetadataValues(raw, allowlist),
-    traversal
-  );
+) => {
+  const checkedResult: boolean =
+    (!allowlist.has("text") && Object.hasOwn(raw, "text")) ||
+    unknownSpeechMetadataRequiresRejection(
+      unknownSpeechMetadataValues(raw, allowlist),
+      traversal
+    );
+  return checkedResult;
+};
 
-const isPresentNonNull = (record: Schema.JsonObject, key: string): boolean =>
-  Object.hasOwn(record, key) && record[key] !== null;
+const isPresentNonNull = (record: Schema.JsonObject, key: string) => {
+  const checkedResult: boolean =
+    Object.hasOwn(record, key) && record[key] !== null;
+  return checkedResult;
+};
 
-const hasWrongRootMetadataType = (raw: Schema.JsonObject): boolean =>
-  (isPresentNonNull(raw, "vtt") && !Schema.is(Schema.String)(raw["vtt"])) ||
-  (isPresentNonNull(raw, "word_count") &&
-    !Schema.is(Schema.Number)(raw["word_count"]));
+const hasWrongRootMetadataType = (raw: Schema.JsonObject) => {
+  const checkedResult: boolean =
+    (isPresentNonNull(raw, "vtt") && !Schema.is(Schema.String)(raw["vtt"])) ||
+    (isPresentNonNull(raw, "word_count") &&
+      !Schema.is(Schema.Number)(raw["word_count"]));
+  return checkedResult;
+};
 
-const genericNestedContainersAreInvalid = (raw: Schema.JsonObject): boolean =>
-  isPresentNonNull(raw, "words") && !Array.isArray(raw["words"]);
+const genericNestedContainersAreInvalid = (raw: Schema.JsonObject) => {
+  const checkedResult: boolean =
+    isPresentNonNull(raw, "words") && !Array.isArray(raw["words"]);
+  return checkedResult;
+};
 
-const modelSpecificNestedContainersAreInvalid = (
-  raw: Schema.JsonObject
-): boolean => {
+const modelSpecificNestedContainersAreInvalid = (raw: Schema.JsonObject) => {
   if (
     (isPresentNonNull(raw, "segments") && !Array.isArray(raw["segments"])) ||
     (isPresentNonNull(raw, "transcription_info") &&
       !isUnknownRecord(raw["transcription_info"]))
   ) {
-    return true;
+    const checkedResult = true;
+    return checkedResult;
   }
-  return (
+  {
+    const checkedResult: boolean =
+      Array.isArray(raw["segments"]) &&
+      raw["segments"].some(
+        (segment) =>
+          isUnknownRecord(segment) &&
+          ((isPresentNonNull(segment, "tokens") &&
+            !Array.isArray(segment["tokens"])) ||
+            (isPresentNonNull(segment, "words") &&
+              !Array.isArray(segment["words"])))
+      );
+    return checkedResult;
+  }
+};
+
+const genericNestedEntriesAreInvalid = (raw: Schema.JsonObject) => {
+  const checkedResult: boolean =
+    Array.isArray(raw["words"]) &&
+    raw["words"].some((word) => !isUnknownRecord(word));
+  return checkedResult;
+};
+
+const modelSpecificNestedEntriesAreInvalid = (raw: Schema.JsonObject) => {
+  const checkedResult: boolean =
     Array.isArray(raw["segments"]) &&
     raw["segments"].some(
       (segment) =>
-        isUnknownRecord(segment) &&
-        ((isPresentNonNull(segment, "tokens") &&
-          !Array.isArray(segment["tokens"])) ||
-          (isPresentNonNull(segment, "words") &&
-            !Array.isArray(segment["words"])))
-    )
-  );
+        !isUnknownRecord(segment) ||
+        (Array.isArray(segment["words"]) &&
+          segment["words"].some((word) => !isUnknownRecord(word)))
+    );
+  return checkedResult;
 };
 
-const genericNestedEntriesAreInvalid = (raw: Schema.JsonObject): boolean =>
-  Array.isArray(raw["words"]) &&
-  raw["words"].some((word) => !isUnknownRecord(word));
+const hasWrongNullableNumberType = (record: Schema.JsonObject, key: string) => {
+  const checkedResult: boolean =
+    isPresentNonNull(record, key) && !Schema.is(Schema.Number)(record[key]);
+  return checkedResult;
+};
 
-const modelSpecificNestedEntriesAreInvalid = (
-  raw: Schema.JsonObject
-): boolean =>
-  Array.isArray(raw["segments"]) &&
-  raw["segments"].some(
-    (segment) =>
-      !isUnknownRecord(segment) ||
-      (Array.isArray(segment["words"]) &&
-        segment["words"].some((word) => !isUnknownRecord(word)))
-  );
+const hasWrongNullableStringType = (record: Schema.JsonObject, key: string) => {
+  const checkedResult: boolean =
+    isPresentNonNull(record, key) && !Schema.is(Schema.String)(record[key]);
+  return checkedResult;
+};
 
-const hasWrongNullableNumberType = (
-  record: Schema.JsonObject,
-  key: string
-): boolean =>
-  isPresentNonNull(record, key) && !Schema.is(Schema.Number)(record[key]);
+const genericNestedMetadataTypesAreInvalid = (raw: Schema.JsonObject) => {
+  const checkedResult: boolean =
+    Array.isArray(raw["words"]) &&
+    raw["words"].some(
+      (word) =>
+        isUnknownRecord(word) &&
+        (hasWrongNullableNumberType(word, "end") ||
+          hasWrongNullableNumberType(word, "start") ||
+          hasWrongNullableStringType(word, "word"))
+    );
+  return checkedResult;
+};
 
-const hasWrongNullableStringType = (
-  record: Schema.JsonObject,
-  key: string
-): boolean =>
-  isPresentNonNull(record, key) && !Schema.is(Schema.String)(record[key]);
-
-const genericNestedMetadataTypesAreInvalid = (
-  raw: Schema.JsonObject
-): boolean =>
-  Array.isArray(raw["words"]) &&
-  raw["words"].some(
-    (word) =>
-      isUnknownRecord(word) &&
-      (hasWrongNullableNumberType(word, "end") ||
-        hasWrongNullableNumberType(word, "start") ||
-        hasWrongNullableStringType(word, "word"))
-  );
-
-const modelSpecificNestedMetadataTypesAreInvalid = (
-  raw: Schema.JsonObject
-): boolean => {
+const modelSpecificNestedMetadataTypesAreInvalid = (raw: Schema.JsonObject) => {
   const transcriptionInfo = raw["transcription_info"];
   if (
     isUnknownRecord(transcriptionInfo) &&
@@ -516,63 +563,70 @@ const modelSpecificNestedMetadataTypesAreInvalid = (
       hasWrongNullableStringType(transcriptionInfo, "language") ||
       hasWrongNullableNumberType(transcriptionInfo, "language_probability"))
   ) {
-    return true;
+    const checkedResult = true;
+    return checkedResult;
   }
-  return (
-    Array.isArray(raw["segments"]) &&
-    raw["segments"].some((segment) => {
-      if (!isUnknownRecord(segment)) {
-        return false;
-      }
-      if (
-        hasWrongNullableNumberType(segment, "avg_logprob") ||
-        hasWrongNullableNumberType(segment, "compression_ratio") ||
-        hasWrongNullableNumberType(segment, "end") ||
-        hasWrongNullableNumberType(segment, "id") ||
-        hasWrongNullableNumberType(segment, "no_speech_prob") ||
-        hasWrongNullableNumberType(segment, "seek") ||
-        hasWrongNullableNumberType(segment, "start") ||
-        hasWrongNullableNumberType(segment, "temperature") ||
-        hasWrongNullableStringType(segment, "text")
-      ) {
-        return true;
-      }
-      if (
-        Array.isArray(segment["tokens"]) &&
-        segment["tokens"].some((token) => !Schema.is(Schema.Number)(token))
-      ) {
-        return true;
-      }
-      return (
-        Array.isArray(segment["words"]) &&
-        segment["words"].some(
-          (word) =>
-            isUnknownRecord(word) &&
-            (hasWrongNullableNumberType(word, "end") ||
-              hasWrongNullableNumberType(word, "start") ||
-              hasWrongNullableStringType(word, "word"))
-        )
-      );
-    })
-  );
+  {
+    const checkedResult: boolean =
+      Array.isArray(raw["segments"]) &&
+      raw["segments"].some((segment) => {
+        if (!isUnknownRecord(segment)) {
+          return false;
+        }
+        if (
+          hasWrongNullableNumberType(segment, "avg_logprob") ||
+          hasWrongNullableNumberType(segment, "compression_ratio") ||
+          hasWrongNullableNumberType(segment, "end") ||
+          hasWrongNullableNumberType(segment, "id") ||
+          hasWrongNullableNumberType(segment, "no_speech_prob") ||
+          hasWrongNullableNumberType(segment, "seek") ||
+          hasWrongNullableNumberType(segment, "start") ||
+          hasWrongNullableNumberType(segment, "temperature") ||
+          hasWrongNullableStringType(segment, "text")
+        ) {
+          return true;
+        }
+        if (
+          Array.isArray(segment["tokens"]) &&
+          segment["tokens"].some((token) => !Schema.is(Schema.Number)(token))
+        ) {
+          return true;
+        }
+        return (
+          Array.isArray(segment["words"]) &&
+          segment["words"].some(
+            (word) =>
+              isUnknownRecord(word) &&
+              (hasWrongNullableNumberType(word, "end") ||
+                hasWrongNullableNumberType(word, "start") ||
+                hasWrongNullableStringType(word, "word"))
+          )
+        );
+      });
+    return checkedResult;
+  }
 };
 
-const genericUnsupportedPropertyLocation = (
-  raw: Schema.JsonObject
-): SpeechEnvelopeUnsupportedLocation | undefined =>
-  Array.isArray(raw["words"]) &&
-  raw["words"].some(
-    (word) =>
-      isUnknownRecord(word) &&
-      hasUnsupportedProperty(word, ModelSpecificSpeechWordOptionalMetadataKeys)
-  )
-    ? "word"
-    : undefined;
+const genericUnsupportedPropertyLocation = (raw: Schema.JsonObject) => {
+  const checkedResult: SpeechEnvelopeUnsupportedLocation | undefined =
+    Array.isArray(raw["words"]) &&
+    raw["words"].some(
+      (word) =>
+        isUnknownRecord(word) &&
+        hasUnsupportedProperty(
+          word,
+          ModelSpecificSpeechWordOptionalMetadataKeys
+        )
+    )
+      ? "word"
+      : undefined;
+  return checkedResult;
+};
 
 const modelSpecificUnsupportedPropertyLocation = (
   raw: Schema.JsonObject,
   traversal: SpeechUnknownMetadataTraversal
-): SpeechEnvelopeUnsupportedLocation | undefined => {
+) => {
   const transcriptionInfo = raw["transcription_info"];
   if (
     isUnknownRecord(transcriptionInfo) &&
@@ -582,10 +636,14 @@ const modelSpecificUnsupportedPropertyLocation = (
       traversal
     )
   ) {
-    return "transcription_info";
+    const checkedResult: SpeechEnvelopeUnsupportedLocation | undefined =
+      "transcription_info";
+    return checkedResult;
   }
   if (!Array.isArray(raw["segments"])) {
-    return undefined;
+    const checkedResult: SpeechEnvelopeUnsupportedLocation | undefined =
+      undefined;
+    return checkedResult;
   }
   for (const segment of raw["segments"]) {
     if (!isUnknownRecord(segment)) {
@@ -598,7 +656,9 @@ const modelSpecificUnsupportedPropertyLocation = (
         traversal
       )
     ) {
-      return "segment";
+      const checkedResult: SpeechEnvelopeUnsupportedLocation | undefined =
+        "segment";
+      return checkedResult;
     }
   }
   for (const segment of raw["segments"]) {
@@ -617,56 +677,82 @@ const modelSpecificUnsupportedPropertyLocation = (
           traversal
         )
       ) {
-        return "word";
+        const checkedResult: SpeechEnvelopeUnsupportedLocation | undefined =
+          "word";
+        return checkedResult;
       }
     }
   }
-  return undefined;
+  {
+    const checkedResult: SpeechEnvelopeUnsupportedLocation | undefined =
+      undefined;
+    return checkedResult;
+  }
 };
 
-const classifySpeechEnvelopeFamily = (
-  raw: Schema.JsonObject
-): SpeechEnvelopeFamily => {
+const classifySpeechEnvelopeFamily = (raw: Schema.JsonObject) => {
   const hasModelSpecificDiscriminator =
     Object.hasOwn(raw, "segments") || Object.hasOwn(raw, "transcription_info");
   const hasGenericDiscriminator = Object.hasOwn(raw, "words");
   if (hasModelSpecificDiscriminator && hasGenericDiscriminator) {
-    return "unclassified";
+    const checkedResult: SpeechEnvelopeFamily = "unclassified";
+    return checkedResult;
   }
-  return hasModelSpecificDiscriminator ? "model_specific" : "generic";
+  {
+    const checkedResult: SpeechEnvelopeFamily = hasModelSpecificDiscriminator
+      ? "model_specific"
+      : "generic";
+    return checkedResult;
+  }
 };
 
-const classifySpeechEnvelope = (
-  raw: Schema.Json | undefined
-): SpeechEnvelopeClassification => {
+const classifySpeechEnvelope = (raw: Schema.Json | undefined) => {
   if (!isUnknownRecord(raw)) {
-    return { failure: "not_object", family: "unclassified" };
+    const checkedResult: SpeechEnvelopeClassification = {
+      failure: "not_object",
+      family: "unclassified",
+    };
+    return checkedResult;
   }
   const family = classifySpeechEnvelopeFamily(raw);
   if (!Object.hasOwn(raw, "text")) {
-    return { failure: "required_text_missing", family };
+    const checkedResult: SpeechEnvelopeClassification = {
+      failure: "required_text_missing",
+      family,
+    };
+    return checkedResult;
   }
   if (!Schema.is(Schema.String)(raw["text"])) {
-    return { failure: "required_text_type", family };
+    const checkedResult: SpeechEnvelopeClassification = {
+      failure: "required_text_type",
+      family,
+    };
+    return checkedResult;
   }
   if (hasWrongRootMetadataType(raw)) {
-    return { failure: "root_metadata_type", family };
+    const checkedResult: SpeechEnvelopeClassification = {
+      failure: "root_metadata_type",
+      family,
+    };
+    return checkedResult;
   }
   if (family === "unclassified") {
-    return {
+    const checkedResult: SpeechEnvelopeClassification = {
       failure: "unsupported_property",
       family,
       unsupportedLocation: "root",
       unsupportedRootProperty: "words",
     };
+    return checkedResult;
   }
   if (hasAmbiguousSpeechWrapper(raw)) {
-    return {
+    const checkedResult: SpeechEnvelopeClassification = {
       failure: "unsupported_property",
       family,
       unsupportedLocation: "root",
       unsupportedRootProperty: "other",
     };
+    return checkedResult;
   }
   const unknownMetadataTraversal = makeSpeechUnknownMetadataTraversal();
   if (
@@ -675,56 +761,81 @@ const classifySpeechEnvelope = (
       unknownMetadataTraversal
     )
   ) {
-    return {
+    const checkedResult: SpeechEnvelopeClassification = {
       failure: "unsupported_property",
       family,
       unsupportedLocation: "root",
       unsupportedRootProperty: "other",
     };
+    return checkedResult;
   }
   if (
     family === "generic"
       ? genericNestedContainersAreInvalid(raw)
       : modelSpecificNestedContainersAreInvalid(raw)
   ) {
-    return { failure: "nested_container_type", family };
+    const checkedResult: SpeechEnvelopeClassification = {
+      failure: "nested_container_type",
+      family,
+    };
+    return checkedResult;
   }
   if (
     family === "generic"
       ? genericNestedEntriesAreInvalid(raw)
       : modelSpecificNestedEntriesAreInvalid(raw)
   ) {
-    return { failure: "nested_entry_type", family };
+    const checkedResult: SpeechEnvelopeClassification = {
+      failure: "nested_entry_type",
+      family,
+    };
+    return checkedResult;
   }
   if (
     family === "generic"
       ? genericNestedMetadataTypesAreInvalid(raw)
       : modelSpecificNestedMetadataTypesAreInvalid(raw)
   ) {
-    return { failure: "nested_metadata_type", family };
+    const checkedResult: SpeechEnvelopeClassification = {
+      failure: "nested_metadata_type",
+      family,
+    };
+    return checkedResult;
   }
   const unsupportedLocation =
     family === "generic"
       ? genericUnsupportedPropertyLocation(raw)
       : modelSpecificUnsupportedPropertyLocation(raw, unknownMetadataTraversal);
   if (unsupportedLocation !== undefined) {
-    return {
+    const checkedResult: SpeechEnvelopeClassification = {
       failure: "unsupported_property",
       family,
       unsupportedLocation,
     };
+    return checkedResult;
   }
-  return { failure: undefined, family };
+  {
+    const checkedResult: SpeechEnvelopeClassification = {
+      failure: undefined,
+      family,
+    };
+    return checkedResult;
+  }
 };
 
 const rejectedSpeechEnvelope = (
   classification: ReturnType<typeof classifySpeechEnvelope>,
   defaultFailure: SpeechEnvelopeFailure
 ) => {
-  let rejected: Extract<
-    ReturnType<typeof decodeSpeechResponse>,
-    { readonly _tag: "Rejected" }
-  > = {
+  let rejected: {
+    readonly _tag: "Rejected";
+    readonly decodeReason: "speech_envelope_schema_invalid";
+    readonly decodeStage: "speech_envelope";
+    readonly speechEnvelopeFailure: SpeechEnvelopeFailure;
+    readonly speechEnvelopeFamily: SpeechEnvelopeFamily;
+    readonly speechEnvelopeUnsupportedLocation?: SpeechEnvelopeUnsupportedLocation;
+    readonly speechEnvelopeUnsupportedRootProperty?: SpeechEnvelopeUnsupportedRootProperty;
+  } = {
     _tag: "Rejected",
     decodeReason: "speech_envelope_schema_invalid",
     decodeStage: "speech_envelope",
@@ -747,28 +858,27 @@ const rejectedSpeechEnvelope = (
   return rejected;
 };
 
-const decodeSpeechResponse = (
-  raw: Schema.Json | undefined
-):
-  | {
-      readonly _tag: "Decoded";
-      readonly text: string;
-    }
-  | { readonly _tag: "Absent" }
-  | {
-      readonly _tag: "Rejected";
-      readonly decodeReason:
-        | "speech_envelope_schema_invalid"
-        | "speech_transcript_normalization_invalid";
-      readonly decodeStage: "speech_envelope" | "speech_transcript";
-      readonly speechEnvelopeFailure: SpeechEnvelopeFailure;
-      readonly speechEnvelopeFamily: SpeechEnvelopeFamily;
-      readonly speechEnvelopeUnsupportedLocation?: SpeechEnvelopeUnsupportedLocation;
-      readonly speechEnvelopeUnsupportedRootProperty?: SpeechEnvelopeUnsupportedRootProperty;
-    } => {
+const decodeSpeechResponse = (raw: Schema.Json | undefined) => {
   const classification = classifySpeechEnvelope(raw);
   if (!isUnknownRecord(raw) || classification.failure !== undefined) {
-    return rejectedSpeechEnvelope(classification, "not_object");
+    const checkedResult:
+      | {
+          readonly _tag: "Decoded";
+          readonly text: string;
+        }
+      | { readonly _tag: "Absent" }
+      | {
+          readonly _tag: "Rejected";
+          readonly decodeReason:
+            | "speech_envelope_schema_invalid"
+            | "speech_transcript_normalization_invalid";
+          readonly decodeStage: "speech_envelope" | "speech_transcript";
+          readonly speechEnvelopeFailure: SpeechEnvelopeFailure;
+          readonly speechEnvelopeFamily: SpeechEnvelopeFamily;
+          readonly speechEnvelopeUnsupportedLocation?: SpeechEnvelopeUnsupportedLocation;
+          readonly speechEnvelopeUnsupportedRootProperty?: SpeechEnvelopeUnsupportedRootProperty;
+        } = rejectedSpeechEnvelope(classification, "not_object");
+    return checkedResult;
   }
   const isModelSpecific = classification.family === "model_specific";
   const projected = projectDocumentedSpeechResponse(
@@ -785,11 +895,27 @@ const decodeSpeechResponse = (
         Option.map(({ text }) => text)
       );
   if (Option.isNone(envelope)) {
-    return rejectedSpeechEnvelope(classification, "semantic_constraint");
+    const checkedResult:
+      | {
+          readonly _tag: "Decoded";
+          readonly text: string;
+        }
+      | { readonly _tag: "Absent" }
+      | {
+          readonly _tag: "Rejected";
+          readonly decodeReason:
+            | "speech_envelope_schema_invalid"
+            | "speech_transcript_normalization_invalid";
+          readonly decodeStage: "speech_envelope" | "speech_transcript";
+          readonly speechEnvelopeFailure: SpeechEnvelopeFailure;
+          readonly speechEnvelopeFamily: SpeechEnvelopeFamily;
+          readonly speechEnvelopeUnsupportedLocation?: SpeechEnvelopeUnsupportedLocation;
+          readonly speechEnvelopeUnsupportedRootProperty?: SpeechEnvelopeUnsupportedRootProperty;
+        } = rejectedSpeechEnvelope(classification, "semantic_constraint");
+    return checkedResult;
   }
   const normalized = envelope.value.trim();
   if (normalized.length === 0) {
-    // A valid empty envelope is evidence of no detected speech, never a parse fallback.
     const segmentWords = Array.isArray(raw["segments"])
       ? raw["segments"].map((entry) =>
           isUnknownRecord(entry) ? entry["words"] : undefined
@@ -808,26 +934,64 @@ const decodeSpeechResponse = (
           )
       ) ||
       (Predicate.isNumber(raw["word_count"]) && raw["word_count"] > 0);
-    return nestedText
-      ? rejectedSpeechEnvelope(classification, "semantic_constraint")
-      : { _tag: "Absent" };
+    {
+      const checkedResult:
+        | {
+            readonly _tag: "Decoded";
+            readonly text: string;
+          }
+        | { readonly _tag: "Absent" }
+        | {
+            readonly _tag: "Rejected";
+            readonly decodeReason:
+              | "speech_envelope_schema_invalid"
+              | "speech_transcript_normalization_invalid";
+            readonly decodeStage: "speech_envelope" | "speech_transcript";
+            readonly speechEnvelopeFailure: SpeechEnvelopeFailure;
+            readonly speechEnvelopeFamily: SpeechEnvelopeFamily;
+            readonly speechEnvelopeUnsupportedLocation?: SpeechEnvelopeUnsupportedLocation;
+            readonly speechEnvelopeUnsupportedRootProperty?: SpeechEnvelopeUnsupportedRootProperty;
+          } = nestedText
+        ? rejectedSpeechEnvelope(classification, "semantic_constraint")
+        : { _tag: "Absent" };
+      return checkedResult;
+    }
   }
   const text = Schema.decodeUnknownOption(SpeechTranscript.fields.text)(
     normalized
   );
-  return Option.match(text, {
-    onNone: () => ({
-      _tag: "Rejected" as const,
-      decodeReason: "speech_transcript_normalization_invalid" as const,
-      decodeStage: "speech_transcript" as const,
-      speechEnvelopeFailure: "normalized_text_invalid" as const,
-      speechEnvelopeFamily: classification.family,
-    }),
-    onSome: (normalizedText) => ({
-      _tag: "Decoded" as const,
-      text: normalizedText,
-    }),
-  });
+  {
+    const checkedResult:
+      | {
+          readonly _tag: "Decoded";
+          readonly text: string;
+        }
+      | { readonly _tag: "Absent" }
+      | {
+          readonly _tag: "Rejected";
+          readonly decodeReason:
+            | "speech_envelope_schema_invalid"
+            | "speech_transcript_normalization_invalid";
+          readonly decodeStage: "speech_envelope" | "speech_transcript";
+          readonly speechEnvelopeFailure: SpeechEnvelopeFailure;
+          readonly speechEnvelopeFamily: SpeechEnvelopeFamily;
+          readonly speechEnvelopeUnsupportedLocation?: SpeechEnvelopeUnsupportedLocation;
+          readonly speechEnvelopeUnsupportedRootProperty?: SpeechEnvelopeUnsupportedRootProperty;
+        } = Option.match(text, {
+      onNone: () => ({
+        _tag: "Rejected" as const,
+        decodeReason: "speech_transcript_normalization_invalid" as const,
+        decodeStage: "speech_transcript" as const,
+        speechEnvelopeFailure: "normalized_text_invalid" as const,
+        speechEnvelopeFamily: classification.family,
+      }),
+      onSome: (normalizedText) => ({
+        _tag: "Decoded" as const,
+        text: normalizedText,
+      }),
+    });
+    return checkedResult;
+  }
 };
 
 const speechDecodeDiagnostics = (
@@ -850,10 +1014,13 @@ const speechDecodeDiagnostics = (
   return {};
 };
 
-const speechFailure = (
-  code: SafeProviderFailureCode
-): SpeechTranscriptionFailure =>
-  adapterFailure("SpeechTranscriptionFailure", code);
+const speechFailure = (code: SafeProviderFailureCode) => {
+  const checkedResult: SpeechTranscriptionFailure = adapterFailure(
+    "SpeechTranscriptionFailure",
+    code
+  );
+  return checkedResult;
+};
 
 export const makeInstalledSpeechTranscriber = (input: {
   readonly correlationId: ImportCorrelationId;

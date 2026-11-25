@@ -193,7 +193,7 @@ export const makeSession = <R>(
         }
         const tokens = yield* decryptTokens(session.secret);
         const startedAt = yield* Clock.currentTimeMillis;
-        // A persisted marker plus watchdog prevents reuse of a token after an ambiguous process interruption.
+
         yield* storage.write(
           { ...record, session: { ...session, phase: "refreshing" } },
           startedAt + 60_000
@@ -255,7 +255,7 @@ export const makeSession = <R>(
             startedAt + Math.floor((newExpiry - startedAt) / 2)
           )
         );
-        // Tokens and their next alarm are already durable before these read-only probes.
+
         yield* verifyRenewal(session.stationId, result.success);
         return result.success;
       });
@@ -515,7 +515,7 @@ export const makeSession = <R>(
         read(id, (token) => client.timeOfUseSettings(id, token)),
       topology: (input: StationId) =>
         read(input, (token) => client.topology(input, token)),
-      // Commands share the refresh/disconnect lock, but never use the read retry path.
+
       withConnection: <A, E, R2>(
         stationId: StationId,
         operation: (

@@ -163,10 +163,9 @@ export const mergeSessionCookies = (
   headers: readonly string[] | string,
   url: URL,
   now: number
-): readonly TescoBrowserCookie[] => {
+) => {
   let cookies = [...current];
-  // Effect's Cookies collection is keyed only by name and cannot represent a browser jar.
-  // Parse the original headers without decoding signed/encoded cookie values.
+
   for (const parsed of parseSetCookie(headers, {
     decodeValues: false,
     split: true,
@@ -211,5 +210,8 @@ export const mergeSessionCookies = (
       cookies.push(cookie);
     }
   }
-  return cookies;
+  {
+    const checkedResult: readonly TescoBrowserCookie[] = cookies;
+    return checkedResult;
+  }
 };

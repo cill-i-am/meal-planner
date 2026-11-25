@@ -116,8 +116,14 @@ const decodeOpenApiObjectProperty = Schema.decodeUnknownOption(
 
 const openApiReferenceName = (
   schema: JsonSchema.JsonSchema | Schema.Json | undefined
-): string | undefined =>
-  Option.getOrUndefined(decodeOpenApiReference(schema))?.$ref.split("/").at(-1);
+) => {
+  const checkedResult: string | undefined = Option.getOrUndefined(
+    decodeOpenApiReference(schema)
+  )
+    ?.$ref.split("/")
+    .at(-1);
+  return checkedResult;
+};
 
 describe("RecipeImportIntent protocol", () => {
   it.each([

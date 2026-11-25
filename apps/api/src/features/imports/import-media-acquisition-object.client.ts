@@ -69,11 +69,14 @@ export interface AcquisitionMediaObjectStub {
   ) => AcquisitionRpcEffect<typeof ProviderEvidenceTransport.Encoded>;
 }
 
-const privateArtifactFailure = (): RetryableAcquisitionFailure =>
-  new RetryableAcquisitionError({
-    reason: "container_rpc",
-    stage: "container",
-  });
+const privateArtifactFailure = () => {
+  const checkedResult: RetryableAcquisitionFailure =
+    new RetryableAcquisitionError({
+      reason: "container_rpc",
+      stage: "container",
+    });
+  return checkedResult;
+};
 
 const openPrivateArtifact = Effect.fn(
   "ImportMediaAcquisitionObject.openPrivateArtifact"
@@ -100,56 +103,59 @@ const openPrivateArtifact = Effect.fn(
 /** Adapt the private DO fetch transport to the Effect-shaped application port. */
 export const makeAcquisitionMediaObject = (
   stub: AcquisitionMediaObjectStub
-): AcquisitionMediaObjectLike => ({
-  cleanup: (artifactId) =>
-    stub.cleanup(artifactId).pipe(Effect.mapError(privateArtifactFailure)),
-  prepare: (input) =>
-    stub.prepare(input).pipe(
-      Effect.matchEffect({
-        onFailure: (error) => {
-          const decoded = Schema.decodeUnknownOption(
-            ContainerAcquisitionFailure
-          )(error);
-          return Effect.fail(
-            Option.isSome(decoded) ? decoded.value : privateArtifactFailure()
+) => {
+  const checkedResult: AcquisitionMediaObjectLike = {
+    cleanup: (artifactId) =>
+      stub.cleanup(artifactId).pipe(Effect.mapError(privateArtifactFailure)),
+    prepare: (input) =>
+      stub.prepare(input).pipe(
+        Effect.matchEffect({
+          onFailure: (error) => {
+            const decoded = Schema.decodeUnknownOption(
+              ContainerAcquisitionFailure
+            )(error);
+            return Effect.fail(
+              Option.isSome(decoded) ? decoded.value : privateArtifactFailure()
+            );
+          },
+          onSuccess: Effect.succeed,
+        })
+      ),
+    prepareProviderEvidence: (artifactId, durationSeconds) =>
+      stub.prepareProviderEvidence(artifactId, durationSeconds).pipe(
+        Effect.matchEffect({
+          onFailure: (error) => {
+            const decoded = Schema.decodeUnknownOption(
+              RetryableAcquisitionFailureSchema
+            )(error);
+            return Effect.fail(
+              Option.isSome(decoded) ? decoded.value : privateArtifactFailure()
+            );
+          },
+          onSuccess: Effect.succeed,
+        })
+      ),
+    readArtifact: (artifactId) =>
+      Stream.unwrap(
+        Effect.gen(function* readArtifact() {
+          const readerId = crypto.randomUUID();
+          const close = yield* Effect.cached(
+            stub
+              .closeReader(artifactId, readerId)
+              .pipe(Effect.mapError(privateArtifactFailure), Effect.orDie)
           );
-        },
-        onSuccess: Effect.succeed,
-      })
-    ),
-  prepareProviderEvidence: (artifactId, durationSeconds) =>
-    stub.prepareProviderEvidence(artifactId, durationSeconds).pipe(
-      Effect.matchEffect({
-        onFailure: (error) => {
-          const decoded = Schema.decodeUnknownOption(
-            RetryableAcquisitionFailureSchema
-          )(error);
-          return Effect.fail(
-            Option.isSome(decoded) ? decoded.value : privateArtifactFailure()
+          yield* Effect.addFinalizer(() => close);
+          const body = yield* openPrivateArtifact(
+            stub,
+            artifactId,
+            readerId
+          ).pipe(Effect.onError(() => close));
+
+          return Stream.transformPull(body, (pull, scope) =>
+            Scope.addFinalizer(scope, close).pipe(Effect.as(pull))
           );
-        },
-        onSuccess: Effect.succeed,
-      })
-    ),
-  readArtifact: (artifactId) =>
-    Stream.unwrap(
-      Effect.gen(function* readArtifact() {
-        const readerId = crypto.randomUUID();
-        const close = yield* Effect.cached(
-          stub
-            .closeReader(artifactId, readerId)
-            .pipe(Effect.mapError(privateArtifactFailure), Effect.orDie)
-        );
-        yield* Effect.addFinalizer(() => close);
-        const body = yield* openPrivateArtifact(
-          stub,
-          artifactId,
-          readerId
-        ).pipe(Effect.onError(() => close));
-        // Register after the source pull so acknowledgement runs before native cancel.
-        return Stream.transformPull(body, (pull, scope) =>
-          Scope.addFinalizer(scope, close).pipe(Effect.as(pull))
-        );
-      })
-    ),
-});
+        })
+      ),
+  };
+  return checkedResult;
+};

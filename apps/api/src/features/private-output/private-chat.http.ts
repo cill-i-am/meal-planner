@@ -80,8 +80,7 @@ export const handlePrivateChatRequest = Effect.fn(
       });
       const target = new URL("https://private-output.internal/chat");
       target.search = url.search;
-      // Only protocol metadata crosses this boundary; cookies and client-supplied
-      // internal authority headers are never forwarded to the private worker.
+
       const headers = new Headers({
         "private-output-session": sessionReference,
       });
@@ -100,7 +99,7 @@ export const handlePrivateChatRequest = Effect.fn(
         if (payload === null) {
           return new Response(null, { status: 400 });
         }
-        // Keep the library's native request intact and replace any forged context.
+
         body = JSON.stringify({ ...payload, privateChatContext: context });
         headers.set("Content-Type", "application/json");
       } else {

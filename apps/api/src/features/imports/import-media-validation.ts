@@ -22,8 +22,13 @@ export type MediaProbeOutput = typeof MediaProbeOutput.Type;
 
 const invalidMedia = (
   code: "invalid_media" | "limit_exceeded" | "unsupported_streams"
-): TerminalMediaFailure =>
-  new TerminalMediaError({ code, stage: "validation" });
+) => {
+  const checkedResult: TerminalMediaFailure = new TerminalMediaError({
+    code,
+    stage: "validation",
+  });
+  return checkedResult;
+};
 
 export const hasIsoBaseMediaFileType = (header: Uint8Array) =>
   header.length >= 8 &&

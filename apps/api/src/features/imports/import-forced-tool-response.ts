@@ -51,22 +51,26 @@ export type ForcedToolResponseDecode =
 const isRecord = (value: Schema.Json | undefined): value is Schema.JsonObject =>
   Schema.is(ForcedToolJsonObject)(value);
 
-const decodeArguments = (
-  value: Schema.Json | undefined
-): ForcedToolJsonObject | undefined => {
+const decodeArguments = (value: Schema.Json | undefined) => {
   if (value === undefined) {
-    return undefined;
+    const checkedResult: ForcedToolJsonObject | undefined = undefined;
+    return checkedResult;
   }
   if (isRecord(value)) {
-    return value;
+    const checkedResult: ForcedToolJsonObject | undefined = value;
+    return checkedResult;
   }
   if (!Schema.is(Schema.String)(value)) {
-    return undefined;
+    const checkedResult: ForcedToolJsonObject | undefined = undefined;
+    return checkedResult;
   }
   try {
-    return Option.getOrUndefined(decodeForcedToolJsonObject(JSON.parse(value)));
+    const checkedResult: ForcedToolJsonObject | undefined =
+      Option.getOrUndefined(decodeForcedToolJsonObject(JSON.parse(value)));
+    return checkedResult;
   } catch {
-    return undefined;
+    const checkedResult: ForcedToolJsonObject | undefined = undefined;
+    return checkedResult;
   }
 };
 
@@ -74,38 +78,46 @@ type ForcedToolJsonDecode =
   | { readonly _tag: "Parsed"; readonly value: Schema.Json }
   | Extract<NativeForcedToolDecode, { readonly _tag: "Invalid" | "Prose" }>;
 
-const decodeForcedToolJson = (text: string): ForcedToolJsonDecode => {
+const decodeForcedToolJson = (text: string) => {
   try {
     const decoded = Schema.decodeUnknownOption(Schema.Json)(JSON.parse(text));
-    return Option.isSome(decoded)
-      ? { _tag: "Parsed", value: decoded.value }
-      : { _tag: "Invalid" };
+    {
+      const checkedResult: ForcedToolJsonDecode = Option.isSome(decoded)
+        ? { _tag: "Parsed", value: decoded.value }
+        : { _tag: "Invalid" };
+      return checkedResult;
+    }
   } catch {
     const trimmed = text.trimStart();
-    return trimmed.startsWith("{") || trimmed.startsWith("[")
-      ? { _tag: "Invalid" }
-      : { _tag: "Prose" };
+    {
+      const checkedResult: ForcedToolJsonDecode =
+        trimmed.startsWith("{") || trimmed.startsWith("[")
+          ? { _tag: "Invalid" }
+          : { _tag: "Prose" };
+      return checkedResult;
+    }
   }
 };
 
-const decodeNativeForcedToolEnvelope = (
-  text: string
-): NativeForcedToolDecode => {
+const decodeNativeForcedToolEnvelope = (text: string) => {
   const decodedJson = decodeForcedToolJson(text);
   if (decodedJson._tag !== "Parsed") {
-    return decodedJson;
+    const checkedResult: NativeForcedToolDecode = decodedJson;
+    return checkedResult;
   }
   const parsed = decodedJson.value;
   let envelope = parsed;
   const wrappedInArray = Array.isArray(parsed);
   if (Array.isArray(parsed)) {
     if (parsed.length !== 1) {
-      return { _tag: "Invalid" };
+      const checkedResult: NativeForcedToolDecode = { _tag: "Invalid" };
+      return checkedResult;
     }
     [envelope] = parsed;
   }
   if (!isRecord(envelope)) {
-    return { _tag: "Invalid" };
+    const checkedResult: NativeForcedToolDecode = { _tag: "Invalid" };
+    return checkedResult;
   }
 
   const keys = Object.keys(envelope).toSorted();
@@ -119,12 +131,15 @@ const decodeNativeForcedToolEnvelope = (
     keys[1] === (hasArguments ? "name" : "parameters") &&
     Schema.is(Schema.String)(name);
   if (!isExactEnvelope) {
-    return hasArguments || hasParameters || Schema.is(Schema.String)(name)
-      ? { _tag: "Invalid" }
-      : { _tag: "Value", value: envelope, wrappedInArray };
+    const checkedResult: NativeForcedToolDecode =
+      hasArguments || hasParameters || Schema.is(Schema.String)(name)
+        ? { _tag: "Invalid" }
+        : { _tag: "Value", value: envelope, wrappedInArray };
+    return checkedResult;
   }
   if (!Schema.is(Schema.String)(name)) {
-    return { _tag: "Invalid" };
+    const checkedResult: NativeForcedToolDecode = { _tag: "Invalid" };
+    return checkedResult;
   }
 
   const argumentsValue = hasArguments
@@ -132,57 +147,74 @@ const decodeNativeForcedToolEnvelope = (
     : envelope["parameters"];
   const decodedArguments = decodeArguments(argumentsValue);
   if (decodedArguments === undefined) {
-    return { _tag: "Invalid" };
+    const checkedResult: NativeForcedToolDecode = { _tag: "Invalid" };
+    return checkedResult;
   }
-  return {
-    _tag: "Call",
-    call: {
-      arguments: decodedArguments,
-      name,
-    },
-  };
+  {
+    const checkedResult: NativeForcedToolDecode = {
+      _tag: "Call",
+      call: {
+        arguments: decodedArguments,
+        name,
+      },
+    };
+    return checkedResult;
+  }
 };
 
-export const structurallyEqualJson = (
+export const structurallyEqualJson: (
   left: Schema.Json | undefined,
   right: Schema.Json | undefined
-): boolean => {
+) => boolean = (left, right) => {
   if (Object.is(left, right)) {
-    return true;
+    const checkedResult = true;
+    return checkedResult;
   }
   if (Array.isArray(left) || Array.isArray(right)) {
-    return (
+    const checkedResult =
       Array.isArray(left) &&
       Array.isArray(right) &&
       left.length === right.length &&
-      left.every((value, index) => structurallyEqualJson(value, right[index]))
-    );
+      left.every((value, index) => structurallyEqualJson(value, right[index]));
+    return checkedResult;
   }
   if (!isRecord(left) || !isRecord(right)) {
-    return false;
+    const checkedResult = false;
+    return checkedResult;
   }
   const leftKeys = Object.keys(left).toSorted();
   const rightKeys = Object.keys(right).toSorted();
-  return (
-    leftKeys.length === rightKeys.length &&
-    leftKeys.every(
-      (key, index) =>
-        key === rightKeys[index] && structurallyEqualJson(left[key], right[key])
-    )
-  );
+  {
+    const checkedResult =
+      leftKeys.length === rightKeys.length &&
+      leftKeys.every(
+        (key, index) =>
+          key === rightKeys[index] &&
+          structurallyEqualJson(left[key], right[key])
+      );
+    return checkedResult;
+  }
 };
 
 const decodeTextOnlyForcedToolResponse = (
   text: readonly (ForcedToolResponsePart & { readonly text: string })[],
   expectedName: string,
   acceptUnwrappedObject: boolean
-): ForcedToolResponseDecode => {
+) => {
   const [part] = text;
   if (part === undefined) {
-    return { _tag: "Missing", reason: "missing_content" };
+    const checkedResult: ForcedToolResponseDecode = {
+      _tag: "Missing",
+      reason: "missing_content",
+    };
+    return checkedResult;
   }
   if (text.length !== 1) {
-    return { _tag: "Malformed", reason: "invalid_cardinality" };
+    const checkedResult: ForcedToolResponseDecode = {
+      _tag: "Malformed",
+      reason: "invalid_cardinality",
+    };
+    return checkedResult;
   }
   const envelope = decodeNativeForcedToolEnvelope(part.text);
   if (
@@ -190,14 +222,26 @@ const decodeTextOnlyForcedToolResponse = (
     acceptUnwrappedObject &&
     !envelope.wrappedInArray
   ) {
-    return { _tag: "Decoded", value: envelope.value };
+    const checkedResult: ForcedToolResponseDecode = {
+      _tag: "Decoded",
+      value: envelope.value,
+    };
+    return checkedResult;
   }
   if (envelope._tag !== "Call") {
-    return { _tag: "Malformed", reason: "invalid_native_envelope" };
+    const checkedResult: ForcedToolResponseDecode = {
+      _tag: "Malformed",
+      reason: "invalid_native_envelope",
+    };
+    return checkedResult;
   }
-  return envelope.call.name === expectedName
-    ? { _tag: "Decoded", value: envelope.call.arguments }
-    : { _tag: "Malformed", reason: "unexpected_tool_name" };
+  {
+    const checkedResult: ForcedToolResponseDecode =
+      envelope.call.name === expectedName
+        ? { _tag: "Decoded", value: envelope.call.arguments }
+        : { _tag: "Malformed", reason: "unexpected_tool_name" };
+    return checkedResult;
+  }
 };
 
 /**
@@ -215,7 +259,7 @@ export const decodeForcedToolResponseResult = (
   options?: {
     readonly acceptUnwrappedObject?: boolean;
   }
-): ForcedToolResponseDecode => {
+) => {
   const parts = content.flatMap((part) =>
     Option.match(decodeForcedToolResponsePart(part), {
       onNone: () => [],
@@ -230,50 +274,88 @@ export const decodeForcedToolResponseResult = (
 
   if (structured.length > 0) {
     if (structured.length !== 1) {
-      return { _tag: "Malformed", reason: "invalid_cardinality" };
+      const checkedResult: ForcedToolResponseDecode = {
+        _tag: "Malformed",
+        reason: "invalid_cardinality",
+      };
+      return checkedResult;
     }
     const [call] = structured;
     if (call?.name !== expectedName) {
-      return { _tag: "Malformed", reason: "unexpected_tool_name" };
+      const checkedResult: ForcedToolResponseDecode = {
+        _tag: "Malformed",
+        reason: "unexpected_tool_name",
+      };
+      return checkedResult;
     }
     const structuredArguments = decodeArguments(call.params);
     if (structuredArguments === undefined) {
-      return { _tag: "Malformed", reason: "invalid_arguments" };
+      const checkedResult: ForcedToolResponseDecode = {
+        _tag: "Malformed",
+        reason: "invalid_arguments",
+      };
+      return checkedResult;
     }
     const native = text.map((part) =>
       decodeNativeForcedToolEnvelope(part.text)
     );
     if (native.some((result) => result._tag === "Invalid")) {
-      return { _tag: "Malformed", reason: "invalid_native_envelope" };
+      const checkedResult: ForcedToolResponseDecode = {
+        _tag: "Malformed",
+        reason: "invalid_native_envelope",
+      };
+      return checkedResult;
     }
     const nativeMirrors = native.flatMap((result) =>
       result._tag === "Call" || result._tag === "Value" ? [result] : []
     );
     if (nativeMirrors.length === 0) {
-      return { _tag: "Decoded", value: structuredArguments };
+      const checkedResult: ForcedToolResponseDecode = {
+        _tag: "Decoded",
+        value: structuredArguments,
+      };
+      return checkedResult;
     }
     if (nativeMirrors.length !== 1) {
-      return { _tag: "Malformed", reason: "invalid_cardinality" };
+      const checkedResult: ForcedToolResponseDecode = {
+        _tag: "Malformed",
+        reason: "invalid_cardinality",
+      };
+      return checkedResult;
     }
     const [nativeMirror] = nativeMirrors;
     if (
       nativeMirror?._tag === "Call" &&
       nativeMirror.call.name !== expectedName
     ) {
-      return { _tag: "Malformed", reason: "unexpected_tool_name" };
+      const checkedResult: ForcedToolResponseDecode = {
+        _tag: "Malformed",
+        reason: "unexpected_tool_name",
+      };
+      return checkedResult;
     }
     const mirroredArguments =
       nativeMirror?._tag === "Call"
         ? nativeMirror.call.arguments
         : nativeMirror?.value;
-    return structurallyEqualJson(structuredArguments, mirroredArguments)
-      ? { _tag: "Decoded", value: structuredArguments }
-      : { _tag: "Malformed", reason: "mirror_mismatch" };
+    {
+      const checkedResult: ForcedToolResponseDecode = structurallyEqualJson(
+        structuredArguments,
+        mirroredArguments
+      )
+        ? { _tag: "Decoded", value: structuredArguments }
+        : { _tag: "Malformed", reason: "mirror_mismatch" };
+      return checkedResult;
+    }
   }
 
-  return decodeTextOnlyForcedToolResponse(
-    text,
-    expectedName,
-    options?.acceptUnwrappedObject === true
-  );
+  {
+    const checkedResult: ForcedToolResponseDecode =
+      decodeTextOnlyForcedToolResponse(
+        text,
+        expectedName,
+        options?.acceptUnwrappedObject === true
+      );
+    return checkedResult;
+  }
 };

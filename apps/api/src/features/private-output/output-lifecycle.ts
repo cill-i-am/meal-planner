@@ -38,7 +38,6 @@ interface OutputLifecycleEnvironment extends Cloudflare.Env {
   };
 }
 
-/** Serialize output registration with canonical writers, without owning authority. */
 class OutputLifecycle extends Agent<OutputLifecycleEnvironment> {
   #database = instrumentDrizzle(drizzle(this.ctx.storage), {
     attributes: { "db.namespace": "private-output" },
@@ -48,7 +47,6 @@ class OutputLifecycle extends Agent<OutputLifecycleEnvironment> {
     context: NativeCloudflare.DurableObjectState,
     environment: OutputLifecycleEnvironment
   ) {
-    // The Agent receives a runtime invalidation-only facade, never the child's broad namespace.
     super(context, {
       ...environment,
       PrivateInterviewDirectory: {
@@ -68,7 +66,7 @@ class OutputLifecycle extends Agent<OutputLifecycleEnvironment> {
         }),
       },
     });
-    // Native RPC enters directly; Agent onStart alone does not initialize this path.
+
     context.blockConcurrencyWhile(() => {
       migrate(this.#database, migrations);
       return Promise.resolve();
@@ -90,24 +88,29 @@ class OutputLifecycle extends Agent<OutputLifecycleEnvironment> {
     return false;
   }
 
-  register(untrusted: OutputRegistration): boolean {
+  register(untrusted: OutputRegistration) {
     const input = Schema.decodeUnknownSync(OutputRegistration)(untrusted);
-    return this.#database.transaction((transaction) => {
-      const pending = transaction
-        .select()
-        .from(outputMutations)
-        .where(ne(outputMutations.phase, "settled"))
-        .get();
-      if (pending !== undefined) {
-        return false;
-      }
-      transaction
-        .insert(outputRegistrations)
-        .values(input)
-        .onConflictDoNothing()
-        .run();
-      return true;
-    });
+    {
+      const checkedResult: boolean = this.#database.transaction(
+        (transaction) => {
+          const pending = transaction
+            .select()
+            .from(outputMutations)
+            .where(ne(outputMutations.phase, "settled"))
+            .get();
+          if (pending !== undefined) {
+            return false;
+          }
+          transaction
+            .insert(outputRegistrations)
+            .values(input)
+            .onConflictDoNothing()
+            .run();
+          return true;
+        }
+      );
+      return checkedResult;
+    }
   }
 
   findPendingMutation(untrusted: OutputMutationIntent) {
@@ -152,8 +155,7 @@ class OutputLifecycle extends Agent<OutputLifecycleEnvironment> {
     });
   }
 
-  /** Retrying this exact operation also retries lost child invalidation acknowledgments. */
-  async prepareMutation(untrusted: OutputMutation): Promise<void> {
+  async prepareMutation(untrusted: OutputMutation) {
     const input = Schema.decodeUnknownSync(OutputMutation)(untrusted);
     this.#database.transaction((transaction) => {
       const retained = transaction
@@ -198,7 +200,7 @@ class OutputLifecycle extends Agent<OutputLifecycleEnvironment> {
       .run();
   }
 
-  markDispatched(untrusted: OutputMutation): void {
+  markDispatched(untrusted: OutputMutation) {
     const input = Schema.decodeUnknownSync(OutputMutation)(untrusted);
     const operation = this.#database
       .select()
@@ -215,8 +217,7 @@ class OutputLifecycle extends Agent<OutputLifecycleEnvironment> {
       .run();
   }
 
-  /** Settle only this definite outcome; any other pending operation keeps registration closed. */
-  completeMutation(untrusted: OutputMutation): void {
+  completeMutation(untrusted: OutputMutation) {
     const input = Schema.decodeUnknownSync(OutputMutation)(untrusted);
     this.#database.transaction((transaction) => {
       const operation = transaction

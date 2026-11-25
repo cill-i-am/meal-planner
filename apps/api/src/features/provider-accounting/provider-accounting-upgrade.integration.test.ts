@@ -21,7 +21,7 @@ import {
   ProviderAccountingTimestamp,
 } from "./provider-accounting.js";
 import { makeD1ProviderAccountingRepository } from "./provider-accounting.repository.d1.js";
-import { makeD1ProviderAccountingRepository as makePreviousRepository } from "./provider-accounting.repository.previous.test-fixture.js";
+import { makeD1ProviderAccountingRepository as makePreviousRepository } from "./provider-accounting.repository.previous.fixture.js";
 
 type UpgradeDatabase = Awaited<ReturnType<Miniflare["getD1Database"]>>;
 
@@ -65,7 +65,6 @@ const withAppliedBaseline = async (
     upgrade: () => Promise<void>
   ) => Promise<void>
 ) => {
-  // Alchemy's Cloudflare wildcard export maps to barrels; this executor is internal.
   const { makeD1MigrationExecutor } = (await import(
     new URL(
       "ApplyMigrations.js",
@@ -91,7 +90,7 @@ const withAppliedBaseline = async (
   if (baseline === undefined) {
     throw new Error("The applied provider accounting baseline is missing");
   }
-  // Pin the installed schema from main at 9a59f851, so editing the baseline cannot bypass this upgrade test.
+
   expect(baseline.hash).toBe(
     "e45012cfd5270be6bfb5b133ba85a065299e148c52cddf59076364f06ce6238f"
   );
@@ -127,7 +126,6 @@ const withAppliedBaseline = async (
     const database = await runtime.getD1Database("ProviderAccountingDatabase");
     const executeSql = (sql: string) =>
       Effect.promise(async () => {
-        // Cloudflare's SQL parser preserves compound trigger bodies in the atomic batch.
         await writeFile(`${directory}/0001_payload.sql`, sql);
         const parsed = await readD1Migrations(directory);
         const statements = parsed.flatMap(({ queries }) =>
@@ -135,7 +133,7 @@ const withAppliedBaseline = async (
         );
         return { result: await database.batch(statements) };
       });
-    // Seed the installed beta.72 schema and ledger to exercise the real upgrade.
+
     await executeSql(`
       ${baseline.sql}
       CREATE TABLE d1_migrations (id TEXT PRIMARY KEY, name TEXT, applied_at TEXT);
@@ -274,9 +272,8 @@ it("upgrades an applied baseline and conservatively settles an existing invocati
       },
     ]);
   });
-}, 30_000);
+});
 
-// Frozen, unmodified repository from main at 9a59f85170f379e065920eadaaf69593d90c2c40.
 const previousRepositorySha256 =
   "447c63a4de74627a5f581e2338c86449a27725579fde0484a7bfe84ccbbe5aa8";
 
@@ -285,7 +282,7 @@ it.each(["active", "expired", "swept", "unknown"] as const)(
   async (scenario) => {
     const source = await readFile(
       new URL(
-        "provider-accounting.repository.previous.test-fixture.ts",
+        "provider-accounting.repository.previous.fixture.ts",
         import.meta.url
       )
     );
@@ -454,6 +451,5 @@ it.each(["active", "expired", "swept", "unknown"] as const)(
         expect(remainingReplay.results).toEqual([]);
       }
     });
-  },
-  30_000
+  }
 );

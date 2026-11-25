@@ -70,19 +70,17 @@ const defineTool = <
   ...definition,
   execute: flow(
     Schema.decodeUnknownEffect(definition.input, { onExcessProperty: "error" }),
-    Effect.flatMap(
-      (
-        decoded
-      ): Effect.Effect<
+    Effect.flatMap((decoded) => {
+      const checkedResult: Effect.Effect<
         Readonly<Record<string, Schema.Json>>,
         Schema.SchemaError | TescoSessionFailure,
         TescoMcpCapabilities
-      > =>
-        TescoMcpCapabilities.pipe(
-          Effect.flatMap((service) => run(service, decoded)),
-          Effect.flatMap(Schema.encodeEffect(definition.output))
-        )
-    )
+      > = TescoMcpCapabilities.pipe(
+        Effect.flatMap((service) => run(service, decoded)),
+        Effect.flatMap(Schema.encodeEffect(definition.output))
+      );
+      return checkedResult;
+    })
   ),
 });
 

@@ -280,7 +280,7 @@ const batchDispatchPurposes: ReadonlySet<HouseholdCommandPurpose> = new Set([
 export const requireHouseholdCommandAdmission = (
   admission: HouseholdCommandAdmission,
   purpose: HouseholdCommandPurpose
-): Effect.Effect<HouseholdCommandAdmission, HouseholdAuthorizationFailure> => {
+) => {
   const permitted = (() => {
     switch (admission.actor._tag) {
       case "Member": {
@@ -314,7 +314,13 @@ export const requireHouseholdCommandAdmission = (
       }
     }
   })();
-  return permitted
-    ? Effect.succeed(admission)
-    : Effect.fail(HouseholdAuthorizationFailure.make({}));
+  {
+    const checkedResult: Effect.Effect<
+      HouseholdCommandAdmission,
+      HouseholdAuthorizationFailure
+    > = permitted
+      ? Effect.succeed(admission)
+      : Effect.fail(HouseholdAuthorizationFailure.make({}));
+    return checkedResult;
+  }
 };

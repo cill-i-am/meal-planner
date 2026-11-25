@@ -23,7 +23,6 @@ export class HouseholdMealPlanCurrentPrincipal extends Context.Service<
   HouseholdMealPlanPrincipal
 >()("meal-planner/HouseholdMealPlanCurrentPrincipal") {}
 
-// The household receives the change and time; the internal actor digest stays private.
 const PublicFields = {
   audit: Schema.Array(
     Schema.Struct({
@@ -59,9 +58,7 @@ export const HouseholdMealPlanResponse = Schema.Union([
 ]);
 export type HouseholdMealPlanResponse = typeof HouseholdMealPlanResponse.Type;
 
-export const toHouseholdMealPlanResponse = (
-  plan: MealPlan
-): HouseholdMealPlanResponse => {
+export const toHouseholdMealPlanResponse = (plan: MealPlan) => {
   const common = {
     audit: plan.audit.map(({ actorId: _actorId, ...entry }) => entry),
     planId: plan.planId,
@@ -70,21 +67,33 @@ export const toHouseholdMealPlanResponse = (
   };
   switch (plan._tag) {
     case "Draft": {
-      return { ...common, _tag: "Draft", proposed: plan.proposed };
+      const checkedResult: HouseholdMealPlanResponse = {
+        ...common,
+        _tag: "Draft",
+        proposed: plan.proposed,
+      };
+      return checkedResult;
     }
     case "Approved": {
-      return { ...common, _tag: "Approved", active: plan.active };
+      const checkedResult: HouseholdMealPlanResponse = {
+        ...common,
+        _tag: "Approved",
+        active: plan.active,
+      };
+      return checkedResult;
     }
     case "ProposedRevision": {
-      return {
+      const checkedResult: HouseholdMealPlanResponse = {
         ...common,
         _tag: "ProposedRevision",
         active: plan.active,
         proposed: plan.proposed,
       };
+      return checkedResult;
     }
     default: {
-      return plan satisfies never;
+      const checkedResult: HouseholdMealPlanResponse = plan satisfies never;
+      return checkedResult;
     }
   }
 };

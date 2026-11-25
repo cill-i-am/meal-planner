@@ -64,10 +64,14 @@ const PersistenceUnavailableFailure = Schema.Struct({
   reason: Schema.Literal("persistence_unavailable"),
 });
 
-const mapFailure = <E>(error: E): ImportTransitionError =>
-  Schema.is(PersistenceUnavailableFailure)(error)
+const mapFailure = <E>(error: E) => {
+  const checkedResult: ImportTransitionError = Schema.is(
+    PersistenceUnavailableFailure
+  )(error)
     ? importPersistenceUnavailable()
     : importTransitionRejected();
+  return checkedResult;
+};
 
 const makeBoundary = (input: HouseholdEvidenceRepositoryInput) => {
   const admission = {
@@ -216,68 +220,107 @@ const hasEvidenceReference = (
 const projectSpeechStatus = (
   stage: EvidenceStage,
   references: EvidenceReferences
-): Effect.Effect<CurrentEvidenceStatus | null, ImportTransitionError> => {
+) => {
   if (stage?.outcome === "Dispatching") {
-    return Effect.succeed({ kind: "transcribing" });
+    const checkedResult: Effect.Effect<
+      CurrentEvidenceStatus | null,
+      ImportTransitionError
+    > = Effect.succeed({ kind: "transcribing" });
+    return checkedResult;
   }
   if (stage?.outcome === "Failed") {
-    return Schema.is(SpeechTranscriptionFailureCode)(stage.failureCode)
+    const checkedResult: Effect.Effect<
+      CurrentEvidenceStatus | null,
+      ImportTransitionError
+    > = Schema.is(SpeechTranscriptionFailureCode)(stage.failureCode)
       ? Effect.succeed({
           code: stage.failureCode,
           kind: "failed",
           recovery: "retry_later",
         })
       : Effect.fail(importTransitionRejected());
+    return checkedResult;
   }
   if (stage?.outcome !== "Completed") {
-    return Effect.succeed(null);
+    const checkedResult: Effect.Effect<
+      CurrentEvidenceStatus | null,
+      ImportTransitionError
+    > = Effect.succeed(null);
+    return checkedResult;
   }
-  return hasEvidenceReference(references, "speech_transcript")
-    ? Effect.succeed({ kind: "transcribed" })
-    : Effect.fail(importTransitionRejected());
+  {
+    const checkedResult: Effect.Effect<
+      CurrentEvidenceStatus | null,
+      ImportTransitionError
+    > = hasEvidenceReference(references, "speech_transcript")
+      ? Effect.succeed({ kind: "transcribed" })
+      : Effect.fail(importTransitionRejected());
+    return checkedResult;
+  }
 };
 
 const projectVisualStatus = (
   stage: EvidenceStage,
   references: EvidenceReferences
-): Effect.Effect<CurrentEvidenceStatus | null, ImportTransitionError> => {
+) => {
   if (stage?.outcome === "Dispatching") {
-    return Effect.succeed({ kind: "extracting_visual" });
+    const checkedResult: Effect.Effect<
+      CurrentEvidenceStatus | null,
+      ImportTransitionError
+    > = Effect.succeed({ kind: "extracting_visual" });
+    return checkedResult;
   }
   if (stage?.outcome === "Failed") {
-    return Schema.is(VisualEvidenceFailureCode)(stage.failureCode)
+    const checkedResult: Effect.Effect<
+      CurrentEvidenceStatus | null,
+      ImportTransitionError
+    > = Schema.is(VisualEvidenceFailureCode)(stage.failureCode)
       ? Effect.succeed({
           code: stage.failureCode,
           kind: "failed",
           recovery: "operator_reconcile",
         })
       : Effect.fail(importTransitionRejected());
+    return checkedResult;
   }
   if (stage?.outcome !== "Completed" || stage.result?._tag !== "Visual") {
-    return Effect.succeed(null);
+    const checkedResult: Effect.Effect<
+      CurrentEvidenceStatus | null,
+      ImportTransitionError
+    > = Effect.succeed(null);
+    return checkedResult;
   }
-  return hasEvidenceReference(references, "visual_manifest")
-    ? Effect.succeed({ kind: visualStatus(stage.result.outcome) })
-    : Effect.fail(importTransitionRejected());
+  {
+    const checkedResult: Effect.Effect<
+      CurrentEvidenceStatus | null,
+      ImportTransitionError
+    > = hasEvidenceReference(references, "visual_manifest")
+      ? Effect.succeed({ kind: visualStatus(stage.result.outcome) })
+      : Effect.fail(importTransitionRejected());
+    return checkedResult;
+  }
 };
 
-const projectExtractionStatus = (
-  stage: EvidenceStage
-): CurrentEvidenceStatus | undefined => {
+const projectExtractionStatus = (stage: EvidenceStage) => {
   if (stage?.outcome === "Failed") {
-    return {
+    const checkedResult: CurrentEvidenceStatus | undefined = {
       code: "recipe_extraction_failed",
       kind: "failed",
       recovery: "operator_reconcile",
     };
+    return checkedResult;
   }
-  return stage?.outcome === "Completed" ? { kind: "needs_review" } : undefined;
+  {
+    const checkedResult: CurrentEvidenceStatus | undefined =
+      stage?.outcome === "Completed" ? { kind: "needs_review" } : undefined;
+    return checkedResult;
+  }
 };
 
 /** Compact household-native current result for provider-stage decisions. */
 export const makeHouseholdImportEvidenceCurrentRepository = (
   input: HouseholdEvidenceRepositoryInput
-): HouseholdImportEvidenceCurrentRepository => {
+) => {
   const boundary = makeBoundary(input);
   const importId = decodeImportId(input.intentId);
   const readCurrent: HouseholdImportEvidenceCurrentRepository["readCurrent"] = (
@@ -328,14 +371,17 @@ export const makeHouseholdImportEvidenceCurrentRepository = (
       ),
       Effect.mapError(() => importPersistenceUnavailable())
     );
-  return {
-    readCurrent,
-  };
+  {
+    const checkedResult: HouseholdImportEvidenceCurrentRepository = {
+      readCurrent,
+    };
+    return checkedResult;
+  }
 };
 
 export const makeHouseholdSpeechTranscriptionRepository = (
   input: HouseholdEvidenceRepositoryInput
-): SpeechTranscriptionRepository => {
+) => {
   const boundary = makeBoundary(input);
   const completed = (
     stage: NonNullable<Effect.Success<ReturnType<typeof boundary.read>>>
@@ -367,159 +413,162 @@ export const makeHouseholdSpeechTranscriptionRepository = (
       usage: result.usage,
     } satisfies CompletedTranscriptEvidence);
   };
-  return {
-    claim: (claim) =>
-      Effect.gen(function* claimSpeechEvidence() {
-        yield* assertIdentity(input, claim.importId, claim.generation);
-        const inputFingerprint = Schema.decodeUnknownSync(Sha256Hex)(
-          claim.sourceMediaSha256
-        );
-        const current = yield* boundary.read("speech");
-        if (
-          current?.outcome === "Failed" &&
-          current.dispatchId === claim.dispatchId &&
-          current.inputFingerprint === inputFingerprint &&
-          current.completedAt !== null &&
-          Schema.is(SpeechTranscriptionFailureCode)(current.failureCode)
-        ) {
-          return {
-            _tag: "Failed" as const,
-            code: current.failureCode,
-            completedAt: current.completedAt,
-            dispatchId: claim.dispatchId,
-          };
-        }
-        const startedAt =
-          current?.dispatchId === claim.dispatchId &&
-          current.inputFingerprint === inputFingerprint
-            ? current.startedAt
-            : claim.startedAt;
-        const receipt = yield* boundary.mutate(
-          `speech:claim:${claim.dispatchId}:${claim.sourceMediaSha256}`,
-          {
-            inputFingerprint,
-            operation: {
-              _tag: "Claim",
+  {
+    const checkedResult: SpeechTranscriptionRepository = {
+      claim: (claim) =>
+        Effect.gen(function* claimSpeechEvidence() {
+          yield* assertIdentity(input, claim.importId, claim.generation);
+          const inputFingerprint = Schema.decodeUnknownSync(Sha256Hex)(
+            claim.sourceMediaSha256
+          );
+          const current = yield* boundary.read("speech");
+          if (
+            current?.outcome === "Failed" &&
+            current.dispatchId === claim.dispatchId &&
+            current.inputFingerprint === inputFingerprint &&
+            current.completedAt !== null &&
+            Schema.is(SpeechTranscriptionFailureCode)(current.failureCode)
+          ) {
+            return {
+              _tag: "Failed" as const,
+              code: current.failureCode,
+              completedAt: current.completedAt,
               dispatchId: claim.dispatchId,
-              stage: "speech",
-              startedAt,
-            },
+            };
           }
-        );
-        if (receipt.outcome === "Completed") {
-          const stage = yield* boundary.read("speech");
-          if (stage === null) {
+          const startedAt =
+            current?.dispatchId === claim.dispatchId &&
+            current.inputFingerprint === inputFingerprint
+              ? current.startedAt
+              : claim.startedAt;
+          const receipt = yield* boundary.mutate(
+            `speech:claim:${claim.dispatchId}:${claim.sourceMediaSha256}`,
+            {
+              inputFingerprint,
+              operation: {
+                _tag: "Claim",
+                dispatchId: claim.dispatchId,
+                stage: "speech",
+                startedAt,
+              },
+            }
+          );
+          if (receipt.outcome === "Completed") {
+            const stage = yield* boundary.read("speech");
+            if (stage === null) {
+              return yield* Effect.fail(importTransitionRejected());
+            }
+            return {
+              _tag: "Completed" as const,
+              evidence: yield* completed(stage),
+            };
+          }
+          if (receipt.outcome === "Failed") {
+            const stage = yield* boundary.read("speech");
+            if (
+              stage === null ||
+              stage.completedAt === null ||
+              !Schema.is(SpeechTranscriptionFailureCode)(stage.failureCode)
+            ) {
+              return yield* Effect.fail(importTransitionRejected());
+            }
+            return {
+              _tag: "Failed" as const,
+              code: stage.failureCode,
+              completedAt: stage.completedAt,
+              dispatchId: claim.dispatchId,
+            };
+          }
+          if (receipt.outcome === "RecoveryPrepared") {
             return yield* Effect.fail(importTransitionRejected());
           }
           return {
-            _tag: "Completed" as const,
-            evidence: yield* completed(stage),
-          };
-        }
-        if (receipt.outcome === "Failed") {
-          const stage = yield* boundary.read("speech");
+            _tag: receipt.outcome,
+            dispatchId: claim.dispatchId,
+            startedAt,
+          } satisfies SpeechDispatchClaim;
+        }),
+      complete: (evidence) =>
+        assertIdentity(input, evidence.importId, evidence.generation).pipe(
+          Effect.andThen(
+            boundary.mutate(`speech:complete:${evidence.transcriptSha256}`, {
+              inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
+                evidence.sourceMediaSha256
+              ),
+              operation: {
+                _tag: "Complete",
+                dispatchId: evidence.dispatchId,
+                reference: {
+                  byteLength: evidence.byteLength,
+                  deleteAt: evidence.deleteAt,
+                  key: evidence.transcriptKey,
+                  kind: "speech_transcript",
+                  sha256: Schema.decodeUnknownSync(Sha256Hex)(
+                    evidence.transcriptSha256
+                  ),
+                },
+                result: {
+                  _tag: "Speech",
+                  completedAt: evidence.completedAt,
+                  cost: evidence.cost,
+                  detectedLanguage: evidence.detectedLanguage,
+                  dispatchId: evidence.dispatchId,
+                  model: evidence.model,
+                  provider: evidence.provider,
+                  segmentsCount: evidence.segmentsCount,
+                  sourceMediaSha256: Schema.decodeUnknownSync(Sha256Hex)(
+                    evidence.sourceMediaSha256
+                  ),
+                  transcript: evidence.transcript ?? { status: "available" },
+                  transcriptKey: evidence.transcriptKey,
+                  transcriptSha256: Schema.decodeUnknownSync(Sha256Hex)(
+                    evidence.transcriptSha256
+                  ),
+                  usage: evidence.usage,
+                },
+                stage: "speech",
+              },
+            })
+          ),
+          Effect.as(evidence)
+        ),
+      fail: (failure) =>
+        Effect.gen(function* failSpeechEvidence() {
+          yield* assertIdentity(input, failure.importId, failure.generation);
+          const inputFingerprint = Schema.decodeUnknownSync(Sha256Hex)(
+            failure.sourceMediaSha256
+          );
+          const current = yield* boundary.read("speech");
           if (
-            stage === null ||
-            stage.completedAt === null ||
-            !Schema.is(SpeechTranscriptionFailureCode)(stage.failureCode)
+            current === null ||
+            current.dispatchId !== failure.dispatchId ||
+            current.inputFingerprint !== inputFingerprint
           ) {
             return yield* Effect.fail(importTransitionRejected());
           }
-          return {
-            _tag: "Failed" as const,
-            code: stage.failureCode,
-            completedAt: stage.completedAt,
-            dispatchId: claim.dispatchId,
-          };
-        }
-        if (receipt.outcome === "RecoveryPrepared") {
-          return yield* Effect.fail(importTransitionRejected());
-        }
-        return {
-          _tag: receipt.outcome,
-          dispatchId: claim.dispatchId,
-          startedAt,
-        } satisfies SpeechDispatchClaim;
-      }),
-    complete: (evidence) =>
-      assertIdentity(input, evidence.importId, evidence.generation).pipe(
-        Effect.andThen(
-          boundary.mutate(`speech:complete:${evidence.transcriptSha256}`, {
-            inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
-              evidence.sourceMediaSha256
-            ),
-            operation: {
-              _tag: "Complete",
-              dispatchId: evidence.dispatchId,
-              reference: {
-                byteLength: evidence.byteLength,
-                deleteAt: evidence.deleteAt,
-                key: evidence.transcriptKey,
-                kind: "speech_transcript",
-                sha256: Schema.decodeUnknownSync(Sha256Hex)(
-                  evidence.transcriptSha256
-                ),
+          yield* boundary.mutate(
+            `speech:fail:${failure.dispatchId}:${failure.sourceMediaSha256}:${failure.failureCode}`,
+            {
+              inputFingerprint,
+              operation: {
+                _tag: "Fail",
+                completedAt: failure.completedAt,
+                dispatchId: failure.dispatchId,
+                failureCode: failure.failureCode,
+                recovery: "retry_later",
+                stage: "speech",
               },
-              result: {
-                _tag: "Speech",
-                completedAt: evidence.completedAt,
-                cost: evidence.cost,
-                detectedLanguage: evidence.detectedLanguage,
-                dispatchId: evidence.dispatchId,
-                model: evidence.model,
-                provider: evidence.provider,
-                segmentsCount: evidence.segmentsCount,
-                sourceMediaSha256: Schema.decodeUnknownSync(Sha256Hex)(
-                  evidence.sourceMediaSha256
-                ),
-                transcript: evidence.transcript ?? { status: "available" },
-                transcriptKey: evidence.transcriptKey,
-                transcriptSha256: Schema.decodeUnknownSync(Sha256Hex)(
-                  evidence.transcriptSha256
-                ),
-                usage: evidence.usage,
-              },
-              stage: "speech",
-            },
-          })
-        ),
-        Effect.as(evidence)
-      ),
-    fail: (failure) =>
-      Effect.gen(function* failSpeechEvidence() {
-        yield* assertIdentity(input, failure.importId, failure.generation);
-        const inputFingerprint = Schema.decodeUnknownSync(Sha256Hex)(
-          failure.sourceMediaSha256
-        );
-        const current = yield* boundary.read("speech");
-        if (
-          current === null ||
-          current.dispatchId !== failure.dispatchId ||
-          current.inputFingerprint !== inputFingerprint
-        ) {
-          return yield* Effect.fail(importTransitionRejected());
-        }
-        yield* boundary.mutate(
-          `speech:fail:${failure.dispatchId}:${failure.sourceMediaSha256}:${failure.failureCode}`,
-          {
-            inputFingerprint,
-            operation: {
-              _tag: "Fail",
-              completedAt: failure.completedAt,
-              dispatchId: failure.dispatchId,
-              failureCode: failure.failureCode,
-              recovery: "retry_later",
-              stage: "speech",
-            },
-          }
-        );
-      }),
-  };
+            }
+          );
+        }),
+    };
+    return checkedResult;
+  }
 };
 
 export const makeHouseholdVisualEvidenceRepository = (
   input: HouseholdEvidenceRepositoryInput
-): VisualEvidenceRepository => {
+) => {
   const boundary = makeBoundary(input);
   const completed = (
     stage: NonNullable<Effect.Success<ReturnType<typeof boundary.read>>>
@@ -550,161 +599,167 @@ export const makeHouseholdVisualEvidenceRepository = (
       usage: result.usage,
     } satisfies CompletedVisualEvidence);
   };
-  return {
-    claim: (claim) =>
-      Effect.gen(function* claimVisualEvidence() {
-        yield* assertIdentity(input, claim.importId, claim.generation);
-        const inputFingerprint = Schema.decodeUnknownSync(Sha256Hex)(
-          claim.sourceMediaSha256
-        );
-        const current = yield* boundary.read("visual");
-        if (
-          current?.outcome === "Failed" &&
-          current.dispatchId === claim.dispatchId &&
-          current.inputFingerprint === inputFingerprint &&
-          current.completedAt !== null &&
-          Schema.is(VisualEvidenceFailureCode)(current.failureCode)
-        ) {
-          return {
-            _tag: "Failed" as const,
-            code: current.failureCode,
-            completedAt: current.completedAt,
-            dispatchId: claim.dispatchId,
-          };
-        }
-        const startedAt =
-          current?.dispatchId === claim.dispatchId &&
-          current.inputFingerprint === inputFingerprint
-            ? current.startedAt
-            : claim.startedAt;
-        const receipt = yield* boundary.mutate(
-          `visual:claim:${claim.dispatchId}:${claim.sourceMediaSha256}`,
-          {
-            inputFingerprint,
-            operation: {
-              _tag: "Claim",
+  {
+    const checkedResult: VisualEvidenceRepository = {
+      claim: (claim) =>
+        Effect.gen(function* claimVisualEvidence() {
+          yield* assertIdentity(input, claim.importId, claim.generation);
+          const inputFingerprint = Schema.decodeUnknownSync(Sha256Hex)(
+            claim.sourceMediaSha256
+          );
+          const current = yield* boundary.read("visual");
+          if (
+            current?.outcome === "Failed" &&
+            current.dispatchId === claim.dispatchId &&
+            current.inputFingerprint === inputFingerprint &&
+            current.completedAt !== null &&
+            Schema.is(VisualEvidenceFailureCode)(current.failureCode)
+          ) {
+            return {
+              _tag: "Failed" as const,
+              code: current.failureCode,
+              completedAt: current.completedAt,
               dispatchId: claim.dispatchId,
-              stage: "visual",
-              startedAt,
-            },
+            };
           }
-        );
-        if (receipt.outcome === "Completed") {
-          return yield* boundary.read("visual").pipe(
-            Effect.flatMap((stage) =>
-              stage === null
-                ? Effect.fail(importTransitionRejected())
-                : completed(stage)
-            ),
-            Effect.map((evidence): VisualDispatchClaim => ({
-              _tag: "Completed",
-              evidence,
-            }))
-          );
-        }
-        if (receipt.outcome === "Failed") {
-          return yield* boundary.read("visual").pipe(
-            Effect.flatMap((stage) =>
-              stage === null ||
-              stage.completedAt === null ||
-              !Schema.is(VisualEvidenceFailureCode)(stage.failureCode)
-                ? Effect.fail(importTransitionRejected())
-                : Effect.succeed<VisualDispatchClaim>({
-                    _tag: "Failed",
-                    code: stage.failureCode,
-                    completedAt: stage.completedAt,
-                    dispatchId: claim.dispatchId,
-                  })
-            )
-          );
-        }
-        return {
-          _tag:
-            receipt.outcome === "DispatchClaimed"
-              ? "DispatchClaimed"
-              : "ResumeDispatch",
-          dispatchId: claim.dispatchId,
-          startedAt,
-        } satisfies VisualDispatchClaim;
-      }),
-    complete: (evidence) =>
-      assertIdentity(input, evidence.importId, evidence.generation).pipe(
-        Effect.andThen(
-          boundary.mutate(`visual:complete:${evidence.manifestSha256}`, {
-            inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
-              evidence.sourceMediaSha256
-            ),
-            operation: {
-              _tag: "Complete",
-              dispatchId: evidence.dispatchId,
-              reference: {
-                byteLength: evidence.byteLength,
-                deleteAt: evidence.deleteAt,
-                key: evidence.manifestKey,
-                kind: "visual_manifest",
-                sha256: Schema.decodeUnknownSync(Sha256Hex)(
-                  evidence.manifestSha256
-                ),
+          const startedAt =
+            current?.dispatchId === claim.dispatchId &&
+            current.inputFingerprint === inputFingerprint
+              ? current.startedAt
+              : claim.startedAt;
+          const receipt = yield* boundary.mutate(
+            `visual:claim:${claim.dispatchId}:${claim.sourceMediaSha256}`,
+            {
+              inputFingerprint,
+              operation: {
+                _tag: "Claim",
+                dispatchId: claim.dispatchId,
+                stage: "visual",
+                startedAt,
               },
-              result: {
-                _tag: "Visual",
-                completedAt: evidence.completedAt,
-                cost: evidence.cost,
+            }
+          );
+          if (receipt.outcome === "Completed") {
+            return yield* boundary.read("visual").pipe(
+              Effect.flatMap((stage) =>
+                stage === null
+                  ? Effect.fail(importTransitionRejected())
+                  : completed(stage)
+              ),
+              Effect.map((evidence) => {
+                const nestedResult: VisualDispatchClaim = {
+                  _tag: "Completed",
+                  evidence,
+                };
+                return nestedResult;
+              })
+            );
+          }
+          if (receipt.outcome === "Failed") {
+            return yield* boundary.read("visual").pipe(
+              Effect.flatMap((stage) =>
+                stage === null ||
+                stage.completedAt === null ||
+                !Schema.is(VisualEvidenceFailureCode)(stage.failureCode)
+                  ? Effect.fail(importTransitionRejected())
+                  : Effect.succeed<VisualDispatchClaim>({
+                      _tag: "Failed",
+                      code: stage.failureCode,
+                      completedAt: stage.completedAt,
+                      dispatchId: claim.dispatchId,
+                    })
+              )
+            );
+          }
+          return {
+            _tag:
+              receipt.outcome === "DispatchClaimed"
+                ? "DispatchClaimed"
+                : "ResumeDispatch",
+            dispatchId: claim.dispatchId,
+            startedAt,
+          } satisfies VisualDispatchClaim;
+        }),
+      complete: (evidence) =>
+        assertIdentity(input, evidence.importId, evidence.generation).pipe(
+          Effect.andThen(
+            boundary.mutate(`visual:complete:${evidence.manifestSha256}`, {
+              inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
+                evidence.sourceMediaSha256
+              ),
+              operation: {
+                _tag: "Complete",
                 dispatchId: evidence.dispatchId,
-                manifestKey: evidence.manifestKey,
-                manifestSha256: Schema.decodeUnknownSync(Sha256Hex)(
-                  evidence.manifestSha256
-                ),
-                model: evidence.model,
-                observationsCount: evidence.observationsCount,
-                outcome: evidence.outcome,
-                provider: evidence.provider,
-                sourceMediaSha256: Schema.decodeUnknownSync(Sha256Hex)(
-                  evidence.sourceMediaSha256
-                ),
-                usage: evidence.usage,
+                reference: {
+                  byteLength: evidence.byteLength,
+                  deleteAt: evidence.deleteAt,
+                  key: evidence.manifestKey,
+                  kind: "visual_manifest",
+                  sha256: Schema.decodeUnknownSync(Sha256Hex)(
+                    evidence.manifestSha256
+                  ),
+                },
+                result: {
+                  _tag: "Visual",
+                  completedAt: evidence.completedAt,
+                  cost: evidence.cost,
+                  dispatchId: evidence.dispatchId,
+                  manifestKey: evidence.manifestKey,
+                  manifestSha256: Schema.decodeUnknownSync(Sha256Hex)(
+                    evidence.manifestSha256
+                  ),
+                  model: evidence.model,
+                  observationsCount: evidence.observationsCount,
+                  outcome: evidence.outcome,
+                  provider: evidence.provider,
+                  sourceMediaSha256: Schema.decodeUnknownSync(Sha256Hex)(
+                    evidence.sourceMediaSha256
+                  ),
+                  usage: evidence.usage,
+                },
+                stage: "visual",
               },
-              stage: "visual",
-            },
-          })
+            })
+          ),
+          Effect.as(evidence)
         ),
-        Effect.as(evidence)
-      ),
-    fail: (failure) =>
-      Effect.gen(function* failVisualEvidence() {
-        yield* assertIdentity(input, failure.importId, failure.generation);
-        const inputFingerprint = Schema.decodeUnknownSync(Sha256Hex)(
-          failure.sourceMediaSha256
-        );
-        const current = yield* boundary.read("visual");
-        if (
-          current === null ||
-          current.dispatchId !== failure.dispatchId ||
-          current.inputFingerprint !== inputFingerprint
-        ) {
-          return yield* Effect.fail(importTransitionRejected());
-        }
-        yield* boundary.mutate(
-          `visual:fail:${failure.dispatchId}:${failure.sourceMediaSha256}:${failure.failureCode}`,
-          {
-            inputFingerprint,
-            operation: {
-              _tag: "Fail",
-              completedAt: failure.completedAt,
-              dispatchId: failure.dispatchId,
-              failureCode: failure.failureCode,
-              recovery: "operator_review",
-              stage: "visual",
-            },
+      fail: (failure) =>
+        Effect.gen(function* failVisualEvidence() {
+          yield* assertIdentity(input, failure.importId, failure.generation);
+          const inputFingerprint = Schema.decodeUnknownSync(Sha256Hex)(
+            failure.sourceMediaSha256
+          );
+          const current = yield* boundary.read("visual");
+          if (
+            current === null ||
+            current.dispatchId !== failure.dispatchId ||
+            current.inputFingerprint !== inputFingerprint
+          ) {
+            return yield* Effect.fail(importTransitionRejected());
           }
-        );
-      }),
-  };
+          yield* boundary.mutate(
+            `visual:fail:${failure.dispatchId}:${failure.sourceMediaSha256}:${failure.failureCode}`,
+            {
+              inputFingerprint,
+              operation: {
+                _tag: "Fail",
+                completedAt: failure.completedAt,
+                dispatchId: failure.dispatchId,
+                failureCode: failure.failureCode,
+                recovery: "operator_review",
+                stage: "visual",
+              },
+            }
+          );
+        }),
+    };
+    return checkedResult;
+  }
 };
 
 export const makeHouseholdRecipeDraftRepository = (
   input: HouseholdEvidenceRepositoryInput
-): RecipeDraftRepository => {
+) => {
   const boundary = makeBoundary(input);
   const claimResult = (fingerprint: string) =>
     boundary.read("extraction").pipe(
@@ -783,44 +838,47 @@ export const makeHouseholdRecipeDraftRepository = (
         return claimResult(claimInput.extractionFingerprint);
       })
     );
-  return {
-    claim: claimStage,
-    complete: (draft: RecipeDraft) =>
-      assertIdentity(input, draft.importId, draft.generation).pipe(
-        Effect.andThen(
-          boundary.mutate(
-            `extraction:complete:${draft.extractionFingerprint}`,
+  {
+    const checkedResult: RecipeDraftRepository = {
+      claim: claimStage,
+      complete: (draft: RecipeDraft) =>
+        assertIdentity(input, draft.importId, draft.generation).pipe(
+          Effect.andThen(
+            boundary.mutate(
+              `extraction:complete:${draft.extractionFingerprint}`,
+              {
+                inputFingerprint: draft.extractionFingerprint,
+                operation: {
+                  _tag: "Complete",
+                  dispatchId: draft.extractionFingerprint,
+                  result: { _tag: "Extraction", draft },
+                  stage: "extraction",
+                },
+              }
+            )
+          ),
+          Effect.as(draft)
+        ),
+      fail: (failure) =>
+        boundary
+          .mutate(
+            `extraction:fail:${failure.extractionFingerprint}:${failure.failureCode}`,
             {
-              inputFingerprint: draft.extractionFingerprint,
+              inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
+                failure.extractionFingerprint
+              ),
               operation: {
-                _tag: "Complete",
-                dispatchId: draft.extractionFingerprint,
-                result: { _tag: "Extraction", draft },
+                _tag: "Fail",
+                completedAt: failure.completedAt,
+                dispatchId: failure.extractionFingerprint,
+                failureCode: failure.failureCode,
+                recovery: "operator_review",
                 stage: "extraction",
               },
             }
           )
-        ),
-        Effect.as(draft)
-      ),
-    fail: (failure) =>
-      boundary
-        .mutate(
-          `extraction:fail:${failure.extractionFingerprint}:${failure.failureCode}`,
-          {
-            inputFingerprint: Schema.decodeUnknownSync(Sha256Hex)(
-              failure.extractionFingerprint
-            ),
-            operation: {
-              _tag: "Fail",
-              completedAt: failure.completedAt,
-              dispatchId: failure.extractionFingerprint,
-              failureCode: failure.failureCode,
-              recovery: "operator_review",
-              stage: "extraction",
-            },
-          }
-        )
-        .pipe(Effect.asVoid),
-  };
+          .pipe(Effect.asVoid),
+    };
+    return checkedResult;
+  }
 };

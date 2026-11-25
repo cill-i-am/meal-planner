@@ -8,7 +8,7 @@ import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { workerObservability } from "../../infrastructure/worker-observability.js";
-import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import { bundleWorkerFixture } from "../../test/native-worker.fixture.js";
 import { HouseholdRecordRecipeImportDispatchResult } from "../households/recipe-import/household-recipe-import.contract.js";
 
 const { date: compatibilityDate, flags: compatibilityFlags } =
@@ -68,17 +68,14 @@ describe("household batch native production Workflow composition", () => {
     const [hostManifest, domainManifest] = await Promise.all([
       bundleWorkerFixture(
         fileURLToPath(
-          new URL(
-            "household-import-batch-workflow.test-fixture.ts",
-            import.meta.url
-          )
+          new URL("household-import-batch-workflow.fixture.ts", import.meta.url)
         ),
         persistenceDirectory
       ),
       bundleWorkerFixture(
         fileURLToPath(
           new URL(
-            "../households/household-domain-service.test-fixture.js",
+            "../households/household-domain-service.fixture.js",
             import.meta.url
           )
         ),
@@ -186,7 +183,7 @@ describe("household batch native production Workflow composition", () => {
       status: { status: "complete" },
       workflowId: first.workflowId,
     });
-  }, 20_000);
+  });
 
   it("reconciles dispatch after the committed started response is lost", async () => {
     const result = await runScenario(
@@ -221,7 +218,7 @@ describe("household batch native production Workflow composition", () => {
       intentId: result.replay.intentId,
       status: "succeeded",
     });
-  }, 20_000);
+  });
 
   it("reconciles one committed Workflow when every successful start response is lost", async () => {
     const first = await runScenario(
@@ -271,7 +268,7 @@ describe("household batch native production Workflow composition", () => {
       status: { status: "complete" },
       workflowId: first.workflowId,
     });
-  }, 20_000);
+  });
 
   it("preserves a committed Workflow when every bounded reconciliation probe is unavailable", async () => {
     const result = await runScenario(
@@ -326,7 +323,7 @@ describe("household batch native production Workflow composition", () => {
       intentId: result.replay.intentId,
       status: "succeeded",
     });
-  }, 20_000);
+  });
 
   it("settles only after bounded exact native pre-start refusals", async () => {
     const result = await runScenario(
@@ -375,5 +372,5 @@ describe("household batch native production Workflow composition", () => {
       status: { status: "complete" },
       workflowId: result.workflowId,
     });
-  }, 20_000);
+  });
 });

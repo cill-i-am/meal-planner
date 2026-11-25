@@ -60,7 +60,7 @@ const parseBoolean = (value: string) => {
   throw invalidSession();
 };
 
-const parseCookie = (line: string): SessionCookie => {
+const parseCookie = (line: string) => {
   const fields = line.split("\t");
   if (fields.length !== 7) {
     throw invalidSession();
@@ -101,21 +101,22 @@ const parseCookie = (line: string): SessionCookie => {
   ) {
     throw invalidSession();
   }
-  return {
-    domain,
-    expiresAtSeconds,
-    includeSubdomains: parseBoolean(rawIncludeSubdomains),
-    name,
-    path,
-    secure: parseBoolean(rawSecure),
-    value,
-  };
+  {
+    const checkedResult: SessionCookie = {
+      domain,
+      expiresAtSeconds,
+      includeSubdomains: parseBoolean(rawIncludeSubdomains),
+      name,
+      path,
+      secure: parseBoolean(rawSecure),
+      value,
+    };
+    return checkedResult;
+  }
 };
 
 /** Decodes a bounded yt-dlp Netscape cookie jar into an in-memory capability. */
-export const decodeTikTokMediaSession = (
-  input: Uint8Array
-): MediaSessionCapability => {
+export const decodeTikTokMediaSession = (input: Uint8Array) => {
   if (input.byteLength === 0 || input.byteLength > MaximumCookieJarBytes) {
     throw invalidSession();
   }
@@ -146,7 +147,10 @@ export const decodeTikTokMediaSession = (
   }
   const capability = Object.freeze({}) as MediaSessionCapability;
   SessionCookies.set(capability, cookies);
-  return capability;
+  {
+    const checkedResult: MediaSessionCapability = capability;
+    return checkedResult;
+  }
 };
 
 const domainMatches = (cookie: SessionCookie, hostname: string) =>
@@ -164,7 +168,7 @@ export const mediaSessionCookieHeader = (
   session: MediaSessionCapability,
   url: URL,
   nowSeconds = Math.floor(Date.now() / 1000)
-): string | undefined => {
+) => {
   const cookies = SessionCookies.get(session);
   if (cookies === undefined) {
     throw invalidSession();
@@ -184,5 +188,9 @@ export const mediaSessionCookieHeader = (
   if (textBytes(header) > MaximumCookieHeaderBytes) {
     throw invalidSession();
   }
-  return header.length === 0 ? undefined : header;
+  {
+    const checkedResult: string | undefined =
+      header.length === 0 ? undefined : header;
+    return checkedResult;
+  }
 };

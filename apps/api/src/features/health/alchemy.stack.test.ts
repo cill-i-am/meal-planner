@@ -11,8 +11,8 @@ import { createAuthClient } from "better-auth/client";
 import { Effect, Schema } from "effect";
 import { afterAll as restoreAfterAll, expect, vi } from "vitest";
 
-import Stack from "../../../../alchemy.run.js";
-import { HealthResponse } from "../features/health/health.model.js";
+import Stack from "../../../../../alchemy.run.js";
+import { HealthResponse } from "./health.model.js";
 
 const stage = `test_native_${randomUUID().slice(0, 8)}`;
 vi.stubEnv("ALCHEMY_DEV", "true");
@@ -71,8 +71,7 @@ test(
     expect(page.status).toBe(200);
     expect(yield* page.text).toContain("<!DOCTYPE html>");
   }),
-  // A fresh CI runner builds the real media image before the API can serve.
-  // Local runs may start without the image layers that CI prepares first.
+
   { timeout: 600_000 }
 );
 

@@ -135,8 +135,7 @@ describe("household foundation structural boundaries", () => {
     expect(`${composition}\n${controlPlane}`).not.toContain(
       "getAcceptedInvitationMember"
     );
-    // Email is valid for checking the organiser's original invitation intent;
-    // acceptance and profile linking must still use authenticated subject proof.
+
     const recipientProof = composition
       .split("export const makeHouseholdInvitationRecipientVerifier =")[1]
       ?.split("const persistenceFailure")[0];

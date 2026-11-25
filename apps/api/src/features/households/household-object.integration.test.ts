@@ -15,11 +15,11 @@ import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { workerObservability } from "../../infrastructure/worker-observability.js";
-import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import { bundleWorkerFixture } from "../../test/native-worker.fixture.js";
 import {
   privateOutputRuntimeWorker,
   privateOutputTestBindings,
-} from "../private-output/private-output-runtime.test-fixture.js";
+} from "../private-output/private-output-runtime.fixture.js";
 import { HouseholdImportWorkflowDispatchView } from "./foundation/import-workflow-admission.contract.js";
 import { HouseholdObjectLocator } from "./household-object-locator.js";
 import {
@@ -334,7 +334,7 @@ describe("household person registry on real Durable Object SQLite", () => {
     if (archivedPerson === undefined) {
       throw new Error("Expected the departed adult to remain in the roster");
     }
-  }, 30_000);
+  });
 
   it("preserves replay, lifecycle, races, restart, and household isolation", async () => {
     const organizationId = "org-person-registry-a";
@@ -574,7 +574,7 @@ describe("household person registry on real Durable Object SQLite", () => {
       ok: true,
       value: { displayName: "Cillian" },
     });
-  }, 30_000);
+  });
 
   it("physically rejects a second creator association in one household database", async () => {
     const organizationId = "org-person-creator-singleton-constraint";
@@ -600,7 +600,7 @@ describe("household person registry on real Durable Object SQLite", () => {
 });
 
 const fixturePath = fileURLToPath(
-  new URL("household-object-host.test-fixture.ts", import.meta.url)
+  new URL("household-object-host.fixture.ts", import.meta.url)
 );
 const temporaryDirectories: string[] = [];
 let runtime: Miniflare;
@@ -2382,5 +2382,5 @@ describe("household Durable Object", () => {
       ok: true,
       value: { preparedPortions: [{ reservations: [], state: "available" }] },
     });
-  }, 30_000);
+  });
 });

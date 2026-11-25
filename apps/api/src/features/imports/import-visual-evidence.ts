@@ -43,10 +43,13 @@ export interface VisualEvidencePipelineFailure {
 const pipelineFailure = (
   code: VisualEvidencePipelineFailure["code"],
   reasonCode?: ProviderTaskDiagnosticReasonCode
-): VisualEvidencePipelineFailure =>
-  reasonCode === undefined
-    ? { _tag: "VisualEvidencePipelineFailure", code }
-    : { _tag: "VisualEvidencePipelineFailure", code, reasonCode };
+) => {
+  const checkedResult: VisualEvidencePipelineFailure =
+    reasonCode === undefined
+      ? { _tag: "VisualEvidencePipelineFailure", code }
+      : { _tag: "VisualEvidencePipelineFailure", code, reasonCode };
+  return checkedResult;
+};
 const observationsMatchFrames = (
   observations: readonly {
     readonly frameIndex: number;
@@ -64,23 +67,26 @@ const completedFromDocument = (
   byteLength: number,
   manifestSha256: string,
   manifestKey: string
-): CompletedVisualEvidence => ({
-  byteLength,
-  completedAt: document.createdAt,
-  cost: document.cost,
-  deleteAt: document.sourceEvidenceDeleteAt,
-  dispatchId: document.dispatchId,
-  generation: document.acquisitionGeneration,
-  importId: document.importId,
-  manifestKey,
-  manifestSha256,
-  model: document.model,
-  observationsCount: document.observations.length,
-  outcome: document.outcome,
-  provider: document.provider,
-  sourceMediaSha256: document.sourceMediaSha256,
-  usage: document.usage,
-});
+) => {
+  const checkedResult: CompletedVisualEvidence = {
+    byteLength,
+    completedAt: document.createdAt,
+    cost: document.cost,
+    deleteAt: document.sourceEvidenceDeleteAt,
+    dispatchId: document.dispatchId,
+    generation: document.acquisitionGeneration,
+    importId: document.importId,
+    manifestKey,
+    manifestSha256,
+    model: document.model,
+    observationsCount: document.observations.length,
+    outcome: document.outcome,
+    provider: document.provider,
+    sourceMediaSha256: document.sourceMediaSha256,
+    usage: document.usage,
+  };
+  return checkedResult;
+};
 
 export const extractVisualEvidenceForTranscribedImport = Effect.fn(
   "Imports.extractVisualEvidence"
@@ -287,7 +293,6 @@ export const extractVisualEvidenceForTranscribedImport = Effect.fn(
     );
   }).pipe(
     Effect.catchTag("VisualEvidencePipelineFailure", (failure) => {
-      // Unsettled provider outcomes retain dispatch ownership; do not authorize another call.
       if (
         failure.code === "outcome_unknown" ||
         failure.code === "provider_unavailable" ||

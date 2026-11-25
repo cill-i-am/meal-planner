@@ -21,9 +21,10 @@ export const prepareSetupConfirmation = (input: {
   readonly modelTurn: SubmitConversationTurn;
   readonly newActionId: () => string;
   readonly scope: ConversationScope;
-}): ConversationTurnState["setupConfirmation"] => {
+}) => {
   if (input.modelTurn.setupConfirmation === null) {
-    return null;
+    const checkedResult: ConversationTurnState["setupConfirmation"] = null;
+    return checkedResult;
   }
   const { displayedRoster, latestRoster } = input;
   if (
@@ -37,14 +38,17 @@ export const prepareSetupConfirmation = (input: {
   ) {
     throw new ConversationModelFailure({ reason: "invalid_output" });
   }
-  return {
-    _tag: "ConfirmDisplayedRoster",
-    actionId: Schema.decodeUnknownSync(ConversationActionId)(
-      input.newActionId()
-    ),
-    blockId: latestRoster.id,
-    revision: latestRoster.revision,
-  };
+  {
+    const checkedResult: ConversationTurnState["setupConfirmation"] = {
+      _tag: "ConfirmDisplayedRoster",
+      actionId: Schema.decodeUnknownSync(ConversationActionId)(
+        input.newActionId()
+      ),
+      blockId: latestRoster.id,
+      revision: latestRoster.revision,
+    };
+    return checkedResult;
+  }
 };
 
 /** A conversational action cannot substitute edited roster fields after consent. */
@@ -52,7 +56,7 @@ export const matchesConfirmedRosterAction = (
   action: ConversationAction,
   roster: Extract<ConversationBlock, { _tag: "RosterProposal" }>,
   confirmation: ConversationTurnState["setupConfirmation"]
-): boolean => {
+) => {
   if (
     confirmation === null ||
     action.decision !== "accept" ||
@@ -67,14 +71,20 @@ export const matchesConfirmedRosterAction = (
     action.reviewedRoster.familyName !== roster.familyName ||
     action.reviewedRoster.people.length !== roster.people.length
   ) {
-    return false;
+    const checkedResult = false;
+    return checkedResult;
   }
-  return action.reviewedRoster.people.every((person, index) => {
-    const displayed = roster.people[index];
-    return (
-      displayed?.draftId === person.draftId &&
-      displayed.displayName === person.displayName &&
-      displayed.kind === person.kind
+  {
+    const checkedResult: boolean = action.reviewedRoster.people.every(
+      (person, index) => {
+        const displayed = roster.people[index];
+        return (
+          displayed?.draftId === person.draftId &&
+          displayed.displayName === person.displayName &&
+          displayed.kind === person.kind
+        );
+      }
     );
-  });
+    return checkedResult;
+  }
 };

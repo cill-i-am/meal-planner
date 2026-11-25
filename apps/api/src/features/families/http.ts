@@ -25,19 +25,23 @@ const conflictMessages = {
   mutation_collision: "This request ID was already used for different details.",
   stale_version: "The family changed. Reload before editing.",
 } as const;
-const accessReason = (status: number): FamilyFailure["reason"] => {
+const accessReason = (status: number) => {
   switch (status) {
     case 401: {
-      return "unauthorized";
+      const checkedResult: FamilyFailure["reason"] = "unauthorized";
+      return checkedResult;
     }
     case 403: {
-      return "forbidden";
+      const checkedResult: FamilyFailure["reason"] = "forbidden";
+      return checkedResult;
     }
     case 429: {
-      return "rate_limited";
+      const checkedResult: FamilyFailure["reason"] = "rate_limited";
+      return checkedResult;
     }
     default: {
-      return "unavailable";
+      const checkedResult: FamilyFailure["reason"] = "unavailable";
+      return checkedResult;
     }
   }
 };

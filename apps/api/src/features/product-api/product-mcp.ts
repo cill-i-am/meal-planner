@@ -48,14 +48,12 @@ export const handleProductMcp = (
   dispatch: ProductMcpDispatch
 ) =>
   Effect.gen(function* serveProductMcp() {
-    // Acquired before the SDK: shutdown closes ingress, then interrupts and
-    // joins every callback, including its uninterruptible resource finalizers.
     const run = yield* FiberSet.makeRuntimePromise();
     const owner = new AbortController();
     const runCallback = async <A, E>(
       program: Effect.Effect<A, E>,
       context: ServerContext
-    ): Promise<A> => {
+    ) => {
       const unavailable = () =>
         new ProtocolError(
           ProtocolErrorCode.InternalError,
@@ -74,7 +72,8 @@ export const handleProductMcp = (
         throw unavailable();
       }
       if (Exit.isSuccess(exit)) {
-        return exit.value;
+        const checkedResult: A | Promise<A> = exit.value;
+        return checkedResult;
       }
       const failure = Cause.findError(exit.cause);
       if (
@@ -146,7 +145,6 @@ export const handleProductMcp = (
               server.setRequestHandler(
                 "tasks/update",
                 {
-                  // SDK 2.3 lifts MRTR fields before custom-method parsing.
                   params: UpdateTaskRequestV2Schema.shape.params.omit({
                     inputResponses: true,
                   }),
@@ -195,8 +193,7 @@ export const handleProductMcp = (
     if (response.body === null) {
       return response;
     }
-    // Legacy SSE responds before callbacks finish. Keep their scope alive until
-    // the finite reply is consumed; this surface polls tasks without subscriptions.
+
     const body = yield* readProductMcpBody(response, 4_194_304);
     return new Response(body, {
       headers: response.headers,

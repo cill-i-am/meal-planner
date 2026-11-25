@@ -37,8 +37,7 @@ export const invitationViewPlugin = () =>
         { method: "GET", use: [sessionMiddleware] },
         async (ctx) => {
           ctx.setHeader("cache-control", "no-store");
-          // Better Call leaves HTTP route parameters percent-encoded; direct API
-          // callers already supply the underlying identity.
+
           const parsedId = ctx.request
             ? parseInvitationPathId(ctx.params.id)
             : parseInvitationId(ctx.params.id);

@@ -51,7 +51,7 @@ import {
 } from "vitest";
 
 import { workerObservability } from "../../infrastructure/worker-observability.js";
-import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import { bundleWorkerFixture } from "../../test/native-worker.fixture.js";
 import * as authSchema from "../auth/auth.database-schema.js";
 import {
   emptyPrivateDiscoveryContinuity,
@@ -63,13 +63,13 @@ import {
   kimiChoice,
   kimiChunk,
   kimiEvent,
-} from "../private-output/private-discovery-kimi-stream.test-fixtures.js";
+} from "../private-output/private-discovery-kimi-stream.fixture.js";
 import { PrivateDiscoveryContext } from "../private-output/private-discovery-model.js";
 import {
   privateOutputControlWorker,
   privateOutputRuntimeWorker,
   privateOutputTestBindings,
-} from "../private-output/private-output-runtime.test-fixture.js";
+} from "../private-output/private-output-runtime.fixture.js";
 import {
   PrivateParticipantBinding,
   privateOutputKey,
@@ -97,7 +97,6 @@ import {
 import { HouseholdMetadata } from "./household.contract.js";
 import { MemberDepartureWorkflowInput } from "./people/member-departure.js";
 
-// Native integration cases include auth, durable writes, and persisted-runtime restarts.
 vi.setConfig({ testTimeout: 30_000 });
 
 const { date: compatibilityDate, flags: compatibilityFlags } =
@@ -112,11 +111,14 @@ let domainManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
 let providerRecoveryManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
 let batchQueueManifest: Awaited<ReturnType<typeof bundleWorkerFixture>>;
 
-const getRuntime = (): Miniflare => {
+const getRuntime = () => {
   if (runtime === undefined) {
     throw new Error("Expected the household boundary runtime to be ready.");
   }
-  return runtime;
+  {
+    const checkedResult: Miniflare = runtime;
+    return checkedResult;
+  }
 };
 
 const HouseholdStatusResponse = Schema.Struct({
@@ -349,8 +351,6 @@ const restartRuntime = async (privateAuditLogs?: string[]) => {
   runtime = makeRuntime(privateAuditLogs);
 };
 
-// Seven worker bundles and local bindings need a cold-start budget distinct from
-// the individual behavior-test timeouts, especially under concurrent CI load.
 beforeAll(async () => {
   const temporaryDirectory = await mkdtemp(
     `${tmpdir()}/meal-planner-household-boundary-`
@@ -359,7 +359,7 @@ beforeAll(async () => {
   privateOutputControlManifest = await bundleWorkerFixture(
     fileURLToPath(
       new URL(
-        "../private-output/private-output-control.test-fixture.ts",
+        "../private-output/private-output-control.fixture.ts",
         import.meta.url
       )
     ),
@@ -385,25 +385,25 @@ beforeAll(async () => {
     ),
     bundleWorkerFixture(
       fileURLToPath(
-        new URL("household-api-service.test-fixture.ts", import.meta.url)
+        new URL("household-api-service.fixture.ts", import.meta.url)
       ),
       temporaryDirectory
     ),
     bundleWorkerFixture(
       fileURLToPath(
-        new URL("household-domain-service.test-fixture.js", import.meta.url)
+        new URL("household-domain-service.fixture.js", import.meta.url)
       ),
       temporaryDirectory
     ),
     bundleWorkerFixture(
       fileURLToPath(
-        new URL("household-provider-recovery.test-fixture.ts", import.meta.url)
+        new URL("household-provider-recovery.fixture.ts", import.meta.url)
       ),
       temporaryDirectory
     ),
     bundleWorkerFixture(
       fileURLToPath(
-        new URL("household-import-batch-queue.test-fixture.ts", import.meta.url)
+        new URL("household-import-batch-queue.fixture.ts", import.meta.url)
       ),
       temporaryDirectory
     ),
@@ -434,8 +434,6 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  // Each boundary case has its own auth request window; limiter behavior has a
-  // dedicated suite, and this D1 database persists across runtime restarts.
   const database = await getRuntime().getD1Database(
     "MealPlannerAuthDatabase",
     "api"
@@ -445,26 +443,32 @@ beforeEach(async () => {
 
 const cookieHeader = (response: {
   readonly headers: { readonly get: (name: string) => string | null };
-}): string => {
+}) => {
   const setCookie = response.headers.get("set-cookie");
   if (setCookie === null) {
     throw new Error("Expected Better Auth to set a session cookie.");
   }
-  return setCookie.split(";", 1)[0] ?? "";
+  {
+    const checkedResult: string = setCookie.split(";", 1)[0] ?? "";
+    return checkedResult;
+  }
 };
 
 const authClientAddresses = new Map<string, string>();
-const authClientAddress = (label: string): string => {
+const authClientAddress = (label: string) => {
   const existing = authClientAddresses.get(label);
   if (existing !== undefined) {
-    return existing;
+    const checkedResult: string = existing;
+    return checkedResult;
   }
-  // Better Auth groups IPv6 clients by /64, so give each fixture account a
-  // distinct reserved IPv4 address for its signup and later sign-in.
+
   const index = authClientAddresses.size;
   const address = `198.18.${Math.floor(index / 250)}.${(index % 250) + 1}`;
   authClientAddresses.set(label, address);
-  return address;
+  {
+    const checkedResult: string = address;
+    return checkedResult;
+  }
 };
 
 const authRequest = (
@@ -716,10 +720,13 @@ const prepareLinkedAdult = async (
   } as const;
 };
 
-const readDepartureWorkflowInput = async (
+const readDepartureWorkflowInput: (
   organizationId: string,
+  remaining?: number
+) => Promise<typeof MemberDepartureWorkflowInput.Type> = async (
+  organizationId,
   remaining = 40
-): Promise<typeof MemberDepartureWorkflowInput.Type> => {
+) => {
   const bindings = await getRuntime().getBindings<{
     readonly HOUSEHOLD_TEST_OBSERVATIONS: {
       readonly get: (key: string) => Promise<string | null>;
@@ -729,24 +736,40 @@ const readDepartureWorkflowInput = async (
     `member-departure-workflow:${organizationId}`
   );
   if (value !== null) {
-    return Schema.decodeUnknownPromise(MemberDepartureWorkflowInput)(
-      JSON.parse(value)
-    );
+    const checkedResult:
+      | Awaited<Promise<typeof MemberDepartureWorkflowInput.Type>>
+      | Promise<typeof MemberDepartureWorkflowInput.Type> =
+      Schema.decodeUnknownPromise(MemberDepartureWorkflowInput)(
+        JSON.parse(value)
+      );
+    return checkedResult;
   }
   if (remaining === 0) {
     throw new Error("Expected the member departure Workflow to start");
   }
   await delay(50);
-  return readDepartureWorkflowInput(organizationId, remaining - 1);
+  {
+    const checkedResult:
+      | Awaited<Promise<typeof MemberDepartureWorkflowInput.Type>>
+      | Promise<typeof MemberDepartureWorkflowInput.Type> =
+      readDepartureWorkflowInput(organizationId, remaining - 1);
+    return checkedResult;
+  }
 };
 
-const readDepartureEventually = async (
+const readDepartureEventually: (
   organizationId: string,
   cookie: string,
   operationId: string,
   expectedState: (typeof HouseholdMemberDepartureOperation.Type)["state"],
+  remaining?: number
+) => Promise<typeof HouseholdMemberDepartureOperation.Type> = async (
+  organizationId,
+  cookie,
+  operationId,
+  expectedState,
   remaining = 60
-): Promise<typeof HouseholdMemberDepartureOperation.Type> => {
+) => {
   let observedState = "unreadable";
   const response = await getRuntime().dispatchFetch(
     `https://meal-planner.test/v1/families/${organizationId}/people/departures/${operationId}`,
@@ -763,7 +786,10 @@ const readDepartureEventually = async (
     )(await response.json());
     observedState = operation.state;
     if (operation.state === expectedState) {
-      return operation;
+      const checkedResult:
+        | Awaited<Promise<typeof HouseholdMemberDepartureOperation.Type>>
+        | Promise<typeof HouseholdMemberDepartureOperation.Type> = operation;
+      return checkedResult;
     }
   }
   if (remaining === 0) {
@@ -772,22 +798,34 @@ const readDepartureEventually = async (
     );
   }
   await delay(100);
-  return readDepartureEventually(
-    organizationId,
-    cookie,
-    operationId,
-    expectedState,
-    remaining - 1
-  );
+  {
+    const checkedResult:
+      | Awaited<Promise<typeof HouseholdMemberDepartureOperation.Type>>
+      | Promise<typeof HouseholdMemberDepartureOperation.Type> =
+      readDepartureEventually(
+        organizationId,
+        cookie,
+        operationId,
+        expectedState,
+        remaining - 1
+      );
+    return checkedResult;
+  }
 };
 
-const readDepartureByMutationEventually = async (
+const readDepartureByMutationEventually: (
   organizationId: string,
   cookie: string,
   mutationId: string,
   expectedState: (typeof HouseholdMemberDepartureOperation.Type)["state"],
+  remaining?: number
+) => Promise<typeof HouseholdMemberDepartureOperation.Type> = async (
+  organizationId,
+  cookie,
+  mutationId,
+  expectedState,
   remaining = 60
-): Promise<typeof HouseholdMemberDepartureOperation.Type> => {
+) => {
   const response = await getRuntime().dispatchFetch(
     `https://meal-planner.test/v1/families/${organizationId}/people/departures/by-mutation/${mutationId}`,
     { headers: { cookie } }
@@ -801,7 +839,10 @@ const readDepartureByMutationEventually = async (
     HouseholdMemberDepartureOperation
   )(await response.json());
   if (operation.state === expectedState) {
-    return operation;
+    const checkedResult:
+      | Awaited<Promise<typeof HouseholdMemberDepartureOperation.Type>>
+      | Promise<typeof HouseholdMemberDepartureOperation.Type> = operation;
+    return checkedResult;
   }
   if (remaining === 0) {
     throw new Error(
@@ -809,13 +850,19 @@ const readDepartureByMutationEventually = async (
     );
   }
   await delay(100);
-  return readDepartureByMutationEventually(
-    organizationId,
-    cookie,
-    mutationId,
-    expectedState,
-    remaining - 1
-  );
+  {
+    const checkedResult:
+      | Awaited<Promise<typeof HouseholdMemberDepartureOperation.Type>>
+      | Promise<typeof HouseholdMemberDepartureOperation.Type> =
+      readDepartureByMutationEventually(
+        organizationId,
+        cookie,
+        mutationId,
+        expectedState,
+        remaining - 1
+      );
+    return checkedResult;
+  }
 };
 
 const systemCommand = (
@@ -955,23 +1002,25 @@ const settleUnknownProviderBudget = async (input: {
   );
 };
 
-const batchQueueResult = async (
-  itemId: string,
-  remaining = 80
-): Promise<unknown> => {
+const batchQueueResult = async (itemId: string, remaining = 80) => {
   const results = await getRuntime().getKVNamespace(
     "BATCH_QUEUE_RESULTS",
     "batch-consumer"
   );
   const value = await results.get(itemId, "json");
   if (value !== null) {
-    return value;
+    const checkedResult: Awaited<Promise<unknown>> | Promise<unknown> = value;
+    return checkedResult;
   }
   if (remaining === 0) {
     throw new Error("Batch outbox alarm was not delivered.");
   }
   await delay(25);
-  return batchQueueResult(itemId, remaining - 1);
+  {
+    const checkedResult: Awaited<Promise<unknown>> | Promise<unknown> =
+      batchQueueResult(itemId, remaining - 1);
+    return checkedResult;
+  }
 };
 
 const batchQueueDeliveries = async (itemId: string) => {
@@ -2641,7 +2690,7 @@ describe("household public API to private Durable Object boundary", () => {
       await otherBootstrap.json()
     );
     expect(otherPerson.id).not.toBe(ownerPerson.id);
-  }, 30_000);
+  });
 
   it("routes only the owner during a concurrent owner and member creator bootstrap", async () => {
     const ownerCookie = await signUp("People Concurrent Owner");
@@ -2712,7 +2761,7 @@ describe("household public API to private Durable Object boundary", () => {
       currentPersonId: null,
       people: [expect.objectContaining({ kind: "adult" })],
     });
-  }, 30_000);
+  });
 
   it("projects creator-slot authority independently from non-creator roster entries", async () => {
     const cookie = await signUp("People Projection Owner");
@@ -2813,7 +2862,7 @@ describe("household public API to private Durable Object boundary", () => {
       currentPersonId: null,
       people: [],
     });
-  }, 30_000);
+  });
 
   it("keeps concurrent household invitation identities attached to their people", async () => {
     const {
@@ -2889,7 +2938,7 @@ describe("household public API to private Durable Object boundary", () => {
         id: invitations[index]?.invitationId,
       });
     }
-  }, 30_000);
+  });
 
   it("runs the public people lifecycle through Better Auth, private Worker, and household SQLite", async () => {
     const cookie = await signUp("People Boundary Member");
@@ -3128,7 +3177,7 @@ describe("household public API to private Durable Object boundary", () => {
       lifecycle: "active",
       version: 3,
     });
-  }, 30_000);
+  });
 
   it("links an invited Better Auth member to the existing adult without duplicating the person", async () => {
     const ownerCookie = await signUp("People Invitation Owner");
@@ -3395,7 +3444,7 @@ describe("household public API to private Durable Object boundary", () => {
     );
     expect(historicalProfile.status).toBe(200);
     expect(await historicalProfile.text()).toBe(provisionalBytes);
-  }, 30_000);
+  });
 
   it("projects the associated invitation outcome without leaking its identity or following orphan rows", async () => {
     const setup = await prepareInvitableAdult("Invitation Status");
@@ -3649,7 +3698,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(
       roster.people.filter((person) => person.id === setup.adult.id)
     ).toHaveLength(1);
-  }, 30_000);
+  });
 
   it("retries mail failure after association with the same invitation", async () => {
     const setup = await prepareInvitableAdult("Invitation Mail Retry");
@@ -3866,7 +3915,7 @@ describe("household public API to private Durable Object boundary", () => {
         .from(authSchema.invitation)
         .where(eq(authSchema.invitation.organizationId, setup.organization.id))
     ).resolves.toHaveLength(2);
-  }, 30_000);
+  });
 
   it("repairs an accepted member link only to the explicitly selected adult", async () => {
     const setup = await prepareLinkedAdult("Explicit Link Repair");
@@ -3943,7 +3992,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(
       roster.people.find((person) => person.id === setup.adult.id)
     ).toMatchObject({ associationState: "detached", lifecycle: "active" });
-  }, 30_000);
+  });
 
   it("links the same Better Auth user independently in two households", async () => {
     const sharedAdult = {
@@ -3994,7 +4043,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(firstRoster.currentPersonId).toBe(first.adult.id);
     expect(secondRoster.currentPersonId).toBe(second.adult.id);
     expect(first.adult.id).not.toBe(second.adult.id);
-  }, 30_000);
+  });
 
   it("recovers a departure that crashes before Better Auth removes access", async () => {
     const setup = await prepareLinkedAdult("Departure Before Removal");
@@ -4079,7 +4128,7 @@ describe("household public API to private Durable Object boundary", () => {
         .from(authSchema.member)
         .where(eq(authSchema.member.id, setup.memberId))
     ).resolves.toHaveLength(0);
-  }, 30_000);
+  });
 
   it("recovers and cancels the exact prepared departure after its response is lost", async () => {
     const setup = await prepareLinkedAdult("Departure Prepared Recovery");
@@ -4169,7 +4218,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(
       roster.people.find((person) => person.id === setup.adult.id)
     ).toMatchObject({ associationState: "linked", lifecycle: "active" });
-  }, 30_000);
+  });
 
   it("preserves a replacement membership until an explicit departure repair targets it", async () => {
     const setup = await prepareLinkedAdult("Departure Replacement Member");
@@ -4271,7 +4320,7 @@ describe("household public API to private Durable Object boundary", () => {
         .from(authSchema.member)
         .where(eq(authSchema.member.id, replacementMemberId))
     ).resolves.toHaveLength(0);
-  }, 30_000);
+  });
 
   it("finishes a departure after access removal commits but its signal is lost", async () => {
     const setup = await prepareLinkedAdult("Departure After Removal");
@@ -4336,7 +4385,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(
       roster.people.find((person) => person.id === setup.adult.id)
     ).toMatchObject({ associationState: "detached", lifecycle: "archived" });
-  }, 30_000);
+  });
 
   it("retries finalization repair on the original departure operation", async () => {
     const setup = await prepareLinkedAdult("Departure Finalization Repair");
@@ -4407,7 +4456,7 @@ describe("household public API to private Durable Object boundary", () => {
       personId: setup.adult.id,
       state: "completed",
     });
-  }, 30_000);
+  });
 
   it("returns an invited former member to the same historical person", async () => {
     const setup = await prepareLinkedAdult("Returning Historical Adult");
@@ -4652,7 +4701,7 @@ describe("household public API to private Durable Object boundary", () => {
     );
     expect(historicalProfile.status).toBe(200);
     expect(await historicalProfile.text()).toBe(profileBytes);
-  }, 30_000);
+  });
 
   it("preserves the last owner and requires an explicit repair outcome", async () => {
     const ownerLabel = "Departure Last Owner";
@@ -4739,7 +4788,7 @@ describe("household public API to private Durable Object boundary", () => {
         }),
       ],
     });
-  }, 30_000);
+  });
 
   it("runs public import admission through Recipe Bank and an adult-approved plan", async () => {
     const cookie = await signUp("Import Boundary Member");
@@ -5018,7 +5067,7 @@ describe("household public API to private Durable Object boundary", () => {
         await approveResponse.json()
       )
     ).toMatchObject({ _tag: "Approved", revision: 2 });
-  }, 30_000);
+  });
 
   it("commits verified R2 acquisition evidence through the private household authority", async () => {
     const cookie = await signUp("Evidence Boundary Member");
@@ -5106,7 +5155,7 @@ describe("household public API to private Durable Object boundary", () => {
       },
     });
     expect(commitResponse.status, await commitResponse.text()).toBe(200);
-  }, 30_000);
+  });
 
   it("replays durable acquisition identities and advances generations exactly once", async () => {
     const { admission, admitted } = await admitResolvedEvidenceImport({
@@ -5180,7 +5229,7 @@ describe("household public API to private Durable Object boundary", () => {
       { acquisitionAttemptGeneration: 1, attemptOrdinal: 1 },
       { acquisitionAttemptGeneration: 2, attemptOrdinal: 2 },
     ]);
-  }, 30_000);
+  });
 
   it("rejects stale evidence without mutation and accepts the corrected generation", async () => {
     const { admission, admitted } = await admitResolvedEvidenceImport({
@@ -5220,7 +5269,7 @@ describe("household public API to private Durable Object boundary", () => {
       }
     );
     expect(correctedResponse.status, await correctedResponse.text()).toBe(200);
-  }, 30_000);
+  });
 
   it("commits a closed speech result with replay and generation fencing", async () => {
     const { admission, admitted, cookie } = await admitResolvedEvidenceImport({
@@ -5392,7 +5441,7 @@ describe("household public API to private Durable Object boundary", () => {
       mutationId: "f".repeat(64),
     });
     expect(newTerminalCompletion.status).toBe(400);
-  }, 30_000);
+  });
 
   it("rejects new stage mutations after cancellation while replaying the committed claim receipt", async () => {
     const { admission, admitted, cookie } = await admitResolvedEvidenceImport({
@@ -5492,7 +5541,7 @@ describe("household public API to private Durable Object boundary", () => {
       mutationId: "e".repeat(64),
     });
     expect(terminalFailure.status).toBe(400);
-  }, 30_000);
+  });
 
   it("physically isolates household evidence routing", async () => {
     const householdA = await admitResolvedEvidenceImport({
@@ -5536,7 +5585,7 @@ describe("household public API to private Durable Object boundary", () => {
       result,
     });
     expect(ownerResponse.status, await ownerResponse.text()).toBe(200);
-  }, 30_000);
+  });
 
   it("returns the same private receipt on retry and rejects a conflicting replay without mutation", async () => {
     const { admission, admitted } = await admitResolvedEvidenceImport({
@@ -5604,7 +5653,7 @@ describe("household public API to private Durable Object boundary", () => {
         HouseholdCommitAcquisitionEvidenceResult
       )(await afterConflictResponse.json())
     ).toEqual(firstReceipt);
-  }, 30_000);
+  });
 
   it("persists household evidence receipts across a real runtime restart", async () => {
     const { admission, admitted } = await admitResolvedEvidenceImport({
@@ -5656,7 +5705,7 @@ describe("household public API to private Durable Object boundary", () => {
       }
     );
     expect(expiredFirstWrite.status).toBe(400);
-  }, 30_000);
+  });
 
   it("rejects invalid retention without mutation and accepts the corrected deadline", async () => {
     const { admission, admitted } = await admitResolvedEvidenceImport({
@@ -5702,7 +5751,7 @@ describe("household public API to private Durable Object boundary", () => {
       }
     );
     expect(correctedResponse.status, await correctedResponse.text()).toBe(200);
-  }, 30_000);
+  });
 
   it("records a missing R2 observation without weakening committed integrity metadata", async () => {
     const { admission, admitted } = await admitResolvedEvidenceImport({
@@ -5841,7 +5890,7 @@ describe("household public API to private Durable Object boundary", () => {
       availability: "deleted",
       observationOrdinal: 2,
     });
-  }, 30_000);
+  });
 
   it("rejects source-mixed evidence reference wire shapes", async () => {
     const intentId = "00000000-0000-4000-8000-000000000134";
@@ -5909,7 +5958,7 @@ describe("household public API to private Durable Object boundary", () => {
         ],
       })
     ).rejects.toBeDefined();
-  }, 30_000);
+  });
 
   it("rejects wrong-source evidence commands before authoring household evidence", async () => {
     const carousel = await admitResolvedEvidenceImport({
@@ -6030,7 +6079,7 @@ describe("household public API to private Durable Object boundary", () => {
       correctedSpeechClaim.status,
       await correctedSpeechClaim.clone().text()
     ).toBe(200);
-  }, 30_000);
+  });
 
   it("rejects a forged cross-organization session before private routing", async () => {
     const cookieA = await signUp("Boundary A");
@@ -6314,8 +6363,7 @@ describe("household public API to private Durable Object boundary", () => {
         failureCode: "outcome_unknown",
         outcome: "Failed",
       });
-    },
-    30_000
+    }
   );
 
   it("replays household speech recovery after the external restart fails", async () => {
@@ -6366,7 +6414,7 @@ describe("household public API to private Durable Object boundary", () => {
       recoveryDispatchId: fixture.recoveryDispatchId,
     });
     expect(await readSpeechStage(fixture)).toEqual(preparedStage);
-  }, 30_000);
+  });
 
   it("replays household speech recovery after a completed restart response is lost", async () => {
     const fixture = await prepareUnknownSpeechTerminal({
@@ -6416,7 +6464,7 @@ describe("household public API to private Durable Object boundary", () => {
     await expect(
       restartState.get(`speech-restart-calls:${fixture.intentId}`)
     ).resolves.toBe("1");
-  }, 30_000);
+  });
 
   it("returns one exact household speech recovery across concurrent replays", async () => {
     const fixture = await prepareUnknownSpeechTerminal({
@@ -6450,7 +6498,7 @@ describe("household public API to private Durable Object boundary", () => {
     await expect(
       restartState.get(`speech-restart-calls:${fixture.intentId}`)
     ).resolves.toBe("1");
-  }, 30_000);
+  });
 
   it("keeps execution generation one across acquisition attempt two and successive speech recovery", async () => {
     const fixture = await prepareUnknownSpeechTerminal({
@@ -6527,7 +6575,7 @@ describe("household public API to private Durable Object boundary", () => {
       ownershipId: recoveryTwoDispatchId,
       stage: "speech",
     });
-  }, 30_000);
+  });
 
   it("settles and executes two household visual recovery attempts after provider ambiguity", async () => {
     const videoId = "7000000000000000111";
@@ -6753,7 +6801,7 @@ describe("household public API to private Durable Object boundary", () => {
       ownershipId: recoveryTwoDispatchId,
       stage: "visual",
     });
-  }, 30_000);
+  });
 
   it.each([
     { mode: "absent", providerCalls: 1 },
@@ -6783,8 +6831,7 @@ describe("household public API to private Durable Object boundary", () => {
         replay: { _tag: "VisualEvidenceReady" },
         stage: { outcome: "Completed" },
       });
-    },
-    30_000
+    }
   );
 
   it("starts source resolution from an unresolved admitted import", async () => {
@@ -6828,7 +6875,7 @@ describe("household public API to private Durable Object boundary", () => {
       unresolvedRecovery: { reason: "illegal_transition" },
       wrongPurpose: { _tag: "HouseholdAuthorizationFailure" },
     });
-  }, 30_000);
+  });
 
   it.each([
     { mode: "start_response_lost", suffix: "145" },
@@ -6860,8 +6907,7 @@ describe("household public API to private Durable Object boundary", () => {
           /^import-acquisition:v1:[a-f\d]{64}$/u
         ),
       });
-    },
-    30_000
+    }
   );
 
   it("atomically prepares and persists a fenced household recipe recovery", async () => {
@@ -7310,7 +7356,6 @@ const openPrivateConnection = async (
       })
     )(payload);
     if (probe._tag === "Some") {
-      // Test-only physical delivery marker; canonical transcript reads use /chat.
       messages.push(probe.value.text);
       return;
     }
@@ -7475,8 +7520,7 @@ describe("displayed account and family binding", () => {
         label: "Displayed Identity Adult",
       }
     );
-    // The owner remains a valid participant in the original family, so this also
-    // checks switching accounts without changing the family.
+
     const otherCookie = setup.ownerCookie;
     await Promise.all(
       [originalCookie, otherCookie].map(async (cookie) => {
@@ -7774,7 +7818,7 @@ describe("canonical private interview output boundary", () => {
       "synthetic-owner-after-copied-reference",
     ]);
     connection.socket.close();
-  }, 30_000);
+  });
 
   it("keeps participant transcript content out of shared household state, audit, coordinators and native logs", async () => {
     const capturedLogs: string[] = [];
@@ -7933,7 +7977,6 @@ describe("canonical private interview output boundary", () => {
       );
       await Promise.all(
         [householdStorage, ...coordinators].map(async (storage) => {
-          // Miniflare reserves _cf_* tables; inspect every application-owned table.
           const tables = await storage.exec<{ name: string }>(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT GLOB '_cf_*' ORDER BY name"
           );
@@ -7967,7 +8010,7 @@ describe("canonical private interview output boundary", () => {
     } finally {
       await restartRuntime();
     }
-  }, 30_000);
+  });
 
   it("stops passive and in-flight output before real Better Auth sign-out commits", async () => {
     const setup = await prepareLinkedAdult("Private Passive Revoke");
@@ -8000,7 +8043,7 @@ describe("canonical private interview output boundary", () => {
       privateConnect(setup.memberCookie, connection.sessionReference),
       403
     );
-  }, 30_000);
+  });
 
   it.each(["directory", "session"] as const)(
     "keeps real sign-out uncommitted after a lost %s invalidation acknowledgement and safely retries",
@@ -8050,8 +8093,7 @@ describe("canonical private interview output boundary", () => {
           .from(authSchema.session)
           .where(eq(authSchema.session.id, session.session.id))
       ).toEqual([]);
-    },
-    30_000
+    }
   );
 
   it("commits real sign-out while an unrelated refresh has an ambiguous retained dispatch", async () => {
@@ -8119,7 +8161,7 @@ describe("canonical private interview output boundary", () => {
     await expectDirectoryRevoked(directory, setup.memberCookie);
     await delay(10);
     expect(connection.messages).toEqual([]);
-  }, 30_000);
+  });
 
   it.each(["directory", "session"] as const)(
     "rejects %s activation whose final canonical household read finished before a concurrent real session revocation",
@@ -8164,8 +8206,7 @@ describe("canonical private interview output boundary", () => {
         await observations.put(`private-output-release:${barrier}`, "release");
       }
       await expectPrivateStatus(pending, 403);
-    },
-    30_000
+    }
   );
 
   it.each(["directory", "session"] as const)(
@@ -8219,8 +8260,7 @@ describe("canonical private interview output boundary", () => {
         "synthetic-after-canonical-reauthentication",
       ]);
       fresh.socket.close();
-    },
-    30_000
+    }
   );
 
   it("disables output for the captured household when the real active organization changes", async () => {
@@ -8243,7 +8283,7 @@ describe("canonical private interview output boundary", () => {
       privateConnect(setup.memberCookie, connection.sessionReference),
       403
     );
-  }, 30_000);
+  });
 
   it("fences departure preparation before membership removal and cannot reauthorize the pending adult", async () => {
     const setup = await prepareLinkedAdult("Private Household Departure");
@@ -8293,7 +8333,7 @@ describe("canonical private interview output boundary", () => {
       privateConnect(setup.memberCookie, connection.sessionReference),
       403
     );
-  }, 30_000);
+  });
 
   it("revokes both private children when real departure removes membership and archives the adult", async () => {
     const setup = await prepareLinkedAdult("Private Completed Departure");
@@ -8351,7 +8391,7 @@ describe("canonical private interview output boundary", () => {
       privateConnect(setup.memberCookie, connection.sessionReference),
       403
     );
-  }, 30_000);
+  });
 
   it("keeps the original immutable person binding after a canonical adult-link repair", async () => {
     const setup = await prepareLinkedAdult("Private Immutable Repair");
@@ -8432,7 +8472,7 @@ describe("canonical private interview output boundary", () => {
     await delay(10);
     expect(fresh.messages).toEqual(["synthetic-new-explicit-session"]);
     fresh.socket.close();
-  }, 30_000);
+  });
 });
 
 type CardConnection = Awaited<ReturnType<typeof openPrivateConnection>>;
@@ -9060,7 +9100,7 @@ describe("canonical private profile cards", () => {
       privateModelResponse = undefined;
       await restartRuntime(capturedCardLogs);
     }
-  }, 30_000);
+  });
 
   it("keeps correction and rejection private, then confirms only the reviewed revision with interview provenance", async () => {
     const setup = await prepareLinkedAdult("Private Card Revision");
@@ -9230,7 +9270,6 @@ describe("canonical private profile cards", () => {
     ];
     await Promise.all(
       [sharedStorage, ...coordinators].map(async (storage) => {
-        // Miniflare reserves _cf_* tables; inspect every application-owned table.
         const tables = await storage.exec<{ name: string }>(
           "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT GLOB '_cf_*'"
         );
@@ -9714,7 +9753,7 @@ describe("canonical private profile cards", () => {
       privateModelResponse = undefined;
       await restartRuntime(logs);
     }
-  }, 120_000);
+  });
 
   it("pages maximum-label proposals within the private frame budget and retains completed cards as read-only history", async () => {
     const setup = await prepareLinkedAdult("Private Card Bounded Pages");

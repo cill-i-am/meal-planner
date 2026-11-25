@@ -35,40 +35,46 @@ export interface ImportSystemAuthorizer {
 export const makeImportSystemAuthorizer = (options: {
   readonly principal: ImportPrincipal;
   readonly token: Redacted.Redacted<string>;
-}): Effect.Effect<ImportSystemAuthorizer> => {
+}) => {
   const expectedToken = Redacted.value(options.token);
   if (expectedToken.length === 0) {
-    return Effect.succeed({ authorize: rejectUnauthorized });
+    const checkedResult: Effect.Effect<ImportSystemAuthorizer> = Effect.succeed(
+      { authorize: rejectUnauthorized }
+    );
+    return checkedResult;
   }
-  return Effect.map(
-    Effect.promise(() => importHmacKey(expectedToken)),
-    (expectedKey) => ({
-      authorize: (authorization) => {
-        const suppliedToken = bearerToken(authorization);
-        if (suppliedToken === undefined) {
-          return rejectUnauthorized();
-        }
-        return Effect.flatMap(
-          Effect.promise(async () => {
-            const suppliedKey = await importHmacKey(suppliedToken);
-            const signature = await crypto.subtle.sign(
-              hmacAlgorithm,
-              suppliedKey,
-              challenge
-            );
-            return crypto.subtle.verify(
-              hmacAlgorithm,
-              expectedKey,
-              signature,
-              challenge
-            );
-          }),
-          (matches) =>
-            matches ? Effect.succeed(options.principal) : rejectUnauthorized()
-        );
-      },
-    })
-  );
+  {
+    const checkedResult: Effect.Effect<ImportSystemAuthorizer> = Effect.map(
+      Effect.promise(() => importHmacKey(expectedToken)),
+      (expectedKey) => ({
+        authorize: (authorization) => {
+          const suppliedToken = bearerToken(authorization);
+          if (suppliedToken === undefined) {
+            return rejectUnauthorized();
+          }
+          return Effect.flatMap(
+            Effect.promise(async () => {
+              const suppliedKey = await importHmacKey(suppliedToken);
+              const signature = await crypto.subtle.sign(
+                hmacAlgorithm,
+                suppliedKey,
+                challenge
+              );
+              return crypto.subtle.verify(
+                hmacAlgorithm,
+                expectedKey,
+                signature,
+                challenge
+              );
+            }),
+            (matches) =>
+              matches ? Effect.succeed(options.principal) : rejectUnauthorized()
+          );
+        },
+      })
+    );
+    return checkedResult;
+  }
 };
 
 /** System-only authorization capability for operational import routes. */

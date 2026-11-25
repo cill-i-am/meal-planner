@@ -24,7 +24,7 @@ import {
   defaultVisualUsage,
   toolResponse,
   recipeJsonResponse,
-} from "./import-provider-adapters.test-fixture.js";
+} from "./import-provider-adapters.fixture.js";
 import type { ProviderDispatchGate } from "./import-provider-kernel.js";
 import { makeInstalledRecipeExtractor } from "./import-provider-recipe.js";
 import nativeRecipeCapture from "./import-provider-recipe.native-envelope.test-fixture.json" with { type: "json" };
@@ -34,8 +34,6 @@ import {
   RecipeExtraction,
 } from "./import-recipe-extractor.js";
 
-// Captured native envelope and usage; both candidate representations below are
-// scripted replacements. This does not claim a live full-schema recipe success.
 const nativeRecipeEnvelope = () => ({
   ...nativeRecipeCapture.nativeResponse,
   choices: nativeRecipeCapture.nativeResponse.choices.map((choice) => ({
@@ -941,9 +939,7 @@ describe("installed recipe provider adapter", () => {
     const gateway = makeRawProviderTransports(
       new Response(
         new ReadableStream<Uint8Array>({
-          start() {
-            // The provider returned headers but never completed the body.
-          },
+          start() {},
         }),
         { headers: { "content-type": "application/json" } }
       ),

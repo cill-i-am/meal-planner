@@ -6,7 +6,7 @@ import { makeSettingsClient } from "./settings-client.js";
 
 const id = Schema.decodeUnknownSync(StationId)("12345");
 const token = Redacted.make("fixture-token");
-// Shapes observed from the owner app; non-empty schedules and finite limits are synthetic cases.
+
 const responses: Readonly<Record<string, unknown>> = {
   "/device/dischargesetting/peak/shaving": {
     controlMode: 987,

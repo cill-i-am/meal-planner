@@ -18,7 +18,6 @@ const EnrollmentFile = Schema.Struct({
   session: TescoSessionCredentials,
 });
 
-/** Credentials travel in a mode-0600 file and HTTPS body, never command-line arguments or output. */
 const operate = Effect.gen(function* operateTescoSession() {
   const mode = process.argv.at(3) ?? "enroll";
   if (mode !== "enroll" && mode !== "report") {
@@ -97,7 +96,6 @@ const operate = Effect.gen(function* operateTescoSession() {
   );
 });
 
-// CLI process boundary: diagnostics cannot render a SchemaError containing a session credential.
 await Effect.runPromise(
   operate.pipe(
     Effect.provide(FetchHttpClient.layer),

@@ -45,18 +45,28 @@ export interface ImportWorkerR2TestEnvironment extends ImportWorkerTestEnvironme
 export const workerTestR2PutBody = (
   value: AcquisitionPutValue,
   contentLength: number
-): Effect.Effect<ArrayBufferView, RetryableAcquisitionFailure> => {
+) => {
   if (ArrayBuffer.isView(value)) {
-    return Effect.succeed(value);
+    const checkedResult: Effect.Effect<
+      ArrayBufferView,
+      RetryableAcquisitionFailure
+    > = Effect.succeed(value);
+    return checkedResult;
   }
-  return Effect.gen(function* collectWorkerTestR2Body() {
-    const chunks = yield* Stream.runCollect(value);
-    const bytes = new Uint8Array(contentLength);
-    let offset = 0;
-    for (const chunk of chunks) {
-      bytes.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    return bytes;
-  });
+  {
+    const checkedResult: Effect.Effect<
+      ArrayBufferView,
+      RetryableAcquisitionFailure
+    > = Effect.gen(function* collectWorkerTestR2Body() {
+      const chunks = yield* Stream.runCollect(value);
+      const bytes = new Uint8Array(contentLength);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return bytes;
+    });
+    return checkedResult;
+  }
 };

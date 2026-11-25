@@ -20,7 +20,7 @@ const providerStepContext = (attempt: number) =>
   });
 
 const captureAttempt = async (attempt: number) => {
-  const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+  const log = vi.spyOn(console, "log");
   const exit = await Effect.runPromiseExit(
     runProviderTaskAttempt(
       "speech",
@@ -45,7 +45,7 @@ const captureAttempt = async (attempt: number) => {
 
 describe("provider task observability", () => {
   it("emits a safe terminal success for the same correlation identifier", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const log = vi.spyOn(console, "log");
     const result = await Effect.runPromise(
       runProviderTaskAttempt(
         "speech",
@@ -141,7 +141,7 @@ describe("provider task observability", () => {
   });
 
   it("preserves only a closed evidence reason on a terminal checkpoint", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const log = vi.spyOn(console, "log");
     const checkpoint = await Effect.runPromise(
       runProviderTaskAttempt(
         "recipe",

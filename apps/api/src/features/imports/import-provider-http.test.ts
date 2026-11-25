@@ -8,11 +8,11 @@ import {
   localDispatchGate,
   makeRecordingTraceStore,
   runFactory,
-} from "./import-provider-adapters.test-fixture.js";
+} from "./import-provider-adapters.fixture.js";
 import { makeWorkersAiTransport } from "./import-provider-kernel.js";
 import type { ProviderDispatchGate } from "./import-provider-kernel.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
-import { syntheticThreeFrameResponse } from "./import-provider-visual.scout.test-fixture.js";
+import { syntheticThreeFrameResponse } from "./import-provider-visual.scout.fixture.js";
 import { ImportId } from "./import.contracts.js";
 
 const request = {
@@ -32,7 +32,6 @@ const request = {
   sourceMediaSha256: "b".repeat(64),
 };
 
-// Exercise the installed Alchemy serializer/parser, not the scripted language-model fixture.
 const makeAdapter = async (
   response: Response,
   dispatch = localDispatchGate

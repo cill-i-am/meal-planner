@@ -31,16 +31,26 @@ const Mode = Schema.Struct({
   socLowerLimit: Schema.NullOr(Percent),
   socUpperLimit: Schema.NullOr(Percent),
 });
-const currentSetting = (
-  value: number | null
-): typeof AcChargerCurrent.Type.lastSetCurrent => {
+const currentSetting = (value: number | null) => {
   if (value === null) {
-    return { kind: "unknown" };
+    const checkedResult: typeof AcChargerCurrent.Type.lastSetCurrent = {
+      kind: "unknown",
+    };
+    return checkedResult;
   }
   if (value === -1) {
-    return { kind: "unset" };
+    const checkedResult: typeof AcChargerCurrent.Type.lastSetCurrent = {
+      kind: "unset",
+    };
+    return checkedResult;
   }
-  return { kind: "amperes", value };
+  {
+    const checkedResult: typeof AcChargerCurrent.Type.lastSetCurrent = {
+      kind: "amperes",
+      value,
+    };
+    return checkedResult;
+  }
 };
 export const makeChargingClient = (read: ProviderRead) => {
   const chargers = (id: StationId, token: Redacted.Redacted<string>) =>

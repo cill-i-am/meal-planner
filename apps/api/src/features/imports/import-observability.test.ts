@@ -68,7 +68,7 @@ describe("private import observability", () => {
 
   it("drops invalid telemetry without synchronously surfacing forbidden values", async () => {
     const forbiddenValue = "https://secret.example/video?token=private-canary";
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const log = vi.spyOn(console, "log");
     let telemetry: Effect.Effect<void> | undefined;
 
     expect(() => {
@@ -87,7 +87,7 @@ describe("private import observability", () => {
   });
 
   it("emits only the closed event name and allowlisted annotations", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const log = vi.spyOn(console, "log");
 
     await Effect.runPromise(
       emitImportObservabilityEvent({
@@ -113,7 +113,7 @@ describe("private import observability", () => {
   });
 
   it("emits only closed decode-stage and reason classifications", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const log = vi.spyOn(console, "log");
 
     await Effect.runPromise(
       emitImportObservabilityEvent({
@@ -141,7 +141,7 @@ describe("private import observability", () => {
   });
 
   it("emits only closed speech-envelope family and failure classifications", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const log = vi.spyOn(console, "log");
 
     await Effect.runPromise(
       emitImportObservabilityEvent({
@@ -207,7 +207,7 @@ describe("private import observability", () => {
   ] as const)(
     "keeps a failed private trace write outside the %s lifecycle seam",
     async (event, outcome) => {
-      const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+      const log = vi.spyOn(console, "log");
       const traceStore = ImportObservabilityTraceStore.of({
         append: () => Effect.die(new Error("trace persistence unavailable")),
         read: () => Effect.succeed([]),
@@ -238,7 +238,7 @@ describe("private import observability", () => {
   );
 
   it("preserves caller interruption while isolating trace failures", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const log = vi.spyOn(console, "log");
     const traceStore = ImportObservabilityTraceStore.of({
       append: () => Effect.interrupt,
       read: () => Effect.succeed([]),

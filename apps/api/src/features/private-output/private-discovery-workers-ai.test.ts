@@ -3,7 +3,7 @@ import type { CloudflareBindingConfig } from "@tanstack/ai-cloudflare";
 import { Cause, Effect, Exit, Option, Schema } from "effect";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
-import { responsesToolSse } from "../../test/cloudflare-responses.test-fixture.js";
+import { responsesToolSse } from "../../test/cloudflare-responses.fixture.js";
 import { PrivateChatReply } from "./private-chat-reply.js";
 import {
   emptyPrivateDiscoveryContinuity,
@@ -14,7 +14,7 @@ import {
   kimiChoice,
   kimiChunk,
   kimiEvent,
-} from "./private-discovery-kimi-stream.test-fixtures.js";
+} from "./private-discovery-kimi-stream.fixture.js";
 import {
   makePrivateDiscoveryProviderOutput,
   PrivateDiscoveryContext,
@@ -26,8 +26,7 @@ import { privateDiscoveryInstructions } from "./private-discovery-prompt.js";
 import { makePrivateDiscoveryModel } from "./private-discovery-workers-ai.js";
 import type { PrivateDiscoveryConfiguration } from "./private-discovery-workers-ai.js";
 
-// Keep one spy in place before any SDK client caches bound console methods.
-const providerLogs = vi.spyOn(console, "error").mockImplementation(() => {});
+const providerLogs = vi.spyOn(console, "error");
 
 const ids = {
   current: "00000000-0000-4000-8000-000000000003",
@@ -47,26 +46,29 @@ const context = () =>
     profile: { facts: [], version: 0 },
     scope: "ProfileEdit",
   });
-const canonicalMessages = (): ModelMessage[] => [
-  {
-    content: "I cook for myself.",
-    createdAt: new Date(1000),
-    id: ids.previous,
-    role: "user",
-  },
-  {
-    content: "Which meals do you enjoy?",
-    createdAt: new Date(2000),
-    id: ids.question,
-    role: "assistant",
-  },
-  {
-    content: "I like tomatoes.",
-    createdAt: new Date(3000),
-    id: ids.current,
-    role: "user",
-  },
-];
+const canonicalMessages = () => {
+  const checkedResult: ModelMessage[] = [
+    {
+      content: "I cook for myself.",
+      createdAt: new Date(1000),
+      id: ids.previous,
+      role: "user",
+    },
+    {
+      content: "Which meals do you enjoy?",
+      createdAt: new Date(2000),
+      id: ids.question,
+      role: "assistant",
+    },
+    {
+      content: "I like tomatoes.",
+      createdAt: new Date(3000),
+      id: ids.current,
+      role: "user",
+    },
+  ];
+  return checkedResult;
+};
 const config: PrivateDiscoveryConfiguration = {
   gatewayId: "synthetic-private-discovery",
   inputUsdPerMillionTokens: 0.95,
@@ -778,7 +780,7 @@ describe("private discovery native TanStack provider", () => {
       );
       const running = observe(test.model.stream(test.input));
       const options = await dispatched.promise;
-      // The published binding adapter does not forward the SDK request signal.
+
       expect(options).not.toHaveProperty("signal");
       if (cause === "deadline") {
         await vi.advanceTimersByTimeAsync(1000);

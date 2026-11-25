@@ -10,7 +10,7 @@ import {
   CatalogueSuggestions,
 } from "../catalogue/catalogue.model.js";
 import * as Shopping from "../shopping/shopping.model.js";
-import { makeHttpShoppingFixture } from "./http-shopping.test-fixture.js";
+import { makeHttpShoppingFixture } from "./http-shopping.fixture.js";
 import { tescoPrivateOpenApi } from "./http.contract.js";
 import type { TescoMcpCapabilities } from "./mcp.contract.js";
 import { makeTescoMcpHttpHandler } from "./mcp.http.js";

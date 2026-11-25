@@ -47,12 +47,13 @@ export interface ProviderAccountingError {
   readonly code: ProviderAccountingErrorCode;
 }
 
-export const providerAccountingError = (
-  code: ProviderAccountingErrorCode
-): ProviderAccountingError => ({
-  _tag: "ProviderAccountingError",
-  code,
-});
+export const providerAccountingError = (code: ProviderAccountingErrorCode) => {
+  const checkedResult: ProviderAccountingError = {
+    _tag: "ProviderAccountingError",
+    code,
+  };
+  return checkedResult;
+};
 
 export interface ProviderAccountingReservation {
   readonly dispatchId: ProviderAccountingDispatchId;
@@ -176,10 +177,6 @@ export interface ProviderInvocationResult<A> {
 const canBeginProviderInvocation = (state: ProviderAccountingDispatchState) =>
   state === "reserved" || state === "invoking";
 
-/**
- * The provider boundary may use this marker only when it has authoritative
- * evidence that a failed dispatch incurred exactly zero cost.
- */
 const ProviderKnownZeroCostFailureBrand = Symbol(
   "ProviderKnownZeroCostFailure"
 );
@@ -194,9 +191,10 @@ export class ProviderKnownZeroCostFailure<E> {
   }
 }
 
-export const providerKnownZeroCostFailure = <E>(
-  error: E
-): ProviderKnownZeroCostFailure<E> => new ProviderKnownZeroCostFailure(error);
+export const providerKnownZeroCostFailure = <E>(error: E) => {
+  const checkedResult = new ProviderKnownZeroCostFailure<E>(error);
+  return checkedResult;
+};
 
 export const isProviderKnownZeroCostFailure = <Error>(
   error: Error | ProviderKnownZeroCostFailure<Error>
@@ -320,11 +318,11 @@ export const runAccountedProviderDispatch = <A, E>(input: {
   readonly previousAttempt?: ProviderAccountingReservation;
   readonly repository: ProviderAccountingRepository;
   readonly reservation: ProviderAccountingReservation;
-}): Effect.Effect<
-  AccountedProviderDispatchResult<A>,
-  E | ProviderAccountingError
-> =>
-  Effect.gen(function* runBudgetedProviderDispatch() {
+}) => {
+  const checkedResult: Effect.Effect<
+    AccountedProviderDispatchResult<A>,
+    E | ProviderAccountingError
+  > = Effect.gen(function* runBudgetedProviderDispatch() {
     const replayConservative = (
       conservativeChargeMicroUsd: number,
       replay: ProviderAccountingConservativeReplayValue | undefined
@@ -509,7 +507,7 @@ export const runAccountedProviderDispatch = <A, E>(input: {
     ).pipe(
       Effect.catchCause((cause) => {
         const [reason] = cause.reasons;
-        // Zero-cost authority requires the entire failure, not one reason in it.
+
         if (
           cause.reasons.length === 1 &&
           reason !== undefined &&
@@ -536,8 +534,11 @@ export const runAccountedProviderDispatch = <A, E>(input: {
                   | E
                   | ProviderAccountingError
                   | ProviderKnownZeroCostFailure<E>
-              ): E | ProviderAccountingError =>
-                isProviderKnownZeroCostFailure(error) ? error.error : error
+              ) => {
+                const nestedResult: E | ProviderAccountingError =
+                  isProviderKnownZeroCostFailure(error) ? error.error : error;
+                return nestedResult;
+              }
             )
           )
         );
@@ -559,3 +560,5 @@ export const runAccountedProviderDispatch = <A, E>(input: {
     }
     return claimedResult;
   });
+  return checkedResult;
+};

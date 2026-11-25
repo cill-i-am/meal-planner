@@ -14,7 +14,7 @@ import type {
 import { VerifiedPreparedMediaArtifact } from "./import-media-acquirer.js";
 import { AcquisitionGeneration } from "./import-media.model.js";
 import { ImportId } from "./import.contracts.js";
-import { memoryBucket } from "./transcript-evidence.test-fixture.js";
+import { memoryBucket } from "./transcript-evidence.fixture.js";
 
 const hash = async (bytes: Uint8Array) =>
   Array.from(
@@ -24,22 +24,26 @@ const hash = async (bytes: Uint8Array) =>
     (byte) => byte.toString(16).padStart(2, "0")
   ).join("");
 
-const object = (bytes: Uint8Array): R2ObjectBodyLike => ({
-  arrayBuffer: () => Effect.succeed(Uint8Array.from(bytes).buffer),
-  size: bytes.byteLength,
-  text: () => Effect.succeed(new TextDecoder().decode(bytes)),
-});
+const object = (bytes: Uint8Array) => {
+  const checkedResult: R2ObjectBodyLike = {
+    arrayBuffer: () => Effect.succeed(Uint8Array.from(bytes).buffer),
+    size: bytes.byteLength,
+    text: () => Effect.succeed(new TextDecoder().decode(bytes)),
+  };
+  return checkedResult;
+};
 
-const readOnlyBucket = (
-  read: (key: string) => Uint8Array | undefined
-): AcquisitionBucketLike => ({
-  get: (key) => {
-    const bytes = read(key);
-    return Effect.succeed(bytes === undefined ? null : object(bytes));
-  },
-  head: () => Effect.die("Unexpected derived-evidence head"),
-  put: () => Effect.die("Unexpected derived-evidence write"),
-});
+const readOnlyBucket = (read: (key: string) => Uint8Array | undefined) => {
+  const checkedResult: AcquisitionBucketLike = {
+    get: (key) => {
+      const bytes = read(key);
+      return Effect.succeed(bytes === undefined ? null : object(bytes));
+    },
+    head: () => Effect.die("Unexpected derived-evidence head"),
+    put: () => Effect.die("Unexpected derived-evidence write"),
+  };
+  return checkedResult;
+};
 
 describe("private derived provider evidence", () => {
   it("returns only hash-verified audio and ordered frames", async () => {

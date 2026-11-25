@@ -11,8 +11,10 @@ import {
 type RequestCancellationSignal = Parameters<typeof raceWithRequestSignal>[0];
 type AlchemyRequest = Parameters<typeof Cloudflare.makeRequestEffect>[0];
 
-const asAlchemyRequest = (request: Request): AlchemyRequest =>
-  request as unknown as AlchemyRequest;
+const asAlchemyRequest = (request: Request) => {
+  const checkedResult: AlchemyRequest = request as unknown as AlchemyRequest;
+  return checkedResult;
+};
 
 class RecordingSignal implements RequestCancellationSignal {
   readonly registered = Promise.withResolvers<boolean>();

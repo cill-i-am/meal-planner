@@ -14,12 +14,12 @@ import {
   kimiChunk,
   kimiChoice,
   kimiEvent,
-} from "./private-discovery-kimi-stream.test-fixtures.js";
+} from "./private-discovery-kimi-stream.fixture.js";
 import { PrivateDiscoveryContext } from "./private-discovery-model.js";
 import {
   makePrivateOutputHarness,
   nativePrivateChatInput,
-} from "./private-output-native.test-fixture.js";
+} from "./private-output-native.fixture.js";
 import type { PrivateSessionBinding } from "./private-output.contract.js";
 
 const harness = makePrivateOutputHarness();
@@ -272,7 +272,8 @@ describe("native adaptive assistant attempts through the production model adapte
     const connection = await harness.open(session);
     const attempt = await harness.startTurn(connection);
     const first = attempt.finished;
-    await expect.poll(() => harness.calls.length).toBe(1);
+    await harness.calls.waitForCount(1);
+    expect(harness.calls).toHaveLength(1);
     const duplicate = await harness.chatRequest(connection, {
       body: attempt.input,
       method: "POST",
@@ -1705,7 +1706,8 @@ describe("native adaptive assistant attempts through the production model adapte
     const session = await harness.binding();
     const connection = await harness.open(session);
     const attempt = await harness.startTurn(connection);
-    await expect.poll(() => harness.calls.length).toBe(1);
+    await harness.calls.waitForCount(1);
+    expect(harness.calls).toHaveLength(1);
     const cancelled = await harness.chatRequest(connection, {
       method: "DELETE",
       query: `?runId=${attempt.turnId}`,
@@ -1773,7 +1775,8 @@ describe("native adaptive assistant attempts through the production model adapte
       const connection = await harness.open(session);
       const attempt = await harness.startTurn(connection);
       const running = attempt.finished;
-      await expect.poll(() => harness.calls.length).toBe(1);
+      await harness.calls.waitForCount(1);
+      expect(harness.calls).toHaveLength(1);
       const key =
         scope === "account" ? session.accountKey : session.householdKey;
       const operation = await harness.successful<{
@@ -1852,7 +1855,8 @@ describe("native adaptive assistant attempts through the production model adapte
     const connection = await harness.open(session);
     const attempt = await harness.startTurn(connection);
     const running = attempt.finished.catch(() => "runtime-stopped");
-    await expect.poll(() => harness.calls.length).toBe(1);
+    await harness.calls.waitForCount(1);
+    expect(harness.calls).toHaveLength(1);
     await harness.restart();
     release.resolve(response());
     await running;
@@ -2121,7 +2125,8 @@ describe("native adaptive assistant attempts through the production model adapte
     const session = await harness.binding();
     const connection = await harness.open(session);
     const attempt = await harness.startTurn(connection);
-    await expect.poll(() => harness.calls.length).toBe(1);
+    await harness.calls.waitForCount(1);
+    expect(harness.calls).toHaveLength(1);
     connection.socket.close();
     await attempt.finished;
     expect(await latestAttempt(connection)).toMatchObject({
@@ -2396,7 +2401,8 @@ describe("native adaptive assistant attempts through the production model adapte
     const running = attempt.finished
       .then(() => "finished")
       .catch(() => "runtime-stopped");
-    await expect.poll(() => harness.calls.length).toBe(1);
+    await harness.calls.waitForCount(1);
+    expect(harness.calls).toHaveLength(1);
     const dispatched = await audit(session);
     expect(dispatched[0]?.status).toBe("running");
     expect(JSON.parse(dispatched[0]?.provenanceJson ?? "null")).toMatchObject({
@@ -2523,7 +2529,8 @@ describe("native adaptive assistant attempts through the production model adapte
         const connection = await harness.open(session);
         const attempt = await harness.startTurn(connection);
         const running = attempt.finished;
-        await expect.poll(() => harness.calls.length).toBe(1);
+        await harness.calls.waitForCount(1);
+        expect(harness.calls).toHaveLength(1);
         expect(harness.calls[0]).toMatchObject({
           body: { stream: true, stream_options: { include_usage: true } },
           gateway: { requestTimeoutMs: 5000 },
@@ -2554,7 +2561,7 @@ describe("native adaptive assistant attempts through the production model adapte
           controller.enqueue(new TextEncoder().encode(rest));
         }
         controller.close();
-        // Reported stream errors reject the prepared proposal before native completion.
+
         await running;
         const duplicate = await harness.chatRequest(connection, {
           body: attempt.input,

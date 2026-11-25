@@ -103,7 +103,6 @@ export const Action = ({
         className="email-action"
         href={url}
         style={{
-          // Keep a solid fallback for clients that ignore gradients or shadows.
           backgroundColor: "#111114",
           backgroundImage: "linear-gradient(180deg, #242427 0%, #111114 100%)",
           borderRadius: 999,

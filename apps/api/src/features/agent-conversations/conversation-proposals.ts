@@ -44,21 +44,26 @@ const optionIsCurrent = (
       option.kind === ref.kind
   ) ?? false;
 
-const routineRefs = (choice: RoutineChoice): readonly PlanningOptionRef[] => {
+const routineRefs = (choice: RoutineChoice) => {
   switch (choice._tag) {
     case "Options": {
-      return choice.optionRefs;
+      const checkedResult: readonly PlanningOptionRef[] = choice.optionRefs;
+      return checkedResult;
     }
     case "External": {
-      return [choice.optionRef];
+      const checkedResult: readonly PlanningOptionRef[] = [choice.optionRef];
+      return checkedResult;
     }
     case "Leftover":
     case "Skip":
     case "Flexible": {
-      return [];
+      const checkedResult: readonly PlanningOptionRef[] = [];
+      return checkedResult;
     }
     default: {
-      return choice satisfies never;
+      const checkedResult: readonly PlanningOptionRef[] =
+        choice satisfies never;
+      return checkedResult;
     }
   }
 };
@@ -74,33 +79,42 @@ const coverageIsCurrent = (
 const planChangeIsCurrent = (
   context: ConversationCanonicalContext,
   change: MealPlanChange
-): boolean => {
+) => {
   switch (change._tag) {
     case "SetCoverage": {
-      return coverageIsCurrent(context, change);
+      const checkedResult: boolean = coverageIsCurrent(context, change);
+      return checkedResult;
     }
     case "ReplaceMealEvent": {
-      return optionIsCurrent(context, change.option);
+      const checkedResult: boolean = optionIsCurrent(context, change.option);
+      return checkedResult;
     }
     case "SetCookEvent": {
-      return optionIsCurrent(context, change.event.option);
+      const checkedResult: boolean = optionIsCurrent(
+        context,
+        change.event.option
+      );
+      return checkedResult;
     }
     case "RemoveCookEvent": {
-      return true;
+      const checkedResult = true;
+      return checkedResult;
     }
     case "RefreshInputs": {
-      return false;
+      const checkedResult = false;
+      return checkedResult;
     }
     case "ReplaceDraftPlan": {
-      return (
+      const checkedResult: boolean =
         change.coverage.every((entry) => coverageIsCurrent(context, entry)) &&
         change.cookEvents.every((event) =>
           optionIsCurrent(context, event.option)
-        )
-      );
+        );
+      return checkedResult;
     }
     default: {
-      return change satisfies never;
+      const checkedResult: boolean = change satisfies never;
+      return checkedResult;
     }
   }
 };
@@ -200,18 +214,19 @@ const validPlanningSetup = (
   block: Extract<ConversationModelBlock, { _tag: "PlanningContentProposal" }>,
   context: ConversationCanonicalContext,
   focusPersonId: string | null
-): boolean => {
+) => {
   const content = context.planningContent;
   if (
     content === null ||
     content.configVersion !== block.expectedContentVersion
   ) {
-    return false;
+    const checkedResult = false;
+    return checkedResult;
   }
   const { command } = block;
   switch (command._tag) {
     case "SetPersonManagedOccasions": {
-      return (
+      const checkedResult: boolean =
         activePerson(context, command.personId) &&
         (focusPersonId === null || focusPersonId === command.personId) &&
         command.entries.every(
@@ -222,11 +237,11 @@ const validPlanningSetup = (
                 saved.occasionId === entry.occasionId &&
                 saved.personId === command.personId
             )
-        )
-      );
+        );
+      return checkedResult;
     }
     case "SetPersonAvailability": {
-      return (
+      const checkedResult: boolean =
         activePerson(context, command.personId) &&
         (focusPersonId === null || focusPersonId === command.personId) &&
         command.entries.every(
@@ -237,17 +252,19 @@ const validPlanningSetup = (
                 saved.personId === command.personId &&
                 saved.occasionId === entry.occasionId
             )
-        )
-      );
+        );
+      return checkedResult;
     }
     case "SetCookingCapacity": {
-      return true;
+      const checkedResult = true;
+      return checkedResult;
     }
     case "PutOption": {
-      return true;
+      const checkedResult = true;
+      return checkedResult;
     }
     case "PutFallback": {
-      return (
+      const checkedResult: boolean =
         activePerson(context, command.value.personId) &&
         (focusPersonId === null || focusPersonId === command.value.personId) &&
         optionIsCurrent(context, command.value.optionRef) &&
@@ -257,21 +274,22 @@ const validPlanningSetup = (
               saved.personId === command.value.personId &&
               saved.occasionId === occasionId
           )
-        )
-      );
+        );
+      return checkedResult;
     }
     default: {
-      return command satisfies never;
+      const checkedResult: boolean = command satisfies never;
+      return checkedResult;
     }
   }
 };
 
-const materializePlanningSetup = (
-  command: PlanningSetupModelCommand
-): PlanningSetupCommand => {
+const materializePlanningSetup = (command: PlanningSetupModelCommand) => {
   switch (command._tag) {
     case "SetPersonManagedOccasions": {
-      return Schema.decodeUnknownSync(PlanningSetupCommand)({
+      const checkedResult: PlanningSetupCommand = Schema.decodeUnknownSync(
+        PlanningSetupCommand
+      )({
         ...command,
         entries: command.entries.map((entry) => ({
           ...entry,
@@ -279,13 +297,17 @@ const materializePlanningSetup = (
           personId: command.personId,
         })),
       });
+      return checkedResult;
     }
     case "SetPersonAvailability":
     case "SetCookingCapacity": {
-      return command;
+      const checkedResult: PlanningSetupCommand = command;
+      return checkedResult;
     }
     case "PutOption": {
-      return Schema.decodeUnknownSync(PlanningSetupCommand)({
+      const checkedResult: PlanningSetupCommand = Schema.decodeUnknownSync(
+        PlanningSetupCommand
+      )({
         _tag: "PutOption",
         value: {
           ...command.value,
@@ -293,15 +315,20 @@ const materializePlanningSetup = (
           optionVersion: 1,
         },
       });
+      return checkedResult;
     }
     case "PutFallback": {
-      return Schema.decodeUnknownSync(PlanningSetupCommand)({
+      const checkedResult: PlanningSetupCommand = Schema.decodeUnknownSync(
+        PlanningSetupCommand
+      )({
         _tag: "PutFallback",
         value: { ...command.value, id: crypto.randomUUID(), version: 1 },
       });
+      return checkedResult;
     }
     default: {
-      return command satisfies never;
+      const checkedResult: PlanningSetupCommand = command satisfies never;
+      return checkedResult;
     }
   }
 };
@@ -331,43 +358,65 @@ const validBlock = (
     readonly focusPersonId: string | null;
     readonly scope: ConversationScope;
   }
-): boolean => {
+) => {
   const { context, focusPersonId, scope } = input;
   if (block._tag === "Question") {
-    return validQuestion(block, context, focusPersonId, scope);
+    const checkedResult: boolean = validQuestion(
+      block,
+      context,
+      focusPersonId,
+      scope
+    );
+    return checkedResult;
   }
   if (block._tag === "RosterProposal") {
-    return scope._tag === "AccountPrivateSetup";
+    const checkedResult: boolean = scope._tag === "AccountPrivateSetup";
+    return checkedResult;
   }
   if (scope._tag !== "FamilyShared") {
-    return false;
+    const checkedResult = false;
+    return checkedResult;
   }
   switch (block._tag) {
     case "PersonFactProposal": {
-      return validFact(block, context, focusPersonId);
+      const checkedResult: boolean = validFact(block, context, focusPersonId);
+      return checkedResult;
     }
     case "RoutineProposal": {
-      return validRoutine(block, context, focusPersonId);
+      const checkedResult: boolean = validRoutine(
+        block,
+        context,
+        focusPersonId
+      );
+      return checkedResult;
     }
     case "PlanningContentProposal": {
-      return validPlanningSetup(block, context, focusPersonId);
+      const checkedResult: boolean = validPlanningSetup(
+        block,
+        context,
+        focusPersonId
+      );
+      return checkedResult;
     }
     case "PlanChangeProposal": {
-      return validPlan(block, context);
+      const checkedResult: boolean = validPlan(block, context);
+      return checkedResult;
     }
     case "PlanScheduleProposal": {
-      return (
+      const checkedResult: boolean =
         context.plan?._tag === "Draft" &&
         context.plan.planId === block.planId &&
         context.plan.revision === block.expectedRevision &&
-        context.planningContent !== null
-      );
+        context.planningContent !== null;
+      return checkedResult;
     }
     case "RecipeDetails": {
-      return validRecipe(block, context);
+      const checkedResult: boolean = validRecipe(block, context);
+      return checkedResult;
     }
     default: {
-      return block satisfies never;
+      const checkedResult: boolean = block satisfies never;
+      return checkedResult;
     }
   }
 };
@@ -381,84 +430,96 @@ export const prepareConversationBlocks = (input: {
     | undefined;
   readonly scope: ConversationScope;
   readonly turnId: typeof ConversationTurnId.Type;
-}): readonly ConversationBlock[] => {
+}) => {
   const { context, scope } = input;
   if (
     (scope._tag === "AccountPrivateSetup" &&
       (context.family !== null || context.people.length > 0)) ||
     (scope._tag === "FamilyShared" && context.family?.id !== scope.familyId)
   ) {
-    return invalid();
+    const checkedResult: readonly ConversationBlock[] = invalid();
+    return checkedResult;
   }
-  return input.blocks.map((candidate) => {
-    const block = Schema.decodeUnknownSync(ConversationModelBlock, {
-      onExcessProperty: "error",
-    })(candidate);
-    if (!validBlock(block, input)) {
-      return invalid();
-    }
-    const id = Schema.decodeUnknownSync(ConversationBlockId)(
-      crypto.randomUUID()
-    );
-    const common = {
-      id,
-      revision: 1,
-      status: "proposed" as const,
-      turnId: input.turnId,
-    };
-    if (block._tag === "PersonFactProposal") {
-      const before = reviewedBefore(block, context);
-      return Schema.decodeUnknownSync(ConversationBlock)({
-        ...block,
-        ...common,
-        requiresSafetyConfirmation:
-          (block.change._tag === "Replace" || block.change._tag === "Remove") &&
-          before !== null &&
-          before._tag !== "FoodPreference",
-        reviewedBefore: before,
-      });
-    }
-    if (block._tag === "PlanningContentProposal") {
-      return Schema.decodeUnknownSync(ConversationBlock)({
-        ...block,
-        ...common,
-        command: materializePlanningSetup(block.command),
-      });
-    }
-    if (block._tag === "PlanScheduleProposal") {
-      return Schema.decodeUnknownSync(ConversationBlock)({
-        _tag: "PlanChangeProposal",
-        ...common,
-        change: materializePlanSchedule({
-          context,
-          newId: () => crypto.randomUUID(),
-          proposal: block,
-        }),
-        expectedRevision: block.expectedRevision,
-        explanation: block.explanation,
-        planId: block.planId,
-      });
-    }
-    if (block._tag === "RosterProposal") {
-      const available = new Map<string, string[]>();
-      for (const person of input.previousRoster?.people ?? []) {
-        const key = `${person.kind}:${person.displayName.toLocaleLowerCase()}`;
-        const ids = available.get(key) ?? [];
-        ids.push(person.draftId);
-        available.set(key, ids);
+  {
+    const checkedResult: readonly ConversationBlock[] = input.blocks.map(
+      (candidate) => {
+        const block = Schema.decodeUnknownSync(ConversationModelBlock, {
+          onExcessProperty: "error",
+        })(candidate);
+        if (!validBlock(block, input)) {
+          return invalid();
+        }
+        const id = Schema.decodeUnknownSync(ConversationBlockId)(
+          crypto.randomUUID()
+        );
+        const common = {
+          id,
+          revision: 1,
+          status: "proposed" as const,
+          turnId: input.turnId,
+        };
+        if (block._tag === "PersonFactProposal") {
+          const before = reviewedBefore(block, context);
+          return Schema.decodeUnknownSync(ConversationBlock)({
+            ...block,
+            ...common,
+            requiresSafetyConfirmation:
+              (block.change._tag === "Replace" ||
+                block.change._tag === "Remove") &&
+              before !== null &&
+              before._tag !== "FoodPreference",
+            reviewedBefore: before,
+          });
+        }
+        if (block._tag === "PlanningContentProposal") {
+          return Schema.decodeUnknownSync(ConversationBlock)({
+            ...block,
+            ...common,
+            command: materializePlanningSetup(block.command),
+          });
+        }
+        if (block._tag === "PlanScheduleProposal") {
+          return Schema.decodeUnknownSync(ConversationBlock)({
+            _tag: "PlanChangeProposal",
+            ...common,
+            change: materializePlanSchedule({
+              context,
+              newId: () => crypto.randomUUID(),
+              proposal: block,
+            }),
+            expectedRevision: block.expectedRevision,
+            explanation: block.explanation,
+            planId: block.planId,
+          });
+        }
+        if (block._tag === "RosterProposal") {
+          const available = new Map<string, string[]>();
+          for (const person of input.previousRoster?.people ?? []) {
+            const key = `${person.kind}:${person.displayName.toLocaleLowerCase()}`;
+            const ids = available.get(key) ?? [];
+            ids.push(person.draftId);
+            available.set(key, ids);
+          }
+          return Schema.decodeUnknownSync(ConversationBlock)({
+            ...block,
+            ...common,
+            people: block.people.map((person) => ({
+              ...person,
+              draftId:
+                available
+                  .get(
+                    `${person.kind}:${person.displayName.toLocaleLowerCase()}`
+                  )
+                  ?.shift() ?? crypto.randomUUID(),
+            })),
+          });
+        }
+        return Schema.decodeUnknownSync(ConversationBlock)({
+          ...block,
+          ...common,
+        });
       }
-      return Schema.decodeUnknownSync(ConversationBlock)({
-        ...block,
-        ...common,
-        people: block.people.map((person) => ({
-          ...person,
-          draftId:
-            available
-              .get(`${person.kind}:${person.displayName.toLocaleLowerCase()}`)
-              ?.shift() ?? crypto.randomUUID(),
-        })),
-      });
-    }
-    return Schema.decodeUnknownSync(ConversationBlock)({ ...block, ...common });
-  });
+    );
+    return checkedResult;
+  }
 };

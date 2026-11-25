@@ -80,14 +80,17 @@ const fixture = () =>
     const frames = yield* Effect.forEach([3, 5, 7], (size, frameIndex) => {
       const bytes = new Uint8Array(size).fill(frameIndex + 1);
       return sha256Bytes(bytes).pipe(
-        Effect.map((sha256): VisualFrameArtifact => ({
-          bytes,
-          height: 640,
-          mimeType: "image/jpeg",
-          sha256,
-          timestampMilliseconds: (frameIndex + 1) * 100,
-          width: 360,
-        }))
+        Effect.map((sha256) => {
+          const checkedResult: VisualFrameArtifact = {
+            bytes,
+            height: 640,
+            mimeType: "image/jpeg",
+            sha256,
+            timestampMilliseconds: (frameIndex + 1) * 100,
+            width: 360,
+          };
+          return checkedResult;
+        })
       );
     });
     const manifest: VisualEvidenceManifest = {
@@ -121,7 +124,6 @@ const fixture = () =>
     return { ...memoryBucket(), frames, manifest };
   });
 
-// Seed persisted bytes independently of the writer, with real content digests.
 const seedDocument = (
   bucket: AcquisitionBucketLike,
   manifest: VisualEvidenceManifest,

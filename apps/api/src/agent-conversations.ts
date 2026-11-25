@@ -155,14 +155,18 @@ const invalid = () =>
     status: 400,
   });
 
-const sha256 = async (value: string): Promise<string> => {
+const sha256 = async (value: string) => {
   const digest = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(value)
   );
-  return Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
+  {
+    const checkedResult: Awaited<Promise<string>> | Promise<string> =
+      Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, "0")
+      ).join("");
+    return checkedResult;
+  }
 };
 const SessionProblem = Schema.Struct({
   reason: Schema.Literals([
@@ -489,49 +493,72 @@ export const makeAgentConversationHost = (
   const profileCommandFor = (
     block: Extract<ConversationBlock, { readonly _tag: "PersonFactProposal" }>,
     safetyConfirmation: "I confirm this safety constraint change" | null
-  ): Effect.Effect<
-    ProfileCommand,
-    ReturnType<typeof forbidden> | ReturnType<typeof invalid>
-  > => {
+  ) => {
     if (
       block.requiresSafetyConfirmation &&
       safetyConfirmation !== "I confirm this safety constraint change"
     ) {
-      return Effect.fail(forbidden());
+      const checkedResult: Effect.Effect<
+        ProfileCommand,
+        ReturnType<typeof forbidden> | ReturnType<typeof invalid>
+      > = Effect.fail(forbidden());
+      return checkedResult;
     }
     const { change } = block;
     switch (change._tag) {
       case "Add": {
-        return Effect.succeed({
+        const checkedResult: Effect.Effect<
+          ProfileCommand,
+          ReturnType<typeof forbidden> | ReturnType<typeof invalid>
+        > = Effect.succeed({
           _tag: "AddProfileFact",
           fact: change.fact,
         });
+        return checkedResult;
       }
       case "Confirm": {
-        return Effect.succeed({
+        const checkedResult: Effect.Effect<
+          ProfileCommand,
+          ReturnType<typeof forbidden> | ReturnType<typeof invalid>
+        > = Effect.succeed({
           _tag: "ConfirmProfileFact",
           factId: change.factId,
         });
+        return checkedResult;
       }
       case "Replace": {
         if (block.requiresSafetyConfirmation) {
-          return Effect.succeed({
+          const checkedResult: Effect.Effect<
+            ProfileCommand,
+            ReturnType<typeof forbidden> | ReturnType<typeof invalid>
+          > = Effect.succeed({
             _tag: "ConfirmHardConstraintReduction",
             confirmation: "I confirm this safety constraint change",
             factId: change.factId,
             replacement: change.fact,
           });
+          return checkedResult;
         }
-        return change.fact._tag === "FoodPreference"
-          ? Effect.succeed({
-              _tag: "ReplaceOrdinaryProfileFact",
-              fact: change.fact,
-              factId: change.factId,
-            })
-          : Effect.fail(invalid());
+        {
+          const checkedResult: Effect.Effect<
+            ProfileCommand,
+            ReturnType<typeof forbidden> | ReturnType<typeof invalid>
+          > =
+            change.fact._tag === "FoodPreference"
+              ? Effect.succeed({
+                  _tag: "ReplaceOrdinaryProfileFact",
+                  fact: change.fact,
+                  factId: change.factId,
+                })
+              : Effect.fail(invalid());
+          return checkedResult;
+        }
       }
       case "Remove": {
-        return block.requiresSafetyConfirmation
+        const checkedResult: Effect.Effect<
+          ProfileCommand,
+          ReturnType<typeof forbidden> | ReturnType<typeof invalid>
+        > = block.requiresSafetyConfirmation
           ? Effect.succeed({
               _tag: "ConfirmHardConstraintReduction",
               confirmation: "I confirm this safety constraint change",
@@ -542,9 +569,14 @@ export const makeAgentConversationHost = (
               _tag: "RemoveOrdinaryProfileFact",
               factId: change.factId,
             });
+        return checkedResult;
       }
       default: {
-        return Effect.fail(invalid());
+        const checkedResult: Effect.Effect<
+          ProfileCommand,
+          ReturnType<typeof forbidden> | ReturnType<typeof invalid>
+        > = Effect.fail(invalid());
+        return checkedResult;
       }
     }
   };
@@ -581,8 +613,7 @@ export const makeAgentConversationHost = (
         .getProfile({ personId: target.id, principal })
         .pipe(Effect.mapError(unavailable));
       const { change } = block;
-      // The canonical receipt wins on retry after a successful write. Only compare
-      // the reviewed fact while the profile still has the proposed version.
+
       if (profile.version === block.profileVersion && change._tag !== "Add") {
         const currentFact = profile.facts.find(
           (fact) => fact.id === change.factId

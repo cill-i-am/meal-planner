@@ -11,8 +11,11 @@ import type { RetryableAcquisitionFailure } from "./import-media.model.js";
 
 const retryableUploadFailure = (
   reason: NonNullable<RetryableAcquisitionFailure["reason"]>
-): RetryableAcquisitionFailure =>
-  new RetryableAcquisitionError({ reason, stage: "store" });
+) => {
+  const checkedResult: RetryableAcquisitionFailure =
+    new RetryableAcquisitionError({ reason, stage: "store" });
+  return checkedResult;
+};
 
 /** Stream one private artifact through the application-owned R2 port. */
 export const putPrivateArtifact = Effect.fn("ImportMedia.putPrivateArtifact")(

@@ -212,7 +212,7 @@ export const makeEnergyProfileClient = (read: ProviderRead) => {
   return {
     energyProfile,
     profileTemplates: templates,
-    // The dedicated legacy priority endpoint returned an empty object. The app's current profile contains the authoritative list.
+
     solarPriority: (id: StationId, token: Redacted.Redacted<string>) =>
       energyProfile({ stationId: id, target: { kind: "current" } }, token).pipe(
         Effect.map((profile) => ({

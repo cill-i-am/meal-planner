@@ -96,7 +96,7 @@ export const makeProductConversationsHttpLayer = (options: {
           ? output.beginDirectoryRequest(participant)
           : output.beginRequest({ ...participant, sessionReference })
       );
-      // Register both lifecycle fences before the final canonical membership read.
+
       const current = yield* resolve();
       const { expiresAt } = current;
       const binding = {

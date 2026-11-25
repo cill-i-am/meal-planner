@@ -12,11 +12,11 @@ import { Miniflare } from "miniflare";
 import { describe, expect, it } from "vitest";
 
 import { workerObservability } from "../../infrastructure/worker-observability.js";
-import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import { bundleWorkerFixture } from "../../test/native-worker.fixture.js";
 
 const run = promisify(execFile);
 const enabled = process.env["MEAL_PLANNER_RUN_CONTAINER_TESTS"] === "1";
-// The native Docker engine requires its configured networking image to exist locally.
+
 const containerEgressInterceptorImage =
   "cloudflare/proxy-everything:3cb1195@sha256:0ef6716c52430096900b150d84a3302057d6cd2319dae7987128c85d0733e3c8";
 const docker = async (...args: string[]) => {

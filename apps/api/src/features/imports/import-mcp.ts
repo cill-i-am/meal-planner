@@ -58,56 +58,81 @@ export type ImportPreparationProjection =
 const projectPreparationEvent = (
   intentId: RecipeImportIntentId,
   event: RecipeImportTimelineEvent
-): Exclude<
-  ImportPreparationProjection,
-  { readonly _tag: "Working" | "Unavailable" }
-> | null => {
+) => {
   const completedAt = event.at;
   switch (event.type) {
     case "action_available": {
-      return {
+      const checkedResult: Exclude<
+        ImportPreparationProjection,
+        { readonly _tag: "Working" | "Unavailable" }
+      > | null = {
         _tag: "Completed",
         completedAt,
         isError: false,
         result: { action: event.action, intentId, type: "draft_ready" },
       };
+      return checkedResult;
     }
     case "intent_succeeded": {
-      return {
+      const checkedResult: Exclude<
+        ImportPreparationProjection,
+        { readonly _tag: "Working" | "Unavailable" }
+      > | null = {
         _tag: "Completed",
         completedAt,
         isError: false,
         result: { intentId, recipeId: event.recipeId, type: "published" },
       };
+      return checkedResult;
     }
     case "intent_failed": {
-      return {
+      const checkedResult: Exclude<
+        ImportPreparationProjection,
+        { readonly _tag: "Working" | "Unavailable" }
+      > | null = {
         _tag: "Completed",
         completedAt,
         isError: true,
         result: { code: event.code, intentId, type: "failed" },
       };
+      return checkedResult;
     }
     case "intent_redirected": {
-      return {
+      const checkedResult: Exclude<
+        ImportPreparationProjection,
+        { readonly _tag: "Working" | "Unavailable" }
+      > | null = {
         _tag: "Completed",
         completedAt,
         isError: false,
         result: { intentId, redirect: event.redirect, type: "redirected" },
       };
+      return checkedResult;
     }
     case "intent_cancelled": {
-      return { _tag: "Cancelled", completedAt, intentId };
+      const checkedResult: Exclude<
+        ImportPreparationProjection,
+        { readonly _tag: "Working" | "Unavailable" }
+      > | null = { _tag: "Cancelled", completedAt, intentId };
+      return checkedResult;
     }
     case "intent_admitted":
     case "source_resolved":
     case "processing_stage_changed":
     case "retrying":
     case "recovered": {
-      return null;
+      const checkedResult: Exclude<
+        ImportPreparationProjection,
+        { readonly _tag: "Working" | "Unavailable" }
+      > | null = null;
+      return checkedResult;
     }
     default: {
-      return event satisfies never;
+      const checkedResult: Exclude<
+        ImportPreparationProjection,
+        { readonly _tag: "Working" | "Unavailable" }
+      > | null = event satisfies never;
+      return checkedResult;
     }
   }
 };
@@ -123,26 +148,39 @@ const projectPreparationEvent = (
 export const projectImportPreparation = (
   intent: RecipeImportIntent,
   timeline: RecipeImportTimeline
-): ImportPreparationProjection => {
+) => {
   if (timeline.data.length === 0) {
-    return { _tag: "Unavailable", reason: "missing_history" };
+    const checkedResult: ImportPreparationProjection = {
+      _tag: "Unavailable",
+      reason: "missing_history",
+    };
+    return checkedResult;
   }
   if (
     timeline.data[0]?.type !== "intent_admitted" ||
     timeline.data.some((event, index) => event.intentVersion !== index + 1) ||
     timeline.data.length < intent.intentVersion
   ) {
-    return { _tag: "Unavailable", reason: "inconsistent_history" };
+    const checkedResult: ImportPreparationProjection = {
+      _tag: "Unavailable",
+      reason: "inconsistent_history",
+    };
+    return checkedResult;
   }
   for (const event of timeline.data) {
     const terminal = projectPreparationEvent(intent.id, event);
     if (terminal !== null) {
-      return terminal;
+      const checkedResult: ImportPreparationProjection = terminal;
+      return checkedResult;
     }
   }
-  return intent.status === "processing"
-    ? { _tag: "Working", intent }
-    : { _tag: "Unavailable", reason: "missing_history" };
+  {
+    const checkedResult: ImportPreparationProjection =
+      intent.status === "processing"
+        ? { _tag: "Working", intent }
+        : { _tag: "Unavailable", reason: "missing_history" };
+    return checkedResult;
+  }
 };
 
 const unavailableMessages = {
@@ -188,27 +226,37 @@ const maximumPreviewBytes = 64 * 1024;
 export const prepareRecipeReview = (
   action: RecipeImportAction,
   expectedVersion: RecipeImportActionVersion
-): PreparedRecipeReview => {
+) => {
   if (action.status !== "active") {
-    return unavailableReview("inactive");
+    const checkedResult: PreparedRecipeReview = unavailableReview("inactive");
+    return checkedResult;
   }
   if (action.actionVersion !== expectedVersion) {
-    return unavailableReview("version_conflict");
+    const checkedResult: PreparedRecipeReview =
+      unavailableReview("version_conflict");
+    return checkedResult;
   }
   const { recipe, tags } = action.review;
   if (tags === null || !isPublishableRecipe(recipe)) {
-    return unavailableReview("unpublishable");
+    const checkedResult: PreparedRecipeReview =
+      unavailableReview("unpublishable");
+    return checkedResult;
   }
 
   const message = `Publish this recipe to the household recipe bank? This saves the complete recipe and planning tags shown below. Declining or cancelling leaves the draft unchanged.\n\n${JSON.stringify({ recipe, tags }, null, 2)}`;
   if (new TextEncoder().encode(message).byteLength > maximumPreviewBytes) {
-    return unavailableReview("preview_too_large");
+    const checkedResult: PreparedRecipeReview =
+      unavailableReview("preview_too_large");
+    return checkedResult;
   }
-  return {
-    _tag: "Ready",
-    actionId: action.id,
-    actionVersion: action.actionVersion,
-    intentId: action.intentId,
-    message,
-  };
+  {
+    const checkedResult: PreparedRecipeReview = {
+      _tag: "Ready",
+      actionId: action.id,
+      actionVersion: action.actionVersion,
+      intentId: action.intentId,
+      message,
+    };
+    return checkedResult;
+  }
 };

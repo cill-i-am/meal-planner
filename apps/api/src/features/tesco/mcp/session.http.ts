@@ -12,8 +12,7 @@ export const TescoSessionHttpLive = Layer.unwrap(
         return response;
       }
       const headers = new Headers(response.headers);
-      // The session jar's RFC-aware parser splits this without losing Expires commas,
-      // repeated names, paths, domains, deletion fields or encoded values.
+
       headers.set("set-cookie", cookies.join(", "));
       return new Response(response.body, {
         headers,

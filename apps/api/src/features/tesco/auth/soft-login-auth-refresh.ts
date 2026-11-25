@@ -47,8 +47,11 @@ export const makeTescoSoftLoginAuthRefreshLive = (
           const requestSoftLoginHtml = (
             url: URL,
             remainingRedirects: number
-          ): Effect.Effect<string, TescoSoftLoginRefreshError> =>
-            Effect.gen(function* () {
+          ) => {
+            const checkedResult: Effect.Effect<
+              string,
+              TescoSoftLoginRefreshError
+            > = Effect.gen(function* () {
               const response = yield* refreshClient
                 .get(url, {
                   headers: {
@@ -93,6 +96,8 @@ export const makeTescoSoftLoginAuthRefreshLive = (
                 Effect.mapError(() => new TescoSoftLoginResponseInvalid())
               );
             });
+            return checkedResult;
+          };
 
           const refreshUrl = new URL(config.signInUrl);
           refreshUrl.searchParams.set("from", config.refreshFromUrl.href);

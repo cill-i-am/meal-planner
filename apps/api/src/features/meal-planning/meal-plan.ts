@@ -122,9 +122,13 @@ export interface MealPlanService {
   ) => Effect.Effect<MealPlanApproved, MealPlanServiceError>;
 }
 
-const ruleViolation = (
-  reason: MealPlanRuleViolation["reason"]
-): MealPlanRuleViolation => ({ _tag: "MealPlanRuleViolation", reason });
+const ruleViolation = (reason: MealPlanRuleViolation["reason"]) => {
+  const checkedResult: MealPlanRuleViolation = {
+    _tag: "MealPlanRuleViolation",
+    reason,
+  };
+  return checkedResult;
+};
 const notFound = (planId: MealPlanId) => MealPlanNotFound.make({ planId });
 const versionConflict = (expectedRevision: number, actualRevision: number) =>
   MealPlanVersionConflict.make({ actualRevision, expectedRevision });
@@ -144,8 +148,8 @@ const requirePlan = (repository: MealPlanRepository, planId: MealPlanId) =>
 const mutationFingerprint = (
   action: string,
   command: MealPlanChangeCommand | MealPlanDecisionCommand
-): string =>
-  JSON.stringify({
+) => {
+  const checkedResult: string = JSON.stringify({
     action,
     actorId: command.actorId,
     change: "change" in command ? command.change : null,
@@ -154,6 +158,8 @@ const mutationFingerprint = (
     planId: command.planId,
     reason: command.reason,
   });
+  return checkedResult;
+};
 
 const changeAuditAction: Record<
   MealPlanChange["_tag"],
@@ -171,22 +177,23 @@ const audit = (
   command: MealPlanChangeCommand | MealPlanDecisionCommand,
   action: MealPlanAudit["action"],
   changedRequirements: MealPlanAudit["changedRequirements"] = []
-): MealPlanAudit => ({
-  action,
-  actorId: command.actorId,
-  at: command.at,
-  changedRequirements,
-  mutationId: command.mutationId,
-  reason: command.reason,
-});
+) => {
+  const checkedResult: MealPlanAudit = {
+    action,
+    actorId: command.actorId,
+    at: command.at,
+    changedRequirements,
+    mutationId: command.mutationId,
+    reason: command.reason,
+  };
+  return checkedResult;
+};
 
 const isRuleViolation = (
   result: ReturnType<typeof changePlanVersion>
 ): result is MealPlanRuleViolation => "_tag" in result;
 
-export const makeMealPlanService = (
-  repository: MealPlanRepository
-): MealPlanService => {
+export const makeMealPlanService = (repository: MealPlanRepository) => {
   const mutate = (
     action: string,
     command: MealPlanChangeCommand | MealPlanDecisionCommand,
@@ -222,192 +229,195 @@ export const makeMealPlanService = (
       });
     });
 
-  return {
-    acceptRevision: (command, authority) =>
-      mutate("accept_revision", command, (current) => {
-        if (current._tag !== "ProposedRevision") {
-          return Effect.fail(transitionRejected(current._tag));
-        }
-        const issue = validatePlanVersion(
-          current.proposed,
-          current.request,
-          authority,
-          true
-        );
-        if (issue !== null) {
-          return Effect.fail(issue);
-        }
-        return Effect.succeed({
-          _tag: "Approved" as const,
-          active: current.proposed,
-          audit: [...current.audit, audit(command, "accept_revision")],
-          planId: current.planId,
-          request: current.request,
-          revision: current.revision + 1,
-        });
-      }).pipe(
-        Effect.flatMap((plan) =>
-          plan._tag === "Approved"
-            ? Effect.succeed(plan)
-            : Effect.die("Revision replay has the wrong lifecycle")
-        )
-      ),
-    approve: (command, authority) =>
-      mutate("approve", command, (current) => {
-        if (current._tag !== "Draft") {
-          return Effect.fail(transitionRejected(current._tag));
-        }
-        const issue = validatePlanVersion(
-          current.proposed,
-          current.request,
-          authority,
-          true
-        );
-        if (issue !== null) {
-          return Effect.fail(issue);
-        }
-        return Effect.succeed({
-          _tag: "Approved" as const,
-          active: current.proposed,
-          audit: [...current.audit, audit(command, "approve")],
-          planId: current.planId,
-          request: current.request,
-          revision: current.revision + 1,
-        });
-      }).pipe(
-        Effect.flatMap((plan) =>
-          plan._tag === "Approved"
-            ? Effect.succeed(plan)
-            : Effect.die("Approval replay has the wrong lifecycle")
-        )
-      ),
-    change: (command, authority) =>
-      mutate("change", command, (current) => {
-        if (current._tag === "Approved") {
-          return Effect.fail(transitionRejected(current._tag));
-        }
-        const working = current.proposed;
-        if (command.change._tag !== "RefreshInputs") {
-          const currentIssue = validatePlanVersion(
-            working,
+  {
+    const checkedResult: MealPlanService = {
+      acceptRevision: (command, authority) =>
+        mutate("accept_revision", command, (current) => {
+          if (current._tag !== "ProposedRevision") {
+            return Effect.fail(transitionRejected(current._tag));
+          }
+          const issue = validatePlanVersion(
+            current.proposed,
             current.request,
             authority,
-            false
+            true
           );
-          if (currentIssue !== null) {
-            return Effect.fail(currentIssue);
+          if (issue !== null) {
+            return Effect.fail(issue);
           }
-        }
-        const changed =
-          command.change._tag === "RefreshInputs"
-            ? rebasePlanVersion(working, current.request, authority)
-            : changePlanVersion(
-                working,
-                command.change,
-                current.request,
-                authority
-              );
-        if (isRuleViolation(changed)) {
-          return Effect.fail(changed);
-        }
-        const next: MealPlan = {
-          ...current,
-          audit: [
-            ...current.audit,
-            audit(
-              command,
-              changeAuditAction[command.change._tag],
-              changed.changed
-            ),
-          ],
-          proposed: changed.version,
-          revision: current.revision + 1,
-        };
-        return Effect.succeed(next);
-      }),
-    create: (request, authority, initialCoverage = []) => {
-      const planId = Schema.decodeUnknownSync(MealPlanId)(request.requestKey);
-      const expected = new Set(
-        requiredCoverage(request, authority).map(requirementIdentity)
-      );
-      const supplied = initialCoverage.map(({ requirement }) =>
-        requirementIdentity(requirement)
-      );
-      if (expected.size === 0) {
-        return Effect.fail(ruleViolation("config_missing"));
-      }
-      if (
-        supplied.length !== new Set(supplied).size ||
-        supplied.some((key) => !expected.has(key))
-      ) {
-        return Effect.fail(ruleViolation("invalid_requirement_matrix"));
-      }
-      const proposed = makeInitialPlanVersion(
-        request,
-        authority,
-        initialCoverage
-      );
-      const issue = validatePlanVersion(proposed, request, authority, false);
-      if (issue !== null) {
-        return Effect.fail(issue);
-      }
-      const draft: MealPlanDraft = {
-        _tag: "Draft",
-        audit: [],
-        planId,
-        proposed,
-        request,
-        revision: 0,
-      };
-      return repository.create({
-        draft,
-        requestFingerprint: JSON.stringify(request),
-      });
-    },
-    listRecent: repository.listRecent,
-    proposeRevision: (command, authority) =>
-      mutate("propose_revision", command, (current) => {
-        if (current._tag !== "Approved") {
-          return Effect.fail(transitionRejected(current._tag));
-        }
-        const rebased = rebasePlanVersion(
-          current.active,
-          current.request,
-          authority
+          return Effect.succeed({
+            _tag: "Approved" as const,
+            active: current.proposed,
+            audit: [...current.audit, audit(command, "accept_revision")],
+            planId: current.planId,
+            request: current.request,
+            revision: current.revision + 1,
+          });
+        }).pipe(
+          Effect.flatMap((plan) =>
+            plan._tag === "Approved"
+              ? Effect.succeed(plan)
+              : Effect.die("Revision replay has the wrong lifecycle")
+          )
+        ),
+      approve: (command, authority) =>
+        mutate("approve", command, (current) => {
+          if (current._tag !== "Draft") {
+            return Effect.fail(transitionRejected(current._tag));
+          }
+          const issue = validatePlanVersion(
+            current.proposed,
+            current.request,
+            authority,
+            true
+          );
+          if (issue !== null) {
+            return Effect.fail(issue);
+          }
+          return Effect.succeed({
+            _tag: "Approved" as const,
+            active: current.proposed,
+            audit: [...current.audit, audit(command, "approve")],
+            planId: current.planId,
+            request: current.request,
+            revision: current.revision + 1,
+          });
+        }).pipe(
+          Effect.flatMap((plan) =>
+            plan._tag === "Approved"
+              ? Effect.succeed(plan)
+              : Effect.die("Approval replay has the wrong lifecycle")
+          )
+        ),
+      change: (command, authority) =>
+        mutate("change", command, (current) => {
+          if (current._tag === "Approved") {
+            return Effect.fail(transitionRejected(current._tag));
+          }
+          const working = current.proposed;
+          if (command.change._tag !== "RefreshInputs") {
+            const currentIssue = validatePlanVersion(
+              working,
+              current.request,
+              authority,
+              false
+            );
+            if (currentIssue !== null) {
+              return Effect.fail(currentIssue);
+            }
+          }
+          const changed =
+            command.change._tag === "RefreshInputs"
+              ? rebasePlanVersion(working, current.request, authority)
+              : changePlanVersion(
+                  working,
+                  command.change,
+                  current.request,
+                  authority
+                );
+          if (isRuleViolation(changed)) {
+            return Effect.fail(changed);
+          }
+          const next: MealPlan = {
+            ...current,
+            audit: [
+              ...current.audit,
+              audit(
+                command,
+                changeAuditAction[command.change._tag],
+                changed.changed
+              ),
+            ],
+            proposed: changed.version,
+            revision: current.revision + 1,
+          };
+          return Effect.succeed(next);
+        }),
+      create: (request, authority, initialCoverage = []) => {
+        const planId = Schema.decodeUnknownSync(MealPlanId)(request.requestKey);
+        const expected = new Set(
+          requiredCoverage(request, authority).map(requirementIdentity)
         );
-        return Effect.succeed({
-          _tag: "ProposedRevision" as const,
-          active: current.active,
-          audit: [
-            ...current.audit,
-            audit(command, "propose_revision", rebased.changed),
-          ],
-          planId: current.planId,
-          proposed: { ...rebased.version, number: current.active.number + 1 },
-          request: current.request,
-          revision: current.revision + 1,
-        });
-      }),
-    read: repository.find,
-    rejectRevision: (command) =>
-      mutate("reject_revision", command, (current) => {
-        if (current._tag !== "ProposedRevision") {
-          return Effect.fail(transitionRejected(current._tag));
+        const supplied = initialCoverage.map(({ requirement }) =>
+          requirementIdentity(requirement)
+        );
+        if (expected.size === 0) {
+          return Effect.fail(ruleViolation("config_missing"));
         }
-        return Effect.succeed({
-          _tag: "Approved" as const,
-          active: current.active,
-          audit: [...current.audit, audit(command, "reject_revision")],
-          planId: current.planId,
-          request: current.request,
-          revision: current.revision + 1,
+        if (
+          supplied.length !== new Set(supplied).size ||
+          supplied.some((key) => !expected.has(key))
+        ) {
+          return Effect.fail(ruleViolation("invalid_requirement_matrix"));
+        }
+        const proposed = makeInitialPlanVersion(
+          request,
+          authority,
+          initialCoverage
+        );
+        const issue = validatePlanVersion(proposed, request, authority, false);
+        if (issue !== null) {
+          return Effect.fail(issue);
+        }
+        const draft: MealPlanDraft = {
+          _tag: "Draft",
+          audit: [],
+          planId,
+          proposed,
+          request,
+          revision: 0,
+        };
+        return repository.create({
+          draft,
+          requestFingerprint: JSON.stringify(request),
         });
-      }).pipe(
-        Effect.flatMap((plan) =>
-          plan._tag === "Approved"
-            ? Effect.succeed(plan)
-            : Effect.die("Rejection replay has the wrong lifecycle")
-        )
-      ),
-  };
+      },
+      listRecent: repository.listRecent,
+      proposeRevision: (command, authority) =>
+        mutate("propose_revision", command, (current) => {
+          if (current._tag !== "Approved") {
+            return Effect.fail(transitionRejected(current._tag));
+          }
+          const rebased = rebasePlanVersion(
+            current.active,
+            current.request,
+            authority
+          );
+          return Effect.succeed({
+            _tag: "ProposedRevision" as const,
+            active: current.active,
+            audit: [
+              ...current.audit,
+              audit(command, "propose_revision", rebased.changed),
+            ],
+            planId: current.planId,
+            proposed: { ...rebased.version, number: current.active.number + 1 },
+            request: current.request,
+            revision: current.revision + 1,
+          });
+        }),
+      read: repository.find,
+      rejectRevision: (command) =>
+        mutate("reject_revision", command, (current) => {
+          if (current._tag !== "ProposedRevision") {
+            return Effect.fail(transitionRejected(current._tag));
+          }
+          return Effect.succeed({
+            _tag: "Approved" as const,
+            active: current.active,
+            audit: [...current.audit, audit(command, "reject_revision")],
+            planId: current.planId,
+            request: current.request,
+            revision: current.revision + 1,
+          });
+        }).pipe(
+          Effect.flatMap((plan) =>
+            plan._tag === "Approved"
+              ? Effect.succeed(plan)
+              : Effect.die("Rejection replay has the wrong lifecycle")
+          )
+        ),
+    };
+    return checkedResult;
+  }
 };

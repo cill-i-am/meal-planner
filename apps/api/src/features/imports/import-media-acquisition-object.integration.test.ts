@@ -72,13 +72,16 @@ mediaBytes.set([
   0, 0, 0, 0, 0, 0,
 ]);
 
-const response = (statusCode = 200): SecureMediaDownloadResponse => ({
-  body: Readable.from([mediaBytes]),
-  contentLength: mediaBytes.byteLength,
-  destroy: () => null,
-  location: undefined,
-  statusCode,
-});
+const response = (statusCode = 200) => {
+  const checkedResult: SecureMediaDownloadResponse = {
+    body: Readable.from([mediaBytes]),
+    contentLength: mediaBytes.byteLength,
+    destroy: () => null,
+    location: undefined,
+    statusCode,
+  };
+  return checkedResult;
+};
 
 const videoMetadata = () => ({
   description: "Synthetic recipe boundary",
@@ -107,65 +110,68 @@ const makeProcessRunner = (
     readonly value: string;
   },
   sessionDomain = ".tiktokcdn.com"
-): MediaProcessRunner => ({
-  run: (command, args) =>
-    Effect.promise(async () => {
-      if (command === "yt-dlp") {
-        const cookiesIndex = args.indexOf("--cookies");
-        const sessionPath = args[cookiesIndex + 1];
-        if (sessionPath === undefined) {
-          throw new Error("Expected an ephemeral session file");
+) => {
+  const checkedResult: MediaProcessRunner = {
+    run: (command, args) =>
+      Effect.promise(async () => {
+        if (command === "yt-dlp") {
+          const cookiesIndex = args.indexOf("--cookies");
+          const sessionPath = args[cookiesIndex + 1];
+          if (sessionPath === undefined) {
+            throw new Error("Expected an ephemeral session file");
+          }
+          const sessionStats = await stat(sessionPath);
+          if (sessionAudit !== undefined) {
+            sessionAudit.mode = sessionStats.mode % 0o1000;
+            const processUserId = process.getuid?.();
+            sessionAudit.ownedByProcess =
+              processUserId === undefined || sessionStats.uid === processUserId;
+            sessionAudit.path = sessionPath;
+          }
+          await appendFile(
+            sessionPath,
+            `${sessionDomain}\tTRUE\t/\tTRUE\t4102444800\tsynthetic_session\t${sessionAudit?.value ?? randomUUID()}\n`
+          );
+          return {
+            stderrBytes: 0,
+            stdout: new TextEncoder().encode(JSON.stringify(metadata())),
+          };
         }
-        const sessionStats = await stat(sessionPath);
-        if (sessionAudit !== undefined) {
-          sessionAudit.mode = sessionStats.mode % 0o1000;
-          const processUserId = process.getuid?.();
-          sessionAudit.ownedByProcess =
-            processUserId === undefined || sessionStats.uid === processUserId;
-          sessionAudit.path = sessionPath;
+        if (command === "ffmpeg") {
+          await writeFile(String(args.at(-1)), mediaBytes);
+          return { stderrBytes: 0, stdout: new Uint8Array() };
         }
-        await appendFile(
-          sessionPath,
-          `${sessionDomain}\tTRUE\t/\tTRUE\t4102444800\tsynthetic_session\t${sessionAudit?.value ?? randomUUID()}\n`
-        );
-        return {
-          stderrBytes: 0,
-          stdout: new TextEncoder().encode(JSON.stringify(metadata())),
-        };
-      }
-      if (command === "ffmpeg") {
-        await writeFile(String(args.at(-1)), mediaBytes);
-        return { stderrBytes: 0, stdout: new Uint8Array() };
-      }
-      if (command === "ffprobe") {
-        if (args.includes("stream=width,height")) {
+        if (command === "ffprobe") {
+          if (args.includes("stream=width,height")) {
+            return {
+              stderrBytes: 0,
+              stdout: new TextEncoder().encode(
+                JSON.stringify({ streams: [{ height: 720, width: 1280 }] })
+              ),
+            };
+          }
           return {
             stderrBytes: 0,
             stdout: new TextEncoder().encode(
-              JSON.stringify({ streams: [{ height: 720, width: 1280 }] })
+              JSON.stringify({
+                format: {
+                  duration: "12",
+                  format_name: "mp4",
+                  size: String(mediaBytes.byteLength),
+                },
+                streams: [
+                  { codec_name: "h264", codec_type: "video", index: 0 },
+                  { codec_name: "aac", codec_type: "audio", index: 1 },
+                ],
+              })
             ),
           };
         }
-        return {
-          stderrBytes: 0,
-          stdout: new TextEncoder().encode(
-            JSON.stringify({
-              format: {
-                duration: "12",
-                format_name: "mp4",
-                size: String(mediaBytes.byteLength),
-              },
-              streams: [
-                { codec_name: "h264", codec_type: "video", index: 0 },
-                { codec_name: "aac", codec_type: "audio", index: 1 },
-              ],
-            })
-          ),
-        };
-      }
-      throw new Error(`Unexpected command ${command}`);
-    }),
-});
+        throw new Error(`Unexpected command ${command}`);
+      }),
+  };
+  return checkedResult;
+};
 
 const makeContainerFetcher = (
   runtime: ReturnType<typeof makeTikTokMediaContainerRuntime>,
@@ -310,29 +316,32 @@ const withInstalledAcquisitionBoundary = async <A>(
   }
 };
 
-const untouchedBucket = (): AcquisitionBucketLike => ({
-  get: () =>
-    Effect.fail(
-      new RetryableAcquisitionError({
-        reason: "container_rpc",
-        stage: "verify",
-      })
-    ),
-  head: () =>
-    Effect.fail(
-      new RetryableAcquisitionError({
-        reason: "container_rpc",
-        stage: "verify",
-      })
-    ),
-  put: () =>
-    Effect.fail(
-      new RetryableAcquisitionError({
-        reason: "container_rpc",
-        stage: "store",
-      })
-    ),
-});
+const untouchedBucket = () => {
+  const checkedResult: AcquisitionBucketLike = {
+    get: () =>
+      Effect.fail(
+        new RetryableAcquisitionError({
+          reason: "container_rpc",
+          stage: "verify",
+        })
+      ),
+    head: () =>
+      Effect.fail(
+        new RetryableAcquisitionError({
+          reason: "container_rpc",
+          stage: "verify",
+        })
+      ),
+    put: () =>
+      Effect.fail(
+        new RetryableAcquisitionError({
+          reason: "container_rpc",
+          stage: "store",
+        })
+      ),
+  };
+  return checkedResult;
+};
 
 const runContainerRequest = (
   runtime: ReturnType<typeof makeTikTokMediaContainerRuntime>,
@@ -1089,7 +1098,7 @@ describe("installed acquisition Durable Object boundary", () => {
       expect(metadataCalls).toBe(4);
       expect(resolveCalls).toBe(3);
     });
-  }, 10_000);
+  });
 
   it("converges repeated installed source denials after fresh acquisition attempts", async () => {
     let allocations = 0;
@@ -1150,5 +1159,5 @@ describe("installed acquisition Durable Object boundary", () => {
       expect(metadataCalls).toBe(3);
       expect(requestCalls).toBe(3);
     });
-  }, 10_000);
+  });
 });

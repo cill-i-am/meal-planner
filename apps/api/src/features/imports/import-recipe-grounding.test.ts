@@ -20,24 +20,28 @@ import {
 } from "./import-recipe-grounding.js";
 import { ImportId } from "./import.contracts.js";
 
-const items = (value: string): readonly RecipeEvidenceItem[] => [
-  {
-    artifactReference: "transcript",
-    evidenceId: "trusted",
-    kind: "transcript",
-    origin: "creator_provided",
-    value,
-  },
-];
-const candidate = (
-  overrides: Partial<RecipeCandidate> = {}
-): RecipeCandidate => ({
-  ...emptyRecipeDetails,
-  ingredients: null,
-  instructions: null,
-  name: null,
-  ...overrides,
-});
+const items = (value: string) => {
+  const checkedResult: readonly RecipeEvidenceItem[] = [
+    {
+      artifactReference: "transcript",
+      evidenceId: "trusted",
+      kind: "transcript",
+      origin: "creator_provided",
+      value,
+    },
+  ];
+  return checkedResult;
+};
+const candidate = (overrides: Partial<RecipeCandidate> = {}) => {
+  const checkedResult: RecipeCandidate = {
+    ...emptyRecipeDetails,
+    ingredients: null,
+    instructions: null,
+    name: null,
+    ...overrides,
+  };
+  return checkedResult;
+};
 
 describe("structured recipe grounding", () => {
   it.each([

@@ -44,44 +44,58 @@ const CapturedGraphQlRequest = Schema.Struct({
   variables: Schema.Record(Schema.String, Schema.Json),
 });
 
-const authorization = (value: string): TescoAuthorization =>
-  Redacted.make(Schema.decodeUnknownSync(TescoAuthorizationValue)(value));
+const authorization = (value: string) => {
+  const checkedResult: TescoAuthorization = Redacted.make(
+    Schema.decodeUnknownSync(TescoAuthorizationValue)(value)
+  );
+  return checkedResult;
+};
 
-const listen = async (server: Server): Promise<string> => {
+const listen = async (server: Server) => {
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const address = server.address();
   if (address === null || Schema.is(Schema.String)(address)) {
     throw new Error("Test server did not expose a TCP address");
   }
-  return `http://${address.address}:${address.port}`;
+  {
+    const checkedResult: Awaited<Promise<string>> | Promise<string> =
+      `http://${address.address}:${address.port}`;
+    return checkedResult;
+  }
 };
 
-const close = async (server: Server): Promise<void> => {
+const close = async (server: Server) => {
   server.close();
   await once(server, "close");
 };
 
-const readRequestBody = (request: IncomingMessage): Promise<string> =>
+const readRequestBody = (request: IncomingMessage) =>
   // eslint-disable-next-line promise/avoid-new -- Node request streams expose callback-only completion events.
-  new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    request.on("data", (chunk: Buffer) => chunks.push(chunk));
-    request.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
-    request.on("error", reject);
-  });
+  {
+    const checkedResult = new Promise<string>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
+      request.on("error", reject);
+    });
+    return checkedResult;
+  };
 
-const makeConfig = (mangoUrl: URL): TescoCatalogueConfig => ({
-  locale: Schema.decodeUnknownSync(TescoLocale)("en-IE"),
-  mangoApiKey: Redacted.make(
-    Schema.decodeUnknownSync(TescoApiKeyValue)(FixtureApiKey)
-  ),
-  mangoUrl,
-  region: Schema.decodeUnknownSync(TescoRegion)("IE"),
-  releaseBranch: null,
-  suggestionUrl: new URL(mangoUrl),
-  transactionPurpose: null,
-});
+const makeConfig = (mangoUrl: URL) => {
+  const checkedResult: TescoCatalogueConfig = {
+    locale: Schema.decodeUnknownSync(TescoLocale)("en-IE"),
+    mangoApiKey: Redacted.make(
+      Schema.decodeUnknownSync(TescoApiKeyValue)(FixtureApiKey)
+    ),
+    mangoUrl,
+    region: Schema.decodeUnknownSync(TescoRegion)("IE"),
+    releaseBranch: null,
+    suggestionUrl: new URL(mangoUrl),
+    transactionPurpose: null,
+  };
+  return checkedResult;
+};
 
 const makeLive = (
   mangoUrl: URL,
@@ -197,7 +211,7 @@ const makeUnitLive = (
   );
 };
 
-const respondJson = (response: ServerResponse, body: Schema.Json): void => {
+const respondJson = (response: ServerResponse, body: Schema.Json) => {
   response.writeHead(200, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
 };

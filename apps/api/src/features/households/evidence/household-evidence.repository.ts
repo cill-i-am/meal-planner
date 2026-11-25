@@ -125,24 +125,52 @@ const validateEvidenceFreshness = (
     ? Effect.void
     : Effect.fail(failure("invalid_input"));
 
-const resultStage = (
-  tag: string
-): "carousel" | "extraction" | "speech" | "visual" | null => {
+const resultStage = (tag: string) => {
   switch (tag) {
     case "Carousel": {
-      return "carousel";
+      const checkedResult:
+        | "carousel"
+        | "extraction"
+        | "speech"
+        | "visual"
+        | null = "carousel";
+      return checkedResult;
     }
     case "Extraction": {
-      return "extraction";
+      const checkedResult:
+        | "carousel"
+        | "extraction"
+        | "speech"
+        | "visual"
+        | null = "extraction";
+      return checkedResult;
     }
     case "Speech": {
-      return "speech";
+      const checkedResult:
+        | "carousel"
+        | "extraction"
+        | "speech"
+        | "visual"
+        | null = "speech";
+      return checkedResult;
     }
     case "Visual": {
-      return "visual";
+      const checkedResult:
+        | "carousel"
+        | "extraction"
+        | "speech"
+        | "visual"
+        | null = "visual";
+      return checkedResult;
     }
     default: {
-      return null;
+      const checkedResult:
+        | "carousel"
+        | "extraction"
+        | "speech"
+        | "visual"
+        | null = null;
+      return checkedResult;
     }
   }
 };
@@ -151,38 +179,74 @@ const expectedStageReference = (
   stage: "carousel" | "extraction" | "speech" | "visual",
   intentId: string,
   generation: number
-): {
-  readonly key: string;
-  readonly kind: "carousel_manifest" | "speech_transcript" | "visual_manifest";
-  readonly ordinal: number;
-} | null => {
+) => {
   switch (stage) {
     case "carousel": {
-      return {
+      const checkedResult: {
+        readonly key: string;
+        readonly kind:
+          | "carousel_manifest"
+          | "speech_transcript"
+          | "visual_manifest";
+        readonly ordinal: number;
+      } | null = {
         key: `imports/${intentId}/carousel/v1/generations/${generation}/manifest.json`,
         kind: "carousel_manifest" as const,
         ordinal: 0,
       };
+      return checkedResult;
     }
     case "speech": {
-      return {
+      const checkedResult: {
+        readonly key: string;
+        readonly kind:
+          | "carousel_manifest"
+          | "speech_transcript"
+          | "visual_manifest";
+        readonly ordinal: number;
+      } | null = {
         key: `imports/${intentId}/transcription/v1/generations/${generation}/transcript.json`,
         kind: "speech_transcript" as const,
         ordinal: 2,
       };
+      return checkedResult;
     }
     case "visual": {
-      return {
+      const checkedResult: {
+        readonly key: string;
+        readonly kind:
+          | "carousel_manifest"
+          | "speech_transcript"
+          | "visual_manifest";
+        readonly ordinal: number;
+      } | null = {
         key: `imports/${intentId}/visual/v1/generations/${generation}/manifest.json`,
         kind: "visual_manifest" as const,
         ordinal: 3,
       };
+      return checkedResult;
     }
     case "extraction": {
-      return null;
+      const checkedResult: {
+        readonly key: string;
+        readonly kind:
+          | "carousel_manifest"
+          | "speech_transcript"
+          | "visual_manifest";
+        readonly ordinal: number;
+      } | null = null;
+      return checkedResult;
     }
     default: {
-      return null;
+      const checkedResult: {
+        readonly key: string;
+        readonly kind:
+          | "carousel_manifest"
+          | "speech_transcript"
+          | "visual_manifest";
+        readonly ordinal: number;
+      } | null = null;
+      return checkedResult;
     }
   }
 };

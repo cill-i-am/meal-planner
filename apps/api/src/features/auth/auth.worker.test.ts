@@ -13,12 +13,12 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { makeHouseholdPeopleControlPlane } from "../households/people/household-people.control-plane.js";
 import * as authSchema from "./auth.database-schema.js";
+import { makeNativeAuthTestService } from "./auth.fixture.js";
 import { makeMealPlannerAuth } from "./auth.js";
 import {
   resolveAuthenticatedOrganization,
   resolveAuthPrincipal,
 } from "./auth.principal.js";
-import { makeNativeAuthTestService } from "./auth.test-fixture.js";
 
 const testEnv = env as unknown as {
   readonly AUTH_TEST_MIGRATIONS: {
@@ -31,12 +31,15 @@ const testEnv = env as unknown as {
 const baseURL = "https://meal-planner.test";
 const secret = "local-worker-test-secret-at-least-32-characters";
 
-const cookieHeader = (response: Response): string => {
+const cookieHeader = (response: Response) => {
   const setCookie = response.headers.get("set-cookie");
   if (setCookie === null) {
     throw new Error("Expected Better Auth to set a session cookie.");
   }
-  return setCookie.split(";", 1)[0] ?? "";
+  {
+    const checkedResult: string = setCookie.split(";", 1)[0] ?? "";
+    return checkedResult;
+  }
 };
 
 const authRequest = (
@@ -68,7 +71,6 @@ describe("Better Auth D1 control plane", () => {
   });
 
   beforeEach(async () => {
-    // Each scenario has its own request window; rate-limit behavior has a dedicated suite.
     await drizzle(testEnv.MealPlannerAuthDatabase).delete(authSchema.rateLimit);
   });
 
@@ -194,8 +196,7 @@ describe("Better Auth D1 control plane", () => {
       )
     );
     expect(validInvitation.status).toBe(200);
-    // Native invitation creation is not a mail boundary. The household
-    // command sends only after its person association succeeds.
+
     expect(mails).toEqual([]);
   });
 

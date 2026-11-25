@@ -186,19 +186,20 @@ export const acquiredFixture = (audio: "available" | "absent" = "available") =>
     if (result._tag !== "VerifiedAcquisition") {
       return yield* Effect.die("Acquisition fixture failed");
     }
-    const current = (
-      status: string
-    ): HouseholdImportEvidenceCurrentRepository => ({
-      readCurrent: () =>
-        Effect.succeed(
-          Option.some({
-            acquisitionGeneration: generation,
-            canonicalSourceId: canonicalId,
-            importId,
-            sourceKind: "tiktok",
-            status: { kind: status },
-          })
-        ),
-    });
+    const current = (status: string) => {
+      const checkedResult: HouseholdImportEvidenceCurrentRepository = {
+        readCurrent: () =>
+          Effect.succeed(
+            Option.some({
+              acquisitionGeneration: generation,
+              canonicalSourceId: canonicalId,
+              importId,
+              sourceKind: "tiktok",
+              status: { kind: status },
+            })
+          ),
+      };
+      return checkedResult;
+    };
     return { ...storage, current, evidence: result.evidence };
   });

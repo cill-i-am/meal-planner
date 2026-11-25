@@ -40,7 +40,7 @@ export const makeRequestBudget = (storage: RequestBudgetStorage) =>
           }
           const last = recent.at(-1) ?? now - 400;
           const reservedAt = Math.max(now, last + 400);
-          // Write before waiting: cancellation consumes this reservation, never creates an unaccounted request.
+
           yield* storage.write({
             blockedUntil: state.blockedUntil,
             reservations: [...recent, reservedAt],

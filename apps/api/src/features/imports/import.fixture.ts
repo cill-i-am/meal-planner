@@ -25,13 +25,16 @@ export const makeTestSystemAuthorizer = (token: string) =>
 export const makeTestAuthPrincipalResolver = (
   sessionToken: string,
   principal = TestImportPrincipal
-): AuthPrincipalResolver => ({
-  resolve: (headers) =>
-    headers.get("cookie") === `better-auth.session_token=${sessionToken}`
-      ? Effect.succeed(
-          Schema.decodeUnknownSync(RecipeImportPrincipal)(principal)
-        )
-      : Effect.fail(
-          new AuthPrincipalResolutionError({ reason: "invalid_session" })
-        ),
-});
+) => {
+  const checkedResult: AuthPrincipalResolver = {
+    resolve: (headers) =>
+      headers.get("cookie") === `better-auth.session_token=${sessionToken}`
+        ? Effect.succeed(
+            Schema.decodeUnknownSync(RecipeImportPrincipal)(principal)
+          )
+        : Effect.fail(
+            new AuthPrincipalResolutionError({ reason: "invalid_session" })
+          ),
+  };
+  return checkedResult;
+};

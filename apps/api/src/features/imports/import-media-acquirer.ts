@@ -175,7 +175,7 @@ export type AcquisitionMediaSource = Pick<
 >;
 
 const NullableString = Schema.NullOr(Schema.String);
-// Retained tool versions describe the producer of an immutable artifact.
+
 const ToolVersion = Schema.String.pipe(Schema.check(Schema.isNonEmpty()));
 const AcquisitionManifest = Schema.Struct({
   acquiredAt: ImportTimestamp,
@@ -307,43 +307,66 @@ const hasExpectedMetadata = (
 const retryableAt = (
   stage: RetryableAcquisitionFailure["stage"],
   reason?: AcquisitionFailureReason
-): RetryableAcquisitionFailure =>
-  new RetryableAcquisitionError(
-    reason === undefined ? { stage } : { reason, stage }
-  );
+) => {
+  const checkedResult: RetryableAcquisitionFailure =
+    new RetryableAcquisitionError(
+      reason === undefined ? { stage } : { reason, stage }
+    );
+  return checkedResult;
+};
 
 const closeContainerFailure = (
   failure: ContainerAcquisitionError,
   generation: AcquisitionGeneration
-): Effect.Effect<AcquisitionTaskOutcome, RetryableAcquisitionFailure> => {
+) => {
   switch (failure._tag) {
     case "RetryableAcquisitionFailure": {
-      return Effect.fail(retryableAt(failure.stage, failure.reason));
+      const checkedResult: Effect.Effect<
+        AcquisitionTaskOutcome,
+        RetryableAcquisitionFailure
+      > = Effect.fail(retryableAt(failure.stage, failure.reason));
+      return checkedResult;
     }
     case "TerminalMedia": {
-      return Effect.succeed({
+      const checkedResult: Effect.Effect<
+        AcquisitionTaskOutcome,
+        RetryableAcquisitionFailure
+      > = Effect.succeed({
         _tag: "TerminalMedia",
         code: failure.code,
         generation,
         stage: failure.stage,
       });
+      return checkedResult;
     }
     case "Unavailable": {
-      return Effect.succeed({
+      const checkedResult: Effect.Effect<
+        AcquisitionTaskOutcome,
+        RetryableAcquisitionFailure
+      > = Effect.succeed({
         _tag: "Unavailable",
         code: failure.code,
         generation,
       });
+      return checkedResult;
     }
     case "UnsupportedCarousel": {
-      return Effect.succeed({
+      const checkedResult: Effect.Effect<
+        AcquisitionTaskOutcome,
+        RetryableAcquisitionFailure
+      > = Effect.succeed({
         _tag: "UnsupportedCarousel",
         code: failure.code,
         generation,
       });
+      return checkedResult;
     }
     default: {
-      return failure satisfies never;
+      const checkedResult: Effect.Effect<
+        AcquisitionTaskOutcome,
+        RetryableAcquisitionFailure
+      > = failure satisfies never;
+      return checkedResult;
     }
   }
 };
@@ -594,7 +617,7 @@ export const acquireStoreVerify = Effect.fn("ImportMedia.acquireStoreVerify")(
       readonly generation: AcquisitionGeneration;
       readonly importId: ImportId;
     }
-  ): Effect.fn.Return<AcquisitionTaskOutcome, RetryableAcquisitionFailure> {
+  ) {
     return yield* Effect.gen(function* attempt() {
       const preparedTransport = yield* mediaObject
         .prepare({

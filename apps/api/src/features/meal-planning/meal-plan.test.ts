@@ -78,7 +78,7 @@ const authority = (
     readonly stockSourceOption?: "roast" | "none";
     readonly childReviewOption?: "cereal" | "roast";
   } = {}
-): PlanningAuthority => {
+) => {
   const people = [
     Schema.decodeUnknownSync(MealPlanPersonPin)({
       personId: adultId,
@@ -215,7 +215,10 @@ const authority = (
         ]
       : [],
   });
-  return { content, people };
+  {
+    const checkedResult: PlanningAuthority = { content, people };
+    return checkedResult;
+  }
 };
 
 const request = (weeks = 1) =>
@@ -228,14 +231,19 @@ const request = (weeks = 1) =>
 const flexibleCoverage = (
   planRequest: ReturnType<typeof request>,
   context: PlanningAuthority
-): MealPlanCoverage[] =>
-  requiredCoverage(planRequest, context).map((requirement) => ({
+) => {
+  const checkedResult: MealPlanCoverage[] = requiredCoverage(
+    planRequest,
+    context
+  ).map((requirement) => ({
     requirement,
     resolution: decodeResolution({
       _tag: "Flexible",
       rationale: "Adult chose a flexible meal.",
     }),
   }));
+  return checkedResult;
+};
 
 describe("family meal planning domain", () => {
   it("expands twelve weeks for every person and managed occasion", () => {
@@ -926,58 +934,63 @@ describe("family meal planning domain", () => {
   });
 });
 
-const memoryRepository = (): MealPlanRepository => {
+const memoryRepository = () => {
   const plans = new Map<string, MealPlan>();
   const receipts = new Map<string, { fingerprint: string; plan: MealPlan }>();
-  return {
-    create: ({ draft }) =>
-      Effect.sync(() => {
-        plans.set(draft.planId, draft);
-        return draft;
-      }),
-    find: (planId) =>
-      Effect.sync(() => {
-        const plan = plans.get(planId);
-        return plan === undefined ? Option.none<MealPlan>() : Option.some(plan);
-      }),
-    findMutation: ({ planId, mutationId, mutationFingerprint }) =>
-      Effect.gen(function* findReceipt() {
-        const receipt = receipts.get(`${planId}:${mutationId}`);
-        if (receipt && receipt.fingerprint !== mutationFingerprint) {
-          return yield* Effect.fail({
-            _tag: "MealPlanMutationConflict" as const,
-            mutationId,
+  {
+    const checkedResult: MealPlanRepository = {
+      create: ({ draft }) =>
+        Effect.sync(() => {
+          plans.set(draft.planId, draft);
+          return draft;
+        }),
+      find: (planId) =>
+        Effect.sync(() => {
+          const plan = plans.get(planId);
+          return plan === undefined
+            ? Option.none<MealPlan>()
+            : Option.some(plan);
+        }),
+      findMutation: ({ planId, mutationId, mutationFingerprint }) =>
+        Effect.gen(function* findReceipt() {
+          const receipt = receipts.get(`${planId}:${mutationId}`);
+          if (receipt && receipt.fingerprint !== mutationFingerprint) {
+            return yield* Effect.fail({
+              _tag: "MealPlanMutationConflict" as const,
+              mutationId,
+            });
+          }
+          return receipt === undefined
+            ? Option.none<MealPlan>()
+            : Option.some(receipt.plan);
+        }),
+      listRecent: () => Effect.sync(() => [...plans.values()]),
+      save: ({ next, expectedRevision, mutationFingerprint, mutationId }) =>
+        Effect.gen(function* savePlan() {
+          const current = plans.get(next.planId);
+          if (current === undefined) {
+            return yield* Effect.fail({
+              _tag: "MealPlanNotFound" as const,
+              planId: next.planId,
+            });
+          }
+          if (current.revision !== expectedRevision) {
+            return yield* Effect.fail({
+              _tag: "MealPlanVersionConflict" as const,
+              actualRevision: current.revision,
+              expectedRevision,
+            });
+          }
+          plans.set(next.planId, next);
+          receipts.set(`${next.planId}:${mutationId}`, {
+            fingerprint: mutationFingerprint,
+            plan: next,
           });
-        }
-        return receipt === undefined
-          ? Option.none<MealPlan>()
-          : Option.some(receipt.plan);
-      }),
-    listRecent: () => Effect.sync(() => [...plans.values()]),
-    save: ({ next, expectedRevision, mutationFingerprint, mutationId }) =>
-      Effect.gen(function* savePlan() {
-        const current = plans.get(next.planId);
-        if (current === undefined) {
-          return yield* Effect.fail({
-            _tag: "MealPlanNotFound" as const,
-            planId: next.planId,
-          });
-        }
-        if (current.revision !== expectedRevision) {
-          return yield* Effect.fail({
-            _tag: "MealPlanVersionConflict" as const,
-            actualRevision: current.revision,
-            expectedRevision,
-          });
-        }
-        plans.set(next.planId, next);
-        receipts.set(`${next.planId}:${mutationId}`, {
-          fingerprint: mutationFingerprint,
-          plan: next,
-        });
-        return next;
-      }),
-  };
+          return next;
+        }),
+    };
+    return checkedResult;
+  }
 };
 
 describe("meal plan lifecycle", () => {

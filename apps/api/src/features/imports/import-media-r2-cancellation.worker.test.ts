@@ -58,7 +58,6 @@ describe("native fixed-length upload cancellation", () => {
       ]);
       expect(result).toBe("deadline");
     } finally {
-      // A failed regression must still release the native pending write.
       await fixed.readable.cancel().catch(() => null);
       await Promise.race([producer, delay(500)]);
     }

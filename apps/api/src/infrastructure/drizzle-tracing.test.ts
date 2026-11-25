@@ -5,7 +5,7 @@ import { drizzle } from "drizzle-orm/node-sqlite";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { expect, it } from "vitest";
 
-import { RecordingDrizzleTracer } from "./drizzle-tracing.test-fixture.js";
+import { RecordingDrizzleTracer } from "./drizzle-tracing.fixture.js";
 
 const rows = sqliteTable("tracing_probe", {
   id: integer().primaryKey(),

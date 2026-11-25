@@ -110,7 +110,7 @@ export default class MealPlannerApi extends Cloudflare.Worker<MealPlannerApi>()(
       ...workerObservability,
       env: {
         ...conversationBindings,
-        // Environment binding effects run only at deployment; props also run at cold start.
+
         MEAL_PLANNER_PUBLIC_ORIGIN: Effect.gen(function* publicOriginBinding() {
           const { dev } = yield* AlchemyContext;
           return configuredPublicOrigin({

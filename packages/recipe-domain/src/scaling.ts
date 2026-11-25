@@ -21,19 +21,35 @@ export type RecipeScalingResult =
 export const scaleRecipeIngredients = (
   recipe: RecipeContent,
   targetServings: number
-): RecipeScalingResult => {
+) => {
   if (!Number.isFinite(targetServings) || targetServings <= 0) {
-    return { _tag: "CannotScale", reason: "invalid_target" };
+    const checkedResult: RecipeScalingResult = {
+      _tag: "CannotScale",
+      reason: "invalid_target",
+    };
+    return checkedResult;
   }
   const source = recipe.servings;
   if (source === null) {
-    return { _tag: "CannotScale", reason: "unknown_servings" };
+    const checkedResult: RecipeScalingResult = {
+      _tag: "CannotScale",
+      reason: "unknown_servings",
+    };
+    return checkedResult;
   }
   if (source.max !== null && source.max !== source.quantity) {
-    return { _tag: "CannotScale", reason: "ambiguous_servings" };
+    const checkedResult: RecipeScalingResult = {
+      _tag: "CannotScale",
+      reason: "ambiguous_servings",
+    };
+    return checkedResult;
   }
   if (source.unit !== "serving" && source.unit !== "servings") {
-    return { _tag: "CannotScale", reason: "non_serving_yield" };
+    const checkedResult: RecipeScalingResult = {
+      _tag: "CannotScale",
+      reason: "non_serving_yield",
+    };
+    return checkedResult;
   }
   const factor = targetServings / source.quantity;
   const unresolvedIngredientIndexes: number[] = [];
@@ -81,12 +97,19 @@ export const scaleRecipeIngredients = (
             !Number.isFinite(ingredient.quantity.max)))
     )
   ) {
-    return { _tag: "CannotScale", reason: "amount_overflow" };
+    const checkedResult: RecipeScalingResult = {
+      _tag: "CannotScale",
+      reason: "amount_overflow",
+    };
+    return checkedResult;
   }
-  return {
-    _tag: "Scaled",
-    ingredients,
-    servings: targetServings,
-    unresolvedIngredientIndexes,
-  };
+  {
+    const checkedResult: RecipeScalingResult = {
+      _tag: "Scaled",
+      ingredients,
+      servings: targetServings,
+      unresolvedIngredientIndexes,
+    };
+    return checkedResult;
+  }
 };

@@ -87,7 +87,7 @@ it("preserves existing families and stops before deleting an unresolved submitte
   expect(JSON.parse(unresolved?.progress ?? "null")).toMatchObject({
     checkpoint: { command: { person: { mutationId: "unresolved-person" } } },
   });
-  // Simulate finishing that existing request with the previous application.
+
   await writeOldProgress("pending-person", {
     organizationId: "complete",
     stage: "family-review",

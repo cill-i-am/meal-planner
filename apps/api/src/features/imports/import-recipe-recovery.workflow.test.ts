@@ -54,28 +54,33 @@ const organizationId = Schema.decodeUnknownSync(HouseholdOrganizationId)(
   "organization-recipe-recovery-workflow"
 );
 
-const attempt = (ordinal: RecipeRecoveryOrdinal): RecipeRecoveryAttempt => ({
-  acquisitionGeneration: generation,
-  createdAt: timestamp,
-  currentDispatchId: Schema.decodeUnknownSync(HouseholdDispatchId)(
-    `${rootDispatchId}:recovery:${ordinal}`
-  ),
-  currentExtractionFingerprint: sha(String(ordinal).repeat(64)),
-  evidenceFingerprint: sha("a".repeat(64)),
-  executionGeneration,
-  importId,
-  ordinal,
-  predecessorDispatchId: Schema.decodeUnknownSync(HouseholdDispatchId)(
-    ordinal === 1 ? rootDispatchId : `${rootDispatchId}:recovery:${ordinal - 1}`
-  ),
-  predecessorExtractionFingerprint: sha("b".repeat(64)),
-  rootDispatchId,
-  rootExtractionFingerprint: sha("b".repeat(64)),
-  sourceMediaSha256: sha("e".repeat(64)),
-  terminalCheckpointCompletedAt: timestamp,
-  transcriptSha256: sha("c".repeat(64)),
-  visualManifestSha256: sha("d".repeat(64)),
-});
+const attempt = (ordinal: RecipeRecoveryOrdinal) => {
+  const checkedResult: RecipeRecoveryAttempt = {
+    acquisitionGeneration: generation,
+    createdAt: timestamp,
+    currentDispatchId: Schema.decodeUnknownSync(HouseholdDispatchId)(
+      `${rootDispatchId}:recovery:${ordinal}`
+    ),
+    currentExtractionFingerprint: sha(String(ordinal).repeat(64)),
+    evidenceFingerprint: sha("a".repeat(64)),
+    executionGeneration,
+    importId,
+    ordinal,
+    predecessorDispatchId: Schema.decodeUnknownSync(HouseholdDispatchId)(
+      ordinal === 1
+        ? rootDispatchId
+        : `${rootDispatchId}:recovery:${ordinal - 1}`
+    ),
+    predecessorExtractionFingerprint: sha("b".repeat(64)),
+    rootDispatchId,
+    rootExtractionFingerprint: sha("b".repeat(64)),
+    sourceMediaSha256: sha("e".repeat(64)),
+    terminalCheckpointCompletedAt: timestamp,
+    transcriptSha256: sha("c".repeat(64)),
+    visualManifestSha256: sha("d".repeat(64)),
+  };
+  return checkedResult;
+};
 
 const input = (attemptOrdinal: RecipeRecoveryOrdinal) => ({
   acquisitionGeneration: generation,

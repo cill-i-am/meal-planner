@@ -120,7 +120,7 @@ const fixture = (failCycle = 0, externalRedirect = false) => {
           "set-cookie",
           `OAuth.TokensExpiryTime=${expiryValue(now)}; Path=/; Domain=.tesco.ie; Secure`
         );
-        // Match the lossless string-valued header produced by TescoSessionHttpLive.
+
         headers.set("set-cookie", headers.getSetCookie().join(", "));
         return HttpClientResponse.fromWeb(
           request,

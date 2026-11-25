@@ -60,7 +60,7 @@ export class PrivateInterviewSession extends ProductionSession {
         websearch: unexpectedBindingMethod,
         gateway: unexpectedBindingMethod,
         models: unexpectedBindingMethod,
-        // Native Ai.run is overloaded across every provider model. This test adapter replaces only its external transport.
+
         run: ((
           model: string,
           body: SyntheticModelBody,
@@ -76,7 +76,6 @@ export class PrivateInterviewSession extends ProductionSession {
               model,
             }),
             method: "POST",
-            // The synthetic provider deliberately ignores cancellation to prove the durable late-output fence.
           })) as CloudflareBindingConfig["binding"]["run"],
         toMarkdown: unexpectedBindingMethod,
       },
@@ -112,7 +111,6 @@ export class PrivateInterviewSession extends ProductionSession {
     const nativeNow = Date.now;
     Date.now = () => now;
     try {
-      // Production enqueue is synchronous: no other request observes the fixture clock.
       this.enqueueOutput(input);
     } finally {
       Date.now = nativeNow;
@@ -311,7 +309,7 @@ const routeDirectoryRequest = async (
   directory: DirectoryPort,
   input: CommandInput,
   generation: { readonly generation: string }
-): Promise<CommandResult | undefined> => {
+) => {
   let result: unknown = null;
   if (input.action === "directory-begin-request" && input.participant) {
     result = await directory.beginRequest(input.participant);
@@ -337,9 +335,17 @@ const routeDirectoryRequest = async (
   } else if (input.action === "directory-socket-count") {
     result = await directory.readSocketCount();
   } else {
-    return undefined;
+    const checkedResult:
+      | Awaited<Promise<CommandResult | undefined>>
+      | Promise<CommandResult | undefined> = undefined;
+    return checkedResult;
   }
-  return { result };
+  {
+    const checkedResult:
+      | Awaited<Promise<CommandResult | undefined>>
+      | Promise<CommandResult | undefined> = { result };
+    return checkedResult;
+  }
 };
 
 const routeDirectoryCommand = async (
@@ -347,7 +353,7 @@ const routeDirectoryCommand = async (
   directory: DirectoryPort,
   input: CommandInput,
   generation: { readonly generation: string }
-): Promise<CommandResult> => {
+) => {
   let result: unknown = null;
   if (input.action === "directory-initialize" && input.participant) {
     result = await directory.initialize(input.participant);
@@ -360,7 +366,12 @@ const routeDirectoryCommand = async (
       expiresAt: input.expiresAt ?? 0,
     });
   } else if (input.action === "directory-private-http") {
-    return { response: directory.fetch(new Request(request.url)) };
+    const checkedResult:
+      | Awaited<Promise<CommandResult>>
+      | Promise<CommandResult> = {
+      response: directory.fetch(new Request(request.url)),
+    };
+    return checkedResult;
   } else if (input.action === "directory-sql") {
     result = await directory.sql("select * from private_directory_binding");
   } else if (input.action === "directory-state") {
@@ -384,7 +395,9 @@ const routeDirectoryCommand = async (
   } else if (input.action === "directory-reserved" && input.binding) {
     result = (await directory.readReservation(input.binding)) !== null;
   } else if (input.action === "directory-connect") {
-    return {
+    const checkedResult:
+      | Awaited<Promise<CommandResult>>
+      | Promise<CommandResult> = {
       response: directory.fetch(
         new Request(request.url, {
           headers: {
@@ -394,10 +407,21 @@ const routeDirectoryCommand = async (
         })
       ),
     };
+    return checkedResult;
   } else {
-    return { response: new Response(null, { status: 404 }) };
+    const checkedResult:
+      | Awaited<Promise<CommandResult>>
+      | Promise<CommandResult> = {
+      response: new Response(null, { status: 404 }),
+    };
+    return checkedResult;
   }
-  return { result };
+  {
+    const checkedResult:
+      | Awaited<Promise<CommandResult>>
+      | Promise<CommandResult> = { result };
+    return checkedResult;
+  }
 };
 
 const routeSessionChat = async (
@@ -406,7 +430,7 @@ const routeSessionChat = async (
   binding: typeof PrivateSessionBinding.Type,
   profile: CommandInput["profile"],
   generation: { readonly generation: string }
-): Promise<CommandResult> => {
+) => {
   const url = new URL("https://private-output.internal/chat");
   url.search = new URL(request.url).search;
   const context = {
@@ -424,32 +448,42 @@ const routeSessionChat = async (
       Schema.Record(Schema.String, Schema.Unknown)
     )(await request.json());
     headers.set("content-type", "application/json");
-    return {
-      response: child.fetch(
-        new Request(url, {
-          body: JSON.stringify({ ...body, privateChatContext: context }),
-          headers,
-          method: "POST",
-        })
-      ),
-    };
+    {
+      const checkedResult:
+        | Awaited<Promise<CommandResult>>
+        | Promise<CommandResult> = {
+        response: child.fetch(
+          new Request(url, {
+            body: JSON.stringify({ ...body, privateChatContext: context }),
+            headers,
+            method: "POST",
+          })
+        ),
+      };
+      return checkedResult;
+    }
   }
   headers.set(
     "private-chat-context",
     encodeURIComponent(JSON.stringify(context))
   );
-  return {
-    response: child.fetch(
-      new Request(url, { headers, method: request.method })
-    ),
-  };
+  {
+    const checkedResult:
+      | Awaited<Promise<CommandResult>>
+      | Promise<CommandResult> = {
+      response: child.fetch(
+        new Request(url, { headers, method: request.method })
+      ),
+    };
+    return checkedResult;
+  }
 };
 
 const readSessionCommand = async (
   request: Request,
   child: SessionPort,
   input: CommandInput
-): Promise<CommandResult | undefined> => {
+) => {
   let result: unknown = null;
   if (input.action === "turns") {
     result = await child.readTurns();
@@ -472,20 +506,36 @@ const readSessionCommand = async (
       "select * from private_session_binding"
     );
   } else if (input.action === "private-http") {
-    return { response: child.fetch(new Request(request.url)) };
+    const checkedResult:
+      | Awaited<Promise<CommandResult | undefined>>
+      | Promise<CommandResult | undefined> = {
+      response: child.fetch(new Request(request.url)),
+    };
+    return checkedResult;
   } else {
-    return undefined;
+    const checkedResult:
+      | Awaited<Promise<CommandResult | undefined>>
+      | Promise<CommandResult | undefined> = undefined;
+    return checkedResult;
   }
-  return { result };
+  {
+    const checkedResult:
+      | Awaited<Promise<CommandResult | undefined>>
+      | Promise<CommandResult | undefined> = { result };
+    return checkedResult;
+  }
 };
 
 const routeSessionRequest = async (
   child: SessionPort,
   input: CommandInput,
   generation: { readonly generation: string }
-): Promise<CommandResult | undefined> => {
+) => {
   if (!input.binding) {
-    return undefined;
+    const checkedResult:
+      | Awaited<Promise<CommandResult | undefined>>
+      | Promise<CommandResult | undefined> = undefined;
+    return checkedResult;
   }
   const context = { ...generation, binding: input.binding };
   let result: unknown;
@@ -524,9 +574,17 @@ const routeSessionRequest = async (
   } else if (input.action === "cancel-request-turn" && input.turnId) {
     result = await child.cancelTurn({ ...context, turnId: input.turnId });
   } else {
-    return undefined;
+    const checkedResult:
+      | Awaited<Promise<CommandResult | undefined>>
+      | Promise<CommandResult | undefined> = undefined;
+    return checkedResult;
   }
-  return { result };
+  {
+    const checkedResult:
+      | Awaited<Promise<CommandResult | undefined>>
+      | Promise<CommandResult | undefined> = { result };
+    return checkedResult;
+  }
 };
 
 const routeSessionCommand = async (
@@ -534,7 +592,7 @@ const routeSessionCommand = async (
   child: SessionPort,
   input: CommandInput,
   generation: { readonly generation: string }
-): Promise<CommandResult | undefined> => {
+) => {
   let result: unknown = null;
   if (input.action === "initialize" && input.binding) {
     result = await child.initialize({
@@ -553,7 +611,9 @@ const routeSessionCommand = async (
       expiresAt: input.expiresAt ?? 0,
     });
   } else if (input.action === "connect") {
-    return {
+    const checkedResult:
+      | Awaited<Promise<CommandResult | undefined>>
+      | Promise<CommandResult | undefined> = {
       response: child.fetch(
         new Request("https://private-output.internal/upgrade", {
           headers: {
@@ -563,6 +623,7 @@ const routeSessionCommand = async (
         })
       ),
     };
+    return checkedResult;
   } else if (input.action === "command-at-time" && input.now !== undefined) {
     result = await child.commandAtTime(
       { ...generation, payload: input.payload ?? "" },
@@ -579,26 +640,44 @@ const routeSessionCommand = async (
       payload: input.payload ?? "",
     });
   } else if (input.action === "chat" && input.binding) {
-    return routeSessionChat(
+    const checkedResult:
+      | Awaited<Promise<CommandResult | undefined>>
+      | Promise<CommandResult | undefined> = routeSessionChat(
       request,
       child,
       input.binding,
       input.profile,
       generation
     );
+    return checkedResult;
   } else {
-    return readSessionCommand(request, child, input);
+    const checkedResult:
+      | Awaited<Promise<CommandResult | undefined>>
+      | Promise<CommandResult | undefined> = readSessionCommand(
+      request,
+      child,
+      input
+    );
+    return checkedResult;
   }
-  return { result };
+  {
+    const checkedResult:
+      | Awaited<Promise<CommandResult | undefined>>
+      | Promise<CommandResult | undefined> = { result };
+    return checkedResult;
+  }
 };
 
 const routeSessionConfirmation = async (
   child: SessionPort,
   input: CommandInput,
   generation: { readonly generation: string }
-): Promise<CommandResult | undefined> => {
+) => {
   if (!input.binding || !input.mutationId) {
-    return undefined;
+    const checkedResult:
+      | Awaited<Promise<CommandResult | undefined>>
+      | Promise<CommandResult | undefined> = undefined;
+    return checkedResult;
   }
   const context = {
     ...generation,
@@ -606,23 +685,36 @@ const routeSessionConfirmation = async (
     mutationId: input.mutationId,
   };
   if (input.action === "release-confirmation") {
-    return { result: await child.releaseConfirmation(context) };
+    const checkedResult:
+      | Awaited<Promise<CommandResult | undefined>>
+      | Promise<CommandResult | undefined> = {
+      result: await child.releaseConfirmation(context),
+    };
+    return checkedResult;
   }
   if (input.action === "settle-confirmation" && input.outcome) {
-    return {
+    const checkedResult:
+      | Awaited<Promise<CommandResult | undefined>>
+      | Promise<CommandResult | undefined> = {
       result: await child.settleConfirmation({
         ...context,
         outcome: input.outcome,
       }),
     };
+    return checkedResult;
   }
-  return undefined;
+  {
+    const checkedResult:
+      | Awaited<Promise<CommandResult | undefined>>
+      | Promise<CommandResult | undefined> = undefined;
+    return checkedResult;
+  }
 };
 
 const routeLifecycleCommand = async (
   coordinator: OutputLifecyclePort,
   input: CommandInput
-): Promise<CommandResult> => {
+) => {
   const operation = { operationId: input.operationId ?? "" };
   let result: unknown = null;
   if (input.action === "mutation-find-pending") {
@@ -642,18 +734,25 @@ const routeLifecycleCommand = async (
   } else if (input.action === "mutation-read") {
     result = await coordinator.readMutation(operation);
   } else {
-    return { response: new Response(null, { status: 404 }) };
+    const checkedResult:
+      | Awaited<Promise<CommandResult>>
+      | Promise<CommandResult> = {
+      response: new Response(null, { status: 404 }),
+    };
+    return checkedResult;
   }
 
-  return { result };
+  {
+    const checkedResult:
+      | Awaited<Promise<CommandResult>>
+      | Promise<CommandResult> = { result };
+    return checkedResult;
+  }
 };
 
 /** Test-only direct capabilities; this shell is never referenced by the production worker resource. */
 export default {
-  async fetch(
-    request: Request,
-    env: Environment
-  ): Promise<Response | NativeCloudflare.Response> {
+  async fetch(request: Request, env: Environment) {
     const input = Schema.decodeUnknownSync(Command, {
       onExcessProperty: "error",
     })(JSON.parse(request.headers.get("x-test-command") ?? "null"));
@@ -691,18 +790,35 @@ export default {
         }
       }
       if (outcome === undefined) {
-        return new Response(null, { status: 404 });
+        const checkedResult:
+          | Awaited<Promise<Response | NativeCloudflare.Response>>
+          | Promise<Response | NativeCloudflare.Response> = new Response(null, {
+          status: 404,
+        });
+        return checkedResult;
       }
       if ("response" in outcome) {
-        // Returning the delegated promise preserves its rejection boundary outside the command catch.
-        return outcome.response;
+        const checkedResult:
+          | Awaited<Promise<Response | NativeCloudflare.Response>>
+          | Promise<Response | NativeCloudflare.Response> = outcome.response;
+        return checkedResult;
       }
-      return Response.json({ result: outcome.result ?? null });
+      {
+        const checkedResult:
+          | Awaited<Promise<Response | NativeCloudflare.Response>>
+          | Promise<Response | NativeCloudflare.Response> = Response.json({
+          result: outcome.result ?? null,
+        });
+        return checkedResult;
+      }
     } catch (error) {
-      return Response.json(
+      const checkedResult:
+        | Awaited<Promise<Response | NativeCloudflare.Response>>
+        | Promise<Response | NativeCloudflare.Response> = Response.json(
         { error: error instanceof Error ? error.message : "Rejected" },
         { status: 409 }
       );
+      return checkedResult;
     }
   },
 };

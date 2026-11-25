@@ -223,7 +223,7 @@ const runtime = Effect.gen(function* constructAccountObject() {
         Effect.gen(function* enrollAccount() {
           const secret = yield* vault.decrypt(input);
           const value = Redacted.value(secret);
-          // The discriminant is checked after decryption; plaintext never crosses native RPC.
+
           if (value.kind !== "enrollment") {
             return yield* failure("InvalidInput");
           }
