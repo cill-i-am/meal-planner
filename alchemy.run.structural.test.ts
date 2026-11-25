@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 const readRepoFile = (path: string) => {
   const checkedResult: string = readFileSync(
@@ -13,17 +13,27 @@ const readRepoFile = (path: string) => {
 };
 
 describe("Alchemy source structure (no provider lifecycle or runtime proof)", () => {
-  it("loads the deployment graph in Node without evaluating Worker-only modules", () => {
-    const result = spawnSync(
-      process.execPath,
-      ["--import", "tsx", "-e", "import('./alchemy.run.ts')"],
-      {
-        cwd: import.meta.dirname,
-        encoding: "utf-8",
-        timeout: 15_000,
-      }
-    );
-    expect(result.status, result.stderr).toBe(0);
+  describe("cold deployment graph load", () => {
+    let result: ReturnType<typeof loadDeploymentGraph>;
+    const loadDeploymentGraph = () =>
+      spawnSync(
+        process.execPath,
+        ["--import", "tsx", "-e", "import('./alchemy.run.ts')"],
+        {
+          cwd: import.meta.dirname,
+          encoding: "utf-8",
+          timeout: 15_000,
+        }
+      );
+
+    beforeAll(() => {
+      result = loadDeploymentGraph();
+    });
+
+    it("loads the deployment graph in Node without evaluating Worker-only modules", () => {
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(0);
+    });
   });
 
   it("disables provider request logging and retention", () => {
