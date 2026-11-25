@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { Effect, Schema } from "effect";
-import { expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   createAccountedEvaluationTransport,
@@ -355,7 +355,7 @@ it.each(["write", "rename"] as const)(
   }
 );
 
-it("the CLI exits nonzero and records stopped_unknown when a provider response has no usage", async () => {
+const startUnmeteredCli = async () => {
   const rootDirectory = await mkdtemp(
     path.join(tmpdir(), "evaluation-transport-cli-")
   );
@@ -380,18 +380,42 @@ it("the CLI exits nonzero and records stopped_unknown when a provider response h
   });
   child.stderr.resume();
   const closed = once(child, "close");
-  try {
-    await respond(rootDirectory, "cli-unknown", {
-      result: { response: "synthetic unmetered response" },
-    });
-    const [exitCode] = await closed;
-    expect(exitCode).toBe(1);
-    expect(output).toContain('"status":"stopped_unknown"');
-  } finally {
+  const close = async () => {
     child.kill("SIGTERM");
     await closed;
     await rm(rootDirectory, { force: true, recursive: true });
-  }
+  };
+  return { close, closed, output: () => output, rootDirectory };
+};
+
+describe("unmetered provider response", () => {
+  let cli: Awaited<ReturnType<typeof startUnmeteredCli>>;
+
+  beforeEach(async () => {
+    cli = await startUnmeteredCli();
+    try {
+      await readPending(cli.rootDirectory, "cli-unknown");
+      return cli.close;
+    } catch (error) {
+      await cli.close();
+      throw error;
+    }
+  });
+
+  it("the CLI exits nonzero and records stopped_unknown when a provider response has no usage", async () => {
+    await respond(cli.rootDirectory, "cli-unknown", {
+      result: { response: "synthetic unmetered response" },
+    });
+    const [exitCode] = await cli.closed;
+    expect(exitCode).toBe(1);
+    expect(cli.output()).toContain('"status":"stopped_unknown"');
+    const resultFile = evaluationBridgePaths(cli.rootDirectory, "cli-unknown")
+      .request.replace(`${path.sep}bridge${path.sep}`, path.sep)
+      .replace(".request.json", ".result.json");
+    expect(JSON.parse(await readFile(resultFile, "utf-8"))).toMatchObject({
+      status: "stopped_unknown",
+    });
+  });
 });
 
 it("rejects changed payload or pricing on replay without changing the original settlement", async () => {
